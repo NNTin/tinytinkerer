@@ -1,0 +1,12 @@
+node_modules
+.pnpm-store
+.turbo
+dist
+coverage
+.env
+.env.*
+!.env.example
+apps/web/node_modules
+apps/web/dist
+apps/web/pnpm-lock.yaml
+apps/edge/.wrangler

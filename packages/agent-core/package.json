@@ -1,0 +1,19 @@
+{
+  "name": "@tinytinkerer/agent-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tinytinkerer/shared": "workspace:*",
+    "@tinytinkerer/types": "workspace:*",
+    "zod": "^4.1.12"
+  }
+}
