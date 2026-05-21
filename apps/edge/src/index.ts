@@ -7,7 +7,6 @@ import { z } from 'zod'
 type Bindings = {
   GITHUB_CLIENT_ID?: string
   GITHUB_CLIENT_SECRET?: string
-  GITHUB_MODELS_TOKEN?: string
   TAVILY_API_KEY?: string
 }
 
@@ -54,10 +53,8 @@ app.get('/health', (c) => {
         : 'Missing GitHub OAuth environment variables'
     },
     models: {
-      state: c.env.GITHUB_MODELS_TOKEN ? 'ready' : 'degraded',
-      detail: c.env.GITHUB_MODELS_TOKEN
-        ? 'GitHub Models proxy ready'
-        : 'Using local fallback planner/synthesizer'
+      state: 'ready',
+      detail: 'GitHub Models proxy ready (sign in with GitHub to enable)'
     },
     search: {
       state: c.env.TAVILY_API_KEY ? 'ready' : 'degraded',
@@ -199,26 +196,16 @@ app.post(
   ),
   async (c) => {
     const body = c.req.valid('json')
+    const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
 
-    if (!c.env.GITHUB_MODELS_TOKEN) {
-      const content =
-        body.messages.at(-1)?.content ?? 'No prompt supplied. Configure GITHUB_MODELS_TOKEN for live model proxy.'
-      return c.json({
-        choices: [
-          {
-            message: {
-              role: 'assistant',
-              content: `Local fallback response: ${content}`
-            }
-          }
-        ]
-      })
+    if (!authorization) {
+      return c.json({ error: 'Unauthorized' }, 401)
     }
 
     const response = await fetch('https://models.github.ai/inference/chat/completions', {
       method: 'POST',
       headers: {
-        authorization: `Bearer ${c.env.GITHUB_MODELS_TOKEN}`,
+        authorization,
         'content-type': 'application/json'
       },
       body: JSON.stringify({

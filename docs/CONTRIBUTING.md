@@ -58,11 +58,10 @@ VITE_GITHUB_REDIRECT_URI=     # optional: OAuth redirect URI
 ```bash
 GITHUB_CLIENT_ID=             # optional: GitHub OAuth app client ID
 GITHUB_CLIENT_SECRET=         # optional: GitHub OAuth app client secret
-GITHUB_MODELS_TOKEN=          # optional: enables live AI model responses
 TAVILY_API_KEY=               # optional: enables live web search
 ```
 
-When `GITHUB_MODELS_TOKEN` or `TAVILY_API_KEY` are absent, the health endpoint at `GET /health` reports `"state": "degraded"` for those subsystems.
+AI model responses use the signed-in user's GitHub OAuth token — there is no separate `GITHUB_MODELS_TOKEN`. When `TAVILY_API_KEY` is absent the health endpoint reports `"state": "degraded"` for search and mock results are returned instead.
 
 ## Other commands
 

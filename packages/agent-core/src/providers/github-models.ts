@@ -1,6 +1,7 @@
 import type { ExecutionPlan, PlanStep } from '@tinytinkerer/types'
 import { z } from 'zod'
 import { sleep } from '@tinytinkerer/shared'
+import { SYSTEM_STYLE_PROMPT } from '../prompts/system'
 import type { ExecutionContext, ModelProvider } from '../types'
 
 const defaultPlanSchema = z.object({
@@ -21,6 +22,7 @@ const defaultPlanSchema = z.object({
 
 type GitHubModelsProviderOptions = {
   baseUrl: string
+  getToken?: () => string | null | undefined
 }
 
 const inferPlan = (prompt: string): ExecutionPlan => {
@@ -93,13 +95,60 @@ export class GitHubModelsProvider implements ModelProvider {
   }
 
   async *synthesize(context: ExecutionContext): AsyncIterable<string> {
+    const token = this.options.getToken?.()
+
+    if (token) {
+      const toolSection = Object.entries(context.toolResults)
+        .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+        .join('\n')
+
+      const userContent = [
+        context.prompt,
+        context.notes.filter(Boolean).length > 0 && `\nResearch notes:\n${context.notes.join('\n')}`,
+        toolSection && `\nTool results:\n${toolSection}`
+      ]
+        .filter(Boolean)
+        .join('')
+
+      try {
+        const response = await fetch(`${this.options.baseUrl}/api/models/chat`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            messages: [
+              { role: 'system', content: SYSTEM_STYLE_PROMPT },
+              { role: 'user', content: userContent }
+            ]
+          })
+        })
+
+        if (response.ok) {
+          const payload = (await response.json()) as {
+            choices?: Array<{ message?: { content?: string } }>
+          }
+          const content = payload.choices?.[0]?.message?.content ?? ''
+          if (content) {
+            for (const chunk of content.split(' ')) {
+              yield `${chunk} `
+            }
+            return
+          }
+        }
+      } catch {
+        // fall through to local mock
+      }
+    }
+
     const collected = Object.entries(context.toolResults)
       .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
       .join('\n')
 
     const draft = collected
       ? `I worked through the plan and used tools where needed.\n\n${collected}`
-      : 'I worked through your request and prepared a direct answer based on the plan.'
+      : 'Sign in with GitHub to get AI responses. Without a token the runtime runs in local fallback mode.'
 
     for (const chunk of draft.split(' ')) {
       await sleep(25)
