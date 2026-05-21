@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint src --ext .ts,.tsx",
+    "lint": "eslint src",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "preview": "vite preview"
@@ -31,7 +31,6 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "tailwindcss": "^4.1.17",
-    "typescript": "^6.0.3",
     "vite": "^8.0.12"
   }
 }
