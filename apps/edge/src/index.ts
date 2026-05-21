@@ -239,6 +239,7 @@ app.post(
     'json',
     z.object({
       model: z.string().optional(),
+      stream: z.boolean().optional(),
       messages: z
         .array(
           z.object({
@@ -257,6 +258,8 @@ app.post(
       return c.json({ error: 'Unauthorized' }, 401)
     }
 
+    const useStream = body.stream === true
+
     const response = await fetch('https://models.github.ai/inference/chat/completions', {
       method: 'POST',
       headers: {
@@ -266,13 +269,12 @@ app.post(
       body: JSON.stringify({
         model: body.model ?? 'openai/gpt-4.1-mini',
         messages: body.messages,
-        stream: false
+        stream: useStream
       })
     })
 
-    const rawText = await response.text()
-
     if (!response.ok) {
+      const rawText = await response.text()
       console.error('[models/chat] upstream error', {
         status: response.status,
         'retry-after': response.headers.get('retry-after'),
@@ -296,7 +298,21 @@ app.post(
       )
     }
 
-    const payload: unknown = JSON.parse(rawText)
+    if (useStream && response.body) {
+      const origin = c.env.ALLOWED_ORIGIN ?? '*'
+      return new Response(response.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'X-Accel-Buffering': 'no',
+          'Access-Control-Allow-Origin': origin,
+          ...(origin !== '*' ? { Vary: 'Origin' } : {})
+        }
+      })
+    }
+
+    const payload: unknown = JSON.parse(await response.text())
     return c.json(payload, 200)
   }
 )
