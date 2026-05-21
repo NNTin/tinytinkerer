@@ -10,3 +10,4 @@ apps/web/node_modules
 apps/web/dist
 apps/web/pnpm-lock.yaml
 apps/edge/.wrangler
+apps/edge/.dev.vars
