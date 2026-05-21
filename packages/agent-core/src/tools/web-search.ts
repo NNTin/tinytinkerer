@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { Tool } from './registry'
 
 export const webSearchInputSchema = z.object({
-  query: z.string().min(2),
+  query: z.string().min(2).max(500),
   maxResults: z.number().int().positive().max(10).optional()
 })
 
