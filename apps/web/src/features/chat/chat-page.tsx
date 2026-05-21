@@ -33,32 +33,29 @@ const thinkingLabel = (event: ChatEvent): string | undefined => {
   }
 }
 
-const buildTurns = (events: ChatEvent[]): Turn[] => {
+// streamingText holds the live chunk accumulation from the store; assistant.chunk
+// events are not persisted so completed turns rely solely on assistant.done.text.
+const buildTurns = (events: ChatEvent[], streamingText: string): Turn[] => {
   const turns: Turn[] = []
   let userEventId: string | null = null
   let userText: string | null = null
-  let chunks: string[] = []
 
   for (const event of events) {
     if (event.type === 'user.message') {
       userEventId = event.id
       userText = event.payload.text
-      chunks = []
-    } else if (event.type === 'assistant.chunk') {
-      chunks.push(event.payload.text)
     } else if (event.type === 'assistant.done') {
       if (userEventId !== null && userText !== null) {
         turns.push({ id: userEventId, userText, assistantText: event.payload.text })
         userEventId = null
         userText = null
-        chunks = []
       }
     }
   }
 
-  // In-progress turn (streaming or pending synthesis)
+  // In-progress turn: use live streamingText from the store.
   if (userEventId !== null && userText !== null) {
-    turns.push({ id: userEventId, userText, assistantText: chunks.join('') })
+    turns.push({ id: userEventId, userText, assistantText: streamingText })
   }
 
   return turns
@@ -96,6 +93,7 @@ const formatCooldown = (remainingMs: number): string => {
 
 export const ChatPage = () => {
   const events = useChatStore((state) => state.events)
+  const streamingText = useChatStore((state) => state.streamingText)
   const isRunning = useChatStore((state) => state.isRunning)
   const isRetryPending = useChatStore((state) => state.isRetryPending)
   const cooldownUntil = useChatStore((state) => state.cooldownUntil)
@@ -116,7 +114,7 @@ export const ChatPage = () => {
     return () => window.clearInterval(interval)
   }, [cooldownUntil])
 
-  const turns = useMemo(() => buildTurns(events), [events])
+  const turns = useMemo(() => buildTurns(events, streamingText), [events, streamingText])
   const timeline = useMemo(() => buildCurrentTimeline(events), [events])
 
   const toolEvents = useMemo(

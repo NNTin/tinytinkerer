@@ -16,6 +16,7 @@ const RATE_LIMIT_COOLDOWN_KEY = 'rate_limit_cooldown_until'
 type ChatState = {
   conversationId: string | undefined
   events: ChatEvent[]
+  streamingText: string
   isRunning: boolean
   isRetryPending: boolean
   cooldownUntil: string | undefined
@@ -70,6 +71,7 @@ const applyRateLimitEvent = async (event: ChatEvent, set: (state: Partial<ChatSt
 export const useChatStore = create<ChatState>((set, get) => ({
   conversationId: undefined,
   events: [],
+  streamingText: '',
   isRunning: false,
   isRetryPending: false,
   cooldownUntil: undefined,
@@ -98,9 +100,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       for await (const event of runtime.run(prompt, { signal: runController.signal })) {
-        set((state) => ({ events: [...state.events, event] }))
-        await saveEvent(conversationId, event)
-        await applyRateLimitEvent(event, set)
+        if (event.type === 'assistant.chunk') {
+          // Accumulate streaming text without persisting individual chunks or
+          // spreading the events array — avoids O(n²) allocations and per-chunk DB writes.
+          set((state) => ({ streamingText: state.streamingText + event.payload.text }))
+        } else {
+          set((state) => ({ events: [...state.events, event], streamingText: '' }))
+          await saveEvent(conversationId, event)
+          await applyRateLimitEvent(event, set)
+        }
       }
     } finally {
       if (activeRunController === runController) {
@@ -120,6 +128,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     await clearConversationEvents(conversationId)
-    set({ events: [] })
+    set({ events: [], streamingText: '' })
   }
 }))

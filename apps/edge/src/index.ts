@@ -280,6 +280,7 @@ app.post(
     'json',
     z.object({
       model: z.string().optional(),
+      stream: z.boolean().optional(),
       messages: z
         .array(
           z.object({
@@ -298,6 +299,7 @@ app.post(
       return c.json({ error: 'Unauthorized' }, 401)
     }
 
+    const useStream = body.stream === true
     const modelsBaseUrl = c.env.GITHUB_MODELS_URL ?? GITHUB_MODELS_DEFAULT_URL
 
     const response = await fetchWithTimeout(
@@ -311,15 +313,14 @@ app.post(
         body: JSON.stringify({
           model: body.model ?? 'openai/gpt-4.1-mini',
           messages: body.messages,
-          stream: false
+          stream: useStream
         })
       },
       30_000
     )
 
-    const rawText = await response.text()
-
     if (!response.ok) {
+      const rawText = await response.text()
       console.error('[models/chat] upstream error', {
         status: response.status,
         'retry-after': response.headers.get('retry-after'),
@@ -343,6 +344,21 @@ app.post(
       return c.json({ error: safeError }, statusCode)
     }
 
+    if (useStream && response.body) {
+      const origin = c.env.ALLOWED_ORIGIN ?? '*'
+      return new Response(response.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'X-Accel-Buffering': 'no',
+          'Access-Control-Allow-Origin': origin,
+          ...(origin !== '*' ? { Vary: 'Origin' } : {})
+        }
+      })
+    }
+
+    const rawText = await response.text()
     const parsed = chatCompletionSchema.safeParse(JSON.parse(rawText))
     if (!parsed.success) {
       return c.json({ error: 'Unexpected response from upstream model' }, 502)
