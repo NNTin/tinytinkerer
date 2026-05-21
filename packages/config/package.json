@@ -1,0 +1,13 @@
+{
+  "name": "@tinytinkerer/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "build": "echo 'config package has no build output'",
+    "lint": "echo 'config package has no lint target'",
+    "test": "echo 'config package has no tests'",
+    "typecheck": "echo 'config package has no typecheck target'"
+  }
+}

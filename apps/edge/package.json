@@ -1,0 +1,22 @@
+{
+  "name": "@tinytinkerer/edge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.7.5",
+    "@tinytinkerer/types": "workspace:*",
+    "hono": "^4.10.5",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "wrangler": "^4.46.0"
+  }
+}
