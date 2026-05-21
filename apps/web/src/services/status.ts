@@ -1,6 +1,19 @@
 import type { SystemStatus } from '@tinytinkerer/types'
+import { z } from 'zod'
 
 const edgeUrl = import.meta.env.VITE_EDGE_URL ?? 'http://127.0.0.1:8787'
+
+const serviceStatusSchema = z.object({
+  state: z.enum(['ready', 'degraded', 'offline']),
+  detail: z.string(),
+  error: z.string().optional()
+})
+
+const systemStatusSchema = z.object({
+  auth: serviceStatusSchema,
+  models: serviceStatusSchema,
+  search: serviceStatusSchema
+})
 
 export const fetchStatus = async (): Promise<SystemStatus> => {
   const response = await fetch(`${edgeUrl}/health`)
@@ -8,5 +21,7 @@ export const fetchStatus = async (): Promise<SystemStatus> => {
     throw new Error('Unable to reach edge status endpoint')
   }
 
-  return (await response.json()) as SystemStatus
+  // Runtime-validate the external response before returning as SystemStatus.
+  // The schema matches SystemStatus exactly; the cast is safe after parse succeeds.
+  return systemStatusSchema.parse(await response.json()) as SystemStatus
 }
