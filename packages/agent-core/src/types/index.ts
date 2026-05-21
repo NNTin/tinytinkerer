@@ -10,5 +10,5 @@ export type ExecutionContext = {
 export interface ModelProvider {
   plan(prompt: string): Promise<ExecutionPlan>
   execute(step: PlanStep, context: ExecutionContext): Promise<string>
-  synthesize(context: ExecutionContext): AsyncIterable<string>
+  synthesize(context: ExecutionContext, options?: { signal?: AbortSignal }): AsyncIterable<string>
 }

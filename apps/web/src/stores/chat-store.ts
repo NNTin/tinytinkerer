@@ -1,17 +1,31 @@
 import type { ChatEvent } from '@tinytinkerer/types'
 import { create } from 'zustand'
-import { appendEvent, clearConversationEvents, createConversation, loadConversationEvents } from '../services/db'
+import {
+  appendEvent,
+  clearConversationEvents,
+  createConversation,
+  getPreference,
+  loadConversationEvents,
+  setPreference
+} from '../services/db'
 import { runtime } from '../services/runtime'
 import type { PersistedEvent } from '../types/chat'
+
+const RATE_LIMIT_COOLDOWN_KEY = 'rate_limit_cooldown_until'
 
 type ChatState = {
   conversationId: string | undefined
   events: ChatEvent[]
   isRunning: boolean
+  isRetryPending: boolean
+  cooldownUntil: string | undefined
   initialize: () => Promise<void>
   sendPrompt: (prompt: string) => Promise<void>
+  cancelRetry: () => void
   resetConversation: () => Promise<void>
 }
+
+let activeRunController: AbortController | undefined
 
 const saveEvent = async (conversationId: string, event: ChatEvent): Promise<void> => {
   const persisted: PersistedEvent = {
@@ -21,32 +35,83 @@ const saveEvent = async (conversationId: string, event: ChatEvent): Promise<void
   await appendEvent(persisted)
 }
 
+const activeCooldown = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined
+  }
+
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp) || timestamp <= Date.now()) {
+    return undefined
+  }
+
+  return value
+}
+
+const applyRateLimitEvent = async (event: ChatEvent, set: (state: Partial<ChatState>) => void): Promise<void> => {
+  if (event.type === 'rate.limit.waiting') {
+    await setPreference(RATE_LIMIT_COOLDOWN_KEY, event.payload.retryAt)
+    set({ cooldownUntil: event.payload.retryAt, isRetryPending: event.payload.autoRetry })
+    return
+  }
+
+  if (event.type === 'rate.limit.cancelled') {
+    await setPreference(RATE_LIMIT_COOLDOWN_KEY, event.payload.retryAt)
+    set({ cooldownUntil: event.payload.retryAt, isRetryPending: false })
+    return
+  }
+
+  if (event.type === 'rate.limit.recovered') {
+    await setPreference(RATE_LIMIT_COOLDOWN_KEY, '')
+    set({ cooldownUntil: undefined, isRetryPending: false })
+  }
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   conversationId: undefined,
   events: [],
   isRunning: false,
+  isRetryPending: false,
+  cooldownUntil: undefined,
   initialize: async () => {
     const conversation = await createConversation()
     const storedEvents = await loadConversationEvents(conversation.id)
+    const cooldownUntil = activeCooldown(await getPreference(RATE_LIMIT_COOLDOWN_KEY))
+    if (!cooldownUntil) {
+      await setPreference(RATE_LIMIT_COOLDOWN_KEY, '')
+    }
     set({
       conversationId: conversation.id,
-      events: storedEvents
+      events: storedEvents,
+      cooldownUntil
     })
   },
   sendPrompt: async (prompt) => {
     const conversationId = get().conversationId
-    if (!conversationId || get().isRunning) {
+    if (!conversationId || get().isRunning || activeCooldown(get().cooldownUntil)) {
       return
     }
 
-    set({ isRunning: true })
+    const runController = new AbortController()
+    activeRunController = runController
+    set({ isRunning: true, isRetryPending: false })
 
-    for await (const event of runtime.run(prompt)) {
-      set((state) => ({ events: [...state.events, event] }))
-      await saveEvent(conversationId, event)
+    try {
+      for await (const event of runtime.run(prompt, { signal: runController.signal })) {
+        set((state) => ({ events: [...state.events, event] }))
+        await saveEvent(conversationId, event)
+        await applyRateLimitEvent(event, set)
+      }
+    } finally {
+      if (activeRunController === runController) {
+        activeRunController = undefined
+      }
+      set({ isRunning: false, isRetryPending: false })
     }
-
-    set({ isRunning: false })
+  },
+  cancelRetry: () => {
+    activeRunController?.abort()
+    set({ isRetryPending: false })
   },
   resetConversation: async () => {
     const conversationId = get().conversationId

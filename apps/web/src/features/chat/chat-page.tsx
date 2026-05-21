@@ -1,7 +1,7 @@
 import type { ChatEvent } from '@tinytinkerer/types'
 import { Button } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { TopBar } from '../../components/top-bar'
 import { useChatRuntime } from '../../hooks/use-chat-runtime'
 
@@ -32,10 +32,34 @@ const summarizeAssistant = (events: ChatEvent[]): string =>
     .join('')
     .trim()
 
+const formatCooldown = (remainingMs: number): string => {
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
 export const ChatPage = () => {
-  const { events, sendPrompt, resetConversation, isRunning } = useChatRuntime()
+  const { events, sendPrompt, resetConversation, cancelRetry, isRunning, isRetryPending, cooldownUntil } =
+    useChatRuntime()
   const [prompt, setPrompt] = useState('')
   const [openTimeline, setOpenTimeline] = useState(true)
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!cooldownUntil) {
+      return undefined
+    }
+
+    const interval = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(interval)
+  }, [cooldownUntil])
 
   const timeline = useMemo<TimelineEntry[]>(
     () =>
@@ -53,6 +77,14 @@ export const ChatPage = () => {
   )
 
   const assistantText = useMemo(() => summarizeAssistant(events), [events])
+
+  const cooldownRemainingMs = cooldownUntil ? Math.max(0, Date.parse(cooldownUntil) - now) : 0
+  const isCoolingDown = cooldownRemainingMs > 0
+  const submitLabel = isCoolingDown
+    ? formatCooldown(cooldownRemainingMs)
+    : isRunning
+      ? 'Thinking…'
+      : 'Send'
 
   const toolEvents = useMemo(
     () => events.filter((event) => event.type === 'tool.call.completed' || event.type === 'tool.call.failed'),
@@ -136,10 +168,10 @@ export const ChatPage = () => {
         </section>
 
         <form
-          className="mt-auto grid gap-2 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm md:grid-cols-[1fr_auto_auto]"
+          className="mt-auto grid gap-2 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm md:grid-cols-[1fr_auto_auto_auto]"
           onSubmit={(event) => {
             event.preventDefault()
-            if (!prompt.trim()) {
+            if (!prompt.trim() || isCoolingDown || isRunning) {
               return
             }
             void sendPrompt(prompt.trim())
@@ -152,9 +184,14 @@ export const ChatPage = () => {
             placeholder="Ask anything…"
             className="h-11 rounded-md border border-stone-300 bg-white px-3 text-sm outline-none ring-amber-300 transition focus:ring-2"
           />
-          <Button type="submit" disabled={isRunning || !prompt.trim()}>
-            {isRunning ? 'Thinking…' : 'Send'}
+          <Button type="submit" disabled={isRunning || isCoolingDown || !prompt.trim()} className="min-w-24">
+            {submitLabel}
           </Button>
+          {isRetryPending && isCoolingDown ? (
+            <Button type="button" variant="secondary" onClick={cancelRetry}>
+              Cancel retry
+            </Button>
+          ) : null}
           <Button type="button" variant="secondary" onClick={() => void resetConversation()}>
             Reset
           </Button>

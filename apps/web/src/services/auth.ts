@@ -12,7 +12,7 @@ export const buildGitHubLoginUrl = (): string | null => {
 }
 
 export const exchangeCode = async (code: string): Promise<string> => {
-  const redirectUri = import.meta.env.VITE_GITHUB_REDIRECT_URI as string | undefined
+  const redirectUri = import.meta.env.VITE_GITHUB_REDIRECT_URI
   const response = await fetch(`${edgeUrl}/auth/github/exchange`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

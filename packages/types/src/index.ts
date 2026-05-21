@@ -8,6 +8,9 @@ export type EventType =
   | 'tool.call.completed'
   | 'tool.call.failed'
   | 'execution.step.completed'
+  | 'rate.limit.waiting'
+  | 'rate.limit.recovered'
+  | 'rate.limit.cancelled'
   | 'assistant.chunk'
   | 'assistant.done'
   | 'error'
@@ -66,6 +69,15 @@ export type ExecutionStepCompletedEvent = EventBase<
   'execution.step.completed',
   { stepId: string; note: string }
 >
+export type RateLimitWaitingEvent = EventBase<
+  'rate.limit.waiting',
+  { retryAfterMs: number; retryAt: string; message: string; autoRetry: boolean }
+>
+export type RateLimitRecoveredEvent = EventBase<'rate.limit.recovered', { retryAt: string }>
+export type RateLimitCancelledEvent = EventBase<
+  'rate.limit.cancelled',
+  { retryAfterMs: number; retryAt: string; message: string; reason: 'too_long' | 'cancelled' }
+>
 export type AssistantChunkEvent = EventBase<'assistant.chunk', { text: string }>
 export type AssistantDoneEvent = EventBase<'assistant.done', { text: string }>
 export type ErrorEvent = EventBase<'error', { message: string }>
@@ -81,6 +93,9 @@ export type ChatEvent =
   | ToolCallCompletedEvent
   | ToolCallFailedEvent
   | ExecutionStepCompletedEvent
+  | RateLimitWaitingEvent
+  | RateLimitRecoveredEvent
+  | RateLimitCancelledEvent
   | AssistantChunkEvent
   | AssistantDoneEvent
   | ErrorEvent

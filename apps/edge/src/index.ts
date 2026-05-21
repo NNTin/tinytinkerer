@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, parseRetryAfterMs } from '@tinytinkerer/shared'
 import type { SearchResult, SystemStatus } from '@tinytinkerer/types'
 import { z } from 'zod'
 
@@ -43,6 +44,18 @@ const normalizeSearchResults = (results: unknown[]): SearchResult[] =>
       return { title, url, snippet }
     })
     .filter((value): value is SearchResult => Boolean(value))
+
+const toRateLimitResponse = (rawText: string, retryAfter: string | null) => {
+  const retryAfterMs = parseRetryAfterMs(retryAfter) ?? DEFAULT_RATE_LIMIT_RETRY_AFTER_MS
+  const retryAt = new Date(Date.now() + retryAfterMs).toISOString()
+
+  return {
+    code: 'rate_limited',
+    error: rawText || 'GitHub Models is rate limited',
+    retryAfterMs,
+    retryAt
+  }
+}
 
 app.get('/health', (c) => {
   const status: SystemStatus = {
@@ -215,8 +228,33 @@ app.post(
       })
     })
 
-    const payload: unknown = await response.json()
-    return c.json(payload, response.status as 200 | 400 | 401 | 403 | 429 | 500)
+    const rawText = await response.text()
+
+    if (!response.ok) {
+      console.error('[models/chat] upstream error', {
+        status: response.status,
+        'retry-after': response.headers.get('retry-after'),
+        'x-ratelimit-limit-requests': response.headers.get('x-ratelimit-limit-requests'),
+        'x-ratelimit-remaining-requests': response.headers.get('x-ratelimit-remaining-requests'),
+        'x-ratelimit-reset-requests': response.headers.get('x-ratelimit-reset-requests'),
+        body: rawText
+      })
+
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('retry-after')
+        const body = toRateLimitResponse(rawText, retryAfter)
+        c.header('Retry-After', retryAfter ?? String(Math.ceil(body.retryAfterMs / 1000)))
+        return c.json(body, 429)
+      }
+
+      return c.json(
+        { error: rawText || `Upstream error ${response.status}` },
+        response.status as 400 | 401 | 403 | 429 | 500
+      )
+    }
+
+    const payload: unknown = JSON.parse(rawText)
+    return c.json(payload, 200)
   }
 )
 

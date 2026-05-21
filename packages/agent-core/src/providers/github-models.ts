@@ -1,6 +1,7 @@
 import type { ExecutionPlan, PlanStep } from '@tinytinkerer/types'
 import { z } from 'zod'
-import { sleep } from '@tinytinkerer/shared'
+import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, parseRetryAfterMs, sleep } from '@tinytinkerer/shared'
+import { RateLimitError } from '../errors/rate-limit-error'
 import { SYSTEM_STYLE_PROMPT } from '../prompts/system'
 import type { ExecutionContext, ModelProvider } from '../types'
 
@@ -18,6 +19,12 @@ const defaultPlanSchema = z.object({
         .optional()
     })
   )
+})
+
+const rateLimitResponseSchema = z.object({
+  error: z.string().optional(),
+  retryAfterMs: z.number().nonnegative().optional(),
+  retryAt: z.string().optional()
 })
 
 type GitHubModelsProviderOptions = {
@@ -59,6 +66,31 @@ const inferPlan = (prompt: string): ExecutionPlan => {
   }
 }
 
+const isValidRetryAt = (value: string | undefined): value is string =>
+  Boolean(value && !Number.isNaN(Date.parse(value)))
+
+const createRateLimitError = async (response: Response): Promise<RateLimitError> => {
+  const rawText = await response.text()
+  const parsed = (() => {
+    try {
+      return rateLimitResponseSchema.partial().parse(JSON.parse(rawText))
+    } catch {
+      return undefined
+    }
+  })()
+
+  const retryAfterMs =
+    parsed?.retryAfterMs ?? parseRetryAfterMs(response.headers.get('retry-after')) ?? DEFAULT_RATE_LIMIT_RETRY_AFTER_MS
+  const retryAt = isValidRetryAt(parsed?.retryAt)
+    ? parsed.retryAt
+    : new Date(Date.now() + retryAfterMs).toISOString()
+
+  return new RateLimitError(parsed?.error ?? (rawText || 'GitHub Models is rate limited'), {
+    retryAfterMs,
+    retryAt
+  })
+}
+
 export class GitHubModelsProvider implements ModelProvider {
   constructor(private readonly options: GitHubModelsProviderOptions) {}
 
@@ -94,7 +126,7 @@ export class GitHubModelsProvider implements ModelProvider {
     return `Completed step: ${step.summary}`
   }
 
-  async *synthesize(context: ExecutionContext): AsyncIterable<string> {
+  async *synthesize(context: ExecutionContext, options?: { signal?: AbortSignal }): AsyncIterable<string> {
     const token = this.options.getToken?.()
 
     if (token) {
@@ -111,7 +143,7 @@ export class GitHubModelsProvider implements ModelProvider {
         .join('')
 
       try {
-        const response = await fetch(`${this.options.baseUrl}/api/models/chat`, {
+        const requestInit: RequestInit = {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
@@ -123,7 +155,16 @@ export class GitHubModelsProvider implements ModelProvider {
               { role: 'user', content: userContent }
             ]
           })
-        })
+        }
+        if (options?.signal) {
+          requestInit.signal = options.signal
+        }
+
+        const response = await fetch(`${this.options.baseUrl}/api/models/chat`, requestInit)
+
+        if (response.status === 429) {
+          throw await createRateLimitError(response)
+        }
 
         if (response.ok) {
           const payload = (await response.json()) as {
@@ -137,7 +178,10 @@ export class GitHubModelsProvider implements ModelProvider {
             return
           }
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof RateLimitError) {
+          throw error
+        }
         // fall through to local mock
       }
     }

@@ -1,5 +1,6 @@
 import type { ChatEvent, PlanStep } from '@tinytinkerer/types'
-import { withTimeout } from '@tinytinkerer/shared'
+import { MAX_AUTO_RETRY_AFTER_MS, withTimeout } from '@tinytinkerer/shared'
+import { isRateLimitError } from '../errors/rate-limit-error'
 import { createEvent } from '../events/create-event'
 import type { ExecutionContext, ModelProvider } from '../types'
 import { ToolRegistry } from '../tools/registry'
@@ -9,6 +10,10 @@ type AgentRuntimeOptions = {
   maxToolCallsPerStep?: number
   toolTimeoutMs?: number
   stepTimeoutMs?: number
+}
+
+type RunOptions = {
+  signal?: AbortSignal
 }
 
 export class AgentRuntime {
@@ -28,7 +33,7 @@ export class AgentRuntime {
     this.stepTimeoutMs = options.stepTimeoutMs ?? 15_000
   }
 
-  async *run(prompt: string): AsyncGenerator<ChatEvent> {
+  async *run(prompt: string, options: RunOptions = {}): AsyncGenerator<ChatEvent> {
     const context: ExecutionContext = {
       prompt,
       plan: {
@@ -82,13 +87,7 @@ export class AgentRuntime {
         yield createEvent('execution.step.completed', { stepId: step.id, note })
       }
 
-      let output = ''
-      for await (const chunk of this.provider.synthesize(context)) {
-        output += chunk
-        yield createEvent('assistant.chunk', { text: chunk })
-      }
-
-      yield createEvent('assistant.done', { text: output.trim() })
+      yield* this.synthesizeWithRateLimit(context, options.signal)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown runtime error'
       yield createEvent('error', { message })
@@ -123,5 +122,95 @@ export class AgentRuntime {
       const message = error instanceof Error ? error.message : 'Tool execution failed'
       yield createEvent('tool.call.failed', { toolId, error: message })
     }
+  }
+
+  private async *synthesizeWithRateLimit(
+    context: ExecutionContext,
+    signal: AbortSignal | undefined
+  ): AsyncGenerator<ChatEvent> {
+    while (true) {
+      try {
+        const chunks: string[] = []
+        const synthesizeOptions = signal ? { signal } : undefined
+        for await (const chunk of this.provider.synthesize(context, synthesizeOptions)) {
+          chunks.push(chunk)
+        }
+
+        for (const chunk of chunks) {
+          yield createEvent('assistant.chunk', { text: chunk })
+        }
+
+        yield createEvent('assistant.done', { text: chunks.join('').trim() })
+        return
+      } catch (error) {
+        if (!isRateLimitError(error)) {
+          throw error
+        }
+
+        const autoRetry = error.retryAfterMs <= MAX_AUTO_RETRY_AFTER_MS
+
+        if (!autoRetry) {
+          yield createEvent('rate.limit.cancelled', {
+            retryAfterMs: error.retryAfterMs,
+            retryAt: error.retryAt,
+            message: error.message,
+            reason: 'too_long'
+          })
+          yield createEvent('assistant.done', {
+            text: 'GitHub Models is rate limited. This request was cancelled because the cooldown is longer than five minutes.'
+          })
+          return
+        }
+
+        yield createEvent('rate.limit.waiting', {
+          retryAfterMs: error.retryAfterMs,
+          retryAt: error.retryAt,
+          message: error.message,
+          autoRetry: true
+        })
+
+        const elapsed = await this.waitUntil(error.retryAt, signal)
+        if (!elapsed) {
+          yield createEvent('rate.limit.cancelled', {
+            retryAfterMs: error.retryAfterMs,
+            retryAt: error.retryAt,
+            message: 'Retry cancelled',
+            reason: 'cancelled'
+          })
+          yield createEvent('assistant.done', { text: 'Retry cancelled.' })
+          return
+        }
+
+        yield createEvent('rate.limit.recovered', { retryAt: error.retryAt })
+      }
+    }
+  }
+
+  private waitUntil(retryAt: string, signal: AbortSignal | undefined): Promise<boolean> {
+    if (signal?.aborted) {
+      return Promise.resolve(false)
+    }
+
+    const retryAtMs = Date.parse(retryAt)
+    const timeoutMs = Number.isNaN(retryAtMs) ? 0 : Math.max(0, retryAtMs - Date.now())
+
+    return new Promise((resolve) => {
+      const cleanup = () => {
+        clearTimeout(timeoutId)
+        signal?.removeEventListener('abort', onAbort)
+      }
+
+      const onAbort = () => {
+        cleanup()
+        resolve(false)
+      }
+
+      const timeoutId = setTimeout(() => {
+        cleanup()
+        resolve(true)
+      }, timeoutMs)
+
+      signal?.addEventListener('abort', onAbort, { once: true })
+    })
   }
 }
