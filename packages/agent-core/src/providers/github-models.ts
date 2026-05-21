@@ -135,8 +135,8 @@ export class GitHubModelsProvider implements ModelProvider {
     }
   }
 
-  async execute(step: PlanStep): Promise<string> {
-    return `Completed step: ${step.summary}`
+  execute(step: PlanStep): Promise<string> {
+    return Promise.resolve(`Completed step: ${step.summary}`)
   }
 
   async *synthesize(context: ExecutionContext, options?: { signal?: AbortSignal }): AsyncIterable<string> {
