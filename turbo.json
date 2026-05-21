@@ -9,15 +9,10 @@
       "cache": false,
       "persistent": true
     },
-    "lint": {
-      "dependsOn": ["^lint"]
-    },
+    "lint": {},
     "test": {
-      "dependsOn": ["^test"],
       "outputs": ["coverage/**"]
     },
-    "typecheck": {
-      "dependsOn": ["^typecheck"]
-    }
+    "typecheck": {}
   }
 }

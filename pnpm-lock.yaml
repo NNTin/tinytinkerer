@@ -115,9 +115,6 @@ importers:
       tailwindcss:
         specifier: ^4.1.17
         version: 4.3.0
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
       vite:
         specifier: ^8.0.12
         version: 8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)
@@ -133,8 +130,6 @@ importers:
       zod:
         specifier: ^4.1.12
         version: 4.4.3
-
-  packages/config: {}
 
   packages/shared: {}
 
