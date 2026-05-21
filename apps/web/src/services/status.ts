@@ -1,7 +1,6 @@
 import type { SystemStatus } from '@tinytinkerer/types'
 import { z } from 'zod'
-
-const edgeUrl = import.meta.env.VITE_EDGE_URL ?? 'http://127.0.0.1:8787'
+import { edgeUrl } from './config'
 
 const serviceStatusSchema = z.object({
   state: z.enum(['ready', 'degraded', 'offline']),

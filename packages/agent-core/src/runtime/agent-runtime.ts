@@ -134,9 +134,6 @@ export class AgentRuntime {
         const synthesizeOptions = signal ? { signal } : undefined
         for await (const chunk of this.provider.synthesize(context, synthesizeOptions)) {
           chunks.push(chunk)
-        }
-
-        for (const chunk of chunks) {
           yield createEvent('assistant.chunk', { text: chunk })
         }
 
