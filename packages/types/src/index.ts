@@ -8,6 +8,7 @@ export type EventType =
   | 'tool.call.completed'
   | 'tool.call.failed'
   | 'execution.step.completed'
+  | 'execution.completed'
   | 'rate.limit.waiting'
   | 'rate.limit.recovered'
   | 'rate.limit.cancelled'
@@ -69,6 +70,7 @@ export type ExecutionStepCompletedEvent = EventBase<
   'execution.step.completed',
   { stepId: string; note: string }
 >
+export type ExecutionCompletedEvent = EventBase<'execution.completed', { steps: number }>
 export type RateLimitWaitingEvent = EventBase<
   'rate.limit.waiting',
   { retryAfterMs: number; retryAt: string; message: string; autoRetry: boolean }
@@ -93,6 +95,7 @@ export type ChatEvent =
   | ToolCallCompletedEvent
   | ToolCallFailedEvent
   | ExecutionStepCompletedEvent
+  | ExecutionCompletedEvent
   | RateLimitWaitingEvent
   | RateLimitRecoveredEvent
   | RateLimitCancelledEvent
