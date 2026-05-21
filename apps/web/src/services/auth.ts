@@ -1,4 +1,11 @@
+import { z } from 'zod'
+
 const edgeUrl = import.meta.env.VITE_EDGE_URL ?? 'http://127.0.0.1:8787'
+
+const exchangeResponseSchema = z.object({
+  accessToken: z.string().optional(),
+  error: z.string().optional()
+})
 
 export const buildGitHubLoginUrl = (): string | null => {
   const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID
@@ -23,7 +30,7 @@ export const exchangeCode = async (code: string): Promise<string> => {
     throw new Error('OAuth exchange failed')
   }
 
-  const data = (await response.json()) as { accessToken?: string; error?: string }
+  const data = exchangeResponseSchema.parse(await response.json())
   if (!data.accessToken) {
     throw new Error(data.error ?? 'No access token in response')
   }

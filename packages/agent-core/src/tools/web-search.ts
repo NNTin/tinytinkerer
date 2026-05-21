@@ -7,6 +7,17 @@ export const webSearchInputSchema = z.object({
   maxResults: z.number().int().positive().max(10).optional()
 })
 
+const searchResultSchema = z.object({
+  title: z.string(),
+  url: z.string(),
+  snippet: z.string()
+})
+
+const webSearchResponseSchema = z.object({
+  query: z.string(),
+  results: z.array(searchResultSchema)
+})
+
 export type WebSearchInput = z.infer<typeof webSearchInputSchema>
 
 export type WebSearchOutput = {
@@ -31,10 +42,6 @@ export const createWebSearchTool = (baseUrl: string): Tool<WebSearchInput, WebSe
       throw new Error(`Search failed (${response.status})`)
     }
 
-    const payload = (await response.json()) as { query: string; results: SearchResult[] }
-    return {
-      query: payload.query,
-      results: payload.results
-    }
+    return webSearchResponseSchema.parse(await response.json())
   }
 })
