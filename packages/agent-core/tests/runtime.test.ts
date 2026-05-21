@@ -58,6 +58,7 @@ describe('AgentRuntime', () => {
 
     expect(events.some((event) => event.type === 'plan.generated')).toBe(true)
     expect(events.some((event) => event.type === 'tool.call.completed')).toBe(true)
+    expect(events.some((event) => event.type === 'execution.completed')).toBe(true)
     expect(events.at(-1)?.type).toBe('assistant.done')
   })
 
@@ -181,5 +182,64 @@ describe('AgentRuntime', () => {
 
     expect(events.find(isEventType('rate.limit.cancelled'))?.payload.reason).toBe('cancelled')
     vi.useRealTimers()
+  })
+
+  it('stops mid-execution and ends cleanly when signal is aborted', async () => {
+    const controller = new AbortController()
+    let stepCount = 0
+    const multiStepProvider: ModelProvider = {
+      async plan() {
+        return {
+          complexity: 'medium',
+          steps: [
+            { id: 'step-1', summary: 'Step one' },
+            { id: 'step-2', summary: 'Step two' },
+            { id: 'step-3', summary: 'Step three' }
+          ]
+        }
+      },
+      async execute(step) {
+        stepCount += 1
+        if (step.id === 'step-1') {
+          controller.abort()
+        }
+        return `done: ${step.id}`
+      },
+      async *synthesize() {
+        yield 'should not reach here'
+      }
+    }
+
+    const runtime = new AgentRuntime(multiStepProvider, new ToolRegistry())
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello', { signal: controller.signal })) {
+      events.push(event)
+    }
+
+    expect(stepCount).toBe(1)
+    expect(events.some((event) => event.type === 'execution.completed')).toBe(true)
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(events.at(-1)?.type).toBe('assistant.done')
+  })
+
+  it('does not emit tool.call.started when tool calls are disabled', async () => {
+    const registry = new ToolRegistry()
+    registry.register({
+      id: 'web-search',
+      description: 'test tool',
+      schema: z.object({ query: z.string() }),
+      async execute() {
+        return {}
+      }
+    })
+
+    const runtime = new AgentRuntime(provider, registry, { maxToolCallsPerStep: 0 })
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(events.some((event) => event.type === 'tool.call.started')).toBe(false)
+    expect(events.some((event) => event.type === 'tool.call.failed')).toBe(true)
   })
 })

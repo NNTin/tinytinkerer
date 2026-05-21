@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, parseRetryAfterMs } from '@tinytinkerer/shared'
 import { RateLimitError } from '../errors/rate-limit-error'
 import { SYSTEM_STYLE_PROMPT } from '../prompts/system'
-import type { ExecutionContext, ModelProvider } from '../types'
+import type { ExecutionContext, ModelProvider, ProviderCallOptions } from '../types'
 
 const defaultPlanSchema = z.object({
   complexity: z.enum(['low', 'medium', 'high']),
@@ -108,13 +108,17 @@ const createRateLimitError = async (response: Response): Promise<RateLimitError>
 export class GitHubModelsProvider implements ModelProvider {
   constructor(private readonly options: GitHubModelsProviderOptions) {}
 
-  async plan(prompt: string): Promise<ExecutionPlan> {
+  async plan(prompt: string, options?: ProviderCallOptions): Promise<ExecutionPlan> {
     try {
-      const response = await fetch(`${this.options.baseUrl}/api/models/plan`, {
+      const planInit: RequestInit = {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ prompt })
-      })
+      }
+      if (options?.signal) {
+        planInit.signal = options.signal
+      }
+      const response = await fetch(`${this.options.baseUrl}/api/models/plan`, planInit)
 
       if (!response.ok) {
         return inferPlan(prompt)
@@ -139,7 +143,7 @@ export class GitHubModelsProvider implements ModelProvider {
     return Promise.resolve(`Completed step: ${step.summary}`)
   }
 
-  async *synthesize(context: ExecutionContext, options?: { signal?: AbortSignal }): AsyncIterable<string> {
+  async *synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<string> {
     const token = this.options.getToken?.()
 
     if (token) {

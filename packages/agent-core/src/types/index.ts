@@ -7,8 +7,12 @@ export type ExecutionContext = {
   toolResults: Record<string, unknown>
 }
 
+export type ProviderCallOptions = {
+  signal?: AbortSignal
+}
+
 export interface ModelProvider {
-  plan(prompt: string): Promise<ExecutionPlan>
-  execute(step: PlanStep, context: ExecutionContext): Promise<string>
-  synthesize(context: ExecutionContext, options?: { signal?: AbortSignal }): AsyncIterable<string>
+  plan(prompt: string, options?: ProviderCallOptions): Promise<ExecutionPlan>
+  execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
+  synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<string>
 }

@@ -34,6 +34,7 @@ export class AgentRuntime {
   }
 
   async *run(prompt: string, options: RunOptions = {}): AsyncGenerator<ChatEvent> {
+    const { signal } = options
     const context: ExecutionContext = {
       prompt,
       plan: {
@@ -47,18 +48,25 @@ export class AgentRuntime {
     yield createEvent('user.message', { text: prompt })
     yield createEvent('planning.started', { summary: 'Understanding request' })
 
+    const callOptions = signal ? { signal } : undefined
+
     try {
       context.plan = await withTimeout(
-        this.provider.plan(prompt),
+        this.provider.plan(prompt, callOptions),
         this.stepTimeoutMs,
         'Planner timed out'
       )
       yield createEvent('plan.generated', { plan: context.plan })
-      yield createEvent('execution.started', { steps: context.plan.steps.length })
 
       const steps = context.plan.steps.slice(0, this.maxIterations)
+      yield createEvent('execution.started', { steps: steps.length })
 
+      let completedSteps = 0
       for (let index = 0; index < steps.length; index += 1) {
+        if (signal?.aborted) {
+          break
+        }
+
         const step = steps[index]
         if (!step) {
           continue
@@ -79,16 +87,28 @@ export class AgentRuntime {
         }
 
         const note = await withTimeout(
-          this.provider.execute(step, context),
+          this.provider.execute(step, context, callOptions),
           this.stepTimeoutMs,
           'Execution step timed out'
         )
         context.notes.push(note)
         yield createEvent('execution.step.completed', { stepId: step.id, note })
+        completedSteps += 1
       }
 
-      yield* this.synthesizeWithRateLimit(context, options.signal)
+      yield createEvent('execution.completed', { steps: completedSteps })
+
+      if (signal?.aborted) {
+        yield createEvent('assistant.done', { text: '' })
+        return
+      }
+
+      yield* this.synthesizeWithRateLimit(context, signal)
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        yield createEvent('assistant.done', { text: '' })
+        return
+      }
       const message = error instanceof Error ? error.message : 'Unknown runtime error'
       yield createEvent('error', { message })
       yield createEvent('assistant.done', { text: 'I hit an execution issue. Please try again.' })
@@ -101,7 +121,6 @@ export class AgentRuntime {
     }
 
     const { toolId, input } = step.toolCall
-    yield createEvent('tool.call.started', { toolId, input })
 
     if (this.maxToolCallsPerStep < 1) {
       yield createEvent('tool.call.failed', {
@@ -110,6 +129,8 @@ export class AgentRuntime {
       })
       return
     }
+
+    yield createEvent('tool.call.started', { toolId, input })
 
     try {
       const output = await withTimeout(
