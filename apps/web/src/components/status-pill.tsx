@@ -6,10 +6,10 @@ type StatusPillProps = {
   status: ServiceStatus
 }
 
-const colorMap: Record<ServiceStatus['state'], string> = {
+const dotClass: Record<ServiceStatus['state'], string> = {
   ready: 'bg-emerald-500',
-  degraded: 'bg-amber-500',
-  offline: 'bg-rose-500'
+  degraded: 'bg-amber-500 status-dot-pulse',
+  offline: 'bg-rose-500 status-dot-pulse'
 }
 
 export const StatusPill = ({ label, status }: StatusPillProps) => (
@@ -17,9 +17,9 @@ export const StatusPill = ({ label, status }: StatusPillProps) => (
     <Tooltip.Trigger asChild>
       <button
         type="button"
-        className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/70 px-3 py-1 text-xs text-stone-700"
+        className="inline-flex cursor-default items-center gap-2 rounded-full border border-[var(--border)] bg-white/70 px-3 py-1 text-xs text-stone-700 transition-colors hover:bg-stone-50"
       >
-        <span className={`h-2 w-2 rounded-full ${colorMap[status.state]}`} />
+        <span className={`h-2 w-2 rounded-full ${dotClass[status.state]}`} />
         {label}
       </button>
     </Tooltip.Trigger>
@@ -30,6 +30,7 @@ export const StatusPill = ({ label, status }: StatusPillProps) => (
       >
         <p>{status.detail}</p>
         {status.error ? <p className="mt-1 text-rose-300">{status.error}</p> : null}
+        <Tooltip.Arrow className="fill-stone-900" />
       </Tooltip.Content>
     </Tooltip.Portal>
   </Tooltip.Root>

@@ -1,7 +1,7 @@
 import type { ChatEvent } from '@tinytinkerer/types'
 import { Button } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { TopBar } from '../../components/top-bar'
 import { useChatStore } from '../../stores/chat-store'
 
@@ -14,6 +14,11 @@ type Turn = {
   id: string
   userText: string
   assistantText: string
+  isError?: boolean
+  errorMessage?: string
+  systemMessage?: string
+  systemLevel?: 'info' | 'warning' | 'error'
+  rateLimitMessage?: string
 }
 
 const thinkingLabel = (event: ChatEvent): string | undefined => {
@@ -49,6 +54,45 @@ const buildTurns = (events: ChatEvent[], streamingText: string): Turn[] => {
         turns.push({ id: userEventId, userText, assistantText: event.payload.text })
         userEventId = null
         userText = null
+      }
+    } else if (event.type === 'error') {
+      if (userEventId !== null && userText !== null) {
+        turns.push({
+          id: userEventId,
+          userText,
+          assistantText: '',
+          isError: true,
+          errorMessage: event.payload.message
+        })
+        userEventId = null
+        userText = null
+      }
+    } else if (event.type === 'system') {
+      if (userEventId !== null && userText !== null) {
+        turns.push({
+          id: userEventId,
+          userText,
+          assistantText: '',
+          systemMessage: event.payload.message,
+          systemLevel: event.payload.level
+        })
+      } else {
+        turns.push({
+          id: event.id,
+          userText: '',
+          assistantText: '',
+          systemMessage: event.payload.message,
+          systemLevel: event.payload.level
+        })
+      }
+    } else if (event.type === 'rate.limit.waiting') {
+      if (userEventId !== null && userText !== null) {
+        turns.push({
+          id: userEventId,
+          userText,
+          assistantText: '',
+          rateLimitMessage: event.payload.message
+        })
       }
     }
   }
@@ -91,6 +135,20 @@ const formatCooldown = (remainingMs: number): string => {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
+const ThinkingDots = () => (
+  <span aria-label="Thinking" className="inline-flex items-end gap-0.5 pb-0.5">
+    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-stone-400" />
+    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-stone-400" />
+    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-stone-400" />
+  </span>
+)
+
+const systemLevelStyle: Record<'info' | 'warning' | 'error', string> = {
+  info: 'border-stone-200 bg-stone-50 text-stone-600',
+  warning: 'border-amber-200 bg-amber-50 text-amber-800',
+  error: 'border-rose-200 bg-rose-50 text-rose-700'
+}
+
 export const ChatPage = () => {
   const events = useChatStore((state) => state.events)
   const streamingText = useChatStore((state) => state.streamingText)
@@ -105,6 +163,9 @@ export const ChatPage = () => {
   const [openTimeline, setOpenTimeline] = useState(true)
   const [now, setNow] = useState(() => Date.now())
 
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const conversationEndRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     if (!cooldownUntil) {
       return undefined
@@ -113,6 +174,19 @@ export const ChatPage = () => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(interval)
   }, [cooldownUntil])
+
+  // Auto-grow textarea
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+  }, [prompt])
+
+  // Scroll to bottom when new content arrives
+  useEffect(() => {
+    conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [events, streamingText])
 
   const turns = useMemo(() => buildTurns(events, streamingText), [events, streamingText])
   const timeline = useMemo(() => buildCurrentTimeline(events), [events])
@@ -130,33 +204,66 @@ export const ChatPage = () => {
       ? 'Thinking…'
       : 'Send'
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (!prompt.trim() || isCoolingDown || isRunning) return
+      void sendPrompt(prompt.trim())
+      setPrompt('')
+    }
+  }
+
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col">
       <TopBar />
 
       <main className="flex flex-1 flex-col gap-4 px-4 py-6 md:px-8">
-        <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm transition-all duration-300">
+        {/* Conversation */}
+        <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Conversation</h2>
           <div className="mt-3 space-y-4">
             {turns.length === 0 ? (
-              <p className="text-sm text-[var(--muted)]">Your conversation appears here.</p>
+              <p className="text-sm text-[var(--muted)]">Start a conversation below.</p>
             ) : (
               turns.map((turn) => (
                 <div key={turn.id} className="space-y-2">
-                  <p className="rounded-lg bg-amber-100/70 px-3 py-2 text-sm text-stone-800">{turn.userText}</p>
-                  {turn.assistantText ? (
-                    <p className="rounded-lg bg-white px-3 py-2 text-sm text-stone-900 shadow-sm">
+                  {turn.userText ? (
+                    <p className="rounded-lg bg-amber-100/70 px-3 py-2 text-sm text-stone-800">{turn.userText}</p>
+                  ) : null}
+
+                  {turn.systemMessage ? (
+                    <div
+                      className={`rounded-lg border px-3 py-2 text-sm ${systemLevelStyle[turn.systemLevel ?? 'info']}`}
+                    >
+                      {turn.systemMessage}
+                    </div>
+                  ) : turn.isError && turn.errorMessage ? (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                      {turn.errorMessage}
+                    </div>
+                  ) : turn.rateLimitMessage ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      {turn.rateLimitMessage}
+                    </div>
+                  ) : turn.assistantText ? (
+                    <p
+                      className={`rounded-lg bg-white px-3 py-2 text-sm text-stone-900 shadow-sm${streamingText && turn.assistantText === streamingText ? ' streaming-cursor' : ''}`}
+                    >
                       {turn.assistantText}
                     </p>
                   ) : isRunning ? (
-                    <p className="rounded-lg bg-white px-3 py-2 text-sm text-[var(--muted)] shadow-sm">Thinking…</p>
+                    <div className="rounded-lg bg-white px-3 py-2.5 text-sm text-stone-400 shadow-sm">
+                      <ThinkingDots />
+                    </div>
                   ) : null}
                 </div>
               ))
             )}
+            <div ref={conversationEndRef} />
           </div>
         </section>
 
+        {/* Thinking timeline */}
         <Collapsible.Root open={openTimeline} onOpenChange={setOpenTimeline}>
           <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
             <div className="flex items-center justify-between">
@@ -167,31 +274,48 @@ export const ChatPage = () => {
                 </Button>
               </Collapsible.Trigger>
             </div>
-            <Collapsible.Content className="mt-3 space-y-2 text-sm">
-              {timeline.length === 0 ? (
-                <p className="text-[var(--muted)]">Understanding request</p>
-              ) : (
-                timeline.map((item) => (
-                  <div key={item.id} className="rounded-md border border-stone-200 bg-white px-3 py-2">
-                    {item.label}
-                  </div>
-                ))
-              )}
+            <Collapsible.Content className="collapsible-content overflow-hidden">
+              <div className="mt-3 space-y-2 text-sm">
+                {timeline.length === 0 ? (
+                  <p className="text-[var(--muted)]">
+                    {isRunning ? (
+                      <>
+                        Understanding request <ThinkingDots />
+                      </>
+                    ) : (
+                      'Steps will appear here during a run.'
+                    )}
+                  </p>
+                ) : (
+                  timeline.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className="timeline-entry flex items-start gap-2.5 rounded-md border border-stone-200 bg-white px-3 py-2"
+                    >
+                      <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[10px] font-semibold text-amber-700">
+                        {index + 1}
+                      </span>
+                      <span className="text-stone-700">{item.label}</span>
+                    </div>
+                  ))
+                )}
+              </div>
             </Collapsible.Content>
           </section>
         </Collapsible.Root>
 
+        {/* Tool activity */}
         <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Tool activity</h2>
           <div className="mt-3 space-y-2">
             {toolEvents.length === 0 ? (
-              <p className="text-sm text-[var(--muted)]">Tool execution cards appear here.</p>
+              <p className="text-sm text-[var(--muted)]">Search results and tool outputs will appear here.</p>
             ) : (
               toolEvents.map((event) => {
                 if (event.type === 'tool.call.failed') {
                   return (
-                    <div key={event.id} className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm">
-                      Web Search failed: {event.payload.error}
+                    <div key={event.id} className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                      <span className="font-medium">Search failed:</span> {event.payload.error}
                     </div>
                   )
                 }
@@ -200,9 +324,19 @@ export const ChatPage = () => {
                 const resultCount = Array.isArray(output.results) ? output.results.length : 0
 
                 return (
-                  <details key={event.id} className="rounded-md border border-stone-200 bg-white px-3 py-2 text-sm">
-                    <summary className="cursor-pointer">Web Search — {resultCount} results found</summary>
-                    <p className="mt-1 text-[var(--muted)]">Query: {output.query ?? 'unknown'}</p>
+                  <details key={event.id} className="group rounded-md border border-stone-200 bg-white text-sm">
+                    <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-stone-700 hover:bg-stone-50">
+                      <span className="flex h-4 w-4 items-center justify-center rounded bg-stone-100 text-[10px] font-bold text-stone-500 transition-transform group-open:rotate-90">
+                        ▶
+                      </span>
+                      <span>
+                        Web search —{' '}
+                        <span className="text-stone-500">{resultCount} result{resultCount !== 1 ? 's' : ''}</span>
+                      </span>
+                    </summary>
+                    <div className="border-t border-stone-100 px-3 py-2 text-stone-500">
+                      Query: <span className="text-stone-700">{output.query ?? 'unknown'}</span>
+                    </div>
                   </details>
                 )
               })
@@ -210,8 +344,9 @@ export const ChatPage = () => {
           </div>
         </section>
 
+        {/* Compose */}
         <form
-          className="mt-auto grid gap-2 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm md:grid-cols-[1fr_auto_auto_auto]"
+          className="mt-auto rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm"
           onSubmit={(event) => {
             event.preventDefault()
             if (!prompt.trim() || isCoolingDown || isRunning) {
@@ -221,23 +356,29 @@ export const ChatPage = () => {
             setPrompt('')
           }}
         >
-          <input
+          <textarea
+            ref={textareaRef}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Ask anything…"
-            className="h-11 rounded-md border border-stone-300 bg-white px-3 text-sm outline-none ring-amber-300 transition focus:ring-2"
+            onKeyDown={handleKeyDown}
+            placeholder="Ask anything… (Enter to send, Shift+Enter for newline)"
+            rows={1}
+            className="w-full resize-none rounded-md border border-stone-300 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none ring-amber-300 transition focus:ring-2"
+            style={{ minHeight: '44px' }}
           />
-          <Button type="submit" disabled={isRunning || isCoolingDown || !prompt.trim()} className="min-w-24">
-            {submitLabel}
-          </Button>
-          {isRetryPending && isCoolingDown ? (
-            <Button type="button" variant="secondary" onClick={cancelRetry}>
-              Cancel retry
+          <div className="mt-2 flex items-center gap-2">
+            <Button type="submit" disabled={isRunning || isCoolingDown || !prompt.trim()} className="min-w-24">
+              {submitLabel}
             </Button>
-          ) : null}
-          <Button type="button" variant="secondary" onClick={() => void resetConversation()}>
-            Reset
-          </Button>
+            {isRetryPending && isCoolingDown ? (
+              <Button type="button" variant="secondary" onClick={cancelRetry}>
+                Cancel retry
+              </Button>
+            ) : null}
+            <Button type="button" variant="secondary" onClick={() => void resetConversation()}>
+              Reset
+            </Button>
+          </div>
         </form>
       </main>
     </div>
