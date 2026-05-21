@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { exchangeCode } from '../../services/auth'
+import { exchangeCode, validateOAuthState } from '../../services/auth'
 import { useAuthStore } from '../../stores/auth-store'
 
 export const CallbackPage = () => {
@@ -11,8 +11,15 @@ export const CallbackPage = () => {
 
   useEffect(() => {
     const code = searchParams.get('code')
+    const state = searchParams.get('state')
+
     if (!code) {
       setError('No authorization code received from GitHub.')
+      return
+    }
+
+    if (!validateOAuthState(state)) {
+      setError('Authentication failed. Please try signing in again.')
       return
     }
 
@@ -21,8 +28,8 @@ export const CallbackPage = () => {
         await setToken(token)
         void navigate('/', { replace: true })
       })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Authentication failed.')
+      .catch(() => {
+        setError('Authentication failed. Please try again.')
       })
   }, [searchParams, navigate, setToken])
 
