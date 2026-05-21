@@ -5,6 +5,15 @@ import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, parseRetryAfterMs } from '@tinytinke
 import type { SearchResult, SystemStatus } from '@tinytinkerer/types'
 import { z } from 'zod'
 
+const githubOAuthResponseSchema = z.object({
+  access_token: z.string().optional(),
+  error: z.string().optional()
+})
+
+const tavilyResponseSchema = z.object({
+  results: z.array(z.unknown()).optional()
+})
+
 type Bindings = {
   GITHUB_CLIENT_ID?: string
   GITHUB_CLIENT_SECRET?: string
@@ -112,7 +121,8 @@ app.post(
       })
     })
 
-    const payload = (await response.json()) as { access_token?: string; error?: string }
+    const parsed = githubOAuthResponseSchema.safeParse(await response.json())
+    const payload = parsed.success ? parsed.data : {}
 
     if (!payload.access_token) {
       return c.json({ error: payload.error ?? 'OAuth exchange failed' }, 400)
@@ -184,11 +194,12 @@ app.post(
       return c.json({ error: 'Tavily request failed' }, 502)
     }
 
-    const payload = (await response.json()) as { results?: unknown[] }
+    const parsed = tavilyResponseSchema.safeParse(await response.json())
+    const results = parsed.success ? (parsed.data.results ?? []) : []
 
     return c.json({
       query: input.query,
-      results: normalizeSearchResults(payload.results ?? [])
+      results: normalizeSearchResults(results)
     })
   }
 )

@@ -27,6 +27,20 @@ const rateLimitResponseSchema = z.object({
   retryAt: z.string().optional()
 })
 
+const chatCompletionSchema = z.object({
+  choices: z
+    .array(
+      z.object({
+        message: z
+          .object({
+            content: z.string().optional()
+          })
+          .optional()
+      })
+    )
+    .optional()
+})
+
 type GitHubModelsProviderOptions = {
   baseUrl: string
   getToken?: () => string | null | undefined
@@ -73,7 +87,7 @@ const createRateLimitError = async (response: Response): Promise<RateLimitError>
   const rawText = await response.text()
   const parsed = (() => {
     try {
-      return rateLimitResponseSchema.partial().parse(JSON.parse(rawText))
+      return rateLimitResponseSchema.parse(JSON.parse(rawText))
     } catch {
       return undefined
     }
@@ -167,9 +181,7 @@ export class GitHubModelsProvider implements ModelProvider {
         }
 
         if (response.ok) {
-          const payload = (await response.json()) as {
-            choices?: Array<{ message?: { content?: string } }>
-          }
+          const payload = chatCompletionSchema.parse(await response.json())
           const content = payload.choices?.[0]?.message?.content ?? ''
           if (content) {
             for (const chunk of content.split(' ')) {
