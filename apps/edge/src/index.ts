@@ -1,6 +1,5 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
-import { cors } from 'hono/cors'
 import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, parseRetryAfterMs } from '@tinytinkerer/shared'
 import type { SearchResult, SystemStatus } from '@tinytinkerer/types'
 import { z } from 'zod'
@@ -18,11 +17,33 @@ type Bindings = {
   GITHUB_CLIENT_ID?: string
   GITHUB_CLIENT_SECRET?: string
   TAVILY_API_KEY?: string
+  ALLOWED_ORIGIN?: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
 
-app.use('*', cors())
+app.use('*', async (c, next) => {
+  const origin = c.env.ALLOWED_ORIGIN ?? '*'
+
+  if (c.req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Max-Age': '86400',
+        Vary: 'Origin'
+      }
+    })
+  }
+
+  await next()
+  c.res.headers.set('Access-Control-Allow-Origin', origin)
+  if (origin !== '*') {
+    c.res.headers.append('Vary', 'Origin')
+  }
+})
 
 const searchSchema = z.object({
   query: z.string().min(2),
@@ -204,18 +225,28 @@ app.post(
   }
 )
 
+const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
+  400: 'Invalid request',
+  401: 'Authentication failed. Your GitHub token may be invalid or expired.',
+  403: 'Access denied. Check your GitHub token permissions.',
+  500: 'Upstream service error',
+  503: 'Upstream service unavailable'
+}
+
 app.post(
   '/api/models/chat',
   zValidator(
     'json',
     z.object({
       model: z.string().optional(),
-      messages: z.array(
-        z.object({
-          role: z.enum(['system', 'user', 'assistant']),
-          content: z.string()
-        })
-      )
+      messages: z
+        .array(
+          z.object({
+            role: z.enum(['system', 'user', 'assistant']),
+            content: z.string().max(32_000)
+          })
+        )
+        .max(100)
     })
   ),
   async (c) => {
@@ -247,19 +278,20 @@ app.post(
         'retry-after': response.headers.get('retry-after'),
         'x-ratelimit-limit-requests': response.headers.get('x-ratelimit-limit-requests'),
         'x-ratelimit-remaining-requests': response.headers.get('x-ratelimit-remaining-requests'),
-        'x-ratelimit-reset-requests': response.headers.get('x-ratelimit-reset-requests'),
-        body: rawText
+        'x-ratelimit-reset-requests': response.headers.get('x-ratelimit-reset-requests')
       })
 
       if (response.status === 429) {
         const retryAfter = response.headers.get('retry-after')
-        const body = toRateLimitResponse(rawText, retryAfter)
-        c.header('Retry-After', retryAfter ?? String(Math.ceil(body.retryAfterMs / 1000)))
-        return c.json(body, 429)
+        const rateLimitBody = toRateLimitResponse(rawText, retryAfter)
+        c.header('Retry-After', retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000)))
+        return c.json(rateLimitBody, 429)
       }
 
+      const safeError =
+        UPSTREAM_ERROR_MESSAGES[response.status] ?? `Upstream error ${response.status}`
       return c.json(
-        { error: rawText || `Upstream error ${response.status}` },
+        { error: safeError },
         response.status as 400 | 401 | 403 | 429 | 500
       )
     }
