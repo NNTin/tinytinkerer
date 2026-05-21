@@ -11,3 +11,4 @@ apps/web/dist
 apps/web/pnpm-lock.yaml
 apps/edge/.wrangler
 apps/edge/.dev.vars
+agent-orchestrator.yaml
