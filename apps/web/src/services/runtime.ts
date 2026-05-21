@@ -1,7 +1,6 @@
 import { AgentRuntime, GitHubModelsProvider, ToolRegistry, createWebSearchTool } from '@tinytinkerer/agent-core'
 import { useAuthStore } from '../stores/auth-store'
-
-const edgeUrl = import.meta.env.VITE_EDGE_URL ?? 'http://127.0.0.1:8787'
+import { edgeUrl } from './config'
 
 const registry = new ToolRegistry()
 registry.register(createWebSearchTool(edgeUrl))

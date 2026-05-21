@@ -1,6 +1,6 @@
 import type { ExecutionPlan, PlanStep } from '@tinytinkerer/types'
 import { z } from 'zod'
-import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, parseRetryAfterMs, sleep } from '@tinytinkerer/shared'
+import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, parseRetryAfterMs } from '@tinytinkerer/shared'
 import { RateLimitError } from '../errors/rate-limit-error'
 import { SYSTEM_STYLE_PROMPT } from '../prompts/system'
 import type { ExecutionContext, ModelProvider } from '../types'
@@ -136,7 +136,6 @@ export class GitHubModelsProvider implements ModelProvider {
   }
 
   async execute(step: PlanStep): Promise<string> {
-    await sleep(150)
     return `Completed step: ${step.summary}`
   }
 
@@ -207,7 +206,6 @@ export class GitHubModelsProvider implements ModelProvider {
       : 'Sign in with GitHub to get AI responses. Without a token the runtime runs in local fallback mode.'
 
     for (const chunk of draft.split(' ')) {
-      await sleep(25)
       yield `${chunk} `
     }
   }

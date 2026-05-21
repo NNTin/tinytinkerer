@@ -3,21 +3,29 @@ import { Button } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { useEffect, useMemo, useState } from 'react'
 import { TopBar } from '../../components/top-bar'
-import { useChatRuntime } from '../../hooks/use-chat-runtime'
+import { useChatStore } from '../../stores/chat-store'
 
 type TimelineEntry = {
   id: string
   label: string
 }
 
-const thinkingLabels = (event: ChatEvent): string | undefined => {
+type Turn = {
+  id: string
+  userText: string
+  assistantText: string
+}
+
+const thinkingLabel = (event: ChatEvent): string | undefined => {
   switch (event.type) {
     case 'planning.started':
       return 'Planning research steps'
     case 'execution.step.started':
       return event.payload.step.summary
-    case 'tool.call.started':
-      return `Searching web: ${event.payload.toolId}`
+    case 'tool.call.started': {
+      const query = event.payload.input.query
+      return typeof query === 'string' ? `Searching: ${query}` : 'Searching web'
+    }
     case 'execution.step.completed':
       return event.payload.note
     default:
@@ -25,12 +33,53 @@ const thinkingLabels = (event: ChatEvent): string | undefined => {
   }
 }
 
-const summarizeAssistant = (events: ChatEvent[]): string =>
-  events
-    .filter((event) => event.type === 'assistant.chunk')
-    .map((event) => event.payload.text)
-    .join('')
-    .trim()
+const buildTurns = (events: ChatEvent[]): Turn[] => {
+  const turns: Turn[] = []
+  let userEventId: string | null = null
+  let userText: string | null = null
+  let chunks: string[] = []
+
+  for (const event of events) {
+    if (event.type === 'user.message') {
+      userEventId = event.id
+      userText = event.payload.text
+      chunks = []
+    } else if (event.type === 'assistant.chunk') {
+      chunks.push(event.payload.text)
+    } else if (event.type === 'assistant.done') {
+      if (userEventId !== null && userText !== null) {
+        turns.push({ id: userEventId, userText, assistantText: event.payload.text })
+        userEventId = null
+        userText = null
+        chunks = []
+      }
+    }
+  }
+
+  // In-progress turn (streaming or pending synthesis)
+  if (userEventId !== null && userText !== null) {
+    turns.push({ id: userEventId, userText, assistantText: chunks.join('') })
+  }
+
+  return turns
+}
+
+const buildCurrentTimeline = (events: ChatEvent[]): TimelineEntry[] => {
+  let startIndex = 0
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]?.type === 'user.message') {
+      startIndex = i
+      break
+    }
+  }
+  return events
+    .slice(startIndex)
+    .map((event) => {
+      const label = thinkingLabel(event)
+      return label ? { id: event.id, label } : undefined
+    })
+    .filter((value): value is TimelineEntry => Boolean(value))
+}
 
 const formatCooldown = (remainingMs: number): string => {
   const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000))
@@ -46,8 +95,14 @@ const formatCooldown = (remainingMs: number): string => {
 }
 
 export const ChatPage = () => {
-  const { events, sendPrompt, resetConversation, cancelRetry, isRunning, isRetryPending, cooldownUntil } =
-    useChatRuntime()
+  const events = useChatStore((state) => state.events)
+  const isRunning = useChatStore((state) => state.isRunning)
+  const isRetryPending = useChatStore((state) => state.isRetryPending)
+  const cooldownUntil = useChatStore((state) => state.cooldownUntil)
+  const sendPrompt = useChatStore((state) => state.sendPrompt)
+  const resetConversation = useChatStore((state) => state.resetConversation)
+  const cancelRetry = useChatStore((state) => state.cancelRetry)
+
   const [prompt, setPrompt] = useState('')
   const [openTimeline, setOpenTimeline] = useState(true)
   const [now, setNow] = useState(() => Date.now())
@@ -61,22 +116,13 @@ export const ChatPage = () => {
     return () => window.clearInterval(interval)
   }, [cooldownUntil])
 
-  const timeline = useMemo<TimelineEntry[]>(
-    () =>
-      events
-        .map((event) => {
-          const label = thinkingLabels(event)
-          if (!label) {
-            return undefined
-          }
+  const turns = useMemo(() => buildTurns(events), [events])
+  const timeline = useMemo(() => buildCurrentTimeline(events), [events])
 
-          return { id: event.id, label }
-        })
-        .filter((value): value is TimelineEntry => Boolean(value)),
+  const toolEvents = useMemo(
+    () => events.filter((event) => event.type === 'tool.call.completed' || event.type === 'tool.call.failed'),
     [events]
   )
-
-  const assistantText = useMemo(() => summarizeAssistant(events), [events])
 
   const cooldownRemainingMs = cooldownUntil ? Math.max(0, Date.parse(cooldownUntil) - now) : 0
   const isCoolingDown = cooldownRemainingMs > 0
@@ -86,11 +132,6 @@ export const ChatPage = () => {
       ? 'Thinking…'
       : 'Send'
 
-  const toolEvents = useMemo(
-    () => events.filter((event) => event.type === 'tool.call.completed' || event.type === 'tool.call.failed'),
-    [events]
-  )
-
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col">
       <TopBar />
@@ -98,18 +139,22 @@ export const ChatPage = () => {
       <main className="flex flex-1 flex-col gap-4 px-4 py-6 md:px-8">
         <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm transition-all duration-300">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Conversation</h2>
-          <div className="mt-3 space-y-3">
-            {events
-              .filter((event) => event.type === 'user.message')
-              .map((event) => (
-                <p key={event.id} className="rounded-lg bg-amber-100/70 px-3 py-2 text-sm text-stone-800">
-                  {event.payload.text}
-                </p>
-              ))}
-            {assistantText ? (
-              <p className="rounded-lg bg-white px-3 py-2 text-sm text-stone-900 shadow-sm">{assistantText}</p>
+          <div className="mt-3 space-y-4">
+            {turns.length === 0 ? (
+              <p className="text-sm text-[var(--muted)]">Your conversation appears here.</p>
             ) : (
-              <p className="text-sm text-[var(--muted)]">Assistant responses stream here.</p>
+              turns.map((turn) => (
+                <div key={turn.id} className="space-y-2">
+                  <p className="rounded-lg bg-amber-100/70 px-3 py-2 text-sm text-stone-800">{turn.userText}</p>
+                  {turn.assistantText ? (
+                    <p className="rounded-lg bg-white px-3 py-2 text-sm text-stone-900 shadow-sm">
+                      {turn.assistantText}
+                    </p>
+                  ) : isRunning ? (
+                    <p className="rounded-lg bg-white px-3 py-2 text-sm text-[var(--muted)] shadow-sm">Thinking…</p>
+                  ) : null}
+                </div>
+              ))
             )}
           </div>
         </section>
