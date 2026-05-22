@@ -248,6 +248,34 @@ describe('AgentRuntime', () => {
     expect(capturedNotes).toHaveLength(0)
   })
 
+  it('passes prior conversation history into synthesis context', async () => {
+    const capturedHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
+    const historyAwareProvider: ModelProvider = {
+      async plan() {
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return 'ok'
+      },
+      async *synthesize(ctx) {
+        capturedHistory.push(...ctx.history)
+        yield 'done'
+      }
+    }
+
+    const runtime = new AgentRuntime(historyAwareProvider, new ToolRegistry())
+    const history = [
+      { role: 'user' as const, content: 'hello, my name is Tin' },
+      { role: 'assistant' as const, content: 'Hello Tin!' }
+    ]
+
+    for await (const _ of runtime.run('Do you know my name?', { history })) {
+      // consume events
+    }
+
+    expect(capturedHistory).toEqual(history)
+  })
+
   it('adds tool result notes but not fake notes for non-tool steps', async () => {
     const capturedNotes: string[] = []
     const mixedProvider: ModelProvider = {

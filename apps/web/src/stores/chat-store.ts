@@ -3,12 +3,13 @@ import { create } from 'zustand'
 import {
   appendEvent,
   clearConversationEvents,
-  createConversation,
+  getLatestConversationOrCreate,
   getPreference,
   loadConversationEvents,
   setPreference
 } from '../services/db'
 import { runtime } from '../services/runtime'
+import { buildConversationHistory } from './chat-history'
 import type { PersistedEvent } from '../types/chat'
 
 const RATE_LIMIT_COOLDOWN_KEY = 'rate_limit_cooldown_until'
@@ -76,7 +77,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isRetryPending: false,
   cooldownUntil: undefined,
   initialize: async () => {
-    const conversation = await createConversation()
+    const conversation = await getLatestConversationOrCreate()
     const storedEvents = await loadConversationEvents(conversation.id)
     const cooldownUntil = activeCooldown(await getPreference(RATE_LIMIT_COOLDOWN_KEY))
     if (!cooldownUntil) {
@@ -99,7 +100,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ isRunning: true, isRetryPending: false })
 
     try {
-      for await (const event of runtime.run(prompt, { signal: runController.signal })) {
+      const history = buildConversationHistory(get().events)
+
+      for await (const event of runtime.run(prompt, {
+        signal: runController.signal,
+        history
+      })) {
         if (event.type === 'assistant.chunk') {
           // Accumulate streaming text without persisting individual chunks or
           // spreading the events array — avoids O(n²) allocations and per-chunk DB writes.

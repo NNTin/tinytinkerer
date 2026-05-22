@@ -83,6 +83,7 @@ export class GitHubModelsProvider implements ModelProvider {
             stream: true,
             messages: [
               { role: 'system', content: SYSTEM_STYLE_PROMPT },
+              ...context.history,
               { role: 'user', content: userContent }
             ]
           })

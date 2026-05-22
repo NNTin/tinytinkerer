@@ -36,6 +36,12 @@ export const createConversation = async (): Promise<Conversation> => {
   return conversation
 }
 
+export const getLatestConversation = async (): Promise<Conversation | undefined> =>
+  db.conversations.orderBy('updatedAt').last()
+
+export const getLatestConversationOrCreate = async (): Promise<Conversation> =>
+  (await getLatestConversation()) ?? createConversation()
+
 export const loadConversationEvents = async (conversationId: string): Promise<PersistedEvent[]> =>
   db.events.where('conversationId').equals(conversationId).sortBy('timestamp')
 

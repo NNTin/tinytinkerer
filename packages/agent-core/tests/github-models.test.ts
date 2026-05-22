@@ -5,6 +5,7 @@ import type { ExecutionContext } from '../src/types'
 
 const context: ExecutionContext = {
   prompt: 'hello',
+  history: [],
   plan: { complexity: 'low', steps: [] },
   notes: [],
   toolResults: {}
@@ -103,6 +104,64 @@ describe('GitHubModelsProvider', () => {
       retryAfterMs: 120_000,
       retryAt
     } satisfies Partial<RateLimitError>)
+
+    vi.unstubAllGlobals()
+  })
+
+  it('includes prior conversation turns before the current prompt', async () => {
+    const fetchSpy = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = [
+        'data: {"choices":[{"delta":{"content":"ok"}}]}',
+        '',
+        'data: [DONE]',
+        ''
+      ].join('\n')
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const provider = new GitHubModelsProvider({
+      baseUrl: 'http://example.com',
+      getToken: () => 'token'
+    })
+
+    const output = await collect(
+      provider.synthesize({
+        ...context,
+        prompt: 'Do you know my name?',
+        history: [
+          { role: 'user', content: 'hello, my name is Tin' },
+          { role: 'assistant', content: 'Hello Tin! How can I assist you today?' }
+        ],
+        notes: ['understand: user is asking about stored name'],
+        toolResults: { search: { result: 'Tin' } }
+      })
+    )
+
+    expect(output).toBe('ok')
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    const [, init] = fetchSpy.mock.calls[0] ?? []
+    const requestBody = JSON.parse(String(init?.body)) as {
+      messages: Array<{ role: string; content: string }>
+    }
+
+    expect(requestBody.messages).toEqual([
+      expect.objectContaining({ role: 'system' }),
+      { role: 'user', content: 'hello, my name is Tin' },
+      { role: 'assistant', content: 'Hello Tin! How can I assist you today?' },
+      {
+        role: 'user',
+        content: [
+          'Do you know my name?',
+          '\nResearch notes:\nunderstand: user is asking about stored name',
+          '\nTool results:\nsearch: {"result":"Tin"}'
+        ].join('')
+      }
+    ])
 
     vi.unstubAllGlobals()
   })

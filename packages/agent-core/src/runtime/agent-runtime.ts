@@ -2,7 +2,7 @@ import type { ChatEvent, PlanStep } from '@tinytinkerer/types'
 import { MAX_AUTO_RETRY_AFTER_MS, withTimeout } from '@tinytinkerer/shared'
 import { isRateLimitError } from '../errors/rate-limit-error'
 import { createEvent } from '../events/create-event'
-import type { ExecutionContext, ModelProvider } from '../types'
+import type { ConversationMessage, ExecutionContext, ModelProvider } from '../types'
 import { ToolRegistry } from '../tools/registry'
 
 type AgentRuntimeOptions = {
@@ -14,6 +14,7 @@ type AgentRuntimeOptions = {
 
 type RunOptions = {
   signal?: AbortSignal
+  history?: ConversationMessage[]
 }
 
 export class AgentRuntime {
@@ -37,6 +38,7 @@ export class AgentRuntime {
     const { signal } = options
     const context: ExecutionContext = {
       prompt,
+      history: options.history ?? [],
       plan: {
         complexity: 'low',
         steps: []
