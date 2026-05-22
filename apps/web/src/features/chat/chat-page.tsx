@@ -4,6 +4,7 @@ import * as Collapsible from '@radix-ui/react-collapsible'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { TopBar } from '../../components/top-bar'
 import { useChatStore } from '../../stores/chat-store'
+import { MarkdownContent } from './markdown-content.js'
 
 type TimelineEntry = {
   id: string
@@ -246,11 +247,12 @@ export const ChatPage = () => {
                       {turn.rateLimitMessage}
                     </div>
                   ) : turn.assistantText ? (
-                    <p
-                      className={`rounded-lg bg-white px-3 py-2 text-sm text-stone-900 shadow-sm${streamingText && turn.assistantText === streamingText ? ' streaming-cursor' : ''}`}
-                    >
-                      {turn.assistantText}
-                    </p>
+                    <div className="rounded-lg bg-white px-3 py-2 text-sm text-stone-900 shadow-sm">
+                      <MarkdownContent
+                        content={turn.assistantText}
+                        isStreaming={Boolean(streamingText && turn.assistantText === streamingText)}
+                      />
+                    </div>
                   ) : isRunning ? (
                     <div className="rounded-lg bg-white px-3 py-2.5 text-sm text-stone-400 shadow-sm">
                       <ThinkingDots />
