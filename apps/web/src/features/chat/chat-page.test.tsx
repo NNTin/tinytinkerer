@@ -2,19 +2,21 @@ import { render } from '@testing-library/react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 // Stub zustand store — provide minimal shape ChatPage reads
-vi.mock('../../stores/chat-store.js', () => ({
-  useChatStore: (selector: (s: unknown) => unknown) =>
-    selector({
-      events: [],
-      streamingText: '',
-      isRunning: false,
-      isRetryPending: false,
-      cooldownUntil: null,
-      sendPrompt: vi.fn(),
-      resetConversation: vi.fn(),
-      cancelRetry: vi.fn(),
-    }),
-}))
+vi.mock('../../stores/chat-store.js', () => {
+  const state = {
+    events: [],
+    streamingText: '',
+    isRunning: false,
+    isRetryPending: false,
+    cooldownUntil: null,
+    sendPrompt: vi.fn(),
+    resetConversation: vi.fn(),
+    cancelRetry: vi.fn(),
+  }
+  const useChatStore = (selector: (s: typeof state) => unknown) => selector(state)
+  useChatStore.getState = () => ({ initialize: vi.fn().mockResolvedValue(undefined) })
+  return { useChatStore }
+})
 
 vi.mock('../../components/top-bar.js', () => ({
   TopBar: () => <div data-testid="top-bar" />,

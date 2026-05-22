@@ -4,11 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './app/router'
 import { useAuthStore } from './stores/auth-store'
-import { useChatStore } from './stores/chat-store'
 import './index.css'
 
 void useAuthStore.getState().initialize()
-void useChatStore.getState().initialize()
 
 const queryClient = new QueryClient()
 
