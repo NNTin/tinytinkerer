@@ -131,7 +131,11 @@ importers:
         specifier: ^4.1.12
         version: 4.4.3
 
-  packages/shared: {}
+  packages/shared:
+    dependencies:
+      '@tinytinkerer/types':
+        specifier: workspace:*
+        version: link:../types
 
   packages/types: {}
 
