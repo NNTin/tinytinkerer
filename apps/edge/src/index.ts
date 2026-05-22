@@ -1,6 +1,6 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
-import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, inferPlan, parseRetryAfterMs } from '@tinytinkerer/shared'
+import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, parseRetryAfterMs } from '@tinytinkerer/shared'
 import type { SearchResult, SystemStatus } from '@tinytinkerer/types'
 import { z } from 'zod'
 
@@ -185,15 +185,6 @@ app.post(
     }
 
     return c.json({ accessToken: payload.access_token })
-  }
-)
-
-app.post(
-  '/api/models/plan',
-  zValidator('json', z.object({ prompt: z.string().min(1).max(2000) })),
-  (c) => {
-    const { prompt } = c.req.valid('json')
-    return c.json(inferPlan(prompt))
   }
 )
 

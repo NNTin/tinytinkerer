@@ -5,22 +5,6 @@ import { RateLimitError } from '../errors/rate-limit-error'
 import { SYSTEM_STYLE_PROMPT } from '../prompts/system'
 import type { ExecutionContext, ModelProvider, ProviderCallOptions } from '../types'
 
-const defaultPlanSchema = z.object({
-  complexity: z.enum(['low', 'medium', 'high']),
-  steps: z.array(
-    z.object({
-      id: z.string(),
-      summary: z.string(),
-      toolCall: z
-        .object({
-          toolId: z.string(),
-          input: z.record(z.string(), z.unknown())
-        })
-        .optional()
-    })
-  )
-})
-
 const rateLimitResponseSchema = z.object({
   error: z.string().optional(),
   retryAfterMs: z.number().nonnegative().optional(),
@@ -31,7 +15,6 @@ type GitHubModelsProviderOptions = {
   baseUrl: string
   getToken?: () => string | null | undefined
 }
-
 
 const isValidRetryAt = (value: string | undefined): value is string =>
   Boolean(value && !Number.isNaN(Date.parse(value)))
@@ -61,35 +44,8 @@ const createRateLimitError = async (response: Response): Promise<RateLimitError>
 export class GitHubModelsProvider implements ModelProvider {
   constructor(private readonly options: GitHubModelsProviderOptions) {}
 
-  async plan(prompt: string, options?: ProviderCallOptions): Promise<ExecutionPlan> {
-    try {
-      const planInit: RequestInit = {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt })
-      }
-      if (options?.signal) {
-        planInit.signal = options.signal
-      }
-      const response = await fetch(`${this.options.baseUrl}/api/models/plan`, planInit)
-
-      if (!response.ok) {
-        return inferPlan(prompt)
-      }
-
-      const json = (await response.json()) as unknown
-      const parsed = defaultPlanSchema.parse(json)
-      return {
-        complexity: parsed.complexity,
-        steps: parsed.steps.map((step) => ({
-          id: step.id,
-          summary: step.summary,
-          ...(step.toolCall ? { toolCall: step.toolCall } : {})
-        }))
-      }
-    } catch {
-      return inferPlan(prompt)
-    }
+  plan(prompt: string): Promise<ExecutionPlan> {
+    return Promise.resolve(inferPlan(prompt))
   }
 
   execute(step: PlanStep, context: ExecutionContext): Promise<string> {
