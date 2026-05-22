@@ -1,6 +1,6 @@
 import type { ExecutionPlan, PlanStep } from '@tinytinkerer/types'
 import { z } from 'zod'
-import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, parseRetryAfterMs } from '@tinytinkerer/shared'
+import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, inferPlan, parseRetryAfterMs } from '@tinytinkerer/shared'
 import { RateLimitError } from '../errors/rate-limit-error'
 import { SYSTEM_STYLE_PROMPT } from '../prompts/system'
 import type { ExecutionContext, ModelProvider, ProviderCallOptions } from '../types'
@@ -32,39 +32,6 @@ type GitHubModelsProviderOptions = {
   getToken?: () => string | null | undefined
 }
 
-const inferPlan = (prompt: string): ExecutionPlan => {
-  const needsSearch = /latest|news|compare|research|search|web|today/i.test(prompt)
-  const steps: PlanStep[] = [
-    {
-      id: 'understand',
-      summary: 'Understand request constraints'
-    }
-  ]
-
-  if (needsSearch) {
-    steps.push({
-      id: 'search',
-      summary: 'Collect current references from web search',
-      toolCall: {
-        toolId: 'web-search',
-        input: {
-          query: prompt,
-          maxResults: 5
-        }
-      }
-    })
-  }
-
-  steps.push({
-    id: 'compose',
-    summary: 'Compose final grounded response'
-  })
-
-  return {
-    complexity: needsSearch ? 'medium' : 'low',
-    steps
-  }
-}
 
 const isValidRetryAt = (value: string | undefined): value is string =>
   Boolean(value && !Number.isNaN(Date.parse(value)))

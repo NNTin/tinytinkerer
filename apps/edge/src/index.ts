@@ -1,6 +1,6 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
-import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, parseRetryAfterMs } from '@tinytinkerer/shared'
+import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, inferPlan, parseRetryAfterMs } from '@tinytinkerer/shared'
 import type { SearchResult, SystemStatus } from '@tinytinkerer/types'
 import { z } from 'zod'
 
@@ -193,23 +193,7 @@ app.post(
   zValidator('json', z.object({ prompt: z.string().min(1).max(2000) })),
   (c) => {
     const { prompt } = c.req.valid('json')
-    const needsSearch = /latest|news|search|web|compare|today/i.test(prompt)
-    return c.json({
-      complexity: needsSearch ? 'medium' : 'low',
-      steps: [
-        { id: 'understand', summary: 'Understand request constraints' },
-        ...(needsSearch
-          ? [
-              {
-                id: 'search',
-                summary: 'Gather external context',
-                toolCall: { toolId: 'web-search', input: { query: prompt, maxResults: 5 } }
-              }
-            ]
-          : []),
-        { id: 'compose', summary: 'Compose final answer' }
-      ]
-    })
+    return c.json(inferPlan(prompt))
   }
 )
 
