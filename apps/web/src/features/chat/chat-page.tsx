@@ -6,6 +6,9 @@ import { TopBar } from '../../components/top-bar'
 import { useChatStore } from '../../stores/chat-store'
 import { MarkdownContent } from './markdown-content.js'
 
+// Guard so the deferred-load init only fires once even in React StrictMode.
+let chatStoreInitialized = false
+
 type TimelineEntry = {
   id: string
   label: string
@@ -166,6 +169,13 @@ export const ChatPage = () => {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const conversationEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!chatStoreInitialized) {
+      chatStoreInitialized = true
+      void useChatStore.getState().initialize()
+    }
+  }, [])
 
   useEffect(() => {
     if (!cooldownUntil) {
