@@ -1,5 +1,6 @@
 import * as Tooltip from '@radix-ui/react-tooltip'
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { StatusPill } from './status-pill'
 import { fetchStatus } from '../services/status'
 import { buildGitHubLoginUrl } from '../services/auth'
@@ -20,8 +21,20 @@ export const TopBar = () => {
 
   const token = useAuthStore((state) => state.token)
   const clearToken = useAuthStore((state) => state.clearToken)
+  const setToken = useAuthStore((state) => state.setToken)
   const loginUrl = buildGitHubLoginUrl()
   const status = data ?? fallback
+
+  const [showPat, setShowPat] = useState(false)
+  const [patValue, setPatValue] = useState('')
+
+  const handlePatSave = async () => {
+    const trimmed = patValue.trim()
+    if (!trimmed) return
+    await setToken(trimmed)
+    setPatValue('')
+    setShowPat(false)
+  }
 
   return (
     <Tooltip.Provider delayDuration={120}>
@@ -42,14 +55,53 @@ export const TopBar = () => {
             >
               Sign out
             </button>
-          ) : loginUrl ? (
-            <a
-              href={loginUrl}
-              className="inline-flex items-center gap-1.5 rounded-full border border-stone-800 bg-stone-900 px-3 py-1 text-xs text-white hover:bg-stone-700"
-            >
-              Sign in with GitHub
-            </a>
-          ) : null}
+          ) : (
+            <>
+              {loginUrl && (
+                <a
+                  href={loginUrl}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-stone-800 bg-stone-900 px-3 py-1 text-xs text-white hover:bg-stone-700"
+                >
+                  Sign in with GitHub
+                </a>
+              )}
+              {showPat ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="password"
+                    value={patValue}
+                    onChange={(e) => setPatValue(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') void handlePatSave() }}
+                    placeholder="GitHub PAT (models: read)"
+                    autoFocus
+                    className="rounded-full border border-[var(--border)] bg-white/70 px-3 py-1 text-xs text-stone-700 outline-none focus:border-stone-400 w-52"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handlePatSave()}
+                    className="inline-flex items-center rounded-full border border-stone-800 bg-stone-900 px-3 py-1 text-xs text-white hover:bg-stone-700"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowPat(false); setPatValue('') }}
+                    className="inline-flex items-center rounded-full border border-[var(--border)] bg-white/70 px-3 py-1 text-xs text-stone-700 hover:bg-stone-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowPat(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-white/70 px-3 py-1 text-xs text-stone-700 hover:bg-stone-100"
+                >
+                  Enter PAT
+                </button>
+              )}
+            </>
+          )}
         </div>
       </header>
     </Tooltip.Provider>
