@@ -18,6 +18,42 @@ const collect = async (stream: AsyncIterable<string>): Promise<string> => {
   return output
 }
 
+describe('GitHubModelsProvider.execute', () => {
+  const provider = new GitHubModelsProvider({ baseUrl: 'http://example.com' })
+
+  it('returns a tool result summary for tool steps', async () => {
+    const ctx: ExecutionContext = {
+      ...context,
+      toolResults: { search: { count: 3, items: ['a', 'b', 'c'] } }
+    }
+    const note = await provider.execute(
+      { id: 'search', summary: 'Search web', toolCall: { toolId: 'web-search', input: {} } },
+      ctx
+    )
+    expect(note).toBe('search: {"count":3,"items":["a","b","c"]}')
+    expect(note).not.toContain('Completed step:')
+  })
+
+  it('returns empty string for tool steps with no result yet', async () => {
+    const note = await provider.execute(
+      { id: 'search', summary: 'Search web', toolCall: { toolId: 'web-search', input: {} } },
+      context
+    )
+    expect(note).toBe('')
+  })
+
+  it('returns empty string for non-tool steps', async () => {
+    const note = await provider.execute({ id: 'understand', summary: 'Understand the request' }, context)
+    expect(note).toBe('')
+    expect(note).not.toContain('Completed step:')
+  })
+
+  it('does not return placeholder text', async () => {
+    const composeNote = await provider.execute({ id: 'compose', summary: 'Compose final response' }, context)
+    expect(composeNote).not.toMatch(/Completed step:/i)
+  })
+})
+
 describe('GitHubModelsProvider', () => {
   it('throws a typed rate limit error for 429 responses', async () => {
     const retryAt = new Date(Date.now() + 120_000).toISOString()

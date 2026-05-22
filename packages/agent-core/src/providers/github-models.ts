@@ -125,8 +125,12 @@ export class GitHubModelsProvider implements ModelProvider {
     }
   }
 
-  execute(step: PlanStep): Promise<string> {
-    return Promise.resolve(`Completed step: ${step.summary}`)
+  execute(step: PlanStep, context: ExecutionContext): Promise<string> {
+    if (step.toolCall) {
+      const result = context.toolResults[step.id]
+      return Promise.resolve(result !== undefined ? `${step.id}: ${JSON.stringify(result)}` : '')
+    }
+    return Promise.resolve('')
   }
 
   async *synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<string> {

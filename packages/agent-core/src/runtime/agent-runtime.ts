@@ -91,7 +91,9 @@ export class AgentRuntime {
           this.stepTimeoutMs,
           'Execution step timed out'
         )
-        context.notes.push(note)
+        if (note) {
+          context.notes.push(note)
+        }
         yield createEvent('execution.step.completed', { stepId: step.id, note })
         completedSteps += 1
       }

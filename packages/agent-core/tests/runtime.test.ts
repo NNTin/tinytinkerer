@@ -222,6 +222,81 @@ describe('AgentRuntime', () => {
     expect(events.at(-1)?.type).toBe('assistant.done')
   })
 
+  it('does not add empty execute() notes to context.notes', async () => {
+    const capturedNotes: string[] = []
+    const noNoteProvider: ModelProvider = {
+      async plan() {
+        return {
+          complexity: 'low',
+          steps: [{ id: 'understand', summary: 'Understand the request' }]
+        }
+      },
+      async execute() {
+        return ''
+      },
+      async *synthesize(ctx) {
+        capturedNotes.push(...ctx.notes)
+        yield 'done'
+      }
+    }
+
+    const runtime = new AgentRuntime(noNoteProvider, new ToolRegistry())
+    for await (const _ of runtime.run('hello')) {
+      // consume events
+    }
+
+    expect(capturedNotes).toHaveLength(0)
+  })
+
+  it('adds tool result notes but not fake notes for non-tool steps', async () => {
+    const capturedNotes: string[] = []
+    const mixedProvider: ModelProvider = {
+      async plan() {
+        return {
+          complexity: 'medium',
+          steps: [
+            {
+              id: 'search',
+              summary: 'Search web',
+              toolCall: { toolId: 'web-search', input: { query: 'hello' } }
+            },
+            { id: 'compose', summary: 'Compose final response' }
+          ]
+        }
+      },
+      async execute(step, ctx) {
+        if (step.toolCall) {
+          const result = ctx.toolResults[step.id]
+          return result !== undefined ? `${step.id}: ${JSON.stringify(result)}` : ''
+        }
+        return ''
+      },
+      async *synthesize(ctx) {
+        capturedNotes.push(...ctx.notes)
+        yield 'done'
+      }
+    }
+
+    const registry = new ToolRegistry()
+    registry.register({
+      id: 'web-search',
+      description: 'test tool',
+      schema: z.object({ query: z.string() }),
+      async execute() {
+        return { results: ['r1'] }
+      }
+    })
+
+    const runtime = new AgentRuntime(mixedProvider, registry)
+    for await (const _ of runtime.run('hello')) {
+      // consume events
+    }
+
+    expect(capturedNotes).toHaveLength(1)
+    expect(capturedNotes[0]).toContain('search:')
+    expect(capturedNotes[0]).not.toContain('Completed step:')
+  })
+
   it('does not emit tool.call.started when tool calls are disabled', async () => {
     const registry = new ToolRegistry()
     registry.register({
