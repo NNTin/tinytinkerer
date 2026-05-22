@@ -215,14 +215,14 @@ export const ChatPage = () => {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col">
+    <div className="mx-auto flex h-screen w-full max-w-5xl flex-col">
       <TopBar />
 
-      <main className="flex flex-1 flex-col gap-4 px-4 py-6 md:px-8">
+      <main className="flex flex-1 flex-col gap-4 overflow-hidden px-4 py-6 md:px-8">
         {/* Conversation */}
-        <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Conversation</h2>
-          <div className="mt-3 space-y-4">
+        <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
+          <h2 className="shrink-0 text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Conversation</h2>
+          <div className="mt-3 flex-1 overflow-y-auto space-y-4">
             {turns.length === 0 ? (
               <p className="text-sm text-[var(--muted)]">Start a conversation below.</p>
             ) : (

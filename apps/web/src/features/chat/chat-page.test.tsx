@@ -1,0 +1,50 @@
+import { render } from '@testing-library/react'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+
+// Stub zustand store — provide minimal shape ChatPage reads
+vi.mock('../../stores/chat-store.js', () => ({
+  useChatStore: (selector: (s: unknown) => unknown) =>
+    selector({
+      events: [],
+      streamingText: '',
+      isRunning: false,
+      isRetryPending: false,
+      cooldownUntil: null,
+      sendPrompt: vi.fn(),
+      resetConversation: vi.fn(),
+      cancelRetry: vi.fn(),
+    }),
+}))
+
+vi.mock('../../components/top-bar.js', () => ({
+  TopBar: () => <div data-testid="top-bar" />,
+}))
+
+import { ChatPage } from './chat-page.js'
+
+beforeAll(() => {
+  // jsdom does not implement scrollIntoView
+  Element.prototype.scrollIntoView = vi.fn()
+})
+
+describe('ChatPage conversation panel scrolling', () => {
+  it('bounds the page to viewport height', () => {
+    const { container } = render(<ChatPage />)
+    const root = container.firstElementChild as HTMLElement
+    expect(root.className).toContain('h-screen')
+    expect(root.className).not.toContain('min-h-screen')
+  })
+
+  it('gives the conversation section overflow-y-auto for in-place scrolling', () => {
+    const { container } = render(<ChatPage />)
+    // The scrollable inner div sits inside the conversation <section>
+    const scrollDiv = container.querySelector('section div.overflow-y-auto')
+    expect(scrollDiv).not.toBeNull()
+  })
+
+  it('gives main overflow-hidden to contain layout within viewport', () => {
+    const { container } = render(<ChatPage />)
+    const main = container.querySelector('main')
+    expect(main?.className).toContain('overflow-hidden')
+  })
+})
