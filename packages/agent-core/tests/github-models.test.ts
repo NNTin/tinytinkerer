@@ -18,6 +18,32 @@ const collect = async (stream: AsyncIterable<string>): Promise<string> => {
   return output
 }
 
+describe('GitHubModelsProvider.plan', () => {
+  it('returns a low-complexity plan for a plain prompt', async () => {
+    const provider = new GitHubModelsProvider({ baseUrl: 'http://example.com' })
+    const plan = await provider.plan('tell me a joke')
+    expect(plan.complexity).toBe('low')
+    expect(plan.steps.map((s) => s.id)).toEqual(['understand', 'compose'])
+  })
+
+  it('returns a medium-complexity plan with a search step for search-keyword prompts', async () => {
+    const provider = new GitHubModelsProvider({ baseUrl: 'http://example.com' })
+    const plan = await provider.plan('what is the latest news today?')
+    expect(plan.complexity).toBe('medium')
+    expect(plan.steps.map((s) => s.id)).toEqual(['understand', 'search', 'compose'])
+    expect(plan.steps[1]?.toolCall?.toolId).toBe('web-search')
+  })
+
+  it('does not make network calls', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    const provider = new GitHubModelsProvider({ baseUrl: 'http://example.com' })
+    await provider.plan('does this hit the network?')
+    expect(fetchSpy).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+})
+
 describe('GitHubModelsProvider.execute', () => {
   const provider = new GitHubModelsProvider({ baseUrl: 'http://example.com' })
 
