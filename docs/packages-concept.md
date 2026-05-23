@@ -20,10 +20,10 @@ Apps own shell-specific code.
 - shell layout and visual structure
 - host embedding concerns
 - app-specific configuration and bootstrapping
-- final binding between UI components and shared controllers
+- final binding between UI components and shared browser-facing APIs
 - app-local UX decisions that are not shared feature behavior
 
-Apps must not become the long-term home for shared orchestration, persistence logic, provider wiring, or non-trivial reusable feature runtimes.
+Apps must not become the long-term home for shared orchestration, persistence logic, provider wiring, or non-trivial reusable feature runtimes. Apps also must not reach past `app-browser` into lower runtime layers.
 
 ## What Belongs In A Package
 
@@ -98,6 +98,8 @@ Owns:
 - session-based OAuth state helpers
 - fetch-based edge clients
 - concrete provider and tool wiring for browser apps
+- shell-facing exports that browser apps consume directly
+- shared browser runtime composition
 - shell configuration such as edge URL, storage namespace, and auth mode
 
 Must not own:
@@ -141,19 +143,31 @@ Must not own:
 
 Allowed examples:
 
-- `apps/web` importing `app-core` controllers and `ui` primitives
-- `apps/widget` importing `app-browser` storage and auth adapters
-- `app-browser` importing `agent-core` and `contracts`
+- `apps/web` importing `app-browser` and `ui`
+- `apps/widget` importing `app-browser` and `ui`
+- `app-browser` importing `app-core`, `agent-core`, and `contracts`
 - `apps/edge` importing `contracts`
+- `apps/web` importing a `feature-*` package only for shell-local render-edge integration
 
 Forbidden examples:
 
 - `apps/web` directly creating GitHub model providers or browser search tools instead of consuming shared adapters
+- `apps/web` or `apps/widget` importing `contracts`, `app-core`, or `agent-core` directly
 - `app-core` importing Dexie, `fetch`, `sessionStorage`, or React
 - `ui` containing app-specific feature flows or runtime composition
 - `agent-core` owning product-specific integrations such as GitHub Models wiring
+- `feature-*` importing `app-browser`, `app-core`, `agent-core`, or `apps/*`
 - `apps/widget` copying `apps/web` feature logic instead of reusing packages
 - any app importing code from another app
+
+## Browser Assembly Boundary
+
+For browser apps, `packages/app-browser` is the main shared runtime boundary.
+
+- Browser apps should depend on `app-browser` instead of composing lower runtime layers themselves.
+- If an app needs a lower-layer capability, `app-browser` should expose the browser-safe API for it.
+- This keeps runtime composition consistent between `web` and `widget`.
+- This also makes dependency enforcement simpler because the allowed app dependency surface stays small.
 
 ## When To Introduce A New Package
 
@@ -188,6 +202,12 @@ The apps should only own:
 - shell-specific layout and spacing
 - app-local affordances around the rendered diagram
 
+Mermaid remains a render-edge exception, not an alternate browser composition root.
+
+- `feature-mermaid` may depend downward on packages such as `ui` and `contracts`
+- `feature-mermaid` must not bypass `app-browser`
+- if shared browser runtime integration is required, `app-browser` owns that integration and apps only mount the feature's render adapter
+
 This is the model to reuse for any future large shared feature.
 
 ## Review Checklist For New Features
@@ -195,6 +215,7 @@ This is the model to reuse for any future large shared feature.
 - [ ] Can this behavior live outside the app shell?
 - [ ] Will more than one app or layer need this feature?
 - [ ] Is the feature large enough to justify a dedicated package?
+- [ ] Does the browser app dependency surface stay small, with `app-browser` as the shared assembly boundary?
 - [ ] Are contracts, headless logic, browser adapters, and UI presentation separated cleanly?
 - [ ] Does `packages/ui` stay primitive-only?
-- [ ] Does the proposal avoid app-to-app imports or copied feature runtimes?
+- [ ] Does the proposal avoid app-to-app imports, copied feature runtimes, and feature-package bypasses around `app-browser`?

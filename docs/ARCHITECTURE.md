@@ -31,17 +31,11 @@ flowchart LR
     mermaid["@tinytinkerer/feature-mermaid<br/>shared large feature package"]
   end
 
-  web --> ui
-  web --> appcore
   web --> appbrowser
-  web --> contracts
-  web --> mermaid
+  web --> ui
 
-  widget --> ui
-  widget --> appcore
   widget --> appbrowser
-  widget --> contracts
-  widget --> mermaid
+  widget --> ui
 
   edge --> contracts
 
@@ -52,8 +46,8 @@ flowchart LR
   appbrowser --> agent
   appbrowser --> contracts
 
-  mermaid --> contracts
   mermaid --> ui
+  mermaid --> contracts
 
   agent --> contracts
 ```
@@ -76,28 +70,32 @@ flowchart LR
 | `packages/contracts` | Shared schemas and types | agent event contracts, planning contracts, edge DTOs, rate-limit payloads | fetch logic, runtime orchestration, UI components |
 | `packages/agent-core` | Product-agnostic runtime abstractions | `AgentRuntime`, tool registry, provider interfaces, rate-limit runtime behavior | GitHub-specific providers, app-specific tools, browser code |
 | `packages/app-core` | Headless product behavior | chat/auth/settings orchestration, projections, feature policies, ports | React, Zustand, Dexie, fetch, `window`, `sessionStorage` |
-| `packages/app-browser` | Shared browser adapters | IndexedDB repositories, OAuth state handling, edge clients, provider/tool wiring, shell config | app-specific layout and page composition |
+| `packages/app-browser` | Shared browser runtime and composition boundary | IndexedDB repositories, OAuth state handling, edge clients, provider/tool wiring, shell-facing exports, shell config | app-specific layout and page composition, feature runtimes |
 | `packages/ui` | Presentational React primitives | buttons, simple shared visual building blocks, styling helpers | feature runtimes, orchestration, app-owned flows |
 | `packages/feature-*` | Large shared features | reusable non-trivial feature logic shared by apps or layers | app shells, unrelated primitives |
 
 ## Dependency Rules
 
-- Apps may depend on `contracts`, `agent-core`, `app-core`, `app-browser`, `ui`, and feature packages. Apps must never import from other apps.
+- Browser apps may depend on `app-browser` and `ui` by default. They must never import from other apps.
+- Browser apps must not directly depend on `contracts`, `app-core`, or `agent-core`. If a browser app needs a lower-layer capability, `app-browser` must expose the browser-safe interface.
+- Direct app imports of `feature-*` packages are a narrow render-edge exception only. They are allowed only for shell-local rendering adapters and must not be used to bypass `app-browser`.
 - `packages/ui` must not import from `app-core`, `app-browser`, `agent-core`, or `apps/*`.
 - `packages/app-core` may depend on `contracts` and `agent-core`, but must never use browser APIs, fetch, Dexie, session storage, React, or app-local UI code.
-- `packages/app-browser` may depend on `contracts`, `agent-core`, and `app-core`, and owns browser-only adapters.
+- `packages/app-browser` may depend on `contracts`, `agent-core`, and `app-core`, and is the primary browser assembly boundary for shared runtime composition.
 - `packages/agent-core` must stay product-agnostic. Concrete GitHub Models integrations, web-search implementations, and product planning heuristics do not belong there.
 - `apps/edge` may depend on `contracts` and its own internal modules only. It must not depend on browser packages or UI packages.
-- Feature packages should depend only on the layers required for the feature. They must not become a second `app-core` or a second `ui`.
+- Feature packages should depend only on the layers required for the feature. They must not become a second `app-browser`, a second `app-core`, or a second `ui`.
+- Feature packages must depend downward only. They must not import from `app-browser`, `app-core`, `agent-core`, or `apps/*` unless the architecture is explicitly revised.
 
 ## Browser App Model
 
-The future browser architecture is built around one shared headless core and one shared browser adapter layer.
+The future browser architecture is built around one shared headless core and one shared browser assembly boundary.
 
-- `apps/web` and `apps/widget` both consume `packages/app-core` for shared product behavior.
-- Both apps consume `packages/app-browser` for browser-specific integrations such as persistence, OAuth browser flows, fetch-based edge clients, and runtime composition.
-- Both apps may consume `packages/ui` for presentational primitives, but each app remains responsible for its own shell, layout, and feature presentation.
+- `apps/web` and `apps/widget` both consume `packages/app-browser` as the browser-facing shared package.
+- `packages/app-browser` depends on `app-core`, `agent-core`, and `contracts`, and hides those lower-layer details from browser apps.
+- Apps also consume `packages/ui` for presentational primitives, but each app remains responsible for its own shell, layout, and feature presentation.
 - `packages/app-browser` is configured per shell. Different apps can vary by `edgeBaseUrl`, storage namespace, auth mode, host embedding behavior, and other shell-specific configuration without changing shared logic.
+- If a browser app needs a lower-layer type or capability, the correct fix is to extend `app-browser` rather than importing lower layers directly.
 - The widget is treated as the stricter client. Shared code must assume embedding constraints, thin host-controlled surfaces, and the possibility of host-provided credentials.
 
 ## Shared Feature Extraction
@@ -107,15 +105,18 @@ When a large feature is introduced, shared behavior must be extracted before it 
 - Feature extraction is required when a capability is non-trivial, has its own rendering or behavior pipeline, or is expected to be shared by `web` and `widget`.
 - `packages/ui` is not the place for feature runtimes. It stays focused on primitives and presentational building blocks.
 - Large shared features should use dedicated feature packages such as `packages/feature-mermaid`.
+- The main dependency graph should stay strict. Direct app-to-feature imports are exceptions for render-edge concerns, not the default browser composition path.
 
 ### Mermaid example
 
 If both `apps/web` and `apps/widget` support Mermaid rendering:
 
+- `@tinytinkerer/feature-mermaid` depends downward only, for example on `ui` and `contracts`
 - the shared parser/render pipeline belongs in `@tinytinkerer/feature-mermaid`
 - markdown integration hooks belong in `@tinytinkerer/feature-mermaid`
 - shared sanitization, lazy-loading, and rendering policy belong in `@tinytinkerer/feature-mermaid`
 - app-local code only decides where Mermaid content appears and how it fits that shell's UX
+- if shared runtime integration is needed, `app-browser` owns that integration and the app only mounts the render-edge adapter
 
 This same rule applies to any large shared feature, not only Mermaid.
 
@@ -130,9 +131,9 @@ This same rule applies to any large shared feature, not only Mermaid.
 
 The desired flow is:
 
-1. A UI app renders the shell and binds user interaction to `app-core`.
-2. `app-core` orchestrates product behavior through ports and runtime abstractions.
-3. `app-browser` supplies browser-backed implementations for persistence, auth state, edge clients, and runtime/provider wiring.
+1. A UI app renders the shell and binds user interaction to `app-browser`.
+2. `app-browser` supplies browser-backed implementations, shell-facing exports, and shared browser runtime composition.
+3. `app-core` orchestrates product behavior through ports and runtime abstractions behind `app-browser`.
 4. `agent-core` executes the agent runtime using product-agnostic abstractions.
 5. `apps/edge` exposes stateless endpoints and returns payloads that conform to `contracts`.
 
