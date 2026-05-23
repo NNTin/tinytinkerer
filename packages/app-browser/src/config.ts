@@ -27,11 +27,21 @@ const DEFAULT_CONFIG: ResolvedBrowserShellConfig = {
 
 export const resolveBrowserShellConfig = (
   config: BrowserShellConfig = {}
-): ResolvedBrowserShellConfig => ({
-  edgeBaseUrl: config.edgeBaseUrl ?? DEFAULT_CONFIG.edgeBaseUrl,
-  storageNamespace: config.storageNamespace ?? DEFAULT_CONFIG.storageNamespace,
-  authMode: config.authMode ?? DEFAULT_CONFIG.authMode,
-  githubClientId: config.githubClientId,
-  githubRedirectUri: config.githubRedirectUri,
-  hostToken: config.hostToken ?? DEFAULT_CONFIG.hostToken
-})
+): ResolvedBrowserShellConfig => {
+  const resolved: ResolvedBrowserShellConfig = {
+    edgeBaseUrl: config.edgeBaseUrl ?? DEFAULT_CONFIG.edgeBaseUrl,
+    storageNamespace: config.storageNamespace ?? DEFAULT_CONFIG.storageNamespace,
+    authMode: config.authMode ?? DEFAULT_CONFIG.authMode,
+    hostToken: config.hostToken ?? DEFAULT_CONFIG.hostToken
+  }
+
+  if (config.githubClientId !== undefined) {
+    resolved.githubClientId = config.githubClientId
+  }
+
+  if (config.githubRedirectUri !== undefined) {
+    resolved.githubRedirectUri = config.githubRedirectUri
+  }
+
+  return resolved
+}

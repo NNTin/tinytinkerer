@@ -38,8 +38,9 @@ describe('GitHubModelsProvider', () => {
     const retryAt = new Date(Date.now() + 120_000).toISOString()
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        new Response(
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
           JSON.stringify({
             code: 'rate_limited',
             error: 'rate limited',
@@ -50,6 +51,7 @@ describe('GitHubModelsProvider', () => {
             status: 429,
             headers: { 'retry-after': '120' }
           }
+          )
         )
       )
     )
@@ -69,17 +71,21 @@ describe('GitHubModelsProvider', () => {
   })
 
   it('includes prior conversation turns before the current prompt', async () => {
-    const fetchSpy = vi.fn(async () => {
+    const fetchSpy = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      void _input
+      void init
       const body = [
         'data: {"choices":[{"delta":{"content":"ok"}}]}',
         '',
         'data: [DONE]',
         ''
       ].join('\n')
-      return new Response(body, {
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' }
-      })
+      return Promise.resolve(
+        new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      )
     })
     vi.stubGlobal('fetch', fetchSpy)
 
@@ -104,8 +110,17 @@ describe('GitHubModelsProvider', () => {
     expect(output).toBe('ok')
     expect(fetchSpy).toHaveBeenCalledTimes(1)
 
-    const [, init] = fetchSpy.mock.calls[0] ?? []
-    const requestBody = JSON.parse(String(init?.body)) as {
+    const firstCall = fetchSpy.mock.calls[0]
+    if (!firstCall) {
+      throw new Error('Expected fetch to be called once')
+    }
+
+    const [, init] = firstCall
+    if (typeof init?.body !== 'string') {
+      throw new Error('Expected fetch body to be a JSON string')
+    }
+
+    const requestBody = JSON.parse(init.body) as {
       messages: Array<{ role: string; content: string }>
     }
 

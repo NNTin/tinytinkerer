@@ -3,6 +3,7 @@ import { Button } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { Cog6ToothIcon } from '@heroicons/react/24/outline'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ensureBrowserShellInitialized } from '../../app/browser-shell'
 import { useChatStore } from '../../stores/chat-store'
 import { useAuthStore } from '../../stores/auth-store.js'
 import { useSettingsStore } from '../../stores/settings-store.js'
@@ -17,6 +18,13 @@ const GitHubMark = () => (
 
 // Guard so the deferred-load init only fires once even in React StrictMode.
 let chatStoreInitialized = false
+
+const initializeStore = (store: { getState?: () => { initialize?: () => Promise<void> } }): void => {
+  const initialize = store.getState?.().initialize
+  if (initialize) {
+    void initialize()
+  }
+}
 
 const formatCooldown = (remainingMs: number): string => {
   const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000))
@@ -71,7 +79,10 @@ export const ChatPage = () => {
   useEffect(() => {
     if (!chatStoreInitialized) {
       chatStoreInitialized = true
-      void useChatStore.getState().initialize()
+      ensureBrowserShellInitialized()
+      initializeStore(useAuthStore)
+      initializeStore(useSettingsStore)
+      initializeStore(useChatStore)
     }
   }, [])
 

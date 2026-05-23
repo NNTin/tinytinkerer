@@ -90,12 +90,15 @@ export const applyRateLimitEvent = async (
 export const canSendPrompt = (state: ChatStateSnapshot): boolean =>
   Boolean(state.conversationId) && !state.isRunning && !activeCooldown(state.cooldownUntil)
 
-export const runPrompt = async (
+export const runPrompt = (
   runtimeFactory: ChatRuntimeFactory,
   prompt: string,
   history: { role: 'user' | 'assistant'; content: string }[],
   signal?: AbortSignal
-): Promise<AsyncGenerator<ChatEvent>> => runtimeFactory.create().run(prompt, { signal, history })
+): AsyncGenerator<ChatEvent> =>
+  runtimeFactory
+    .create()
+    .run(prompt, signal ? { signal, history } : { history })
 
 export const resetConversation = async (
   conversations: ConversationRepository,

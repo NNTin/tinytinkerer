@@ -44,12 +44,9 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.7.5
         version: 0.7.6(hono@4.12.21)(zod@4.4.3)
-      '@tinytinkerer/shared':
+      '@tinytinkerer/contracts':
         specifier: workspace:*
-        version: link:../../packages/shared
-      '@tinytinkerer/types':
-        specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/contracts
       hono:
         specifier: ^4.10.5
         version: 4.12.21
@@ -78,18 +75,12 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.90.11
         version: 5.100.11(react@19.2.6)
-      '@tinytinkerer/agent-core':
+      '@tinytinkerer/app-browser':
         specifier: workspace:*
-        version: link:../../packages/agent-core
-      '@tinytinkerer/types':
-        specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/app-browser
       '@tinytinkerer/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      dexie:
-        specifier: ^4.2.1
-        version: 4.4.2
       react:
         specifier: ^19.2.0
         version: 19.2.6
@@ -105,12 +96,6 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
-      zod:
-        specifier: ^4.1.12
-        version: 4.4.3
-      zustand:
-        specifier: ^5.0.8
-        version: 5.0.13(@types/react@19.2.15)(react@19.2.6)
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.1.17
@@ -143,25 +128,99 @@ importers:
         specifier: ^8.0.12
         version: 8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)
 
+  apps/widget:
+    dependencies:
+      '@tanstack/react-query':
+        specifier: ^5.90.11
+        version: 5.100.11(react@19.2.6)
+      '@tinytinkerer/app-browser':
+        specifier: workspace:*
+        version: link:../../packages/app-browser
+      '@tinytinkerer/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      react:
+        specifier: ^19.2.0
+        version: 19.2.6
+      react-dom:
+        specifier: ^19.2.0
+        version: 19.2.6(react@19.2.6)
+      react-markdown:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/react@19.2.15)(react@19.2.6)
+      react-router-dom:
+        specifier: ^7.9.5
+        version: 7.15.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.1.17
+        version: 4.3.0(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0))
+      '@testing-library/jest-dom':
+        specifier: ^6.9.1
+        version: 6.9.1
+      '@types/react':
+        specifier: ^19.2.14
+        version: 19.2.15
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.15)
+      '@vitejs/plugin-react':
+        specifier: ^6.0.1
+        version: 6.0.2(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0))
+      jsdom:
+        specifier: ^29.1.1
+        version: 29.1.1
+      tailwindcss:
+        specifier: ^4.1.17
+        version: 4.3.0
+      vite:
+        specifier: ^8.0.12
+        version: 8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)
+
   packages/agent-core:
     dependencies:
-      '@tinytinkerer/shared':
+      '@tinytinkerer/contracts':
         specifier: workspace:*
-        version: link:../shared
-      '@tinytinkerer/types':
-        specifier: workspace:*
-        version: link:../types
+        version: link:../contracts
       zod:
         specifier: ^4.1.12
         version: 4.4.3
 
-  packages/shared:
+  packages/app-browser:
     dependencies:
-      '@tinytinkerer/types':
+      '@tinytinkerer/agent-core':
         specifier: workspace:*
-        version: link:../types
+        version: link:../agent-core
+      '@tinytinkerer/app-core':
+        specifier: workspace:*
+        version: link:../app-core
+      '@tinytinkerer/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      dexie:
+        specifier: ^4.2.1
+        version: 4.4.2
+      zustand:
+        specifier: ^5.0.8
+        version: 5.0.13(@types/react@19.2.15)(react@19.2.6)
 
-  packages/types: {}
+  packages/app-core:
+    dependencies:
+      '@tinytinkerer/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@tinytinkerer/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
+  packages/contracts:
+    dependencies:
+      zod:
+        specifier: ^4.1.12
+        version: 4.4.3
 
   packages/ui:
     dependencies:
