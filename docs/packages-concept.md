@@ -145,7 +145,7 @@ Allowed examples:
 
 - `apps/web` importing `app-browser` and `ui`
 - `apps/widget` importing `app-browser` and `ui`
-- `app-browser` importing `app-core`, `agent-core`, and `contracts`
+- `app-browser` importing `app-core` and `contracts`
 - `apps/edge` importing `contracts`
 - `apps/web` importing a `feature-*` package only for shell-local render-edge integration
 

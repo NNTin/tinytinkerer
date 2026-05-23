@@ -1,4 +1,4 @@
-import type { Tool } from '@tinytinkerer/agent-core'
+import type { Tool } from '@tinytinkerer/app-core'
 import {
   edgeErrorResponseSchema,
   searchRequestSchema,

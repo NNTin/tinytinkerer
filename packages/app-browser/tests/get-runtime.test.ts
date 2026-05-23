@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatEvent } from '@tinytinkerer/contracts'
-import { ToolRegistry } from '@tinytinkerer/agent-core'
 import { DEFAULT_MODEL } from '@tinytinkerer/app-core'
 import type { BrowserShell } from '../src/shell.js'
 import type { AuthStore } from '../src/stores/auth-store.js'
@@ -66,28 +65,55 @@ beforeEach(() => {
 })
 
 describe('createBrowserRuntimeFactory', () => {
-  it('registers web-search tool in the registry when searchEnabled is true', () => {
-    const registerSpy = vi.spyOn(ToolRegistry.prototype, 'register')
-    createRuntime()
-    expect(registerSpy).toHaveBeenCalledTimes(1)
-    expect(registerSpy.mock.calls[0]?.[0]?.id).toBe('web-search')
-    registerSpy.mockRestore()
+  it('emits web-search tool events when searchEnabled is true', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/api/search')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ query: 'latest news about React', results: [] }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' }
+            })
+          )
+        }
+
+        throw new Error(`Unexpected fetch call: ${url}`)
+      })
+    )
+
+    const runtime = createRuntime()
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('latest news about React')) {
+      events.push(event)
+    }
+
+    expect(events.some((event) => event.type === 'tool.call.started')).toBe(true)
+    expect(events.some((event) => event.type === 'tool.call.completed')).toBe(true)
+    vi.unstubAllGlobals()
   })
 
-  it('does not register any tools when searchEnabled is false', () => {
+  it('does not emit tool events when searchEnabled is false', async () => {
     mockSettings.searchEnabled = false
-    const registerSpy = vi.spyOn(ToolRegistry.prototype, 'register')
-    createRuntime()
-    expect(registerSpy).not.toHaveBeenCalled()
-    registerSpy.mockRestore()
+    const runtime = createRuntime()
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('latest news about React')) {
+      events.push(event)
+    }
+
+    expect(events.some((event) => event.type === 'tool.call.started')).toBe(false)
   })
 
-  it('does not register search when the service is not ready', () => {
+  it('does not emit tool events when the service is not ready', async () => {
     mockStatus.status.search.state = 'degraded'
-    const registerSpy = vi.spyOn(ToolRegistry.prototype, 'register')
-    createRuntime()
-    expect(registerSpy).not.toHaveBeenCalled()
-    registerSpy.mockRestore()
+    const runtime = createRuntime()
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('latest news about React')) {
+      events.push(event)
+    }
+
+    expect(events.some((event) => event.type === 'tool.call.started')).toBe(false)
   })
 
   it('forwards selectedModel from settings store to the HTTP request body', async () => {

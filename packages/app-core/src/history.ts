@@ -1,5 +1,5 @@
-import type { ConversationMessage } from '@tinytinkerer/agent-core'
 import type { ChatEvent } from '@tinytinkerer/contracts'
+import type { ConversationMessage } from './runtime'
 
 export const buildConversationHistory = (events: ChatEvent[]): ConversationMessage[] => {
   const history: ConversationMessage[] = []

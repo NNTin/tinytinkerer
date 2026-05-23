@@ -234,12 +234,11 @@ function validateBoundary(sourcePkg, target, filePath) {
     const allowed = new Set([
       '@tinytinkerer/app-browser',
       '@tinytinkerer/app-core',
-      '@tinytinkerer/agent-core',
       '@tinytinkerer/contracts'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: app-browser may import only app-core, agent-core, contracts, and app-browser-local modules (${targetPkg.name})`
+        `${sourceLabel}: app-browser may import only app-core, contracts, and app-browser-local modules (${targetPkg.name})`
       )
     }
   }

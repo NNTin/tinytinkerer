@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { RateLimitError, type ExecutionContext } from '@tinytinkerer/agent-core'
+import { RateLimitError, type ExecutionContext } from '@tinytinkerer/app-core'
 import { GitHubModelsProvider } from '../src/runtime/github-models-provider.js'
 
 const context: ExecutionContext = {

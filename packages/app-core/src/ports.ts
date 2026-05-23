@@ -1,5 +1,5 @@
-import type { ConversationMessage } from '@tinytinkerer/agent-core'
 import type { ChatEvent, SystemStatus } from '@tinytinkerer/contracts'
+import type { ConversationMessage } from './runtime'
 
 export type Conversation = {
   id: string

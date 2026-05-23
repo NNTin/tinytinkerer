@@ -18,7 +18,6 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tinytinkerer/agent-core": "workspace:*",
     "@tinytinkerer/app-core": "workspace:*",
     "@tinytinkerer/contracts": "workspace:*",
     "dexie": "^4.2.1",
@@ -28,6 +27,7 @@
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "react": "^19.0.0",
     "@types/react": "^19.2.14"
   }
 }
