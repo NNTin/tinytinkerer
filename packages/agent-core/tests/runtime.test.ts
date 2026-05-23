@@ -1,4 +1,4 @@
-import type { ChatEvent } from '@tinytinkerer/types'
+import type { ChatEvent } from '@tinytinkerer/contracts'
 import { inferPlan } from '@tinytinkerer/shared'
 import { describe, expect, it, vi } from 'vitest'
 import { RateLimitError } from '../src/errors/rate-limit-error'

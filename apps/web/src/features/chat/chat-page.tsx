@@ -1,4 +1,4 @@
-import type { ChatEvent } from '@tinytinkerer/types'
+import type { ChatEvent } from '@tinytinkerer/contracts'
 import { Button } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { Cog6ToothIcon } from '@heroicons/react/24/outline'

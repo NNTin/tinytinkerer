@@ -1,4 +1,4 @@
-import type { SystemStatus } from '@tinytinkerer/types'
+import type { SystemStatus } from '@tinytinkerer/contracts'
 import { z } from 'zod'
 import { edgeUrl } from './config'
 
@@ -22,5 +22,5 @@ export const fetchStatus = async (): Promise<SystemStatus> => {
 
   // Runtime-validate the external response before returning as SystemStatus.
   // The schema matches SystemStatus exactly; the cast is safe after parse succeeds.
-  return systemStatusSchema.parse(await response.json()) as SystemStatus
+  return systemStatusSchema.parse(await response.json())
 }

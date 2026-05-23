@@ -1,4 +1,4 @@
-import type { SearchResult } from '@tinytinkerer/types'
+import type { SearchResult } from '@tinytinkerer/contracts'
 import { z } from 'zod'
 import type { Tool } from './registry'
 

@@ -44,12 +44,12 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.7.5
         version: 0.7.6(hono@4.12.21)(zod@4.4.3)
+      '@tinytinkerer/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@tinytinkerer/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@tinytinkerer/types':
-        specifier: workspace:*
-        version: link:../../packages/types
       hono:
         specifier: ^4.10.5
         version: 4.12.21
@@ -81,9 +81,9 @@ importers:
       '@tinytinkerer/agent-core':
         specifier: workspace:*
         version: link:../../packages/agent-core
-      '@tinytinkerer/types':
+      '@tinytinkerer/contracts':
         specifier: workspace:*
-        version: link:../../packages/types
+        version: link:../../packages/contracts
       '@tinytinkerer/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -145,23 +145,33 @@ importers:
 
   packages/agent-core:
     dependencies:
+      '@tinytinkerer/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tinytinkerer/shared':
         specifier: workspace:*
         version: link:../shared
-      '@tinytinkerer/types':
-        specifier: workspace:*
-        version: link:../types
+      zod:
+        specifier: ^4.1.12
+        version: 4.4.3
+
+  packages/contracts:
+    dependencies:
       zod:
         specifier: ^4.1.12
         version: 4.4.3
 
   packages/shared:
     dependencies:
-      '@tinytinkerer/types':
+      '@tinytinkerer/contracts':
         specifier: workspace:*
-        version: link:../types
+        version: link:../contracts
 
-  packages/types: {}
+  packages/types:
+    dependencies:
+      '@tinytinkerer/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/ui:
     dependencies:

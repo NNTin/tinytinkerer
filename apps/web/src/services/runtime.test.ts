@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatEvent } from '@tinytinkerer/types'
+import type { ChatEvent } from '@tinytinkerer/contracts'
 import { ToolRegistry } from '@tinytinkerer/agent-core'
 import { DEFAULT_MODEL } from './models.js'
 
@@ -128,6 +128,7 @@ describe('getRuntime — model forwarding', () => {
     mockSettings.selectedModel = 'openai/gpt-4o'
 
     const runtime = getRuntime()
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for await (const _event of runtime.run('hello')) {
       // drain event stream
     }

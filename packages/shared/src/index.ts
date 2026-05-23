@@ -1,4 +1,4 @@
-import type { ExecutionPlan, PlanStep } from '@tinytinkerer/types'
+import type { ExecutionPlan, PlanStep } from '@tinytinkerer/contracts'
 
 export type { ExecutionPlan, PlanStep }
 

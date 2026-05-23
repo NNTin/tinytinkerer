@@ -1,7 +1,12 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, parseRetryAfterMs } from '@tinytinkerer/shared'
-import type { SearchResult, SystemStatus } from '@tinytinkerer/types'
+import {
+  chatRequestSchema,
+  githubExchangeRequestSchema,
+  searchRequestSchema,
+} from '@tinytinkerer/contracts'
+import type { SearchResult, SystemStatus } from '@tinytinkerer/contracts'
 import { z } from 'zod'
 
 const githubOAuthResponseSchema = z.object({
@@ -84,11 +89,6 @@ app.use('*', async (c, next) => {
   }
 })
 
-const searchSchema = z.object({
-  query: z.string().min(2).max(500),
-  maxResults: z.number().int().positive().max(10).optional()
-})
-
 type TavilyResultItem = z.infer<typeof tavilyResultItemSchema>
 
 const normalizeSearchResults = (results: TavilyResultItem[]): SearchResult[] =>
@@ -141,13 +141,7 @@ app.get('/health', (c) => {
 
 app.post(
   '/auth/github/exchange',
-  zValidator(
-    'json',
-    z.object({
-      code: z.string().min(1),
-      redirectUri: z.string().url().optional()
-    })
-  ),
+  zValidator('json', githubExchangeRequestSchema),
   async (c) => {
     const { code, redirectUri } = c.req.valid('json')
     if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_CLIENT_SECRET) {
@@ -190,7 +184,7 @@ app.post(
 
 app.post(
   '/api/search',
-  zValidator('json', searchSchema),
+  zValidator('json', searchRequestSchema),
   async (c) => {
     const input = c.req.valid('json')
 
@@ -251,21 +245,7 @@ const UPSTREAM_ERROR_STATUSES = new Set([400, 401, 403, 500, 503])
 
 app.post(
   '/api/models/chat',
-  zValidator(
-    'json',
-    z.object({
-      model: z.string().optional(),
-      stream: z.boolean().optional(),
-      messages: z
-        .array(
-          z.object({
-            role: z.enum(['system', 'user', 'assistant']),
-            content: z.string().max(32_000)
-          })
-        )
-        .max(100)
-    })
-  ),
+  zValidator('json', chatRequestSchema),
   async (c) => {
     const body = c.req.valid('json')
     const authorization = c.req.header('authorization') ?? c.req.header('Authorization')

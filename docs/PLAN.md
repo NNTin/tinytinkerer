@@ -6,11 +6,11 @@ Nothing in this file is marked complete. It is a forward migration checklist.
 
 ## Iteration 1: Contracts Foundation
 
-- [ ] Create `packages/contracts` as the target replacement for `packages/types`
-- [ ] Move shared schemas and inferred types for agent events and edge DTOs into contracts
-- [ ] Remove duplicated response and request schemas from web, edge, and provider code where possible
-- [ ] Update imports so contracts become the shared source of truth
-- [ ] Define the removal plan for `packages/types`
+- [x] Create `packages/contracts` as the target replacement for `packages/types`
+- [x] Move shared schemas and inferred types for agent events and edge DTOs into contracts
+- [x] Remove duplicated response and request schemas from web, edge, and provider code where possible
+- [x] Update imports so contracts become the shared source of truth
+- [x] Define the removal plan for `packages/types`
 
 ## Iteration 2: Slim Agent Core
 

@@ -1,4 +1,4 @@
-import type { ExecutionPlan, PlanStep } from '@tinytinkerer/types'
+import type { ExecutionPlan, PlanStep } from '@tinytinkerer/contracts'
 import { z } from 'zod'
 import { DEFAULT_RATE_LIMIT_RETRY_AFTER_MS, inferPlan, parseRetryAfterMs } from '@tinytinkerer/shared'
 import { RateLimitError } from '../errors/rate-limit-error'

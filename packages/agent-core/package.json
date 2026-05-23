@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@tinytinkerer/shared": "workspace:*",
-    "@tinytinkerer/types": "workspace:*",
+    "@tinytinkerer/contracts": "workspace:*",
     "zod": "^4.1.12"
   }
 }

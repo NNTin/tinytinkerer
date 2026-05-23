@@ -1,4 +1,4 @@
-import type { ChatEvent } from '@tinytinkerer/types'
+import type { ChatEvent } from '@tinytinkerer/contracts'
 
 export type Conversation = {
   id: string

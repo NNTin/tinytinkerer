@@ -1,4 +1,4 @@
-import type { ChatEvent, PlanStep } from '@tinytinkerer/types'
+import type { ChatEvent, PlanStep } from '@tinytinkerer/contracts'
 import { MAX_AUTO_RETRY_AFTER_MS, withTimeout } from '@tinytinkerer/shared'
 import { isRateLimitError } from '../errors/rate-limit-error'
 import { createEvent } from '../events/create-event'
