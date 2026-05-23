@@ -45,9 +45,10 @@ const mockStatusState = vi.hoisted(() => ({
 }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
-  buildGitHubLoginUrl: () => 'https://github.test/login',
   buildTurns: () => mockChatState.events,
-  initializeBrowserStores: vi.fn().mockResolvedValue(undefined),
+  canStartGitHubOAuth: () => true,
+  startGitHubOAuth: vi.fn(),
+  startStatusPolling: vi.fn(() => () => undefined),
   SUPPORTED_MODELS: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
   useAuthStore: (selector: (state: typeof mockAuthState) => unknown) => selector(mockAuthState),
   useChatStore: Object.assign(

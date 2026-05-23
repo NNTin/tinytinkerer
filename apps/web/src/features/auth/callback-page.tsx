@@ -1,7 +1,6 @@
+import { completeGitHubOAuthCallback } from '@tinytinkerer/app-browser'
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ensureBrowserShellInitialized } from '../../app/browser-shell'
-import { completeGitHubOAuthCallback } from '../../services/auth'
 
 export const CallbackPage = () => {
   const [searchParams] = useSearchParams()
@@ -9,7 +8,6 @@ export const CallbackPage = () => {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    ensureBrowserShellInitialized()
     completeGitHubOAuthCallback({
       code: searchParams.get('code'),
       state: searchParams.get('state')

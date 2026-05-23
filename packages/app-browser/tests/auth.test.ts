@@ -11,34 +11,41 @@ vi.mock('../src/stores/auth-store.js', () => ({
   }
 }))
 
-import {
-  buildGitHubLoginUrl,
-  completeGitHubOAuthCallback,
-  validateOAuthState
-} from '../src/auth.js'
-import { initializeBrowserShell } from '../src/shell.js'
+import { canStartGitHubOAuth, completeGitHubOAuthCallback, startGitHubOAuth } from '../src/auth.js'
+import { configureBrowserShell } from '../src/shell.js'
 
 describe('auth helpers', () => {
   beforeEach(() => {
     sessionStorage.clear()
     vi.restoreAllMocks()
     mockAuthStore.setToken.mockClear()
-    initializeBrowserShell({
+    configureBrowserShell({
       edgeBaseUrl: 'http://edge.local',
       storageNamespace: 'tinytinkerer-test',
       githubClientId: 'github-client-id'
     })
   })
 
-  it('stores oauth state under the shell namespace', () => {
-    buildGitHubLoginUrl()
+  it('does not write oauth state until oauth is explicitly started', () => {
+    expect(canStartGitHubOAuth()).toBe(true)
+    expect(sessionStorage.getItem('tinytinkerer-test:oauth_state')).toBeNull()
+  })
+
+  it('stores oauth state under the shell namespace when oauth starts', () => {
+    const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined)
+
+    startGitHubOAuth()
+
+    expect(assignSpy).toHaveBeenCalledTimes(1)
     expect(sessionStorage.getItem('tinytinkerer-test:oauth_state')).toBeTruthy()
     expect(sessionStorage.getItem('oauth_state')).toBeNull()
   })
 
   it('completes the callback and persists the exchanged token', async () => {
-    const loginUrl = buildGitHubLoginUrl()
-    const state = loginUrl ? new URL(loginUrl).searchParams.get('state') : null
+    const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined)
+    startGitHubOAuth()
+    const redirectUrl = assignSpy.mock.calls[0]?.[0]
+    const state = redirectUrl ? new URL(String(redirectUrl)).searchParams.get('state') : null
 
     vi.stubGlobal(
       'fetch',
@@ -65,7 +72,9 @@ describe('auth helpers', () => {
   })
 
   it('rejects invalid oauth state', async () => {
-    buildGitHubLoginUrl()
+    const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined)
+    startGitHubOAuth()
+    expect(assignSpy).toHaveBeenCalledTimes(1)
 
     await expect(
       completeGitHubOAuthCallback({ code: 'abc123', state: 'wrong-state' })
@@ -73,8 +82,10 @@ describe('auth helpers', () => {
   })
 
   it('surfaces exchange failures', async () => {
-    const loginUrl = buildGitHubLoginUrl()
-    const state = loginUrl ? new URL(loginUrl).searchParams.get('state') : null
+    const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined)
+    startGitHubOAuth()
+    const redirectUrl = assignSpy.mock.calls[0]?.[0]
+    const state = redirectUrl ? new URL(String(redirectUrl)).searchParams.get('state') : null
 
     vi.stubGlobal(
       'fetch',
@@ -92,7 +103,19 @@ describe('auth helpers', () => {
       completeGitHubOAuthCallback({ code: 'abc123', state })
     ).rejects.toThrow('OAuth is not configured')
 
-    expect(validateOAuthState(state)).toBe(false)
+    await expect(
+      completeGitHubOAuthCallback({ code: 'abc123', state })
+    ).rejects.toThrow('Authentication failed. Please try signing in again.')
     vi.unstubAllGlobals()
+  })
+
+  it('reports oauth as unavailable in host-token mode', () => {
+    configureBrowserShell({
+      edgeBaseUrl: 'http://edge.local',
+      storageNamespace: 'tinytinkerer-test',
+      authMode: 'host-token'
+    })
+
+    expect(canStartGitHubOAuth()).toBe(false)
   })
 })

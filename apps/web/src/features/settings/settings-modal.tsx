@@ -1,11 +1,16 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { useEffect, useState, type ReactNode } from 'react'
-import { useStatusStore, type ServiceStatus, type SystemStatus } from '@tinytinkerer/app-browser'
-import { useAuthStore } from '../../stores/auth-store.js'
-import { useSettingsStore } from '../../stores/settings-store.js'
-import { buildGitHubLoginUrl } from '../../services/auth.js'
-import { SUPPORTED_MODELS } from '../../services/models.js'
+import {
+  canStartGitHubOAuth,
+  startGitHubOAuth,
+  SUPPORTED_MODELS,
+  useAuthStore,
+  useSettingsStore,
+  useStatusStore,
+  type ServiceStatus,
+  type SystemStatus
+} from '@tinytinkerer/app-browser'
 
 const fallbackStatus: SystemStatus = {
   auth: { state: 'offline', detail: 'Unavailable' },
@@ -98,7 +103,7 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
   const token = useAuthStore((state) => state.token)
   const clearToken = useAuthStore((state) => state.clearToken)
   const setToken = useAuthStore((state) => state.setToken)
-  const loginUrl = buildGitHubLoginUrl()
+  const oauthAvailable = canStartGitHubOAuth()
 
   const [showPat, setShowPat] = useState(false)
   const [patValue, setPatValue] = useState('')
@@ -139,14 +144,15 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
         Sign in to enable AI responses via GitHub Models.
       </p>
 
-      {loginUrl && (
-        <a
-          href={loginUrl}
+      {oauthAvailable && (
+        <button
+          type="button"
+          onClick={startGitHubOAuth}
           className="inline-flex items-center gap-2 rounded-md border border-stone-800 bg-stone-900 px-4 py-2 text-sm text-white hover:bg-stone-700 transition-colors"
         >
           <GitHubMark />
           Sign in with GitHub
-        </a>
+        </button>
       )}
 
       {showPat ? (
@@ -287,16 +293,9 @@ const SettingsModalContent = ({ open, onOpenChange }: SettingsModalProps) => {
   const refreshStatus = useStatusStore((state) => state.refresh)
 
   useEffect(() => {
-    if (!open) {
-      return undefined
-    }
-
-    void refreshStatus()
-    const intervalId = window.setInterval(() => {
+    if (open) {
       void refreshStatus()
-    }, 15_000)
-
-    return () => window.clearInterval(intervalId)
+    }
   }, [open, refreshStatus])
 
   const effectiveStatus = status ?? fallbackStatus

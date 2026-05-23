@@ -40,7 +40,7 @@ vi.mock('../src/stores/status-store.js', () => ({
 
 import { ToolRegistry } from '@tinytinkerer/agent-core'
 import { DEFAULT_MODEL } from '@tinytinkerer/app-core'
-import { initializeBrowserShell } from '../src/shell.js'
+import { configureBrowserShell } from '../src/shell.js'
 import { getRuntime } from '../src/runtime/get-runtime.js'
 
 beforeEach(() => {
@@ -49,7 +49,7 @@ beforeEach(() => {
   mockAuth.token = null
   mockStatus.hydrated = true
   mockStatus.status.search.state = 'ready'
-  initializeBrowserShell({
+  configureBrowserShell({
     edgeBaseUrl: 'http://test-edge.local',
     storageNamespace: 'tinytinkerer-test'
   })

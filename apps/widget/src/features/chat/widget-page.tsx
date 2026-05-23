@@ -1,6 +1,8 @@
 import {
+  canStartGitHubOAuth,
   buildTurns,
-  buildGitHubLoginUrl,
+  startGitHubOAuth,
+  startStatusPolling,
   SUPPORTED_MODELS,
   useAuthStore,
   useChatStore,
@@ -17,8 +19,6 @@ const fallbackStatus: SystemStatus = {
   models: { state: 'offline', detail: 'Unavailable' },
   search: { state: 'offline', detail: 'Unavailable' }
 }
-
-let chatStoreInitialized = false
 
 export const WidgetPage = () => {
   const events = useChatStore((state) => state.events)
@@ -44,27 +44,15 @@ export const WidgetPage = () => {
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!chatStoreInitialized) {
-      chatStoreInitialized = true
-      void useChatStore.getState().initialize()
-    }
-  }, [])
-
-  useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
   }, [events, streamingText])
 
   useEffect(() => {
-    void refreshStatus()
-    const intervalId = window.setInterval(() => {
-      void refreshStatus()
-    }, 15_000)
-
-    return () => window.clearInterval(intervalId)
+    return startStatusPolling(refreshStatus)
   }, [refreshStatus])
 
   const turns = useMemo(() => buildTurns(events, streamingText), [events, streamingText])
-  const loginUrl = buildGitHubLoginUrl()
+  const oauthAvailable = canStartGitHubOAuth()
   const effectiveStatus = status ?? fallbackStatus
   const searchUnavailable = effectiveStatus.search.state !== 'ready'
 
@@ -146,13 +134,14 @@ export const WidgetPage = () => {
               </Button>
             ) : (
               <>
-                {loginUrl ? (
-                  <a
-                    href={loginUrl}
+                {oauthAvailable ? (
+                  <button
+                    type="button"
+                    onClick={startGitHubOAuth}
                     className="inline-flex items-center rounded-full bg-stone-900 px-3 py-1.5 text-xs text-white"
                   >
                     Sign in with GitHub
-                  </a>
+                  </button>
                 ) : null}
                 {showPat ? (
                   <div className="flex flex-1 flex-wrap items-center gap-2">

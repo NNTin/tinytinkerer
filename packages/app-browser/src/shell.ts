@@ -3,7 +3,7 @@ import { systemStatusSchema } from '@tinytinkerer/contracts'
 import { createBrowserPersistence } from './db'
 import { resolveBrowserShellConfig, type BrowserShellConfig, type ResolvedBrowserShellConfig } from './config'
 
-type BrowserShell = {
+export type BrowserShell = {
   config: ResolvedBrowserShellConfig
   conversations: ReturnType<typeof createBrowserPersistence>['conversations']
   preferences: ReturnType<typeof createBrowserPersistence>['preferences']
@@ -22,7 +22,7 @@ const createStatusGateway = (config: ResolvedBrowserShellConfig): StatusGateway 
   }
 })
 
-const buildShell = (config: BrowserShellConfig = {}): BrowserShell => {
+const buildShell = (config: BrowserShellConfig): BrowserShell => {
   const resolved = resolveBrowserShellConfig(config)
   const persistence = createBrowserPersistence(resolved.storageNamespace, resolved.hostToken)
 
@@ -35,12 +35,21 @@ const buildShell = (config: BrowserShellConfig = {}): BrowserShell => {
   }
 }
 
-let currentShell = buildShell()
+let currentShell: BrowserShell | undefined
 
-export const initializeBrowserShell = (config: BrowserShellConfig = {}): void => {
+const browserShellError = (): Error =>
+  new Error('Browser shell has not been bootstrapped. Call bootstrapBrowserShell() before using @tinytinkerer/app-browser.')
+
+export const configureBrowserShell = (config: BrowserShellConfig): void => {
   currentShell = buildShell(config)
 }
 
-export const getBrowserShell = (): BrowserShell => currentShell
+export const getBrowserShell = (): BrowserShell => {
+  if (!currentShell) {
+    throw browserShellError()
+  }
 
-export const getBrowserShellConfig = (): ResolvedBrowserShellConfig => currentShell.config
+  return currentShell
+}
+
+export const getBrowserShellConfig = (): ResolvedBrowserShellConfig => getBrowserShell().config

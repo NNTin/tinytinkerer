@@ -1,13 +1,12 @@
 export {
-  buildGitHubLoginUrl,
+  canStartGitHubOAuth,
   completeGitHubOAuthCallback,
-  exchangeCode,
-  validateOAuthState
+  startGitHubOAuth
 } from './auth'
 export type { BrowserAuthMode, BrowserShellConfig, ResolvedBrowserShellConfig } from './config'
-export { initializeBrowserStores } from './initialize'
-export { initializeBrowserShell, getBrowserShellConfig } from './shell'
-export { fetchStatus } from './status'
+export { bootstrapBrowserShell } from './initialize'
+export { getBrowserShellConfig } from './shell'
+export { fetchStatus, startStatusPolling } from './status'
 export { useAuthStore } from './stores/auth-store'
 export { useChatStore } from './stores/chat-store'
 export { useSettingsStore } from './stores/settings-store'

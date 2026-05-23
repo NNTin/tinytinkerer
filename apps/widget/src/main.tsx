@@ -2,8 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
-  initializeBrowserStores,
-  initializeBrowserShell,
+  bootstrapBrowserShell,
   type BrowserShellConfig
 } from '@tinytinkerer/app-browser'
 import { RouterProvider } from 'react-router-dom'
@@ -30,17 +29,15 @@ const githubClientId = hostConfig.githubClientId ?? getEnvValue('VITE_GITHUB_CLI
 const githubRedirectUri =
   hostConfig.githubRedirectUri ?? getEnvValue('VITE_GITHUB_REDIRECT_URI')
 
-const widgetConfig: BrowserShellConfig = {
+const browserConfig: BrowserShellConfig = {
   ...widgetConfigBase,
   ...(githubClientId ? { githubClientId } : {}),
   ...(githubRedirectUri ? { githubRedirectUri } : {})
 }
 
-initializeBrowserShell(widgetConfig)
-
 const queryClient = new QueryClient()
 
-void initializeBrowserStores().then(() => {
+void bootstrapBrowserShell(browserConfig).then(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

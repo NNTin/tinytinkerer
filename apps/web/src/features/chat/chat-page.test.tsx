@@ -41,41 +41,28 @@ const mockTurns = vi.hoisted(() => [] as Array<{
   }
 }>)
 
-vi.mock('../../stores/chat-store.js', () => {
-  const state = {
-    events: [],
-    streamingText: '',
-    isRunning: false,
-    isRetryPending: false,
-    cooldownUntil: null,
-    sendPrompt: vi.fn(),
-    resetConversation: vi.fn(),
-    cancelRetry: vi.fn()
-  }
-  const useChatStore = (selector: (s: typeof state) => unknown) => selector(state)
-  useChatStore.getState = () => ({ initialize: vi.fn().mockResolvedValue(undefined) })
-  return { useChatStore }
-})
+const mockChatState = vi.hoisted(() => ({
+  events: [] as any[],
+  streamingText: '',
+  isRunning: false,
+  isRetryPending: false,
+  cooldownUntil: undefined as string | undefined,
+  sendPrompt: vi.fn(),
+  resetConversation: vi.fn(),
+  cancelRetry: vi.fn()
+}))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
   buildCurrentTimeline: () => [],
   buildTurns: () => mockTurns,
-  initializeBrowserStores: vi.fn().mockResolvedValue(undefined),
-  initializeBrowserShell: vi.fn(),
+  canStartGitHubOAuth: () => true,
+  startGitHubOAuth: vi.fn(),
+  startStatusPolling: vi.fn(() => () => undefined),
+  useAuthStore: (selector: (state: typeof mockAuthState) => unknown) => selector(mockAuthState),
+  useChatStore: (selector: (state: typeof mockChatState) => unknown) => selector(mockChatState),
+  useSettingsStore: (selector: (state: typeof mockSettingsState) => unknown) => selector(mockSettingsState),
   useStatusStore: (selector: (state: typeof mockStatusState) => unknown) => selector(mockStatusState),
   SUPPORTED_MODELS: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }]
-}))
-
-vi.mock('../../stores/auth-store.js', () => ({
-  useAuthStore: (selector: (s: typeof mockAuthState) => unknown) => selector(mockAuthState)
-}))
-
-vi.mock('../../stores/settings-store.js', () => ({
-  useSettingsStore: (selector: (s: typeof mockSettingsState) => unknown) => selector(mockSettingsState)
-}))
-
-vi.mock('../../services/auth.js', () => ({
-  buildGitHubLoginUrl: () => 'https://github.test/login'
 }))
 
 import { ChatPage } from './chat-page.js'
@@ -94,6 +81,11 @@ beforeEach(() => {
   mockSettingsState.showThinkingTimeline = true
   mockSettingsState.showToolActivity = true
   mockAuthState.token = null
+  mockChatState.events = []
+  mockChatState.streamingText = ''
+  mockChatState.isRunning = false
+  mockChatState.isRetryPending = false
+  mockChatState.cooldownUntil = undefined
   mockStatusState.status = {
     auth: { state: 'ready', detail: 'GitHub auth available' },
     models: { state: 'degraded', detail: 'Model responses are slower than usual' },
@@ -211,7 +203,7 @@ describe('ChatPage settings modal', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Settings' })
     const authRegion = within(dialog).getByRole('region', { name: 'Auth' })
-    expect(await within(authRegion).findByRole('link', { name: /sign in with github/i })).not.toBeNull()
+    expect(await within(authRegion).findByRole('button', { name: /sign in with github/i })).not.toBeNull()
     expect(within(authRegion).getByRole('button', { name: /use a personal access token instead/i })).not.toBeNull()
   })
 

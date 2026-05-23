@@ -10,21 +10,21 @@ const generateState = (): string => {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
 }
 
-export const buildGitHubLoginUrl = (): string | null => {
+export const canStartGitHubOAuth = (): boolean => {
   const config = getBrowserShellConfig()
-  if (config.authMode === 'host-token') {
-    return null
+  return config.authMode !== 'host-token' && Boolean(config.githubClientId)
+}
+
+const createGitHubLoginUrl = (): string => {
+  if (!canStartGitHubOAuth()) {
+    throw new Error('GitHub OAuth is not available for this browser shell.')
   }
 
-  if (!config.githubClientId) {
-    return null
-  }
-
+  const config = getBrowserShellConfig()
   const state = generateState()
   sessionStorage.setItem(oauthStateKey(), state)
-
   const params = new URLSearchParams({
-    client_id: config.githubClientId,
+    client_id: config.githubClientId!,
     scope: 'read:user',
     state
   })
@@ -36,14 +36,18 @@ export const buildGitHubLoginUrl = (): string | null => {
   return `https://github.com/login/oauth/authorize?${params.toString()}`
 }
 
-export const validateOAuthState = (returnedState: string | null): boolean => {
+export const startGitHubOAuth = (): void => {
+  window.location.assign(createGitHubLoginUrl())
+}
+
+const validateOAuthState = (returnedState: string | null): boolean => {
   const stateKey = oauthStateKey()
   const storedState = sessionStorage.getItem(stateKey)
   sessionStorage.removeItem(stateKey)
   return Boolean(storedState) && storedState === returnedState
 }
 
-export const exchangeCode = async (code: string): Promise<string> => {
+const exchangeCode = async (code: string): Promise<string> => {
   const config = getBrowserShellConfig()
   const response = await fetch(`${config.edgeBaseUrl}/auth/github/exchange`, {
     method: 'POST',
@@ -61,7 +65,9 @@ export const exchangeCode = async (code: string): Promise<string> => {
       .then((value) => githubExchangeResponseSchema.safeParse(value))
       .catch(() => undefined)
 
-    throw new Error(parsedPayload?.success ? (parsedPayload.data.error ?? 'OAuth exchange failed') : 'OAuth exchange failed')
+    throw new Error(
+      parsedPayload?.success ? (parsedPayload.data.error ?? 'OAuth exchange failed') : 'OAuth exchange failed'
+    )
   }
 
   const data = githubExchangeResponseSchema.parse(await response.json())

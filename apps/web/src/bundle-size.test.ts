@@ -26,7 +26,7 @@
  *       and open the generated `stats.html` treemap.
  *    b. Or run: pnpm dlx vite-bundle-visualizer in apps/web.
  * 3. The most common culprits are:
- *    - Importing @tinytinkerer/agent-core or @tinytinkerer/app-browser/runtime
+ *    - Importing @tinytinkerer/agent-core or app-browser internals directly
  *      from any eagerly-loaded file
  *      (auth-store, main.tsx, top-bar, router, etc.)
  *    - Importing react-markdown or remark-gfm outside the lazy chat chunk
