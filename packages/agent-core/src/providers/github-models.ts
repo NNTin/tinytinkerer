@@ -14,6 +14,7 @@ const rateLimitResponseSchema = z.object({
 type GitHubModelsProviderOptions = {
   baseUrl: string
   getToken?: () => string | null | undefined
+  getModel?: () => string | null | undefined
 }
 
 const isValidRetryAt = (value: string | undefined): value is string =>
@@ -81,6 +82,7 @@ export class GitHubModelsProvider implements ModelProvider {
           },
           body: JSON.stringify({
             stream: true,
+            model: this.options.getModel?.() ?? undefined,
             messages: [
               { role: 'system', content: SYSTEM_STYLE_PROMPT },
               ...context.history,

@@ -4,6 +4,7 @@ import * as Collapsible from '@radix-ui/react-collapsible'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { TopBar } from '../../components/top-bar'
 import { useChatStore } from '../../stores/chat-store'
+import { useSettingsStore } from '../../stores/settings-store.js'
 import { MarkdownContent } from './markdown-content.js'
 
 // Guard so the deferred-load init only fires once even in React StrictMode.
@@ -163,6 +164,9 @@ export const ChatPage = () => {
   const resetConversation = useChatStore((state) => state.resetConversation)
   const cancelRetry = useChatStore((state) => state.cancelRetry)
 
+  const showThinkingTimeline = useSettingsStore((state) => state.showThinkingTimeline)
+  const showToolActivity = useSettingsStore((state) => state.showToolActivity)
+
   const [prompt, setPrompt] = useState('')
   const [openTimeline, setOpenTimeline] = useState(true)
   const [now, setNow] = useState(() => Date.now())
@@ -276,47 +280,50 @@ export const ChatPage = () => {
         </section>
 
         {/* Thinking timeline */}
-        <Collapsible.Root open={openTimeline} onOpenChange={setOpenTimeline}>
-          <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Thinking timeline</h2>
-              <Collapsible.Trigger asChild>
-                <Button variant="ghost" size="sm" aria-label="Toggle timeline">
-                  {openTimeline ? 'Collapse' : 'Expand'}
-                </Button>
-              </Collapsible.Trigger>
-            </div>
-            <Collapsible.Content className="collapsible-content overflow-hidden">
-              <div className="mt-3 space-y-2 text-sm">
-                {timeline.length === 0 ? (
-                  <p className="text-[var(--muted)]">
-                    {isRunning ? (
-                      <>
-                        Understanding request <ThinkingDots />
-                      </>
-                    ) : (
-                      'Steps will appear here during a run.'
-                    )}
-                  </p>
-                ) : (
-                  timeline.map((item, index) => (
-                    <div
-                      key={item.id}
-                      className="timeline-entry flex items-start gap-2.5 rounded-md border border-stone-200 bg-white px-3 py-2"
-                    >
-                      <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[10px] font-semibold text-amber-700">
-                        {index + 1}
-                      </span>
-                      <span className="text-stone-700">{item.label}</span>
-                    </div>
-                  ))
-                )}
+        {showThinkingTimeline ? (
+          <Collapsible.Root open={openTimeline} onOpenChange={setOpenTimeline}>
+            <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Thinking timeline</h2>
+                <Collapsible.Trigger asChild>
+                  <Button variant="ghost" size="sm" aria-label="Toggle timeline">
+                    {openTimeline ? 'Collapse' : 'Expand'}
+                  </Button>
+                </Collapsible.Trigger>
               </div>
-            </Collapsible.Content>
-          </section>
-        </Collapsible.Root>
+              <Collapsible.Content className="collapsible-content overflow-hidden">
+                <div className="mt-3 space-y-2 text-sm">
+                  {timeline.length === 0 ? (
+                    <p className="text-[var(--muted)]">
+                      {isRunning ? (
+                        <>
+                          Understanding request <ThinkingDots />
+                        </>
+                      ) : (
+                        'Steps will appear here during a run.'
+                      )}
+                    </p>
+                  ) : (
+                    timeline.map((item, index) => (
+                      <div
+                        key={item.id}
+                        className="timeline-entry flex items-start gap-2.5 rounded-md border border-stone-200 bg-white px-3 py-2"
+                      >
+                        <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[10px] font-semibold text-amber-700">
+                          {index + 1}
+                        </span>
+                        <span className="text-stone-700">{item.label}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </Collapsible.Content>
+            </section>
+          </Collapsible.Root>
+        ) : null}
 
         {/* Tool activity */}
+        {showToolActivity ? (
         <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Tool activity</h2>
           <div className="mt-3 space-y-2">
@@ -355,6 +362,7 @@ export const ChatPage = () => {
             )}
           </div>
         </section>
+        ) : null}
 
         {/* Compose */}
         <form

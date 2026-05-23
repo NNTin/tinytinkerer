@@ -8,7 +8,7 @@ import {
   loadConversationEvents,
   setPreference
 } from '../services/db'
-import { runtime } from '../services/runtime'
+import { getRuntime } from '../services/runtime.js'
 import { buildConversationHistory } from './chat-history'
 import type { PersistedEvent } from '../types/chat'
 
@@ -102,7 +102,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const history = buildConversationHistory(get().events)
 
-      for await (const event of runtime.run(prompt, {
+      for await (const event of getRuntime().run(prompt, {
         signal: runController.signal,
         history
       })) {
