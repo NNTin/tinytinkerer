@@ -26,16 +26,19 @@ flowchart LR
     agent["@tinytinkerer/agent-core<br/>runtime abstractions"]
     appcore["@tinytinkerer/app-core<br/>headless product logic"]
     appbrowser["@tinytinkerer/app-browser<br/>browser adapters + integrations"]
-    ui["@tinytinkerer/ui<br/>presentational React primitives"]
-    markdown["@tinytinkerer/feature-markdown<br/>shared markdown rendering feature"]
-    mermaid["@tinytinkerer/feature-mermaid<br/>shared large feature package"]
+
+    subgraph SharedUiSurface["Shared UI Surface"]
+      ui["@tinytinkerer/ui<br/>presentational React primitives"]
+      markdown["@tinytinkerer/feature-markdown<br/>shared markdown rendering feature"]
+      mermaid["@tinytinkerer/feature-mermaid<br/>shared large feature package"]
+    end
   end
 
-  web --> appbrowser
   web --> ui
+  web --> appbrowser
 
-  widget --> appbrowser
   widget --> ui
+  widget --> appbrowser
 
   edge --> contracts
 
@@ -46,12 +49,44 @@ flowchart LR
   appbrowser --> agent
   appbrowser --> contracts
 
-  markdown --> ui
+  ui <--- markdown
+  ui <--- mermaid
 
-  mermaid --> ui
   mermaid --> contracts
 
   agent --> contracts
+
+  subgraph Legend
+    direction LR
+    legendUiApp["UI Apps"]
+    legendEdge["Edge Backend"]
+    legendBrowser["Browser Assembly"]
+    legendUi["UI Primitives"]
+    legendFeature["Shared Features"]
+    legendContracts["Shared Contracts"]
+    legendCore["Headless Core"]
+
+    %% ensure legend is rendered properly
+    legendUiApp ~~~ legendEdge ~~~ legendBrowser 
+    legendUi ~~~ legendFeature ~~~ legendContracts 
+    legendCore
+  end
+
+  classDef uiApp fill:#dbeafe,stroke:#1d4ed8,color:#111827,stroke-width:2px;
+  classDef edgeApp fill:#fee2e2,stroke:#b91c1c,color:#111827,stroke-width:2px;
+  classDef browserAssembly fill:#ccfbf1,stroke:#0f766e,color:#111827,stroke-width:2px;
+  classDef uiPrimitives fill:#fef3c7,stroke:#b45309,color:#111827,stroke-width:2px;
+  classDef sharedFeature fill:#e9d5ff,stroke:#7c3aed,color:#111827,stroke-width:2px;
+  classDef contractsLayer fill:#dcfce7,stroke:#15803d,color:#111827,stroke-width:2px;
+  classDef coreLayer fill:#e5e7eb,stroke:#6b7280,color:#111827,stroke-width:2px;
+
+  class web,widget,legendUiApp uiApp;
+  class edge,legendEdge edgeApp;
+  class appbrowser,legendBrowser browserAssembly;
+  class ui,legendUi uiPrimitives;
+  class markdown,mermaid,legendFeature sharedFeature;
+  class contracts,legendContracts contractsLayer;
+  class agent,appcore,legendCore coreLayer;
 ```
 
 ## Design Principles
