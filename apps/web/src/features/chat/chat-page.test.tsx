@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mutable settings state — modified per test via vi.hoisted so the mock factory can close over it
@@ -164,8 +164,9 @@ describe('ChatPage settings modal', () => {
   it('modal contains auth controls', () => {
     render(<ChatPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(screen.getByRole('region', { name: /auth/i })).not.toBeNull()
-    expect(screen.getByRole('button', { name: /sign in with github/i })).not.toBeNull()
+    const dialog = screen.getByRole('dialog', { name: 'Settings' })
+    expect(within(dialog).getByRole('region', { name: /auth/i })).not.toBeNull()
+    expect(within(dialog).getByRole('button', { name: /sign in with github/i })).not.toBeNull()
   })
 
   it('closes the modal when the close button is clicked', () => {
