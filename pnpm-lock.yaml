@@ -78,18 +78,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.90.11
         version: 5.100.11(react@19.2.6)
-      '@tinytinkerer/agent-core':
-        specifier: workspace:*
-        version: link:../../packages/agent-core
       '@tinytinkerer/app-browser':
         specifier: workspace:*
         version: link:../../packages/app-browser
-      '@tinytinkerer/app-core':
-        specifier: workspace:*
-        version: link:../../packages/app-core
-      '@tinytinkerer/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
       '@tinytinkerer/ui':
         specifier: workspace:*
         version: link:../../packages/ui

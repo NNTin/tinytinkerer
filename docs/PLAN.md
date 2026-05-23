@@ -40,12 +40,12 @@ Nothing in this file is marked complete. It is a forward migration checklist.
 
 ## Iteration 5: Refactor Web Into A Thin App
 
-- [ ] Refactor `apps/web` to consume `app-browser` as its primary shared runtime dependency
-- [ ] Keep routes, screens, and UI presentation inside the app
-- [ ] Remove app-local orchestration that now belongs in shared layers
-- [ ] Remove direct imports of `app-core`, `agent-core`, and `contracts` from the web app
-- [ ] Ensure the web app acts as a thin UI shell
-- [ ] Confirm no direct business-logic imports bypass the new layers
+- [x] Refactor `apps/web` to consume `app-browser` as its primary shared runtime dependency
+- [x] Keep routes, screens, and UI presentation inside the app
+- [x] Remove app-local orchestration that now belongs in shared layers
+- [x] Remove direct imports of `app-core`, `agent-core`, and `contracts` from the web app
+- [x] Ensure the web app acts as a thin UI shell
+- [x] Confirm no direct business-logic imports bypass the new layers
 
 ## Iteration 6: Modularize Edge
 

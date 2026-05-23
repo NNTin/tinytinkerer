@@ -1,1 +1,1 @@
-export { buildConversationHistory } from '@tinytinkerer/app-core'
+export { buildConversationHistory } from '@tinytinkerer/app-browser'

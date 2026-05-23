@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatEvent } from '@tinytinkerer/contracts'
-import { ToolRegistry } from '@tinytinkerer/agent-core'
+import type { ChatEvent } from '@tinytinkerer/app-browser'
+import { ToolRegistry } from '@tinytinkerer/app-browser'
 import { DEFAULT_MODEL } from './models.js'
 
 // Mutable runtime settings — modified per test so the mock factory can close over them

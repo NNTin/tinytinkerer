@@ -1,4 +1,4 @@
-import type { ChatEvent } from '@tinytinkerer/contracts'
+import type { ChatEvent } from '@tinytinkerer/app-browser'
 import { describe, expect, it } from 'vitest'
 import { buildConversationHistory } from './chat-history'
 

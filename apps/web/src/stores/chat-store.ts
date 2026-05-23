@@ -1,4 +1,4 @@
-import type { ChatEvent } from '@tinytinkerer/contracts'
+import type { ChatEvent } from '@tinytinkerer/app-browser'
 import { create } from 'zustand'
 import {
   appendEvent,

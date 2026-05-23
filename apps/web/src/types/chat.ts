@@ -1,1 +1,1 @@
-export type { Conversation, PersistedEvent } from '@tinytinkerer/app-core'
+export type { Conversation, PersistedEvent } from '@tinytinkerer/app-browser'

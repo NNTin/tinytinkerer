@@ -1,5 +1,5 @@
 import * as Tooltip from '@radix-ui/react-tooltip'
-import type { ServiceStatus } from '@tinytinkerer/contracts'
+import type { ServiceStatus } from '@tinytinkerer/app-browser'
 
 type StatusPillProps = {
   label: string
