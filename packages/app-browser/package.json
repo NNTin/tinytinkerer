@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@tinytinkerer/app-core": "workspace:*",
+    "@tinytinkerer/brand-assets": "workspace:*",
     "@tinytinkerer/contracts": "workspace:*",
     "dexie": "^4.2.1",
     "zustand": "^5.0.8"

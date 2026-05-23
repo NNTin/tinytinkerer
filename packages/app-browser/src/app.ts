@@ -16,6 +16,7 @@ import {
   type SettingsStore
 } from './stores/settings-store'
 import { createStatusStore, type StatusState, type StatusStore } from './stores/status-store'
+import { applyBrandMetadata } from './branding'
 
 export type BrowserApp = {
   shell: BrowserShell
@@ -42,6 +43,7 @@ const requireBrowserApp = (app: BrowserApp | undefined): BrowserApp => {
 
 export const createBrowserApp = async (config: BrowserShellConfig): Promise<BrowserApp> => {
   const shell = createBrowserShell(config)
+  applyBrandMetadata()
   const auth = createAuthStore(shell)
   const settings = createSettingsStore(shell)
   const status = createStatusStore(shell)

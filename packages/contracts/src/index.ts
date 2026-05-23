@@ -233,6 +233,63 @@ export const searchResponseSchema = z.object({
 export type SearchRequest = z.infer<typeof searchRequestSchema>
 export type SearchResponse = z.infer<typeof searchResponseSchema>
 
+export const brandLinkRelSchema = z.enum(['icon', 'apple-touch-icon', 'mask-icon'])
+export type BrandLinkRel = z.infer<typeof brandLinkRelSchema>
+
+export const brandLinkAssetSchema = z.object({
+  rel: brandLinkRelSchema,
+  href: z.string().min(1),
+  type: z.string().min(1).optional(),
+  sizes: z.string().min(1).optional(),
+  color: z.string().min(1).optional()
+})
+export type BrandLinkAsset = z.infer<typeof brandLinkAssetSchema>
+
+export const brandThemeMetadataSchema = z.object({
+  applicationName: z.string().min(1),
+  themeColor: z.string().min(1),
+  backgroundColor: z.string().min(1)
+})
+export type BrandThemeMetadata = z.infer<typeof brandThemeMetadataSchema>
+
+export const brandManifestIconPurposeSchema = z.enum(['any', 'maskable', 'monochrome'])
+export type BrandManifestIconPurpose = z.infer<typeof brandManifestIconPurposeSchema>
+
+export const brandManifestIconSchema = z.object({
+  src: z.string().min(1),
+  sizes: z.string().min(1),
+  type: z.string().min(1),
+  purpose: brandManifestIconPurposeSchema.optional()
+})
+export type BrandManifestIcon = z.infer<typeof brandManifestIconSchema>
+
+export const brandManifestDisplaySchema = z.enum([
+  'fullscreen',
+  'standalone',
+  'minimal-ui',
+  'browser'
+])
+export type BrandManifestDisplay = z.infer<typeof brandManifestDisplaySchema>
+
+export const brandManifestSchema = z.object({
+  name: z.string().min(1),
+  shortName: z.string().min(1),
+  description: z.string().min(1).optional(),
+  startUrl: z.string().min(1),
+  display: brandManifestDisplaySchema,
+  backgroundColor: z.string().min(1),
+  themeColor: z.string().min(1),
+  icons: z.array(brandManifestIconSchema).min(1)
+})
+export type BrandManifest = z.infer<typeof brandManifestSchema>
+
+export const brandDefinitionSchema = z.object({
+  theme: brandThemeMetadataSchema,
+  links: z.array(brandLinkAssetSchema).min(1),
+  manifest: brandManifestSchema
+})
+export type BrandDefinition = z.infer<typeof brandDefinitionSchema>
+
 export const chatMessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant']),
   content: z.string().max(32_000)

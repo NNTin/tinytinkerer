@@ -191,6 +191,9 @@ importers:
       '@tinytinkerer/app-core':
         specifier: workspace:*
         version: link:../app-core
+      '@tinytinkerer/brand-assets':
+        specifier: workspace:*
+        version: link:../brand-assets
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -213,6 +216,12 @@ importers:
       '@tinytinkerer/agent-core':
         specifier: workspace:*
         version: link:../agent-core
+      '@tinytinkerer/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
+  packages/brand-assets:
+    dependencies:
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../contracts

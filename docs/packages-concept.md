@@ -33,6 +33,7 @@ Packages own reusable capability.
 - `agent-core`: runtime abstractions and generic execution behavior
 - `app-core`: headless product logic and orchestration
 - `app-browser`: browser-specific adapters and integrations
+- `brand-assets`: shared favicon, manifest, and theme metadata
 - `ui`: presentational primitives
 - `feature-*`: large shared features with real logic
 
@@ -98,6 +99,7 @@ Owns:
 - session-based OAuth state helpers
 - fetch-based edge clients
 - concrete provider and tool wiring for browser apps
+- runtime application of shared brand metadata
 - shell-facing exports that browser apps consume directly
 - shared browser runtime composition
 - shell configuration such as edge URL, storage namespace, and auth mode
@@ -107,6 +109,22 @@ Must not own:
 - page layouts
 - app-local screens
 - feature presentation that is unique to one shell
+
+### `packages/brand-assets`
+
+Owns:
+
+- placeholder favicon and icon definitions
+- shared PWA manifest data
+- shared theme metadata consumed by browser shells
+- typed brand metadata objects validated against `contracts`
+
+Must not own:
+
+- DOM or `document.head` mutation
+- app bootstrapping logic
+- app-specific page titles or shell copy
+- React code
 
 ### `packages/ui`
 
@@ -145,7 +163,8 @@ Allowed examples:
 
 - `apps/web` importing `app-browser` and `ui`
 - `apps/widget` importing `app-browser` and `ui`
-- `app-browser` importing `app-core` and `contracts`
+- `app-browser` importing `app-core`, `contracts`, and `brand-assets`
+- `brand-assets` importing `contracts`
 - `apps/edge` importing `contracts`
 - `apps/web` importing a `feature-*` package only for shell-local render-edge integration
 
@@ -153,9 +172,11 @@ Forbidden examples:
 
 - `apps/web` directly creating GitHub model providers or browser search tools instead of consuming shared adapters
 - `apps/web` or `apps/widget` importing `contracts`, `app-core`, or `agent-core` directly
+- `apps/web` or `apps/widget` importing `brand-assets` directly
 - `app-core` importing Dexie, `fetch`, `sessionStorage`, or React
 - `ui` containing app-specific feature flows or runtime composition
 - `agent-core` owning product-specific integrations such as GitHub Models wiring
+- `brand-assets` owning browser boot code instead of leaving that integration to `app-browser`
 - `feature-*` importing `app-browser`, `app-core`, `agent-core`, or `apps/*`
 - `apps/widget` copying `apps/web` feature logic instead of reusing packages
 - any app importing code from another app
@@ -167,6 +188,7 @@ For browser apps, `packages/app-browser` is the main shared runtime boundary.
 - Browser apps should depend on `app-browser` instead of composing lower runtime layers themselves.
 - `app-browser` should be instantiated per shell rather than relying on module-global browser state.
 - If an app needs a lower-layer capability, `app-browser` should expose the browser-safe API for it.
+- Shared brand links, manifests, and theme metadata should be applied through `app-browser`, not directly from app HTML or a lower-level package.
 - This keeps runtime composition consistent between `web` and `widget`.
 - This also makes dependency enforcement simpler because the allowed app dependency surface stays small.
 

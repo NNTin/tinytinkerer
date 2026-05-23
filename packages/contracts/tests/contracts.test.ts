@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  brandDefinitionSchema,
   chatEventSchema,
   githubExchangeRequestSchema,
   modelsChatRequestSchema,
@@ -61,5 +62,27 @@ describe('contracts', () => {
         retryAt: new Date().toISOString()
       }).code
     ).toBe('rate_limited')
+  })
+
+  it('parses shared brand metadata', () => {
+    expect(
+      brandDefinitionSchema.parse({
+        theme: {
+          applicationName: 'tinytinkerer',
+          themeColor: '#f6f2ec',
+          backgroundColor: '#fffaf5'
+        },
+        links: [{ rel: 'icon', href: 'data:image/svg+xml,test' }],
+        manifest: {
+          name: 'tinytinkerer',
+          shortName: 'tinker',
+          startUrl: '/',
+          display: 'standalone',
+          backgroundColor: '#fffaf5',
+          themeColor: '#f6f2ec',
+          icons: [{ src: 'data:image/svg+xml,test', sizes: '512x512', type: 'image/svg+xml' }]
+        }
+      }).manifest.display
+    ).toBe('standalone')
   })
 })

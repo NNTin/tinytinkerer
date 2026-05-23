@@ -27,6 +27,8 @@ flowchart LR
     appcore["@tinytinkerer/app-core<br/>headless product logic + runtime facade"]
     appbrowser["@tinytinkerer/app-browser<br/>browser adapters + integrations"]
 
+    brand["@tinytinkerer/brand-assets<br/>favicons + PWA assets (mobile support in future) + theme metadata"]
+
     subgraph SharedUiSurface["Shared UI Surface"]
       ui["@tinytinkerer/ui<br/>presentational React primitives"]
       markdown["@tinytinkerer/feature-markdown<br/>shared markdown rendering feature"]
@@ -47,6 +49,7 @@ flowchart LR
 
   appbrowser --> appcore
   appbrowser --> contracts
+  appbrowser --> brand
 
   ui <--- markdown
   ui <--- mermaid
@@ -54,6 +57,8 @@ flowchart LR
   mermaid --> contracts
 
   agent --> contracts
+  
+  brand --> contracts
 
   subgraph Legend
     direction LR
@@ -64,11 +69,12 @@ flowchart LR
     legendFeature["Shared Features"]
     legendContracts["Shared Contracts"]
     legendCore["Headless Core"]
+    legendBrand["Brand Assets"]
 
     %% ensure legend is rendered properly
     legendUiApp ~~~ legendEdge ~~~ legendBrowser 
     legendUi ~~~ legendFeature ~~~ legendContracts 
-    legendCore
+    legendCore ~~~ legendBrand
   end
 
   classDef uiApp fill:#dbeafe,stroke:#1d4ed8,color:#111827,stroke-width:2px;
@@ -78,6 +84,7 @@ flowchart LR
   classDef sharedFeature fill:#e9d5ff,stroke:#7c3aed,color:#111827,stroke-width:2px;
   classDef contractsLayer fill:#dcfce7,stroke:#15803d,color:#111827,stroke-width:2px;
   classDef coreLayer fill:#e5e7eb,stroke:#6b7280,color:#111827,stroke-width:2px;
+  classDef brandLayer fill:#ffe4e6,stroke:#be123c,color:#111827,stroke-width:2px;
 
   class web,widget,legendUiApp uiApp;
   class edge,legendEdge edgeApp;
@@ -86,6 +93,7 @@ flowchart LR
   class markdown,mermaid,legendFeature sharedFeature;
   class contracts,legendContracts contractsLayer;
   class agent,appcore,legendCore coreLayer;
+  class brand,legendBrand brandLayer;
 ```
 
 ## Design Principles
@@ -107,6 +115,7 @@ flowchart LR
 | `packages/agent-core` | Product-agnostic runtime abstractions | `AgentRuntime`, tool registry, provider interfaces, rate-limit runtime behavior | GitHub-specific providers, app-specific tools, browser code |
 | `packages/app-core` | Headless product behavior | chat/auth/settings orchestration, projections, feature policies, ports | React, Zustand, Dexie, fetch, `window`, `sessionStorage` |
 | `packages/app-browser` | Shared browser runtime and composition boundary | IndexedDB repositories, OAuth state handling, edge clients, provider/tool wiring via `app-core` ports, shell-facing exports, shell config | app-specific layout and page composition, feature runtimes |
+| `packages/brand-assets` | Shared brand asset definitions | placeholder favicon/PWA assets, shared theme metadata, manifest definitions | app shell bootstrapping, document/head mutation, app-specific page titles |
 | `packages/ui` | Presentational React primitives | buttons, simple shared visual building blocks, styling helpers | feature runtimes, orchestration, app-owned flows |
 | `packages/feature-*` | Large shared features | reusable non-trivial feature logic shared by apps or layers | app shells, unrelated primitives |
 
@@ -117,7 +126,8 @@ flowchart LR
 - Direct app imports of `feature-*` packages are a narrow render-edge exception only. They are allowed only for shell-local rendering adapters and must not be used to bypass `app-browser`.
 - `packages/ui` must not import from `app-core`, `app-browser`, `agent-core`, or `apps/*`.
 - `packages/app-core` may depend on `contracts` and `agent-core`, owns the product-facing runtime facade, and must never use browser APIs, fetch, Dexie, session storage, React, or app-local UI code.
-- `packages/app-browser` may depend on `contracts` and `app-core`, and is the primary browser assembly boundary for shared runtime composition.
+- `packages/app-browser` may depend on `contracts`, `app-core`, and `brand-assets`, and is the primary browser assembly boundary for shared runtime composition.
+- `packages/brand-assets` may depend on `contracts` only. It must stay data-only and must not own DOM mutation or app-shell bootstrapping.
 - `packages/agent-core` must stay product-agnostic. Concrete GitHub Models integrations, web-search implementations, and product planning heuristics do not belong there.
 - `apps/edge` may depend on `contracts` and its own internal modules only. It must not depend on browser packages or UI packages.
 - Feature packages should depend only on the layers required for the feature. They must not become a second `app-browser`, a second `app-core`, or a second `ui`.
@@ -128,11 +138,12 @@ flowchart LR
 The future browser architecture is built around one shared headless core and one shared browser assembly boundary.
 
 - `apps/web` and `apps/widget` both consume `packages/app-browser` as the browser-facing shared package.
-- `packages/app-browser` depends on `app-core` and `contracts`, and hides lower-layer runtime details from browser apps.
+- `packages/app-browser` depends on `app-core`, `contracts`, and `brand-assets`, and hides lower-layer runtime details from browser apps.
 - Apps also consume `packages/ui` for presentational primitives, but each app remains responsible for its own shell, layout, and feature presentation.
 - `packages/app-browser` is configured per shell instance. Different apps, or multiple embedded widgets on the same page, can vary by `edgeBaseUrl`, storage namespace, auth mode, host embedding behavior, and other shell-specific configuration without changing shared logic.
 - If a browser app needs a lower-layer type or capability, the correct fix is to extend `app-browser` rather than importing lower layers directly.
 - The widget is treated as the stricter client. Shared code must assume embedding constraints, thin host-controlled surfaces, and the possibility of host-provided credentials.
+- Shared brand metadata is applied through `app-browser`. Browser apps must not import `brand-assets` directly, even for simple favicon or manifest needs.
 
 ## Shared Feature Extraction
 
