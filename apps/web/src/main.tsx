@@ -7,15 +7,17 @@ import { useAuthStore } from './stores/auth-store'
 import { useSettingsStore } from './stores/settings-store'
 import './index.css'
 
-void useAuthStore.getState().initialize()
-void useSettingsStore.getState().initialize()
-
 const queryClient = new QueryClient()
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  </StrictMode>
-)
+void Promise.all([
+  useAuthStore.getState().initialize(),
+  useSettingsStore.getState().initialize()
+]).then(() => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </StrictMode>
+  )
+})
