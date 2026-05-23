@@ -128,4 +128,15 @@ describe('brand metadata', () => {
     expect(document.head.querySelectorAll('link[rel="icon"]').length).toBe(4)
     expect(document.head.querySelectorAll('meta[name="theme-color"]').length).toBe(1)
   })
+
+  it('preserves an existing external manifest link', async () => {
+    document.head.innerHTML = '<meta charset="UTF-8" /><link rel="manifest" href="/mobile/manifest.webmanifest" />'
+
+    await createBrowserApp({})
+
+    expect(document.head.querySelector('link[rel="manifest"]:not([data-tinytinkerer-brand])')?.getAttribute('href')).toBe(
+      '/mobile/manifest.webmanifest'
+    )
+    expect(document.head.querySelector('link[rel="manifest"][data-tinytinkerer-brand="manifest"]')).toBeNull()
+  })
 })

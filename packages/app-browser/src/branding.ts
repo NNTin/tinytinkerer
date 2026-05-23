@@ -41,22 +41,30 @@ const createManifestDataUrl = (): string => {
   )}`
 }
 
-const managedLinks = (): ManagedLink[] => [
-  ...TINYTINKERER_BRAND.links.map((link, index) => ({
+const hasExternalManifestLink = (): boolean =>
+  Boolean(document.head.querySelector(`link[rel="manifest"]:not([${MANAGED_ATTR}])`))
+
+const managedLinks = (): ManagedLink[] => {
+  const links: ManagedLink[] = TINYTINKERER_BRAND.links.map((link, index) => ({
     key: `link:${index}`,
     rel: link.rel,
     href: link.href,
     ...(link.type ? { type: link.type } : {}),
     ...(link.sizes ? { sizes: link.sizes } : {}),
     ...(link.color ? { color: link.color } : {})
-  })),
-  {
-    key: 'manifest',
-    rel: 'manifest',
-    href: createManifestDataUrl(),
-    type: 'application/manifest+json'
+  }))
+
+  if (!hasExternalManifestLink()) {
+    links.push({
+      key: 'manifest',
+      rel: 'manifest',
+      href: createManifestDataUrl(),
+      type: 'application/manifest+json'
+    })
   }
-]
+
+  return links
+}
 
 const managedMeta = (): ManagedMeta[] => [
   {
