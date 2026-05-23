@@ -64,6 +64,25 @@ describe('inferPlan', () => {
     expect(searchStep?.toolCall?.input).toEqual({ query: prompt, maxResults: 5 })
   })
 
+  it('does not inject a search step when searchEnabled is false', () => {
+    const plan = inferPlan('What is the latest news on AI?', { searchEnabled: false })
+    expect(plan.complexity).toBe('low')
+    expect(plan.steps.map((s) => s.id)).toEqual(['understand', 'compose'])
+    expect(plan.steps.every((s) => !s.toolCall)).toBe(true)
+  })
+
+  it('still injects a search step when searchEnabled is true', () => {
+    const plan = inferPlan('What is the latest news on AI?', { searchEnabled: true })
+    expect(plan.complexity).toBe('medium')
+    expect(plan.steps.some((s) => s.id === 'search')).toBe(true)
+  })
+
+  it('injects a search step when searchEnabled is undefined (default on)', () => {
+    const plan = inferPlan('What is the latest news on AI?', {})
+    expect(plan.complexity).toBe('medium')
+    expect(plan.steps.some((s) => s.id === 'search')).toBe(true)
+  })
+
   it('edge and local fallback produce equivalent plans for the same prompt', () => {
     const prompts = [
       'Tell me something simple',

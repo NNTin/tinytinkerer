@@ -4,8 +4,8 @@ export type { ExecutionPlan, PlanStep }
 
 const SEARCH_KEYWORDS = /latest|news|search|web|compare|today|research/i
 
-export const inferPlan = (prompt: string): ExecutionPlan => {
-  const needsSearch = SEARCH_KEYWORDS.test(prompt)
+export const inferPlan = (prompt: string, options?: { searchEnabled?: boolean }): ExecutionPlan => {
+  const needsSearch = options?.searchEnabled !== false && SEARCH_KEYWORDS.test(prompt)
   const steps: PlanStep[] = [{ id: 'understand', summary: 'Understand request constraints' }]
 
   if (needsSearch) {

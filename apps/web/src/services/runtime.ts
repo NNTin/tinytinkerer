@@ -10,9 +10,10 @@ const provider = new GitHubModelsProvider({
 })
 
 export const getRuntime = (): AgentRuntime => {
+  const { searchEnabled } = useSettingsStore.getState()
   const registry = new ToolRegistry()
-  if (useSettingsStore.getState().searchEnabled) {
+  if (searchEnabled) {
     registry.register(createWebSearchTool(edgeUrl))
   }
-  return new AgentRuntime(provider, registry)
+  return new AgentRuntime(provider, registry, { searchEnabled })
 }

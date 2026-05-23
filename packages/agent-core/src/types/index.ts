@@ -15,6 +15,7 @@ export type ExecutionContext = {
 
 export type ProviderCallOptions = {
   signal?: AbortSignal
+  searchEnabled?: boolean
 }
 
 export interface ModelProvider {
