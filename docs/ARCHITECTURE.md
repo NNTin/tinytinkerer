@@ -10,7 +10,6 @@ This document describes the desired future architecture for TinyTinkerer. The go
 
 See also:
 - [packages-concept.md](./packages-concept.md) for detailed package boundaries
-- [PLAN.md](./PLAN.md) for the migration roadmap
 
 ## Monorepo Map
 
@@ -28,6 +27,7 @@ flowchart LR
     appcore["@tinytinkerer/app-core<br/>headless product logic"]
     appbrowser["@tinytinkerer/app-browser<br/>browser adapters + integrations"]
     ui["@tinytinkerer/ui<br/>presentational React primitives"]
+    markdown["@tinytinkerer/feature-markdown<br/>shared markdown rendering feature"]
     mermaid["@tinytinkerer/feature-mermaid<br/>shared large feature package"]
   end
 
@@ -45,6 +45,8 @@ flowchart LR
   appbrowser --> appcore
   appbrowser --> agent
   appbrowser --> contracts
+
+  markdown --> ui
 
   mermaid --> ui
   mermaid --> contracts
@@ -141,5 +143,5 @@ The desired flow is:
 
 The current repository work remaining beyond this migration is intentionally narrow:
 
-- `packages/feature-*` remains an architectural pattern rather than an actively used package family.
+- `@tinytinkerer/feature-markdown` is now the first active shared feature package.
 - Mermaid stays documented as the first explicit feature-package example, but no dedicated shared feature runtime has been introduced yet.

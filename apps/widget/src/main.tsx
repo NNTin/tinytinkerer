@@ -2,9 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
+  initializeBrowserStores,
   initializeBrowserShell,
-  useAuthStore,
-  useSettingsStore,
   type BrowserShellConfig
 } from '@tinytinkerer/app-browser'
 import { RouterProvider } from 'react-router-dom'
@@ -41,10 +40,7 @@ initializeBrowserShell(widgetConfig)
 
 const queryClient = new QueryClient()
 
-void Promise.all([
-  useAuthStore.getState().initialize(),
-  useSettingsStore.getState().initialize()
-]).then(() => {
+void initializeBrowserStores().then(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

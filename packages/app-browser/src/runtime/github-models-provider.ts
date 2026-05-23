@@ -2,6 +2,7 @@ import { inferPlan } from '@tinytinkerer/app-core'
 import type { ExecutionContext, ModelProvider, ProviderCallOptions } from '@tinytinkerer/agent-core'
 import { RateLimitError } from '@tinytinkerer/agent-core'
 import {
+  edgeErrorResponseSchema,
   modelsChatResponseSchema,
   rateLimitPayloadSchema,
   type ExecutionPlan,
@@ -40,6 +41,16 @@ const createRateLimitError = async (response: Response): Promise<RateLimitError>
   })
 }
 
+const createEdgeError = async (response: Response, fallback: string): Promise<Error> => {
+  const parsed = await response
+    .clone()
+    .json()
+    .then((value) => edgeErrorResponseSchema.safeParse(value))
+    .catch(() => undefined)
+
+  return new Error(parsed?.success ? parsed.data.error : fallback)
+}
+
 export class GitHubModelsProvider implements ModelProvider {
   constructor(private readonly options: GitHubModelsProviderOptions) {}
 
@@ -75,50 +86,46 @@ export class GitHubModelsProvider implements ModelProvider {
         .filter(Boolean)
         .join('')
 
-      try {
-        const requestInit: RequestInit = {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            stream: true,
-            model: this.options.getModel?.() ?? undefined,
-            messages: [
-              { role: 'system', content: SYSTEM_STYLE_PROMPT },
-              ...context.history,
-              { role: 'user', content: userContent }
-            ]
-          })
-        }
-
-        if (options?.signal) {
-          requestInit.signal = options.signal
-        }
-
-        const response = await fetch(`${this.options.baseUrl}/api/models/chat`, requestInit)
-
-        if (response.status === 429) {
-          throw await createRateLimitError(response)
-        }
-
-        if (response.ok && response.body) {
-          yield* parseSseStream(response.body, options?.signal)
-          return
-        }
-
-        if (response.ok) {
-          const parsed = modelsChatResponseSchema.parse(await response.json())
-          const text = parsed.choices?.[0]?.message?.content ?? ''
-          yield text
-          return
-        }
-      } catch (error) {
-        if (error instanceof RateLimitError) {
-          throw error
-        }
+      const requestInit: RequestInit = {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          stream: true,
+          model: this.options.getModel?.() ?? undefined,
+          messages: [
+            { role: 'system', content: SYSTEM_STYLE_PROMPT },
+            ...context.history,
+            { role: 'user', content: userContent }
+          ]
+        })
       }
+
+      if (options?.signal) {
+        requestInit.signal = options.signal
+      }
+
+      const response = await fetch(`${this.options.baseUrl}/api/models/chat`, requestInit)
+
+      if (response.status === 429) {
+        throw await createRateLimitError(response)
+      }
+
+      if (!response.ok) {
+        throw await createEdgeError(response, `Models request failed (${response.status})`)
+      }
+
+      if (response.body) {
+        yield* parseSseStream(response.body, options?.signal)
+        return
+      }
+
+      const parsed = modelsChatResponseSchema.parse(await response.json())
+      const text = parsed.choices?.[0]?.message?.content ?? ''
+      yield text
+      return
     }
 
     const collected = Object.entries(context.toolResults)

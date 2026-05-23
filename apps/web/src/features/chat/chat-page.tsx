@@ -1,4 +1,10 @@
-import { buildCurrentTimeline, buildTurns } from '@tinytinkerer/app-browser'
+import {
+  buildCurrentTimeline,
+  buildTurns,
+  initializeBrowserStores,
+  useStatusStore
+} from '@tinytinkerer/app-browser'
+import { MarkdownContent } from '@tinytinkerer/feature-markdown'
 import { Button } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { Cog6ToothIcon } from '@heroicons/react/24/outline'
@@ -8,7 +14,6 @@ import { useChatStore } from '../../stores/chat-store'
 import { useAuthStore } from '../../stores/auth-store.js'
 import { useSettingsStore } from '../../stores/settings-store.js'
 import { SettingsModal } from '../settings/settings-modal.js'
-import { MarkdownContent } from './markdown-content.js'
 
 const GitHubMark = () => (
   <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4" aria-hidden="true">
@@ -53,6 +58,8 @@ const systemLevelStyle: Record<'info' | 'warning' | 'error', string> = {
   error: 'border-rose-200 bg-rose-50 text-rose-700'
 }
 
+const noticeStyle: Record<'info' | 'warning' | 'error', string> = systemLevelStyle
+
 export const ChatPage = () => {
   const events = useChatStore((state) => state.events)
   const streamingText = useChatStore((state) => state.streamingText)
@@ -62,6 +69,7 @@ export const ChatPage = () => {
   const sendPrompt = useChatStore((state) => state.sendPrompt)
   const resetConversation = useChatStore((state) => state.resetConversation)
   const cancelRetry = useChatStore((state) => state.cancelRetry)
+  const refreshStatus = useStatusStore((state) => state.refresh)
 
   const token = useAuthStore((state) => state.token)
 
@@ -80,11 +88,19 @@ export const ChatPage = () => {
     if (!chatStoreInitialized) {
       chatStoreInitialized = true
       ensureBrowserShellInitialized()
-      initializeStore(useAuthStore)
-      initializeStore(useSettingsStore)
+      void initializeBrowserStores()
       initializeStore(useChatStore)
     }
   }, [])
+
+  useEffect(() => {
+    void refreshStatus()
+    const intervalId = window.setInterval(() => {
+      void refreshStatus()
+    }, 15_000)
+
+    return () => window.clearInterval(intervalId)
+  }, [refreshStatus])
 
   useEffect(() => {
     if (!cooldownUntil) {
@@ -149,24 +165,19 @@ export const ChatPage = () => {
                     <p className="rounded-lg bg-amber-100/70 px-3 py-2 text-sm text-stone-800">{turn.userText}</p>
                   ) : null}
 
-                  {turn.systemMessage ? (
+                  {turn.notice ? (
                     <div
-                      className={`rounded-lg border px-3 py-2 text-sm ${systemLevelStyle[turn.systemLevel ?? 'info']}`}
+                      className={`rounded-lg border px-3 py-2 text-sm ${noticeStyle[turn.notice.level ?? 'info']}`}
                     >
-                      {turn.systemMessage}
+                      {turn.notice.message}
                     </div>
-                  ) : turn.isError && turn.errorMessage ? (
-                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                      {turn.errorMessage}
-                    </div>
-                  ) : turn.rateLimitMessage ? (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                      {turn.rateLimitMessage}
-                    </div>
-                  ) : turn.assistantText ? (
+                  ) : null}
+
+                  {turn.assistantText ? (
                     <div className="rounded-lg bg-white px-3 py-2 text-sm text-stone-900 shadow-sm">
                       <MarkdownContent
                         content={turn.assistantText}
+                        className="prose-assistant"
                         isStreaming={Boolean(streamingText && turn.assistantText === streamingText)}
                       />
                     </div>

@@ -1,17 +1,16 @@
 import {
   buildTurns,
   buildGitHubLoginUrl,
-  fetchStatus,
   SUPPORTED_MODELS,
   useAuthStore,
   useChatStore,
   useSettingsStore,
+  useStatusStore,
   type SystemStatus
 } from '@tinytinkerer/app-browser'
+import { MarkdownContent } from '@tinytinkerer/feature-markdown'
 import { Button } from '@tinytinkerer/ui'
-import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MarkdownContent } from './markdown-content'
 
 const fallbackStatus: SystemStatus = {
   auth: { state: 'offline', detail: 'Unavailable' },
@@ -36,6 +35,8 @@ export const WidgetPage = () => {
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
   const searchEnabled = useSettingsStore((state) => state.searchEnabled)
   const setSearchEnabled = useSettingsStore((state) => state.setSearchEnabled)
+  const status = useStatusStore((state) => state.status)
+  const refreshStatus = useStatusStore((state) => state.refresh)
 
   const [prompt, setPrompt] = useState('')
   const [showPat, setShowPat] = useState(false)
@@ -53,15 +54,19 @@ export const WidgetPage = () => {
     endRef.current?.scrollIntoView({ block: 'end' })
   }, [events, streamingText])
 
-  const { data } = useQuery({
-    queryKey: ['widget-status'],
-    queryFn: fetchStatus,
-    refetchInterval: 15_000
-  })
+  useEffect(() => {
+    void refreshStatus()
+    const intervalId = window.setInterval(() => {
+      void refreshStatus()
+    }, 15_000)
+
+    return () => window.clearInterval(intervalId)
+  }, [refreshStatus])
 
   const turns = useMemo(() => buildTurns(events, streamingText), [events, streamingText])
   const loginUrl = buildGitHubLoginUrl()
-  const status = data ?? fallbackStatus
+  const effectiveStatus = status ?? fallbackStatus
+  const searchUnavailable = effectiveStatus.search.state !== 'ready'
 
   const handleSubmit = async () => {
     const trimmed = prompt.trim()
@@ -96,7 +101,7 @@ export const WidgetPage = () => {
               <h1 className="mt-1 text-lg font-semibold">tinytinkerer widget</h1>
             </div>
             <div className="rounded-full border border-[var(--widget-border)] px-2.5 py-1 text-[11px] text-[var(--widget-muted)]">
-              {status.models.state}
+              {effectiveStatus.models.state}
             </div>
           </div>
 
@@ -119,15 +124,20 @@ export const WidgetPage = () => {
             <label className="flex items-center justify-between rounded-xl border border-[var(--widget-border)] bg-white px-3 py-2 text-sm text-[var(--widget-text)]">
               <span>
                 <span className="block text-xs text-[var(--widget-muted)]">Web search</span>
-                <span>{searchEnabled ? 'Enabled' : 'Disabled'}</span>
+                <span>{searchUnavailable ? 'Unavailable' : searchEnabled ? 'Enabled' : 'Disabled'}</span>
               </span>
               <input
                 type="checkbox"
                 checked={searchEnabled}
+                disabled={searchUnavailable}
                 onChange={(event) => void setSearchEnabled(event.target.checked)}
               />
             </label>
           </div>
+
+          {searchUnavailable ? (
+            <p className="mt-2 text-xs text-[var(--widget-muted)]">{effectiveStatus.search.detail}</p>
+          ) : null}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {token ? (
@@ -182,15 +192,17 @@ export const WidgetPage = () => {
                     </div>
                   ) : null}
                   <div className="rounded-2xl border border-[var(--widget-border)] bg-white px-3 py-3">
-                    <MarkdownContent
-                      content={
-                        turn.assistantText ||
-                        turn.systemMessage ||
-                        turn.errorMessage ||
-                        turn.rateLimitMessage ||
-                        '...'
-                      }
-                    />
+                    {turn.notice ? (
+                      <div className="mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        {turn.notice.message}
+                      </div>
+                    ) : null}
+                    {turn.assistantText ? (
+                      <MarkdownContent
+                        content={turn.assistantText}
+                        className="widget-prose text-sm"
+                      />
+                    ) : null}
                   </div>
                 </div>
               ))}

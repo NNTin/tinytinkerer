@@ -1,39 +1,30 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ensureBrowserShellInitialized } from '../../app/browser-shell'
-import { exchangeCode, validateOAuthState } from '../../services/auth'
-import { useAuthStore } from '../../stores/auth-store'
+import { completeGitHubOAuthCallback } from '../../services/auth'
 
 export const CallbackPage = () => {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const setToken = useAuthStore((state) => state.setToken)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     ensureBrowserShellInitialized()
-    const code = searchParams.get('code')
-    const state = searchParams.get('state')
-
-    if (!code) {
-      setError('No authorization code received from GitHub.')
-      return
-    }
-
-    if (!validateOAuthState(state)) {
-      setError('Authentication failed. Please try signing in again.')
-      return
-    }
-
-    exchangeCode(code)
-      .then(async (token) => {
-        await setToken(token)
+    completeGitHubOAuthCallback({
+      code: searchParams.get('code'),
+      state: searchParams.get('state')
+    })
+      .then(() => {
         void navigate('/', { replace: true })
       })
-      .catch(() => {
-        setError('Authentication failed. Please try again.')
+      .catch((nextError: unknown) => {
+        setError(
+          nextError instanceof Error && nextError.message
+            ? nextError.message
+            : 'Authentication failed. Please try again.'
+        )
       })
-  }, [searchParams, navigate, setToken])
+  }, [searchParams, navigate])
 
   if (error) {
     return (

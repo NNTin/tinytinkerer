@@ -1,12 +1,10 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { XMarkIcon } from '@heroicons/react/24/outline'
-import { useQuery } from '@tanstack/react-query'
-import { useState, type ReactNode } from 'react'
-import type { ServiceStatus, SystemStatus } from '@tinytinkerer/app-browser'
+import { useEffect, useState, type ReactNode } from 'react'
+import { useStatusStore, type ServiceStatus, type SystemStatus } from '@tinytinkerer/app-browser'
 import { useAuthStore } from '../../stores/auth-store.js'
 import { useSettingsStore } from '../../stores/settings-store.js'
 import { buildGitHubLoginUrl } from '../../services/auth.js'
-import { fetchStatus } from '../../services/status.js'
 import { SUPPORTED_MODELS } from '../../services/models.js'
 
 const fallbackStatus: SystemStatus = {
@@ -62,11 +60,12 @@ type ToggleRowProps = {
   label: string
   description?: string
   checked: boolean
+  disabled?: boolean
   onChange: (next: boolean) => void
 }
 
-const ToggleRow = ({ label, description, checked, onChange }: ToggleRowProps) => (
-  <label className="flex cursor-pointer items-start justify-between gap-4 py-1">
+const ToggleRow = ({ label, description, checked, disabled = false, onChange }: ToggleRowProps) => (
+  <label className={`flex items-start justify-between gap-4 py-1 ${disabled ? 'opacity-60' : 'cursor-pointer'}`}>
     <span className="min-w-0">
       <span className="block text-sm text-stone-800">{label}</span>
       {description ? <span className="block text-xs text-[var(--muted)] mt-0.5">{description}</span> : null}
@@ -76,6 +75,7 @@ const ToggleRow = ({ label, description, checked, onChange }: ToggleRowProps) =>
         type="checkbox"
         className="peer sr-only"
         checked={checked}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
       <span className="block h-5 w-9 rounded-full border border-stone-300 bg-stone-100 transition-colors peer-checked:border-amber-500 peer-checked:bg-amber-500 peer-focus-visible:ring-2 peer-focus-visible:ring-amber-300" />
@@ -225,14 +225,20 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
 const SearchSection = ({ status }: { status: ServiceStatus }) => {
   const searchEnabled = useSettingsStore((state) => state.searchEnabled)
   const setSearchEnabled = useSettingsStore((state) => state.setSearchEnabled)
+  const isUnavailable = status.state !== 'ready'
 
   return (
     <div className="space-y-3">
       <SectionStatus label="Search" status={status} />
       <ToggleRow
         label="Enable web search"
-        description="Allow the agent to search the web for up-to-date information."
+        description={
+          isUnavailable
+            ? 'Web search is unavailable right now. The runtime will skip search until the service recovers.'
+            : 'Allow the agent to search the web for up-to-date information.'
+        }
         checked={searchEnabled}
+        disabled={isUnavailable}
         onChange={(next) => void setSearchEnabled(next)}
       />
     </div>
@@ -277,14 +283,23 @@ export const SettingsModal = ({ open, onOpenChange }: SettingsModalProps) => (
 )
 
 const SettingsModalContent = ({ open, onOpenChange }: SettingsModalProps) => {
-  const { data } = useQuery({
-    queryKey: ['system-status'],
-    queryFn: fetchStatus,
-    enabled: open,
-    refetchInterval: 15_000
-  })
+  const status = useStatusStore((state) => state.status)
+  const refreshStatus = useStatusStore((state) => state.refresh)
 
-  const status = data ?? fallbackStatus
+  useEffect(() => {
+    if (!open) {
+      return undefined
+    }
+
+    void refreshStatus()
+    const intervalId = window.setInterval(() => {
+      void refreshStatus()
+    }, 15_000)
+
+    return () => window.clearInterval(intervalId)
+  }, [open, refreshStatus])
+
+  const effectiveStatus = status ?? fallbackStatus
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -309,19 +324,19 @@ const SettingsModalContent = ({ open, onOpenChange }: SettingsModalProps) => {
 
           <div className="max-h-[70vh] space-y-6 overflow-y-auto px-6 py-5">
             <SettingsSection title="Auth">
-              <AuthSection status={status.auth} />
+              <AuthSection status={effectiveStatus.auth} />
             </SettingsSection>
 
             <hr className="border-[var(--border)]" />
 
             <SettingsSection title="Models">
-              <ModelsSection status={status.models} />
+              <ModelsSection status={effectiveStatus.models} />
             </SettingsSection>
 
             <hr className="border-[var(--border)]" />
 
             <SettingsSection title="Search">
-              <SearchSection status={status.search} />
+              <SearchSection status={effectiveStatus.search} />
             </SettingsSection>
 
             <hr className="border-[var(--border)]" />

@@ -9,11 +9,11 @@ export type Turn = {
   id: string
   userText: string
   assistantText: string
-  isError?: boolean
-  errorMessage?: string
-  systemMessage?: string
-  systemLevel?: 'info' | 'warning' | 'error'
-  rateLimitMessage?: string
+  notice?: {
+    kind: 'system' | 'error' | 'rate-limit'
+    message: string
+    level?: 'info' | 'warning' | 'error'
+  }
 }
 
 export const activeCooldown = (value: string | undefined): string | undefined => {
@@ -48,63 +48,99 @@ const thinkingLabel = (event: ChatEvent): string | undefined => {
 
 export const buildTurns = (events: ChatEvent[], streamingText: string): Turn[] => {
   const turns: Turn[] = []
-  let userEventId: string | null = null
-  let userText: string | null = null
+  let pendingTurn: Turn | undefined
+
+  const pushPendingTurn = () => {
+    if (!pendingTurn) {
+      return
+    }
+
+    turns.push(pendingTurn)
+    pendingTurn = undefined
+  }
 
   for (const event of events) {
     if (event.type === 'user.message') {
-      userEventId = event.id
-      userText = event.payload.text
+      pushPendingTurn()
+      pendingTurn = {
+        id: event.id,
+        userText: event.payload.text,
+        assistantText: ''
+      }
     } else if (event.type === 'assistant.done') {
-      if (userEventId !== null && userText !== null) {
-        turns.push({ id: userEventId, userText, assistantText: event.payload.text })
-        userEventId = null
-        userText = null
+      if (pendingTurn) {
+        pendingTurn.assistantText = event.payload.text
+        pushPendingTurn()
+      } else if (event.payload.text) {
+        turns.push({
+          id: event.id,
+          userText: '',
+          assistantText: event.payload.text
+        })
       }
     } else if (event.type === 'error') {
-      if (userEventId !== null && userText !== null) {
-        turns.push({
-          id: userEventId,
-          userText,
-          assistantText: '',
-          isError: true,
-          errorMessage: event.payload.message
-        })
-        userEventId = null
-        userText = null
-      }
-    } else if (event.type === 'system') {
-      if (userEventId !== null && userText !== null) {
-        turns.push({
-          id: userEventId,
-          userText,
-          assistantText: '',
-          systemMessage: event.payload.message,
-          systemLevel: event.payload.level
-        })
+      if (pendingTurn) {
+        pendingTurn.notice = {
+          kind: 'error',
+          message: event.payload.message,
+          level: 'error'
+        }
       } else {
         turns.push({
           id: event.id,
           userText: '',
           assistantText: '',
-          systemMessage: event.payload.message,
-          systemLevel: event.payload.level
+          notice: {
+            kind: 'error',
+            message: event.payload.message,
+            level: 'error'
+          }
         })
       }
-    } else if (event.type === 'rate.limit.waiting') {
-      if (userEventId !== null && userText !== null) {
+    } else if (event.type === 'system') {
+      if (pendingTurn) {
+        pendingTurn.notice = {
+          kind: 'system',
+          message: event.payload.message,
+          level: event.payload.level
+        }
+      } else {
         turns.push({
-          id: userEventId,
-          userText,
+          id: event.id,
+          userText: '',
           assistantText: '',
-          rateLimitMessage: event.payload.message
+          notice: {
+            kind: 'system',
+            message: event.payload.message,
+            level: event.payload.level
+          }
+        })
+      }
+    } else if (event.type === 'rate.limit.waiting' || event.type === 'rate.limit.cancelled') {
+      if (pendingTurn) {
+        pendingTurn.notice = {
+          kind: 'rate-limit',
+          message: event.payload.message,
+          level: 'warning'
+        }
+      } else {
+        turns.push({
+          id: event.id,
+          userText: '',
+          assistantText: '',
+          notice: {
+            kind: 'rate-limit',
+            message: event.payload.message,
+            level: 'warning'
+          }
         })
       }
     }
   }
 
-  if (userEventId !== null && userText !== null) {
-    turns.push({ id: userEventId, userText, assistantText: streamingText })
+  if (pendingTurn) {
+    pendingTurn.assistantText = streamingText
+    pushPendingTurn()
   }
 
   return turns

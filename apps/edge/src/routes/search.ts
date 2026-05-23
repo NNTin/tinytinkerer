@@ -1,5 +1,6 @@
 import { zValidator } from '@hono/zod-validator'
 import {
+  edgeErrorResponseSchema,
   searchResponseSchema,
   searchResultSchema,
   searchRequestSchema,
@@ -44,16 +45,10 @@ export const registerSearchRoutes = (app: Hono<{ Bindings: Bindings }>) => {
 
     if (!c.env.TAVILY_API_KEY) {
       return c.json(
-        searchResponseSchema.parse({
-          query: input.query,
-          results: [
-            {
-              title: 'Search unavailable',
-              url: 'https://tavily.com/',
-              snippet: 'Set TAVILY_API_KEY in edge environment to enable live web search.'
-            }
-          ]
-        })
+        edgeErrorResponseSchema.parse({
+          error: 'Web search is currently unavailable. Configure Tavily to enable live search.'
+        }),
+        503
       )
     }
 
@@ -76,7 +71,10 @@ export const registerSearchRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     )
 
     if (!response.ok) {
-      return c.json({ error: 'Tavily request failed' }, 502)
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: 'Web search request failed.' }),
+        502
+      )
     }
 
     const parsed = tavilyResponseSchema.safeParse(await response.json())

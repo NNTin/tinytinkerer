@@ -1,6 +1,12 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
-import { MarkdownContent } from './markdown-content.js'
+// @vitest-environment jsdom
+import '@testing-library/jest-dom/vitest'
+import { cleanup, render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { MarkdownContent } from '../src/index.js'
+
+afterEach(() => {
+  cleanup()
+})
 
 describe('MarkdownContent', () => {
   it('renders plain text', () => {
@@ -26,8 +32,13 @@ describe('MarkdownContent', () => {
   })
 
   it('renders ordered list', () => {
-    render(<MarkdownContent content={'1. first\n2. second'} />)
-    const items = screen.getAllByRole('listitem')
+    const { container } = render(<MarkdownContent content={'1. first\n2. second'} />)
+    const list = container.querySelector('ol')
+    expect(list).not.toBeNull()
+    if (!list) {
+      throw new Error('Expected an ordered list')
+    }
+    const items = within(list).getAllByRole('listitem')
     expect(items).toHaveLength(2)
     expect(screen.getByText('first')).toBeInTheDocument()
   })
@@ -65,8 +76,8 @@ describe('MarkdownContent', () => {
     expect(container.firstChild).toHaveClass('streaming-cursor')
   })
 
-  it('does not add streaming-cursor class by default', () => {
-    const { container } = render(<MarkdownContent content="done" />)
-    expect(container.firstChild).not.toHaveClass('streaming-cursor')
+  it('accepts a custom className', () => {
+    const { container } = render(<MarkdownContent content="done" className="prose-assistant" />)
+    expect(container.firstChild).toHaveClass('prose-assistant')
   })
 })

@@ -1,5 +1,9 @@
 import { zValidator } from '@hono/zod-validator'
-import { modelsChatRequestSchema, modelsChatResponseSchema } from '@tinytinkerer/contracts'
+import {
+  edgeErrorResponseSchema,
+  modelsChatRequestSchema,
+  modelsChatResponseSchema
+} from '@tinytinkerer/contracts'
 import type { Hono } from 'hono'
 import type { Bindings } from '../lib/bindings'
 import { fetchWithTimeout } from '../lib/fetch'
@@ -23,7 +27,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
 
     if (!authorization) {
-      return c.json({ error: 'Unauthorized' }, 401)
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
     }
 
     const useStream = body.stream === true
@@ -68,7 +72,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
         ? (response.status as 400 | 401 | 403 | 500 | 503)
         : 502
-      return c.json({ error: safeError }, statusCode)
+      return c.json(edgeErrorResponseSchema.parse({ error: safeError }), statusCode)
     }
 
     if (useStream && response.body) {

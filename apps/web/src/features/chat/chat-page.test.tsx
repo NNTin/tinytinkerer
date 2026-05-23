@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -22,13 +21,25 @@ const mockAuthState = vi.hoisted(() => ({
   initialize: vi.fn()
 }))
 
-const mockFetchStatus = vi.hoisted(() =>
-  vi.fn().mockResolvedValue({
+const mockStatusState = vi.hoisted(() => ({
+  status: {
     auth: { state: 'ready', detail: 'GitHub auth available' },
     models: { state: 'degraded', detail: 'Model responses are slower than usual' },
     search: { state: 'offline', detail: 'Search temporarily unavailable', error: 'Upstream timeout' }
-  })
-)
+  },
+  refresh: vi.fn()
+}))
+
+const mockTurns = vi.hoisted(() => [] as Array<{
+  id: string
+  userText: string
+  assistantText: string
+  notice?: {
+    kind: 'system' | 'error' | 'rate-limit'
+    message: string
+    level?: 'info' | 'warning' | 'error'
+  }
+}>)
 
 vi.mock('../../stores/chat-store.js', () => {
   const state = {
@@ -46,6 +57,15 @@ vi.mock('../../stores/chat-store.js', () => {
   return { useChatStore }
 })
 
+vi.mock('@tinytinkerer/app-browser', () => ({
+  buildCurrentTimeline: () => [],
+  buildTurns: () => mockTurns,
+  initializeBrowserStores: vi.fn().mockResolvedValue(undefined),
+  initializeBrowserShell: vi.fn(),
+  useStatusStore: (selector: (state: typeof mockStatusState) => unknown) => selector(mockStatusState),
+  SUPPORTED_MODELS: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }]
+}))
+
 vi.mock('../../stores/auth-store.js', () => ({
   useAuthStore: (selector: (s: typeof mockAuthState) => unknown) => selector(mockAuthState)
 }))
@@ -58,25 +78,9 @@ vi.mock('../../services/auth.js', () => ({
   buildGitHubLoginUrl: () => 'https://github.test/login'
 }))
 
-vi.mock('../../services/status.js', () => ({
-  fetchStatus: mockFetchStatus
-}))
-
 import { ChatPage } from './chat-page.js'
 
-const renderChatPage = () => {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false }
-    }
-  })
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <ChatPage />
-    </QueryClientProvider>
-  )
-}
+const renderChatPage = () => render(<ChatPage />)
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn()
@@ -90,11 +94,12 @@ beforeEach(() => {
   mockSettingsState.showThinkingTimeline = true
   mockSettingsState.showToolActivity = true
   mockAuthState.token = null
-  mockFetchStatus.mockResolvedValue({
+  mockStatusState.status = {
     auth: { state: 'ready', detail: 'GitHub auth available' },
     models: { state: 'degraded', detail: 'Model responses are slower than usual' },
     search: { state: 'offline', detail: 'Search temporarily unavailable', error: 'Upstream timeout' }
-  })
+  }
+  mockTurns.length = 0
 })
 
 describe('ChatPage layout', () => {
@@ -216,5 +221,35 @@ describe('ChatPage settings modal', () => {
     expect(screen.getByRole('dialog', { name: 'Settings' })).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Close settings' }))
     expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
+  })
+
+  it('disables search controls when the service is unavailable', () => {
+    renderChatPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Settings' })
+    const checkbox = within(dialog).getByRole('checkbox', { name: /enable web search/i })
+    expect(checkbox).toBeDisabled()
+    expect(within(dialog).getByText(/runtime will skip search until the service recovers/i)).toBeInTheDocument()
+  })
+})
+
+describe('ChatPage turns', () => {
+  it('renders a notice and final answer within the same turn', () => {
+    mockTurns.push({
+      id: 'turn-1',
+      userText: 'hello',
+      assistantText: 'Hi there.',
+      notice: {
+        kind: 'rate-limit',
+        message: 'Recovered after a short wait.',
+        level: 'warning'
+      }
+    })
+
+    renderChatPage()
+
+    expect(screen.getByText('Recovered after a short wait.')).toBeInTheDocument()
+    expect(screen.getByText('Hi there.')).toBeInTheDocument()
   })
 })

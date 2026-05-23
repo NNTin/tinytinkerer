@@ -1,1 +1,6 @@
-export { buildGitHubLoginUrl, exchangeCode, validateOAuthState } from '@tinytinkerer/app-browser'
+export {
+  buildGitHubLoginUrl,
+  completeGitHubOAuthCallback,
+  exchangeCode,
+  validateOAuthState
+} from '@tinytinkerer/app-browser'

@@ -10,6 +10,15 @@ const mockAuth = vi.hoisted(() => ({
   token: null as string | null
 }))
 
+const mockStatus = vi.hoisted(() => ({
+  hydrated: true,
+  status: {
+    auth: { state: 'ready', detail: 'ok' },
+    models: { state: 'ready', detail: 'ok' },
+    search: { state: 'ready', detail: 'ok' }
+  }
+}))
+
 vi.mock('../src/stores/settings-store.js', () => ({
   useSettingsStore: {
     getState: () => mockSettings
@@ -22,6 +31,13 @@ vi.mock('../src/stores/auth-store.js', () => ({
   }
 }))
 
+vi.mock('../src/stores/status-store.js', () => ({
+  isSearchReady: (state: typeof mockStatus) => state.hydrated && state.status.search.state === 'ready',
+  useStatusStore: {
+    getState: () => mockStatus
+  }
+}))
+
 import { ToolRegistry } from '@tinytinkerer/agent-core'
 import { DEFAULT_MODEL } from '@tinytinkerer/app-core'
 import { initializeBrowserShell } from '../src/shell.js'
@@ -31,6 +47,8 @@ beforeEach(() => {
   mockSettings.searchEnabled = true
   mockSettings.selectedModel = DEFAULT_MODEL
   mockAuth.token = null
+  mockStatus.hydrated = true
+  mockStatus.status.search.state = 'ready'
   initializeBrowserShell({
     edgeBaseUrl: 'http://test-edge.local',
     storageNamespace: 'tinytinkerer-test'
@@ -48,6 +66,14 @@ describe('getRuntime', () => {
 
   it('does not register any tools when searchEnabled is false', () => {
     mockSettings.searchEnabled = false
+    const registerSpy = vi.spyOn(ToolRegistry.prototype, 'register')
+    getRuntime()
+    expect(registerSpy).not.toHaveBeenCalled()
+    registerSpy.mockRestore()
+  })
+
+  it('does not register search when the service is not ready', () => {
+    mockStatus.status.search.state = 'degraded'
     const registerSpy = vi.spyOn(ToolRegistry.prototype, 'register')
     getRuntime()
     expect(registerSpy).not.toHaveBeenCalled()
@@ -89,6 +115,25 @@ describe('getRuntime', () => {
 
   it('suppresses search planning and tool events when searchEnabled is false', async () => {
     mockSettings.searchEnabled = false
+
+    const runtime = getRuntime()
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('latest news about React')) {
+      events.push(event)
+    }
+
+    const generatedPlan = events.find((event) => event.type === 'plan.generated')
+    expect(generatedPlan?.type).toBe('plan.generated')
+    if (generatedPlan?.type !== 'plan.generated') {
+      throw new Error('Expected plan.generated event')
+    }
+
+    expect(generatedPlan.payload.plan.steps.some((step) => step.id === 'search')).toBe(false)
+    expect(events.some((event) => event.type === 'tool.call.started')).toBe(false)
+  })
+
+  it('suppresses search planning when the service is unavailable', async () => {
+    mockStatus.status.search.state = 'offline'
 
     const runtime = getRuntime()
     const events: ChatEvent[] = []

@@ -1,5 +1,6 @@
 import type { Tool } from '@tinytinkerer/agent-core'
 import {
+  edgeErrorResponseSchema,
   searchRequestSchema,
   searchResponseSchema,
   type SearchRequest,
@@ -20,7 +21,13 @@ export const createWebSearchTool = (baseUrl: string): Tool<SearchRequest, Search
     })
 
     if (!response.ok) {
-      throw new Error(`Search failed (${response.status})`)
+      const payload = await response
+        .clone()
+        .json()
+        .then((value) => edgeErrorResponseSchema.safeParse(value))
+        .catch(() => undefined)
+
+      throw new Error(payload?.success ? payload.data.error : `Search failed (${response.status})`)
     }
 
     return searchResponseSchema.parse(await response.json())

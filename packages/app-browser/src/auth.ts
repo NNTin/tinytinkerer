@@ -1,7 +1,8 @@
 import { githubExchangeResponseSchema } from '@tinytinkerer/contracts'
 import { getBrowserShellConfig } from './shell'
+import { useAuthStore } from './stores/auth-store'
 
-const OAUTH_STATE_KEY = 'oauth_state'
+const oauthStateKey = (): string => `${getBrowserShellConfig().storageNamespace}:oauth_state`
 
 const generateState = (): string => {
   const bytes = new Uint8Array(16)
@@ -20,7 +21,7 @@ export const buildGitHubLoginUrl = (): string | null => {
   }
 
   const state = generateState()
-  sessionStorage.setItem(OAUTH_STATE_KEY, state)
+  sessionStorage.setItem(oauthStateKey(), state)
 
   const params = new URLSearchParams({
     client_id: config.githubClientId,
@@ -36,8 +37,9 @@ export const buildGitHubLoginUrl = (): string | null => {
 }
 
 export const validateOAuthState = (returnedState: string | null): boolean => {
-  const storedState = sessionStorage.getItem(OAUTH_STATE_KEY)
-  sessionStorage.removeItem(OAUTH_STATE_KEY)
+  const stateKey = oauthStateKey()
+  const storedState = sessionStorage.getItem(stateKey)
+  sessionStorage.removeItem(stateKey)
   return Boolean(storedState) && storedState === returnedState
 }
 
@@ -53,7 +55,13 @@ export const exchangeCode = async (code: string): Promise<string> => {
   })
 
   if (!response.ok) {
-    throw new Error('OAuth exchange failed')
+    const parsedPayload = await response
+      .clone()
+      .json()
+      .then((value) => githubExchangeResponseSchema.safeParse(value))
+      .catch(() => undefined)
+
+    throw new Error(parsedPayload?.success ? (parsedPayload.data.error ?? 'OAuth exchange failed') : 'OAuth exchange failed')
   }
 
   const data = githubExchangeResponseSchema.parse(await response.json())
@@ -62,4 +70,28 @@ export const exchangeCode = async (code: string): Promise<string> => {
   }
 
   return data.accessToken
+}
+
+export const completeGitHubOAuthCallback = async (options: {
+  code: string | null
+  state: string | null
+}): Promise<void> => {
+  if (!options.code) {
+    throw new Error('No authorization code received from GitHub.')
+  }
+
+  if (!validateOAuthState(options.state)) {
+    throw new Error('Authentication failed. Please try signing in again.')
+  }
+
+  try {
+    const token = await exchangeCode(options.code)
+    await useAuthStore.getState().setToken(token)
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(error.message || 'Authentication failed. Please try again.')
+    }
+
+    throw new Error('Authentication failed. Please try again.')
+  }
 }

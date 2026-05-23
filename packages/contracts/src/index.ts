@@ -214,6 +214,12 @@ export const githubExchangeResponseSchema = z.object({
 export type GitHubExchangeRequest = z.infer<typeof githubExchangeRequestSchema>
 export type GitHubExchangeResponse = z.infer<typeof githubExchangeResponseSchema>
 
+export const edgeErrorResponseSchema = z.object({
+  error: z.string()
+})
+
+export type EdgeErrorResponse = z.infer<typeof edgeErrorResponseSchema>
+
 export const searchRequestSchema = z.object({
   query: z.string().min(2).max(500),
   maxResults: z.number().int().positive().max(10).optional()

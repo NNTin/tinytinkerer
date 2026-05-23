@@ -194,7 +194,7 @@ If both `web` and `widget` support Mermaid rendering, these concerns should not 
 - shared styling glue
 - fallback behavior when rendering fails
 
-That shared behavior belongs in a dedicated package such as `@tinytinkerer/feature-mermaid`.
+That shared behavior belongs in a dedicated package such as `@tinytinkerer/feature-markdown` or `@tinytinkerer/feature-mermaid`.
 
 The apps should only own:
 

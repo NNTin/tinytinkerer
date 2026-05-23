@@ -58,6 +58,59 @@ describe('app-core helpers', () => {
     expect(buildCurrentTimeline(events)).toHaveLength(2)
   })
 
+  it('keeps one turn when rate-limit waiting later completes', () => {
+    expect(
+      buildTurns(
+        [
+          event('user.message', { text: 'latest news' }),
+          event('rate.limit.waiting', {
+            retryAfterMs: 1_000,
+            retryAt: new Date(Date.now() + 1_000).toISOString(),
+            message: 'Rate limited for a moment.',
+            autoRetry: true
+          }),
+          event('assistant.done', { text: 'Here is the latest update.' })
+        ],
+        ''
+      )
+    ).toEqual([
+      {
+        id: expect.any(String),
+        userText: 'latest news',
+        assistantText: 'Here is the latest update.',
+        notice: {
+          kind: 'rate-limit',
+          message: 'Rate limited for a moment.',
+          level: 'warning'
+        }
+      }
+    ])
+  })
+
+  it('keeps one turn when a system notice later completes', () => {
+    expect(
+      buildTurns(
+        [
+          event('user.message', { text: 'hello' }),
+          event('system', { message: 'Using cached context.', level: 'info' }),
+          event('assistant.done', { text: 'Hi there.' })
+        ],
+        ''
+      )
+    ).toEqual([
+      {
+        id: expect.any(String),
+        userText: 'hello',
+        assistantText: 'Hi there.',
+        notice: {
+          kind: 'system',
+          message: 'Using cached context.',
+          level: 'info'
+        }
+      }
+    ])
+  })
+
   it('drops expired cooldowns', () => {
     expect(activeCooldown(new Date(Date.now() - 1_000).toISOString())).toBeUndefined()
   })
