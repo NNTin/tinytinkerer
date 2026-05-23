@@ -18,8 +18,18 @@ vi.mock('../../stores/chat-store.js', () => {
   return { useChatStore }
 })
 
-vi.mock('../../components/top-bar.js', () => ({
-  TopBar: () => <div data-testid="top-bar" />,
+vi.mock('../../stores/auth-store.js', () => {
+  const state = { token: null, clearToken: vi.fn(), setToken: vi.fn() }
+  return { useAuthStore: (selector: (s: typeof state) => unknown) => selector(state) }
+})
+
+vi.mock('../../stores/settings-store.js', () => {
+  const state = { showThinkingTimeline: true, showToolActivity: true }
+  return { useSettingsStore: (selector: (s: typeof state) => unknown) => selector(state) }
+})
+
+vi.mock('../../services/auth.js', () => ({
+  buildGitHubLoginUrl: () => null,
 }))
 
 import { ChatPage } from './chat-page.js'

@@ -1,10 +1,12 @@
 import type { ChatEvent } from '@tinytinkerer/types'
 import { Button } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
+import { Cog6ToothIcon } from '@heroicons/react/24/outline'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { TopBar } from '../../components/top-bar'
 import { useChatStore } from '../../stores/chat-store'
+import { useAuthStore } from '../../stores/auth-store.js'
 import { useSettingsStore } from '../../stores/settings-store.js'
+import { buildGitHubLoginUrl } from '../../services/auth.js'
 import { MarkdownContent } from './markdown-content.js'
 
 // Guard so the deferred-load init only fires once even in React StrictMode.
@@ -164,12 +166,20 @@ export const ChatPage = () => {
   const resetConversation = useChatStore((state) => state.resetConversation)
   const cancelRetry = useChatStore((state) => state.cancelRetry)
 
+  const token = useAuthStore((state) => state.token)
+  const clearToken = useAuthStore((state) => state.clearToken)
+  const setToken = useAuthStore((state) => state.setToken)
+
   const showThinkingTimeline = useSettingsStore((state) => state.showThinkingTimeline)
   const showToolActivity = useSettingsStore((state) => state.showToolActivity)
+
+  const loginUrl = buildGitHubLoginUrl()
 
   const [prompt, setPrompt] = useState('')
   const [openTimeline, setOpenTimeline] = useState(true)
   const [now, setNow] = useState(() => Date.now())
+  const [showPat, setShowPat] = useState(false)
+  const [patValue, setPatValue] = useState('')
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const conversationEndRef = useRef<HTMLDivElement>(null)
@@ -228,10 +238,16 @@ export const ChatPage = () => {
     }
   }
 
+  const handlePatSave = async () => {
+    const trimmed = patValue.trim()
+    if (!trimmed) return
+    await setToken(trimmed)
+    setPatValue('')
+    setShowPat(false)
+  }
+
   return (
     <div className="mx-auto flex h-screen w-full max-w-5xl flex-col">
-      <TopBar />
-
       <main className="flex flex-1 flex-col gap-4 overflow-hidden px-4 py-6 md:px-8">
         {/* Conversation */}
         <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
@@ -324,49 +340,49 @@ export const ChatPage = () => {
 
         {/* Tool activity */}
         {showToolActivity ? (
-        <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Tool activity</h2>
-          <div className="mt-3 space-y-2">
-            {toolEvents.length === 0 ? (
-              <p className="text-sm text-[var(--muted)]">Search results and tool outputs will appear here.</p>
-            ) : (
-              toolEvents.map((event) => {
-                if (event.type === 'tool.call.failed') {
+          <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Tool activity</h2>
+            <div className="mt-3 space-y-2">
+              {toolEvents.length === 0 ? (
+                <p className="text-sm text-[var(--muted)]">Search results and tool outputs will appear here.</p>
+              ) : (
+                toolEvents.map((event) => {
+                  if (event.type === 'tool.call.failed') {
+                    return (
+                      <div key={event.id} className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                        <span className="font-medium">Search failed:</span> {event.payload.error}
+                      </div>
+                    )
+                  }
+
+                  const output = event.payload.output as { query?: string; results?: unknown[] }
+                  const resultCount = Array.isArray(output.results) ? output.results.length : 0
+
                   return (
-                    <div key={event.id} className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                      <span className="font-medium">Search failed:</span> {event.payload.error}
-                    </div>
+                    <details key={event.id} className="group rounded-md border border-stone-200 bg-white text-sm">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-stone-700 hover:bg-stone-50">
+                        <span className="flex h-4 w-4 items-center justify-center rounded bg-stone-100 text-[10px] font-bold text-stone-500 transition-transform group-open:rotate-90">
+                          ▶
+                        </span>
+                        <span>
+                          Web search —{' '}
+                          <span className="text-stone-500">{resultCount} result{resultCount !== 1 ? 's' : ''}</span>
+                        </span>
+                      </summary>
+                      <div className="border-t border-stone-100 px-3 py-2 text-stone-500">
+                        Query: <span className="text-stone-700">{output.query ?? 'unknown'}</span>
+                      </div>
+                    </details>
                   )
-                }
-
-                const output = event.payload.output as { query?: string; results?: unknown[] }
-                const resultCount = Array.isArray(output.results) ? output.results.length : 0
-
-                return (
-                  <details key={event.id} className="group rounded-md border border-stone-200 bg-white text-sm">
-                    <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-stone-700 hover:bg-stone-50">
-                      <span className="flex h-4 w-4 items-center justify-center rounded bg-stone-100 text-[10px] font-bold text-stone-500 transition-transform group-open:rotate-90">
-                        ▶
-                      </span>
-                      <span>
-                        Web search —{' '}
-                        <span className="text-stone-500">{resultCount} result{resultCount !== 1 ? 's' : ''}</span>
-                      </span>
-                    </summary>
-                    <div className="border-t border-stone-100 px-3 py-2 text-stone-500">
-                      Query: <span className="text-stone-700">{output.query ?? 'unknown'}</span>
-                    </div>
-                  </details>
-                )
-              })
-            )}
-          </div>
-        </section>
+                })
+              )}
+            </div>
+          </section>
         ) : null}
 
-        {/* Compose */}
+        {/* Composer */}
         <form
-          className="mt-auto rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm"
+          className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm"
           onSubmit={(event) => {
             event.preventDefault()
             if (!prompt.trim() || isCoolingDown || isRunning) {
@@ -386,17 +402,97 @@ export const ChatPage = () => {
             className="w-full resize-none rounded-md border border-stone-300 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none ring-amber-300 transition focus:ring-2"
             style={{ minHeight: '44px' }}
           />
+
+          {/* Composer actions */}
           <div className="mt-2 flex items-center gap-2">
-            <Button type="submit" disabled={isRunning || isCoolingDown || !prompt.trim()} className="min-w-24">
-              {submitLabel}
-            </Button>
+            {/* Settings trigger */}
+            <button
+              type="button"
+              aria-label="Settings"
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-stone-200 text-stone-500 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700 transition-colors"
+            >
+              <Cog6ToothIcon className="h-4 w-4" />
+            </button>
+
+            {/* Auth controls */}
+            {token ? (
+              <button
+                type="button"
+                onClick={() => void clearToken()}
+                className="inline-flex items-center gap-1.5 rounded-md border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600 hover:border-stone-300 hover:bg-stone-50 transition-colors h-9"
+              >
+                Sign out
+              </button>
+            ) : showPat ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="password"
+                  value={patValue}
+                  onChange={(e) => setPatValue(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void handlePatSave() }}
+                  placeholder="GitHub PAT (models: read)"
+                  autoFocus
+                  className="rounded-md border border-stone-300 bg-white px-3 py-2 text-xs text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300 w-52 h-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handlePatSave()}
+                  className="inline-flex items-center rounded-md border border-stone-800 bg-stone-900 px-3 py-2 text-xs text-white hover:bg-stone-700 h-9 transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowPat(false); setPatValue('') }}
+                  className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600 hover:bg-stone-50 h-9 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                {loginUrl && (
+                  <a
+                    href={loginUrl}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-stone-800 bg-stone-900 px-3 py-2 text-xs text-white hover:bg-stone-700 h-9 transition-colors"
+                  >
+                    <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5" aria-hidden="true">
+                      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                    </svg>
+                    Sign in with GitHub
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowPat(true)}
+                  className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600 hover:bg-stone-50 h-9 transition-colors"
+                >
+                  Enter PAT
+                </button>
+              </div>
+            )}
+
+            <div className="flex-1" />
+
+            {/* Reset */}
+            <button
+              type="button"
+              onClick={() => void resetConversation()}
+              className="inline-flex h-9 items-center rounded-md border border-stone-300 bg-white px-3 text-sm text-stone-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 transition-colors"
+            >
+              Reset
+            </button>
+
+            {/* Retry cancel */}
             {isRetryPending && isCoolingDown ? (
               <Button type="button" variant="secondary" onClick={cancelRetry}>
                 Cancel retry
               </Button>
             ) : null}
-            <Button type="button" variant="secondary" onClick={() => void resetConversation()}>
-              Reset
+
+            {/* Send */}
+            <Button type="submit" disabled={isRunning || isCoolingDown || !prompt.trim()} className="min-w-24">
+              {submitLabel}
             </Button>
           </div>
         </form>
