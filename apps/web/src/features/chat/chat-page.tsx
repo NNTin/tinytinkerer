@@ -232,10 +232,10 @@ export const ChatPage = () => {
 
   return (
     <div className="mx-auto flex h-screen w-full max-w-5xl flex-col">
-      <main className="flex flex-1 flex-col gap-4 overflow-hidden px-4 py-6 md:px-8">
+      <main className="flex flex-1 flex-col gap-3 overflow-hidden px-4 py-4 md:px-8">
         {/* Conversation */}
-        <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
-          <h2 className="shrink-0 text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Conversation</h2>
+        <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm">
+          <h2 className="shrink-0 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Conversation</h2>
           <div className="mt-3 flex-1 overflow-y-auto space-y-4">
             {turns.length === 0 ? (
               <p className="text-sm text-[var(--muted)]">Start a conversation below.</p>
@@ -282,19 +282,23 @@ export const ChatPage = () => {
         {/* Thinking timeline */}
         {showThinkingTimeline ? (
           <Collapsible.Root open={openTimeline} onOpenChange={setOpenTimeline}>
-            <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
+            <section className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-4 py-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Thinking timeline</h2>
+                <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">Thinking</h2>
                 <Collapsible.Trigger asChild>
-                  <Button variant="ghost" size="sm" aria-label="Toggle timeline">
+                  <button
+                    type="button"
+                    aria-label="Toggle timeline"
+                    className="text-xs text-[var(--muted)] hover:text-stone-700 transition-colors"
+                  >
                     {openTimeline ? 'Collapse' : 'Expand'}
-                  </Button>
+                  </button>
                 </Collapsible.Trigger>
               </div>
               <Collapsible.Content className="collapsible-content overflow-hidden">
-                <div className="mt-3 space-y-2 text-sm">
+                <div className="mt-2 space-y-1 text-sm">
                   {timeline.length === 0 ? (
-                    <p className="text-[var(--muted)]">
+                    <p className="text-xs text-[var(--muted)]">
                       {isRunning ? (
                         <>
                           Understanding request <ThinkingDots />
@@ -307,12 +311,12 @@ export const ChatPage = () => {
                     timeline.map((item, index) => (
                       <div
                         key={item.id}
-                        className="timeline-entry flex items-start gap-2.5 rounded-md border border-stone-200 bg-white px-3 py-2"
+                        className="timeline-entry flex items-start gap-2 py-1"
                       >
-                        <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[10px] font-semibold text-amber-700">
+                        <span className="mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[9px] font-semibold text-amber-700">
                           {index + 1}
                         </span>
-                        <span className="text-stone-700">{item.label}</span>
+                        <span className="text-xs text-stone-600">{item.label}</span>
                       </div>
                     ))
                   )}
@@ -324,16 +328,16 @@ export const ChatPage = () => {
 
         {/* Tool activity */}
         {showToolActivity ? (
-          <section className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">Tool activity</h2>
-            <div className="mt-3 space-y-2">
+          <section className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-4 py-3">
+            <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">Tools</h2>
+            <div className="mt-2 space-y-1">
               {toolEvents.length === 0 ? (
-                <p className="text-sm text-[var(--muted)]">Search results and tool outputs will appear here.</p>
+                <p className="text-xs text-[var(--muted)]">Search results and tool outputs will appear here.</p>
               ) : (
                 toolEvents.map((event) => {
                   if (event.type === 'tool.call.failed') {
                     return (
-                      <div key={event.id} className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                      <div key={event.id} className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-700">
                         <span className="font-medium">Search failed:</span> {event.payload.error}
                       </div>
                     )
@@ -343,18 +347,18 @@ export const ChatPage = () => {
                   const resultCount = Array.isArray(output.results) ? output.results.length : 0
 
                   return (
-                    <details key={event.id} className="group rounded-md border border-stone-200 bg-white text-sm">
-                      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-stone-700 hover:bg-stone-50">
-                        <span className="flex h-4 w-4 items-center justify-center rounded bg-stone-100 text-[10px] font-bold text-stone-500 transition-transform group-open:rotate-90">
+                    <details key={event.id} className="group rounded-md border border-stone-200/70 bg-white/60 text-xs">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 text-stone-600 hover:bg-stone-50/80">
+                        <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-stone-100 text-[9px] font-bold text-stone-400 transition-transform group-open:rotate-90">
                           ▶
                         </span>
                         <span>
                           Web search —{' '}
-                          <span className="text-stone-500">{resultCount} result{resultCount !== 1 ? 's' : ''}</span>
+                          <span className="text-[var(--muted)]">{resultCount} result{resultCount !== 1 ? 's' : ''}</span>
                         </span>
                       </summary>
-                      <div className="border-t border-stone-100 px-3 py-2 text-stone-500">
-                        Query: <span className="text-stone-700">{output.query ?? 'unknown'}</span>
+                      <div className="border-t border-stone-100 px-3 py-1.5 text-[var(--muted)]">
+                        Query: <span className="text-stone-600">{output.query ?? 'unknown'}</span>
                       </div>
                     </details>
                   )
@@ -366,7 +370,7 @@ export const ChatPage = () => {
 
         {/* Composer */}
         <form
-          className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm"
+          className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3 shadow-sm"
           onSubmit={(event) => {
             event.preventDefault()
             if (!prompt.trim() || isCoolingDown || isRunning) {
