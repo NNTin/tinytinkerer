@@ -1,0 +1,16 @@
+{
+  "name": "@tinytinkerer/host",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node ./src/dev-server.mjs",
+    "build": "node ./src/build-pages.mjs"
+  },
+  "dependencies": {
+    "@tinytinkerer/mobile": "workspace:*",
+    "@tinytinkerer/web": "workspace:*",
+    "@tinytinkerer/widget": "workspace:*",
+    "vite": "^8.0.12"
+  }
+}

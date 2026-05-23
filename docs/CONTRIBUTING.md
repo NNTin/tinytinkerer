@@ -25,11 +25,19 @@ pnpm install
 
 ## Running locally
 
-Start both servers in parallel:
+Start local development:
 
 ```bash
 pnpm dev
 ```
+
+This runs:
+
+- Edge API (`http://localhost:8787`)
+- Frontend host (`http://localhost:3000/`)
+  - Web: `http://localhost:3000/`
+  - Widget: `http://localhost:3000/widget/`
+  - Mobile: `http://localhost:3000/mobile/`
 
 Or start them individually in separate terminals:
 
@@ -37,11 +45,8 @@ Or start them individually in separate terminals:
 # Terminal 1 — Edge API (http://localhost:8787)
 pnpm --filter @tinytinkerer/edge dev
 
-# Terminal 2 — Web app (http://localhost:5173)
-pnpm --filter @tinytinkerer/web dev
-
-# Terminal 3 — Widget shell
-pnpm --filter @tinytinkerer/widget dev
+# Terminal 2 — Frontend host (http://localhost:3000)
+pnpm --filter @tinytinkerer/host dev
 ```
 
 ## Environment variables
@@ -97,6 +102,8 @@ pnpm format      # Prettier
 ```
 apps/
   edge/          # Hono edge API (Cloudflare Workers compatible)
+  host/          # Unified frontend host and GitHub Pages composition
+  mobile/        # Mobile React frontend
   web/           # React 19 + Vite + Tailwind CSS v4 frontend
   widget/        # Embeddable React widget shell
 

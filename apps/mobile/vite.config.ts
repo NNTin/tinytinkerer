@@ -3,8 +3,11 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const deployBase = process.env.TINYTINKERER_DEPLOY_BASE?.replace(/\/+$/, '')
+const base = deployBase ? `${deployBase}/mobile/` : '/mobile/'
+
 export default defineConfig({
-  base: '/mobile/',
+  base,
   publicDir: '../../packages/brand-assets/assets/generated',
   plugins: [
     react(),
