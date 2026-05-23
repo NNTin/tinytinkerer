@@ -40,10 +40,12 @@ Do not add sidebars, split panes, or competing surfaces at the same visual weigh
 ## Composer
 
 Sits at the bottom of the column. Contains a growing textarea and an action row:
-- **Left**: settings gear (tertiary, icon-only)
+- **Left**: settings gear (tertiary, icon-only), "Sign in" button (tertiary, icon+label, shown only when unauthenticated)
 - **Right**: Reset (secondary, labelled button), Cancel retry (secondary, conditional), Send (primary CTA, min-w-24)
 
-Action hierarchy: Send is the single primary action. Reset and Cancel are secondary. Settings is tertiary. Never place a primary CTA next to another primary CTA.
+Action hierarchy: Send is the single primary action. Reset and Cancel are secondary. Settings and Sign in are tertiary. Never place a primary CTA next to another primary CTA.
+
+The "Sign in" button is the primary auth entry point. It appears in the composer action row only when the user is not authenticated, giving immediate discoverability without cluttering the main page. Clicking it opens the Settings modal (Auth section), which handles both GitHub OAuth and PAT flows. Once signed in, the button disappears.
 
 ## Settings modal
 

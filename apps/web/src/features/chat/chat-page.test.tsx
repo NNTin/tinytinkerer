@@ -7,6 +7,13 @@ const mockSettingsState = vi.hoisted(() => ({
   showToolActivity: true
 }))
 
+// Mutable auth state — modified per test to simulate signed-in / signed-out
+const mockAuthState = vi.hoisted(() => ({
+  token: null as string | null,
+  clearToken: vi.fn(),
+  setToken: vi.fn(),
+}))
+
 // Stub zustand store — provide minimal shape ChatPage reads
 vi.mock('../../stores/chat-store.js', () => {
   const state = {
@@ -24,10 +31,9 @@ vi.mock('../../stores/chat-store.js', () => {
   return { useChatStore }
 })
 
-vi.mock('../../stores/auth-store.js', () => {
-  const state = { token: null, clearToken: vi.fn(), setToken: vi.fn() }
-  return { useAuthStore: (selector: (s: typeof state) => unknown) => selector(state) }
-})
+vi.mock('../../stores/auth-store.js', () => ({
+  useAuthStore: (selector: (s: typeof mockAuthState) => unknown) => selector(mockAuthState),
+}))
 
 vi.mock('../../stores/settings-store.js', () => ({
   useSettingsStore: (selector: (s: typeof mockSettingsState) => unknown) => selector(mockSettingsState)
@@ -49,9 +55,10 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
-  // Reset to default (both panels visible) before each test
+  // Reset to default (both panels visible, signed out) before each test
   mockSettingsState.showThinkingTimeline = true
   mockSettingsState.showToolActivity = true
+  mockAuthState.token = null
 })
 
 describe('ChatPage layout', () => {
@@ -114,5 +121,19 @@ describe('ChatPage secondary panel conditional rendering', () => {
     const sections = container.querySelectorAll('section')
     expect(sections).toHaveLength(1) // only the conversation <section>
     expect(container.querySelector('form')).not.toBeNull()
+  })
+})
+
+describe('ChatPage composer auth entry point', () => {
+  it('shows "Sign in" button in the composer when not authenticated', () => {
+    mockAuthState.token = null
+    render(<ChatPage />)
+    expect(screen.getByRole('button', { name: /sign in with github/i })).not.toBeNull()
+  })
+
+  it('hides "Sign in" button from the composer when already authenticated', () => {
+    mockAuthState.token = 'ghp_test_token'
+    render(<ChatPage />)
+    expect(screen.queryByRole('button', { name: /sign in with github/i })).toBeNull()
   })
 })
