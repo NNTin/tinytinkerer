@@ -1,4 +1,4 @@
-import type { ChatEvent, EventType } from '@tinytinkerer/types'
+import type { ChatEvent, EventType } from '@tinytinkerer/contracts'
 
 const createId = (): string => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {

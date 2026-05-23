@@ -7,7 +7,7 @@ on:
 
 jobs:
   ci:
-    name: Mermaid, Lint, Typecheck & Test
+    name: Mermaid, Boundaries, Lint, Typecheck & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +28,11 @@ jobs:
         id: mermaid
         continue-on-error: true
         run: pnpm check:mermaid
+
+      - name: Boundary check
+        id: boundaries
+        continue-on-error: true
+        run: pnpm check:boundaries
 
       - name: Lint
         id: lint
@@ -51,6 +56,11 @@ jobs:
 
           if [ "${{ steps.mermaid.outcome }}" != "success" ]; then
             echo "Mermaid render check failed."
+            failed=1
+          fi
+
+          if [ "${{ steps.boundaries.outcome }}" != "success" ]; then
+            echo "Boundary check failed."
             failed=1
           fi
 

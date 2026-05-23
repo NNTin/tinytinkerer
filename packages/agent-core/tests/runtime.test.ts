@@ -1,11 +1,33 @@
-import type { ChatEvent } from '@tinytinkerer/types'
-import { inferPlan } from '@tinytinkerer/shared'
+import type { ChatEvent } from '@tinytinkerer/contracts'
 import { describe, expect, it, vi } from 'vitest'
 import { RateLimitError } from '../src/errors/rate-limit-error'
 import { AgentRuntime } from '../src/runtime/agent-runtime'
 import { ToolRegistry } from '../src/tools/registry'
 import { z } from 'zod'
 import type { ModelProvider, ProviderCallOptions } from '../src/types'
+
+const inferPlan = (prompt: string, options?: { searchEnabled?: boolean }) => {
+  const searchEnabled = options?.searchEnabled !== false
+  const shouldSearch = /latest|news|search|web|compare|today|research/i.test(prompt)
+  return {
+    complexity: searchEnabled && shouldSearch ? ('medium' as const) : ('low' as const),
+    steps:
+      searchEnabled && shouldSearch
+        ? [
+            { id: 'understand', summary: 'Understand request constraints' },
+            {
+              id: 'search',
+              summary: 'Collect current references from web search',
+              toolCall: { toolId: 'web-search', input: { query: prompt, maxResults: 5 } }
+            },
+            { id: 'compose', summary: 'Compose final answer' }
+          ]
+        : [
+            { id: 'understand', summary: 'Understand request constraints' },
+            { id: 'compose', summary: 'Compose final answer' }
+          ]
+  }
+}
 
 type EventOf<TType extends ChatEvent['type']> = Extract<ChatEvent, { type: TType }>
 

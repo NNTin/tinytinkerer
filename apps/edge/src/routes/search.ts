@@ -1,0 +1,92 @@
+import { zValidator } from '@hono/zod-validator'
+import {
+  searchResponseSchema,
+  searchResultSchema,
+  searchRequestSchema,
+  type SearchResult
+} from '@tinytinkerer/contracts'
+import type { Hono } from 'hono'
+import { z } from 'zod'
+import type { Bindings } from '../lib/bindings'
+import { fetchWithTimeout } from '../lib/fetch'
+
+const tavilyResultItemSchema = z.object({
+  title: z.string().optional(),
+  url: z.string().optional(),
+  content: z.string().optional(),
+  snippet: z.string().optional()
+})
+
+const tavilyResponseSchema = z.object({
+  results: z.array(tavilyResultItemSchema).optional()
+})
+
+type TavilyResultItem = z.infer<typeof tavilyResultItemSchema>
+
+const normalizeSearchResults = (results: TavilyResultItem[]): SearchResult[] =>
+  results
+    .map((item) => {
+      const title = item.title ?? 'Untitled'
+      const url = item.url ?? ''
+      const snippet = item.content ?? item.snippet ?? ''
+
+      if (!url) {
+        return undefined
+      }
+
+      return searchResultSchema.parse({ title, url, snippet })
+    })
+    .filter((value): value is SearchResult => Boolean(value))
+
+export const registerSearchRoutes = (app: Hono<{ Bindings: Bindings }>) => {
+  app.post('/api/search', zValidator('json', searchRequestSchema), async (c) => {
+    const input = c.req.valid('json')
+
+    if (!c.env.TAVILY_API_KEY) {
+      return c.json(
+        searchResponseSchema.parse({
+          query: input.query,
+          results: [
+            {
+              title: 'Search unavailable',
+              url: 'https://tavily.com/',
+              snippet: 'Set TAVILY_API_KEY in edge environment to enable live web search.'
+            }
+          ]
+        })
+      )
+    }
+
+    const response = await fetchWithTimeout(
+      'https://api.tavily.com/search',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          api_key: c.env.TAVILY_API_KEY,
+          query: input.query,
+          max_results: input.maxResults ?? 5,
+          include_answer: false,
+          include_raw_content: false
+        })
+      },
+      10_000
+    )
+
+    if (!response.ok) {
+      return c.json({ error: 'Tavily request failed' }, 502)
+    }
+
+    const parsed = tavilyResponseSchema.safeParse(await response.json())
+    const results = parsed.success ? (parsed.data.results ?? []) : []
+
+    return c.json(
+      searchResponseSchema.parse({
+        query: input.query,
+        results: normalizeSearchResults(results)
+      })
+    )
+  })
+}

@@ -1,8 +1,9 @@
-import type { ChatEvent } from '@tinytinkerer/types'
+import { buildCurrentTimeline, buildTurns } from '@tinytinkerer/app-browser'
 import { Button } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { Cog6ToothIcon } from '@heroicons/react/24/outline'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ensureBrowserShellInitialized } from '../../app/browser-shell'
 import { useChatStore } from '../../stores/chat-store'
 import { useAuthStore } from '../../stores/auth-store.js'
 import { useSettingsStore } from '../../stores/settings-store.js'
@@ -18,121 +19,11 @@ const GitHubMark = () => (
 // Guard so the deferred-load init only fires once even in React StrictMode.
 let chatStoreInitialized = false
 
-type TimelineEntry = {
-  id: string
-  label: string
-}
-
-type Turn = {
-  id: string
-  userText: string
-  assistantText: string
-  isError?: boolean
-  errorMessage?: string
-  systemMessage?: string
-  systemLevel?: 'info' | 'warning' | 'error'
-  rateLimitMessage?: string
-}
-
-const thinkingLabel = (event: ChatEvent): string | undefined => {
-  switch (event.type) {
-    case 'planning.started':
-      return 'Planning research steps'
-    case 'execution.step.started':
-      return event.payload.step.summary
-    case 'tool.call.started': {
-      const query = event.payload.input.query
-      return typeof query === 'string' ? `Searching: ${query}` : 'Searching web'
-    }
-    case 'execution.step.completed':
-      return event.payload.note
-    default:
-      return undefined
+const initializeStore = (store: { getState?: () => { initialize?: () => Promise<void> } }): void => {
+  const initialize = store.getState?.().initialize
+  if (initialize) {
+    void initialize()
   }
-}
-
-// streamingText holds the live chunk accumulation from the store; assistant.chunk
-// events are not persisted so completed turns rely solely on assistant.done.text.
-const buildTurns = (events: ChatEvent[], streamingText: string): Turn[] => {
-  const turns: Turn[] = []
-  let userEventId: string | null = null
-  let userText: string | null = null
-
-  for (const event of events) {
-    if (event.type === 'user.message') {
-      userEventId = event.id
-      userText = event.payload.text
-    } else if (event.type === 'assistant.done') {
-      if (userEventId !== null && userText !== null) {
-        turns.push({ id: userEventId, userText, assistantText: event.payload.text })
-        userEventId = null
-        userText = null
-      }
-    } else if (event.type === 'error') {
-      if (userEventId !== null && userText !== null) {
-        turns.push({
-          id: userEventId,
-          userText,
-          assistantText: '',
-          isError: true,
-          errorMessage: event.payload.message
-        })
-        userEventId = null
-        userText = null
-      }
-    } else if (event.type === 'system') {
-      if (userEventId !== null && userText !== null) {
-        turns.push({
-          id: userEventId,
-          userText,
-          assistantText: '',
-          systemMessage: event.payload.message,
-          systemLevel: event.payload.level
-        })
-      } else {
-        turns.push({
-          id: event.id,
-          userText: '',
-          assistantText: '',
-          systemMessage: event.payload.message,
-          systemLevel: event.payload.level
-        })
-      }
-    } else if (event.type === 'rate.limit.waiting') {
-      if (userEventId !== null && userText !== null) {
-        turns.push({
-          id: userEventId,
-          userText,
-          assistantText: '',
-          rateLimitMessage: event.payload.message
-        })
-      }
-    }
-  }
-
-  // In-progress turn: use live streamingText from the store.
-  if (userEventId !== null && userText !== null) {
-    turns.push({ id: userEventId, userText, assistantText: streamingText })
-  }
-
-  return turns
-}
-
-const buildCurrentTimeline = (events: ChatEvent[]): TimelineEntry[] => {
-  let startIndex = 0
-  for (let i = events.length - 1; i >= 0; i--) {
-    if (events[i]?.type === 'user.message') {
-      startIndex = i
-      break
-    }
-  }
-  return events
-    .slice(startIndex)
-    .map((event) => {
-      const label = thinkingLabel(event)
-      return label ? { id: event.id, label } : undefined
-    })
-    .filter((value): value is TimelineEntry => Boolean(value))
 }
 
 const formatCooldown = (remainingMs: number): string => {
@@ -188,7 +79,10 @@ export const ChatPage = () => {
   useEffect(() => {
     if (!chatStoreInitialized) {
       chatStoreInitialized = true
-      void useChatStore.getState().initialize()
+      ensureBrowserShellInitialized()
+      initializeStore(useAuthStore)
+      initializeStore(useSettingsStore)
+      initializeStore(useChatStore)
     }
   }, [])
 

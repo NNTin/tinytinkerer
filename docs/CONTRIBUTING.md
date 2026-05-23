@@ -39,6 +39,9 @@ pnpm --filter @tinytinkerer/edge dev
 
 # Terminal 2 — Web app (http://localhost:5173)
 pnpm --filter @tinytinkerer/web dev
+
+# Terminal 3 — Widget shell
+pnpm --filter @tinytinkerer/widget dev
 ```
 
 ## Environment variables
@@ -51,6 +54,21 @@ The app runs in **local fallback mode** without any API keys — useful for UI d
 VITE_EDGE_URL=http://127.0.0.1:8787
 VITE_GITHUB_CLIENT_ID=        # optional: GitHub OAuth app client ID
 VITE_GITHUB_REDIRECT_URI=     # optional: OAuth redirect URI
+```
+
+### Widget
+
+The widget reads host-controlled runtime config from `window.__TINYTINKERER_WIDGET_CONFIG__`:
+
+```ts
+window.__TINYTINKERER_WIDGET_CONFIG__ = {
+  edgeBaseUrl: 'http://127.0.0.1:8787',
+  storageNamespace: 'tinytinkerer-widget',
+  authMode: 'hybrid', // 'oauth' | 'host-token' | 'hybrid'
+  hostToken: null,
+  githubClientId: '',
+  githubRedirectUri: ''
+}
 ```
 
 ### Edge — `apps/edge/.dev.vars`
@@ -66,6 +84,7 @@ AI model responses use the signed-in user's GitHub OAuth token — there is no s
 ## Other commands
 
 ```bash
+pnpm check:boundaries   # Workspace boundary and cycle checks
 pnpm lint        # ESLint across all packages
 pnpm typecheck   # TypeScript across all packages
 pnpm test        # Vitest across all packages
@@ -79,11 +98,12 @@ pnpm format      # Prettier
 apps/
   edge/          # Hono edge API (Cloudflare Workers compatible)
   web/           # React 19 + Vite + Tailwind CSS v4 frontend
+  widget/        # Embeddable React widget shell
 
 packages/
-  agent-core/    # AgentRuntime, providers, tool registry
-  types/         # Shared TypeScript types
-  shared/        # Utility helpers (sleep, withTimeout)
+  contracts/     # Shared Zod contracts and inferred types
+  agent-core/    # AgentRuntime, tool registry, runtime abstractions
+  app-core/      # Headless product logic and projections
+  app-browser/   # Browser adapters, persistence, runtime wiring
   ui/            # Shared React component library
-  config/        # Shared ESLint / TS config
 ```
