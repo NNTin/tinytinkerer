@@ -45,8 +45,9 @@ const createRateLimitError = async (response: Response): Promise<RateLimitError>
 export class GitHubModelsProvider implements ModelProvider {
   constructor(private readonly options: GitHubModelsProviderOptions) {}
 
-  plan(prompt: string): Promise<ExecutionPlan> {
-    return Promise.resolve(inferPlan(prompt))
+  plan(prompt: string, options?: ProviderCallOptions): Promise<ExecutionPlan> {
+    const searchEnabled = options?.searchEnabled
+    return Promise.resolve(inferPlan(prompt, searchEnabled !== undefined ? { searchEnabled } : undefined))
   }
 
   execute(step: PlanStep, context: ExecutionContext): Promise<string> {

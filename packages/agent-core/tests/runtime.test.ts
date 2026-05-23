@@ -1,10 +1,11 @@
 import type { ChatEvent } from '@tinytinkerer/types'
+import { inferPlan } from '@tinytinkerer/shared'
 import { describe, expect, it, vi } from 'vitest'
 import { RateLimitError } from '../src/errors/rate-limit-error'
 import { AgentRuntime } from '../src/runtime/agent-runtime'
 import { ToolRegistry } from '../src/tools/registry'
 import { z } from 'zod'
-import type { ModelProvider } from '../src/types'
+import type { ModelProvider, ProviderCallOptions } from '../src/types'
 
 type EventOf<TType extends ChatEvent['type']> = Extract<ChatEvent, { type: TType }>
 
@@ -323,6 +324,32 @@ describe('AgentRuntime', () => {
     expect(capturedNotes).toHaveLength(1)
     expect(capturedNotes[0]).toContain('search:')
     expect(capturedNotes[0]).not.toContain('Completed step:')
+  })
+
+  it('does not emit tool.call.started or tool.call.failed for search when searchEnabled is false', async () => {
+    const searchProvider: ModelProvider = {
+      plan: (prompt: string, options?: ProviderCallOptions) => {
+        const searchEnabled = options?.searchEnabled
+        return Promise.resolve(inferPlan(prompt, searchEnabled !== undefined ? { searchEnabled } : undefined))
+      },
+      async execute() {
+        return 'ok'
+      },
+      async *synthesize() {
+        yield 'done'
+      }
+    }
+
+    const runtime = new AgentRuntime(searchProvider, new ToolRegistry(), { searchEnabled: false })
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('What is the latest news on AI?')) {
+      events.push(event)
+    }
+
+    expect(events.some((event) => event.type === 'tool.call.started')).toBe(false)
+    expect(events.some((event) => event.type === 'tool.call.failed')).toBe(false)
+    const planEvent = events.find(isEventType('plan.generated'))
+    expect(planEvent?.payload.plan.steps.every((s) => !s.toolCall)).toBe(true)
   })
 
   it('does not emit tool.call.started when tool calls are disabled', async () => {

@@ -10,6 +10,7 @@ type AgentRuntimeOptions = {
   maxToolCallsPerStep?: number
   toolTimeoutMs?: number
   stepTimeoutMs?: number
+  searchEnabled?: boolean
 }
 
 type RunOptions = {
@@ -22,6 +23,7 @@ export class AgentRuntime {
   private readonly maxToolCallsPerStep: number
   private readonly toolTimeoutMs: number
   private readonly stepTimeoutMs: number
+  private readonly searchEnabled: boolean
 
   constructor(
     private readonly provider: ModelProvider,
@@ -32,6 +34,7 @@ export class AgentRuntime {
     this.maxToolCallsPerStep = options.maxToolCallsPerStep ?? 1
     this.toolTimeoutMs = options.toolTimeoutMs ?? 10_000
     this.stepTimeoutMs = options.stepTimeoutMs ?? 15_000
+    this.searchEnabled = options.searchEnabled ?? true
   }
 
   async *run(prompt: string, options: RunOptions = {}): AsyncGenerator<ChatEvent> {
@@ -50,7 +53,7 @@ export class AgentRuntime {
     yield createEvent('user.message', { text: prompt })
     yield createEvent('planning.started', { summary: 'Understanding request' })
 
-    const callOptions = signal ? { signal } : undefined
+    const callOptions = { ...(signal ? { signal } : {}), searchEnabled: this.searchEnabled }
 
     try {
       context.plan = await withTimeout(
