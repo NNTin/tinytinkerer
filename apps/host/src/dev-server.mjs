@@ -22,7 +22,7 @@ const httpServer = createHttpServer((req, res) => {
 
   if (pathname === '/mobile' || pathname === '/widget') {
     res.statusCode = 301
-    res.setHeader('Location', `${pathname}/`)
+    res.setHeader('Location', pathname === '/mobile' ? '/mobile/' : '/widget/')
     res.end()
     return
   }
