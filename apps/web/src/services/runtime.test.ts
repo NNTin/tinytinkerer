@@ -9,6 +9,10 @@ const mockSettings = vi.hoisted(() => ({
   showToolActivity: true
 }))
 
+const mockAuth = vi.hoisted(() => ({
+  token: null as string | null
+}))
+
 vi.mock('../stores/settings-store.js', () => ({
   useSettingsStore: {
     getState: () => mockSettings
@@ -17,7 +21,7 @@ vi.mock('../stores/settings-store.js', () => ({
 
 vi.mock('../stores/auth-store.js', () => ({
   useAuthStore: {
-    getState: () => ({ token: null })
+    getState: () => mockAuth
   }
 }))
 
@@ -30,6 +34,7 @@ import { getRuntime } from './runtime.js'
 beforeEach(() => {
   mockSettings.searchEnabled = true
   mockSettings.selectedModel = 'openai/gpt-4.1-mini'
+  mockAuth.token = null
 })
 
 describe('getRuntime — search tool registration', () => {
@@ -53,18 +58,41 @@ describe('getRuntime — search tool registration', () => {
 })
 
 describe('getRuntime — model forwarding', () => {
-  it('returns a runtime whose provider reads selectedModel from the settings store', () => {
-    // The provider uses getModel: () => useSettingsStore.getState().selectedModel
-    // Verify indirectly: change the model after runtime creation and confirm the provider
-    // picks up the current value at call time (it is a callback, not a snapshot).
-    mockSettings.selectedModel = 'openai/gpt-4.1-mini'
-    getRuntime() // creates provider with getModel closure
+  it('forwards selectedModel from settings store to the HTTP request body', async () => {
+    let capturedBody: string | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        capturedBody = init?.body as string | undefined
+        const sseBody = [
+          'data: {"choices":[{"delta":{"content":"ok"}}]}',
+          '',
+          'data: [DONE]',
+          ''
+        ].join('\n')
+        return Promise.resolve(
+          new Response(sseBody, {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' }
+          })
+        )
+      })
+    )
 
+    mockAuth.token = 'test-token'
     mockSettings.selectedModel = 'openai/gpt-4o'
 
-    // The model getter is a live callback — reading it now should return the new value
-    const currentModel = mockSettings.selectedModel
-    expect(currentModel).toBe('openai/gpt-4o')
+    const runtime = getRuntime()
+    const events: unknown[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(capturedBody).toBeDefined()
+    const requestBody = JSON.parse(capturedBody ?? '{}') as { model: string }
+    expect(requestBody.model).toBe('openai/gpt-4o')
+
+    vi.unstubAllGlobals()
   })
 
   it('creates a new AgentRuntime instance on every call (no shared state)', () => {

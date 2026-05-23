@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mutable settings state — modified per test via vi.hoisted so the mock factory can close over it
@@ -44,7 +44,18 @@ vi.mock('../../services/auth.js', () => ({
 }))
 
 vi.mock('../settings/settings-modal.js', () => ({
-  SettingsModal: () => null,
+  SettingsModal: ({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) =>
+    open ? (
+      <div role="dialog" aria-label="Settings">
+        <button type="button" aria-label="Close settings" onClick={() => onOpenChange(false)}>
+          Close
+        </button>
+        <section aria-label="Auth">
+          <h3>Auth</h3>
+          <button type="button">Sign in with GitHub</button>
+        </section>
+      </div>
+    ) : null,
 }))
 
 import { ChatPage } from './chat-page.js'
@@ -135,5 +146,34 @@ describe('ChatPage composer auth entry point', () => {
     mockAuthState.token = 'ghp_test_token'
     render(<ChatPage />)
     expect(screen.queryByRole('button', { name: /sign in with github/i })).toBeNull()
+  })
+})
+
+describe('ChatPage settings modal', () => {
+  it('modal is closed by default', () => {
+    render(<ChatPage />)
+    expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
+  })
+
+  it('opens the settings modal when the settings gear button is clicked', () => {
+    render(<ChatPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(screen.getByRole('dialog', { name: 'Settings' })).not.toBeNull()
+  })
+
+  it('modal contains auth controls', () => {
+    render(<ChatPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    const dialog = screen.getByRole('dialog', { name: 'Settings' })
+    expect(within(dialog).getByRole('region', { name: /auth/i })).not.toBeNull()
+    expect(within(dialog).getByRole('button', { name: /sign in with github/i })).not.toBeNull()
+  })
+
+  it('closes the modal when the close button is clicked', () => {
+    render(<ChatPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(screen.getByRole('dialog', { name: 'Settings' })).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Close settings' }))
+    expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
   })
 })
