@@ -81,3 +81,19 @@ Follow these rules when introducing new elements:
 3. **Keep the palette warm**: amber for interactive focus/accent, stone for text, no cold blues.
 4. **No orphan panels**: don't add a new panel on the main page without gating it behind a settings toggle and making it visually secondary.
 5. **Mobile first**: the layout is a single column. New sections must stack cleanly without horizontal overflow on narrow screens.
+
+## Cross-App Feature Reuse
+
+When a large feature is introduced and both `web` and `widget` need it, duplication is not acceptable.
+
+- Shared feature logic must be extracted into a dedicated package before the second app grows its own implementation.
+- `packages/ui` is only for primitives and presentational building blocks. It is not the home for feature runtimes.
+- Feature packages own shared behavior, integration surfaces, and non-trivial rendering pipelines used across apps.
+
+Mermaid is the concrete example:
+
+- If both apps render Mermaid diagrams, do not duplicate the parser or render pipeline.
+- Do not duplicate markdown hooks, sanitization rules, lazy-loading, or shared styling glue in both apps.
+- Instead create a package such as `@tinytinkerer/feature-mermaid` and keep app wrappers thin.
+
+This rule applies to any similarly large cross-app feature, not only Mermaid.

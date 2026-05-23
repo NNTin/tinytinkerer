@@ -6,147 +6,142 @@ Do NOT delete above lines.
 
 # Architecture
 
-TinyTinkerer is a pnpm/turbo monorepo with two runnable apps and four shared packages. The browser app owns the user experience and most of the orchestration. The edge app is a thin, stateless proxy for OAuth, web search, health checks, and GitHub Models access.
+This document describes the desired future architecture for TinyTinkerer. The goal is a monorepo where UI apps are thin shells, shared behavior is headless and reusable, browser-specific concerns live behind adapters, and large shared features are extracted before they are duplicated.
+
+See also:
+- [packages-concept.md](./packages-concept.md) for detailed package boundaries
+- [PLAN.md](./PLAN.md) for the migration roadmap
 
 ## Monorepo Map
 
 ```mermaid
 flowchart LR
   subgraph Apps
-    web["@tinytinkerer/web<br/>React 19 + Vite frontend"]
-    edge["@tinytinkerer/edge<br/>Hono edge API"]
+    web["@tinytinkerer/web<br/>full browser UI shell"]
+    widget["@tinytinkerer/widget<br/>embeddable browser UI shell"]
+    edge["@tinytinkerer/edge<br/>stateless edge backend"]
   end
 
   subgraph Packages
-    agent["@tinytinkerer/agent-core<br/>runtime, provider, tools"]
-    shared["@tinytinkerer/shared<br/>planning + utilities"]
-    types["@tinytinkerer/types<br/>shared contracts"]
-    ui["@tinytinkerer/ui<br/>shared React primitives"]
+    contracts["@tinytinkerer/contracts<br/>shared schemas + types"]
+    agent["@tinytinkerer/agent-core<br/>runtime abstractions"]
+    appcore["@tinytinkerer/app-core<br/>headless product logic"]
+    appbrowser["@tinytinkerer/app-browser<br/>browser adapters + integrations"]
+    ui["@tinytinkerer/ui<br/>presentational React primitives"]
+    mermaid["@tinytinkerer/feature-mermaid<br/>shared large feature package"]
   end
 
-  subgraph Repo_Config["Config Layer"]
-    rootcfg["Root config files<br/>pnpm-workspace.yaml<br/>turbo.json<br/>tsconfig.base.json<br/>eslint.config.mjs"]
-    webcfg["Web runtime config<br/>apps/web/src/services/config.ts<br/>VITE_* env vars"]
-    edgecfg["Edge runtime config<br/>wrangler.jsonc<br/>.dev.vars / Worker bindings"]
-  end
-
-  web --> agent
-  web --> types
   web --> ui
-  edge --> shared
-  edge --> types
-  agent --> shared
-  agent --> types
-  shared --> types
+  web --> appcore
+  web --> appbrowser
+  web --> contracts
+  web --> mermaid
 
-  rootcfg -.applies to.-> web
-  rootcfg -.applies to.-> edge
-  rootcfg -.applies to.-> agent
-  rootcfg -.applies to.-> shared
-  rootcfg -.applies to.-> types
-  rootcfg -.applies to.-> ui
-  webcfg -.configures.-> web
-  edgecfg -.configures.-> edge
+  widget --> ui
+  widget --> appcore
+  widget --> appbrowser
+  widget --> contracts
+  widget --> mermaid
+
+  edge --> contracts
+
+  appcore --> agent
+  appcore --> contracts
+
+  appbrowser --> appcore
+  appbrowser --> agent
+  appbrowser --> contracts
+
+  mermaid --> contracts
+  mermaid --> ui
+
+  agent --> contracts
 ```
 
-## Big Picture
+## Design Principles
 
-- `apps/web` is the primary application. It renders the chat UI, stores settings and history in IndexedDB, manages OAuth state, and runs the agent runtime in the browser.
-- `apps/edge` is a stateless backend. It exposes `/health`, `/auth/github/exchange`, `/api/search`, and `/api/models/chat`.
-- `packages/agent-core` contains the agent loop: plan, optional tool execution, synthesis, event streaming, and rate-limit handling.
-- `packages/shared` contains pure utilities used across runtime boundaries, including local plan inference, timeout helpers, and retry-after parsing.
-- `packages/types` defines the contracts both apps use, especially chat events, execution plans, service status, and search results.
-- `packages/ui` provides reusable React UI primitives. Today it is consumed by `apps/web`.
+- Apps stay thin. `apps/web` and `apps/widget` own routes, screens, layout, embedding concerns, and final UI composition, but not shared product behavior.
+- Shared product behavior is headless. Reusable orchestration, projections, and use-case logic live in packages that do not depend on React or browser APIs.
+- Browser-specific code is isolated. Fetch clients, OAuth browser flows, IndexedDB, session storage, and similar concerns live in browser adapter packages.
+- Contracts are the wire source of truth. Shared request, response, event, and payload schemas live in a single contracts package and are reused by clients, the edge app, and runtime layers.
+- Large shared features are extracted early. If a feature is non-trivial and reused across apps, it becomes a dedicated package instead of being implemented twice.
 
-### What each layer contributes
+## Target Layers
 
-- The web app builds conversation history from prior persisted events and passes that history into `AgentRuntime`.
-- `AgentRuntime` emits typed `ChatEvent` objects for planning, execution, tool usage, errors, rate limits, and final assistant output.
-- `GitHubModelsProvider.plan()` is local and deterministic. It uses `inferPlan()` from `@tinytinkerer/shared` instead of calling a remote planner.
-- Tool execution is opt-in. The web app enables the `web-search` tool based on user settings, then `ToolRegistry` routes the call.
-- The edge app normalizes third-party responses so the browser only deals with the repo's own contracts.
-
-## Responsibilities By Component
-
-| Component | Primary responsibility | Depends on | Key outputs |
+| Layer | Purpose | Owns | Must not own |
 | --- | --- | --- | --- |
-| `apps/web` | User interface, local state, persistence, runtime orchestration | `agent-core`, `types`, `ui` | Rendered chat, persisted events/preferences, OAuth token usage |
-| `apps/edge` | External service boundary and API normalization | `shared`, `types` | Health status, OAuth token exchange, search results, model proxy responses |
-| `packages/agent-core` | Agent loop and provider/tool abstractions | `shared`, `types` | `ChatEvent` stream |
-| `packages/shared` | Pure shared logic and helpers | `types` | Plans, timeout behavior, retry-after parsing |
-| `packages/types` | Shared contracts | none | Stable cross-app TypeScript types |
-| `packages/ui` | Shared UI primitives | React peer dependency | Reusable components such as `Button` |
-| Config layer | Build, lint, typecheck, env wiring | root files + app-local config | Consistent workspace behavior and runtime endpoints |
+| `apps/web` | Full browser application shell | routes, screens, layout, app-local composition, final presentation | shared business logic, provider wiring, storage implementation details |
+| `apps/widget` | Embeddable browser application shell | host integration, compact layout, widget-specific composition | copied web behavior, duplicated feature runtimes |
+| `apps/edge` | Stateless backend boundary | HTTP endpoints, upstream normalization, transport concerns | browser APIs, UI logic, app-local state |
+| `packages/contracts` | Shared schemas and types | agent event contracts, planning contracts, edge DTOs, rate-limit payloads | fetch logic, runtime orchestration, UI components |
+| `packages/agent-core` | Product-agnostic runtime abstractions | `AgentRuntime`, tool registry, provider interfaces, rate-limit runtime behavior | GitHub-specific providers, app-specific tools, browser code |
+| `packages/app-core` | Headless product behavior | chat/auth/settings orchestration, projections, feature policies, ports | React, Zustand, Dexie, fetch, `window`, `sessionStorage` |
+| `packages/app-browser` | Shared browser adapters | IndexedDB repositories, OAuth state handling, edge clients, provider/tool wiring, shell config | app-specific layout and page composition |
+| `packages/ui` | Presentational React primitives | buttons, simple shared visual building blocks, styling helpers | feature runtimes, orchestration, app-owned flows |
+| `packages/feature-*` | Large shared features | reusable non-trivial feature logic shared by apps or layers | app shells, unrelated primitives |
 
-## Browser-Side State And Persistence
+## Dependency Rules
 
-- `apps/web` uses Zustand stores for chat state, auth state, and settings state.
-- Dexie-backed IndexedDB stores:
-  - conversations
-  - persisted chat events
-  - preferences such as GitHub token, selected model, search toggle, and rate-limit cooldown
-- Streaming `assistant.chunk` events are intentionally not persisted. The store accumulates them in memory and only persists the terminal events such as `assistant.done`.
-- This design keeps the edge backend stateless while still preserving conversation history locally.
+- Apps may depend on `contracts`, `agent-core`, `app-core`, `app-browser`, `ui`, and feature packages. Apps must never import from other apps.
+- `packages/ui` must not import from `app-core`, `app-browser`, `agent-core`, or `apps/*`.
+- `packages/app-core` may depend on `contracts` and `agent-core`, but must never use browser APIs, fetch, Dexie, session storage, React, or app-local UI code.
+- `packages/app-browser` may depend on `contracts`, `agent-core`, and `app-core`, and owns browser-only adapters.
+- `packages/agent-core` must stay product-agnostic. Concrete GitHub Models integrations, web-search implementations, and product planning heuristics do not belong there.
+- `apps/edge` may depend on `contracts` and its own internal modules only. It must not depend on browser packages or UI packages.
+- Feature packages should depend only on the layers required for the feature. They must not become a second `app-core` or a second `ui`.
 
-## Auth, Config, And Status
+## Browser App Model
 
-```mermaid
-flowchart TD
-  user[User in browser]
-  web[apps/web]
-  auth[auth service + auth store]
-  settings[settings store]
-  db[(IndexedDB via Dexie)]
-  edge[apps/edge]
-  gh[GitHub OAuth + GitHub Models]
-  tavily[Tavily]
-  status[status service]
-  rootcfg[Root workspace config]
-  webe[Web env vars]
-  edgee[Edge bindings / env vars]
+The future browser architecture is built around one shared headless core and one shared browser adapter layer.
 
-  rootcfg --> web
-  rootcfg --> edge
-  webe --> auth
-  webe --> status
-  edgee --> edge
+- `apps/web` and `apps/widget` both consume `packages/app-core` for shared product behavior.
+- Both apps consume `packages/app-browser` for browser-specific integrations such as persistence, OAuth browser flows, fetch-based edge clients, and runtime composition.
+- Both apps may consume `packages/ui` for presentational primitives, but each app remains responsible for its own shell, layout, and feature presentation.
+- `packages/app-browser` is configured per shell. Different apps can vary by `edgeBaseUrl`, storage namespace, auth mode, host embedding behavior, and other shell-specific configuration without changing shared logic.
+- The widget is treated as the stricter client. Shared code must assume embedding constraints, thin host-controlled surfaces, and the possibility of host-provided credentials.
 
-  user --> web
-  web --> auth
-  auth --> gh
-  gh --> edge
-  edge --> auth
-  auth --> db
+## Shared Feature Extraction
 
-  web --> settings
-  settings --> db
+When a large feature is introduced, shared behavior must be extracted before it is duplicated across UI apps.
 
-  web --> status
-  status --> edge
-  edge --> tavily
-  edge --> gh
-```
+- Feature extraction is required when a capability is non-trivial, has its own rendering or behavior pipeline, or is expected to be shared by `web` and `widget`.
+- `packages/ui` is not the place for feature runtimes. It stays focused on primitives and presentational building blocks.
+- Large shared features should use dedicated feature packages such as `packages/feature-mermaid`.
 
-### Config boundaries
+### Mermaid example
 
-- Root config is shared through `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`, and `eslint.config.mjs`.
-- Web runtime config is local to `apps/web`, mainly `VITE_EDGE_URL`, `VITE_GITHUB_CLIENT_ID`, and `VITE_GITHUB_REDIRECT_URI`.
-- Edge runtime config is local to `apps/edge`, mainly `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `TAVILY_API_KEY`, `ALLOWED_ORIGIN`, and `GITHUB_MODELS_URL`.
+If both `apps/web` and `apps/widget` support Mermaid rendering:
 
-### Auth and health behavior
+- the shared parser/render pipeline belongs in `@tinytinkerer/feature-mermaid`
+- markdown integration hooks belong in `@tinytinkerer/feature-mermaid`
+- shared sanitization, lazy-loading, and rendering policy belong in `@tinytinkerer/feature-mermaid`
+- app-local code only decides where Mermaid content appears and how it fits that shell's UX
 
-- GitHub sign-in starts in the browser, but code exchange happens through the edge endpoint so the client secret never lives in the web app.
-- The GitHub access token is stored in browser preferences and attached by `GitHubModelsProvider` when calling `/api/models/chat`.
-- `/health` reports whether OAuth and search are configured, which lets the web UI show degraded vs ready states without guessing.
-- If search is not configured, edge returns a mock fallback result. If a GitHub token is missing, the runtime falls back to local mock synthesis.
+This same rule applies to any large shared feature, not only Mermaid.
 
-## Shared Contracts
+## Contracts and Data Flow
 
-`@tinytinkerer/types` is the spine that keeps `web`, `edge`, and `agent-core` aligned.
+`packages/contracts` is the shared source of truth for:
 
-- `ChatEvent` defines the event protocol used by the runtime and rendered by the UI.
-- `ExecutionPlan` and `PlanStep` define how local planning feeds execution.
-- `SystemStatus` defines the health payload returned by edge and consumed by the web app.
-- `SearchResult` defines the normalized search shape returned from edge and tool execution.
+- agent event schemas and types such as `ChatEvent`
+- planning schemas such as `ExecutionPlan` and `PlanStep`
+- edge DTOs such as `/health`, `/auth/github/exchange`, `/api/search`, and `/api/models/chat`
+- rate-limit payloads shared between backend and browser layers
 
-Without this package, the web app, edge app, and agent runtime would each need their own copies of the same payload definitions.
+The desired flow is:
+
+1. A UI app renders the shell and binds user interaction to `app-core`.
+2. `app-core` orchestrates product behavior through ports and runtime abstractions.
+3. `app-browser` supplies browser-backed implementations for persistence, auth state, edge clients, and runtime/provider wiring.
+4. `agent-core` executes the agent runtime using product-agnostic abstractions.
+5. `apps/edge` exposes stateless endpoints and returns payloads that conform to `contracts`.
+
+## Current Gaps Motivating This Target
+
+The current repository shape motivates this target architecture:
+
+- `apps/web` currently owns too much orchestration and browser behavior.
+- `packages/agent-core` currently contains product-specific integrations that should move outward.
+- `packages/shared` mixes helpers with product planning concerns and should not remain a mixed-ownership bucket.
+- shared contracts are not yet the runtime schema source of truth across all layers.
+- there is no explicit package strategy yet for large shared features or for enforcing dependency boundaries.
