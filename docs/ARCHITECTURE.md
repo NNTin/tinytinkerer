@@ -21,6 +21,8 @@ flowchart LR
     edge["@tinytinkerer/edge<br/>stateless edge backend"]
   end
 
+  common["Frontend Composition Layer"]
+
   subgraph Packages
     contracts["@tinytinkerer/contracts<br/>shared schemas + types"]
     agent["@tinytinkerer/agent-core<br/>runtime abstractions"]
@@ -36,12 +38,12 @@ flowchart LR
     end
   end
 
-  web --> ui
-  web --> appbrowser
+  web --> common
+  widget --> common
 
-  widget --> ui
-  widget --> appbrowser
-
+  common --> ui
+  common --> appbrowser
+  
   edge --> contracts
 
   appcore --> agent
