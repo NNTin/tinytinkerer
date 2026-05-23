@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { act } from 'react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type MockChatEvent = {
@@ -133,9 +134,14 @@ describe('MobilePage', () => {
     installEvent.preventDefault = vi.fn()
 
     renderMobilePage()
-    window.dispatchEvent(installEvent)
 
-    fireEvent.click(await screen.findByRole('button', { name: /install app/i }))
+    act(() => {
+      window.dispatchEvent(installEvent)
+    })
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: /install app/i }))
+    })
 
     expect(prompt).toHaveBeenCalledTimes(1)
   })

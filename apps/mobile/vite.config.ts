@@ -10,7 +10,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      injectRegister: false,
+      injectRegister: 'auto',
       registerType: 'autoUpdate',
       manifest: {
         name: 'tinytinkerer',
