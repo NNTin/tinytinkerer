@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_MODEL } from '../services/models.js'
 
 const mockGetPreference = vi.hoisted(() =>
   vi.fn<(key: string) => Promise<string | undefined>>()
@@ -13,8 +14,6 @@ vi.mock('../services/db.js', () => ({
 }))
 
 import { useSettingsStore } from './settings-store.js'
-
-const DEFAULT_MODEL = 'openai/gpt-4.1-mini'
 
 const resetStore = () => {
   useSettingsStore.setState({
@@ -97,12 +96,20 @@ describe('settings-store initialize', () => {
   })
 
   it('restores persisted selectedModel', async () => {
-    const customModel = 'openai/gpt-4o'
+    const customModel = DEFAULT_MODEL
     mockGetPreference.mockImplementation((key) =>
       Promise.resolve(key === 'settings_selected_model' ? customModel : undefined)
     )
     await useSettingsStore.getState().initialize()
     expect(useSettingsStore.getState().selectedModel).toBe(customModel)
+  })
+
+  it('falls back to the default model when the persisted model is unsupported', async () => {
+    mockGetPreference.mockImplementation((key) =>
+      Promise.resolve(key === 'settings_selected_model' ? 'openai/gpt-4o' : undefined)
+    )
+    await useSettingsStore.getState().initialize()
+    expect(useSettingsStore.getState().selectedModel).toBe(DEFAULT_MODEL)
   })
 })
 
@@ -133,9 +140,15 @@ describe('settings-store setters', () => {
   })
 
   it('setSelectedModel persists the model id to DB and updates store', async () => {
-    const newModel = 'openai/gpt-4o'
+    const newModel = DEFAULT_MODEL
     await useSettingsStore.getState().setSelectedModel(newModel)
     expect(mockSetPreference).toHaveBeenCalledWith('settings_selected_model', newModel)
     expect(useSettingsStore.getState().selectedModel).toBe(newModel)
+  })
+
+  it('setSelectedModel normalizes unsupported values before persisting', async () => {
+    await useSettingsStore.getState().setSelectedModel('openai/gpt-4o')
+    expect(mockSetPreference).toHaveBeenCalledWith('settings_selected_model', DEFAULT_MODEL)
+    expect(useSettingsStore.getState().selectedModel).toBe(DEFAULT_MODEL)
   })
 })

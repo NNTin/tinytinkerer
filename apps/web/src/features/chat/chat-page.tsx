@@ -338,10 +338,13 @@ export const ChatPage = () => {
         {/* Tool activity */}
         {showToolActivity ? (
           <section className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-4 py-3">
-            <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">Tools</h2>
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">Tool History</h2>
+              <p className="text-[11px] text-[var(--muted)]">Historical audit log across this conversation</p>
+            </div>
             <div className="mt-2 space-y-1">
               {toolEvents.length === 0 ? (
-                <p className="text-xs text-[var(--muted)]">Search results and tool outputs will appear here.</p>
+                <p className="text-xs text-[var(--muted)]">Search results and tool outputs from this conversation will appear here.</p>
               ) : (
                 toolEvents.map((event) => {
                   if (event.type === 'tool.call.failed') {

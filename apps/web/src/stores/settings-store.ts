@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { getPreference, setPreference } from '../services/db.js'
-
-const DEFAULT_MODEL = 'openai/gpt-4.1-mini'
+import { DEFAULT_MODEL, normalizeSelectedModel } from '../services/models.js'
 
 const KEYS = {
   selectedModel: 'settings_selected_model',
@@ -44,7 +43,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     ])
     set({
       hydrated: true,
-      selectedModel: selectedModel ?? DEFAULT_MODEL,
+      selectedModel: normalizeSelectedModel(selectedModel),
       searchEnabled: parseBool(searchEnabled, true),
       showThinkingTimeline: parseBool(showThinkingTimeline, true),
       showToolActivity: parseBool(showToolActivity, true)
@@ -52,8 +51,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
 
   setSelectedModel: async (model) => {
-    await setPreference(KEYS.selectedModel, model)
-    set({ selectedModel: model })
+    const normalizedModel = normalizeSelectedModel(model)
+    await setPreference(KEYS.selectedModel, normalizedModel)
+    set({ selectedModel: normalizedModel })
   },
 
   setSearchEnabled: async (enabled) => {

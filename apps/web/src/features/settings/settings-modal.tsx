@@ -1,18 +1,61 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { XMarkIcon } from '@heroicons/react/24/outline'
-import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useState, type ReactNode } from 'react'
+import type { ServiceStatus, SystemStatus } from '@tinytinkerer/types'
 import { useAuthStore } from '../../stores/auth-store.js'
 import { useSettingsStore } from '../../stores/settings-store.js'
 import { buildGitHubLoginUrl } from '../../services/auth.js'
+import { fetchStatus } from '../../services/status.js'
+import { SUPPORTED_MODELS } from '../../services/models.js'
 
-const SUPPORTED_MODELS = [
-  { id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }
-]
+const fallbackStatus: SystemStatus = {
+  auth: { state: 'offline', detail: 'Unavailable' },
+  models: { state: 'offline', detail: 'Unavailable' },
+  search: { state: 'offline', detail: 'Unavailable' }
+}
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
-const SectionHeading = ({ children }: { children: React.ReactNode }) => (
+const SectionHeading = ({ children }: { children: ReactNode }) => (
   <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">{children}</h3>
+)
+
+const statusClasses: Record<ServiceStatus['state'], string> = {
+  ready: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  degraded: 'border-amber-200 bg-amber-50 text-amber-800',
+  offline: 'border-rose-200 bg-rose-50 text-rose-700'
+}
+
+const statusDotClasses: Record<ServiceStatus['state'], string> = {
+  ready: 'bg-emerald-500',
+  degraded: 'bg-amber-500',
+  offline: 'bg-rose-500'
+}
+
+const SectionStatus = ({ label, status }: { label: string; status: ServiceStatus }) => (
+  <div className={`rounded-lg border px-3 py-2 text-xs ${statusClasses[status.state]}`}>
+    <div className="flex items-center gap-2">
+      <span className={`h-2 w-2 rounded-full ${statusDotClasses[status.state]}`} aria-hidden="true" />
+      <span className="font-medium">{label} status</span>
+      <span className="capitalize">{status.state}</span>
+    </div>
+    <p className="mt-1">{status.detail}</p>
+    {status.error ? <p className="mt-1">{status.error}</p> : null}
+  </div>
+)
+
+const SettingsSection = ({
+  title,
+  children
+}: {
+  title: string
+  children: ReactNode
+}) => (
+  <section role="region" aria-label={title}>
+    <SectionHeading>{title}</SectionHeading>
+    <div className="mt-3">{children}</div>
+  </section>
 )
 
 type ToggleRowProps = {
@@ -51,7 +94,7 @@ const GitHubMark = () => (
 
 // ── Auth section ──────────────────────────────────────────────────────────────
 
-const AuthSection = () => {
+const AuthSection = ({ status }: { status: ServiceStatus }) => {
   const token = useAuthStore((state) => state.token)
   const clearToken = useAuthStore((state) => state.clearToken)
   const setToken = useAuthStore((state) => state.setToken)
@@ -70,24 +113,28 @@ const AuthSection = () => {
 
   if (token) {
     return (
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-stone-800">Signed in</p>
-          <p className="mt-0.5 text-xs text-[var(--muted)]">GitHub token is stored locally in your browser.</p>
+      <div className="space-y-3">
+        <SectionStatus label="Auth" status={status} />
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm text-stone-800">Signed in</p>
+            <p className="mt-0.5 text-xs text-[var(--muted)]">GitHub token is stored locally in your browser.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void clearToken()}
+            className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50"
+          >
+            Sign out
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => void clearToken()}
-          className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 hover:border-stone-300 hover:bg-stone-50 transition-colors"
-        >
-          Sign out
-        </button>
       </div>
     )
   }
 
   return (
     <div className="space-y-3">
+      <SectionStatus label="Auth" status={status} />
       <p className="text-xs text-[var(--muted)]">
         Sign in to enable AI responses via GitHub Models.
       </p>
@@ -148,12 +195,13 @@ const AuthSection = () => {
 
 // ── Models section ────────────────────────────────────────────────────────────
 
-const ModelsSection = () => {
+const ModelsSection = ({ status }: { status: ServiceStatus }) => {
   const selectedModel = useSettingsStore((state) => state.selectedModel)
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
 
   return (
     <div className="space-y-2">
+      <SectionStatus label="Models" status={status} />
       <label htmlFor="model-select" className="block text-sm text-stone-800">
         Model
       </label>
@@ -174,17 +222,20 @@ const ModelsSection = () => {
 
 // ── Search section ────────────────────────────────────────────────────────────
 
-const SearchSection = () => {
+const SearchSection = ({ status }: { status: ServiceStatus }) => {
   const searchEnabled = useSettingsStore((state) => state.searchEnabled)
   const setSearchEnabled = useSettingsStore((state) => state.setSearchEnabled)
 
   return (
-    <ToggleRow
-      label="Enable web search"
-      description="Allow the agent to search the web for up-to-date information."
-      checked={searchEnabled}
-      onChange={(next) => void setSearchEnabled(next)}
-    />
+    <div className="space-y-3">
+      <SectionStatus label="Search" status={status} />
+      <ToggleRow
+        label="Enable web search"
+        description="Allow the agent to search the web for up-to-date information."
+        checked={searchEnabled}
+        onChange={(next) => void setSearchEnabled(next)}
+      />
+    </div>
   )
 }
 
@@ -222,68 +273,65 @@ type SettingsModalProps = {
 }
 
 export const SettingsModal = ({ open, onOpenChange }: SettingsModalProps) => (
-  <Dialog.Root open={open} onOpenChange={onOpenChange}>
-    <Dialog.Portal>
-      <Dialog.Overlay className="settings-overlay fixed inset-0 z-40 bg-stone-900/30 backdrop-blur-sm" />
-      <Dialog.Content
-        className="settings-content fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-xl outline-none"
-        aria-describedby={undefined}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
-          <Dialog.Title className="text-base font-semibold text-stone-900">Settings</Dialog.Title>
-          <Dialog.Close asChild>
-            <button
-              type="button"
-              aria-label="Close settings"
-              className="flex h-7 w-7 items-center justify-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition-colors"
-            >
-              <XMarkIcon className="h-4 w-4" />
-            </button>
-          </Dialog.Close>
-        </div>
-
-        {/* Body */}
-        <div className="max-h-[70vh] overflow-y-auto px-6 py-5 space-y-6">
-          {/* Auth */}
-          <section>
-            <SectionHeading>Auth</SectionHeading>
-            <div className="mt-3">
-              <AuthSection />
-            </div>
-          </section>
-
-          <hr className="border-[var(--border)]" />
-
-          {/* Models */}
-          <section>
-            <SectionHeading>Models</SectionHeading>
-            <div className="mt-3">
-              <ModelsSection />
-            </div>
-          </section>
-
-          <hr className="border-[var(--border)]" />
-
-          {/* Search */}
-          <section>
-            <SectionHeading>Search</SectionHeading>
-            <div className="mt-3">
-              <SearchSection />
-            </div>
-          </section>
-
-          <hr className="border-[var(--border)]" />
-
-          {/* Interface */}
-          <section>
-            <SectionHeading>Interface</SectionHeading>
-            <div className="mt-3">
-              <InterfaceSection />
-            </div>
-          </section>
-        </div>
-      </Dialog.Content>
-    </Dialog.Portal>
-  </Dialog.Root>
+  <SettingsModalContent open={open} onOpenChange={onOpenChange} />
 )
+
+const SettingsModalContent = ({ open, onOpenChange }: SettingsModalProps) => {
+  const { data } = useQuery({
+    queryKey: ['system-status'],
+    queryFn: fetchStatus,
+    enabled: open,
+    refetchInterval: 15_000
+  })
+
+  const status = data ?? fallbackStatus
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="settings-overlay fixed inset-0 z-40 bg-stone-900/30 backdrop-blur-sm" />
+        <Dialog.Content
+          className="settings-content fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-xl outline-none"
+          aria-describedby={undefined}
+        >
+          <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
+            <Dialog.Title className="text-base font-semibold text-stone-900">Settings</Dialog.Title>
+            <Dialog.Close asChild>
+              <button
+                type="button"
+                aria-label="Close settings"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </Dialog.Close>
+          </div>
+
+          <div className="max-h-[70vh] space-y-6 overflow-y-auto px-6 py-5">
+            <SettingsSection title="Auth">
+              <AuthSection status={status.auth} />
+            </SettingsSection>
+
+            <hr className="border-[var(--border)]" />
+
+            <SettingsSection title="Models">
+              <ModelsSection status={status.models} />
+            </SettingsSection>
+
+            <hr className="border-[var(--border)]" />
+
+            <SettingsSection title="Search">
+              <SearchSection status={status.search} />
+            </SettingsSection>
+
+            <hr className="border-[var(--border)]" />
+
+            <SettingsSection title="Interface">
+              <InterfaceSection />
+            </SettingsSection>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}

@@ -2,11 +2,12 @@ import { AgentRuntime, GitHubModelsProvider, ToolRegistry, createWebSearchTool }
 import { useAuthStore } from '../stores/auth-store.js'
 import { useSettingsStore } from '../stores/settings-store.js'
 import { edgeUrl } from './config.js'
+import { normalizeSelectedModel } from './models.js'
 
 const provider = new GitHubModelsProvider({
   baseUrl: edgeUrl,
   getToken: () => useAuthStore.getState().token,
-  getModel: () => useSettingsStore.getState().selectedModel
+  getModel: () => normalizeSelectedModel(useSettingsStore.getState().selectedModel)
 })
 
 export const getRuntime = (): AgentRuntime => {

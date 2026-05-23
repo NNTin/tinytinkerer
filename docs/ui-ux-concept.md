@@ -51,20 +51,24 @@ The "Sign in" button is the primary auth entry point. It appears in the composer
 
 Settings live in a Radix Dialog, opened via the settings gear. This keeps the main page uncluttered and lets settings feel like a deliberate mode change. The modal is `max-w-md`, centred, with a header / scrollable body layout.
 
-Inside the modal, sections are separated by `<hr>` dividers with `SectionHeading` labels (`text-xs uppercase tracking-wider`). Each section has a single responsibility (Auth, Models, Search, Interface). Toggle rows use the `ToggleRow` primitive with a custom amber toggle control.
+Inside the modal, sections are separated by `<hr>` dividers with `SectionHeading` labels (`text-xs uppercase tracking-wider`). Each section has a single responsibility (Auth, Models, Search, Interface). Auth, Models, and Search each surface their live service status inline inside the section so the top-level app chrome can stay quiet without hiding system health. Toggle rows use the `ToggleRow` primitive with a custom amber toggle control.
 
 Do not put settings inline on the main page. Do not add floating panels or drawer overlays for settings.
 
-## Secondary panels (Thinking / Tools)
+## Secondary panels (Thinking / Tool History)
 
-Thinking timeline and Tool activity are opt-in transparency features, not primary content. They must always feel subordinate:
+Thinking timeline and Tool History are opt-in transparency features, not primary content. They must always feel subordinate:
 
 - Use `bg-[var(--bg)]` (not `--panel`) so they sit one step behind the conversation.
 - No `shadow-sm` — shadows are reserved for primary panels.
 - Reduced padding (`px-4 py-3` vs `p-5` for the conversation).
 - Headings at `text-xs font-medium` — quieter than primary panel headings.
 - Timeline entries: compact rows with a small step-number badge, no card borders.
-- Tool activity entries: `text-xs`, muted colours, `<details>` for expandable output.
+- Tool history entries: `text-xs`, muted colours, `<details>` for expandable output.
+
+The two panels have different time scopes:
+- Thinking timeline is current-turn only. It explains the active run and resets naturally with the next user prompt.
+- Tool History is conversation-level. It acts as a historical audit log and may include entries from earlier turns in the same conversation.
 
 Both panels are conditionally rendered based on their persisted toggle in settings (`showThinkingTimeline`, `showToolActivity`). When disabled, the section is completely removed from the DOM — no empty placeholder, no skeleton.
 
