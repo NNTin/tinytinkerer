@@ -1,6 +1,13 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+type MockChatEvent = {
+  id: string
+  type: string
+  timestamp?: string
+  payload?: Record<string, unknown>
+}
+
 const mockSettingsState = vi.hoisted(() => ({
   hydrated: true,
   selectedModel: 'openai/gpt-4.1-mini',
@@ -42,7 +49,7 @@ const mockTurns = vi.hoisted(() => [] as Array<{
 }>)
 
 const mockChatState = vi.hoisted(() => ({
-  events: [] as any[],
+  events: [] as MockChatEvent[],
   streamingText: '',
   isRunning: false,
   isRetryPending: false,

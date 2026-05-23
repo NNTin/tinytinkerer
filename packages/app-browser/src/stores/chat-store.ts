@@ -8,7 +8,6 @@ import {
 } from '@tinytinkerer/app-core'
 import type { ChatEvent } from '@tinytinkerer/contracts'
 import { create } from 'zustand'
-import { getRuntime } from '../runtime/get-runtime'
 import { getBrowserShell } from '../shell'
 
 type ChatState = {
@@ -25,6 +24,11 @@ type ChatState = {
 }
 
 let activeRunController: AbortController | undefined
+
+const loadRuntime = async () => {
+  const runtimeModule = await import('../runtime/get-runtime')
+  return runtimeModule.getRuntime()
+}
 
 export const useChatStore = create<ChatState>((set, get) => ({
   conversationId: undefined,
@@ -57,7 +61,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       const history = buildConversationHistory(get().events)
-      const runtime = getRuntime()
+      const runtime = await loadRuntime()
 
       for await (const event of runtime.run(prompt, {
         signal: runController.signal,

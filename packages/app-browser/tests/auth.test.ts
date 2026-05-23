@@ -14,10 +14,21 @@ vi.mock('../src/stores/auth-store.js', () => ({
 import { canStartGitHubOAuth, completeGitHubOAuthCallback, startGitHubOAuth } from '../src/auth.js'
 import { configureBrowserShell } from '../src/shell.js'
 
+const stubLocationAssign = () => {
+  const assignSpy = vi.fn<(url: string) => void>()
+  vi.stubGlobal('location', {
+    ...window.location,
+    assign: assignSpy
+  })
+
+  return assignSpy
+}
+
 describe('auth helpers', () => {
   beforeEach(() => {
     sessionStorage.clear()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     mockAuthStore.setToken.mockClear()
     configureBrowserShell({
       edgeBaseUrl: 'http://edge.local',
@@ -32,7 +43,7 @@ describe('auth helpers', () => {
   })
 
   it('stores oauth state under the shell namespace when oauth starts', () => {
-    const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined)
+    const assignSpy = stubLocationAssign()
 
     startGitHubOAuth()
 
@@ -42,7 +53,7 @@ describe('auth helpers', () => {
   })
 
   it('completes the callback and persists the exchanged token', async () => {
-    const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined)
+    const assignSpy = stubLocationAssign()
     startGitHubOAuth()
     const redirectUrl = assignSpy.mock.calls[0]?.[0]
     const state = redirectUrl ? new URL(String(redirectUrl)).searchParams.get('state') : null
@@ -72,7 +83,7 @@ describe('auth helpers', () => {
   })
 
   it('rejects invalid oauth state', async () => {
-    const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined)
+    const assignSpy = stubLocationAssign()
     startGitHubOAuth()
     expect(assignSpy).toHaveBeenCalledTimes(1)
 
@@ -82,7 +93,7 @@ describe('auth helpers', () => {
   })
 
   it('surfaces exchange failures', async () => {
-    const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined)
+    const assignSpy = stubLocationAssign()
     startGitHubOAuth()
     const redirectUrl = assignSpy.mock.calls[0]?.[0]
     const state = redirectUrl ? new URL(String(redirectUrl)).searchParams.get('state') : null

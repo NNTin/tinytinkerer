@@ -37,7 +37,7 @@ const createGitHubLoginUrl = (): string => {
 }
 
 export const startGitHubOAuth = (): void => {
-  window.location.assign(createGitHubLoginUrl())
+  location.assign(createGitHubLoginUrl())
 }
 
 const validateOAuthState = (returnedState: string | null): boolean => {
@@ -95,9 +95,9 @@ export const completeGitHubOAuthCallback = async (options: {
     await useAuthStore.getState().setToken(token)
   } catch (error) {
     if (error instanceof Error) {
-      throw new Error(error.message || 'Authentication failed. Please try again.')
+      throw new Error(error.message || 'Authentication failed. Please try again.', { cause: error })
     }
 
-    throw new Error('Authentication failed. Please try again.')
+    throw new Error('Authentication failed. Please try again.', { cause: error })
   }
 }

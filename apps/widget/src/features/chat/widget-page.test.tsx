@@ -23,7 +23,7 @@ const mockChatState = vi.hoisted(() => ({
   ],
   streamingText: '',
   isRunning: false,
-  sendPrompt: vi.fn(),
+  sendPrompt: vi.fn().mockResolvedValue(undefined),
   resetConversation: vi.fn(),
   initialize: vi.fn()
 }))
@@ -108,6 +108,7 @@ describe('WidgetPage', () => {
         }
       )
       fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+      await Promise.resolve()
     })
 
     expect(mockChatState.sendPrompt).toHaveBeenCalledWith('Tell me something current')
