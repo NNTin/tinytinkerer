@@ -11,6 +11,7 @@ const KEYS = {
 } as const
 
 type SettingsState = {
+  hydrated: boolean
   selectedModel: string
   searchEnabled: boolean
   showThinkingTimeline: boolean
@@ -28,6 +29,7 @@ const parseBool = (value: string | undefined, fallback: boolean): boolean => {
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
+  hydrated: false,
   selectedModel: DEFAULT_MODEL,
   searchEnabled: true,
   showThinkingTimeline: true,
@@ -41,6 +43,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       getPreference(KEYS.showToolActivity)
     ])
     set({
+      hydrated: true,
       selectedModel: selectedModel ?? DEFAULT_MODEL,
       searchEnabled: parseBool(searchEnabled, true),
       showThinkingTimeline: parseBool(showThinkingTimeline, true),

@@ -18,6 +18,7 @@ const DEFAULT_MODEL = 'openai/gpt-4.1-mini'
 
 const resetStore = () => {
   useSettingsStore.setState({
+    hydrated: false,
     selectedModel: DEFAULT_MODEL,
     searchEnabled: true,
     showThinkingTimeline: true,
@@ -40,6 +41,10 @@ describe('settings-store defaults', () => {
     expect(state.showThinkingTimeline).toBe(true)
     expect(state.showToolActivity).toBe(true)
   })
+
+  it('hydrated is false before initialize is called', () => {
+    expect(useSettingsStore.getState().hydrated).toBe(false)
+  })
 })
 
 describe('settings-store initialize', () => {
@@ -49,6 +54,12 @@ describe('settings-store initialize', () => {
     expect(mockGetPreference).toHaveBeenCalledWith('settings_search_enabled')
     expect(mockGetPreference).toHaveBeenCalledWith('settings_show_thinking_timeline')
     expect(mockGetPreference).toHaveBeenCalledWith('settings_show_tool_activity')
+  })
+
+  it('sets hydrated to true after initialize completes', async () => {
+    expect(useSettingsStore.getState().hydrated).toBe(false)
+    await useSettingsStore.getState().initialize()
+    expect(useSettingsStore.getState().hydrated).toBe(true)
   })
 
   it('falls back to defaults when DB returns undefined for all keys', async () => {
