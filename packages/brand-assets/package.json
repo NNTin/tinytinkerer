@@ -12,9 +12,10 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
+    "generate": "pnpm -w generate:brand-assets",
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src tests",
-    "test": "vitest run",
+    "test": "pnpm -w generate:brand-assets && vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

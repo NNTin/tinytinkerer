@@ -24,29 +24,35 @@ vi.mock('@tinytinkerer/brand-assets', () => ({
       backgroundColor: '#fffaf5'
     },
     links: [
-      { rel: 'icon', href: 'data:image/svg+xml,icon', type: 'image/svg+xml', sizes: 'any' },
+      { rel: 'icon', href: '/assets/favicon.ico', type: 'image/x-icon' },
+      { rel: 'icon', href: '/assets/favicon-16.png', type: 'image/png', sizes: '16x16' },
+      { rel: 'icon', href: '/assets/favicon-32.png', type: 'image/png', sizes: '32x32' },
+      { rel: 'icon', href: '/assets/favicon-48.png', type: 'image/png', sizes: '48x48' },
       {
         rel: 'apple-touch-icon',
-        href: 'data:image/svg+xml,apple',
-        type: 'image/svg+xml',
+        href: '/assets/apple-touch-icon-180.png',
+        type: 'image/png',
         sizes: '180x180'
-      },
-      {
-        rel: 'mask-icon',
-        href: 'data:image/svg+xml,mask',
-        type: 'image/svg+xml',
-        color: '#25231d'
       }
     ],
     manifest: {
       name: 'tinytinkerer',
-      shortName: 'tinker',
-      description: 'Placeholder PWA metadata for TinyTinkerer.',
+      shortName: 'tinytinkerer',
+      description: 'TinyTinkerer app icons and branding metadata for web, widget, and future mobile shells.',
       startUrl: '/',
       display: 'standalone',
       backgroundColor: '#fffaf5',
       themeColor: '#f6f2ec',
-      icons: [{ src: 'data:image/svg+xml,icon', sizes: '512x512', type: 'image/svg+xml' }]
+      icons: [
+        { src: '/assets/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/assets/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        {
+          src: '/assets/icon-maskable-512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'maskable'
+        }
+      ]
     }
   }
 }))
@@ -92,11 +98,14 @@ describe('brand metadata', () => {
   it('applies shared icon, manifest, and theme metadata during app creation', async () => {
     await createBrowserApp({})
 
-    expect(document.head.querySelector('link[rel="icon"]')?.getAttribute('href')).toMatch(
-      /^data:image\/svg\+xml/
+    expect(document.head.querySelectorAll('link[rel="icon"]').length).toBe(4)
+    expect(document.head.querySelector('link[rel="icon"][type="image/x-icon"]')?.getAttribute('href')).toBe(
+      '/assets/favicon.ico'
+    )
+    expect(document.head.querySelector('link[rel="icon"][sizes="16x16"]')?.getAttribute('href')).toBe(
+      '/assets/favicon-16.png'
     )
     expect(document.head.querySelector('link[rel="apple-touch-icon"]')).toBeTruthy()
-    expect(document.head.querySelector('link[rel="mask-icon"]')).toBeTruthy()
     expect(document.head.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe(
       '#f6f2ec'
     )
@@ -105,7 +114,7 @@ describe('brand metadata', () => {
     expect(manifestHref).toMatch(/^data:application\/manifest\+json/)
     expect(JSON.parse(decodeDataUrlPayload(manifestHref ?? ''))).toMatchObject({
       name: 'tinytinkerer',
-      short_name: 'tinker',
+      short_name: 'tinytinkerer',
       display: 'standalone'
     })
   })
@@ -114,9 +123,9 @@ describe('brand metadata', () => {
     await createBrowserApp({})
     await createBrowserApp({})
 
-    expect(document.head.querySelectorAll('[data-tinytinkerer-brand]').length).toBe(7)
+    expect(document.head.querySelectorAll('[data-tinytinkerer-brand]').length).toBe(9)
     expect(document.head.querySelectorAll('link[rel="manifest"]').length).toBe(1)
-    expect(document.head.querySelectorAll('link[rel="icon"]').length).toBe(1)
+    expect(document.head.querySelectorAll('link[rel="icon"]').length).toBe(4)
     expect(document.head.querySelectorAll('meta[name="theme-color"]').length).toBe(1)
   })
 })

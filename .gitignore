@@ -3,6 +3,7 @@ node_modules
 .turbo
 dist
 coverage
+packages/brand-assets/assets/generated/
 .env
 .env.*
 !.env.example

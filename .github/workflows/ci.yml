@@ -7,7 +7,7 @@ on:
 
 jobs:
   ci:
-    name: Mermaid, Boundaries, Lint, Typecheck & Test
+    name: Mermaid, Boundaries, Lint, Typecheck, Test & Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +49,11 @@ jobs:
         continue-on-error: true
         run: pnpm test
 
+      - name: Build
+        id: build
+        continue-on-error: true
+        run: pnpm build
+
       - name: Fail if any checks failed
         if: always()
         run: |
@@ -76,6 +81,11 @@ jobs:
 
           if [ "${{ steps.test.outcome }}" != "success" ]; then
             echo "Tests failed."
+            failed=1
+          fi
+
+          if [ "${{ steps.build.outcome }}" != "success" ]; then
+            echo "Build failed."
             failed=1
           fi
 

@@ -1,24 +1,15 @@
 import { brandDefinitionSchema, type BrandDefinition } from '@tinytinkerer/contracts'
 
-const toDataUrl = (mimeType: string, value: string): string =>
-  `data:${mimeType};charset=utf-8,${encodeURIComponent(value)}`
-
-const primaryIconSvg = `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="TinyTinkerer placeholder icon">
-  <rect width="128" height="128" rx="28" fill="#25231d" />
-  <circle cx="64" cy="46" r="18" fill="#f59e0b" />
-  <path d="M34 94c8-18 20-27 30-27 15 0 25 10 30 27" fill="none" stroke="#fffaf5" stroke-linecap="round" stroke-width="12" />
-</svg>`.trim()
-
-const maskIconSvg = `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="28" fill="#000" />
-  <circle cx="64" cy="46" r="18" fill="#fff" />
-  <path d="M34 94c8-18 20-27 30-27 15 0 25 10 30 27" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="12" />
-</svg>`.trim()
-
-const primaryIconUrl = toDataUrl('image/svg+xml', primaryIconSvg)
-const maskIconUrl = toDataUrl('image/svg+xml', maskIconSvg)
+export const TINYTINKERER_BRAND_ASSET_URLS = {
+  faviconIco: new URL('../assets/generated/favicon.ico', import.meta.url).href,
+  favicon16: new URL('../assets/generated/favicon-16.png', import.meta.url).href,
+  favicon32: new URL('../assets/generated/favicon-32.png', import.meta.url).href,
+  favicon48: new URL('../assets/generated/favicon-48.png', import.meta.url).href,
+  appleTouchIcon180: new URL('../assets/generated/apple-touch-icon-180.png', import.meta.url).href,
+  icon192: new URL('../assets/generated/icon-192.png', import.meta.url).href,
+  icon512: new URL('../assets/generated/icon-512.png', import.meta.url).href,
+  iconMaskable512: new URL('../assets/generated/icon-maskable-512.png', import.meta.url).href
+} as const
 
 export const TINYTINKERER_BRAND: BrandDefinition = brandDefinitionSchema.parse({
   theme: {
@@ -29,37 +20,60 @@ export const TINYTINKERER_BRAND: BrandDefinition = brandDefinitionSchema.parse({
   links: [
     {
       rel: 'icon',
-      href: primaryIconUrl,
-      type: 'image/svg+xml',
-      sizes: 'any'
+      href: TINYTINKERER_BRAND_ASSET_URLS.faviconIco,
+      type: 'image/x-icon'
+    },
+    {
+      rel: 'icon',
+      href: TINYTINKERER_BRAND_ASSET_URLS.favicon16,
+      type: 'image/png',
+      sizes: '16x16'
+    },
+    {
+      rel: 'icon',
+      href: TINYTINKERER_BRAND_ASSET_URLS.favicon32,
+      type: 'image/png',
+      sizes: '32x32'
+    },
+    {
+      rel: 'icon',
+      href: TINYTINKERER_BRAND_ASSET_URLS.favicon48,
+      type: 'image/png',
+      sizes: '48x48'
     },
     {
       rel: 'apple-touch-icon',
-      href: primaryIconUrl,
-      type: 'image/svg+xml',
+      href: TINYTINKERER_BRAND_ASSET_URLS.appleTouchIcon180,
+      type: 'image/png',
       sizes: '180x180'
-    },
-    {
-      rel: 'mask-icon',
-      href: maskIconUrl,
-      type: 'image/svg+xml',
-      color: '#25231d'
     }
   ],
   manifest: {
     name: 'tinytinkerer',
-    shortName: 'tinker',
-    description: 'Placeholder PWA metadata for TinyTinkerer.',
+    shortName: 'tinytinkerer',
+    description: 'TinyTinkerer app icons and branding metadata for web, widget, and future mobile shells.',
     startUrl: '/',
     display: 'standalone',
     backgroundColor: '#fffaf5',
     themeColor: '#f6f2ec',
     icons: [
       {
-        src: primaryIconUrl,
-        sizes: '512x512',
-        type: 'image/svg+xml',
+        src: TINYTINKERER_BRAND_ASSET_URLS.icon192,
+        sizes: '192x192',
+        type: 'image/png',
         purpose: 'any'
+      },
+      {
+        src: TINYTINKERER_BRAND_ASSET_URLS.icon512,
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any'
+      },
+      {
+        src: TINYTINKERER_BRAND_ASSET_URLS.iconMaskable512,
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'maskable'
       }
     ]
   }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { existsSync } from 'node:fs'
 import { brandDefinitionSchema } from '@tinytinkerer/contracts'
-import { TINYTINKERER_BRAND } from '../src/index.js'
+import { TINYTINKERER_BRAND, TINYTINKERER_BRAND_ASSET_URLS } from '../src/index.js'
 
 describe('brand assets', () => {
   it('exports placeholder brand data matching shared contracts', () => {
@@ -9,8 +10,21 @@ describe('brand assets', () => {
     )
   })
 
-  it('uses inline placeholder asset URLs', () => {
-    expect(TINYTINKERER_BRAND.links[0]?.href).toMatch(/^data:image\/svg\+xml/)
-    expect(TINYTINKERER_BRAND.manifest.icons[0]?.src).toMatch(/^data:image\/svg\+xml/)
+  it('exports generated PNG asset URLs for browser branding', () => {
+    expect(TINYTINKERER_BRAND.links.map((link) => link.href)).toContain(
+      TINYTINKERER_BRAND_ASSET_URLS.faviconIco
+    )
+    expect(TINYTINKERER_BRAND.links.map((link) => link.href)).toContain(
+      TINYTINKERER_BRAND_ASSET_URLS.appleTouchIcon180
+    )
+    expect(TINYTINKERER_BRAND.manifest.icons.map((icon) => icon.src)).toContain(
+      TINYTINKERER_BRAND_ASSET_URLS.iconMaskable512
+    )
+  })
+
+  it('keeps the source image and future mobile icon files in the package', () => {
+    expect(existsSync(new URL('../assets/source/tinytinkerer.jpg', import.meta.url))).toBe(true)
+    expect(existsSync(new URL('../assets/generated/favicon.ico', import.meta.url))).toBe(true)
+    expect(existsSync(new URL('../assets/generated/icon-1024.png', import.meta.url))).toBe(true)
   })
 })
