@@ -81,15 +81,18 @@ importers:
       '@tinytinkerer/agent-core':
         specifier: workspace:*
         version: link:../../packages/agent-core
+      '@tinytinkerer/app-browser':
+        specifier: workspace:*
+        version: link:../../packages/app-browser
+      '@tinytinkerer/app-core':
+        specifier: workspace:*
+        version: link:../../packages/app-core
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@tinytinkerer/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      dexie:
-        specifier: ^4.2.1
-        version: 4.4.2
       react:
         specifier: ^19.2.0
         version: 19.2.6
@@ -155,17 +158,43 @@ importers:
         specifier: ^4.1.12
         version: 4.4.3
 
+  packages/app-browser:
+    dependencies:
+      '@tinytinkerer/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@tinytinkerer/app-core':
+        specifier: workspace:*
+        version: link:../app-core
+      '@tinytinkerer/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@tinytinkerer/shared':
+        specifier: workspace:*
+        version: link:../shared
+      dexie:
+        specifier: ^4.2.1
+        version: 4.4.2
+      zod:
+        specifier: ^4.1.12
+        version: 4.4.3
+
+  packages/app-core:
+    dependencies:
+      '@tinytinkerer/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@tinytinkerer/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
   packages/contracts:
     dependencies:
       zod:
         specifier: ^4.1.12
         version: 4.4.3
 
-  packages/shared:
-    dependencies:
-      '@tinytinkerer/contracts':
-        specifier: workspace:*
-        version: link:../contracts
+  packages/shared: {}
 
   packages/types:
     dependencies:

@@ -1,5 +1,4 @@
 import type { ChatEvent } from '@tinytinkerer/contracts'
-import { inferPlan } from '@tinytinkerer/shared'
 import { describe, expect, it, vi } from 'vitest'
 import { RateLimitError } from '../src/errors/rate-limit-error'
 import { AgentRuntime } from '../src/runtime/agent-runtime'
@@ -327,10 +326,24 @@ describe('AgentRuntime', () => {
   })
 
   it('does not emit tool.call.started or tool.call.failed for search when searchEnabled is false', async () => {
+    const SEARCH_KEYWORDS = /latest|news|search|web|compare|today|research/i
     const searchProvider: ModelProvider = {
       plan: (prompt: string, options?: ProviderCallOptions) => {
         const searchEnabled = options?.searchEnabled
-        return Promise.resolve(inferPlan(prompt, searchEnabled !== undefined ? { searchEnabled } : undefined))
+        const needsSearch = searchEnabled !== false && SEARCH_KEYWORDS.test(prompt)
+        return Promise.resolve({
+          complexity: needsSearch ? ('medium' as const) : ('low' as const),
+          steps: needsSearch
+            ? [
+                { id: 'understand', summary: 'Understand request constraints' },
+                { id: 'search', summary: 'Search', toolCall: { toolId: 'web-search', input: { query: prompt, maxResults: 5 } } },
+                { id: 'compose', summary: 'Compose final answer' }
+              ]
+            : [
+                { id: 'understand', summary: 'Understand request constraints' },
+                { id: 'compose', summary: 'Compose final answer' }
+              ]
+        })
       },
       async execute() {
         return 'ok'

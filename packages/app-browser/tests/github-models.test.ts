@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { RateLimitError } from '../src/errors/rate-limit-error'
-import { GitHubModelsProvider } from '../src/providers/github-models'
-import type { ExecutionContext } from '../src/types'
+import { RateLimitError } from '@tinytinkerer/agent-core'
+import { GitHubModelsProvider } from '../src/providers/github-models.js'
+import type { ExecutionContext } from '@tinytinkerer/agent-core'
 
 const context: ExecutionContext = {
   prompt: 'hello',

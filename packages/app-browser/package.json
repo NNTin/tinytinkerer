@@ -1,5 +1,5 @@
 {
-  "name": "@tinytinkerer/shared",
+  "name": "@tinytinkerer/app-browser",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,11 +7,22 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./db": {
+      "types": "./src/db/index.ts",
+      "default": "./src/db/index.ts"
     }
   },
   "main": "src/index.ts",
   "types": "src/index.ts",
-  "dependencies": {},
+  "dependencies": {
+    "@tinytinkerer/agent-core": "workspace:*",
+    "@tinytinkerer/app-core": "workspace:*",
+    "@tinytinkerer/contracts": "workspace:*",
+    "@tinytinkerer/shared": "workspace:*",
+    "dexie": "^4.2.1",
+    "zod": "^4.1.12"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src",

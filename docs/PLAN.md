@@ -14,29 +14,29 @@ Nothing in this file is marked complete. It is a forward migration checklist.
 
 ## Iteration 2: Slim Agent Core
 
-- [ ] Keep only runtime abstractions in `packages/agent-core`
-- [ ] Move product-specific provider logic out of `agent-core`
-- [ ] Move product-specific tool implementations out of `agent-core`
-- [ ] Move planning heuristics out of `packages/shared`
-- [ ] Define the removal plan for `packages/shared`
+- [x] Keep only runtime abstractions in `packages/agent-core`
+- [x] Move product-specific provider logic out of `agent-core`
+- [x] Move product-specific tool implementations out of `agent-core`
+- [x] Move planning heuristics out of `packages/shared`
+- [x] Define the removal plan for `packages/shared`
 
 ## Iteration 3: Introduce App Core
 
-- [ ] Create `packages/app-core`
-- [ ] Move headless chat, auth, and settings orchestration into `app-core`
-- [ ] Move event-to-view projection helpers into `app-core`
-- [ ] Define ports for persistence, auth token access, status, search, and model gateways
-- [ ] Ensure `app-core` has no React or browser API dependency
+- [x] Create `packages/app-core`
+- [x] Move headless chat, auth, and settings orchestration into `app-core`
+- [x] Move event-to-view projection helpers into `app-core`
+- [x] Define ports for persistence, auth token access, status, search, and model gateways
+- [x] Ensure `app-core` has no React or browser API dependency
 
 ## Iteration 4: Introduce Browser Adapters
 
-- [ ] Create `packages/app-browser`
-- [ ] Make `app-browser` the primary browser-facing composition package
-- [ ] Move Dexie persistence and browser storage concerns into `app-browser`
-- [ ] Move OAuth state handling into `app-browser`
-- [ ] Move fetch-based edge clients and GitHub Models provider and tool wiring into `app-browser`
-- [ ] Expose shell-facing browser APIs so apps do not import `app-core`, `agent-core`, or `contracts` directly
-- [ ] Add shell configuration for `edgeBaseUrl`, storage namespace, and auth mode
+- [x] Create `packages/app-browser`
+- [x] Make `app-browser` the primary browser-facing composition package
+- [x] Move Dexie persistence and browser storage concerns into `app-browser`
+- [x] Move OAuth state handling into `app-browser`
+- [x] Move fetch-based edge clients and GitHub Models provider and tool wiring into `app-browser`
+- [x] Expose shell-facing browser APIs so apps do not import `app-core`, `agent-core`, or `contracts` directly
+- [x] Add shell configuration for `edgeBaseUrl`, storage namespace, and auth mode
 
 ## Iteration 5: Refactor Web Into A Thin App
 
