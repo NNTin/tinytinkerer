@@ -77,7 +77,7 @@ const managedMeta = (): ManagedMeta[] => [
 ]
 
 const upsertLink = (head: HTMLHeadElement, link: ManagedLink): void => {
-  let element = head.querySelector(`link[${MANAGED_ATTR}="${link.key}"]`) as HTMLLinkElement | null
+  let element = head.querySelector<HTMLLinkElement>(`link[${MANAGED_ATTR}="${link.key}"]`)
   if (!element) {
     element = document.createElement('link')
     element.setAttribute(MANAGED_ATTR, link.key)
@@ -107,7 +107,7 @@ const upsertLink = (head: HTMLHeadElement, link: ManagedLink): void => {
 }
 
 const upsertMeta = (head: HTMLHeadElement, meta: ManagedMeta): void => {
-  let element = head.querySelector(`meta[${MANAGED_ATTR}="${meta.key}"]`) as HTMLMetaElement | null
+  let element = head.querySelector<HTMLMetaElement>(`meta[${MANAGED_ATTR}="${meta.key}"]`)
   if (!element) {
     element = document.createElement('meta')
     element.setAttribute(MANAGED_ATTR, meta.key)

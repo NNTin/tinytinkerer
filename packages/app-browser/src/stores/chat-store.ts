@@ -81,7 +81,7 @@ export const createChatStore = (options: {
               streamingText: currentState.streamingText + text
             }))
           },
-          onEvent: async (event) => {
+          onEvent: (event) => {
             set((currentState) => ({
               events: [...currentState.events, event],
               streamingText: ''

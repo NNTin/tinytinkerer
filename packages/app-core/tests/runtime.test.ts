@@ -14,8 +14,8 @@ const collectEvents = async (runtime: ReturnType<typeof createChatRuntime>): Pro
 describe('createChatRuntime', () => {
   it('adapts provider and tool registration through app-core', async () => {
     const provider: ModelProvider = {
-      async plan() {
-        return {
+      plan() {
+        return Promise.resolve({
           complexity: 'medium',
           steps: [
             { id: 'understand', summary: 'Understand request constraints' },
@@ -25,13 +25,13 @@ describe('createChatRuntime', () => {
               toolCall: { toolId: 'web-search', input: { query: 'latest news', maxResults: 5 } }
             }
           ]
-        }
+        })
       },
-      async execute() {
-        return 'used tool results'
+      execute() {
+        return Promise.resolve('used tool results')
       },
       async *synthesize() {
-        yield 'done'
+        yield await Promise.resolve('done')
       }
     }
 
@@ -43,8 +43,8 @@ describe('createChatRuntime', () => {
             id: 'web-search',
             description: 'Search the web',
             schema: searchRequestSchema,
-            async execute() {
-              return { results: [] }
+            execute() {
+              return Promise.resolve({ results: [] })
             }
           }
         ]
@@ -63,18 +63,18 @@ describe('createChatRuntime', () => {
     const retryAt = new Date(Date.now() + 1).toISOString()
     let attempts = 0
     const provider: ModelProvider = {
-      async plan() {
-        return { complexity: 'low', steps: [] }
+      plan() {
+        return Promise.resolve({ complexity: 'low', steps: [] })
       },
-      async execute() {
-        return ''
+      execute() {
+        return Promise.resolve('')
       },
       async *synthesize() {
         attempts += 1
         if (attempts === 1) {
           throw new RateLimitError('rate limited', { retryAfterMs: 1, retryAt })
         }
-        yield 'retried'
+        yield await Promise.resolve('retried')
       }
     }
 

@@ -55,6 +55,18 @@ const createRuntime = () =>
     statusStore: createStatusStoreStub()
   }).create()
 
+const toRequestUrl = (input: RequestInfo | URL): string => {
+  if (typeof input === 'string') {
+    return input
+  }
+
+  if (input instanceof URL) {
+    return input.href
+  }
+
+  return input.url
+}
+
 beforeEach(() => {
   mockSettings.searchEnabled = true
   mockSettings.selectedModel = DEFAULT_MODEL
@@ -69,7 +81,7 @@ describe('createBrowserRuntimeFactory', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
-        const url = String(input)
+        const url = toRequestUrl(input)
         if (url.endsWith('/api/search')) {
           return Promise.resolve(
             new Response(JSON.stringify({ query: 'latest news about React', results: [] }), {
