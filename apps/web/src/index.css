@@ -242,3 +242,29 @@ body {
 .timeline-entry {
   animation: timeline-enter 200ms ease-out both;
 }
+
+/* Settings dialog animations */
+@keyframes dialog-overlay-show {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes dialog-overlay-hide {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes dialog-content-show {
+  from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes dialog-content-hide {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to   { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }
+}
+
+.settings-overlay[data-state='open']   { animation: dialog-overlay-show  180ms ease-out; }
+.settings-overlay[data-state='closed'] { animation: dialog-overlay-hide   150ms ease-in; }
+.settings-content[data-state='open']   { animation: dialog-content-show   200ms ease-out; }
+.settings-content[data-state='closed'] { animation: dialog-content-hide   160ms ease-in; }

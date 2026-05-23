@@ -32,6 +32,10 @@ vi.mock('../../services/auth.js', () => ({
   buildGitHubLoginUrl: () => null,
 }))
 
+vi.mock('../settings/settings-modal.js', () => ({
+  SettingsModal: () => null,
+}))
+
 import { ChatPage } from './chat-page.js'
 
 beforeAll(() => {
