@@ -1,4 +1,5 @@
 import type { ChatEvent } from '@tinytinkerer/contracts'
+import { buildConversationHistory } from './history'
 import { activeCooldown } from './projections'
 import type {
   ChatRuntimeFactory,
@@ -99,6 +100,43 @@ export const runPrompt = (
   runtimeFactory
     .create()
     .run(prompt, signal ? { signal, history } : { history })
+
+export const executeChatPrompt = async (options: {
+  conversationId: string
+  existingEvents: ChatEvent[]
+  prompt: string
+  runtimeFactory: ChatRuntimeFactory
+  conversations: ConversationRepository
+  preferences: PreferencesStore
+  signal?: AbortSignal
+  onChunk: (text: string) => void | Promise<void>
+  onEvent: (event: ChatEvent) => void | Promise<void>
+  onRateLimitState: (
+    state: Pick<ChatStateSnapshot, 'cooldownUntil' | 'isRetryPending'>
+  ) => void | Promise<void>
+}): Promise<void> => {
+  const history = buildConversationHistory(options.existingEvents)
+
+  for await (const event of runPrompt(
+    options.runtimeFactory,
+    options.prompt,
+    history,
+    options.signal
+  )) {
+    if (event.type === 'assistant.chunk') {
+      await options.onChunk(event.payload.text)
+      continue
+    }
+
+    await options.onEvent(event)
+    await options.conversations.appendEvent(createPersistedEvent(options.conversationId, event))
+
+    const rateLimitState = await applyRateLimitEvent(event, options.preferences)
+    if (rateLimitState) {
+      await options.onRateLimitState(rateLimitState)
+    }
+  }
+}
 
 export const resetConversation = async (
   conversations: ConversationRepository,

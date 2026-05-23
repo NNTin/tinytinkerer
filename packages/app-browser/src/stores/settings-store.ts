@@ -6,10 +6,10 @@ import {
   persistBooleanPreference,
   persistSelectedModel
 } from '@tinytinkerer/app-core'
-import { create } from 'zustand'
-import { getBrowserShell } from '../shell'
+import { createStore, type StoreApi } from 'zustand/vanilla'
+import type { BrowserShell } from '../shell'
 
-type SettingsState = {
+export type SettingsState = {
   hydrated: boolean
   selectedModel: string
   searchEnabled: boolean
@@ -22,31 +22,30 @@ type SettingsState = {
   setShowToolActivity: (show: boolean) => Promise<void>
 }
 
-export const useSettingsStore = create<SettingsState>((set) => ({
-  ...defaultSettingsState(),
-  selectedModel: DEFAULT_MODEL,
-  initialize: async () => {
-    const state = await loadSettingsState(getBrowserShell().preferences)
-    set(state)
-  },
-  setSelectedModel: async (model) => {
-    const normalizedModel = await persistSelectedModel(getBrowserShell().preferences, model)
-    set({ selectedModel: normalizedModel })
-  },
-  setSearchEnabled: async (enabled) => {
-    await persistBooleanPreference(getBrowserShell().preferences, SETTINGS_KEYS.searchEnabled, enabled)
-    set({ searchEnabled: enabled })
-  },
-  setShowThinkingTimeline: async (show) => {
-    await persistBooleanPreference(
-      getBrowserShell().preferences,
-      SETTINGS_KEYS.showThinkingTimeline,
-      show
-    )
-    set({ showThinkingTimeline: show })
-  },
-  setShowToolActivity: async (show) => {
-    await persistBooleanPreference(getBrowserShell().preferences, SETTINGS_KEYS.showToolActivity, show)
-    set({ showToolActivity: show })
-  }
-}))
+export type SettingsStore = StoreApi<SettingsState>
+
+export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
+  createStore<SettingsState>((set) => ({
+    ...defaultSettingsState(),
+    selectedModel: DEFAULT_MODEL,
+    initialize: async () => {
+      const state = await loadSettingsState(shell.preferences)
+      set(state)
+    },
+    setSelectedModel: async (model) => {
+      const normalizedModel = await persistSelectedModel(shell.preferences, model)
+      set({ selectedModel: normalizedModel })
+    },
+    setSearchEnabled: async (enabled) => {
+      await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.searchEnabled, enabled)
+      set({ searchEnabled: enabled })
+    },
+    setShowThinkingTimeline: async (show) => {
+      await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.showThinkingTimeline, show)
+      set({ showThinkingTimeline: show })
+    },
+    setShowToolActivity: async (show) => {
+      await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.showToolActivity, show)
+      set({ showToolActivity: show })
+    }
+  }))

@@ -2,10 +2,9 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { useEffect, useState, type ReactNode } from 'react'
 import {
-  canStartGitHubOAuth,
-  startGitHubOAuth,
   SUPPORTED_MODELS,
   useAuthStore,
+  useGitHubOAuth,
   useSettingsStore,
   useStatusStore,
   type ServiceStatus,
@@ -103,7 +102,7 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
   const token = useAuthStore((state) => state.token)
   const clearToken = useAuthStore((state) => state.clearToken)
   const setToken = useAuthStore((state) => state.setToken)
-  const oauthAvailable = canStartGitHubOAuth()
+  const { canStartGitHubOAuth, startGitHubOAuth } = useGitHubOAuth()
 
   const [showPat, setShowPat] = useState(false)
   const [patValue, setPatValue] = useState('')
@@ -144,10 +143,10 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
         Sign in to enable AI responses via GitHub Models.
       </p>
 
-      {oauthAvailable && (
+      {canStartGitHubOAuth && (
         <button
           type="button"
-          onClick={startGitHubOAuth}
+          onClick={() => startGitHubOAuth()}
           className="inline-flex items-center gap-2 rounded-md border border-stone-800 bg-stone-900 px-4 py-2 text-sm text-white hover:bg-stone-700 transition-colors"
         >
           <GitHubMark />

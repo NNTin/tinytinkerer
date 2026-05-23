@@ -1,7 +1,11 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { bootstrapBrowserShell, type BrowserShellConfig } from '@tinytinkerer/app-browser'
+import {
+  AppBrowserProvider,
+  createBrowserApp,
+  type BrowserShellConfig
+} from '@tinytinkerer/app-browser'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './app/router'
 import './index.css'
@@ -19,12 +23,14 @@ const browserConfig: BrowserShellConfig = {
 
 const queryClient = new QueryClient()
 
-void bootstrapBrowserShell(browserConfig).then(() => {
+void createBrowserApp(browserConfig).then((browserApp) => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
+      <AppBrowserProvider app={browserApp}>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </AppBrowserProvider>
     </StrictMode>
   )
 })

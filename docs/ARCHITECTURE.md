@@ -131,7 +131,7 @@ The future browser architecture is built around one shared headless core and one
 - `apps/web` and `apps/widget` both consume `packages/app-browser` as the browser-facing shared package.
 - `packages/app-browser` depends on `app-core`, `agent-core`, and `contracts`, and hides those lower-layer details from browser apps.
 - Apps also consume `packages/ui` for presentational primitives, but each app remains responsible for its own shell, layout, and feature presentation.
-- `packages/app-browser` is configured per shell. Different apps can vary by `edgeBaseUrl`, storage namespace, auth mode, host embedding behavior, and other shell-specific configuration without changing shared logic.
+- `packages/app-browser` is configured per shell instance. Different apps, or multiple embedded widgets on the same page, can vary by `edgeBaseUrl`, storage namespace, auth mode, host embedding behavior, and other shell-specific configuration without changing shared logic.
 - If a browser app needs a lower-layer type or capability, the correct fix is to extend `app-browser` rather than importing lower layers directly.
 - The widget is treated as the stricter client. Shared code must assume embedding constraints, thin host-controlled surfaces, and the possibility of host-provided credentials.
 

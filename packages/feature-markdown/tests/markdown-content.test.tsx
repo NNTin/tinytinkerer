@@ -2,7 +2,11 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { MarkdownContent } from '../src/index.js'
+import {
+  MARKDOWN_ROOT_CLASS,
+  MARKDOWN_STREAMING_CLASS,
+  MarkdownContent
+} from '../src/index.js'
 
 afterEach(() => {
   cleanup()
@@ -73,7 +77,12 @@ describe('MarkdownContent', () => {
 
   it('adds streaming-cursor class when isStreaming is true', () => {
     const { container } = render(<MarkdownContent content="streaming..." isStreaming />)
-    expect(container.firstChild).toHaveClass('streaming-cursor')
+    expect(container.firstChild).toHaveClass(MARKDOWN_STREAMING_CLASS)
+  })
+
+  it('always adds the shared markdown root class', () => {
+    const { container } = render(<MarkdownContent content="done" />)
+    expect(container.firstChild).toHaveClass(MARKDOWN_ROOT_CLASS)
   })
 
   it('accepts a custom className', () => {

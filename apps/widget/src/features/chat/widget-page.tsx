@@ -1,11 +1,10 @@
 import {
-  canStartGitHubOAuth,
   buildTurns,
-  startGitHubOAuth,
   startStatusPolling,
   SUPPORTED_MODELS,
   useAuthStore,
   useChatStore,
+  useGitHubOAuth,
   useSettingsStore,
   useStatusStore,
   type SystemStatus
@@ -30,6 +29,7 @@ export const WidgetPage = () => {
   const token = useAuthStore((state) => state.token)
   const setToken = useAuthStore((state) => state.setToken)
   const clearToken = useAuthStore((state) => state.clearToken)
+  const { canStartGitHubOAuth, startGitHubOAuth } = useGitHubOAuth()
 
   const selectedModel = useSettingsStore((state) => state.selectedModel)
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
@@ -52,7 +52,6 @@ export const WidgetPage = () => {
   }, [refreshStatus])
 
   const turns = useMemo(() => buildTurns(events, streamingText), [events, streamingText])
-  const oauthAvailable = canStartGitHubOAuth()
   const effectiveStatus = status ?? fallbackStatus
   const searchUnavailable = effectiveStatus.search.state !== 'ready'
 
@@ -134,10 +133,10 @@ export const WidgetPage = () => {
               </Button>
             ) : (
               <>
-                {oauthAvailable ? (
+                {canStartGitHubOAuth ? (
                   <button
                     type="button"
-                    onClick={startGitHubOAuth}
+                    onClick={() => startGitHubOAuth()}
                     className="inline-flex items-center rounded-full bg-stone-900 px-3 py-1.5 text-xs text-white"
                   >
                     Sign in with GitHub

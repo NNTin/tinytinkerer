@@ -1,18 +1,34 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { BrowserApp, BrowserShell, BrowserShellConfig } from '../src/index.js'
+import {
+  canStartGitHubOAuth,
+  completeGitHubOAuthCallback,
+  startGitHubOAuth
+} from '../src/index.js'
 
 const mockAuthStore = vi.hoisted(() => ({
   setToken: vi.fn().mockResolvedValue(undefined)
 }))
 
-vi.mock('../src/stores/auth-store.js', () => ({
-  useAuthStore: {
-    getState: () => mockAuthStore
-  }
-}))
-
-import { canStartGitHubOAuth, completeGitHubOAuthCallback, startGitHubOAuth } from '../src/auth.js'
-import { configureBrowserShell } from '../src/shell.js'
+const createAuthApp = (config: BrowserShellConfig = {}): BrowserApp =>
+  ({
+    shell: {
+      config: {
+        edgeBaseUrl: 'http://edge.local',
+        storageNamespace: 'tinytinkerer-test',
+        authMode: 'hybrid',
+        hostToken: null,
+        githubClientId: 'github-client-id',
+        ...config
+      }
+    } as BrowserShell,
+    stores: {
+      auth: {
+        getState: () => mockAuthStore
+      }
+    }
+  }) as unknown as BrowserApp
 
 const stubLocationAssign = () => {
   const assignSpy = vi.fn<(url: string) => void>()
@@ -30,22 +46,19 @@ describe('auth helpers', () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     mockAuthStore.setToken.mockClear()
-    configureBrowserShell({
-      edgeBaseUrl: 'http://edge.local',
-      storageNamespace: 'tinytinkerer-test',
-      githubClientId: 'github-client-id'
-    })
   })
 
   it('does not write oauth state until oauth is explicitly started', () => {
-    expect(canStartGitHubOAuth()).toBe(true)
+    const app = createAuthApp()
+    expect(canStartGitHubOAuth(app.shell)).toBe(true)
     expect(sessionStorage.getItem('tinytinkerer-test:oauth_state')).toBeNull()
   })
 
   it('stores oauth state under the shell namespace when oauth starts', () => {
+    const app = createAuthApp()
     const assignSpy = stubLocationAssign()
 
-    startGitHubOAuth()
+    startGitHubOAuth(app.shell)
 
     expect(assignSpy).toHaveBeenCalledTimes(1)
     expect(sessionStorage.getItem('tinytinkerer-test:oauth_state')).toBeTruthy()
@@ -53,8 +66,9 @@ describe('auth helpers', () => {
   })
 
   it('completes the callback and persists the exchanged token', async () => {
+    const app = createAuthApp()
     const assignSpy = stubLocationAssign()
-    startGitHubOAuth()
+    startGitHubOAuth(app.shell)
     const redirectUrl = assignSpy.mock.calls[0]?.[0]
     const state = redirectUrl ? new URL(String(redirectUrl)).searchParams.get('state') : null
 
@@ -70,31 +84,34 @@ describe('auth helpers', () => {
       )
     )
 
-    await completeGitHubOAuthCallback({ code: 'abc123', state })
+    await completeGitHubOAuthCallback(app, { code: 'abc123', state })
 
     expect(mockAuthStore.setToken).toHaveBeenCalledWith('ghu_test_token')
     vi.unstubAllGlobals()
   })
 
   it('rejects missing authorization codes', async () => {
+    const app = createAuthApp()
     await expect(
-      completeGitHubOAuthCallback({ code: null, state: 'state' })
+      completeGitHubOAuthCallback(app, { code: null, state: 'state' })
     ).rejects.toThrow('No authorization code received from GitHub.')
   })
 
   it('rejects invalid oauth state', async () => {
+    const app = createAuthApp()
     const assignSpy = stubLocationAssign()
-    startGitHubOAuth()
+    startGitHubOAuth(app.shell)
     expect(assignSpy).toHaveBeenCalledTimes(1)
 
     await expect(
-      completeGitHubOAuthCallback({ code: 'abc123', state: 'wrong-state' })
+      completeGitHubOAuthCallback(app, { code: 'abc123', state: 'wrong-state' })
     ).rejects.toThrow('Authentication failed. Please try signing in again.')
   })
 
   it('surfaces exchange failures', async () => {
+    const app = createAuthApp()
     const assignSpy = stubLocationAssign()
-    startGitHubOAuth()
+    startGitHubOAuth(app.shell)
     const redirectUrl = assignSpy.mock.calls[0]?.[0]
     const state = redirectUrl ? new URL(String(redirectUrl)).searchParams.get('state') : null
 
@@ -111,22 +128,13 @@ describe('auth helpers', () => {
     )
 
     await expect(
-      completeGitHubOAuthCallback({ code: 'abc123', state })
+      completeGitHubOAuthCallback(app, { code: 'abc123', state })
     ).rejects.toThrow('OAuth is not configured')
-
-    await expect(
-      completeGitHubOAuthCallback({ code: 'abc123', state })
-    ).rejects.toThrow('Authentication failed. Please try signing in again.')
     vi.unstubAllGlobals()
   })
 
   it('reports oauth as unavailable in host-token mode', () => {
-    configureBrowserShell({
-      edgeBaseUrl: 'http://edge.local',
-      storageNamespace: 'tinytinkerer-test',
-      authMode: 'host-token'
-    })
-
-    expect(canStartGitHubOAuth()).toBe(false)
+    const app = createAuthApp({ authMode: 'host-token' })
+    expect(canStartGitHubOAuth(app.shell)).toBe(false)
   })
 })

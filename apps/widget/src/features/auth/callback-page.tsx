@@ -1,4 +1,4 @@
-import { completeGitHubOAuthCallback } from '@tinytinkerer/app-browser'
+import { useGitHubOAuth } from '@tinytinkerer/app-browser'
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
@@ -6,6 +6,7 @@ export const CallbackPage = () => {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
+  const { completeGitHubOAuthCallback } = useGitHubOAuth()
 
   useEffect(() => {
     completeGitHubOAuthCallback({
@@ -22,7 +23,7 @@ export const CallbackPage = () => {
             : 'Authentication failed. Please try again.'
         )
       })
-  }, [navigate, searchParams])
+  }, [completeGitHubOAuthCallback, navigate, searchParams])
 
   return (
     <div className="flex min-h-screen items-center justify-center text-sm text-[var(--widget-muted)]">

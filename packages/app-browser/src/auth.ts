@@ -1,8 +1,8 @@
 import { githubExchangeResponseSchema } from '@tinytinkerer/contracts'
-import { getBrowserShellConfig } from './shell'
-import { useAuthStore } from './stores/auth-store'
+import type { BrowserApp } from './app'
+import type { BrowserShell } from './shell'
 
-const oauthStateKey = (): string => `${getBrowserShellConfig().storageNamespace}:oauth_state`
+const oauthStateKey = (shell: BrowserShell): string => `${shell.config.storageNamespace}:oauth_state`
 
 const generateState = (): string => {
   const bytes = new Uint8Array(16)
@@ -10,19 +10,19 @@ const generateState = (): string => {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
 }
 
-export const canStartGitHubOAuth = (): boolean => {
-  const config = getBrowserShellConfig()
+export const canStartGitHubOAuth = (shell: BrowserShell): boolean => {
+  const config = shell.config
   return config.authMode !== 'host-token' && Boolean(config.githubClientId)
 }
 
-const createGitHubLoginUrl = (): string => {
-  if (!canStartGitHubOAuth()) {
+const createGitHubLoginUrl = (shell: BrowserShell): string => {
+  if (!canStartGitHubOAuth(shell)) {
     throw new Error('GitHub OAuth is not available for this browser shell.')
   }
 
-  const config = getBrowserShellConfig()
+  const config = shell.config
   const state = generateState()
-  sessionStorage.setItem(oauthStateKey(), state)
+  sessionStorage.setItem(oauthStateKey(shell), state)
   const params = new URLSearchParams({
     client_id: config.githubClientId!,
     scope: 'read:user',
@@ -36,19 +36,19 @@ const createGitHubLoginUrl = (): string => {
   return `https://github.com/login/oauth/authorize?${params.toString()}`
 }
 
-export const startGitHubOAuth = (): void => {
-  location.assign(createGitHubLoginUrl())
+export const startGitHubOAuth = (shell: BrowserShell): void => {
+  location.assign(createGitHubLoginUrl(shell))
 }
 
-const validateOAuthState = (returnedState: string | null): boolean => {
-  const stateKey = oauthStateKey()
+const validateOAuthState = (shell: BrowserShell, returnedState: string | null): boolean => {
+  const stateKey = oauthStateKey(shell)
   const storedState = sessionStorage.getItem(stateKey)
   sessionStorage.removeItem(stateKey)
   return Boolean(storedState) && storedState === returnedState
 }
 
-const exchangeCode = async (code: string): Promise<string> => {
-  const config = getBrowserShellConfig()
+const exchangeCode = async (shell: BrowserShell, code: string): Promise<string> => {
+  const config = shell.config
   const response = await fetch(`${config.edgeBaseUrl}/auth/github/exchange`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -78,7 +78,9 @@ const exchangeCode = async (code: string): Promise<string> => {
   return data.accessToken
 }
 
-export const completeGitHubOAuthCallback = async (options: {
+export const completeGitHubOAuthCallback = async (
+  app: BrowserApp,
+  options: {
   code: string | null
   state: string | null
 }): Promise<void> => {
@@ -86,13 +88,13 @@ export const completeGitHubOAuthCallback = async (options: {
     throw new Error('No authorization code received from GitHub.')
   }
 
-  if (!validateOAuthState(options.state)) {
+  if (!validateOAuthState(app.shell, options.state)) {
     throw new Error('Authentication failed. Please try signing in again.')
   }
 
   try {
-    const token = await exchangeCode(options.code)
-    await useAuthStore.getState().setToken(token)
+    const token = await exchangeCode(app.shell, options.code)
+    await app.stores.auth.getState().setToken(token)
   } catch (error) {
     if (error instanceof Error) {
       throw new Error(error.message || 'Authentication failed. Please try again.', { cause: error })

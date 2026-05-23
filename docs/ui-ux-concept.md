@@ -1,6 +1,6 @@
-# UI/UX Concept — tinytinkerer
+# UI/UX Concept — tinytinkerer web
 
-This document records the design intent behind the current UI so future agents can extend it consistently.
+This document records the design intent behind the current `apps/web` UI so future agents can extend it consistently.
 
 ## Style direction
 
@@ -81,6 +81,14 @@ Follow these rules when introducing new elements:
 3. **Keep the palette warm**: amber for interactive focus/accent, stone for text, no cold blues.
 4. **No orphan panels**: don't add a new panel on the main page without gating it behind a settings toggle and making it visually secondary.
 5. **Mobile first**: the layout is a single column. New sections must stack cleanly without horizontal overflow on narrow screens.
+
+## Widget Note
+
+`apps/widget` intentionally does not follow this exact shell model.
+
+- The widget is the stricter embedded surface and may expose compact inline controls when that keeps host integration simpler.
+- The settings modal, composer control hierarchy, and panel stacking rules in this document are the source of truth for `apps/web`, not for `apps/widget`.
+- Shared behavior should still come from `app-browser`, `app-core`, and `feature-*` packages even when the widget uses a different shell layout.
 
 ## Cross-App Feature Reuse
 

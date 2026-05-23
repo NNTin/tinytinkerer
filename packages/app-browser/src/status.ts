@@ -1,8 +1,8 @@
 import type { SystemStatus } from '@tinytinkerer/contracts'
-import { getBrowserShell } from './shell'
+import type { BrowserShell } from './shell'
 
-export const fetchStatus = async (): Promise<SystemStatus> =>
-  getBrowserShell().statusGateway.fetchStatus()
+export const fetchStatus = async (shell: BrowserShell): Promise<SystemStatus> =>
+  shell.statusGateway.fetchStatus()
 
 export const startStatusPolling = (
   refresh: () => Promise<void>,

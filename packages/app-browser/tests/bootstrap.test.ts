@@ -1,50 +1,67 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const mockShell = vi.hoisted(() => ({
+  config: {
+    edgeBaseUrl: 'http://edge.local',
+    storageNamespace: 'tinytinkerer-test',
+    authMode: 'hybrid' as const,
+    githubClientId: 'github-client-id',
+    hostToken: null
+  },
+  conversations: {},
+  preferences: {},
+  authTokens: {},
+  statusGateway: {}
+}))
+
 const authInitialize = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const chatInitialize = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const settingsInitialize = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const statusInitialize = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 
+vi.mock('../src/shell.js', () => ({
+  createBrowserShell: vi.fn(() => mockShell)
+}))
+
 vi.mock('../src/stores/auth-store.js', () => ({
-  useAuthStore: {
+  createAuthStore: vi.fn(() => ({
     getState: () => ({ initialize: authInitialize })
-  }
+  }))
 }))
 
 vi.mock('../src/stores/chat-store.js', () => ({
-  useChatStore: {
+  createChatStore: vi.fn(() => ({
     getState: () => ({ initialize: chatInitialize })
-  }
+  }))
 }))
 
 vi.mock('../src/stores/settings-store.js', () => ({
-  useSettingsStore: {
+  createSettingsStore: vi.fn(() => ({
     getState: () => ({ initialize: settingsInitialize })
-  }
+  }))
 }))
 
 vi.mock('../src/stores/status-store.js', () => ({
-  useStatusStore: {
+  createStatusStore: vi.fn(() => ({
     getState: () => ({ initialize: statusInitialize })
-  }
+  }))
 }))
 
 import { bootstrapBrowserShell } from '../src/initialize.js'
-import { getBrowserShellConfig } from '../src/shell.js'
 
 describe('bootstrapBrowserShell', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('configures the shell and initializes shared browser stores together', async () => {
-    await bootstrapBrowserShell({
+  it('creates a browser app instance and initializes its stores together', async () => {
+    const app = await bootstrapBrowserShell({
       edgeBaseUrl: 'http://edge.local',
       storageNamespace: 'tinytinkerer-test',
       githubClientId: 'github-client-id'
     })
 
-    expect(getBrowserShellConfig()).toMatchObject({
+    expect(app.shell.config).toMatchObject({
       edgeBaseUrl: 'http://edge.local',
       storageNamespace: 'tinytinkerer-test',
       githubClientId: 'github-client-id'

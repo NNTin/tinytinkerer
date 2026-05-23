@@ -165,6 +165,7 @@ Forbidden examples:
 For browser apps, `packages/app-browser` is the main shared runtime boundary.
 
 - Browser apps should depend on `app-browser` instead of composing lower runtime layers themselves.
+- `app-browser` should be instantiated per shell rather than relying on module-global browser state.
 - If an app needs a lower-layer capability, `app-browser` should expose the browser-safe API for it.
 - This keeps runtime composition consistent between `web` and `widget`.
 - This also makes dependency enforcement simpler because the allowed app dependency surface stays small.

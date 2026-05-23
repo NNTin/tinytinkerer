@@ -62,9 +62,12 @@ const mockChatState = vi.hoisted(() => ({
 vi.mock('@tinytinkerer/app-browser', () => ({
   buildCurrentTimeline: () => [],
   buildTurns: () => mockTurns,
-  canStartGitHubOAuth: () => true,
-  startGitHubOAuth: vi.fn(),
   startStatusPolling: vi.fn(() => () => undefined),
+  useGitHubOAuth: () => ({
+    canStartGitHubOAuth: true,
+    startGitHubOAuth: vi.fn(),
+    completeGitHubOAuthCallback: vi.fn()
+  }),
   useAuthStore: (selector: (state: typeof mockAuthState) => unknown) => selector(mockAuthState),
   useChatStore: (selector: (state: typeof mockChatState) => unknown) => selector(mockChatState),
   useSettingsStore: (selector: (state: typeof mockSettingsState) => unknown) => selector(mockSettingsState),

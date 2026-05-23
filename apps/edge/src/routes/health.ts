@@ -17,7 +17,9 @@ export const registerHealthRoute = (app: Hono<{ Bindings: Bindings }>) => {
       },
       search: {
         state: c.env.TAVILY_API_KEY ? 'ready' : 'degraded',
-        detail: c.env.TAVILY_API_KEY ? 'Tavily proxy ready' : 'Using mock search results'
+        detail: c.env.TAVILY_API_KEY
+          ? 'Tavily proxy ready'
+          : 'Web search unavailable until Tavily is configured'
       }
     }
 

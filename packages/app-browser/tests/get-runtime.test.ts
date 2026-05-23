@@ -1,47 +1,60 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatEvent } from '@tinytinkerer/contracts'
+import { ToolRegistry } from '@tinytinkerer/agent-core'
+import { DEFAULT_MODEL } from '@tinytinkerer/app-core'
+import type { BrowserShell } from '../src/shell.js'
+import type { AuthStore } from '../src/stores/auth-store.js'
+import type { SettingsStore } from '../src/stores/settings-store.js'
+import type { StatusStore } from '../src/stores/status-store.js'
+import { createBrowserRuntimeFactory } from '../src/runtime/get-runtime.js'
 
-const mockSettings = vi.hoisted(() => ({
+const mockSettings = {
   searchEnabled: true,
   selectedModel: 'openai/gpt-4.1-mini'
-}))
+}
 
-const mockAuth = vi.hoisted(() => ({
+const mockAuth = {
   token: null as string | null
-}))
+}
 
-const mockStatus = vi.hoisted(() => ({
+const mockStatus = {
   hydrated: true,
   status: {
     auth: { state: 'ready', detail: 'ok' },
     models: { state: 'ready', detail: 'ok' },
     search: { state: 'ready', detail: 'ok' }
   }
-}))
+}
 
-vi.mock('../src/stores/settings-store.js', () => ({
-  useSettingsStore: {
-    getState: () => mockSettings
-  }
-}))
-
-vi.mock('../src/stores/auth-store.js', () => ({
-  useAuthStore: {
+const createAuthStoreStub = (): AuthStore =>
+  ({
     getState: () => mockAuth
-  }
-}))
+  }) as AuthStore
 
-vi.mock('../src/stores/status-store.js', () => ({
-  isSearchReady: (state: typeof mockStatus) => state.hydrated && state.status.search.state === 'ready',
-  useStatusStore: {
+const createSettingsStoreStub = (): SettingsStore =>
+  ({
+    getState: () => mockSettings
+  }) as SettingsStore
+
+const createStatusStoreStub = (): StatusStore =>
+  ({
     getState: () => mockStatus
-  }
-}))
+  }) as StatusStore
 
-import { ToolRegistry } from '@tinytinkerer/agent-core'
-import { DEFAULT_MODEL } from '@tinytinkerer/app-core'
-import { configureBrowserShell } from '../src/shell.js'
-import { getRuntime } from '../src/runtime/get-runtime.js'
+const createRuntime = () =>
+  createBrowserRuntimeFactory({
+    shell: {
+      config: {
+        edgeBaseUrl: 'http://test-edge.local',
+        storageNamespace: 'tinytinkerer-test',
+        authMode: 'hybrid',
+        hostToken: null
+      }
+    } as BrowserShell,
+    authStore: createAuthStoreStub(),
+    settingsStore: createSettingsStoreStub(),
+    statusStore: createStatusStoreStub()
+  }).create()
 
 beforeEach(() => {
   mockSettings.searchEnabled = true
@@ -49,16 +62,13 @@ beforeEach(() => {
   mockAuth.token = null
   mockStatus.hydrated = true
   mockStatus.status.search.state = 'ready'
-  configureBrowserShell({
-    edgeBaseUrl: 'http://test-edge.local',
-    storageNamespace: 'tinytinkerer-test'
-  })
+  mockStatus.status.search.detail = 'ok'
 })
 
-describe('getRuntime', () => {
+describe('createBrowserRuntimeFactory', () => {
   it('registers web-search tool in the registry when searchEnabled is true', () => {
     const registerSpy = vi.spyOn(ToolRegistry.prototype, 'register')
-    getRuntime()
+    createRuntime()
     expect(registerSpy).toHaveBeenCalledTimes(1)
     expect(registerSpy.mock.calls[0]?.[0]?.id).toBe('web-search')
     registerSpy.mockRestore()
@@ -67,7 +77,7 @@ describe('getRuntime', () => {
   it('does not register any tools when searchEnabled is false', () => {
     mockSettings.searchEnabled = false
     const registerSpy = vi.spyOn(ToolRegistry.prototype, 'register')
-    getRuntime()
+    createRuntime()
     expect(registerSpy).not.toHaveBeenCalled()
     registerSpy.mockRestore()
   })
@@ -75,7 +85,7 @@ describe('getRuntime', () => {
   it('does not register search when the service is not ready', () => {
     mockStatus.status.search.state = 'degraded'
     const registerSpy = vi.spyOn(ToolRegistry.prototype, 'register')
-    getRuntime()
+    createRuntime()
     expect(registerSpy).not.toHaveBeenCalled()
     registerSpy.mockRestore()
   })
@@ -102,7 +112,7 @@ describe('getRuntime', () => {
     )
 
     mockAuth.token = 'test-token'
-    const runtime = getRuntime()
+    const runtime = createRuntime()
     const events: unknown[] = []
     for await (const event of runtime.run('hello')) {
       events.push(event)
@@ -116,7 +126,7 @@ describe('getRuntime', () => {
   it('suppresses search planning and tool events when searchEnabled is false', async () => {
     mockSettings.searchEnabled = false
 
-    const runtime = getRuntime()
+    const runtime = createRuntime()
     const events: ChatEvent[] = []
     for await (const event of runtime.run('latest news about React')) {
       events.push(event)
@@ -135,7 +145,7 @@ describe('getRuntime', () => {
   it('suppresses search planning when the service is unavailable', async () => {
     mockStatus.status.search.state = 'offline'
 
-    const runtime = getRuntime()
+    const runtime = createRuntime()
     const events: ChatEvent[] = []
     for await (const event of runtime.run('latest news about React')) {
       events.push(event)

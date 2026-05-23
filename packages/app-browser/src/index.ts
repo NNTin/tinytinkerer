@@ -1,16 +1,21 @@
+export { canStartGitHubOAuth, completeGitHubOAuthCallback, startGitHubOAuth } from './auth'
 export {
-  canStartGitHubOAuth,
-  completeGitHubOAuthCallback,
-  startGitHubOAuth
-} from './auth'
+  AppBrowserProvider,
+  createBrowserApp,
+  useAuthStore,
+  useBrowserApp,
+  useChatStore,
+  useSettingsStore,
+  useStatusStore
+} from './app'
+export type { BrowserApp } from './app'
 export type { BrowserAuthMode, BrowserShellConfig, ResolvedBrowserShellConfig } from './config'
 export { bootstrapBrowserShell } from './initialize'
-export { getBrowserShellConfig } from './shell'
+export { useBrowserShellConfig, useGitHubOAuth } from './hooks'
 export { fetchStatus, startStatusPolling } from './status'
-export { useAuthStore } from './stores/auth-store'
-export { useChatStore } from './stores/chat-store'
-export { useSettingsStore } from './stores/settings-store'
-export { isSearchReady, useStatusStore } from './stores/status-store'
+export type { BrowserShell } from './shell'
+export { createBrowserShell } from './shell'
+export { isSearchReady } from './stores/status-store'
 export {
   DEFAULT_MODEL,
   SUPPORTED_MODELS,
