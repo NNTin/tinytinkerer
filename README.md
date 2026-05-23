@@ -12,6 +12,7 @@ pnpm dev
 ```
 
 - Web: `http://localhost:5173`
+- Widget: run `pnpm --filter @tinytinkerer/widget dev`
 - Edge API: `http://localhost:8787`
 
 See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for full setup instructions, environment variables, and project structure.

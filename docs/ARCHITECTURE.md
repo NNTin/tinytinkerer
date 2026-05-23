@@ -139,10 +139,7 @@ The desired flow is:
 
 ## Current Gaps Motivating This Target
 
-The current repository shape motivates this target architecture:
+The current repository work remaining beyond this migration is intentionally narrow:
 
-- `apps/web` currently owns too much orchestration and browser behavior.
-- `packages/agent-core` currently contains product-specific integrations that should move outward.
-- `packages/shared` mixes helpers with product planning concerns and should not remain a mixed-ownership bucket.
-- shared contracts are not yet the runtime schema source of truth across all layers.
-- there is no explicit package strategy yet for large shared features or for enforcing dependency boundaries.
+- `packages/feature-*` remains an architectural pattern rather than an actively used package family.
+- Mermaid stays documented as the first explicit feature-package example, but no dedicated shared feature runtime has been introduced yet.

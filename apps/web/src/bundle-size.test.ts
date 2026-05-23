@@ -7,7 +7,8 @@
  * WHY THIS FILE EXISTS
  * --------------------
  * Before issue #24 the entire web app shipped as a single 733 kB JS chunk.
- * That was caused by @tinytinkerer/agent-core, react-markdown, and remark-gfm
+ * That was caused by the runtime stack behind @tinytinkerer/agent-core,
+ * react-markdown, and remark-gfm
  * all being imported from eagerly-loaded modules, ending up in the main entry
  * bundle and blocking the initial page parse.
  *
@@ -25,7 +26,8 @@
  *       and open the generated `stats.html` treemap.
  *    b. Or run: pnpm dlx vite-bundle-visualizer in apps/web.
  * 3. The most common culprits are:
- *    - Importing @tinytinkerer/agent-core from any eagerly-loaded file
+ *    - Importing @tinytinkerer/agent-core or @tinytinkerer/app-browser/runtime
+ *      from any eagerly-loaded file
  *      (auth-store, main.tsx, top-bar, router, etc.)
  *    - Importing react-markdown or remark-gfm outside the lazy chat chunk
  *    - Adding a new heavy library to a module that is NOT behind React.lazy()

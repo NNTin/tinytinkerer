@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
+    "check:boundaries": "node ./scripts/check-boundaries.mjs",
     "check:mermaid": "node ./scripts/check-mermaid.mjs",
     "lint": "turbo run lint",
     "test": "turbo run test",

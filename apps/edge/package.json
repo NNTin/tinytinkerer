@@ -12,8 +12,7 @@
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.5",
-    "@tinytinkerer/shared": "workspace:*",
-    "@tinytinkerer/types": "workspace:*",
+    "@tinytinkerer/contracts": "workspace:*",
     "hono": "^4.10.5",
     "zod": "^4.1.12"
   },
