@@ -1,107 +1,141 @@
-# UI/UX Concept — tinytinkerer web
+# UI/UX Concept
 
-This document records the design intent behind the current `apps/web` UI so future agents can extend it consistently.
+This document records the design intent for the tinytinkerer frontend surfaces.
 
-## Style direction
+It complements [ARCHITECTURE.md](./ARCHITECTURE.md) by focusing on UI ownership, shared frontend packages, and the rules agents should follow to avoid duplicating behavior or styling across frontend apps.
 
-The palette is warm stone and amber: `--bg` (#f6f2ec), `--panel` (#fffaf5), `--border` (#dccdb9), `--muted` (#766a5d), amber-400/500 for interactive focus and accent. The overall effect is editorial and calm, not saturated or high-contrast. Avoid introducing blues, purples, or vivid accent colours that would break this tone.
+## Frontend Composition
 
-Typography uses Inter at default weights. Headings inside panels are `text-xs font-medium uppercase tracking-wider text-[var(--muted)]` — small, quiet labels that orient without dominating. Never use large headings or hero text on the main page.
+```mermaid
+flowchart LR
+  host["@tinytinkerer/host<br/>dev + deployment composition"]
 
-Borders and shadows are used sparingly to indicate hierarchy:
-- Primary panel (conversation): `shadow-sm` + `border border-[var(--border)]` + `bg-[var(--panel)]`
-- Secondary panels (thinking, tools): no shadow + `bg-[var(--bg)]` + lighter border
-- Composer: `shadow-sm` + `bg-[var(--panel)]`, visually paired with the conversation panel
+  web["@tinytinkerer/web"]
+  widget["@tinytinkerer/widget"]
+  mobile["@tinytinkerer/mobile"]
 
-## Layout
-
-The page is a single full-height column (`h-screen`, `overflow-hidden`, `max-w-5xl mx-auto`). Sections stack vertically inside a `<main>` with a small gap (`gap-3`). There is no sticky top bar or global nav — the settings gear lives inside the composer so controls stay close to where they are used.
-
-```
-┌──────────────────────────────────────┐
-│  Conversation (flex-1, scrollable)   │
-├──────────────────────────────────────┤
-│  Thinking timeline (conditional)     │  ← secondary, lighter
-├──────────────────────────────────────┤
-│  Tool activity    (conditional)      │  ← secondary, lighter
-├──────────────────────────────────────┤
-│  Composer (textarea + actions)       │
-└──────────────────────────────────────┘
+  host --> web
+  host --> widget
+  host --> mobile
 ```
 
-The conversation panel takes `flex-1` and all available height. Secondary panels are fixed-height and shrink to fit their content. When both secondary panels are disabled in settings the page is just conversation + composer, which is the baseline clean state.
+`@tinytinkerer/host` is the composition layer for local development and deployment output. It serves the three frontend shells together, but it is not a fourth UI shell and must not become the home for shared feature logic.
 
-## Conversation panel
+## Purpose
 
-The dominant surface. White-ish background (`--panel`), shadow, generous padding. User messages render as warm amber-tinted bubbles. Assistant messages render on a white card. Error and system messages use colour-coded borders (rose, amber, stone). Streaming uses a blinking amber cursor.
+The frontend apps are different shells around the same product runtime:
 
-Do not add sidebars, split panes, or competing surfaces at the same visual weight as the conversation.
+- `@tinytinkerer/web` is the full browser shell.
+- `@tinytinkerer/mobile` is the installable narrow-screen shell.
+- `@tinytinkerer/widget` is the stricter embedded shell.
 
-## Composer
+They should feel like the same product family without forcing identical layouts.
 
-Sits at the bottom of the column. Contains a growing textarea and an action row:
-- **Left**: settings gear (tertiary, icon-only), "Sign in" button (tertiary, icon+label, shown only when unauthenticated)
-- **Right**: Reset (secondary, labelled button), Cancel retry (secondary, conditional), Send (primary CTA, min-w-24)
+The goal for future agents is:
 
-Action hierarchy: Send is the single primary action. Reset and Cancel are secondary. Settings and Sign in are tertiary. Never place a primary CTA next to another primary CTA.
+- keep app shells thin
+- keep styling consistent where the user perceives the same feature
+- extract reusable UI and feature behavior into shared packages before it is copied into another app
 
-The "Sign in" button is the primary auth entry point. It appears in the composer action row only when the user is not authenticated, giving immediate discoverability without cluttering the main page. Clicking it opens the Settings modal (Auth section), which handles both GitHub OAuth and PAT flows. Once signed in, the button disappears.
+## Shared UI System
 
-## Settings modal
+The shared frontend model has three layers:
 
-Settings live in a Radix Dialog, opened via the settings gear. This keeps the main page uncluttered and lets settings feel like a deliberate mode change. The modal is `max-w-md`, centred, with a header / scrollable body layout.
+- `@tinytinkerer/ui` owns presentational primitives such as buttons and other reusable visual building blocks.
+- `@tinytinkerer/feature-markdown` owns the shared markdown rendering surface used by frontend apps.
+- `@tinytinkerer/feature-mermaid` is the intended shared package for Mermaid-specific behavior once Mermaid support becomes real and non-trivial across apps.
 
-Inside the modal, sections are separated by `<hr>` dividers with `SectionHeading` labels (`text-xs uppercase tracking-wider`). Each section has a single responsibility (Auth, Models, Search, Interface). Auth, Models, and Search each surface their live service status inline inside the section so the top-level app chrome can stay quiet without hiding system health. Toggle rows use the `ToggleRow` primitive with a custom amber toggle control.
+Rules:
 
-Do not put settings inline on the main page. Do not add floating panels or drawer overlays for settings.
+1. App shells may decide layout, spacing, and app-specific affordances.
+2. Shared controls, renderers, and non-trivial visual behavior should move into packages instead of being reimplemented per app.
+3. `@tinytinkerer/ui` is for primitives, not feature runtimes.
+4. `feature-*` packages are where cross-app rendering pipelines, sanitization policy, lazy loading, and shared feature glue belong.
 
-## Secondary panels (Thinking / Tool History)
+## Shared Visual Direction
 
-Thinking timeline and Tool History are opt-in transparency features, not primary content. They must always feel subordinate:
+`web` and `mobile` currently share the main product mood:
 
-- Use `bg-[var(--bg)]` (not `--panel`) so they sit one step behind the conversation.
-- No `shadow-sm` — shadows are reserved for primary panels.
-- Reduced padding (`px-4 py-3` vs `p-5` for the conversation).
-- Headings at `text-xs font-medium` — quieter than primary panel headings.
-- Timeline entries: compact rows with a small step-number badge, no card borders.
-- Tool history entries: `text-xs`, muted colours, `<details>` for expandable output.
+- warm stone and amber surfaces
+- soft rounded panels
+- restrained borders and shadows
+- amber focus and primary-action emphasis
+- quiet status colors for info, warning, and error states
 
-The two panels have different time scopes:
-- Thinking timeline is current-turn only. It explains the active run and resets naturally with the next user prompt.
-- Tool History is conversation-level. It acts as a historical audit log and may include entries from earlier turns in the same conversation.
+This should remain the baseline product identity unless there is a strong shell-specific reason to diverge.
 
-Both panels are conditionally rendered based on their persisted toggle in settings (`showThinkingTimeline`, `showToolActivity`). When disabled, the section is completely removed from the DOM — no empty placeholder, no skeleton.
+The widget belongs to the same family, but it is allowed to be more compact and host-friendly:
 
-## Adding new UI
+- denser controls
+- tighter spacing
+- embedded-card presentation
+- inline setup flows when a modal would hurt embedding
 
-Follow these rules when introducing new elements:
+The widget may differ in shell structure, but it must not fork shared feature behavior or invent a separate styling system for the same shared controls.
 
-1. **Every new control needs a home**: composer action row for send-adjacent actions, settings modal for preferences, inline inline inline for contextual actions inside a message.
-2. **Match the visual tier**: primary surfaces get `--panel` + shadow; secondary surfaces get `--bg`, no shadow.
-3. **Keep the palette warm**: amber for interactive focus/accent, stone for text, no cold blues.
-4. **No orphan panels**: don't add a new panel on the main page without gating it behind a settings toggle and making it visually secondary.
-5. **Mobile first**: the layout is a single column. New sections must stack cleanly without horizontal overflow on narrow screens.
+## Shell Guidance
 
-## Widget Note
+### Web
 
-`apps/widget` intentionally does not follow this exact shell model.
+`@tinytinkerer/web` is the most spacious browser shell.
 
-- The widget is the stricter embedded surface and may expose compact inline controls when that keeps host integration simpler.
-- The settings modal, composer control hierarchy, and panel stacking rules in this document are the source of truth for `apps/web`, not for `apps/widget`.
-- Shared behavior should still come from `app-browser`, `app-core`, and `feature-*` packages even when the widget uses a different shell layout.
+- Use the conversation as the dominant surface.
+- Keep the page as a single primary workflow instead of adding competing panes.
+- Keep settings in a modal or other clearly secondary surface.
+- Treat transparency features such as thinking and tool history as subordinate to the conversation.
 
-## Cross-App Feature Reuse
+### Mobile
 
-When a large feature is introduced and both `web` and `widget` need it, duplication is not acceptable.
+`@tinytinkerer/mobile` uses the same core product language on narrower screens.
 
-- Shared feature logic must be extracted into a dedicated package before the second app grows its own implementation.
-- `packages/ui` is only for primitives and presentational building blocks. It is not the home for feature runtimes.
-- Feature packages own shared behavior, integration surfaces, and non-trivial rendering pipelines used across apps.
+- Preserve the single-column flow.
+- Prefer thumb-friendly controls, larger hit targets, and safe-area-aware spacing.
+- Keep install and mobile-specific affordances in the shell layer.
+- Reuse shared runtime and rendering behavior rather than rebuilding mobile-specific versions of the same feature.
 
-Mermaid is the concrete example:
+### Widget
 
-- If both apps render Mermaid diagrams, do not duplicate the parser or render pipeline.
-- Do not duplicate markdown hooks, sanitization rules, lazy-loading, or shared styling glue in both apps.
-- Instead create a package such as `@tinytinkerer/feature-mermaid` and keep app wrappers thin.
+`@tinytinkerer/widget` is the stricter embedded shell.
 
-This rule applies to any similarly large cross-app feature, not only Mermaid.
+- Optimize for compact sessions and host integration.
+- Inline configuration is acceptable when it reduces friction inside an embedded surface.
+- Avoid assuming a full-page shell, modal-heavy flows, or large supporting panels.
+- Keep the widget thin: it should reuse shared runtime, shared markdown rendering, and future shared features instead of copying web or mobile internals.
+
+## Feature Reuse Rules
+
+When a feature appears in more than one frontend app, duplication is not acceptable.
+
+Use these rules:
+
+1. If the feature is just a visual primitive, extend `@tinytinkerer/ui`.
+2. If the feature has its own rendering or interaction pipeline, create or extend a `feature-*` package.
+3. If shared browser runtime integration is needed, expose it through `@tinytinkerer/app-browser` instead of letting apps wire lower layers directly.
+4. Do not copy feature logic from `web` into `mobile` or `widget`, or from one app into another in any direction.
+
+Mermaid is the explicit example:
+
+- Mermaid support should not be separately implemented in `web`, `mobile`, and `widget`.
+- Markdown hooks, Mermaid source detection, lazy loading, sanitization, fallback behavior, and shared styling glue belong in `@tinytinkerer/feature-mermaid`.
+- Apps should only decide where Mermaid appears and how it fits their shell.
+
+## Current Gaps To Avoid Repeating
+
+The repo still has some duplicated frontend UI that should be treated as migration pressure, not as the model to copy forward.
+
+- Markdown prose styling is currently repeated across app stylesheets.
+- Some settings-modal primitives are currently duplicated between `web` and `mobile`.
+
+Future agents should not extend those copies again. If the same UI behavior or styling contract is needed in another app, extract it into a shared package instead.
+
+## Agent Checklist
+
+Before adding frontend UI, check:
+
+- Is this a shell-specific layout choice or a reusable UI capability?
+- Will another frontend app need the same control, renderer, or behavior?
+- Should this live in `@tinytinkerer/ui`, `@tinytinkerer/feature-markdown`, or a new/existing `feature-*` package?
+- Does this preserve a consistent visual family across apps?
+- Does this avoid app-to-app copying?
+
+If the answer points to reuse, extract first and keep the app wrapper thin.
