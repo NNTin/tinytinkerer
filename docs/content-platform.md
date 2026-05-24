@@ -15,6 +15,24 @@ The design goals are:
 - prevent `@tinytinkerer/ui` from becoming a feature runtime
 - keep heavy content renderers lazy and isolated from the main browser entry bundle
 
+## Scope For This Migration
+
+This document describes the first content-platform cutover, not the final long-term rich-content system.
+
+In scope now:
+
+- replacing `@tinytinkerer/feature-markdown`
+- introducing explicit content packages
+- moving browser-shell content rendering behind `@tinytinkerer/app-browser`
+- defining the initial internal AST boundary
+
+Out of scope for this phase:
+
+- changing edge payloads to emit structured content
+- moving `ContentNode` into `@tinytinkerer/contracts`
+- interactive `ChoicePromptNode` behavior
+- app-shell-specific UX around rich content
+
 ## Package Model
 
 The content platform is split into five packages.
@@ -125,6 +143,17 @@ Rules:
 - `ChoicePromptNode` is reserved as an extension point in v1 and should not require parsing or interactive rendering yet.
 - Existing browser/runtime layers may continue to treat assistant output as strings until a later transport change is intentionally planned.
 
+## Shell-Facing API
+
+The intended public browser-facing surface is a single content export from `@tinytinkerer/app-browser`.
+
+Expected characteristics:
+
+- browser shells render assistant output through `app-browser`, not through direct `content-*` imports
+- the shell-facing component accepts raw assistant text plus shell-local styling hooks
+- parsing, registry composition, specialized renderer wiring, and fallback policy remain hidden behind `app-browser`
+- app shells can still decide container layout and surrounding UX without rebuilding content behavior
+
 ## Composition Boundary
 
 `@tinytinkerer/app-browser` is the browser-facing composition layer for the content platform.
@@ -181,6 +210,7 @@ flowchart LR
 - `app-browser` may compose the content platform, but the content platform must not depend on `app-browser`.
 - Browser apps consume shell-facing content exports from `app-browser`, not directly from `content-*`.
 - `ui` stays primitive-only and must not absorb content parsing or specialized feature runtime logic.
+- `content-*` packages must not become a second browser runtime or a second app shell.
 
 ## Rendering Model
 
@@ -193,6 +223,25 @@ The intended rendering split is:
 - `app-browser` decides how those pieces are composed and exposed to browser shells
 
 Specialized renderers such as Mermaid and wireframe should be lazy-loadable so they do not bloat the main browser entry chunk.
+
+## Parsing Rules
+
+The content platform should treat markdown as the source format for this phase and promote only well-defined structures into specialized nodes.
+
+Initial mapping rules:
+
+- fenced code blocks with info string `mermaid` become `MermaidNode`
+- fenced code blocks with info string `wireframe` become `WireframeNode`
+- other fenced code blocks become `CodeBlockNode`
+- tables become `TableNode`
+- images become `ImageNode`
+- remaining prose stays in `MarkdownNode`
+
+Fallback rules:
+
+- invalid or unsupported specialized blocks must not break rendering
+- specialized rendering failures should degrade to readable content, typically a code-block-style fallback
+- parsing should preserve display order so mixed markdown and specialized nodes render in the same sequence as the source text
 
 ## App Responsibilities
 
