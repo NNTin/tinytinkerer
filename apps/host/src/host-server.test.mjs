@@ -115,21 +115,18 @@ describe('host server', () => {
     expect(body).toContain('"start_url":"./#/"')
   })
 
-  it('falls back to a free port when the preferred port is unavailable', async () => {
+  it('fails clearly when the preferred port is unavailable', async () => {
     const blocker = await startBlocker()
     const blockerAddress = blocker.address()
     if (!blockerAddress || typeof blockerAddress === 'string') {
       throw new Error('Expected blocker to listen on a TCP address.')
     }
 
-    const hostServer = await createHostServer({
-      preferredPort: blockerAddress.port,
-      disableDependencyOptimization: true
-    })
-    activeClosers.add(() => hostServer.close())
-
-    expect(hostServer.port).not.toBe(blockerAddress.port)
-    expect(hostServer.port).toBeGreaterThan(0)
+    await expect(
+      createHostServer({ preferredPort: blockerAddress.port, disableDependencyOptimization: true })
+    ).rejects.toThrow(
+      `Port ${blockerAddress.port} is already in use on 127.0.0.1. Free the port and retry.`
+    )
   })
 
   it('fails clearly when an explicitly requested port is unavailable', async () => {
@@ -142,7 +139,7 @@ describe('host server', () => {
     await expect(
       createHostServer({ port: blockerAddress.port, disableDependencyOptimization: true })
     ).rejects.toThrow(
-      `Port ${blockerAddress.port} is already in use on 127.0.0.1. Set PORT to an open port and retry.`
+      `Port ${blockerAddress.port} is already in use on 127.0.0.1. Free the port and retry.`
     )
   })
 })

@@ -7,7 +7,6 @@ describe('widget runtime config', () => {
       resolveWidgetGitHubRedirectUri(
         { githubClientId: 'client-id' },
         'client-id',
-        undefined,
         '/widget/',
         'https://pr-42.tiny.preview.nntin.xyz'
       )
@@ -22,7 +21,6 @@ describe('widget runtime config', () => {
           githubRedirectUri: 'https://embed.example/widget/#/auth/callback'
         },
         'client-id',
-        'https://tiny.nntin.xyz/widget/#/auth/callback',
         '/widget/',
         'https://pr-42.tiny.preview.nntin.xyz'
       )
@@ -31,7 +29,7 @@ describe('widget runtime config', () => {
 
   it('returns undefined when oauth is not configured', () => {
     expect(
-      resolveWidgetGitHubRedirectUri({}, undefined, undefined, '/widget/', 'https://example.com')
+      resolveWidgetGitHubRedirectUri({}, undefined, '/widget/', 'https://example.com')
     ).toBeUndefined()
   })
 })
