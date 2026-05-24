@@ -4,11 +4,16 @@ import {
   modelsChatRequestSchema,
   modelsChatResponseSchema
 } from '@tinytinkerer/contracts'
+import { z } from 'zod'
 import type { Hono } from 'hono'
 import type { Bindings } from '../lib/bindings'
 import { applyCorsHeaders } from '../lib/cors'
 import { fetchWithTimeout } from '../lib/fetch'
 import { toRateLimitResponse } from '../lib/rate-limit'
+
+const openAiModelsResponseSchema = z.object({
+  data: z.array(z.object({ id: z.string() })).optional()
+})
 
 const GITHUB_MODELS_DEFAULT_URL = 'https://models.github.ai/inference'
 
@@ -93,5 +98,36 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
 
     const rawText = await response.text()
     return c.json(modelsChatResponseSchema.parse(JSON.parse(rawText)), 200)
+  })
+
+  app.get('/api/models/list', async (c) => {
+    const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
+
+    if (!authorization) {
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
+    }
+
+    const modelsBaseUrl = c.env.GITHUB_MODELS_URL ?? GITHUB_MODELS_DEFAULT_URL
+
+    const response = await fetchWithTimeout(
+      `${modelsBaseUrl}/models`,
+      { headers: { authorization, accept: 'application/json' } },
+      10_000
+    )
+
+    if (!response.ok) {
+      const safeError =
+        UPSTREAM_ERROR_MESSAGES[response.status] ?? `Upstream error ${response.status}`
+      const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
+        ? (response.status as 400 | 401 | 403 | 500 | 503)
+        : 502
+      return c.json(edgeErrorResponseSchema.parse({ error: safeError }), statusCode)
+    }
+
+    const parsed = openAiModelsResponseSchema.safeParse(await response.json())
+    const ids = parsed.success ? (parsed.data.data ?? []).map((m) => m.id) : []
+
+    const models = ids.map((id) => ({ id, label: id }))
+    return c.json({ models })
   })
 }

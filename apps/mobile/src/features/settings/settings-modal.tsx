@@ -2,9 +2,10 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { useEffect, useState, type ReactNode } from 'react'
 import {
-  SUPPORTED_MODELS,
   useAuthStore,
+  useGitHubModels,
   useGitHubOAuth,
+  useGitHubUser,
   useSettingsStore,
   useStatusStore,
   type ServiceStatus,
@@ -103,6 +104,7 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
   const clearToken = useAuthStore((state) => state.clearToken)
   const setToken = useAuthStore((state) => state.setToken)
   const { canStartGitHubOAuth, startGitHubOAuth } = useGitHubOAuth()
+  const user = useGitHubUser()
 
   const [showPat, setShowPat] = useState(false)
   const [patValue, setPatValue] = useState('')
@@ -120,14 +122,25 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
       <div className="space-y-3">
         <SectionStatus label="Auth" status={status} />
         <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm text-stone-800">Signed in</p>
-            <p className="mt-0.5 text-xs text-[var(--muted)]">GitHub token is stored locally in your browser.</p>
+          <div className="flex items-center gap-3 min-w-0">
+            {user?.avatarUrl ? (
+              <img
+                src={user.avatarUrl}
+                alt={user.login}
+                className="h-8 w-8 rounded-full shrink-0 border border-stone-200"
+              />
+            ) : null}
+            <div className="min-w-0">
+              <p className="text-sm text-stone-800 truncate">{user ? (user.name ?? user.login) : 'Signed in'}</p>
+              {user ? <p className="text-xs text-[var(--muted)] truncate">@{user.login}</p> : (
+                <p className="mt-0.5 text-xs text-[var(--muted)]">GitHub token is stored locally in your browser.</p>
+              )}
+            </div>
           </div>
           <button
             type="button"
             onClick={() => void clearToken()}
-            className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50"
+            className="shrink-0 inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50"
           >
             Sign out
           </button>
@@ -203,6 +216,7 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
 const ModelsSection = ({ status }: { status: ServiceStatus }) => {
   const selectedModel = useSettingsStore((state) => state.selectedModel)
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
+  const models = useGitHubModels()
 
   return (
     <div className="space-y-2">
@@ -216,7 +230,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
         onChange={(e) => void setSelectedModel(e.target.value)}
         className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
       >
-        {SUPPORTED_MODELS.map((m) => (
+        {models.map((m) => (
           <option key={m.id} value={m.id}>{m.label}</option>
         ))}
       </select>

@@ -1,4 +1,8 @@
 export { canStartGitHubOAuth, completeGitHubOAuthCallback, startGitHubOAuth } from './auth'
+export { useGitHubUser } from './github-user'
+export type { GitHubUser } from './github-user'
+export { useGitHubModels } from './github-models'
+export type { ModelEntry } from './github-models'
 export {
   AppBrowserProvider,
   createBrowserApp,

@@ -23,7 +23,7 @@ const githubClientId = getEnvValue('VITE_GITHUB_CLIENT_ID')
 
 const browserConfig: BrowserShellConfig = {
   edgeBaseUrl: getEnvValue('VITE_EDGE_URL') ?? '',
-  storageNamespace: 'tinytinkerer-mobile',
+  storageNamespace: 'tinytinkerer',
   authMode: 'hybrid',
   ...(githubClientId ? { githubClientId } : {}),
   ...(githubRedirectUri ? { githubRedirectUri } : {})

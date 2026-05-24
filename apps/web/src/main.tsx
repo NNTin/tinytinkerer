@@ -20,7 +20,7 @@ const githubRedirectUri = resolveGitHubRedirectUri(
 
 const browserConfig: BrowserShellConfig = {
   edgeBaseUrl: import.meta.env.VITE_EDGE_URL ?? '',
-  storageNamespace: 'tinytinkerer-web',
+  storageNamespace: 'tinytinkerer',
   authMode: 'hybrid',
   ...(githubClientId ? { githubClientId } : {}),
   ...(githubClientId ? { githubRedirectUri } : {})

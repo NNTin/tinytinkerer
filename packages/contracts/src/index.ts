@@ -334,3 +334,15 @@ export const rateLimitPayloadSchema = z.object({
 })
 
 export type RateLimitPayload = z.infer<typeof rateLimitPayloadSchema>
+
+export const githubModelEntrySchema = z.object({
+  id: z.string(),
+  label: z.string()
+})
+
+export const modelsListResponseSchema = z.object({
+  models: z.array(githubModelEntrySchema)
+})
+
+export type GitHubModelEntry = z.infer<typeof githubModelEntrySchema>
+export type ModelsListResponse = z.infer<typeof modelsListResponseSchema>

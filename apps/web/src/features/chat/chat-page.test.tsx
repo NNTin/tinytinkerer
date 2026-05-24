@@ -68,6 +68,8 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     startGitHubOAuth: vi.fn(),
     completeGitHubOAuthCallback: vi.fn()
   }),
+  useGitHubUser: () => null,
+  useGitHubModels: () => [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
   useAuthStore: (selector: (state: typeof mockAuthState) => unknown) => selector(mockAuthState),
   useChatStore: (selector: (state: typeof mockChatState) => unknown) => selector(mockChatState),
   useSettingsStore: (selector: (state: typeof mockSettingsState) => unknown) => selector(mockSettingsState),
