@@ -11,8 +11,11 @@ pnpm install
 pnpm dev
 ```
 
-- Web: `http://localhost:5173`
-- Widget: run `pnpm --filter @tinytinkerer/widget dev`
+- Frontend host: `http://localhost:3000/` (web)
+  - Widget: `http://localhost:3000/widget/`
+  - Mobile: `http://localhost:3000/mobile/`
 - Edge API: `http://localhost:8787`
+
+`pnpm build` composes the GitHub Pages artifact at `apps/host/dist`.
 
 See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for full setup instructions, environment variables, and project structure.

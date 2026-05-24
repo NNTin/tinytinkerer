@@ -1,12 +1,12 @@
 import { lazy, Suspense } from 'react'
-import { createBrowserRouter } from 'react-router-dom'
+import { createHashRouter } from 'react-router-dom'
 
 const ChatPage = lazy(() => import('../features/chat/chat-page').then((m) => ({ default: m.ChatPage })))
 const CallbackPage = lazy(() =>
   import('../features/auth/callback-page').then((m) => ({ default: m.CallbackPage }))
 )
 
-export const router = createBrowserRouter([
+export const router = createHashRouter([
   {
     path: '/',
     element: (

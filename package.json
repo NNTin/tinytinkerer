@@ -5,8 +5,8 @@
   "packageManager": "pnpm@9.12.0",
   "scripts": {
     "generate:brand-assets": "node ./scripts/generate-brand-assets.mjs",
-    "dev": "pnpm generate:brand-assets && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 turbo run dev --parallel",
-    "build": "pnpm generate:brand-assets && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 turbo run build",
+    "dev": "pnpm generate:brand-assets && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 turbo run dev --filter=@tinytinkerer/edge --filter=@tinytinkerer/host",
+    "build": "pnpm generate:brand-assets && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 TINYTINKERER_DEPLOY_BASE=/tinytinkerer turbo run build",
     "check:boundaries": "node ./scripts/check-boundaries.mjs",
     "check:mermaid": "node ./scripts/check-mermaid.mjs",
     "lint": "turbo run lint && node ./scripts/check-boundaries.mjs",

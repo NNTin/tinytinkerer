@@ -1,25 +1,69 @@
 import type { MiddlewareHandler } from 'hono'
 import type { Bindings } from './bindings'
 
+const getConfiguredOrigins = (env: Bindings): string[] => {
+  const allowlist = env.ALLOWED_ORIGINS?.split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0)
+
+  if (allowlist && allowlist.length > 0) {
+    return allowlist
+  }
+
+  return env.ALLOWED_ORIGIN ? [env.ALLOWED_ORIGIN] : []
+}
+
+export const resolveAllowedOrigin = (
+  env: Bindings,
+  requestOrigin: string | null
+): string | null => {
+  const configuredOrigins = getConfiguredOrigins(env)
+
+  if (configuredOrigins.length === 0) {
+    return '*'
+  }
+
+  if (!requestOrigin) {
+    return null
+  }
+
+  return configuredOrigins.includes(requestOrigin) ? requestOrigin : null
+}
+
+export const applyCorsHeaders = (
+  headers: Headers,
+  env: Bindings,
+  requestOrigin: string | null
+): void => {
+  const allowedOrigin = resolveAllowedOrigin(env, requestOrigin)
+
+  if (allowedOrigin) {
+    headers.set('Access-Control-Allow-Origin', allowedOrigin)
+  }
+
+  if (allowedOrigin !== '*' && headers.get('Vary') !== 'Origin') {
+    headers.append('Vary', 'Origin')
+  }
+}
+
 export const corsMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) => {
-  const origin = c.env.ALLOWED_ORIGIN ?? '*'
+  const requestOrigin = c.req.header('origin') ?? null
 
   if (c.req.method === 'OPTIONS') {
+    const headers = new Headers({
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400'
+    })
+
+    applyCorsHeaders(headers, c.env, requestOrigin)
+
     return new Response(null, {
       status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        'Access-Control-Max-Age': '86400',
-        Vary: 'Origin'
-      }
+      headers
     })
   }
 
   await next()
-  c.res.headers.set('Access-Control-Allow-Origin', origin)
-  if (origin !== '*') {
-    c.res.headers.append('Vary', 'Origin')
-  }
+  applyCorsHeaders(c.res.headers, c.env, requestOrigin)
 }
