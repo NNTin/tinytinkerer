@@ -66,6 +66,18 @@ export const resolveAllowedOrigin = (
     : null
 }
 
+const EXPOSED_HEADERS = [
+  'x-ratelimit-limit-requests',
+  'x-ratelimit-remaining-requests',
+  'x-ratelimit-reset-requests',
+  'x-ratelimit-renewalperiod-requests',
+  'x-ratelimit-limit-tokens',
+  'x-ratelimit-remaining-tokens',
+  'x-ratelimit-reset-tokens',
+  'x-ratelimit-renewalperiod-tokens',
+  'x-ratelimit-abusepenalty-active',
+].join(', ')
+
 export const applyCorsHeaders = (
   headers: Headers,
   env: Bindings,
@@ -80,6 +92,8 @@ export const applyCorsHeaders = (
   if (allowedOrigin !== '*' && headers.get('Vary') !== 'Origin') {
     headers.append('Vary', 'Origin')
   }
+
+  headers.set('Access-Control-Expose-Headers', EXPOSED_HEADERS)
 }
 
 export const corsMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) => {

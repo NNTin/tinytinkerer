@@ -18,6 +18,18 @@ const githubModelsListSchema = z.object({
   })).optional()
 })
 
+const RATE_LIMIT_HEADERS = [
+  'x-ratelimit-limit-requests',
+  'x-ratelimit-remaining-requests',
+  'x-ratelimit-reset-requests',
+  'x-ratelimit-renewalperiod-requests',
+  'x-ratelimit-limit-tokens',
+  'x-ratelimit-remaining-tokens',
+  'x-ratelimit-reset-tokens',
+  'x-ratelimit-renewalperiod-tokens',
+  'x-ratelimit-abusepenalty-active',
+] as const
+
 const GITHUB_MODELS_DEFAULT_URL = 'https://models.github.ai/inference'
 const GITHUB_MODELS_LIST_URL = 'https://models.github.ai/v1/models'
 
@@ -92,12 +104,22 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
         'X-Accel-Buffering': 'no'
       })
 
+      for (const header of RATE_LIMIT_HEADERS) {
+        const value = response.headers.get(header)
+        if (value !== null) headers.set(header, value)
+      }
+
       applyCorsHeaders(headers, c.env, c.req.header('origin') ?? null)
 
       return new Response(response.body, {
         status: 200,
         headers
       })
+    }
+
+    for (const header of RATE_LIMIT_HEADERS) {
+      const value = response.headers.get(header)
+      if (value !== null) c.header(header, value)
     }
 
     const rawText = await response.text()
