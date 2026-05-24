@@ -94,11 +94,16 @@ export class GitHubModelsProvider implements ModelProvider {
       const estimatedTokens = estimateTokens(context)
       const throttle = this.quota.checkThrottle(estimatedTokens)
       if (throttle.shouldThrottle) {
-        const retryAt = new Date(Date.now() + throttle.waitMs).toISOString()
-        throw new RateLimitError(`Proactive rate limit (${throttle.reason})`, {
-          retryAfterMs: Math.ceil(throttle.waitMs),
-          retryAt,
-        })
+        if (throttle.waitMs > 1000) {
+          // Surface to UI: disable Send button and show countdown timer
+          const retryAt = new Date(Date.now() + throttle.waitMs).toISOString()
+          throw new RateLimitError(`Proactive rate limit (${throttle.reason})`, {
+            retryAfterMs: Math.ceil(throttle.waitMs),
+            retryAt,
+          })
+        }
+        // Sub-second soft delay: sleep silently without disrupting the UI
+        await new Promise<void>((resolve) => setTimeout(resolve, throttle.waitMs))
       }
 
       const toolSection = Object.entries(context.toolResults)

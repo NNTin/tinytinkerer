@@ -14,6 +14,13 @@ import {
 import { Button } from '@tinytinkerer/ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+const formatCooldown = (remainingMs: number): string => {
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
 const fallbackStatus: SystemStatus = {
   auth: { state: 'offline', detail: 'Unavailable' },
   models: { state: 'offline', detail: 'Unavailable' },
@@ -24,7 +31,10 @@ export const WidgetPage = () => {
   const events = useChatStore((state) => state.events)
   const streamingText = useChatStore((state) => state.streamingText)
   const isRunning = useChatStore((state) => state.isRunning)
+  const isRetryPending = useChatStore((state) => state.isRetryPending)
+  const cooldownUntil = useChatStore((state) => state.cooldownUntil)
   const sendPrompt = useChatStore((state) => state.sendPrompt)
+  const cancelRetry = useChatStore((state) => state.cancelRetry)
   const resetConversation = useChatStore((state) => state.resetConversation)
 
   const token = useAuthStore((state) => state.token)
@@ -44,7 +54,14 @@ export const WidgetPage = () => {
   const [prompt, setPrompt] = useState('')
   const [showPat, setShowPat] = useState(false)
   const [patValue, setPatValue] = useState('')
+  const [now, setNow] = useState(() => Date.now())
   const endRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!cooldownUntil) return undefined
+    const interval = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(interval)
+  }, [cooldownUntil])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
@@ -58,9 +75,13 @@ export const WidgetPage = () => {
   const effectiveStatus = status ?? fallbackStatus
   const searchUnavailable = effectiveStatus.search.state !== 'ready'
 
+  const cooldownRemainingMs = cooldownUntil ? Math.max(0, Date.parse(cooldownUntil) - now) : 0
+  const isCoolingDown = cooldownRemainingMs > 0
+  const submitLabel = isCoolingDown ? formatCooldown(cooldownRemainingMs) : isRunning ? 'Thinking...' : 'Send'
+
   const handleSubmit = async () => {
     const trimmed = prompt.trim()
-    if (!trimmed || isRunning) {
+    if (!trimmed || isRunning || isCoolingDown) {
       return
     }
 
@@ -226,7 +247,7 @@ export const WidgetPage = () => {
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
-                void handleSubmit()
+                if (!isCoolingDown) void handleSubmit()
               }
             }}
             placeholder="Ask something current, compare options, or continue the thread."
@@ -240,9 +261,16 @@ export const WidgetPage = () => {
             >
               Clear conversation
             </button>
-            <Button onClick={() => void handleSubmit()} disabled={isRunning}>
-              {isRunning ? 'Thinking...' : 'Send'}
-            </Button>
+            <div className="flex items-center gap-2">
+              {isRetryPending && isCoolingDown ? (
+                <Button size="sm" variant="secondary" onClick={cancelRetry}>
+                  Cancel retry
+                </Button>
+              ) : null}
+              <Button onClick={() => void handleSubmit()} disabled={isRunning || isCoolingDown}>
+                {submitLabel}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
