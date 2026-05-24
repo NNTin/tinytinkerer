@@ -18,6 +18,7 @@ flowchart LR
   subgraph Apps
     web["@tinytinkerer/web<br/>full browser UI shell"]
     widget["@tinytinkerer/widget<br/>embeddable browser UI shell"]
+    mobile["@tinytinkerer/mobile<br/>mobile PWA shell"]
     edge["@tinytinkerer/edge<br/>stateless edge backend"]
   end
 
@@ -40,6 +41,7 @@ flowchart LR
 
   web --> common
   widget --> common
+  mobile --> common
 
   common --> ui
   common --> appbrowser
@@ -88,7 +90,7 @@ flowchart LR
   classDef coreLayer fill:#e5e7eb,stroke:#6b7280,color:#111827,stroke-width:2px;
   classDef brandLayer fill:#ffe4e6,stroke:#be123c,color:#111827,stroke-width:2px;
 
-  class web,widget,legendUiApp uiApp;
+  class web,widget,mobile,legendUiApp uiApp;
   class edge,legendEdge edgeApp;
   class appbrowser,legendBrowser browserAssembly;
   class ui,legendUi uiPrimitives;
