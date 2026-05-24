@@ -1,4 +1,3 @@
-/// <reference path="./assets.d.ts" />
 import mermaidRuntimeUrl from 'mermaid/dist/mermaid.min.js?url'
 import { useEffect, useId, useState } from 'react'
 import type { MermaidNode } from '@tinytinkerer/content-core'
