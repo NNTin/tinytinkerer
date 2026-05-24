@@ -59,7 +59,7 @@ describe('edge routes', () => {
 
   it('echoes an allowlisted origin for standard responses and preflight', async () => {
     const env = {
-      ALLOWED_ORIGINS: 'http://localhost:3000, https://nntin.github.io'
+      ALLOWED_ORIGINS: 'http://localhost:3000, https://tiny.nntin.xyz'
     }
 
     const response = await app.fetch(
@@ -72,7 +72,7 @@ describe('edge routes', () => {
     const preflightResponse = await app.fetch(
       new Request('http://localhost/health', {
         method: 'OPTIONS',
-        headers: { origin: 'https://nntin.github.io' }
+        headers: { origin: 'https://tiny.nntin.xyz' }
       }),
       env
     )
@@ -80,9 +80,21 @@ describe('edge routes', () => {
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3000')
     expect(response.headers.get('Vary')).toBe('Origin')
     expect(preflightResponse.status).toBe(204)
-    expect(preflightResponse.headers.get('Access-Control-Allow-Origin')).toBe(
-      'https://nntin.github.io'
+    expect(preflightResponse.headers.get('Access-Control-Allow-Origin')).toBe('https://tiny.nntin.xyz')
+  })
+
+  it('echoes wildcard preview origins for Vercel preview domains', async () => {
+    const response = await app.fetch(
+      new Request('http://localhost/health', {
+        headers: { origin: 'https://pr-123-feature.tiny.preview.nntin.xyz' }
+      }),
+      { ALLOWED_ORIGINS: 'https://*.tiny.preview.nntin.xyz' }
     )
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
+      'https://pr-123-feature.tiny.preview.nntin.xyz'
+    )
+    expect(response.headers.get('Vary')).toBe('Origin')
   })
 
   it('omits cors origin headers for disallowed origins', async () => {
@@ -90,7 +102,19 @@ describe('edge routes', () => {
       new Request('http://localhost/health', {
         headers: { origin: 'https://evil.example' }
       }),
-      { ALLOWED_ORIGINS: 'http://localhost:3000' }
+      { ALLOWED_ORIGINS: 'http://localhost:3000, https://*.tiny.preview.nntin.xyz' }
+    )
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
+    expect(response.headers.get('Vary')).toBe('Origin')
+  })
+
+  it('rejects nested preview subdomains for wildcard entries', async () => {
+    const response = await app.fetch(
+      new Request('http://localhost/health', {
+        headers: { origin: 'https://nested.pr-123.tiny.preview.nntin.xyz' }
+      }),
+      { ALLOWED_ORIGINS: 'https://*.tiny.preview.nntin.xyz' }
     )
 
     expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()

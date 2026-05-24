@@ -1,6 +1,38 @@
 import type { MiddlewareHandler } from 'hono'
 import type { Bindings } from './bindings'
 
+const matchesConfiguredOrigin = (configuredOrigin: string, requestOrigin: string): boolean => {
+  if (!configuredOrigin.includes('*')) {
+    return configuredOrigin === requestOrigin
+  }
+
+  const wildcardPrefix = 'https://*.'
+  if (!configuredOrigin.startsWith(wildcardPrefix)) {
+    return false
+  }
+
+  let requestedUrl: URL
+  try {
+    requestedUrl = new URL(requestOrigin)
+  } catch {
+    return false
+  }
+
+  if (requestedUrl.protocol !== 'https:') {
+    return false
+  }
+
+  const configuredHostSuffix = configuredOrigin.slice(wildcardPrefix.length)
+  const requestHost = requestedUrl.hostname
+
+  if (!requestHost.endsWith(`.${configuredHostSuffix}`)) {
+    return false
+  }
+
+  const subdomain = requestHost.slice(0, -(configuredHostSuffix.length + 1))
+  return subdomain.length > 0 && !subdomain.includes('.')
+}
+
 const getConfiguredOrigins = (env: Bindings): string[] => {
   const allowlist = env.ALLOWED_ORIGINS?.split(',')
     .map((origin) => origin.trim())
@@ -27,7 +59,11 @@ export const resolveAllowedOrigin = (
     return null
   }
 
-  return configuredOrigins.includes(requestOrigin) ? requestOrigin : null
+  return configuredOrigins.some((configuredOrigin) =>
+    matchesConfiguredOrigin(configuredOrigin, requestOrigin)
+  )
+    ? requestOrigin
+    : null
 }
 
 export const applyCorsHeaders = (

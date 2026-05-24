@@ -60,10 +60,10 @@ The app runs in **local fallback mode** without any API keys — useful for UI d
 ```bash
 VITE_EDGE_URL=               # optional in local host dev; required for deployed builds
 VITE_GITHUB_CLIENT_ID=        # optional: GitHub OAuth app client ID
-VITE_GITHUB_REDIRECT_URI=     # optional: OAuth redirect URI
+VITE_GITHUB_REDIRECT_URI=     # optional: defaults to /#/auth/callback
 ```
 
-When you run through `pnpm dev`, the unified host proxies `/health`, `/api/*`, and `/auth/github/exchange`, so `VITE_EDGE_URL` can be omitted for local same-origin development. For GitHub Pages builds, set `VITE_EDGE_URL` to the deployed edge origin.
+When you run through `pnpm dev`, the unified host proxies `/health`, `/api/*`, and `/auth/github/exchange`, so `VITE_EDGE_URL` can be omitted for local same-origin development. For deployed builds, set `VITE_EDGE_URL` to the deployed edge origin. If `VITE_GITHUB_REDIRECT_URI` is omitted, the web app derives the callback from the current origin, which allows Vercel preview domains to complete OAuth.
 
 ### Widget
 
@@ -80,7 +80,7 @@ window.__TINYTINKERER_WIDGET_CONFIG__ = {
 }
 ```
 
-For standalone widget embedding outside the unified host, set `edgeBaseUrl` to the edge deployment origin explicitly.
+For standalone widget embedding outside the unified host, set `edgeBaseUrl` to the edge deployment origin explicitly. If `githubRedirectUri` is omitted but OAuth is enabled, the widget derives the callback from the current origin.
 
 ### Mobile — `apps/mobile/.env`
 
@@ -90,7 +90,7 @@ VITE_GITHUB_CLIENT_ID=        # optional: GitHub OAuth app client ID
 VITE_GITHUB_REDIRECT_URI=     # optional: defaults to /mobile/#/auth/callback
 ```
 
-Like web, mobile can rely on same-origin requests in unified local development. For GitHub Pages builds, point `VITE_EDGE_URL` at the deployed edge origin.
+Like web, mobile can rely on same-origin requests in unified local development. For deployed builds, point `VITE_EDGE_URL` at the deployed edge origin.
 
 ### Edge — `apps/edge/.dev.vars`
 
@@ -98,10 +98,10 @@ Like web, mobile can rely on same-origin requests in unified local development. 
 GITHUB_CLIENT_ID=             # optional: GitHub OAuth app client ID
 GITHUB_CLIENT_SECRET=         # optional: GitHub OAuth app client secret
 TAVILY_API_KEY=               # optional: enables live web search
-ALLOWED_ORIGINS=http://localhost:3000,https://nntin.github.io
+ALLOWED_ORIGINS=http://localhost:3000,https://tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz
 ```
 
-`ALLOWED_ORIGINS` is a comma-separated CORS allowlist. Use it for GitHub Pages plus local dev origins. `ALLOWED_ORIGIN` remains supported as a single-origin fallback, but `ALLOWED_ORIGINS` should be preferred.
+`ALLOWED_ORIGINS` is a comma-separated CORS allowlist. Use it for local dev plus deployed frontend origins. Wildcard entries in the form `https://*.tiny.preview.nntin.xyz` are supported for preview subdomains. `ALLOWED_ORIGIN` remains supported as a single-origin fallback, but `ALLOWED_ORIGINS` should be preferred.
 
 AI model responses use the signed-in user's GitHub OAuth token — there is no separate `GITHUB_MODELS_TOKEN`. When `TAVILY_API_KEY` is absent the health endpoint reports `"state": "degraded"` for search and mock results are returned instead.
 
@@ -112,7 +112,8 @@ pnpm check:boundaries   # Workspace boundary and cycle checks
 pnpm lint        # ESLint across all packages
 pnpm typecheck   # TypeScript across all packages
 pnpm test        # Vitest across all packages
-pnpm build       # Produces the composed Pages artifact at apps/host/dist
+pnpm build       # Produces the composed static deployment artifact at apps/host/dist
+pnpm build:pages # Produces the legacy GitHub Pages-flavored artifact
 pnpm format      # Prettier
 ```
 
@@ -121,7 +122,7 @@ pnpm format      # Prettier
 ```
 apps/
   edge/          # Hono edge API (Cloudflare Workers compatible)
-  host/          # Unified frontend host and GitHub Pages composition
+  host/          # Unified frontend host and composed static deployment output
   mobile/        # Mobile React frontend
   web/           # React 19 + Vite + Tailwind CSS v4 frontend
   widget/        # Embeddable React widget shell

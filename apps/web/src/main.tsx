@@ -8,17 +8,22 @@ import {
 } from '@tinytinkerer/app-browser'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './app/router'
+import { resolveGitHubRedirectUri } from './runtime-config'
 import './index.css'
 
 const githubClientId = import.meta.env.VITE_GITHUB_CLIENT_ID
-const githubRedirectUri = import.meta.env.VITE_GITHUB_REDIRECT_URI
+const githubRedirectUri = resolveGitHubRedirectUri(
+  import.meta.env.VITE_GITHUB_REDIRECT_URI,
+  import.meta.env.BASE_URL,
+  window.location.origin
+)
 
 const browserConfig: BrowserShellConfig = {
   edgeBaseUrl: import.meta.env.VITE_EDGE_URL ?? '',
   storageNamespace: 'tinytinkerer-web',
   authMode: 'hybrid',
   ...(githubClientId ? { githubClientId } : {}),
-  ...(githubRedirectUri ? { githubRedirectUri } : {})
+  ...(githubClientId ? { githubRedirectUri } : {})
 }
 
 const queryClient = new QueryClient()

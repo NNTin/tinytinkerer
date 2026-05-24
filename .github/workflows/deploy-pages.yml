@@ -1,22 +1,31 @@
-name: Deploy Pages
+name: Deploy Vercel
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: vercel-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
 jobs:
-  build:
-    name: Build Pages Artifact
+  deploy-production:
+    name: Deploy Production
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,22 +39,132 @@ jobs:
           node-version: '22'
           cache: pnpm
 
-      - uses: actions/configure-pages@v5
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build Deployment Artifacts
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy to Vercel
+        id: deploy
+        run: |
+          url="$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Alias Production Domain
+        run: vercel alias set "${{ steps.deploy.outputs.url }}" "tiny.nntin.xyz" --token="$VERCEL_TOKEN"
+
+  deploy-preview:
+    name: Deploy Preview
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
 
-      - uses: actions/upload-pages-artifact@v4
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment
+        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+
+      - name: Build Deployment Artifacts
+        run: vercel build --token="$VERCEL_TOKEN"
+
+      - name: Deploy to Vercel
+        id: deploy
+        run: |
+          url="$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Derive Preview Domain
+        id: preview-domain
+        shell: bash
+        run: |
+          branch_slug="$(printf '%s' "${{ github.event.pull_request.head.ref }}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-+//; s/-+$//')"
+          if [ -z "$branch_slug" ]; then
+            branch_slug="preview"
+          fi
+
+          max_branch_length=52
+          branch_slug="${branch_slug:0:$max_branch_length}"
+          branch_slug="${branch_slug%-}"
+
+          slug="pr-${{ github.event.pull_request.number }}-$branch_slug"
+          slug="${slug%-}"
+          domain="$slug.tiny.preview.nntin.xyz"
+
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+          echo "domain=$domain" >> "$GITHUB_OUTPUT"
+
+      - name: Alias Preview Domain
+        id: alias
+        run: |
+          domain="${{ steps.preview-domain.outputs.domain }}"
+          vercel alias set "${{ steps.deploy.outputs.url }}" "$domain" --token="$VERCEL_TOKEN"
+          echo "preview_url=https://$domain" >> "$GITHUB_OUTPUT"
+
+      - name: Comment Preview Link
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ steps.alias.outputs.preview_url }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+          PREVIEW_DOMAIN: ${{ steps.preview-domain.outputs.domain }}
         with:
-          path: apps/host/dist
+          script: |
+            const marker = '<!-- vercel-preview -->'
+            const issue_number = context.payload.pull_request.number
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number,
+              per_page: 100,
+            })
 
-  deploy:
-    name: Deploy GitHub Pages
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+            const body = [
+              marker,
+              '## Vercel Preview',
+              '',
+              `Preview: ${process.env.PREVIEW_URL}`,
+              `Deployment: ${process.env.DEPLOYMENT_URL}`,
+              `Domain: \`${process.env.PREVIEW_DOMAIN}\``,
+              `Commit: \`${process.env.GITHUB_SHA}\``,
+            ].join('\n')
+
+            const existingComment = comments.find((comment) =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            )
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existingComment.id,
+                body,
+              })
+              return
+            }
+
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number,
+              body,
+            })

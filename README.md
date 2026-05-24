@@ -16,6 +16,6 @@ pnpm dev
   - Mobile: `http://localhost:3000/mobile/`
 - Edge API: `http://localhost:8787`
 
-`pnpm build` composes the GitHub Pages artifact at `apps/host/dist`.
+`pnpm build` composes the static deployment artifact at `apps/host/dist`.
 
 See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for full setup instructions, environment variables, and project structure.

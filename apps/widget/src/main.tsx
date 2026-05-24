@@ -8,6 +8,7 @@ import {
 } from '@tinytinkerer/app-browser'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './app/router'
+import { resolveWidgetGitHubRedirectUri } from './runtime-config'
 import './index.css'
 
 const hostConfig: BrowserShellConfig = window.__TINYTINKERER_WIDGET_CONFIG__ ?? {}
@@ -27,8 +28,13 @@ const widgetConfigBase: BrowserShellConfig = {
 }
 
 const githubClientId = hostConfig.githubClientId ?? getEnvValue('VITE_GITHUB_CLIENT_ID')
-const githubRedirectUri =
-  hostConfig.githubRedirectUri ?? getEnvValue('VITE_GITHUB_REDIRECT_URI')
+const githubRedirectUri = resolveWidgetGitHubRedirectUri(
+  hostConfig,
+  githubClientId,
+  getEnvValue('VITE_GITHUB_REDIRECT_URI'),
+  import.meta.env.BASE_URL,
+  window.location.origin
+)
 
 const browserConfig: BrowserShellConfig = {
   ...widgetConfigBase,
