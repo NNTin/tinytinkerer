@@ -59,13 +59,13 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: 4.46.0
-          command: deploy --config apps/edge/wrangler.jsonc --secrets-file ${{ steps.secrets-file.outputs.path }}
+          workingDirectory: apps/edge
+          command: deploy --secrets-file ${{ steps.secrets-file.outputs.path }}
 
       - name: Apply Worker Domain Configuration
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: 4.46.0
-          command: triggers deploy --config apps/edge/wrangler.jsonc
+          workingDirectory: apps/edge
+          command: triggers deploy
