@@ -45,6 +45,9 @@ const mockStatusState = vi.hoisted(() => ({
 }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
+  AssistantContent: ({ content, className }: { content: string; className?: string }) => (
+    <div className={className}>{content}</div>
+  ),
   buildTurns: () => mockChatState.events,
   startStatusPolling: vi.fn(() => () => undefined),
   SUPPORTED_MODELS: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
@@ -64,12 +67,6 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   ),
   useSettingsStore: (selector: (state: typeof mockSettingsState) => unknown) => selector(mockSettingsState),
   useStatusStore: (selector: (state: typeof mockStatusState) => unknown) => selector(mockStatusState)
-}))
-
-vi.mock('@tinytinkerer/feature-markdown', () => ({
-  MarkdownContent: ({ content, className }: { content: string; className?: string }) => (
-    <div className={className}>{content}</div>
-  )
 }))
 
 import { WidgetPage } from './widget-page.js'

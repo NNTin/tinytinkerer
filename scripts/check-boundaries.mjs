@@ -197,10 +197,14 @@ function validateBoundary(sourcePkg, target, filePath) {
     errors.push(`${sourceLabel}: app-to-app imports are forbidden (${sourcePkg.name} -> ${targetPkg.name})`)
   }
 
-  if (sourcePkg.name === '@tinytinkerer/web' || sourcePkg.name === '@tinytinkerer/widget') {
+  if (
+    sourcePkg.name === '@tinytinkerer/web' ||
+    sourcePkg.name === '@tinytinkerer/widget' ||
+    sourcePkg.name === '@tinytinkerer/mobile'
+  ) {
     if (!isBrowserAppDependencyAllowed(targetPkg)) {
       errors.push(
-        `${sourceLabel}: browser apps may depend only on @tinytinkerer/app-browser, @tinytinkerer/ui, or feature packages (${targetPkg.name})`
+        `${sourceLabel}: browser apps may depend only on @tinytinkerer/app-browser or @tinytinkerer/ui (${targetPkg.name})`
       )
     }
   }
@@ -235,6 +239,10 @@ function validateBoundary(sourcePkg, target, filePath) {
       '@tinytinkerer/app-browser',
       '@tinytinkerer/app-core',
       '@tinytinkerer/brand-assets',
+      '@tinytinkerer/content-markdown',
+      '@tinytinkerer/content-mermaid',
+      '@tinytinkerer/content-react',
+      '@tinytinkerer/content-wireframe',
       '@tinytinkerer/contracts'
     ])
     if (!allowed.has(targetPkg.name)) {
@@ -262,14 +270,49 @@ function validateBoundary(sourcePkg, target, filePath) {
     }
   }
 
-  if (sourcePkg.slug.startsWith('feature-')) {
+  if (sourcePkg.name === '@tinytinkerer/content-core') {
     const allowed = new Set([
-      sourcePkg.name,
-      '@tinytinkerer/contracts',
+      '@tinytinkerer/content-core'
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(`${sourceLabel}: content-core must not depend on other workspace packages (${targetPkg.name})`)
+    }
+  }
+
+  if (sourcePkg.name === '@tinytinkerer/content-markdown') {
+    const allowed = new Set([
+      '@tinytinkerer/content-core',
+      '@tinytinkerer/content-markdown'
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(`${sourceLabel}: content-markdown may import only content-core and local modules (${targetPkg.name})`)
+    }
+  }
+
+  if (sourcePkg.name === '@tinytinkerer/content-react') {
+    const allowed = new Set([
+      '@tinytinkerer/content-core',
+      '@tinytinkerer/content-react',
       '@tinytinkerer/ui'
     ])
     if (!allowed.has(targetPkg.name)) {
-      errors.push(`${sourceLabel}: feature packages may import only ui, contracts, and feature-local modules (${targetPkg.name})`)
+      errors.push(`${sourceLabel}: content-react may import only content-core, ui, and local modules (${targetPkg.name})`)
+    }
+  }
+
+  if (
+    sourcePkg.name === '@tinytinkerer/content-mermaid' ||
+    sourcePkg.name === '@tinytinkerer/content-wireframe'
+  ) {
+    const allowed = new Set([
+      sourcePkg.name,
+      '@tinytinkerer/content-core',
+      '@tinytinkerer/content-react'
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(
+        `${sourceLabel}: specialized content packages may import only content-core, content-react, and local modules (${targetPkg.name})`
+      )
     }
   }
 
@@ -292,8 +335,7 @@ function validateSourceConstraints(pkg, filePath, source) {
 function isBrowserAppDependencyAllowed(targetPkg) {
   return (
     targetPkg.name === '@tinytinkerer/app-browser' ||
-    targetPkg.name === '@tinytinkerer/ui' ||
-    targetPkg.slug.startsWith('feature-')
+    targetPkg.name === '@tinytinkerer/ui'
   )
 }
 

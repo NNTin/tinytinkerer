@@ -1,4 +1,5 @@
 import {
+  AssistantContent,
   buildCurrentTimeline,
   buildTurns,
   startStatusPolling,
@@ -7,7 +8,6 @@ import {
   useSettingsStore,
   useStatusStore
 } from '@tinytinkerer/app-browser'
-import { MarkdownContent } from '@tinytinkerer/feature-markdown'
 import { Button } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { Cog6ToothIcon } from '@heroicons/react/24/outline'
@@ -150,7 +150,7 @@ export const ChatPage = () => {
 
                   {turn.assistantText ? (
                     <div className="rounded-lg bg-white px-3 py-2 text-sm text-stone-900 shadow-sm">
-                      <MarkdownContent
+                      <AssistantContent
                         content={turn.assistantText}
                         className="prose-assistant"
                         isStreaming={Boolean(streamingText && turn.assistantText === streamingText)}

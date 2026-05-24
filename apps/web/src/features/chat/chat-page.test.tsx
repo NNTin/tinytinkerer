@@ -60,6 +60,9 @@ const mockChatState = vi.hoisted(() => ({
 }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
+  AssistantContent: ({ content, className }: { content: string; className?: string }) => (
+    <div className={className}>{content}</div>
+  ),
   buildCurrentTimeline: () => [],
   buildTurns: () => mockTurns,
   startStatusPolling: vi.fn(() => () => undefined),

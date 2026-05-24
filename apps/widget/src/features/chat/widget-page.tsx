@@ -1,4 +1,5 @@
 import {
+  AssistantContent,
   buildTurns,
   startStatusPolling,
   useAuthStore,
@@ -10,7 +11,6 @@ import {
   useStatusStore,
   type SystemStatus
 } from '@tinytinkerer/app-browser'
-import { MarkdownContent } from '@tinytinkerer/feature-markdown'
 import { Button } from '@tinytinkerer/ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
@@ -205,7 +205,7 @@ export const WidgetPage = () => {
                       </div>
                     ) : null}
                     {turn.assistantText ? (
-                      <MarkdownContent
+                      <AssistantContent
                         content={turn.assistantText}
                         className="widget-prose text-sm"
                       />

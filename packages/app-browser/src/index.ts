@@ -13,7 +13,9 @@ export {
   useStatusStore
 } from './app'
 export type { BrowserApp } from './app'
+export type { AssistantContentProps } from './assistant-content'
 export type { BrowserAuthMode, BrowserShellConfig, ResolvedBrowserShellConfig } from './config'
+export { AssistantContent } from './assistant-content'
 export { bootstrapBrowserShell } from './initialize'
 export { useBrowserShellConfig, useGitHubOAuth } from './hooks'
 export { fetchStatus, startStatusPolling } from './status'

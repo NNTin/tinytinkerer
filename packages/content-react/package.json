@@ -1,8 +1,9 @@
 {
-  "name": "@tinytinkerer/feature-markdown",
+  "name": "@tinytinkerer/content-react",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./src/index.tsx",
@@ -18,6 +19,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@tinytinkerer/content-core": "workspace:*",
+    "@tinytinkerer/ui": "workspace:*",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
@@ -31,6 +34,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "jsdom": "^29.1.1",
+    "react": "^19.0.0",
     "vite": "^8.0.12",
     "vitest": "^4.0.8"
   }
