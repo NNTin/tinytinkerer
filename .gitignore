@@ -14,3 +14,4 @@ apps/edge/.wrangler
 apps/edge/.dev.vars
 .claude/
 agent-orchestrator.yaml
+apps/mobile/dev-dist/

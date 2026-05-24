@@ -6,6 +6,7 @@ import {
 } from '@tinytinkerer/contracts'
 import type { Hono } from 'hono'
 import type { Bindings } from '../lib/bindings'
+import { applyCorsHeaders } from '../lib/cors'
 import { fetchWithTimeout } from '../lib/fetch'
 import { toRateLimitResponse } from '../lib/rate-limit'
 
@@ -76,16 +77,17 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     }
 
     if (useStream && response.body) {
-      const origin = c.env.ALLOWED_ORIGIN ?? '*'
+      const headers = new Headers({
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no'
+      })
+
+      applyCorsHeaders(headers, c.env, c.req.header('origin') ?? null)
+
       return new Response(response.body, {
         status: 200,
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'X-Accel-Buffering': 'no',
-          'Access-Control-Allow-Origin': origin,
-          ...(origin !== '*' ? { Vary: 'Origin' } : {})
-        }
+        headers
       })
     }
 

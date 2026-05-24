@@ -4,8 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node ./src/dev-server.mjs",
-    "build": "node ./src/build-pages.mjs"
+    "dev": "node ./src/host-server.mjs",
+    "build": "node ./src/build-pages.mjs",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@tinytinkerer/mobile": "workspace:*",
