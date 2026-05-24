@@ -11,11 +11,15 @@ import { applyCorsHeaders } from '../lib/cors'
 import { fetchWithTimeout } from '../lib/fetch'
 import { toRateLimitResponse } from '../lib/rate-limit'
 
-const openAiModelsResponseSchema = z.object({
-  data: z.array(z.object({ id: z.string() })).optional()
+const githubCatalogItemSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().optional(),
+  display_name: z.string().optional(),
+  publisher: z.string().optional()
 })
 
 const GITHUB_MODELS_DEFAULT_URL = 'https://models.github.ai/inference'
+const GITHUB_MODELS_CATALOG_URL = 'https://models.github.ai/catalog'
 
 const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
   400: 'Invalid request',
@@ -107,15 +111,18 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
     }
 
-    const modelsBaseUrl = c.env.GITHUB_MODELS_URL ?? GITHUB_MODELS_DEFAULT_URL
+    const catalogUrl = c.env.GITHUB_MODELS_URL
+      ? `${c.env.GITHUB_MODELS_URL}/models`
+      : GITHUB_MODELS_CATALOG_URL
 
     const response = await fetchWithTimeout(
-      `${modelsBaseUrl}/models`,
+      catalogUrl,
       { headers: { authorization, accept: 'application/json' } },
       10_000
     )
 
     if (!response.ok) {
+      console.error('[models/list] upstream error', { status: response.status, url: catalogUrl })
       const safeError =
         UPSTREAM_ERROR_MESSAGES[response.status] ?? `Upstream error ${response.status}`
       const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
@@ -124,10 +131,19 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       return c.json(edgeErrorResponseSchema.parse({ error: safeError }), statusCode)
     }
 
-    const parsed = openAiModelsResponseSchema.safeParse(await response.json())
-    const ids = parsed.success ? (parsed.data.data ?? []).map((m) => m.id) : []
+    const raw: unknown = await response.json()
+    const items: unknown[] = Array.isArray(raw) ? raw : []
+    const models = items
+      .map((item: unknown) => {
+        const parsed = githubCatalogItemSchema.safeParse(item)
+        if (!parsed.success) return null
+        const { id, name, display_name, publisher } = parsed.data
+        const modelId = id ?? (publisher && name ? `${publisher}/${name}` : name ?? '')
+        const label = display_name ?? name ?? modelId
+        return modelId ? { id: modelId, label } : null
+      })
+      .filter((m): m is { id: string; label: string } => m !== null)
 
-    const models = ids.map((id) => ({ id, label: id }))
     return c.json({ models })
   })
 }
