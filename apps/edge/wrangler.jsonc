@@ -2,5 +2,18 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "tinytinkerer-edge",
   "main": "src/index.ts",
-  "compatibility_date": "2026-05-21"
+  "compatibility_date": "2026-05-21",
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "api.tiny.nntin.xyz",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "ALLOWED_ORIGINS": "http://localhost:3000,https://tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz"
+  },
+  "secrets": {
+    "required": ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"]
+  }
 }

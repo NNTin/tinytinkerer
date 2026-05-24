@@ -14,12 +14,13 @@ The current codebase expects a **GitHub OAuth App**, not a GitHub App installati
 - Use a GitHub OAuth app for `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and `VITE_GITHUB_CLIENT_ID`
 - Do not create a GitHub App unless you plan to change the authentication implementation
 - GitHub Actions deployment does not need a GitHub App; it uses the repository `GITHUB_TOKEN` plus Vercel secrets
+- GitHub Actions secret names must not start with `GITHUB_`, so this repo uses `OAUTH_GITHUB_CLIENT_ID` and `OAUTH_GITHUB_CLIENT_SECRET` in GitHub Actions and maps them to the Worker runtime secret names during deploy
 
 ## Architecture
 
 - Frontend production alias: `https://tiny.nntin.xyz`
 - Frontend PR preview aliases: `https://pr-<number>-<branch>.tiny.preview.nntin.xyz`
-- Edge API: deploy this separately on Cloudflare Workers at a stable URL such as `https://api.tiny.preview.nntin.xyz`
+- Edge API: deploy this separately on Cloudflare Workers at `https://api.tiny.nntin.xyz`
 
 The frontend talks directly to the Cloudflare edge origin through `VITE_EDGE_URL`.
 
@@ -56,8 +57,14 @@ In the GitHub repository:
    - `VERCEL_TOKEN`
    - `VERCEL_ORG_ID`
    - `VERCEL_PROJECT_ID`
+   - `CLOUDFLARE_API_TOKEN`
+   - `CLOUDFLARE_ACCOUNT_ID`
+   - `OAUTH_GITHUB_CLIENT_ID`
+   - `OAUTH_GITHUB_CLIENT_SECRET`
+   - `TAVILY_API_KEY` (optional)
 
 The deploy workflow at `.github/workflows/deploy-pages.yml` uses those secrets for both production and preview deploys.
+The edge deploy workflow at `.github/workflows/deploy-edge.yml` uses the Cloudflare and OAuth secrets.
 
 ## 2. Vercel Setup
 
@@ -91,7 +98,7 @@ Do not commit `.vercel/`.
 Set these variables in Vercel for both **Production** and **Preview**:
 
 ```bash
-VITE_EDGE_URL=https://api.tiny.preview.nntin.xyz
+VITE_EDGE_URL=https://api.tiny.nntin.xyz
 VITE_GITHUB_CLIENT_ID=<your-github-oauth-client-id>
 ```
 
@@ -137,32 +144,62 @@ The workflow also needs:
 
 The edge app lives in `apps/edge`.
 
-Deploy it as a Cloudflare Worker with a stable public URL such as:
+Deploy it as a Cloudflare Worker on:
 
-- `https://api.tiny.preview.nntin.xyz`
+- `https://api.tiny.nntin.xyz`
 
 The Worker config starts in `apps/edge/wrangler.jsonc`.
 
-### 3.2 Set Worker Secrets and Vars
+The repository now contains the production Worker routing and non-secret runtime config in `apps/edge/wrangler.jsonc`:
 
-Set the required secrets:
+- custom domain route: `api.tiny.nntin.xyz`
+- `workers_dev: false`
+- `ALLOWED_ORIGINS=http://localhost:3000,https://tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz`
+
+### 3.2 Create the Cloudflare API Token
+
+Create an API token for GitHub Actions.
+
+Recommended scope:
+
+- Worker edit permissions for the target account
+- zone access for the `nntin.xyz` zone, because the workflow applies the custom domain route
+
+Save these GitHub Actions secrets:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+### 3.3 Configure Worker Secrets
+
+The Worker requires these secrets:
 
 ```bash
-wrangler secret put GITHUB_CLIENT_ID
-wrangler secret put GITHUB_CLIENT_SECRET
+GITHUB_CLIENT_ID
+GITHUB_CLIENT_SECRET
 ```
+
+In GitHub Actions, store them under these repository secret names instead:
+
+```bash
+OAUTH_GITHUB_CLIENT_ID
+OAUTH_GITHUB_CLIENT_SECRET
+```
+
+The edge deploy workflow maps:
+
+- `OAUTH_GITHUB_CLIENT_ID` -> Worker secret `GITHUB_CLIENT_ID`
+- `OAUTH_GITHUB_CLIENT_SECRET` -> Worker secret `GITHUB_CLIENT_SECRET`
 
 Optional:
 
 ```bash
-wrangler secret put TAVILY_API_KEY
+TAVILY_API_KEY
 ```
 
-Set plain-text vars for CORS:
+These are not meant to be set manually in the Cloudflare dashboard for normal deployments. The GitHub Actions workflow uploads them during `wrangler deploy --secrets-file ...`.
 
-```bash
-ALLOWED_ORIGINS=http://localhost:3000,https://tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz
-```
+For local development, keep using `apps/edge/.dev.vars`.
 
 Why this matters:
 
@@ -171,27 +208,43 @@ Why this matters:
 - preview frontends therefore call the API cross-origin
 - the edge service must explicitly allow both the stable production hostname and wildcard preview hostnames
 
-### 3.3 Attach a Custom Domain
+### 3.4 Deploy From GitHub Actions
 
-Attach your Worker to a public HTTPS hostname in your Cloudflare zone, such as:
+The repo now includes `.github/workflows/deploy-edge.yml`.
 
-- `api.tiny.preview.nntin.xyz`
+On every push to `main`, it:
 
-Then point `VITE_EDGE_URL` in Vercel to that exact origin.
+- installs dependencies
+- builds `apps/edge`
+- creates a temporary secrets file from GitHub Actions secrets
+- runs `wrangler deploy --config apps/edge/wrangler.jsonc --secrets-file ...`
+- runs `wrangler triggers deploy --config apps/edge/wrangler.jsonc`
 
-### 3.4 Deploy the Worker
+The extra `triggers deploy` step is important because Cloudflare applies route and custom-domain changes through trigger deployment.
 
-From the repo root:
+### 3.5 First Deploy Checklist
+
+Before the workflow can succeed, confirm:
+
+- the `nntin.xyz` zone is in the target Cloudflare account
+- `api.tiny.nntin.xyz` is available for Worker custom domain attachment
+- the GitHub Actions secrets listed above are present
+- Vercel uses `VITE_EDGE_URL=https://api.tiny.nntin.xyz`
+
+### 3.6 Manual Deploy Fallback
+
+If you want to deploy the Worker manually once before enabling CI:
 
 ```bash
 pnpm --filter @tinytinkerer/edge build
-pnpm --filter @tinytinkerer/edge exec wrangler deploy
+pnpm --filter @tinytinkerer/edge exec wrangler deploy --config apps/edge/wrangler.jsonc
+pnpm --filter @tinytinkerer/edge exec wrangler triggers deploy --config apps/edge/wrangler.jsonc
 ```
 
 After deploy, verify:
 
 ```bash
-curl https://api.tiny.preview.nntin.xyz/health
+curl https://api.tiny.nntin.xyz/health
 ```
 
 With OAuth configured, the `auth.state` value in `/health` should report `ready` instead of `degraded`.
@@ -203,8 +256,9 @@ Once all three systems are configured:
 1. Cloudflare exposes the edge API on a stable URL
 2. Vercel builds the frontend with `VITE_EDGE_URL` pointing at that URL
 3. GitHub Actions deploys `main` and PR previews to Vercel
-4. GitHub OAuth redirects users back to the active Vercel origin
-5. Cloudflare CORS allows the production alias and preview wildcard domains
+4. GitHub Actions deploys the edge Worker to `https://api.tiny.nntin.xyz`
+5. GitHub OAuth redirects users back to the active Vercel origin
+6. Cloudflare CORS allows the production alias and preview wildcard domains
 
 ## 5. Verification Checklist
 
@@ -216,6 +270,7 @@ Once all three systems are configured:
 4. Confirm the app loads
 5. Confirm sign-in works
 6. Confirm API requests hit the Cloudflare edge origin
+7. Confirm requests target `https://api.tiny.nntin.xyz`
 
 ### Preview
 
@@ -243,6 +298,7 @@ Usually caused by one of these:
 - `VITE_EDGE_URL` is missing in Vercel
 - `ALLOWED_ORIGINS` on Cloudflare does not include the preview wildcard
 - the Worker custom domain is not active yet
+- the edge deploy workflow has not run successfully yet
 
 ### Workflow fails before deploy
 
@@ -251,6 +307,15 @@ Usually caused by one of these:
 - `VERCEL_TOKEN`, `VERCEL_ORG_ID`, or `VERCEL_PROJECT_ID` is missing in GitHub Actions secrets
 - the Vercel project is not linked correctly
 - the custom domains were not added to the Vercel project
+
+### Edge workflow fails before deploy
+
+Usually caused by one of these:
+
+- `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ACCOUNT_ID` is missing in GitHub Actions secrets
+- `OAUTH_GITHUB_CLIENT_ID` or `OAUTH_GITHUB_CLIENT_SECRET` is missing in GitHub Actions secrets
+- the Cloudflare token does not have enough scope for Workers deploys and zone routing changes
+- `api.tiny.nntin.xyz` cannot be provisioned as a Worker custom domain in the target zone
 
 ## References
 
