@@ -11,7 +11,7 @@
     }
   ],
   "vars": {
-    "ALLOWED_ORIGINS": "http://localhost:3000,https://tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz"
+    "ALLOWED_ORIGINS": "http://localhost:3111,https://tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz"
   },
   "secrets": {
     "required": ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"]

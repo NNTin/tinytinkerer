@@ -14,7 +14,7 @@ import './index.css'
 const hostConfig: BrowserShellConfig = window.__TINYTINKERER_WIDGET_CONFIG__ ?? {}
 
 const getEnvValue = (
-  key: 'VITE_EDGE_URL' | 'VITE_GITHUB_CLIENT_ID' | 'VITE_GITHUB_REDIRECT_URI'
+  key: 'VITE_EDGE_URL' | 'VITE_GITHUB_CLIENT_ID'
 ): string | undefined => {
   const value = (import.meta.env as Record<string, unknown>)[key]
   return typeof value === 'string' ? value : undefined
@@ -31,7 +31,6 @@ const githubClientId = hostConfig.githubClientId ?? getEnvValue('VITE_GITHUB_CLI
 const githubRedirectUri = resolveWidgetGitHubRedirectUri(
   hostConfig,
   githubClientId,
-  getEnvValue('VITE_GITHUB_REDIRECT_URI'),
   import.meta.env.BASE_URL,
   window.location.origin
 )

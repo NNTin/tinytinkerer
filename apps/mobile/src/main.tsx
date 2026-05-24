@@ -11,14 +11,13 @@ import { router } from './app/router'
 import './index.css'
 
 const getEnvValue = (
-  key: 'VITE_EDGE_URL' | 'VITE_GITHUB_CLIENT_ID' | 'VITE_GITHUB_REDIRECT_URI'
+  key: 'VITE_EDGE_URL' | 'VITE_GITHUB_CLIENT_ID'
 ): string | undefined => {
   const value = (import.meta.env as Record<string, unknown>)[key]
   return typeof value === 'string' ? value : undefined
 }
 
-const githubRedirectUri =
-  getEnvValue('VITE_GITHUB_REDIRECT_URI') ?? `${window.location.origin}${import.meta.env.BASE_URL}#/auth/callback`
+const githubRedirectUri = `${window.location.origin}${import.meta.env.BASE_URL}#/auth/callback`
 const githubClientId = getEnvValue('VITE_GITHUB_CLIENT_ID')
 
 const browserConfig: BrowserShellConfig = {

@@ -157,32 +157,19 @@ const createRequestHandler = (apps) => (req, res) => {
  * @returns {Promise<void>}
  */
 const startListening = async (server, { host, port, preferredPort }) => {
-  if (port !== undefined) {
-    try {
-      await listen(server, host, port)
-      return
-    } catch (error) {
-      if (isPortInUseError(error)) {
-        throw new Error(
-          `Port ${port} is already in use on ${host}. Set PORT to an open port and retry.`,
-          { cause: error }
-        )
-      }
-
-      throw error
-    }
-  }
-
+  const targetPort = port ?? preferredPort
   try {
-    await listen(server, host, preferredPort)
-    return
+    await listen(server, host, targetPort)
   } catch (error) {
-    if (!isPortInUseError(error)) {
-      throw error
+    if (isPortInUseError(error)) {
+      throw new Error(
+        `Port ${targetPort} is already in use on ${host}. Free the port and retry.`,
+        { cause: error }
+      )
     }
-  }
 
-  await listen(server, host, 0)
+    throw error
+  }
 }
 
 /**
@@ -200,7 +187,7 @@ const startListening = async (server, { host, port, preferredPort }) => {
 export const createHostServer = async ({
   host = '127.0.0.1',
   port,
-  preferredPort = 3000,
+  preferredPort = 3111,
   rootDir = workspaceRoot,
   disableDependencyOptimization = false
 } = {}) => {
@@ -272,25 +259,19 @@ export const createHostServer = async ({
 }
 
 /**
- * @param {{ host?: string, port?: number, preferredPort?: number }} [options]
+ * @param {{ host?: string, preferredPort?: number }} [options]
  * @returns {Promise<void>}
  */
 export const runHostServer = async ({
   host = '127.0.0.1',
-  port = process.env.PORT ? Number(process.env.PORT) : undefined,
-  preferredPort = 3000
+  preferredPort = 3111
 } = {}) => {
-  const hostServer = await createHostServer({ host, port, preferredPort })
-  const usedFallbackPort = port === undefined && hostServer.port !== preferredPort
+  const hostServer = await createHostServer({ host, preferredPort })
 
   console.log(`@tinytinkerer/host listening at ${hostServer.url}`)
   console.log(`  Web: ${hostServer.url}/`)
   console.log(`  Widget: ${hostServer.url}/widget/`)
   console.log(`  Mobile: ${hostServer.url}/mobile/`)
-
-  if (usedFallbackPort) {
-    console.log(`Port ${preferredPort} was unavailable, so the host selected ${hostServer.port}.`)
-  }
 
   const shutdown = async () => {
     try {
