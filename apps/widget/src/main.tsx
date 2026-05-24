@@ -22,7 +22,7 @@ const getEnvValue = (
 
 const widgetConfigBase: BrowserShellConfig = {
   edgeBaseUrl: hostConfig.edgeBaseUrl ?? getEnvValue('VITE_EDGE_URL') ?? '',
-  storageNamespace: hostConfig.storageNamespace ?? 'tinytinkerer-widget',
+  storageNamespace: hostConfig.storageNamespace ?? 'tinytinkerer',
   authMode: hostConfig.authMode ?? 'hybrid',
   hostToken: hostConfig.hostToken ?? null
 }

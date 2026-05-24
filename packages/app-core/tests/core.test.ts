@@ -25,8 +25,16 @@ describe('app-core helpers', () => {
     expect(inferPlan('latest ai news').steps.some((step) => step.id === 'search')).toBe(true)
   })
 
-  it('normalizes unsupported models', () => {
-    expect(normalizeSelectedModel('openai/gpt-4o')).toBe('openai/gpt-4.1-mini')
+  it('falls back to the default model for null/empty values', () => {
+    expect(normalizeSelectedModel(null)).toBe('openai/gpt-4.1-mini')
+    expect(normalizeSelectedModel(undefined)).toBe('openai/gpt-4.1-mini')
+    expect(normalizeSelectedModel('')).toBe('openai/gpt-4.1-mini')
+    expect(normalizeSelectedModel('   ')).toBe('openai/gpt-4.1-mini')
+  })
+
+  it('preserves any non-empty model id including dynamic models', () => {
+    expect(normalizeSelectedModel('openai/gpt-4o')).toBe('openai/gpt-4o')
+    expect(normalizeSelectedModel('meta/llama-4-scout-17b-16e-instruct')).toBe('meta/llama-4-scout-17b-16e-instruct')
   })
 
   it('builds conversation history from completed turns only', () => {

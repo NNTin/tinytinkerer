@@ -4,13 +4,22 @@ import {
   modelsChatRequestSchema,
   modelsChatResponseSchema
 } from '@tinytinkerer/contracts'
+import { z } from 'zod'
 import type { Hono } from 'hono'
 import type { Bindings } from '../lib/bindings'
 import { applyCorsHeaders } from '../lib/cors'
 import { fetchWithTimeout } from '../lib/fetch'
 import { toRateLimitResponse } from '../lib/rate-limit'
 
+const githubModelsListSchema = z.object({
+  data: z.array(z.object({
+    id: z.string(),
+    name: z.string().optional()
+  })).optional()
+})
+
 const GITHUB_MODELS_DEFAULT_URL = 'https://models.github.ai/inference'
+const GITHUB_MODELS_LIST_URL = 'https://models.github.ai/v1/models'
 
 const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
   400: 'Invalid request',
@@ -93,5 +102,41 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
 
     const rawText = await response.text()
     return c.json(modelsChatResponseSchema.parse(JSON.parse(rawText)), 200)
+  })
+
+  app.get('/api/models/list', async (c) => {
+    const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
+
+    if (!authorization) {
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
+    }
+
+    const listUrl = c.env.GITHUB_MODELS_URL
+      ? `${c.env.GITHUB_MODELS_URL}/models`
+      : GITHUB_MODELS_LIST_URL
+
+    const response = await fetchWithTimeout(
+      listUrl,
+      { headers: { authorization, accept: 'application/json' } },
+      10_000
+    )
+
+    if (!response.ok) {
+      console.error('[models/list] upstream error', { status: response.status, url: listUrl })
+      const safeError =
+        UPSTREAM_ERROR_MESSAGES[response.status] ?? `Upstream error ${response.status}`
+      const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
+        ? (response.status as 400 | 401 | 403 | 500 | 503)
+        : 502
+      return c.json(edgeErrorResponseSchema.parse({ error: safeError }), statusCode)
+    }
+
+    const parsed = githubModelsListSchema.safeParse(await response.json())
+    const models = (parsed.success ? (parsed.data.data ?? []) : []).map((m) => ({
+      id: m.id,
+      label: m.name ?? m.id
+    }))
+
+    return c.json({ models })
   })
 }

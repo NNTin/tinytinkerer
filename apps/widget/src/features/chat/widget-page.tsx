@@ -1,10 +1,11 @@
 import {
   buildTurns,
   startStatusPolling,
-  SUPPORTED_MODELS,
   useAuthStore,
   useChatStore,
+  useGitHubModels,
   useGitHubOAuth,
+  useGitHubUser,
   useSettingsStore,
   useStatusStore,
   type SystemStatus
@@ -30,6 +31,8 @@ export const WidgetPage = () => {
   const setToken = useAuthStore((state) => state.setToken)
   const clearToken = useAuthStore((state) => state.clearToken)
   const { canStartGitHubOAuth, startGitHubOAuth } = useGitHubOAuth()
+  const user = useGitHubUser()
+  const availableModels = useGitHubModels()
 
   const selectedModel = useSettingsStore((state) => state.selectedModel)
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
@@ -100,7 +103,7 @@ export const WidgetPage = () => {
                 onChange={(event) => void setSelectedModel(event.target.value)}
                 className="mt-1 w-full rounded-xl border border-[var(--widget-border)] bg-white px-3 py-2 text-sm text-[var(--widget-text)]"
               >
-                {SUPPORTED_MODELS.map((model) => (
+                {availableModels.map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.label}
                   </option>
@@ -128,9 +131,25 @@ export const WidgetPage = () => {
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {token ? (
-              <Button size="sm" variant="ghost" onClick={() => void clearToken()}>
-                Sign out
-              </Button>
+              <div className="flex flex-1 items-center justify-between gap-2">
+                {user ? (
+                  <div className="flex items-center gap-2 min-w-0">
+                    {user.avatarUrl ? (
+                      <img
+                        src={user.avatarUrl}
+                        alt={user.login}
+                        className="h-6 w-6 rounded-full border border-[var(--widget-border)] shrink-0"
+                      />
+                    ) : null}
+                    <span className="text-xs text-[var(--widget-muted)] truncate">@{user.login}</span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-[var(--widget-muted)]">Signed in</span>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => void clearToken()}>
+                  Sign out
+                </Button>
+              </div>
             ) : (
               <>
                 {canStartGitHubOAuth ? (
