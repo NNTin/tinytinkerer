@@ -4,17 +4,26 @@ This plan is written for handoff to an implementation agent.
 
 The goal is to replace `@tinytinkerer/feature-markdown` with a dedicated content platform and align docs, package boundaries, and browser composition around that model.
 
+## Status
+
+- [x] `docs/content-platform.md` exists and defines the target package model.
+- [x] `docs/Plan.md` exists as the implementation handoff document.
+- [ ] Architecture docs are aligned with the content-platform model.
+- [ ] Workspace packages and boundary rules are aligned with the content-platform model.
+- [ ] Browser apps are migrated off `@tinytinkerer/feature-markdown`.
+
 ## Constraints
 
-- [ ] Treat `ContentNode` as an internal content-platform AST in this phase.
-- [ ] Do not change edge DTOs or `@tinytinkerer/contracts` to emit structured content yet.
-- [ ] Keep `apps/host` in the documented architecture as a composition app, not a browser shell.
-- [ ] Do a direct cutover rather than leaving `feature-markdown` as a long-term compatibility layer.
-- [ ] Treat `ChoicePromptNode` as reserved only. Define the type, but do not add parsing or interactive rendering in v1.
+- [x] Treat `ContentNode` as an internal content-platform AST in this phase.
+- [x] Do not change edge DTOs or `@tinytinkerer/contracts` to emit structured content yet.
+- [x] Keep `apps/host` in the documented architecture as a composition app, not a browser shell.
+- [x] Do a direct cutover rather than leaving `feature-markdown` as a long-term compatibility layer.
+- [x] Treat `ChoicePromptNode` as reserved only. Define the type, but do not add parsing or interactive rendering in v1.
 
 ## Deliverables
 
-- [ ] Add `docs/content-platform.md`.
+- [x] Add `docs/content-platform.md`.
+- [x] Add `docs/Plan.md`.
 - [ ] Update `docs/ARCHITECTURE.md` to replace `feature-*` content examples with the content-platform package set.
 - [ ] Update `docs/packages-concept.md` to reflect the new package boundaries and dependency rules.
 - [ ] Update `docs/ui-ux-concept.md` so it refers to the content platform instead of `feature-markdown` and `feature-mermaid`.
@@ -27,6 +36,17 @@ The goal is to replace `@tinytinkerer/feature-markdown` with a dedicated content
   - [ ] `packages/content-wireframe`
 - [ ] Expose a shell-facing content renderer from `@tinytinkerer/app-browser`.
 - [ ] Migrate `web`, `widget`, and `mobile` to the new `app-browser` content export.
+
+## Execution Order
+
+- [ ] Update architecture and concept docs first so the target package graph is explicit before code moves.
+- [ ] Update workspace boundary rules next so new package work is protected by tooling.
+- [ ] Add `content-core` and `content-markdown` before React rendering packages.
+- [ ] Add `content-react` after the AST and parser contracts are stable.
+- [ ] Add `content-mermaid` and `content-wireframe` as specialized renderers after the generic renderer exists.
+- [ ] Integrate the composed content surface into `app-browser`.
+- [ ] Migrate browser apps to the new `app-browser` content export.
+- [ ] Remove `packages/feature-markdown` only after all app imports and tests are migrated.
 
 ## Package Responsibilities
 
@@ -75,6 +95,7 @@ The goal is to replace `@tinytinkerer/feature-markdown` with a dedicated content
 ## `app-browser` Integration
 
 - [ ] Add a shell-facing content export from `@tinytinkerer/app-browser`.
+- [ ] Keep apps dependent on `app-browser` and `ui`, not directly on `content-*`.
 - [ ] Parse assistant text through `content-markdown` inside `app-browser`.
 - [ ] Compose the renderer registry inside `app-browser`.
 - [ ] Register Mermaid and wireframe support through the content platform, not directly inside app shells.
@@ -127,4 +148,5 @@ The goal is to replace `@tinytinkerer/feature-markdown` with a dedicated content
 - [ ] Browser shells render assistant content through `@tinytinkerer/app-browser`.
 - [ ] Markdown, code blocks, tables, and images still render correctly.
 - [ ] Mermaid and wireframe nodes have a defined rendering and fallback path.
+- [ ] `apps/host` is still documented as composition infrastructure rather than as a browser shell.
 - [ ] Docs consistently describe the content platform rather than `feature-*` content packages.
