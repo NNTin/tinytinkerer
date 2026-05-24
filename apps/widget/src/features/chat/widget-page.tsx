@@ -1,8 +1,10 @@
 import {
   AssistantContent,
   buildTurns,
+  formatCooldown,
   startStatusPolling,
   useAuthStore,
+  useChatCooldown,
   useChatStore,
   useGitHubModels,
   useGitHubOAuth,
@@ -13,13 +15,6 @@ import {
 } from '@tinytinkerer/app-browser'
 import { Button } from '@tinytinkerer/ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
-
-const formatCooldown = (remainingMs: number): string => {
-  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000))
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
-}
 
 const fallbackStatus: SystemStatus = {
   auth: { state: 'offline', detail: 'Unavailable' },
@@ -32,7 +27,6 @@ export const WidgetPage = () => {
   const streamingText = useChatStore((state) => state.streamingText)
   const isRunning = useChatStore((state) => state.isRunning)
   const isRetryPending = useChatStore((state) => state.isRetryPending)
-  const cooldownUntil = useChatStore((state) => state.cooldownUntil)
   const sendPrompt = useChatStore((state) => state.sendPrompt)
   const cancelRetry = useChatStore((state) => state.cancelRetry)
   const resetConversation = useChatStore((state) => state.resetConversation)
@@ -54,14 +48,7 @@ export const WidgetPage = () => {
   const [prompt, setPrompt] = useState('')
   const [showPat, setShowPat] = useState(false)
   const [patValue, setPatValue] = useState('')
-  const [now, setNow] = useState(() => Date.now())
   const endRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!cooldownUntil) return undefined
-    const interval = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(interval)
-  }, [cooldownUntil])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
@@ -75,8 +62,7 @@ export const WidgetPage = () => {
   const effectiveStatus = status ?? fallbackStatus
   const searchUnavailable = effectiveStatus.search.state !== 'ready'
 
-  const cooldownRemainingMs = cooldownUntil ? Math.max(0, Date.parse(cooldownUntil) - now) : 0
-  const isCoolingDown = cooldownRemainingMs > 0
+  const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
   const submitLabel = isCoolingDown ? formatCooldown(cooldownRemainingMs) : isRunning ? 'Thinking...' : 'Send'
 
   const handleSubmit = async () => {

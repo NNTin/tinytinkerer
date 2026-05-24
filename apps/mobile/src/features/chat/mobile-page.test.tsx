@@ -66,7 +66,9 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   ),
   buildCurrentTimeline: () => [],
   buildTurns: () => mockTurns,
+  formatCooldown: (ms: number) => `${Math.ceil(ms / 1000)}s`,
   startStatusPolling: vi.fn(() => () => undefined),
+  useChatCooldown: () => ({ cooldownRemainingMs: 0, isCoolingDown: false }),
   useGitHubOAuth: () => ({
     canStartGitHubOAuth: true,
     startGitHubOAuth: vi.fn(),
