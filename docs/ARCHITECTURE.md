@@ -17,6 +17,7 @@ See also:
 ```mermaid
 flowchart LR
   subgraph Apps
+    host["@tinytinkerer/host<br/>dev server + build compositor"]
     web["@tinytinkerer/web<br/>full browser UI shell"]
     widget["@tinytinkerer/widget<br/>embeddable browser UI shell"]
     mobile["@tinytinkerer/mobile<br/>mobile PWA shell"]
@@ -42,6 +43,10 @@ flowchart LR
     end
   end
 
+  host --> web
+  host --> widget
+  host --> mobile
+
   web --> common
   widget --> common
   mobile --> common
@@ -53,21 +58,21 @@ flowchart LR
   appcore --> agent
   appcore --> contracts
 
+  appbrowser --> contentmarkdown
+  appbrowser --> contentmermaid
+  appbrowser --> contentreact
+  appbrowser --> contentwireframe
   appbrowser --> appcore
   appbrowser --> contracts
   appbrowser --> brand
-  appbrowser --> contentmarkdown
-  appbrowser --> contentreact
-  appbrowser --> contentmermaid
-  appbrowser --> contentwireframe
 
   contentmarkdown --> contentcore
-  contentreact --> contentcore
   contentreact --> ui
+  contentreact --> contentcore
   contentmermaid --> contentcore
   contentmermaid --> contentreact
-  contentwireframe --> contentcore
   contentwireframe --> contentreact
+  contentwireframe --> contentcore
 
   agent --> contracts
   brand --> contracts
@@ -75,6 +80,7 @@ flowchart LR
   subgraph Legend
     direction LR
     legendUiApp["UI Apps"]
+    legendHost["Build Compositor"]
     legendEdge["Edge Backend"]
     legendBrowser["Browser Assembly"]
     legendUi["UI Primitives"]
@@ -84,12 +90,13 @@ flowchart LR
     legendBrand["Brand Assets"]
 
     %% ensure legend is rendered properly
-    legendUiApp ~~~ legendEdge ~~~ legendBrowser
+    legendHost ~~~ legendEdge ~~~ legendBrowser
     legendUi ~~~ legendFeature ~~~ legendContracts
-    legendCore ~~~ legendBrand
+    legendCore ~~~ legendBrand ~~~ legendUiApp
   end
 
   classDef uiApp fill:#dbeafe,stroke:#1d4ed8,color:#111827,stroke-width:2px;
+  classDef hostInfra fill:#fed7aa,stroke:#c2410c,color:#111827,stroke-width:2px;
   classDef edgeApp fill:#fee2e2,stroke:#b91c1c,color:#111827,stroke-width:2px;
   classDef browserAssembly fill:#ccfbf1,stroke:#0f766e,color:#111827,stroke-width:2px;
   classDef uiPrimitives fill:#fef3c7,stroke:#b45309,color:#111827,stroke-width:2px;
@@ -99,6 +106,7 @@ flowchart LR
   classDef brandLayer fill:#ffe4e6,stroke:#be123c,color:#111827,stroke-width:2px;
 
   class web,widget,mobile,legendUiApp uiApp;
+  class host,legendHost hostInfra;
   class edge,legendEdge edgeApp;
   class common,appbrowser,legendBrowser browserAssembly;
   class ui,legendUi uiPrimitives;
