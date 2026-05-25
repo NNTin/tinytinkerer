@@ -1,4 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  edgeErrorResponseSchema,
+  rateLimitPayloadSchema,
+  systemStatusSchema
+} from '@tinytinkerer/contracts'
 import app from './index.js'
 
 describe('edge routes', () => {
@@ -17,7 +22,9 @@ describe('edge routes', () => {
     )
 
     expect(response.status).toBe(401)
-    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+    const body = await response.json()
+    edgeErrorResponseSchema.parse(body)
+    expect(body).toEqual({ error: 'Unauthorized' })
   })
 
   it('returns a typed 503 error when search is unavailable', async () => {
@@ -31,7 +38,9 @@ describe('edge routes', () => {
     )
 
     expect(response.status).toBe(503)
-    await expect(response.json()).resolves.toEqual({
+    const body = await response.json()
+    edgeErrorResponseSchema.parse(body)
+    expect(body).toEqual({
       error: 'Web search is currently unavailable. Configure Tavily to enable live search.'
     })
   })
@@ -68,6 +77,7 @@ describe('edge routes', () => {
     expect(response.status).toBe(429)
     expect(response.headers.get('Retry-After')).toBe('120')
     const body = await response.json() as Record<string, unknown>
+    rateLimitPayloadSchema.parse(body)
     expect(body['code']).toBe('rate_limited')
     expect(body['error']).toBe('GitHub Models rate limit reached')
     expect(body['retryAfterMs']).toBe(120_000)
@@ -103,7 +113,9 @@ describe('edge routes', () => {
     )
 
     expect(response.status).toBe(401)
-    await expect(response.json()).resolves.toEqual({
+    const body = await response.json()
+    edgeErrorResponseSchema.parse(body)
+    expect(body).toEqual({
       error: 'Authentication failed. Your GitHub token may be invalid or expired.'
     })
   })
@@ -128,6 +140,8 @@ describe('edge routes', () => {
       env
     )
 
+    const body = await response.json()
+    systemStatusSchema.parse(body)
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3000')
     expect(response.headers.get('Vary')).toBe('Origin')
     expect(preflightResponse.status).toBe(204)

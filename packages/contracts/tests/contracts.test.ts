@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   brandDefinitionSchema,
   chatEventSchema,
+  edgeErrorResponseSchema,
   githubExchangeRequestSchema,
   modelsChatRequestSchema,
+  modelsListResponseSchema,
   rateLimitPayloadSchema,
   searchResponseSchema,
   systemStatusSchema
@@ -43,6 +45,8 @@ describe('contracts', () => {
         search: { state: 'offline', detail: 'down' }
       }).models.state
     ).toBe('degraded')
+
+    expect(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }).error).toBe('Unauthorized')
   })
 
   it('parses model and rate-limit payloads', () => {
@@ -62,6 +66,19 @@ describe('contracts', () => {
         retryAt: new Date().toISOString()
       }).code
     ).toBe('rate_limited')
+  })
+
+  it('parses models list response', () => {
+    expect(
+      modelsListResponseSchema.parse({
+        models: [
+          { id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' },
+          { id: 'openai/gpt-4o', label: 'GPT-4o' }
+        ]
+      }).models
+    ).toHaveLength(2)
+
+    expect(modelsListResponseSchema.parse({ models: [] }).models).toHaveLength(0)
   })
 
   it('parses shared brand metadata', () => {

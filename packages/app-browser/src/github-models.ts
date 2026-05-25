@@ -1,25 +1,10 @@
 import { useEffect, useState } from 'react'
 import { SUPPORTED_MODELS } from '@tinytinkerer/app-core'
+import { modelsListResponseSchema, type GitHubModelEntry } from '@tinytinkerer/contracts'
 import { useAuthStore } from './app'
 import { useBrowserShellConfig } from './hooks'
 
-export type ModelEntry = { id: string; label: string }
-
-const modelListResponseSchema = (raw: unknown): ModelEntry[] | null => {
-  if (typeof raw !== 'object' || raw === null) return null
-  const obj = raw as Record<string, unknown>
-  if (!Array.isArray(obj['models'])) return null
-  const result: ModelEntry[] = []
-  for (const item of obj['models'] as unknown[]) {
-    if (typeof item === 'object' && item !== null) {
-      const entry = item as Record<string, unknown>
-      if (typeof entry['id'] === 'string' && typeof entry['label'] === 'string') {
-        result.push({ id: entry['id'], label: entry['label'] })
-      }
-    }
-  }
-  return result.length > 0 ? result : null
-}
+export type ModelEntry = GitHubModelEntry
 
 type CacheEntry = { models: ModelEntry[]; cachedAt: number }
 const modelsCache = new Map<string, CacheEntry>()
@@ -49,8 +34,10 @@ export const fetchGitHubModels = async (
 
     if (!response.ok) return [...SUPPORTED_MODELS]
 
-    const models = modelListResponseSchema(await response.json())
-    if (!models) return [...SUPPORTED_MODELS]
+    const parsed = modelsListResponseSchema.safeParse(await response.json())
+    if (!parsed.success) return [...SUPPORTED_MODELS]
+    const models = parsed.data.models
+    if (models.length === 0) return [...SUPPORTED_MODELS]
 
     modelsCache.set(cacheKey, { models, cachedAt: Date.now() })
     return models
