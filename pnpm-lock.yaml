@@ -53,9 +53,6 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.7.5
         version: 0.7.6(hono@4.12.21)(zod@4.4.3)
-      '@tinytinkerer/app-core':
-        specifier: workspace:*
-        version: link:../../packages/app-core
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
