@@ -121,7 +121,8 @@ const formatAddress = (addressInfo) => {
     throw new Error('Expected the host server to expose a TCP address.')
   }
 
-  return `http://${addressInfo.address}:${addressInfo.port}`
+  const host = addressInfo.address.includes(':') ? `[${addressInfo.address}]` : addressInfo.address
+  return `http://${host}:${addressInfo.port}`
 }
 
 /**
