@@ -3,6 +3,7 @@ import type { BrowserApp } from './app'
 import type { BrowserShell } from './shell'
 
 const oauthStateKey = (shell: BrowserShell): string => `${shell.config.storageNamespace}:oauth_state`
+const oauthReturnUrlKey = (shell: BrowserShell): string => `${shell.config.storageNamespace}:oauth_return_url`
 
 const generateState = (): string => {
   const bytes = new Uint8Array(16)
@@ -36,8 +37,43 @@ const createGitHubLoginUrl = (shell: BrowserShell): string => {
   return `https://github.com/login/oauth/authorize?${params.toString()}`
 }
 
+const isEmbeddedContext = (): boolean => {
+  try {
+    return window.parent !== window
+  } catch {
+    return false
+  }
+}
+
+const getTopLevelHref = (): string | null => {
+  try {
+    return window.top?.location.href ?? null
+  } catch {
+    return null
+  }
+}
+
+const navigateForOAuth = (url: string): void => {
+  if (isEmbeddedContext()) {
+    const topLocation = window.top?.location
+    if (topLocation) {
+      topLocation.assign(url)
+      return
+    }
+  }
+
+  location.assign(url)
+}
+
 export const startGitHubOAuth = (shell: BrowserShell): void => {
-  location.assign(createGitHubLoginUrl(shell))
+  if (isEmbeddedContext()) {
+    const returnUrl = getTopLevelHref()
+    if (returnUrl) {
+      sessionStorage.setItem(oauthReturnUrlKey(shell), returnUrl)
+    }
+  }
+
+  navigateForOAuth(createGitHubLoginUrl(shell))
 }
 
 const validateOAuthState = (shell: BrowserShell, returnedState: string | null): boolean => {
@@ -45,6 +81,13 @@ const validateOAuthState = (shell: BrowserShell, returnedState: string | null): 
   const storedState = sessionStorage.getItem(stateKey)
   sessionStorage.removeItem(stateKey)
   return Boolean(storedState) && storedState === returnedState
+}
+
+export const consumeGitHubOAuthReturnUrl = (shell: BrowserShell): string | null => {
+  const key = oauthReturnUrlKey(shell)
+  const returnUrl = sessionStorage.getItem(key)
+  sessionStorage.removeItem(key)
+  return returnUrl
 }
 
 const exchangeCode = async (shell: BrowserShell, code: string): Promise<string> => {

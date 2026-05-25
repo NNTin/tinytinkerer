@@ -9,11 +9,11 @@ export default defineConfig({
   base,
   plugins: [react(), tailwindcss()],
   server: {
-    host: '127.0.0.1',
+    host: 'localhost',
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8787', changeOrigin: true },
-      '/auth/github/exchange': { target: 'http://127.0.0.1:8787', changeOrigin: true },
-      '/health': { target: 'http://127.0.0.1:8787', changeOrigin: true },
+      '/api': { target: 'http://localhost:8787', changeOrigin: true },
+      '/auth/github/exchange': { target: 'http://localhost:8787', changeOrigin: true },
+      '/health': { target: 'http://localhost:8787', changeOrigin: true },
     }
   },
   build: {

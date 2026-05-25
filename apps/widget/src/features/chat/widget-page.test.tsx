@@ -51,6 +51,9 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   buildTurns: () => mockChatState.events,
   formatCooldown: (ms: number) => `${Math.ceil(ms / 1000)}s`,
   startStatusPolling: vi.fn(() => () => undefined),
+  TINYTINKERER_BRAND_ASSET_URLS: {
+    icon192: '/brand/icon-192.png'
+  },
   SUPPORTED_MODELS: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
   useChatCooldown: () => ({ cooldownRemainingMs: 0, isCoolingDown: false }),
   useGitHubOAuth: () => ({
@@ -134,7 +137,11 @@ describe('WidgetPage', () => {
 
   it('posts minimized state changes to the host when rendered in host mode', () => {
     window.history.replaceState({}, '', '/widget/?view=host')
-    const postMessageSpy = vi.spyOn(window, 'postMessage')
+    const postMessageSpy = vi.fn()
+    Object.defineProperty(window, 'parent', {
+      value: { postMessage: postMessageSpy },
+      configurable: true
+    })
 
     render(<WidgetPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Minimize' }))

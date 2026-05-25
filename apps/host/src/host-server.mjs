@@ -49,6 +49,8 @@ const staticContentTypes = {
   '.js': 'text/javascript; charset=utf-8'
 }
 
+const edgeProxyPrefixes = ['/api', '/auth/github/exchange']
+
 /**
  * @param {unknown} error
  * @returns {error is NodeJS.ErrnoException}
@@ -132,6 +134,31 @@ const findTargetApp = (apps, pathname) =>
 
 /**
  * @param {string} pathname
+ * @returns {boolean}
+ */
+const isEdgeProxyRequest = (pathname) =>
+  pathname === '/health' ||
+  edgeProxyPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+
+/**
+ * @param {HostAppDefinition[]} apps
+ * @returns {HostAppDefinition}
+ */
+const getEdgeProxyApp = (apps) => {
+  const webApp = apps.find((app) => app.mountPath === '/web/')
+  if (webApp) {
+    return webApp
+  }
+
+  if (apps[0]) {
+    return apps[0]
+  }
+
+  throw new Error('Expected at least one mounted app to proxy edge routes.')
+}
+
+/**
+ * @param {string} pathname
  * @returns {string | undefined}
  */
 const resolveHostStaticPath = (publicDir, pathname) => {
@@ -196,6 +223,14 @@ const createRequestHandler = (apps, publicDir) => (req, res) => {
             : '/web/'
       )
       res.end()
+      return
+    }
+
+    if (isEdgeProxyRequest(pathname)) {
+      getAppServer(getEdgeProxyApp(apps)).middlewares(req, res, () => {
+        res.statusCode = 404
+        res.end('Not found')
+      })
       return
     }
 
@@ -273,7 +308,7 @@ const startListening = async (server, { host, port, preferredPort }) => {
  * }>}
  */
 export const createHostServer = async ({
-  host = '127.0.0.1',
+  host = 'localhost',
   port,
   preferredPort = 3111,
   rootDir = workspaceRoot,
@@ -366,7 +401,7 @@ export const createHostServer = async ({
  * @returns {Promise<void>}
  */
 export const runHostServer = async ({
-  host = '127.0.0.1',
+  host = 'localhost',
   preferredPort = 3111
 } = {}) => {
   const hostServer = await createHostServer({ host, preferredPort })

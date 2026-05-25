@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom'
 export const CallbackPage = () => {
   const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
-  const { completeGitHubOAuthCallback } = useGitHubOAuth()
+  const { completeGitHubOAuthCallback, consumeGitHubOAuthReturnUrl } = useGitHubOAuth()
 
   useEffect(() => {
     // GitHub redirects to /?code=...&state=...#/auth/callback — params land in
@@ -16,6 +16,12 @@ export const CallbackPage = () => {
       state: params.get('state')
     })
       .then(() => {
+        const returnUrl = consumeGitHubOAuthReturnUrl()
+        if (returnUrl) {
+          window.location.replace(returnUrl)
+          return
+        }
+
         void navigate('/', { replace: true })
       })
       .catch((nextError: unknown) => {
@@ -25,7 +31,7 @@ export const CallbackPage = () => {
             : 'Authentication failed. Please try again.'
         )
       })
-  }, [completeGitHubOAuthCallback, navigate])
+  }, [completeGitHubOAuthCallback, consumeGitHubOAuthReturnUrl, navigate])
 
   if (error) {
     return (

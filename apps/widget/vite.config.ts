@@ -9,7 +9,7 @@ export default defineConfig({
   base,
   plugins: [react(), tailwindcss()],
   server: {
-    host: '127.0.0.1'
+    host: 'localhost'
   },
   build: {
     rollupOptions: {

@@ -1,4 +1,9 @@
-export { canStartGitHubOAuth, completeGitHubOAuthCallback, startGitHubOAuth } from './auth'
+export {
+  canStartGitHubOAuth,
+  completeGitHubOAuthCallback,
+  consumeGitHubOAuthReturnUrl,
+  startGitHubOAuth
+} from './auth'
 export { TINYTINKERER_BRAND_ASSET_URLS } from '@tinytinkerer/brand-assets'
 export { useGitHubUser } from './github-user'
 export type { GitHubUser } from './github-user'

@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { canStartGitHubOAuth, completeGitHubOAuthCallback, startGitHubOAuth } from './auth'
+import {
+  canStartGitHubOAuth,
+  completeGitHubOAuthCallback,
+  consumeGitHubOAuthReturnUrl,
+  startGitHubOAuth
+} from './auth'
 import { useBrowserApp, useChatStore } from './app'
 import type { ResolvedBrowserShellConfig } from './config'
 
@@ -43,6 +48,7 @@ export const useGitHubOAuth = () => {
     () => ({
       canStartGitHubOAuth: canStartGitHubOAuth(app.shell),
       startGitHubOAuth: () => startGitHubOAuth(app.shell),
+      consumeGitHubOAuthReturnUrl: () => consumeGitHubOAuthReturnUrl(app.shell),
       completeGitHubOAuthCallback: (options: { code: string | null; state: string | null }) =>
         completeGitHubOAuthCallback(app, options)
     }),
