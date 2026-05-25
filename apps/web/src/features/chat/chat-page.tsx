@@ -6,7 +6,7 @@ import { Button, GitHubMark, ThinkingDots } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { Cog6ToothIcon } from '@heroicons/react/24/outline'
 import { useEffect, useRef, useState } from 'react'
-import { SettingsModal } from '../settings/settings-modal.js'
+import { BrowserSettingsModal as SettingsModal } from '@tinytinkerer/app-browser'
 
 const systemLevelStyle: Record<'info' | 'warning' | 'error', string> = {
   info: 'border-stone-200 bg-stone-50 text-stone-600',

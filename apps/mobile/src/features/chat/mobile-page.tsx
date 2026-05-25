@@ -7,7 +7,7 @@ import * as Collapsible from '@radix-ui/react-collapsible'
 import { ArrowDownTrayIcon, Cog6ToothIcon } from '@heroicons/react/24/outline'
 import { useEffect, useRef, useState } from 'react'
 import { useInstallPrompt } from '../install/use-install-prompt'
-import { SettingsModal } from '../settings/settings-modal'
+import { BrowserSettingsModal as SettingsModal } from '@tinytinkerer/app-browser'
 
 const noticeStyle: Record<'info' | 'warning' | 'error', string> = {
   info: 'border-stone-200 bg-stone-50 text-stone-600',

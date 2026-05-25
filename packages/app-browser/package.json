@@ -33,7 +33,8 @@
     "zustand": "^5.0.8"
   },
   "peerDependencies": {
-    "react": "^19.0.0"
+    "react": "^19.0.0",
+    "react-router-dom": "^7.0.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
@@ -43,6 +44,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "jsdom": "^29.1.1",
     "react": "^19.0.0",
+    "react-router-dom": "^7.9.5",
     "vite": "^8.0.12",
     "vitest": "^4.0.8"
   }

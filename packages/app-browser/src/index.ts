@@ -27,6 +27,7 @@ export type {
   ResolvedBrowserShellConfig
 } from './config'
 export { AssistantContent } from './assistant-content'
+export { BrowserCallbackPage } from './browser-callback-page'
 export { BrowserSettingsModal } from './browser-settings-modal'
 export { bootstrapBrowserShell } from './initialize'
 export { formatCooldown, useBrowserShellConfig, useChatCooldown, useGitHubOAuth } from './hooks'
