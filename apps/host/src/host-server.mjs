@@ -152,6 +152,19 @@ const createRequestHandler = (apps) => (req, res) => {
 }
 
 /**
+ * @param {string} host
+ * @param {number} port
+ * @returns {Promise<void>}
+ */
+const probePort = async (host, port) =>
+  new Promise((resolvePromise, rejectPromise) => {
+    const probe = createHttpServer()
+    probe.once('error', (error) => rejectPromise(error))
+    probe.once('listening', () => probe.close(() => resolvePromise()))
+    probe.listen(port, host)
+  })
+
+/**
  * @param {HttpServer} server
  * @param {{ host: string, port: number | undefined, preferredPort: number }} options
  * @returns {Promise<void>}
@@ -191,6 +204,20 @@ export const createHostServer = async ({
   rootDir = workspaceRoot,
   disableDependencyOptimization = false
 } = {}) => {
+  const targetPort = port ?? preferredPort
+
+  try {
+    await probePort(host, targetPort)
+  } catch (error) {
+    if (isPortInUseError(error)) {
+      throw new Error(
+        `Port ${targetPort} is already in use on ${host}. Free the port and retry.`,
+        { cause: error }
+      )
+    }
+    throw error
+  }
+
   const apps = createAppDefinitions(rootDir)
   const httpServer = createHttpServer()
 
