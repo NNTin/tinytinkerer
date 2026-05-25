@@ -85,7 +85,12 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<MermaidNo
       .then((result) => {
         if (!cancelled) {
           const sanitized = DOMPurify.sanitize(result.svg, {
-            USE_PROFILES: { svg: true, svgFilters: true }
+            USE_PROFILES: { svg: true, svgFilters: true },
+            ADD_TAGS: ['foreignObject', 'div', 'span', 'p', 'br'],
+            // foreignObject is an HTML integration point in SVG; without this,
+            // DOMPurify rejects all HTML children (div, span, p) inside it, stripping
+            // node labels from flowchart and class diagrams entirely.
+            HTML_INTEGRATION_POINTS: { 'annotation-xml': true, 'foreignobject': true }
           })
           setSvg(sanitized)
         }
