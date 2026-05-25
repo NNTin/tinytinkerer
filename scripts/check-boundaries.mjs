@@ -292,11 +292,14 @@ function validateBoundary(sourcePkg, target, filePath) {
   if (sourcePkg.name === '@tinytinkerer/content-react') {
     const allowed = new Set([
       '@tinytinkerer/content-core',
+      '@tinytinkerer/content-markdown',
       '@tinytinkerer/content-react',
       '@tinytinkerer/ui'
     ])
     if (!allowed.has(targetPkg.name)) {
-      errors.push(`${sourceLabel}: content-react may import only content-core, ui, and local modules (${targetPkg.name})`)
+      errors.push(
+        `${sourceLabel}: content-react may import only content-core, content-markdown, ui, and local modules (${targetPkg.name})`
+      )
     }
   }
 

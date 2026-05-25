@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@tinytinkerer/content-core": "workspace:*",
+    "@tinytinkerer/content-markdown": "workspace:*",
     "@tinytinkerer/ui": "workspace:*",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"

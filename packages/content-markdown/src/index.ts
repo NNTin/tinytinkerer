@@ -3,6 +3,7 @@ import type { Content, Root, Table, TableCell } from 'mdast'
 import remarkGfm from 'remark-gfm'
 import remarkParse from 'remark-parse'
 import remarkStringify from 'remark-stringify'
+import { createElement, type ReactElement } from 'react'
 import {
   type ContentDocument,
   type ContentNode,
@@ -61,6 +62,13 @@ const asStandaloneImage = (node: Content): ImageNode | null => {
 
 const tableCellToText = (cell: TableCell): string => toString(cell).trim()
 
+const alignToMarkdown = (align: TableAlignment): string => {
+  if (align === 'left') return ':---'
+  if (align === 'right') return '---:'
+  if (align === 'center') return ':---:'
+  return '---'
+}
+
 const asTableNode = (node: Content): TableNode | null => {
   if (node.type !== 'table') {
     return null
@@ -102,6 +110,47 @@ const asSpecialCodeBlock = (node: Content): ContentNode | null => {
     ...(node.lang ? { language: node.lang } : {})
   }
 }
+
+export const tableToMarkdown = (node: TableNode): string => {
+  const header = `| ${node.header.join(' | ')} |`
+  const separator = `| ${node.align.map(alignToMarkdown).join(' | ')} |`
+  const rows = node.rows.map((row) => `| ${row.join(' | ')} |`)
+  return [header, separator, ...rows].join('\n')
+}
+
+export const TableNodeView = ({ node }: { node: TableNode }): ReactElement =>
+  createElement(
+    'table',
+    null,
+    createElement(
+      'thead',
+      null,
+      createElement(
+        'tr',
+        null,
+        node.header.map((cell, index) =>
+          createElement('th', { key: `${index}-${cell}`, align: node.align[index] ?? undefined }, cell)
+        )
+      )
+    ),
+    createElement(
+      'tbody',
+      null,
+      node.rows.map((row, rowIndex) =>
+        createElement(
+          'tr',
+          { key: `${rowIndex}-${row.join('|')}` },
+          row.map((cell, cellIndex) =>
+            createElement(
+              'td',
+              { key: `${rowIndex}-${cellIndex}-${cell}`, align: node.align[cellIndex] ?? undefined },
+              cell
+            )
+          )
+        )
+      )
+    )
+  )
 
 export const parseMarkdownContent: ContentParser = (content) => {
   const root = parser.parse(content)
