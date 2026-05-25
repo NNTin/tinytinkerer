@@ -1,4 +1,5 @@
 import { TINYTINKERER_BRAND } from '@tinytinkerer/brand-assets'
+import type { BrowserShellConfig } from './config'
 
 const MANAGED_ATTR = 'data-tinytinkerer-brand'
 
@@ -17,14 +18,17 @@ type ManagedMeta = {
   content: string
 }
 
-const createManifestDataUrl = (): string => {
+const resolveManifestStartUrl = (config: BrowserShellConfig): string =>
+  config.manifestStartUrl ?? TINYTINKERER_BRAND.manifest.startUrl
+
+const createManifestDataUrl = (config: BrowserShellConfig): string => {
   const manifest = {
     name: TINYTINKERER_BRAND.manifest.name,
     short_name: TINYTINKERER_BRAND.manifest.shortName,
     ...(TINYTINKERER_BRAND.manifest.description
       ? { description: TINYTINKERER_BRAND.manifest.description }
       : {}),
-    start_url: TINYTINKERER_BRAND.manifest.startUrl,
+    start_url: resolveManifestStartUrl(config),
     display: TINYTINKERER_BRAND.manifest.display,
     background_color: TINYTINKERER_BRAND.manifest.backgroundColor,
     theme_color: TINYTINKERER_BRAND.manifest.themeColor,
@@ -44,7 +48,7 @@ const createManifestDataUrl = (): string => {
 const hasExternalManifestLink = (): boolean =>
   Boolean(document.head.querySelector(`link[rel="manifest"]:not([${MANAGED_ATTR}])`))
 
-const managedLinks = (): ManagedLink[] => {
+const managedLinks = (config: BrowserShellConfig): ManagedLink[] => {
   const links: ManagedLink[] = TINYTINKERER_BRAND.links.map((link, index) => ({
     key: `link:${index}`,
     rel: link.rel,
@@ -58,7 +62,7 @@ const managedLinks = (): ManagedLink[] => {
     links.push({
       key: 'manifest',
       rel: 'manifest',
-      href: createManifestDataUrl(),
+      href: createManifestDataUrl(config),
       type: 'application/manifest+json'
     })
   }
@@ -135,14 +139,14 @@ const removeStaleManagedElements = (activeKeys: Set<string>): void => {
   }
 }
 
-export const applyBrandMetadata = (): void => {
+export const applyBrandMetadata = (config: BrowserShellConfig = {}): void => {
   if (typeof document === 'undefined' || !document.head) {
     return
   }
 
   const activeKeys = new Set<string>()
 
-  for (const link of managedLinks()) {
+  for (const link of managedLinks(config)) {
     activeKeys.add(link.key)
     upsertLink(document.head, link)
   }

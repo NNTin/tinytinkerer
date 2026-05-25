@@ -19,7 +19,7 @@ flowchart LR
   host --> mobile
 ```
 
-`@tinytinkerer/host` is the composition layer for local development and deployment output. It serves the three frontend shells together, but it is not a fourth UI shell and must not become the home for shared feature logic.
+`@tinytinkerer/host` is the composition layer for local development and deployment output. It serves the three frontend shells together and may own a thin compositor page at `/`, but it is not a fourth product shell and must not become the home for shared feature logic.
 
 ## Purpose
 

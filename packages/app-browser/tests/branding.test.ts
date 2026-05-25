@@ -96,7 +96,7 @@ describe('brand metadata', () => {
   })
 
   it('applies shared icon, manifest, and theme metadata during app creation', async () => {
-    await createBrowserApp({})
+    await createBrowserApp({ manifestStartUrl: '/web/' })
 
     expect(document.head.querySelectorAll('link[rel="icon"]').length).toBe(4)
     expect(document.head.querySelector('link[rel="icon"][type="image/x-icon"]')?.getAttribute('href')).toBe(
@@ -115,7 +115,8 @@ describe('brand metadata', () => {
     expect(JSON.parse(decodeDataUrlPayload(manifestHref ?? ''))).toMatchObject({
       name: 'tinytinkerer',
       short_name: 'tinytinkerer',
-      display: 'standalone'
+      display: 'standalone',
+      start_url: '/web/'
     })
   })
 

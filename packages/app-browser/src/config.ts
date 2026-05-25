@@ -6,6 +6,7 @@ export type BrowserShellConfig = {
   authMode?: BrowserAuthMode
   githubClientId?: string
   githubRedirectUri?: string
+  manifestStartUrl?: string
   hostToken?: string | null
 }
 
@@ -15,6 +16,7 @@ export type ResolvedBrowserShellConfig = {
   authMode: BrowserAuthMode
   githubClientId?: string
   githubRedirectUri?: string
+  manifestStartUrl?: string
   hostToken: string | null
 }
 
@@ -41,6 +43,10 @@ export const resolveBrowserShellConfig = (
 
   if (config.githubRedirectUri !== undefined) {
     resolved.githubRedirectUri = config.githubRedirectUri
+  }
+
+  if (config.manifestStartUrl !== undefined) {
+    resolved.manifestStartUrl = config.manifestStartUrl
   }
 
   return resolved

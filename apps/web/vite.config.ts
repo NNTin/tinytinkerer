@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 const deployBase = process.env.TINYTINKERER_DEPLOY_BASE?.replace(/\/+$/, '')
-const base = deployBase ? `${deployBase}/` : '/'
+const base = deployBase ? `${deployBase}/web/` : '/web/'
 
 export default defineConfig({
   base,

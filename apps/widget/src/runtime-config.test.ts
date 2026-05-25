@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { resolveWidgetGitHubRedirectUri } from './runtime-config'
+import {
+  resolveWidgetGitHubRedirectUri,
+  resolveWidgetViewMode,
+  resolveWidgetWindowMode
+} from './runtime-config'
 
 describe('widget runtime config', () => {
   it('derives the oauth callback from the current origin when no override is provided', () => {
@@ -31,5 +35,15 @@ describe('widget runtime config', () => {
     expect(
       resolveWidgetGitHubRedirectUri({}, undefined, '/widget/', 'https://example.com')
     ).toBeUndefined()
+  })
+
+  it('detects host rendering mode from the query string', () => {
+    expect(resolveWidgetViewMode('?view=host')).toBe('host')
+    expect(resolveWidgetViewMode('')).toBe('standalone')
+  })
+
+  it('detects the minimized widget mode from the query string', () => {
+    expect(resolveWidgetWindowMode('?mode=minimized')).toBe('minimized')
+    expect(resolveWidgetWindowMode('?view=host')).toBe('expanded')
   })
 })

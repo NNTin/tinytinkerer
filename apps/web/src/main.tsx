@@ -17,6 +17,7 @@ const browserConfig: BrowserShellConfig = {
   edgeBaseUrl: import.meta.env.VITE_EDGE_URL ?? '',
   storageNamespace: 'tinytinkerer',
   authMode: 'hybrid',
+  manifestStartUrl: import.meta.env.BASE_URL,
   ...(githubClientId ? { githubClientId } : {}),
   ...(githubClientId ? { githubRedirectUri } : {})
 }

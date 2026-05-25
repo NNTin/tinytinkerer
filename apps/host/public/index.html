@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>tinytinkerer host</title>
+    <link rel="stylesheet" href="./__host/compositor.css" />
+  </head>
+  <body>
+    <div class="host-shell">
+      <header class="host-toolbar">
+        <div>
+          <p class="host-eyebrow">Unified Frontend Host</p>
+          <h1 class="host-title">tinytinkerer shells</h1>
+        </div>
+        <div class="host-actions">
+          <a data-standalone-link="web" href="./web/" target="_blank" rel="noreferrer">Open web</a>
+          <a data-standalone-link="mobile" href="./mobile/" target="_blank" rel="noreferrer">Open mobile</a>
+          <a data-standalone-link="widget" href="./widget/" target="_blank" rel="noreferrer">Open widget</a>
+          <button id="reset-widget-layout" type="button">Reset widget layout</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="surface surface-web">
+          <div class="surface-header">
+            <div>
+              <p class="surface-label">Web</p>
+              <p class="surface-note">Full browser shell</p>
+            </div>
+          </div>
+          <div class="surface-frame">
+            <iframe
+              id="web-frame"
+              src="./web/"
+              title="tinytinkerer web shell"
+              loading="eager"
+              referrerpolicy="strict-origin-when-cross-origin"
+            ></iframe>
+          </div>
+        </section>
+
+        <section class="surface surface-mobile">
+          <div class="surface-header">
+            <div>
+              <p class="surface-label">Mobile</p>
+              <p class="surface-note">Installable narrow-screen shell</p>
+            </div>
+          </div>
+          <div class="mobile-stage">
+            <div class="mobile-device-frame">
+              <div class="mobile-device-notch" aria-hidden="true"></div>
+              <div class="mobile-screen">
+                <iframe
+                  id="mobile-frame"
+                  src="./mobile/"
+                  title="tinytinkerer mobile shell"
+                  loading="eager"
+                  referrerpolicy="strict-origin-when-cross-origin"
+                ></iframe>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <div id="widget-window" class="widget-window" data-minimized="false">
+        <button
+          id="widget-grip"
+          class="widget-grip"
+          type="button"
+          aria-label="Move widget window"
+          title="Move widget window"
+        ></button>
+        <div class="widget-frame">
+          <iframe
+            id="widget-frame"
+            class="widget-iframe"
+            src="./widget/?view=host"
+            title="tinytinkerer widget shell"
+            loading="eager"
+            referrerpolicy="strict-origin-when-cross-origin"
+          ></iframe>
+        </div>
+        <button
+          id="widget-resize-handle"
+          class="widget-resize-handle"
+          type="button"
+          aria-label="Resize widget window"
+          title="Resize widget window"
+        ></button>
+      </div>
+    </div>
+
+    <script type="module" src="./__host/compositor.js"></script>
+  </body>
+</html>

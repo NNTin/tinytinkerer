@@ -62,7 +62,7 @@ describe('host server', () => {
     activeClosers.add(() => sharedHostServer?.close() ?? Promise.resolve())
   })
 
-  it('serves the web app from the root path', async () => {
+  it('serves the composite host page from the root path', async () => {
     if (!sharedHostServer) {
       throw new Error('Expected the shared host server to be available.')
     }
@@ -71,22 +71,41 @@ describe('host server', () => {
     const body = await response.text()
 
     expect(response.status).toBe(200)
-    expect(body).toContain('<title>web</title>')
-    expect(body).toContain('src="/src/main.tsx"')
+    expect(body).toContain('<title>tinytinkerer host</title>')
+    expect(body).toContain('src="./web/"')
+    expect(body).toContain('src="./mobile/"')
+    expect(body).toContain('src="./widget/?view=host"')
   })
 
-  it('redirects non-suffixed widget and mobile paths', async () => {
+  it('redirects non-suffixed web, widget, and mobile paths', async () => {
     if (!sharedHostServer) {
       throw new Error('Expected the shared host server to be available.')
     }
 
+    const webResponse = await fetch(`${sharedHostServer.url}/web`, { redirect: 'manual' })
     const widgetResponse = await fetch(`${sharedHostServer.url}/widget`, { redirect: 'manual' })
     const mobileResponse = await fetch(`${sharedHostServer.url}/mobile`, { redirect: 'manual' })
 
+    expect(webResponse.status).toBe(301)
+    expect(webResponse.headers.get('location')).toBe('/web/')
     expect(widgetResponse.status).toBe(301)
     expect(widgetResponse.headers.get('location')).toBe('/widget/')
     expect(mobileResponse.status).toBe(301)
     expect(mobileResponse.headers.get('location')).toBe('/mobile/')
+  })
+
+  it('serves the web app from /web/ with the web base path intact', async () => {
+    if (!sharedHostServer) {
+      throw new Error('Expected the shared host server to be available.')
+    }
+
+    const response = await fetch(`${sharedHostServer.url}/web/`)
+    const body = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('<title>web</title>')
+    expect(body).toContain('src="/web/@vite/client"')
+    expect(body).toContain('src="/web/src/main.tsx"')
   })
 
   it('serves mounted widget assets with the widget base path intact', async () => {

@@ -181,7 +181,7 @@ The current intended flow is:
 - Assistant output remains a raw markdown string at the transport boundary in this phase.
 - `app-browser` parses and renders assistant output through the content platform and exposes a narrow shell-facing `AssistantContent` component.
 - Apps still decide where assistant content appears, how it is spaced, and what shell-local affordances surround it.
-- `apps/host` remains composition infrastructure, not a browser shell.
+- `apps/host` remains composition infrastructure. It may own a thin host/compositor page at `/`, but it must not absorb shared browser-shell runtime or feature logic.
 
 ## Content Platform
 

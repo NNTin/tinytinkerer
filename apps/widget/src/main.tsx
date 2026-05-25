@@ -26,6 +26,7 @@ const widgetConfigBase: BrowserShellConfig = {
   edgeBaseUrl: hostConfig.edgeBaseUrl ?? getEnvValue('VITE_EDGE_URL') ?? '',
   storageNamespace: hostConfig.storageNamespace ?? 'tinytinkerer',
   authMode: hostConfig.authMode ?? 'hybrid',
+  manifestStartUrl: import.meta.env.BASE_URL,
   hostToken: hostConfig.hostToken ?? null
 }
 

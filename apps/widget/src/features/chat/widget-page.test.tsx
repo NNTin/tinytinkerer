@@ -79,6 +79,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  window.localStorage.clear()
+  window.history.replaceState({}, '', '/widget/')
   mockAuthState.token = null
   mockSettingsState.searchEnabled = true
   mockStatusState.status.search.state = 'degraded'
@@ -116,5 +118,33 @@ describe('WidgetPage', () => {
     })
 
     expect(mockChatState.sendPrompt).toHaveBeenCalledWith('Tell me something current')
+  })
+
+  it('collapses to a launcher and restores in standalone mode', () => {
+    render(<WidgetPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Minimize' }))
+
+    expect(screen.getByRole('button', { name: 'Restore widget' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Restore widget' }))
+
+    expect(screen.getByRole('button', { name: 'Minimize' })).toBeInTheDocument()
+  })
+
+  it('posts minimized state changes to the host when rendered in host mode', () => {
+    window.history.replaceState({}, '', '/widget/?view=host')
+    const postMessageSpy = vi.spyOn(window, 'postMessage')
+
+    render(<WidgetPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Minimize' }))
+
+    expect(postMessageSpy).toHaveBeenLastCalledWith(
+      {
+        type: 'tinytinkerer.widget.state',
+        mode: 'minimized'
+      },
+      window.location.origin
+    )
   })
 })
