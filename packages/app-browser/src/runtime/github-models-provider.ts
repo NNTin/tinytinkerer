@@ -68,6 +68,8 @@ const createEdgeError = async (response: Response, fallback: string): Promise<Er
 
 export class GitHubModelsProvider implements ModelProvider {
   private readonly quota = new RateLimitQuota()
+  // canSendPrompt gates the UI so only one synthesis runs at a time.
+  private synthesizing = false
 
   constructor(private readonly options: GitHubModelsProviderOptions) {}
 
@@ -88,21 +90,27 @@ export class GitHubModelsProvider implements ModelProvider {
   }
 
   async *synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<string> {
+    if (this.synthesizing) {
+      throw new Error('Assertion failed: synthesize called concurrently — canSendPrompt must gate this at the UI layer')
+    }
+    this.synthesizing = true
+
+    try {
+      yield* this.synthesizeInner(context, options)
+    } finally {
+      this.synthesizing = false
+    }
+  }
+
+  private async *synthesizeInner(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<string> {
     const token = this.options.getToken?.()
 
     if (token) {
       const estimatedTokens = estimateTokens(context)
       const throttle = this.quota.checkThrottle(estimatedTokens)
       if (throttle.shouldThrottle) {
-        if (throttle.waitMs > 1000) {
-          // Surface to UI: disable Send button and show countdown timer
-          const retryAt = new Date(Date.now() + throttle.waitMs).toISOString()
-          throw new RateLimitError(`Proactive rate limit (${throttle.reason})`, {
-            retryAfterMs: Math.ceil(throttle.waitMs),
-            retryAt,
-          })
-        }
-        // Sub-second soft delay: sleep silently without disrupting the UI
+        // Sleep inline for all throttle durations — keeps prevention inside the provider
+        // and avoids misusing the upstream recovery loop.
         await new Promise<void>((resolve) => setTimeout(resolve, throttle.waitMs))
       }
 
@@ -152,6 +160,9 @@ export class GitHubModelsProvider implements ModelProvider {
       if (!response.ok) {
         throw await createEdgeError(response, `Models request failed (${response.status})`)
       }
+
+      // 200 OK — server accepted the request; clear any heuristic backoff.
+      this.quota.clearHeuristicBackoff()
 
       if (response.body) {
         yield* parseSseStream(response.body, options?.signal)
