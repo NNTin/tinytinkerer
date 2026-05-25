@@ -76,6 +76,7 @@ const EXPOSED_HEADERS = [
   'x-ratelimit-reset-tokens',
   'x-ratelimit-renewalperiod-tokens',
   'x-ratelimit-abusepenalty-active',
+  'retry-after',
 ].join(', ')
 
 export const applyCorsHeaders = (

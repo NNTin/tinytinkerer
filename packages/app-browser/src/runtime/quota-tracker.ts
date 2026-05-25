@@ -64,9 +64,7 @@ export class RateLimitQuota {
       }
     }
 
-    if (abusePenalty !== null) {
-      this.abuseActive = abusePenalty.toLowerCase() === 'true'
-    }
+    this.abuseActive = abusePenalty !== null && abusePenalty.toLowerCase() === 'true'
 
     // Clear heuristic backoff on a successful response
     this.heuristicBackoffMs = 0
