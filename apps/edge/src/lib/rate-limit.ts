@@ -1,28 +1,8 @@
-import { rateLimitPayloadSchema, type RateLimitPayload } from '@tinytinkerer/contracts'
+import { parseRetryAfterMs, rateLimitPayloadSchema, type RateLimitPayload } from '@tinytinkerer/contracts'
+
+export { parseRetryAfterMs }
 
 const DEFAULT_RATE_LIMIT_RETRY_AFTER_MS = 60_000
-
-export const parseRetryAfterMs = (
-  value: string | null | undefined,
-  nowMs = Date.now()
-): number | undefined => {
-  const trimmed = value?.trim()
-  if (!trimmed) {
-    return undefined
-  }
-
-  const seconds = Number(trimmed)
-  if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.ceil(seconds * 1000)
-  }
-
-  const dateMs = Date.parse(trimmed)
-  if (!Number.isNaN(dateMs)) {
-    return Math.max(0, dateMs - nowMs)
-  }
-
-  return undefined
-}
 
 export const toRateLimitResponse = (
   rawText: string,
