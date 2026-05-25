@@ -17,9 +17,12 @@ export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<Wirefra
         <span className="h-2.5 w-2.5 rounded-full bg-stone-300" />
         <span className="ml-2 text-[11px] font-medium uppercase tracking-wide text-stone-500">Wireframe</span>
       </div>
-      <pre className="overflow-x-auto px-4 py-4 text-xs leading-6 text-stone-700">
-        <code>{node.code}</code>
-      </pre>
+      <iframe
+        srcDoc={node.code}
+        title="Wireframe preview"
+        sandbox="allow-same-origin allow-scripts"
+        className="h-64 w-full border-0 bg-white"
+      />
     </div>
   )
 }

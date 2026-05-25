@@ -95,7 +95,8 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<MermaidNo
           setSvg(sanitized)
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        console.error('[content-mermaid] render failed:', error)
         if (!cancelled) {
           setFailed(true)
         }
