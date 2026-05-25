@@ -11,9 +11,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tinytinkerer/mobile": "workspace:*",
-    "@tinytinkerer/web": "workspace:*",
-    "@tinytinkerer/widget": "workspace:*",
     "vite": "^8.0.12"
   }
 }
