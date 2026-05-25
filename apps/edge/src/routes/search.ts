@@ -41,6 +41,12 @@ const normalizeSearchResults = (results: TavilyResultItem[]): SearchResult[] =>
 
 export const registerSearchRoutes = (app: Hono<{ Bindings: Bindings }>) => {
   app.post('/api/search', zValidator('json', searchRequestSchema), async (c) => {
+    const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
+
+    if (!authorization) {
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
+    }
+
     const input = c.req.valid('json')
 
     if (!c.env.TAVILY_API_KEY) {

@@ -4,5 +4,7 @@ export type Bindings = {
   TAVILY_API_KEY?: string
   ALLOWED_ORIGIN?: string
   ALLOWED_ORIGINS?: string
+  /** Set to 'true' to allow all origins (dev only). When absent, no CORS header is sent. */
+  ALLOW_ALL_ORIGINS?: string
   GITHUB_MODELS_URL?: string
 }

@@ -10,9 +10,16 @@ const githubOAuthResponseSchema = z.object({
   error: z.string().optional()
 })
 
+const GITHUB_CODE_RE = /^[a-zA-Z0-9_-]{10,40}$/
+
 export const registerAuthRoutes = (app: Hono<{ Bindings: Bindings }>) => {
   app.post('/auth/github/exchange', zValidator('json', githubExchangeRequestSchema), async (c) => {
     const { code, redirectUri } = c.req.valid('json')
+
+    if (!GITHUB_CODE_RE.test(code)) {
+      return c.json(githubExchangeResponseSchema.parse({ error: 'Invalid OAuth code format' }), 400)
+    }
+
     if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_CLIENT_SECRET) {
       return c.json(githubExchangeResponseSchema.parse({ error: 'OAuth is not configured' }), 501)
     }
