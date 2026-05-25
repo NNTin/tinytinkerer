@@ -103,7 +103,8 @@ type PreviewCodeFrameProps = {
   showPreview?: boolean
   codeView?: ReactNode
   className?: string
-  containerProps?: Omit<ComponentPropsWithoutRef<'div'>, 'children' | 'className'>
+  containerProps?: Omit<ComponentPropsWithoutRef<'div'>, 'children' | 'className'> &
+    Partial<Record<`data-${string}`, string>>
 }
 
 export const PreviewCodeFrame = ({
@@ -152,7 +153,12 @@ export const PreviewCodeFrame = ({
       </div>
       {activeView === 'preview'
         ? preview
-        : (codeView ?? <CodeBlockFallback code={code} language={codeLanguage} />)}
+        : (codeView ?? (
+            <CodeBlockFallback
+              code={code}
+              {...(codeLanguage ? { language: codeLanguage } : {})}
+            />
+          ))}
     </div>
   )
 }

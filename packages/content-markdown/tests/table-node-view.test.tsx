@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { TableNode } from '@tinytinkerer/content-core'
 import { TableNodeView, tableToMarkdown } from '../src/index.js'
 
 afterEach(() => {
@@ -9,8 +10,8 @@ afterEach(() => {
 })
 
 describe('TableNodeView', () => {
-  const node = {
-    type: 'table' as const,
+  const node: TableNode = {
+    type: 'table',
     align: ['left', 'right', 'center'],
     header: ['Name', 'Role', 'Score'],
     rows: [['Ada', 'Admin', '3']]
