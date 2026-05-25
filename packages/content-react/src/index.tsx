@@ -1,6 +1,7 @@
 import {
   Component,
   Fragment,
+  useState,
   type ComponentType,
   type ReactNode
 } from 'react'
@@ -56,30 +57,64 @@ const MarkdownNodeView = ({ node }: ContentNodeRendererProps<MarkdownNode>) => (
   <ReactMarkdown remarkPlugins={[remarkGfm]}>{node.markdown}</ReactMarkdown>
 )
 
-const TableNodeView = ({ node }: ContentNodeRendererProps<TableNode>) => (
-  <table>
-    <thead>
-      <tr>
-        {node.header.map((cell, index) => (
-          <th key={`${index}-${cell}`} align={node.align[index] ?? undefined}>
-            {cell}
-          </th>
-        ))}
-      </tr>
-    </thead>
-    <tbody>
-      {node.rows.map((row, rowIndex) => (
-        <tr key={`${rowIndex}-${row.join('|')}`}>
-          {row.map((cell, cellIndex) => (
-            <td key={`${rowIndex}-${cellIndex}-${cell}`} align={node.align[cellIndex] ?? undefined}>
-              {cell}
-            </td>
+const alignToMarkdown = (align: 'left' | 'right' | 'center' | null): string => {
+  if (align === 'left') return ':---'
+  if (align === 'right') return '---:'
+  if (align === 'center') return ':---:'
+  return '---'
+}
+
+const tableToMarkdown = (node: TableNode): string => {
+  const header = `| ${node.header.join(' | ')} |`
+  const separator = `| ${node.align.map(alignToMarkdown).join(' | ')} |`
+  const rows = node.rows.map((row) => `| ${row.join(' | ')} |`)
+  return [header, separator, ...rows].join('\n')
+}
+
+const TableNodeView = ({ node }: ContentNodeRendererProps<TableNode>) => {
+  const [copied, setCopied] = useState(false)
+
+  const copy = () => {
+    void navigator.clipboard.writeText(tableToMarkdown(node)).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <div className="relative overflow-x-auto">
+      <button
+        type="button"
+        onClick={copy}
+        className="absolute top-1 right-1 text-[11px] font-medium text-stone-400 hover:text-stone-600 transition-colors px-1.5 py-0.5 rounded hover:bg-stone-100"
+      >
+        {copied ? 'Copied!' : 'Copy'}
+      </button>
+      <table>
+        <thead>
+          <tr>
+            {node.header.map((cell, index) => (
+              <th key={`${index}-${cell}`} align={node.align[index] ?? undefined}>
+                {cell}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {node.rows.map((row, rowIndex) => (
+            <tr key={`${rowIndex}-${row.join('|')}`}>
+              {row.map((cell, cellIndex) => (
+                <td key={`${rowIndex}-${cellIndex}-${cell}`} align={node.align[cellIndex] ?? undefined}>
+                  {cell}
+                </td>
+              ))}
+            </tr>
           ))}
-        </tr>
-      ))}
-    </tbody>
-  </table>
-)
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 const ImageNodeView = ({ node }: ContentNodeRendererProps<ImageNode>) => (
   <img src={node.url} alt={node.alt} title={node.title} />

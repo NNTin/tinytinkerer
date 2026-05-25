@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WireframeNodeRenderer } from '../src/index.js'
 
 const HELLO_WORLD_HTML = `<!DOCTYPE html>
@@ -46,7 +46,7 @@ describe('WireframeNodeRenderer', () => {
     expect(container.querySelector('[data-tt-wireframe]')).not.toBeNull()
   })
 
-  it('renders HTML content in a sandboxed iframe', () => {
+  it('renders HTML content in a sandboxed iframe by default', () => {
     const { container } = render(
       <WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />
     )
@@ -66,6 +66,48 @@ describe('WireframeNodeRenderer', () => {
     expect(container.querySelector('h1')).toBeNull()
   })
 
+  it('shows Preview and Code toggle buttons', () => {
+    render(<WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />)
+
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Code' })).toBeInTheDocument()
+  })
+
+  it('switches to code view and shows HTML source when Code is clicked', () => {
+    const { container } = render(
+      <WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Code' }))
+
+    expect(container.querySelector('iframe')).toBeNull()
+    expect(container.querySelector('code')?.textContent).toBe(HELLO_WORLD_HTML)
+  })
+
+  it('switches back to preview when Preview is clicked after Code', () => {
+    const { container } = render(
+      <WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Code' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+
+    expect(container.querySelector('iframe')).not.toBeNull()
+    expect(container.querySelector('code')).toBeNull()
+  })
+
+  it('shows a Copy button that reports Copied! after clicking', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    render(<WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+
+    expect(writeText).toHaveBeenCalledWith(HELLO_WORLD_HTML)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copied!' })).toBeInTheDocument())
+  })
+
   it('falls back to a code block for empty wireframes', () => {
     const { container } = render(
       <WireframeNodeRenderer node={{ type: 'wireframe', code: '   ' }} />
@@ -73,5 +115,6 @@ describe('WireframeNodeRenderer', () => {
 
     expect(container.querySelector('code')?.textContent).toBe('   ')
     expect(container.querySelector('iframe')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Preview' })).toBeNull()
   })
 })

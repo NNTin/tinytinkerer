@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockInitialize = vi.hoisted(() => vi.fn())
@@ -90,5 +90,64 @@ describe('MermaidNodeRenderer', () => {
     })
 
     consoleSpy.mockRestore()
+  })
+
+  it('always shows the chrome wrapper and Mermaid label', () => {
+    mockRender.mockResolvedValue({ svg: '<svg />' })
+
+    render(<MermaidNodeRenderer node={{ type: 'mermaid', code: 'graph TD\nA-->B' }} />)
+
+    expect(screen.getByText('Mermaid')).toBeInTheDocument()
+  })
+
+  it('shows Preview and Code buttons when render succeeds', async () => {
+    mockRender.mockResolvedValue({ svg: '<svg><text>Diagram</text></svg>' })
+
+    render(<MermaidNodeRenderer node={{ type: 'mermaid', code: 'graph TD\nA-->B' }} />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: 'Code' })).toBeInTheDocument()
+  })
+
+  it('hides the Preview button when rendering fails', async () => {
+    mockRender.mockRejectedValue(new Error('render failed'))
+
+    render(<MermaidNodeRenderer node={{ type: 'mermaid', code: 'bad syntax' }} />)
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Preview' })).toBeNull()
+    })
+    expect(screen.getByRole('button', { name: 'Code' })).toBeInTheDocument()
+  })
+
+  it('switches to code view when Code is clicked', async () => {
+    mockRender.mockResolvedValue({ svg: '<svg><text>Diagram</text></svg>' })
+
+    const { container } = render(
+      <MermaidNodeRenderer node={{ type: 'mermaid', code: 'graph TD\nA-->B' }} />
+    )
+
+    await waitFor(() => expect(container.querySelector('svg')).not.toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Code' }))
+
+    expect(container.querySelector('svg')).toBeNull()
+    expect(container.querySelector('code')?.textContent).toBe('graph TD\nA-->B')
+  })
+
+  it('shows a Copy button that writes the mermaid source to the clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    mockRender.mockResolvedValue({ svg: '<svg />' })
+
+    render(<MermaidNodeRenderer node={{ type: 'mermaid', code: 'graph TD\nA-->B' }} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+
+    expect(writeText).toHaveBeenCalledWith('graph TD\nA-->B')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copied!' })).toBeInTheDocument())
   })
 })
