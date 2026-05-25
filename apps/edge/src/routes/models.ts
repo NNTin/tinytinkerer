@@ -86,6 +86,10 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
         const retryAfter = response.headers.get('retry-after')
         const rateLimitBody = toRateLimitResponse(rawText, retryAfter)
         c.header('Retry-After', retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000)))
+        for (const header of RATE_LIMIT_HEADERS) {
+          const value = response.headers.get(header)
+          if (value !== null) c.header(header, value)
+        }
         return c.json(rateLimitBody, 429)
       }
 

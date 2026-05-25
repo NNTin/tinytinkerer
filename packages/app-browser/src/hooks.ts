@@ -19,8 +19,14 @@ export const useChatCooldown = (): { cooldownRemainingMs: number; isCoolingDown:
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
-    if (!cooldownUntil) return undefined
-    const interval = window.setInterval(() => setNow(Date.now()), 1000)
+    if (!cooldownUntil || Date.parse(cooldownUntil) <= Date.now()) return undefined
+    const interval = window.setInterval(() => {
+      const currentNow = Date.now()
+      setNow(currentNow)
+      if (Date.parse(cooldownUntil) <= currentNow) {
+        window.clearInterval(interval)
+      }
+    }, 1000)
     return () => window.clearInterval(interval)
   }, [cooldownUntil])
 

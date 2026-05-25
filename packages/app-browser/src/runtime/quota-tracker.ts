@@ -118,7 +118,7 @@ export class RateLimitQuota {
       }
     }
 
-    return { shouldThrottle: false, waitMs: 0, reason: 'none' }
+    return this.checkHeuristic(nowMs)
   }
 
   private checkHeuristic(nowMs: number): ThrottleResult {
