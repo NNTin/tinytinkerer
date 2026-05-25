@@ -1,8 +1,10 @@
 import {
   AssistantContent,
   buildTurns,
+  formatCooldown,
   startStatusPolling,
   useAuthStore,
+  useChatCooldown,
   useChatStore,
   useGitHubModels,
   useGitHubOAuth,
@@ -24,7 +26,9 @@ export const WidgetPage = () => {
   const events = useChatStore((state) => state.events)
   const streamingText = useChatStore((state) => state.streamingText)
   const isRunning = useChatStore((state) => state.isRunning)
+  const isRetryPending = useChatStore((state) => state.isRetryPending)
   const sendPrompt = useChatStore((state) => state.sendPrompt)
+  const cancelRetry = useChatStore((state) => state.cancelRetry)
   const resetConversation = useChatStore((state) => state.resetConversation)
 
   const token = useAuthStore((state) => state.token)
@@ -58,9 +62,12 @@ export const WidgetPage = () => {
   const effectiveStatus = status ?? fallbackStatus
   const searchUnavailable = effectiveStatus.search.state !== 'ready'
 
+  const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
+  const submitLabel = isCoolingDown ? formatCooldown(cooldownRemainingMs) : isRunning ? 'Thinking...' : 'Send'
+
   const handleSubmit = async () => {
     const trimmed = prompt.trim()
-    if (!trimmed || isRunning) {
+    if (!trimmed || isRunning || isCoolingDown) {
       return
     }
 
@@ -226,7 +233,7 @@ export const WidgetPage = () => {
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
-                void handleSubmit()
+                if (!isCoolingDown) void handleSubmit()
               }
             }}
             placeholder="Ask something current, compare options, or continue the thread."
@@ -240,9 +247,16 @@ export const WidgetPage = () => {
             >
               Clear conversation
             </button>
-            <Button onClick={() => void handleSubmit()} disabled={isRunning}>
-              {isRunning ? 'Thinking...' : 'Send'}
-            </Button>
+            <div className="flex items-center gap-2">
+              {isRetryPending && isCoolingDown ? (
+                <Button size="sm" variant="secondary" onClick={cancelRetry}>
+                  Cancel retry
+                </Button>
+              ) : null}
+              <Button onClick={() => void handleSubmit()} disabled={isRunning || isCoolingDown}>
+                {submitLabel}
+              </Button>
+            </div>
           </div>
         </div>
       </div>

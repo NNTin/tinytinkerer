@@ -49,8 +49,10 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     <div className={className}>{content}</div>
   ),
   buildTurns: () => mockChatState.events,
+  formatCooldown: (ms: number) => `${Math.ceil(ms / 1000)}s`,
   startStatusPolling: vi.fn(() => () => undefined),
   SUPPORTED_MODELS: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
+  useChatCooldown: () => ({ cooldownRemainingMs: 0, isCoolingDown: false }),
   useGitHubOAuth: () => ({
     canStartGitHubOAuth: true,
     startGitHubOAuth: vi.fn(),

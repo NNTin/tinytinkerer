@@ -14,6 +14,17 @@ import {
 } from '@tinytinkerer/contracts'
 import { SYSTEM_STYLE_PROMPT } from './system-prompt'
 import { getRetryAfterMs } from './rate-limit'
+import { RateLimitQuota } from './quota-tracker'
+
+const estimateTokens = (context: ExecutionContext): number => {
+  const allText = [
+    SYSTEM_STYLE_PROMPT,
+    ...context.history.map((m) => m.content),
+    context.prompt,
+    ...context.notes,
+  ].join('')
+  return Math.ceil(allText.length / 4)
+}
 
 type GitHubModelsProviderOptions = {
   baseUrl: string
@@ -56,6 +67,8 @@ const createEdgeError = async (response: Response, fallback: string): Promise<Er
 }
 
 export class GitHubModelsProvider implements ModelProvider {
+  private readonly quota = new RateLimitQuota()
+
   constructor(private readonly options: GitHubModelsProviderOptions) {}
 
   plan(prompt: string, options?: ProviderCallOptions): Promise<ExecutionPlan> {
@@ -78,6 +91,21 @@ export class GitHubModelsProvider implements ModelProvider {
     const token = this.options.getToken?.()
 
     if (token) {
+      const estimatedTokens = estimateTokens(context)
+      const throttle = this.quota.checkThrottle(estimatedTokens)
+      if (throttle.shouldThrottle) {
+        if (throttle.waitMs > 1000) {
+          // Surface to UI: disable Send button and show countdown timer
+          const retryAt = new Date(Date.now() + throttle.waitMs).toISOString()
+          throw new RateLimitError(`Proactive rate limit (${throttle.reason})`, {
+            retryAfterMs: Math.ceil(throttle.waitMs),
+            retryAt,
+          })
+        }
+        // Sub-second soft delay: sleep silently without disrupting the UI
+        await new Promise<void>((resolve) => setTimeout(resolve, throttle.waitMs))
+      }
+
       const toolSection = Object.entries(context.toolResults)
         .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
         .join('\n')
@@ -113,8 +141,12 @@ export class GitHubModelsProvider implements ModelProvider {
 
       const response = await fetch(`${this.options.baseUrl}/api/models/chat`, requestInit)
 
+      this.quota.updateFromHeaders(response.headers)
+
       if (response.status === 429) {
-        throw await createRateLimitError(response)
+        const err = await createRateLimitError(response)
+        this.quota.recordRateLimit(err.retryAfterMs)
+        throw err
       }
 
       if (!response.ok) {

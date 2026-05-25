@@ -2,8 +2,10 @@ import {
   AssistantContent,
   buildCurrentTimeline,
   buildTurns,
+  formatCooldown,
   startStatusPolling,
   useAuthStore,
+  useChatCooldown,
   useChatStore,
   useSettingsStore,
   useStatusStore
@@ -20,18 +22,6 @@ const GitHubMark = () => (
   </svg>
 )
 
-const formatCooldown = (remainingMs: number): string => {
-  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000))
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-  }
-
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
-}
 
 const ThinkingDots = () => (
   <span aria-label="Thinking" className="inline-flex items-end gap-0.5 pb-0.5">
@@ -54,7 +44,6 @@ export const ChatPage = () => {
   const streamingText = useChatStore((state) => state.streamingText)
   const isRunning = useChatStore((state) => state.isRunning)
   const isRetryPending = useChatStore((state) => state.isRetryPending)
-  const cooldownUntil = useChatStore((state) => state.cooldownUntil)
   const sendPrompt = useChatStore((state) => state.sendPrompt)
   const resetConversation = useChatStore((state) => state.resetConversation)
   const cancelRetry = useChatStore((state) => state.cancelRetry)
@@ -67,7 +56,6 @@ export const ChatPage = () => {
 
   const [prompt, setPrompt] = useState('')
   const [openTimeline, setOpenTimeline] = useState(true)
-  const [now, setNow] = useState(() => Date.now())
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -76,15 +64,6 @@ export const ChatPage = () => {
   useEffect(() => {
     return startStatusPolling(refreshStatus)
   }, [refreshStatus])
-
-  useEffect(() => {
-    if (!cooldownUntil) {
-      return undefined
-    }
-
-    const interval = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(interval)
-  }, [cooldownUntil])
 
   // Auto-grow textarea
   useEffect(() => {
@@ -107,8 +86,7 @@ export const ChatPage = () => {
     [events]
   )
 
-  const cooldownRemainingMs = cooldownUntil ? Math.max(0, Date.parse(cooldownUntil) - now) : 0
-  const isCoolingDown = cooldownRemainingMs > 0
+  const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
   const submitLabel = isCoolingDown
     ? formatCooldown(cooldownRemainingMs)
     : isRunning
