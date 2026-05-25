@@ -31,6 +31,12 @@ const flushMarkdown = (children: Content[], nodes: ContentNode[]) => {
   children.length = 0
 }
 
+const sanitizeImageUrl = (url: string): string => {
+  if (/^https?:/i.test(url)) return url
+  if (/^data:image\//i.test(url)) return url
+  return ''
+}
+
 const asStandaloneImage = (node: Content): ImageNode | null => {
   if (node.type !== 'paragraph') {
     return null
@@ -47,7 +53,7 @@ const asStandaloneImage = (node: Content): ImageNode | null => {
 
   return {
     type: 'image',
-    url: onlyChild.url,
+    url: sanitizeImageUrl(onlyChild.url),
     alt: onlyChild.alt ?? '',
     ...(onlyChild.title ? { title: onlyChild.title } : {})
   }

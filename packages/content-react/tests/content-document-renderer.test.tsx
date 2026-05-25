@@ -74,4 +74,16 @@ describe('ContentDocumentRenderer', () => {
 
     expect(screen.getByText('[Button]')).toBeInTheDocument()
   })
+
+  it('renders choicePrompt nodes without crashing when no renderer is registered', () => {
+    const { container } = render(
+      <ContentDocumentRenderer
+        document={{
+          nodes: [{ type: 'choicePrompt', prompt: 'Pick one', choices: ['A', 'B'] }]
+        }}
+      />
+    )
+
+    expect(container.querySelector('pre')).toBeInTheDocument()
+  })
 })

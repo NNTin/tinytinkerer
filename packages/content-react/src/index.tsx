@@ -8,7 +8,6 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   type CodeBlockNode,
-  type ChoicePromptNode,
   type ContentDocument,
   type ContentNode,
   type ContentNodeByType,
@@ -86,23 +85,11 @@ const ImageNodeView = ({ node }: ContentNodeRendererProps<ImageNode>) => (
   <img src={node.url} alt={node.alt} title={node.title} />
 )
 
-const ChoicePromptNodeView = ({ node }: ContentNodeRendererProps<ChoicePromptNode>) => (
-  <div>
-    <p>{node.prompt}</p>
-    <ul>
-      {node.choices.map((choice) => (
-        <li key={choice}>{choice}</li>
-      ))}
-    </ul>
-  </div>
-)
-
 export const defaultContentRenderers = {
   markdown: MarkdownNodeView,
   codeBlock: CodeBlockNodeView,
   table: TableNodeView,
-  image: ImageNodeView,
-  choicePrompt: ChoicePromptNodeView
+  image: ImageNodeView
 } satisfies ReactContentRendererRegistry
 
 export const createContentRendererRegistry = (
@@ -123,10 +110,6 @@ export const CodeBlockFallback = ({
 const genericNodeFallback = (node: ContentNode): ReactNode => {
   if (node.type === 'mermaid' || node.type === 'wireframe') {
     return <CodeBlockFallback code={node.code} language={node.type} />
-  }
-
-  if (node.type === 'choicePrompt') {
-    return <ChoicePromptNodeView node={node} />
   }
 
   return <CodeBlockFallback code={JSON.stringify(node, null, 2)} language="json" />
@@ -165,6 +148,25 @@ const renderNode = (node: ContentNode, renderers: ReactContentRendererRegistry):
   )
 }
 
+// djb2 hash for stable node keys — avoids type+index churn during streaming updates
+const djb2 = (str: string): number => {
+  let hash = 5381
+  for (let i = 0; i < str.length; i++) {
+    hash = (((hash << 5) + hash) ^ str.charCodeAt(i)) >>> 0
+  }
+  return hash
+}
+
+const nodeKey = (node: ContentNode, index: number): string => {
+  const primary =
+    'markdown' in node ? node.markdown
+    : 'code' in node ? node.code
+    : 'url' in node ? node.url
+    : 'prompt' in node ? node.prompt
+    : JSON.stringify(node)
+  return `${node.type}-${djb2(primary)}-${index}`
+}
+
 export const ContentDocumentRenderer = ({
   document,
   className,
@@ -181,7 +183,7 @@ export const ContentDocumentRenderer = ({
     )}
   >
     {document.nodes.map((node, index) => (
-      <Fragment key={`${node.type}-${index}`}>{renderNode(node, renderers)}</Fragment>
+      <Fragment key={nodeKey(node, index)}>{renderNode(node, renderers)}</Fragment>
     ))}
   </div>
 )

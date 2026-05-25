@@ -6,10 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mockInitialize = vi.hoisted(() => vi.fn())
 const mockRender = vi.hoisted(() => vi.fn())
 
-import { MermaidNodeRenderer } from '../src/index.js'
+import { MermaidNodeRenderer, resetMermaidState } from '../src/index.js'
 
 afterEach(() => {
   cleanup()
+  resetMermaidState()
   delete window.mermaid
 })
 
