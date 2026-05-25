@@ -19,28 +19,32 @@ describe('edge routes', () => {
         body: JSON.stringify({ query: 'latest ai news' })
       }),
       {}
-	    )
-	
-	    expect(response.status).toBe(401)
-	    const body = edgeErrorResponseSchema.parse(await response.json())
-	    expect(body).toEqual({ error: 'Unauthorized' })
-	  })
+    )
+
+    expect(response.status).toBe(401)
+    const body = edgeErrorResponseSchema.parse(await response.json())
+    expect(body).toEqual({ error: 'Unauthorized' })
+  })
 
   it('returns a typed 503 error when search is unavailable', async () => {
     const response = await app.fetch(
       new Request('http://localhost/api/search', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: 'Bearer test-token' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer test-token'
+        },
         body: JSON.stringify({ query: 'latest ai news' })
       }),
       {}
-	    )
-	
-	    expect(response.status).toBe(503)
-	    const body = edgeErrorResponseSchema.parse(await response.json())
-	    expect(body).toEqual({
-	      error: 'Web search is currently unavailable. Configure Tavily to enable live search.'
-	    })
+    )
+
+    expect(response.status).toBe(503)
+    const body = edgeErrorResponseSchema.parse(await response.json())
+    expect(body).toEqual({
+      error:
+        'Web search is currently unavailable. Configure Tavily to enable live search.'
+    })
   })
 
   it('returns 429 with Retry-After header and rate-limit body when upstream is rate limited', async () => {
@@ -74,7 +78,7 @@ describe('edge routes', () => {
 
     expect(response.status).toBe(429)
     expect(response.headers.get('Retry-After')).toBe('120')
-    const body = await response.json() as Record<string, unknown>
+    const body = (await response.json()) as Record<string, unknown>
     rateLimitPayloadSchema.parse(body)
     expect(body['code']).toBe('rate_limited')
     expect(body['error']).toBe('GitHub Models rate limit reached')
@@ -108,13 +112,14 @@ describe('edge routes', () => {
         })
       }),
       {}
-	    )
-	
-	    expect(response.status).toBe(401)
-	    const body = edgeErrorResponseSchema.parse(await response.json())
-	    expect(body).toEqual({
-	      error: 'Authentication failed. Your GitHub token may be invalid or expired.'
-	    })
+    )
+
+    expect(response.status).toBe(401)
+    const body = edgeErrorResponseSchema.parse(await response.json())
+    expect(body).toEqual({
+      error:
+        'Authentication failed. Your GitHub token may be invalid or expired.'
+    })
   })
 
   it('echoes an allowlisted origin for standard responses and preflight', async () => {
@@ -127,21 +132,25 @@ describe('edge routes', () => {
         headers: { origin: 'http://localhost:3000' }
       }),
       env
-	    )
-	
-	    const preflightResponse = await app.fetch(
+    )
+
+    const preflightResponse = await app.fetch(
       new Request('http://localhost/health', {
         method: 'OPTIONS',
         headers: { origin: 'https://tiny.nntin.xyz' }
       }),
-	      env
-	    )
-	
-	    systemStatusSchema.parse(await response.json())
-	    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3000')
-	    expect(response.headers.get('Vary')).toBe('Origin')
-	    expect(preflightResponse.status).toBe(204)
-    expect(preflightResponse.headers.get('Access-Control-Allow-Origin')).toBe('https://tiny.nntin.xyz')
+      env
+    )
+
+    systemStatusSchema.parse(await response.json())
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
+      'http://localhost:3000'
+    )
+    expect(response.headers.get('Vary')).toBe('Origin')
+    expect(preflightResponse.status).toBe(204)
+    expect(preflightResponse.headers.get('Access-Control-Allow-Origin')).toBe(
+      'https://tiny.nntin.xyz'
+    )
   })
 
   it('echoes wildcard preview origins for Vercel preview domains', async () => {
@@ -163,7 +172,10 @@ describe('edge routes', () => {
       new Request('http://localhost/health', {
         headers: { origin: 'https://evil.example' }
       }),
-      { ALLOWED_ORIGINS: 'http://localhost:3000, https://*.tiny.preview.nntin.xyz' }
+      {
+        ALLOWED_ORIGINS:
+          'http://localhost:3000, https://*.tiny.preview.nntin.xyz'
+      }
     )
 
     expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
@@ -213,7 +225,9 @@ describe('edge routes', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3000')
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
+      'http://localhost:3000'
+    )
     expect(response.headers.get('Vary')).toBe('Origin')
     await expect(response.text()).resolves.toContain('data: {"id":"stream"}')
   })

@@ -27,7 +27,7 @@ export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<Wirefra
         <iframe
           srcDoc={node.code}
           title="Wireframe preview"
-          sandbox="allow-same-origin allow-scripts"
+          sandbox="allow-scripts"
           className="h-64 w-full border-0 bg-white"
         />
       }

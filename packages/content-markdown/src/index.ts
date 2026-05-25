@@ -69,6 +69,14 @@ const alignToMarkdown = (align: TableAlignment): string => {
   return '---'
 }
 
+const formatTableCell = (value: string): string =>
+  value
+    .replace(/\\/g, '\\\\')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n/g, '<br />')
+    .replace(/\|/g, '\\|')
+    .trim()
+
 const asTableNode = (node: Content): TableNode | null => {
   if (node.type !== 'table') {
     return null
@@ -112,9 +120,12 @@ const asSpecialCodeBlock = (node: Content): ContentNode | null => {
 }
 
 export const tableToMarkdown = (node: TableNode): string => {
-  const header = `| ${node.header.join(' | ')} |`
-  const separator = `| ${node.align.map(alignToMarkdown).join(' | ')} |`
-  const rows = node.rows.map((row) => `| ${row.join(' | ')} |`)
+  const width = node.header.length
+  const header = `| ${node.header.map(formatTableCell).join(' | ')} |`
+  const separator = `| ${Array.from({ length: width }, (_, index) => alignToMarkdown(node.align[index] ?? null)).join(' | ')} |`
+  const rows = node.rows.map((row) =>
+    `| ${Array.from({ length: width }, (_, index) => formatTableCell(row[index] ?? '')).join(' | ')} |`
+  )
   return [header, separator, ...rows].join('\n')
 }
 

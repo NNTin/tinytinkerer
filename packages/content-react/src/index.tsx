@@ -87,9 +87,14 @@ const useCopyButtonState = (value: string) => {
       return
     }
 
-    void navigator.clipboard.writeText(value).then(() => {
-      setCopied(true)
-    })
+    void navigator.clipboard
+      .writeText(value)
+      .then(() => {
+        setCopied(true)
+      })
+      .catch(() => {
+        setCopied(false)
+      })
   }
 
   return { copied, copy }
@@ -133,6 +138,7 @@ export const PreviewCodeFrame = ({
             <button
               type="button"
               onClick={() => setView('preview')}
+              aria-pressed={activeView === 'preview'}
               className={`${BUTTON_BASE} ${activeView === 'preview' ? BUTTON_ACTIVE : BUTTON_IDLE}`}
             >
               Preview
@@ -141,6 +147,7 @@ export const PreviewCodeFrame = ({
           <button
             type="button"
             onClick={() => setView('code')}
+            aria-pressed={activeView === 'code'}
             className={`${BUTTON_BASE} ${activeView === 'code' ? BUTTON_ACTIVE : BUTTON_IDLE}`}
           >
             Code
