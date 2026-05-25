@@ -4,6 +4,7 @@ import type { BrowserApp, BrowserShell, BrowserShellConfig } from '../src/index.
 import {
   canStartGitHubOAuth,
   completeGitHubOAuthCallback,
+  consumeGitHubOAuthReturnUrl,
   startGitHubOAuth
 } from '../src/index.js'
 
@@ -40,11 +41,43 @@ const stubLocationAssign = () => {
   return assignSpy
 }
 
+const resetWindowEmbedding = () => {
+  Object.defineProperty(window, 'parent', {
+    value: window,
+    configurable: true
+  })
+  Object.defineProperty(window, 'top', {
+    value: window,
+    configurable: true
+  })
+}
+
+const stubEmbeddedContext = (topHref = 'http://localhost:3111/') => {
+  const topAssignSpy = vi.fn<(url: string) => void>()
+
+  Object.defineProperty(window, 'parent', {
+    value: { location: { href: topHref } },
+    configurable: true
+  })
+  Object.defineProperty(window, 'top', {
+    value: {
+      location: {
+        href: topHref,
+        assign: topAssignSpy
+      }
+    },
+    configurable: true
+  })
+
+  return topAssignSpy
+}
+
 describe('auth helpers', () => {
   beforeEach(() => {
     sessionStorage.clear()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    resetWindowEmbedding()
     mockAuthStore.setToken.mockClear()
   })
 
@@ -63,6 +96,17 @@ describe('auth helpers', () => {
     expect(assignSpy).toHaveBeenCalledTimes(1)
     expect(sessionStorage.getItem('tinytinkerer-test:oauth_state')).toBeTruthy()
     expect(sessionStorage.getItem('oauth_state')).toBeNull()
+  })
+
+  it('escapes iframe oauth to the top-level tab and remembers the host return url', () => {
+    const app = createAuthApp()
+    const topAssignSpy = stubEmbeddedContext()
+
+    startGitHubOAuth(app.shell)
+
+    expect(topAssignSpy).toHaveBeenCalledTimes(1)
+    expect(sessionStorage.getItem('tinytinkerer-test:oauth_state')).toBeTruthy()
+    expect(sessionStorage.getItem('tinytinkerer-test:oauth_return_url')).toBe('http://localhost:3111/')
   })
 
   it('completes the callback and persists the exchanged token', async () => {
@@ -136,5 +180,13 @@ describe('auth helpers', () => {
   it('reports oauth as unavailable in host-token mode', () => {
     const app = createAuthApp({ authMode: 'host-token' })
     expect(canStartGitHubOAuth(app.shell)).toBe(false)
+  })
+
+  it('consumes the stored oauth return url once', () => {
+    const app = createAuthApp()
+    sessionStorage.setItem('tinytinkerer-test:oauth_return_url', 'http://localhost:3111/')
+
+    expect(consumeGitHubOAuthReturnUrl(app.shell)).toBe('http://localhost:3111/')
+    expect(consumeGitHubOAuthReturnUrl(app.shell)).toBeNull()
   })
 })

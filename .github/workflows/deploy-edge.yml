@@ -3,6 +3,13 @@ name: Deploy Edge
 on:
   push:
     branches: [main]
+    paths:
+      - 'apps/edge/**'
+      - 'packages/contracts/**'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
+      - 'turbo.json'
+      - '.github/workflows/deploy-edge.yml'
   workflow_dispatch:
 
 permissions:

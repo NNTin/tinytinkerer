@@ -11,7 +11,8 @@ pnpm install
 pnpm dev
 ```
 
-- Frontend host: `http://localhost:3000/` (web)
+- Frontend host: `http://localhost:3000/` (composite host page)
+  - Web: `http://localhost:3000/web/`
   - Widget: `http://localhost:3000/widget/`
   - Mobile: `http://localhost:3000/mobile/`
 - Edge API: `http://localhost:8787`

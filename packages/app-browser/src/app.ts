@@ -43,7 +43,7 @@ const requireBrowserApp = (app: BrowserApp | undefined): BrowserApp => {
 export const createBrowserApp = async (config: BrowserShellConfig): Promise<BrowserApp> => {
   const shell = createBrowserShell(config)
   const { applyBrandMetadata } = await import('./branding')
-  applyBrandMetadata()
+  applyBrandMetadata(config)
   const auth = createAuthStore(shell)
   const settings = createSettingsStore(shell)
   const status = createStatusStore(shell)

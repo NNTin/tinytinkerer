@@ -1,9 +1,10 @@
 // @ts-check
 
 import { createServer as createHttpServer } from 'node:http'
+import { readFile } from 'node:fs/promises'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, extname, join, relative, resolve } from 'node:path'
 import { createServer as createViteServer } from 'vite'
 
 /** @typedef {import('node:http').IncomingMessage} IncomingMessage */
@@ -39,8 +40,16 @@ const workspaceRoot = resolve(currentDir, '../../..')
 const createAppDefinitions = (rootDir) => [
   { mountPath: '/mobile/', root: join(rootDir, 'apps/mobile') },
   { mountPath: '/widget/', root: join(rootDir, 'apps/widget') },
-  { mountPath: '/', root: join(rootDir, 'apps/web') }
+  { mountPath: '/web/', root: join(rootDir, 'apps/web') }
 ]
+
+const staticContentTypes = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8'
+}
+
+const edgeProxyPrefixes = ['/api', '/auth/github/exchange']
 
 /**
  * @param {unknown} error
@@ -112,7 +121,8 @@ const formatAddress = (addressInfo) => {
     throw new Error('Expected the host server to expose a TCP address.')
   }
 
-  return `http://${addressInfo.address}:${addressInfo.port}`
+  const host = addressInfo.address.includes(':') ? `[${addressInfo.address}]` : addressInfo.address
+  return `http://${host}:${addressInfo.port}`
 }
 
 /**
@@ -124,30 +134,136 @@ const findTargetApp = (apps, pathname) =>
   apps.find((app) => (app.mountPath === '/' ? true : pathname.startsWith(app.mountPath)))
 
 /**
+ * @param {string} pathname
+ * @returns {boolean}
+ */
+const isEdgeProxyRequest = (pathname) =>
+  pathname === '/health' ||
+  edgeProxyPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+
+/**
  * @param {HostAppDefinition[]} apps
+ * @returns {HostAppDefinition}
+ */
+const getEdgeProxyApp = (apps) => {
+  const webApp = apps.find((app) => app.mountPath === '/web/')
+  if (webApp) {
+    return webApp
+  }
+
+  if (apps[0]) {
+    return apps[0]
+  }
+
+  throw new Error('Expected at least one mounted app to proxy edge routes.')
+}
+
+/**
+ * @param {string} publicDir
+ * @param {string} pathname
+ * @returns {string | undefined}
+ */
+const resolveHostStaticPath = (publicDir, pathname) => {
+  if (pathname === '/' || pathname === '/index.html') {
+    return join(publicDir, 'index.html')
+  }
+
+  if (!pathname.startsWith('/__host/')) {
+    return undefined
+  }
+
+  const candidate = resolve(publicDir, `.${pathname}`)
+  const rel = relative(publicDir, candidate)
+  if (rel.startsWith('..') || rel === '') {
+    return undefined
+  }
+
+  return candidate
+}
+
+/**
+ * @param {string} publicDir
+ * @param {string} pathname
+ * @returns {Promise<{ body: Buffer, contentType: string } | undefined>}
+ */
+const readHostStaticAsset = async (publicDir, pathname) => {
+  const assetPath = resolveHostStaticPath(publicDir, pathname)
+  if (!assetPath) {
+    return undefined
+  }
+
+  try {
+    const body = await readFile(assetPath)
+    const contentType = /** @type {Record<string, string>} */ (staticContentTypes)[extname(assetPath)] ?? 'application/octet-stream'
+    return { body, contentType }
+  } catch (error) {
+    if (error instanceof Error && 'code' in error) {
+      const code = /** @type {string} */ (error.code)
+      if (code === 'ENOENT' || code === 'EISDIR' || code === 'ENOTDIR') {
+        return undefined
+      }
+    }
+
+    throw error
+  }
+}
+
+/**
+ * @param {HostAppDefinition[]} apps
+ * @param {string} publicDir
  * @returns {(req: IncomingMessage, res: ServerResponse) => void}
  */
-const createRequestHandler = (apps) => (req, res) => {
-  const requestUrl = req.url ?? '/'
-  const pathname = requestUrl.split('?')[0] ?? '/'
+const createRequestHandler = (apps, publicDir) => (req, res) => {
+  const handleRequest = async () => {
+    const requestUrl = req.url ?? '/'
+    const pathname = requestUrl.split('?')[0] ?? '/'
 
-  if (pathname === '/mobile' || pathname === '/widget') {
-    res.statusCode = 301
-    res.setHeader('Location', pathname === '/mobile' ? '/mobile/' : '/widget/')
-    res.end()
-    return
+    if (pathname === '/mobile' || pathname === '/widget' || pathname === '/web') {
+      res.statusCode = 301
+      res.setHeader(
+        'Location',
+        pathname === '/mobile'
+          ? '/mobile/'
+          : pathname === '/widget'
+            ? '/widget/'
+            : '/web/'
+      )
+      res.end()
+      return
+    }
+
+    if (isEdgeProxyRequest(pathname)) {
+      getAppServer(getEdgeProxyApp(apps)).middlewares(req, res, () => {
+        res.statusCode = 404
+        res.end('Not found')
+      })
+      return
+    }
+
+    const staticAsset = await readHostStaticAsset(publicDir, pathname)
+    if (staticAsset) {
+      res.statusCode = 200
+      res.setHeader('Content-Type', staticAsset.contentType)
+      res.end(staticAsset.body)
+      return
+    }
+
+    const target = findTargetApp(apps, pathname)
+    if (!target) {
+      res.statusCode = 404
+      res.end('Not found')
+      return
+    }
+
+    getAppServer(target).middlewares(req, res, () => {
+      res.statusCode = 404
+      res.end('Not found')
+    })
   }
 
-  const target = findTargetApp(apps, pathname)
-  if (!target) {
-    res.statusCode = 404
-    res.end('Not found')
-    return
-  }
-
-  getAppServer(target).middlewares(req, res, () => {
-    res.statusCode = 404
-    res.end('Not found')
+  void handleRequest().catch((error) => {
+    res.statusCode = 500
+    res.end(error instanceof Error ? error.message : 'Internal server error')
   })
 }
 
@@ -198,7 +314,7 @@ const startListening = async (server, { host, port, preferredPort }) => {
  * }>}
  */
 export const createHostServer = async ({
-  host = '127.0.0.1',
+  host = 'localhost',
   port,
   preferredPort = 3111,
   rootDir = workspaceRoot,
@@ -219,6 +335,7 @@ export const createHostServer = async ({
   }
 
   const apps = createAppDefinitions(rootDir)
+  const publicDir = join(rootDir, 'apps/host/public')
   const httpServer = createHttpServer()
 
   try {
@@ -240,7 +357,7 @@ export const createHostServer = async ({
       app.server = await createViteServer(viteConfig)
     }
 
-    httpServer.on('request', createRequestHandler(apps))
+    httpServer.on('request', createRequestHandler(apps, publicDir))
 
     await startListening(httpServer, { host, port, preferredPort })
   } catch (error) {
@@ -290,13 +407,14 @@ export const createHostServer = async ({
  * @returns {Promise<void>}
  */
 export const runHostServer = async ({
-  host = '127.0.0.1',
+  host = 'localhost',
   preferredPort = 3111
 } = {}) => {
   const hostServer = await createHostServer({ host, preferredPort })
 
   console.log(`@tinytinkerer/host listening at ${hostServer.url}`)
-  console.log(`  Web: ${hostServer.url}/`)
+  console.log(`  Composite: ${hostServer.url}/`)
+  console.log(`  Web: ${hostServer.url}/web/`)
   console.log(`  Widget: ${hostServer.url}/widget/`)
   console.log(`  Mobile: ${hostServer.url}/mobile/`)
 

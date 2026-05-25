@@ -3,7 +3,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { BrowserShell } from '../shell'
 import { fetchStatus as fetchSharedStatus } from '../status'
 
-const defaultStatus: SystemStatus = {
+export const OFFLINE_SYSTEM_STATUS: SystemStatus = {
   auth: { state: 'offline', detail: 'Unavailable' },
   models: { state: 'offline', detail: 'Unavailable' },
   search: { state: 'offline', detail: 'Unavailable' }
@@ -33,7 +33,7 @@ export type StatusStore = StoreApi<StatusState>
 export const createStatusStore = (shell: BrowserShell): StatusStore =>
   createStore<StatusState>((set) => ({
     hydrated: false,
-    status: defaultStatus,
+    status: OFFLINE_SYSTEM_STATUS,
     initialize: async () => {
       try {
         const status = await fetchSharedStatus(shell)

@@ -44,7 +44,7 @@ Why use a parent-domain callback URL:
 
 - tinytinkerer now derives `redirect_uri` from the current Vercel preview origin
 - GitHub's OAuth rules allow the redirect host to vary by subdomain, as long as the registered callback URL still matches the same parent host and the redirect path stays under the registered path
-- Registering a root callback such as `https://nntin.xyz/` leaves room for `https://tiny.nntin.xyz/#/auth/callback` and `https://pr-123-branch.tiny.preview.nntin.xyz/#/auth/callback`
+- Registering a root callback such as `https://nntin.xyz/` leaves room for `https://tiny.nntin.xyz/web/#/auth/callback` and `https://pr-123-branch.tiny.preview.nntin.xyz/web/#/auth/callback`
 
 If you set a fixed `VITE_GITHUB_REDIRECT_URI` in Vercel, preview auth will stop being dynamic. Leave that variable unset unless you intentionally want a fixed callback URL.
 

@@ -1,37 +1,39 @@
 # Content Platform
 
-This document defines the shared content-rendering architecture for TinyTinkerer.
+This document defines the current shared assistant-content architecture for TinyTinkerer.
 
-It complements [ARCHITECTURE.md](./ARCHITECTURE.md) and [packages-concept.md](./packages-concept.md) by replacing the earlier `feature-markdown` and `feature-mermaid` direction with a dedicated content platform.
+It complements [ARCHITECTURE.md](./ARCHITECTURE.md) and [packages-concept.md](./packages-concept.md) by describing the subsystem that owns assistant-content parsing, rendering, specialized runtimes, and fallback behavior.
 
 ## Purpose
 
-The content platform exists to keep rich assistant output out of app shells while still keeping browser-specific composition inside `@tinytinkerer/app-browser`.
+The content platform exists to keep rich assistant output out of app shells while also preventing `@tinytinkerer/app-browser` and `@tinytinkerer/ui` from turning into content-specific dumping grounds.
 
 The design goals are:
 
 - keep frontend shells thin
-- keep content parsing and rendering reusable across `web`, `widget`, and `mobile`
-- prevent `@tinytinkerer/ui` from becoming a feature runtime
-- keep heavy content renderers lazy and isolated from the main browser entry bundle
+- keep assistant-content parsing and rendering reusable across `web`, `widget`, and `mobile`
+- keep `@tinytinkerer/ui` primitive-only
+- keep heavy specialized renderers lazy and isolated from the main browser entry bundle
 
-## Scope For This Migration
+## Scope
 
-This document describes the first content-platform cutover, not the final long-term rich-content system.
+This document describes the active content architecture in the repo today.
 
-In scope now:
+In scope:
 
-- replacing `@tinytinkerer/feature-markdown`
-- introducing explicit content packages
-- moving browser-shell content rendering behind `@tinytinkerer/app-browser`
-- defining the initial internal AST boundary
+- internal content AST types
+- markdown parsing into that AST
+- generic React rendering of content documents
+- specialized content runtimes such as Mermaid and wireframe
+- shared fallback behavior for invalid or unsupported rich content
 
-Out of scope for this phase:
+Out of scope:
 
-- changing edge payloads to emit structured content
-- moving `ContentNode` into `@tinytinkerer/contracts`
-- interactive `ChoicePromptNode` behavior
-- app-shell-specific UX around rich content
+- chat, auth, settings, or shell bootstrap logic
+- browser OAuth or persistence helpers
+- shell-specific page composition
+- moving rich-content AST types into `@tinytinkerer/contracts`
+- changing edge payloads away from assistant markdown strings
 
 ## Package Model
 
@@ -63,7 +65,7 @@ Owns:
 
 - the React content renderer
 - renderer registry types
-- default renderers for content nodes that do not need a specialized feature package
+- default renderers for content nodes that do not need a specialized package
 - shared React-side fallback behavior
 
 Must not own:
@@ -138,21 +140,21 @@ type ContentNode =
 
 Rules:
 
-- `ContentNode` stays inside the content platform in this migration.
+- `ContentNode` stays inside the content platform.
 - `@tinytinkerer/contracts` does not mirror this AST yet.
-- `ChoicePromptNode` is reserved as an extension point in v1 and should not require parsing or interactive rendering yet.
-- Existing browser/runtime layers may continue to treat assistant output as strings until a later transport change is intentionally planned.
+- `ChoicePromptNode` remains an extension point and does not require interactive behavior yet.
+- Shared runtime layers may continue to treat assistant output as strings until a later transport change is intentionally planned.
 
 ## Shell-Facing API
 
-The intended public browser-facing surface is a single content export from `@tinytinkerer/app-browser`.
+The public browser-facing content surface is `AssistantContent` from `@tinytinkerer/app-browser`.
 
-Expected characteristics:
+That means:
 
 - browser shells render assistant output through `app-browser`, not through direct `content-*` imports
 - the shell-facing component accepts raw assistant text plus shell-local styling hooks
-- parsing, registry composition, specialized renderer wiring, and fallback policy remain hidden behind `app-browser`
-- app shells can still decide container layout and surrounding UX without rebuilding content behavior
+- parsing, renderer composition, specialized runtime wiring, and fallback policy remain hidden behind `app-browser`
+- shared content styling hooks may be exposed from the browser layer, but content packages do not own app-shell layout
 
 ## Composition Boundary
 
@@ -209,12 +211,12 @@ flowchart LR
 - `content-mermaid` and `content-wireframe` may depend only on `content-core` and `content-react`.
 - `app-browser` may compose the content platform, but the content platform must not depend on `app-browser`.
 - Browser apps consume shell-facing content exports from `app-browser`, not directly from `content-*`.
-- `ui` stays primitive-only and must not absorb content parsing or specialized feature runtime logic.
+- `ui` must not absorb content parsing, specialized renderers, or browser-shell runtime logic.
 - `content-*` packages must not become a second browser runtime or a second app shell.
 
 ## Rendering Model
 
-The intended rendering split is:
+The current rendering split is:
 
 - `content-markdown` parses raw markdown into `ContentDocument`
 - `content-react` renders general-purpose nodes such as markdown, code blocks, tables, and images
@@ -222,11 +224,11 @@ The intended rendering split is:
 - `content-wireframe` renders wireframe nodes
 - `app-browser` decides how those pieces are composed and exposed to browser shells
 
-Specialized renderers such as Mermaid and wireframe should be lazy-loadable so they do not bloat the main browser entry chunk.
+Specialized renderers such as Mermaid and wireframe should stay lazy-loadable so they do not bloat the main browser entry chunk.
 
 ## Parsing Rules
 
-The content platform should treat markdown as the source format for this phase and promote only well-defined structures into specialized nodes.
+The content platform treats markdown as the source format for this phase and promotes only well-defined structures into specialized nodes.
 
 Initial mapping rules:
 
@@ -258,13 +260,3 @@ Apps do not own:
 - Mermaid source detection
 - wireframe runtime setup
 - shared content fallback policy
-
-## Agent Checklist
-
-Before changing rich-content rendering, check:
-
-- Does this belong in `content-core`, `content-react`, `content-markdown`, `content-mermaid`, or `content-wireframe`?
-- Can the browser shell consume the capability through `app-browser` instead of importing a lower layer?
-- Is `ui` still only providing primitives and not feature runtime behavior?
-- Will this change preserve lazy loading for heavy specialized renderers?
-- Is the AST still internal unless a deliberate contracts change is being made?

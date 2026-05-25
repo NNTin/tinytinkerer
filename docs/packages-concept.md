@@ -1,15 +1,15 @@
 # Packages Concept
 
-This document explains how TinyTinkerer should divide responsibility between apps and packages in the future architecture. The main rule is simple: apps present the product, packages implement reusable capability.
+This document explains how TinyTinkerer should divide responsibility between apps and packages. The rule is simple: apps present shell-specific experiences, packages own reusable capability.
 
 ## Why Apps Stay Thin
 
-Thin apps make UI replacement practical.
+Thin apps make UI replacement practical and reduce behavioral drift.
 
-- `apps/web` and `apps/widget` should be easy to change without rewriting product behavior.
-- Shared product capability should not be trapped inside a single app shell.
-- Embeddable surfaces are usually stricter than first-party app shells, so shared behavior must be designed for the stricter case.
-- Thin apps also reduce drift. When behavior changes, it changes once in a shared layer instead of separately in each UI app.
+- `apps/web`, `apps/mobile`, and `apps/widget` should be easy to change without rewriting product behavior.
+- Shared capability should not be trapped inside a single shell.
+- The widget is the stricter surface, so shared behavior must be designed to survive compact or embedded shells.
+- When behavior changes, it should usually change once in a package instead of separately in each app.
 
 ## What Belongs In An App
 
@@ -19,25 +19,26 @@ Apps own shell-specific code.
 - screens and page-level composition
 - shell layout and visual structure
 - host embedding concerns
-- app-specific configuration and bootstrapping
-- final binding between UI components and shared browser-facing APIs
-- app-local UX decisions that are not shared feature behavior
+- mobile install affordances
+- widget window UX
+- final binding between app-local markup and shared browser-facing APIs
+- app-local copy and shell-specific affordances
 
-Apps must not become the long-term home for shared orchestration, persistence logic, provider wiring, or non-trivial reusable feature runtimes. Apps also must not reach past `app-browser` into lower runtime layers.
+Apps must not become the long-term home for shared orchestration, persistence logic, browser integration, or non-trivial reusable feature runtimes. Apps also must not reach past `app-browser` into lower runtime layers.
 
-## What Belongs In A Package
+## Package Placement Rules
 
-Packages own reusable capability.
+When shared code appears, place it according to what kind of thing it is:
 
-- `contracts`: shared schemas and types
-- `agent-core`: runtime abstractions and generic execution behavior
-- `app-core`: headless product logic and orchestration
-- `app-browser`: browser-specific adapters and integrations
-- `brand-assets`: shared favicon, manifest, and theme metadata
-- `ui`: presentational primitives
-- `feature-*`: large shared features with real logic
+- headless product logic -> `packages/app-core`
+- browser-specific shared logic, shell-facing hooks, shared browser components, bootstrap helpers, and shared browser styles -> `packages/app-browser`
+- stateless visual atoms and primitives -> `packages/ui`
+- assistant-content parsing, AST, rendering, and specialized content runtimes -> `packages/content-*`
+- shared schemas and DTOs -> `packages/contracts`
+- product-agnostic runtime abstractions -> `packages/agent-core`
+- favicon, icons, manifest, and theme metadata -> `packages/brand-assets`
 
-If behavior is expected to survive a shell rewrite, it probably belongs in a package.
+Introduce a new package only when none of the existing boundaries is the right long-term home.
 
 ## Package Responsibilities
 
@@ -87,34 +88,36 @@ Owns:
 Must not own:
 
 - React hooks that require a renderer
-- Zustand stores as the public reuse boundary
 - browser APIs such as `window`, `sessionStorage`, or IndexedDB
+- fetch-based browser clients
 - transport code
 
 ### `packages/app-browser`
 
 Owns:
 
-- Dexie or other browser persistence adapters
-- session-based OAuth state helpers
+- browser persistence adapters
+- session-based OAuth helpers
 - fetch-based edge clients
 - concrete provider and tool wiring for browser apps
 - runtime application of shared brand metadata
-- shell-facing exports that browser apps consume directly
-- shared browser runtime composition
-- shell configuration such as edge URL, storage namespace, and auth mode
+- browser app creation and bootstrap config resolution
+- shell-facing React hooks and controllers
+- shared browser-facing components such as `AssistantContent` and the shared settings modal
+- shared browser stylesheet and browser-facing visual behavior that is reused across shells
 
 Must not own:
 
 - page layouts
 - app-local screens
+- shell-specific copy
 - feature presentation that is unique to one shell
 
 ### `packages/brand-assets`
 
 Owns:
 
-- placeholder favicon and icon definitions
+- favicon and icon definitions
 - shared PWA manifest data
 - shared theme metadata consumed by browser shells
 - typed brand metadata objects validated against `contracts`
@@ -132,7 +135,8 @@ Owns:
 
 - buttons
 - form primitives
-- shared visual building blocks
+- icons and marks
+- tiny visual atoms such as loading indicators
 - lightweight styling helpers
 
 Must not own:
@@ -140,21 +144,26 @@ Must not own:
 - chat orchestration
 - authentication flows
 - search behavior
-- Markdown or Mermaid feature runtimes
+- markdown parsing
+- Mermaid or wireframe runtimes
 - product-specific controller logic
+- persistence logic
 
-### `packages/feature-*`
+### `packages/content-*`
 
 Owns:
 
-- large, reusable, non-trivial shared features
-- feature-level rendering pipelines
-- shared integration surfaces used by multiple apps or layers
+- assistant-content AST and contracts
+- markdown parsing
+- generic content rendering
+- specialized content runtimes such as Mermaid and wireframe
+- shared content fallback policy
 
 Must not own:
 
-- unrelated primitives
 - app shell composition
+- browser OAuth or persistence logic
+- unrelated primitives
 - catch-all business logic
 
 ## Allowed And Forbidden Dependencies
@@ -162,40 +171,37 @@ Must not own:
 Allowed examples:
 
 - `apps/web` importing `app-browser` and `ui`
+- `apps/mobile` importing `app-browser` and `ui`
 - `apps/widget` importing `app-browser` and `ui`
-- `app-browser` importing `app-core`, `contracts`, and `brand-assets`
+- `app-browser` importing `app-core`, `contracts`, `brand-assets`, and `content-*`
 - `brand-assets` importing `contracts`
 - `apps/edge` importing `contracts`
-- `apps/web` importing a `feature-*` package only for shell-local render-edge integration
 
 Forbidden examples:
 
-- `apps/web` directly creating GitHub model providers or browser search tools instead of consuming shared adapters
-- `apps/web` or `apps/widget` importing `contracts`, `app-core`, or `agent-core` directly
-- `apps/web` or `apps/widget` importing `brand-assets` directly
+- any browser app importing `contracts`, `app-core`, `agent-core`, `brand-assets`, or `content-*` directly
+- any app importing code from another app
 - `app-core` importing Dexie, `fetch`, `sessionStorage`, or React
 - `ui` containing app-specific feature flows or runtime composition
-- `agent-core` owning product-specific integrations such as GitHub Models wiring
-- `brand-assets` owning browser boot code instead of leaving that integration to `app-browser`
-- `feature-*` importing `app-browser`, `app-core`, `agent-core`, or `apps/*`
-- `apps/widget` copying `apps/web` feature logic instead of reusing packages
-- any app importing code from another app
+- `content-*` bypassing `app-browser` to become a second browser assembly boundary
+- `app-browser` absorbing page layouts or shell-specific page ownership
+- `apps/widget` copying `apps/web` or `apps/mobile` feature logic instead of reusing packages
 
 ## Browser Assembly Boundary
 
-For browser apps, `packages/app-browser` is the main shared runtime boundary.
+For browser apps, `packages/app-browser` is the main shared frontend boundary.
 
 - Browser apps should depend on `app-browser` instead of composing lower runtime layers themselves.
-- `app-browser` should be instantiated per shell rather than relying on module-global browser state.
 - If an app needs a lower-layer capability, `app-browser` should expose the browser-safe API for it.
 - Shared brand links, manifests, and theme metadata should be applied through `app-browser`, not directly from app HTML or a lower-level package.
-- This keeps runtime composition consistent between `web` and `widget`.
-- This also makes dependency enforcement simpler because the allowed app dependency surface stays small.
+- Shared browser-shell behavior should usually be extracted into `app-browser` before it is copied into a second app.
+- `app-browser` may expose React hooks and components when that is the correct shared browser-surface contract.
 
 ## When To Introduce A New Package
 
-Introduce a new package when all of the following are true:
+Introduce a new package only when all of the following are true:
 
+- the shared behavior does not fit cleanly into `app-core`, `app-browser`, `ui`, `content-*`, `contracts`, `agent-core`, or `brand-assets`
 - the feature is large enough to have its own behavior or integration pipeline
 - the feature is expected to be reused by at least two apps or by multiple layers
 - the feature would otherwise create duplicated logic or duplicated policy
@@ -203,43 +209,27 @@ Introduce a new package when all of the following are true:
 
 Do not create a package for trivial wrappers or one-off helpers. The point is to prevent meaningful duplication, not to atomize the repo.
 
-## Case Study: Mermaid As A Shared Feature
+## Case Study: Shared Frontend Behavior
 
-Mermaid is the right example because it is more than a visual primitive.
+The current frontend is the model to follow:
 
-If both `web` and `widget` support Mermaid rendering, these concerns should not be duplicated:
+- shared chat, auth, settings, bootstrap, and browser integration behavior belongs in `@tinytinkerer/app-browser`
+- shared assistant-content rendering belongs behind `@tinytinkerer/app-browser` and is implemented by `@tinytinkerer/content-*`
+- stateless atoms such as icons and thinking indicators belong in `@tinytinkerer/ui`
+- web, mobile, and widget keep their own page structure and shell-specific UX
 
-- markdown integration
-- Mermaid source detection
-- render pipeline setup
-- sanitization and safety policy
-- lazy-loading strategy
-- shared styling glue
-- fallback behavior when rendering fails
+This means similarity alone is not enough to justify extraction.
 
-That shared behavior belongs in the dedicated content platform, split across `@tinytinkerer/content-core`, `@tinytinkerer/content-markdown`, `@tinytinkerer/content-react`, and specialized renderer packages such as `@tinytinkerer/content-mermaid`.
+- extract shared behavior first
+- extract generic visual atoms second
+- keep page layout local unless the interaction contract is actually shared
 
-The apps should only own:
+## Review Checklist For New Frontend Work
 
-- where Mermaid content appears
-- shell-specific layout and spacing
-- app-local affordances around the rendered diagram
-
-Mermaid remains a render-edge exception, not an alternate browser composition root.
-
-- browser apps must not import `content-*` packages directly
-- `content-mermaid` may depend downward only on `content-core` and `content-react`
-- `content-*` must not bypass `app-browser`
-- if shared browser runtime integration is required, `app-browser` owns that integration and apps only mount the feature's render adapter
-
-This is the model to reuse for any future large shared feature.
-
-## Review Checklist For New Features
-
-- [ ] Can this behavior live outside the app shell?
-- [ ] Will more than one app or layer need this feature?
-- [ ] Is the feature large enough to justify a dedicated package?
+- [ ] Is this shell-specific layout, or shared capability?
+- [ ] If it is headless product behavior, should it live in `app-core`?
+- [ ] If it is shared browser-shell behavior, should it live in `app-browser`?
+- [ ] If it is only a stateless primitive, should it live in `ui`?
+- [ ] If it is assistant-content parsing or rendering, should it live in `content-*`?
 - [ ] Does the browser app dependency surface stay small, with `app-browser` as the shared assembly boundary?
-- [ ] Are contracts, headless logic, browser adapters, and UI presentation separated cleanly?
-- [ ] Does `packages/ui` stay primitive-only?
-- [ ] Does the proposal avoid app-to-app imports, copied feature runtimes, and feature-package bypasses around `app-browser`?
+- [ ] Does this avoid app-to-app imports and copied feature logic?

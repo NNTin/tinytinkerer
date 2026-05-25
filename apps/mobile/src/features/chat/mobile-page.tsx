@@ -1,36 +1,13 @@
 import {
   AssistantContent,
-  buildCurrentTimeline,
-  buildTurns,
-  formatCooldown,
-  startStatusPolling,
-  useAuthStore,
-  useChatCooldown,
-  useChatStore,
-  useSettingsStore,
-  useStatusStore
+  useChatSurfaceController
 } from '@tinytinkerer/app-browser'
-import { Button } from '@tinytinkerer/ui'
+import { Button, GitHubMark, ThinkingDots } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { ArrowDownTrayIcon, Cog6ToothIcon } from '@heroicons/react/24/outline'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useInstallPrompt } from '../install/use-install-prompt'
-import { SettingsModal } from '../settings/settings-modal'
-
-const GitHubMark = () => (
-  <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4" aria-hidden="true">
-    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
-  </svg>
-)
-
-
-const ThinkingDots = () => (
-  <span aria-label="Thinking" className="inline-flex items-end gap-0.5 pb-0.5">
-    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-stone-400" />
-    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-stone-400" />
-    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-stone-400" />
-  </span>
-)
+import { BrowserSettingsModal as SettingsModal } from '@tinytinkerer/app-browser'
 
 const noticeStyle: Record<'info' | 'warning' | 'error', string> = {
   info: 'border-stone-200 bg-stone-50 text-stone-600',
@@ -39,25 +16,29 @@ const noticeStyle: Record<'info' | 'warning' | 'error', string> = {
 }
 
 export const MobilePage = () => {
-  const events = useChatStore((state) => state.events)
-  const streamingText = useChatStore((state) => state.streamingText)
-  const isRunning = useChatStore((state) => state.isRunning)
-  const isRetryPending = useChatStore((state) => state.isRetryPending)
-  const sendPrompt = useChatStore((state) => state.sendPrompt)
-  const resetConversation = useChatStore((state) => state.resetConversation)
-  const cancelRetry = useChatStore((state) => state.cancelRetry)
-  const refreshStatus = useStatusStore((state) => state.refresh)
-  const token = useAuthStore((state) => state.token)
-  const showThinkingTimeline = useSettingsStore((state) => state.showThinkingTimeline)
-  const showToolActivity = useSettingsStore((state) => state.showToolActivity)
+  const {
+    events,
+    streamingText,
+    token,
+    turns,
+    timeline,
+    toolEvents,
+    isRunning,
+    isRetryPending,
+    showThinkingTimeline,
+    showToolActivity,
+    submitLabel,
+    isCoolingDown,
+    submitPrompt: submitPromptController,
+    resetConversation,
+    cancelRetry
+  } = useChatSurfaceController()
   const [prompt, setPrompt] = useState('')
   const [openTimeline, setOpenTimeline] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const conversationEndRef = useRef<HTMLDivElement>(null)
   const { canInstall, showIosHint, promptToInstall } = useInstallPrompt()
-
-  useEffect(() => startStatusPolling(refreshStatus), [refreshStatus])
 
   useEffect(() => {
     const element = textareaRef.current
@@ -73,27 +54,12 @@ export const MobilePage = () => {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [events, streamingText])
 
-  const turns = useMemo(() => buildTurns(events, streamingText), [events, streamingText])
-  const timeline = useMemo(() => buildCurrentTimeline(events), [events])
-  const toolEvents = useMemo(
-    () => events.filter((event) => event.type === 'tool.call.completed' || event.type === 'tool.call.failed'),
-    [events]
-  )
-  const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
-  const submitLabel = isCoolingDown
-    ? formatCooldown(cooldownRemainingMs)
-    : isRunning
-      ? 'Thinking…'
-      : 'Send'
-
-  const submitPrompt = () => {
-    const trimmed = prompt.trim()
-    if (!trimmed || isCoolingDown || isRunning) {
-      return
-    }
-
-    void sendPrompt(trimmed)
-    setPrompt('')
+  const handlePromptSubmit = () => {
+    void submitPromptController(prompt).then((didSend) => {
+      if (didSend) {
+        setPrompt('')
+      }
+    })
   }
 
   return (
@@ -273,7 +239,7 @@ export const MobilePage = () => {
           className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--panel)] px-3 py-3 shadow-[0_18px_40px_rgba(36,33,24,0.08)]"
           onSubmit={(event) => {
             event.preventDefault()
-            submitPrompt()
+            handlePromptSubmit()
           }}
         >
           <textarea
@@ -283,7 +249,7 @@ export const MobilePage = () => {
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
-                submitPrompt()
+                handlePromptSubmit()
               }
             }}
             placeholder="Ask anything…"

@@ -54,7 +54,7 @@ const mockChatState = vi.hoisted(() => ({
   isRunning: false,
   isRetryPending: false,
   cooldownUntil: undefined as string | undefined,
-  sendPrompt: vi.fn(),
+  submitPrompt: vi.fn(() => true),
   resetConversation: vi.fn(),
   cancelRetry: vi.fn()
 }))
@@ -63,23 +63,67 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   AssistantContent: ({ content, className }: { content: string; className?: string }) => (
     <div className={className}>{content}</div>
   ),
-  buildCurrentTimeline: () => [],
-  buildTurns: () => mockTurns,
-  formatCooldown: (ms: number) => `${Math.ceil(ms / 1000)}s`,
-  startStatusPolling: vi.fn(() => () => undefined),
-  useChatCooldown: () => ({ cooldownRemainingMs: 0, isCoolingDown: false }),
-  useGitHubOAuth: () => ({
-    canStartGitHubOAuth: true,
-    startGitHubOAuth: vi.fn(),
-    completeGitHubOAuthCallback: vi.fn()
+  useChatSurfaceController: () => ({
+    events: mockChatState.events,
+    streamingText: mockChatState.streamingText,
+    token: mockAuthState.token,
+    turns: mockTurns,
+    timeline: [],
+    toolEvents: [],
+    isRunning: mockChatState.isRunning,
+    isRetryPending: mockChatState.isRetryPending,
+    showThinkingTimeline: mockSettingsState.showThinkingTimeline,
+    showToolActivity: mockSettingsState.showToolActivity,
+    cooldownRemainingMs: 0,
+    isCoolingDown: false,
+    submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
+    submitPrompt: mockChatState.submitPrompt,
+    resetConversation: mockChatState.resetConversation,
+    cancelRetry: mockChatState.cancelRetry
   }),
-  useGitHubUser: () => null,
-  useGitHubModels: () => [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
-  useAuthStore: (selector: (state: typeof mockAuthState) => unknown) => selector(mockAuthState),
-  useChatStore: (selector: (state: typeof mockChatState) => unknown) => selector(mockChatState),
-  useSettingsStore: (selector: (state: typeof mockSettingsState) => unknown) => selector(mockSettingsState),
-  useStatusStore: (selector: (state: typeof mockStatusState) => unknown) => selector(mockStatusState),
-  SUPPORTED_MODELS: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }]
+  BrowserSettingsModal: ({
+    open,
+    onOpenChange
+  }: {
+    open: boolean
+    onOpenChange: (open: boolean) => void
+  }) =>
+    open ? (
+      <div role="dialog" aria-label="Settings">
+        <button type="button" aria-label="Close settings" onClick={() => onOpenChange(false)}>
+          Close
+        </button>
+        <section role="region" aria-label="Auth">
+          <p>Auth status</p>
+          <p>{mockStatusState.status.auth.detail}</p>
+          {mockAuthState.token ? null : (
+            <>
+              <button type="button">Sign in with GitHub</button>
+              <button type="button">Use a personal access token instead</button>
+            </>
+          )}
+        </section>
+        <section role="region" aria-label="Models">
+          <p>Models status</p>
+          <p>{mockStatusState.status.models.detail}</p>
+        </section>
+        <section role="region" aria-label="Search">
+          <p>Search status</p>
+          <p>{mockStatusState.status.search.detail}</p>
+          {mockStatusState.status.search.error ? <p>{mockStatusState.status.search.error}</p> : null}
+          <label>
+            Enable web search
+            <input type="checkbox" disabled={mockStatusState.status.search.state !== 'ready'} />
+          </label>
+          {mockStatusState.status.search.state !== 'ready' ? (
+            <p>Web search is unavailable right now. The runtime will skip search until the service recovers.</p>
+          ) : null}
+        </section>
+        <section role="region" aria-label="Interface">
+          <p>Interface</p>
+        </section>
+      </div>
+    ) : null
 }))
 
 import { ChatPage } from './chat-page.js'
@@ -103,6 +147,7 @@ beforeEach(() => {
   mockChatState.isRunning = false
   mockChatState.isRetryPending = false
   mockChatState.cooldownUntil = undefined
+  mockChatState.submitPrompt.mockClear()
   mockStatusState.status = {
     auth: { state: 'ready', detail: 'GitHub auth available' },
     models: { state: 'degraded', detail: 'Model responses are slower than usual' },

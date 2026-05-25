@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@source "../../../packages/app-browser/src";
 
 :root {
   color-scheme: light;
@@ -21,250 +22,23 @@ body {
   box-sizing: border-box;
 }
 
-/* Collapsible open/close animation */
-@keyframes collapsible-open {
-  from {
-    height: 0;
-    opacity: 0;
-  }
-  to {
-    height: var(--radix-collapsible-content-height);
-    opacity: 1;
-  }
-}
-
-@keyframes collapsible-close {
-  from {
-    height: var(--radix-collapsible-content-height);
-    opacity: 1;
-  }
-  to {
-    height: 0;
-    opacity: 0;
-  }
-}
-
-.collapsible-content[data-state='open'] {
-  animation: collapsible-open 200ms ease-out;
-}
-
-.collapsible-content[data-state='closed'] {
-  animation: collapsible-close 180ms ease-in;
-  overflow: hidden;
-}
-
-/* Thinking dots */
-@keyframes thinking-bounce {
-  0%,
-  60%,
-  100% {
-    opacity: 0.25;
-    transform: translateY(0);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(-3px);
-  }
-}
-
-.thinking-dot {
-  display: inline-block;
-  animation: thinking-bounce 1.4s ease-in-out infinite;
-}
-
-.thinking-dot:nth-child(2) {
-  animation-delay: 0.16s;
-}
-
-.thinking-dot:nth-child(3) {
-  animation-delay: 0.32s;
-}
-
-/* Streaming cursor */
-@keyframes cursor-blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
-
-.tt-markdown--streaming::after {
-  content: '|';
-  display: inline-block;
-  margin-left: 1px;
-  animation: cursor-blink 0.9s step-end infinite;
-  color: #b45309;
-}
-
-/* Status dot pulse for degraded/offline */
-@keyframes status-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.status-dot-pulse {
-  animation: status-pulse 1.6s ease-in-out infinite;
-}
-
-/* Markdown assistant prose */
 .tt-markdown.prose-assistant {
   line-height: 1.6;
 }
 
-.tt-markdown.prose-assistant > *:first-child {
-  margin-top: 0;
+.tt-markdown.prose-assistant h1 {
+  font-size: 1.2em;
 }
 
-.tt-markdown.prose-assistant > *:last-child {
-  margin-bottom: 0;
+.tt-markdown.prose-assistant h2 {
+  font-size: 1.1em;
 }
-
-.tt-markdown.prose-assistant p {
-  margin: 0.4em 0;
-}
-
-.tt-markdown.prose-assistant h1,
-.tt-markdown.prose-assistant h2,
-.tt-markdown.prose-assistant h3,
-.tt-markdown.prose-assistant h4,
-.tt-markdown.prose-assistant h5,
-.tt-markdown.prose-assistant h6 {
-  font-weight: 600;
-  line-height: 1.3;
-  margin: 0.75em 0 0.3em;
-}
-
-.tt-markdown.prose-assistant h1 { font-size: 1.2em; }
-.tt-markdown.prose-assistant h2 { font-size: 1.1em; }
-.tt-markdown.prose-assistant h3 { font-size: 1em; }
 
 .tt-markdown.prose-assistant ul,
 .tt-markdown.prose-assistant ol {
-  margin: 0.4em 0;
   padding-left: 1.4em;
 }
 
-.tt-markdown.prose-assistant ul { list-style-type: disc; }
-.tt-markdown.prose-assistant ol { list-style-type: decimal; }
-
-.tt-markdown.prose-assistant li {
-  margin: 0.2em 0;
-}
-
-.tt-markdown.prose-assistant a {
-  color: #b45309;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.tt-markdown.prose-assistant a:hover {
-  color: #92400e;
-}
-
-.tt-markdown.prose-assistant code {
-  background: #f3ede6;
-  border-radius: 3px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.875em;
-  padding: 0.1em 0.35em;
-}
-
 .tt-markdown.prose-assistant pre {
-  background: #f3ede6;
-  border: 1px solid #dccdb9;
   border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.85em;
-  margin: 0.6em 0;
-  overflow-x: auto;
-  padding: 0.75em 1em;
 }
-
-.tt-markdown.prose-assistant pre code {
-  background: none;
-  border-radius: 0;
-  font-size: inherit;
-  padding: 0;
-}
-
-.tt-markdown.prose-assistant blockquote {
-  border-left: 3px solid #dccdb9;
-  color: #766a5d;
-  margin: 0.5em 0;
-  padding-left: 0.8em;
-}
-
-.tt-markdown.prose-assistant hr {
-  border: none;
-  border-top: 1px solid #dccdb9;
-  margin: 0.75em 0;
-}
-
-.tt-markdown.prose-assistant table {
-  border-collapse: collapse;
-  font-size: 0.9em;
-  margin: 0.5em 0;
-  width: 100%;
-}
-
-.tt-markdown.prose-assistant th,
-.tt-markdown.prose-assistant td {
-  border: 1px solid #dccdb9;
-  padding: 0.3em 0.6em;
-  text-align: left;
-}
-
-.tt-markdown.prose-assistant th {
-  background: #f3ede6;
-  font-weight: 600;
-}
-
-/* Timeline entry fade-in */
-@keyframes timeline-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.timeline-entry {
-  animation: timeline-enter 200ms ease-out both;
-}
-
-/* Settings dialog animations */
-@keyframes dialog-overlay-show {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes dialog-overlay-hide {
-  from { opacity: 1; }
-  to   { opacity: 0; }
-}
-
-@keyframes dialog-content-show {
-  from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }
-  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-}
-
-@keyframes dialog-content-hide {
-  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  to   { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }
-}
-
-.settings-overlay[data-state='open']   { animation: dialog-overlay-show  180ms ease-out; }
-.settings-overlay[data-state='closed'] { animation: dialog-overlay-hide   150ms ease-in; }
-.settings-content[data-state='open']   { animation: dialog-content-show   200ms ease-out; }
-.settings-content[data-state='closed'] { animation: dialog-content-hide   160ms ease-in; }

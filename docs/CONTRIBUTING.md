@@ -35,7 +35,8 @@ This runs:
 
 - Edge API (`http://localhost:8787`)
 - Frontend host (`http://localhost:3000/`)
-  - Web: `http://localhost:3000/`
+  - Composite: `http://localhost:3000/`
+  - Web: `http://localhost:3000/web/`
   - Widget: `http://localhost:3000/widget/`
   - Mobile: `http://localhost:3000/mobile/`
 
@@ -60,7 +61,7 @@ The app runs in **local fallback mode** without any API keys — useful for UI d
 ```bash
 VITE_EDGE_URL=               # optional in local host dev; required for deployed builds
 VITE_GITHUB_CLIENT_ID=        # optional: GitHub OAuth app client ID
-VITE_GITHUB_REDIRECT_URI=     # optional: defaults to /#/auth/callback
+VITE_GITHUB_REDIRECT_URI=     # optional: defaults to /web/#/auth/callback
 ```
 
 When you run through `pnpm dev`, the unified host proxies `/health`, `/api/*`, and `/auth/github/exchange`, so `VITE_EDGE_URL` can be omitted for local same-origin development. For deployed builds, set `VITE_EDGE_URL` to the deployed edge origin. If `VITE_GITHUB_REDIRECT_URI` is omitted, the web app derives the callback from the current origin, which allows Vercel preview domains to complete OAuth.

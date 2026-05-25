@@ -4,11 +4,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   AppBrowserProvider,
   createBrowserApp,
+  resolveBrowserShellBootstrapConfig,
   type BrowserShellConfig
 } from '@tinytinkerer/app-browser'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './app/router'
-import { resolveWidgetGitHubRedirectUri } from './runtime-config'
+import '@tinytinkerer/app-browser/styles.css'
 import './index.css'
 
 // The embedding page is fully trusted — it provides hostToken and other config intentionally.
@@ -30,18 +31,14 @@ const widgetConfigBase: BrowserShellConfig = {
 }
 
 const githubClientId = hostConfig.githubClientId ?? getEnvValue('VITE_GITHUB_CLIENT_ID')
-const githubRedirectUri = resolveWidgetGitHubRedirectUri(
-  hostConfig,
-  githubClientId,
-  import.meta.env.BASE_URL,
-  window.location.origin
-)
-
-const browserConfig: BrowserShellConfig = {
+const browserConfig = resolveBrowserShellBootstrapConfig({
   ...widgetConfigBase,
-  ...(githubClientId ? { githubClientId } : {}),
-  ...(githubRedirectUri ? { githubRedirectUri } : {})
-}
+  baseUrl: import.meta.env.BASE_URL,
+  origin: window.location.origin,
+  manifestStartUrl: import.meta.env.BASE_URL,
+  githubClientId,
+  githubRedirectUri: hostConfig.githubRedirectUri
+})
 
 const queryClient = new QueryClient()
 
