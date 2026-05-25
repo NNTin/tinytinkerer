@@ -76,7 +76,7 @@ export const resolveBrowserShellBootstrapConfig = (
     storageNamespace: options.storageNamespace ?? DEFAULT_CONFIG.storageNamespace,
     authMode: options.authMode ?? DEFAULT_CONFIG.authMode,
     hostToken: options.hostToken ?? DEFAULT_CONFIG.hostToken,
-    ...(options.manifestStartUrl ? { manifestStartUrl: options.manifestStartUrl } : {}),
+    ...(options.manifestStartUrl !== undefined ? { manifestStartUrl: options.manifestStartUrl } : {}),
     ...(options.githubClientId ? { githubClientId: options.githubClientId } : {}),
     ...(githubRedirectUri ? { githubRedirectUri } : {})
   }

@@ -194,12 +194,16 @@ const readHostStaticAsset = async (publicDir, pathname) => {
     const contentType = staticContentTypes[extname(assetPath)] ?? 'application/octet-stream'
     return { body, contentType }
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      return undefined
+    if (error instanceof Error && 'code' in error) {
+      const code = error.code
+      if (code === 'ENOENT' || code === 'EISDIR' || code === 'ENOTDIR') {
+        return undefined
+      }
     }
 
     throw error
   }
+}
 }
 
 /**
