@@ -142,9 +142,10 @@ flowchart LR
 
 ## Dependency Rules
 
-- Browser apps may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
+- Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
-- `app-browser` is the only browser-facing composition boundary for shared runtime and shared assistant-content rendering.
+- `app-browser` may depend on `app-core`, `content-*` packages, `brand-assets`, and `contracts`. It is the only browser-facing composition boundary for shared runtime and shared assistant-content rendering.
+- `brand-assets` may depend on `contracts` and nothing else.
 - `content-core` must not depend on other workspace packages.
 - `content-markdown` may depend only on `content-core`.
 - `content-react` may depend only on `content-core` and `ui`.
@@ -153,6 +154,7 @@ flowchart LR
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
 - `agent-core` may depend only on `contracts` and agent-core-local modules.
 - `edge` may depend only on `contracts` and edge-local modules.
+- `host` must not declare workspace dependencies on other apps. Path resolution for build composition uses relative filesystem paths, not module imports.
 
 ## Contracts and Data Flow
 
