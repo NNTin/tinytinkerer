@@ -6,6 +6,14 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
+    "@tinytinkerer/host#build": {
+      "dependsOn": [
+        "@tinytinkerer/web#build",
+        "@tinytinkerer/widget#build",
+        "@tinytinkerer/mobile#build"
+      ],
+      "outputs": ["dist/**"]
+    },
     "dev": {
       "cache": false,
       "persistent": true
