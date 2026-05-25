@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify'
 import mermaidRuntimeUrl from 'mermaid/dist/mermaid.min.js?url'
 import { useEffect, useId, useState } from 'react'
 import type { MermaidNode } from '@tinytinkerer/content-core'
@@ -20,6 +21,11 @@ declare global {
 
 let mermaidPromise: Promise<MermaidApi> | null = null
 let hasInitializedMermaid = false
+
+export const resetMermaidState = (): void => {
+  mermaidPromise = null
+  hasInitializedMermaid = false
+}
 
 const initializeMermaid = (mermaid: MermaidApi): MermaidApi => {
   if (!hasInitializedMermaid) {
@@ -78,7 +84,10 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<MermaidNo
       .then((mermaid) => mermaid.render(`tt-mermaid-${id}`, node.code))
       .then((result) => {
         if (!cancelled) {
-          setSvg(result.svg)
+          const sanitized = DOMPurify.sanitize(result.svg, {
+            USE_PROFILES: { svg: true, svgFilters: true }
+          })
+          setSvg(sanitized)
         }
       })
       .catch(() => {

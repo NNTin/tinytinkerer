@@ -67,4 +67,41 @@ describe('AssistantContent', () => {
       expect(document.querySelector('svg')).not.toBeNull()
     })
   })
+
+  it('preserves DOM order for mixed node types', async () => {
+    mockRender.mockResolvedValue({ svg: '<svg><text>Diagram</text></svg>' })
+
+    const { container } = render(
+      <AssistantContent
+        content={[
+          '# Title',
+          '',
+          '```mermaid',
+          'graph TD',
+          'A-->B',
+          '```',
+          '',
+          'Some text',
+          '',
+          '![img](https://example.com/img.png)'
+        ].join('\n')}
+      />
+    )
+
+    await waitFor(() => {
+      expect(container.querySelector('svg')).not.toBeNull()
+    })
+
+    const heading = container.querySelector('h1')
+    const svg = container.querySelector('svg')
+    const img = container.querySelector('img')
+
+    expect(heading).not.toBeNull()
+    expect(svg).not.toBeNull()
+    expect(img).not.toBeNull()
+
+    // Node.DOCUMENT_POSITION_FOLLOWING (4) means the argument comes after the receiver
+    expect(heading!.compareDocumentPosition(svg!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(svg!.compareDocumentPosition(img!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
 })

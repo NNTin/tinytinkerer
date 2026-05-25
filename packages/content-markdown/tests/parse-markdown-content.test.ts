@@ -64,4 +64,46 @@ describe('parseMarkdownContent', () => {
       nodes: [{ type: 'markdown', markdown: '# Heading\n\n* one\n* two' }]
     })
   })
+
+  it('preserves node sequence for a mixed document (markdown, mermaid, wireframe, table, image interleaved)', () => {
+    const content = [
+      '# Title',
+      '',
+      '```mermaid',
+      'graph TD',
+      'A-->B',
+      '```',
+      '',
+      'Some text',
+      '',
+      '```wireframe',
+      '[Button]',
+      '```',
+      '',
+      '| Col |',
+      '| --- |',
+      '| val |',
+      '',
+      '![img](https://example.com/img.png)',
+      '',
+      'End'
+    ].join('\n')
+
+    const doc = parseMarkdownContent(content)
+    expect(doc.nodes.map((n) => n.type)).toEqual([
+      'markdown',
+      'mermaid',
+      'markdown',
+      'wireframe',
+      'table',
+      'image',
+      'markdown'
+    ])
+  })
+
+  it('sanitizes javascript: URLs in standalone image nodes to empty src', () => {
+    expect(parseMarkdownContent('![xss](javascript:alert(1))')).toEqual({
+      nodes: [{ type: 'image', url: '', alt: 'xss' }]
+    })
+  })
 })
