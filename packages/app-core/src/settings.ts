@@ -17,11 +17,9 @@ export type SettingsState = {
 }
 
 const parseBool = (value: string | undefined, fallback: boolean): boolean => {
-  if (value === undefined) {
-    return fallback
-  }
-
-  return value !== 'false'
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return fallback
 }
 
 export const defaultSettingsState = (): SettingsState => ({
