@@ -335,6 +335,28 @@ export const rateLimitPayloadSchema = z.object({
 
 export type RateLimitPayload = z.infer<typeof rateLimitPayloadSchema>
 
+export const parseRetryAfterMs = (
+  value: string | null | undefined,
+  nowMs = Date.now()
+): number | undefined => {
+  const trimmed = value?.trim()
+  if (!trimmed) {
+    return undefined
+  }
+
+  const seconds = Number(trimmed)
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds * 1000)
+  }
+
+  const dateMs = Date.parse(trimmed)
+  if (!Number.isNaN(dateMs)) {
+    return Math.max(0, dateMs - nowMs)
+  }
+
+  return undefined
+}
+
 export const githubModelEntrySchema = z.object({
   id: z.string(),
   label: z.string()
