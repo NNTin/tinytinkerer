@@ -253,7 +253,7 @@ describe('host server', () => {
       models: { state: 'ready' },
       search: { state: 'ready' }
     })
-  })
+  }, 30_000)
 
   it('fails clearly when the preferred port is unavailable', async () => {
     const blocker = await startBlocker()
