@@ -54,7 +54,7 @@ const mockChatState = vi.hoisted(() => ({
   isRunning: false,
   isRetryPending: false,
   cooldownUntil: undefined as string | undefined,
-  submitPrompt: vi.fn(async () => true),
+  submitPrompt: vi.fn(() => true),
   resetConversation: vi.fn(),
   cancelRetry: vi.fn()
 }))

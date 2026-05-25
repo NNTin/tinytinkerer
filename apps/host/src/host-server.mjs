@@ -158,6 +158,7 @@ const getEdgeProxyApp = (apps) => {
 }
 
 /**
+ * @param {string} publicDir
  * @param {string} pathname
  * @returns {string | undefined}
  */
@@ -180,6 +181,7 @@ const resolveHostStaticPath = (publicDir, pathname) => {
 }
 
 /**
+ * @param {string} publicDir
  * @param {string} pathname
  * @returns {Promise<{ body: Buffer, contentType: string } | undefined>}
  */
@@ -191,11 +193,11 @@ const readHostStaticAsset = async (publicDir, pathname) => {
 
   try {
     const body = await readFile(assetPath)
-    const contentType = staticContentTypes[extname(assetPath)] ?? 'application/octet-stream'
+    const contentType = /** @type {Record<string, string>} */ (staticContentTypes)[extname(assetPath)] ?? 'application/octet-stream'
     return { body, contentType }
   } catch (error) {
     if (error instanceof Error && 'code' in error) {
-      const code = error.code
+      const code = /** @type {string} */ (error.code)
       if (code === 'ENOENT' || code === 'EISDIR' || code === 'ENOTDIR') {
         return undefined
       }
@@ -203,7 +205,6 @@ const readHostStaticAsset = async (publicDir, pathname) => {
 
     throw error
   }
-}
 }
 
 /**
@@ -220,9 +221,9 @@ const createRequestHandler = (apps, publicDir) => (req, res) => {
       res.statusCode = 301
       res.setHeader(
         'Location',
-        pathname === '/mobile/' || pathname === '/mobile'
+        pathname === '/mobile'
           ? '/mobile/'
-          : pathname === '/widget/' || pathname === '/widget'
+          : pathname === '/widget'
             ? '/widget/'
             : '/web/'
       )

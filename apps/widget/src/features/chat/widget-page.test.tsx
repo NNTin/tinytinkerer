@@ -31,10 +31,10 @@ const mockChatState = vi.hoisted(() => ({
 
 const mockSettingsState = vi.hoisted(() => ({
   effectiveStatus: {
-    auth: { state: 'ready' as 'ready' | 'degraded' | 'offline', detail: 'GitHub auth available' },
-    models: { state: 'ready' as 'ready' | 'degraded' | 'offline', detail: 'Models ready' },
+    auth: { state: 'ready', detail: 'GitHub auth available' },
+    models: { state: 'ready', detail: 'Models ready' },
     search: {
-      state: 'degraded' as 'ready' | 'degraded' | 'offline',
+      state: 'degraded',
       detail: 'Search temporarily unavailable'
     }
   },

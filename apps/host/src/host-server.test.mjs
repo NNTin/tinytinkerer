@@ -245,7 +245,7 @@ describe('host server', () => {
     activeClosers.add(() => proxyHostServer.close())
 
     const response = await fetch(`${proxyHostServer.url}/health`)
-    const body = await response.json()
+    const body = /** @type {unknown} */ (await response.json())
 
     expect(response.status).toBe(200)
     expect(body).toMatchObject({

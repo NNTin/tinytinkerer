@@ -29,15 +29,6 @@ const mockAuthState = vi.hoisted(() => ({
   initialize: vi.fn()
 }))
 
-const mockStatusState = vi.hoisted(() => ({
-  status: {
-    auth: { state: 'ready', detail: 'GitHub auth available' },
-    models: { state: 'degraded', detail: 'Model responses are slower than usual' },
-    search: { state: 'offline', detail: 'Search temporarily unavailable', error: 'Upstream timeout' }
-  },
-  refresh: vi.fn()
-}))
-
 const mockTurns = vi.hoisted(() => [] as Array<{
   id: string
   userText: string
@@ -55,7 +46,7 @@ const mockChatState = vi.hoisted(() => ({
   isRunning: false,
   isRetryPending: false,
   cooldownUntil: undefined as string | undefined,
-  submitPrompt: vi.fn(async () => true),
+  submitPrompt: vi.fn(() => true),
   resetConversation: vi.fn(),
   cancelRetry: vi.fn()
 }))

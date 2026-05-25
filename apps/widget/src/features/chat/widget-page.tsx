@@ -74,24 +74,26 @@ const loadStandaloneLayout = (): WidgetLayout => {
   }
 
   try {
-    const parsed = JSON.parse(stored)
+    const parsed: unknown = JSON.parse(stored)
+    if (typeof parsed !== 'object' || parsed === null) {
+      return createDefaultStandaloneLayout()
+    }
+    const r = parsed as Record<string, unknown>
     if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      typeof parsed.x !== 'number' ||
-      typeof parsed.y !== 'number' ||
-      typeof parsed.width !== 'number' ||
-      typeof parsed.height !== 'number'
+      typeof r.x !== 'number' ||
+      typeof r.y !== 'number' ||
+      typeof r.width !== 'number' ||
+      typeof r.height !== 'number'
     ) {
       return createDefaultStandaloneLayout()
     }
 
     return clampLayout({
-      x: parsed.x,
-      y: parsed.y,
-      width: parsed.width,
-      height: parsed.height,
-      minimized: parsed.minimized === true
+      x: r.x,
+      y: r.y,
+      width: r.width,
+      height: r.height,
+      minimized: r.minimized === true
     })
   } catch {
     return createDefaultStandaloneLayout()
