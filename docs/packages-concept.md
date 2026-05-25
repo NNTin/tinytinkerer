@@ -217,7 +217,7 @@ If both `web` and `widget` support Mermaid rendering, these concerns should not 
 - shared styling glue
 - fallback behavior when rendering fails
 
-That shared behavior belongs in a dedicated package such as `@tinytinkerer/feature-markdown` or `@tinytinkerer/feature-mermaid`.
+That shared behavior belongs in the dedicated content platform, split across `@tinytinkerer/content-core`, `@tinytinkerer/content-markdown`, `@tinytinkerer/content-react`, and specialized renderer packages such as `@tinytinkerer/content-mermaid`.
 
 The apps should only own:
 
@@ -227,8 +227,9 @@ The apps should only own:
 
 Mermaid remains a render-edge exception, not an alternate browser composition root.
 
-- `feature-mermaid` may depend downward on packages such as `ui` and `contracts`
-- `feature-mermaid` must not bypass `app-browser`
+- browser apps must not import `content-*` packages directly
+- `content-mermaid` may depend downward only on `content-core` and `content-react`
+- `content-*` must not bypass `app-browser`
 - if shared browser runtime integration is required, `app-browser` owns that integration and apps only mount the feature's render adapter
 
 This is the model to reuse for any future large shared feature.

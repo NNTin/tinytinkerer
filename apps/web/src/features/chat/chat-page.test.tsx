@@ -60,9 +60,14 @@ const mockChatState = vi.hoisted(() => ({
 }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
+  AssistantContent: ({ content, className }: { content: string; className?: string }) => (
+    <div className={className}>{content}</div>
+  ),
   buildCurrentTimeline: () => [],
   buildTurns: () => mockTurns,
+  formatCooldown: (ms: number) => `${Math.ceil(ms / 1000)}s`,
   startStatusPolling: vi.fn(() => () => undefined),
+  useChatCooldown: () => ({ cooldownRemainingMs: 0, isCoolingDown: false }),
   useGitHubOAuth: () => ({
     canStartGitHubOAuth: true,
     startGitHubOAuth: vi.fn(),

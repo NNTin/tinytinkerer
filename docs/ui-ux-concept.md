@@ -42,15 +42,15 @@ The goal for future agents is:
 The shared frontend model has three layers:
 
 - `@tinytinkerer/ui` owns presentational primitives such as buttons and other reusable visual building blocks.
-- `@tinytinkerer/feature-markdown` owns the shared markdown rendering surface used by frontend apps.
-- `@tinytinkerer/feature-mermaid` is the intended shared package for Mermaid-specific behavior once Mermaid support becomes real and non-trivial across apps.
+- `@tinytinkerer/app-browser` owns the shell-facing rich-content surface consumed by frontend apps.
+- `@tinytinkerer/content-*` owns the shared content parsing and rendering pipeline behind that `app-browser` surface.
 
 Rules:
 
 1. App shells may decide layout, spacing, and app-specific affordances.
 2. Shared controls, renderers, and non-trivial visual behavior should move into packages instead of being reimplemented per app.
 3. `@tinytinkerer/ui` is for primitives, not feature runtimes.
-4. `feature-*` packages are where cross-app rendering pipelines, sanitization policy, lazy loading, and shared feature glue belong.
+4. The content platform is where cross-app parsing, rendering, sanitization policy, lazy loading, and shared feature glue belong.
 
 ## Shared Visual Direction
 
@@ -100,7 +100,7 @@ The widget may differ in shell structure, but it must not fork shared feature be
 - Optimize for compact sessions and host integration.
 - Inline configuration is acceptable when it reduces friction inside an embedded surface.
 - Avoid assuming a full-page shell, modal-heavy flows, or large supporting panels.
-- Keep the widget thin: it should reuse shared runtime, shared markdown rendering, and future shared features instead of copying web or mobile internals.
+- Keep the widget thin: it should reuse shared runtime, shared content rendering, and future shared features instead of copying web or mobile internals.
 
 ## Feature Reuse Rules
 
@@ -109,14 +109,14 @@ When a feature appears in more than one frontend app, duplication is not accepta
 Use these rules:
 
 1. If the feature is just a visual primitive, extend `@tinytinkerer/ui`.
-2. If the feature has its own rendering or interaction pipeline, create or extend a `feature-*` package.
+2. If the feature has its own rendering or interaction pipeline, create or extend the content platform or another dedicated shared package.
 3. If shared browser runtime integration is needed, expose it through `@tinytinkerer/app-browser` instead of letting apps wire lower layers directly.
 4. Do not copy feature logic from `web` into `mobile` or `widget`, or from one app into another in any direction.
 
 Mermaid is the explicit example:
 
 - Mermaid support should not be separately implemented in `web`, `mobile`, and `widget`.
-- Markdown hooks, Mermaid source detection, lazy loading, sanitization, fallback behavior, and shared styling glue belong in `@tinytinkerer/feature-mermaid`.
+- Markdown hooks, Mermaid source detection, lazy loading, sanitization, fallback behavior, and shared styling glue belong in `@tinytinkerer/content-markdown`, `@tinytinkerer/content-mermaid`, and `@tinytinkerer/app-browser`.
 - Apps should only decide where Mermaid appears and how it fits their shell.
 
 ## Current Gaps To Avoid Repeating
@@ -134,7 +134,7 @@ Before adding frontend UI, check:
 
 - Is this a shell-specific layout choice or a reusable UI capability?
 - Will another frontend app need the same control, renderer, or behavior?
-- Should this live in `@tinytinkerer/ui`, `@tinytinkerer/feature-markdown`, or a new/existing `feature-*` package?
+- Should this live in `@tinytinkerer/ui`, the content platform, or another dedicated shared package?
 - Does this preserve a consistent visual family across apps?
 - Does this avoid app-to-app copying?
 

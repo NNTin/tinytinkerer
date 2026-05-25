@@ -1,17 +1,17 @@
 {
-  "name": "@tinytinkerer/app-browser",
+  "name": "@tinytinkerer/content-wireframe",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./src/index.tsx",
+      "default": "./src/index.tsx"
     }
   },
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "src/index.tsx",
+  "types": "src/index.tsx",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "eslint src tests",
@@ -19,15 +19,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tinytinkerer/app-core": "workspace:*",
-    "@tinytinkerer/brand-assets": "workspace:*",
-    "@tinytinkerer/content-markdown": "workspace:*",
-    "@tinytinkerer/content-mermaid": "workspace:*",
-    "@tinytinkerer/content-react": "workspace:*",
-    "@tinytinkerer/content-wireframe": "workspace:*",
-    "@tinytinkerer/contracts": "workspace:*",
-    "dexie": "^4.2.1",
-    "zustand": "^5.0.8"
+    "@tinytinkerer/content-core": "workspace:*",
+    "@tinytinkerer/content-react": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.0.0"
