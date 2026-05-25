@@ -1,5 +1,17 @@
 export type BrowserAuthMode = 'oauth' | 'host-token' | 'hybrid'
 
+export type BrowserShellBootstrapOptions = {
+  baseUrl: string
+  origin: string
+  edgeBaseUrl?: string | undefined
+  storageNamespace?: string | undefined
+  authMode?: BrowserAuthMode | undefined
+  githubClientId?: string | undefined
+  githubRedirectUri?: string | undefined
+  manifestStartUrl?: string | undefined
+  hostToken?: string | null
+}
+
 export type BrowserShellConfig = {
   edgeBaseUrl?: string
   storageNamespace?: string
@@ -50,4 +62,22 @@ export const resolveBrowserShellConfig = (
   }
 
   return resolved
+}
+
+export const resolveBrowserShellBootstrapConfig = (
+  options: BrowserShellBootstrapOptions
+): BrowserShellConfig => {
+  const githubRedirectUri =
+    options.githubRedirectUri ??
+    (options.githubClientId ? `${options.origin}${options.baseUrl}#/auth/callback` : undefined)
+
+  return {
+    edgeBaseUrl: options.edgeBaseUrl ?? DEFAULT_CONFIG.edgeBaseUrl,
+    storageNamespace: options.storageNamespace ?? DEFAULT_CONFIG.storageNamespace,
+    authMode: options.authMode ?? DEFAULT_CONFIG.authMode,
+    hostToken: options.hostToken ?? DEFAULT_CONFIG.hostToken,
+    ...(options.manifestStartUrl ? { manifestStartUrl: options.manifestStartUrl } : {}),
+    ...(options.githubClientId ? { githubClientId: options.githubClientId } : {}),
+    ...(githubRedirectUri ? { githubRedirectUri } : {})
+  }
 }

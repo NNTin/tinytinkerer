@@ -55,7 +55,7 @@ const mockChatState = vi.hoisted(() => ({
   isRunning: false,
   isRetryPending: false,
   cooldownUntil: undefined as string | undefined,
-  sendPrompt: vi.fn(),
+  submitPrompt: vi.fn(async () => true),
   resetConversation: vi.fn(),
   cancelRetry: vi.fn()
 }))
@@ -64,21 +64,25 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   AssistantContent: ({ content, className }: { content: string; className?: string }) => (
     <div className={className}>{content}</div>
   ),
-  buildCurrentTimeline: () => [],
-  buildTurns: () => mockTurns,
-  formatCooldown: (ms: number) => `${Math.ceil(ms / 1000)}s`,
-  startStatusPolling: vi.fn(() => () => undefined),
-  useChatCooldown: () => ({ cooldownRemainingMs: 0, isCoolingDown: false }),
-  useGitHubOAuth: () => ({
-    canStartGitHubOAuth: true,
-    startGitHubOAuth: vi.fn(),
-    completeGitHubOAuthCallback: vi.fn()
+  useChatSurfaceController: () => ({
+    events: mockChatState.events,
+    streamingText: mockChatState.streamingText,
+    token: mockAuthState.token,
+    turns: mockTurns,
+    timeline: [],
+    toolEvents: [],
+    isRunning: mockChatState.isRunning,
+    isRetryPending: mockChatState.isRetryPending,
+    showThinkingTimeline: mockSettingsState.showThinkingTimeline,
+    showToolActivity: mockSettingsState.showToolActivity,
+    cooldownRemainingMs: 0,
+    isCoolingDown: false,
+    submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
+    submitPrompt: mockChatState.submitPrompt,
+    resetConversation: mockChatState.resetConversation,
+    cancelRetry: mockChatState.cancelRetry
   }),
-  useAuthStore: (selector: (state: typeof mockAuthState) => unknown) => selector(mockAuthState),
-  useChatStore: (selector: (state: typeof mockChatState) => unknown) => selector(mockChatState),
-  useSettingsStore: (selector: (state: typeof mockSettingsState) => unknown) => selector(mockSettingsState),
-  useStatusStore: (selector: (state: typeof mockStatusState) => unknown) => selector(mockStatusState),
-  SUPPORTED_MODELS: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }]
+  BrowserSettingsModal: () => null
 }))
 
 import { MobilePage } from './mobile-page.js'
@@ -115,6 +119,7 @@ beforeEach(() => {
   mockChatState.isRunning = false
   mockChatState.isRetryPending = false
   mockChatState.cooldownUntil = undefined
+  mockChatState.submitPrompt.mockClear()
   mockTurns.length = 0
 })
 

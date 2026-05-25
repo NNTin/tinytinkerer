@@ -1,28 +1,12 @@
 import {
   AssistantContent,
-  buildTurns,
-  formatCooldown,
-  startStatusPolling,
   TINYTINKERER_BRAND_ASSET_URLS,
-  useAuthStore,
-  useChatCooldown,
-  useChatStore,
-  useGitHubModels,
-  useGitHubOAuth,
-  useGitHubUser,
-  useSettingsStore,
-  useStatusStore,
-  type SystemStatus
+  useChatSurfaceController,
+  useSettingsSurfaceController
 } from '@tinytinkerer/app-browser'
-import { Button } from '@tinytinkerer/ui'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Button, GitHubMark } from '@tinytinkerer/ui'
+import { useEffect, useRef, useState } from 'react'
 import { resolveWidgetViewMode, resolveWidgetWindowMode } from '../../runtime-config'
-
-const fallbackStatus: SystemStatus = {
-  auth: { state: 'offline', detail: 'Unavailable' },
-  models: { state: 'offline', detail: 'Unavailable' },
-  search: { state: 'offline', detail: 'Unavailable' }
-}
 
 const STANDALONE_LAYOUT_KEY = 'tinytinkerer:widget-layout:v1'
 const WIDGET_DEFAULT_WIDTH = 400
@@ -133,28 +117,33 @@ const WidgetLauncher = ({ onRestore }: { onRestore: () => void }) => (
 )
 
 const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
-  const events = useChatStore((state) => state.events)
-  const streamingText = useChatStore((state) => state.streamingText)
-  const isRunning = useChatStore((state) => state.isRunning)
-  const isRetryPending = useChatStore((state) => state.isRetryPending)
-  const sendPrompt = useChatStore((state) => state.sendPrompt)
-  const cancelRetry = useChatStore((state) => state.cancelRetry)
-  const resetConversation = useChatStore((state) => state.resetConversation)
-
-  const token = useAuthStore((state) => state.token)
-  const setToken = useAuthStore((state) => state.setToken)
-  const clearToken = useAuthStore((state) => state.clearToken)
-  const { canStartGitHubOAuth, startGitHubOAuth } = useGitHubOAuth()
-  const user = useGitHubUser()
-  const availableModels = useGitHubModels()
-
-  const selectedModel = useSettingsStore((state) => state.selectedModel)
-  const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
-  const searchEnabled = useSettingsStore((state) => state.searchEnabled)
-  const setSearchEnabled = useSettingsStore((state) => state.setSearchEnabled)
-  const status = useStatusStore((state) => state.status)
-  const refreshStatus = useStatusStore((state) => state.refresh)
-
+  const {
+    events,
+    streamingText,
+    turns,
+    isRunning,
+    isRetryPending,
+    submitLabel,
+    isCoolingDown,
+    submitPrompt,
+    resetConversation,
+    cancelRetry
+  } = useChatSurfaceController()
+  const {
+    token,
+    setToken,
+    clearToken,
+    canStartGitHubOAuth,
+    startGitHubOAuth,
+    user,
+    models,
+    selectedModel,
+    setSelectedModel,
+    searchEnabled,
+    setSearchEnabled,
+    effectiveStatus,
+    searchUnavailable
+  } = useSettingsSurfaceController()
   const [prompt, setPrompt] = useState('')
   const [showPat, setShowPat] = useState(false)
   const [patValue, setPatValue] = useState('')
@@ -164,23 +153,11 @@ const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
     endRef.current?.scrollIntoView({ block: 'end' })
   }, [events, streamingText])
 
-  useEffect(() => startStatusPolling(refreshStatus), [refreshStatus])
-
-  const turns = useMemo(() => buildTurns(events, streamingText), [events, streamingText])
-  const effectiveStatus = status ?? fallbackStatus
-  const searchUnavailable = effectiveStatus.search.state !== 'ready'
-
-  const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
-  const submitLabel = isCoolingDown ? formatCooldown(cooldownRemainingMs) : isRunning ? 'Thinking...' : 'Send'
-
   const handleSubmit = async () => {
-    const trimmed = prompt.trim()
-    if (!trimmed || isRunning || isCoolingDown) {
-      return
+    const didSend = await submitPrompt(prompt)
+    if (didSend) {
+      setPrompt('')
     }
-
-    await sendPrompt(trimmed)
-    setPrompt('')
   }
 
   const handlePatSave = async () => {
@@ -227,7 +204,7 @@ const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
                 onChange={(event) => void setSelectedModel(event.target.value)}
                 className="mt-1 w-full rounded-xl border border-[var(--widget-border)] bg-white px-3 py-2 text-sm text-[var(--widget-text)]"
               >
-                {availableModels.map((model) => (
+                {models.map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.label}
                   </option>
@@ -280,8 +257,9 @@ const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
                   <button
                     type="button"
                     onClick={() => startGitHubOAuth()}
-                    className="inline-flex items-center rounded-full bg-stone-900 px-3 py-1.5 text-xs text-white"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-stone-900 px-3 py-1.5 text-xs text-white"
                   >
+                    <GitHubMark />
                     Sign in with GitHub
                   </button>
                 ) : null}

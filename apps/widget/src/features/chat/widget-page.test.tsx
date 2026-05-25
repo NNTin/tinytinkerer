@@ -9,7 +9,7 @@ const mockAuthState = vi.hoisted(() => ({
 }))
 
 const mockChatState = vi.hoisted(() => ({
-  events: [
+  turns: [
     {
       id: 'turn-1',
       userText: 'hello',
@@ -21,57 +21,78 @@ const mockChatState = vi.hoisted(() => ({
       }
     }
   ],
+  events: [] as Array<{ id: string; type: string }>,
   streamingText: '',
   isRunning: false,
-  sendPrompt: vi.fn().mockResolvedValue(undefined),
+  submitPrompt: vi.fn().mockResolvedValue(true),
   resetConversation: vi.fn(),
-  initialize: vi.fn()
+  cancelRetry: vi.fn()
 }))
 
 const mockSettingsState = vi.hoisted(() => ({
+  effectiveStatus: {
+    auth: { state: 'ready' as 'ready' | 'degraded' | 'offline', detail: 'GitHub auth available' },
+    models: { state: 'ready' as 'ready' | 'degraded' | 'offline', detail: 'Models ready' },
+    search: {
+      state: 'degraded' as 'ready' | 'degraded' | 'offline',
+      detail: 'Search temporarily unavailable'
+    }
+  },
   selectedModel: 'openai/gpt-4.1-mini',
   searchEnabled: true,
   setSelectedModel: vi.fn(),
-  setSearchEnabled: vi.fn()
-}))
-
-const mockStatusState = vi.hoisted(() => ({
-  status: {
-    auth: { state: 'ready', detail: 'GitHub auth available' },
-    models: { state: 'ready', detail: 'Models ready' },
-    search: { state: 'degraded', detail: 'Search temporarily unavailable' }
-  },
-  refresh: vi.fn()
+  setSearchEnabled: vi.fn(),
+  setShowThinkingTimeline: vi.fn(),
+  setShowToolActivity: vi.fn(),
+  showThinkingTimeline: true,
+  showToolActivity: true
 }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
   AssistantContent: ({ content, className }: { content: string; className?: string }) => (
     <div className={className}>{content}</div>
   ),
-  buildTurns: () => mockChatState.events,
-  formatCooldown: (ms: number) => `${Math.ceil(ms / 1000)}s`,
-  startStatusPolling: vi.fn(() => () => undefined),
   TINYTINKERER_BRAND_ASSET_URLS: {
     icon192: '/brand/icon-192.png'
   },
-  SUPPORTED_MODELS: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
-  useChatCooldown: () => ({ cooldownRemainingMs: 0, isCoolingDown: false }),
-  useGitHubOAuth: () => ({
+  useChatSurfaceController: () => ({
+    events: mockChatState.events,
+    streamingText: mockChatState.streamingText,
+    token: mockAuthState.token,
+    turns: mockChatState.turns,
+    timeline: [],
+    toolEvents: [],
+    isRunning: mockChatState.isRunning,
+    isRetryPending: false,
+    showThinkingTimeline: true,
+    showToolActivity: true,
+    cooldownRemainingMs: 0,
+    isCoolingDown: false,
+    submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
+    submitPrompt: mockChatState.submitPrompt,
+    resetConversation: mockChatState.resetConversation,
+    cancelRetry: mockChatState.cancelRetry
+  }),
+  useSettingsSurfaceController: () => ({
+    effectiveStatus: mockSettingsState.effectiveStatus,
+    refreshStatus: vi.fn(),
+    token: mockAuthState.token,
+    clearToken: mockAuthState.clearToken,
+    setToken: mockAuthState.setToken,
     canStartGitHubOAuth: true,
     startGitHubOAuth: vi.fn(),
-    completeGitHubOAuthCallback: vi.fn()
-  }),
-  useGitHubUser: () => null,
-  useGitHubModels: () => [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
-  useAuthStore: (selector: (state: typeof mockAuthState) => unknown) => selector(mockAuthState),
-  useChatStore: Object.assign(
-    (selector: (state: typeof mockChatState) => unknown) => selector(mockChatState),
-    {
-      getState: () => mockChatState
-    }
-  ),
-  useSettingsStore: (selector: (state: typeof mockSettingsState) => unknown) => selector(mockSettingsState),
-  useStatusStore: (selector: (state: typeof mockStatusState) => unknown) => selector(mockStatusState)
+    user: null,
+    models: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
+    selectedModel: mockSettingsState.selectedModel,
+    setSelectedModel: mockSettingsState.setSelectedModel,
+    searchEnabled: mockSettingsState.searchEnabled,
+    setSearchEnabled: mockSettingsState.setSearchEnabled,
+    showThinkingTimeline: mockSettingsState.showThinkingTimeline,
+    setShowThinkingTimeline: mockSettingsState.setShowThinkingTimeline,
+    showToolActivity: mockSettingsState.showToolActivity,
+    setShowToolActivity: mockSettingsState.setShowToolActivity,
+    searchUnavailable: mockSettingsState.effectiveStatus.search.state !== 'ready'
+  })
 }))
 
 import { WidgetPage } from './widget-page.js'
@@ -86,8 +107,8 @@ beforeEach(() => {
   window.history.replaceState({}, '', '/widget/')
   mockAuthState.token = null
   mockSettingsState.searchEnabled = true
-  mockStatusState.status.search.state = 'degraded'
-  mockStatusState.status.search.detail = 'Search temporarily unavailable'
+  mockSettingsState.effectiveStatus.search.state = 'degraded'
+  mockSettingsState.effectiveStatus.search.detail = 'Search temporarily unavailable'
 })
 
 describe('WidgetPage', () => {
@@ -120,7 +141,7 @@ describe('WidgetPage', () => {
       await Promise.resolve()
     })
 
-    expect(mockChatState.sendPrompt).toHaveBeenCalledWith('Tell me something current')
+    expect(mockChatState.submitPrompt).toHaveBeenCalledWith('Tell me something current')
   })
 
   it('collapses to a launcher and restores in standalone mode', () => {

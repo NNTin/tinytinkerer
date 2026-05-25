@@ -20,14 +20,26 @@ export {
 } from './app'
 export type { BrowserApp } from './app'
 export type { AssistantContentProps } from './assistant-content'
-export type { BrowserAuthMode, BrowserShellConfig, ResolvedBrowserShellConfig } from './config'
+export type {
+  BrowserAuthMode,
+  BrowserShellBootstrapOptions,
+  BrowserShellConfig,
+  ResolvedBrowserShellConfig
+} from './config'
 export { AssistantContent } from './assistant-content'
+export { BrowserSettingsModal } from './browser-settings-modal'
 export { bootstrapBrowserShell } from './initialize'
 export { formatCooldown, useBrowserShellConfig, useChatCooldown, useGitHubOAuth } from './hooks'
+export { resolveBrowserShellBootstrapConfig } from './config'
+export {
+  useChatSurfaceController,
+  useGitHubOAuthCallbackController,
+  useSettingsSurfaceController
+} from './surfaces'
 export { fetchStatus, startStatusPolling } from './status'
 export type { BrowserShell } from './shell'
 export { createBrowserShell } from './shell'
-export { isSearchReady } from './stores/status-store'
+export { isSearchReady, OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 export {
   DEFAULT_MODEL,
   SUPPORTED_MODELS,

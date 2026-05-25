@@ -111,36 +111,6 @@ body {
   line-height: 1.55;
 }
 
-.tt-markdown.widget-prose > *:first-child {
-  margin-top: 0;
-}
-
-.tt-markdown.widget-prose > *:last-child {
-  margin-bottom: 0;
-}
-
-.tt-markdown.widget-prose p,
-.tt-markdown.widget-prose ul,
-.tt-markdown.widget-prose ol {
-  margin: 0.4em 0;
-}
-
-.tt-markdown.widget-prose code,
 .tt-markdown.widget-prose pre {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-.tt-markdown.widget-prose pre {
-  overflow-x: auto;
   border-radius: 0.75rem;
-  border: 1px solid #d7d4ca;
-  background: #f2efe7;
-  padding: 0.75rem;
-}
-
-.tt-markdown--streaming::after {
-  content: '|';
-  display: inline-block;
-  margin-left: 1px;
-  color: #b45309;
 }
