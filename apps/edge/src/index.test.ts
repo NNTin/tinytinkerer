@@ -6,7 +6,7 @@ describe('edge routes', () => {
     vi.restoreAllMocks()
   })
 
-  it('returns a typed 503 error when search is unavailable', async () => {
+  it('returns 401 when search is called without authorization', async () => {
     const response = await app.fetch(
       new Request('http://localhost/api/search', {
         method: 'POST',
@@ -16,10 +16,61 @@ describe('edge routes', () => {
       {}
     )
 
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
+  })
+
+  it('returns a typed 503 error when search is unavailable', async () => {
+    const response = await app.fetch(
+      new Request('http://localhost/api/search', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer test-token' },
+        body: JSON.stringify({ query: 'latest ai news' })
+      }),
+      {}
+    )
+
     expect(response.status).toBe(503)
     await expect(response.json()).resolves.toEqual({
       error: 'Web search is currently unavailable. Configure Tavily to enable live search.'
     })
+  })
+
+  it('returns 429 with Retry-After header and rate-limit body when upstream is rate limited', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response('rate limited', {
+            status: 429,
+            headers: { 'retry-after': '120' }
+          })
+        )
+      )
+    )
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer test-token'
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-4.1-mini',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      {}
+    )
+
+    expect(response.status).toBe(429)
+    expect(response.headers.get('Retry-After')).toBe('120')
+    const body = await response.json() as Record<string, unknown>
+    expect(body['code']).toBe('rate_limited')
+    expect(body['error']).toBe('GitHub Models rate limit reached')
+    expect(body['retryAfterMs']).toBe(120_000)
   })
 
   it('returns a typed models error for upstream authentication failures', async () => {

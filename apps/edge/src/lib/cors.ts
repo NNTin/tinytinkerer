@@ -52,7 +52,7 @@ export const resolveAllowedOrigin = (
   const configuredOrigins = getConfiguredOrigins(env)
 
   if (configuredOrigins.length === 0) {
-    return '*'
+    return env.ALLOW_ALL_ORIGINS === 'true' ? '*' : null
   }
 
   if (!requestOrigin) {
@@ -90,6 +90,7 @@ export const applyCorsHeaders = (
     headers.set('Access-Control-Allow-Origin', allowedOrigin)
   }
 
+  // Vary: Origin prevents caches from serving one origin's credentialed response to another.
   if (allowedOrigin !== '*' && headers.get('Vary') !== 'Origin') {
     headers.append('Vary', 'Origin')
   }

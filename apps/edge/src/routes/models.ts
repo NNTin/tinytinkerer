@@ -37,11 +37,13 @@ const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
   400: 'Invalid request',
   401: 'Authentication failed. Your GitHub token may be invalid or expired.',
   403: 'Access denied. Check your GitHub token permissions.',
+  422: 'Unprocessable request',
   500: 'Upstream service error',
-  503: 'Upstream service unavailable'
+  503: 'Upstream service unavailable',
+  504: 'Upstream service timed out'
 }
 
-const UPSTREAM_ERROR_STATUSES = new Set([400, 401, 403, 500, 503])
+const UPSTREAM_ERROR_STATUSES = new Set([400, 401, 403, 422, 500, 503, 504])
 
 export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
   app.post('/api/models/chat', zValidator('json', modelsChatRequestSchema), async (c) => {
@@ -93,10 +95,15 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
         return c.json(rateLimitBody, 429)
       }
 
+      if (response.status === 503) {
+        const retryAfter = response.headers.get('retry-after')
+        if (retryAfter) c.header('Retry-After', retryAfter)
+      }
+
       const safeError =
         UPSTREAM_ERROR_MESSAGES[response.status] ?? `Upstream error ${response.status}`
       const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
-        ? (response.status as 400 | 401 | 403 | 500 | 503)
+        ? (response.status as 400 | 401 | 403 | 422 | 500 | 503 | 504)
         : 502
       return c.json(edgeErrorResponseSchema.parse({ error: safeError }), statusCode)
     }
@@ -152,7 +159,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       const safeError =
         UPSTREAM_ERROR_MESSAGES[response.status] ?? `Upstream error ${response.status}`
       const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
-        ? (response.status as 400 | 401 | 403 | 500 | 503)
+        ? (response.status as 400 | 401 | 403 | 422 | 500 | 503 | 504)
         : 502
       return c.json(edgeErrorResponseSchema.parse({ error: safeError }), statusCode)
     }
