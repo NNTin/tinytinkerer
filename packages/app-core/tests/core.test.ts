@@ -5,6 +5,8 @@ import {
   buildConversationHistory,
   buildCurrentTimeline,
   buildTurns,
+  canSendPrompt,
+  defaultChatState,
   inferPlan,
   normalizeSelectedModel
 } from '../src/index.js'
@@ -119,5 +121,50 @@ describe('app-core helpers', () => {
 
   it('drops expired cooldowns', () => {
     expect(activeCooldown(new Date(Date.now() - 1_000).toISOString())).toBeUndefined()
+  })
+
+  it('buildCurrentTimeline returns empty array when no user.message is present', () => {
+    expect(buildCurrentTimeline([])).toEqual([])
+    expect(
+      buildCurrentTimeline([
+        event('planning.started', { summary: 'Understanding request' }),
+        event('assistant.done', { text: 'hi' })
+      ])
+    ).toEqual([])
+  })
+
+  it('execution.step.completed with empty note does not appear in timeline', () => {
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hello' }),
+      event('execution.step.completed', { stepId: 'step-1', note: '' }),
+      event('assistant.done', { text: 'hi' })
+    ]
+    const timeline = buildCurrentTimeline(events)
+    expect(timeline.every((entry) => entry.label !== '')).toBe(true)
+    expect(timeline).toHaveLength(0)
+  })
+
+  describe('canSendPrompt', () => {
+    it('returns false when conversationId is absent', () => {
+      expect(canSendPrompt({ ...defaultChatState(), conversationId: undefined })).toBe(false)
+    })
+
+    it('returns false when isRunning is true', () => {
+      expect(canSendPrompt({ ...defaultChatState(), conversationId: 'id', isRunning: true })).toBe(false)
+    })
+
+    it('returns false when cooldown is active', () => {
+      const future = new Date(Date.now() + 60_000).toISOString()
+      expect(canSendPrompt({ ...defaultChatState(), conversationId: 'id', cooldownUntil: future })).toBe(false)
+    })
+
+    it('returns true when cooldown has expired', () => {
+      const past = new Date(Date.now() - 1_000).toISOString()
+      expect(canSendPrompt({ ...defaultChatState(), conversationId: 'id', cooldownUntil: past })).toBe(true)
+    })
+
+    it('returns true when all conditions are clear', () => {
+      expect(canSendPrompt({ ...defaultChatState(), conversationId: 'id' })).toBe(true)
+    })
   })
 })

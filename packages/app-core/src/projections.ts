@@ -5,15 +5,17 @@ export type TimelineEntry = {
   label: string
 }
 
+export type TurnNotice = {
+  kind: 'system' | 'error' | 'rate-limit'
+  message: string
+  level?: 'info' | 'warning' | 'error'
+}
+
 export type Turn = {
   id: string
   userText: string
   assistantText: string
-  notice?: {
-    kind: 'system' | 'error' | 'rate-limit'
-    message: string
-    level?: 'info' | 'warning' | 'error'
-  }
+  notice?: TurnNotice
 }
 
 export const activeCooldown = (value: string | undefined): string | undefined => {
@@ -27,6 +29,18 @@ export const activeCooldown = (value: string | undefined): string | undefined =>
   }
 
   return value
+}
+
+const noticeSeverity = (notice: TurnNotice): number => {
+  if (notice.kind === 'error') return 3
+  if (notice.kind === 'rate-limit') return 2
+  return 1
+}
+
+const setNoticeIfHigherSeverity = (turn: Turn, candidate: TurnNotice): void => {
+  if (!turn.notice || noticeSeverity(candidate) > noticeSeverity(turn.notice)) {
+    turn.notice = candidate
+  }
 }
 
 const thinkingLabel = (event: ChatEvent): string | undefined => {
@@ -79,61 +93,33 @@ export const buildTurns = (events: ChatEvent[], streamingText: string): Turn[] =
         })
       }
     } else if (event.type === 'error') {
+      const notice: TurnNotice = { kind: 'error', message: event.payload.message, level: 'error' }
       if (pendingTurn) {
-        pendingTurn.notice = {
-          kind: 'error',
-          message: event.payload.message,
-          level: 'error'
-        }
+        setNoticeIfHigherSeverity(pendingTurn, notice)
       } else {
-        turns.push({
-          id: event.id,
-          userText: '',
-          assistantText: '',
-          notice: {
-            kind: 'error',
-            message: event.payload.message,
-            level: 'error'
-          }
-        })
+        turns.push({ id: event.id, userText: '', assistantText: '', notice })
       }
     } else if (event.type === 'system') {
+      const notice: TurnNotice = {
+        kind: 'system',
+        message: event.payload.message,
+        level: event.payload.level
+      }
       if (pendingTurn) {
-        pendingTurn.notice = {
-          kind: 'system',
-          message: event.payload.message,
-          level: event.payload.level
-        }
+        setNoticeIfHigherSeverity(pendingTurn, notice)
       } else {
-        turns.push({
-          id: event.id,
-          userText: '',
-          assistantText: '',
-          notice: {
-            kind: 'system',
-            message: event.payload.message,
-            level: event.payload.level
-          }
-        })
+        turns.push({ id: event.id, userText: '', assistantText: '', notice })
       }
     } else if (event.type === 'rate.limit.waiting' || event.type === 'rate.limit.cancelled') {
+      const notice: TurnNotice = {
+        kind: 'rate-limit',
+        message: event.payload.message,
+        level: 'warning'
+      }
       if (pendingTurn) {
-        pendingTurn.notice = {
-          kind: 'rate-limit',
-          message: event.payload.message,
-          level: 'warning'
-        }
+        setNoticeIfHigherSeverity(pendingTurn, notice)
       } else {
-        turns.push({
-          id: event.id,
-          userText: '',
-          assistantText: '',
-          notice: {
-            kind: 'rate-limit',
-            message: event.payload.message,
-            level: 'warning'
-          }
-        })
+        turns.push({ id: event.id, userText: '', assistantText: '', notice })
       }
     }
   }
@@ -147,12 +133,16 @@ export const buildTurns = (events: ChatEvent[], streamingText: string): Turn[] =
 }
 
 export const buildCurrentTimeline = (events: ChatEvent[]): TimelineEntry[] => {
-  let startIndex = 0
+  let startIndex = -1
   for (let index = events.length - 1; index >= 0; index -= 1) {
     if (events[index]?.type === 'user.message') {
       startIndex = index
       break
     }
+  }
+
+  if (startIndex === -1) {
+    return []
   }
 
   return events

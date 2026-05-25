@@ -70,11 +70,12 @@ export const applyRateLimitEvent = async (
   }
 
   if (event.type === 'rate.limit.cancelled') {
-    await preferences.set(RATE_LIMIT_COOLDOWN_KEY, event.payload.retryAt)
-    return {
-      cooldownUntil: event.payload.retryAt,
-      isRetryPending: false
+    if (event.payload.reason === 'cancelled') {
+      await preferences.set(RATE_LIMIT_COOLDOWN_KEY, '')
+      return { cooldownUntil: undefined, isRetryPending: false }
     }
+    await preferences.set(RATE_LIMIT_COOLDOWN_KEY, event.payload.retryAt)
+    return { cooldownUntil: event.payload.retryAt, isRetryPending: false }
   }
 
   if (event.type === 'rate.limit.recovered') {
@@ -117,6 +118,16 @@ export const executeChatPrompt = async (options: {
 }): Promise<void> => {
   const history = buildConversationHistory(options.existingEvents)
 
+  const persistableTypes = new Set<ChatEvent['type']>([
+    'user.message',
+    'assistant.done',
+    'error',
+    'system',
+    'rate.limit.waiting',
+    'rate.limit.recovered',
+    'rate.limit.cancelled'
+  ])
+
   for await (const event of runPrompt(
     options.runtimeFactory,
     options.prompt,
@@ -129,7 +140,10 @@ export const executeChatPrompt = async (options: {
     }
 
     await options.onEvent(event)
-    await options.conversations.appendEvent(createPersistedEvent(options.conversationId, event))
+
+    if (persistableTypes.has(event.type)) {
+      await options.conversations.appendEvent(createPersistedEvent(options.conversationId, event))
+    }
 
     const rateLimitState = await applyRateLimitEvent(event, options.preferences)
     if (rateLimitState) {
