@@ -1,11 +1,17 @@
 import { parseMarkdownContent } from '@tinytinkerer/content-markdown'
-import { MermaidNodeRenderer } from '@tinytinkerer/content-mermaid'
 import {
   ContentDocumentRenderer,
   createContentRendererRegistry
 } from '@tinytinkerer/content-react'
-import { WireframeNodeRenderer } from '@tinytinkerer/content-wireframe'
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
+
+const MermaidNodeRenderer = lazy(() =>
+  import('@tinytinkerer/content-mermaid').then((m) => ({ default: m.MermaidNodeRenderer }))
+)
+
+const WireframeNodeRenderer = lazy(() =>
+  import('@tinytinkerer/content-wireframe').then((m) => ({ default: m.WireframeNodeRenderer }))
+)
 
 export type AssistantContentProps = {
   content: string
@@ -26,11 +32,13 @@ export const AssistantContent = ({
   const document = useMemo(() => parseMarkdownContent(content), [content])
 
   return (
-    <ContentDocumentRenderer
-      document={document}
-      isStreaming={isStreaming}
-      renderers={assistantContentRenderers}
-      {...(className ? { className } : {})}
-    />
+    <Suspense>
+      <ContentDocumentRenderer
+        document={document}
+        isStreaming={isStreaming}
+        renderers={assistantContentRenderers}
+        {...(className ? { className } : {})}
+      />
+    </Suspense>
   )
 }

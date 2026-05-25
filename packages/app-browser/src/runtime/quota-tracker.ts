@@ -11,6 +11,12 @@ const parseNonNegativeInt = (headers: Headers, name: string): number | undefined
   return Number.isFinite(n) && n >= 0 ? n : undefined
 }
 
+// GitHub sends x-ratelimit-reset-* as either relative seconds (<= 86400) or absolute Unix epoch seconds.
+const resolveResetAt = (resetSec: number | undefined, nowMs: number, renewalMs: number): number => {
+  if (resetSec === undefined || resetSec <= 0) return nowMs + renewalMs
+  return resetSec > 86400 ? resetSec * 1000 : nowMs + resetSec * 1000
+}
+
 type QuotaWindow = {
   limit: number
   remaining: number
@@ -49,7 +55,7 @@ export class RateLimitQuota {
       this.requests = {
         limit: limitReq,
         remaining: remainingReq,
-        resetAt: nowMs + (resetReq !== undefined && resetReq > 0 ? resetReq * 1000 : renewalMs),
+        resetAt: resolveResetAt(resetReq, nowMs, renewalMs),
         renewalPeriodMs: renewalMs,
       }
     }
@@ -59,14 +65,16 @@ export class RateLimitQuota {
       this.tokens = {
         limit: limitTok,
         remaining: remainingTok,
-        resetAt: nowMs + (resetTok !== undefined && resetTok > 0 ? resetTok * 1000 : renewalMs),
+        resetAt: resolveResetAt(resetTok, nowMs, renewalMs),
         renewalPeriodMs: renewalMs,
       }
     }
 
     this.abuseActive = abusePenalty !== null && abusePenalty.toLowerCase() === 'true'
+  }
 
-    // Clear heuristic backoff on a successful response
+  // Call after a confirmed successful response to clear any heuristic backoff.
+  clearHeuristicBackoff(): void {
     this.heuristicBackoffMs = 0
   }
 

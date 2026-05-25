@@ -40,21 +40,6 @@ const createStatusStoreStub = (): StatusStore =>
     getState: () => mockStatus
   }) as StatusStore
 
-const createRuntime = () =>
-  createBrowserRuntimeFactory({
-    shell: {
-      config: {
-        edgeBaseUrl: 'http://test-edge.local',
-        storageNamespace: 'tinytinkerer-test',
-        authMode: 'hybrid',
-        hostToken: null
-      }
-    } as BrowserShell,
-    authStore: createAuthStoreStub(),
-    settingsStore: createSettingsStoreStub(),
-    statusStore: createStatusStoreStub()
-  }).create()
-
 const toRequestUrl = (input: RequestInfo | URL): string => {
   if (typeof input === 'string') {
     return input
@@ -77,6 +62,23 @@ beforeEach(() => {
 })
 
 describe('createBrowserRuntimeFactory', () => {
+  // createRuntime is defined here so each test body calls it after beforeEach resets the mocks.
+  // searchEnabled is read at .create() time, so runtime construction must happen inside the test.
+  const createRuntime = () =>
+    createBrowserRuntimeFactory({
+      shell: {
+        config: {
+          edgeBaseUrl: 'http://test-edge.local',
+          storageNamespace: 'tinytinkerer-test',
+          authMode: 'hybrid',
+          hostToken: null
+        }
+      } as BrowserShell,
+      authStore: createAuthStoreStub(),
+      settingsStore: createSettingsStoreStub(),
+      statusStore: createStatusStoreStub()
+    }).create()
+
   it('emits web-search tool events when searchEnabled is true', async () => {
     vi.stubGlobal(
       'fetch',

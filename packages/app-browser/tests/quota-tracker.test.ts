@@ -116,13 +116,26 @@ describe('RateLimitQuota', () => {
     expect(result.waitMs).toBeGreaterThan(30_000)
   })
 
-  it('clears heuristic backoff after a successful response with headers', () => {
+  it('clears heuristic backoff via clearHeuristicBackoff() after a confirmed successful response', () => {
     const quota = new RateLimitQuota()
     const nowMs = Date.now()
     quota.recordRateLimit(30_000, nowMs)
     quota.updateFromHeaders(makeHeaders())
+    // updateFromHeaders no longer clears heuristic — caller must do so explicitly after 200 OK
+    expect(quota.checkThrottle(0, nowMs).shouldThrottle).toBe(true)
+    quota.clearHeuristicBackoff()
+    expect(quota.checkThrottle(0, nowMs).shouldThrottle).toBe(false)
+  })
+
+  it('preserves heuristic backoff when updateFromHeaders is called on a non-success response', () => {
+    const quota = new RateLimitQuota()
+    const nowMs = Date.now()
+    quota.recordRateLimit(30_000, nowMs)
+    // Simulate headers arriving on a 429 — heuristic must not be cleared
+    quota.updateFromHeaders(makeHeaders())
     const result = quota.checkThrottle(0, nowMs)
-    expect(result.shouldThrottle).toBe(false)
+    expect(result.shouldThrottle).toBe(true)
+    expect(result.reason).toBe('heuristic')
   })
 
   it('ignores stale quota windows (window already expired)', () => {
@@ -139,6 +152,26 @@ describe('RateLimitQuota', () => {
     // Check at current time — window has expired, should not throttle
     const result = quota.checkThrottle(0, Date.now())
     expect(result.shouldThrottle).toBe(false)
+  })
+
+  it('interprets x-ratelimit-reset-* as absolute epoch seconds when value > 86400', () => {
+    const quota = new RateLimitQuota()
+    const nowMs = Date.now()
+    // Simulate GitHub sending an absolute epoch timestamp ~60s in the future
+    const absoluteResetSec = Math.floor((nowMs + 60_000) / 1000)
+    quota.updateFromHeaders(
+      makeHeaders({
+        'x-ratelimit-remaining-requests': '0',
+        'x-ratelimit-reset-requests': String(absoluteResetSec),
+      }),
+      nowMs
+    )
+    const result = quota.checkThrottle(0, nowMs)
+    expect(result.shouldThrottle).toBe(true)
+    expect(result.reason).toBe('request_quota')
+    // resetAt should be close to the absolute timestamp, not nowMs + absoluteResetSec * 1000
+    expect(result.waitMs).toBeGreaterThan(50_000)
+    expect(result.waitMs).toBeLessThan(70_000)
   })
 
   it('does not throttle based on token quota when estimatedTokens is 0', () => {

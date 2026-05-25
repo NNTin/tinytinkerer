@@ -11,7 +11,9 @@ import { router } from './app/router'
 import { resolveWidgetGitHubRedirectUri } from './runtime-config'
 import './index.css'
 
-const hostConfig: BrowserShellConfig = window.__TINYTINKERER_WIDGET_CONFIG__ ?? {}
+// The embedding page is fully trusted — it provides hostToken and other config intentionally.
+// Freeze immediately to prevent accidental mutation before values are consumed below.
+const hostConfig: BrowserShellConfig = Object.freeze(window.__TINYTINKERER_WIDGET_CONFIG__ ?? {})
 
 const getEnvValue = (
   key: 'VITE_EDGE_URL' | 'VITE_GITHUB_CLIENT_ID'

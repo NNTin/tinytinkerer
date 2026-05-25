@@ -21,15 +21,26 @@ const modelListResponseSchema = (raw: unknown): ModelEntry[] | null => {
   return result.length > 0 ? result : null
 }
 
-const modelsCache = new Map<string, ModelEntry[]>()
+type CacheEntry = { models: ModelEntry[]; cachedAt: number }
+const modelsCache = new Map<string, CacheEntry>()
+const MODELS_CACHE_TTL_MS = 5 * 60_000
+
+const hashToken = async (token: string): Promise<string> => {
+  const data = new TextEncoder().encode(token)
+  const hash = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
 
 export const fetchGitHubModels = async (
   edgeBaseUrl: string,
   token: string
 ): Promise<ModelEntry[]> => {
-  const cacheKey = `${edgeBaseUrl}:${token}`
+  const tokenHash = await hashToken(token)
+  const cacheKey = `${edgeBaseUrl}:${tokenHash}`
   const cached = modelsCache.get(cacheKey)
-  if (cached) return cached
+  if (cached && Date.now() - cached.cachedAt <= MODELS_CACHE_TTL_MS) return cached.models
 
   try {
     const response = await fetch(`${edgeBaseUrl}/api/models/list`, {
@@ -41,7 +52,7 @@ export const fetchGitHubModels = async (
     const models = modelListResponseSchema(await response.json())
     if (!models) return [...SUPPORTED_MODELS]
 
-    modelsCache.set(cacheKey, models)
+    modelsCache.set(cacheKey, { models, cachedAt: Date.now() })
     return models
   } catch {
     return [...SUPPORTED_MODELS]

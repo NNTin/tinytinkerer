@@ -83,7 +83,7 @@ export const createBrowserPersistence = (
       await preferences.set('github_access_token', token)
     },
     async clearStoredToken() {
-      await preferences.set('github_access_token', '')
+      await db.preferences.delete('github_access_token')
     },
     getHostToken() {
       return hostToken
