@@ -11,6 +11,7 @@ This document describes the current target architecture for TinyTinkerer. UI app
 See also:
 - [content-platform.md](./content-platform.md)
 - [packages-concept.md](./packages-concept.md)
+- [ui-ux-concept.md](./ui-ux-concept.md)
 
 ## Monorepo Map
 
