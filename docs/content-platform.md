@@ -84,7 +84,7 @@ Owns:
 - markdown parsing
 - GFM support
 - mapping markdown structures into `ContentNode`
-- table markup and table-to-markdown serialization
+- thin markdown-to-document rendering adapter built on `content-react`
 - fallback rules for unsupported content
 
 Must not own:
@@ -164,10 +164,9 @@ That means:
 Browser apps should not import `content-*` packages directly. Instead:
 
 1. `app-browser` accepts assistant text from shared runtime state.
-2. `app-browser` parses that text through `content-markdown`.
-3. `app-browser` composes the renderer registry using `content-react`.
-4. `app-browser` mounts specialized renderers from `content-mermaid` and `content-wireframe`.
-5. Browser shells consume the final shell-safe export from `app-browser`.
+2. `app-browser` delegates markdown parsing and document rendering to `content-markdown`.
+3. `app-browser` mounts specialized renderers from `content-mermaid` and `content-wireframe`.
+4. Browser shells consume the final shell-safe export from `app-browser`.
 
 This keeps the dependency surface small and preserves the rule that apps extend capability through `app-browser` instead of reaching into lower layers directly.
 
@@ -180,36 +179,34 @@ flowchart LR
   subgraph ContentPlatform["Content Platform"]
     contentcore["@tinytinkerer/content-core<br/>AST + contracts"]
     contentreact["@tinytinkerer/content-react<br/>React rendering runtime + shared chrome"]
-    contentmarkdown["@tinytinkerer/content-markdown<br/>markdown parsing + table semantics"]
+    contentmarkdown["@tinytinkerer/content-markdown<br/>markdown parsing + React adapter"]
     contentmermaid["@tinytinkerer/content-mermaid<br/>Mermaid renderer/runtime"]
     contentwireframe["@tinytinkerer/content-wireframe<br/>wireframe renderer/runtime"]
   end
 
   ui["@tinytinkerer/ui<br/>presentational primitives"]
 
-  appbrowser --> contentreact
   appbrowser --> contentmarkdown
   appbrowser --> contentmermaid
   appbrowser --> contentwireframe
 
   contentreact --> contentcore
-  contentreact --> contentmarkdown
   contentreact --> ui
 
+  contentmarkdown --> contentreact
   contentmarkdown --> contentcore
-
-  contentmermaid --> contentcore
   contentmermaid --> contentreact
+  contentmermaid --> contentcore
 
-  contentwireframe --> contentcore
   contentwireframe --> contentreact
+  contentwireframe --> contentcore
 ```
 
 ## Dependency Rules
 
 - `content-core` must not depend on any workspace package.
-- `content-react` may depend only on `content-core`, `content-markdown`, and `ui`.
-- `content-markdown` may depend only on `content-core`.
+- `content-react` may depend only on `content-core` and `ui`.
+- `content-markdown` may depend only on `content-core` and `content-react`.
 - `content-mermaid` and `content-wireframe` may depend only on `content-core` and `content-react`.
 - `app-browser` may compose the content platform, but the content platform must not depend on `app-browser`.
 - Browser apps consume shell-facing content exports from `app-browser`, not directly from `content-*`.
@@ -221,11 +218,11 @@ flowchart LR
 The current rendering split is:
 
 - `content-markdown` parses raw markdown into `ContentDocument`
-- `content-markdown` also owns table rendering and markdown serialization for `TableNode`
-- `content-react` renders general-purpose nodes such as markdown, code blocks, and images, and layers shared copy/preview chrome on top
+- `content-markdown` exposes a thin `MarkdownContent` adapter that delegates document rendering to `content-react`
+- `content-react` renders general-purpose nodes such as markdown, code blocks, tables, and images, and layers shared copy/preview chrome plus shared content styles on top
 - `content-mermaid` renders Mermaid nodes
 - `content-wireframe` renders wireframe nodes
-- `app-browser` decides how those pieces are composed and exposed to browser shells
+- `app-browser` decides which specialized capabilities are available and exposes the shell-facing entrypoint
 
 Specialized renderers such as Mermaid and wireframe should stay lazy-loadable so they do not bloat the main browser entry chunk.
 

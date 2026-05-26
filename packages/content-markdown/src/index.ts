@@ -3,7 +3,7 @@ import type { Content, Root, Table, TableCell } from 'mdast'
 import remarkGfm from 'remark-gfm'
 import remarkParse from 'remark-parse'
 import remarkStringify from 'remark-stringify'
-import { createElement, type ReactElement } from 'react'
+import { createElement, useMemo } from 'react'
 import {
   type ContentDocument,
   type ContentNode,
@@ -12,6 +12,10 @@ import {
   type TableAlignment,
   type TableNode
 } from '@tinytinkerer/content-core'
+import {
+  ContentDocumentRenderer,
+  type ReactContentRendererRegistry
+} from '@tinytinkerer/content-react'
 import { unified } from 'unified'
 
 const parser = unified().use(remarkParse).use(remarkGfm)
@@ -62,21 +66,6 @@ const asStandaloneImage = (node: Content): ImageNode | null => {
 
 const tableCellToText = (cell: TableCell): string => toString(cell).trim()
 
-const alignToMarkdown = (align: TableAlignment): string => {
-  if (align === 'left') return ':---'
-  if (align === 'right') return '---:'
-  if (align === 'center') return ':---:'
-  return '---'
-}
-
-const formatTableCell = (value: string): string =>
-  value
-    .replace(/\\/g, '\\\\')
-    .replace(/\r\n?/g, '\n')
-    .replace(/\n/g, '<br />')
-    .replace(/\|/g, '\\|')
-    .trim()
-
 const asTableNode = (node: Content): TableNode | null => {
   if (node.type !== 'table') {
     return null
@@ -119,50 +108,6 @@ const asSpecialCodeBlock = (node: Content): ContentNode | null => {
   }
 }
 
-export const tableToMarkdown = (node: TableNode): string => {
-  const width = node.header.length
-  const header = `| ${node.header.map(formatTableCell).join(' | ')} |`
-  const separator = `| ${Array.from({ length: width }, (_, index) => alignToMarkdown(node.align[index] ?? null)).join(' | ')} |`
-  const rows = node.rows.map((row) =>
-    `| ${Array.from({ length: width }, (_, index) => formatTableCell(row[index] ?? '')).join(' | ')} |`
-  )
-  return [header, separator, ...rows].join('\n')
-}
-
-export const TableNodeView = ({ node }: { node: TableNode }): ReactElement =>
-  createElement(
-    'table',
-    null,
-    createElement(
-      'thead',
-      null,
-      createElement(
-        'tr',
-        null,
-        node.header.map((cell, index) =>
-          createElement('th', { key: `${index}-${cell}`, align: node.align[index] ?? undefined }, cell)
-        )
-      )
-    ),
-    createElement(
-      'tbody',
-      null,
-      node.rows.map((row, rowIndex) =>
-        createElement(
-          'tr',
-          { key: `${rowIndex}-${row.join('|')}` },
-          row.map((cell, cellIndex) =>
-            createElement(
-              'td',
-              { key: `${rowIndex}-${cellIndex}-${cell}`, align: node.align[cellIndex] ?? undefined },
-              cell
-            )
-          )
-        )
-      )
-    )
-  )
-
 export const parseMarkdownContent: ContentParser = (content) => {
   const root = parser.parse(content)
   const nodes: ContentNode[] = []
@@ -196,4 +141,27 @@ export const parseMarkdownContent: ContentParser = (content) => {
   flushMarkdown(markdownChildren, nodes)
 
   return { nodes } satisfies ContentDocument
+}
+
+export type MarkdownContentProps = {
+  content: string
+  className?: string
+  isStreaming?: boolean
+  renderers?: ReactContentRendererRegistry
+}
+
+export const MarkdownContent = ({
+  content,
+  className,
+  isStreaming = false,
+  renderers
+}: MarkdownContentProps) => {
+  const document = useMemo(() => parseMarkdownContent(content), [content])
+
+  return createElement(ContentDocumentRenderer, {
+    document,
+    className,
+    isStreaming,
+    renderers
+  })
 }

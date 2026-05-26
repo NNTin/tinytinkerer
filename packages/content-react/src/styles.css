@@ -1,0 +1,140 @@
+@keyframes cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.tt-markdown--streaming::after {
+  content: '|';
+  display: inline-block;
+  margin-left: 1px;
+  animation: cursor-blink 0.9s step-end infinite;
+  color: #b45309;
+}
+
+.tt-markdown:is(.prose-assistant, .widget-prose) > *:first-child {
+  margin-top: 0;
+}
+
+.tt-markdown:is(.prose-assistant, .widget-prose) > *:last-child {
+  margin-bottom: 0;
+}
+
+.tt-markdown:is(.prose-assistant, .widget-prose) p,
+.tt-markdown.widget-prose ul,
+.tt-markdown.widget-prose ol {
+  margin: 0.4em 0;
+}
+
+.tt-markdown.prose-assistant h1,
+.tt-markdown.prose-assistant h2,
+.tt-markdown.prose-assistant h3,
+.tt-markdown.prose-assistant h4,
+.tt-markdown.prose-assistant h5,
+.tt-markdown.prose-assistant h6 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0.75em 0 0.3em;
+}
+
+.tt-markdown.prose-assistant h3 {
+  font-size: 1em;
+}
+
+.tt-markdown.prose-assistant ul,
+.tt-markdown.prose-assistant ol {
+  margin: 0.4em 0;
+}
+
+.tt-markdown.prose-assistant ul {
+  list-style-type: disc;
+}
+
+.tt-markdown.prose-assistant ol {
+  list-style-type: decimal;
+}
+
+.tt-markdown.prose-assistant li {
+  margin: 0.2em 0;
+}
+
+.tt-markdown.prose-assistant a {
+  color: #b45309;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.tt-markdown.prose-assistant a:hover {
+  color: #92400e;
+}
+
+.tt-markdown:is(.prose-assistant, .widget-prose) code,
+.tt-markdown:is(.prose-assistant, .widget-prose) pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.tt-markdown.prose-assistant code {
+  background: #f3ede6;
+  border-radius: 3px;
+  font-size: 0.875em;
+  padding: 0.1em 0.35em;
+}
+
+.tt-markdown.prose-assistant pre {
+  background: #f3ede6;
+  border: 1px solid #dccdb9;
+  font-size: 0.85em;
+  margin: 0.6em 0;
+  overflow-x: auto;
+  padding: 0.75em 1em;
+}
+
+.tt-markdown.widget-prose pre {
+  overflow-x: auto;
+  border: 1px solid #d7d4ca;
+  background: #f2efe7;
+  padding: 0.75rem;
+}
+
+.tt-markdown.prose-assistant pre code {
+  background: none;
+  border-radius: 0;
+  font-size: inherit;
+  padding: 0;
+}
+
+.tt-markdown.prose-assistant blockquote {
+  border-left: 3px solid #dccdb9;
+  color: #766a5d;
+  margin: 0.5em 0;
+  padding-left: 0.8em;
+}
+
+.tt-markdown.prose-assistant hr {
+  border: none;
+  border-top: 1px solid #dccdb9;
+  margin: 0.75em 0;
+}
+
+.tt-markdown.prose-assistant table {
+  border-collapse: collapse;
+  font-size: 0.9em;
+  margin: 0.5em 0;
+  width: 100%;
+}
+
+.tt-markdown.prose-assistant th,
+.tt-markdown.prose-assistant td {
+  border: 1px solid #dccdb9;
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+
+.tt-markdown.prose-assistant th {
+  background: #f3ede6;
+  font-weight: 600;
+}

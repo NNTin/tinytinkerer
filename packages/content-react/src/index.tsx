@@ -1,10 +1,12 @@
 import {
   Component,
   Fragment,
+  Suspense,
   useEffect,
   useState,
   type ComponentPropsWithoutRef,
   type ComponentType,
+  type LazyExoticComponent,
   type ReactNode
 } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -15,9 +17,10 @@ import {
   type ContentNode,
   type ContentNodeByType,
   type ImageNode,
+  type TableAlignment,
+  type TableNode,
   type MarkdownNode
 } from '@tinytinkerer/content-core'
-import { TableNodeView as MarkdownTableNodeView, tableToMarkdown } from '@tinytinkerer/content-markdown'
 import { cn } from '@tinytinkerer/ui'
 
 export const MARKDOWN_ROOT_CLASS = 'tt-markdown'
@@ -27,7 +30,9 @@ export type ContentNodeRendererProps<TNode extends ContentNode> = {
   node: TNode
 }
 
-export type ContentNodeRenderer<TNode extends ContentNode> = ComponentType<ContentNodeRendererProps<TNode>>
+export type ContentNodeRenderer<TNode extends ContentNode> =
+  | ComponentType<ContentNodeRendererProps<TNode>>
+  | LazyExoticComponent<ComponentType<ContentNodeRendererProps<TNode>>>
 
 export type ReactContentRendererRegistry = {
   [K in keyof ContentNodeByType]?: ContentNodeRenderer<ContentNodeByType[K]>
@@ -170,7 +175,7 @@ export const PreviewCodeFrame = ({
   )
 }
 
-const TableNodeView = ({ node }: ContentNodeRendererProps<ContentNodeByType['table']>) => {
+export const TableNodeView = ({ node }: { node: TableNode }) => {
   const { copied, copy } = useCopyButtonState(tableToMarkdown(node))
 
   return (
@@ -182,7 +187,7 @@ const TableNodeView = ({ node }: ContentNodeRendererProps<ContentNodeByType['tab
       >
         {copied ? 'Copied!' : 'Copy'}
       </button>
-      <MarkdownTableNodeView node={node} />
+      <TableMarkup node={node} />
     </div>
   )
 }
@@ -248,9 +253,11 @@ const renderNode = (node: ContentNode, renderers: ReactContentRendererRegistry):
   }
 
   return (
-    <RendererBoundary fallback={fallback}>
-      <Renderer node={node} />
-    </RendererBoundary>
+    <Suspense fallback={fallback}>
+      <RendererBoundary fallback={fallback}>
+        <Renderer node={node} />
+      </RendererBoundary>
+    </Suspense>
   )
 }
 
@@ -277,19 +284,78 @@ export const ContentDocumentRenderer = ({
   document,
   className,
   isStreaming = false,
-  renderers = defaultContentRenderers
-}: ContentDocumentRendererProps) => (
-  <div
-    data-tt-markdown=""
-    data-streaming={isStreaming ? 'true' : undefined}
-    className={cn(
-      MARKDOWN_ROOT_CLASS,
-      className,
-      isStreaming && MARKDOWN_STREAMING_CLASS
-    )}
-  >
-    {document.nodes.map((node, index) => (
-      <Fragment key={nodeKey(node, index)}>{renderNode(node, renderers)}</Fragment>
-    ))}
-  </div>
+  renderers
+}: ContentDocumentRendererProps) => {
+  const mergedRenderers = renderers
+    ? {
+        ...defaultContentRenderers,
+        ...renderers
+      }
+    : defaultContentRenderers
+
+  return (
+    <div
+      data-tt-markdown=""
+      data-streaming={isStreaming ? 'true' : undefined}
+      className={cn(
+        MARKDOWN_ROOT_CLASS,
+        className,
+        isStreaming && MARKDOWN_STREAMING_CLASS
+      )}
+    >
+      {document.nodes.map((node, index) => (
+        <Fragment key={nodeKey(node, index)}>{renderNode(node, mergedRenderers)}</Fragment>
+      ))}
+    </div>
+  )
+}
+
+const alignToMarkdown = (align: TableAlignment): string => {
+  if (align === 'left') return ':---'
+  if (align === 'right') return '---:'
+  if (align === 'center') return ':---:'
+  return '---'
+}
+
+const formatTableCell = (value: string): string =>
+  value
+    .replace(/\\/g, '\\\\')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n/g, '<br />')
+    .replace(/\|/g, '\\|')
+    .trim()
+
+export const tableToMarkdown = (node: TableNode): string => {
+  const width = node.header.length
+  const header = `| ${node.header.map(formatTableCell).join(' | ')} |`
+  const separator = `| ${Array.from({ length: width }, (_, index) => alignToMarkdown(node.align[index] ?? null)).join(' | ')} |`
+  const rows = node.rows.map((row) =>
+    `| ${Array.from({ length: width }, (_, index) => formatTableCell(row[index] ?? '')).join(' | ')} |`
+  )
+  return [header, separator, ...rows].join('\n')
+}
+
+const TableMarkup = ({ node }: { node: TableNode }) => (
+  <table>
+    <thead>
+      <tr>
+        {node.header.map((cell, index) => (
+          <th key={`${index}-${cell}`} align={node.align[index] ?? undefined}>
+            {cell}
+          </th>
+        ))}
+      </tr>
+    </thead>
+    <tbody>
+      {node.rows.map((row, rowIndex) => (
+        <tr key={`${rowIndex}-${row.join('|')}`}>
+          {row.map((cell, cellIndex) => (
+            <td key={`${rowIndex}-${cellIndex}-${cell}`} align={node.align[cellIndex] ?? undefined}>
+              {cell}
+            </td>
+          ))}
+        </tr>
+      ))}
+    </tbody>
+  </table>
 )
