@@ -1,5 +1,5 @@
 {
-  "name": "@tinytinkerer/content-core",
+  "name": "@tinytinkerer/content-runtime",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,6 +17,9 @@
     "lint": "eslint src tests",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tinytinkerer/content-core": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.0.8"

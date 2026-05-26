@@ -1,6 +1,7 @@
 import { MarkdownContent } from '@tinytinkerer/content-markdown'
-import { mermaidRenderers } from '@tinytinkerer/content-mermaid'
-import { wireframeRenderers } from '@tinytinkerer/content-wireframe'
+import { mermaidPlugin } from '@tinytinkerer/content-mermaid'
+import { createReactContentRuntime } from '@tinytinkerer/content-react'
+import { wireframePlugin } from '@tinytinkerer/content-wireframe'
 
 export type AssistantContentProps = {
   content: string
@@ -8,10 +9,9 @@ export type AssistantContentProps = {
   className?: string
 }
 
-const assistantContentRenderers = {
-  ...mermaidRenderers,
-  ...wireframeRenderers
-}
+const assistantRuntime = createReactContentRuntime()
+assistantRuntime.register(mermaidPlugin)
+assistantRuntime.register(wireframePlugin)
 
 export const AssistantContent = ({
   content,
@@ -21,7 +21,7 @@ export const AssistantContent = ({
   <MarkdownContent
     content={content}
     isStreaming={isStreaming}
-    renderers={assistantContentRenderers}
+    runtime={assistantRuntime}
     {...(className ? { className } : {})}
   />
 )

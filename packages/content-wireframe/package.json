@@ -20,7 +20,8 @@
   },
   "dependencies": {
     "@tinytinkerer/content-core": "workspace:*",
-    "@tinytinkerer/content-react": "workspace:*"
+    "@tinytinkerer/content-react": "workspace:*",
+    "@tinytinkerer/content-runtime": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.0.0"

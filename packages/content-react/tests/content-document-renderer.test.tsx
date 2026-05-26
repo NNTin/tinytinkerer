@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MermaidNode } from '@tinytinkerer/content-core'
 import {
   ContentDocumentRenderer,
+  createReactContentRuntime,
   MARKDOWN_ROOT_CLASS,
   MARKDOWN_STREAMING_CLASS,
   PreviewCodeFrame,
@@ -163,6 +164,77 @@ describe('ContentDocumentRenderer', () => {
     })
 
     await waitFor(() => expect(screen.getByText(/Loaded: graph TD/)).toBeInTheDocument())
+  })
+
+  it('renders semantic block nodes (heading, paragraph, list, blockquote)', () => {
+    render(
+      <ContentDocumentRenderer
+        document={{
+          nodes: [
+            {
+              type: 'heading',
+              level: 2,
+              children: [{ type: 'text', value: 'Outline' }]
+            },
+            {
+              type: 'paragraph',
+              children: [
+                { type: 'text', value: 'See ' },
+                { type: 'strong', children: [{ type: 'text', value: 'docs' }] }
+              ]
+            },
+            {
+              type: 'list',
+              ordered: false,
+              children: [
+                {
+                  type: 'listItem',
+                  children: [
+                    {
+                      type: 'paragraph',
+                      children: [{ type: 'text', value: 'first' }]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              type: 'blockquote',
+              children: [
+                {
+                  type: 'paragraph',
+                  children: [{ type: 'text', value: 'quoted' }]
+                }
+              ]
+            }
+          ]
+        }}
+      />
+    )
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Outline' })).toBeInTheDocument()
+    expect(screen.getByText('docs')).toBeInTheDocument()
+    expect(screen.getByRole('list')).toBeInTheDocument()
+    expect(screen.getByText('first')).toBeInTheDocument()
+    expect(screen.getByText('quoted')).toBeInTheDocument()
+  })
+
+  it('uses a custom plugin registered against an externally supplied runtime', () => {
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:mermaid',
+      nodeType: 'mermaid',
+      render: (node) => <div data-testid="custom-mermaid">{node.code}</div>
+    })
+
+    render(
+      <ContentDocumentRenderer
+        runtime={runtime}
+        document={{ nodes: [{ type: 'mermaid', code: 'graph TD\nA-->B' }] }}
+      />
+    )
+
+    expect(screen.getByTestId('custom-mermaid')).toHaveTextContent('graph TD')
   })
 
   it('renders choicePrompt nodes without crashing when no renderer is registered', () => {
