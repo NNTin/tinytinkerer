@@ -2,7 +2,11 @@ import DOMPurify from 'dompurify'
 import mermaidRuntimeUrl from 'mermaid/dist/mermaid.min.js?url'
 import { useEffect, useId, useState } from 'react'
 import type { MermaidNode } from '@tinytinkerer/content-core'
-import { CodeBlockFallback, type ContentNodeRendererProps } from '@tinytinkerer/content-react'
+import {
+  CodeBlockFallback,
+  PreviewCodeFrame,
+  type ContentNodeRendererProps
+} from '@tinytinkerer/content-react'
 
 type MermaidRenderResult = {
   svg: string
@@ -85,12 +89,18 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<MermaidNo
       .then((result) => {
         if (!cancelled) {
           const sanitized = DOMPurify.sanitize(result.svg, {
-            USE_PROFILES: { svg: true, svgFilters: true }
+            USE_PROFILES: { svg: true, svgFilters: true },
+            ADD_TAGS: ['foreignObject', 'div', 'span', 'p', 'br'],
+            // foreignObject is an HTML integration point in SVG; without this,
+            // DOMPurify rejects all HTML children (div, span, p) inside it, stripping
+            // node labels from flowchart and class diagrams entirely.
+            HTML_INTEGRATION_POINTS: { 'annotation-xml': true, 'foreignobject': true }
           })
           setSvg(sanitized)
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        console.error('[content-mermaid] render failed:', error)
         if (!cancelled) {
           setFailed(true)
         }
@@ -101,13 +111,21 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<MermaidNo
     }
   }, [id, node.code])
 
-  if (failed) {
-    return <CodeBlockFallback code={node.code} language="mermaid" />
-  }
-
-  if (!svg) {
-    return <CodeBlockFallback code={node.code} language="mermaid" />
-  }
-
-  return <div aria-label="Mermaid diagram" dangerouslySetInnerHTML={{ __html: svg }} />
+  return (
+    <PreviewCodeFrame
+      headerStart={
+        <span className="text-[11px] font-medium uppercase tracking-wide text-stone-500">Mermaid</span>
+      }
+      code={node.code}
+      codeLanguage="mermaid"
+      showPreview={!failed}
+      preview={
+        svg ? (
+          <div aria-label="Mermaid diagram" className="bg-white p-4" dangerouslySetInnerHTML={{ __html: svg }} />
+        ) : (
+          <CodeBlockFallback code={node.code} language="mermaid" />
+        )
+      }
+    />
+  )
 }

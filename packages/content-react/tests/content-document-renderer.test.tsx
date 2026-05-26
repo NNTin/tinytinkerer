@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ContentDocumentRenderer,
   MARKDOWN_ROOT_CLASS,
-  MARKDOWN_STREAMING_CLASS
+  MARKDOWN_STREAMING_CLASS,
+  PreviewCodeFrame
 } from '../src/index.js'
 
 afterEach(() => {
@@ -50,6 +51,35 @@ describe('ContentDocumentRenderer', () => {
     expect(screen.getByRole('img', { name: 'Test image' })).toBeInTheDocument()
   })
 
+  it('copies table nodes using the shared markdown serializer', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    render(
+      <ContentDocumentRenderer
+        document={{
+          nodes: [
+            {
+              type: 'table',
+              align: ['left', 'right'],
+              header: ['Name', 'Role'],
+              rows: [['Ada', 'Admin']]
+            }
+          ]
+        }}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+
+    expect(writeText).toHaveBeenCalledWith([
+      '| Name | Role |',
+      '| :--- | ---: |',
+      '| Ada | Admin |'
+    ].join('\n'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copied!' })).toBeInTheDocument())
+  })
+
   it('falls back when a specialized renderer is missing', () => {
     render(
       <ContentDocumentRenderer
@@ -85,5 +115,32 @@ describe('ContentDocumentRenderer', () => {
     )
 
     expect(container.querySelector('pre')).toBeInTheDocument()
+  })
+})
+
+describe('PreviewCodeFrame', () => {
+  it('switches between preview and code views and copies source', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    const { container } = render(
+      <PreviewCodeFrame
+        headerStart={<span>Example</span>}
+        code={'const answer = 42'}
+        codeLanguage="ts"
+        preview={<div>Preview body</div>}
+      />
+    )
+
+    expect(screen.getByText('Preview body')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Code' }))
+
+    expect(container.querySelector('code')?.textContent).toBe('const answer = 42')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+
+    expect(writeText).toHaveBeenCalledWith('const answer = 42')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copied!' })).toBeInTheDocument())
   })
 })

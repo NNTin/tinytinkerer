@@ -54,7 +54,7 @@ flowchart LR
 
     subgraph ContentPlatform["Content Platform"]
       contentcore["@tinytinkerer/content-core<br/>content AST + contracts"]
-      contentmarkdown["@tinytinkerer/content-markdown<br/>markdown -> content AST"]
+      contentmarkdown["@tinytinkerer/content-markdown<br/>markdown -> content AST + table semantics"]
       contentreact["@tinytinkerer/content-react<br/>React document renderer"]
       contentmermaid["@tinytinkerer/content-mermaid<br/>Mermaid renderer/runtime"]
       contentwireframe["@tinytinkerer/content-wireframe<br/>wireframe renderer/runtime"]
@@ -76,10 +76,10 @@ flowchart LR
   appcore --> agent
   appcore --> contracts
 
-  appbrowser --> contentmarkdown
   appbrowser --> contentmermaid
   appbrowser --> contentreact
   appbrowser --> contentwireframe
+  appbrowser --> contentmarkdown
   appbrowser --> appcore
   appbrowser --> contracts
   appbrowser --> brand
@@ -87,6 +87,7 @@ flowchart LR
   contentmarkdown --> contentcore
   contentreact --> ui
   contentreact --> contentcore
+  contentreact --> contentmarkdown
   contentmermaid --> contentcore
   contentmermaid --> contentreact
   contentwireframe --> contentreact
@@ -166,7 +167,7 @@ flowchart LR
 - `brand-assets` may depend on `contracts` and nothing else.
 - `content-core` must not depend on other workspace packages.
 - `content-markdown` may depend only on `content-core`.
-- `content-react` may depend only on `content-core` and `ui`.
+- `content-react` may depend only on `content-core`, `content-markdown`, and `ui`.
 - `content-mermaid` and `content-wireframe` may depend only on `content-core` and `content-react`.
 - `ui` must stay primitive-only.
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
@@ -239,8 +240,8 @@ It must not own:
 
 ## Content Platform
 
-- `content-markdown` parses markdown into an internal `ContentDocument`.
-- `content-react` renders general nodes such as markdown, code blocks, tables, and images.
+- `content-markdown` parses markdown into an internal `ContentDocument` and owns table markup plus table-to-markdown serialization.
+- `content-react` renders general nodes such as markdown, code blocks, and images, and owns shared content chrome such as copy and preview/code controls.
 - `content-mermaid` and `content-wireframe` isolate specialized rendering behavior and fallback policy.
 - Heavy specialized runtimes stay lazy so they do not bloat eager browser entry bundles.
 - The content AST stays internal to the content platform in this phase; `contracts` still expose assistant output as strings.

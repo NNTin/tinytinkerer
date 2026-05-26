@@ -65,7 +65,8 @@ Owns:
 
 - the React content renderer
 - renderer registry types
-- default renderers for content nodes that do not need a specialized package
+- shared copy and preview/code interaction chrome
+- default renderers for content nodes that do not need specialized markup from another package
 - shared React-side fallback behavior
 
 Must not own:
@@ -83,11 +84,11 @@ Owns:
 - markdown parsing
 - GFM support
 - mapping markdown structures into `ContentNode`
+- table markup and table-to-markdown serialization
 - fallback rules for unsupported content
 
 Must not own:
 
-- React rendering
 - shell-facing exports for apps
 - browser runtime assembly
 
@@ -178,8 +179,8 @@ flowchart LR
 
   subgraph ContentPlatform["Content Platform"]
     contentcore["@tinytinkerer/content-core<br/>AST + contracts"]
-    contentreact["@tinytinkerer/content-react<br/>React rendering runtime + registry"]
-    contentmarkdown["@tinytinkerer/content-markdown<br/>markdown parsing + AST transform"]
+    contentreact["@tinytinkerer/content-react<br/>React rendering runtime + shared chrome"]
+    contentmarkdown["@tinytinkerer/content-markdown<br/>markdown parsing + table semantics"]
     contentmermaid["@tinytinkerer/content-mermaid<br/>Mermaid renderer/runtime"]
     contentwireframe["@tinytinkerer/content-wireframe<br/>wireframe renderer/runtime"]
   end
@@ -192,6 +193,7 @@ flowchart LR
   appbrowser --> contentwireframe
 
   contentreact --> contentcore
+  contentreact --> contentmarkdown
   contentreact --> ui
 
   contentmarkdown --> contentcore
@@ -206,7 +208,7 @@ flowchart LR
 ## Dependency Rules
 
 - `content-core` must not depend on any workspace package.
-- `content-react` may depend only on `content-core` and `ui`.
+- `content-react` may depend only on `content-core`, `content-markdown`, and `ui`.
 - `content-markdown` may depend only on `content-core`.
 - `content-mermaid` and `content-wireframe` may depend only on `content-core` and `content-react`.
 - `app-browser` may compose the content platform, but the content platform must not depend on `app-browser`.
@@ -219,7 +221,8 @@ flowchart LR
 The current rendering split is:
 
 - `content-markdown` parses raw markdown into `ContentDocument`
-- `content-react` renders general-purpose nodes such as markdown, code blocks, tables, and images
+- `content-markdown` also owns table rendering and markdown serialization for `TableNode`
+- `content-react` renders general-purpose nodes such as markdown, code blocks, and images, and layers shared copy/preview chrome on top
 - `content-mermaid` renders Mermaid nodes
 - `content-wireframe` renders wireframe nodes
 - `app-browser` decides how those pieces are composed and exposed to browser shells

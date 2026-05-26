@@ -22,8 +22,7 @@ describe('edge routes', () => {
     )
 
     expect(response.status).toBe(401)
-    const body = await response.json()
-    edgeErrorResponseSchema.parse(body)
+    const body = edgeErrorResponseSchema.parse(await response.json())
     expect(body).toEqual({ error: 'Unauthorized' })
   })
 
@@ -31,17 +30,20 @@ describe('edge routes', () => {
     const response = await app.fetch(
       new Request('http://localhost/api/search', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: 'Bearer test-token' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer test-token'
+        },
         body: JSON.stringify({ query: 'latest ai news' })
       }),
       {}
     )
 
     expect(response.status).toBe(503)
-    const body = await response.json()
-    edgeErrorResponseSchema.parse(body)
+    const body = edgeErrorResponseSchema.parse(await response.json())
     expect(body).toEqual({
-      error: 'Web search is currently unavailable. Configure Tavily to enable live search.'
+      error:
+        'Web search is currently unavailable. Configure Tavily to enable live search.'
     })
   })
 
@@ -76,7 +78,7 @@ describe('edge routes', () => {
 
     expect(response.status).toBe(429)
     expect(response.headers.get('Retry-After')).toBe('120')
-    const body = await response.json() as Record<string, unknown>
+    const body = (await response.json()) as Record<string, unknown>
     rateLimitPayloadSchema.parse(body)
     expect(body['code']).toBe('rate_limited')
     expect(body['error']).toBe('GitHub Models rate limit reached')
@@ -113,10 +115,10 @@ describe('edge routes', () => {
     )
 
     expect(response.status).toBe(401)
-    const body = await response.json()
-    edgeErrorResponseSchema.parse(body)
+    const body = edgeErrorResponseSchema.parse(await response.json())
     expect(body).toEqual({
-      error: 'Authentication failed. Your GitHub token may be invalid or expired.'
+      error:
+        'Authentication failed. Your GitHub token may be invalid or expired.'
     })
   })
 
@@ -140,12 +142,15 @@ describe('edge routes', () => {
       env
     )
 
-    const body = await response.json()
-    systemStatusSchema.parse(body)
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3000')
+    systemStatusSchema.parse(await response.json())
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
+      'http://localhost:3000'
+    )
     expect(response.headers.get('Vary')).toBe('Origin')
     expect(preflightResponse.status).toBe(204)
-    expect(preflightResponse.headers.get('Access-Control-Allow-Origin')).toBe('https://tiny.nntin.xyz')
+    expect(preflightResponse.headers.get('Access-Control-Allow-Origin')).toBe(
+      'https://tiny.nntin.xyz'
+    )
   })
 
   it('echoes wildcard preview origins for Vercel preview domains', async () => {
@@ -167,7 +172,10 @@ describe('edge routes', () => {
       new Request('http://localhost/health', {
         headers: { origin: 'https://evil.example' }
       }),
-      { ALLOWED_ORIGINS: 'http://localhost:3000, https://*.tiny.preview.nntin.xyz' }
+      {
+        ALLOWED_ORIGINS:
+          'http://localhost:3000, https://*.tiny.preview.nntin.xyz'
+      }
     )
 
     expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
@@ -217,7 +225,9 @@ describe('edge routes', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3000')
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
+      'http://localhost:3000'
+    )
     expect(response.headers.get('Vary')).toBe('Origin')
     await expect(response.text()).resolves.toContain('data: {"id":"stream"}')
   })
