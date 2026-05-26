@@ -160,8 +160,8 @@ export const MarkdownContent = ({
 
   return createElement(ContentDocumentRenderer, {
     document,
-    className,
     isStreaming,
-    renderers
+    ...(className ? { className } : {}),
+    ...(renderers ? { renderers } : {})
   })
 }

@@ -2,7 +2,8 @@ import type { WireframeNode } from '@tinytinkerer/content-core'
 import {
   CodeBlockFallback,
   PreviewCodeFrame,
-  type ContentNodeRendererProps
+  type ContentNodeRendererProps,
+  type ReactContentRendererRegistry
 } from '@tinytinkerer/content-react'
 
 export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<WireframeNode>) => {
@@ -34,3 +35,7 @@ export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<Wirefra
     />
   )
 }
+
+export const wireframeRenderers = {
+  wireframe: WireframeNodeRenderer
+} satisfies Pick<ReactContentRendererRegistry, 'wireframe'>

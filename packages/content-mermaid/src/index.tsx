@@ -5,7 +5,8 @@ import type { MermaidNode } from '@tinytinkerer/content-core'
 import {
   CodeBlockFallback,
   PreviewCodeFrame,
-  type ContentNodeRendererProps
+  type ContentNodeRendererProps,
+  type ReactContentRendererRegistry
 } from '@tinytinkerer/content-react'
 
 type MermaidRenderResult = {
@@ -129,3 +130,7 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<MermaidNo
     />
   )
 }
+
+export const mermaidRenderers = {
+  mermaid: MermaidNodeRenderer
+} satisfies Pick<ReactContentRendererRegistry, 'mermaid'>

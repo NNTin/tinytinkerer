@@ -1,13 +1,6 @@
 import { MarkdownContent } from '@tinytinkerer/content-markdown'
-import { lazy } from 'react'
-
-const MermaidNodeRenderer = lazy(() =>
-  import('@tinytinkerer/content-mermaid').then((m) => ({ default: m.MermaidNodeRenderer }))
-)
-
-const WireframeNodeRenderer = lazy(() =>
-  import('@tinytinkerer/content-wireframe').then((m) => ({ default: m.WireframeNodeRenderer }))
-)
+import { mermaidRenderers } from '@tinytinkerer/content-mermaid'
+import { wireframeRenderers } from '@tinytinkerer/content-wireframe'
 
 export type AssistantContentProps = {
   content: string
@@ -16,8 +9,8 @@ export type AssistantContentProps = {
 }
 
 const assistantContentRenderers = {
-  mermaid: MermaidNodeRenderer,
-  wireframe: WireframeNodeRenderer
+  ...mermaidRenderers,
+  ...wireframeRenderers
 }
 
 export const AssistantContent = ({

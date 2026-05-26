@@ -165,7 +165,7 @@ Browser apps should not import `content-*` packages directly. Instead:
 
 1. `app-browser` accepts assistant text from shared runtime state.
 2. `app-browser` delegates markdown parsing and document rendering to `content-markdown`.
-3. `app-browser` mounts specialized renderers from `content-mermaid` and `content-wireframe`.
+3. `app-browser` assembles specialized renderer maps from `content-mermaid` and `content-wireframe`.
 4. Browser shells consume the final shell-safe export from `app-browser`.
 
 This keeps the dependency surface small and preserves the rule that apps extend capability through `app-browser` instead of reaching into lower layers directly.
@@ -220,8 +220,8 @@ The current rendering split is:
 - `content-markdown` parses raw markdown into `ContentDocument`
 - `content-markdown` exposes a thin `MarkdownContent` adapter that delegates document rendering to `content-react`
 - `content-react` renders general-purpose nodes such as markdown, code blocks, tables, and images, and layers shared copy/preview chrome plus shared content styles on top
-- `content-mermaid` renders Mermaid nodes
-- `content-wireframe` renders wireframe nodes
+- `content-mermaid` exports Mermaid-specific renderer registration and node rendering
+- `content-wireframe` exports wireframe-specific renderer registration and node rendering
 - `app-browser` decides which specialized capabilities are available and exposes the shell-facing entrypoint
 
 Specialized renderers such as Mermaid and wireframe should stay lazy-loadable so they do not bloat the main browser entry chunk.

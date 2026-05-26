@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { lazy, type ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { MermaidNode } from '@tinytinkerer/content-core'
 import {
   ContentDocumentRenderer,
   MARKDOWN_ROOT_CLASS,
@@ -118,7 +119,7 @@ describe('ContentDocumentRenderer', () => {
           ]
         }}
         renderers={{
-          mermaid: ({ node }) => <div>Diagram: {node.code}</div>
+          mermaid: ({ node }: { node: MermaidNode }) => <div>Diagram: {node.code}</div>
         }}
       />
     )

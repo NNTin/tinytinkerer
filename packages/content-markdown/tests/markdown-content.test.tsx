@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { MermaidNode } from '@tinytinkerer/content-core'
 import { MarkdownContent } from '../src/index.js'
 
 afterEach(() => {
@@ -23,7 +24,7 @@ describe('MarkdownContent', () => {
         className="prose-assistant"
         isStreaming
         renderers={{
-          mermaid: ({ node }) => <div>Diagram: {node.code}</div>
+          mermaid: ({ node }: { node: MermaidNode }) => <div>Diagram: {node.code}</div>
         }}
       />
     )
