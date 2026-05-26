@@ -291,6 +291,55 @@ Fallback rules:
 - parsing should preserve display order so mixed markdown and specialized nodes render in the same sequence as the source text
 - stable IDs guarantee that re-parsing identical content yields identical node identities, and appending content to a document does not change the IDs of prior nodes
 
+## Adding a Renderer Package
+
+The platform is plugin-driven: every block type maps to a `NodeRendererPlugin` registered on a `ContentRuntime`. New rich-content kinds (executable widgets, embeds, citation cards, specialized images, custom choice prompts, etc.) ship as their own `@tinytinkerer/content-*` package, mirroring `content-mermaid` and `content-wireframe`.
+
+### Two scenarios
+
+Decide which case applies before adding a package:
+
+1. **Specialized rendering for an existing AST node** — e.g., a richer `ImageNode` viewer or a custom `CodeBlockNode` highlighter. The block type already exists in `content-core` and usually has a default plugin in `content-react`. The new package only needs to ship a plugin that overrides the default at registration time.
+2. **A new AST node type** — e.g., a media embed, executable widget, or interactive `ChoicePromptNode`. The node variant has to be added to `content-core`, taught to the parser in `content-markdown`, and rendered by a new plugin package.
+
+### Steps
+
+1. **(Scenario 2 only) Add the node type.** Append the new variant to the relevant union in `content-core` (`BlockNode` or `InlineNode`) and re-export it from `content-react/src/index.tsx`. No package downstream of `content-react` should import the type from `content-core` directly.
+2. **(Scenario 2 only, markdown-sourced nodes) Extend the parser.** Add a mapping rule in `content-markdown` that emits the new node. Use `computeNodeId(type, digest, occurrence)` (re-exported by `content-react`) to assign stable IDs.
+3. **Create `packages/content-<name>/`** with:
+   - `package.json` whose only workspace dep is `@tinytinkerer/content-react` (plus a `react` peer dep and any third-party runtime libs).
+   - `tsconfig.json` extending the workspace base.
+   - `src/index.tsx` exporting the plugin and (optionally) the renderer component.
+4. **Define the plugin** as a `ReactNodeRendererPlugin<'<nodeType>'>`:
+   - `id`: stable plugin identifier (e.g. `'choice-prompt'`).
+   - `nodeType`: the AST `type` literal it handles.
+   - `capabilities`: set `lazy: true` for heavy runtimes, `preview: true` for plugins that render a preview/code split.
+   - `load()` (optional): lazy-import the heavy runtime. Mermaid does this with dynamic `<script>` injection so the runtime never lands in the main entry chunk.
+   - `render(node, ctx)`: return a `ReactNode`. Use `ctx.renderBlock` to recurse into child blocks. Reuse `PreviewCodeFrame`, `CodeBlockFallback`, and other chrome from `content-react`.
+   - `fallback(node, error?)`: return a safe fallback (typically `<CodeBlockFallback>`). The runtime's `wrap` already adds `<Suspense>` + an error boundary on top.
+5. **Tests.** Add `packages/content-<name>/tests/` covering the success, lazy-loading, and failure paths. Plugin-shape tests can render the renderer component directly; integration tests can pass the plugin via the `plugins` prop of `MarkdownContent`.
+6. **Boundary rules.** Extend `scripts/check-boundaries.mjs`: the new package's allowed deps are itself and `@tinytinkerer/content-react`, and `app-browser` must be allowed to depend on the new package if it should be wired into the assistant surface.
+7. **Compose.** Add the plugin to the stable `assistantPlugins` array in `packages/app-browser/src/assistant-content.tsx`, and add the workspace dep to `packages/app-browser/package.json`. Apps and shells do not need to change.
+8. **Docs.** Update the package list and the dependency diagram in this document (and `docs/ARCHITECTURE.md` if the new package changes the platform's external surface).
+
+### What stays the same
+
+A new renderer package never:
+
+- imports from `content-core` or `content-runtime` directly (use the `content-react` re-exports)
+- builds its own `ContentRuntime` — `MarkdownContent` owns runtime construction
+- depends on `app-browser` (that direction is forbidden)
+- ships its own app-shell layout, routing, or transport
+
+### Reusing the chrome
+
+Most specialized renderers reuse the shared chrome from `content-react`:
+
+- `PreviewCodeFrame` — the toggleable preview/code split with copy controls
+- `CodeBlockFallback` — the canonical "show the source as code" fallback
+
+Because the chrome and runtime mechanics live in `content-react`, a new plugin package usually stays small: it contributes the rendering logic and the `NodeRendererPlugin` shape, not new chrome.
+
 ## App Responsibilities
 
 Apps still own:
