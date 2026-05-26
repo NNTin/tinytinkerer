@@ -122,7 +122,7 @@ Use these rules:
 Mermaid remains the explicit content example:
 
 - Mermaid support should not be separately implemented in `web`, `mobile`, and `widget`.
-- Markdown hooks, Mermaid source detection, lazy loading, fallback behavior, and shared content wiring belong in `@tinytinkerer/content-markdown`, `@tinytinkerer/content-mermaid`, and `@tinytinkerer/app-browser`.
+- Markdown hooks, Mermaid source detection, lazy loading, fallback behavior, and shared content wiring belong in `@tinytinkerer/content-markdown`, `@tinytinkerer/content-mermaid`, and `@tinytinkerer/app-browser`. The Mermaid runtime is registered as a `NodeRendererPlugin` against the platform-agnostic `ContentRuntime` from `@tinytinkerer/content-runtime`; specialized renderers should follow the same plugin shape.
 - Apps should only decide where Mermaid appears and how it fits their shell.
 
 ## Intentional Divergence

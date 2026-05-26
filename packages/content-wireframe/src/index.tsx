@@ -1,8 +1,10 @@
-import type { WireframeNode } from '@tinytinkerer/content-core'
 import {
   CodeBlockFallback,
   PreviewCodeFrame,
-  type ContentNodeRendererProps
+  type ContentNodeRendererProps,
+  type ReactContentRendererRegistry,
+  type ReactNodeRendererPlugin,
+  type WireframeNode
 } from '@tinytinkerer/content-react'
 
 export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<WireframeNode>) => {
@@ -34,3 +36,18 @@ export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<Wirefra
     />
   )
 }
+
+export const wireframePlugin: ReactNodeRendererPlugin<'wireframe'> = {
+  id: 'wireframe',
+  nodeType: 'wireframe',
+  capabilities: { preview: true },
+  render: (node) => <WireframeNodeRenderer node={node} />,
+  fallback: (node) => <CodeBlockFallback code={node.code} language="wireframe" />
+}
+
+// Legacy renderer-map export retained for callers still wiring renderers via the
+// ReactContentRendererRegistry shape. New callers should register `wireframePlugin`
+// against a ContentRuntime instead.
+export const wireframeRenderers = {
+  wireframe: WireframeNodeRenderer
+} satisfies Pick<ReactContentRendererRegistry, 'wireframe'>

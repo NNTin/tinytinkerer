@@ -3,12 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/styles.css"
+  ],
   "exports": {
     ".": {
       "types": "./src/index.tsx",
       "default": "./src/index.tsx"
-    }
+    },
+    "./styles.css": "./src/styles.css"
   },
   "main": "src/index.tsx",
   "types": "src/index.tsx",
@@ -20,7 +23,7 @@
   },
   "dependencies": {
     "@tinytinkerer/content-core": "workspace:*",
-    "@tinytinkerer/content-markdown": "workspace:*",
+    "@tinytinkerer/content-runtime": "workspace:*",
     "@tinytinkerer/ui": "workspace:*",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"

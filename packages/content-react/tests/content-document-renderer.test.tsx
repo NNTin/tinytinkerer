@@ -1,12 +1,17 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { lazy, type ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { MermaidNode } from '@tinytinkerer/content-core'
 import {
   ContentDocumentRenderer,
+  createReactContentRuntime,
   MARKDOWN_ROOT_CLASS,
   MARKDOWN_STREAMING_CLASS,
-  PreviewCodeFrame
+  PreviewCodeFrame,
+  TableNodeView,
+  tableToMarkdown
 } from '../src/index.js'
 
 afterEach(() => {
@@ -105,6 +110,133 @@ describe('ContentDocumentRenderer', () => {
     expect(screen.getByText('[Button]')).toBeInTheDocument()
   })
 
+  it('merges partial renderer overrides with the default renderers', () => {
+    render(
+      <ContentDocumentRenderer
+        document={{
+          nodes: [
+            { type: 'markdown', markdown: '# Heading' },
+            { type: 'mermaid', code: 'graph TD\nA-->B' }
+          ]
+        }}
+        renderers={{
+          mermaid: ({ node }: { node: MermaidNode }) => <div>Diagram: {node.code}</div>
+        }}
+      />
+    )
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Heading' })).toBeInTheDocument()
+    expect(screen.getByText(/Diagram: graph TD/)).toBeInTheDocument()
+  })
+
+  it('keeps surrounding content rendered while a lazy specialized renderer is pending', async () => {
+    type LazyRendererModule = {
+      default: ({ node }: { node: { code: string } }) => ReactElement
+    }
+
+    let resolveRenderer: ((value: LazyRendererModule) => void) | undefined
+    const LazyMermaidRenderer = lazy(
+      () =>
+        new Promise<LazyRendererModule>((resolve) => {
+          resolveRenderer = resolve
+        })
+    )
+
+    const { container } = render(
+      <ContentDocumentRenderer
+        document={{
+          nodes: [
+            { type: 'markdown', markdown: 'Before' },
+            { type: 'mermaid', code: 'graph TD\nA-->B' },
+            { type: 'markdown', markdown: 'After' }
+          ]
+        }}
+        renderers={{ mermaid: LazyMermaidRenderer }}
+      />
+    )
+
+    expect(screen.getByText('Before')).toBeInTheDocument()
+    expect(screen.getByText('After')).toBeInTheDocument()
+    expect(container.querySelector('code')?.textContent).toBe('graph TD\nA-->B')
+
+    resolveRenderer?.({
+      default: ({ node }) => <div>Loaded: {node.code}</div>
+    })
+
+    await waitFor(() => expect(screen.getByText(/Loaded: graph TD/)).toBeInTheDocument())
+  })
+
+  it('renders semantic block nodes (heading, paragraph, list, blockquote)', () => {
+    render(
+      <ContentDocumentRenderer
+        document={{
+          nodes: [
+            {
+              type: 'heading',
+              level: 2,
+              children: [{ type: 'text', value: 'Outline' }]
+            },
+            {
+              type: 'paragraph',
+              children: [
+                { type: 'text', value: 'See ' },
+                { type: 'strong', children: [{ type: 'text', value: 'docs' }] }
+              ]
+            },
+            {
+              type: 'list',
+              ordered: false,
+              children: [
+                {
+                  type: 'listItem',
+                  children: [
+                    {
+                      type: 'paragraph',
+                      children: [{ type: 'text', value: 'first' }]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              type: 'blockquote',
+              children: [
+                {
+                  type: 'paragraph',
+                  children: [{ type: 'text', value: 'quoted' }]
+                }
+              ]
+            }
+          ]
+        }}
+      />
+    )
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Outline' })).toBeInTheDocument()
+    expect(screen.getByText('docs')).toBeInTheDocument()
+    expect(screen.getByRole('list')).toBeInTheDocument()
+    expect(screen.getByText('first')).toBeInTheDocument()
+    expect(screen.getByText('quoted')).toBeInTheDocument()
+  })
+
+  it('uses a custom plugin registered against an externally supplied runtime', () => {
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:mermaid',
+      nodeType: 'mermaid',
+      render: (node) => <div data-testid="custom-mermaid">{node.code}</div>
+    })
+
+    render(
+      <ContentDocumentRenderer
+        runtime={runtime}
+        document={{ nodes: [{ type: 'mermaid', code: 'graph TD\nA-->B' }] }}
+      />
+    )
+
+    expect(screen.getByTestId('custom-mermaid')).toHaveTextContent('graph TD')
+  })
+
   it('renders choicePrompt nodes without crashing when no renderer is registered', () => {
     const { container } = render(
       <ContentDocumentRenderer
@@ -142,5 +274,36 @@ describe('PreviewCodeFrame', () => {
 
     expect(writeText).toHaveBeenCalledWith('const answer = 42')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Copied!' })).toBeInTheDocument())
+  })
+})
+
+describe('TableNodeView', () => {
+  it('renders semantic table markup from a TableNode', () => {
+    const { container } = render(
+      <TableNodeView
+        node={{
+          type: 'table',
+          align: ['left', 'right', 'center'],
+          header: ['Name', 'Role', 'Score'],
+          rows: [['Ada', 'Admin', '3']]
+        }}
+      />
+    )
+
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveAttribute('align', 'left')
+    expect(screen.getByRole('columnheader', { name: 'Role' })).toHaveAttribute('align', 'right')
+    expect(container.querySelector('td[align="center"]')?.textContent).toBe('3')
+  })
+
+  it('serializes aligned tables back to markdown', () => {
+    expect(
+      tableToMarkdown({
+        type: 'table',
+        align: ['left', 'right', 'center'],
+        header: ['Name', 'Role', 'Score'],
+        rows: [['Ada', 'Admin', '3']]
+      })
+    ).toBe(['| Name | Role | Score |', '| :--- | ---: | :---: |', '| Ada | Admin | 3 |'].join('\n'))
   })
 })

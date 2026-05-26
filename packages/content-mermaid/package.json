@@ -19,7 +19,6 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tinytinkerer/content-core": "workspace:*",
     "@tinytinkerer/content-react": "workspace:*",
     "@types/dompurify": "^3.2.0",
     "dompurify": "^3.4.5",

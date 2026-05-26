@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { WireframeNodeRenderer } from '../src/index.js'
+import { WireframeNodeRenderer, wireframeRenderers } from '../src/index.js'
 
 const HELLO_WORLD_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -32,6 +32,10 @@ afterEach(() => {
 })
 
 describe('WireframeNodeRenderer', () => {
+  it('exports the wireframe renderer map for composition', () => {
+    expect(wireframeRenderers.wireframe).toBe(WireframeNodeRenderer)
+  })
+
   it('renders the wireframe chrome with the label', () => {
     render(<WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />)
 
