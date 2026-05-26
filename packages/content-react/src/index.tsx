@@ -154,8 +154,10 @@ const renderInline = (nodes: InlineNode[]): ReactNode =>
     }
   })
 
+type HeadingTag = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
+
 const HeadingNodeView = ({ node }: ContentNodeRendererProps<HeadingNode>) => {
-  const Tag = `h${node.level}` as 'h1'
+  const Tag = `h${node.level}` as HeadingTag
   return <Tag>{renderInline(node.children)}</Tag>
 }
 
@@ -458,10 +460,10 @@ export const createReactContentRuntime = (): ReactContentRuntime => {
   const runtime = createContentRuntime<ReactNode>({
     fallback: (node) => genericNodeFallback(node),
     wrap: (children, ctx) => {
-      const fallbackNode = ctx.fallback()
+      const LazyFallback = () => <>{ctx.fallback()}</>
       return (
-        <Suspense fallback={fallbackNode}>
-          <RendererBoundary fallback={fallbackNode}>{children}</RendererBoundary>
+        <Suspense fallback={<LazyFallback />}>
+          <RendererBoundary fallback={<LazyFallback />}>{children}</RendererBoundary>
         </Suspense>
       )
     }
