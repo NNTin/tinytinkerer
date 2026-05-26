@@ -26,8 +26,6 @@
     "@tinytinkerer/brand-assets": "workspace:*",
     "@tinytinkerer/content-markdown": "workspace:*",
     "@tinytinkerer/content-mermaid": "workspace:*",
-    "@tinytinkerer/content-react": "workspace:*",
-    "@tinytinkerer/content-runtime": "workspace:*",
     "@tinytinkerer/content-wireframe": "workspace:*",
     "@tinytinkerer/contracts": "workspace:*",
     "dexie": "^4.2.1",

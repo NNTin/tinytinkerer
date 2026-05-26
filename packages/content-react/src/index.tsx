@@ -38,6 +38,40 @@ import {
 } from '@tinytinkerer/content-runtime'
 import { cn } from '@tinytinkerer/ui'
 
+export { computeNodeId, hashContent } from '@tinytinkerer/content-core'
+export type {
+  BlockNode,
+  BlockquoteNode,
+  BreakNode,
+  ChoicePromptNode,
+  CodeBlockNode,
+  CodeInlineNode,
+  ContentDocument,
+  ContentNode,
+  ContentNodeByType,
+  ContentParser,
+  ContentRendererRegistry,
+  EmphasisNode,
+  HeadingNode,
+  ImageInlineNode,
+  ImageNode,
+  InlineNode,
+  LinkNode,
+  ListItemNode,
+  ListNode,
+  MarkdownNode,
+  MermaidNode,
+  NodeId,
+  ParagraphNode,
+  StrikethroughNode,
+  StrongNode,
+  TableAlignment,
+  TableNode,
+  TextNode,
+  ThematicBreakNode,
+  WireframeNode
+} from '@tinytinkerer/content-core'
+
 export const MARKDOWN_ROOT_CLASS = 'tt-markdown'
 export const MARKDOWN_STREAMING_CLASS = 'tt-markdown--streaming'
 
@@ -58,6 +92,7 @@ export type ReactNodeRendererPlugin<TType extends ContentNode['type']> = NodeRen
   TType,
   ReactNode
 >
+export type ReactContentPlugin = AnyNodeRendererPlugin<ReactNode>
 
 type ContentDocumentRendererProps = {
   document: ContentDocument

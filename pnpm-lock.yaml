@@ -273,12 +273,6 @@ importers:
       '@tinytinkerer/content-mermaid':
         specifier: workspace:*
         version: link:../content-mermaid
-      '@tinytinkerer/content-react':
-        specifier: workspace:*
-        version: link:../content-react
-      '@tinytinkerer/content-runtime':
-        specifier: workspace:*
-        version: link:../content-runtime
       '@tinytinkerer/content-wireframe':
         specifier: workspace:*
         version: link:../content-wireframe
@@ -346,9 +340,6 @@ importers:
 
   packages/content-markdown:
     dependencies:
-      '@tinytinkerer/content-core':
-        specifier: workspace:*
-        version: link:../content-core
       '@tinytinkerer/content-react':
         specifier: workspace:*
         version: link:../content-react
@@ -398,15 +389,9 @@ importers:
 
   packages/content-mermaid:
     dependencies:
-      '@tinytinkerer/content-core':
-        specifier: workspace:*
-        version: link:../content-core
       '@tinytinkerer/content-react':
         specifier: workspace:*
         version: link:../content-react
-      '@tinytinkerer/content-runtime':
-        specifier: workspace:*
-        version: link:../content-runtime
       '@types/dompurify':
         specifier: ^3.2.0
         version: 3.2.0
@@ -503,15 +488,9 @@ importers:
 
   packages/content-wireframe:
     dependencies:
-      '@tinytinkerer/content-core':
-        specifier: workspace:*
-        version: link:../content-core
       '@tinytinkerer/content-react':
         specifier: workspace:*
         version: link:../content-react
-      '@tinytinkerer/content-runtime':
-        specifier: workspace:*
-        version: link:../content-runtime
     devDependencies:
       '@testing-library/jest-dom':
         specifier: ^6.9.1

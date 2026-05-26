@@ -22,7 +22,6 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tinytinkerer/content-core": "workspace:*",
     "@tinytinkerer/content-react": "workspace:*",
     "mdast-util-to-string": "^4.0.0",
     "remark-gfm": "^4.0.1",

@@ -1,11 +1,11 @@
 import DOMPurify from 'dompurify'
 import mermaidRuntimeUrl from 'mermaid/dist/mermaid.min.js?url'
 import { useEffect, useId, useState } from 'react'
-import type { MermaidNode } from '@tinytinkerer/content-core'
 import {
   CodeBlockFallback,
   PreviewCodeFrame,
   type ContentNodeRendererProps,
+  type MermaidNode,
   type ReactContentRendererRegistry,
   type ReactNodeRendererPlugin
 } from '@tinytinkerer/content-react'

@@ -77,27 +77,21 @@ flowchart LR
   appcore --> agent
   appcore --> contracts
 
+  appbrowser --> contentmarkdown
   appbrowser --> contentmermaid
   appbrowser --> contentwireframe
-  appbrowser --> contentmarkdown
-  appbrowser --> contentreact
-  appbrowser --> contentruntime
   appbrowser --> appcore
   appbrowser --> contracts
   appbrowser --> brand
 
   contentruntime --> contentcore
 
-  contentmarkdown --> contentcore
-  contentmarkdown --> contentreact
   contentreact --> ui
-  contentreact --> contentcore
   contentreact --> contentruntime
-  contentmermaid --> contentcore
-  contentmermaid --> contentruntime
+  contentreact --> contentcore
+
+  contentmarkdown --> contentreact
   contentmermaid --> contentreact
-  contentwireframe --> contentcore
-  contentwireframe --> contentruntime
   contentwireframe --> contentreact
 
   agent --> contracts
@@ -170,13 +164,12 @@ flowchart LR
 
 - Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
-- `app-browser` may depend on `app-core`, `content-*`, `brand-assets`, and `contracts`. It is the browser-facing composition boundary for shared frontend behavior.
+- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`). It must not depend on `content-react`, `content-runtime`, or `content-core` directly.
 - `brand-assets` may depend on `contracts` and nothing else.
 - `content-core` must not depend on other workspace packages.
 - `content-runtime` may depend only on `content-core`.
-- `content-react` may depend only on `content-core`, `content-runtime`, and `ui`.
-- `content-markdown` may depend only on `content-core`, `content-runtime`, and `content-react`.
-- `content-mermaid` and `content-wireframe` may depend only on `content-core`, `content-runtime`, and `content-react`.
+- `content-react` may depend only on `content-core`, `content-runtime`, and `ui`. It is the public facade for the React side of the content platform and re-exports the content-core symbols downstream content packages need.
+- `content-markdown`, `content-mermaid`, and `content-wireframe` may depend only on `content-react`. They must not import `content-core` or `content-runtime` directly.
 - `ui` must stay primitive-only.
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
 - `agent-core` may depend only on `contracts` and agent-core-local modules.
@@ -199,7 +192,7 @@ The current flow is:
 3. `@tinytinkerer/app-browser` composes browser-backed implementations on top of `@tinytinkerer/app-core`.
 4. `@tinytinkerer/app-core` orchestrates product behavior through ports and runtime abstractions.
 5. `@tinytinkerer/agent-core` executes the agent runtime using product-agnostic abstractions.
-6. Assistant markdown is parsed by `content-markdown` into the semantic `ContentDocument`, dispatched through the `content-runtime` coordinator (with `content-react` as the React runtime implementation), and rendered using the default React plugins plus the `content-mermaid` and `content-wireframe` plugins registered by `app-browser`.
+6. Assistant markdown is parsed by `content-markdown` into the semantic `ContentDocument`. `MarkdownContent` (also from `content-markdown`) accepts an optional `plugins` array, builds a React runtime via `createReactContentRuntime` internally, and dispatches each node through `content-runtime` (with `content-react` as the React runtime implementation). `app-browser` only passes the `content-mermaid` and `content-wireframe` plugins to `MarkdownContent`; the runtime, default React plugins, and AST types stay internal to the content platform facade.
 7. `@tinytinkerer/edge` exposes stateless endpoints and returns payloads that conform to `contracts`.
 
 ## Browser App Model

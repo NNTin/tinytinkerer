@@ -1,10 +1,10 @@
-import type { WireframeNode } from '@tinytinkerer/content-core'
 import {
   CodeBlockFallback,
   PreviewCodeFrame,
   type ContentNodeRendererProps,
   type ReactContentRendererRegistry,
-  type ReactNodeRendererPlugin
+  type ReactNodeRendererPlugin,
+  type WireframeNode
 } from '@tinytinkerer/content-react'
 
 export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<WireframeNode>) => {

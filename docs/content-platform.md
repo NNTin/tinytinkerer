@@ -78,7 +78,7 @@ Must not own:
 
 ### `@tinytinkerer/content-react`
 
-Owns the React implementation of the content runtime and the default React plugins + chrome.
+Owns the React implementation of the content runtime, the default React plugins + chrome, and the outward-facing facade for the React side of the content platform.
 
 Owns:
 
@@ -87,7 +87,8 @@ Owns:
 - React inline-node renderer (text, emphasis, strong, strikethrough, code, link, image, break)
 - shared copy and preview/code interaction chrome (`PreviewCodeFrame`, `CodeBlockFallback`)
 - React-side fallback policy (Suspense + RendererBoundary wrap)
-- legacy `ContentDocumentRenderer` + renderer-registry overrides for backward compatibility
+- `ContentDocumentRenderer` + renderer-registry overrides
+- re-exports of the content-core AST types and stable-ID helpers (`computeNodeId`, `hashContent`, `NodeId`, the full AST node-type set) and the React plugin/runtime types (`ReactContentRuntime`, `ReactContentPlugin`, `ReactNodeRendererPlugin`, `ContentNodeRendererProps`) so downstream content packages depend only on `content-react`
 
 Must not own:
 
@@ -97,25 +98,25 @@ Must not own:
 
 ### `@tinytinkerer/content-markdown`
 
-Owns markdown parsing and AST transformation into the semantic `ContentDocument`.
+Owns markdown parsing and AST transformation into the semantic `ContentDocument`. Imports AST types and the React runtime via `@tinytinkerer/content-react` only — never from `content-core` or `content-runtime` directly.
 
 Owns:
 
 - markdown parsing
 - GFM support
 - mapping markdown structures into block + inline `ContentNode`s
-- stable ID assignment via `computeNodeId`
-- thin markdown-to-document rendering adapter built on `content-react`
+- stable ID assignment via `computeNodeId` (re-exported by `content-react`)
+- `MarkdownContent` — parses to `ContentDocument`, builds a `ReactContentRuntime` internally from an optional `plugins` array, and delegates rendering to `ContentDocumentRenderer`
 - fallback rules for unsupported content
 
 Must not own:
 
 - shell-facing exports for apps
-- browser runtime assembly
+- direct imports from `content-core` or `content-runtime`
 
 ### `@tinytinkerer/content-mermaid`
 
-Owns Mermaid-specific rendering behavior, exposed as a plugin.
+Owns Mermaid-specific rendering behavior, exposed as a plugin. Imports node types, plugin contract, and shared chrome via `@tinytinkerer/content-react` only.
 
 Owns:
 
@@ -128,10 +129,11 @@ Must not own:
 - markdown parsing
 - app-shell composition
 - general browser runtime wiring
+- direct imports from `content-core` or `content-runtime`
 
 ### `@tinytinkerer/content-wireframe`
 
-Owns wireframe-specific rendering behavior, exposed as a plugin.
+Owns wireframe-specific rendering behavior, exposed as a plugin. Imports node types, plugin contract, and shared chrome via `@tinytinkerer/content-react` only.
 
 Owns:
 
@@ -144,6 +146,7 @@ Must not own:
 - markdown parsing
 - app-shell composition
 - general browser runtime wiring
+- direct imports from `content-core` or `content-runtime`
 
 ## AST Surface
 
@@ -204,12 +207,12 @@ That means:
 
 Browser apps should not import `content-*` packages directly. Instead:
 
-1. `app-browser` builds a singleton `ReactContentRuntime` via `createReactContentRuntime` and registers `mermaidPlugin` + `wireframePlugin`.
-2. `app-browser` accepts assistant text from shared runtime state and hands it (with the runtime) to `MarkdownContent` from `content-markdown`.
-3. `content-markdown` parses to a `ContentDocument` and delegates document rendering to `ContentDocumentRenderer`, which dispatches each node through the runtime.
-4. Browser shells consume the final shell-safe export from `app-browser`.
+1. `app-browser` imports `MarkdownContent` from `content-markdown` and the `mermaidPlugin` / `wireframePlugin` exports from `content-mermaid` / `content-wireframe`. It does not import `content-react`, `content-runtime`, or `content-core`.
+2. `app-browser` passes the plugins as a stable `plugins` array to `MarkdownContent`.
+3. `MarkdownContent` parses the assistant text to a `ContentDocument`, internally builds a `ReactContentRuntime` via `createReactContentRuntime`, registers the supplied plugins on top of the default React plugins, and delegates document rendering to `ContentDocumentRenderer`.
+4. Browser shells consume the final shell-safe export (`AssistantContent`) from `app-browser`.
 
-This keeps the dependency surface small and preserves the rule that apps extend capability through `app-browser` instead of reaching into lower layers directly.
+This keeps the dependency surface small and preserves the rule that apps extend capability through `app-browser` instead of reaching into lower layers directly. Runtime construction is fully encapsulated by `content-markdown`, so adding or swapping plugins never leaks runtime types into `app-browser`.
 
 ## Browser Composition Diagram
 
@@ -219,8 +222,8 @@ flowchart LR
 
   subgraph ContentPlatform["Content Platform"]
     contentcore["@tinytinkerer/content-core<br/>AST + stable-ID helpers + contracts"]
-    contentruntime["@tinytinkerer/content-runtime<br/>platform-agnostic coordinator + plugin contract"]
-    contentreact["@tinytinkerer/content-react<br/>React runtime impl + default plugins + chrome"]
+    contentruntime["@tinytinkerer/content-runtime<br/>platform-agnostic coordinator"]
+    contentreact["@tinytinkerer/content-react<br/>React runtime impl + chrome"]
     contentmarkdown["@tinytinkerer/content-markdown<br/>markdown parsing + React adapter"]
     contentmermaid["@tinytinkerer/content-mermaid<br/>MermaidPlugin"]
     contentwireframe["@tinytinkerer/content-wireframe<br/>WireframePlugin"]
@@ -231,34 +234,26 @@ flowchart LR
   appbrowser --> contentmarkdown
   appbrowser --> contentmermaid
   appbrowser --> contentwireframe
-  appbrowser --> contentreact
-  appbrowser --> contentruntime
 
-  contentruntime --> contentcore
-
-  contentreact --> contentcore
   contentreact --> contentruntime
   contentreact --> ui
 
-  contentmarkdown --> contentcore
   contentmarkdown --> contentreact
-  contentmermaid --> contentcore
-  contentmermaid --> contentruntime
   contentmermaid --> contentreact
-
-  contentwireframe --> contentcore
-  contentwireframe --> contentruntime
   contentwireframe --> contentreact
+
+  classDef coreLayer fill:#ffe4e6,stroke:#be123c,color:#111827,stroke-width:2px;
+  class contentcore coreLayer;
 ```
 
 ## Dependency Rules
 
 - `content-core` must not depend on any workspace package.
 - `content-runtime` may depend only on `content-core`.
-- `content-react` may depend only on `content-core`, `content-runtime`, and `ui`.
-- `content-markdown` may depend only on `content-core`, `content-runtime`, and `content-react`.
-- `content-mermaid` and `content-wireframe` may depend only on `content-core`, `content-runtime`, and `content-react`.
-- `app-browser` may compose the content platform, but the content platform must not depend on `app-browser`.
+- `content-react` may depend only on `content-core`, `content-runtime`, and `ui`. It is the public facade for the React side of the content platform and re-exports the content-core symbols downstream packages need.
+- `content-markdown`, `content-mermaid`, and `content-wireframe` may depend only on `content-react`. They must not import `content-core` or `content-runtime` directly.
+- `app-browser` may depend only on the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`). It must not depend on `content-react`, `content-runtime`, or `content-core` directly.
+- The content platform must not depend on `app-browser`.
 - Browser apps consume shell-facing content exports from `app-browser`, not directly from `content-*`.
 - `ui` must not absorb content parsing, specialized renderers, or browser-shell runtime logic.
 - `content-*` packages must not become a second browser runtime or a second app shell.
@@ -268,10 +263,10 @@ flowchart LR
 The current rendering split is:
 
 - `content-markdown` parses raw markdown into the semantic `ContentDocument`, assigning stable IDs to every block.
-- `content-markdown` exposes a thin `MarkdownContent` adapter that delegates document rendering to `content-react`'s `ContentDocumentRenderer`.
-- `content-react` provides `createReactContentRuntime`, which returns a `ContentRuntime<ReactNode>` with default React plugins pre-registered (paragraph, heading, list, blockquote, thematic break, legacy markdown, code block, table, image). Each rendered block is wrapped in `<Suspense>` + a class-based `RendererBoundary` so per-plugin React-lazy renderers and thrown errors degrade gracefully.
-- `content-mermaid` and `content-wireframe` each export a typed `NodeRendererPlugin` (`mermaidPlugin`, `wireframePlugin`) — registration on the runtime is a single `runtime.register(plugin)` call.
-- `app-browser` builds the singleton runtime, registers specialized plugins, and exposes the shell-facing entrypoint.
+- `content-markdown` exposes a `MarkdownContent` adapter that accepts a `plugins` array, builds a `ReactContentRuntime` via `createReactContentRuntime`, registers each supplied plugin, and delegates document rendering to `content-react`'s `ContentDocumentRenderer`. Runtime construction is memoized on the plugins-array reference.
+- `content-react` provides `createReactContentRuntime`, which returns a `ContentRuntime<ReactNode>` with default React plugins pre-registered (paragraph, heading, list, blockquote, thematic break, legacy markdown, code block, table, image). Each rendered block is wrapped in `<Suspense>` + a class-based `RendererBoundary` so per-plugin React-lazy renderers and thrown errors degrade gracefully. `content-react` also re-exports the content-core AST types and stable-ID helpers so downstream content packages can drop direct `content-core` imports.
+- `content-mermaid` and `content-wireframe` each export a typed `NodeRendererPlugin` (`mermaidPlugin`, `wireframePlugin`) — registration on the runtime is a single `runtime.register(plugin)` call, performed inside `MarkdownContent`.
+- `app-browser` only passes a stable `plugins` array (containing `mermaidPlugin` + `wireframePlugin`) to `MarkdownContent`. It does not see runtimes, default plugins, or AST types.
 
 Specialized renderers such as Mermaid stay lazy-loadable: Mermaid's runtime is fetched via dynamic script injection on first use, so it does not bloat the main browser entry chunk.
 

@@ -241,14 +241,12 @@ function validateBoundary(sourcePkg, target, filePath) {
       '@tinytinkerer/brand-assets',
       '@tinytinkerer/content-markdown',
       '@tinytinkerer/content-mermaid',
-      '@tinytinkerer/content-react',
-      '@tinytinkerer/content-runtime',
       '@tinytinkerer/content-wireframe',
       '@tinytinkerer/contracts'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, content-*, and app-browser-local modules (${targetPkg.name})`
+        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, the outward-facing content packages (content-markdown, content-mermaid, content-wireframe), and app-browser-local modules (${targetPkg.name})`
       )
     }
   }
@@ -294,14 +292,12 @@ function validateBoundary(sourcePkg, target, filePath) {
 
   if (sourcePkg.name === '@tinytinkerer/content-markdown') {
     const allowed = new Set([
-      '@tinytinkerer/content-core',
       '@tinytinkerer/content-react',
-      '@tinytinkerer/content-runtime',
       '@tinytinkerer/content-markdown'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: content-markdown may import only content-core, content-runtime, content-react, and local modules (${targetPkg.name})`
+        `${sourceLabel}: content-markdown may import only content-react and local modules (${targetPkg.name})`
       )
     }
   }
@@ -326,13 +322,11 @@ function validateBoundary(sourcePkg, target, filePath) {
   ) {
     const allowed = new Set([
       sourcePkg.name,
-      '@tinytinkerer/content-core',
-      '@tinytinkerer/content-react',
-      '@tinytinkerer/content-runtime'
+      '@tinytinkerer/content-react'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: specialized content packages may import only content-core, content-runtime, content-react, and local modules (${targetPkg.name})`
+        `${sourceLabel}: specialized content packages may import only content-react and local modules (${targetPkg.name})`
       )
     }
   }

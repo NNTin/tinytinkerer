@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { MermaidNode } from '@tinytinkerer/content-core'
+import type { ReactNodeRendererPlugin } from '@tinytinkerer/content-react'
 import { MarkdownContent } from '../src/index.js'
 
 afterEach(() => {
@@ -17,15 +17,19 @@ describe('MarkdownContent', () => {
     expect(screen.getByRole('table')).toBeInTheDocument()
   })
 
-  it('forwards shared runtime props and specialized renderer overrides', () => {
+  it('renders user-supplied plugins alongside the default React runtime', () => {
+    const mermaidStub: ReactNodeRendererPlugin<'mermaid'> = {
+      id: 'mermaid-stub',
+      nodeType: 'mermaid',
+      render: (node) => <div>Diagram: {node.code}</div>
+    }
+
     const { container } = render(
       <MarkdownContent
         content={['Intro', '', '```mermaid', 'graph TD', 'A-->B', '```'].join('\n')}
         className="prose-assistant"
         isStreaming
-        renderers={{
-          mermaid: ({ node }: { node: MermaidNode }) => <div>Diagram: {node.code}</div>
-        }}
+        plugins={[mermaidStub]}
       />
     )
 

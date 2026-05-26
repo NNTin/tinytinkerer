@@ -19,9 +19,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tinytinkerer/content-core": "workspace:*",
-    "@tinytinkerer/content-react": "workspace:*",
-    "@tinytinkerer/content-runtime": "workspace:*"
+    "@tinytinkerer/content-react": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.0.0"
