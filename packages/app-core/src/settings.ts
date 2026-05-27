@@ -1,11 +1,14 @@
 import { DEFAULT_MODEL, normalizeSelectedModel } from './models'
 import type { PreferencesStore } from './ports'
+import type { McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contracts'
 
 export const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',
   searchEnabled: 'settings_search_enabled',
   showThinkingTimeline: 'settings_show_thinking_timeline',
-  showToolActivity: 'settings_show_tool_activity'
+  showToolActivity: 'settings_show_tool_activity',
+  mcpServers: 'settings_mcp_servers',
+  mcpDiscovery: 'settings_mcp_discovery'
 } as const
 
 export type SettingsState = {
@@ -14,6 +17,8 @@ export type SettingsState = {
   searchEnabled: boolean
   showThinkingTimeline: boolean
   showToolActivity: boolean
+  mcpServers: McpServerConfig[]
+  mcpDiscovery: Record<string, McpDiscoveryResult>
 }
 
 const parseBool = (value: string | undefined, fallback: boolean): boolean => {
@@ -27,15 +32,19 @@ export const defaultSettingsState = (): SettingsState => ({
   selectedModel: DEFAULT_MODEL,
   searchEnabled: true,
   showThinkingTimeline: true,
-  showToolActivity: true
+  showToolActivity: true,
+  mcpServers: [],
+  mcpDiscovery: {}
 })
 
 export const loadSettingsState = async (preferences: PreferencesStore): Promise<SettingsState> => {
-  const [selectedModel, searchEnabled, showThinkingTimeline, showToolActivity] = await Promise.all([
+  const [selectedModel, searchEnabled, showThinkingTimeline, showToolActivity, mcpServersRaw, mcpDiscoveryRaw] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
     preferences.get(SETTINGS_KEYS.searchEnabled),
     preferences.get(SETTINGS_KEYS.showThinkingTimeline),
-    preferences.get(SETTINGS_KEYS.showToolActivity)
+    preferences.get(SETTINGS_KEYS.showToolActivity),
+    preferences.get(SETTINGS_KEYS.mcpServers),
+    preferences.get(SETTINGS_KEYS.mcpDiscovery)
   ])
 
   return {
@@ -43,8 +52,44 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     selectedModel: normalizeSelectedModel(selectedModel),
     searchEnabled: parseBool(searchEnabled, true),
     showThinkingTimeline: parseBool(showThinkingTimeline, true),
-    showToolActivity: parseBool(showToolActivity, true)
+    showToolActivity: parseBool(showToolActivity, true),
+    mcpServers: parseMcpServers(mcpServersRaw),
+    mcpDiscovery: parseMcpDiscovery(mcpDiscoveryRaw)
   }
+}
+
+const parseMcpServers = (raw: string | undefined): McpServerConfig[] => {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as McpServerConfig[]) : []
+  } catch {
+    return []
+  }
+}
+
+const parseMcpDiscovery = (raw: string | undefined): Record<string, McpDiscoveryResult> => {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, McpDiscoveryResult>) : {}
+  } catch {
+    return {}
+  }
+}
+
+export const persistMcpServers = async (
+  preferences: PreferencesStore,
+  servers: McpServerConfig[]
+): Promise<void> => {
+  await preferences.set(SETTINGS_KEYS.mcpServers, JSON.stringify(servers))
+}
+
+export const persistMcpDiscovery = async (
+  preferences: PreferencesStore,
+  discovery: Record<string, McpDiscoveryResult>
+): Promise<void> => {
+  await preferences.set(SETTINGS_KEYS.mcpDiscovery, JSON.stringify(discovery))
 }
 
 export const persistSelectedModel = async (

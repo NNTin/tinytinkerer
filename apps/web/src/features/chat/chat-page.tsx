@@ -8,6 +8,13 @@ import { Cog6ToothIcon } from '@heroicons/react/24/outline'
 import { useEffect, useRef, useState } from 'react'
 import { BrowserSettingsModal as SettingsModal } from '@tinytinkerer/app-browser'
 
+const toolLabel = (toolId: string): string => {
+  if (toolId === 'web-search') return 'Web search'
+  const mcpMatch = toolId.match(/^mcp:[^:]+:(.+)$/)
+  if (mcpMatch) return mcpMatch[1] ?? toolId
+  return toolId
+}
+
 const systemLevelStyle: Record<'info' | 'warning' | 'error', string> = {
   info: 'border-stone-200 bg-stone-50 text-stone-600',
   warning: 'border-amber-200 bg-amber-50 text-amber-800',
@@ -171,30 +178,50 @@ export const ChatPage = () => {
                 <p className="text-xs text-[var(--muted)]">Search results and tool outputs from this conversation will appear here.</p>
               ) : (
                 toolEvents.map((event) => {
+                  const toolId = event.payload.toolId
+                  const label = toolLabel(toolId)
+
                   if (event.type === 'tool.call.failed') {
                     return (
                       <div key={event.id} className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-700">
-                        <span className="font-medium">Search failed:</span> {event.payload.error}
+                        <span className="font-medium">{label} failed:</span> {event.payload.error}
                       </div>
                     )
                   }
 
-                  const output = event.payload.output as { query?: string; results?: unknown[] }
-                  const resultCount = Array.isArray(output.results) ? output.results.length : 0
+                  if (toolId === 'web-search') {
+                    const output = event.payload.output as { query?: string; results?: unknown[] }
+                    const resultCount = Array.isArray(output.results) ? output.results.length : 0
+                    return (
+                      <details key={event.id} className="group rounded-md border border-stone-200/70 bg-white/60 text-xs">
+                        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 text-stone-600 hover:bg-stone-50/80">
+                          <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-stone-100 text-[9px] font-bold text-stone-400 transition-transform group-open:rotate-90">
+                            ▶
+                          </span>
+                          <span>
+                            Web search —{' '}
+                            <span className="text-[var(--muted)]">{resultCount} result{resultCount !== 1 ? 's' : ''}</span>
+                          </span>
+                        </summary>
+                        <div className="border-t border-stone-100 px-3 py-1.5 text-[var(--muted)]">
+                          Query: <span className="text-stone-600">{output.query ?? 'unknown'}</span>
+                        </div>
+                      </details>
+                    )
+                  }
 
+                  const output = event.payload.output as { text?: string; isError?: boolean } | null
+                  const summary = output?.text ? output.text.slice(0, 120) : '(no output)'
                   return (
                     <details key={event.id} className="group rounded-md border border-stone-200/70 bg-white/60 text-xs">
                       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 text-stone-600 hover:bg-stone-50/80">
                         <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-stone-100 text-[9px] font-bold text-stone-400 transition-transform group-open:rotate-90">
                           ▶
                         </span>
-                        <span>
-                          Web search —{' '}
-                          <span className="text-[var(--muted)]">{resultCount} result{resultCount !== 1 ? 's' : ''}</span>
-                        </span>
+                        <span>{label}</span>
                       </summary>
                       <div className="border-t border-stone-100 px-3 py-1.5 text-[var(--muted)]">
-                        Query: <span className="text-stone-600">{output.query ?? 'unknown'}</span>
+                        {summary}
                       </div>
                     </details>
                   )

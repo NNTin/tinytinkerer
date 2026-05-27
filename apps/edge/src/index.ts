@@ -3,6 +3,7 @@ import type { Bindings } from './lib/bindings'
 import { corsMiddleware } from './lib/cors'
 import { registerAuthRoutes } from './routes/auth'
 import { registerHealthRoute } from './routes/health'
+import { registerMcpRoutes } from './routes/mcp'
 import { registerModelRoutes } from './routes/models'
 import { registerSearchRoutes } from './routes/search'
 
@@ -14,5 +15,6 @@ registerHealthRoute(app)
 registerAuthRoutes(app)
 registerSearchRoutes(app)
 registerModelRoutes(app)
+registerMcpRoutes(app)
 
 export default app

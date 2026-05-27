@@ -23,7 +23,7 @@ export type ProviderCallOptions = {
 }
 
 export interface ModelProvider {
-  plan(prompt: string, options?: ProviderCallOptions): Promise<ExecutionPlan>
+  plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan>
   execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
   synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<string>
 }

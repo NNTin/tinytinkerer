@@ -11,13 +11,16 @@ export const createBrowserRuntimeFactory = (options: {
   settingsStore: SettingsStore
   statusStore: StatusStore
 }): ChatRuntimeFactory => ({
-  create: () =>
-    createRuntime({
+  create: () => {
+    const settings = options.settingsStore.getState()
+    return createRuntime({
       baseUrl: options.shell.config.edgeBaseUrl,
       searchEnabled:
-        options.settingsStore.getState().searchEnabled &&
-        isSearchReady(options.statusStore.getState()),
+        settings.searchEnabled && isSearchReady(options.statusStore.getState()),
       getToken: () => options.authStore.getState().token,
-      getModel: () => options.settingsStore.getState().selectedModel
+      getModel: () => settings.selectedModel,
+      mcpServers: settings.mcpServers,
+      mcpDiscovery: settings.mcpDiscovery
     })
+  }
 })

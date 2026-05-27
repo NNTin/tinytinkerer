@@ -1,5 +1,6 @@
 import {
   AssistantContent,
+  McpServerList,
   TINYTINKERER_BRAND_ASSET_URLS,
   useChatSurfaceController,
   useSettingsSurfaceController
@@ -230,6 +231,11 @@ const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
           {searchUnavailable ? (
             <p className="mt-2 text-xs text-[var(--widget-muted)]">{effectiveStatus.search.detail}</p>
           ) : null}
+
+          <div className="mt-4">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--widget-muted)]">MCP Servers</p>
+            <McpServerList />
+          </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {token ? (

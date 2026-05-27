@@ -1,6 +1,7 @@
 import {
   inferPlan,
   RateLimitError,
+  type ConversationMessage,
   type ExecutionContext,
   type ModelProvider,
   type ProviderCallOptions
@@ -15,6 +16,8 @@ import {
 import { SYSTEM_STYLE_PROMPT } from './system-prompt'
 import { getRetryAfterMs } from './rate-limit'
 import { RateLimitQuota } from './quota-tracker'
+import { createEdgeFetch } from './edge-fetch'
+import { llmPlan } from './mcp-planner'
 
 const estimateTokens = (context: ExecutionContext): number => {
   const allText = [
@@ -26,10 +29,18 @@ const estimateTokens = (context: ExecutionContext): number => {
   return Math.ceil(allText.length / 4)
 }
 
+export type McpToolDescriptor = {
+  id: string
+  description: string
+  inputSchema: Record<string, unknown>
+  serverInstructions?: string
+}
+
 type GitHubModelsProviderOptions = {
   baseUrl: string
   getToken?: () => string | null | undefined
   getModel?: () => string | null | undefined
+  mcpToolDescriptors?: McpToolDescriptor[]
 }
 
 const isValidRetryAt = (value: string | undefined): value is string =>
@@ -73,11 +84,22 @@ export class GitHubModelsProvider implements ModelProvider {
 
   constructor(private readonly options: GitHubModelsProviderOptions) {}
 
-  plan(prompt: string, options?: ProviderCallOptions): Promise<ExecutionPlan> {
+  async plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan> {
+    const token = this.options.getToken?.()
+    const mcpDescriptors = this.options.mcpToolDescriptors ?? []
+
+    if (token && mcpDescriptors.length > 0) {
+      try {
+        const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
+        const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
+        return await llmPlan(prompt, history, mcpDescriptors, model, edgeFetch)
+      } catch {
+        // fall through to heuristic
+      }
+    }
+
     const searchEnabled = options?.searchEnabled
-    return Promise.resolve(
-      inferPlan(prompt, searchEnabled !== undefined ? { searchEnabled } : undefined)
-    )
+    return inferPlan(prompt, searchEnabled !== undefined ? { searchEnabled } : undefined)
   }
 
   execute(step: PlanStep, context: ExecutionContext): Promise<string> {

@@ -28,7 +28,7 @@ export type {
 } from './config'
 export { AssistantContent } from './assistant-content'
 export { BrowserCallbackPage } from './browser-callback-page'
-export { BrowserSettingsModal } from './browser-settings-modal'
+export { BrowserSettingsModal, McpServerList } from './browser-settings-modal'
 export { bootstrapBrowserShell } from './initialize'
 export { formatCooldown, useBrowserShellConfig, useChatCooldown, useGitHubOAuth } from './hooks'
 export { resolveBrowserShellBootstrapConfig } from './config'
@@ -49,4 +49,11 @@ export {
   normalizeSelectedModel
 } from '@tinytinkerer/app-core'
 export type { TimelineEntry, Turn } from '@tinytinkerer/app-core'
-export type { ChatEvent, ServiceStatus, SystemStatus } from '@tinytinkerer/contracts'
+export type {
+  ChatEvent,
+  McpDiscoveryResult,
+  McpServerConfig,
+  McpToolMeta,
+  ServiceStatus,
+  SystemStatus
+} from '@tinytinkerer/contracts'

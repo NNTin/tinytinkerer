@@ -4,7 +4,7 @@ import { RateLimitError } from '../src/errors/rate-limit-error'
 import { AgentRuntime } from '../src/runtime/agent-runtime'
 import { ToolRegistry } from '../src/tools/registry'
 import { z } from 'zod'
-import type { ModelProvider, ProviderCallOptions } from '../src/types'
+import type { ConversationMessage, ModelProvider, ProviderCallOptions } from '../src/types'
 
 const inferPlan = (prompt: string, options?: { searchEnabled?: boolean }) => {
   const searchEnabled = options?.searchEnabled !== false
@@ -353,9 +353,9 @@ describe('AgentRuntime', () => {
 
   it('does not emit tool.call.started or tool.call.failed for search when searchEnabled is false', async () => {
     const searchProvider: ModelProvider = {
-      plan: (prompt: string, options?: ProviderCallOptions) => {
+      plan: (_prompt: string, _history: ConversationMessage[], options?: ProviderCallOptions) => {
         const searchEnabled = options?.searchEnabled
-        return Promise.resolve(inferPlan(prompt, searchEnabled !== undefined ? { searchEnabled } : undefined))
+        return Promise.resolve(inferPlan(_prompt, searchEnabled !== undefined ? { searchEnabled } : undefined))
       },
       async execute() {
         return 'ok'
