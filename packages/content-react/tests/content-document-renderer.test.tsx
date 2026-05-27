@@ -4,7 +4,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { lazy, type ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  assignNodeIds,
+  ContentDocumentContent,
   ContentDocumentRenderer,
+  type ContentDocument,
   createReactContentRuntime,
   MARKDOWN_ROOT_CLASS,
   MARKDOWN_STREAMING_CLASS,
@@ -17,6 +20,8 @@ import {
 afterEach(() => {
   cleanup()
 })
+
+const withIds = (document: ContentDocument): ContentDocument => assignNodeIds(document)
 
 describe('ContentDocumentRenderer', () => {
   it('exports a conservative SSR execution policy preset', () => {
@@ -31,9 +36,9 @@ describe('ContentDocumentRenderer', () => {
     const { container } = render(
       <ContentDocumentRenderer
         isStreaming
-        document={{
+        document={withIds({
           nodes: [{ type: 'paragraph', children: [{ type: 'text', value: 'Hello' }] }]
-        }}
+        })}
       />
     )
 
@@ -44,7 +49,7 @@ describe('ContentDocumentRenderer', () => {
   it('renders default semantic nodes, code blocks, tables, and images', () => {
     render(
       <ContentDocumentRenderer
-        document={{
+        document={withIds({
           nodes: [
             {
               type: 'heading',
@@ -68,7 +73,7 @@ describe('ContentDocumentRenderer', () => {
             },
             { type: 'image', url: 'https://example.com/test.png', alt: 'Test image' }
           ]
-        }}
+        })}
       />
     )
 
@@ -84,7 +89,7 @@ describe('ContentDocumentRenderer', () => {
 
     render(
       <ContentDocumentRenderer
-        document={{
+        document={withIds({
           nodes: [
             {
               type: 'table',
@@ -101,7 +106,7 @@ describe('ContentDocumentRenderer', () => {
               ]
             }
           ]
-        }}
+        })}
       />
     )
 
@@ -118,7 +123,7 @@ describe('ContentDocumentRenderer', () => {
   it('falls back when a specialized renderer is missing', () => {
     render(
       <ContentDocumentRenderer
-        document={{ nodes: [{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }] }}
+        document={withIds({ nodes: [{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }] })}
       />
     )
 
@@ -140,7 +145,7 @@ describe('ContentDocumentRenderer', () => {
     render(
       <ContentDocumentRenderer
         runtime={runtime}
-        document={{ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] }}
+        document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
       />
     )
 
@@ -160,7 +165,7 @@ describe('ContentDocumentRenderer', () => {
     render(
       <ContentDocumentRenderer
         runtime={runtime}
-        document={{
+        document={withIds({
           nodes: [
             {
               type: 'heading',
@@ -169,7 +174,7 @@ describe('ContentDocumentRenderer', () => {
             },
             { type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }
           ]
-        }}
+        })}
       />
     )
 
@@ -201,13 +206,13 @@ describe('ContentDocumentRenderer', () => {
     const { container } = render(
       <ContentDocumentRenderer
         runtime={runtime}
-        document={{
+        document={withIds({
           nodes: [
             { type: 'paragraph', children: [{ type: 'text', value: 'Before' }] },
             { type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' },
             { type: 'paragraph', children: [{ type: 'text', value: 'After' }] }
           ]
-        }}
+        })}
       />
     )
 
@@ -225,7 +230,7 @@ describe('ContentDocumentRenderer', () => {
   it('renders semantic block nodes (heading, paragraph, list, blockquote)', () => {
     render(
       <ContentDocumentRenderer
-        document={{
+        document={withIds({
           nodes: [
             {
               type: 'heading',
@@ -264,7 +269,7 @@ describe('ContentDocumentRenderer', () => {
               ]
             }
           ]
-        }}
+        })}
       />
     )
 
@@ -288,7 +293,7 @@ describe('ContentDocumentRenderer', () => {
     render(
       <ContentDocumentRenderer
         runtime={runtime}
-        document={{ nodes: [{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }] }}
+        document={withIds({ nodes: [{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }] })}
       />
     )
 
@@ -313,7 +318,7 @@ describe('ContentDocumentRenderer', () => {
     render(
       <ContentDocumentRenderer
         runtime={runtime}
-        document={{ nodes: [{ type: 'codeBlock', code: '<html />', language: 'wireframe' }] }}
+        document={withIds({ nodes: [{ type: 'codeBlock', code: '<html />', language: 'wireframe' }] })}
       />
     )
 
@@ -324,13 +329,27 @@ describe('ContentDocumentRenderer', () => {
   it('renders choicePrompt nodes without crashing when no renderer is registered', () => {
     const { container } = render(
       <ContentDocumentRenderer
-        document={{
+        document={withIds({
           nodes: [{ type: 'choicePrompt', prompt: 'Pick one', choices: ['A', 'B'] }]
-        }}
+        })}
       />
     )
 
     expect(container.querySelector('pre')).toBeInTheDocument()
+  })
+})
+
+describe('ContentDocumentContent', () => {
+  it('normalizes hand-built documents before rendering them', () => {
+    render(
+      <ContentDocumentContent
+        document={{
+          nodes: [{ type: 'paragraph', children: [{ type: 'text', value: 'Hello adapter' }] }]
+        }}
+      />
+    )
+
+    expect(screen.getByText('Hello adapter')).toBeInTheDocument()
   })
 })
 

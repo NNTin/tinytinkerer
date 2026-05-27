@@ -1,13 +1,7 @@
 import type {
-  BlockNode,
-  ContentDocument,
   ContentNode,
   ContentNodeByType
 } from '@tinytinkerer/content-core'
-
-export type NodeRendererPluginCapabilities = {
-  readonly preview?: boolean
-}
 
 export type NodeRendererPluginRequirements = {
   readonly lazy?: boolean
@@ -36,7 +30,6 @@ export interface NodeRendererPlugin<TType extends ContentNode['type'], TResult> 
   readonly id: string
   readonly nodeType: TType
   readonly priority?: number
-  readonly capabilities?: NodeRendererPluginCapabilities
   readonly requirements?: NodeRendererPluginRequirements
   matches?(node: ContentNodeByType[TType]): boolean
   load?(): Promise<void>
@@ -87,12 +80,9 @@ export type CreateContentRuntimeOptions<TResult> = {
 
 export interface ContentRuntime<TResult> {
   register<TType extends ContentNode['type']>(plugin: NodeRendererPlugin<TType, TResult>): void
-  getPlugins(nodeType: ContentNode['type']): readonly AnyNodeRendererPlugin<TResult>[]
   resolve(node: ContentNode): RuntimeResolution<TResult>
   renderNode(node: ContentNode): TResult
-  renderDocument(doc: ContentDocument): TResult[]
   prepareNode(node: ContentNode): Promise<void>
-  prepareDocument(doc: ContentDocument): Promise<void>
 }
 
 type RegisteredPlugin<TResult> = {
@@ -110,17 +100,6 @@ const DEFAULT_EXECUTION_POLICY: Required<RuntimeExecutionPolicy> = {
   allowLazy: true,
   allowClientOnly: true,
   allowDom: true
-}
-
-const collectNestedBlocks = (node: BlockNode): BlockNode[] => {
-  switch (node.type) {
-    case 'list':
-      return node.children.flatMap((item) => item.children.flatMap((child) => [child, ...collectNestedBlocks(child)]))
-    case 'blockquote':
-      return node.children.flatMap((child) => [child, ...collectNestedBlocks(child)])
-    default:
-      return []
-  }
 }
 
 const sortRegisteredPlugins = <TResult>(
@@ -149,8 +128,9 @@ export const createContentRuntime = <TResult>(
     nodeType: ContentNode['type']
   ): readonly RegisteredPlugin<TResult>[] => sortRegisteredPlugins(plugins.get(nodeType) ?? [])
 
-  const getPlugins = (nodeType: ContentNode['type']): readonly AnyNodeRendererPlugin<TResult>[] =>
-    getRegisteredPlugins(nodeType).map((entry) => entry.plugin)
+  const getPluginsForNodeType = (
+    nodeType: ContentNode['type']
+  ): readonly AnyNodeRendererPlugin<TResult>[] => getRegisteredPlugins(nodeType).map((entry) => entry.plugin)
 
   const matchesNode = (
     plugin: AnyNodeRendererPlugin<TResult>,
@@ -182,7 +162,7 @@ export const createContentRuntime = <TResult>(
   }
 
   const selectPlugin = (node: ContentNode): RuntimeResolution<TResult> => {
-    const candidates = getPlugins(node.type)
+    const candidates = getPluginsForNodeType(node.type)
     if (candidates.length === 0) {
       return {
         ok: false,
@@ -357,11 +337,6 @@ export const createContentRuntime = <TResult>(
     return preparePlugin(selected.plugin)
   }
 
-  const prepareDocument = async (doc: ContentDocument): Promise<void> => {
-    const nodes = doc.nodes.flatMap((node) => [node, ...collectNestedBlocks(node)])
-    await Promise.all(nodes.map((node) => prepareNode(node)))
-  }
-
   return {
     register<TType extends ContentNode['type']>(plugin: NodeRendererPlugin<TType, TResult>) {
       const list = plugins.get(plugin.nodeType) ?? []
@@ -372,13 +347,8 @@ export const createContentRuntime = <TResult>(
       nextOrder += 1
       plugins.set(plugin.nodeType, list)
     },
-    getPlugins,
     resolve,
     renderNode,
-    renderDocument(doc) {
-      return doc.nodes.map((node) => renderNode(node))
-    },
-    prepareNode,
-    prepareDocument
+    prepareNode
   }
 }

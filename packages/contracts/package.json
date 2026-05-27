@@ -18,6 +18,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@tinytinkerer/content-core": "workspace:*",
     "zod": "^4.1.12"
   }
 }

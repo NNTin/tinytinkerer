@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { BlockNode, ContentDocument, InlineNode } from '@tinytinkerer/content-react'
+import type { BlockNode, ContentDocument, InlineNode } from '@tinytinkerer/content-core'
 import { parseMarkdownContent } from '../src/index.js'
 
 const stripIds = (doc: ContentDocument): ContentDocument => ({

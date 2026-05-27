@@ -55,20 +55,6 @@ const sourceRules = new Map([
       { pattern: /from\s+['"]react(?:\/[^'"]*)?['"]/, label: 'React import' },
       { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
     ]
-  ],
-  [
-    '@tinytinkerer/content-runtime',
-    [
-      { pattern: /\bfetch\s*\(/, label: 'fetch()' },
-      { pattern: /\bwindow(?=\s*[\.\[])/, label: 'window' },
-      { pattern: /\bdocument(?=\s*[\.\[])/, label: 'document' },
-      { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
-      { pattern: /\blocalStorage\b/, label: 'localStorage' },
-      { pattern: /\bindexedDB\b/, label: 'indexedDB' },
-      { pattern: /\bDexie\b/, label: 'Dexie' },
-      { pattern: /from\s+['"]react(?:\/[^'"]*)?['"]/, label: 'React import' },
-      { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
-    ]
   ]
 ])
 
@@ -309,15 +295,15 @@ function validateBoundary(sourcePkg, target, filePath) {
       '@tinytinkerer/app-browser',
       '@tinytinkerer/app-core',
       '@tinytinkerer/brand-assets',
-      '@tinytinkerer/content-core',
       '@tinytinkerer/content-markdown',
       '@tinytinkerer/content-mermaid',
+      '@tinytinkerer/content-react',
       '@tinytinkerer/content-wireframe',
       '@tinytinkerer/contracts'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, content-core for DTO translation, the outward-facing content packages (content-markdown, content-mermaid, content-wireframe), and app-browser-local modules (${targetPkg.name})`
+        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, content-react, and the outward-facing content packages (content-markdown, content-mermaid, content-wireframe), plus app-browser-local modules (${targetPkg.name})`
       )
     }
   }
@@ -349,27 +335,14 @@ function validateBoundary(sourcePkg, target, filePath) {
     }
   }
 
-  if (sourcePkg.name === '@tinytinkerer/content-runtime') {
-    const allowed = new Set([
-      '@tinytinkerer/content-core',
-      '@tinytinkerer/content-runtime'
-    ])
-    if (!allowed.has(targetPkg.name)) {
-      errors.push(
-        `${sourceLabel}: content-runtime may import only content-core and local modules (${targetPkg.name})`
-      )
-    }
-  }
-
   if (sourcePkg.name === '@tinytinkerer/content-markdown') {
     const allowed = new Set([
       '@tinytinkerer/content-core',
-      '@tinytinkerer/content-react',
       '@tinytinkerer/content-markdown'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: content-markdown may import only content-core, content-react, and local modules (${targetPkg.name})`
+        `${sourceLabel}: content-markdown may import only content-core and local modules (${targetPkg.name})`
       )
     }
   }
@@ -378,12 +351,11 @@ function validateBoundary(sourcePkg, target, filePath) {
     const allowed = new Set([
       '@tinytinkerer/content-core',
       '@tinytinkerer/content-react',
-      '@tinytinkerer/content-runtime',
       '@tinytinkerer/ui'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: content-react may import only content-core, content-runtime, ui, and local modules (${targetPkg.name})`
+        `${sourceLabel}: content-react may import only content-core, ui, and local modules (${targetPkg.name})`
       )
     }
   }
@@ -403,8 +375,14 @@ function validateBoundary(sourcePkg, target, filePath) {
     }
   }
 
-  if (sourcePkg.name === '@tinytinkerer/contracts' && targetPkg.name !== '@tinytinkerer/contracts') {
-    errors.push(`${sourceLabel}: contracts must not depend on other workspace packages (${targetPkg.name})`)
+  if (sourcePkg.name === '@tinytinkerer/contracts') {
+    const allowed = new Set([
+      '@tinytinkerer/content-core',
+      '@tinytinkerer/contracts'
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(`${sourceLabel}: contracts may import only content-core and local modules (${targetPkg.name})`)
+    }
   }
 }
 

@@ -53,10 +53,9 @@ flowchart LR
     ui["@tinytinkerer/ui<br/>presentational React primitives"]
 
     subgraph ContentPlatform["Content Platform"]
-      contentcore["@tinytinkerer/content-core<br/>semantic AST + stable-ID helpers + contracts"]
-      contentruntime["@tinytinkerer/content-runtime<br/>platform-agnostic coordinator + plugin contract"]
-      contentmarkdown["@tinytinkerer/content-markdown<br/>markdown -> content AST + React adapter"]
-      contentreact["@tinytinkerer/content-react<br/>React runtime impl + default plugins + chrome"]
+      contentcore["@tinytinkerer/content-core<br/>semantic AST + stable-ID helpers + source-plugin contracts"]
+      contentmarkdown["@tinytinkerer/content-markdown<br/>markdown source plugin + parser"]
+      contentreact["@tinytinkerer/content-react<br/>React runtime + default plugins + chrome"]
       contentmermaid["@tinytinkerer/content-mermaid<br/>MermaidPlugin"]
       contentwireframe["@tinytinkerer/content-wireframe<br/>WireframePlugin"]
     end
@@ -78,24 +77,23 @@ flowchart LR
   appcore --> contracts
 
   appbrowser --> contentmarkdown
+  appbrowser --> contentreact
   appbrowser --> contentmermaid
   appbrowser --> contentwireframe
   appbrowser --> appcore
   appbrowser --> contracts
   appbrowser --> brand
 
-  contentruntime --> contentcore
-
   contentreact --> ui
-  contentreact --> contentruntime
   contentreact --> contentcore
 
-  contentmarkdown --> contentreact
+  contentmarkdown --> contentcore
   contentmermaid --> contentreact
   contentwireframe --> contentreact
 
   agent --> contracts
   brand --> contracts
+  contracts --> contentcore
 
   subgraph Legend
     direction LR
@@ -129,7 +127,7 @@ flowchart LR
   class edge,legendEdge edgeApp;
   class common,appbrowser,legendBrowser browserAssembly;
   class ui,legendUi uiPrimitives;
-  class contentcore,contentruntime,contentmarkdown,contentreact,contentmermaid,contentwireframe,legendFeature sharedFeature;
+  class contentcore,contentmarkdown,contentreact,contentmermaid,contentwireframe,legendFeature sharedFeature;
   class contracts,legendContracts contractsLayer;
   class agent,appcore,legendCore coreLayer;
   class brand,legendBrand brandLayer;
@@ -158,19 +156,19 @@ flowchart LR
 | `packages/app-browser` | shared browser composition boundary | browser adapters, shell bootstrap config, OAuth helpers, shell-facing hooks and components, shared browser styles | app-specific layout, app-owned screens |
 | `packages/brand-assets` | shared brand metadata | favicon, icon, manifest, and theme definitions | DOM mutation, app bootstrapping |
 | `packages/ui` | presentational primitives | buttons, icons, tiny visual atoms, styling helpers | feature runtimes, orchestration |
-| `packages/content-*` | shared content platform | semantic content AST + stable IDs, platform-agnostic runtime coordinator, plugin contract, markdown parsing, default React plugins + chrome, specialized content plugins | app shells, transport contracts |
+| `packages/content-*` | shared content platform | semantic content AST + stable IDs, source-plugin contracts, React runtime + chrome, markdown parsing, specialized content plugins | app shells, transport orchestration |
 
 ## Dependency Rules
 
 - Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
-- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `content-core` for DTO translation, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`). It must not depend on `content-react` or `content-runtime` directly.
+- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`).
 - `brand-assets` may depend on `contracts` and nothing else.
 - `content-core` must not depend on other workspace packages.
-- `content-runtime` may depend only on `content-core`.
-- `content-react` may depend only on `content-core`, `content-runtime`, and `ui`. It is the public facade for the React side of the content platform and re-exports the content-core symbols downstream content packages need.
-- `content-markdown` may depend only on `content-core`, `content-react`, and local modules.
+- `content-react` may depend only on `content-core`, `ui`, and local modules. It owns the React runtime and re-exports the content-core symbols downstream content packages need.
+- `content-markdown` may depend only on `content-core` and local modules. It is a source-plugin package, not a rendering facade.
 - `content-mermaid` and `content-wireframe` may depend only on `content-react` and local modules.
+- `contracts` may depend on `content-core` for shared content-document types.
 - `ui` must stay primitive-only.
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
 - `agent-core` may depend only on `contracts` and agent-core-local modules.
@@ -193,8 +191,8 @@ The current flow is:
 3. `@tinytinkerer/app-browser` composes browser-backed implementations on top of `@tinytinkerer/app-core`.
 4. `@tinytinkerer/app-core` orchestrates product behavior through ports and runtime abstractions.
 5. `@tinytinkerer/agent-core` executes the agent runtime using product-agnostic abstractions.
-6. Assistant synthesis still arrives from the model provider as markdown text, but `app-browser` now creates a markdown content session through `content-markdown` and emits structured assistant events with `{ source, content }`, where `content` is the wire-safe `AssistantContentDocument` DTO from `contracts`.
-7. `AssistantContent` in `app-browser` translates that DTO into the internal semantic `ContentDocument`, applies the specialized Mermaid and wireframe plugins, and renders through the content platform.
+6. Assistant synthesis still arrives from the model provider as markdown text, but `app-browser` now creates a markdown content session through `content-markdown` and emits structured assistant events with `{ source, content }`, where `content` is the shared semantic `AssistantContentDocument` shape from `contracts`.
+7. `AssistantContent` in `app-browser` passes that document directly to `content-react`, applies the specialized Mermaid and wireframe plugins, and renders through the content platform.
 8. `@tinytinkerer/edge` exposes stateless endpoints and returns payloads that conform to `contracts`.
 
 ## Browser App Model
@@ -244,8 +242,7 @@ It must not own:
 ## Content Platform
 
 - `content-core` owns the semantic AST (block + inline node types) plus stable identity helpers (`computeNodeId`, `assignNodeIds`) used by parsers and renderers. Inline nodes now participate in the shared identity contract.
-- `content-runtime` owns the platform-agnostic `ContentRuntime<TResult>` coordinator and the `NodeRendererPlugin` contract. It resolves competing plugins per node type by `priority` + `matches(node)`, enforces execution policy, orchestrates lazy `load()` calls via `prepareNode()` / `prepareDocument()`, and routes structured failure reasons through host-supplied fallback + wrap hooks. It has no React dependency.
-- `content-markdown` parses markdown into the semantic `ContentDocument`, emits Mermaid and wireframe fences as `codeBlock` nodes with specialized `language` values, exposes a thin `MarkdownContent` adapter over the React runtime, and provides `createMarkdownContentSession()` for parser-side streaming snapshots.
-- `content-react` provides `createReactContentRuntime`, the default React plugins (paragraph, heading, list, blockquote, thematicBreak, codeBlock, table, image), the inline renderer, and the shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`). `ContentDocumentRenderer` normalizes missing ids through `assignNodeIds()` for blocks, list items, and inline nodes, then uses Suspense plus a render error boundary around runtime-managed node preparation.
+- `content-markdown` parses markdown into the semantic `ContentDocument`, emits Mermaid and wireframe fences as `codeBlock` nodes with specialized `language` values, and provides `markdownSourcePlugin` plus `createMarkdownContentSession()` for parser-side streaming snapshots.
+- `content-react` provides the React `ContentRuntime<TResult>` implementation and the `NodeRendererPlugin` contract, the default React plugins (paragraph, heading, list, blockquote, thematicBreak, codeBlock, table, image), the inline renderer, and the shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`). `ContentDocumentContent` normalizes hand-built documents through `assignNodeIds()`, while `ContentDocumentRenderer` renders canonical documents with Suspense plus a render error boundary around runtime-managed node preparation.
 - `content-mermaid` and `content-wireframe` export singleton convenience plugins plus `createMermaidPlugin()` / `createWireframePlugin()` factory helpers for runtime-scoped plugin instances. Mermaid still ships its heavy runtime as a separately code-split chunk loaded on first use.
-- `contracts` now own the assistant-facing `AssistantContentDocument` DTO, while the internal semantic AST remains the content platform's runtime/parser model.
+- `contracts` now reuse the assistant-facing `AssistantContentDocument` shape from `content-core`, so browser transport and content rendering share one canonical document model.

@@ -31,7 +31,7 @@ import {
   type NodeRendererPlugin,
   type RenderContext,
   type RuntimeExecutionPolicy
-} from '@tinytinkerer/content-runtime'
+} from './runtime'
 import { cn } from '@tinytinkerer/ui'
 
 export { assignNodeIds, computeNodeId, hashContent } from '@tinytinkerer/content-core'
@@ -92,7 +92,7 @@ export type {
   RuntimeFailureContext,
   RuntimeFailureReason,
   RuntimeResolution
-} from '@tinytinkerer/content-runtime'
+} from './runtime'
 
 type ContentDocumentRendererProps = {
   document: ContentDocument
@@ -108,6 +108,14 @@ type RendererBoundaryProps = {
 
 type RendererBoundaryState = {
   hasError: boolean
+}
+
+export type ContentDocumentContentProps = {
+  document: ContentDocument
+  className?: string
+  isStreaming?: boolean
+  plugins?: readonly ReactContentPlugin[]
+  executionPolicy?: RuntimeExecutionPolicy
 }
 
 class RendererBoundary extends Component<RendererBoundaryProps, RendererBoundaryState> {
@@ -526,6 +534,36 @@ export const createReactContentRuntime = (
   return runtime
 }
 
+export const ContentDocumentContent = ({
+  document,
+  className,
+  isStreaming = false,
+  plugins,
+  executionPolicy
+}: ContentDocumentContentProps) => {
+  const normalizedDocument = useMemo(() => assignNodeIds(document), [document])
+  const runtime = useMemo(() => {
+    const built = createReactContentRuntime(
+      executionPolicy ? { executionPolicy } : undefined
+    )
+    if (plugins) {
+      for (const plugin of plugins) {
+        built.register(plugin)
+      }
+    }
+    return built
+  }, [executionPolicy, plugins])
+
+  return (
+    <ContentDocumentRenderer
+      document={normalizedDocument}
+      isStreaming={isStreaming}
+      runtime={runtime}
+      {...(className ? { className } : {})}
+    />
+  )
+}
+
 let cachedDefaultRuntime: ReactContentRuntime | null = null
 
 const getDefaultRuntime = (): ReactContentRuntime => {
@@ -541,7 +579,6 @@ export const ContentDocumentRenderer = ({
   isStreaming = false,
   runtime
 }: ContentDocumentRendererProps) => {
-  const normalizedDocument = useMemo(() => assignNodeIds(document), [document])
   const activeRuntime = useMemo(() => runtime ?? getDefaultRuntime(), [runtime])
 
   return (
@@ -554,7 +591,7 @@ export const ContentDocumentRenderer = ({
         isStreaming && MARKDOWN_STREAMING_CLASS
       )}
     >
-      {normalizedDocument.nodes.map((node) => (
+      {document.nodes.map((node) => (
         <Fragment key={node.id}>{activeRuntime.renderNode(node)}</Fragment>
       ))}
     </div>

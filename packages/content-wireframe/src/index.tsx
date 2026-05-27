@@ -40,7 +40,6 @@ export const createWireframePlugin = (): ReactNodeRendererPlugin<'codeBlock'> =>
   id: 'wireframe',
   nodeType: 'codeBlock',
   priority: 40,
-  capabilities: { preview: true },
   requirements: { clientOnly: true, needsDom: true },
   matches: (node) => node.language === 'wireframe',
   render: (node) => <WireframeNodeRenderer node={node} />,

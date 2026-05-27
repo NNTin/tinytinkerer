@@ -152,18 +152,17 @@ Must not own:
 
 ### `packages/content-*`
 
-The content platform is six packages with strict layering:
+The content platform is five packages with strict layering:
 
-- `content-core` owns the semantic AST (block + inline) and stable-ID helpers, including shared inline-id normalization; no other workspace deps.
-- `content-runtime` owns the platform-agnostic `ContentRuntime` coordinator, multi-plugin resolution policy, execution policy, and the `NodeRendererPlugin` contract; depends only on `content-core`.
-- `content-react` owns the React runtime implementation, default React plugins, inline renderer, shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`), and render-time preparation/ID normalization; depends on `content-core`, `content-runtime`, and `ui`.
-- `content-markdown` owns markdown parsing into the semantic AST, parser-only markdown sessions, and thin React adapters (`MarkdownContent`, `ContentDocumentContent`); Mermaid and wireframe stay `codeBlock` specializations via `language`; depends directly on `content-core` and `content-react`.
+- `content-core` owns the semantic AST (block + inline), stable-ID helpers, and source-plugin contracts; no other workspace deps.
+- `content-react` owns the React runtime implementation, default React plugins, inline renderer, shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`), and render-time preparation/normalization adapter; depends on `content-core` and `ui`.
+- `content-markdown` owns markdown parsing into the semantic AST and parser-only markdown sessions through `markdownSourcePlugin`; Mermaid and wireframe stay `codeBlock` specializations via `language`; depends directly on `content-core`.
 - `content-mermaid` and `content-wireframe` each own one specialized `codeBlock` plugin plus their renderer, fallback, and execution requirements; each depends directly on `content-react` only and may expose both a factory export and a singleton convenience export.
 
 Owns collectively:
 
 - assistant-content AST and contracts
-- platform-agnostic dispatch + plugin contract
+- source-plugin contracts + React renderer plugin contract
 - markdown parsing
 - generic content rendering
 - specialized content plugins such as Mermaid and wireframe
@@ -183,7 +182,7 @@ Allowed examples:
 - `apps/web` importing `app-browser` and `ui`
 - `apps/mobile` importing `app-browser` and `ui`
 - `apps/widget` importing `app-browser` and `ui`
-- `app-browser` importing `app-core`, `contracts`, `brand-assets`, `content-core` for DTO translation, and outward-facing `content-*`
+- `app-browser` importing `app-core`, `contracts`, `brand-assets`, `content-react`, and outward-facing `content-*`
 - `brand-assets` importing `contracts`
 - `apps/edge` importing `contracts`
 

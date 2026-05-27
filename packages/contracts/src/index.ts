@@ -1,4 +1,12 @@
 import { z } from 'zod'
+import type {
+  BlockNode as ContentBlockNode,
+  ContentDocument as CoreContentDocument,
+  InlineNode as ContentInlineNode,
+  ListItemNode as ContentListItemNode,
+  TableAlignment as ContentTableAlignment,
+  TableCell as ContentTableCell
+} from '@tinytinkerer/content-core'
 
 export const eventTypeSchema = z.enum([
   'user.message',
@@ -55,106 +63,12 @@ export type ExecutionPlan = z.infer<typeof executionPlanSchema>
 
 const nodeIdSchema = z.string()
 
-type AssistantNodeBase = {
-  id?: string | undefined
-}
-
-export type AssistantInlineNode =
-  | (AssistantNodeBase & {
-      type: 'text'
-      value: string
-    })
-  | (AssistantNodeBase & {
-      type: 'emphasis'
-      children: AssistantInlineNode[]
-    })
-  | (AssistantNodeBase & {
-      type: 'strong'
-      children: AssistantInlineNode[]
-    })
-  | (AssistantNodeBase & {
-      type: 'strikethrough'
-      children: AssistantInlineNode[]
-    })
-  | (AssistantNodeBase & {
-      type: 'codeInline'
-      value: string
-    })
-  | (AssistantNodeBase & {
-      type: 'link'
-      url: string
-      title?: string | undefined
-      children: AssistantInlineNode[]
-    })
-  | (AssistantNodeBase & {
-      type: 'imageInline'
-      url: string
-      alt: string
-      title?: string | undefined
-    })
-  | (AssistantNodeBase & {
-      type: 'break'
-    })
-
-export type AssistantTableCell = AssistantInlineNode[]
-
-export type AssistantTableAlignment = 'left' | 'center' | 'right' | null
-
-export type AssistantListItemNode = AssistantNodeBase & {
-  type: 'listItem'
-  checked?: boolean | null | undefined
-  children: AssistantBlockNode[]
-}
-
-export type AssistantBlockNode =
-  | (AssistantNodeBase & {
-      type: 'heading'
-      level: 1 | 2 | 3 | 4 | 5 | 6
-      children: AssistantInlineNode[]
-    })
-  | (AssistantNodeBase & {
-      type: 'paragraph'
-      children: AssistantInlineNode[]
-    })
-  | (AssistantNodeBase & {
-      type: 'list'
-      ordered: boolean
-      start?: number | undefined
-      children: AssistantListItemNode[]
-    })
-  | (AssistantNodeBase & {
-      type: 'blockquote'
-      children: AssistantBlockNode[]
-    })
-  | (AssistantNodeBase & {
-      type: 'thematicBreak'
-    })
-  | (AssistantNodeBase & {
-      type: 'codeBlock'
-      code: string
-      language?: string | undefined
-    })
-  | (AssistantNodeBase & {
-      type: 'choicePrompt'
-      prompt: string
-      choices: string[]
-    })
-  | (AssistantNodeBase & {
-      type: 'table'
-      align: AssistantTableAlignment[]
-      header: AssistantTableCell[]
-      rows: AssistantTableCell[][]
-    })
-  | (AssistantNodeBase & {
-      type: 'image'
-      url: string
-      alt: string
-      title?: string | undefined
-    })
-
-export type AssistantContentDocument = {
-  nodes: AssistantBlockNode[]
-}
+export type AssistantInlineNode = ContentInlineNode
+export type AssistantTableCell = ContentTableCell
+export type AssistantTableAlignment = ContentTableAlignment
+export type AssistantListItemNode = ContentListItemNode
+export type AssistantBlockNode = ContentBlockNode
+export type AssistantContentDocument = CoreContentDocument
 
 export const assistantInlineNodeSchema: z.ZodType<AssistantInlineNode> = z.lazy(() =>
   z.discriminatedUnion('type', [

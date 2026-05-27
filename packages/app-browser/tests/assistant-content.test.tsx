@@ -4,7 +4,6 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseMarkdownContent } from '@tinytinkerer/content-markdown'
 import { AssistantContent } from '../src/assistant-content.js'
-import { contentDocumentToAssistantContentDocument } from '../src/content-document.js'
 import { resetMermaidState } from '@tinytinkerer/content-mermaid'
 
 const mockInitialize = vi.hoisted(() => vi.fn())
@@ -63,8 +62,7 @@ afterEach(() => {
   delete mermaidWindow.mermaid
 })
 
-const assistantContent = (markdown: string) =>
-  contentDocumentToAssistantContentDocument(parseMarkdownContent(markdown))
+const assistantContent = (markdown: string) => parseMarkdownContent(markdown)
 
 describe('AssistantContent', () => {
   it('renders markdown, tables, and images through app-browser composition', () => {

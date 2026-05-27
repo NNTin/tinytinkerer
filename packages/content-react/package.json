@@ -23,7 +23,6 @@
   },
   "dependencies": {
     "@tinytinkerer/content-core": "workspace:*",
-    "@tinytinkerer/content-runtime": "workspace:*",
     "@tinytinkerer/ui": "workspace:*"
   },
   "peerDependencies": {

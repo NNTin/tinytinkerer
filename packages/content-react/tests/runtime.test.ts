@@ -3,39 +3,10 @@ import {
   createContentRuntime,
   type NodeRendererPlugin,
   type RuntimeFailureReason
-} from '../src/index.js'
+} from '../src/runtime.js'
 
 describe('createContentRuntime', () => {
-  it('dispatches registered plugins per node type', () => {
-    const runtime = createContentRuntime<string>({
-      fallback: (failure) => `fallback:${failure.reason}:${failure.node.type}`
-    })
-
-    const codePlugin: NodeRendererPlugin<'codeBlock', string> = {
-      id: 'core:codeBlock',
-      nodeType: 'codeBlock',
-      render: (node) => `code(${node.code})`
-    }
-    const paragraphPlugin: NodeRendererPlugin<'paragraph', string> = {
-      id: 'core:paragraph',
-      nodeType: 'paragraph',
-      render: (node) =>
-        `p(${node.children.map((child) => (child.type === 'text' ? child.value : '?')).join('')})`
-    }
-
-    runtime.register(codePlugin)
-    runtime.register(paragraphPlugin)
-
-    const results = runtime.renderDocument({
-      nodes: [
-        { type: 'paragraph', children: [{ type: 'text', value: 'hi' }] },
-        { type: 'codeBlock', code: 'x' }
-      ]
-    })
-    expect(results).toEqual(['p(hi)', 'code(x)'])
-  })
-
-  it('resolves the highest-priority matching plugin for a node type', () => {
+  it('dispatches the highest-priority matching plugin for a node type', () => {
     const runtime = createContentRuntime<string>({
       fallback: () => 'fallback'
     })
@@ -75,12 +46,6 @@ describe('createContentRuntime', () => {
     expect(runtime.renderNode({ type: 'codeBlock', code: '<html />', language: 'html' })).toBe(
       'noMatch'
     )
-    expect(fallback).toHaveBeenCalledWith(
-      expect.objectContaining({
-        reason: 'noMatch',
-        node: { type: 'codeBlock', code: '<html />', language: 'html' }
-      })
-    )
   })
 
   it('falls back with policyBlocked when matching plugins are disallowed by execution policy', () => {
@@ -102,12 +67,6 @@ describe('createContentRuntime', () => {
 
     expect(runtime.renderNode({ type: 'codeBlock', code: '<html />', language: 'wireframe' })).toBe(
       'policyBlocked'
-    )
-    expect(fallback).toHaveBeenCalledWith(
-      expect.objectContaining({
-        reason: 'policyBlocked',
-        plugin: expect.objectContaining({ id: 'wireframe-code' })
-      })
     )
   })
 
@@ -134,29 +93,7 @@ describe('createContentRuntime', () => {
     expect(result).toBe('renderFailed:mermaid:graph TD\nA-->B')
   })
 
-  it('falls through to the host fallback when the plugin fallback also throws', () => {
-    const runtime = createContentRuntime<string>({
-      fallback: (failure) => `host:${failure.reason}`
-    })
-
-    runtime.register({
-      id: 'mermaid-code',
-      nodeType: 'codeBlock',
-      matches: (node) => node.language === 'mermaid',
-      render: () => {
-        throw new Error('boom')
-      },
-      fallback: () => {
-        throw new Error('worse')
-      }
-    })
-
-    expect(
-      runtime.renderNode({ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' })
-    ).toBe('host:renderFailed')
-  })
-
-  it('invokes wrap once per render and exposes a fallback factory', () => {
+  it('invokes wrap once per render', () => {
     const wrap = vi.fn((result: string) => `<${result}>`)
     const runtime = createContentRuntime<string>({
       fallback: (failure) => `host:${failure.reason}`,
@@ -203,7 +140,7 @@ describe('createContentRuntime', () => {
       fallback: (failure) => `fallback:${failure.reason}`
     })
 
-    runtime.register({
+    const plugin: NodeRendererPlugin<'codeBlock', string> = {
       id: 'mermaid-code',
       nodeType: 'codeBlock',
       matches: (node) => node.language === 'mermaid',
@@ -216,7 +153,9 @@ describe('createContentRuntime', () => {
         return Promise.resolve()
       },
       render: (node) => node.code
-    })
+    }
+
+    runtime.register(plugin)
 
     await expect(
       runtime.prepareNode({ type: 'codeBlock', code: 'graph', language: 'mermaid' })
@@ -228,76 +167,5 @@ describe('createContentRuntime', () => {
       runtime.prepareNode({ type: 'codeBlock', code: 'graph', language: 'mermaid' })
     ).resolves.toBeUndefined()
     expect(attempts).toBe(2)
-  })
-
-  it('prepares nested nodes across a document', async () => {
-    const load = vi.fn(() => Promise.resolve())
-    const runtime = createContentRuntime<string>({
-      fallback: () => 'fallback'
-    })
-
-    runtime.register({
-      id: 'mermaid-code',
-      nodeType: 'codeBlock',
-      matches: (node) => node.language === 'mermaid',
-      requirements: { lazy: true },
-      load,
-      render: (node) => node.code
-    })
-
-    await runtime.prepareDocument({
-      nodes: [
-        {
-          type: 'blockquote',
-          children: [
-            {
-              type: 'list',
-              ordered: false,
-              children: [
-                {
-                  type: 'listItem',
-                  children: [{ type: 'codeBlock', code: 'graph TD', language: 'mermaid' }]
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    })
-
-    expect(load).toHaveBeenCalledTimes(1)
-  })
-
-  it('exposes ordered plugins and resolution results', () => {
-    const runtime = createContentRuntime<string>({ fallback: () => '' })
-
-    runtime.register({
-      id: 'generic-code',
-      nodeType: 'codeBlock',
-      render: (node) => node.code
-    })
-    runtime.register({
-      id: 'mermaid-code',
-      nodeType: 'codeBlock',
-      priority: 20,
-      matches: (node) => node.language === 'mermaid',
-      render: (node) => node.code
-    })
-
-    expect(runtime.getPlugins('codeBlock').map((plugin) => plugin.id)).toEqual([
-      'mermaid-code',
-      'generic-code'
-    ])
-
-    expect(
-      runtime.resolve({ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' })
-    ).toEqual({
-      ok: true,
-      plugin: expect.objectContaining({ id: 'mermaid-code' }),
-      candidates: expect.arrayContaining([
-        expect.objectContaining({ id: 'mermaid-code' }),
-        expect.objectContaining({ id: 'generic-code' })
-      ])
-    })
   })
 })

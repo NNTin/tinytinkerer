@@ -77,56 +77,6 @@ const loadMermaid = (): Promise<MermaidApi> => {
   return mermaidPromise
 }
 
-const createLoadMermaid = () => {
-  let localMermaidPromise: Promise<MermaidApi> | null = null
-  let localHasInitializedMermaid = false
-
-  const initializeLocalMermaid = (mermaid: MermaidApi): MermaidApi => {
-    if (!localHasInitializedMermaid) {
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: 'strict'
-      })
-      localHasInitializedMermaid = true
-    }
-
-    return mermaid
-  }
-
-  return (): Promise<MermaidApi> => {
-    const existingMermaid = window.mermaid
-    if (existingMermaid) {
-      return Promise.resolve(initializeLocalMermaid(existingMermaid))
-    }
-
-    localMermaidPromise ??= new Promise<MermaidApi>((resolve, reject) => {
-      const script = document.createElement('script')
-      script.async = true
-      script.src = mermaidRuntimeUrl
-      script.dataset.ttMermaidRuntime = 'true'
-      script.onload = () => {
-        const mermaid = window.mermaid
-        if (!mermaid) {
-          reject(new Error('Mermaid runtime did not expose a global API'))
-          return
-        }
-
-        resolve(initializeLocalMermaid(mermaid))
-      }
-      script.onerror = () => {
-        reject(new Error('Failed to load Mermaid runtime'))
-      }
-
-      document.head.append(script)
-    }).catch((error) => {
-      localMermaidPromise = null
-      throw error
-    })
-
-    return localMermaidPromise
-  }
-}
-
 export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlockNode>) => {
   const [svg, setSvg] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
@@ -191,15 +141,13 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlock
 }
 
 export const createMermaidPlugin = (): ReactNodeRendererPlugin<'codeBlock'> => {
-  const loadPluginMermaid = createLoadMermaid()
   return {
     id: 'mermaid',
     nodeType: 'codeBlock',
     priority: 50,
-    capabilities: { preview: true },
     requirements: { lazy: true, clientOnly: true, needsDom: true },
     matches: (node) => node.language === 'mermaid',
-    load: () => loadPluginMermaid().then(() => undefined),
+    load: () => loadMermaid().then(() => undefined),
     render: (node) => <MermaidNodeRenderer node={node} />,
     fallback: (node) => <CodeBlockFallback code={node.code} language={node.language ?? 'mermaid'} />
   }

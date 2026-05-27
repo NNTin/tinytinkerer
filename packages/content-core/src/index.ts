@@ -364,3 +364,21 @@ export const assignNodeIds = (doc: ContentDocument): ContentDocument => {
     nodes: doc.nodes.map((node) => normalizeBlockNode(node, counts))
   }
 }
+
+export type ContentSourceSnapshot = {
+  source: string
+  document: ContentDocument
+}
+
+export interface ContentSourceSession {
+  append(chunk: string): ContentSourceSnapshot
+  replace(source: string): ContentSourceSnapshot
+  snapshot(): ContentSourceSnapshot
+}
+
+export interface ContentSourcePlugin {
+  id: string
+  format: string
+  parse(source: string): ContentDocument
+  createSession(initialSource?: string): ContentSourceSession
+}

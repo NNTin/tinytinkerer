@@ -1,8 +1,7 @@
 import type { AssistantContentDocument } from '@tinytinkerer/contracts'
-import { ContentDocumentContent } from '@tinytinkerer/content-markdown'
+import { ContentDocumentContent } from '@tinytinkerer/content-react'
 import { mermaidPlugin } from '@tinytinkerer/content-mermaid'
 import { wireframePlugin } from '@tinytinkerer/content-wireframe'
-import { assistantContentDocumentToContentDocument } from './content-document'
 
 export type AssistantContentProps = {
   content: AssistantContentDocument
@@ -18,7 +17,7 @@ export const AssistantContent = ({
   className
 }: AssistantContentProps) => (
   <ContentDocumentContent
-    document={assistantContentDocumentToContentDocument(content)}
+    document={content}
     isStreaming={isStreaming}
     plugins={assistantPlugins}
     {...(className ? { className } : {})}
