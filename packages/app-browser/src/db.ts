@@ -61,18 +61,90 @@ class TinyTinkererDb extends Dexie {
               : typeof payload.kind === 'string'
                 ? payload.kind
                 : 'assistant'
-          const content =
+          const rawContent =
             payload.content ??
             payload.text ??
             payload.delta ??
             payload.message ??
             ''
+          // The renderer requires a ContentDocument shape ({ nodes: [...] }).
+          // Legacy v1 events stored the assistant text directly as a string;
+          // wrap it in a minimal paragraph so the document is at least valid.
+          const isStructuredDocument =
+            rawContent !== null &&
+            typeof rawContent === 'object' &&
+            Array.isArray((rawContent as { nodes?: unknown }).nodes)
+          const content = isStructuredDocument
+            ? rawContent
+            : typeof rawContent === 'string' && rawContent.trim().length > 0
+              ? {
+                  nodes: [
+                    {
+                      type: 'paragraph',
+                      children: [{ type: 'text', value: rawContent }]
+                    }
+                  ]
+                }
+              : { nodes: [] }
 
           await eventsTable.put({
             ...event,
             payload: {
               source,
               content
+            }
+          })
+        }
+      })
+    this.version(3)
+      .stores({
+        conversations: 'id,updatedAt',
+        events: 'id,conversationId,timestamp',
+        preferences: 'key'
+      })
+      .upgrade(async (tx) => {
+        // Repair assistant events whose payload.content is not a structured
+        // ContentDocument (e.g. records that the v2 upgrade left as a raw
+        // string). Re-wrap them so the renderer doesn't crash on hydration.
+        const eventsTable = tx.table('events')
+        const existingEvents = await eventsTable.toArray()
+
+        for (const event of existingEvents as Array<Record<string, unknown>>) {
+          const eventType = typeof event.type === 'string' ? event.type : ''
+          if (!eventType.startsWith('assistant.')) {
+            continue
+          }
+          const payload =
+            event.payload && typeof event.payload === 'object'
+              ? (event.payload as Record<string, unknown>)
+              : null
+          if (payload == null) {
+            continue
+          }
+          const rawContent = payload.content
+          const alreadyStructured =
+            rawContent !== null &&
+            typeof rawContent === 'object' &&
+            Array.isArray((rawContent as { nodes?: unknown }).nodes)
+          if (alreadyStructured) {
+            continue
+          }
+          const repaired =
+            typeof rawContent === 'string' && rawContent.trim().length > 0
+              ? {
+                  nodes: [
+                    {
+                      type: 'paragraph',
+                      children: [{ type: 'text', value: rawContent }]
+                    }
+                  ]
+                }
+              : { nodes: [] }
+          await eventsTable.put({
+            ...event,
+            payload: {
+              ...payload,
+              content: repaired
             }
           })
         }

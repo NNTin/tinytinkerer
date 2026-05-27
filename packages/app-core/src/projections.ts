@@ -45,6 +45,18 @@ const setNoticeIfHigherSeverity = (turn: Turn, candidate: TurnNotice): void => {
   }
 }
 
+const isContentDocument = (value: unknown): value is ContentDocument =>
+  value !== null &&
+  typeof value === 'object' &&
+  Array.isArray((value as { nodes?: unknown }).nodes)
+
+// Defensive coercion: persisted assistant events from earlier schemas may carry
+// a raw markdown string as `payload.content` (see the v2 db.ts migration). The
+// renderer requires a ContentDocument; treat anything else as missing so the
+// existing `turn.assistantContent ?` guards skip rendering rather than crash.
+const coerceAssistantContent = (value: unknown): ContentDocument | null =>
+  isContentDocument(value) ? value : null
+
 const thinkingLabel = (event: ChatEvent): string | undefined => {
   switch (event.type) {
     case 'planning.started':
@@ -86,24 +98,26 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
         isStreaming: false
       }
     } else if (event.type === 'assistant.chunk') {
+      const content = coerceAssistantContent(event.payload.content)
       if (pendingTurn) {
         pendingTurn.assistantSource = event.payload.source
-        pendingTurn.assistantContent = event.payload.content
+        pendingTurn.assistantContent = content
         pendingTurn.isStreaming = true
       } else {
         turns.push({
           id: event.id,
           userText: '',
           assistantSource: event.payload.source,
-          assistantContent: event.payload.content,
+          assistantContent: content,
           isStreaming: true
         })
       }
     } else if (event.type === 'assistant.done') {
       const hasSource = event.payload.source.trim().length > 0
+      const content = coerceAssistantContent(event.payload.content)
       if (pendingTurn) {
         pendingTurn.assistantSource = event.payload.source
-        pendingTurn.assistantContent = hasSource ? event.payload.content : null
+        pendingTurn.assistantContent = hasSource ? content : null
         pendingTurn.isStreaming = false
         pushPendingTurn()
       } else if (hasSource) {
@@ -111,7 +125,7 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
           id: event.id,
           userText: '',
           assistantSource: event.payload.source,
-          assistantContent: event.payload.content,
+          assistantContent: content,
           isStreaming: false
         })
       }
