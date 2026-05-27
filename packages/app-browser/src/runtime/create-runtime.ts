@@ -1,6 +1,7 @@
 import { createChatRuntime, type Tool } from '@tinytinkerer/app-core'
 import type { McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contracts'
-import { GitHubModelsProvider, type McpToolDescriptor } from './github-models-provider'
+import { GitHubModelsProvider } from './github-models-provider'
+import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch } from './edge-fetch'
 import { createWebSearchTool } from './web-search-tool'
 import { createMcpTool } from './mcp-tool'
@@ -15,16 +16,28 @@ export const createRuntime = (options: {
 }) => {
   const edgeFetch = createEdgeFetch(options.baseUrl, options.getToken)
 
-  const tools: Tool<unknown, unknown>[] = options.searchEnabled ? [createWebSearchTool(edgeFetch)] : []
+  const tools: Tool<unknown, unknown>[] = []
+  const allToolDescriptors: PlannerToolDescriptor[] = []
 
-  const mcpDescriptors: McpToolDescriptor[] = []
+  if (options.searchEnabled) {
+    tools.push(createWebSearchTool(edgeFetch))
+    allToolDescriptors.push({
+      id: 'web-search',
+      description: 'Search the web for fresh context using Tavily.',
+      inputSchema: {
+        query: { type: 'string', description: 'Search query (2–500 chars)' },
+        maxResults: { type: 'number', description: 'Max results (1–10, optional)' }
+      }
+    })
+  }
+
   for (const server of options.mcpServers ?? []) {
     if (!server.enabled) continue
     const disc = options.mcpDiscovery?.[server.id]
     if (!disc || disc.error) continue
     for (const toolMeta of disc.tools) {
       tools.push(createMcpTool(server, toolMeta, edgeFetch))
-      const descriptor: McpToolDescriptor = {
+      const descriptor: PlannerToolDescriptor = {
         id: `mcp:${server.id}:${toolMeta.toolName}`,
         description: `[${server.name}] ${toolMeta.description}`,
         inputSchema: toolMeta.inputSchema
@@ -32,7 +45,7 @@ export const createRuntime = (options: {
       if (disc.instructions) {
         descriptor.serverInstructions = disc.instructions
       }
-      mcpDescriptors.push(descriptor)
+      allToolDescriptors.push(descriptor)
     }
   }
 
@@ -41,7 +54,7 @@ export const createRuntime = (options: {
       baseUrl: options.baseUrl,
       getToken: options.getToken,
       getModel: options.getModel,
-      mcpToolDescriptors: mcpDescriptors
+      allToolDescriptors
     }),
     createAssistantContentSession: async (initialSource = '') => {
       const { createMarkdownContentSession } = await import('@tinytinkerer/content-markdown')
@@ -49,24 +62,15 @@ export const createRuntime = (options: {
       return {
         append(chunk) {
           const snapshot = session.append(chunk)
-          return {
-            source: snapshot.source,
-            content: snapshot.document
-          }
+          return { source: snapshot.source, content: snapshot.document }
         },
         replace(source) {
           const snapshot = session.replace(source)
-          return {
-            source: snapshot.source,
-            content: snapshot.document
-          }
+          return { source: snapshot.source, content: snapshot.document }
         },
         snapshot() {
           const snapshot = session.snapshot()
-          return {
-            source: snapshot.source,
-            content: snapshot.document
-          }
+          return { source: snapshot.source, content: snapshot.document }
         }
       }
     },

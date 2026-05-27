@@ -2,14 +2,14 @@ import type { ConversationMessage } from '@tinytinkerer/app-core'
 import { executionPlanSchema, type ExecutionPlan } from '@tinytinkerer/contracts'
 import type { EdgeFetch } from './edge-fetch'
 
-type ToolDescriptor = {
+export type PlannerToolDescriptor = {
   id: string
   description: string
   inputSchema: Record<string, unknown>
   serverInstructions?: string
 }
 
-const buildPlanningSystemPrompt = (tools: ToolDescriptor[]): string => {
+const buildPlanningSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
   const toolDocs = tools
     .map(
       (t) =>
@@ -44,9 +44,10 @@ Rules:
 export const llmPlan = async (
   prompt: string,
   history: ConversationMessage[],
-  tools: ToolDescriptor[],
+  tools: PlannerToolDescriptor[],
   model: string,
-  edgeFetch: EdgeFetch
+  edgeFetch: EdgeFetch,
+  signal?: AbortSignal
 ): Promise<ExecutionPlan> => {
   const systemPrompt = buildPlanningSystemPrompt(tools)
 
@@ -56,11 +57,7 @@ export const llmPlan = async (
     { role: 'user' as const, content: prompt }
   ]
 
-  const response = await edgeFetch('/api/models/chat', {
-    model,
-    stream: false,
-    messages
-  })
+  const response = await edgeFetch('/api/models/chat', { model, stream: false, messages }, signal)
 
   if (!response.ok) {
     throw new Error(`Planning request failed (${response.status})`)

@@ -287,7 +287,7 @@ const McpServerCard = ({
   onToggle: (enabled: boolean) => void
   onRefresh: () => void
   onRemove: () => void
-  onSave: (patch: Partial<Omit<McpServerConfig, 'id'>>) => void
+  onSave: (patch: Partial<Omit<McpServerConfig, 'id'>>, triggerRefresh: boolean) => void
 }) => {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<McpServerFormState>({
@@ -318,7 +318,8 @@ const McpServerCard = ({
     if (form.url !== server.url) patch.url = form.url
     const token = form.bearerToken.trim() || undefined
     if (token !== server.bearerToken) patch.bearerToken = token
-    if (Object.keys(patch).length > 0) onSave(patch)
+    const connectionChanged = 'url' in patch || 'bearerToken' in patch
+    if (Object.keys(patch).length > 0) onSave(patch, connectionChanged)
     setEditing(false)
   }
 
@@ -449,7 +450,11 @@ export const McpServerList = () => {
             onToggle={(enabled) => void setMcpServerEnabled(server.id, enabled)}
             onRefresh={() => void doRefresh(server)}
             onRemove={() => void removeMcpServer(server.id)}
-            onSave={(patch) => void updateMcpServer(server.id, patch)}
+            onSave={(patch, triggerRefresh) => {
+              void updateMcpServer(server.id, patch).then(() => {
+                if (triggerRefresh) void doRefresh({ ...server, ...patch })
+              })
+            }}
           />
         ))
       )}

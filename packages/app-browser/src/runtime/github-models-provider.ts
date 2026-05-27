@@ -17,7 +17,7 @@ import { SYSTEM_STYLE_PROMPT } from './system-prompt'
 import { getRetryAfterMs } from './rate-limit'
 import { RateLimitQuota } from './quota-tracker'
 import { createEdgeFetch } from './edge-fetch'
-import { llmPlan } from './mcp-planner'
+import { llmPlan, type PlannerToolDescriptor } from './mcp-planner'
 
 const estimateTokens = (context: ExecutionContext): number => {
   const allText = [
@@ -29,18 +29,11 @@ const estimateTokens = (context: ExecutionContext): number => {
   return Math.ceil(allText.length / 4)
 }
 
-export type McpToolDescriptor = {
-  id: string
-  description: string
-  inputSchema: Record<string, unknown>
-  serverInstructions?: string
-}
-
 type GitHubModelsProviderOptions = {
   baseUrl: string
   getToken?: () => string | null | undefined
   getModel?: () => string | null | undefined
-  mcpToolDescriptors?: McpToolDescriptor[]
+  allToolDescriptors?: PlannerToolDescriptor[]
 }
 
 const isValidRetryAt = (value: string | undefined): value is string =>
@@ -86,13 +79,14 @@ export class GitHubModelsProvider implements ModelProvider {
 
   async plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan> {
     const token = this.options.getToken?.()
-    const mcpDescriptors = this.options.mcpToolDescriptors ?? []
+    const allDescriptors = this.options.allToolDescriptors ?? []
+    const hasMcpTools = allDescriptors.some((d) => d.id.startsWith('mcp:'))
 
-    if (token && mcpDescriptors.length > 0) {
+    if (token && hasMcpTools) {
       try {
         const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
         const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
-        return await llmPlan(prompt, history, mcpDescriptors, model, edgeFetch)
+        return await llmPlan(prompt, history, allDescriptors, model, edgeFetch, options?.signal)
       } catch {
         // fall through to heuristic
       }

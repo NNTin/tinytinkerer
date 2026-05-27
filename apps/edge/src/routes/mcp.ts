@@ -12,6 +12,36 @@ import {
 import type { Hono } from 'hono'
 import type { Bindings } from '../lib/bindings'
 
+const isPrivateHostname = (hostname: string): boolean => {
+  // Strip IPv6 brackets
+  const h = hostname.replace(/^\[|\]$/g, '').toLowerCase()
+
+  // Well-known loopback/internal names
+  if (h === 'localhost' || h === 'metadata.google.internal') return true
+
+  // IPv4 private ranges
+  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])]
+    if (a === 10) return true                          // 10.0.0.0/8
+    if (a === 172 && b >= 16 && b <= 31) return true  // 172.16.0.0/12
+    if (a === 192 && b === 168) return true            // 192.168.0.0/16
+    if (a === 127) return true                         // 127.0.0.0/8
+    if (a === 169 && b === 254) return true            // 169.254.0.0/16 link-local
+    if (a === 100 && b >= 64 && b <= 127) return true // 100.64.0.0/10 CGNAT
+    if (a === 0) return true                           // 0.0.0.0/8
+    if (a === 198 && (b === 18 || b === 19)) return true // benchmarking
+    return false
+  }
+
+  // IPv6 private/reserved
+  if (h === '::1' || h === '0:0:0:0:0:0:0:1') return true
+  if (h.startsWith('fc') || h.startsWith('fd')) return true // fc00::/7 ULA
+  if (h.startsWith('fe80')) return true               // link-local
+
+  return false
+}
+
 const validateMcpUrl = (raw: string): boolean => {
   let url: URL
   try {
@@ -19,11 +49,20 @@ const validateMcpUrl = (raw: string): boolean => {
   } catch {
     return false
   }
-  if (url.protocol === 'https:') return true
+
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return false
+
+  const hostname = url.hostname.replace(/^\[|\]$/g, '')
+
+  // http is allowed only for localhost/127.0.0.1 (local dev)
   if (url.protocol === 'http:') {
-    return url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+    return hostname === 'localhost' || hostname === '127.0.0.1'
   }
-  return false
+
+  // https: block private/internal IP literals
+  if (isPrivateHostname(hostname)) return false
+
+  return true
 }
 
 const toMcpHeaders = (bearerToken: string | undefined): Record<string, string> =>
