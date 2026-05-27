@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockInitialize = vi.hoisted(() => vi.fn())
 const mockRender = vi.hoisted(() => vi.fn())
+const mockParse = vi.hoisted(() => vi.fn())
 
 import {
   createMermaidPlugin,
@@ -31,8 +32,12 @@ afterEach(() => {
 beforeEach(() => {
   mockInitialize.mockReset()
   mockRender.mockReset()
+  mockParse.mockReset()
+  // Default to treating syntax as valid so existing render-path tests are unaffected.
+  mockParse.mockResolvedValue({ diagramType: 'flowchart' })
   window.mermaid = {
     initialize: mockInitialize,
+    parse: mockParse,
     render: mockRender
   }
 })
@@ -173,6 +178,38 @@ describe('MermaidNodeRenderer', () => {
 
     expect(container.querySelector('svg')).toBeNull()
     expect(container.querySelector('code')?.textContent).toBe('graph TD\nA-->B')
+  })
+
+  it('skips rendering when parse rejects the syntax (e.g. mid-stream)', async () => {
+    mockParse.mockResolvedValue(false)
+
+    render(
+      <MermaidNodeRenderer
+        node={{ type: 'codeBlock', code: 'graph TD\nA-->', language: 'mermaid' }}
+      />
+    )
+
+    // Wait long enough for the parse promise to settle without scheduling a render.
+    await waitFor(() => expect(mockParse).toHaveBeenCalledTimes(1))
+    expect(mockRender).not.toHaveBeenCalled()
+    // Preview button stays available; we want render to take over the moment
+    // streaming completes with valid syntax.
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
+    expect(screen.queryByText(/Syntax error/i)).toBeNull()
+  })
+
+  it('does not surface mermaid error SVGs when parse fails during streaming', async () => {
+    mockParse.mockResolvedValue(false)
+
+    const { container } = render(
+      <MermaidNodeRenderer
+        node={{ type: 'codeBlock', code: 'sequenceDiagram\nAlice->>', language: 'mermaid' }}
+      />
+    )
+
+    await waitFor(() => expect(mockParse).toHaveBeenCalledTimes(1))
+    // No SVG should ever be injected into the preview when parse fails.
+    expect(container.querySelector('svg')).toBeNull()
   })
 
   it('shows a Copy button that writes the mermaid source to the clipboard', async () => {
