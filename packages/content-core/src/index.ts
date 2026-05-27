@@ -108,37 +108,23 @@ export type ThematicBreakNode = {
   id?: NodeId
 }
 
-/**
- * Legacy escape hatch carrying raw markdown source. The semantic AST prefers
- * paragraph/heading/list/etc., but this stays exported so hand-constructed
- * documents (tests, internal tools) keep working.
- */
-export type MarkdownNode = {
-  type: 'markdown'
-  id?: NodeId
-  markdown: string
-}
-
 export type CodeBlockNode = {
   type: 'codeBlock'
   id?: NodeId
   code: string
   language?: string
-  meta?: string
 }
 
 export type MermaidNode = {
   type: 'mermaid'
   id?: NodeId
   code: string
-  meta?: string
 }
 
 export type WireframeNode = {
   type: 'wireframe'
   id?: NodeId
   code: string
-  meta?: string
 }
 
 export type ChoicePromptNode = {
@@ -172,7 +158,6 @@ export type BlockNode =
   | ListNode
   | BlockquoteNode
   | ThematicBreakNode
-  | MarkdownNode
   | CodeBlockNode
   | MermaidNode
   | WireframeNode
@@ -190,8 +175,122 @@ export type ContentNodeByType = {
   [K in ContentNode['type']]: Extract<ContentNode, { type: K }>
 }
 
-export type ContentParser<TInput = string> = (input: TInput) => ContentDocument
+const serializeInlineNode = (node: InlineNode): string => {
+  switch (node.type) {
+    case 'text':
+      return `text:${node.value}`
+    case 'emphasis':
+      return `emphasis(${node.children.map(serializeInlineNode).join('|')})`
+    case 'strong':
+      return `strong(${node.children.map(serializeInlineNode).join('|')})`
+    case 'strikethrough':
+      return `strikethrough(${node.children.map(serializeInlineNode).join('|')})`
+    case 'codeInline':
+      return `codeInline:${node.value}`
+    case 'link':
+      return `link:${node.url}:${node.title ?? ''}(${node.children.map(serializeInlineNode).join('|')})`
+    case 'imageInline':
+      return `imageInline:${node.url}:${node.alt}:${node.title ?? ''}`
+    case 'break':
+      return 'break'
+  }
+}
 
-export type ContentRendererRegistry<TResult> = {
-  [K in keyof ContentNodeByType]?: (node: ContentNodeByType[K]) => TResult
+const serializeInlineNodes = (nodes: InlineNode[]): string => nodes.map(serializeInlineNode).join('\n')
+
+const serializeListItem = (node: ListItemNode): string =>
+  `listItem:${node.checked === undefined ? '' : String(node.checked)}:${node.children.map(serializeBlockNode).join('\n')}`
+
+const serializeBlockNode = (node: BlockNode): string => {
+  switch (node.type) {
+    case 'heading':
+      return `heading:${node.level}:${serializeInlineNodes(node.children)}`
+    case 'paragraph':
+      return `paragraph:${serializeInlineNodes(node.children)}`
+    case 'list':
+      return `list:${String(node.ordered)}:${node.start ?? ''}:${node.children.map(serializeListItem).join('\n')}`
+    case 'blockquote':
+      return `blockquote:${node.children.map(serializeBlockNode).join('\n')}`
+    case 'thematicBreak':
+      return 'thematicBreak'
+    case 'codeBlock':
+      return `codeBlock:${node.language ?? ''}:${node.code}`
+    case 'mermaid':
+      return `mermaid:${node.code}`
+    case 'wireframe':
+      return `wireframe:${node.code}`
+    case 'choicePrompt':
+      return `choicePrompt:${node.prompt}:${node.choices.join('\n')}`
+    case 'table':
+      return `table:${node.align.join('|')}:${node.header.join('|')}:${node.rows.map((row) => row.join('|')).join('\n')}`
+    case 'image':
+      return `image:${node.url}:${node.alt}:${node.title ?? ''}`
+  }
+}
+
+const nextOccurrence = (counts: Map<string, number>, type: string, digest: string): number => {
+  const key = `${type}\u0000${digest}`
+  const occurrence = counts.get(key) ?? 0
+  counts.set(key, occurrence + 1)
+  return occurrence
+}
+
+const withAssignedId = <T extends { type: string; id?: NodeId }>(
+  node: T,
+  counts: Map<string, number>,
+  digest: string
+): T => {
+  const occurrence = nextOccurrence(counts, node.type, digest)
+  if (node.id) {
+    return node
+  }
+  return {
+    ...node,
+    id: computeNodeId(node.type, digest, occurrence)
+  }
+}
+
+const normalizeListItem = (
+  node: ListItemNode,
+  counts: Map<string, number>
+): ListItemNode => {
+  const children = node.children.map((child) => normalizeBlockNode(child, counts))
+  const normalized = {
+    ...node,
+    children
+  }
+  return withAssignedId(normalized, counts, serializeListItem(normalized))
+}
+
+const normalizeBlockNode = (
+  node: BlockNode,
+  counts: Map<string, number>
+): BlockNode => {
+  switch (node.type) {
+    case 'list': {
+      const children = node.children.map((child) => normalizeListItem(child, counts))
+      const normalized: ListNode = {
+        ...node,
+        children
+      }
+      return withAssignedId(normalized, counts, serializeBlockNode(normalized))
+    }
+    case 'blockquote': {
+      const children = node.children.map((child) => normalizeBlockNode(child, counts))
+      const normalized: BlockquoteNode = {
+        ...node,
+        children
+      }
+      return withAssignedId(normalized, counts, serializeBlockNode(normalized))
+    }
+    default:
+      return withAssignedId(node, counts, serializeBlockNode(node))
+  }
+}
+
+export const assignNodeIds = (document: ContentDocument): ContentDocument => {
+  const counts = new Map<string, number>()
+  return {
+    nodes: document.nodes.map((node) => normalizeBlockNode(node, counts))
+  }
 }

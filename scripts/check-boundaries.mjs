@@ -41,10 +41,39 @@ const sourceRules = new Map([
       { pattern: /from\s+['"]react(?:\/[^'"]*)?['"]/, label: 'React import' },
       { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
     ]
+  ],
+  [
+    '@tinytinkerer/content-core',
+    [
+      { pattern: /\bfetch\s*\(/, label: 'fetch()' },
+      { pattern: /\bwindow\b/, label: 'window' },
+      { pattern: /\bdocument\b/, label: 'document' },
+      { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
+      { pattern: /\blocalStorage\b/, label: 'localStorage' },
+      { pattern: /\bindexedDB\b/, label: 'indexedDB' },
+      { pattern: /\bDexie\b/, label: 'Dexie' },
+      { pattern: /from\s+['"]react(?:\/[^'"]*)?['"]/, label: 'React import' },
+      { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
+    ]
+  ],
+  [
+    '@tinytinkerer/content-runtime',
+    [
+      { pattern: /\bfetch\s*\(/, label: 'fetch()' },
+      { pattern: /\bwindow\b/, label: 'window' },
+      { pattern: /\bdocument\b/, label: 'document' },
+      { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
+      { pattern: /\blocalStorage\b/, label: 'localStorage' },
+      { pattern: /\bindexedDB\b/, label: 'indexedDB' },
+      { pattern: /\bDexie\b/, label: 'Dexie' },
+      { pattern: /from\s+['"]react(?:\/[^'"]*)?['"]/, label: 'React import' },
+      { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
+    ]
   ]
 ])
 
 for (const pkg of workspacePackages) {
+  validateDeclaredWorkspaceDependencies(pkg)
   const files = await collectSourceFiles(pkg.dir)
 
   for (const file of files) {
@@ -94,7 +123,8 @@ async function loadWorkspacePackages() {
           name: manifest.name,
           dir,
           kind: relative(rootDir, baseDir).startsWith('apps') ? 'app' : 'package',
-          slug: entry.name
+          slug: entry.name,
+          manifest
         })
       } catch {
         // Ignore directories without a package manifest.
@@ -107,8 +137,7 @@ async function loadWorkspacePackages() {
 
 async function collectSourceFiles(dir) {
   const files = []
-  const srcDir = join(dir, 'src')
-  const stack = [srcDir]
+  const stack = [join(dir, 'src'), join(dir, 'tests')]
 
   while (stack.length > 0) {
     const current = stack.pop()
@@ -116,7 +145,12 @@ async function collectSourceFiles(dir) {
       continue
     }
 
-    const entries = await readdir(current, { withFileTypes: true })
+    let entries
+    try {
+      entries = await readdir(current, { withFileTypes: true })
+    } catch {
+      continue
+    }
     for (const entry of entries) {
       const fullPath = join(current, entry.name)
       if (entry.isDirectory()) {
@@ -134,6 +168,42 @@ async function collectSourceFiles(dir) {
   }
 
   return files
+}
+
+function validateDeclaredWorkspaceDependencies(pkg) {
+  const dependencySections = [
+    pkg.manifest.dependencies,
+    pkg.manifest.devDependencies,
+    pkg.manifest.peerDependencies,
+    pkg.manifest.optionalDependencies
+  ]
+  const declaredWorkspaceDependencies = new Set()
+
+  for (const section of dependencySections) {
+    for (const dependencyName of Object.keys(section ?? {})) {
+      if (workspaceByName.has(dependencyName)) {
+        declaredWorkspaceDependencies.add(dependencyName)
+      }
+    }
+  }
+
+  for (const dependencyName of declaredWorkspaceDependencies) {
+    const targetPkg = workspaceByName.get(dependencyName)
+    if (!targetPkg) {
+      continue
+    }
+
+    graph.get(pkg.name)?.add(targetPkg.name)
+    validateBoundary(
+      pkg,
+      {
+        pkg: targetPkg,
+        specifier: dependencyName,
+        isSubpathImport: false
+      },
+      join(pkg.dir, 'package.json')
+    )
+  }
 }
 
 async function parseSourceFile(filePath) {

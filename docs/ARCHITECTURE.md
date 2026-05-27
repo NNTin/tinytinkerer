@@ -241,9 +241,9 @@ It must not own:
 
 ## Content Platform
 
-- `content-core` owns the semantic AST (block + inline node types) and `computeNodeId` helpers that hand every parsed node a deterministic, prefix-stable ID.
+- `content-core` owns the semantic AST (block + inline node types) plus stable identity helpers (`computeNodeId`, `assignNodeIds`) used by parsers and renderers.
 - `content-runtime` owns the platform-agnostic `ContentRuntime<TResult>` coordinator and the `NodeRendererPlugin` contract. It dispatches nodes to plugins, orchestrates lazy `load()` calls, and routes failures through host-supplied fallback + wrap hooks. It has no React dependency.
 - `content-markdown` parses markdown into the semantic `ContentDocument` and exposes a thin `MarkdownContent` adapter over the React runtime.
-- `content-react` provides `createReactContentRuntime`, the default React plugins (paragraph, heading, list, blockquote, thematicBreak, codeBlock, table, image, plus a legacy markdown escape hatch), the inline renderer, and the shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`). The React wrap hook drops every dispatched node into Suspense + a render error boundary.
+- `content-react` provides `createReactContentRuntime`, the default React plugins (paragraph, heading, list, blockquote, thematicBreak, codeBlock, table, image), the inline renderer, and the shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`). `ContentDocumentRenderer` normalizes missing block/list-item IDs through `assignNodeIds()` and the React wrap hook drops every dispatched node into Suspense + a render error boundary.
 - `content-mermaid` and `content-wireframe` export `mermaidPlugin` / `wireframePlugin` — typed `NodeRendererPlugin`s registered into the runtime at composition time. Mermaid still ships its heavy runtime as a separately code-split chunk loaded on first use.
 - The content AST stays internal to the content platform in this phase; `contracts` still expose assistant output as strings.

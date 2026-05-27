@@ -3,7 +3,6 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { lazy, type ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MermaidNode } from '@tinytinkerer/content-core'
 import {
   ContentDocumentRenderer,
   createReactContentRuntime,
@@ -23,7 +22,9 @@ describe('ContentDocumentRenderer', () => {
     const { container } = render(
       <ContentDocumentRenderer
         isStreaming
-        document={{ nodes: [{ type: 'markdown', markdown: 'Hello' }] }}
+        document={{
+          nodes: [{ type: 'paragraph', children: [{ type: 'text', value: 'Hello' }] }]
+        }}
       />
     )
 
@@ -31,12 +32,16 @@ describe('ContentDocumentRenderer', () => {
     expect(container.firstChild).toHaveClass(MARKDOWN_STREAMING_CLASS)
   })
 
-  it('renders default markdown, code blocks, tables, and images', () => {
+  it('renders default semantic nodes, code blocks, tables, and images', () => {
     render(
       <ContentDocumentRenderer
         document={{
           nodes: [
-            { type: 'markdown', markdown: '# Heading' },
+            {
+              type: 'heading',
+              level: 1,
+              children: [{ type: 'text', value: 'Heading' }]
+            },
             { type: 'codeBlock', code: 'const answer = 42', language: 'ts' },
             {
               type: 'table',
@@ -96,31 +101,45 @@ describe('ContentDocumentRenderer', () => {
   })
 
   it('falls back when a specialized renderer throws', () => {
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:wireframe',
+      nodeType: 'wireframe',
+      render: () => {
+        throw new Error('boom')
+      }
+    })
+
     render(
       <ContentDocumentRenderer
+        runtime={runtime}
         document={{ nodes: [{ type: 'wireframe', code: '[Button]' }] }}
-        renderers={{
-          wireframe: () => {
-            throw new Error('boom')
-          }
-        }}
       />
     )
 
     expect(screen.getByText('[Button]')).toBeInTheDocument()
   })
 
-  it('merges partial renderer overrides with the default renderers', () => {
+  it('keeps default renderers while adding custom plugins through the supplied runtime', () => {
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:mermaid',
+      nodeType: 'mermaid',
+      render: (node) => <div>Diagram: {node.code}</div>
+    })
+
     render(
       <ContentDocumentRenderer
+        runtime={runtime}
         document={{
           nodes: [
-            { type: 'markdown', markdown: '# Heading' },
+            {
+              type: 'heading',
+              level: 1,
+              children: [{ type: 'text', value: 'Heading' }]
+            },
             { type: 'mermaid', code: 'graph TD\nA-->B' }
           ]
-        }}
-        renderers={{
-          mermaid: ({ node }: { node: MermaidNode }) => <div>Diagram: {node.code}</div>
         }}
       />
     )
@@ -141,17 +160,23 @@ describe('ContentDocumentRenderer', () => {
           resolveRenderer = resolve
         })
     )
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:lazy-mermaid',
+      nodeType: 'mermaid',
+      render: (node) => <LazyMermaidRenderer node={node} />
+    })
 
     const { container } = render(
       <ContentDocumentRenderer
+        runtime={runtime}
         document={{
           nodes: [
-            { type: 'markdown', markdown: 'Before' },
+            { type: 'paragraph', children: [{ type: 'text', value: 'Before' }] },
             { type: 'mermaid', code: 'graph TD\nA-->B' },
-            { type: 'markdown', markdown: 'After' }
+            { type: 'paragraph', children: [{ type: 'text', value: 'After' }] }
           ]
         }}
-        renderers={{ mermaid: LazyMermaidRenderer }}
       />
     )
 

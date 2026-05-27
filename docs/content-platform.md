@@ -83,12 +83,12 @@ Owns the React implementation of the content runtime, the default React plugins 
 Owns:
 
 - `createReactContentRuntime` — builds a `ContentRuntime<ReactNode>` with default plugins pre-registered
-- default React plugins (paragraph, heading, list, blockquote, thematic-break, code-block, table, image, legacy markdown)
+- default React plugins (paragraph, heading, list, blockquote, thematic-break, code-block, table, image)
 - React inline-node renderer (text, emphasis, strong, strikethrough, code, link, image, break)
 - shared copy and preview/code interaction chrome (`PreviewCodeFrame`, `CodeBlockFallback`)
 - React-side fallback policy (Suspense + RendererBoundary wrap)
-- `ContentDocumentRenderer` + renderer-registry overrides
-- re-exports of the content-core AST types and stable-ID helpers (`computeNodeId`, `hashContent`, `NodeId`, the full AST node-type set) and the React plugin/runtime types (`ReactContentRuntime`, `ReactContentPlugin`, `ReactNodeRendererPlugin`, `ContentNodeRendererProps`) so downstream content packages depend only on `content-react`
+- `ContentDocumentRenderer`
+- re-exports of the content-core AST types and stable-ID helpers (`computeNodeId`, `hashContent`, `assignNodeIds`, `NodeId`, the full AST node-type set) and the React plugin/runtime types (`ReactContentRuntime`, `ReactContentPlugin`, `ReactNodeRendererPlugin`, `ContentNodeRendererProps`) so downstream content packages depend only on `content-react`
 
 Must not own:
 
@@ -165,7 +165,6 @@ type BlockNode =
   | ChoicePromptNode
   | TableNode
   | ImageNode
-  | MarkdownNode       // legacy escape hatch carrying raw markdown source
 
 type InlineNode =
   | TextNode
@@ -185,9 +184,8 @@ Rules:
 
 - `ContentNode` stays inside the content platform.
 - `@tinytinkerer/contracts` does not mirror this AST yet.
-- Every node carries an optional `id`. The parser assigns deterministic, prefix-stable IDs via `computeNodeId`; hand-constructed nodes (tests, internal tools) may omit `id` and the React runtime falls back to a hash-of-content + index key.
+- Every block and list-item node may carry an optional `id`. Markdown parsing assigns deterministic, prefix-stable IDs via `computeNodeId`; hand-constructed documents may omit `id`, and the shared `assignNodeIds()` helper normalizes them before React rendering.
 - `ChoicePromptNode` remains an extension point and does not require interactive behavior yet.
-- `MarkdownNode` is kept as a legacy escape hatch — the parser no longer emits it, but tests and ad-hoc constructions still resolve to a React renderer.
 - Shared runtime layers may continue to treat assistant output as strings until a later transport change is intentionally planned.
 
 ## Shell-Facing API
@@ -264,7 +262,7 @@ The current rendering split is:
 
 - `content-markdown` parses raw markdown into the semantic `ContentDocument`, assigning stable IDs to every block.
 - `content-markdown` exposes a `MarkdownContent` adapter that accepts a `plugins` array, builds a `ReactContentRuntime` via `createReactContentRuntime`, registers each supplied plugin, and delegates document rendering to `content-react`'s `ContentDocumentRenderer`. Runtime construction is memoized on the plugins-array reference.
-- `content-react` provides `createReactContentRuntime`, which returns a `ContentRuntime<ReactNode>` with default React plugins pre-registered (paragraph, heading, list, blockquote, thematic break, legacy markdown, code block, table, image). Each rendered block is wrapped in `<Suspense>` + a class-based `RendererBoundary` so per-plugin React-lazy renderers and thrown errors degrade gracefully. `content-react` also re-exports the content-core AST types and stable-ID helpers so downstream content packages can drop direct `content-core` imports.
+- `content-react` provides `createReactContentRuntime`, which returns a `ContentRuntime<ReactNode>` with default React plugins pre-registered (paragraph, heading, list, blockquote, thematic break, code block, table, image). `ContentDocumentRenderer` first normalizes the document through `assignNodeIds()` and then wraps each rendered block in `<Suspense>` + a class-based `RendererBoundary` so per-plugin React-lazy renderers and thrown errors degrade gracefully. `content-react` also re-exports the content-core AST types and stable-ID helpers so downstream content packages can drop direct `content-core` imports.
 - `content-mermaid` and `content-wireframe` each export a typed `NodeRendererPlugin` (`mermaidPlugin`, `wireframePlugin`) — registration on the runtime is a single `runtime.register(plugin)` call, performed inside `MarkdownContent`.
 - `app-browser` only passes a stable `plugins` array (containing `mermaidPlugin` + `wireframePlugin`) to `MarkdownContent`. It does not see runtimes, default plugins, or AST types.
 

@@ -6,7 +6,6 @@ import {
   PreviewCodeFrame,
   type ContentNodeRendererProps,
   type MermaidNode,
-  type ReactContentRendererRegistry,
   type ReactNodeRendererPlugin
 } from '@tinytinkerer/content-react'
 
@@ -140,10 +139,3 @@ export const mermaidPlugin: ReactNodeRendererPlugin<'mermaid'> = {
   render: (node) => <MermaidNodeRenderer node={node} />,
   fallback: (node) => <CodeBlockFallback code={node.code} language="mermaid" />
 }
-
-// Legacy renderer-map export retained for callers still wiring renderers via the
-// ReactContentRendererRegistry shape. New callers should register `mermaidPlugin`
-// against a ContentRuntime instead.
-export const mermaidRenderers = {
-  mermaid: MermaidNodeRenderer
-} satisfies Pick<ReactContentRendererRegistry, 'mermaid'>

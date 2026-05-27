@@ -39,21 +39,12 @@ const stripBlock = (node: BlockNode): BlockNode => {
     case 'codeBlock': {
       const next: BlockNode = { type: 'codeBlock', code: node.code }
       if (node.language) next.language = node.language
-      if (node.meta) next.meta = node.meta
       return next
     }
-    case 'mermaid': {
-      const next: BlockNode = { type: 'mermaid', code: node.code }
-      if (node.meta) next.meta = node.meta
-      return next
-    }
-    case 'wireframe': {
-      const next: BlockNode = { type: 'wireframe', code: node.code }
-      if (node.meta) next.meta = node.meta
-      return next
-    }
-    case 'markdown':
-      return { type: 'markdown', markdown: node.markdown }
+    case 'mermaid':
+      return { type: 'mermaid', code: node.code }
+    case 'wireframe':
+      return { type: 'wireframe', code: node.code }
     case 'choicePrompt':
       return { type: 'choicePrompt', prompt: node.prompt, choices: node.choices }
   }

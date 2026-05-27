@@ -1,0 +1,249 @@
+import { toString } from 'mdast-util-to-string'
+import type {
+  BlockContent,
+  Blockquote,
+  Code,
+  Heading,
+  Image,
+  List,
+  ListItem,
+  Paragraph,
+  PhrasingContent,
+  RootContent,
+  Table,
+  TableCell,
+  ThematicBreak
+} from 'mdast'
+import remarkGfm from 'remark-gfm'
+import remarkParse from 'remark-parse'
+import {
+  computeNodeId,
+  type BlockNode,
+  type BlockquoteNode,
+  type CodeBlockNode,
+  type ContentDocument,
+  type HeadingNode,
+  type ImageNode,
+  type InlineNode,
+  type ListItemNode,
+  type ListNode,
+  type MermaidNode,
+  type NodeId,
+  type ParagraphNode,
+  type TableAlignment,
+  type TableNode,
+  type ThematicBreakNode,
+  type WireframeNode
+} from '@tinytinkerer/content-react'
+import { unified } from 'unified'
+
+const parser = unified().use(remarkParse).use(remarkGfm)
+
+type IdAllocator = {
+  allocate: (type: string, digest: string) => NodeId
+}
+
+const createIdAllocator = (): IdAllocator => {
+  const counts = new Map<string, number>()
+  return {
+    allocate: (type, digest) => {
+      const key = `${type}\u0000${digest}`
+      const occurrence = counts.get(key) ?? 0
+      counts.set(key, occurrence + 1)
+      return computeNodeId(type, digest, occurrence)
+    }
+  }
+}
+
+const sanitizeImageUrl = (url: string): string => {
+  if (/^https?:/i.test(url)) return url
+  if (/^data:image\//i.test(url)) return url
+  return ''
+}
+
+const inlineFromMdast = (node: PhrasingContent): InlineNode => {
+  switch (node.type) {
+    case 'text':
+      return { type: 'text', value: node.value }
+    case 'emphasis':
+      return { type: 'emphasis', children: node.children.map(inlineFromMdast) }
+    case 'strong':
+      return { type: 'strong', children: node.children.map(inlineFromMdast) }
+    case 'delete':
+      return { type: 'strikethrough', children: node.children.map(inlineFromMdast) }
+    case 'inlineCode':
+      return { type: 'codeInline', value: node.value }
+    case 'link':
+      return {
+        type: 'link',
+        url: node.url,
+        ...(node.title ? { title: node.title } : {}),
+        children: node.children.map(inlineFromMdast)
+      }
+    case 'image':
+      return {
+        type: 'imageInline',
+        url: sanitizeImageUrl(node.url),
+        alt: node.alt ?? '',
+        ...(node.title ? { title: node.title } : {})
+      }
+    case 'break':
+      return { type: 'break' }
+    default:
+      return { type: 'text', value: toString(node) }
+  }
+}
+
+const tableCellToText = (cell: TableCell): string => toString(cell).trim()
+
+const fromHeading = (node: Heading, ids: IdAllocator): HeadingNode => ({
+  type: 'heading',
+  id: ids.allocate('heading', toString(node)),
+  level: node.depth,
+  children: node.children.map(inlineFromMdast)
+})
+
+const fromStandaloneImage = (node: Image, ids: IdAllocator): ImageNode => ({
+  type: 'image',
+  id: ids.allocate('image', node.url),
+  url: sanitizeImageUrl(node.url),
+  alt: node.alt ?? '',
+  ...(node.title ? { title: node.title } : {})
+})
+
+const fromParagraph = (
+  node: Paragraph,
+  ids: IdAllocator
+): ParagraphNode | ImageNode => {
+  if (node.children.length === 1 && node.children[0]?.type === 'image') {
+    return fromStandaloneImage(node.children[0], ids)
+  }
+  return {
+    type: 'paragraph',
+    id: ids.allocate('paragraph', toString(node)),
+    children: node.children.map(inlineFromMdast)
+  }
+}
+
+const fromListItem = (node: ListItem, ids: IdAllocator): ListItemNode => {
+  const item: ListItemNode = {
+    type: 'listItem',
+    id: ids.allocate('listItem', toString(node)),
+    children: node.children.flatMap((child): BlockNode[] => {
+      const block = blockFromMdast(child, ids)
+      return block ? [block] : []
+    })
+  }
+  if (typeof node.checked === 'boolean') {
+    item.checked = node.checked
+  }
+  return item
+}
+
+const fromList = (node: List, ids: IdAllocator): ListNode => {
+  const list: ListNode = {
+    type: 'list',
+    id: ids.allocate('list', toString(node)),
+    ordered: Boolean(node.ordered),
+    children: node.children.map((item) => fromListItem(item, ids))
+  }
+  if (typeof node.start === 'number') {
+    list.start = node.start
+  }
+  return list
+}
+
+const fromBlockquote = (node: Blockquote, ids: IdAllocator): BlockquoteNode => ({
+  type: 'blockquote',
+  id: ids.allocate('blockquote', toString(node)),
+  children: node.children.flatMap((child): BlockNode[] => {
+    const block = blockFromMdast(child, ids)
+    return block ? [block] : []
+  })
+})
+
+const fromThematicBreak = (_: ThematicBreak, ids: IdAllocator): ThematicBreakNode => ({
+  type: 'thematicBreak',
+  id: ids.allocate('thematicBreak', '')
+})
+
+const fromCode = (
+  node: Code,
+  ids: IdAllocator
+): MermaidNode | WireframeNode | CodeBlockNode => {
+  if (node.lang === 'mermaid') {
+    return {
+      type: 'mermaid',
+      id: ids.allocate('mermaid', node.value),
+      code: node.value
+    }
+  }
+  if (node.lang === 'wireframe') {
+    return {
+      type: 'wireframe',
+      id: ids.allocate('wireframe', node.value),
+      code: node.value
+    }
+  }
+  const block: CodeBlockNode = {
+    type: 'codeBlock',
+    id: ids.allocate('codeBlock', node.value),
+    code: node.value
+  }
+  if (node.lang) {
+    block.language = node.lang
+  }
+  return block
+}
+
+const fromTable = (node: Table, ids: IdAllocator): TableNode => {
+  const headerRow = node.children[0]
+  const bodyRows = node.children.slice(1)
+  const align = (node.align ?? []).map((value): TableAlignment => value ?? null)
+  const header = headerRow ? headerRow.children.map(tableCellToText) : []
+  const rows = bodyRows.map((row) => row.children.map(tableCellToText))
+  const digest = [header.join('\u0001'), ...rows.map((row) => row.join('\u0001'))].join('\n')
+  return {
+    type: 'table',
+    id: ids.allocate('table', digest),
+    align,
+    header,
+    rows
+  }
+}
+
+const blockFromMdast = (node: RootContent | BlockContent, ids: IdAllocator): BlockNode | null => {
+  switch (node.type) {
+    case 'heading':
+      return fromHeading(node, ids)
+    case 'paragraph':
+      return fromParagraph(node, ids)
+    case 'list':
+      return fromList(node, ids)
+    case 'blockquote':
+      return fromBlockquote(node, ids)
+    case 'thematicBreak':
+      return fromThematicBreak(node, ids)
+    case 'code':
+      return fromCode(node, ids)
+    case 'table':
+      return fromTable(node, ids)
+    default:
+      return null
+  }
+}
+
+export const parseMarkdownContent = (content: string): ContentDocument => {
+  const root = parser.parse(content)
+  const ids = createIdAllocator()
+  const nodes: BlockNode[] = []
+
+  for (const child of root.children) {
+    const block = blockFromMdast(child, ids)
+    if (block) {
+      nodes.push(block)
+    }
+  }
+
+  return { nodes }
+}

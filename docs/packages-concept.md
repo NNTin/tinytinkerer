@@ -155,8 +155,8 @@ The content platform is six packages with strict layering:
 
 - `content-core` owns the semantic AST (block + inline) and stable-ID helpers; no other workspace deps.
 - `content-runtime` owns the platform-agnostic `ContentRuntime` coordinator and the `NodeRendererPlugin` contract; depends only on `content-core`.
-- `content-react` owns the React runtime implementation, default React plugins, inline renderer, and shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`); depends on `content-core`, `content-runtime`, and `ui`.
-- `content-markdown` owns markdown parsing into the semantic AST and the React `MarkdownContent` adapter; depends directly on `content-react` only.
+- `content-react` owns the React runtime implementation, default React plugins, inline renderer, shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`), and render-time ID normalization; depends on `content-core`, `content-runtime`, and `ui`.
+- `content-markdown` owns markdown parsing into the semantic AST and a thin `MarkdownContent` adapter over the React runtime; depends directly on `content-react` only.
 - `content-mermaid` and `content-wireframe` each own one specialized plugin (`mermaidPlugin` / `wireframePlugin`) plus their renderer and lazy-load policy; each depends directly on `content-react` only.
 
 Owns collectively:
