@@ -150,8 +150,8 @@ describe('app-core helpers', () => {
   it('coerces malformed persisted assistant content (e.g. legacy string payloads) to null', () => {
     // Simulate a record that survived the v2 IndexedDB migration with a raw
     // markdown string in payload.content. The renderer requires a structured
-    // document, so the projection should drop the bad shape rather than pass
-    // it through and crash the chat surface.
+    // ContentDocument; the projection should drop the bad shape rather than
+    // pass it through and crash the chat surface.
     const malformed = [
       {
         id: 'evt-user',
