@@ -15,7 +15,6 @@ import {
   type ContentDocument,
   type ContentNode,
   type HeadingNode,
-  type ImageNode,
   type InlineNode,
   type ListItemNode,
   type ListNode,
@@ -88,6 +87,7 @@ export const REACT_SSR_EXECUTION_POLICY: RuntimeExecutionPolicy = {
 }
 
 export type {
+  RenderContext,
   RuntimeExecutionPolicy,
   RuntimeFailureContext,
   RuntimeFailureReason,
@@ -201,7 +201,7 @@ const PreparedNodeBoundary = ({
   return children
 }
 
-const renderInline = (nodes: readonly InlineNode[]): ReactNode =>
+export const renderInline = (nodes: readonly InlineNode[]): ReactNode =>
   nodes.map((node, index) => {
     const key = node.id ?? `${node.type}-${index}`
     switch (node.type) {
@@ -315,17 +315,13 @@ const CodeBlockNodeView = ({ node }: ContentNodeRendererProps<CodeBlockNode>) =>
   </pre>
 )
 
-const ImageNodeView = ({ node }: ContentNodeRendererProps<ImageNode>) => (
-  <img src={node.url} alt={node.alt} title={node.title} />
-)
-
 const COPY_RESET_DELAY_MS = 2000
 
 const BUTTON_BASE = 'text-[11px] font-medium transition-colors px-1.5 py-0.5 rounded'
 const BUTTON_IDLE = 'text-stone-500 hover:text-stone-700'
 const BUTTON_ACTIVE = 'bg-stone-100 text-stone-700'
 
-const useCopyButtonState = (value: string) => {
+export const useCopyButtonState = (value: string) => {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -498,16 +494,6 @@ const defaultReactPlugins: AnyNodeRendererPlugin<ReactNode>[] = [
     nodeType: 'codeBlock',
     priority: -100,
     render: (node) => <CodeBlockNodeView node={node} />
-  },
-  {
-    id: 'core:table',
-    nodeType: 'table',
-    render: (node) => <TableNodeView node={node} />
-  },
-  {
-    id: 'core:image',
-    nodeType: 'image',
-    render: (node) => <ImageNodeView node={node} />
   }
 ]
 

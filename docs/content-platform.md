@@ -39,7 +39,7 @@ Out of scope:
 
 ## Package Model
 
-The content platform is split into five packages.
+The content platform is split into ten packages: five foundational (`content-core`, `content-react`, `content-markdown`, `content-mermaid`, `content-wireframe`) and five additional specialized renderers (`content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`). All specialized renderers follow the same shape — each owns one `ReactNodeRendererPlugin` and depends only on `content-react`.
 
 ### `@tinytinkerer/content-core`
 
@@ -135,6 +135,80 @@ Must not own:
 - general browser runtime wiring
 - direct imports from `content-core`
 
+### `@tinytinkerer/content-image`
+
+Owns the canonical `ImageNode` renderer. Replaces the previous `core:image` default in `content-react`.
+
+Owns:
+
+- `imagePlugin` (`NodeRendererPlugin<'image'>` with always-matches, priority 10)
+- figure + figcaption layout, lazy loading, click-to-lightbox, zoom, open/download controls
+
+Must not own:
+
+- inline image rendering (`imageInline` stays in the inline renderer in `content-react`)
+- markdown parsing
+- direct imports from `content-core`
+
+### `@tinytinkerer/content-code`
+
+Owns specialized `CodeBlockNode` rendering for languaged code blocks. Single plugin with internal language dispatch.
+
+Owns:
+
+- `codePlugin` (`NodeRendererPlugin<'codeBlock'>` with `matches: typeof node.language === 'string' && length > 0`, priority 30, `lazy + clientOnly` requirements)
+- per-language sub-renderers for `diff`, `json` (with Format toggle), `yaml`, `http`, `sql`, `bash`, and a generic syntax-highlighted fallback
+- the lazy `highlight.js` runtime loader
+
+Must not own:
+
+- mermaid / wireframe dispatch (those plugins still win their own languages via higher priority and narrower `matches`)
+- direct imports from `content-core`
+
+### `@tinytinkerer/content-callout`
+
+Owns GitHub-style `[!NOTE]` / `[!TIP]` / `[!WARNING]` / `[!IMPORTANT]` / `[!CAUTION]` callout rendering. Pure renderer plugin — no parser changes required.
+
+Owns:
+
+- `calloutPlugin` (`NodeRendererPlugin<'blockquote'>` with `matches`: first paragraph's first text node begins with `[!KIND]`)
+- per-kind icon + colour variants and marker-stripping while preserving the rest of the blockquote children
+
+Must not own:
+
+- markdown parsing
+- direct imports from `content-core`
+
+### `@tinytinkerer/content-link-card`
+
+Owns rich preview-card rendering for paragraphs that are just a single link.
+
+Owns:
+
+- `linkCardPlugin` (`NodeRendererPlugin<'paragraph'>` with `matches`: single `LinkNode` child, or single `TextNode` whose trimmed value parses as a URL)
+- bordered card layout with title, hostname, and external-link icon
+
+Must not own:
+
+- OG / metadata fetching
+- markdown parsing
+- direct imports from `content-core`
+
+### `@tinytinkerer/content-table`
+
+Owns the canonical `TableNode` renderer. Replaces the previous `core:table` default in `content-react`.
+
+Owns:
+
+- `tablePlugin` (`NodeRendererPlugin<'table'>` with always-matches, priority 10)
+- sticky header, responsive card-layout mode (mobile breakpoint), CSV export, markdown copy (via `tableToMarkdown` from `content-react`), row-hover highlight
+- internal `tableToCsv` helper
+
+Must not own:
+
+- markdown parsing
+- direct imports from `content-core`
+
 ## AST Surface
 
 The canonical content document shape lives in `@tinytinkerer/contracts`. The content platform owns the parsing, normalization, plugin runtime, and rendering behavior built on top of that shared model.
@@ -190,7 +264,7 @@ That means:
 
 Browser apps should not import `content-*` packages directly. Instead:
 
-1. `app-browser` imports the `ContentDocument` type from `contracts`, `ContentDocumentContent` from `content-react`, `createMarkdownContentSession()` from `content-markdown`, and the `mermaidPlugin` / `wireframePlugin` exports from `content-mermaid` / `content-wireframe`.
+1. `app-browser` imports the `ContentDocument` type from `contracts`, `ContentDocumentContent` from `content-react`, `createMarkdownContentSession()` from `content-markdown`, and the singleton plugin exports from each specialized content package: `mermaidPlugin`, `wireframePlugin`, `codePlugin`, `calloutPlugin`, `linkCardPlugin`, `imagePlugin`, `tablePlugin`.
 2. During synthesis, `app-browser` creates a markdown content session and emits each `ContentDocument` snapshot directly as the wire-safe `{ source, content }` assistant event payload.
 3. During rendering, `AssistantContent` passes the document directly to `ContentDocumentContent`, supplies a stable plugin array, and lets the content platform own runtime assembly and rendering.
 4. Browser shells consume the final shell-safe export (`AssistantContent`) from `app-browser`.
@@ -211,6 +285,11 @@ flowchart LR
     contentmarkdown["@tinytinkerer/content-markdown<br/>markdown source plugin + parser"]
     contentmermaid["@tinytinkerer/content-mermaid<br/>MermaidPlugin"]
     contentwireframe["@tinytinkerer/content-wireframe<br/>WireframePlugin"]
+    contentimage["@tinytinkerer/content-image<br/>ImagePlugin"]
+    contentcode["@tinytinkerer/content-code<br/>CodePlugin"]
+    contentcallout["@tinytinkerer/content-callout<br/>CalloutPlugin"]
+    contentlinkcard["@tinytinkerer/content-link-card<br/>LinkCardPlugin"]
+    contenttable["@tinytinkerer/content-table<br/>TablePlugin"]
   end
 
   ui["@tinytinkerer/ui<br/>presentational primitives"]
@@ -224,6 +303,11 @@ flowchart LR
   contentmarkdown --> contentcore
   contentmermaid --> contentreact
   contentwireframe --> contentreact
+  contentimage --> contentreact
+  contentcode --> contentreact
+  contentcallout --> contentreact
+  contentlinkcard --> contentreact
+  contenttable --> contentreact
 
   classDef coreLayer fill:#ffe4e6,stroke:#be123c,color:#111827,stroke-width:2px;
   classDef contractsLayer fill:#dcfce7,stroke:#15803d,color:#111827,stroke-width:2px;
@@ -238,8 +322,8 @@ Diagram convention: external consumers should point to the `ContentPlatform` sub
 - `content-core` may depend only on `contracts` and local modules.
 - `content-react` may depend only on `content-core`, `ui`, and local modules. It is the public facade for the React side of the content platform and re-exports the content-core symbols downstream packages need.
 - `content-markdown` may depend only on `content-core` and local modules.
-- `content-mermaid` and `content-wireframe` may depend only on `content-react` and local modules.
-- `app-browser` may depend on `content-react`, `content-markdown`, `content-mermaid`, and `content-wireframe`.
+- `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, and `content-table` may depend only on `content-react` and local modules.
+- `app-browser` may depend on `content-react`, `content-markdown`, `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, and `content-table`.
 - `contracts` may depend only on local modules.
 - The content platform must not depend on `app-browser`.
 - Browser apps consume shell-facing content exports from `app-browser`, not directly from `content-*`.
@@ -252,7 +336,7 @@ The current rendering split is:
 
 - `content-markdown` parses raw markdown into the semantic `ContentDocument`, assigning stable block IDs and then normalizing any remaining block/list-item/inline ids through `assignNodeIds()`.
 - `content-markdown` exposes `markdownSourcePlugin`, `parseMarkdownContent()`, and `createMarkdownContentSession()` for parser-side snapshot streaming.
-- `content-react` provides `createReactContentRuntime`, which returns a `ContentRuntime<ReactNode>` with default React plugins pre-registered (paragraph, heading, list, blockquote, thematic break, code block, table, image). `ContentDocumentContent` normalizes hand-built documents through `assignNodeIds()` and then delegates to `ContentDocumentRenderer`, which assumes a canonical document and wraps each rendered block in a runtime-backed preparation boundary plus `<Suspense>` + a class-based `RendererBoundary` so lazy plugins and thrown render errors degrade gracefully. `content-react` also re-exports the content-core AST types and stable-ID helpers so downstream content packages can drop direct `content-core` imports.
+- `content-react` provides `createReactContentRuntime`, which returns a `ContentRuntime<ReactNode>` with default React plugins pre-registered (paragraph, heading, list, blockquote, thematic break, code block). Image and table no longer ship a default — they are owned by `content-image` and `content-table` and must be registered explicitly. `ContentDocumentContent` normalizes hand-built documents through `assignNodeIds()` and then delegates to `ContentDocumentRenderer`, which assumes a canonical document and wraps each rendered block in a runtime-backed preparation boundary plus `<Suspense>` + a class-based `RendererBoundary` so lazy plugins and thrown render errors degrade gracefully. `content-react` also re-exports the content-core AST types, the stable-ID helpers, `renderInline`, `tableToMarkdown`, `useCopyButtonState`, and the runtime `RenderContext` so downstream content packages can drop direct `content-core` imports.
 - `content-react` also exports `REACT_SSR_EXECUTION_POLICY`, which blocks lazy, client-only, and DOM-required plugins so SSR falls back deterministically to code rendering.
 - `content-mermaid` and `content-wireframe` each export typed `NodeRendererPlugin<'codeBlock'>` singletons plus `createMermaidPlugin()` / `createWireframePlugin()` factory helpers for runtime-scoped plugin instances.
 - `app-browser` owns browser-side composition, but runtime construction and default plugin registration stay inside the content platform.

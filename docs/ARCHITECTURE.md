@@ -59,6 +59,11 @@ flowchart LR
       contentreact["@tinytinkerer/content-react<br/>React runtime + default plugins + chrome"]
       contentmermaid["@tinytinkerer/content-mermaid<br/>MermaidPlugin"]
       contentwireframe["@tinytinkerer/content-wireframe<br/>WireframePlugin"]
+      contentimage["@tinytinkerer/content-image<br/>ImagePlugin"]
+      contentcode["@tinytinkerer/content-code<br/>CodePlugin"]
+      contentcallout["@tinytinkerer/content-callout<br/>CalloutPlugin"]
+      contentlinkcard["@tinytinkerer/content-link-card<br/>LinkCardPlugin"]
+      contenttable["@tinytinkerer/content-table<br/>TablePlugin"]
     end
   end
 
@@ -88,6 +93,11 @@ flowchart LR
   contentmarkdown --> contentcore
   contentmermaid --> contentreact
   contentwireframe --> contentreact
+  contentimage --> contentreact
+  contentcode --> contentreact
+  contentcallout --> contentreact
+  contentlinkcard --> contentreact
+  contenttable --> contentreact
 
   agent --> contracts
   brand --> contracts
@@ -125,7 +135,7 @@ flowchart LR
   class edge,legendEdge edgeApp;
   class common,appbrowser,legendBrowser browserAssembly;
   class ui,legendUi uiPrimitives;
-  class contentcore,contentmarkdown,contentreact,contentmermaid,contentwireframe,legendFeature sharedFeature;
+  class contentcore,contentmarkdown,contentreact,contentmermaid,contentwireframe,contentimage,contentcode,contentcallout,contentlinkcard,contenttable,legendFeature sharedFeature;
   class contracts,legendContracts contractsLayer;
   class agent,appcore,legendCore coreLayer;
   class brand,legendBrand brandLayer;
@@ -212,12 +222,12 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 
 - Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
-- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`).
+- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`).
 - `brand-assets` may depend on `contracts` and nothing else.
 - `content-core` may depend only on `contracts` and local modules.
 - `content-react` may depend only on `content-core`, `ui`, and local modules. It owns the React runtime and re-exports the content-core symbols downstream content packages need.
 - `content-markdown` may depend only on `content-core` and local modules. It is a source-plugin package, not a rendering facade.
-- `content-mermaid` and `content-wireframe` may depend only on `content-react` and local modules.
+- `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, and `content-table` may depend only on `content-react` and local modules.
 - `contracts` may depend only on local modules.
 - `ui` must stay primitive-only.
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
@@ -294,6 +304,7 @@ It must not own:
 
 - `content-core` owns content behavior over the canonical shared content model: stable identity helpers (`computeNodeId`, `assignNodeIds`), serialization used for normalization, and source-plugin contracts. The block + inline node types now come from `contracts`.
 - `content-markdown` parses markdown into the semantic `ContentDocument`, emits Mermaid and wireframe fences as `codeBlock` nodes with specialized `language` values, and provides `markdownSourcePlugin` plus `createMarkdownContentSession()` for parser-side streaming snapshots.
-- `content-react` provides the React `ContentRuntime<TResult>` implementation and the `NodeRendererPlugin` contract, the default React plugins (paragraph, heading, list, blockquote, thematicBreak, codeBlock, table, image), the inline renderer, and the shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`). `ContentDocumentContent` normalizes hand-built documents through `assignNodeIds()`, while `ContentDocumentRenderer` renders canonical documents with Suspense plus a render error boundary around runtime-managed node preparation.
+- `content-react` provides the React `ContentRuntime<TResult>` implementation and the `NodeRendererPlugin` contract, the default React plugins (paragraph, heading, list, blockquote, thematicBreak, codeBlock — image and table are no longer defaults; they live in `content-image` / `content-table`), the inline renderer (exported as `renderInline`), and the shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`, `useCopyButtonState`, `tableToMarkdown`). `ContentDocumentContent` normalizes hand-built documents through `assignNodeIds()`, while `ContentDocumentRenderer` renders canonical documents with Suspense plus a render error boundary around runtime-managed node preparation.
 - `content-mermaid` and `content-wireframe` export singleton convenience plugins plus `createMermaidPlugin()` / `createWireframePlugin()` factory helpers for runtime-scoped plugin instances. Mermaid still ships its heavy runtime as a separately code-split chunk loaded on first use.
+- `content-image`, `content-code`, `content-callout`, `content-link-card`, and `content-table` follow the same renderer-plugin shape and each export a `create*Plugin()` factory plus a singleton plugin. `content-code` lazy-imports its syntax highlighter on first use; the others render synchronously. `content-image` and `content-table` replace the previous `core:image` / `core:table` defaults in `content-react`; `content-callout` and `content-link-card` are gated by `matches(node)` predicates (blockquote `[!NOTE]`-style markers and single-link paragraphs respectively); `content-code` matches every languaged `codeBlock` and dispatches per-language inside a single plugin (diff, json, yaml, http, sql, bash, generic).
 - `contracts` own the canonical content document schemas and types directly. The schema is recursive (block ↔ list-item via `z.lazy`), uses a discriminated union on `type`, and bridges schema → interface with a single `as z.ZodType<…>` cast per recursive schema (see the [Coding Conventions](#coding-conventions) section for why).

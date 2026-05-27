@@ -46,7 +46,7 @@ describe('ContentDocumentRenderer', () => {
     expect(container.firstChild).toHaveClass(MARKDOWN_STREAMING_CLASS)
   })
 
-  it('renders default semantic nodes, code blocks, tables, and images', () => {
+  it('renders default semantic nodes and code blocks', () => {
     render(
       <ContentDocumentRenderer
         document={withIds({
@@ -56,22 +56,7 @@ describe('ContentDocumentRenderer', () => {
               level: 1,
               children: [{ type: 'text', value: 'Heading' }]
             },
-            { type: 'codeBlock', code: 'const answer = 42', language: 'ts' },
-            {
-              type: 'table',
-              align: ['left', 'right'],
-              header: [
-                [{ type: 'text', value: 'Name' }],
-                [{ type: 'text', value: 'Role' }]
-              ],
-              rows: [
-                [
-                  [{ type: 'text', value: 'Ada' }],
-                  [{ type: 'text', value: 'Admin' }]
-                ]
-              ]
-            },
-            { type: 'image', url: 'https://example.com/test.png', alt: 'Test image' }
+            { type: 'codeBlock', code: 'const answer = 42', language: 'ts' }
           ]
         })}
       />
@@ -79,45 +64,19 @@ describe('ContentDocumentRenderer', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Heading' })).toBeInTheDocument()
     expect(screen.getByText('const answer = 42')).toBeInTheDocument()
-    expect(screen.getByRole('table')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Test image' })).toBeInTheDocument()
   })
 
-  it('copies table nodes using the shared markdown serializer', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.assign(navigator, { clipboard: { writeText } })
-
-    render(
+  it('falls back when no plugin is registered for a node type', () => {
+    const { container } = render(
       <ContentDocumentRenderer
         document={withIds({
-          nodes: [
-            {
-              type: 'table',
-              align: ['left', 'right'],
-              header: [
-                [{ type: 'text', value: 'Name' }],
-                [{ type: 'text', value: 'Role' }]
-              ],
-              rows: [
-                [
-                  [{ type: 'text', value: 'Ada' }],
-                  [{ type: 'text', value: 'Admin' }]
-                ]
-              ]
-            }
-          ]
+          nodes: [{ type: 'image', url: 'https://example.com/test.png', alt: 'Test image' }]
         })}
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
-
-    expect(writeText).toHaveBeenCalledWith([
-      '| Name | Role |',
-      '| :--- | ---: |',
-      '| Ada | Admin |'
-    ].join('\n'))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Copied!' })).toBeInTheDocument())
+    expect(screen.queryByRole('img')).toBeNull()
+    expect(container.querySelector('pre')).toBeInTheDocument()
   })
 
   it('falls back when a specialized renderer is missing', () => {
