@@ -119,6 +119,7 @@ describe('AgentRuntime', () => {
       async *synthesize() {
         attempts += 1
         if (attempts === 1) {
+          yield 'partial '
           throw new RateLimitError('rate limited', { retryAfterMs: 1, retryAt })
         }
         yield 'retried'
@@ -134,6 +135,8 @@ describe('AgentRuntime', () => {
     expect(attempts).toBe(2)
     expect(events.some((event) => event.type === 'rate.limit.waiting')).toBe(true)
     expect(events.some((event) => event.type === 'rate.limit.recovered')).toBe(true)
+    const latestAssistantChunk = [...events].reverse().find(isEventType('assistant.chunk'))
+    expect(latestAssistantChunk?.payload.source).toBe('retried')
     expect(events.find(isEventType('assistant.done'))?.payload.source).toBe('retried')
   })
 

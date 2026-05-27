@@ -132,6 +132,21 @@ describe('app-core helpers', () => {
     })
   })
 
+  it('keeps assistantContent null when assistant.done source is empty', () => {
+    const turns = buildTurns([
+      event('user.message', { text: 'hello' }),
+      event('assistant.done', { source: '   ', content: assistantContent('') })
+    ])
+
+    expect(turns).toHaveLength(1)
+    expect(turns[0]).toMatchObject({
+      userText: 'hello',
+      assistantSource: '   ',
+      assistantContent: null,
+      isStreaming: false
+    })
+  })
+
   it('drops expired cooldowns', () => {
     expect(activeCooldown(new Date(Date.now() - 1_000).toISOString())).toBeUndefined()
   })

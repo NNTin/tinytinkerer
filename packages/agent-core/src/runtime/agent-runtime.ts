@@ -169,9 +169,8 @@ export class AgentRuntime {
     context: ExecutionContext,
     signal: AbortSignal | undefined
   ): AsyncGenerator<ChatEvent> {
-    const session = await this.createAssistantContentSession()
-
     while (true) {
+      const session = await this.createAssistantContentSession()
       try {
         const synthesizeOptions = signal ? { signal } : undefined
         for await (const chunk of this.provider.synthesize(context, synthesizeOptions)) {

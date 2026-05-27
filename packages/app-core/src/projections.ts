@@ -100,12 +100,13 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
         })
       }
     } else if (event.type === 'assistant.done') {
+      const hasSource = event.payload.source.trim().length > 0
       if (pendingTurn) {
         pendingTurn.assistantSource = event.payload.source
-        pendingTurn.assistantContent = event.payload.content
+        pendingTurn.assistantContent = hasSource ? event.payload.content : null
         pendingTurn.isStreaming = false
         pushPendingTurn()
-      } else if (event.payload.source.trim()) {
+      } else if (hasSource) {
         turns.push({
           id: event.id,
           userText: '',

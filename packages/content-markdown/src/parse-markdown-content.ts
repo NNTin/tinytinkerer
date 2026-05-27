@@ -60,6 +60,21 @@ const sanitizeImageUrl = (url: string): string => {
   return ''
 }
 
+const sanitizeLinkUrl = (url: string): string => {
+  const trimmed = url.trim()
+  if (!trimmed) return ''
+
+  const schemeMatch = /^([a-z][a-z\d+\-.]*):/i.exec(trimmed)
+  if (!schemeMatch) {
+    return trimmed.startsWith('//') ? '' : trimmed
+  }
+
+  const scheme = schemeMatch[1]?.toLowerCase()
+  return scheme === 'http' || scheme === 'https' || scheme === 'mailto' || scheme === 'tel'
+    ? trimmed
+    : ''
+}
+
 const inlineFromMdast = (node: PhrasingContent): InlineNode => {
   switch (node.type) {
     case 'text':
@@ -75,7 +90,7 @@ const inlineFromMdast = (node: PhrasingContent): InlineNode => {
     case 'link':
       return {
         type: 'link',
-        url: node.url,
+        url: sanitizeLinkUrl(node.url),
         ...(node.title ? { title: node.title } : {}),
         children: node.children.map(inlineFromMdast)
       }

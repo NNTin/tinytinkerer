@@ -18,8 +18,14 @@ const sourceRules = new Map([
     '@tinytinkerer/app-core',
     [
       { pattern: /\bfetch\s*\(/, label: 'fetch()' },
-      { pattern: /\bwindow(?=\s*[\.\[])/, label: 'window' },
-      { pattern: /\bdocument(?=\s*[\.\[])/, label: 'document' },
+      {
+        pattern: /(?<![\w$])window(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'window'
+      },
+      {
+        pattern: /(?<![\w$])document(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'document'
+      },
       { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
       { pattern: /\blocalStorage\b/, label: 'localStorage' },
       { pattern: /\bindexedDB\b/, label: 'indexedDB' },
@@ -32,8 +38,14 @@ const sourceRules = new Map([
     '@tinytinkerer/agent-core',
     [
       { pattern: /\bfetch\s*\(/, label: 'fetch()' },
-      { pattern: /\bwindow(?=\s*[\.\[])/, label: 'window' },
-      { pattern: /\bdocument(?=\s*[\.\[])/, label: 'document' },
+      {
+        pattern: /(?<![\w$])window(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'window'
+      },
+      {
+        pattern: /(?<![\w$])document(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'document'
+      },
       { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
       { pattern: /\blocalStorage\b/, label: 'localStorage' },
       { pattern: /\bindexedDB\b/, label: 'indexedDB' },
@@ -46,8 +58,14 @@ const sourceRules = new Map([
     '@tinytinkerer/content-core',
     [
       { pattern: /\bfetch\s*\(/, label: 'fetch()' },
-      { pattern: /\bwindow(?=\s*[\.\[])/, label: 'window' },
-      { pattern: /\bdocument(?=\s*[\.\[])/, label: 'document' },
+      {
+        pattern: /(?<![\w$])window(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'window'
+      },
+      {
+        pattern: /(?<![\w$])document(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'document'
+      },
       { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
       { pattern: /\blocalStorage\b/, label: 'localStorage' },
       { pattern: /\bindexedDB\b/, label: 'indexedDB' },

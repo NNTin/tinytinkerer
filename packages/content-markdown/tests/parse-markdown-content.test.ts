@@ -234,6 +234,17 @@ describe('parseMarkdownContent', () => {
     })
   })
 
+  it('sanitizes unsafe link schemes', () => {
+    expect(stripIds(parseMarkdownContent('[xss](javascript:alert(1))'))).toEqual({
+      nodes: [
+        {
+          type: 'paragraph',
+          children: [{ type: 'link', url: '', children: [{ type: 'text', value: 'xss' }] }]
+        }
+      ]
+    })
+  })
+
   it('assigns deterministic ids that are stable across reparses', () => {
     const a = parseMarkdownContent('Hello world\n\n## Subhead')
     const b = parseMarkdownContent('Hello world\n\n## Subhead')
