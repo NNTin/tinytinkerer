@@ -1,11 +1,11 @@
-import { StrictMode, startTransition, useEffect, useState } from 'react'
+import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   AppBrowserProvider,
   createBrowserApp,
-  initializeBrowserApp,
   resolveBrowserShellBootstrapConfig,
+  useBrowserAppBootstrap,
   type BrowserShellConfig
 } from '@tinytinkerer/app-browser'
 import { RouterProvider } from 'react-router-dom'
@@ -46,30 +46,7 @@ const queryClient = new QueryClient()
 const browserApp = createBrowserApp(browserConfig)
 
 const WidgetBootstrap = () => {
-  const [error, setError] = useState<string | null>(null)
-  const [ready, setReady] = useState(false)
-
-  useEffect(() => {
-    let disposed = false
-
-    void initializeBrowserApp(browserApp, browserConfig)
-      .then(() => {
-        if (!disposed) {
-          startTransition(() => {
-            setReady(true)
-          })
-        }
-      })
-      .catch((nextError: unknown) => {
-        if (!disposed) {
-          setError(nextError instanceof Error ? nextError.message : 'Unable to start the widget shell.')
-        }
-      })
-
-    return () => {
-      disposed = true
-    }
-  }, [])
+  const { ready, error } = useBrowserAppBootstrap(browserApp, browserConfig)
 
   if (!ready) {
     return <WidgetBootScreen {...(error ? { error } : {})} />

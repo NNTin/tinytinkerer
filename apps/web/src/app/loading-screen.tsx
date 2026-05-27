@@ -1,9 +1,4 @@
-type LoadingScreenProps = {
-  eyebrow: string
-  title: string
-  message: string
-  error?: string
-}
+import type { LoadingScreenProps } from '@tinytinkerer/app-browser'
 
 const LoadingCard = ({ eyebrow, title, message, error }: LoadingScreenProps) => (
   <div className="mx-auto flex min-h-screen w-full max-w-5xl items-center justify-center px-4 py-8 md:px-8">

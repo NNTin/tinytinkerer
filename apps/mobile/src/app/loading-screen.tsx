@@ -1,9 +1,4 @@
-type LoadingScreenProps = {
-  eyebrow: string
-  title: string
-  message: string
-  error?: string
-}
+import type { LoadingScreenProps } from '@tinytinkerer/app-browser'
 
 const LoadingShell = ({ eyebrow, title, message, error }: LoadingScreenProps) => (
   <div className="flex min-h-[100dvh] w-full flex-col bg-[var(--bg)] px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-[max(env(safe-area-inset-top),1rem)] text-[var(--text)]">

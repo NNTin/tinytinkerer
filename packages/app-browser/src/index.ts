@@ -1,3 +1,5 @@
+export { useBrowserAppBootstrap } from './bootstrap'
+export type { LoadingScreenProps } from './loading-screen-types'
 export {
   canStartGitHubOAuth,
   completeGitHubOAuthCallback,

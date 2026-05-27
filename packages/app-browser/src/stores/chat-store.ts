@@ -3,6 +3,7 @@ import {
 } from '@tinytinkerer/contracts'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { BrowserShell } from '../shell'
+import { loadCoreModule } from '../core-module'
 import type { AuthStore } from './auth-store'
 import type { SettingsStore } from './settings-store'
 import type { StatusStore } from './status-store'
@@ -39,7 +40,7 @@ export const createChatStore = (options: {
       return initializePromise
     }
 
-    initializePromise = import('@tinytinkerer/app-core')
+    initializePromise = loadCoreModule()
       .then(async ({ initializeChatState }) => {
         const state = await initializeChatState(options.shell.conversations, options.shell.preferences)
         set({ ...state, hydrated: true })
@@ -64,7 +65,7 @@ export const createChatStore = (options: {
     sendPrompt: async (prompt) => {
       await ensureInitialized(set, get)
       const state = get()
-      const { canSendPrompt, executeChatPrompt } = await import('@tinytinkerer/app-core')
+      const { canSendPrompt, executeChatPrompt } = await loadCoreModule()
       if (!canSendPrompt(state)) {
         return
       }
@@ -117,7 +118,7 @@ export const createChatStore = (options: {
     },
     resetConversation: async () => {
       await ensureInitialized(set, get)
-      const { resetConversation } = await import('@tinytinkerer/app-core')
+      const { resetConversation } = await loadCoreModule()
       const events = await resetConversation(options.shell.conversations, get().conversationId)
       set({ events })
     }

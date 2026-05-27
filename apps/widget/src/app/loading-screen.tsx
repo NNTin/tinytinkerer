@@ -1,9 +1,4 @@
-type LoadingScreenProps = {
-  eyebrow: string
-  title: string
-  message: string
-  error?: string
-}
+import type { LoadingScreenProps } from '@tinytinkerer/app-browser'
 
 const LoadingPanel = ({ eyebrow, title, message, error }: LoadingScreenProps) => (
   <div className="flex min-h-screen items-center justify-center px-4 py-6">
