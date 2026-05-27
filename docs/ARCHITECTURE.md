@@ -46,7 +46,7 @@ flowchart LR
   common["Frontend Composition Layer"]
 
   subgraph Packages
-    contracts["@tinytinkerer/contracts<br/>shared schemas + types"]
+    contracts["@tinytinkerer/contracts<br/>canonical schemas + types"]
     agent["@tinytinkerer/agent-core<br/>runtime abstractions"]
     appcore["@tinytinkerer/app-core<br/>headless product logic + runtime facade"]
     appbrowser["@tinytinkerer/app-browser<br/>browser adapters + shell-facing exports"]
@@ -54,7 +54,7 @@ flowchart LR
     ui["@tinytinkerer/ui<br/>presentational React primitives"]
 
     subgraph ContentPlatform["Content Platform"]
-      contentcore["@tinytinkerer/content-core<br/>semantic AST + stable-ID helpers + source-plugin contracts"]
+      contentcore["@tinytinkerer/content-core<br/>content behavior + stable-ID helpers + source-plugin contracts"]
       contentmarkdown["@tinytinkerer/content-markdown<br/>markdown source plugin + parser"]
       contentreact["@tinytinkerer/content-react<br/>React runtime + default plugins + chrome"]
       contentmermaid["@tinytinkerer/content-mermaid<br/>MermaidPlugin"]
@@ -91,7 +91,7 @@ flowchart LR
 
   agent --> contracts
   brand --> contracts
-  contracts --> contentcore
+  contentcore --> contracts
 
   subgraph Legend
     direction LR
@@ -138,7 +138,7 @@ Diagram convention: when a package consumes the content platform through its pub
 - Apps stay thin. `web`, `mobile`, and `widget` own routes, page composition, shell layout, and shell-specific UX, but not shared product behavior.
 - Shared product behavior stays headless where possible. Core orchestration, projections, and runtime policies live in packages that do not depend on React or browser APIs.
 - Shared browser-shell behavior has a single boundary. Browser-specific adapters, shell-facing React hooks and components, OAuth helpers, and shared browser styles live in `@tinytinkerer/app-browser`.
-- Contracts are the wire source of truth. Shared request, response, event, and payload schemas live in `@tinytinkerer/contracts`.
+- Contracts are the foundational shared schema and type source of truth. Shared request, response, event, payload, and canonical content-model schemas live in `@tinytinkerer/contracts`.
 - Rich assistant content is a dedicated subsystem. Markdown parsing, AST handling, and specialized renderers live in the content platform, not in apps and not in `ui`.
 
 ## Layers
@@ -150,13 +150,13 @@ Diagram convention: when a package consumes the content platform through its pub
 | `apps/widget` | embeddable browser shell | host integration, compact layout, widget window UX | copied shared runtime logic, direct lower-layer imports |
 | `apps/mobile` | mobile browser shell | PWA shell, install affordances, narrow-screen layout | copied shared runtime logic, direct lower-layer imports |
 | `apps/edge` | stateless backend boundary | HTTP endpoints, upstream normalization, transport concerns | browser APIs, UI logic |
-| `packages/contracts` | shared wire contracts | schemas and DTOs | runtime orchestration, UI code |
+| `packages/contracts` | foundational shared schemas and types | Zod schemas, inferred types, canonical content model, DTOs | runtime orchestration, UI code |
 | `packages/agent-core` | product-agnostic runtime abstractions | provider/tool abstractions, runtime mechanics | browser code, app-specific behavior |
 | `packages/app-core` | headless product behavior | chat/auth/settings orchestration, projections, ports | React, browser APIs, fetch, storage adapters |
 | `packages/app-browser` | shared browser composition boundary | browser adapters, shell bootstrap config, OAuth helpers, shell-facing hooks and components, shared browser styles | app-specific layout, app-owned screens |
 | `packages/brand-assets` | shared brand metadata | favicon, icon, manifest, and theme definitions | DOM mutation, app bootstrapping |
 | `packages/ui` | presentational primitives | buttons, icons, tiny visual atoms, styling helpers | feature runtimes, orchestration |
-| `packages/content-*` | shared content platform | semantic content AST + stable IDs, source-plugin contracts, React runtime + chrome, markdown parsing, specialized content plugins | app shells, transport orchestration |
+| `packages/content-*` | shared content platform | content behavior over the canonical content model, stable IDs, source-plugin contracts, React runtime + chrome, markdown parsing, specialized content plugins | app shells, transport orchestration |
 
 ## Dependency Rules
 
@@ -164,11 +164,11 @@ Diagram convention: when a package consumes the content platform through its pub
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
 - `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`).
 - `brand-assets` may depend on `contracts` and nothing else.
-- `content-core` must not depend on other workspace packages.
+- `content-core` may depend only on `contracts` and local modules.
 - `content-react` may depend only on `content-core`, `ui`, and local modules. It owns the React runtime and re-exports the content-core symbols downstream content packages need.
 - `content-markdown` may depend only on `content-core` and local modules. It is a source-plugin package, not a rendering facade.
 - `content-mermaid` and `content-wireframe` may depend only on `content-react` and local modules.
-- `contracts` may depend on `content-core` for shared content-document types.
+- `contracts` may depend only on local modules.
 - `ui` must stay primitive-only.
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
 - `agent-core` may depend only on `contracts` and agent-core-local modules.
@@ -183,6 +183,7 @@ Diagram convention: when a package consumes the content platform through its pub
 - planning schemas such as `ExecutionPlan` and `PlanStep`
 - edge DTOs such as `/health`, `/auth/github/exchange`, `/api/search`, and `/api/models/chat`
 - rate-limit payloads shared between backend and browser layers
+- the canonical content document schemas and node types shared with the content platform
 
 The current flow is:
 
@@ -241,8 +242,8 @@ It must not own:
 
 ## Content Platform
 
-- `content-core` owns the semantic AST (block + inline node types) plus stable identity helpers (`computeNodeId`, `assignNodeIds`) used by parsers and renderers. Inline nodes now participate in the shared identity contract.
+- `content-core` owns content behavior over the canonical shared content model: stable identity helpers (`computeNodeId`, `assignNodeIds`), serialization used for normalization, and source-plugin contracts. The block + inline node types now come from `contracts`.
 - `content-markdown` parses markdown into the semantic `ContentDocument`, emits Mermaid and wireframe fences as `codeBlock` nodes with specialized `language` values, and provides `markdownSourcePlugin` plus `createMarkdownContentSession()` for parser-side streaming snapshots.
 - `content-react` provides the React `ContentRuntime<TResult>` implementation and the `NodeRendererPlugin` contract, the default React plugins (paragraph, heading, list, blockquote, thematicBreak, codeBlock, table, image), the inline renderer, and the shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`). `ContentDocumentContent` normalizes hand-built documents through `assignNodeIds()`, while `ContentDocumentRenderer` renders canonical documents with Suspense plus a render error boundary around runtime-managed node preparation.
 - `content-mermaid` and `content-wireframe` export singleton convenience plugins plus `createMermaidPlugin()` / `createWireframePlugin()` factory helpers for runtime-scoped plugin instances. Mermaid still ships its heavy runtime as a separately code-split chunk loaded on first use.
-- `contracts` now reuse the assistant-facing `AssistantContentDocument` shape from `content-core`, so browser transport and content rendering share one canonical document model.
+- `contracts` now own the canonical content document schemas and types directly, with assistant-facing aliases such as `AssistantContentDocument` kept for chat-event compatibility.

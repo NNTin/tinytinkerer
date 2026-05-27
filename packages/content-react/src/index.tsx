@@ -165,6 +165,8 @@ const readPreparedNode = (runtime: ReactContentRuntime, node: ContentNode): void
 
   const existing = cache.get(node.id)
   if (existing?.status === 'pending' && existing.promise) {
+    // Suspense expects the in-flight preparation promise to be thrown here.
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw existing.promise
   }
   if (existing) {
@@ -181,6 +183,8 @@ const readPreparedNode = (runtime: ReactContentRuntime, node: ContentNode): void
     }
   )
   cache.set(node.id, record)
+  // Suspense expects the in-flight preparation promise to be thrown here.
+  // eslint-disable-next-line @typescript-eslint/only-throw-error
   throw record.promise
 }
 
@@ -510,7 +514,6 @@ const defaultReactPlugins: AnyNodeRendererPlugin<ReactNode>[] = [
 export const createReactContentRuntime = (
   options: CreateReactContentRuntimeOptions = {}
 ): ReactContentRuntime => {
-  let runtimeRef: ReactContentRuntime
   const runtime = createContentRuntime<ReactNode>({
     fallback: (failure) => genericNodeFallback(failure.node),
     ...(options.executionPolicy ? { executionPolicy: options.executionPolicy } : {}),
@@ -519,7 +522,7 @@ export const createReactContentRuntime = (
       return (
         <Suspense fallback={lazyFallback}>
           <RendererBoundary fallback={lazyFallback}>
-            <PreparedNodeBoundary runtime={runtimeRef} node={ctx.node}>
+            <PreparedNodeBoundary runtime={runtime} node={ctx.node}>
               {children}
             </PreparedNodeBoundary>
           </RendererBoundary>
@@ -527,7 +530,6 @@ export const createReactContentRuntime = (
       )
     }
   })
-  runtimeRef = runtime
   for (const plugin of defaultReactPlugins) {
     runtime.register(plugin)
   }

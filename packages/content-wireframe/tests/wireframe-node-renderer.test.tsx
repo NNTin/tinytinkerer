@@ -34,7 +34,7 @@ afterEach(() => {
 describe('WireframeNodeRenderer', () => {
   it('exports the wireframe plugin for composition', () => {
     expect(wireframePlugin.nodeType).toBe('codeBlock')
-    expect(wireframePlugin.render).toBeTypeOf('function')
+    expect(typeof wireframePlugin.render).toBe('function')
   })
 
   it('creates isolated plugin instances on demand', () => {

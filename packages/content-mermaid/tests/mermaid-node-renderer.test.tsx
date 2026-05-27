@@ -40,7 +40,7 @@ beforeEach(() => {
 describe('MermaidNodeRenderer', () => {
   it('exports the mermaid plugin for composition', () => {
     expect(mermaidPlugin.nodeType).toBe('codeBlock')
-    expect(mermaidPlugin.render).toBeTypeOf('function')
+    expect(typeof mermaidPlugin.render).toBe('function')
   })
 
   it('creates isolated plugin instances on demand', () => {

@@ -18,6 +18,9 @@
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json"
   },
+  "dependencies": {
+    "@tinytinkerer/contracts": "workspace:*"
+  },
   "devDependencies": {
     "vitest": "^4.0.8"
   }

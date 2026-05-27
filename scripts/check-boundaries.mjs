@@ -328,10 +328,11 @@ function validateBoundary(sourcePkg, target, filePath) {
 
   if (sourcePkg.name === '@tinytinkerer/content-core') {
     const allowed = new Set([
+      '@tinytinkerer/contracts',
       '@tinytinkerer/content-core'
     ])
     if (!allowed.has(targetPkg.name)) {
-      errors.push(`${sourceLabel}: content-core must not depend on other workspace packages (${targetPkg.name})`)
+      errors.push(`${sourceLabel}: content-core may import only contracts and local modules (${targetPkg.name})`)
     }
   }
 
@@ -377,11 +378,10 @@ function validateBoundary(sourcePkg, target, filePath) {
 
   if (sourcePkg.name === '@tinytinkerer/contracts') {
     const allowed = new Set([
-      '@tinytinkerer/content-core',
       '@tinytinkerer/contracts'
     ])
     if (!allowed.has(targetPkg.name)) {
-      errors.push(`${sourceLabel}: contracts may import only content-core and local modules (${targetPkg.name})`)
+      errors.push(`${sourceLabel}: contracts may import only local modules (${targetPkg.name})`)
     }
   }
 }

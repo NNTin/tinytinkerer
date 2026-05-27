@@ -22,9 +22,9 @@ This document describes the active content architecture in the repo today.
 
 In scope:
 
-- the semantic content AST (block + inline) with stable node IDs
+- the canonical content document model (block + inline) with stable node IDs applied by content behavior
 - a platform-agnostic content runtime that owns plugin dispatch, lazy loading, and fallback policy
-- markdown parsing into that AST
+- markdown parsing into that content model
 - a React runtime implementation that ships the default React plugins and chrome
 - specialized content runtimes such as Mermaid and wireframe, registered as plugins
 - shared fallback behavior for invalid or unsupported rich content
@@ -34,23 +34,23 @@ Out of scope:
 - chat, auth, settings, or shell bootstrap logic
 - browser OAuth or persistence helpers
 - shell-specific page composition
-- replacing the internal semantic AST with the transport DTO from `@tinytinkerer/contracts`
+- moving parsing, rendering, or stable-ID behavior into `@tinytinkerer/contracts`
 - non-React renderer packages beyond the current runtime contract
 
 ## Package Model
 
-The content platform is split into six packages.
+The content platform is split into five packages.
 
 ### `@tinytinkerer/content-core`
 
-Owns the content AST, stable-ID utilities, and package-level contracts.
+Owns content behavior, stable-ID utilities, and package-level contracts over the canonical shared content model from `@tinytinkerer/contracts`.
 
 Owns:
 
-- `BlockNode` / `InlineNode` / `ContentNode` / `ContentDocument`
-- node-specific TypeScript types
 - `computeNodeId` / `hashContent` (deterministic stable-ID helpers)
 - `assignNodeIds()` for deterministic block, list-item, and inline-node identity normalization
+- source-plugin/session contracts
+- re-exports of the canonical content-model types for content-platform ergonomics
 
 Must not own:
 
@@ -58,6 +58,7 @@ Must not own:
 - markdown parsing libraries
 - browser runtime composition
 - app-shell concerns
+- canonical Zod schemas or canonical content-model type ownership
 
 ### `@tinytinkerer/content-react`
 
@@ -90,7 +91,7 @@ Owns:
 
 - markdown parsing
 - GFM support
-- mapping markdown structures into block + inline `ContentNode`s
+- mapping markdown structures into the canonical block + inline content nodes
 - `markdownSourcePlugin` implementing the source/session contract from `content-core`
 - stable ID assignment via `computeNodeId` plus final normalization through `assignNodeIds()`
 - `createMarkdownContentSession()` — accumulates markdown source and returns full `ContentDocument` snapshots
@@ -136,7 +137,7 @@ Must not own:
 
 ## AST Surface
 
-The content platform owns the semantic AST. The browser/chat transport reuses that same document shape through `AssistantContentDocument` in `@tinytinkerer/contracts`.
+The canonical content document shape lives in `@tinytinkerer/contracts`. The content platform owns the parsing, normalization, plugin runtime, and rendering behavior built on top of that shared model.
 
 ```ts
 type BlockNode =
@@ -166,8 +167,8 @@ type ContentDocument = { nodes: BlockNode[] }
 
 Rules:
 
-- `ContentNode` stays inside the content platform.
-- `@tinytinkerer/contracts` reuses the assistant-facing `ContentDocument` shape from `content-core`.
+- `ContentNode` is part of the canonical shared content model, but most non-content consumers should stay at the `AssistantContentDocument` boundary.
+- `@tinytinkerer/contracts` owns the canonical `ContentDocument` schema and types directly and keeps assistant-facing aliases such as `AssistantContentDocument` for compatibility.
 - Every block, list-item, and inline node may carry an optional `id`. Markdown parsing assigns deterministic, prefix-stable block IDs via `computeNodeId`; hand-constructed documents may omit `id`, and the shared `assignNodeIds()` helper normalizes the full document before React rendering.
 - `ChoicePromptNode` remains an extension point and does not require interactive behavior yet.
 - Shared runtime layers now treat assistant output as structured `{ source, content }` snapshots at the chat-event boundary; parser/runtime internals still operate on the semantic AST.
@@ -180,7 +181,7 @@ That means:
 
 - browser shells render assistant output through `app-browser`, not through direct `content-*` imports
 - the shell-facing component accepts structured `AssistantContentDocument` DTOs plus shell-local styling hooks
-- DTO translation, runtime construction, plugin registration, and fallback policy remain hidden behind `app-browser`
+- runtime construction, plugin registration, and fallback policy remain hidden behind `app-browser`
 - shared content styling hooks may be exposed from the browser layer, but content packages do not own app-shell layout
 
 ## Composition Boundary
@@ -202,9 +203,10 @@ This keeps apps thin while making the chat-event boundary structured without for
 flowchart LR
   %% Do not delete this comment. Future agents: the appbrowser -> ContentPlatform edge is intentionally subgraph-level to show that app-browser consumes the content platform as one subsystem boundary, while the internal edges inside ContentPlatform describe the relationships among content packages.
   appbrowser["@tinytinkerer/app-browser<br/>browser-facing content assembly"]
+  contracts["@tinytinkerer/contracts<br/>canonical schemas + types"]
 
   subgraph ContentPlatform["Content Platform"]
-    contentcore["@tinytinkerer/content-core<br/>AST + stable-ID helpers + contracts"]
+    contentcore["@tinytinkerer/content-core<br/>stable-ID helpers + source-plugin contracts"]
     contentreact["@tinytinkerer/content-react<br/>React runtime + chrome"]
     contentmarkdown["@tinytinkerer/content-markdown<br/>markdown source plugin + parser"]
     contentmermaid["@tinytinkerer/content-mermaid<br/>MermaidPlugin"]
@@ -218,23 +220,27 @@ flowchart LR
   contentreact --> contentcore
   contentreact --> ui
 
+  contentcore --> contracts
   contentmarkdown --> contentcore
   contentmermaid --> contentreact
   contentwireframe --> contentreact
 
   classDef coreLayer fill:#ffe4e6,stroke:#be123c,color:#111827,stroke-width:2px;
+  classDef contractsLayer fill:#dcfce7,stroke:#15803d,color:#111827,stroke-width:2px;
   class contentcore coreLayer;
+  class contracts contractsLayer;
 ```
 
 Diagram convention: external consumers should point to the `ContentPlatform` subgraph when they depend on the subsystem as a whole. Keep the internal package edges inside the subgraph so the subsystem's internal structure remains visible.
 
 ## Dependency Rules
 
-- `content-core` must not depend on any workspace package.
+- `content-core` may depend only on `contracts` and local modules.
 - `content-react` may depend only on `content-core`, `ui`, and local modules. It is the public facade for the React side of the content platform and re-exports the content-core symbols downstream packages need.
 - `content-markdown` may depend only on `content-core` and local modules.
 - `content-mermaid` and `content-wireframe` may depend only on `content-react` and local modules.
 - `app-browser` may depend on `content-react`, `content-markdown`, `content-mermaid`, and `content-wireframe`.
+- `contracts` may depend only on local modules.
 - The content platform must not depend on `app-browser`.
 - Browser apps consume shell-facing content exports from `app-browser`, not directly from `content-*`.
 - `ui` must not absorb content parsing, specialized renderers, or browser-shell runtime logic.

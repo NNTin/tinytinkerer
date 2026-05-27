@@ -34,7 +34,7 @@ When shared code appears, place it according to what kind of thing it is:
 - browser-specific shared logic, shell-facing hooks, shared browser components, bootstrap helpers, and shared browser styles -> `packages/app-browser`
 - stateless visual atoms and primitives -> `packages/ui`
 - assistant-content parsing, AST, rendering, and specialized content runtimes -> `packages/content-*`
-- shared schemas and DTOs -> `packages/contracts`
+- foundational shared schemas and types -> `packages/contracts`
 - product-agnostic runtime abstractions -> `packages/agent-core`
 - favicon, icons, manifest, and theme metadata -> `packages/brand-assets`
 
@@ -48,6 +48,7 @@ Owns:
 
 - shared Zod schemas
 - inferred TypeScript types
+- canonical content-model schemas and types
 - agent event payloads
 - planning payloads
 - edge request and response payloads
@@ -102,7 +103,7 @@ Owns:
 - concrete provider and tool wiring for browser apps
 - runtime application of shared brand metadata
 - browser app creation and bootstrap config resolution
-- translation between browser-facing assistant content DTOs and the internal semantic content AST
+- browser-side composition of structured assistant content DTOs with the content platform
 - shell-facing React hooks and controllers
 - shared browser-facing components such as `AssistantContent` and the shared settings modal
 - shared browser stylesheet and browser-facing visual behavior that is reused across shells
@@ -154,14 +155,14 @@ Must not own:
 
 The content platform is five packages with strict layering:
 
-- `content-core` owns the semantic AST (block + inline), stable-ID helpers, and source-plugin contracts; no other workspace deps.
+- `content-core` owns stable-ID helpers and source-plugin contracts over the canonical content model from `contracts`; it may depend on `contracts` only.
 - `content-react` owns the React runtime implementation, default React plugins, inline renderer, shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`), and render-time preparation/normalization adapter; depends on `content-core` and `ui`.
 - `content-markdown` owns markdown parsing into the semantic AST and parser-only markdown sessions through `markdownSourcePlugin`; Mermaid and wireframe stay `codeBlock` specializations via `language`; depends directly on `content-core`.
 - `content-mermaid` and `content-wireframe` each own one specialized `codeBlock` plugin plus their renderer, fallback, and execution requirements; each depends directly on `content-react` only and may expose both a factory export and a singleton convenience export.
 
 Owns collectively:
 
-- assistant-content AST and contracts
+- assistant-content behavior over the canonical shared content model
 - source-plugin contracts + React renderer plugin contract
 - markdown parsing
 - generic content rendering

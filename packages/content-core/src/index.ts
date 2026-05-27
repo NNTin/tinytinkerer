@@ -1,4 +1,54 @@
-export type NodeId = string
+import type {
+  BlockNode,
+  BlockquoteNode,
+  ContentDocument,
+  EmphasisNode,
+  HeadingNode,
+  InlineNode,
+  LinkNode,
+  ListItemNode,
+  ListNode,
+  NodeId,
+  ParagraphNode,
+  StrongNode,
+  StrikethroughNode,
+  TableCell,
+  TableNode
+} from '@tinytinkerer/contracts'
+export type {
+  AssistantBlockNode,
+  AssistantContentDocument,
+  AssistantInlineNode,
+  AssistantListItemNode,
+  AssistantTableAlignment,
+  AssistantTableCell,
+  BlockNode,
+  BlockquoteNode,
+  BreakNode,
+  ChoicePromptNode,
+  CodeBlockNode,
+  CodeInlineNode,
+  ContentDocument,
+  ContentNode,
+  ContentNodeByType,
+  EmphasisNode,
+  HeadingNode,
+  ImageInlineNode,
+  ImageNode,
+  InlineNode,
+  LinkNode,
+  ListItemNode,
+  ListNode,
+  NodeId,
+  ParagraphNode,
+  StrikethroughNode,
+  StrongNode,
+  TableAlignment,
+  TableCell,
+  TableNode,
+  TextNode,
+  ThematicBreakNode
+} from '@tinytinkerer/contracts'
 
 const djb2 = (input: string): number => {
   let hash = 5381
@@ -15,160 +65,6 @@ export const computeNodeId = (
   contentDigest: string,
   occurrence: number
 ): NodeId => `${type}-${hashContent(contentDigest)}-${occurrence}`
-
-export type TextNode = {
-  type: 'text'
-  id?: NodeId
-  value: string
-}
-
-export type EmphasisNode = {
-  type: 'emphasis'
-  id?: NodeId
-  children: InlineNode[]
-}
-
-export type StrongNode = {
-  type: 'strong'
-  id?: NodeId
-  children: InlineNode[]
-}
-
-export type StrikethroughNode = {
-  type: 'strikethrough'
-  id?: NodeId
-  children: InlineNode[]
-}
-
-export type CodeInlineNode = {
-  type: 'codeInline'
-  id?: NodeId
-  value: string
-}
-
-export type LinkNode = {
-  type: 'link'
-  id?: NodeId
-  url: string
-  title?: string
-  children: InlineNode[]
-}
-
-export type ImageInlineNode = {
-  type: 'imageInline'
-  id?: NodeId
-  url: string
-  alt: string
-  title?: string
-}
-
-export type BreakNode = {
-  type: 'break'
-  id?: NodeId
-}
-
-export type InlineNode =
-  | TextNode
-  | EmphasisNode
-  | StrongNode
-  | StrikethroughNode
-  | CodeInlineNode
-  | LinkNode
-  | ImageInlineNode
-  | BreakNode
-
-export type HeadingNode = {
-  type: 'heading'
-  id?: NodeId
-  level: 1 | 2 | 3 | 4 | 5 | 6
-  children: InlineNode[]
-}
-
-export type ParagraphNode = {
-  type: 'paragraph'
-  id?: NodeId
-  children: InlineNode[]
-}
-
-export type ListItemNode = {
-  type: 'listItem'
-  id?: NodeId
-  checked?: boolean | null
-  children: BlockNode[]
-}
-
-export type ListNode = {
-  type: 'list'
-  id?: NodeId
-  ordered: boolean
-  start?: number
-  children: ListItemNode[]
-}
-
-export type BlockquoteNode = {
-  type: 'blockquote'
-  id?: NodeId
-  children: BlockNode[]
-}
-
-export type ThematicBreakNode = {
-  type: 'thematicBreak'
-  id?: NodeId
-}
-
-export type CodeBlockNode = {
-  type: 'codeBlock'
-  id?: NodeId
-  code: string
-  language?: string
-}
-
-export type ChoicePromptNode = {
-  type: 'choicePrompt'
-  id?: NodeId
-  prompt: string
-  choices: string[]
-}
-
-export type TableAlignment = 'left' | 'center' | 'right' | null
-export type TableCell = InlineNode[]
-
-export type TableNode = {
-  type: 'table'
-  id?: NodeId
-  align: TableAlignment[]
-  header: TableCell[]
-  rows: TableCell[][]
-}
-
-export type ImageNode = {
-  type: 'image'
-  id?: NodeId
-  url: string
-  alt: string
-  title?: string
-}
-
-export type BlockNode =
-  | HeadingNode
-  | ParagraphNode
-  | ListNode
-  | BlockquoteNode
-  | ThematicBreakNode
-  | CodeBlockNode
-  | ChoicePromptNode
-  | TableNode
-  | ImageNode
-
-export type ContentNode = BlockNode
-
-export type ContentDocument = {
-  nodes: BlockNode[]
-}
-
-export type ContentNodeByType = {
-  [K in ContentNode['type']]: Extract<ContentNode, { type: K }>
-}
 
 const serializeInlineNode = (node: InlineNode): string => {
   switch (node.type) {
@@ -227,15 +123,15 @@ const nextOccurrence = (counts: Map<string, number>, type: string, digest: strin
   return occurrence
 }
 
-const withAssignedId = <T extends { type: string; id?: NodeId }>(
+const withAssignedId = <T extends { type: string; id?: NodeId | undefined }>(
   node: T,
   counts: Map<string, number>,
   digest: string
 ): T => {
-  const occurrence = nextOccurrence(counts, node.type, digest)
-  if (node.id) {
+  if (node.id !== undefined) {
     return node
   }
+  const occurrence = nextOccurrence(counts, node.type, digest)
   return {
     ...node,
     id: computeNodeId(node.type, digest, occurrence)

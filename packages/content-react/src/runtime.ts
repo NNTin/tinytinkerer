@@ -141,7 +141,7 @@ export const createContentRuntime = <TResult>(
     }
     return (
       plugin.matches as (candidate: ContentNodeByType[typeof plugin.nodeType]) => boolean
-    )(node as ContentNodeByType[typeof plugin.nodeType])
+    )(node)
   }
 
   const policyAllows = (plugin: AnyNodeRendererPlugin<TResult>): boolean => {
