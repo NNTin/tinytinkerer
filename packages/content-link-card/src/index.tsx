@@ -132,7 +132,6 @@ export const createLinkCardPlugin = (): ReactNodeRendererPlugin<'paragraph'> => 
   id: 'link-card',
   nodeType: 'paragraph',
   priority: 20,
-  requirements: { clientOnly: true },
   matches: (node) => matchesLinkCard(node),
   render: (node) => {
     const source = detectLinkCard(node)

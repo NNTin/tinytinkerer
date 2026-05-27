@@ -24,6 +24,7 @@ describe('linkCardPlugin', () => {
   it('exports the link-card plugin for composition', () => {
     expect(linkCardPlugin.nodeType).toBe('paragraph')
     expect(typeof linkCardPlugin.render).toBe('function')
+    expect(linkCardPlugin.requirements).toBeUndefined()
   })
 
   it('creates isolated plugin instances on demand', () => {

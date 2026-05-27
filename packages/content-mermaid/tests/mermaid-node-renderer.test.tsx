@@ -212,6 +212,18 @@ describe('MermaidNodeRenderer', () => {
     expect(container.querySelector('svg')).toBeNull()
   })
 
+  it('continues rendering when parse resolves with undefined', async () => {
+    mockParse.mockResolvedValue(undefined)
+    mockRender.mockResolvedValue({ svg: '<svg><text>Diagram</text></svg>' })
+
+    render(
+      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+    )
+
+    await waitFor(() => expect(mockRender).toHaveBeenCalledTimes(1))
+    expect(screen.getByLabelText('Mermaid diagram')).toBeInTheDocument()
+  })
+
   it('shows a Copy button that writes the mermaid source to the clipboard', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })

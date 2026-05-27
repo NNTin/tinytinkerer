@@ -60,6 +60,8 @@ describe('TableNodeRenderer', () => {
     expect(container.querySelector('thead')?.className).toContain('sticky')
     expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveAttribute('align', 'left')
     expect(screen.getByRole('columnheader', { name: 'Role' })).toHaveAttribute('align', 'right')
+    expect(screen.getByRole('columnheader', { name: 'Role' }).className).toContain('text-right')
+    expect(screen.getByRole('columnheader', { name: 'Score' }).className).toContain('text-center')
   })
 
   it('renders a responsive card layout alongside the desktop table', () => {
@@ -106,6 +108,26 @@ describe('TableNodeRenderer', () => {
       expect(row.className).toContain('hover:bg-stone-50')
     }
   })
+
+  it('pads short table rows in rendered markup to keep body columns aligned with headers', () => {
+    const { container } = render(
+      <TableNodeRenderer
+        node={{
+          type: 'table',
+          align: ['left', 'right', 'center'],
+          header: [
+            [{ type: 'text', value: 'Name' }],
+            [{ type: 'text', value: 'Role' }],
+            [{ type: 'text', value: 'Score' }]
+          ],
+          rows: [[[{ type: 'text', value: 'Ada' }], [{ type: 'text', value: 'Admin' }]]]
+        }}
+      />
+    )
+
+    const firstRow = container.querySelector('tbody tr')
+    expect(firstRow?.querySelectorAll('td').length).toBe(3)
+  })
 })
 
 describe('tableToCsv', () => {
@@ -138,23 +160,25 @@ describe('tableToCsv', () => {
     expect(
       tableToCsv({
         type: 'table',
-        align: [null, null, null, null],
+        align: [null, null, null, null, null],
         header: [
           [{ type: 'text', value: 'a' }],
           [{ type: 'text', value: 'b' }],
           [{ type: 'text', value: 'c' }],
-          [{ type: 'text', value: 'd' }]
+          [{ type: 'text', value: 'd' }],
+          [{ type: 'text', value: 'e' }]
         ],
         rows: [
           [
             [{ type: 'text', value: '=SUM(A1)' }],
             [{ type: 'text', value: '+1+1' }],
             [{ type: 'text', value: '-1' }],
-            [{ type: 'text', value: '@cmd' }]
+            [{ type: 'text', value: '@cmd' }],
+            [{ type: 'text', value: ' =SUM(B1)' }]
           ]
         ]
       })
-    ).toBe(['a,b,c,d', "'=SUM(A1),'+1+1,'-1,'@cmd"].join('\n'))
+    ).toBe(['a,b,c,d,e', "'=SUM(A1),'+1+1,'-1,'@cmd,' =SUM(B1)"].join('\n'))
   })
 
   it('pads short rows to header width to keep CSV columns aligned', () => {

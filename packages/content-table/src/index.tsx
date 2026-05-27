@@ -9,7 +9,7 @@ import {
   type TableNode
 } from '@tinytinkerer/content-react'
 
-const FORMULA_INJECTION_PREFIX = /^[=+\-@\t\r]/
+const FORMULA_INJECTION_PREFIX = /^\s*[=+\-@]/
 
 const escapeCsvField = (value: string): string => {
   // Prefix cells that would otherwise be interpreted as formulas in
@@ -61,6 +61,16 @@ export const tableToCsv = (node: TableNode): string => {
 
 type TableHeader = readonly TableCell[]
 type TableRow = readonly TableCell[]
+
+const textAlignClass = (alignment: TableNode['align'][number]): string => {
+  if (alignment === 'right') {
+    return 'text-right'
+  }
+  if (alignment === 'center') {
+    return 'text-center'
+  }
+  return 'text-left'
+}
 
 const triggerDownload = (filename: string, content: string): void => {
   if (typeof document === 'undefined') {
@@ -119,7 +129,7 @@ const TableMarkup = ({ node }: { node: TableNode }) => (
             <th
               key={`header-${index}-${cell.map((item) => item.id ?? item.type).join('-')}`}
               align={node.align[index] ?? undefined}
-              className="border-b border-stone-200 px-3 py-2 text-left font-semibold text-stone-700"
+              className={`border-b border-stone-200 px-3 py-2 font-semibold text-stone-700 ${textAlignClass(node.align[index] ?? null)}`}
             >
               {renderInline(cell)}
             </th>
@@ -132,15 +142,18 @@ const TableMarkup = ({ node }: { node: TableNode }) => (
             key={`row-${rowIndex}-${row.map((cell) => cell.map((item) => item.id ?? item.type).join('-')).join('|')}`}
             className="border-b border-stone-100 transition-colors hover:bg-stone-50"
           >
-            {row.map((cell, cellIndex) => (
-              <td
-                key={`cell-${rowIndex}-${cellIndex}-${cell.map((item) => item.id ?? item.type).join('-')}`}
-                align={node.align[cellIndex] ?? undefined}
-                className="px-3 py-2"
-              >
-                {renderInline(cell)}
-              </td>
-            ))}
+            {Array.from({ length: node.header.length }, (_, cellIndex) => {
+              const cell = row[cellIndex] ?? []
+              return (
+                <td
+                  key={`cell-${rowIndex}-${cellIndex}-${cell.map((item) => item.id ?? item.type).join('-')}`}
+                  align={node.align[cellIndex] ?? undefined}
+                  className="px-3 py-2"
+                >
+                  {renderInline(cell)}
+                </td>
+              )
+            })}
           </tr>
         ))}
       </tbody>

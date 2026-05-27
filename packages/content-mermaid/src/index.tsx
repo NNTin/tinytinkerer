@@ -110,7 +110,7 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlock
         if (cancelled) {
           return
         }
-        if (!parseResult) {
+        if (parseResult === false) {
           // Incomplete or invalid syntax (commonly mid-stream). Skip rendering
           // so mermaid's "Syntax error" SVG never enters the chrome, and keep
           // the preview slot open so a later valid snapshot can take over.
