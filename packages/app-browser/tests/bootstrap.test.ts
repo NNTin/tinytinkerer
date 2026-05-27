@@ -74,7 +74,7 @@ describe('bootstrapBrowserShell', () => {
     vi.clearAllMocks()
   })
 
-  it('creates a browser app instance and initializes its stores together', async () => {
+  it('creates a browser app instance and initializes only startup-critical stores', async () => {
     const app = await bootstrapBrowserShell({
       edgeBaseUrl: 'http://edge.local',
       storageNamespace: 'tinytinkerer-test',
@@ -87,8 +87,8 @@ describe('bootstrapBrowserShell', () => {
       githubClientId: 'github-client-id'
     })
     expect(authInitialize).toHaveBeenCalledTimes(1)
-    expect(chatInitialize).toHaveBeenCalledTimes(1)
     expect(settingsInitialize).toHaveBeenCalledTimes(1)
-    expect(statusInitialize).toHaveBeenCalledTimes(1)
+    expect(chatInitialize).not.toHaveBeenCalled()
+    expect(statusInitialize).not.toHaveBeenCalled()
   })
 })

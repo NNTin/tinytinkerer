@@ -6,8 +6,14 @@ import {
 import { Button, GitHubMark, ThinkingDots } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { Cog6ToothIcon } from '@heroicons/react/24/outline'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { BrowserSettingsModal as SettingsModal } from '@tinytinkerer/app-browser'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { WebChatLoading, WebPanelLoading } from '../../app/loading-screen'
+
+const SettingsModal = lazy(() =>
+  import('@tinytinkerer/app-browser/browser-settings-modal').then((module) => ({
+    default: module.BrowserSettingsModal
+  }))
+)
 
 const toolLabel = (toolId: string, serverNameById: Map<string, string>): string => {
   if (toolId === 'web-search') return 'Web search'
@@ -30,6 +36,7 @@ const noticeStyle: Record<'info' | 'warning' | 'error', string> = systemLevelSty
 
 export const ChatPage = () => {
   const {
+    isBooting,
     events,
     token,
     turns,
@@ -83,6 +90,10 @@ export const ChatPage = () => {
       event.preventDefault()
       handlePromptSubmit()
     }
+  }
+
+  if (isBooting) {
+    return <WebChatLoading />
   }
 
   return (
@@ -313,7 +324,11 @@ export const ChatPage = () => {
         </form>
       </main>
 
-      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {settingsOpen ? (
+        <Suspense fallback={<WebPanelLoading />}>
+          <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+        </Suspense>
+      ) : null}
     </div>
   )
 }

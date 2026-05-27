@@ -12,6 +12,7 @@ export type { ModelEntry } from './github-models'
 export {
   AppBrowserProvider,
   createBrowserApp,
+  initializeBrowserApp,
   useAuthStore,
   useBrowserApp,
   useChatStore,

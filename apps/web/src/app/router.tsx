@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { createHashRouter } from 'react-router-dom'
+import { WebRouteLoading } from './loading-screen'
 
 const ChatPage = lazy(() => import('../features/chat/chat-page').then((m) => ({ default: m.ChatPage })))
 const CallbackPage = lazy(() =>
@@ -10,7 +11,7 @@ export const router = createHashRouter([
   {
     path: '/',
     element: (
-      <Suspense fallback={null}>
+      <Suspense fallback={<WebRouteLoading />}>
         <ChatPage />
       </Suspense>
     )
@@ -18,7 +19,7 @@ export const router = createHashRouter([
   {
     path: '/auth/callback',
     element: (
-      <Suspense fallback={null}>
+      <Suspense fallback={<WebRouteLoading />}>
         <CallbackPage />
       </Suspense>
     )

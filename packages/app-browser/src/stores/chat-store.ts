@@ -1,18 +1,14 @@
 import {
-  canSendPrompt,
-  executeChatPrompt,
-  initializeChatState,
-  resetConversation
-} from '@tinytinkerer/app-core'
-import type { ChatEvent } from '@tinytinkerer/contracts'
+  type ChatEvent
+} from '@tinytinkerer/contracts'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { BrowserShell } from '../shell'
-import { createBrowserRuntimeFactory } from '../runtime/get-runtime'
 import type { AuthStore } from './auth-store'
 import type { SettingsStore } from './settings-store'
 import type { StatusStore } from './status-store'
 
 export type ChatState = {
+  hydrated: boolean
   conversationId: string | undefined
   events: ChatEvent[]
   isRunning: boolean
@@ -33,25 +29,42 @@ export const createChatStore = (options: {
   statusStore: StatusStore
 }): ChatStore => {
   let activeRunController: AbortController | undefined
-  const runtimeFactory = createBrowserRuntimeFactory({
-    shell: options.shell,
-    authStore: options.authStore,
-    settingsStore: options.settingsStore,
-    statusStore: options.statusStore
-  })
+  let initializePromise: Promise<void> | null = null
+
+  const ensureInitialized = async (set: ChatStore['setState'], get: ChatStore['getState']) => {
+    if (get().hydrated) {
+      return
+    }
+    if (initializePromise) {
+      return initializePromise
+    }
+
+    initializePromise = import('@tinytinkerer/app-core')
+      .then(async ({ initializeChatState }) => {
+        const state = await initializeChatState(options.shell.conversations, options.shell.preferences)
+        set({ ...state, hydrated: true })
+      })
+      .finally(() => {
+        initializePromise = null
+      })
+
+    return initializePromise
+  }
 
   return createStore<ChatState>((set, get) => ({
+    hydrated: false,
     conversationId: undefined,
     events: [],
     isRunning: false,
     isRetryPending: false,
     cooldownUntil: undefined,
     initialize: async () => {
-      const state = await initializeChatState(options.shell.conversations, options.shell.preferences)
-      set(state)
+      await ensureInitialized(set, get)
     },
     sendPrompt: async (prompt) => {
+      await ensureInitialized(set, get)
       const state = get()
+      const { canSendPrompt, executeChatPrompt } = await import('@tinytinkerer/app-core')
       if (!canSendPrompt(state)) {
         return
       }
@@ -61,6 +74,13 @@ export const createChatStore = (options: {
         return
       }
 
+      const { createBrowserRuntimeFactory } = await import('../runtime/get-runtime')
+      const runtimeFactory = createBrowserRuntimeFactory({
+        shell: options.shell,
+        authStore: options.authStore,
+        settingsStore: options.settingsStore,
+        statusStore: options.statusStore
+      })
       const runController = new AbortController()
       activeRunController = runController
       set({ isRunning: true, isRetryPending: false })
@@ -96,6 +116,8 @@ export const createChatStore = (options: {
       set({ isRetryPending: false })
     },
     resetConversation: async () => {
+      await ensureInitialized(set, get)
+      const { resetConversation } = await import('@tinytinkerer/app-core')
       const events = await resetConversation(options.shell.conversations, get().conversationId)
       set({ events })
     }

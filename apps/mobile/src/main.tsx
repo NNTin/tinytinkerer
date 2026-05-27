@@ -1,9 +1,15 @@
-import { StrictMode } from 'react'
+import { StrictMode, startTransition, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { AppBrowserProvider, createBrowserApp, resolveBrowserShellBootstrapConfig } from '@tinytinkerer/app-browser'
+import {
+  AppBrowserProvider,
+  createBrowserApp,
+  initializeBrowserApp,
+  resolveBrowserShellBootstrapConfig
+} from '@tinytinkerer/app-browser'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './app/router'
+import { MobileBootScreen } from './app/loading-screen'
 import '@tinytinkerer/app-browser/styles.css'
 import './index.css'
 
@@ -17,9 +23,39 @@ const browserConfig = resolveBrowserShellBootstrapConfig({
 })
 
 const queryClient = new QueryClient()
+const browserApp = createBrowserApp(browserConfig)
 
-void createBrowserApp(browserConfig).then((browserApp) => {
-  createRoot(document.getElementById('root')!).render(
+const MobileBootstrap = () => {
+  const [error, setError] = useState<string | null>(null)
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    let disposed = false
+
+    void initializeBrowserApp(browserApp, browserConfig)
+      .then(() => {
+        if (!disposed) {
+          startTransition(() => {
+            setReady(true)
+          })
+        }
+      })
+      .catch((nextError: unknown) => {
+        if (!disposed) {
+          setError(nextError instanceof Error ? nextError.message : 'Unable to start the mobile shell.')
+        }
+      })
+
+    return () => {
+      disposed = true
+    }
+  }, [])
+
+  if (!ready) {
+    return <MobileBootScreen {...(error ? { error } : {})} />
+  }
+
+  return (
     <StrictMode>
       <AppBrowserProvider app={browserApp}>
         <QueryClientProvider client={queryClient}>
@@ -28,4 +64,6 @@ void createBrowserApp(browserConfig).then((browserApp) => {
       </AppBrowserProvider>
     </StrictMode>
   )
-})
+}
+
+createRoot(document.getElementById('root')!).render(<MobileBootstrap />)

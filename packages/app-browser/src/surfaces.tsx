@@ -18,6 +18,7 @@ import { createEdgeFetch } from './runtime/edge-fetch'
 type ToolEvent = Extract<ChatEvent, { type: 'tool.call.completed' | 'tool.call.failed' }>
 
 export type ChatSurfaceController = {
+  isBooting: boolean
   events: ChatEvent[]
   token: string | null
   turns: Turn[]
@@ -36,9 +37,11 @@ export type ChatSurfaceController = {
 }
 
 export const useChatSurfaceController = (): ChatSurfaceController => {
+  const hydrated = useChatStore((state) => state.hydrated)
   const events = useChatStore((state) => state.events)
   const isRunning = useChatStore((state) => state.isRunning)
   const isRetryPending = useChatStore((state) => state.isRetryPending)
+  const initialize = useChatStore((state) => state.initialize)
   const sendPrompt = useChatStore((state) => state.sendPrompt)
   const resetConversation = useChatStore((state) => state.resetConversation)
   const cancelRetry = useChatStore((state) => state.cancelRetry)
@@ -47,6 +50,12 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const showThinkingTimeline = useSettingsStore((state) => state.showThinkingTimeline)
   const showToolActivity = useSettingsStore((state) => state.showToolActivity)
   const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
+
+  useEffect(() => {
+    if (!hydrated) {
+      void initialize()
+    }
+  }, [hydrated, initialize])
 
   useEffect(() => startStatusPolling(refreshStatus), [refreshStatus])
 
@@ -78,6 +87,7 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   }
 
   return {
+    isBooting: !hydrated,
     events,
     token,
     turns,

@@ -70,7 +70,9 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   }) => (
     <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
   ),
+  useSettingsStore: () => [],
   useChatSurfaceController: () => ({
+    isBooting: false,
     events: mockChatState.events,
     token: mockAuthState.token,
     turns: mockTurns,
@@ -86,7 +88,10 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     submitPrompt: mockChatState.submitPrompt,
     resetConversation: mockChatState.resetConversation,
     cancelRetry: mockChatState.cancelRetry
-  }),
+  })
+}))
+
+vi.mock('@tinytinkerer/app-browser/browser-settings-modal', () => ({
   BrowserSettingsModal: ({
     open,
     onOpenChange
@@ -239,17 +244,17 @@ describe('ChatPage settings modal', () => {
     expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
   })
 
-  it('opens the settings modal when the settings gear button is clicked', () => {
+  it('opens the settings modal when the settings gear button is clicked', async () => {
     renderChatPage()
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(screen.getByRole('dialog', { name: 'Settings' })).not.toBeNull()
+    expect(await screen.findByRole('dialog', { name: 'Settings' })).not.toBeNull()
   })
 
   it('shows auth, models, search, and interface sections with relocated status details', async () => {
     renderChatPage()
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
 
-    const dialog = screen.getByRole('dialog', { name: 'Settings' })
+    const dialog = await screen.findByRole('dialog', { name: 'Settings' })
     expect(within(dialog).getByRole('region', { name: 'Auth' })).not.toBeNull()
     expect(within(dialog).getByRole('region', { name: 'Models' })).not.toBeNull()
     expect(within(dialog).getByRole('region', { name: 'Search' })).not.toBeNull()
@@ -268,25 +273,25 @@ describe('ChatPage settings modal', () => {
     renderChatPage()
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
 
-    const dialog = screen.getByRole('dialog', { name: 'Settings' })
+    const dialog = await screen.findByRole('dialog', { name: 'Settings' })
     const authRegion = within(dialog).getByRole('region', { name: 'Auth' })
     expect(await within(authRegion).findByRole('button', { name: /sign in with github/i })).not.toBeNull()
     expect(within(authRegion).getByRole('button', { name: /use a personal access token instead/i })).not.toBeNull()
   })
 
-  it('closes the modal when the close button is clicked', () => {
+  it('closes the modal when the close button is clicked', async () => {
     renderChatPage()
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(screen.getByRole('dialog', { name: 'Settings' })).not.toBeNull()
+    expect(await screen.findByRole('dialog', { name: 'Settings' })).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Close settings' }))
     expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
   })
 
-  it('disables search controls when the service is unavailable', () => {
+  it('disables search controls when the service is unavailable', async () => {
     renderChatPage()
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
 
-    const dialog = screen.getByRole('dialog', { name: 'Settings' })
+    const dialog = await screen.findByRole('dialog', { name: 'Settings' })
     const checkbox = within(dialog).getByRole('checkbox', { name: /enable web search/i })
     expect(checkbox).toBeDisabled()
     expect(within(dialog).getByText(/runtime will skip search until the service recovers/i)).toBeInTheDocument()

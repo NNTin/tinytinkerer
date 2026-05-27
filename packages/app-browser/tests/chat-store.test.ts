@@ -71,7 +71,7 @@ describe('createChatStore', () => {
       statusStore: makeStatusStore(),
     })
 
-    store.setState({ conversationId: 'conv-1', isRunning: false, isRetryPending: false })
+    store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: false })
 
     await store.getState().sendPrompt('hello')
 
@@ -93,7 +93,7 @@ describe('createChatStore', () => {
       statusStore: makeStatusStore(),
     })
 
-    store.setState({ conversationId: 'conv-1', isRunning: false, isRetryPending: false })
+    store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: false })
 
     await store.getState().sendPrompt('hello')
 
@@ -112,7 +112,7 @@ describe('createChatStore', () => {
       statusStore: makeStatusStore(),
     })
 
-    store.setState({ conversationId: 'conv-1', isRunning: false, isRetryPending: true })
+    store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: true })
 
     // sendPrompt propagates errors but the finally block still runs
     await expect(store.getState().sendPrompt('hello')).rejects.toThrow('unexpected')

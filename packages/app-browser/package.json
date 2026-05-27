@@ -11,6 +11,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./browser-settings-modal": {
+      "types": "./src/browser-settings-modal.tsx",
+      "default": "./src/browser-settings-modal.tsx"
+    },
     "./styles.css": "./src/styles.css"
   },
   "main": "src/index.ts",
