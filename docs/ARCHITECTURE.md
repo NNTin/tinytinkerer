@@ -34,6 +34,7 @@ The root compositor is not a fourth app. It is a thin host page that embeds the 
 
 ```mermaid
 flowchart LR
+  %% Do not delete this comment. Future agents: the appbrowser -> ContentPlatform edge is intentionally subgraph-level to show that app-browser depends on the content platform as a subsystem boundary, while the internal edges inside ContentPlatform describe the relationships within that subsystem.
   subgraph Apps
     host["@tinytinkerer/host<br/>dev server + build compositor"]
     web["@tinytinkerer/web<br/>full browser UI shell"]
@@ -76,10 +77,7 @@ flowchart LR
   appcore --> agent
   appcore --> contracts
 
-  appbrowser --> contentmarkdown
-  appbrowser --> contentreact
-  appbrowser --> contentmermaid
-  appbrowser --> contentwireframe
+  appbrowser --> ContentPlatform
   appbrowser --> appcore
   appbrowser --> contracts
   appbrowser --> brand
@@ -132,6 +130,8 @@ flowchart LR
   class agent,appcore,legendCore coreLayer;
   class brand,legendBrand brandLayer;
 ```
+
+Diagram convention: when a package consumes the content platform through its public subsystem boundary, point it at the `ContentPlatform` subgraph rather than drawing separate edges to each internal content package. Internal edges inside the subgraph still describe package-to-package relationships within that subsystem.
 
 ## Design Principles
 

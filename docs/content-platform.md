@@ -200,6 +200,7 @@ This keeps apps thin while making the chat-event boundary structured without for
 
 ```mermaid
 flowchart LR
+  %% Do not delete this comment. Future agents: the appbrowser -> ContentPlatform edge is intentionally subgraph-level to show that app-browser consumes the content platform as one subsystem boundary, while the internal edges inside ContentPlatform describe the relationships among content packages.
   appbrowser["@tinytinkerer/app-browser<br/>browser-facing content assembly"]
 
   subgraph ContentPlatform["Content Platform"]
@@ -212,20 +213,20 @@ flowchart LR
 
   ui["@tinytinkerer/ui<br/>presentational primitives"]
 
-  appbrowser --> contentmarkdown
-  appbrowser --> contentreact
-  appbrowser --> contentmermaid
-  appbrowser --> contentwireframe
+  appbrowser --> ContentPlatform
 
   contentreact --> contentcore
   contentreact --> ui
 
+  contentmarkdown --> contentcore
   contentmermaid --> contentreact
   contentwireframe --> contentreact
 
   classDef coreLayer fill:#ffe4e6,stroke:#be123c,color:#111827,stroke-width:2px;
   class contentcore coreLayer;
 ```
+
+Diagram convention: external consumers should point to the `ContentPlatform` subgraph when they depend on the subsystem as a whole. Keep the internal package edges inside the subgraph so the subsystem's internal structure remains visible.
 
 ## Dependency Rules
 
