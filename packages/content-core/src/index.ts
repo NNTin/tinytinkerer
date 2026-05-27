@@ -18,31 +18,37 @@ export const computeNodeId = (
 
 export type TextNode = {
   type: 'text'
+  id?: NodeId
   value: string
 }
 
 export type EmphasisNode = {
   type: 'emphasis'
+  id?: NodeId
   children: InlineNode[]
 }
 
 export type StrongNode = {
   type: 'strong'
+  id?: NodeId
   children: InlineNode[]
 }
 
 export type StrikethroughNode = {
   type: 'strikethrough'
+  id?: NodeId
   children: InlineNode[]
 }
 
 export type CodeInlineNode = {
   type: 'codeInline'
+  id?: NodeId
   value: string
 }
 
 export type LinkNode = {
   type: 'link'
+  id?: NodeId
   url: string
   title?: string
   children: InlineNode[]
@@ -50,6 +56,7 @@ export type LinkNode = {
 
 export type ImageInlineNode = {
   type: 'imageInline'
+  id?: NodeId
   url: string
   alt: string
   title?: string
@@ -57,6 +64,7 @@ export type ImageInlineNode = {
 
 export type BreakNode = {
   type: 'break'
+  id?: NodeId
 }
 
 export type InlineNode =
@@ -115,18 +123,6 @@ export type CodeBlockNode = {
   language?: string
 }
 
-export type MermaidNode = {
-  type: 'mermaid'
-  id?: NodeId
-  code: string
-}
-
-export type WireframeNode = {
-  type: 'wireframe'
-  id?: NodeId
-  code: string
-}
-
 export type ChoicePromptNode = {
   type: 'choicePrompt'
   id?: NodeId
@@ -159,8 +155,6 @@ export type BlockNode =
   | BlockquoteNode
   | ThematicBreakNode
   | CodeBlockNode
-  | MermaidNode
-  | WireframeNode
   | ChoicePromptNode
   | TableNode
   | ImageNode
@@ -215,10 +209,6 @@ const serializeBlockNode = (node: BlockNode): string => {
       return 'thematicBreak'
     case 'codeBlock':
       return `codeBlock:${node.language ?? ''}:${node.code}`
-    case 'mermaid':
-      return `mermaid:${node.code}`
-    case 'wireframe':
-      return `wireframe:${node.code}`
     case 'choicePrompt':
       return `choicePrompt:${node.prompt}:${node.choices.join('\n')}`
     case 'table':
@@ -250,6 +240,53 @@ const withAssignedId = <T extends { type: string; id?: NodeId }>(
   }
 }
 
+const normalizeInlineNode = (
+  node: InlineNode,
+  counts: Map<string, number>
+): InlineNode => {
+  switch (node.type) {
+    case 'emphasis': {
+      const children = node.children.map((child) => normalizeInlineNode(child, counts))
+      const normalized: EmphasisNode = {
+        ...node,
+        children
+      }
+      return withAssignedId(normalized, counts, serializeInlineNode(normalized))
+    }
+    case 'strong': {
+      const children = node.children.map((child) => normalizeInlineNode(child, counts))
+      const normalized: StrongNode = {
+        ...node,
+        children
+      }
+      return withAssignedId(normalized, counts, serializeInlineNode(normalized))
+    }
+    case 'strikethrough': {
+      const children = node.children.map((child) => normalizeInlineNode(child, counts))
+      const normalized: StrikethroughNode = {
+        ...node,
+        children
+      }
+      return withAssignedId(normalized, counts, serializeInlineNode(normalized))
+    }
+    case 'link': {
+      const children = node.children.map((child) => normalizeInlineNode(child, counts))
+      const normalized: LinkNode = {
+        ...node,
+        children
+      }
+      return withAssignedId(normalized, counts, serializeInlineNode(normalized))
+    }
+    default:
+      return withAssignedId(node, counts, serializeInlineNode(node))
+  }
+}
+
+const normalizeInlineNodes = (
+  nodes: InlineNode[],
+  counts: Map<string, number>
+): InlineNode[] => nodes.map((node) => normalizeInlineNode(node, counts))
+
 const normalizeListItem = (
   node: ListItemNode,
   counts: Map<string, number>
@@ -267,6 +304,22 @@ const normalizeBlockNode = (
   counts: Map<string, number>
 ): BlockNode => {
   switch (node.type) {
+    case 'heading': {
+      const children = normalizeInlineNodes(node.children, counts)
+      const normalized: HeadingNode = {
+        ...node,
+        children
+      }
+      return withAssignedId(normalized, counts, serializeBlockNode(normalized))
+    }
+    case 'paragraph': {
+      const children = normalizeInlineNodes(node.children, counts)
+      const normalized: ParagraphNode = {
+        ...node,
+        children
+      }
+      return withAssignedId(normalized, counts, serializeBlockNode(normalized))
+    }
     case 'list': {
       const children = node.children.map((child) => normalizeListItem(child, counts))
       const normalized: ListNode = {
@@ -288,9 +341,9 @@ const normalizeBlockNode = (
   }
 }
 
-export const assignNodeIds = (document: ContentDocument): ContentDocument => {
+export const assignNodeIds = (doc: ContentDocument): ContentDocument => {
   const counts = new Map<string, number>()
   return {
-    nodes: document.nodes.map((node) => normalizeBlockNode(node, counts))
+    nodes: doc.nodes.map((node) => normalizeBlockNode(node, counts))
   }
 }

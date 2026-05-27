@@ -27,7 +27,7 @@ describe('computeNodeId', () => {
 
 describe('assignNodeIds', () => {
   it('fills missing ids deterministically for block and list item nodes', () => {
-    const document = assignNodeIds({
+    const doc = assignNodeIds({
       nodes: [
         {
           type: 'list',
@@ -46,19 +46,23 @@ describe('assignNodeIds', () => {
       ]
     })
 
-    expect(document.nodes[0]?.id).toMatch(/^list-/)
-    expect(document.nodes[0]?.type).toBe('list')
-    if (document.nodes[0]?.type !== 'list') {
+    expect(doc.nodes[0]?.id).toMatch(/^list-/)
+    expect(doc.nodes[0]?.type).toBe('list')
+    if (doc.nodes[0]?.type !== 'list') {
       throw new Error('expected list node')
     }
-    expect(document.nodes[0].children[0]?.id).toMatch(/^listItem-/)
-    expect(document.nodes[0].children[1]?.id).toMatch(/^listItem-/)
-    expect(document.nodes[0].children[0]?.id).not.toBe(document.nodes[0].children[1]?.id)
-    expect(document.nodes[0].children[0]?.children[0]?.id).toMatch(/^paragraph-/)
+    expect(doc.nodes[0].children[0]?.id).toMatch(/^listItem-/)
+    expect(doc.nodes[0].children[1]?.id).toMatch(/^listItem-/)
+    expect(doc.nodes[0].children[0]?.id).not.toBe(doc.nodes[0].children[1]?.id)
+    expect(doc.nodes[0].children[0]?.children[0]?.id).toMatch(/^paragraph-/)
+    if (doc.nodes[0].children[0]?.children[0]?.type !== 'paragraph') {
+      throw new Error('expected paragraph node')
+    }
+    expect(doc.nodes[0].children[0].children[0].children[0]?.id).toMatch(/^text-/)
   })
 
   it('preserves caller-supplied ids while still normalizing nested children', () => {
-    const document = assignNodeIds({
+    const doc = assignNodeIds({
       nodes: [
         {
           type: 'blockquote',
@@ -73,12 +77,12 @@ describe('assignNodeIds', () => {
       ]
     })
 
-    expect(document.nodes[0]?.id).toBe('quote-1')
-    expect(document.nodes[0]?.type).toBe('blockquote')
-    if (document.nodes[0]?.type !== 'blockquote') {
+    expect(doc.nodes[0]?.id).toBe('quote-1')
+    expect(doc.nodes[0]?.type).toBe('blockquote')
+    if (doc.nodes[0]?.type !== 'blockquote') {
       throw new Error('expected blockquote node')
     }
-    expect(document.nodes[0].children[0]?.id).toMatch(/^paragraph-/)
+    expect(doc.nodes[0].children[0]?.id).toMatch(/^paragraph-/)
   })
 
   it('keeps existing ids stable when the document is extended later', () => {
@@ -105,5 +109,27 @@ describe('assignNodeIds', () => {
 
     expect(initial.nodes[0]?.id).toBe(extended.nodes[0]?.id)
     expect(extended.nodes[1]?.id).toMatch(/^paragraph-/)
+  })
+
+  it('assigns deterministic ids to duplicate inline siblings', () => {
+    const doc = assignNodeIds({
+      nodes: [
+        {
+          type: 'paragraph',
+          children: [
+            { type: 'text', value: 'same' },
+            { type: 'text', value: 'same' }
+          ]
+        }
+      ]
+    })
+
+    expect(doc.nodes[0]?.type).toBe('paragraph')
+    if (doc.nodes[0]?.type !== 'paragraph') {
+      throw new Error('expected paragraph node')
+    }
+    expect(doc.nodes[0].children[0]?.id).toMatch(/^text-/)
+    expect(doc.nodes[0].children[1]?.id).toMatch(/^text-/)
+    expect(doc.nodes[0].children[0]?.id).not.toBe(doc.nodes[0].children[1]?.id)
   })
 })

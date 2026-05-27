@@ -93,7 +93,7 @@ describe('ContentDocumentRenderer', () => {
   it('falls back when a specialized renderer is missing', () => {
     render(
       <ContentDocumentRenderer
-        document={{ nodes: [{ type: 'mermaid', code: 'graph TD\nA-->B' }] }}
+        document={{ nodes: [{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }] }}
       />
     )
 
@@ -104,7 +104,9 @@ describe('ContentDocumentRenderer', () => {
     const runtime = createReactContentRuntime()
     runtime.register({
       id: 'test:wireframe',
-      nodeType: 'wireframe',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'wireframe',
       render: () => {
         throw new Error('boom')
       }
@@ -113,7 +115,7 @@ describe('ContentDocumentRenderer', () => {
     render(
       <ContentDocumentRenderer
         runtime={runtime}
-        document={{ nodes: [{ type: 'wireframe', code: '[Button]' }] }}
+        document={{ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] }}
       />
     )
 
@@ -124,7 +126,9 @@ describe('ContentDocumentRenderer', () => {
     const runtime = createReactContentRuntime()
     runtime.register({
       id: 'test:mermaid',
-      nodeType: 'mermaid',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'mermaid',
       render: (node) => <div>Diagram: {node.code}</div>
     })
 
@@ -138,7 +142,7 @@ describe('ContentDocumentRenderer', () => {
               level: 1,
               children: [{ type: 'text', value: 'Heading' }]
             },
-            { type: 'mermaid', code: 'graph TD\nA-->B' }
+            { type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }
           ]
         }}
       />
@@ -163,7 +167,9 @@ describe('ContentDocumentRenderer', () => {
     const runtime = createReactContentRuntime()
     runtime.register({
       id: 'test:lazy-mermaid',
-      nodeType: 'mermaid',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'mermaid',
       render: (node) => <LazyMermaidRenderer node={node} />
     })
 
@@ -173,7 +179,7 @@ describe('ContentDocumentRenderer', () => {
         document={{
           nodes: [
             { type: 'paragraph', children: [{ type: 'text', value: 'Before' }] },
-            { type: 'mermaid', code: 'graph TD\nA-->B' },
+            { type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' },
             { type: 'paragraph', children: [{ type: 'text', value: 'After' }] }
           ]
         }}
@@ -248,18 +254,46 @@ describe('ContentDocumentRenderer', () => {
     const runtime = createReactContentRuntime()
     runtime.register({
       id: 'test:mermaid',
-      nodeType: 'mermaid',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'mermaid',
       render: (node) => <div data-testid="custom-mermaid">{node.code}</div>
     })
 
     render(
       <ContentDocumentRenderer
         runtime={runtime}
-        document={{ nodes: [{ type: 'mermaid', code: 'graph TD\nA-->B' }] }}
+        document={{ nodes: [{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }] }}
       />
     )
 
     expect(screen.getByTestId('custom-mermaid')).toHaveTextContent('graph TD')
+  })
+
+  it('falls back to generic code rendering when execution policy blocks a browser-only plugin', () => {
+    const runtime = createReactContentRuntime({
+      executionPolicy: {
+        allowDom: false
+      }
+    })
+    runtime.register({
+      id: 'test:blocked-wireframe',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'wireframe',
+      requirements: { clientOnly: true, needsDom: true },
+      render: (node) => <div>blocked: {node.code}</div>
+    })
+
+    render(
+      <ContentDocumentRenderer
+        runtime={runtime}
+        document={{ nodes: [{ type: 'codeBlock', code: '<html />', language: 'wireframe' }] }}
+      />
+    )
+
+    expect(screen.queryByText(/blocked:/)).toBeNull()
+    expect(screen.getByText('<html />')).toBeInTheDocument()
   })
 
   it('renders choicePrompt nodes without crashing when no renderer is registered', () => {

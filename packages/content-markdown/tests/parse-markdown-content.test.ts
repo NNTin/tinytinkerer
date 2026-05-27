@@ -41,10 +41,6 @@ const stripBlock = (node: BlockNode): BlockNode => {
       if (node.language) next.language = node.language
       return next
     }
-    case 'mermaid':
-      return { type: 'mermaid', code: node.code }
-    case 'wireframe':
-      return { type: 'wireframe', code: node.code }
     case 'choicePrompt':
       return { type: 'choicePrompt', prompt: node.prompt, choices: node.choices }
   }
@@ -52,10 +48,14 @@ const stripBlock = (node: BlockNode): BlockNode => {
 
 const stripInline = (node: InlineNode): InlineNode => {
   switch (node.type) {
+    case 'text':
+      return { type: 'text', value: node.value }
     case 'emphasis':
     case 'strong':
     case 'strikethrough':
       return { type: node.type, children: node.children.map(stripInline) }
+    case 'codeInline':
+      return { type: 'codeInline', value: node.value }
     case 'link': {
       const next: InlineNode = { type: 'link', url: node.url, children: node.children.map(stripInline) }
       if (node.title) next.title = node.title
@@ -66,6 +66,8 @@ const stripInline = (node: InlineNode): InlineNode => {
       if (node.title) next.title = node.title
       return next
     }
+    case 'break':
+      return { type: 'break' }
     default:
       return node
   }
@@ -91,13 +93,13 @@ describe('parseMarkdownContent', () => {
     ).toEqual({
       nodes: [
         { type: 'paragraph', children: [{ type: 'text', value: 'Intro' }] },
-        { type: 'mermaid', code: 'graph TD\nA-->B' },
+        { type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' },
         { type: 'paragraph', children: [{ type: 'text', value: 'After' }] }
       ]
     })
 
     expect(stripIds(parseMarkdownContent(['```wireframe', '[Button]', '```'].join('\n')))).toEqual({
-      nodes: [{ type: 'wireframe', code: '[Button]' }]
+      nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }]
     })
   })
 
@@ -204,9 +206,9 @@ describe('parseMarkdownContent', () => {
     const doc = parseMarkdownContent(content)
     expect(doc.nodes.map((n) => n.type)).toEqual([
       'heading',
-      'mermaid',
+      'codeBlock',
       'paragraph',
-      'wireframe',
+      'codeBlock',
       'table',
       'image',
       'paragraph'

@@ -19,6 +19,13 @@ The architecture is directionally good: `content-runtime` is genuinely platform-
 4. some semantic nodes still encode source-format or renderer concerns
 5. node identity is only partially defined and React fills the gaps with renderer-local heuristics
 
+## Status
+
+- Addressed: `MarkdownNode` removal, parser/renderer contracts removed from `content-core`, renderer-map compatibility removal, React-side key heuristics replaced by shared id normalization.
+- Addressed in the latest simplification slice: Mermaid/Wireframe are no longer AST node types; markdown now emits specialized `codeBlock` nodes keyed by `language`; inline nodes now participate in the shared id contract.
+- Intentionally kept: `content-markdown` remains one leaf package with `parseMarkdownContent()` plus a thin `MarkdownContent` React adapter.
+- Deferred: richer semantic table cells and any transport-level move of the AST into `contracts`.
+
 ## Findings
 
 ### 1. `MarkdownNode` leaks source-format concerns into the semantic AST

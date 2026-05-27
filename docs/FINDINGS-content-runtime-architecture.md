@@ -4,6 +4,13 @@
 
 The new content-runtime split is directionally good: the AST, coordinator, React renderer, markdown parser, and specialized plugins are now separated into clearer packages. The main architectural weakness is that the implementation still carries several hidden React-era assumptions, so the current design is more "React runtime plus plugin adapters" than a fully renderer-agnostic content platform.
 
+## Status
+
+- Addressed in the latest simplification slice: runtime plugin resolution now supports multiple candidates per node type, explicit `priority` + `matches(node)` semantics, execution policy, `prepareNode()` / `prepareDocument()`, and structured failure reasons.
+- Addressed: Mermaid and Wireframe no longer require dedicated AST node types; they specialize `codeBlock` through runtime matching.
+- Addressed: React now prepares lazy plugins through the runtime boundary instead of relying on plugin-local runtime bootstrapping during render.
+- Deferred: streaming/incremental document delivery and any broader non-React renderer strategy beyond the current runtime contract.
+
 ## Targeted findings and corrections
 
 ### 1. Plugin isolation is incomplete because ownership is tracked only by `nodeType`

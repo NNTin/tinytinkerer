@@ -1,14 +1,14 @@
 import {
   CodeBlockFallback,
   PreviewCodeFrame,
+  type CodeBlockNode,
   type ContentNodeRendererProps,
   type ReactNodeRendererPlugin,
-  type WireframeNode
 } from '@tinytinkerer/content-react'
 
-export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<WireframeNode>) => {
+export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlockNode>) => {
   if (!node.code.trim()) {
-    return <CodeBlockFallback code={node.code} language="wireframe" />
+    return <CodeBlockFallback code={node.code} language={node.language ?? 'wireframe'} />
   }
 
   return (
@@ -36,10 +36,13 @@ export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<Wirefra
   )
 }
 
-export const wireframePlugin: ReactNodeRendererPlugin<'wireframe'> = {
+export const wireframePlugin: ReactNodeRendererPlugin<'codeBlock'> = {
   id: 'wireframe',
-  nodeType: 'wireframe',
+  nodeType: 'codeBlock',
+  priority: 40,
   capabilities: { preview: true },
+  requirements: { clientOnly: true, needsDom: true },
+  matches: (node) => node.language === 'wireframe',
   render: (node) => <WireframeNodeRenderer node={node} />,
-  fallback: (node) => <CodeBlockFallback code={node.code} language="wireframe" />
+  fallback: (node) => <CodeBlockFallback code={node.code} language={node.language ?? 'wireframe'} />
 }

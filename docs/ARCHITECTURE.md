@@ -192,7 +192,7 @@ The current flow is:
 3. `@tinytinkerer/app-browser` composes browser-backed implementations on top of `@tinytinkerer/app-core`.
 4. `@tinytinkerer/app-core` orchestrates product behavior through ports and runtime abstractions.
 5. `@tinytinkerer/agent-core` executes the agent runtime using product-agnostic abstractions.
-6. Assistant markdown is parsed by `content-markdown` into the semantic `ContentDocument`. `MarkdownContent` (also from `content-markdown`) accepts an optional `plugins` array, builds a React runtime via `createReactContentRuntime` internally, and dispatches each node through `content-runtime` (with `content-react` as the React runtime implementation). `app-browser` only passes the `content-mermaid` and `content-wireframe` plugins to `MarkdownContent`; the runtime, default React plugins, and AST types stay internal to the content platform facade.
+6. Assistant markdown is parsed by `content-markdown` into the semantic `ContentDocument`. Fenced blocks remain semantic `codeBlock` nodes keyed by `language` (including Mermaid and wireframe). `MarkdownContent` (also from `content-markdown`) accepts an optional `plugins` array plus runtime execution policy, builds a React runtime via `createReactContentRuntime` internally, prepares lazy plugins through `content-runtime`, and dispatches each node through `content-react`. `app-browser` only passes the `content-mermaid` and `content-wireframe` plugins to `MarkdownContent`; the runtime, default React plugins, and AST types stay internal to the content platform facade.
 7. `@tinytinkerer/edge` exposes stateless endpoints and returns payloads that conform to `contracts`.
 
 ## Browser App Model
@@ -241,9 +241,9 @@ It must not own:
 
 ## Content Platform
 
-- `content-core` owns the semantic AST (block + inline node types) plus stable identity helpers (`computeNodeId`, `assignNodeIds`) used by parsers and renderers.
-- `content-runtime` owns the platform-agnostic `ContentRuntime<TResult>` coordinator and the `NodeRendererPlugin` contract. It dispatches nodes to plugins, orchestrates lazy `load()` calls, and routes failures through host-supplied fallback + wrap hooks. It has no React dependency.
-- `content-markdown` parses markdown into the semantic `ContentDocument` and exposes a thin `MarkdownContent` adapter over the React runtime.
-- `content-react` provides `createReactContentRuntime`, the default React plugins (paragraph, heading, list, blockquote, thematicBreak, codeBlock, table, image), the inline renderer, and the shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`). `ContentDocumentRenderer` normalizes missing block/list-item IDs through `assignNodeIds()` and the React wrap hook drops every dispatched node into Suspense + a render error boundary.
-- `content-mermaid` and `content-wireframe` export `mermaidPlugin` / `wireframePlugin` — typed `NodeRendererPlugin`s registered into the runtime at composition time. Mermaid still ships its heavy runtime as a separately code-split chunk loaded on first use.
+- `content-core` owns the semantic AST (block + inline node types) plus stable identity helpers (`computeNodeId`, `assignNodeIds`) used by parsers and renderers. Inline nodes now participate in the shared identity contract.
+- `content-runtime` owns the platform-agnostic `ContentRuntime<TResult>` coordinator and the `NodeRendererPlugin` contract. It resolves competing plugins per node type by `priority` + `matches(node)`, enforces execution policy, orchestrates lazy `load()` calls via `prepareNode()` / `prepareDocument()`, and routes structured failure reasons through host-supplied fallback + wrap hooks. It has no React dependency.
+- `content-markdown` parses markdown into the semantic `ContentDocument`, emits Mermaid and wireframe fences as `codeBlock` nodes with specialized `language` values, and exposes a thin `MarkdownContent` adapter over the React runtime.
+- `content-react` provides `createReactContentRuntime`, the default React plugins (paragraph, heading, list, blockquote, thematicBreak, codeBlock, table, image), the inline renderer, and the shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`). `ContentDocumentRenderer` normalizes missing ids through `assignNodeIds()` for blocks, list items, and inline nodes, then uses Suspense plus a render error boundary around runtime-managed node preparation.
+- `content-mermaid` and `content-wireframe` export `mermaidPlugin` / `wireframePlugin` — typed `NodeRendererPlugin<'codeBlock'>` specializations registered into the runtime at composition time. Mermaid still ships its heavy runtime as a separately code-split chunk loaded on first use.
 - The content AST stays internal to the content platform in this phase; `contracts` still expose assistant output as strings.

@@ -17,6 +17,7 @@ import type {
 import remarkGfm from 'remark-gfm'
 import remarkParse from 'remark-parse'
 import {
+  assignNodeIds,
   computeNodeId,
   type BlockNode,
   type BlockquoteNode,
@@ -27,13 +28,11 @@ import {
   type InlineNode,
   type ListItemNode,
   type ListNode,
-  type MermaidNode,
   type NodeId,
   type ParagraphNode,
   type TableAlignment,
   type TableNode,
   type ThematicBreakNode,
-  type WireframeNode
 } from '@tinytinkerer/content-react'
 import { unified } from 'unified'
 
@@ -170,24 +169,10 @@ const fromThematicBreak = (_: ThematicBreak, ids: IdAllocator): ThematicBreakNod
 const fromCode = (
   node: Code,
   ids: IdAllocator
-): MermaidNode | WireframeNode | CodeBlockNode => {
-  if (node.lang === 'mermaid') {
-    return {
-      type: 'mermaid',
-      id: ids.allocate('mermaid', node.value),
-      code: node.value
-    }
-  }
-  if (node.lang === 'wireframe') {
-    return {
-      type: 'wireframe',
-      id: ids.allocate('wireframe', node.value),
-      code: node.value
-    }
-  }
+): CodeBlockNode => {
   const block: CodeBlockNode = {
     type: 'codeBlock',
-    id: ids.allocate('codeBlock', node.value),
+    id: ids.allocate('codeBlock', `${node.lang ?? ''}\u0000${node.value}`),
     code: node.value
   }
   if (node.lang) {
@@ -245,5 +230,5 @@ export const parseMarkdownContent = (content: string): ContentDocument => {
     }
   }
 
-  return { nodes }
+  return assignNodeIds({ nodes })
 }

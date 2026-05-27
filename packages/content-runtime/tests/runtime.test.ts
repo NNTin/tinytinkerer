@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ContentNode } from '@tinytinkerer/content-core'
 import {
   createContentRuntime,
-  type NodeRendererPlugin
+  type NodeRendererPlugin,
+  type RuntimeFailureReason
 } from '../src/index.js'
 
 describe('createContentRuntime', () => {
   it('dispatches registered plugins per node type', () => {
     const runtime = createContentRuntime<string>({
-      fallback: (node) => `fallback:${node.type}`
+      fallback: (failure) => `fallback:${failure.reason}:${failure.node.type}`
     })
 
     const codePlugin: NodeRendererPlugin<'codeBlock', string> = {
@@ -35,41 +35,114 @@ describe('createContentRuntime', () => {
     expect(results).toEqual(['p(hi)', 'code(x)'])
   })
 
-  it('falls back to the host fallback when no plugin is registered', () => {
+  it('resolves the highest-priority matching plugin for a node type', () => {
     const runtime = createContentRuntime<string>({
-      fallback: (node) => `fallback:${node.type}`
+      fallback: () => 'fallback'
     })
 
-    const result = runtime.renderNode({ type: 'mermaid', code: 'graph TD\nA-->B' })
-    expect(result).toBe('fallback:mermaid')
+    runtime.register({
+      id: 'generic-code',
+      nodeType: 'codeBlock',
+      render: (node) => `generic:${node.code}`
+    })
+    runtime.register({
+      id: 'mermaid-code',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'mermaid',
+      render: (node) => `mermaid:${node.code}`
+    })
+
+    expect(
+      runtime.renderNode({ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' })
+    ).toBe('mermaid:graph TD\nA-->B')
+    expect(
+      runtime.renderNode({ type: 'codeBlock', code: 'const answer = 42', language: 'ts' })
+    ).toBe('generic:const answer = 42')
+  })
+
+  it('falls back with noMatch when candidates exist but none match', () => {
+    const fallback = vi.fn((failure: { reason: RuntimeFailureReason }) => failure.reason)
+    const runtime = createContentRuntime<string>({ fallback })
+
+    runtime.register({
+      id: 'mermaid-code',
+      nodeType: 'codeBlock',
+      matches: (node) => node.language === 'mermaid',
+      render: (node) => node.code
+    })
+
+    expect(runtime.renderNode({ type: 'codeBlock', code: '<html />', language: 'html' })).toBe(
+      'noMatch'
+    )
+    expect(fallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'noMatch',
+        node: { type: 'codeBlock', code: '<html />', language: 'html' }
+      })
+    )
+  })
+
+  it('falls back with policyBlocked when matching plugins are disallowed by execution policy', () => {
+    const fallback = vi.fn((failure: { reason: RuntimeFailureReason }) => failure.reason)
+    const runtime = createContentRuntime<string>({
+      fallback,
+      executionPolicy: {
+        allowDom: false
+      }
+    })
+
+    runtime.register({
+      id: 'wireframe-code',
+      nodeType: 'codeBlock',
+      matches: (node) => node.language === 'wireframe',
+      requirements: { clientOnly: true, needsDom: true },
+      render: (node) => node.code
+    })
+
+    expect(runtime.renderNode({ type: 'codeBlock', code: '<html />', language: 'wireframe' })).toBe(
+      'policyBlocked'
+    )
+    expect(fallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'policyBlocked',
+        plugin: expect.objectContaining({ id: 'wireframe-code' })
+      })
+    )
   })
 
   it('uses the plugin fallback when render throws', () => {
     const runtime = createContentRuntime<string>({
-      fallback: (node) => `host:${node.type}`
+      fallback: (failure) => `host:${failure.reason}`
     })
 
     runtime.register({
-      id: 'mermaid',
-      nodeType: 'mermaid',
+      id: 'mermaid-code',
+      nodeType: 'codeBlock',
+      matches: (node) => node.language === 'mermaid',
       render: () => {
         throw new Error('boom')
       },
-      fallback: (node) => `plugin:${node.code}`
+      fallback: (node, failure) => `${failure.reason}:${node.language}:${node.code}`
     })
 
-    const result = runtime.renderNode({ type: 'mermaid', code: 'graph' })
-    expect(result).toBe('plugin:graph')
+    const result = runtime.renderNode({
+      type: 'codeBlock',
+      code: 'graph TD\nA-->B',
+      language: 'mermaid'
+    })
+    expect(result).toBe('renderFailed:mermaid:graph TD\nA-->B')
   })
 
   it('falls through to the host fallback when the plugin fallback also throws', () => {
     const runtime = createContentRuntime<string>({
-      fallback: (node) => `host:${node.type}`
+      fallback: (failure) => `host:${failure.reason}`
     })
 
     runtime.register({
-      id: 'mermaid',
-      nodeType: 'mermaid',
+      id: 'mermaid-code',
+      nodeType: 'codeBlock',
+      matches: (node) => node.language === 'mermaid',
       render: () => {
         throw new Error('boom')
       },
@@ -78,18 +151,20 @@ describe('createContentRuntime', () => {
       }
     })
 
-    expect(runtime.renderNode({ type: 'mermaid', code: 'graph' })).toBe('host:mermaid')
+    expect(
+      runtime.renderNode({ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' })
+    ).toBe('host:renderFailed')
   })
 
   it('invokes wrap once per render and exposes a fallback factory', () => {
     const wrap = vi.fn((result: string) => `<${result}>`)
     const runtime = createContentRuntime<string>({
-      fallback: (node) => `host:${node.type}`,
+      fallback: (failure) => `host:${failure.reason}`,
       wrap
     })
 
     runtime.register({
-      id: 'codeBlock',
+      id: 'code-block',
       nodeType: 'codeBlock',
       render: (node) => node.code
     })
@@ -98,23 +173,25 @@ describe('createContentRuntime', () => {
     expect(wrap).toHaveBeenCalledTimes(1)
   })
 
-  it('calls plugin.load at most once across concurrent ensureLoaded calls', async () => {
+  it('calls plugin.load at most once across concurrent prepareNode calls', async () => {
     const load = vi.fn(() => Promise.resolve())
     const runtime = createContentRuntime<string>({
       fallback: () => 'fallback'
     })
 
     runtime.register({
-      id: 'mermaid',
-      nodeType: 'mermaid',
+      id: 'mermaid-code',
+      nodeType: 'codeBlock',
+      matches: (node) => node.language === 'mermaid',
+      requirements: { lazy: true },
       load,
       render: (node) => node.code
     })
 
     await Promise.all([
-      runtime.ensureLoaded({ type: 'mermaid', code: 'a' }),
-      runtime.ensureLoaded({ type: 'mermaid', code: 'b' }),
-      runtime.ensureLoaded({ type: 'mermaid', code: 'c' })
+      runtime.prepareNode({ type: 'codeBlock', code: 'a', language: 'mermaid' }),
+      runtime.prepareNode({ type: 'codeBlock', code: 'b', language: 'mermaid' }),
+      runtime.prepareNode({ type: 'codeBlock', code: 'c', language: 'mermaid' })
     ])
 
     expect(load).toHaveBeenCalledTimes(1)
@@ -123,12 +200,14 @@ describe('createContentRuntime', () => {
   it('retries plugin.load after a failure', async () => {
     let attempts = 0
     const runtime = createContentRuntime<string>({
-      fallback: () => 'fallback'
+      fallback: (failure) => `fallback:${failure.reason}`
     })
 
     runtime.register({
-      id: 'mermaid',
-      nodeType: 'mermaid',
+      id: 'mermaid-code',
+      nodeType: 'codeBlock',
+      matches: (node) => node.language === 'mermaid',
+      requirements: { lazy: true },
       load: () => {
         attempts += 1
         if (attempts === 1) {
@@ -140,24 +219,85 @@ describe('createContentRuntime', () => {
     })
 
     await expect(
-      runtime.ensureLoaded({ type: 'mermaid', code: 'a' })
+      runtime.prepareNode({ type: 'codeBlock', code: 'graph', language: 'mermaid' })
     ).rejects.toThrow('first attempt')
+    expect(
+      runtime.renderNode({ type: 'codeBlock', code: 'graph', language: 'mermaid' })
+    ).toBe('fallback:loadFailed')
     await expect(
-      runtime.ensureLoaded({ type: 'mermaid', code: 'a' })
+      runtime.prepareNode({ type: 'codeBlock', code: 'graph', language: 'mermaid' })
     ).resolves.toBeUndefined()
     expect(attempts).toBe(2)
   })
 
-  it('exposes registered plugins via has/getPlugin', () => {
+  it('prepares nested nodes across a document', async () => {
+    const load = vi.fn(() => Promise.resolve())
+    const runtime = createContentRuntime<string>({
+      fallback: () => 'fallback'
+    })
+
+    runtime.register({
+      id: 'mermaid-code',
+      nodeType: 'codeBlock',
+      matches: (node) => node.language === 'mermaid',
+      requirements: { lazy: true },
+      load,
+      render: (node) => node.code
+    })
+
+    await runtime.prepareDocument({
+      nodes: [
+        {
+          type: 'blockquote',
+          children: [
+            {
+              type: 'list',
+              ordered: false,
+              children: [
+                {
+                  type: 'listItem',
+                  children: [{ type: 'codeBlock', code: 'graph TD', language: 'mermaid' }]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    })
+
+    expect(load).toHaveBeenCalledTimes(1)
+  })
+
+  it('exposes ordered plugins and resolution results', () => {
     const runtime = createContentRuntime<string>({ fallback: () => '' })
-    const plugin: NodeRendererPlugin<'codeBlock', string> = {
-      id: 'core:codeBlock',
+
+    runtime.register({
+      id: 'generic-code',
       nodeType: 'codeBlock',
       render: (node) => node.code
-    }
-    runtime.register(plugin)
-    expect(runtime.has('codeBlock')).toBe(true)
-    expect(runtime.has('mermaid' satisfies ContentNode['type'])).toBe(false)
-    expect(runtime.getPlugin('codeBlock')).toBe(plugin)
+    })
+    runtime.register({
+      id: 'mermaid-code',
+      nodeType: 'codeBlock',
+      priority: 20,
+      matches: (node) => node.language === 'mermaid',
+      render: (node) => node.code
+    })
+
+    expect(runtime.getPlugins('codeBlock').map((plugin) => plugin.id)).toEqual([
+      'mermaid-code',
+      'generic-code'
+    ])
+
+    expect(
+      runtime.resolve({ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' })
+    ).toEqual({
+      ok: true,
+      plugin: expect.objectContaining({ id: 'mermaid-code' }),
+      candidates: expect.arrayContaining([
+        expect.objectContaining({ id: 'mermaid-code' }),
+        expect.objectContaining({ id: 'generic-code' })
+      ])
+    })
   })
 })

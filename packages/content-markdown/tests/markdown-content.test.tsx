@@ -18,9 +18,11 @@ describe('MarkdownContent', () => {
   })
 
   it('renders user-supplied plugins alongside the default React runtime', () => {
-    const mermaidStub: ReactNodeRendererPlugin<'mermaid'> = {
+    const mermaidStub: ReactNodeRendererPlugin<'codeBlock'> = {
       id: 'mermaid-stub',
-      nodeType: 'mermaid',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'mermaid',
       render: (node) => <div>Diagram: {node.code}</div>
     }
 

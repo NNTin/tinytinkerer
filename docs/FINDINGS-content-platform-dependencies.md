@@ -4,6 +4,13 @@
 
 The current package graph is fundamentally sound: `content-core` stays independent, `content-runtime` owns orchestration, `app-browser` consumes only the outward-facing content packages, and the workspace boundary checker reports no cycles (`/tmp/workspace/NNTin/tinytinkerer/scripts/check-boundaries.mjs`, `/tmp/workspace/NNTin/tinytinkerer/packages/*/package.json`).
 
+## Status
+
+- Addressed: `content-react` no longer owns a legacy markdown compatibility renderer.
+- Addressed: specialized packages no longer export legacy renderer maps; plugins are the only extension path.
+- Addressed: boundary enforcement now checks declared workspace deps, scans tests, and bans browser/framework APIs in `content-core` and `content-runtime`.
+- Remaining watch item: `content-markdown` still depends on `content-react` by design as a leaf convenience package.
+
 The main architectural debt is not the package layering itself, but the places where the implementation still exposes compatibility seams or lets the boundary rules be enforced more weakly than the docs imply.
 
 ## Validation

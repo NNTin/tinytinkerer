@@ -28,7 +28,8 @@ import {
   type AnyNodeRendererPlugin,
   type ContentRuntime,
   type NodeRendererPlugin,
-  type RenderContext
+  type RenderContext,
+  type RuntimeExecutionPolicy
 } from '@tinytinkerer/content-runtime'
 import { cn } from '@tinytinkerer/ui'
 
@@ -51,7 +52,6 @@ export type {
   LinkNode,
   ListItemNode,
   ListNode,
-  MermaidNode,
   NodeId,
   ParagraphNode,
   StrikethroughNode,
@@ -59,8 +59,7 @@ export type {
   TableAlignment,
   TableNode,
   TextNode,
-  ThematicBreakNode,
-  WireframeNode
+  ThematicBreakNode
 } from '@tinytinkerer/content-core'
 
 export const MARKDOWN_ROOT_CLASS = 'tt-markdown'
@@ -76,6 +75,16 @@ export type ReactNodeRendererPlugin<TType extends ContentNode['type']> = NodeRen
   ReactNode
 >
 export type ReactContentPlugin = AnyNodeRendererPlugin<ReactNode>
+export type CreateReactContentRuntimeOptions = {
+  executionPolicy?: RuntimeExecutionPolicy
+}
+
+export type {
+  RuntimeExecutionPolicy,
+  RuntimeFailureContext,
+  RuntimeFailureReason,
+  RuntimeResolution
+} from '@tinytinkerer/content-runtime'
 
 type ContentDocumentRendererProps = {
   document: ContentDocument
@@ -110,29 +119,92 @@ class RendererBoundary extends Component<RendererBoundaryProps, RendererBoundary
   }
 }
 
+type PrepareRecord = {
+  status: 'pending' | 'ready' | 'failed'
+  promise?: Promise<void>
+}
+
+const preparedNodes = new WeakMap<ReactContentRuntime, Map<string, PrepareRecord>>()
+
+const getPreparedNodes = (runtime: ReactContentRuntime): Map<string, PrepareRecord> => {
+  let cache = preparedNodes.get(runtime)
+  if (!cache) {
+    cache = new Map<string, PrepareRecord>()
+    preparedNodes.set(runtime, cache)
+  }
+  return cache
+}
+
+const readPreparedNode = (runtime: ReactContentRuntime, node: ContentNode): void => {
+  if (!node.id) {
+    return
+  }
+
+  const cache = getPreparedNodes(runtime)
+  const resolution = runtime.resolve(node)
+  if (!resolution.ok || !resolution.plugin.load) {
+    cache.set(node.id, { status: 'ready' })
+    return
+  }
+
+  const existing = cache.get(node.id)
+  if (existing?.status === 'pending' && existing.promise) {
+    throw existing.promise
+  }
+  if (existing) {
+    return
+  }
+
+  const record: PrepareRecord = { status: 'pending' }
+  record.promise = runtime.prepareNode(node).then(
+    () => {
+      record.status = 'ready'
+    },
+    () => {
+      record.status = 'failed'
+    }
+  )
+  cache.set(node.id, record)
+  throw record.promise
+}
+
+const PreparedNodeBoundary = ({
+  runtime,
+  node,
+  children
+}: {
+  runtime: ReactContentRuntime
+  node: ContentNode
+  children: ReactNode
+}) => {
+  readPreparedNode(runtime, node)
+  return children
+}
+
 const renderInline = (nodes: InlineNode[]): ReactNode =>
   nodes.map((node, index) => {
+    const key = node.id ?? `${node.type}-${index}`
     switch (node.type) {
       case 'text':
-        return <Fragment key={index}>{node.value}</Fragment>
+        return <Fragment key={key}>{node.value}</Fragment>
       case 'emphasis':
-        return <em key={index}>{renderInline(node.children)}</em>
+        return <em key={key}>{renderInline(node.children)}</em>
       case 'strong':
-        return <strong key={index}>{renderInline(node.children)}</strong>
+        return <strong key={key}>{renderInline(node.children)}</strong>
       case 'strikethrough':
-        return <del key={index}>{renderInline(node.children)}</del>
+        return <del key={key}>{renderInline(node.children)}</del>
       case 'codeInline':
-        return <code key={index}>{node.value}</code>
+        return <code key={key}>{node.value}</code>
       case 'link':
         return (
-          <a key={index} href={node.url} title={node.title}>
+          <a key={key} href={node.url} title={node.title}>
             {renderInline(node.children)}
           </a>
         )
       case 'imageInline':
-        return <img key={index} src={node.url} alt={node.alt} title={node.title} />
+        return <img key={key} src={node.url} alt={node.alt} title={node.title} />
       case 'break':
-        return <br key={index} />
+        return <br key={key} />
     }
   })
 
@@ -343,8 +415,13 @@ export const CodeBlockFallback = ({
 }) => <CodeBlockNodeView node={{ type: 'codeBlock', code, ...(language ? { language } : {}) }} />
 
 const genericNodeFallback = (node: ContentNode): ReactNode => {
-  if (node.type === 'mermaid' || node.type === 'wireframe') {
-    return <CodeBlockFallback code={node.code} language={node.type} />
+  if (node.type === 'codeBlock') {
+    return (
+      <CodeBlockFallback
+        code={node.code}
+        {...(node.language ? { language: node.language } : {})}
+      />
+    )
   }
   return <CodeBlockFallback code={JSON.stringify(node, null, 2)} language="json" />
 }
@@ -378,6 +455,7 @@ const defaultReactPlugins: AnyNodeRendererPlugin<ReactNode>[] = [
   {
     id: 'core:codeBlock',
     nodeType: 'codeBlock',
+    priority: -100,
     render: (node) => <CodeBlockNodeView node={node} />
   },
   {
@@ -392,18 +470,27 @@ const defaultReactPlugins: AnyNodeRendererPlugin<ReactNode>[] = [
   }
 ]
 
-export const createReactContentRuntime = (): ReactContentRuntime => {
+export const createReactContentRuntime = (
+  options: CreateReactContentRuntimeOptions = {}
+): ReactContentRuntime => {
+  let runtimeRef: ReactContentRuntime
   const runtime = createContentRuntime<ReactNode>({
-    fallback: (node) => genericNodeFallback(node),
+    fallback: (failure) => genericNodeFallback(failure.node),
+    ...(options.executionPolicy ? { executionPolicy: options.executionPolicy } : {}),
     wrap: (children, ctx) => {
       const lazyFallback = <>{ctx.fallback()}</>
       return (
         <Suspense fallback={lazyFallback}>
-          <RendererBoundary fallback={lazyFallback}>{children}</RendererBoundary>
+          <RendererBoundary fallback={lazyFallback}>
+            <PreparedNodeBoundary runtime={runtimeRef} node={ctx.node}>
+              {children}
+            </PreparedNodeBoundary>
+          </RendererBoundary>
         </Suspense>
       )
     }
   })
+  runtimeRef = runtime
   for (const plugin of defaultReactPlugins) {
     runtime.register(plugin)
   }

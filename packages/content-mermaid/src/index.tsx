@@ -4,8 +4,8 @@ import { useEffect, useId, useState } from 'react'
 import {
   CodeBlockFallback,
   PreviewCodeFrame,
+  type CodeBlockNode,
   type ContentNodeRendererProps,
-  type MermaidNode,
   type ReactNodeRendererPlugin
 } from '@tinytinkerer/content-react'
 
@@ -77,16 +77,25 @@ const loadMermaid = (): Promise<MermaidApi> => {
   return mermaidPromise
 }
 
-export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<MermaidNode>) => {
+export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlockNode>) => {
   const [svg, setSvg] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   const id = useId().replace(/:/g, '-')
 
   useEffect(() => {
     let cancelled = false
+    const mermaid = window.mermaid
 
-    void loadMermaid()
-      .then((mermaid) => mermaid.render(`tt-mermaid-${id}`, node.code))
+    if (!mermaid) {
+      console.error('[content-mermaid] render failed:', new Error('Mermaid runtime is not loaded'))
+      setFailed(true)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    void mermaid
+      .render(`tt-mermaid-${id}`, node.code)
       .then((result) => {
         if (!cancelled) {
           const sanitized = DOMPurify.sanitize(result.svg, {
@@ -131,11 +140,14 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<MermaidNo
   )
 }
 
-export const mermaidPlugin: ReactNodeRendererPlugin<'mermaid'> = {
+export const mermaidPlugin: ReactNodeRendererPlugin<'codeBlock'> = {
   id: 'mermaid',
-  nodeType: 'mermaid',
-  capabilities: { lazy: true, preview: true },
+  nodeType: 'codeBlock',
+  priority: 50,
+  capabilities: { preview: true },
+  requirements: { lazy: true, clientOnly: true, needsDom: true },
+  matches: (node) => node.language === 'mermaid',
   load: () => loadMermaid().then(() => undefined),
   render: (node) => <MermaidNodeRenderer node={node} />,
-  fallback: (node) => <CodeBlockFallback code={node.code} language="mermaid" />
+  fallback: (node) => <CodeBlockFallback code={node.code} language={node.language ?? 'mermaid'} />
 }
