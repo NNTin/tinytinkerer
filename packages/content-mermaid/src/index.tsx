@@ -13,8 +13,14 @@ type MermaidRenderResult = {
   svg: string
 }
 
+type MermaidParseResult = boolean | { diagramType: string } | undefined
+
 type MermaidApi = {
   initialize: (config: Record<string, unknown>) => void
+  parse?: (
+    code: string,
+    options?: { suppressErrors?: boolean }
+  ) => Promise<MermaidParseResult> | MermaidParseResult
   render: (id: string, code: string) => Promise<MermaidRenderResult>
 }
 
@@ -94,10 +100,28 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlock
       }
     }
 
-    void mermaid
-      .render(`tt-mermaid-${id}`, node.code)
-      .then((result) => {
-        if (!cancelled) {
+    const preflight: Promise<MermaidParseResult> =
+      typeof mermaid.parse === 'function'
+        ? Promise.resolve(mermaid.parse(node.code, { suppressErrors: true }))
+        : Promise.resolve(true)
+
+    void preflight
+      .then((parseResult) => {
+        if (cancelled) {
+          return
+        }
+        if (parseResult === false) {
+          // Incomplete or invalid syntax (commonly mid-stream). Skip rendering
+          // so mermaid's "Syntax error" SVG never enters the chrome, and keep
+          // the preview slot open so a later valid snapshot can take over.
+          setSvg(null)
+          setFailed(false)
+          return
+        }
+        return mermaid.render(`tt-mermaid-${id}`, node.code).then((result) => {
+          if (cancelled) {
+            return
+          }
           const sanitized = DOMPurify.sanitize(result.svg, {
             USE_PROFILES: { svg: true, svgFilters: true },
             ADD_TAGS: ['foreignObject', 'div', 'span', 'p', 'br'],
@@ -107,7 +131,8 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlock
             HTML_INTEGRATION_POINTS: { 'annotation-xml': true, 'foreignobject': true }
           })
           setSvg(sanitized)
-        }
+          setFailed(false)
+        })
       })
       .catch((error: unknown) => {
         console.error('[content-mermaid] render failed:', error)

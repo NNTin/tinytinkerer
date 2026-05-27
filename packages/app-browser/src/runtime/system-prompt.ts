@@ -3,10 +3,20 @@ Do not reveal private chain-of-thought. Provide concise operational summaries.
 
 ## UI rendering capabilities
 
-GitHub Flavored Markdown (headings, lists, task lists, blockquotes, bold, italic, strikethrough, links), GFM tables, standalone images (https:// and data:image/ URLs only), and fenced code blocks with language identifiers all render natively.
+GitHub Flavored Markdown (headings, lists, task lists, blockquotes, bold, italic, strikethrough, links) renders natively. Tables render with sticky headers, markdown copy, and CSV export. Standalone images (https:// and data:image/ URLs only) render with captions (from the title), lazy loading, and a click-to-open lightbox.
 
-For richer output use these special fences:
+Fenced code blocks render as syntax-highlighted source by default. Some languages get specialized treatment:
 - \`\`\`mermaid — diagrams (flowcharts, sequence, class, etc.)
-- \`\`\`wireframe — live HTML preview in a sandboxed iframe; write a full self-contained HTML document
+- \`\`\`wireframe — live HTML preview in a sandboxed iframe; emit a full self-contained HTML document
+- \`\`\`diff — colored unified-diff view with +/- line highlighting
+- \`\`\`json — syntax-highlighted with a Format/Compact toggle
+- \`\`\`yaml, \`\`\`http, \`\`\`sql, \`\`\`bash — language-specific syntax highlighting
 
-Use standard fences (e.g. \`\`\`html) when you want code shown as source, not rendered.`
+Use standard fences (e.g. \`\`\`html) when you want code shown as source, not rendered.
+
+Blockquotes that begin with \`[!NOTE]\`, \`[!TIP]\`, \`[!WARNING]\`, \`[!IMPORTANT]\`, or \`[!CAUTION]\` render as styled callouts:
+
+> [!WARNING]
+> Body text goes here.
+
+A paragraph whose only content is a single link (or a bare URL) renders as a preview card — use this for references and citations.`

@@ -147,6 +147,34 @@ describe('app-core helpers', () => {
     })
   })
 
+  it('coerces malformed persisted assistant content (e.g. legacy string payloads) to null', () => {
+    // Simulate a record that survived the v2 IndexedDB migration with a raw
+    // markdown string in payload.content. The renderer requires a structured
+    // ContentDocument; the projection should drop the bad shape rather than
+    // pass it through and crash the chat surface.
+    const malformed = [
+      {
+        id: 'evt-user',
+        timestamp: new Date().toISOString(),
+        type: 'user.message',
+        payload: { text: 'hello' }
+      },
+      {
+        id: 'evt-done',
+        timestamp: new Date().toISOString(),
+        type: 'assistant.done',
+        payload: { source: 'hi there', content: 'hi there' as unknown as ContentDocument }
+      }
+    ] as ChatEvent[]
+
+    const turns = buildTurns(malformed)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]).toMatchObject({
+      userText: 'hello',
+      assistantContent: null
+    })
+  })
+
   it('drops expired cooldowns', () => {
     expect(activeCooldown(new Date(Date.now() - 1_000).toISOString())).toBeUndefined()
   })

@@ -6,6 +6,16 @@ const rootDir = process.cwd()
 const workspaceRoots = [join(rootDir, 'apps'), join(rootDir, 'packages')]
 const sourceExtensions = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'])
 
+const SPECIALIZED_CONTENT_PACKAGES = new Set([
+  '@tinytinkerer/content-mermaid',
+  '@tinytinkerer/content-wireframe',
+  '@tinytinkerer/content-image',
+  '@tinytinkerer/content-code',
+  '@tinytinkerer/content-callout',
+  '@tinytinkerer/content-link-card',
+  '@tinytinkerer/content-table'
+])
+
 const importPattern =
   /\b(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g
 
@@ -313,15 +323,20 @@ function validateBoundary(sourcePkg, target, filePath) {
       '@tinytinkerer/app-browser',
       '@tinytinkerer/app-core',
       '@tinytinkerer/brand-assets',
+      '@tinytinkerer/content-callout',
+      '@tinytinkerer/content-code',
+      '@tinytinkerer/content-image',
+      '@tinytinkerer/content-link-card',
       '@tinytinkerer/content-markdown',
       '@tinytinkerer/content-mermaid',
       '@tinytinkerer/content-react',
+      '@tinytinkerer/content-table',
       '@tinytinkerer/content-wireframe',
       '@tinytinkerer/contracts'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, content-react, and the outward-facing content packages (content-markdown, content-mermaid, content-wireframe), plus app-browser-local modules (${targetPkg.name})`
+        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, content-react, and the outward-facing content packages (content-markdown, content-mermaid, content-wireframe, content-image, content-code, content-callout, content-link-card, content-table), plus app-browser-local modules (${targetPkg.name})`
       )
     }
   }
@@ -379,10 +394,7 @@ function validateBoundary(sourcePkg, target, filePath) {
     }
   }
 
-  if (
-    sourcePkg.name === '@tinytinkerer/content-mermaid' ||
-    sourcePkg.name === '@tinytinkerer/content-wireframe'
-  ) {
+  if (SPECIALIZED_CONTENT_PACKAGES.has(sourcePkg.name)) {
     const allowed = new Set([
       sourcePkg.name,
       '@tinytinkerer/content-react'
