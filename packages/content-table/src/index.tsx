@@ -9,9 +9,14 @@ import {
   type TableNode
 } from '@tinytinkerer/content-react'
 
+const FORMULA_INJECTION_PREFIX = /^[=+\-@\t\r]/
+
 const escapeCsvField = (value: string): string => {
-  const needsQuotes = /[",\r\n]/.test(value)
-  const escaped = value.replace(/"/g, '""')
+  // Prefix cells that would otherwise be interpreted as formulas in
+  // spreadsheet applications. Apostrophe is the canonical OWASP mitigation.
+  const guarded = FORMULA_INJECTION_PREFIX.test(value) ? `'${value}` : value
+  const needsQuotes = /[",\r\n]/.test(guarded)
+  const escaped = guarded.replace(/"/g, '""')
   return needsQuotes ? `"${escaped}"` : escaped
 }
 
@@ -37,10 +42,19 @@ const cellPlainText = (cell: TableCell): string => {
 }
 
 export const tableToCsv = (node: TableNode): string => {
+  const width = node.header.length
   const lines: string[] = []
-  lines.push(node.header.map((cell) => escapeCsvField(cellPlainText(cell))).join(','))
+  lines.push(
+    Array.from({ length: width }, (_, index) =>
+      escapeCsvField(cellPlainText(node.header[index] ?? []))
+    ).join(',')
+  )
   for (const row of node.rows) {
-    lines.push(row.map((cell) => escapeCsvField(cellPlainText(cell))).join(','))
+    lines.push(
+      Array.from({ length: width }, (_, index) =>
+        escapeCsvField(cellPlainText(row[index] ?? []))
+      ).join(',')
+    )
   }
   return lines.join('\n')
 }

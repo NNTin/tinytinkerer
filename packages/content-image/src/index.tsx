@@ -157,7 +157,7 @@ export const createImagePlugin = (): ReactNodeRendererPlugin<'image'> => ({
   id: 'image',
   nodeType: 'image',
   priority: 10,
-  requirements: { clientOnly: true, needsDom: true },
+  requirements: { clientOnly: true },
   render: (node) => <ImageNodeRenderer node={node} />
 })
 

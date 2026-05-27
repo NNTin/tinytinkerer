@@ -14,6 +14,10 @@ describe('ImageNodeRenderer', () => {
     expect(typeof imagePlugin.render).toBe('function')
   })
 
+  it('declares clientOnly but not needsDom so static rendering still works in non-DOM runtimes', () => {
+    expect(imagePlugin.requirements).toEqual({ clientOnly: true })
+  })
+
   it('creates isolated plugin instances on demand', () => {
     const left = createImagePlugin()
     const right = createImagePlugin()

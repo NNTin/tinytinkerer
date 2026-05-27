@@ -133,4 +133,44 @@ describe('tableToCsv', () => {
       })
     ).toBe(['a,b', '"hello, world","a ""quoted"" value"'].join('\n'))
   })
+
+  it('prefixes formula-injection-prone cells with an apostrophe', () => {
+    expect(
+      tableToCsv({
+        type: 'table',
+        align: [null, null, null, null],
+        header: [
+          [{ type: 'text', value: 'a' }],
+          [{ type: 'text', value: 'b' }],
+          [{ type: 'text', value: 'c' }],
+          [{ type: 'text', value: 'd' }]
+        ],
+        rows: [
+          [
+            [{ type: 'text', value: '=SUM(A1)' }],
+            [{ type: 'text', value: '+1+1' }],
+            [{ type: 'text', value: '-1' }],
+            [{ type: 'text', value: '@cmd' }]
+          ]
+        ]
+      })
+    ).toBe(['a,b,c,d', "'=SUM(A1),'+1+1,'-1,'@cmd"].join('\n'))
+  })
+
+  it('pads short rows to header width to keep CSV columns aligned', () => {
+    expect(
+      tableToCsv({
+        type: 'table',
+        align: [null, null, null],
+        header: [
+          [{ type: 'text', value: 'name' }],
+          [{ type: 'text', value: 'role' }],
+          [{ type: 'text', value: 'score' }]
+        ],
+        rows: [
+          [[{ type: 'text', value: 'Ada' }], [{ type: 'text', value: 'Admin' }]]
+        ]
+      })
+    ).toBe(['name,role,score', 'Ada,Admin,'].join('\n'))
+  })
 })
