@@ -433,7 +433,6 @@ export const mcpToolMetaSchema = z.object({
 export const mcpDiscoveryResultSchema = z.object({
   serverId: z.string(),
   serverName: z.string(),
-  instructions: z.string().optional(),
   tools: z.array(mcpToolMetaSchema),
   syncedAt: z.string(),
   error: z.string().optional()

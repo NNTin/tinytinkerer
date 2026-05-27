@@ -6,14 +6,13 @@ export type PlannerToolDescriptor = {
   id: string
   description: string
   inputSchema: Record<string, unknown>
-  serverInstructions?: string
 }
 
 const buildPlanningSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
   const toolDocs = tools
     .map(
       (t) =>
-        `Tool: ${t.id}\nDescription: ${t.description}\nInput schema: ${JSON.stringify(t.inputSchema, null, 2)}${t.serverInstructions ? `\nServer instructions: ${t.serverInstructions}` : ''}`
+        `Tool: ${t.id}\nDescription: ${t.description}\nInput schema: ${JSON.stringify(t.inputSchema, null, 2)}`
     )
     .join('\n\n')
 

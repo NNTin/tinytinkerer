@@ -87,7 +87,8 @@ export class GitHubModelsProvider implements ModelProvider {
         const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
         const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
         return await llmPlan(prompt, history, allDescriptors, model, edgeFetch, options?.signal)
-      } catch {
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') throw error
         // fall through to heuristic
       }
     }

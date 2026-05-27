@@ -37,15 +37,11 @@ export const createRuntime = (options: {
     if (!disc || disc.error) continue
     for (const toolMeta of disc.tools) {
       tools.push(createMcpTool(server, toolMeta, edgeFetch))
-      const descriptor: PlannerToolDescriptor = {
+      allToolDescriptors.push({
         id: `mcp:${server.id}:${toolMeta.toolName}`,
         description: `[${server.name}] ${toolMeta.description}`,
         inputSchema: toolMeta.inputSchema
-      }
-      if (disc.instructions) {
-        descriptor.serverInstructions = disc.instructions
-      }
-      allToolDescriptors.push(descriptor)
+      })
     }
   }
 

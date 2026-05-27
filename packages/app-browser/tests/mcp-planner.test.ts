@@ -136,7 +136,7 @@ describe('GitHubModelsProvider.plan — LLM branch', () => {
     expect(url).toContain('/api/models/chat')
   })
 
-  it('falls back to inferPlan when llmPlan throws', async () => {
+  it('falls back to inferPlan when llmPlan throws a non-abort error', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockRejectedValue(new Error('Network error'))
@@ -153,6 +153,22 @@ describe('GitHubModelsProvider.plan — LLM branch', () => {
     // inferPlan heuristic: low-complexity prompt → low plan
     expect(plan.complexity).toBe('low')
     expect(plan.steps.map((s) => s.id)).toContain('compose')
+  })
+
+  it('re-throws AbortError instead of falling back to inferPlan', async () => {
+    const abortError = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(abortError)
+    )
+
+    const provider = new GitHubModelsProvider({
+      baseUrl: 'http://edge.local',
+      getToken: () => 'my-token',
+      allToolDescriptors: [descriptor]
+    })
+
+    await expect(provider.plan('what is the weather?', [])).rejects.toMatchObject({ name: 'AbortError' })
   })
 
   it('falls back to inferPlan when there are no MCP tools in allToolDescriptors', async () => {

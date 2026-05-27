@@ -161,6 +161,22 @@ describe('settings-store MCP actions', () => {
     })
   })
 
+  describe('clearMcpDiscovery', () => {
+    it('removes the entry from in-memory state and persists the change', async () => {
+      const store = createSettingsStore(makeShell(preferences))
+      const added = await store.getState().addMcpServer(baseServer)
+      await store.getState().setMcpDiscovery(makeDiscovery(added.id))
+      expect(store.getState().mcpDiscovery[added.id]).toBeDefined()
+
+      await store.getState().clearMcpDiscovery(added.id)
+
+      expect(store.getState().mcpDiscovery[added.id]).toBeUndefined()
+      const raw = await preferences.get('settings_mcp_discovery')
+      const persisted = JSON.parse(raw ?? '{}') as Record<string, unknown>
+      expect(persisted[added.id]).toBeUndefined()
+    })
+  })
+
   describe('setMcpDiscovery', () => {
     it('stores the discovery result keyed by serverId', async () => {
       const store = createSettingsStore(makeShell(preferences))

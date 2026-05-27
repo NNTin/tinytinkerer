@@ -6,7 +6,7 @@ const AUTH = { authorization: 'Bearer test-token' }
 const CT = { 'content-type': 'application/json' }
 const HEADERS = { ...CT, ...AUTH }
 
-const post = (path: string, body: unknown, headers = HEADERS) =>
+const post = (path: string, body: unknown, headers: Record<string, string> = HEADERS) =>
   app.fetch(
     new Request(`http://localhost${path}`, {
       method: 'POST',
@@ -104,6 +104,31 @@ describe('POST /api/mcp/discover', () => {
   it('returns 400 for https to the link-local range', async () => {
     const res = await post('/api/mcp/discover', { url: 'https://169.254.1.2/mcp' })
     expect(res.status).toBe(400)
+  })
+
+  it('returns 400 for https to a GCP metadata endpoint', async () => {
+    const res = await post('/api/mcp/discover', { url: 'https://metadata.google.internal/mcp' })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 for https to the Azure IMDS hostname', async () => {
+    const res = await post('/api/mcp/discover', { url: 'https://metadata.azure.internal/mcp' })
+    expect(res.status).toBe(400)
+  })
+
+  // DNS rebinding / SSRF via resolution is a known gap: this validation only
+  // checks literal IPs and a handful of well-known hostnames. A public-looking
+  // hostname (e.g. attacker.example.com) that DNS-resolves to a private address
+  // will still pass, because pre-flight DNS resolution is not available in this
+  // runtime environment.
+  it('passes a public-looking hostname even though DNS could resolve it privately (known gap)', async () => {
+    // This test documents the limitation, not a desired behaviour.
+    // mcp.example.com is a structurally valid public hostname; we cannot know
+    // its resolved IP at validation time, so it passes through to the SDK.
+    const res = await post('/api/mcp/discover', { url: 'https://mcp.example.com/mcp' })
+    // 200 (SDK mock succeeds) or 502 (SDK fails) both confirm we reached the handler
+    expect([200, 502]).toContain(res.status)
+    expect(res.status).not.toBe(400)
   })
 
   it('allows http to localhost', async () => {

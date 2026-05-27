@@ -154,7 +154,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const effectiveStatus = status ?? OFFLINE_SYSTEM_STATUS
 
   const refreshMcpServer = async (server: McpServerConfig): Promise<void> => {
-    clearMcpDiscovery(server.id)
+    await clearMcpDiscovery(server.id)
     try {
       const edgeFetch = createEdgeFetch(shell.config.edgeBaseUrl, () => token)
       const res = await edgeFetch('/api/mcp/discover', {

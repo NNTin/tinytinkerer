@@ -30,7 +30,7 @@ export type SettingsState = {
   removeMcpServer: (id: string) => Promise<void>
   setMcpServerEnabled: (id: string, enabled: boolean) => Promise<void>
   setMcpDiscovery: (result: McpDiscoveryResult) => Promise<void>
-  clearMcpDiscovery: (serverId: string) => void
+  clearMcpDiscovery: (serverId: string) => Promise<void>
 }
 
 export type SettingsStore = StoreApi<SettingsState>
@@ -101,9 +101,10 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       await persistMcpDiscovery(shell.preferences, nextDiscovery)
       set({ mcpDiscovery: nextDiscovery })
     },
-    clearMcpDiscovery: (serverId) => {
+    clearMcpDiscovery: async (serverId) => {
       const nextDiscovery = { ...get().mcpDiscovery }
       delete nextDiscovery[serverId]
+      await persistMcpDiscovery(shell.preferences, nextDiscovery)
       set({ mcpDiscovery: nextDiscovery })
     }
   }))

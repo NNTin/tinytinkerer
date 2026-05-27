@@ -1,18 +1,23 @@
 import {
   AssistantContent,
-  useChatSurfaceController
+  useChatSurfaceController,
+  useSettingsStore
 } from '@tinytinkerer/app-browser'
 import { Button, GitHubMark, ThinkingDots } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { ArrowDownTrayIcon, Cog6ToothIcon } from '@heroicons/react/24/outline'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useInstallPrompt } from '../install/use-install-prompt'
 import { BrowserSettingsModal as SettingsModal } from '@tinytinkerer/app-browser'
 
-const toolLabel = (toolId: string): string => {
+const toolLabel = (toolId: string, serverNameById: Map<string, string>): string => {
   if (toolId === 'web-search') return 'Web search'
-  const mcpMatch = toolId.match(/^mcp:[^:]+:(.+)$/)
-  if (mcpMatch) return mcpMatch[1] ?? toolId
+  const mcpMatch = toolId.match(/^mcp:([^:]+):(.+)$/)
+  if (mcpMatch) {
+    const [, serverId, toolName] = mcpMatch
+    const serverName = serverNameById.get(serverId ?? '')
+    return serverName ? `[${serverName}] ${toolName}` : (toolName ?? toolId)
+  }
   return toolId
 }
 
@@ -39,6 +44,11 @@ export const MobilePage = () => {
     resetConversation,
     cancelRetry
   } = useChatSurfaceController()
+  const mcpServers = useSettingsStore((state) => state.mcpServers)
+  const serverNameById = useMemo(
+    () => new Map(mcpServers.map((s) => [s.id, s.name])),
+    [mcpServers]
+  )
   const [prompt, setPrompt] = useState('')
   const [openTimeline, setOpenTimeline] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -209,7 +219,7 @@ export const MobilePage = () => {
               ) : (
                 toolEvents.map((event) => {
                   const toolId = event.payload.toolId
-                  const label = toolLabel(toolId)
+                  const label = toolLabel(toolId, serverNameById)
 
                   if (event.type === 'tool.call.failed') {
                     return (
@@ -240,8 +250,10 @@ export const MobilePage = () => {
                     )
                   }
 
-                  const output = event.payload.output as { text?: string } | null
-                  const summary = output?.text ? output.text.slice(0, 120) : '(no output)'
+                  const mcpOutput = event.type === 'tool.call.completed'
+                    ? event.payload.output as { text?: string } | null
+                    : null
+                  const summary = mcpOutput?.text ? mcpOutput.text.slice(0, 120) : '(no output)'
                   return (
                     <details key={event.id} className="group rounded-md border border-stone-200/70 bg-white/70 text-xs">
                       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-stone-600 hover:bg-stone-50/80">

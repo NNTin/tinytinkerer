@@ -12,12 +12,25 @@ import {
 import type { Hono } from 'hono'
 import type { Bindings } from '../lib/bindings'
 
+// NOTE: This check covers only literal IP addresses and a set of well-known
+// cloud-metadata hostnames. It cannot defend against a public-looking hostname
+// that DNS-resolves to a private/RFC1918 address (DNS rebinding / SSRF via
+// resolution). True protection requires either a pre-flight DNS lookup +
+// connect-time IP check (unavailable in Cloudflare Workers without a
+// third-party DNS-over-HTTPS call) or Cloudflare's built-in SSRF guardrails.
+const METADATA_HOSTNAMES = new Set([
+  'metadata.google.internal',    // GCP
+  'instance-data',               // GCP alternate
+  'metadata.azure.internal',     // Azure IMDS
+  'metadata',                    // generic internal metadata alias
+])
+
 const isPrivateHostname = (hostname: string): boolean => {
   // Strip IPv6 brackets
   const h = hostname.replace(/^\[|\]$/g, '').toLowerCase()
 
-  // Well-known loopback/internal names
-  if (h === 'localhost' || h === 'metadata.google.internal') return true
+  // Well-known loopback/internal names and cloud metadata endpoints
+  if (h === 'localhost' || METADATA_HOSTNAMES.has(h)) return true
 
   // IPv4 private ranges
   const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
