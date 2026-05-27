@@ -81,6 +81,12 @@ export type CreateReactContentRuntimeOptions = {
   executionPolicy?: RuntimeExecutionPolicy
 }
 
+export const REACT_SSR_EXECUTION_POLICY: RuntimeExecutionPolicy = {
+  allowLazy: false,
+  allowClientOnly: false,
+  allowDom: false
+}
+
 export type {
   RuntimeExecutionPolicy,
   RuntimeFailureContext,

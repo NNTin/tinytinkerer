@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { WireframeNodeRenderer, wireframePlugin } from '../src/index.js'
+import { createWireframePlugin, WireframeNodeRenderer, wireframePlugin } from '../src/index.js'
 
 const HELLO_WORLD_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -35,6 +35,15 @@ describe('WireframeNodeRenderer', () => {
   it('exports the wireframe plugin for composition', () => {
     expect(wireframePlugin.nodeType).toBe('codeBlock')
     expect(wireframePlugin.render).toBeTypeOf('function')
+  })
+
+  it('creates isolated plugin instances on demand', () => {
+    const left = createWireframePlugin()
+    const right = createWireframePlugin()
+
+    expect(left).not.toBe(right)
+    expect(left.id).toBe('wireframe')
+    expect(right.id).toBe('wireframe')
   })
 
   it('renders the wireframe chrome with the label', () => {

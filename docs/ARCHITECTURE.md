@@ -164,12 +164,13 @@ flowchart LR
 
 - Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
-- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`). It must not depend on `content-react`, `content-runtime`, or `content-core` directly.
+- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `content-core` for DTO translation, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`). It must not depend on `content-react` or `content-runtime` directly.
 - `brand-assets` may depend on `contracts` and nothing else.
 - `content-core` must not depend on other workspace packages.
 - `content-runtime` may depend only on `content-core`.
 - `content-react` may depend only on `content-core`, `content-runtime`, and `ui`. It is the public facade for the React side of the content platform and re-exports the content-core symbols downstream content packages need.
-- `content-markdown`, `content-mermaid`, and `content-wireframe` may depend only on `content-react`. They must not import `content-core` or `content-runtime` directly.
+- `content-markdown` may depend only on `content-core`, `content-react`, and local modules.
+- `content-mermaid` and `content-wireframe` may depend only on `content-react` and local modules.
 - `ui` must stay primitive-only.
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
 - `agent-core` may depend only on `contracts` and agent-core-local modules.
@@ -192,8 +193,9 @@ The current flow is:
 3. `@tinytinkerer/app-browser` composes browser-backed implementations on top of `@tinytinkerer/app-core`.
 4. `@tinytinkerer/app-core` orchestrates product behavior through ports and runtime abstractions.
 5. `@tinytinkerer/agent-core` executes the agent runtime using product-agnostic abstractions.
-6. Assistant markdown is parsed by `content-markdown` into the semantic `ContentDocument`. Fenced blocks remain semantic `codeBlock` nodes keyed by `language` (including Mermaid and wireframe). `MarkdownContent` (also from `content-markdown`) accepts an optional `plugins` array plus runtime execution policy, builds a React runtime via `createReactContentRuntime` internally, prepares lazy plugins through `content-runtime`, and dispatches each node through `content-react`. `app-browser` only passes the `content-mermaid` and `content-wireframe` plugins to `MarkdownContent`; the runtime, default React plugins, and AST types stay internal to the content platform facade.
-7. `@tinytinkerer/edge` exposes stateless endpoints and returns payloads that conform to `contracts`.
+6. Assistant synthesis still arrives from the model provider as markdown text, but `app-browser` now creates a markdown content session through `content-markdown` and emits structured assistant events with `{ source, content }`, where `content` is the wire-safe `AssistantContentDocument` DTO from `contracts`.
+7. `AssistantContent` in `app-browser` translates that DTO into the internal semantic `ContentDocument`, applies the specialized Mermaid and wireframe plugins, and renders through the content platform.
+8. `@tinytinkerer/edge` exposes stateless endpoints and returns payloads that conform to `contracts`.
 
 ## Browser App Model
 
@@ -207,7 +209,7 @@ All three browser shells consume the same browser-facing shared layer.
 - shell-facing chat and settings controllers
 - shared browser settings modal
 - shared browser stylesheet
-- `AssistantContent`
+- `AssistantContent` for structured assistant content DTOs
 
 The apps still own:
 
@@ -243,7 +245,7 @@ It must not own:
 
 - `content-core` owns the semantic AST (block + inline node types) plus stable identity helpers (`computeNodeId`, `assignNodeIds`) used by parsers and renderers. Inline nodes now participate in the shared identity contract.
 - `content-runtime` owns the platform-agnostic `ContentRuntime<TResult>` coordinator and the `NodeRendererPlugin` contract. It resolves competing plugins per node type by `priority` + `matches(node)`, enforces execution policy, orchestrates lazy `load()` calls via `prepareNode()` / `prepareDocument()`, and routes structured failure reasons through host-supplied fallback + wrap hooks. It has no React dependency.
-- `content-markdown` parses markdown into the semantic `ContentDocument`, emits Mermaid and wireframe fences as `codeBlock` nodes with specialized `language` values, and exposes a thin `MarkdownContent` adapter over the React runtime.
+- `content-markdown` parses markdown into the semantic `ContentDocument`, emits Mermaid and wireframe fences as `codeBlock` nodes with specialized `language` values, exposes a thin `MarkdownContent` adapter over the React runtime, and provides `createMarkdownContentSession()` for parser-side streaming snapshots.
 - `content-react` provides `createReactContentRuntime`, the default React plugins (paragraph, heading, list, blockquote, thematicBreak, codeBlock, table, image), the inline renderer, and the shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`). `ContentDocumentRenderer` normalizes missing ids through `assignNodeIds()` for blocks, list items, and inline nodes, then uses Suspense plus a render error boundary around runtime-managed node preparation.
-- `content-mermaid` and `content-wireframe` export `mermaidPlugin` / `wireframePlugin` — typed `NodeRendererPlugin<'codeBlock'>` specializations registered into the runtime at composition time. Mermaid still ships its heavy runtime as a separately code-split chunk loaded on first use.
-- The content AST stays internal to the content platform in this phase; `contracts` still expose assistant output as strings.
+- `content-mermaid` and `content-wireframe` export singleton convenience plugins plus `createMermaidPlugin()` / `createWireframePlugin()` factory helpers for runtime-scoped plugin instances. Mermaid still ships its heavy runtime as a separately code-split chunk loaded on first use.
+- `contracts` now own the assistant-facing `AssistantContentDocument` DTO, while the internal semantic AST remains the content platform's runtime/parser model.

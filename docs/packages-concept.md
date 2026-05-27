@@ -102,6 +102,7 @@ Owns:
 - concrete provider and tool wiring for browser apps
 - runtime application of shared brand metadata
 - browser app creation and bootstrap config resolution
+- translation between browser-facing assistant content DTOs and the internal semantic content AST
 - shell-facing React hooks and controllers
 - shared browser-facing components such as `AssistantContent` and the shared settings modal
 - shared browser stylesheet and browser-facing visual behavior that is reused across shells
@@ -156,8 +157,8 @@ The content platform is six packages with strict layering:
 - `content-core` owns the semantic AST (block + inline) and stable-ID helpers, including shared inline-id normalization; no other workspace deps.
 - `content-runtime` owns the platform-agnostic `ContentRuntime` coordinator, multi-plugin resolution policy, execution policy, and the `NodeRendererPlugin` contract; depends only on `content-core`.
 - `content-react` owns the React runtime implementation, default React plugins, inline renderer, shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`), and render-time preparation/ID normalization; depends on `content-core`, `content-runtime`, and `ui`.
-- `content-markdown` owns markdown parsing into the semantic AST and a thin `MarkdownContent` adapter over the React runtime; Mermaid and wireframe stay `codeBlock` specializations via `language`; depends directly on `content-react` only.
-- `content-mermaid` and `content-wireframe` each own one specialized `codeBlock` plugin (`mermaidPlugin` / `wireframePlugin`) plus their renderer and lazy-load policy; each depends directly on `content-react` only.
+- `content-markdown` owns markdown parsing into the semantic AST, parser-only markdown sessions, and thin React adapters (`MarkdownContent`, `ContentDocumentContent`); Mermaid and wireframe stay `codeBlock` specializations via `language`; depends directly on `content-core` and `content-react`.
+- `content-mermaid` and `content-wireframe` each own one specialized `codeBlock` plugin plus their renderer, fallback, and execution requirements; each depends directly on `content-react` only and may expose both a factory export and a singleton convenience export.
 
 Owns collectively:
 
@@ -182,7 +183,7 @@ Allowed examples:
 - `apps/web` importing `app-browser` and `ui`
 - `apps/mobile` importing `app-browser` and `ui`
 - `apps/widget` importing `app-browser` and `ui`
-- `app-browser` importing `app-core`, `contracts`, `brand-assets`, and `content-*`
+- `app-browser` importing `app-core`, `contracts`, `brand-assets`, `content-core` for DTO translation, and outward-facing `content-*`
 - `brand-assets` importing `contracts`
 - `apps/edge` importing `contracts`
 

@@ -34,8 +34,8 @@ Out of scope:
 - chat, auth, settings, or shell bootstrap logic
 - browser OAuth or persistence helpers
 - shell-specific page composition
-- moving rich-content AST types into `@tinytinkerer/contracts`
-- changing edge payloads away from assistant markdown strings
+- replacing the internal semantic AST with the transport DTO from `@tinytinkerer/contracts`
+- non-React renderer packages beyond the current runtime contract
 
 ## Package Model
 
@@ -100,21 +100,23 @@ Must not own:
 
 ### `@tinytinkerer/content-markdown`
 
-Owns markdown parsing and AST transformation into the semantic `ContentDocument`. Imports AST types and the React runtime via `@tinytinkerer/content-react` only — never from `content-core` or `content-runtime` directly.
+Owns markdown parsing and AST transformation into the semantic `ContentDocument`. It depends on `content-core` for parser-side AST/session types and `content-react` for the thin React adapter surface.
 
 Owns:
 
 - markdown parsing
 - GFM support
 - mapping markdown structures into block + inline `ContentNode`s
-- stable ID assignment via `computeNodeId` plus final normalization through `assignNodeIds()` (re-exported by `content-react`)
+- stable ID assignment via `computeNodeId` plus final normalization through `assignNodeIds()`
+- `createMarkdownContentSession()` — accumulates markdown source and returns full `ContentDocument` snapshots
 - `MarkdownContent` — parses to `ContentDocument`, builds a `ReactContentRuntime` internally from an optional `plugins` array plus execution policy, and delegates rendering to `ContentDocumentRenderer`
+- `ContentDocumentContent` — thin React facade for rendering a semantic `ContentDocument` directly
 - fallback rules for unsupported content
 
 Must not own:
 
 - shell-facing exports for apps
-- direct imports from `content-core` or `content-runtime`
+- direct imports from `content-runtime`
 
 ### `@tinytinkerer/content-mermaid`
 
@@ -152,7 +154,7 @@ Must not own:
 
 ## AST Surface
 
-The content platform owns the internal semantic AST. It is not a wire contract in this phase.
+The content platform owns the internal semantic AST. The browser/chat transport now mirrors it through a wire-safe DTO in `@tinytinkerer/contracts`, but the internal AST and the transport DTO are still separate types.
 
 ```ts
 type BlockNode =
@@ -183,10 +185,10 @@ type ContentDocument = { nodes: BlockNode[] }
 Rules:
 
 - `ContentNode` stays inside the content platform.
-- `@tinytinkerer/contracts` does not mirror this AST yet.
+- `@tinytinkerer/contracts` now mirrors the assistant-facing shape as `AssistantContentDocument`, but parser/runtime code continues to use the internal semantic AST.
 - Every block, list-item, and inline node may carry an optional `id`. Markdown parsing assigns deterministic, prefix-stable block IDs via `computeNodeId`; hand-constructed documents may omit `id`, and the shared `assignNodeIds()` helper normalizes the full document before React rendering.
 - `ChoicePromptNode` remains an extension point and does not require interactive behavior yet.
-- Shared runtime layers may continue to treat assistant output as strings until a later transport change is intentionally planned.
+- Shared runtime layers now treat assistant output as structured `{ source, content }` snapshots at the chat-event boundary; parser/runtime internals still operate on the semantic AST.
 
 ## Shell-Facing API
 
@@ -195,8 +197,8 @@ The public browser-facing content surface is `AssistantContent` from `@tinytinke
 That means:
 
 - browser shells render assistant output through `app-browser`, not through direct `content-*` imports
-- the shell-facing component accepts raw assistant text plus shell-local styling hooks
-- parsing, runtime construction, plugin registration, and fallback policy remain hidden behind `app-browser`
+- the shell-facing component accepts structured `AssistantContentDocument` DTOs plus shell-local styling hooks
+- DTO translation, runtime construction, plugin registration, and fallback policy remain hidden behind `app-browser`
 - shared content styling hooks may be exposed from the browser layer, but content packages do not own app-shell layout
 
 ## Composition Boundary
@@ -205,12 +207,12 @@ That means:
 
 Browser apps should not import `content-*` packages directly. Instead:
 
-1. `app-browser` imports `MarkdownContent` from `content-markdown` and the `mermaidPlugin` / `wireframePlugin` exports from `content-mermaid` / `content-wireframe`. It does not import `content-react`, `content-runtime`, or `content-core`.
-2. `app-browser` passes the plugins as a stable `plugins` array to `MarkdownContent`.
-3. `MarkdownContent` parses the assistant text to a `ContentDocument`, internally builds a `ReactContentRuntime` via `createReactContentRuntime`, registers the supplied plugins on top of the default React plugins, and delegates document rendering to `ContentDocumentRenderer`.
+1. `app-browser` owns the translation boundary between chat-event DTOs and the internal content AST. It imports the `AssistantContentDocument` DTO from `contracts`, semantic content types from `content-core`, `ContentDocumentContent` / `createMarkdownContentSession()` from `content-markdown`, and the `mermaidPlugin` / `wireframePlugin` exports from `content-mermaid` / `content-wireframe`.
+2. During synthesis, `app-browser` creates a markdown content session and converts each semantic `ContentDocument` snapshot into the wire-safe `{ source, content }` assistant event payload.
+3. During rendering, `AssistantContent` converts the DTO back into a semantic `ContentDocument`, passes a stable plugin array to `ContentDocumentContent`, and lets the content platform own runtime assembly and rendering.
 4. Browser shells consume the final shell-safe export (`AssistantContent`) from `app-browser`.
 
-This keeps the dependency surface small and preserves the rule that apps extend capability through `app-browser` instead of reaching into lower layers directly. Runtime construction is fully encapsulated by `content-markdown`, so adding or swapping plugins never leaks runtime types into `app-browser`.
+This keeps apps thin while making the chat-event boundary structured. `app-browser` owns DTO translation; runtime construction and default plugin registration remain inside the content platform.
 
 ## Browser Composition Diagram
 
@@ -232,6 +234,7 @@ flowchart LR
   appbrowser --> contentmarkdown
   appbrowser --> contentmermaid
   appbrowser --> contentwireframe
+  appbrowser --> contentcore
 
   contentreact --> contentruntime
   contentreact --> ui
@@ -249,8 +252,9 @@ flowchart LR
 - `content-core` must not depend on any workspace package.
 - `content-runtime` may depend only on `content-core`.
 - `content-react` may depend only on `content-core`, `content-runtime`, and `ui`. It is the public facade for the React side of the content platform and re-exports the content-core symbols downstream packages need.
-- `content-markdown`, `content-mermaid`, and `content-wireframe` may depend only on `content-react`. They must not import `content-core` or `content-runtime` directly.
-- `app-browser` may depend only on the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`). It must not depend on `content-react`, `content-runtime`, or `content-core` directly.
+- `content-markdown` may depend only on `content-core`, `content-react`, and local modules.
+- `content-mermaid` and `content-wireframe` may depend only on `content-react` and local modules.
+- `app-browser` may depend on `content-core` only for DTO translation. It must not depend on `content-react` or `content-runtime` directly.
 - The content platform must not depend on `app-browser`.
 - Browser apps consume shell-facing content exports from `app-browser`, not directly from `content-*`.
 - `ui` must not absorb content parsing, specialized renderers, or browser-shell runtime logic.
@@ -261,10 +265,11 @@ flowchart LR
 The current rendering split is:
 
 - `content-markdown` parses raw markdown into the semantic `ContentDocument`, assigning stable block IDs and then normalizing any remaining block/list-item/inline ids through `assignNodeIds()`.
-- `content-markdown` exposes a `MarkdownContent` adapter that accepts a `plugins` array plus optional runtime execution policy, builds a `ReactContentRuntime` via `createReactContentRuntime`, registers each supplied plugin, and delegates document rendering to `content-react`'s `ContentDocumentRenderer`. Runtime construction is memoized on the plugins-array reference.
+- `content-markdown` exposes `MarkdownContent` for string parsing, `ContentDocumentContent` for direct document rendering, and `createMarkdownContentSession()` for parser-side snapshot streaming.
 - `content-react` provides `createReactContentRuntime`, which returns a `ContentRuntime<ReactNode>` with default React plugins pre-registered (paragraph, heading, list, blockquote, thematic break, code block, table, image). `ContentDocumentRenderer` first normalizes the document through `assignNodeIds()` and then wraps each rendered block in a runtime-backed preparation boundary plus `<Suspense>` + a class-based `RendererBoundary` so lazy plugins and thrown render errors degrade gracefully. `content-react` also re-exports the content-core AST types and stable-ID helpers so downstream content packages can drop direct `content-core` imports.
-- `content-mermaid` and `content-wireframe` each export a typed `NodeRendererPlugin<'codeBlock'>` (`mermaidPlugin`, `wireframePlugin`) — registration on the runtime is a single `runtime.register(plugin)` call, performed inside `MarkdownContent`.
-- `app-browser` only passes a stable `plugins` array (containing `mermaidPlugin` + `wireframePlugin`) to `MarkdownContent`. It does not see runtimes, default plugins, or AST types.
+- `content-react` also exports `REACT_SSR_EXECUTION_POLICY`, which blocks lazy, client-only, and DOM-required plugins so SSR falls back deterministically to code rendering.
+- `content-mermaid` and `content-wireframe` each export typed `NodeRendererPlugin<'codeBlock'>` singletons plus `createMermaidPlugin()` / `createWireframePlugin()` factory helpers for runtime-scoped plugin instances.
+- `app-browser` owns DTO translation, but runtime construction and default plugin registration stay inside the content platform.
 
 Specialized renderers such as Mermaid stay lazy-loadable: Mermaid's runtime is fetched via dynamic script injection on first use, so it does not bloat the main browser entry chunk.
 

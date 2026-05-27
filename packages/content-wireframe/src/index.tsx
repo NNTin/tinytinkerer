@@ -36,7 +36,7 @@ export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlo
   )
 }
 
-export const wireframePlugin: ReactNodeRendererPlugin<'codeBlock'> = {
+export const createWireframePlugin = (): ReactNodeRendererPlugin<'codeBlock'> => ({
   id: 'wireframe',
   nodeType: 'codeBlock',
   priority: 40,
@@ -45,4 +45,6 @@ export const wireframePlugin: ReactNodeRendererPlugin<'codeBlock'> = {
   matches: (node) => node.language === 'wireframe',
   render: (node) => <WireframeNodeRenderer node={node} />,
   fallback: (node) => <CodeBlockFallback code={node.code} language={node.language ?? 'wireframe'} />
-}
+})
+
+export const wireframePlugin: ReactNodeRendererPlugin<'codeBlock'> = createWireframePlugin()

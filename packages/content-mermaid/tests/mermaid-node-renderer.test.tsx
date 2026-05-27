@@ -6,7 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mockInitialize = vi.hoisted(() => vi.fn())
 const mockRender = vi.hoisted(() => vi.fn())
 
-import { MermaidNodeRenderer, mermaidPlugin, resetMermaidState } from '../src/index.js'
+import {
+  createMermaidPlugin,
+  MermaidNodeRenderer,
+  mermaidPlugin,
+  resetMermaidState
+} from '../src/index.js'
 
 const FLOWCHART_CODE = [
   'flowchart TD',
@@ -36,6 +41,15 @@ describe('MermaidNodeRenderer', () => {
   it('exports the mermaid plugin for composition', () => {
     expect(mermaidPlugin.nodeType).toBe('codeBlock')
     expect(mermaidPlugin.render).toBeTypeOf('function')
+  })
+
+  it('creates isolated plugin instances on demand', () => {
+    const left = createMermaidPlugin()
+    const right = createMermaidPlugin()
+
+    expect(left).not.toBe(right)
+    expect(left.id).toBe('mermaid')
+    expect(right.id).toBe('mermaid')
   })
 
   it('renders svg output after the mermaid runtime loads', async () => {

@@ -9,6 +9,7 @@ import {
   MARKDOWN_ROOT_CLASS,
   MARKDOWN_STREAMING_CLASS,
   PreviewCodeFrame,
+  REACT_SSR_EXECUTION_POLICY,
   TableNodeView,
   tableToMarkdown
 } from '../src/index.js'
@@ -18,6 +19,14 @@ afterEach(() => {
 })
 
 describe('ContentDocumentRenderer', () => {
+  it('exports a conservative SSR execution policy preset', () => {
+    expect(REACT_SSR_EXECUTION_POLICY).toEqual({
+      allowLazy: false,
+      allowClientOnly: false,
+      allowDom: false
+    })
+  })
+
   it('adds the shared markdown root class and streaming class', () => {
     const { container } = render(
       <ContentDocumentRenderer
