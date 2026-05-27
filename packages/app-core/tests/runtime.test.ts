@@ -55,7 +55,7 @@ describe('createChatRuntime', () => {
     expect(events.some((event) => event.type === 'tool.call.completed')).toBe(true)
     expect(events.at(-1)).toMatchObject({
       type: 'assistant.done',
-      payload: { text: 'done' }
+      payload: { source: 'done' }
     })
   })
 
@@ -85,7 +85,7 @@ describe('createChatRuntime', () => {
     expect(events.some((event) => event.type === 'rate.limit.recovered')).toBe(true)
     expect(events.at(-1)).toMatchObject({
       type: 'assistant.done',
-      payload: { text: 'retried' }
+      payload: { source: 'retried' }
     })
   })
 })

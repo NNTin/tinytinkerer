@@ -53,6 +53,244 @@ export const executionPlanSchema = z.object({
 
 export type ExecutionPlan = z.infer<typeof executionPlanSchema>
 
+const nodeIdSchema = z.string()
+
+type AssistantNodeBase = {
+  id?: string | undefined
+}
+
+export type AssistantInlineNode =
+  | (AssistantNodeBase & {
+      type: 'text'
+      value: string
+    })
+  | (AssistantNodeBase & {
+      type: 'emphasis'
+      children: AssistantInlineNode[]
+    })
+  | (AssistantNodeBase & {
+      type: 'strong'
+      children: AssistantInlineNode[]
+    })
+  | (AssistantNodeBase & {
+      type: 'strikethrough'
+      children: AssistantInlineNode[]
+    })
+  | (AssistantNodeBase & {
+      type: 'codeInline'
+      value: string
+    })
+  | (AssistantNodeBase & {
+      type: 'link'
+      url: string
+      title?: string | undefined
+      children: AssistantInlineNode[]
+    })
+  | (AssistantNodeBase & {
+      type: 'imageInline'
+      url: string
+      alt: string
+      title?: string | undefined
+    })
+  | (AssistantNodeBase & {
+      type: 'break'
+    })
+
+export type AssistantTableCell = AssistantInlineNode[]
+
+export type AssistantTableAlignment = 'left' | 'center' | 'right' | null
+
+export type AssistantListItemNode = AssistantNodeBase & {
+  type: 'listItem'
+  checked?: boolean | null | undefined
+  children: AssistantBlockNode[]
+}
+
+export type AssistantBlockNode =
+  | (AssistantNodeBase & {
+      type: 'heading'
+      level: 1 | 2 | 3 | 4 | 5 | 6
+      children: AssistantInlineNode[]
+    })
+  | (AssistantNodeBase & {
+      type: 'paragraph'
+      children: AssistantInlineNode[]
+    })
+  | (AssistantNodeBase & {
+      type: 'list'
+      ordered: boolean
+      start?: number | undefined
+      children: AssistantListItemNode[]
+    })
+  | (AssistantNodeBase & {
+      type: 'blockquote'
+      children: AssistantBlockNode[]
+    })
+  | (AssistantNodeBase & {
+      type: 'thematicBreak'
+    })
+  | (AssistantNodeBase & {
+      type: 'codeBlock'
+      code: string
+      language?: string | undefined
+    })
+  | (AssistantNodeBase & {
+      type: 'choicePrompt'
+      prompt: string
+      choices: string[]
+    })
+  | (AssistantNodeBase & {
+      type: 'table'
+      align: AssistantTableAlignment[]
+      header: AssistantTableCell[]
+      rows: AssistantTableCell[][]
+    })
+  | (AssistantNodeBase & {
+      type: 'image'
+      url: string
+      alt: string
+      title?: string | undefined
+    })
+
+export type AssistantContentDocument = {
+  nodes: AssistantBlockNode[]
+}
+
+export const assistantInlineNodeSchema: z.ZodType<AssistantInlineNode> = z.lazy(() =>
+  z.discriminatedUnion('type', [
+    z.object({
+      type: z.literal('text'),
+      id: nodeIdSchema.optional(),
+      value: z.string()
+    }),
+    z.object({
+      type: z.literal('emphasis'),
+      id: nodeIdSchema.optional(),
+      children: z.array(assistantInlineNodeSchema)
+    }),
+    z.object({
+      type: z.literal('strong'),
+      id: nodeIdSchema.optional(),
+      children: z.array(assistantInlineNodeSchema)
+    }),
+    z.object({
+      type: z.literal('strikethrough'),
+      id: nodeIdSchema.optional(),
+      children: z.array(assistantInlineNodeSchema)
+    }),
+    z.object({
+      type: z.literal('codeInline'),
+      id: nodeIdSchema.optional(),
+      value: z.string()
+    }),
+    z.object({
+      type: z.literal('link'),
+      id: nodeIdSchema.optional(),
+      url: z.string(),
+      title: z.string().optional(),
+      children: z.array(assistantInlineNodeSchema)
+    }),
+    z.object({
+      type: z.literal('imageInline'),
+      id: nodeIdSchema.optional(),
+      url: z.string(),
+      alt: z.string(),
+      title: z.string().optional()
+    }),
+    z.object({
+      type: z.literal('break'),
+      id: nodeIdSchema.optional()
+    })
+  ])
+)
+
+export const assistantTableCellSchema = z.array(assistantInlineNodeSchema)
+
+export const assistantTableAlignmentSchema = z.union([
+  z.literal('left'),
+  z.literal('center'),
+  z.literal('right'),
+  z.null()
+])
+
+export const assistantBlockNodeSchema: z.ZodType<AssistantBlockNode> = z.lazy(() =>
+  z.discriminatedUnion('type', [
+    z.object({
+      type: z.literal('heading'),
+      id: nodeIdSchema.optional(),
+      level: z.union([
+        z.literal(1),
+        z.literal(2),
+        z.literal(3),
+        z.literal(4),
+        z.literal(5),
+        z.literal(6)
+      ]),
+      children: z.array(assistantInlineNodeSchema)
+    }),
+    z.object({
+      type: z.literal('paragraph'),
+      id: nodeIdSchema.optional(),
+      children: z.array(assistantInlineNodeSchema)
+    }),
+    z.object({
+      type: z.literal('list'),
+      id: nodeIdSchema.optional(),
+      ordered: z.boolean(),
+      start: z.number().int().optional(),
+      children: z.array(assistantListItemNodeSchema)
+    }),
+    z.object({
+      type: z.literal('blockquote'),
+      id: nodeIdSchema.optional(),
+      children: z.array(assistantBlockNodeSchema)
+    }),
+    z.object({
+      type: z.literal('thematicBreak'),
+      id: nodeIdSchema.optional()
+    }),
+    z.object({
+      type: z.literal('codeBlock'),
+      id: nodeIdSchema.optional(),
+      code: z.string(),
+      language: z.string().optional()
+    }),
+    z.object({
+      type: z.literal('choicePrompt'),
+      id: nodeIdSchema.optional(),
+      prompt: z.string(),
+      choices: z.array(z.string())
+    }),
+    z.object({
+      type: z.literal('table'),
+      id: nodeIdSchema.optional(),
+      align: z.array(assistantTableAlignmentSchema),
+      header: z.array(assistantTableCellSchema),
+      rows: z.array(z.array(assistantTableCellSchema))
+    }),
+    z.object({
+      type: z.literal('image'),
+      id: nodeIdSchema.optional(),
+      url: z.string(),
+      alt: z.string(),
+      title: z.string().optional()
+    })
+  ])
+)
+
+export const assistantListItemNodeSchema: z.ZodType<AssistantListItemNode> = z.lazy(() =>
+  z.object({
+    type: z.literal('listItem'),
+    id: nodeIdSchema.optional(),
+    checked: z.boolean().nullable().optional(),
+    children: z.array(assistantBlockNodeSchema)
+  })
+)
+
+export const assistantContentDocumentSchema: z.ZodType<AssistantContentDocument> = z.object({
+  nodes: z.array(assistantBlockNodeSchema)
+})
+
 const eventBaseSchema = <TType extends EventType, TPayload extends z.ZodTypeAny>(
   type: TType,
   payload: TPayload
@@ -128,11 +366,17 @@ export const rateLimitCancelledEventSchema = eventBaseSchema(
 )
 export const assistantChunkEventSchema = eventBaseSchema(
   'assistant.chunk',
-  z.object({ text: z.string() })
+  z.object({
+    source: z.string(),
+    content: assistantContentDocumentSchema
+  })
 )
 export const assistantDoneEventSchema = eventBaseSchema(
   'assistant.done',
-  z.object({ text: z.string() })
+  z.object({
+    source: z.string(),
+    content: assistantContentDocumentSchema
+  })
 )
 export const errorEventSchema = eventBaseSchema(
   'error',

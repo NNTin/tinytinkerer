@@ -18,7 +18,6 @@ const noticeStyle: Record<'info' | 'warning' | 'error', string> = {
 export const MobilePage = () => {
   const {
     events,
-    streamingText,
     token,
     turns,
     timeline,
@@ -52,7 +51,7 @@ export const MobilePage = () => {
 
   useEffect(() => {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [events, streamingText])
+  }, [events])
 
   const handlePromptSubmit = () => {
     void submitPromptController(prompt).then((didSend) => {
@@ -132,12 +131,12 @@ export const MobilePage = () => {
                     </div>
                   ) : null}
 
-                  {turn.assistantText ? (
+                  {turn.assistantContent ? (
                     <div className="rounded-2xl bg-white px-3 py-3 text-sm text-stone-900 shadow-sm">
                       <AssistantContent
-                        content={turn.assistantText}
+                        content={turn.assistantContent}
                         className="prose-assistant"
-                        isStreaming={Boolean(streamingText && turn.assistantText === streamingText)}
+                        isStreaming={turn.isStreaming}
                       />
                     </div>
                   ) : isRunning ? (

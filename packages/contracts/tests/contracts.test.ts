@@ -17,7 +17,17 @@ describe('contracts', () => {
       id: '1',
       timestamp: new Date().toISOString(),
       type: 'assistant.done',
-      payload: { text: 'ok' }
+      payload: {
+        source: 'ok',
+        content: {
+          nodes: [
+            {
+              type: 'paragraph',
+              children: [{ type: 'text', value: 'ok' }]
+            }
+          ]
+        }
+      }
     })
 
     expect(event.type).toBe('assistant.done')

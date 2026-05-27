@@ -24,6 +24,15 @@ class TinyTinkererDb extends Dexie {
       events: 'id,conversationId,timestamp',
       preferences: 'key'
     })
+    this.version(2)
+      .stores({
+        conversations: 'id,updatedAt',
+        events: 'id,conversationId,timestamp',
+        preferences: 'key'
+      })
+      .upgrade(async (tx) => {
+        await tx.table('events').clear()
+      })
   }
 }
 

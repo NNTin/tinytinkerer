@@ -1,10 +1,6 @@
-import { createElement, useMemo } from 'react'
-import {
-  ContentDocumentRenderer,
-  createReactContentRuntime,
-  type ReactContentPlugin,
-  type RuntimeExecutionPolicy
-} from '@tinytinkerer/content-react'
+import { useMemo } from 'react'
+import type { ReactContentPlugin, RuntimeExecutionPolicy } from '@tinytinkerer/content-react'
+import { ContentDocumentContent } from './content-document-content'
 import { parseMarkdownContent } from './parse-markdown-content'
 
 export type MarkdownContentProps = {
@@ -23,22 +19,14 @@ export const MarkdownContent = ({
   executionPolicy
 }: MarkdownContentProps) => {
   const document = useMemo(() => parseMarkdownContent(content), [content])
-  const runtime = useMemo(() => {
-    const built = createReactContentRuntime(
-      executionPolicy ? { executionPolicy } : undefined
-    )
-    if (plugins) {
-      for (const plugin of plugins) {
-        built.register(plugin)
-      }
-    }
-    return built
-  }, [executionPolicy, plugins])
 
-  return createElement(ContentDocumentRenderer, {
-    document,
-    isStreaming,
-    runtime,
-    ...(className ? { className } : {})
-  })
+  return (
+    <ContentDocumentContent
+      document={document}
+      isStreaming={isStreaming}
+      {...(className ? { className } : {})}
+      {...(plugins ? { plugins } : {})}
+      {...(executionPolicy ? { executionPolicy } : {})}
+    />
+  )
 }

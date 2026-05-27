@@ -131,13 +131,14 @@ export type ChoicePromptNode = {
 }
 
 export type TableAlignment = 'left' | 'center' | 'right' | null
+export type TableCell = InlineNode[]
 
 export type TableNode = {
   type: 'table'
   id?: NodeId
   align: TableAlignment[]
-  header: string[]
-  rows: string[][]
+  header: TableCell[]
+  rows: TableCell[][]
 }
 
 export type ImageNode = {
@@ -191,6 +192,7 @@ const serializeInlineNode = (node: InlineNode): string => {
 }
 
 const serializeInlineNodes = (nodes: InlineNode[]): string => nodes.map(serializeInlineNode).join('\n')
+const serializeTableCell = (cell: TableCell): string => serializeInlineNodes(cell)
 
 const serializeListItem = (node: ListItemNode): string =>
   `listItem:${node.checked === undefined ? '' : String(node.checked)}:${node.children.map(serializeBlockNode).join('\n')}`
@@ -212,7 +214,7 @@ const serializeBlockNode = (node: BlockNode): string => {
     case 'choicePrompt':
       return `choicePrompt:${node.prompt}:${node.choices.join('\n')}`
     case 'table':
-      return `table:${node.align.join('|')}:${node.header.join('|')}:${node.rows.map((row) => row.join('|')).join('\n')}`
+      return `table:${node.align.join('|')}:${node.header.map(serializeTableCell).join('|')}:${node.rows.map((row) => row.map(serializeTableCell).join('|')).join('\n')}`
     case 'image':
       return `image:${node.url}:${node.alt}:${node.title ?? ''}`
   }
@@ -287,6 +289,11 @@ const normalizeInlineNodes = (
   counts: Map<string, number>
 ): InlineNode[] => nodes.map((node) => normalizeInlineNode(node, counts))
 
+const normalizeTableCell = (
+  cell: TableCell,
+  counts: Map<string, number>
+): TableCell => normalizeInlineNodes(cell, counts)
+
 const normalizeListItem = (
   node: ListItemNode,
   counts: Map<string, number>
@@ -333,6 +340,16 @@ const normalizeBlockNode = (
       const normalized: BlockquoteNode = {
         ...node,
         children
+      }
+      return withAssignedId(normalized, counts, serializeBlockNode(normalized))
+    }
+    case 'table': {
+      const header = node.header.map((cell) => normalizeTableCell(cell, counts))
+      const rows = node.rows.map((row) => row.map((cell) => normalizeTableCell(cell, counts)))
+      const normalized: TableNode = {
+        ...node,
+        header,
+        rows
       }
       return withAssignedId(normalized, counts, serializeBlockNode(normalized))
     }

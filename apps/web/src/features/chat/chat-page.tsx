@@ -19,7 +19,6 @@ const noticeStyle: Record<'info' | 'warning' | 'error', string> = systemLevelSty
 export const ChatPage = () => {
   const {
     events,
-    streamingText,
     token,
     turns,
     timeline,
@@ -52,7 +51,7 @@ export const ChatPage = () => {
   // Scroll to bottom when new content arrives
   useEffect(() => {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [events, streamingText])
+  }, [events])
 
   const handlePromptSubmit = () => {
     void submitPrompt(prompt).then((didSend) => {
@@ -93,12 +92,12 @@ export const ChatPage = () => {
                     </div>
                   ) : null}
 
-                  {turn.assistantText ? (
+                  {turn.assistantContent ? (
                     <div className="rounded-lg bg-white px-3 py-2 text-sm text-stone-900 shadow-sm">
                       <AssistantContent
-                        content={turn.assistantText}
+                        content={turn.assistantContent}
                         className="prose-assistant"
-                        isStreaming={Boolean(streamingText && turn.assistantText === streamingText)}
+                        isStreaming={turn.isStreaming}
                       />
                     </div>
                   ) : isRunning ? (

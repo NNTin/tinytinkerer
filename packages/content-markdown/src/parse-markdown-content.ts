@@ -33,7 +33,7 @@ import {
   type TableAlignment,
   type TableNode,
   type ThematicBreakNode,
-} from '@tinytinkerer/content-react'
+} from '@tinytinkerer/content-core'
 import { unified } from 'unified'
 
 const parser = unified().use(remarkParse).use(remarkGfm)
@@ -93,7 +93,8 @@ const inlineFromMdast = (node: PhrasingContent): InlineNode => {
   }
 }
 
-const tableCellToText = (cell: TableCell): string => toString(cell).trim()
+const inlineNodesFromTableCell = (cell: TableCell): InlineNode[] => cell.children.map(inlineFromMdast)
+const inlineCellDigest = (cell: InlineNode[]): string => JSON.stringify(cell)
 
 const fromHeading = (node: Heading, ids: IdAllocator): HeadingNode => ({
   type: 'heading',
@@ -185,9 +186,12 @@ const fromTable = (node: Table, ids: IdAllocator): TableNode => {
   const headerRow = node.children[0]
   const bodyRows = node.children.slice(1)
   const align = (node.align ?? []).map((value): TableAlignment => value ?? null)
-  const header = headerRow ? headerRow.children.map(tableCellToText) : []
-  const rows = bodyRows.map((row) => row.children.map(tableCellToText))
-  const digest = [header.join('\u0001'), ...rows.map((row) => row.join('\u0001'))].join('\n')
+  const header = headerRow ? headerRow.children.map(inlineNodesFromTableCell) : []
+  const rows = bodyRows.map((row) => row.children.map(inlineNodesFromTableCell))
+  const digest = [
+    header.map(inlineCellDigest).join('\u0001'),
+    ...rows.map((row) => row.map(inlineCellDigest).join('\u0001'))
+  ].join('\n')
   return {
     type: 'table',
     id: ids.allocate('table', digest),

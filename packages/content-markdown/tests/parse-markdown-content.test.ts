@@ -35,7 +35,12 @@ const stripBlock = (node: BlockNode): BlockNode => {
       return next
     }
     case 'table':
-      return { type: 'table', align: node.align, header: node.header, rows: node.rows }
+      return {
+        type: 'table',
+        align: node.align,
+        header: node.header.map((cell) => cell.map(stripInline)),
+        rows: node.rows.map((row) => row.map((cell) => cell.map(stripInline)))
+      }
     case 'codeBlock': {
       const next: BlockNode = { type: 'codeBlock', code: node.code }
       if (node.language) next.language = node.language
@@ -117,8 +122,16 @@ describe('parseMarkdownContent', () => {
         {
           type: 'table',
           align: [null, null],
-          header: ['Name', 'Role'],
-          rows: [['Ada', 'Admin']]
+          header: [
+            [{ type: 'text', value: 'Name' }],
+            [{ type: 'text', value: 'Role' }]
+          ],
+          rows: [
+            [
+              [{ type: 'text', value: 'Ada' }],
+              [{ type: 'text', value: 'Admin' }]
+            ]
+          ]
         }
       ]
     })

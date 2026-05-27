@@ -12,9 +12,9 @@ export const buildConversationHistory = (events: ChatEvent[]): ConversationMessa
     }
 
     if (event.type === 'assistant.done') {
-      if (pendingUserText && event.payload.text.trim()) {
+      if (pendingUserText && event.payload.source.trim()) {
         history.push({ role: 'user', content: pendingUserText })
-        history.push({ role: 'assistant', content: event.payload.text })
+        history.push({ role: 'assistant', content: event.payload.source })
       }
 
       pendingUserText = undefined

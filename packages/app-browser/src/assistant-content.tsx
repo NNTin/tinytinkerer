@@ -1,9 +1,11 @@
-import { MarkdownContent } from '@tinytinkerer/content-markdown'
+import type { AssistantContentDocument } from '@tinytinkerer/contracts'
+import { ContentDocumentContent } from '@tinytinkerer/content-markdown'
 import { mermaidPlugin } from '@tinytinkerer/content-mermaid'
 import { wireframePlugin } from '@tinytinkerer/content-wireframe'
+import { assistantContentDocumentToContentDocument } from './content-document'
 
 export type AssistantContentProps = {
-  content: string
+  content: AssistantContentDocument
   isStreaming?: boolean
   className?: string
 }
@@ -15,8 +17,8 @@ export const AssistantContent = ({
   isStreaming = false,
   className
 }: AssistantContentProps) => (
-  <MarkdownContent
-    content={content}
+  <ContentDocumentContent
+    document={assistantContentDocumentToContentDocument(content)}
     isStreaming={isStreaming}
     plugins={assistantPlugins}
     {...(className ? { className } : {})}

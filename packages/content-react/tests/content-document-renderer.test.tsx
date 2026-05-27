@@ -46,8 +46,16 @@ describe('ContentDocumentRenderer', () => {
             {
               type: 'table',
               align: ['left', 'right'],
-              header: ['Name', 'Role'],
-              rows: [['Ada', 'Admin']]
+              header: [
+                [{ type: 'text', value: 'Name' }],
+                [{ type: 'text', value: 'Role' }]
+              ],
+              rows: [
+                [
+                  [{ type: 'text', value: 'Ada' }],
+                  [{ type: 'text', value: 'Admin' }]
+                ]
+              ]
             },
             { type: 'image', url: 'https://example.com/test.png', alt: 'Test image' }
           ]
@@ -72,8 +80,16 @@ describe('ContentDocumentRenderer', () => {
             {
               type: 'table',
               align: ['left', 'right'],
-              header: ['Name', 'Role'],
-              rows: [['Ada', 'Admin']]
+              header: [
+                [{ type: 'text', value: 'Name' }],
+                [{ type: 'text', value: 'Role' }]
+              ],
+              rows: [
+                [
+                  [{ type: 'text', value: 'Ada' }],
+                  [{ type: 'text', value: 'Admin' }]
+                ]
+              ]
             }
           ]
         }}
@@ -343,8 +359,18 @@ describe('TableNodeView', () => {
         node={{
           type: 'table',
           align: ['left', 'right', 'center'],
-          header: ['Name', 'Role', 'Score'],
-          rows: [['Ada', 'Admin', '3']]
+          header: [
+            [{ type: 'text', value: 'Name' }],
+            [{ type: 'text', value: 'Role' }],
+            [{ type: 'text', value: 'Score' }]
+          ],
+          rows: [
+            [
+              [{ type: 'text', value: 'Ada' }],
+              [{ type: 'text', value: 'Admin' }],
+              [{ type: 'text', value: '3' }]
+            ]
+          ]
         }}
       />
     )
@@ -360,8 +386,18 @@ describe('TableNodeView', () => {
       tableToMarkdown({
         type: 'table',
         align: ['left', 'right', 'center'],
-        header: ['Name', 'Role', 'Score'],
-        rows: [['Ada', 'Admin', '3']]
+        header: [
+          [{ type: 'text', value: 'Name' }],
+          [{ type: 'text', value: 'Role' }],
+          [{ type: 'text', value: 'Score' }]
+        ],
+        rows: [
+          [
+            [{ type: 'text', value: 'Ada' }],
+            [{ type: 'text', value: 'Admin' }],
+            [{ type: 'text', value: '3' }]
+          ]
+        ]
       })
     ).toBe(['| Name | Role | Score |', '| :--- | ---: | :---: |', '| Ada | Admin | 3 |'].join('\n'))
   })

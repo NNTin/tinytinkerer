@@ -134,7 +134,7 @@ describe('AgentRuntime', () => {
     expect(attempts).toBe(2)
     expect(events.some((event) => event.type === 'rate.limit.waiting')).toBe(true)
     expect(events.some((event) => event.type === 'rate.limit.recovered')).toBe(true)
-    expect(events.find(isEventType('assistant.done'))?.payload.text).toBe('retried')
+    expect(events.find(isEventType('assistant.done'))?.payload.source).toBe('retried')
   })
 
   it('cancels synthesis after a long rate limit', async () => {

@@ -20,6 +20,7 @@ import {
   type ListItemNode,
   type ListNode,
   type ParagraphNode,
+  type TableCell,
   type TableAlignment,
   type TableNode
 } from '@tinytinkerer/content-core'
@@ -57,6 +58,7 @@ export type {
   StrikethroughNode,
   StrongNode,
   TableAlignment,
+  TableCell,
   TableNode,
   TextNode,
   ThematicBreakNode
@@ -207,6 +209,27 @@ const renderInline = (nodes: InlineNode[]): ReactNode =>
         return <br key={key} />
     }
   })
+
+const inlineNodesToText = (nodes: InlineNode[]): string =>
+  nodes
+    .map((node) => {
+      switch (node.type) {
+        case 'text':
+          return node.value
+        case 'emphasis':
+        case 'strong':
+        case 'strikethrough':
+        case 'link':
+          return inlineNodesToText(node.children)
+        case 'codeInline':
+          return node.value
+        case 'imageInline':
+          return node.alt
+        case 'break':
+          return '\n'
+      }
+    })
+    .join('')
 
 type HeadingTag = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
 
@@ -547,12 +570,14 @@ const formatTableCell = (value: string): string =>
     .replace(/\|/g, '\\|')
     .trim()
 
+const tableCellToMarkdown = (cell: TableCell): string => formatTableCell(inlineNodesToText(cell))
+
 export const tableToMarkdown = (node: TableNode): string => {
   const width = node.header.length
-  const header = `| ${node.header.map(formatTableCell).join(' | ')} |`
+  const header = `| ${node.header.map(tableCellToMarkdown).join(' | ')} |`
   const separator = `| ${Array.from({ length: width }, (_, index) => alignToMarkdown(node.align[index] ?? null)).join(' | ')} |`
   const rows = node.rows.map((row) =>
-    `| ${Array.from({ length: width }, (_, index) => formatTableCell(row[index] ?? '')).join(' | ')} |`
+    `| ${Array.from({ length: width }, (_, index) => tableCellToMarkdown(row[index] ?? [])).join(' | ')} |`
   )
   return [header, separator, ...rows].join('\n')
 }
@@ -562,18 +587,21 @@ const TableMarkup = ({ node }: { node: TableNode }) => (
     <thead>
       <tr>
         {node.header.map((cell, index) => (
-          <th key={`${index}-${cell}`} align={node.align[index] ?? undefined}>
-            {cell}
+          <th key={`header-${index}-${cell.map((item) => item.id ?? item.type).join('-')}`} align={node.align[index] ?? undefined}>
+            {renderInline(cell)}
           </th>
         ))}
       </tr>
     </thead>
     <tbody>
       {node.rows.map((row, rowIndex) => (
-        <tr key={`${rowIndex}-${row.join('|')}`}>
+        <tr key={`row-${rowIndex}-${row.map((cell) => cell.map((item) => item.id ?? item.type).join('-')).join('|')}`}>
           {row.map((cell, cellIndex) => (
-            <td key={`${rowIndex}-${cellIndex}-${cell}`} align={node.align[cellIndex] ?? undefined}>
-              {cell}
+            <td
+              key={`cell-${rowIndex}-${cellIndex}-${cell.map((item) => item.id ?? item.type).join('-')}`}
+              align={node.align[cellIndex] ?? undefined}
+            >
+              {renderInline(cell)}
             </td>
           ))}
         </tr>

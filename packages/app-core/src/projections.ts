@@ -1,4 +1,4 @@
-import type { ChatEvent } from '@tinytinkerer/contracts'
+import type { AssistantContentDocument, ChatEvent } from '@tinytinkerer/contracts'
 
 export type TimelineEntry = {
   id: string
@@ -14,7 +14,9 @@ export type TurnNotice = {
 export type Turn = {
   id: string
   userText: string
-  assistantText: string
+  assistantSource: string
+  assistantContent: AssistantContentDocument | null
+  isStreaming: boolean
   notice?: TurnNotice
 }
 
@@ -60,7 +62,7 @@ const thinkingLabel = (event: ChatEvent): string | undefined => {
   }
 }
 
-export const buildTurns = (events: ChatEvent[], streamingText: string): Turn[] => {
+export const buildTurns = (events: ChatEvent[]): Turn[] => {
   const turns: Turn[] = []
   let pendingTurn: Turn | undefined
 
@@ -79,17 +81,37 @@ export const buildTurns = (events: ChatEvent[], streamingText: string): Turn[] =
       pendingTurn = {
         id: event.id,
         userText: event.payload.text,
-        assistantText: ''
+        assistantSource: '',
+        assistantContent: null,
+        isStreaming: false
       }
-    } else if (event.type === 'assistant.done') {
+    } else if (event.type === 'assistant.chunk') {
       if (pendingTurn) {
-        pendingTurn.assistantText = event.payload.text
-        pushPendingTurn()
-      } else if (event.payload.text) {
+        pendingTurn.assistantSource = event.payload.source
+        pendingTurn.assistantContent = event.payload.content
+        pendingTurn.isStreaming = true
+      } else {
         turns.push({
           id: event.id,
           userText: '',
-          assistantText: event.payload.text
+          assistantSource: event.payload.source,
+          assistantContent: event.payload.content,
+          isStreaming: true
+        })
+      }
+    } else if (event.type === 'assistant.done') {
+      if (pendingTurn) {
+        pendingTurn.assistantSource = event.payload.source
+        pendingTurn.assistantContent = event.payload.content
+        pendingTurn.isStreaming = false
+        pushPendingTurn()
+      } else if (event.payload.source.trim()) {
+        turns.push({
+          id: event.id,
+          userText: '',
+          assistantSource: event.payload.source,
+          assistantContent: event.payload.content,
+          isStreaming: false
         })
       }
     } else if (event.type === 'error') {
@@ -97,7 +119,14 @@ export const buildTurns = (events: ChatEvent[], streamingText: string): Turn[] =
       if (pendingTurn) {
         setNoticeIfHigherSeverity(pendingTurn, notice)
       } else {
-        turns.push({ id: event.id, userText: '', assistantText: '', notice })
+        turns.push({
+          id: event.id,
+          userText: '',
+          assistantSource: '',
+          assistantContent: null,
+          isStreaming: false,
+          notice
+        })
       }
     } else if (event.type === 'system') {
       const notice: TurnNotice = {
@@ -108,7 +137,14 @@ export const buildTurns = (events: ChatEvent[], streamingText: string): Turn[] =
       if (pendingTurn) {
         setNoticeIfHigherSeverity(pendingTurn, notice)
       } else {
-        turns.push({ id: event.id, userText: '', assistantText: '', notice })
+        turns.push({
+          id: event.id,
+          userText: '',
+          assistantSource: '',
+          assistantContent: null,
+          isStreaming: false,
+          notice
+        })
       }
     } else if (event.type === 'rate.limit.waiting' || event.type === 'rate.limit.cancelled') {
       const notice: TurnNotice = {
@@ -119,13 +155,19 @@ export const buildTurns = (events: ChatEvent[], streamingText: string): Turn[] =
       if (pendingTurn) {
         setNoticeIfHigherSeverity(pendingTurn, notice)
       } else {
-        turns.push({ id: event.id, userText: '', assistantText: '', notice })
+        turns.push({
+          id: event.id,
+          userText: '',
+          assistantSource: '',
+          assistantContent: null,
+          isStreaming: false,
+          notice
+        })
       }
     }
   }
 
   if (pendingTurn) {
-    pendingTurn.assistantText = streamingText
     pushPendingTurn()
   }
 
