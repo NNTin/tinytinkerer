@@ -85,6 +85,26 @@ describe('assignNodeIds', () => {
     expect(doc.nodes[0].children[0]?.id).toMatch(/^paragraph-/)
   })
 
+  it('avoids id collisions after preserving a caller-supplied id', () => {
+    const digest = hashContent('paragraph:text:Hello')
+    const doc = assignNodeIds({
+      nodes: [
+        {
+          type: 'paragraph',
+          id: `paragraph-${digest}-0`,
+          children: [{ type: 'text', value: 'Hello' }]
+        },
+        {
+          type: 'paragraph',
+          children: [{ type: 'text', value: 'Hello' }]
+        }
+      ]
+    })
+
+    expect(doc.nodes[0]?.id).toBe(`paragraph-${digest}-0`)
+    expect(doc.nodes[1]?.id).toBe(`paragraph-${digest}-1`)
+  })
+
   it('keeps existing ids stable when the document is extended later', () => {
     const initial = assignNodeIds({
       nodes: [

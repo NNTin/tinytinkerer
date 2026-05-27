@@ -216,6 +216,21 @@ const fromTable = (node: Table, ids: IdAllocator): TableNode => {
   }
 }
 
+const fallbackParagraphFromUnsupported = (
+  node: RootContent | BlockContent,
+  ids: IdAllocator
+): ParagraphNode | null => {
+  const value = ('value' in node && typeof node.value === 'string' ? node.value : toString(node)).trim()
+  if (!value) {
+    return null
+  }
+  return {
+    type: 'paragraph',
+    id: ids.allocate('paragraph', value),
+    children: [{ type: 'text', value }]
+  }
+}
+
 const blockFromMdast = (node: RootContent | BlockContent, ids: IdAllocator): BlockNode | null => {
   switch (node.type) {
     case 'heading':
@@ -233,7 +248,7 @@ const blockFromMdast = (node: RootContent | BlockContent, ids: IdAllocator): Blo
     case 'table':
       return fromTable(node, ids)
     default:
-      return null
+      return fallbackParagraphFromUnsupported(node, ids)
   }
 }
 

@@ -123,6 +123,7 @@ const withAssignedId = <T extends { type: string; id?: NodeId }>(
   digest: string
 ): T => {
   if (node.id !== undefined) {
+    nextOccurrence(counts, node.type, digest)
     return node
   }
   const occurrence = nextOccurrence(counts, node.type, digest)

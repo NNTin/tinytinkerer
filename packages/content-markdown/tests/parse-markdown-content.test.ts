@@ -245,6 +245,17 @@ describe('parseMarkdownContent', () => {
     })
   })
 
+  it('preserves unsupported block nodes as safe paragraph text', () => {
+    expect(stripIds(parseMarkdownContent('<div>example</div>'))).toEqual({
+      nodes: [
+        {
+          type: 'paragraph',
+          children: [{ type: 'text', value: '<div>example</div>' }]
+        }
+      ]
+    })
+  })
+
   it('assigns deterministic ids that are stable across reparses', () => {
     const a = parseMarkdownContent('Hello world\n\n## Subhead')
     const b = parseMarkdownContent('Hello world\n\n## Subhead')
