@@ -1,7 +1,13 @@
 import type { ChatEvent, PlanStep } from '@tinytinkerer/contracts'
 import { isRateLimitError } from '../errors/rate-limit-error'
 import { createEvent } from '../events/create-event'
-import type { ConversationMessage, ExecutionContext, ModelProvider } from '../types'
+import type {
+  AssistantContentSession,
+  ConversationMessage,
+  CreateAssistantContentSession,
+  ExecutionContext,
+  ModelProvider
+} from '../types'
 import { ToolRegistry } from '../tools/registry'
 import { MAX_AUTO_RETRY_AFTER_MS, withTimeout } from './utils'
 
@@ -11,6 +17,7 @@ type AgentRuntimeOptions = {
   toolTimeoutMs?: number
   stepTimeoutMs?: number
   searchEnabled?: boolean
+  createAssistantContentSession?: CreateAssistantContentSession
 }
 
 type RunOptions = {
@@ -24,6 +31,7 @@ export class AgentRuntime {
   private readonly toolTimeoutMs: number
   private readonly stepTimeoutMs: number
   private readonly searchEnabled: boolean
+  private readonly createAssistantContentSession: CreateAssistantContentSession
 
   constructor(
     private readonly provider: ModelProvider,
@@ -35,6 +43,8 @@ export class AgentRuntime {
     this.toolTimeoutMs = options.toolTimeoutMs ?? 10_000
     this.stepTimeoutMs = options.stepTimeoutMs ?? 15_000
     this.searchEnabled = options.searchEnabled ?? true
+    this.createAssistantContentSession =
+      options.createAssistantContentSession ?? createPlainTextAssistantContentSession
   }
 
   async *run(prompt: string, options: RunOptions = {}): AsyncGenerator<ChatEvent> {
@@ -106,19 +116,22 @@ export class AgentRuntime {
       yield createEvent('execution.completed', { steps: completedSteps })
 
       if (signal?.aborted) {
-        yield createEvent('assistant.done', { text: '' })
+        yield createEvent('assistant.done', (await this.createAssistantContentSession()).snapshot())
         return
       }
 
       yield* this.synthesizeWithRateLimit(context, signal)
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        yield createEvent('assistant.done', { text: '' })
+        yield createEvent('assistant.done', (await this.createAssistantContentSession()).snapshot())
         return
       }
       const message = error instanceof Error ? error.message : 'Unknown runtime error'
       yield createEvent('error', { message })
-      yield createEvent('assistant.done', { text: 'I hit an execution issue. Please try again.' })
+      yield createEvent(
+        'assistant.done',
+        (await this.createAssistantContentSession()).replace('I hit an execution issue. Please try again.')
+      )
     }
   }
 
@@ -157,15 +170,14 @@ export class AgentRuntime {
     signal: AbortSignal | undefined
   ): AsyncGenerator<ChatEvent> {
     while (true) {
+      const session = await this.createAssistantContentSession()
       try {
-        const chunks: string[] = []
         const synthesizeOptions = signal ? { signal } : undefined
         for await (const chunk of this.provider.synthesize(context, synthesizeOptions)) {
-          chunks.push(chunk)
-          yield createEvent('assistant.chunk', { text: chunk })
+          yield createEvent('assistant.chunk', session.append(chunk))
         }
 
-        yield createEvent('assistant.done', { text: chunks.join('').trim() })
+        yield createEvent('assistant.done', session.snapshot())
         return
       } catch (error) {
         if (!isRateLimitError(error)) {
@@ -181,9 +193,12 @@ export class AgentRuntime {
             message: error.message,
             reason: 'too_long'
           })
-          yield createEvent('assistant.done', {
-            text: 'GitHub Models is rate limited. This request was cancelled because the cooldown is longer than five minutes.'
-          })
+          yield createEvent(
+            'assistant.done',
+            session.replace(
+              'GitHub Models is rate limited. This request was cancelled because the cooldown is longer than five minutes.'
+            )
+          )
           return
         }
 
@@ -202,7 +217,7 @@ export class AgentRuntime {
             message: 'Retry cancelled',
             reason: 'cancelled'
           })
-          yield createEvent('assistant.done', { text: 'Retry cancelled.' })
+          yield createEvent('assistant.done', session.replace('Retry cancelled.'))
           return
         }
 
@@ -237,5 +252,38 @@ export class AgentRuntime {
 
       signal?.addEventListener('abort', onAbort, { once: true })
     })
+  }
+}
+
+const createPlainTextAssistantContentSession = (
+  initialSource = ''
+): AssistantContentSession => {
+  let source = initialSource
+
+  const snapshot = () => ({
+    source,
+    content:
+      source.trim().length > 0
+        ? {
+            nodes: [
+              {
+                type: 'paragraph' as const,
+                children: [{ type: 'text' as const, value: source }]
+              }
+            ]
+          }
+        : { nodes: [] }
+  })
+
+  return {
+    append(chunk) {
+      source += chunk
+      return snapshot()
+    },
+    replace(nextSource) {
+      source = nextSource
+      return snapshot()
+    },
+    snapshot
   }
 }

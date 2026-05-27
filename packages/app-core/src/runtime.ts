@@ -1,5 +1,6 @@
 import { AgentRuntime, RateLimitError as AgentRateLimitError, ToolRegistry } from '@tinytinkerer/agent-core'
 import type {
+  CreateAssistantContentSession,
   ExecutionContext as AgentExecutionContext,
   ModelProvider as AgentModelProvider,
   ProviderCallOptions as AgentProviderCallOptions,
@@ -56,6 +57,7 @@ export const createChatRuntime = (options: {
   toolTimeoutMs?: number
   stepTimeoutMs?: number
   searchEnabled?: boolean
+  createAssistantContentSession?: CreateAssistantContentSession
 }): ChatRuntime => {
   const registry = new ToolRegistry()
   for (const tool of options.tools ?? []) {
@@ -69,7 +71,10 @@ export const createChatRuntime = (options: {
       : {}),
     ...(options.toolTimeoutMs !== undefined ? { toolTimeoutMs: options.toolTimeoutMs } : {}),
     ...(options.stepTimeoutMs !== undefined ? { stepTimeoutMs: options.stepTimeoutMs } : {}),
-    ...(options.searchEnabled !== undefined ? { searchEnabled: options.searchEnabled } : {})
+    ...(options.searchEnabled !== undefined ? { searchEnabled: options.searchEnabled } : {}),
+    ...(options.createAssistantContentSession
+      ? { createAssistantContentSession: options.createAssistantContentSession }
+      : {})
   })
 }
 

@@ -24,6 +24,59 @@ class TinyTinkererDb extends Dexie {
       events: 'id,conversationId,timestamp',
       preferences: 'key'
     })
+    this.version(2)
+      .stores({
+        conversations: 'id,updatedAt',
+        events: 'id,conversationId,timestamp',
+        preferences: 'key'
+      })
+      .upgrade(async (tx) => {
+        const eventsTable = tx.table('events')
+        const existingEvents = await eventsTable.toArray()
+
+        for (const event of existingEvents as Array<Record<string, unknown>>) {
+          const eventType = typeof event.type === 'string' ? event.type : ''
+          if (!eventType.startsWith('assistant.')) {
+            continue
+          }
+
+          const payload =
+            event.payload && typeof event.payload === 'object'
+              ? (event.payload as Record<string, unknown>)
+              : null
+
+          if (payload == null) {
+            continue
+          }
+
+          const hasSource = typeof payload.source === 'string'
+          const hasContent = 'content' in payload
+          if (hasSource && hasContent) {
+            continue
+          }
+
+          const source =
+            typeof payload.role === 'string'
+              ? payload.role
+              : typeof payload.kind === 'string'
+                ? payload.kind
+                : 'assistant'
+          const content =
+            payload.content ??
+            payload.text ??
+            payload.delta ??
+            payload.message ??
+            ''
+
+          await eventsTable.put({
+            ...event,
+            payload: {
+              source,
+              content
+            }
+          })
+        }
+      })
   }
 }
 

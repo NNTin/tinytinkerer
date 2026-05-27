@@ -121,7 +121,6 @@ const WidgetLauncher = ({ onRestore }: { onRestore: () => void }) => (
 const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
   const {
     events,
-    streamingText,
     turns,
     isRunning,
     isRetryPending,
@@ -153,7 +152,7 @@ const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
-  }, [events, streamingText])
+  }, [events])
 
   const handleSubmit = async () => {
     const didSend = await submitPrompt(prompt)
@@ -308,8 +307,8 @@ const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
                         {turn.notice.message}
                       </div>
                     ) : null}
-                    {turn.assistantText ? (
-                      <AssistantContent content={turn.assistantText} className="widget-prose text-sm" />
+                    {turn.assistantContent ? (
+                      <AssistantContent content={turn.assistantContent} className="widget-prose text-sm" />
                     ) : null}
                   </div>
                 </div>

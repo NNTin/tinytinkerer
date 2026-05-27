@@ -3,13 +3,16 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { lazy, type ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MermaidNode } from '@tinytinkerer/content-core'
 import {
+  assignNodeIds,
+  ContentDocumentContent,
   ContentDocumentRenderer,
+  type ContentDocument,
   createReactContentRuntime,
   MARKDOWN_ROOT_CLASS,
   MARKDOWN_STREAMING_CLASS,
   PreviewCodeFrame,
+  REACT_SSR_EXECUTION_POLICY,
   TableNodeView,
   tableToMarkdown
 } from '../src/index.js'
@@ -18,12 +21,24 @@ afterEach(() => {
   cleanup()
 })
 
+const withIds = (document: ContentDocument): ContentDocument => assignNodeIds(document)
+
 describe('ContentDocumentRenderer', () => {
+  it('exports a conservative SSR execution policy preset', () => {
+    expect(REACT_SSR_EXECUTION_POLICY).toEqual({
+      allowLazy: false,
+      allowClientOnly: false,
+      allowDom: false
+    })
+  })
+
   it('adds the shared markdown root class and streaming class', () => {
     const { container } = render(
       <ContentDocumentRenderer
         isStreaming
-        document={{ nodes: [{ type: 'markdown', markdown: 'Hello' }] }}
+        document={withIds({
+          nodes: [{ type: 'paragraph', children: [{ type: 'text', value: 'Hello' }] }]
+        })}
       />
     )
 
@@ -31,22 +46,34 @@ describe('ContentDocumentRenderer', () => {
     expect(container.firstChild).toHaveClass(MARKDOWN_STREAMING_CLASS)
   })
 
-  it('renders default markdown, code blocks, tables, and images', () => {
+  it('renders default semantic nodes, code blocks, tables, and images', () => {
     render(
       <ContentDocumentRenderer
-        document={{
+        document={withIds({
           nodes: [
-            { type: 'markdown', markdown: '# Heading' },
+            {
+              type: 'heading',
+              level: 1,
+              children: [{ type: 'text', value: 'Heading' }]
+            },
             { type: 'codeBlock', code: 'const answer = 42', language: 'ts' },
             {
               type: 'table',
               align: ['left', 'right'],
-              header: ['Name', 'Role'],
-              rows: [['Ada', 'Admin']]
+              header: [
+                [{ type: 'text', value: 'Name' }],
+                [{ type: 'text', value: 'Role' }]
+              ],
+              rows: [
+                [
+                  [{ type: 'text', value: 'Ada' }],
+                  [{ type: 'text', value: 'Admin' }]
+                ]
+              ]
             },
             { type: 'image', url: 'https://example.com/test.png', alt: 'Test image' }
           ]
-        }}
+        })}
       />
     )
 
@@ -62,16 +89,24 @@ describe('ContentDocumentRenderer', () => {
 
     render(
       <ContentDocumentRenderer
-        document={{
+        document={withIds({
           nodes: [
             {
               type: 'table',
               align: ['left', 'right'],
-              header: ['Name', 'Role'],
-              rows: [['Ada', 'Admin']]
+              header: [
+                [{ type: 'text', value: 'Name' }],
+                [{ type: 'text', value: 'Role' }]
+              ],
+              rows: [
+                [
+                  [{ type: 'text', value: 'Ada' }],
+                  [{ type: 'text', value: 'Admin' }]
+                ]
+              ]
             }
           ]
-        }}
+        })}
       />
     )
 
@@ -88,7 +123,7 @@ describe('ContentDocumentRenderer', () => {
   it('falls back when a specialized renderer is missing', () => {
     render(
       <ContentDocumentRenderer
-        document={{ nodes: [{ type: 'mermaid', code: 'graph TD\nA-->B' }] }}
+        document={withIds({ nodes: [{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }] })}
       />
     )
 
@@ -96,32 +131,50 @@ describe('ContentDocumentRenderer', () => {
   })
 
   it('falls back when a specialized renderer throws', () => {
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:wireframe',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'wireframe',
+      render: () => {
+        throw new Error('boom')
+      }
+    })
+
     render(
       <ContentDocumentRenderer
-        document={{ nodes: [{ type: 'wireframe', code: '[Button]' }] }}
-        renderers={{
-          wireframe: () => {
-            throw new Error('boom')
-          }
-        }}
+        runtime={runtime}
+        document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
       />
     )
 
     expect(screen.getByText('[Button]')).toBeInTheDocument()
   })
 
-  it('merges partial renderer overrides with the default renderers', () => {
+  it('keeps default renderers while adding custom plugins through the supplied runtime', () => {
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:mermaid',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'mermaid',
+      render: (node) => <div>Diagram: {node.code}</div>
+    })
+
     render(
       <ContentDocumentRenderer
-        document={{
+        runtime={runtime}
+        document={withIds({
           nodes: [
-            { type: 'markdown', markdown: '# Heading' },
-            { type: 'mermaid', code: 'graph TD\nA-->B' }
+            {
+              type: 'heading',
+              level: 1,
+              children: [{ type: 'text', value: 'Heading' }]
+            },
+            { type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }
           ]
-        }}
-        renderers={{
-          mermaid: ({ node }: { node: MermaidNode }) => <div>Diagram: {node.code}</div>
-        }}
+        })}
       />
     )
 
@@ -141,17 +194,25 @@ describe('ContentDocumentRenderer', () => {
           resolveRenderer = resolve
         })
     )
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:lazy-mermaid',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'mermaid',
+      render: (node) => <LazyMermaidRenderer node={node} />
+    })
 
     const { container } = render(
       <ContentDocumentRenderer
-        document={{
+        runtime={runtime}
+        document={withIds({
           nodes: [
-            { type: 'markdown', markdown: 'Before' },
-            { type: 'mermaid', code: 'graph TD\nA-->B' },
-            { type: 'markdown', markdown: 'After' }
+            { type: 'paragraph', children: [{ type: 'text', value: 'Before' }] },
+            { type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' },
+            { type: 'paragraph', children: [{ type: 'text', value: 'After' }] }
           ]
-        }}
-        renderers={{ mermaid: LazyMermaidRenderer }}
+        })}
       />
     )
 
@@ -169,7 +230,7 @@ describe('ContentDocumentRenderer', () => {
   it('renders semantic block nodes (heading, paragraph, list, blockquote)', () => {
     render(
       <ContentDocumentRenderer
-        document={{
+        document={withIds({
           nodes: [
             {
               type: 'heading',
@@ -208,7 +269,7 @@ describe('ContentDocumentRenderer', () => {
               ]
             }
           ]
-        }}
+        })}
       />
     )
 
@@ -223,30 +284,72 @@ describe('ContentDocumentRenderer', () => {
     const runtime = createReactContentRuntime()
     runtime.register({
       id: 'test:mermaid',
-      nodeType: 'mermaid',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'mermaid',
       render: (node) => <div data-testid="custom-mermaid">{node.code}</div>
     })
 
     render(
       <ContentDocumentRenderer
         runtime={runtime}
-        document={{ nodes: [{ type: 'mermaid', code: 'graph TD\nA-->B' }] }}
+        document={withIds({ nodes: [{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }] })}
       />
     )
 
     expect(screen.getByTestId('custom-mermaid')).toHaveTextContent('graph TD')
   })
 
+  it('falls back to generic code rendering when execution policy blocks a browser-only plugin', () => {
+    const runtime = createReactContentRuntime({
+      executionPolicy: {
+        allowDom: false
+      }
+    })
+    runtime.register({
+      id: 'test:blocked-wireframe',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'wireframe',
+      requirements: { clientOnly: true, needsDom: true },
+      render: (node) => <div>blocked: {node.code}</div>
+    })
+
+    render(
+      <ContentDocumentRenderer
+        runtime={runtime}
+        document={withIds({ nodes: [{ type: 'codeBlock', code: '<html />', language: 'wireframe' }] })}
+      />
+    )
+
+    expect(screen.queryByText(/blocked:/)).toBeNull()
+    expect(screen.getByText('<html />')).toBeInTheDocument()
+  })
+
   it('renders choicePrompt nodes without crashing when no renderer is registered', () => {
     const { container } = render(
       <ContentDocumentRenderer
-        document={{
+        document={withIds({
           nodes: [{ type: 'choicePrompt', prompt: 'Pick one', choices: ['A', 'B'] }]
-        }}
+        })}
       />
     )
 
     expect(container.querySelector('pre')).toBeInTheDocument()
+  })
+})
+
+describe('ContentDocumentContent', () => {
+  it('normalizes hand-built documents before rendering them', () => {
+    render(
+      <ContentDocumentContent
+        document={{
+          nodes: [{ type: 'paragraph', children: [{ type: 'text', value: 'Hello adapter' }] }]
+        }}
+      />
+    )
+
+    expect(screen.getByText('Hello adapter')).toBeInTheDocument()
   })
 })
 
@@ -284,8 +387,18 @@ describe('TableNodeView', () => {
         node={{
           type: 'table',
           align: ['left', 'right', 'center'],
-          header: ['Name', 'Role', 'Score'],
-          rows: [['Ada', 'Admin', '3']]
+          header: [
+            [{ type: 'text', value: 'Name' }],
+            [{ type: 'text', value: 'Role' }],
+            [{ type: 'text', value: 'Score' }]
+          ],
+          rows: [
+            [
+              [{ type: 'text', value: 'Ada' }],
+              [{ type: 'text', value: 'Admin' }],
+              [{ type: 'text', value: '3' }]
+            ]
+          ]
         }}
       />
     )
@@ -301,8 +414,18 @@ describe('TableNodeView', () => {
       tableToMarkdown({
         type: 'table',
         align: ['left', 'right', 'center'],
-        header: ['Name', 'Role', 'Score'],
-        rows: [['Ada', 'Admin', '3']]
+        header: [
+          [{ type: 'text', value: 'Name' }],
+          [{ type: 'text', value: 'Role' }],
+          [{ type: 'text', value: 'Score' }]
+        ],
+        rows: [
+          [
+            [{ type: 'text', value: 'Ada' }],
+            [{ type: 'text', value: 'Admin' }],
+            [{ type: 'text', value: '3' }]
+          ]
+        ]
       })
     ).toBe(['| Name | Role | Score |', '| :--- | ---: | :---: |', '| Ada | Admin | 3 |'].join('\n'))
   })

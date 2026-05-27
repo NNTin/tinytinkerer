@@ -6,26 +6,21 @@ import {
   useMemo,
   useState,
   type ComponentPropsWithoutRef,
-  type ComponentType,
-  type LazyExoticComponent,
   type ReactNode
 } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import {
-  hashContent,
+  assignNodeIds,
   type BlockquoteNode,
   type CodeBlockNode,
   type ContentDocument,
   type ContentNode,
-  type ContentNodeByType,
   type HeadingNode,
   type ImageNode,
   type InlineNode,
   type ListItemNode,
   type ListNode,
-  type MarkdownNode,
   type ParagraphNode,
+  type TableCell,
   type TableAlignment,
   type TableNode
 } from '@tinytinkerer/content-core'
@@ -34,11 +29,12 @@ import {
   type AnyNodeRendererPlugin,
   type ContentRuntime,
   type NodeRendererPlugin,
-  type RenderContext
-} from '@tinytinkerer/content-runtime'
+  type RenderContext,
+  type RuntimeExecutionPolicy
+} from './runtime'
 import { cn } from '@tinytinkerer/ui'
 
-export { computeNodeId, hashContent } from '@tinytinkerer/content-core'
+export { assignNodeIds, computeNodeId, hashContent } from '@tinytinkerer/content-core'
 export type {
   BlockNode,
   BlockquoteNode,
@@ -49,8 +45,6 @@ export type {
   ContentDocument,
   ContentNode,
   ContentNodeByType,
-  ContentParser,
-  ContentRendererRegistry,
   EmphasisNode,
   HeadingNode,
   ImageInlineNode,
@@ -59,17 +53,15 @@ export type {
   LinkNode,
   ListItemNode,
   ListNode,
-  MarkdownNode,
-  MermaidNode,
   NodeId,
   ParagraphNode,
   StrikethroughNode,
   StrongNode,
   TableAlignment,
+  TableCell,
   TableNode,
   TextNode,
-  ThematicBreakNode,
-  WireframeNode
+  ThematicBreakNode
 } from '@tinytinkerer/content-core'
 
 export const MARKDOWN_ROOT_CLASS = 'tt-markdown'
@@ -79,26 +71,33 @@ export type ContentNodeRendererProps<TNode extends ContentNode> = {
   node: TNode
 }
 
-export type ContentNodeRenderer<TNode extends ContentNode> =
-  | ComponentType<ContentNodeRendererProps<TNode>>
-  | LazyExoticComponent<ComponentType<ContentNodeRendererProps<TNode>>>
-
-export type ReactContentRendererRegistry = {
-  [K in keyof ContentNodeByType]?: ContentNodeRenderer<ContentNodeByType[K]>
-}
-
 export type ReactContentRuntime = ContentRuntime<ReactNode>
 export type ReactNodeRendererPlugin<TType extends ContentNode['type']> = NodeRendererPlugin<
   TType,
   ReactNode
 >
 export type ReactContentPlugin = AnyNodeRendererPlugin<ReactNode>
+export type CreateReactContentRuntimeOptions = {
+  executionPolicy?: RuntimeExecutionPolicy
+}
+
+export const REACT_SSR_EXECUTION_POLICY: RuntimeExecutionPolicy = {
+  allowLazy: false,
+  allowClientOnly: false,
+  allowDom: false
+}
+
+export type {
+  RuntimeExecutionPolicy,
+  RuntimeFailureContext,
+  RuntimeFailureReason,
+  RuntimeResolution
+} from './runtime'
 
 type ContentDocumentRendererProps = {
   document: ContentDocument
   className?: string
   isStreaming?: boolean
-  renderers?: ReactContentRendererRegistry
   runtime?: ReactContentRuntime
 }
 
@@ -109,6 +108,14 @@ type RendererBoundaryProps = {
 
 type RendererBoundaryState = {
   hasError: boolean
+}
+
+export type ContentDocumentContentProps = {
+  document: ContentDocument
+  className?: string
+  isStreaming?: boolean
+  plugins?: readonly ReactContentPlugin[]
+  executionPolicy?: RuntimeExecutionPolicy
 }
 
 class RendererBoundary extends Component<RendererBoundaryProps, RendererBoundaryState> {
@@ -128,31 +135,119 @@ class RendererBoundary extends Component<RendererBoundaryProps, RendererBoundary
   }
 }
 
-const renderInline = (nodes: InlineNode[]): ReactNode =>
+type PrepareRecord = {
+  status: 'pending' | 'ready' | 'failed'
+  promise?: Promise<void>
+}
+
+const preparedNodes = new WeakMap<ReactContentRuntime, Map<string, PrepareRecord>>()
+
+const getPreparedNodes = (runtime: ReactContentRuntime): Map<string, PrepareRecord> => {
+  let cache = preparedNodes.get(runtime)
+  if (!cache) {
+    cache = new Map<string, PrepareRecord>()
+    preparedNodes.set(runtime, cache)
+  }
+  return cache
+}
+
+const readPreparedNode = (runtime: ReactContentRuntime, node: ContentNode): void => {
+  if (!node.id) {
+    return
+  }
+
+  const cache = getPreparedNodes(runtime)
+  const resolution = runtime.resolve(node)
+  if (!resolution.ok || !resolution.plugin.load) {
+    cache.set(node.id, { status: 'ready' })
+    return
+  }
+
+  const existing = cache.get(node.id)
+  if (existing?.status === 'pending' && existing.promise) {
+    // Suspense expects the in-flight preparation promise to be thrown here.
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw existing.promise
+  }
+  if (existing) {
+    return
+  }
+
+  const record: PrepareRecord = { status: 'pending' }
+  record.promise = runtime.prepareNode(node).then(
+    () => {
+      record.status = 'ready'
+    },
+    () => {
+      record.status = 'failed'
+    }
+  )
+  cache.set(node.id, record)
+  // Suspense expects the in-flight preparation promise to be thrown here.
+  // eslint-disable-next-line @typescript-eslint/only-throw-error
+  throw record.promise
+}
+
+const PreparedNodeBoundary = ({
+  runtime,
+  node,
+  children
+}: {
+  runtime: ReactContentRuntime
+  node: ContentNode
+  children: ReactNode
+}) => {
+  readPreparedNode(runtime, node)
+  return children
+}
+
+const renderInline = (nodes: readonly InlineNode[]): ReactNode =>
   nodes.map((node, index) => {
+    const key = node.id ?? `${node.type}-${index}`
     switch (node.type) {
       case 'text':
-        return <Fragment key={index}>{node.value}</Fragment>
+        return <Fragment key={key}>{node.value}</Fragment>
       case 'emphasis':
-        return <em key={index}>{renderInline(node.children)}</em>
+        return <em key={key}>{renderInline(node.children)}</em>
       case 'strong':
-        return <strong key={index}>{renderInline(node.children)}</strong>
+        return <strong key={key}>{renderInline(node.children)}</strong>
       case 'strikethrough':
-        return <del key={index}>{renderInline(node.children)}</del>
+        return <del key={key}>{renderInline(node.children)}</del>
       case 'codeInline':
-        return <code key={index}>{node.value}</code>
+        return <code key={key}>{node.value}</code>
       case 'link':
         return (
-          <a key={index} href={node.url} title={node.title}>
+          <a key={key} href={node.url} title={node.title}>
             {renderInline(node.children)}
           </a>
         )
       case 'imageInline':
-        return <img key={index} src={node.url} alt={node.alt} title={node.title} />
+        return <img key={key} src={node.url} alt={node.alt} title={node.title} />
       case 'break':
-        return <br key={index} />
+        return <br key={key} />
     }
   })
+
+const inlineNodesToText = (nodes: readonly InlineNode[]): string =>
+  nodes
+    .map((node) => {
+      switch (node.type) {
+        case 'text':
+          return node.value
+        case 'emphasis':
+        case 'strong':
+        case 'strikethrough':
+        case 'link':
+          return inlineNodesToText(node.children)
+        case 'codeInline':
+          return node.value
+        case 'imageInline':
+          return node.alt
+        case 'break':
+          return '\n'
+      }
+    })
+    .join('')
 
 type HeadingTag = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
 
@@ -176,8 +271,8 @@ const ListItemNodeView = ({
     {typeof node.checked === 'boolean' ? (
       <input type="checkbox" defaultChecked={node.checked} disabled />
     ) : null}
-    {node.children.map((child, index) => (
-      <Fragment key={resolveNodeKey(child, index)}>{ctx.renderBlock(child)}</Fragment>
+    {node.children.map((child) => (
+      <Fragment key={child.id}>{ctx.renderBlock(child)}</Fragment>
     ))}
   </li>
 )
@@ -189,8 +284,8 @@ const ListNodeView = ({
   node: ListNode
   ctx: RenderContext<ReactNode>
 }) => {
-  const items = node.children.map((item, index) => (
-    <ListItemNodeView key={item.id ?? `${node.id ?? 'list'}-item-${index}`} node={item} ctx={ctx} />
+  const items = node.children.map((item) => (
+    <ListItemNodeView key={item.id} node={item} ctx={ctx} />
   ))
   if (node.ordered) {
     return <ol start={node.start}>{items}</ol>
@@ -206,8 +301,8 @@ const BlockquoteNodeView = ({
   ctx: RenderContext<ReactNode>
 }) => (
   <blockquote>
-    {node.children.map((child, index) => (
-      <Fragment key={resolveNodeKey(child, index)}>{ctx.renderBlock(child)}</Fragment>
+    {node.children.map((child) => (
+      <Fragment key={child.id}>{ctx.renderBlock(child)}</Fragment>
     ))}
   </blockquote>
 )
@@ -218,10 +313,6 @@ const CodeBlockNodeView = ({ node }: ContentNodeRendererProps<CodeBlockNode>) =>
   <pre>
     <code className={node.language ? `language-${node.language}` : undefined}>{node.code}</code>
   </pre>
-)
-
-const MarkdownNodeView = ({ node }: ContentNodeRendererProps<MarkdownNode>) => (
-  <ReactMarkdown remarkPlugins={[remarkGfm]}>{node.markdown}</ReactMarkdown>
 )
 
 const ImageNodeView = ({ node }: ContentNodeRendererProps<ImageNode>) => (
@@ -365,23 +456,15 @@ export const CodeBlockFallback = ({
 }) => <CodeBlockNodeView node={{ type: 'codeBlock', code, ...(language ? { language } : {}) }} />
 
 const genericNodeFallback = (node: ContentNode): ReactNode => {
-  if (node.type === 'mermaid' || node.type === 'wireframe') {
-    return <CodeBlockFallback code={node.code} language={node.type} />
+  if (node.type === 'codeBlock') {
+    return (
+      <CodeBlockFallback
+        code={node.code}
+        {...(node.language ? { language: node.language } : {})}
+      />
+    )
   }
   return <CodeBlockFallback code={JSON.stringify(node, null, 2)} language="json" />
-}
-
-const resolveNodeKey = (node: ContentNode, index: number): string => {
-  if (node.id) {
-    return node.id
-  }
-  const digest =
-    'markdown' in node ? node.markdown
-    : 'code' in node ? node.code
-    : 'url' in node ? node.url
-    : 'prompt' in node ? node.prompt
-    : JSON.stringify(node)
-  return `${node.type}-${hashContent(digest)}-${index}`
 }
 
 const defaultReactPlugins: AnyNodeRendererPlugin<ReactNode>[] = [
@@ -411,13 +494,9 @@ const defaultReactPlugins: AnyNodeRendererPlugin<ReactNode>[] = [
     render: () => <ThematicBreakNodeView />
   },
   {
-    id: 'core:markdown',
-    nodeType: 'markdown',
-    render: (node) => <MarkdownNodeView node={node} />
-  },
-  {
     id: 'core:codeBlock',
     nodeType: 'codeBlock',
+    priority: -100,
     render: (node) => <CodeBlockNodeView node={node} />
   },
   {
@@ -432,38 +511,21 @@ const defaultReactPlugins: AnyNodeRendererPlugin<ReactNode>[] = [
   }
 ]
 
-const renderersToPlugins = (
-  renderers: ReactContentRendererRegistry
-): AnyNodeRendererPlugin<ReactNode>[] => {
-  const plugins: AnyNodeRendererPlugin<ReactNode>[] = []
-  for (const entry of Object.entries(renderers)) {
-    const [nodeType, Renderer] = entry as [
-      ContentNode['type'],
-      ContentNodeRenderer<ContentNode> | undefined
-    ]
-    if (!Renderer) {
-      continue
-    }
-    plugins.push({
-      id: `override:${nodeType}`,
-      nodeType,
-      render: (node: ContentNode) => {
-        const TypedRenderer = Renderer as ComponentType<ContentNodeRendererProps<ContentNode>>
-        return <TypedRenderer node={node} />
-      }
-    } as AnyNodeRendererPlugin<ReactNode>)
-  }
-  return plugins
-}
-
-export const createReactContentRuntime = (): ReactContentRuntime => {
+export const createReactContentRuntime = (
+  options: CreateReactContentRuntimeOptions = {}
+): ReactContentRuntime => {
   const runtime = createContentRuntime<ReactNode>({
-    fallback: (node) => genericNodeFallback(node),
+    fallback: (failure) => genericNodeFallback(failure.node),
+    ...(options.executionPolicy ? { executionPolicy: options.executionPolicy } : {}),
     wrap: (children, ctx) => {
-      const LazyFallback = () => <>{ctx.fallback()}</>
+      const lazyFallback = <>{ctx.fallback()}</>
       return (
-        <Suspense fallback={<LazyFallback />}>
-          <RendererBoundary fallback={<LazyFallback />}>{children}</RendererBoundary>
+        <Suspense fallback={lazyFallback}>
+          <RendererBoundary fallback={lazyFallback}>
+            <PreparedNodeBoundary runtime={runtime} node={ctx.node}>
+              {children}
+            </PreparedNodeBoundary>
+          </RendererBoundary>
         </Suspense>
       )
     }
@@ -472,6 +534,36 @@ export const createReactContentRuntime = (): ReactContentRuntime => {
     runtime.register(plugin)
   }
   return runtime
+}
+
+export const ContentDocumentContent = ({
+  document,
+  className,
+  isStreaming = false,
+  plugins,
+  executionPolicy
+}: ContentDocumentContentProps) => {
+  const normalizedDocument = useMemo(() => assignNodeIds(document), [document])
+  const runtime = useMemo(() => {
+    const built = createReactContentRuntime(
+      executionPolicy ? { executionPolicy } : undefined
+    )
+    if (plugins) {
+      for (const plugin of plugins) {
+        built.register(plugin)
+      }
+    }
+    return built
+  }, [executionPolicy, plugins])
+
+  return (
+    <ContentDocumentRenderer
+      document={normalizedDocument}
+      isStreaming={isStreaming}
+      runtime={runtime}
+      {...(className ? { className } : {})}
+    />
+  )
 }
 
 let cachedDefaultRuntime: ReactContentRuntime | null = null
@@ -483,40 +575,13 @@ const getDefaultRuntime = (): ReactContentRuntime => {
   return cachedDefaultRuntime
 }
 
-export const defaultContentRenderers = {
-  markdown: MarkdownNodeView,
-  codeBlock: CodeBlockNodeView,
-  table: TableNodeView,
-  image: ImageNodeView
-} satisfies ReactContentRendererRegistry
-
-export const createContentRendererRegistry = (
-  overrides: ReactContentRendererRegistry = {}
-): ReactContentRendererRegistry => ({
-  ...defaultContentRenderers,
-  ...overrides
-})
-
 export const ContentDocumentRenderer = ({
   document,
   className,
   isStreaming = false,
-  renderers,
   runtime
 }: ContentDocumentRendererProps) => {
-  const activeRuntime = useMemo(() => {
-    if (runtime) {
-      return runtime
-    }
-    if (renderers && Object.keys(renderers).length > 0) {
-      const built = createReactContentRuntime()
-      for (const plugin of renderersToPlugins(renderers)) {
-        built.register(plugin)
-      }
-      return built
-    }
-    return getDefaultRuntime()
-  }, [runtime, renderers])
+  const activeRuntime = useMemo(() => runtime ?? getDefaultRuntime(), [runtime])
 
   return (
     <div
@@ -528,8 +593,8 @@ export const ContentDocumentRenderer = ({
         isStreaming && MARKDOWN_STREAMING_CLASS
       )}
     >
-      {document.nodes.map((node, index) => (
-        <Fragment key={resolveNodeKey(node, index)}>{activeRuntime.renderNode(node)}</Fragment>
+      {document.nodes.map((node) => (
+        <Fragment key={node.id}>{activeRuntime.renderNode(node)}</Fragment>
       ))}
     </div>
   )
@@ -550,12 +615,14 @@ const formatTableCell = (value: string): string =>
     .replace(/\|/g, '\\|')
     .trim()
 
+const tableCellToMarkdown = (cell: TableCell): string => formatTableCell(inlineNodesToText(cell))
+
 export const tableToMarkdown = (node: TableNode): string => {
   const width = node.header.length
-  const header = `| ${node.header.map(formatTableCell).join(' | ')} |`
+  const header = `| ${node.header.map(tableCellToMarkdown).join(' | ')} |`
   const separator = `| ${Array.from({ length: width }, (_, index) => alignToMarkdown(node.align[index] ?? null)).join(' | ')} |`
   const rows = node.rows.map((row) =>
-    `| ${Array.from({ length: width }, (_, index) => formatTableCell(row[index] ?? '')).join(' | ')} |`
+    `| ${Array.from({ length: width }, (_, index) => tableCellToMarkdown(row[index] ?? [])).join(' | ')} |`
   )
   return [header, separator, ...rows].join('\n')
 }
@@ -565,18 +632,21 @@ const TableMarkup = ({ node }: { node: TableNode }) => (
     <thead>
       <tr>
         {node.header.map((cell, index) => (
-          <th key={`${index}-${cell}`} align={node.align[index] ?? undefined}>
-            {cell}
+          <th key={`header-${index}-${cell.map((item) => item.id ?? item.type).join('-')}`} align={node.align[index] ?? undefined}>
+            {renderInline(cell)}
           </th>
         ))}
       </tr>
     </thead>
     <tbody>
       {node.rows.map((row, rowIndex) => (
-        <tr key={`${rowIndex}-${row.join('|')}`}>
+        <tr key={`row-${rowIndex}-${row.map((cell) => cell.map((item) => item.id ?? item.type).join('-')).join('|')}`}>
           {row.map((cell, cellIndex) => (
-            <td key={`${rowIndex}-${cellIndex}-${cell}`} align={node.align[cellIndex] ?? undefined}>
-              {cell}
+            <td
+              key={`cell-${rowIndex}-${cellIndex}-${cell.map((item) => item.id ?? item.type).join('-')}`}
+              align={node.align[cellIndex] ?? undefined}
+            >
+              {renderInline(cell)}
             </td>
           ))}
         </tr>

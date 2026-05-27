@@ -13,7 +13,11 @@ const mockChatState = vi.hoisted(() => ({
     {
       id: 'turn-1',
       userText: 'hello',
-      assistantText: 'Hi there.',
+      assistantSource: 'Hi there.',
+      assistantContent: {
+        nodes: [{ type: 'paragraph', children: [{ type: 'text', value: 'Hi there.' }] }]
+      },
+      isStreaming: false,
       notice: {
         kind: 'rate-limit' as const,
         message: 'Recovered after a short wait.',
@@ -22,7 +26,6 @@ const mockChatState = vi.hoisted(() => ({
     }
   ],
   events: [] as Array<{ id: string; type: string }>,
-  streamingText: '',
   isRunning: false,
   submitPrompt: vi.fn().mockResolvedValue(true),
   resetConversation: vi.fn(),
@@ -49,15 +52,20 @@ const mockSettingsState = vi.hoisted(() => ({
 }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
-  AssistantContent: ({ content, className }: { content: string; className?: string }) => (
-    <div className={className}>{content}</div>
+  AssistantContent: ({
+    content,
+    className
+  }: {
+    content: { nodes: Array<{ children?: Array<{ value?: string }> }> }
+    className?: string
+  }) => (
+    <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
   ),
   TINYTINKERER_BRAND_ASSET_URLS: {
     icon192: '/brand/icon-192.png'
   },
   useChatSurfaceController: () => ({
     events: mockChatState.events,
-    streamingText: mockChatState.streamingText,
     token: mockAuthState.token,
     turns: mockChatState.turns,
     timeline: [],

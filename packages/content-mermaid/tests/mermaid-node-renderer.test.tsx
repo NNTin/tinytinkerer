@@ -6,7 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mockInitialize = vi.hoisted(() => vi.fn())
 const mockRender = vi.hoisted(() => vi.fn())
 
-import { MermaidNodeRenderer, mermaidRenderers, resetMermaidState } from '../src/index.js'
+import {
+  createMermaidPlugin,
+  MermaidNodeRenderer,
+  mermaidPlugin,
+  resetMermaidState
+} from '../src/index.js'
 
 const FLOWCHART_CODE = [
   'flowchart TD',
@@ -33,14 +38,27 @@ beforeEach(() => {
 })
 
 describe('MermaidNodeRenderer', () => {
-  it('exports the mermaid renderer map for composition', () => {
-    expect(mermaidRenderers.mermaid).toBe(MermaidNodeRenderer)
+  it('exports the mermaid plugin for composition', () => {
+    expect(mermaidPlugin.nodeType).toBe('codeBlock')
+    expect(typeof mermaidPlugin.render).toBe('function')
+  })
+
+  it('creates isolated plugin instances on demand', () => {
+    const left = createMermaidPlugin()
+    const right = createMermaidPlugin()
+
+    expect(left).not.toBe(right)
+    expect(left.id).toBe('mermaid')
+    expect(right.id).toBe('mermaid')
   })
 
   it('renders svg output after the mermaid runtime loads', async () => {
     mockRender.mockResolvedValue({ svg: '<svg><text>Diagram</text></svg>' })
+    await mermaidPlugin.load?.()
 
-    const { container } = render(<MermaidNodeRenderer node={{ type: 'mermaid', code: 'graph TD\nA-->B' }} />)
+    const { container } = render(
+      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+    )
 
     await waitFor(() => {
       expect(screen.getByLabelText('Mermaid diagram')).toBeInTheDocument()
@@ -54,9 +72,10 @@ describe('MermaidNodeRenderer', () => {
     mockRender.mockResolvedValue({
       svg: '<svg><text>Start</text><text>Is it working?</text><text>Great!</text></svg>'
     })
+    await mermaidPlugin.load?.()
 
     const { container } = render(
-      <MermaidNodeRenderer node={{ type: 'mermaid', code: FLOWCHART_CODE }} />
+      <MermaidNodeRenderer node={{ type: 'codeBlock', code: FLOWCHART_CODE, language: 'mermaid' }} />
     )
 
     await waitFor(() => {
@@ -72,8 +91,11 @@ describe('MermaidNodeRenderer', () => {
 
   it('falls back to a code block when mermaid rendering fails', async () => {
     mockRender.mockRejectedValue(new Error('render failed'))
+    await mermaidPlugin.load?.()
 
-    const { container } = render(<MermaidNodeRenderer node={{ type: 'mermaid', code: 'graph TD\nA-->B' }} />)
+    const { container } = render(
+      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+    )
 
     await waitFor(() => {
       expect(container.querySelector('code')?.textContent).toBe('graph TD\nA-->B')
@@ -83,8 +105,13 @@ describe('MermaidNodeRenderer', () => {
   it('logs the error when mermaid rendering fails', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     mockRender.mockRejectedValue(new Error('parse error'))
+    await mermaidPlugin.load?.()
 
-    render(<MermaidNodeRenderer node={{ type: 'mermaid', code: 'invalid mermaid syntax %%' }} />)
+    render(
+      <MermaidNodeRenderer
+        node={{ type: 'codeBlock', code: 'invalid mermaid syntax %%', language: 'mermaid' }}
+      />
+    )
 
     await waitFor(() => {
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -99,15 +126,20 @@ describe('MermaidNodeRenderer', () => {
   it('always shows the chrome wrapper and Mermaid label', () => {
     mockRender.mockResolvedValue({ svg: '<svg />' })
 
-    render(<MermaidNodeRenderer node={{ type: 'mermaid', code: 'graph TD\nA-->B' }} />)
+    render(
+      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+    )
 
     expect(screen.getByText('Mermaid')).toBeInTheDocument()
   })
 
   it('shows Preview and Code buttons when render succeeds', async () => {
     mockRender.mockResolvedValue({ svg: '<svg><text>Diagram</text></svg>' })
+    await mermaidPlugin.load?.()
 
-    render(<MermaidNodeRenderer node={{ type: 'mermaid', code: 'graph TD\nA-->B' }} />)
+    render(
+      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+    )
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
@@ -117,8 +149,9 @@ describe('MermaidNodeRenderer', () => {
 
   it('hides the Preview button when rendering fails', async () => {
     mockRender.mockRejectedValue(new Error('render failed'))
+    await mermaidPlugin.load?.()
 
-    render(<MermaidNodeRenderer node={{ type: 'mermaid', code: 'bad syntax' }} />)
+    render(<MermaidNodeRenderer node={{ type: 'codeBlock', code: 'bad syntax', language: 'mermaid' }} />)
 
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'Preview' })).toBeNull()
@@ -128,9 +161,10 @@ describe('MermaidNodeRenderer', () => {
 
   it('switches to code view when Code is clicked', async () => {
     mockRender.mockResolvedValue({ svg: '<svg><text>Diagram</text></svg>' })
+    await mermaidPlugin.load?.()
 
     const { container } = render(
-      <MermaidNodeRenderer node={{ type: 'mermaid', code: 'graph TD\nA-->B' }} />
+      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
     )
 
     await waitFor(() => expect(container.querySelector('svg')).not.toBeNull())
@@ -146,8 +180,11 @@ describe('MermaidNodeRenderer', () => {
     Object.assign(navigator, { clipboard: { writeText } })
 
     mockRender.mockResolvedValue({ svg: '<svg />' })
+    await mermaidPlugin.load?.()
 
-    render(<MermaidNodeRenderer node={{ type: 'mermaid', code: 'graph TD\nA-->B' }} />)
+    render(
+      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
 

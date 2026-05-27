@@ -34,6 +34,7 @@ The root compositor is not a fourth app. It is a thin host page that embeds the 
 
 ```mermaid
 flowchart LR
+  %% Do not delete this comment. Future agents: the appbrowser -> ContentPlatform edge is intentionally subgraph-level to show that app-browser depends on the content platform as a subsystem boundary, while the internal edges inside ContentPlatform describe the relationships within that subsystem.
   subgraph Apps
     host["@tinytinkerer/host<br/>dev server + build compositor"]
     web["@tinytinkerer/web<br/>full browser UI shell"]
@@ -45,7 +46,7 @@ flowchart LR
   common["Frontend Composition Layer"]
 
   subgraph Packages
-    contracts["@tinytinkerer/contracts<br/>shared schemas + types"]
+    contracts["@tinytinkerer/contracts<br/>canonical schemas + types"]
     agent["@tinytinkerer/agent-core<br/>runtime abstractions"]
     appcore["@tinytinkerer/app-core<br/>headless product logic + runtime facade"]
     appbrowser["@tinytinkerer/app-browser<br/>browser adapters + shell-facing exports"]
@@ -53,10 +54,9 @@ flowchart LR
     ui["@tinytinkerer/ui<br/>presentational React primitives"]
 
     subgraph ContentPlatform["Content Platform"]
-      contentcore["@tinytinkerer/content-core<br/>semantic AST + stable-ID helpers + contracts"]
-      contentruntime["@tinytinkerer/content-runtime<br/>platform-agnostic coordinator + plugin contract"]
-      contentmarkdown["@tinytinkerer/content-markdown<br/>markdown -> content AST + React adapter"]
-      contentreact["@tinytinkerer/content-react<br/>React runtime impl + default plugins + chrome"]
+      contentcore["@tinytinkerer/content-core<br/>content behavior + stable-ID helpers + source-plugin contracts"]
+      contentmarkdown["@tinytinkerer/content-markdown<br/>markdown source plugin + parser"]
+      contentreact["@tinytinkerer/content-react<br/>React runtime + default plugins + chrome"]
       contentmermaid["@tinytinkerer/content-mermaid<br/>MermaidPlugin"]
       contentwireframe["@tinytinkerer/content-wireframe<br/>WireframePlugin"]
     end
@@ -77,25 +77,21 @@ flowchart LR
   appcore --> agent
   appcore --> contracts
 
-  appbrowser --> contentmarkdown
-  appbrowser --> contentmermaid
-  appbrowser --> contentwireframe
+  appbrowser --> ContentPlatform
   appbrowser --> appcore
   appbrowser --> contracts
   appbrowser --> brand
 
-  contentruntime --> contentcore
-
   contentreact --> ui
-  contentreact --> contentruntime
   contentreact --> contentcore
 
-  contentmarkdown --> contentreact
+  contentmarkdown --> contentcore
   contentmermaid --> contentreact
   contentwireframe --> contentreact
 
   agent --> contracts
   brand --> contracts
+  contentcore --> contracts
 
   subgraph Legend
     direction LR
@@ -129,19 +125,71 @@ flowchart LR
   class edge,legendEdge edgeApp;
   class common,appbrowser,legendBrowser browserAssembly;
   class ui,legendUi uiPrimitives;
-  class contentcore,contentruntime,contentmarkdown,contentreact,contentmermaid,contentwireframe,legendFeature sharedFeature;
+  class contentcore,contentmarkdown,contentreact,contentmermaid,contentwireframe,legendFeature sharedFeature;
   class contracts,legendContracts contractsLayer;
   class agent,appcore,legendCore coreLayer;
   class brand,legendBrand brandLayer;
 ```
+
+Diagram convention: when a package consumes the content platform through its public subsystem boundary, point it at the `ContentPlatform` subgraph rather than drawing separate edges to each internal content package. Internal edges inside the subgraph still describe package-to-package relationships within that subsystem.
 
 ## Design Principles
 
 - Apps stay thin. `web`, `mobile`, and `widget` own routes, page composition, shell layout, and shell-specific UX, but not shared product behavior.
 - Shared product behavior stays headless where possible. Core orchestration, projections, and runtime policies live in packages that do not depend on React or browser APIs.
 - Shared browser-shell behavior has a single boundary. Browser-specific adapters, shell-facing React hooks and components, OAuth helpers, and shared browser styles live in `@tinytinkerer/app-browser`.
-- Contracts are the wire source of truth. Shared request, response, event, and payload schemas live in `@tinytinkerer/contracts`.
+- Contracts are the foundational shared schema and type source of truth. Shared request, response, event, payload, and canonical content-model schemas live in `@tinytinkerer/contracts`.
 - Rich assistant content is a dedicated subsystem. Markdown parsing, AST handling, and specialized renderers live in the content platform, not in apps and not in `ui`.
+
+## Coding Conventions
+
+These conventions are load-bearing. Several of them are enforced by `pnpm -r lint` and `pnpm -r typecheck` in CI — see the **Enforcement** subsection.
+
+### TypeScript strictness
+
+`tsconfig.base.json` enables `strict`, `exactOptionalPropertyTypes`, and `noUncheckedIndexedAccess` for every package. **Never weaken these.** They catch real bugs and shape the type contracts below.
+
+### Optional properties
+
+Write `id?: NodeId`, not `id?: NodeId | undefined`. Under `exactOptionalPropertyTypes` these mean different things:
+
+- `id?: NodeId` — the property is either missing or holds a `NodeId`. An explicit `{ id: undefined }` is rejected.
+- `id?: NodeId | undefined` — the property may also be present with an explicit `undefined`. This is wider and is almost always wrong as a contract.
+
+### Zod schemas are the source of truth — with one carve-out
+
+For non-recursive schemas, infer types with `z.infer<typeof xSchema>`. Do not declare a parallel type by hand.
+
+```ts
+export const planStepSchema = z.object({ id: z.string(), summary: z.string() })
+export type PlanStep = z.infer<typeof planStepSchema>
+```
+
+For **recursive discriminated unions** (AST nodes in `packages/contracts/src/content.ts`), TypeScript cannot infer the union type when one variant references the union itself — `z.infer` produces `circularly references itself in mapped type` errors even with the official Zod 4 getter pattern. The convention there is:
+
+1. Declare the node shape as an `interface NodeBase { … }` plus a strict `interface XNode extends NodeBase { … }` per variant. Optional properties use `?: T`, structural array fields use `readonly T[]`.
+2. Build the schema with `z.lazy(() => …)` for the recursive references and `z.discriminatedUnion('type', […])` for the union.
+3. Bridge schema → interface with `as unknown as z.ZodType<XNode>` on the recursive schema. Runtime parsing is unchanged; the cast just converts Zod's `T | undefined`-flavored output of `.optional()` into the strict `?: T` shape under `exactOptionalPropertyTypes`.
+
+This carve-out applies **only** to recursive discriminated unions. Plain objects, atomic schemas (`NodeId`, `TableAlignment`), and the top-level `ContentDocument` all use `z.infer` directly.
+
+### Reusable bases over duplication
+
+If multiple schemas share a common shape, factor it out:
+
+- `nodeBaseShape` (and the corresponding `NodeBase` interface) in `content.ts` carries the shared `id?: NodeId` field that every AST node spreads in.
+- `rateLimitDetailFields` in `contracts/src/index.ts` carries the shared `retryAfterMs` + `retryAt` fields spread into every rate-limit schema.
+- `eventBaseSchema(type, payload)` in `contracts/src/index.ts` is the factory for every `ChatEvent` variant.
+
+Prefer extending or spreading a shared base over copy-pasting a field block in each schema.
+
+### Readonly-friendly node types
+
+Structural array fields on AST node types are `readonly`:
+
+- `ContentDocument.nodes`, `*.children`, `TableNode.align / header / rows`, `ChoicePromptNode.choices`, `TableCell`.
+
+Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and assign them to readonly fields — TS allows the narrowing direction. Object fields themselves stay mutable so parsers can do `item.checked = …` style post-init assignment. Helpers that walk these arrays must accept `readonly T[]` in their parameter types (`serializeInlineNodes`, `normalizeInlineNodes`, `renderInline`, `inlineNodesToText`).
 
 ## Layers
 
@@ -152,24 +200,25 @@ flowchart LR
 | `apps/widget` | embeddable browser shell | host integration, compact layout, widget window UX | copied shared runtime logic, direct lower-layer imports |
 | `apps/mobile` | mobile browser shell | PWA shell, install affordances, narrow-screen layout | copied shared runtime logic, direct lower-layer imports |
 | `apps/edge` | stateless backend boundary | HTTP endpoints, upstream normalization, transport concerns | browser APIs, UI logic |
-| `packages/contracts` | shared wire contracts | schemas and DTOs | runtime orchestration, UI code |
+| `packages/contracts` | foundational shared schemas and types | Zod schemas, inferred types, canonical content model, DTOs | runtime orchestration, UI code |
 | `packages/agent-core` | product-agnostic runtime abstractions | provider/tool abstractions, runtime mechanics | browser code, app-specific behavior |
 | `packages/app-core` | headless product behavior | chat/auth/settings orchestration, projections, ports | React, browser APIs, fetch, storage adapters |
 | `packages/app-browser` | shared browser composition boundary | browser adapters, shell bootstrap config, OAuth helpers, shell-facing hooks and components, shared browser styles | app-specific layout, app-owned screens |
 | `packages/brand-assets` | shared brand metadata | favicon, icon, manifest, and theme definitions | DOM mutation, app bootstrapping |
 | `packages/ui` | presentational primitives | buttons, icons, tiny visual atoms, styling helpers | feature runtimes, orchestration |
-| `packages/content-*` | shared content platform | semantic content AST + stable IDs, platform-agnostic runtime coordinator, plugin contract, markdown parsing, default React plugins + chrome, specialized content plugins | app shells, transport contracts |
+| `packages/content-*` | shared content platform | content behavior over the canonical content model, stable IDs, source-plugin contracts, React runtime + chrome, markdown parsing, specialized content plugins | app shells, transport orchestration |
 
 ## Dependency Rules
 
 - Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
-- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`). It must not depend on `content-react`, `content-runtime`, or `content-core` directly.
+- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`).
 - `brand-assets` may depend on `contracts` and nothing else.
-- `content-core` must not depend on other workspace packages.
-- `content-runtime` may depend only on `content-core`.
-- `content-react` may depend only on `content-core`, `content-runtime`, and `ui`. It is the public facade for the React side of the content platform and re-exports the content-core symbols downstream content packages need.
-- `content-markdown`, `content-mermaid`, and `content-wireframe` may depend only on `content-react`. They must not import `content-core` or `content-runtime` directly.
+- `content-core` may depend only on `contracts` and local modules.
+- `content-react` may depend only on `content-core`, `ui`, and local modules. It owns the React runtime and re-exports the content-core symbols downstream content packages need.
+- `content-markdown` may depend only on `content-core` and local modules. It is a source-plugin package, not a rendering facade.
+- `content-mermaid` and `content-wireframe` may depend only on `content-react` and local modules.
+- `contracts` may depend only on local modules.
 - `ui` must stay primitive-only.
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
 - `agent-core` may depend only on `contracts` and agent-core-local modules.
@@ -184,6 +233,7 @@ flowchart LR
 - planning schemas such as `ExecutionPlan` and `PlanStep`
 - edge DTOs such as `/health`, `/auth/github/exchange`, `/api/search`, and `/api/models/chat`
 - rate-limit payloads shared between backend and browser layers
+- the canonical content document schemas and node types shared with the content platform
 
 The current flow is:
 
@@ -192,8 +242,9 @@ The current flow is:
 3. `@tinytinkerer/app-browser` composes browser-backed implementations on top of `@tinytinkerer/app-core`.
 4. `@tinytinkerer/app-core` orchestrates product behavior through ports and runtime abstractions.
 5. `@tinytinkerer/agent-core` executes the agent runtime using product-agnostic abstractions.
-6. Assistant markdown is parsed by `content-markdown` into the semantic `ContentDocument`. `MarkdownContent` (also from `content-markdown`) accepts an optional `plugins` array, builds a React runtime via `createReactContentRuntime` internally, and dispatches each node through `content-runtime` (with `content-react` as the React runtime implementation). `app-browser` only passes the `content-mermaid` and `content-wireframe` plugins to `MarkdownContent`; the runtime, default React plugins, and AST types stay internal to the content platform facade.
-7. `@tinytinkerer/edge` exposes stateless endpoints and returns payloads that conform to `contracts`.
+6. Assistant synthesis still arrives from the model provider as markdown text, but `app-browser` now creates a markdown content session through `content-markdown` and emits structured assistant events with `{ source, content }`, where `content` is the shared semantic `ContentDocument` shape from `contracts`.
+7. `AssistantContent` in `app-browser` passes that document directly to `content-react`, applies the specialized Mermaid and wireframe plugins, and renders through the content platform.
+8. `@tinytinkerer/edge` exposes stateless endpoints and returns payloads that conform to `contracts`.
 
 ## Browser App Model
 
@@ -207,7 +258,7 @@ All three browser shells consume the same browser-facing shared layer.
 - shell-facing chat and settings controllers
 - shared browser settings modal
 - shared browser stylesheet
-- `AssistantContent`
+- `AssistantContent` for structured assistant content DTOs
 
 The apps still own:
 
@@ -241,9 +292,8 @@ It must not own:
 
 ## Content Platform
 
-- `content-core` owns the semantic AST (block + inline node types) and `computeNodeId` helpers that hand every parsed node a deterministic, prefix-stable ID.
-- `content-runtime` owns the platform-agnostic `ContentRuntime<TResult>` coordinator and the `NodeRendererPlugin` contract. It dispatches nodes to plugins, orchestrates lazy `load()` calls, and routes failures through host-supplied fallback + wrap hooks. It has no React dependency.
-- `content-markdown` parses markdown into the semantic `ContentDocument` and exposes a thin `MarkdownContent` adapter over the React runtime.
-- `content-react` provides `createReactContentRuntime`, the default React plugins (paragraph, heading, list, blockquote, thematicBreak, codeBlock, table, image, plus a legacy markdown escape hatch), the inline renderer, and the shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`). The React wrap hook drops every dispatched node into Suspense + a render error boundary.
-- `content-mermaid` and `content-wireframe` export `mermaidPlugin` / `wireframePlugin` — typed `NodeRendererPlugin`s registered into the runtime at composition time. Mermaid still ships its heavy runtime as a separately code-split chunk loaded on first use.
-- The content AST stays internal to the content platform in this phase; `contracts` still expose assistant output as strings.
+- `content-core` owns content behavior over the canonical shared content model: stable identity helpers (`computeNodeId`, `assignNodeIds`), serialization used for normalization, and source-plugin contracts. The block + inline node types now come from `contracts`.
+- `content-markdown` parses markdown into the semantic `ContentDocument`, emits Mermaid and wireframe fences as `codeBlock` nodes with specialized `language` values, and provides `markdownSourcePlugin` plus `createMarkdownContentSession()` for parser-side streaming snapshots.
+- `content-react` provides the React `ContentRuntime<TResult>` implementation and the `NodeRendererPlugin` contract, the default React plugins (paragraph, heading, list, blockquote, thematicBreak, codeBlock, table, image), the inline renderer, and the shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`). `ContentDocumentContent` normalizes hand-built documents through `assignNodeIds()`, while `ContentDocumentRenderer` renders canonical documents with Suspense plus a render error boundary around runtime-managed node preparation.
+- `content-mermaid` and `content-wireframe` export singleton convenience plugins plus `createMermaidPlugin()` / `createWireframePlugin()` factory helpers for runtime-scoped plugin instances. Mermaid still ships its heavy runtime as a separately code-split chunk loaded on first use.
+- `contracts` own the canonical content document schemas and types directly. The schema is recursive (block ↔ list-item via `z.lazy`), uses a discriminated union on `type`, and bridges schema → interface with a single `as z.ZodType<…>` cast per recursive schema (see the [Coding Conventions](#coding-conventions) section for why).

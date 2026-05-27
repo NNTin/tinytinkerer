@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   brandDefinitionSchema,
   chatEventSchema,
+  contentDocumentSchema,
   edgeErrorResponseSchema,
   githubExchangeRequestSchema,
   modelsChatRequestSchema,
@@ -17,10 +18,33 @@ describe('contracts', () => {
       id: '1',
       timestamp: new Date().toISOString(),
       type: 'assistant.done',
-      payload: { text: 'ok' }
+      payload: {
+        source: 'ok',
+        content: {
+          nodes: [
+            {
+              type: 'paragraph',
+              children: [{ type: 'text', value: 'ok' }]
+            }
+          ]
+        }
+      }
     })
 
     expect(event.type).toBe('assistant.done')
+  })
+
+  it('keeps the canonical content schema and assistant alias aligned', () => {
+    const document = {
+      nodes: [
+        {
+          type: 'paragraph',
+          children: [{ type: 'text', value: 'ok' }]
+        }
+      ]
+    }
+
+    expect(contentDocumentSchema.parse(document)).toEqual(document)
   })
 
   it('parses shared edge payloads', () => {

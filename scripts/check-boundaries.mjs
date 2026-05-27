@@ -18,8 +18,14 @@ const sourceRules = new Map([
     '@tinytinkerer/app-core',
     [
       { pattern: /\bfetch\s*\(/, label: 'fetch()' },
-      { pattern: /\bwindow\b/, label: 'window' },
-      { pattern: /\bdocument\b/, label: 'document' },
+      {
+        pattern: /(?<![\w$])window(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'window'
+      },
+      {
+        pattern: /(?<![\w$])document(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'document'
+      },
       { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
       { pattern: /\blocalStorage\b/, label: 'localStorage' },
       { pattern: /\bindexedDB\b/, label: 'indexedDB' },
@@ -32,8 +38,34 @@ const sourceRules = new Map([
     '@tinytinkerer/agent-core',
     [
       { pattern: /\bfetch\s*\(/, label: 'fetch()' },
-      { pattern: /\bwindow\b/, label: 'window' },
-      { pattern: /\bdocument\b/, label: 'document' },
+      {
+        pattern: /(?<![\w$])window(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'window'
+      },
+      {
+        pattern: /(?<![\w$])document(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'document'
+      },
+      { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
+      { pattern: /\blocalStorage\b/, label: 'localStorage' },
+      { pattern: /\bindexedDB\b/, label: 'indexedDB' },
+      { pattern: /\bDexie\b/, label: 'Dexie' },
+      { pattern: /from\s+['"]react(?:\/[^'"]*)?['"]/, label: 'React import' },
+      { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
+    ]
+  ],
+  [
+    '@tinytinkerer/content-core',
+    [
+      { pattern: /\bfetch\s*\(/, label: 'fetch()' },
+      {
+        pattern: /(?<![\w$])window(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'window'
+      },
+      {
+        pattern: /(?<![\w$])document(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'document'
+      },
       { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
       { pattern: /\blocalStorage\b/, label: 'localStorage' },
       { pattern: /\bindexedDB\b/, label: 'indexedDB' },
@@ -45,6 +77,7 @@ const sourceRules = new Map([
 ])
 
 for (const pkg of workspacePackages) {
+  validateDeclaredWorkspaceDependencies(pkg)
   const files = await collectSourceFiles(pkg.dir)
 
   for (const file of files) {
@@ -94,7 +127,8 @@ async function loadWorkspacePackages() {
           name: manifest.name,
           dir,
           kind: relative(rootDir, baseDir).startsWith('apps') ? 'app' : 'package',
-          slug: entry.name
+          slug: entry.name,
+          manifest
         })
       } catch {
         // Ignore directories without a package manifest.
@@ -107,8 +141,7 @@ async function loadWorkspacePackages() {
 
 async function collectSourceFiles(dir) {
   const files = []
-  const srcDir = join(dir, 'src')
-  const stack = [srcDir]
+  const stack = [join(dir, 'src'), join(dir, 'tests')]
 
   while (stack.length > 0) {
     const current = stack.pop()
@@ -116,7 +149,12 @@ async function collectSourceFiles(dir) {
       continue
     }
 
-    const entries = await readdir(current, { withFileTypes: true })
+    let entries
+    try {
+      entries = await readdir(current, { withFileTypes: true })
+    } catch {
+      continue
+    }
     for (const entry of entries) {
       const fullPath = join(current, entry.name)
       if (entry.isDirectory()) {
@@ -134,6 +172,42 @@ async function collectSourceFiles(dir) {
   }
 
   return files
+}
+
+function validateDeclaredWorkspaceDependencies(pkg) {
+  const dependencySections = [
+    pkg.manifest.dependencies,
+    pkg.manifest.devDependencies,
+    pkg.manifest.peerDependencies,
+    pkg.manifest.optionalDependencies
+  ]
+  const declaredWorkspaceDependencies = new Set()
+
+  for (const section of dependencySections) {
+    for (const dependencyName of Object.keys(section ?? {})) {
+      if (workspaceByName.has(dependencyName)) {
+        declaredWorkspaceDependencies.add(dependencyName)
+      }
+    }
+  }
+
+  for (const dependencyName of declaredWorkspaceDependencies) {
+    const targetPkg = workspaceByName.get(dependencyName)
+    if (!targetPkg) {
+      continue
+    }
+
+    graph.get(pkg.name)?.add(targetPkg.name)
+    validateBoundary(
+      pkg,
+      {
+        pkg: targetPkg,
+        specifier: dependencyName,
+        isSubpathImport: false
+      },
+      join(pkg.dir, 'package.json')
+    )
+  }
 }
 
 async function parseSourceFile(filePath) {
@@ -241,12 +315,13 @@ function validateBoundary(sourcePkg, target, filePath) {
       '@tinytinkerer/brand-assets',
       '@tinytinkerer/content-markdown',
       '@tinytinkerer/content-mermaid',
+      '@tinytinkerer/content-react',
       '@tinytinkerer/content-wireframe',
       '@tinytinkerer/contracts'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, the outward-facing content packages (content-markdown, content-mermaid, content-wireframe), and app-browser-local modules (${targetPkg.name})`
+        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, content-react, and the outward-facing content packages (content-markdown, content-mermaid, content-wireframe), plus app-browser-local modules (${targetPkg.name})`
       )
     }
   }
@@ -271,33 +346,22 @@ function validateBoundary(sourcePkg, target, filePath) {
 
   if (sourcePkg.name === '@tinytinkerer/content-core') {
     const allowed = new Set([
+      '@tinytinkerer/contracts',
       '@tinytinkerer/content-core'
     ])
     if (!allowed.has(targetPkg.name)) {
-      errors.push(`${sourceLabel}: content-core must not depend on other workspace packages (${targetPkg.name})`)
-    }
-  }
-
-  if (sourcePkg.name === '@tinytinkerer/content-runtime') {
-    const allowed = new Set([
-      '@tinytinkerer/content-core',
-      '@tinytinkerer/content-runtime'
-    ])
-    if (!allowed.has(targetPkg.name)) {
-      errors.push(
-        `${sourceLabel}: content-runtime may import only content-core and local modules (${targetPkg.name})`
-      )
+      errors.push(`${sourceLabel}: content-core may import only contracts and local modules (${targetPkg.name})`)
     }
   }
 
   if (sourcePkg.name === '@tinytinkerer/content-markdown') {
     const allowed = new Set([
-      '@tinytinkerer/content-react',
+      '@tinytinkerer/content-core',
       '@tinytinkerer/content-markdown'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: content-markdown may import only content-react and local modules (${targetPkg.name})`
+        `${sourceLabel}: content-markdown may import only content-core and local modules (${targetPkg.name})`
       )
     }
   }
@@ -306,12 +370,11 @@ function validateBoundary(sourcePkg, target, filePath) {
     const allowed = new Set([
       '@tinytinkerer/content-core',
       '@tinytinkerer/content-react',
-      '@tinytinkerer/content-runtime',
       '@tinytinkerer/ui'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: content-react may import only content-core, content-runtime, ui, and local modules (${targetPkg.name})`
+        `${sourceLabel}: content-react may import only content-core, ui, and local modules (${targetPkg.name})`
       )
     }
   }
@@ -331,8 +394,13 @@ function validateBoundary(sourcePkg, target, filePath) {
     }
   }
 
-  if (sourcePkg.name === '@tinytinkerer/contracts' && targetPkg.name !== '@tinytinkerer/contracts') {
-    errors.push(`${sourceLabel}: contracts must not depend on other workspace packages (${targetPkg.name})`)
+  if (sourcePkg.name === '@tinytinkerer/contracts') {
+    const allowed = new Set([
+      '@tinytinkerer/contracts'
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(`${sourceLabel}: contracts may import only local modules (${targetPkg.name})`)
+    }
   }
 }
 

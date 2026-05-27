@@ -40,7 +40,9 @@ const mockStatusState = vi.hoisted(() => ({
 const mockTurns = vi.hoisted(() => [] as Array<{
   id: string
   userText: string
-  assistantText: string
+  assistantSource: string
+  assistantContent: { nodes: unknown[] } | null
+  isStreaming: boolean
   notice?: {
     kind: 'system' | 'error' | 'rate-limit'
     message: string
@@ -50,7 +52,6 @@ const mockTurns = vi.hoisted(() => [] as Array<{
 
 const mockChatState = vi.hoisted(() => ({
   events: [] as MockChatEvent[],
-  streamingText: '',
   isRunning: false,
   isRetryPending: false,
   cooldownUntil: undefined as string | undefined,
@@ -60,12 +61,17 @@ const mockChatState = vi.hoisted(() => ({
 }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
-  AssistantContent: ({ content, className }: { content: string; className?: string }) => (
-    <div className={className}>{content}</div>
+  AssistantContent: ({
+    content,
+    className
+  }: {
+    content: { nodes: Array<{ children?: Array<{ value?: string }> }> }
+    className?: string
+  }) => (
+    <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
   ),
   useChatSurfaceController: () => ({
     events: mockChatState.events,
-    streamingText: mockChatState.streamingText,
     token: mockAuthState.token,
     turns: mockTurns,
     timeline: [],
@@ -143,7 +149,6 @@ beforeEach(() => {
   mockSettingsState.showToolActivity = true
   mockAuthState.token = null
   mockChatState.events = []
-  mockChatState.streamingText = ''
   mockChatState.isRunning = false
   mockChatState.isRetryPending = false
   mockChatState.cooldownUntil = undefined
@@ -293,7 +298,11 @@ describe('ChatPage turns', () => {
     mockTurns.push({
       id: 'turn-1',
       userText: 'hello',
-      assistantText: 'Hi there.',
+      assistantSource: 'Hi there.',
+      assistantContent: {
+        nodes: [{ type: 'paragraph', children: [{ type: 'text', value: 'Hi there.' }] }]
+      },
+      isStreaming: false,
       notice: {
         kind: 'rate-limit',
         message: 'Recovered after a short wait.',

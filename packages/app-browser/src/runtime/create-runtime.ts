@@ -14,6 +14,33 @@ export const createRuntime = (options: {
       getToken: options.getToken,
       getModel: options.getModel
     }),
+    createAssistantContentSession: async (initialSource = '') => {
+      const { createMarkdownContentSession } = await import('@tinytinkerer/content-markdown')
+      const session = createMarkdownContentSession(initialSource)
+      return {
+        append(chunk) {
+          const snapshot = session.append(chunk)
+          return {
+            source: snapshot.source,
+            content: snapshot.document
+          }
+        },
+        replace(source) {
+          const snapshot = session.replace(source)
+          return {
+            source: snapshot.source,
+            content: snapshot.document
+          }
+        },
+        snapshot() {
+          const snapshot = session.snapshot()
+          return {
+            source: snapshot.source,
+            content: snapshot.document
+          }
+        }
+      }
+    },
     tools: options.searchEnabled ? [createWebSearchTool(options.baseUrl)] : [],
     searchEnabled: options.searchEnabled
   })

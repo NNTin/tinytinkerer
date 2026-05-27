@@ -15,7 +15,6 @@ import type { StatusStore } from './status-store'
 export type ChatState = {
   conversationId: string | undefined
   events: ChatEvent[]
-  streamingText: string
   isRunning: boolean
   isRetryPending: boolean
   cooldownUntil: string | undefined
@@ -44,7 +43,6 @@ export const createChatStore = (options: {
   return createStore<ChatState>((set, get) => ({
     conversationId: undefined,
     events: [],
-    streamingText: '',
     isRunning: false,
     isRetryPending: false,
     cooldownUntil: undefined,
@@ -76,15 +74,9 @@ export const createChatStore = (options: {
           conversations: options.shell.conversations,
           preferences: options.shell.preferences,
           signal: runController.signal,
-          onChunk: (text) => {
-            set((currentState) => ({
-              streamingText: currentState.streamingText + text
-            }))
-          },
           onEvent: (event) => {
             set((currentState) => ({
-              events: [...currentState.events, event],
-              streamingText: ''
+              events: [...currentState.events, event]
             }))
           },
           onRateLimitState: (rateLimitState) => {
@@ -105,7 +97,7 @@ export const createChatStore = (options: {
     },
     resetConversation: async () => {
       const events = await resetConversation(options.shell.conversations, get().conversationId)
-      set({ events, streamingText: '' })
+      set({ events })
     }
   }))
 }

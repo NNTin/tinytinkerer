@@ -4,9 +4,8 @@ import { useEffect, useId, useState } from 'react'
 import {
   CodeBlockFallback,
   PreviewCodeFrame,
+  type CodeBlockNode,
   type ContentNodeRendererProps,
-  type MermaidNode,
-  type ReactContentRendererRegistry,
   type ReactNodeRendererPlugin
 } from '@tinytinkerer/content-react'
 
@@ -78,16 +77,25 @@ const loadMermaid = (): Promise<MermaidApi> => {
   return mermaidPromise
 }
 
-export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<MermaidNode>) => {
+export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlockNode>) => {
   const [svg, setSvg] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   const id = useId().replace(/:/g, '-')
 
   useEffect(() => {
     let cancelled = false
+    const mermaid = window.mermaid
 
-    void loadMermaid()
-      .then((mermaid) => mermaid.render(`tt-mermaid-${id}`, node.code))
+    if (!mermaid) {
+      console.error('[content-mermaid] render failed:', new Error('Mermaid runtime is not loaded'))
+      setFailed(true)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    void mermaid
+      .render(`tt-mermaid-${id}`, node.code)
       .then((result) => {
         if (!cancelled) {
           const sanitized = DOMPurify.sanitize(result.svg, {
@@ -132,18 +140,17 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<MermaidNo
   )
 }
 
-export const mermaidPlugin: ReactNodeRendererPlugin<'mermaid'> = {
-  id: 'mermaid',
-  nodeType: 'mermaid',
-  capabilities: { lazy: true, preview: true },
-  load: () => loadMermaid().then(() => undefined),
-  render: (node) => <MermaidNodeRenderer node={node} />,
-  fallback: (node) => <CodeBlockFallback code={node.code} language="mermaid" />
+export const createMermaidPlugin = (): ReactNodeRendererPlugin<'codeBlock'> => {
+  return {
+    id: 'mermaid',
+    nodeType: 'codeBlock',
+    priority: 50,
+    requirements: { lazy: true, clientOnly: true, needsDom: true },
+    matches: (node) => node.language === 'mermaid',
+    load: () => loadMermaid().then(() => undefined),
+    render: (node) => <MermaidNodeRenderer node={node} />,
+    fallback: (node) => <CodeBlockFallback code={node.code} language={node.language ?? 'mermaid'} />
+  }
 }
 
-// Legacy renderer-map export retained for callers still wiring renderers via the
-// ReactContentRendererRegistry shape. New callers should register `mermaidPlugin`
-// against a ContentRuntime instead.
-export const mermaidRenderers = {
-  mermaid: MermaidNodeRenderer
-} satisfies Pick<ReactContentRendererRegistry, 'mermaid'>
+export const mermaidPlugin: ReactNodeRendererPlugin<'codeBlock'> = createMermaidPlugin()

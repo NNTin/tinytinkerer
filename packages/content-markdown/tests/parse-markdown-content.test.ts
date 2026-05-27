@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { BlockNode, ContentDocument, InlineNode } from '@tinytinkerer/content-react'
+import type { BlockNode, ContentDocument, InlineNode } from '@tinytinkerer/content-core'
 import { parseMarkdownContent } from '../src/index.js'
 
 const stripIds = (doc: ContentDocument): ContentDocument => ({
@@ -35,25 +35,17 @@ const stripBlock = (node: BlockNode): BlockNode => {
       return next
     }
     case 'table':
-      return { type: 'table', align: node.align, header: node.header, rows: node.rows }
+      return {
+        type: 'table',
+        align: node.align,
+        header: node.header.map((cell) => cell.map(stripInline)),
+        rows: node.rows.map((row) => row.map((cell) => cell.map(stripInline)))
+      }
     case 'codeBlock': {
       const next: BlockNode = { type: 'codeBlock', code: node.code }
       if (node.language) next.language = node.language
-      if (node.meta) next.meta = node.meta
       return next
     }
-    case 'mermaid': {
-      const next: BlockNode = { type: 'mermaid', code: node.code }
-      if (node.meta) next.meta = node.meta
-      return next
-    }
-    case 'wireframe': {
-      const next: BlockNode = { type: 'wireframe', code: node.code }
-      if (node.meta) next.meta = node.meta
-      return next
-    }
-    case 'markdown':
-      return { type: 'markdown', markdown: node.markdown }
     case 'choicePrompt':
       return { type: 'choicePrompt', prompt: node.prompt, choices: node.choices }
   }
@@ -61,10 +53,14 @@ const stripBlock = (node: BlockNode): BlockNode => {
 
 const stripInline = (node: InlineNode): InlineNode => {
   switch (node.type) {
+    case 'text':
+      return { type: 'text', value: node.value }
     case 'emphasis':
     case 'strong':
     case 'strikethrough':
       return { type: node.type, children: node.children.map(stripInline) }
+    case 'codeInline':
+      return { type: 'codeInline', value: node.value }
     case 'link': {
       const next: InlineNode = { type: 'link', url: node.url, children: node.children.map(stripInline) }
       if (node.title) next.title = node.title
@@ -75,6 +71,8 @@ const stripInline = (node: InlineNode): InlineNode => {
       if (node.title) next.title = node.title
       return next
     }
+    case 'break':
+      return { type: 'break' }
     default:
       return node
   }
@@ -100,13 +98,13 @@ describe('parseMarkdownContent', () => {
     ).toEqual({
       nodes: [
         { type: 'paragraph', children: [{ type: 'text', value: 'Intro' }] },
-        { type: 'mermaid', code: 'graph TD\nA-->B' },
+        { type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' },
         { type: 'paragraph', children: [{ type: 'text', value: 'After' }] }
       ]
     })
 
     expect(stripIds(parseMarkdownContent(['```wireframe', '[Button]', '```'].join('\n')))).toEqual({
-      nodes: [{ type: 'wireframe', code: '[Button]' }]
+      nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }]
     })
   })
 
@@ -124,8 +122,16 @@ describe('parseMarkdownContent', () => {
         {
           type: 'table',
           align: [null, null],
-          header: ['Name', 'Role'],
-          rows: [['Ada', 'Admin']]
+          header: [
+            [{ type: 'text', value: 'Name' }],
+            [{ type: 'text', value: 'Role' }]
+          ],
+          rows: [
+            [
+              [{ type: 'text', value: 'Ada' }],
+              [{ type: 'text', value: 'Admin' }]
+            ]
+          ]
         }
       ]
     })
@@ -213,9 +219,9 @@ describe('parseMarkdownContent', () => {
     const doc = parseMarkdownContent(content)
     expect(doc.nodes.map((n) => n.type)).toEqual([
       'heading',
-      'mermaid',
+      'codeBlock',
       'paragraph',
-      'wireframe',
+      'codeBlock',
       'table',
       'image',
       'paragraph'
@@ -225,6 +231,28 @@ describe('parseMarkdownContent', () => {
   it('sanitizes javascript: URLs in standalone image nodes to empty src', () => {
     expect(stripIds(parseMarkdownContent('![xss](javascript:alert(1))'))).toEqual({
       nodes: [{ type: 'image', url: '', alt: 'xss' }]
+    })
+  })
+
+  it('sanitizes unsafe link schemes', () => {
+    expect(stripIds(parseMarkdownContent('[xss](javascript:alert(1))'))).toEqual({
+      nodes: [
+        {
+          type: 'paragraph',
+          children: [{ type: 'link', url: '', children: [{ type: 'text', value: 'xss' }] }]
+        }
+      ]
+    })
+  })
+
+  it('preserves unsupported block nodes as safe paragraph text', () => {
+    expect(stripIds(parseMarkdownContent('<div>example</div>'))).toEqual({
+      nodes: [
+        {
+          type: 'paragraph',
+          children: [{ type: 'text', value: '<div>example</div>' }]
+        }
+      ]
     })
   })
 

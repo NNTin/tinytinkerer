@@ -12,7 +12,6 @@ type ToolEvent = Extract<ChatEvent, { type: 'tool.call.completed' | 'tool.call.f
 
 export type ChatSurfaceController = {
   events: ChatEvent[]
-  streamingText: string
   token: string | null
   turns: Turn[]
   timeline: TimelineEntry[]
@@ -31,7 +30,6 @@ export type ChatSurfaceController = {
 
 export const useChatSurfaceController = (): ChatSurfaceController => {
   const events = useChatStore((state) => state.events)
-  const streamingText = useChatStore((state) => state.streamingText)
   const isRunning = useChatStore((state) => state.isRunning)
   const isRetryPending = useChatStore((state) => state.isRetryPending)
   const sendPrompt = useChatStore((state) => state.sendPrompt)
@@ -45,7 +43,7 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
 
   useEffect(() => startStatusPolling(refreshStatus), [refreshStatus])
 
-  const turns = useMemo(() => buildTurns(events, streamingText), [events, streamingText])
+  const turns = useMemo(() => buildTurns(events), [events])
   const timeline = useMemo(() => buildCurrentTimeline(events), [events])
   const toolEvents = useMemo(
     () =>
@@ -74,7 +72,6 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
 
   return {
     events,
-    streamingText,
     token,
     turns,
     timeline,

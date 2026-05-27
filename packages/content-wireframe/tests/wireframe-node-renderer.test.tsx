@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { WireframeNodeRenderer, wireframeRenderers } from '../src/index.js'
+import { createWireframePlugin, WireframeNodeRenderer, wireframePlugin } from '../src/index.js'
 
 const HELLO_WORLD_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -32,19 +32,31 @@ afterEach(() => {
 })
 
 describe('WireframeNodeRenderer', () => {
-  it('exports the wireframe renderer map for composition', () => {
-    expect(wireframeRenderers.wireframe).toBe(WireframeNodeRenderer)
+  it('exports the wireframe plugin for composition', () => {
+    expect(wireframePlugin.nodeType).toBe('codeBlock')
+    expect(typeof wireframePlugin.render).toBe('function')
+  })
+
+  it('creates isolated plugin instances on demand', () => {
+    const left = createWireframePlugin()
+    const right = createWireframePlugin()
+
+    expect(left).not.toBe(right)
+    expect(left.id).toBe('wireframe')
+    expect(right.id).toBe('wireframe')
   })
 
   it('renders the wireframe chrome with the label', () => {
-    render(<WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />)
+    render(
+      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
+    )
 
     expect(screen.getByText('Wireframe')).toBeInTheDocument()
   })
 
   it('renders the wrapper element', () => {
     const { container } = render(
-      <WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />
+      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
     )
 
     expect(container.querySelector('[data-tt-wireframe]')).not.toBeNull()
@@ -52,7 +64,7 @@ describe('WireframeNodeRenderer', () => {
 
   it('renders HTML content in a sandboxed iframe by default', () => {
     const { container } = render(
-      <WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />
+      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
     )
 
     const iframe = container.querySelector('iframe')
@@ -63,7 +75,7 @@ describe('WireframeNodeRenderer', () => {
 
   it('does not leak wireframe HTML into the parent document', () => {
     const { container } = render(
-      <WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />
+      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
     )
 
     // The h1 from the wireframe HTML must not appear as a real DOM node in the parent
@@ -71,7 +83,9 @@ describe('WireframeNodeRenderer', () => {
   })
 
   it('shows Preview and Code toggle buttons', () => {
-    render(<WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />)
+    render(
+      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
+    )
 
     expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Code' })).toBeInTheDocument()
@@ -79,7 +93,7 @@ describe('WireframeNodeRenderer', () => {
 
   it('switches to code view and shows HTML source when Code is clicked', () => {
     const { container } = render(
-      <WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />
+      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Code' }))
@@ -90,7 +104,7 @@ describe('WireframeNodeRenderer', () => {
 
   it('switches back to preview when Preview is clicked after Code', () => {
     const { container } = render(
-      <WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />
+      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Code' }))
@@ -104,7 +118,9 @@ describe('WireframeNodeRenderer', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
 
-    render(<WireframeNodeRenderer node={{ type: 'wireframe', code: HELLO_WORLD_HTML }} />)
+    render(
+      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
 
@@ -114,7 +130,7 @@ describe('WireframeNodeRenderer', () => {
 
   it('falls back to a code block for empty wireframes', () => {
     const { container } = render(
-      <WireframeNodeRenderer node={{ type: 'wireframe', code: '   ' }} />
+      <WireframeNodeRenderer node={{ type: 'codeBlock', code: '   ', language: 'wireframe' }} />
     )
 
     expect(container.querySelector('code')?.textContent).toBe('   ')

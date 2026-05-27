@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { parseMarkdownContent } from '@tinytinkerer/content-markdown'
 import { AssistantContent } from '../src/assistant-content.js'
 import { resetMermaidState } from '@tinytinkerer/content-mermaid'
 
@@ -61,11 +62,13 @@ afterEach(() => {
   delete mermaidWindow.mermaid
 })
 
+const assistantContent = (markdown: string) => parseMarkdownContent(markdown)
+
 describe('AssistantContent', () => {
   it('renders markdown, tables, and images through app-browser composition', () => {
     render(
       <AssistantContent
-        content={[
+        content={assistantContent([
           '# Heading',
           '',
           '| Name | Role |',
@@ -73,7 +76,7 @@ describe('AssistantContent', () => {
           '| Ada | Admin |',
           '',
           '![Diagram](https://example.com/diagram.png)'
-        ].join('\n')}
+        ].join('\n'))}
       />
     )
 
@@ -84,7 +87,7 @@ describe('AssistantContent', () => {
 
   it('propagates shell styling hooks', () => {
     const { container } = render(
-      <AssistantContent content="streaming..." className="prose-assistant" isStreaming />
+      <AssistantContent content={assistantContent('streaming...')} className="prose-assistant" isStreaming />
     )
 
     expect(container.firstChild).toHaveClass('tt-markdown')
@@ -96,7 +99,7 @@ describe('AssistantContent', () => {
     mockRender.mockResolvedValue({ svg: '<svg><text>Diagram</text></svg>' })
 
     render(
-      <AssistantContent content={['```mermaid', FLOWCHART_CODE, '```'].join('\n')} />
+      <AssistantContent content={assistantContent(['```mermaid', FLOWCHART_CODE, '```'].join('\n'))} />
     )
 
     await waitFor(() => {
@@ -111,7 +114,7 @@ describe('AssistantContent', () => {
 
   it('renders wireframe fences through the specialized renderer', async () => {
     render(
-      <AssistantContent content={['```wireframe', HELLO_WORLD_HTML, '```'].join('\n')} />
+      <AssistantContent content={assistantContent(['```wireframe', HELLO_WORLD_HTML, '```'].join('\n'))} />
     )
 
     await waitFor(() => {
@@ -128,7 +131,7 @@ describe('AssistantContent', () => {
 
     render(
       <AssistantContent
-        content={[
+        content={assistantContent([
           '```mermaid',
           FLOWCHART_CODE,
           '```',
@@ -136,7 +139,7 @@ describe('AssistantContent', () => {
           '```wireframe',
           HELLO_WORLD_HTML,
           '```'
-        ].join('\n')}
+        ].join('\n'))}
       />
     )
 
@@ -158,7 +161,7 @@ describe('AssistantContent', () => {
 
     render(
       <AssistantContent
-        content={[
+        content={assistantContent([
           '```wireframe',
           HELLO_WORLD_HTML,
           '```',
@@ -166,7 +169,7 @@ describe('AssistantContent', () => {
           '```mermaid',
           FLOWCHART_CODE,
           '```'
-        ].join('\n')}
+        ].join('\n'))}
       />
     )
 
@@ -186,7 +189,7 @@ describe('AssistantContent', () => {
 
     const { container } = render(
       <AssistantContent
-        content={[
+        content={assistantContent([
           '# Title',
           '',
           '```mermaid',
@@ -197,7 +200,7 @@ describe('AssistantContent', () => {
           'Some text',
           '',
           '![img](https://example.com/img.png)'
-        ].join('\n')}
+        ].join('\n'))}
       />
     )
 

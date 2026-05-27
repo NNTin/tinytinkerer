@@ -23,10 +23,7 @@
   },
   "dependencies": {
     "@tinytinkerer/content-core": "workspace:*",
-    "@tinytinkerer/content-runtime": "workspace:*",
-    "@tinytinkerer/ui": "workspace:*",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "@tinytinkerer/ui": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.0.0"

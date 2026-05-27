@@ -1,4 +1,43 @@
 import { z } from 'zod'
+import { contentDocumentSchema } from './content'
+
+export {
+  blockNodeSchema,
+  contentDocumentSchema,
+  inlineNodeSchema,
+  listItemNodeSchema,
+  nodeIdSchema,
+  tableAlignmentSchema,
+  tableCellSchema
+} from './content'
+export type {
+  BlockNode,
+  BlockquoteNode,
+  BreakNode,
+  ChoicePromptNode,
+  CodeBlockNode,
+  CodeInlineNode,
+  ContentDocument,
+  ContentNode,
+  ContentNodeByType,
+  EmphasisNode,
+  HeadingNode,
+  ImageInlineNode,
+  ImageNode,
+  InlineNode,
+  LinkNode,
+  ListItemNode,
+  ListNode,
+  NodeId,
+  ParagraphNode,
+  StrikethroughNode,
+  StrongNode,
+  TableAlignment,
+  TableCell,
+  TableNode,
+  TextNode,
+  ThematicBreakNode
+} from './content'
 
 export const eventTypeSchema = z.enum([
   'user.message',
@@ -104,11 +143,15 @@ export const executionCompletedEventSchema = eventBaseSchema(
   'execution.completed',
   z.object({ steps: z.number().int().nonnegative() })
 )
+const rateLimitDetailFields = {
+  retryAfterMs: z.number().nonnegative(),
+  retryAt: z.string()
+} as const
+
 export const rateLimitWaitingEventSchema = eventBaseSchema(
   'rate.limit.waiting',
   z.object({
-    retryAfterMs: z.number().nonnegative(),
-    retryAt: z.string(),
+    ...rateLimitDetailFields,
     message: z.string(),
     autoRetry: z.boolean()
   })
@@ -120,19 +163,24 @@ export const rateLimitRecoveredEventSchema = eventBaseSchema(
 export const rateLimitCancelledEventSchema = eventBaseSchema(
   'rate.limit.cancelled',
   z.object({
-    retryAfterMs: z.number().nonnegative(),
-    retryAt: z.string(),
+    ...rateLimitDetailFields,
     message: z.string(),
     reason: z.enum(['too_long', 'cancelled'])
   })
 )
 export const assistantChunkEventSchema = eventBaseSchema(
   'assistant.chunk',
-  z.object({ text: z.string() })
+  z.object({
+    source: z.string(),
+    content: contentDocumentSchema
+  })
 )
 export const assistantDoneEventSchema = eventBaseSchema(
   'assistant.done',
-  z.object({ text: z.string() })
+  z.object({
+    source: z.string(),
+    content: contentDocumentSchema
+  })
 )
 export const errorEventSchema = eventBaseSchema(
   'error',
@@ -329,8 +377,7 @@ export type ModelsChatResponse = z.infer<typeof modelsChatResponseSchema>
 export const rateLimitPayloadSchema = z.object({
   code: z.literal('rate_limited'),
   error: z.string(),
-  retryAfterMs: z.number().nonnegative(),
-  retryAt: z.string()
+  ...rateLimitDetailFields
 })
 
 export type RateLimitPayload = z.infer<typeof rateLimitPayloadSchema>

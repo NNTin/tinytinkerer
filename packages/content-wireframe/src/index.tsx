@@ -1,15 +1,14 @@
 import {
   CodeBlockFallback,
   PreviewCodeFrame,
+  type CodeBlockNode,
   type ContentNodeRendererProps,
-  type ReactContentRendererRegistry,
   type ReactNodeRendererPlugin,
-  type WireframeNode
 } from '@tinytinkerer/content-react'
 
-export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<WireframeNode>) => {
+export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlockNode>) => {
   if (!node.code.trim()) {
-    return <CodeBlockFallback code={node.code} language="wireframe" />
+    return <CodeBlockFallback code={node.code} language={node.language ?? 'wireframe'} />
   }
 
   return (
@@ -37,17 +36,14 @@ export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<Wirefra
   )
 }
 
-export const wireframePlugin: ReactNodeRendererPlugin<'wireframe'> = {
+export const createWireframePlugin = (): ReactNodeRendererPlugin<'codeBlock'> => ({
   id: 'wireframe',
-  nodeType: 'wireframe',
-  capabilities: { preview: true },
+  nodeType: 'codeBlock',
+  priority: 40,
+  requirements: { clientOnly: true, needsDom: true },
+  matches: (node) => node.language === 'wireframe',
   render: (node) => <WireframeNodeRenderer node={node} />,
-  fallback: (node) => <CodeBlockFallback code={node.code} language="wireframe" />
-}
+  fallback: (node) => <CodeBlockFallback code={node.code} language={node.language ?? 'wireframe'} />
+})
 
-// Legacy renderer-map export retained for callers still wiring renderers via the
-// ReactContentRendererRegistry shape. New callers should register `wireframePlugin`
-// against a ContentRuntime instead.
-export const wireframeRenderers = {
-  wireframe: WireframeNodeRenderer
-} satisfies Pick<ReactContentRendererRegistry, 'wireframe'>
+export const wireframePlugin: ReactNodeRendererPlugin<'codeBlock'> = createWireframePlugin()

@@ -1,5 +1,9 @@
 export type BrowserAuthMode = 'oauth' | 'host-token' | 'hybrid'
 
+// Callers commonly pass values read from env (`import.meta.env.X`) that may be
+// undefined. Allowing explicit `undefined` here keeps the call sites ergonomic
+// without forcing a conditional spread on every field.
+/* eslint-disable no-restricted-syntax */
 export type BrowserShellBootstrapOptions = {
   baseUrl: string
   origin: string
@@ -11,6 +15,7 @@ export type BrowserShellBootstrapOptions = {
   manifestStartUrl?: string | undefined
   hostToken?: string | null
 }
+/* eslint-enable no-restricted-syntax */
 
 export type BrowserShellConfig = {
   edgeBaseUrl?: string

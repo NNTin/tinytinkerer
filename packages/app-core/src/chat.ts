@@ -14,7 +14,6 @@ export const RATE_LIMIT_COOLDOWN_KEY = 'rate_limit_cooldown_until'
 export type ChatStateSnapshot = {
   conversationId: string | undefined
   events: ChatEvent[]
-  streamingText: string
   isRunning: boolean
   isRetryPending: boolean
   cooldownUntil: string | undefined
@@ -23,7 +22,6 @@ export type ChatStateSnapshot = {
 export const defaultChatState = (): ChatStateSnapshot => ({
   conversationId: undefined,
   events: [],
-  streamingText: '',
   isRunning: false,
   isRetryPending: false,
   cooldownUntil: undefined
@@ -110,7 +108,6 @@ export const executeChatPrompt = async (options: {
   conversations: ConversationRepository
   preferences: PreferencesStore
   signal?: AbortSignal
-  onChunk: (text: string) => void | Promise<void>
   onEvent: (event: ChatEvent) => void | Promise<void>
   onRateLimitState: (
     state: Pick<ChatStateSnapshot, 'cooldownUntil' | 'isRetryPending'>
@@ -134,11 +131,6 @@ export const executeChatPrompt = async (options: {
     history,
     options.signal
   )) {
-    if (event.type === 'assistant.chunk') {
-      await options.onChunk(event.payload.text)
-      continue
-    }
-
     await options.onEvent(event)
 
     if (persistableTypes.has(event.type)) {

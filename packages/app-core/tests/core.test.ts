@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatEvent } from '@tinytinkerer/contracts'
+import type { ContentDocument, ChatEvent } from '@tinytinkerer/contracts'
 import {
   activeCooldown,
   buildConversationHistory,
@@ -22,6 +22,18 @@ const event = <T extends ChatEvent['type']>(
     payload
   }) as Extract<ChatEvent, { type: T }>
 
+const assistantContent = (source: string): ContentDocument => ({
+  nodes:
+    source.trim().length > 0
+      ? [
+          {
+            type: 'paragraph',
+            children: [{ type: 'text', value: source }]
+          }
+        ]
+      : []
+})
+
 describe('app-core helpers', () => {
   it('infers search plans', () => {
     expect(inferPlan('latest ai news').steps.some((step) => step.id === 'search')).toBe(true)
@@ -43,7 +55,7 @@ describe('app-core helpers', () => {
     expect(
       buildConversationHistory([
         event('user.message', { text: 'hello' }),
-        event('assistant.done', { text: 'hi' }),
+        event('assistant.done', { source: 'hi', content: assistantContent('hi') }),
         event('user.message', { text: 'broken' }),
         event('error', { message: 'oops' })
       ])
@@ -61,10 +73,10 @@ describe('app-core helpers', () => {
         step: { id: 'search', summary: 'Search web', toolCall: { toolId: 'web-search', input: { query: 'hello' } } },
         index: 0
       }),
-      event('assistant.done', { text: 'hi' })
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
 
-    expect(buildTurns(events, '')).toHaveLength(1)
+    expect(buildTurns(events)).toHaveLength(1)
     expect(buildCurrentTimeline(events)).toHaveLength(2)
   })
 
@@ -78,16 +90,18 @@ describe('app-core helpers', () => {
           message: 'Rate limited for a moment.',
           autoRetry: true
         }),
-        event('assistant.done', { text: 'Here is the latest update.' })
-      ],
-      ''
+        event('assistant.done', {
+          source: 'Here is the latest update.',
+          content: assistantContent('Here is the latest update.')
+        })
+      ]
     )
 
     expect(turns).toHaveLength(1)
     expect(turns[0]?.id).toEqual(expect.any(String))
     expect(turns[0]).toMatchObject({
       userText: 'latest news',
-      assistantText: 'Here is the latest update.',
+      assistantSource: 'Here is the latest update.',
       notice: {
         kind: 'rate-limit',
         message: 'Rate limited for a moment.',
@@ -101,21 +115,35 @@ describe('app-core helpers', () => {
       [
         event('user.message', { text: 'hello' }),
         event('system', { message: 'Using cached context.', level: 'info' }),
-        event('assistant.done', { text: 'Hi there.' })
-      ],
-      ''
+        event('assistant.done', { source: 'Hi there.', content: assistantContent('Hi there.') })
+      ]
     )
 
     expect(turns).toHaveLength(1)
     expect(turns[0]?.id).toEqual(expect.any(String))
     expect(turns[0]).toMatchObject({
       userText: 'hello',
-      assistantText: 'Hi there.',
+      assistantSource: 'Hi there.',
       notice: {
         kind: 'system',
         message: 'Using cached context.',
         level: 'info'
       }
+    })
+  })
+
+  it('keeps assistantContent null when assistant.done source is empty', () => {
+    const turns = buildTurns([
+      event('user.message', { text: 'hello' }),
+      event('assistant.done', { source: '   ', content: assistantContent('') })
+    ])
+
+    expect(turns).toHaveLength(1)
+    expect(turns[0]).toMatchObject({
+      userText: 'hello',
+      assistantSource: '   ',
+      assistantContent: null,
+      isStreaming: false
     })
   })
 
@@ -128,7 +156,7 @@ describe('app-core helpers', () => {
     expect(
       buildCurrentTimeline([
         event('planning.started', { summary: 'Understanding request' }),
-        event('assistant.done', { text: 'hi' })
+        event('assistant.done', { source: 'hi', content: assistantContent('hi') })
       ])
     ).toEqual([])
   })
@@ -137,7 +165,7 @@ describe('app-core helpers', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hello' }),
       event('execution.step.completed', { stepId: 'step-1', note: '' }),
-      event('assistant.done', { text: 'hi' })
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
     const timeline = buildCurrentTimeline(events)
     expect(timeline.every((entry) => entry.label !== '')).toBe(true)
