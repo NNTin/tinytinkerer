@@ -87,8 +87,8 @@ flowchart LR
   appbrowser --> contracts
   appbrowser --> brand
 
-  contentreact --> ui
   contentreact --> contentcore
+  contentreact --> ui
 
   contentmarkdown --> contentcore
   contentmermaid --> contentreact
