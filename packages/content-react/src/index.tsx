@@ -201,7 +201,7 @@ const PreparedNodeBoundary = ({
   return children
 }
 
-const renderInline = (nodes: InlineNode[]): ReactNode =>
+const renderInline = (nodes: readonly InlineNode[]): ReactNode =>
   nodes.map((node, index) => {
     const key = node.id ?? `${node.type}-${index}`
     switch (node.type) {
@@ -228,7 +228,7 @@ const renderInline = (nodes: InlineNode[]): ReactNode =>
     }
   })
 
-const inlineNodesToText = (nodes: InlineNode[]): string =>
+const inlineNodesToText = (nodes: readonly InlineNode[]): string =>
   nodes
     .map((node) => {
       switch (node.type) {

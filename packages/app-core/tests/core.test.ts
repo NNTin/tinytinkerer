@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AssistantContentDocument, ChatEvent } from '@tinytinkerer/contracts'
+import type { ContentDocument, ChatEvent } from '@tinytinkerer/contracts'
 import {
   activeCooldown,
   buildConversationHistory,
@@ -22,7 +22,7 @@ const event = <T extends ChatEvent['type']>(
     payload
   }) as Extract<ChatEvent, { type: T }>
 
-const assistantContent = (source: string): AssistantContentDocument => ({
+const assistantContent = (source: string): ContentDocument => ({
   nodes:
     source.trim().length > 0
       ? [

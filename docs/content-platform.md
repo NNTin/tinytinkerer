@@ -141,10 +141,10 @@ The canonical content document shape lives in `@tinytinkerer/contracts`. The con
 
 ```ts
 type BlockNode =
-  | HeadingNode        // { type: 'heading', id?, level, children: InlineNode[] }
-  | ParagraphNode      // { type: 'paragraph', id?, children: InlineNode[] }
-  | ListNode           // { type: 'list', id?, ordered, start?, children: ListItemNode[] }
-  | BlockquoteNode     // { type: 'blockquote', id?, children: BlockNode[] }
+  | HeadingNode        // { type: 'heading', id?, level, children: readonly InlineNode[] }
+  | ParagraphNode      // { type: 'paragraph', id?, children: readonly InlineNode[] }
+  | ListNode           // { type: 'list', id?, ordered, start?, children: readonly ListItemNode[] }
+  | BlockquoteNode     // { type: 'blockquote', id?, children: readonly BlockNode[] }
   | ThematicBreakNode  // { type: 'thematicBreak', id? }
   | CodeBlockNode      // { type: 'codeBlock', id?, code, language? }
   | ChoicePromptNode
@@ -162,13 +162,13 @@ type InlineNode =
   | BreakNode
 
 type ContentNode = BlockNode
-type ContentDocument = { nodes: BlockNode[] }
+type ContentDocument = { nodes: readonly BlockNode[] }
 ```
 
 Rules:
 
-- `ContentNode` is part of the canonical shared content model, but most non-content consumers should stay at the `AssistantContentDocument` boundary.
-- `@tinytinkerer/contracts` owns the canonical `ContentDocument` schema and types directly and keeps assistant-facing aliases such as `AssistantContentDocument` for compatibility.
+- `ContentNode` is the canonical shared content model. All consumers — including non-content callers — use the canonical `ContentDocument` boundary directly.
+- `@tinytinkerer/contracts` owns the canonical `ContentDocument` schema and types directly. The schema declares strict interfaces for each node variant (`?: T` optionals, `readonly` child arrays), builds a recursive `z.discriminatedUnion` with `z.lazy`, and bridges schema → interface with a single `as z.ZodType<…>` cast per recursive schema. See `docs/ARCHITECTURE.md#coding-conventions` for the rationale.
 - Every block, list-item, and inline node may carry an optional `id`. Markdown parsing assigns deterministic, prefix-stable block IDs via `computeNodeId`; hand-constructed documents may omit `id`, and the shared `assignNodeIds()` helper normalizes the full document before React rendering.
 - `ChoicePromptNode` remains an extension point and does not require interactive behavior yet.
 - Shared runtime layers now treat assistant output as structured `{ source, content }` snapshots at the chat-event boundary; parser/runtime internals still operate on the semantic AST.
@@ -180,7 +180,7 @@ The public browser-facing content surface is `AssistantContent` from `@tinytinke
 That means:
 
 - browser shells render assistant output through `app-browser`, not through direct `content-*` imports
-- the shell-facing component accepts structured `AssistantContentDocument` DTOs plus shell-local styling hooks
+- the shell-facing component accepts structured `ContentDocument` DTOs plus shell-local styling hooks
 - runtime construction, plugin registration, and fallback policy remain hidden behind `app-browser`
 - shared content styling hooks may be exposed from the browser layer, but content packages do not own app-shell layout
 
@@ -190,7 +190,7 @@ That means:
 
 Browser apps should not import `content-*` packages directly. Instead:
 
-1. `app-browser` imports the `AssistantContentDocument` type from `contracts`, `ContentDocumentContent` from `content-react`, `createMarkdownContentSession()` from `content-markdown`, and the `mermaidPlugin` / `wireframePlugin` exports from `content-mermaid` / `content-wireframe`.
+1. `app-browser` imports the `ContentDocument` type from `contracts`, `ContentDocumentContent` from `content-react`, `createMarkdownContentSession()` from `content-markdown`, and the `mermaidPlugin` / `wireframePlugin` exports from `content-mermaid` / `content-wireframe`.
 2. During synthesis, `app-browser` creates a markdown content session and emits each `ContentDocument` snapshot directly as the wire-safe `{ source, content }` assistant event payload.
 3. During rendering, `AssistantContent` passes the document directly to `ContentDocumentContent`, supplies a stable plugin array, and lets the content platform own runtime assembly and rendering.
 4. Browser shells consume the final shell-safe export (`AssistantContent`) from `app-browser`.

@@ -1,4 +1,4 @@
-import type { AssistantContentDocument, ChatEvent } from '@tinytinkerer/contracts'
+import type { ChatEvent, ContentDocument } from '@tinytinkerer/contracts'
 
 export type TimelineEntry = {
   id: string
@@ -15,7 +15,7 @@ export type Turn = {
   id: string
   userText: string
   assistantSource: string
-  assistantContent: AssistantContentDocument | null
+  assistantContent: ContentDocument | null
   isStreaming: boolean
   notice?: TurnNotice
 }

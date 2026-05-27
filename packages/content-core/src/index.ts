@@ -16,12 +16,6 @@ import type {
   TableNode
 } from '@tinytinkerer/contracts'
 export type {
-  AssistantBlockNode,
-  AssistantContentDocument,
-  AssistantInlineNode,
-  AssistantListItemNode,
-  AssistantTableAlignment,
-  AssistantTableCell,
   BlockNode,
   BlockquoteNode,
   BreakNode,
@@ -87,7 +81,7 @@ const serializeInlineNode = (node: InlineNode): string => {
   }
 }
 
-const serializeInlineNodes = (nodes: InlineNode[]): string => nodes.map(serializeInlineNode).join('\n')
+const serializeInlineNodes = (nodes: readonly InlineNode[]): string => nodes.map(serializeInlineNode).join('\n')
 const serializeTableCell = (cell: TableCell): string => serializeInlineNodes(cell)
 
 const serializeListItem = (node: ListItemNode): string =>
@@ -123,7 +117,7 @@ const nextOccurrence = (counts: Map<string, number>, type: string, digest: strin
   return occurrence
 }
 
-const withAssignedId = <T extends { type: string; id?: NodeId | undefined }>(
+const withAssignedId = <T extends { type: string; id?: NodeId }>(
   node: T,
   counts: Map<string, number>,
   digest: string
@@ -181,7 +175,7 @@ const normalizeInlineNode = (
 }
 
 const normalizeInlineNodes = (
-  nodes: InlineNode[],
+  nodes: readonly InlineNode[],
   counts: Map<string, number>
 ): InlineNode[] => nodes.map((node) => normalizeInlineNode(node, counts))
 

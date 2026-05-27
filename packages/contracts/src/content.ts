@@ -3,55 +3,69 @@ import { z } from 'zod'
 export const nodeIdSchema = z.string()
 export type NodeId = z.infer<typeof nodeIdSchema>
 
-export type TextNode = {
+export const tableAlignmentSchema = z.union([
+  z.literal('left'),
+  z.literal('center'),
+  z.literal('right'),
+  z.null()
+])
+export type TableAlignment = z.infer<typeof tableAlignmentSchema>
+
+const headingLevelSchema = z.union([
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+  z.literal(6)
+])
+type HeadingLevel = z.infer<typeof headingLevelSchema>
+
+interface NodeBase {
+  id?: NodeId
+}
+
+export interface TextNode extends NodeBase {
   type: 'text'
-  id?: NodeId | undefined
   value: string
 }
 
-export type EmphasisNode = {
+export interface EmphasisNode extends NodeBase {
   type: 'emphasis'
-  id?: NodeId | undefined
-  children: InlineNode[]
+  children: readonly InlineNode[]
 }
 
-export type StrongNode = {
+export interface StrongNode extends NodeBase {
   type: 'strong'
-  id?: NodeId | undefined
-  children: InlineNode[]
+  children: readonly InlineNode[]
 }
 
-export type StrikethroughNode = {
+export interface StrikethroughNode extends NodeBase {
   type: 'strikethrough'
-  id?: NodeId | undefined
-  children: InlineNode[]
+  children: readonly InlineNode[]
 }
 
-export type CodeInlineNode = {
+export interface CodeInlineNode extends NodeBase {
   type: 'codeInline'
-  id?: NodeId | undefined
   value: string
 }
 
-export type LinkNode = {
+export interface LinkNode extends NodeBase {
   type: 'link'
-  id?: NodeId | undefined
   url: string
-  title?: string | undefined
-  children: InlineNode[]
+  title?: string
+  children: readonly InlineNode[]
 }
 
-export type ImageInlineNode = {
+export interface ImageInlineNode extends NodeBase {
   type: 'imageInline'
-  id?: NodeId | undefined
   url: string
   alt: string
-  title?: string | undefined
+  title?: string
 }
 
-export type BreakNode = {
+export interface BreakNode extends NodeBase {
   type: 'break'
-  id?: NodeId | undefined
 }
 
 export type InlineNode =
@@ -64,76 +78,65 @@ export type InlineNode =
   | ImageInlineNode
   | BreakNode
 
-export type HeadingNode = {
+export type TableCell = readonly InlineNode[]
+
+export interface HeadingNode extends NodeBase {
   type: 'heading'
-  id?: NodeId | undefined
-  level: 1 | 2 | 3 | 4 | 5 | 6
-  children: InlineNode[]
+  level: HeadingLevel
+  children: readonly InlineNode[]
 }
 
-export type ParagraphNode = {
+export interface ParagraphNode extends NodeBase {
   type: 'paragraph'
-  id?: NodeId | undefined
-  children: InlineNode[]
+  children: readonly InlineNode[]
 }
 
-export type ListItemNode = {
+export interface ListItemNode extends NodeBase {
   type: 'listItem'
-  id?: NodeId | undefined
-  checked?: boolean | null | undefined
-  children: BlockNode[]
+  checked?: boolean | null
+  children: readonly BlockNode[]
 }
 
-export type ListNode = {
+export interface ListNode extends NodeBase {
   type: 'list'
-  id?: NodeId | undefined
   ordered: boolean
-  start?: number | undefined
-  children: ListItemNode[]
+  start?: number
+  children: readonly ListItemNode[]
 }
 
-export type BlockquoteNode = {
+export interface BlockquoteNode extends NodeBase {
   type: 'blockquote'
-  id?: NodeId | undefined
-  children: BlockNode[]
+  children: readonly BlockNode[]
 }
 
-export type ThematicBreakNode = {
+export interface ThematicBreakNode extends NodeBase {
   type: 'thematicBreak'
-  id?: NodeId | undefined
 }
 
-export type CodeBlockNode = {
+export interface CodeBlockNode extends NodeBase {
   type: 'codeBlock'
-  id?: NodeId | undefined
   code: string
-  language?: string | undefined
+  language?: string
 }
 
-export type ChoicePromptNode = {
+export interface ChoicePromptNode extends NodeBase {
   type: 'choicePrompt'
-  id?: NodeId | undefined
   prompt: string
-  choices: string[]
+  choices: readonly string[]
 }
 
-export type TableAlignment = 'left' | 'center' | 'right' | null
-export type TableCell = InlineNode[]
-
-export type TableNode = {
+export interface TableNode extends NodeBase {
   type: 'table'
-  id?: NodeId | undefined
-  align: TableAlignment[]
-  header: TableCell[]
-  rows: TableCell[][]
+  align: readonly TableAlignment[]
+  header: readonly TableCell[]
+  rows: readonly (readonly TableCell[])[]
 }
 
-export type ImageNode = {
+export interface ImageNode extends NodeBase {
   type: 'image'
-  id?: NodeId | undefined
   url: string
   alt: string
-  title?: string | undefined
+  title?: string
 }
 
 export type BlockNode =
@@ -149,159 +152,129 @@ export type BlockNode =
 
 export type ContentNode = BlockNode
 
-export type ContentDocument = {
-  nodes: BlockNode[]
-}
-
 export type ContentNodeByType = {
   [K in ContentNode['type']]: Extract<ContentNode, { type: K }>
 }
 
-export const inlineNodeSchema: z.ZodType<InlineNode> = z.lazy(() =>
-  z.discriminatedUnion('type', [
-    z.object({
-      type: z.literal('text'),
-      id: nodeIdSchema.optional(),
-      value: z.string()
-    }),
-    z.object({
-      type: z.literal('emphasis'),
-      id: nodeIdSchema.optional(),
-      children: z.array(inlineNodeSchema)
-    }),
-    z.object({
-      type: z.literal('strong'),
-      id: nodeIdSchema.optional(),
-      children: z.array(inlineNodeSchema)
-    }),
-    z.object({
-      type: z.literal('strikethrough'),
-      id: nodeIdSchema.optional(),
-      children: z.array(inlineNodeSchema)
-    }),
-    z.object({
-      type: z.literal('codeInline'),
-      id: nodeIdSchema.optional(),
-      value: z.string()
-    }),
-    z.object({
-      type: z.literal('link'),
-      id: nodeIdSchema.optional(),
-      url: z.string(),
-      title: z.string().optional(),
-      children: z.array(inlineNodeSchema)
-    }),
-    z.object({
-      type: z.literal('imageInline'),
-      id: nodeIdSchema.optional(),
-      url: z.string(),
-      alt: z.string(),
-      title: z.string().optional()
-    }),
-    z.object({
-      type: z.literal('break'),
-      id: nodeIdSchema.optional()
-    })
-  ])
-)
+const nodeBaseShape = {
+  id: nodeIdSchema.optional()
+} as const
 
-export const tableCellSchema: z.ZodType<TableCell> = z.array(inlineNodeSchema)
+const inlineChildren = z.array(z.lazy(() => inlineNodeSchema)).readonly()
+const blockChildren = z.array(z.lazy(() => blockNodeSchema)).readonly()
 
-export const tableAlignmentSchema: z.ZodType<TableAlignment> = z.union([
-  z.literal('left'),
-  z.literal('center'),
-  z.literal('right'),
-  z.null()
-])
-
-export const blockNodeSchema: z.ZodType<BlockNode> = z.lazy(() =>
-  z.discriminatedUnion('type', [
-    z.object({
-      type: z.literal('heading'),
-      id: nodeIdSchema.optional(),
-      level: z.union([
-        z.literal(1),
-        z.literal(2),
-        z.literal(3),
-        z.literal(4),
-        z.literal(5),
-        z.literal(6)
-      ]),
-      children: z.array(inlineNodeSchema)
-    }),
-    z.object({
-      type: z.literal('paragraph'),
-      id: nodeIdSchema.optional(),
-      children: z.array(inlineNodeSchema)
-    }),
-    z.object({
-      type: z.literal('list'),
-      id: nodeIdSchema.optional(),
-      ordered: z.boolean(),
-      start: z.number().int().optional(),
-      children: z.array(listItemNodeSchema)
-    }),
-    z.object({
-      type: z.literal('blockquote'),
-      id: nodeIdSchema.optional(),
-      children: z.array(blockNodeSchema)
-    }),
-    z.object({
-      type: z.literal('thematicBreak'),
-      id: nodeIdSchema.optional()
-    }),
-    z.object({
-      type: z.literal('codeBlock'),
-      id: nodeIdSchema.optional(),
-      code: z.string(),
-      language: z.string().optional()
-    }),
-    z.object({
-      type: z.literal('choicePrompt'),
-      id: nodeIdSchema.optional(),
-      prompt: z.string(),
-      choices: z.array(z.string())
-    }),
-    z.object({
-      type: z.literal('table'),
-      id: nodeIdSchema.optional(),
-      align: z.array(tableAlignmentSchema),
-      header: z.array(tableCellSchema),
-      rows: z.array(z.array(tableCellSchema))
-    }),
-    z.object({
-      type: z.literal('image'),
-      id: nodeIdSchema.optional(),
-      url: z.string(),
-      alt: z.string(),
-      title: z.string().optional()
-    })
-  ])
-)
-
-export const listItemNodeSchema: z.ZodType<ListItemNode> = z.lazy(() =>
+export const inlineNodeSchema = z.discriminatedUnion('type', [
   z.object({
-    type: z.literal('listItem'),
-    id: nodeIdSchema.optional(),
-    checked: z.boolean().nullable().optional(),
-    children: z.array(blockNodeSchema)
+    ...nodeBaseShape,
+    type: z.literal('text'),
+    value: z.string()
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('emphasis'),
+    children: inlineChildren
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('strong'),
+    children: inlineChildren
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('strikethrough'),
+    children: inlineChildren
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('codeInline'),
+    value: z.string()
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('link'),
+    url: z.string(),
+    title: z.string().optional(),
+    children: inlineChildren
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('imageInline'),
+    url: z.string(),
+    alt: z.string(),
+    title: z.string().optional()
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('break')
   })
-)
+]) as unknown as z.ZodType<InlineNode>
 
-export const contentDocumentSchema: z.ZodType<ContentDocument> = z.object({
-  nodes: z.array(blockNodeSchema)
+export const tableCellSchema: z.ZodType<TableCell> = z.array(inlineNodeSchema).readonly()
+
+export const listItemNodeSchema = z.object({
+  ...nodeBaseShape,
+  type: z.literal('listItem'),
+  checked: z.boolean().nullable().optional(),
+  children: blockChildren
+}) as unknown as z.ZodType<ListItemNode>
+
+export const blockNodeSchema = z.discriminatedUnion('type', [
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('heading'),
+    level: headingLevelSchema,
+    children: z.array(inlineNodeSchema).readonly()
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('paragraph'),
+    children: z.array(inlineNodeSchema).readonly()
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('list'),
+    ordered: z.boolean(),
+    start: z.number().int().optional(),
+    children: z.array(listItemNodeSchema).readonly()
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('blockquote'),
+    children: blockChildren
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('thematicBreak')
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('codeBlock'),
+    code: z.string(),
+    language: z.string().optional()
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('choicePrompt'),
+    prompt: z.string(),
+    choices: z.array(z.string()).readonly()
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('table'),
+    align: z.array(tableAlignmentSchema).readonly(),
+    header: z.array(tableCellSchema).readonly(),
+    rows: z.array(z.array(tableCellSchema).readonly()).readonly()
+  }),
+  z.object({
+    ...nodeBaseShape,
+    type: z.literal('image'),
+    url: z.string(),
+    alt: z.string(),
+    title: z.string().optional()
+  })
+]) as unknown as z.ZodType<BlockNode>
+
+export const contentDocumentSchema = z.object({
+  nodes: z.array(blockNodeSchema).readonly()
 })
-
-export type AssistantInlineNode = InlineNode
-export type AssistantTableCell = TableCell
-export type AssistantTableAlignment = TableAlignment
-export type AssistantListItemNode = ListItemNode
-export type AssistantBlockNode = BlockNode
-export type AssistantContentDocument = ContentDocument
-
-export const assistantInlineNodeSchema = inlineNodeSchema
-export const assistantTableCellSchema = tableCellSchema
-export const assistantTableAlignmentSchema = tableAlignmentSchema
-export const assistantListItemNodeSchema = listItemNodeSchema
-export const assistantBlockNodeSchema = blockNodeSchema
-export const assistantContentDocumentSchema = contentDocumentSchema
+export type ContentDocument = z.infer<typeof contentDocumentSchema>

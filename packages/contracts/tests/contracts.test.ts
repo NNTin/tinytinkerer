@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  assistantContentDocumentSchema,
   brandDefinitionSchema,
   chatEventSchema,
   contentDocumentSchema,
@@ -46,7 +45,6 @@ describe('contracts', () => {
     }
 
     expect(contentDocumentSchema.parse(document)).toEqual(document)
-    expect(assistantContentDocumentSchema.parse(document)).toEqual(document)
   })
 
   it('parses shared edge payloads', () => {

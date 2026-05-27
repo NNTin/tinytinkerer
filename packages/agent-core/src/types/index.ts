@@ -1,5 +1,5 @@
 import type {
-  AssistantContentDocument,
+  ContentDocument,
   ExecutionPlan,
   PlanStep
 } from '@tinytinkerer/contracts'
@@ -30,7 +30,7 @@ export interface ModelProvider {
 
 export type AssistantContentSnapshot = {
   source: string
-  content: AssistantContentDocument
+  content: ContentDocument
 }
 
 export interface AssistantContentSession {

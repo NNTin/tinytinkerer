@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import type { ServiceStatus } from '@tinytinkerer/contracts'
 import { useSettingsSurfaceController } from './surfaces'
 
 const GitHubMark = () => (
@@ -7,24 +8,17 @@ const GitHubMark = () => (
   </svg>
 )
 
-type ServiceStatusState = 'ready' | 'degraded' | 'offline'
-type SurfaceStatus = {
-  state: ServiceStatusState
-  detail: string
-  error?: string | undefined
-}
-
 const SectionHeading = ({ children }: { children: ReactNode }) => (
   <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">{children}</h3>
 )
 
-const statusClasses: Record<ServiceStatusState, string> = {
+const statusClasses: Record<ServiceStatus['state'], string> = {
   ready: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   degraded: 'border-amber-200 bg-amber-50 text-amber-800',
   offline: 'border-rose-200 bg-rose-50 text-rose-700'
 }
 
-const statusDotClasses: Record<ServiceStatusState, string> = {
+const statusDotClasses: Record<ServiceStatus['state'], string> = {
   ready: 'bg-emerald-500',
   degraded: 'bg-amber-500',
   offline: 'bg-rose-500'
@@ -48,7 +42,7 @@ const SectionStatus = ({
   status
 }: {
   label: string
-  status: SurfaceStatus
+  status: ServiceStatus
 }) => (
   <div className={`rounded-lg border px-3 py-2 text-xs ${statusClasses[status.state]}`}>
     <div className="flex items-center gap-2">
@@ -96,7 +90,7 @@ const ToggleRow = ({
 const AuthSection = ({
   status
 }: {
-  status: SurfaceStatus
+  status: ServiceStatus
 }) => {
   const { token, clearToken, setToken, canStartGitHubOAuth, startGitHubOAuth, user } =
     useSettingsSurfaceController()
@@ -218,7 +212,7 @@ const AuthSection = ({
 const ModelsSection = ({
   status
 }: {
-  status: SurfaceStatus
+  status: ServiceStatus
 }) => {
   const { selectedModel, setSelectedModel, models } = useSettingsSurfaceController()
 
@@ -248,7 +242,7 @@ const ModelsSection = ({
 const SearchSection = ({
   status
 }: {
-  status: SurfaceStatus
+  status: ServiceStatus
 }) => {
   const { searchEnabled, setSearchEnabled, searchUnavailable } = useSettingsSurfaceController()
 

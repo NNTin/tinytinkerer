@@ -1,10 +1,10 @@
-import type { AssistantContentDocument } from '@tinytinkerer/contracts'
+import type { ContentDocument } from '@tinytinkerer/contracts'
 import { ContentDocumentContent } from '@tinytinkerer/content-react'
 import { mermaidPlugin } from '@tinytinkerer/content-mermaid'
 import { wireframePlugin } from '@tinytinkerer/content-wireframe'
 
 export type AssistantContentProps = {
-  content: AssistantContentDocument
+  content: ContentDocument
   isStreaming?: boolean
   className?: string
 }
