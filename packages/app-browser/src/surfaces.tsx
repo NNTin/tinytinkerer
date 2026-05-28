@@ -18,6 +18,8 @@ import { createEdgeFetch } from './runtime/edge-fetch'
 type ToolEvent = Extract<ChatEvent, { type: 'tool.call.completed' | 'tool.call.failed' }>
 
 export type ChatSurfaceController = {
+  isBooting: boolean
+  initializeError: string | null
   events: ChatEvent[]
   token: string | null
   turns: Turn[]
@@ -36,9 +38,12 @@ export type ChatSurfaceController = {
 }
 
 export const useChatSurfaceController = (): ChatSurfaceController => {
+  const [initializeError, setInitializeError] = useState<string | null>(null)
+  const hydrated = useChatStore((state) => state.hydrated)
   const events = useChatStore((state) => state.events)
   const isRunning = useChatStore((state) => state.isRunning)
   const isRetryPending = useChatStore((state) => state.isRetryPending)
+  const initialize = useChatStore((state) => state.initialize)
   const sendPrompt = useChatStore((state) => state.sendPrompt)
   const resetConversation = useChatStore((state) => state.resetConversation)
   const cancelRetry = useChatStore((state) => state.cancelRetry)
@@ -47,6 +52,30 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const showThinkingTimeline = useSettingsStore((state) => state.showThinkingTimeline)
   const showToolActivity = useSettingsStore((state) => state.showToolActivity)
   const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
+
+  useEffect(() => {
+    if (hydrated || initializeError) {
+      return
+    }
+
+    let cancelled = false
+
+    void initialize().catch((error: unknown) => {
+      if (cancelled) {
+        return
+      }
+
+      setInitializeError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Unable to initialize chat runtime.'
+      )
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [hydrated, initialize, initializeError])
 
   useEffect(() => startStatusPolling(refreshStatus), [refreshStatus])
 
@@ -78,6 +107,8 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   }
 
   return {
+    isBooting: !hydrated && initializeError === null,
+    initializeError,
     events,
     token,
     turns,

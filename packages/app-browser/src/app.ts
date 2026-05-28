@@ -8,6 +8,7 @@ import {
 import { useStore } from 'zustand'
 import type { BrowserShellConfig } from './config'
 import { createBrowserShell, type BrowserShell } from './shell'
+import { applyBrandMetadata } from './branding'
 import { createAuthStore, type AuthState, type AuthStore } from './stores/auth-store'
 import { createChatStore, type ChatState, type ChatStore } from './stores/chat-store'
 import {
@@ -40,10 +41,8 @@ const requireBrowserApp = (app: BrowserApp | undefined): BrowserApp => {
   return app
 }
 
-export const createBrowserApp = async (config: BrowserShellConfig): Promise<BrowserApp> => {
+export const createBrowserApp = (config: BrowserShellConfig): BrowserApp => {
   const shell = createBrowserShell(config)
-  const { applyBrandMetadata } = await import('./branding')
-  applyBrandMetadata(config)
   const auth = createAuthStore(shell)
   const settings = createSettingsStore(shell)
   const status = createStatusStore(shell)
@@ -64,14 +63,18 @@ export const createBrowserApp = async (config: BrowserShellConfig): Promise<Brow
     }
   }
 
-  await Promise.all([
-    auth.getState().initialize(),
-    chat.getState().initialize(),
-    settings.getState().initialize(),
-    status.getState().initialize()
-  ])
-
   return app
+}
+
+export const initializeBrowserApp = async (
+  app: BrowserApp,
+  config: BrowserShellConfig = {}
+): Promise<void> => {
+  applyBrandMetadata(config)
+  await Promise.all([
+    app.stores.auth.getState().initialize(),
+    app.stores.settings.getState().initialize()
+  ])
 }
 
 export const AppBrowserProvider = ({

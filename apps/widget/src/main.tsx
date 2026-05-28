@@ -5,10 +5,12 @@ import {
   AppBrowserProvider,
   createBrowserApp,
   resolveBrowserShellBootstrapConfig,
+  useBrowserAppBootstrap,
   type BrowserShellConfig
 } from '@tinytinkerer/app-browser'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './app/router'
+import { WidgetBootScreen } from './app/loading-screen'
 import '@tinytinkerer/app-browser/styles.css'
 import './index.css'
 
@@ -41,9 +43,16 @@ const browserConfig = resolveBrowserShellBootstrapConfig({
 })
 
 const queryClient = new QueryClient()
+const browserApp = createBrowserApp(browserConfig)
 
-void createBrowserApp(browserConfig).then((browserApp) => {
-  createRoot(document.getElementById('root')!).render(
+const WidgetBootstrap = () => {
+  const { ready, error } = useBrowserAppBootstrap(browserApp, browserConfig)
+
+  if (!ready) {
+    return <WidgetBootScreen {...(error ? { error } : {})} />
+  }
+
+  return (
     <StrictMode>
       <AppBrowserProvider app={browserApp}>
         <QueryClientProvider client={queryClient}>
@@ -52,4 +61,6 @@ void createBrowserApp(browserConfig).then((browserApp) => {
       </AppBrowserProvider>
     </StrictMode>
   )
-})
+}
+
+createRoot(document.getElementById('root')!).render(<WidgetBootstrap />)

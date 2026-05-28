@@ -7,6 +7,7 @@ import {
 } from '@tinytinkerer/app-browser'
 import { Button, GitHubMark } from '@tinytinkerer/ui'
 import { useEffect, useRef, useState } from 'react'
+import { WidgetChatLoading } from '../../app/loading-screen'
 import { resolveWidgetViewMode, resolveWidgetWindowMode } from '../../runtime-config'
 
 const STANDALONE_LAYOUT_KEY = 'tinytinkerer:widget-layout:v1'
@@ -121,6 +122,8 @@ const WidgetLauncher = ({ onRestore }: { onRestore: () => void }) => (
 
 const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
   const {
+    isBooting,
+    initializeError,
     events,
     turns,
     isRunning,
@@ -171,6 +174,10 @@ const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
     await setToken(trimmed)
     setPatValue('')
     setShowPat(false)
+  }
+
+  if (isBooting || initializeError) {
+    return <WidgetChatLoading {...(initializeError ? { error: initializeError } : {})} />
   }
 
   return (

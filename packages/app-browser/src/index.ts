@@ -1,3 +1,5 @@
+export { useBrowserAppBootstrap } from './bootstrap'
+export type { LoadingScreenProps } from './loading-screen-types'
 export {
   canStartGitHubOAuth,
   completeGitHubOAuthCallback,
@@ -12,6 +14,7 @@ export type { ModelEntry } from './github-models'
 export {
   AppBrowserProvider,
   createBrowserApp,
+  initializeBrowserApp,
   useAuthStore,
   useBrowserApp,
   useChatStore,

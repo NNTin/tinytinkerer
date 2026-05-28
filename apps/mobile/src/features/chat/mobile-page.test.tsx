@@ -62,7 +62,9 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   }) => (
     <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
   ),
+  useSettingsStore: () => [],
   useChatSurfaceController: () => ({
+    isBooting: false,
     events: mockChatState.events,
     token: mockAuthState.token,
     turns: mockTurns,
@@ -78,8 +80,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     submitPrompt: mockChatState.submitPrompt,
     resetConversation: mockChatState.resetConversation,
     cancelRetry: mockChatState.cancelRetry
-  }),
-  BrowserSettingsModal: () => null
+  })
 }))
 
 import { MobilePage } from './mobile-page.js'

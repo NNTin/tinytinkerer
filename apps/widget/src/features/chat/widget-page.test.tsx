@@ -66,6 +66,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     icon192: '/brand/icon-192.png'
   },
   useChatSurfaceController: () => ({
+    isBooting: false,
     events: mockChatState.events,
     token: mockAuthState.token,
     turns: mockChatState.turns,

@@ -6,9 +6,15 @@ import {
 import { Button, GitHubMark, ThinkingDots } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { ArrowDownTrayIcon, Cog6ToothIcon } from '@heroicons/react/24/outline'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { MobileChatLoading, MobilePanelLoading } from '../../app/loading-screen'
 import { useInstallPrompt } from '../install/use-install-prompt'
-import { BrowserSettingsModal as SettingsModal } from '@tinytinkerer/app-browser'
+
+const SettingsModal = lazy(() =>
+  import('@tinytinkerer/app-browser/browser-settings-modal').then((module) => ({
+    default: module.BrowserSettingsModal
+  }))
+)
 
 const toolLabel = (toolId: string, serverNameById: Map<string, string>): string => {
   if (toolId === 'web-search') return 'Web search'
@@ -29,6 +35,8 @@ const noticeStyle: Record<'info' | 'warning' | 'error', string> = {
 
 export const MobilePage = () => {
   const {
+    isBooting,
+    initializeError,
     events,
     token,
     turns,
@@ -76,6 +84,10 @@ export const MobilePage = () => {
         setPrompt('')
       }
     })
+  }
+
+  if (isBooting || initializeError) {
+    return <MobileChatLoading {...(initializeError ? { error: initializeError } : {})} />
   }
 
   return (
@@ -332,7 +344,11 @@ export const MobilePage = () => {
         </form>
       </main>
 
-      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {settingsOpen ? (
+        <Suspense fallback={<MobilePanelLoading />}>
+          <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+        </Suspense>
+      ) : null}
     </div>
   )
 }
