@@ -123,6 +123,7 @@ const WidgetLauncher = ({ onRestore }: { onRestore: () => void }) => (
 const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
   const {
     isBooting,
+    initializeError,
     events,
     turns,
     isRunning,
@@ -175,8 +176,8 @@ const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
     setShowPat(false)
   }
 
-  if (isBooting) {
-    return <WidgetChatLoading />
+  if (isBooting || initializeError) {
+    return <WidgetChatLoading {...(initializeError ? { error: initializeError } : {})} />
   }
 
   return (

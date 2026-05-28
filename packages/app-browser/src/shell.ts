@@ -78,9 +78,14 @@ const createLazyPersistence = (
     | null = null
 
   const loadPersistence = async () => {
-    persistencePromise ??= import('./db').then(({ createBrowserPersistence }) =>
-      createBrowserPersistence(storageNamespace, hostToken)
-    )
+    persistencePromise ??= import('./db')
+      .then(({ createBrowserPersistence }) =>
+        createBrowserPersistence(storageNamespace, hostToken)
+      )
+      .catch((error) => {
+        persistencePromise = null
+        throw error
+      })
     return persistencePromise
   }
 

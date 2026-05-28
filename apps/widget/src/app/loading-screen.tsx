@@ -45,10 +45,11 @@ export const WidgetRouteLoading = () => (
   />
 )
 
-export const WidgetChatLoading = () => (
+export const WidgetChatLoading = ({ error }: { error?: string } = {}) => (
   <LoadingPanel
     eyebrow="Chat Runtime"
     title="Hydrating the compact session"
     message="Loading the conversation controller and lazy client runtime."
+    {...(error ? { error } : {})}
   />
 )

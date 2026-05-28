@@ -36,6 +36,7 @@ const noticeStyle: Record<'info' | 'warning' | 'error', string> = {
 export const MobilePage = () => {
   const {
     isBooting,
+    initializeError,
     events,
     token,
     turns,
@@ -85,8 +86,8 @@ export const MobilePage = () => {
     })
   }
 
-  if (isBooting) {
-    return <MobileChatLoading />
+  if (isBooting || initializeError) {
+    return <MobileChatLoading {...(initializeError ? { error: initializeError } : {})} />
   }
 
   return (

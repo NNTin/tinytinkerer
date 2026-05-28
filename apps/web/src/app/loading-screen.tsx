@@ -50,11 +50,12 @@ export const WebRouteLoading = () => (
   />
 )
 
-export const WebChatLoading = () => (
+export const WebChatLoading = ({ error }: { error?: string } = {}) => (
   <LoadingCard
     eyebrow="Chat Runtime"
     title="Hydrating the conversation"
     message="Loading the chat controller, history, and client runtime on demand."
+    {...(error ? { error } : {})}
   />
 )
 

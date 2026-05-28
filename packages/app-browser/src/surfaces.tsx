@@ -19,6 +19,7 @@ type ToolEvent = Extract<ChatEvent, { type: 'tool.call.completed' | 'tool.call.f
 
 export type ChatSurfaceController = {
   isBooting: boolean
+  initializeError: string | null
   events: ChatEvent[]
   token: string | null
   turns: Turn[]
@@ -37,6 +38,7 @@ export type ChatSurfaceController = {
 }
 
 export const useChatSurfaceController = (): ChatSurfaceController => {
+  const [initializeError, setInitializeError] = useState<string | null>(null)
   const hydrated = useChatStore((state) => state.hydrated)
   const events = useChatStore((state) => state.events)
   const isRunning = useChatStore((state) => state.isRunning)
@@ -52,10 +54,28 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
 
   useEffect(() => {
-    if (!hydrated) {
-      void initialize()
+    if (hydrated || initializeError) {
+      return
     }
-  }, [hydrated, initialize])
+
+    let cancelled = false
+
+    void initialize().catch((error: unknown) => {
+      if (cancelled) {
+        return
+      }
+
+      setInitializeError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Unable to initialize chat runtime.'
+      )
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [hydrated, initialize, initializeError])
 
   useEffect(() => startStatusPolling(refreshStatus), [refreshStatus])
 
@@ -87,7 +107,8 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   }
 
   return {
-    isBooting: !hydrated,
+    isBooting: !hydrated && initializeError === null,
+    initializeError,
     events,
     token,
     turns,

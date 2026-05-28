@@ -37,6 +37,7 @@ const noticeStyle: Record<'info' | 'warning' | 'error', string> = systemLevelSty
 export const ChatPage = () => {
   const {
     isBooting,
+    initializeError,
     events,
     token,
     turns,
@@ -92,8 +93,8 @@ export const ChatPage = () => {
     }
   }
 
-  if (isBooting) {
-    return <WebChatLoading />
+  if (isBooting || initializeError) {
+    return <WebChatLoading {...(initializeError ? { error: initializeError } : {})} />
   }
 
   return (

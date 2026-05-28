@@ -49,11 +49,12 @@ export const MobileRouteLoading = () => (
   />
 )
 
-export const MobileChatLoading = () => (
+export const MobileChatLoading = ({ error }: { error?: string } = {}) => (
   <LoadingShell
     eyebrow="Chat Runtime"
     title="Hydrating the conversation"
     message="Loading the chat controller, local history, and client-side tools."
+    {...(error ? { error } : {})}
   />
 )
 
