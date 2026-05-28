@@ -205,7 +205,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
         return
       }
       const raw: unknown = await res.json()
-      const result = mcpDiscoveryResultSchema.parse({ ...raw, serverId: server.id })
+      const result = mcpDiscoveryResultSchema.parse({ ...(raw as object), serverId: server.id })
       await setMcpDiscovery(result)
     } catch (e) {
       await setMcpDiscovery({

@@ -61,16 +61,7 @@ const mockChatState = vi.hoisted(() => ({
   cancelRetry: vi.fn()
 }))
 
-vi.mock('@tinytinkerer/app-browser', () => ({
-  AssistantContent: ({
-    content,
-    className
-  }: {
-    content: { nodes: Array<{ children?: Array<{ value?: string }> }> }
-    className?: string
-  }) => (
-    <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
-  ),
+vi.mock('@tinytinkerer/app-browser/browser-settings-modal', () => ({
   BrowserSettingsModal: ({
     open,
     onOpenChange
@@ -113,7 +104,19 @@ vi.mock('@tinytinkerer/app-browser', () => ({
           <p>Interface</p>
         </section>
       </div>
-    ) : null,
+    ) : null
+}))
+
+vi.mock('@tinytinkerer/app-browser', () => ({
+  AssistantContent: ({
+    content,
+    className
+  }: {
+    content: { nodes: Array<{ children?: Array<{ value?: string }> }> }
+    className?: string
+  }) => (
+    <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
+  ),
   useSettingsStore: () => [],
   useChatSurfaceController: () => ({
     isBooting: false,

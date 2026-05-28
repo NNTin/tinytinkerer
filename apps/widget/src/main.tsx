@@ -11,6 +11,7 @@ import {
 import { RouterProvider } from 'react-router-dom'
 import { router } from './app/router'
 import { WidgetBootScreen } from './app/loading-screen'
+import '@tinytinkerer/app-browser/styles.css'
 import './index.css'
 
 // The embedding page is fully trusted — it provides hostToken and other config intentionally.

@@ -10,7 +10,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { WebChatLoading, WebPanelLoading } from '../../app/loading-screen'
 
 const SettingsModal = lazy(() =>
-  import('@tinytinkerer/app-browser').then((module) => ({
+  import('@tinytinkerer/app-browser/browser-settings-modal').then((module) => ({
     default: module.BrowserSettingsModal
   }))
 )
