@@ -28,7 +28,7 @@ export type ProviderCallOptions = {
 }
 
 export interface ModelProvider {
-  plan(prompt: string, options?: ProviderCallOptions): Promise<ExecutionPlan>
+  plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan>
   execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
   synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<string>
 }
@@ -79,8 +79,8 @@ export const createChatRuntime = (options: {
 }
 
 const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => ({
-  plan(prompt: string, options?: AgentProviderCallOptions) {
-    return provider.plan(prompt, options)
+  plan(prompt: string, history: ConversationMessage[], options?: AgentProviderCallOptions) {
+    return provider.plan(prompt, history, options)
   },
   execute(step: PlanStep, context: AgentExecutionContext, options?: AgentProviderCallOptions) {
     return provider.execute(step, toExecutionContext(context), options)

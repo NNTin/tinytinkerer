@@ -61,10 +61,12 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   }) => (
     <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
   ),
+  McpServerList: () => null,
   TINYTINKERER_BRAND_ASSET_URLS: {
     icon192: '/brand/icon-192.png'
   },
   useChatSurfaceController: () => ({
+    isBooting: false,
     events: mockChatState.events,
     token: mockAuthState.token,
     turns: mockChatState.turns,
@@ -99,7 +101,14 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     setShowThinkingTimeline: mockSettingsState.setShowThinkingTimeline,
     showToolActivity: mockSettingsState.showToolActivity,
     setShowToolActivity: mockSettingsState.setShowToolActivity,
-    searchUnavailable: mockSettingsState.effectiveStatus.search.state !== 'ready'
+    searchUnavailable: mockSettingsState.effectiveStatus.search.state !== 'ready',
+    mcpServers: [],
+    mcpDiscovery: {},
+    addMcpServer: vi.fn(),
+    updateMcpServer: vi.fn(),
+    removeMcpServer: vi.fn(),
+    setMcpServerEnabled: vi.fn(),
+    refreshMcpServer: vi.fn()
   })
 }))
 

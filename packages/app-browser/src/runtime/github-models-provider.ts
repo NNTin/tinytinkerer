@@ -1,6 +1,7 @@
 import {
   inferPlan,
   RateLimitError,
+  type ConversationMessage,
   type ExecutionContext,
   type ModelProvider,
   type ProviderCallOptions
@@ -15,6 +16,8 @@ import {
 import { SYSTEM_STYLE_PROMPT } from './system-prompt'
 import { getRetryAfterMs } from './rate-limit'
 import { RateLimitQuota } from './quota-tracker'
+import { createEdgeFetch } from './edge-fetch'
+import { llmPlan, type PlannerToolDescriptor } from './mcp-planner'
 
 const estimateTokens = (context: ExecutionContext): number => {
   const allText = [
@@ -30,6 +33,7 @@ type GitHubModelsProviderOptions = {
   baseUrl: string
   getToken?: () => string | null | undefined
   getModel?: () => string | null | undefined
+  allToolDescriptors?: PlannerToolDescriptor[]
 }
 
 const isValidRetryAt = (value: string | undefined): value is string =>
@@ -73,11 +77,24 @@ export class GitHubModelsProvider implements ModelProvider {
 
   constructor(private readonly options: GitHubModelsProviderOptions) {}
 
-  plan(prompt: string, options?: ProviderCallOptions): Promise<ExecutionPlan> {
+  async plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan> {
+    const token = this.options.getToken?.()
+    const allDescriptors = this.options.allToolDescriptors ?? []
+    const hasMcpTools = allDescriptors.some((d) => d.id.startsWith('mcp:'))
+
+    if (token && hasMcpTools) {
+      try {
+        const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
+        const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
+        return await llmPlan(prompt, history, allDescriptors, model, edgeFetch, options?.signal)
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') throw error
+        // fall through to heuristic
+      }
+    }
+
     const searchEnabled = options?.searchEnabled
-    return Promise.resolve(
-      inferPlan(prompt, searchEnabled !== undefined ? { searchEnabled } : undefined)
-    )
+    return inferPlan(prompt, searchEnabled !== undefined ? { searchEnabled } : undefined)
   }
 
   execute(step: PlanStep, context: ExecutionContext): Promise<string> {

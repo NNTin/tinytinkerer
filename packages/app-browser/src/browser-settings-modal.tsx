@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { ServiceStatus } from '@tinytinkerer/contracts'
+import type { McpServerConfig, ServiceStatus } from '@tinytinkerer/contracts'
 import { useSettingsSurfaceController } from './surfaces'
 
 const GitHubMark = () => (
@@ -264,6 +264,252 @@ const SearchSection = ({
   )
 }
 
+type McpServerFormState = {
+  name: string
+  url: string
+  bearerToken: string
+}
+
+const emptyForm = (): McpServerFormState => ({ name: '', url: '', bearerToken: '' })
+
+const McpServerCard = ({
+  server,
+  discovery,
+  isSyncing,
+  onToggle,
+  onRefresh,
+  onRemove,
+  onSave
+}: {
+  server: McpServerConfig
+  discovery: ReturnType<typeof useSettingsSurfaceController>['mcpDiscovery'][string] | undefined
+  isSyncing: boolean
+  onToggle: (enabled: boolean) => void
+  onRefresh: () => void
+  onRemove: () => void
+  onSave: (patch: Partial<Omit<McpServerConfig, 'id'>>, triggerRefresh: boolean) => void
+}) => {
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState<McpServerFormState>({
+    name: server.name,
+    url: server.url,
+    bearerToken: server.bearerToken ?? ''
+  })
+
+  const syncBadge = isSyncing
+    ? 'Syncing…'
+    : discovery?.error
+      ? discovery.error
+      : discovery
+        ? `${discovery.tools.length} tool${discovery.tools.length !== 1 ? 's' : ''}`
+        : 'Not synced'
+
+  const badgeClass = isSyncing
+    ? 'text-amber-700'
+    : discovery?.error
+      ? 'text-rose-600'
+      : discovery
+        ? 'text-emerald-700'
+        : 'text-stone-400'
+
+  const handleSave = () => {
+    const patch: Partial<Omit<McpServerConfig, 'id'>> = {}
+    if (form.name !== server.name) patch.name = form.name
+    if (form.url !== server.url) patch.url = form.url
+    const token = form.bearerToken.trim() || undefined
+    if (token !== server.bearerToken) patch.bearerToken = token
+    const connectionChanged = 'url' in patch || 'bearerToken' in patch
+    if (Object.keys(patch).length > 0) onSave(patch, connectionChanged)
+    setEditing(false)
+  }
+
+  return (
+    <div className="rounded-lg border border-stone-200 bg-white p-3 text-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium text-stone-800">{server.name}</p>
+          <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{server.url}</p>
+          <p className={`mt-0.5 text-xs ${badgeClass}`}>{syncBadge}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <input
+            type="checkbox"
+            checked={server.enabled}
+            onChange={(e) => onToggle(e.target.checked)}
+            className="h-3.5 w-3.5 accent-amber-500"
+            title={server.enabled ? 'Disable' : 'Enable'}
+          />
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isSyncing}
+            className="rounded px-1.5 py-0.5 text-xs text-stone-500 hover:bg-stone-100 disabled:opacity-50"
+          >
+            ↺
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing((v) => !v)}
+            className="rounded px-1.5 py-0.5 text-xs text-stone-500 hover:bg-stone-100"
+          >
+            {editing ? 'Close' : 'Edit'}
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            className="rounded px-1.5 py-0.5 text-xs text-rose-500 hover:bg-rose-50"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+      {editing ? (
+        <div className="mt-2 space-y-1.5 border-t border-stone-100 pt-2">
+          <input
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder="Name"
+            className="w-full rounded border border-stone-300 px-2 py-1 text-xs outline-none focus:border-amber-400"
+          />
+          <input
+            value={form.url}
+            onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+            placeholder="URL"
+            className="w-full rounded border border-stone-300 px-2 py-1 text-xs outline-none focus:border-amber-400"
+          />
+          <input
+            type="password"
+            value={form.bearerToken}
+            onChange={(e) => setForm((f) => ({ ...f, bearerToken: e.target.value }))}
+            placeholder="Bearer token (optional)"
+            className="w-full rounded border border-stone-300 px-2 py-1 text-xs outline-none focus:border-amber-400"
+          />
+          <button
+            type="button"
+            onClick={handleSave}
+            className="rounded bg-stone-900 px-2.5 py-1 text-xs text-white hover:bg-stone-700"
+          >
+            Save
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+export const McpServerList = () => {
+  const {
+    mcpServers,
+    mcpDiscovery,
+    addMcpServer,
+    updateMcpServer,
+    removeMcpServer,
+    setMcpServerEnabled,
+    refreshMcpServer
+  } = useSettingsSurfaceController()
+
+  const [addForm, setAddForm] = useState<McpServerFormState | null>(null)
+  const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set())
+
+  const doRefresh = async (server: McpServerConfig) => {
+    setSyncingIds((s) => new Set(s).add(server.id))
+    try {
+      await refreshMcpServer(server)
+    } finally {
+      setSyncingIds((s) => {
+        const next = new Set(s)
+        next.delete(server.id)
+        return next
+      })
+    }
+  }
+
+  const handleAdd = async () => {
+    if (!addForm?.name.trim() || !addForm.url.trim()) return
+    const newServer = await addMcpServer({
+      name: addForm.name.trim(),
+      url: addForm.url.trim(),
+      bearerToken: addForm.bearerToken.trim() || undefined,
+      enabled: true
+    })
+    setAddForm(null)
+    void doRefresh(newServer)
+  }
+
+  return (
+    <div className="space-y-2">
+      {mcpServers.length === 0 ? (
+        <p className="text-xs text-[var(--muted)]">No MCP servers added yet.</p>
+      ) : (
+        mcpServers.map((server) => (
+          <McpServerCard
+            key={server.id}
+            server={server}
+            discovery={mcpDiscovery[server.id]}
+            isSyncing={syncingIds.has(server.id)}
+            onToggle={(enabled) => void setMcpServerEnabled(server.id, enabled)}
+            onRefresh={() => void doRefresh(server)}
+            onRemove={() => void removeMcpServer(server.id)}
+            onSave={(patch, triggerRefresh) => {
+              void updateMcpServer(server.id, patch).then(() => {
+                if (triggerRefresh) void doRefresh({ ...server, ...patch })
+              })
+            }}
+          />
+        ))
+      )}
+      {addForm !== null ? (
+        <div className="space-y-1.5 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <input
+            value={addForm.name}
+            onChange={(e) => setAddForm((f) => f && { ...f, name: e.target.value })}
+            placeholder="Name"
+            autoFocus
+            className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-400"
+          />
+          <input
+            value={addForm.url}
+            onChange={(e) => setAddForm((f) => f && { ...f, url: e.target.value })}
+            placeholder="https://mcp.example.com/mcp"
+            className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-400"
+          />
+          <input
+            type="password"
+            value={addForm.bearerToken}
+            onChange={(e) => setAddForm((f) => f && { ...f, bearerToken: e.target.value })}
+            placeholder="Bearer token (optional)"
+            className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-400"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void handleAdd()}
+              className="rounded bg-stone-900 px-2.5 py-1 text-xs text-white hover:bg-stone-700"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddForm(null)}
+              className="rounded border border-stone-200 px-2.5 py-1 text-xs text-stone-600 hover:bg-stone-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAddForm(emptyForm())}
+          className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50"
+        >
+          + Add server
+        </button>
+      )}
+    </div>
+  )
+}
+
 const InterfaceSection = () => {
   const {
     showThinkingTimeline,
@@ -360,6 +606,12 @@ export const BrowserSettingsModal = ({
 
           <SettingsSection title="Interface">
             <InterfaceSection />
+          </SettingsSection>
+
+          <hr className="border-[var(--border)]" />
+
+          <SettingsSection title="MCP Servers">
+            <McpServerList />
           </SettingsSection>
         </div>
       </div>

@@ -21,14 +21,14 @@ const collect = async (stream: AsyncIterable<string>): Promise<string> => {
 describe('GitHubModelsProvider', () => {
   it('returns a low-complexity plan for a plain prompt', async () => {
     const provider = new GitHubModelsProvider({ baseUrl: 'http://example.com' })
-    const plan = await provider.plan('tell me a joke')
+    const plan = await provider.plan('tell me a joke', [])
     expect(plan.complexity).toBe('low')
     expect(plan.steps.map((step) => step.id)).toEqual(['understand', 'compose'])
   })
 
   it('returns a medium-complexity plan with a search step for search-keyword prompts', async () => {
     const provider = new GitHubModelsProvider({ baseUrl: 'http://example.com' })
-    const plan = await provider.plan('what is the latest news today?')
+    const plan = await provider.plan('what is the latest news today?', [])
     expect(plan.complexity).toBe('medium')
     expect(plan.steps.map((step) => step.id)).toEqual(['understand', 'search', 'compose'])
     expect(plan.steps[1]?.toolCall?.toolId).toBe('web-search')

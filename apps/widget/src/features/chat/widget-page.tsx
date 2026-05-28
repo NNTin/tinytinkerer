@@ -1,11 +1,13 @@
 import {
   AssistantContent,
+  McpServerList,
   TINYTINKERER_BRAND_ASSET_URLS,
   useChatSurfaceController,
   useSettingsSurfaceController
 } from '@tinytinkerer/app-browser'
 import { Button, GitHubMark } from '@tinytinkerer/ui'
 import { useEffect, useRef, useState } from 'react'
+import { WidgetChatLoading } from '../../app/loading-screen'
 import { resolveWidgetViewMode, resolveWidgetWindowMode } from '../../runtime-config'
 
 const STANDALONE_LAYOUT_KEY = 'tinytinkerer:widget-layout:v1'
@@ -120,6 +122,8 @@ const WidgetLauncher = ({ onRestore }: { onRestore: () => void }) => (
 
 const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
   const {
+    isBooting,
+    initializeError,
     events,
     turns,
     isRunning,
@@ -170,6 +174,10 @@ const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
     await setToken(trimmed)
     setPatValue('')
     setShowPat(false)
+  }
+
+  if (isBooting || initializeError) {
+    return <WidgetChatLoading {...(initializeError ? { error: initializeError } : {})} />
   }
 
   return (
@@ -230,6 +238,11 @@ const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
           {searchUnavailable ? (
             <p className="mt-2 text-xs text-[var(--widget-muted)]">{effectiveStatus.search.detail}</p>
           ) : null}
+
+          <div className="mt-4">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[var(--widget-muted)]">MCP Servers</p>
+            <McpServerList />
+          </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {token ? (

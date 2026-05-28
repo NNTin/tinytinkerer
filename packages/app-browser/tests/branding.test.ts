@@ -85,7 +85,7 @@ vi.mock('../src/stores/status-store.js', () => ({
   }))
 }))
 
-import { createBrowserApp } from '../src/index.js'
+import { createBrowserApp, initializeBrowserApp } from '../src/index.js'
 
 const decodeDataUrlPayload = (value: string): string => decodeURIComponent(value.split(',')[1] ?? '')
 
@@ -96,7 +96,8 @@ describe('brand metadata', () => {
   })
 
   it('applies shared icon, manifest, and theme metadata during app creation', async () => {
-    await createBrowserApp({ manifestStartUrl: '/web/' })
+    const app = createBrowserApp({ manifestStartUrl: '/web/' })
+    await initializeBrowserApp(app, { manifestStartUrl: '/web/' })
 
     expect(document.head.querySelectorAll('link[rel="icon"]').length).toBe(4)
     expect(document.head.querySelector('link[rel="icon"][type="image/x-icon"]')?.getAttribute('href')).toBe(
@@ -121,8 +122,8 @@ describe('brand metadata', () => {
   })
 
   it('reuses managed head tags when multiple browser apps are created', async () => {
-    await createBrowserApp({})
-    await createBrowserApp({})
+    await initializeBrowserApp(createBrowserApp({}), {})
+    await initializeBrowserApp(createBrowserApp({}), {})
 
     expect(document.head.querySelectorAll('[data-tinytinkerer-brand]').length).toBe(9)
     expect(document.head.querySelectorAll('link[rel="manifest"]').length).toBe(1)
@@ -133,7 +134,8 @@ describe('brand metadata', () => {
   it('preserves an existing external manifest link', async () => {
     document.head.innerHTML = '<meta charset="UTF-8" /><link rel="manifest" href="/mobile/manifest.webmanifest" />'
 
-    await createBrowserApp({})
+    const app = createBrowserApp({})
+    await initializeBrowserApp(app, {})
 
     expect(document.head.querySelector('link[rel="manifest"]:not([data-tinytinkerer-brand])')?.getAttribute('href')).toBe(
       '/mobile/manifest.webmanifest'

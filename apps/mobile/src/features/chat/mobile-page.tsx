@@ -1,13 +1,26 @@
 import {
   AssistantContent,
-  useChatSurfaceController
+  LazyBrowserSettingsModal,
+  useChatSurfaceController,
+  useSettingsStore
 } from '@tinytinkerer/app-browser'
 import { Button, GitHubMark, ThinkingDots } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { ArrowDownTrayIcon, Cog6ToothIcon } from '@heroicons/react/24/outline'
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { MobileChatLoading, MobilePanelLoading } from '../../app/loading-screen'
 import { useInstallPrompt } from '../install/use-install-prompt'
-import { BrowserSettingsModal as SettingsModal } from '@tinytinkerer/app-browser'
+
+const toolLabel = (toolId: string, serverNameById: Map<string, string>): string => {
+  if (toolId === 'web-search') return 'Web search'
+  const mcpMatch = toolId.match(/^mcp:([^:]+):(.+)$/)
+  if (mcpMatch) {
+    const [, serverId, toolName] = mcpMatch
+    const serverName = serverNameById.get(serverId ?? '')
+    return serverName ? `[${serverName}] ${toolName}` : (toolName ?? toolId)
+  }
+  return toolId
+}
 
 const noticeStyle: Record<'info' | 'warning' | 'error', string> = {
   info: 'border-stone-200 bg-stone-50 text-stone-600',
@@ -17,6 +30,8 @@ const noticeStyle: Record<'info' | 'warning' | 'error', string> = {
 
 export const MobilePage = () => {
   const {
+    isBooting,
+    initializeError,
     events,
     token,
     turns,
@@ -32,6 +47,11 @@ export const MobilePage = () => {
     resetConversation,
     cancelRetry
   } = useChatSurfaceController()
+  const mcpServers = useSettingsStore((state) => state.mcpServers)
+  const serverNameById = useMemo(
+    () => new Map(mcpServers.map((s) => [s.id, s.name])),
+    [mcpServers]
+  )
   const [prompt, setPrompt] = useState('')
   const [openTimeline, setOpenTimeline] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -59,6 +79,10 @@ export const MobilePage = () => {
         setPrompt('')
       }
     })
+  }
+
+  if (isBooting || initializeError) {
+    return <MobileChatLoading {...(initializeError ? { error: initializeError } : {})} />
   }
 
   return (
@@ -201,30 +225,61 @@ export const MobilePage = () => {
                 <p className="text-xs text-[var(--muted)]">Searches and tool runs will appear here during the session.</p>
               ) : (
                 toolEvents.map((event) => {
+                  const toolId = event.payload.toolId
+                  const label = toolLabel(toolId, serverNameById)
+
                   if (event.type === 'tool.call.failed') {
                     return (
                       <div key={event.id} className="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-700">
-                        <span className="font-medium">Search failed:</span> {event.payload.error}
+                        <span className="font-medium">{label} failed:</span> {event.payload.error}
                       </div>
                     )
                   }
 
-                  const output = event.payload.output as { query?: string; results?: unknown[] }
-                  const resultCount = Array.isArray(output.results) ? output.results.length : 0
+                  if (toolId === 'web-search') {
+                    const output = event.payload.output as { query?: string; results?: unknown[] }
+                    const resultCount = Array.isArray(output.results) ? output.results.length : 0
+                    return (
+                      <details key={event.id} className="group rounded-md border border-stone-200/70 bg-white/70 text-xs">
+                        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-stone-600 hover:bg-stone-50/80">
+                          <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-stone-100 text-[9px] font-bold text-stone-400 transition-transform group-open:rotate-90">
+                            ▶
+                          </span>
+                          <span>
+                            Web search —{' '}
+                            <span className="text-[var(--muted)]">{resultCount} result{resultCount !== 1 ? 's' : ''}</span>
+                          </span>
+                        </summary>
+                        <div className="border-t border-stone-100 px-3 py-1.5 text-[var(--muted)]">
+                          Query: <span className="text-stone-600">{output.query ?? 'unknown'}</span>
+                        </div>
+                      </details>
+                    )
+                  }
 
+                  const mcpOutput = event.type === 'tool.call.completed'
+                    ? event.payload.output as { text?: string; isError?: boolean } | null
+                    : null
+                  const isMcpError = mcpOutput?.isError === true
+                  const summaryText = mcpOutput?.text ? mcpOutput.text.slice(0, 120) : '(no output)'
+                  const summary = isMcpError ? `Error: ${summaryText}` : summaryText
                   return (
-                    <details key={event.id} className="group rounded-md border border-stone-200/70 bg-white/70 text-xs">
-                      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-stone-600 hover:bg-stone-50/80">
+                    <details
+                      key={event.id}
+                      className={`group rounded-md border text-xs ${isMcpError ? 'border-rose-200 bg-rose-50/80' : 'border-stone-200/70 bg-white/70'}`}
+                    >
+                      <summary
+                        className={`flex cursor-pointer list-none items-center gap-2 px-3 py-2 hover:bg-stone-50/80 ${isMcpError ? 'text-rose-700' : 'text-stone-600'}`}
+                      >
                         <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-stone-100 text-[9px] font-bold text-stone-400 transition-transform group-open:rotate-90">
                           ▶
                         </span>
-                        <span>
-                          Web search —{' '}
-                          <span className="text-[var(--muted)]">{resultCount} result{resultCount !== 1 ? 's' : ''}</span>
-                        </span>
+                        <span>{label}</span>
                       </summary>
-                      <div className="border-t border-stone-100 px-3 py-1.5 text-[var(--muted)]">
-                        Query: <span className="text-stone-600">{output.query ?? 'unknown'}</span>
+                      <div
+                        className={`border-t px-3 py-1.5 ${isMcpError ? 'border-rose-100 text-rose-700' : 'border-stone-100 text-[var(--muted)]'}`}
+                      >
+                        {summary}
                       </div>
                     </details>
                   )
@@ -293,7 +348,11 @@ export const MobilePage = () => {
         </form>
       </main>
 
-      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {settingsOpen ? (
+        <Suspense fallback={<MobilePanelLoading />}>
+          <LazyBrowserSettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+        </Suspense>
+      ) : null}
     </div>
   )
 }

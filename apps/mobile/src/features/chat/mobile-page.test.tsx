@@ -44,6 +44,7 @@ const mockTurns = vi.hoisted(() => [] as Array<{
 
 const mockChatState = vi.hoisted(() => ({
   events: [] as MockChatEvent[],
+  toolEvents: [] as MockChatEvent[],
   isRunning: false,
   isRetryPending: false,
   cooldownUntil: undefined as string | undefined,
@@ -53,6 +54,7 @@ const mockChatState = vi.hoisted(() => ({
 }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
+  LazyBrowserSettingsModal: () => null,
   AssistantContent: ({
     content,
     className
@@ -62,12 +64,14 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   }) => (
     <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
   ),
+  useSettingsStore: () => [],
   useChatSurfaceController: () => ({
+    isBooting: false,
     events: mockChatState.events,
     token: mockAuthState.token,
     turns: mockTurns,
     timeline: [],
-    toolEvents: [],
+    toolEvents: mockChatState.toolEvents,
     isRunning: mockChatState.isRunning,
     isRetryPending: mockChatState.isRetryPending,
     showThinkingTimeline: mockSettingsState.showThinkingTimeline,
@@ -78,8 +82,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     submitPrompt: mockChatState.submitPrompt,
     resetConversation: mockChatState.resetConversation,
     cancelRetry: mockChatState.cancelRetry
-  }),
-  BrowserSettingsModal: () => null
+  })
 }))
 
 import { MobilePage } from './mobile-page.js'
@@ -112,6 +115,7 @@ beforeEach(() => {
   mockSettingsState.showToolActivity = true
   mockAuthState.token = null
   mockChatState.events = []
+  mockChatState.toolEvents = []
   mockChatState.isRunning = false
   mockChatState.isRetryPending = false
   mockChatState.cooldownUntil = undefined
@@ -150,5 +154,22 @@ describe('MobilePage', () => {
     })
 
     expect(prompt).toHaveBeenCalledTimes(1)
+  })
+
+  it('marks MCP tool-reported errors distinctly in tool history', () => {
+    mockChatState.toolEvents = [
+      {
+        id: 'tool-1',
+        type: 'tool.call.completed',
+        payload: {
+          toolId: 'mcp:server-1:get_weather',
+          output: { text: 'Unknown location', isError: true }
+        }
+      }
+    ]
+
+    renderMobilePage()
+
+    expect(screen.getByText('Error: Unknown location')).not.toBeNull()
   })
 })

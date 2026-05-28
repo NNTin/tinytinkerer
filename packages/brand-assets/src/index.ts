@@ -1,4 +1,4 @@
-import { brandDefinitionSchema, type BrandDefinition } from '@tinytinkerer/contracts'
+import type { BrandDefinition } from '@tinytinkerer/contracts'
 
 export const TINYTINKERER_BRAND_ASSET_URLS = {
   faviconIco: new URL('../assets/generated/favicon.ico', import.meta.url).href,
@@ -11,7 +11,7 @@ export const TINYTINKERER_BRAND_ASSET_URLS = {
   iconMaskable512: new URL('../assets/generated/icon-maskable-512.png', import.meta.url).href
 } as const
 
-export const TINYTINKERER_BRAND: BrandDefinition = brandDefinitionSchema.parse({
+export const TINYTINKERER_BRAND: BrandDefinition = {
   theme: {
     applicationName: 'tinytinkerer',
     themeColor: '#f6f2ec',
@@ -77,4 +77,4 @@ export const TINYTINKERER_BRAND: BrandDefinition = brandDefinitionSchema.parse({
       }
     ]
   }
-})
+}

@@ -12,6 +12,7 @@ See also:
 - [content-platform.md](./content-platform.md)
 - [packages-concept.md](./packages-concept.md)
 - [ui-ux-concept.md](./ui-ux-concept.md)
+- [mcp-integration.md](./mcp-integration.md)
 
 ## Route Model
 

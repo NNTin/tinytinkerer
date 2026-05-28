@@ -1,9 +1,15 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { AppBrowserProvider, createBrowserApp, resolveBrowserShellBootstrapConfig } from '@tinytinkerer/app-browser'
+import {
+  AppBrowserProvider,
+  createBrowserApp,
+  resolveBrowserShellBootstrapConfig,
+  useBrowserAppBootstrap
+} from '@tinytinkerer/app-browser'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './app/router'
+import { MobileBootScreen } from './app/loading-screen'
 import '@tinytinkerer/app-browser/styles.css'
 import './index.css'
 
@@ -17,9 +23,16 @@ const browserConfig = resolveBrowserShellBootstrapConfig({
 })
 
 const queryClient = new QueryClient()
+const browserApp = createBrowserApp(browserConfig)
 
-void createBrowserApp(browserConfig).then((browserApp) => {
-  createRoot(document.getElementById('root')!).render(
+const MobileBootstrap = () => {
+  const { ready, error } = useBrowserAppBootstrap(browserApp, browserConfig)
+
+  if (!ready) {
+    return <MobileBootScreen {...(error ? { error } : {})} />
+  }
+
+  return (
     <StrictMode>
       <AppBrowserProvider app={browserApp}>
         <QueryClientProvider client={queryClient}>
@@ -28,4 +41,6 @@ void createBrowserApp(browserConfig).then((browserApp) => {
       </AppBrowserProvider>
     </StrictMode>
   )
-})
+}
+
+createRoot(document.getElementById('root')!).render(<MobileBootstrap />)

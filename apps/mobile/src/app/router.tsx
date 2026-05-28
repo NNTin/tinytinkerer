@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { createHashRouter } from 'react-router-dom'
+import { MobileRouteLoading } from './loading-screen'
 
 const MobilePage = lazy(() =>
   import('../features/chat/mobile-page').then((module) => ({ default: module.MobilePage }))
@@ -12,7 +13,7 @@ export const router = createHashRouter([
   {
     path: '/',
     element: (
-      <Suspense fallback={null}>
+      <Suspense fallback={<MobileRouteLoading />}>
         <MobilePage />
       </Suspense>
     )
@@ -20,7 +21,7 @@ export const router = createHashRouter([
   {
     path: '/auth/callback',
     element: (
-      <Suspense fallback={null}>
+      <Suspense fallback={<MobileRouteLoading />}>
         <CallbackPage />
       </Suspense>
     )

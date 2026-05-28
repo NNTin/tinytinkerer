@@ -1,16 +1,25 @@
 import { buildCurrentTimeline, buildTurns, type TimelineEntry, type Turn } from '@tinytinkerer/app-core'
-import type { ChatEvent, SystemStatus } from '@tinytinkerer/contracts'
+import {
+  mcpDiscoveryResultSchema,
+  type ChatEvent,
+  type McpDiscoveryResult,
+  type McpServerConfig,
+  type SystemStatus
+} from '@tinytinkerer/contracts'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
-import { useAuthStore, useChatStore, useSettingsStore, useStatusStore } from './app'
+import { useAuthStore, useBrowserApp, useChatStore, useSettingsStore, useStatusStore } from './app'
 import { formatCooldown, useChatCooldown, useGitHubOAuth } from './hooks'
 import { useGitHubUser } from './github-user'
 import { useGitHubModels, type ModelEntry } from './github-models'
 import { startStatusPolling } from './status'
 import { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
+import { createEdgeFetch } from './runtime/edge-fetch'
 
 type ToolEvent = Extract<ChatEvent, { type: 'tool.call.completed' | 'tool.call.failed' }>
 
 export type ChatSurfaceController = {
+  isBooting: boolean
+  initializeError: string | null
   events: ChatEvent[]
   token: string | null
   turns: Turn[]
@@ -29,9 +38,12 @@ export type ChatSurfaceController = {
 }
 
 export const useChatSurfaceController = (): ChatSurfaceController => {
+  const [initializeError, setInitializeError] = useState<string | null>(null)
+  const hydrated = useChatStore((state) => state.hydrated)
   const events = useChatStore((state) => state.events)
   const isRunning = useChatStore((state) => state.isRunning)
   const isRetryPending = useChatStore((state) => state.isRetryPending)
+  const initialize = useChatStore((state) => state.initialize)
   const sendPrompt = useChatStore((state) => state.sendPrompt)
   const resetConversation = useChatStore((state) => state.resetConversation)
   const cancelRetry = useChatStore((state) => state.cancelRetry)
@@ -40,6 +52,30 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const showThinkingTimeline = useSettingsStore((state) => state.showThinkingTimeline)
   const showToolActivity = useSettingsStore((state) => state.showToolActivity)
   const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
+
+  useEffect(() => {
+    if (hydrated || initializeError) {
+      return
+    }
+
+    let cancelled = false
+
+    void initialize().catch((error: unknown) => {
+      if (cancelled) {
+        return
+      }
+
+      setInitializeError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Unable to initialize chat runtime.'
+      )
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [hydrated, initialize, initializeError])
 
   useEffect(() => startStatusPolling(refreshStatus), [refreshStatus])
 
@@ -71,6 +107,8 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   }
 
   return {
+    isBooting: !hydrated && initializeError === null,
+    initializeError,
     events,
     token,
     turns,
@@ -108,6 +146,13 @@ export type SettingsSurfaceController = {
   showToolActivity: boolean
   setShowToolActivity: (show: boolean) => Promise<void>
   searchUnavailable: boolean
+  mcpServers: McpServerConfig[]
+  mcpDiscovery: Record<string, McpDiscoveryResult>
+  addMcpServer: (server: Omit<McpServerConfig, 'id'>) => Promise<McpServerConfig>
+  updateMcpServer: (id: string, patch: Partial<Omit<McpServerConfig, 'id'>>) => Promise<void>
+  removeMcpServer: (id: string) => Promise<void>
+  setMcpServerEnabled: (id: string, enabled: boolean) => Promise<void>
+  refreshMcpServer: (server: McpServerConfig) => Promise<void>
 }
 
 export const useSettingsSurfaceController = (): SettingsSurfaceController => {
@@ -127,8 +172,51 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const setShowThinkingTimeline = useSettingsStore((state) => state.setShowThinkingTimeline)
   const showToolActivity = useSettingsStore((state) => state.showToolActivity)
   const setShowToolActivity = useSettingsStore((state) => state.setShowToolActivity)
+  const mcpServers = useSettingsStore((state) => state.mcpServers)
+  const mcpDiscovery = useSettingsStore((state) => state.mcpDiscovery)
+  const addMcpServer = useSettingsStore((state) => state.addMcpServer)
+  const updateMcpServer = useSettingsStore((state) => state.updateMcpServer)
+  const removeMcpServer = useSettingsStore((state) => state.removeMcpServer)
+  const setMcpServerEnabled = useSettingsStore((state) => state.setMcpServerEnabled)
+  const setMcpDiscovery = useSettingsStore((state) => state.setMcpDiscovery)
+  const clearMcpDiscovery = useSettingsStore((state) => state.clearMcpDiscovery)
+  const { shell } = useBrowserApp()
 
   const effectiveStatus = status ?? OFFLINE_SYSTEM_STATUS
+
+  const refreshMcpServer = async (server: McpServerConfig): Promise<void> => {
+    await clearMcpDiscovery(server.id)
+    try {
+      const edgeFetch = createEdgeFetch(shell.config.edgeBaseUrl, () => token)
+      const res = await edgeFetch('/api/mcp/discover', {
+        url: server.url,
+        bearerToken: server.bearerToken
+      })
+      if (!res.ok) {
+        const errBody: unknown = await res.json().catch(() => ({}))
+        const errMsg = (errBody as { error?: string }).error ?? `HTTP ${res.status}`
+        await setMcpDiscovery({
+          serverId: server.id,
+          serverName: server.name,
+          tools: [],
+          syncedAt: new Date().toISOString(),
+          error: errMsg
+        })
+        return
+      }
+      const raw: unknown = await res.json()
+      const result = mcpDiscoveryResultSchema.parse({ ...(raw as object), serverId: server.id })
+      await setMcpDiscovery(result)
+    } catch (e) {
+      await setMcpDiscovery({
+        serverId: server.id,
+        serverName: server.name,
+        tools: [],
+        syncedAt: new Date().toISOString(),
+        error: e instanceof Error ? e.message : 'Discovery failed'
+      })
+    }
+  }
 
   return {
     effectiveStatus,
@@ -148,7 +236,14 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     setShowThinkingTimeline,
     showToolActivity,
     setShowToolActivity,
-    searchUnavailable: effectiveStatus.search.state !== 'ready'
+    searchUnavailable: effectiveStatus.search.state !== 'ready',
+    mcpServers,
+    mcpDiscovery,
+    addMcpServer,
+    updateMcpServer,
+    removeMcpServer,
+    setMcpServerEnabled,
+    refreshMcpServer
   }
 }
 

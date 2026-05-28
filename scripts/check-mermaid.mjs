@@ -1,9 +1,10 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
-const MERMAID_CLI_VERSION = '11.12.0'
+const MERMAID_CLI_VERSION = '11.15.0'
 
 const listMarkdownFiles = () => {
   const output = execFileSync('git', ['ls-files', '--', '*.md'], { encoding: 'utf8' })
@@ -56,17 +57,17 @@ const extractMermaidBlocks = (content, filePath) => {
 }
 
 const resolveMmdcCommand = () => {
-  const localCheck = spawnSync('mmdc', ['--version'], { stdio: 'ignore' })
-  if (localCheck.status === 0) {
-    return { command: 'mmdc', baseArgs: [] }
-  }
-
   const npxCheck = spawnSync('npx', ['--version'], { stdio: 'ignore' })
   if (npxCheck.status === 0) {
     return {
       command: 'npx',
       baseArgs: ['-y', '-p', `@mermaid-js/mermaid-cli@${MERMAID_CLI_VERSION}`, 'mmdc']
     }
+  }
+
+  const localCheck = spawnSync('mmdc', ['--version'], { stdio: 'ignore' })
+  if (localCheck.status === 0) {
+    return { command: 'mmdc', baseArgs: [] }
   }
 
   throw new Error(
@@ -79,13 +80,15 @@ const renderBlock = (block, tempDir, mmdc) => {
   const inputPath = join(tempDir, `${baseName}.mmd`)
   const outputPath = join(tempDir, `${baseName}.svg`)
   const puppeteerConfigPath = join(tempDir, 'puppeteer-config.json')
+  const executablePath = resolveChromeExecutablePath()
 
   writeFileSync(inputPath, block.source, 'utf8')
   writeFileSync(
     puppeteerConfigPath,
     JSON.stringify(
       {
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        ...(executablePath ? { executablePath } : {})
       },
       null,
       2
@@ -109,6 +112,128 @@ const renderBlock = (block, tempDir, mmdc) => {
   }
 }
 
+const canFallbackToParse = (error) => {
+  const message = error instanceof Error ? error.message : String(error)
+  return (
+    message.includes('Could not find Chrome') ||
+    message.includes('Failed to launch the browser process') ||
+    message.includes('error while loading shared libraries')
+  )
+}
+
+const parseBlock = (block) => {
+  const jsdomModuleUrl = pathToFileURL(
+    join(process.cwd(), 'packages', 'content-mermaid', 'node_modules', 'jsdom', 'lib', 'api.js')
+  ).href
+  const mermaidModuleUrl = pathToFileURL(
+    join(process.cwd(), 'packages', 'content-mermaid', 'node_modules', 'mermaid', 'dist', 'mermaid.core.mjs')
+  ).href
+  const parserScript = [
+    "const jsdomModuleUrl = process.argv[1]",
+    "const mermaidModuleUrl = process.argv[2]",
+    "const input = Buffer.from(process.argv[3] ?? '', 'base64').toString('utf8')",
+    'const { JSDOM } = await import(jsdomModuleUrl)',
+    "const { window } = new JSDOM('<!doctype html><html><body></body></html>')",
+    'globalThis.window = window',
+    'globalThis.document = window.document',
+    "Object.defineProperty(globalThis, 'navigator', { value: window.navigator, configurable: true })",
+    'globalThis.Element = window.Element',
+    'globalThis.HTMLElement = window.HTMLElement',
+    'globalThis.SVGElement = window.SVGElement',
+    "const { default: mermaid } = await import(mermaidModuleUrl)",
+    "mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' })",
+    'await mermaid.parse(input)'
+  ].join('; ')
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      parserScript,
+      jsdomModuleUrl,
+      mermaidModuleUrl,
+      Buffer.from(block.source, 'utf8').toString('base64')
+    ],
+    {
+      encoding: 'utf8'
+    }
+  )
+
+  if (result.status !== 0) {
+    const details = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
+    throw new Error(
+      `Mermaid syntax validation failed in ${block.filePath}:${block.startLine}\n${details || 'Unknown Mermaid parser error'}`
+    )
+  }
+}
+
+const resolveChromeExecutablePath = () => {
+  const candidates = [
+    process.env.PUPPETEER_CACHE_DIR ? dirname(process.env.PUPPETEER_CACHE_DIR) : null,
+    process.env.HOME,
+    ...listAncestorDirs(process.cwd())
+  ]
+    .filter((value, index, array) => typeof value === 'string' && value.length > 0 && array.indexOf(value) === index)
+    .flatMap((baseDir) => [
+      join(baseDir, '.cache', 'puppeteer', 'chrome'),
+      join(baseDir, '.cache', 'puppeteer', 'chrome-headless-shell')
+    ])
+
+  for (const root of candidates) {
+    const executablePath = resolveCachedChromeExecutable(root)
+    if (executablePath) {
+      return executablePath
+    }
+  }
+
+  return null
+}
+
+const listAncestorDirs = (startDir) => {
+  const dirs = []
+  let current = startDir
+
+  while (true) {
+    dirs.push(current)
+    const parent = dirname(current)
+    if (parent === current) {
+      return dirs
+    }
+    current = parent
+  }
+}
+
+const resolveCachedChromeExecutable = (cacheRoot) => {
+  if (!existsSync(cacheRoot)) {
+    return null
+  }
+
+  const builds = readdirSync(cacheRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+
+  for (const build of builds) {
+    const chromePath = join(cacheRoot, build, 'chrome-linux64', 'chrome')
+    if (existsSync(chromePath)) {
+      return chromePath
+    }
+
+    const headlessShellPath = join(
+      cacheRoot,
+      build,
+      'chrome-headless-shell-linux64',
+      'chrome-headless-shell'
+    )
+    if (existsSync(headlessShellPath)) {
+      return headlessShellPath
+    }
+  }
+
+  return null
+}
+
 const main = () => {
   const markdownFiles = listMarkdownFiles()
   const blocks = markdownFiles.flatMap((filePath) =>
@@ -125,7 +250,15 @@ const main = () => {
 
   try {
     for (const block of blocks) {
-      renderBlock(block, tempDir, mmdc)
+      try {
+        renderBlock(block, tempDir, mmdc)
+      } catch (error) {
+        if (!canFallbackToParse(error)) {
+          throw error
+        }
+
+        parseBlock(block)
+      }
     }
   } finally {
     rmSync(tempDir, { recursive: true, force: true })

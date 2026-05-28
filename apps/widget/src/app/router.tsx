@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { createHashRouter } from 'react-router-dom'
+import { WidgetRouteLoading } from './loading-screen'
 
 const WidgetPage = lazy(() =>
   import('../features/chat/widget-page').then((module) => ({ default: module.WidgetPage }))
@@ -12,7 +13,7 @@ export const router = createHashRouter([
   {
     path: '/',
     element: (
-      <Suspense fallback={null}>
+      <Suspense fallback={<WidgetRouteLoading />}>
         <WidgetPage />
       </Suspense>
     )
@@ -20,7 +21,7 @@ export const router = createHashRouter([
   {
     path: '/auth/callback',
     element: (
-      <Suspense fallback={null}>
+      <Suspense fallback={<WidgetRouteLoading />}>
         <CallbackPage />
       </Suspense>
     )

@@ -67,7 +67,7 @@ export class AgentRuntime {
 
     try {
       context.plan = await withTimeout(
-        this.provider.plan(prompt, callOptions),
+        this.provider.plan(prompt, context.history, callOptions),
         this.stepTimeoutMs,
         'Planner timed out'
       )

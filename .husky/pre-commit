@@ -1,4 +1,17 @@
-#!/bin/sh
+#!/usr/bin/env sh
+
+MATCHES=$(
+  git grep --cached -nE '(/home/|/Users/|C:\\Users\\)' -- . ':(exclude).husky/pre-commit' 2>/dev/null || true
+)
+
+if [ -n "$MATCHES" ]; then
+  echo "Machine-specific paths detected:"
+  echo ""
+  echo "$MATCHES"
+  echo ""
+  exit 1
+fi
+
 if ! command -v gitleaks > /dev/null 2>&1; then
   echo "WARNING: gitleaks not found — skipping secrets scan."
   echo "         Install: https://github.com/gitleaks/gitleaks#installing"

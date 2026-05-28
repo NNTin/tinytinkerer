@@ -415,3 +415,52 @@ export const modelsListResponseSchema = z.object({
 
 export type GitHubModelEntry = z.infer<typeof githubModelEntrySchema>
 export type ModelsListResponse = z.infer<typeof modelsListResponseSchema>
+
+export const mcpServerConfigSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  url: z.string().url(),
+  bearerToken: z.string().optional(),
+  enabled: z.boolean()
+})
+
+export const mcpToolMetaSchema = z.object({
+  toolName: z.string(),
+  description: z.string(),
+  inputSchema: z.record(z.string(), z.unknown())
+})
+
+export const mcpDiscoveryResultSchema = z.object({
+  serverId: z.string(),
+  serverName: z.string(),
+  tools: z.array(mcpToolMetaSchema),
+  syncedAt: z.string(),
+  error: z.string().optional()
+})
+
+export const mcpDiscoverRequestSchema = z.object({
+  url: z.string(),
+  bearerToken: z.string().optional()
+})
+
+export const mcpCallRequestSchema = z.object({
+  url: z.string(),
+  bearerToken: z.string().optional(),
+  toolName: z.string(),
+  arguments: z.record(z.string(), z.unknown())
+})
+
+export const mcpCallResponseSchema = z.object({
+  serverName: z.string(),
+  toolName: z.string(),
+  text: z.string(),
+  raw: z.unknown(),
+  isError: z.boolean()
+})
+
+export type McpServerConfig = z.infer<typeof mcpServerConfigSchema>
+export type McpToolMeta = z.infer<typeof mcpToolMetaSchema>
+export type McpDiscoveryResult = z.infer<typeof mcpDiscoveryResultSchema>
+export type McpDiscoverRequest = z.infer<typeof mcpDiscoverRequestSchema>
+export type McpCallRequest = z.infer<typeof mcpCallRequestSchema>
+export type McpCallResponse = z.infer<typeof mcpCallResponseSchema>
