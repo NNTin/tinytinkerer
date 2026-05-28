@@ -120,7 +120,13 @@ const WidgetLauncher = ({ onRestore }: { onRestore: () => void }) => (
   </div>
 )
 
-const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
+const WidgetSurface = ({
+  onMinimize,
+  framed = true
+}: {
+  onMinimize: () => void
+  framed?: boolean
+}) => {
   const {
     isBooting,
     initializeError,
@@ -182,7 +188,14 @@ const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
 
   return (
     <div className="flex h-full w-full flex-col px-4 py-4">
-      <div className="flex h-full min-h-0 flex-col rounded-[1.5rem] border border-[var(--widget-border)] bg-[var(--widget-panel)] shadow-[0_18px_48px_rgba(36,33,24,0.08)]">
+      <div
+        className={[
+          'flex h-full min-h-0 flex-col',
+          framed
+            ? 'rounded-[1.5rem] border border-[var(--widget-border)] bg-[var(--widget-panel)] shadow-[0_18px_48px_rgba(36,33,24,0.08)]'
+            : 'bg-transparent'
+        ].join(' ')}
+      >
         <div className="border-b border-[var(--widget-border)] px-4 py-4">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -479,7 +492,7 @@ export const WidgetPage = () => {
     return isMinimized ? (
       <WidgetLauncher onRestore={handleRestore} />
     ) : (
-      <WidgetSurface onMinimize={handleMinimize} />
+      <WidgetSurface onMinimize={handleMinimize} framed={false} />
     )
   }
 
@@ -511,7 +524,11 @@ export const WidgetPage = () => {
           }}
         />
         <div className="widget-shell-body">
-          {isMinimized ? <WidgetLauncher onRestore={handleRestore} /> : <WidgetSurface onMinimize={handleMinimize} />}
+          {isMinimized ? (
+            <WidgetLauncher onRestore={handleRestore} />
+          ) : (
+            <WidgetSurface onMinimize={handleMinimize} />
+          )}
         </div>
         {!isMinimized ? (
           <button
