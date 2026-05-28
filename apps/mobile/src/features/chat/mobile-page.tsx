@@ -1,20 +1,15 @@
 import {
   AssistantContent,
+  LazyBrowserSettingsModal,
   useChatSurfaceController,
   useSettingsStore
 } from '@tinytinkerer/app-browser'
 import { Button, GitHubMark, ThinkingDots } from '@tinytinkerer/ui'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { ArrowDownTrayIcon, Cog6ToothIcon } from '@heroicons/react/24/outline'
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { MobileChatLoading, MobilePanelLoading } from '../../app/loading-screen'
 import { useInstallPrompt } from '../install/use-install-prompt'
-
-const SettingsModal = lazy(() =>
-  import('@tinytinkerer/app-browser/browser-settings-modal').then((module) => ({
-    default: module.BrowserSettingsModal
-  }))
-)
 
 const toolLabel = (toolId: string, serverNameById: Map<string, string>): string => {
   if (toolId === 'web-search') return 'Web search'
@@ -355,7 +350,7 @@ export const MobilePage = () => {
 
       {settingsOpen ? (
         <Suspense fallback={<MobilePanelLoading />}>
-          <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+          <LazyBrowserSettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
         </Suspense>
       ) : null}
     </div>

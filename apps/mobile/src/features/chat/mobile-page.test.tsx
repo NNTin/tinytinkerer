@@ -53,11 +53,8 @@ const mockChatState = vi.hoisted(() => ({
   cancelRetry: vi.fn()
 }))
 
-vi.mock('@tinytinkerer/app-browser/browser-settings-modal', () => ({
-  BrowserSettingsModal: () => null
-}))
-
 vi.mock('@tinytinkerer/app-browser', () => ({
+  LazyBrowserSettingsModal: () => null,
   AssistantContent: ({
     content,
     className

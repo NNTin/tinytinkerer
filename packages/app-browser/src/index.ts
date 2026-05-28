@@ -32,6 +32,7 @@ export type {
 export { AssistantContent } from './assistant-content'
 export { BrowserCallbackPage } from './browser-callback-page'
 export { BrowserSettingsModal, McpServerList } from './browser-settings-modal'
+export { LazyBrowserSettingsModal } from './lazy-browser-settings-modal'
 export { bootstrapBrowserShell } from './initialize'
 export { formatCooldown, useBrowserShellConfig, useChatCooldown, useGitHubOAuth } from './hooks'
 export { resolveBrowserShellBootstrapConfig } from './config'
