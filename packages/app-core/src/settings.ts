@@ -38,8 +38,8 @@ export const defaultSettingsState = (): SettingsState => ({
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
   searchEnabled: true,
-  showThinkingTimeline: true,
-  showToolActivity: true,
+  showThinkingTimeline: false,
+  showToolActivity: false,
   showCodeBlockFullscreenButton: true,
   mcpServers: [],
   mcpDiscovery: {}
@@ -68,8 +68,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     hydrated: true,
     selectedModel: normalizeSelectedModel(selectedModel),
     searchEnabled: parseBool(searchEnabled, true),
-    showThinkingTimeline: parseBool(showThinkingTimeline, true),
-    showToolActivity: parseBool(showToolActivity, true),
+    showThinkingTimeline: parseBool(showThinkingTimeline, false),
+    showToolActivity: parseBool(showToolActivity, false),
     showCodeBlockFullscreenButton: parseBool(showCodeBlockFullscreenButton, true),
     mcpServers: parseMcpServers(mcpServersRaw),
     mcpDiscovery: parseMcpDiscovery(mcpDiscoveryRaw)
