@@ -7,7 +7,7 @@ import {
   type RenderContext,
   type ReactNodeRendererPlugin
 } from '@tinytinkerer/content-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { calloutPlugin } from '@tinytinkerer/content-callout'
 import { imagePlugin } from '@tinytinkerer/content-image'
 import { linkCardPlugin } from '@tinytinkerer/content-link-card'
@@ -150,18 +150,20 @@ const assistantPlugins = [
 
 const useShowCodeBlockFullscreenButton = (): boolean => {
   const app = useOptionalBrowserApp()
-  const [value, setValue] = useState<boolean>(
-    () => app?.stores.settings.getState().showCodeBlockFullscreenButton ?? true
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (!app) return () => undefined
+      return app.stores.settings.subscribe(() => {
+        onStoreChange()
+      })
+    },
+    [app]
   )
-  useEffect(() => {
-    if (!app) return
-    const store = app.stores.settings
-    setValue(store.getState().showCodeBlockFullscreenButton)
-    return store.subscribe((state) => {
-      setValue(state.showCodeBlockFullscreenButton)
-    })
-  }, [app])
-  return value
+  const getSnapshot = useCallback(
+    (): boolean => app?.stores.settings.getState().showCodeBlockFullscreenButton ?? true,
+    [app]
+  )
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
 export const AssistantContent = ({

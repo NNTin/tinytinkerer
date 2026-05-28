@@ -107,6 +107,42 @@ describe('code-block edit persistence', () => {
     expect(window.localStorage.getItem(key('turn-D', 'node-4'))).toBe('stored-but-streaming')
   })
 
+  it('keeps the editor read-only and upstream-driven while streaming', async () => {
+    const { container, rerender } = render(
+      <ContentDocumentContent
+        document={doc([{ id: 'node-stream', type: 'codeBlock', code: 'partial', language: 'json' }])}
+        plugins={[codePlugin]}
+        isStreaming
+      />
+    )
+
+    await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull())
+    const view = findEditorView(container)
+    expect(view.state.doc.toString()).toBe('partial')
+    const content = container.querySelector('.cm-content') as HTMLElement
+    expect(content.getAttribute('contenteditable')).toBe('false')
+
+    // The next assistant chunk arrives — it must replace the doc, not be masked.
+    rerender(
+      <ContentDocumentContent
+        document={doc([{ id: 'node-stream', type: 'codeBlock', code: 'partial more', language: 'json' }])}
+        plugins={[codePlugin]}
+        isStreaming
+      />
+    )
+    await waitFor(() => expect(view.state.doc.toString()).toBe('partial more'))
+
+    // Final chunk arrives and streaming ends.
+    rerender(
+      <ContentDocumentContent
+        document={doc([{ id: 'node-stream', type: 'codeBlock', code: 'partial more final', language: 'json' }])}
+        plugins={[codePlugin]}
+      />
+    )
+    await waitFor(() => expect(view.state.doc.toString()).toBe('partial more final'))
+    await waitFor(() => expect(content.getAttribute('contenteditable')).toBe('true'))
+  })
+
   it('does nothing without a codeBlockPersistenceScopeId', async () => {
     const { container } = render(
       <ContentDocumentContent

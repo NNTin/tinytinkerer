@@ -101,12 +101,19 @@ type UseEditorArgs = {
   value: string
   onChange: (next: string) => void
   language: string | undefined
+  editable: boolean
 }
 
-const useCodeMirrorEditor = ({ value, onChange, language }: UseEditorArgs): EditorRef => {
+const useCodeMirrorEditor = ({
+  value,
+  onChange,
+  language,
+  editable
+}: UseEditorArgs): EditorRef => {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   const langCompartmentRef = useRef<Compartment | null>(null)
+  const editableCompartmentRef = useRef<Compartment | null>(null)
   const valueRef = useRef(value)
   const onChangeRef = useRef(onChange)
 
@@ -124,7 +131,9 @@ const useCodeMirrorEditor = ({ value, onChange, language }: UseEditorArgs): Edit
       return
     }
     const langCompartment = new Compartment()
+    const editableCompartment = new Compartment()
     langCompartmentRef.current = langCompartment
+    editableCompartmentRef.current = editableCompartment
     const initialLanguage = resolveLanguageExtension(language)
     const state = EditorState.create({
       doc: valueRef.current,
@@ -132,6 +141,7 @@ const useCodeMirrorEditor = ({ value, onChange, language }: UseEditorArgs): Edit
         basicSetup,
         keymap.of([...defaultKeymap, indentWithTab]),
         langCompartment.of(initialLanguage),
+        editableCompartment.of(EditorView.editable.of(editable)),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return
           const doc = update.state.doc.toString()
@@ -151,6 +161,7 @@ const useCodeMirrorEditor = ({ value, onChange, language }: UseEditorArgs): Edit
       view.destroy()
       viewRef.current = null
       langCompartmentRef.current = null
+      editableCompartmentRef.current = null
     }
   }, [])
 
@@ -172,6 +183,15 @@ const useCodeMirrorEditor = ({ value, onChange, language }: UseEditorArgs): Edit
       effects: compartment.reconfigure(resolveLanguageExtension(language))
     })
   }, [language])
+
+  useEffect(() => {
+    const view = viewRef.current
+    const compartment = editableCompartmentRef.current
+    if (!view || !compartment) return
+    view.dispatch({
+      effects: compartment.reconfigure(EditorView.editable.of(editable))
+    })
+  }, [editable])
 
   return containerRef
 }
@@ -232,14 +252,18 @@ const CodeBlockFrame = ({ node, isStreaming }: CodeBlockFrameProps) => {
     }
   }, [isStreaming, storageKey, node.code])
 
-  // Streaming sync: when node.code changes upstream, accept it only if the user
-  // hasn't edited (current value matches the previously seen node.code).
+  // Streaming sync: while streaming, the editor is read-only, so always accept
+  // upstream chunks. Once streaming finishes, accept upstream replacements only
+  // if the user hasn't edited (current value still matches the prior node.code).
   const prevNodeCodeRef = useRef<string>(node.code)
   useEffect(() => {
     if (node.code === prevNodeCodeRef.current) return
-    setValue((current) => (current === prevNodeCodeRef.current ? node.code : current))
+    setValue((current) => {
+      if (isStreaming) return node.code
+      return current === prevNodeCodeRef.current ? node.code : current
+    })
     prevNodeCodeRef.current = node.code
-  }, [node.code])
+  }, [node.code, isStreaming])
 
   // Debounced persistence. Refs make the unmount flush use latest values.
   const persistContextRef = useRef({ storageKey, value, nodeCode: node.code })
@@ -285,7 +309,12 @@ const CodeBlockFrame = ({ node, isStreaming }: CodeBlockFrameProps) => {
   const closeFullscreen = () => setFullscreenOpen(false)
   const openFullscreen = () => setFullscreenOpen(true)
 
-  const inlineRef = useCodeMirrorEditor({ value, onChange: setValue, language: node.language })
+  const inlineRef = useCodeMirrorEditor({
+    value,
+    onChange: setValue,
+    language: node.language,
+    editable: !isStreaming
+  })
   const { copied, copy } = useCopyButtonState(value)
   const label = labelForLanguage(node.language)
 
@@ -323,6 +352,7 @@ const CodeBlockFrame = ({ node, isStreaming }: CodeBlockFrameProps) => {
           value={value}
           language={node.language}
           label={label}
+          editable={!isStreaming}
           onChange={setValue}
           onClose={closeFullscreen}
         />
@@ -335,6 +365,7 @@ type FullscreenCodeEditorProps = {
   value: string
   language: string | undefined
   label: string
+  editable: boolean
   onChange: (next: string) => void
   onClose: () => void
 }
@@ -343,6 +374,7 @@ const FullscreenCodeEditor = ({
   value,
   language,
   label,
+  editable,
   onChange,
   onClose
 }: FullscreenCodeEditorProps) => {
@@ -360,7 +392,7 @@ const FullscreenCodeEditor = ({
     }
   }, [onClose])
 
-  const editorRef = useCodeMirrorEditor({ value, onChange, language })
+  const editorRef = useCodeMirrorEditor({ value, onChange, language, editable })
 
   return (
     <div
@@ -393,7 +425,7 @@ const FullscreenCodeEditor = ({
   )
 }
 
-export const codePlugin: ReactNodeRendererPlugin<'codeBlock'> = {
+export const createCodePlugin = (): ReactNodeRendererPlugin<'codeBlock'> => ({
   id: 'code',
   nodeType: 'codeBlock',
   priority: 30,
@@ -402,6 +434,6 @@ export const codePlugin: ReactNodeRendererPlugin<'codeBlock'> = {
   render: (node, ctx: RenderContext<unknown>) => (
     <CodeBlockFrame node={node} isStreaming={ctx.isStreaming ?? false} />
   )
-}
+})
 
-export const createCodePlugin = (): ReactNodeRendererPlugin<'codeBlock'> => codePlugin
+export const codePlugin: ReactNodeRendererPlugin<'codeBlock'> = createCodePlugin()
