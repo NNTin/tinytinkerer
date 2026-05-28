@@ -82,7 +82,7 @@ flowchart TD
 
     subgraph Edge["Edge (apps/edge)"]
         discover["POST /api/mcp/discover"]
-        call["POST /api/mcp/call"]
+        mcpcall["POST /api/mcp/call"]
         sdk["@modelcontextprotocol/sdk\nClient + StreamableHTTPClientTransport"]
     end
 
@@ -98,17 +98,17 @@ flowchart TD
     surface --> settings
     surface --> fetch
     fetch --> discover
-    fetch --> call
+    fetch --> mcpcall
     runtime --> tool
     runtime --> planner
     tool --> fetch
     planner --> fetch
     discover --> sdk
-    call --> sdk
+    mcpcall --> sdk
     sdk --> mcp
     settings --> runtime
     discover -.->|normalized| schemas
-    call -.->|normalized| schemas
+    mcpcall -.->|normalized| schemas
 ```
 
 ---

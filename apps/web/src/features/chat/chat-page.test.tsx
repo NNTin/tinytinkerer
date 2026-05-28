@@ -71,28 +71,6 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   }) => (
     <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
   ),
-  useSettingsStore: () => [],
-  useChatSurfaceController: () => ({
-    isBooting: false,
-    events: mockChatState.events,
-    token: mockAuthState.token,
-    turns: mockTurns,
-    timeline: [],
-    toolEvents: mockChatState.toolEvents,
-    isRunning: mockChatState.isRunning,
-    isRetryPending: mockChatState.isRetryPending,
-    showThinkingTimeline: mockSettingsState.showThinkingTimeline,
-    showToolActivity: mockSettingsState.showToolActivity,
-    cooldownRemainingMs: 0,
-    isCoolingDown: false,
-    submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
-    submitPrompt: mockChatState.submitPrompt,
-    resetConversation: mockChatState.resetConversation,
-    cancelRetry: mockChatState.cancelRetry
-  })
-}))
-
-vi.mock('@tinytinkerer/app-browser/browser-settings-modal', () => ({
   BrowserSettingsModal: ({
     open,
     onOpenChange
@@ -135,7 +113,26 @@ vi.mock('@tinytinkerer/app-browser/browser-settings-modal', () => ({
           <p>Interface</p>
         </section>
       </div>
-    ) : null
+    ) : null,
+  useSettingsStore: () => [],
+  useChatSurfaceController: () => ({
+    isBooting: false,
+    events: mockChatState.events,
+    token: mockAuthState.token,
+    turns: mockTurns,
+    timeline: [],
+    toolEvents: mockChatState.toolEvents,
+    isRunning: mockChatState.isRunning,
+    isRetryPending: mockChatState.isRetryPending,
+    showThinkingTimeline: mockSettingsState.showThinkingTimeline,
+    showToolActivity: mockSettingsState.showToolActivity,
+    cooldownRemainingMs: 0,
+    isCoolingDown: false,
+    submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
+    submitPrompt: mockChatState.submitPrompt,
+    resetConversation: mockChatState.resetConversation,
+    cancelRetry: mockChatState.cancelRetry
+  })
 }))
 
 import { ChatPage } from './chat-page.js'

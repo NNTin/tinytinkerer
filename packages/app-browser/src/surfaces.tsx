@@ -193,7 +193,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
         bearerToken: server.bearerToken
       })
       if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}))
+        const errBody: unknown = await res.json().catch(() => ({}))
         const errMsg = (errBody as { error?: string }).error ?? `HTTP ${res.status}`
         await setMcpDiscovery({
           serverId: server.id,
@@ -204,7 +204,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
         })
         return
       }
-      const raw = await res.json()
+      const raw: unknown = await res.json()
       const result = mcpDiscoveryResultSchema.parse({ ...raw, serverId: server.id })
       await setMcpDiscovery(result)
     } catch (e) {

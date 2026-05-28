@@ -63,6 +63,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   }) => (
     <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
   ),
+  BrowserSettingsModal: () => null,
   useSettingsStore: () => [],
   useChatSurfaceController: () => ({
     isBooting: false,

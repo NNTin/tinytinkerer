@@ -4,6 +4,8 @@ import type { McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contract
 import { createSettingsStore } from '../src/stores/settings-store.js'
 import type { BrowserShell } from '../src/shell.js'
 
+const mockRandomUUID = vi.hoisted(() => vi.fn<() => string>())
+
 const makePreferences = (): PreferencesStore & { store: Map<string, string> } => {
   const store = new Map<string, string>()
   return {
@@ -48,7 +50,8 @@ let preferences: ReturnType<typeof makePreferences>
 
 beforeEach(() => {
   preferences = makePreferences()
-  vi.stubGlobal('crypto', { randomUUID: vi.fn().mockReturnValueOnce('id-1').mockReturnValueOnce('id-2') })
+  mockRandomUUID.mockReset().mockReturnValueOnce('id-1').mockReturnValueOnce('id-2')
+  vi.stubGlobal('crypto', { randomUUID: mockRandomUUID })
 })
 
 describe('settings-store MCP actions', () => {
@@ -157,7 +160,8 @@ describe('settings-store MCP actions', () => {
       const rawServers = await preferences.get('settings_mcp_servers')
       const rawDiscovery = await preferences.get('settings_mcp_discovery')
       expect(JSON.parse(rawServers ?? '[]')).toHaveLength(0)
-      expect(Object.keys(JSON.parse(rawDiscovery ?? '{}'))).toHaveLength(0)
+      const parsedDiscovery = JSON.parse(rawDiscovery ?? '{}') as Record<string, unknown>
+      expect(Object.keys(parsedDiscovery)).toHaveLength(0)
     })
   })
 
@@ -204,7 +208,9 @@ describe('settings-store MCP actions', () => {
     })
 
     it('merges with existing discovery entries instead of replacing them', async () => {
-      vi.mocked(crypto.randomUUID).mockReturnValueOnce('id-a' as `${string}-${string}-${string}-${string}-${string}`).mockReturnValueOnce('id-b' as `${string}-${string}-${string}-${string}-${string}`)
+      mockRandomUUID
+        .mockReturnValueOnce('id-a')
+        .mockReturnValueOnce('id-b')
       const store = createSettingsStore(makeShell(preferences))
       const a = await store.getState().addMcpServer(baseServer)
       const b = await store.getState().addMcpServer({ ...baseServer, name: 'B' })

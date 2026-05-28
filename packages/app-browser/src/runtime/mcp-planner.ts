@@ -52,7 +52,7 @@ export const llmPlan = async (
 
   const messages = [
     { role: 'system' as const, content: systemPrompt },
-    ...history.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+    ...history.map((m) => ({ role: m.role, content: m.content })),
     { role: 'user' as const, content: prompt }
   ]
 

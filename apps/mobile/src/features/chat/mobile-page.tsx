@@ -11,7 +11,7 @@ import { MobileChatLoading, MobilePanelLoading } from '../../app/loading-screen'
 import { useInstallPrompt } from '../install/use-install-prompt'
 
 const SettingsModal = lazy(() =>
-  import('@tinytinkerer/app-browser/browser-settings-modal').then((module) => ({
+  import('@tinytinkerer/app-browser').then((module) => ({
     default: module.BrowserSettingsModal
   }))
 )
