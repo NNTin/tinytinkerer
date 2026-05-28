@@ -9,6 +9,7 @@ export type SettingsState = {
   searchEnabled: boolean
   showThinkingTimeline: boolean
   showToolActivity: boolean
+  showCodeBlockFullscreenButton: boolean
   mcpServers: McpServerConfig[]
   mcpDiscovery: Record<string, McpDiscoveryResult>
   initialize: () => Promise<void>
@@ -16,6 +17,7 @@ export type SettingsState = {
   setSearchEnabled: (enabled: boolean) => Promise<void>
   setShowThinkingTimeline: (show: boolean) => Promise<void>
   setShowToolActivity: (show: boolean) => Promise<void>
+  setShowCodeBlockFullscreenButton: (show: boolean) => Promise<void>
   addMcpServer: (server: Omit<McpServerConfig, 'id'>) => Promise<McpServerConfig>
   updateMcpServer: (id: string, patch: Partial<Omit<McpServerConfig, 'id'>>) => Promise<void>
   removeMcpServer: (id: string) => Promise<void>
@@ -33,16 +35,18 @@ const SETTINGS_KEYS = {
   searchEnabled: 'settings_search_enabled',
   showThinkingTimeline: 'settings_show_thinking_timeline',
   showToolActivity: 'settings_show_tool_activity',
+  showCodeBlockFullscreenButton: 'settings_show_code_block_fullscreen_button',
   mcpServers: 'settings_mcp_servers',
   mcpDiscovery: 'settings_mcp_discovery'
 } as const
 
-const defaultSettingsState = (): Omit<SettingsState, 'initialize' | 'setSelectedModel' | 'setSearchEnabled' | 'setShowThinkingTimeline' | 'setShowToolActivity' | 'addMcpServer' | 'updateMcpServer' | 'removeMcpServer' | 'setMcpServerEnabled' | 'setMcpDiscovery' | 'clearMcpDiscovery'> => ({
+const defaultSettingsState = (): Omit<SettingsState, 'initialize' | 'setSelectedModel' | 'setSearchEnabled' | 'setShowThinkingTimeline' | 'setShowToolActivity' | 'setShowCodeBlockFullscreenButton' | 'addMcpServer' | 'updateMcpServer' | 'removeMcpServer' | 'setMcpServerEnabled' | 'setMcpDiscovery' | 'clearMcpDiscovery'> => ({
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
   searchEnabled: true,
   showThinkingTimeline: true,
   showToolActivity: true,
+  showCodeBlockFullscreenButton: true,
   mcpServers: [],
   mcpDiscovery: {}
 })
@@ -74,6 +78,15 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       const { persistBooleanPreference } = await loadCoreModule()
       await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.showToolActivity, show)
       set({ showToolActivity: show })
+    },
+    setShowCodeBlockFullscreenButton: async (show) => {
+      const { persistBooleanPreference } = await loadCoreModule()
+      await persistBooleanPreference(
+        shell.preferences,
+        SETTINGS_KEYS.showCodeBlockFullscreenButton,
+        show
+      )
+      set({ showCodeBlockFullscreenButton: show })
     },
     addMcpServer: async (server) => {
       const { persistMcpServers } = await loadCoreModule()

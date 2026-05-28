@@ -122,6 +122,7 @@ export const ChatPage = () => {
                         content={turn.assistantContent}
                         className="prose-assistant"
                         isStreaming={turn.isStreaming}
+                        turnId={turn.id}
                       />
                     </div>
                   ) : isRunning ? (

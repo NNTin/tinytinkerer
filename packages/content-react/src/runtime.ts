@@ -17,6 +17,11 @@ export type RuntimeExecutionPolicy = {
 
 export type RenderContext<TResult> = {
   readonly renderBlock: (node: ContentNode) => TResult
+  readonly isStreaming?: boolean
+}
+
+export type RenderNodeOptions = {
+  readonly isStreaming?: boolean
 }
 
 export type RuntimeFailureReason =
@@ -81,7 +86,7 @@ export type CreateContentRuntimeOptions<TResult> = {
 export interface ContentRuntime<TResult> {
   register<TType extends ContentNode['type']>(plugin: NodeRendererPlugin<TType, TResult>): void
   resolve(node: ContentNode): RuntimeResolution<TResult>
-  renderNode(node: ContentNode): TResult
+  renderNode(node: ContentNode, options?: RenderNodeOptions): TResult
   prepareNode(node: ContentNode): Promise<void>
 }
 
@@ -256,7 +261,8 @@ export const createContentRuntime = <TResult>(
     return options.fallback(failure)
   }
 
-  const renderNode = (node: ContentNode): TResult => {
+  const renderNode = (node: ContentNode, renderOptions?: RenderNodeOptions): TResult => {
+    const isStreaming = renderOptions?.isStreaming ?? false
     const resolution = resolve(node)
     if (!resolution.ok) {
       return fallbackFor(resolution)
@@ -279,7 +285,8 @@ export const createContentRuntime = <TResult>(
       result = (
         resolution.plugin.render as (candidate: ContentNode, ctx: RenderContext<TResult>) => TResult
       )(node, {
-        renderBlock: renderNode
+        renderBlock: (child) => renderNode(child, { isStreaming }),
+        isStreaming
       })
     } catch (error) {
       return createFallback('renderFailed', error)

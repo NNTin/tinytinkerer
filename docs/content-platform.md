@@ -152,13 +152,15 @@ Must not own:
 
 ### `@tinytinkerer/content-code`
 
-Owns specialized `CodeBlockNode` rendering for languaged code blocks. Single plugin with internal language dispatch.
+Canonical editable renderer for every non-specialized `CodeBlockNode`, including unlanguaged fences. Built on CodeMirror 6.
 
 Owns:
 
-- `codePlugin` (`NodeRendererPlugin<'codeBlock'>` with `matches: typeof node.language === 'string' && length > 0`, priority 30, `lazy + clientOnly` requirements)
-- per-language sub-renderers for `diff`, `json` (with Format toggle), `yaml`, `http`, `sql`, `bash`, and a generic syntax-highlighted fallback
-- the lazy `highlight.js` runtime loader
+- `codePlugin` (`NodeRendererPlugin<'codeBlock'>` with `matches: node.type === 'codeBlock'`, priority 30, `lazy + clientOnly` requirements)
+- the inline editable `CodeBlockFrame` (CodeMirror 6 `EditorView` + `basicSetup`) with language label, Copy button, optional Fullscreen button
+- the language → CodeMirror extension map: direct packages for JSON, YAML, SQL, JS/TS, HTML, XML, Markdown, Python; legacy modes for shell/bash, HTTP, and diff; otherwise plain editable text
+- the fullscreen modal (mirrors the image lightbox pattern: backdrop click + Escape + body scroll lock) with a paired `EditorView` bound to the same React string state
+- per-message-block edit persistence via `localStorage` key `tt-code-edit:v1:${turnId}:${node.id}`, gated by `!isStreaming`, debounced ~250ms, deletes the key when the value matches the source
 
 Must not own:
 

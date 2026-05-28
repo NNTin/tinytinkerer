@@ -3,19 +3,22 @@ import {
   CodeBlockFallback,
   ContentDocumentContent,
   type CodeBlockNode,
+  type ContentRenderOptions,
   type RenderContext,
   type ReactNodeRendererPlugin
 } from '@tinytinkerer/content-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { calloutPlugin } from '@tinytinkerer/content-callout'
 import { imagePlugin } from '@tinytinkerer/content-image'
 import { linkCardPlugin } from '@tinytinkerer/content-link-card'
 import { tablePlugin } from '@tinytinkerer/content-table'
+import { useOptionalBrowserApp } from './app'
 
 export type AssistantContentProps = {
   content: ContentDocument
   isStreaming?: boolean
   className?: string
+  turnId?: string
 }
 
 const createLazyCodeBlockPlugin = (options: {
@@ -115,7 +118,7 @@ const codePlugin = createLazyCodeBlockPlugin({
   id: 'code',
   priority: 30,
   requirements: { clientOnly: true },
-  matches: (node) => typeof node.language === 'string' && node.language.length > 0,
+  matches: () => true,
   loadPlugin: () => import('@tinytinkerer/content-code').then((module) => module.codePlugin)
 })
 
@@ -145,15 +148,46 @@ const assistantPlugins = [
   tablePlugin
 ]
 
+const useShowCodeBlockFullscreenButton = (): boolean => {
+  const app = useOptionalBrowserApp()
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (!app) return () => undefined
+      return app.stores.settings.subscribe(() => {
+        onStoreChange()
+      })
+    },
+    [app]
+  )
+  const getSnapshot = useCallback(
+    (): boolean => app?.stores.settings.getState().showCodeBlockFullscreenButton ?? true,
+    [app]
+  )
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
 export const AssistantContent = ({
   content,
   isStreaming = false,
-  className
-}: AssistantContentProps) => (
-  <ContentDocumentContent
-    document={content}
-    isStreaming={isStreaming}
-    plugins={assistantPlugins}
-    {...(className ? { className } : {})}
-  />
-)
+  className,
+  turnId
+}: AssistantContentProps) => {
+  const showCodeBlockFullscreenButton = useShowCodeBlockFullscreenButton()
+  const renderOptions = useMemo<ContentRenderOptions>(
+    () => ({
+      ...(turnId ? { codeBlockPersistenceScopeId: turnId } : {}),
+      showCodeBlockFullscreenButton
+    }),
+    [turnId, showCodeBlockFullscreenButton]
+  )
+
+  return (
+    <ContentDocumentContent
+      document={content}
+      isStreaming={isStreaming}
+      plugins={assistantPlugins}
+      renderOptions={renderOptions}
+      {...(className ? { className } : {})}
+    />
+  )
+}

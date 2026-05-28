@@ -12,6 +12,7 @@ export const SETTINGS_KEYS = {
   searchEnabled: 'settings_search_enabled',
   showThinkingTimeline: 'settings_show_thinking_timeline',
   showToolActivity: 'settings_show_tool_activity',
+  showCodeBlockFullscreenButton: 'settings_show_code_block_fullscreen_button',
   mcpServers: 'settings_mcp_servers',
   mcpDiscovery: 'settings_mcp_discovery'
 } as const
@@ -22,6 +23,7 @@ export type SettingsState = {
   searchEnabled: boolean
   showThinkingTimeline: boolean
   showToolActivity: boolean
+  showCodeBlockFullscreenButton: boolean
   mcpServers: McpServerConfig[]
   mcpDiscovery: Record<string, McpDiscoveryResult>
 }
@@ -38,16 +40,26 @@ export const defaultSettingsState = (): SettingsState => ({
   searchEnabled: true,
   showThinkingTimeline: true,
   showToolActivity: true,
+  showCodeBlockFullscreenButton: true,
   mcpServers: [],
   mcpDiscovery: {}
 })
 
 export const loadSettingsState = async (preferences: PreferencesStore): Promise<SettingsState> => {
-  const [selectedModel, searchEnabled, showThinkingTimeline, showToolActivity, mcpServersRaw, mcpDiscoveryRaw] = await Promise.all([
+  const [
+    selectedModel,
+    searchEnabled,
+    showThinkingTimeline,
+    showToolActivity,
+    showCodeBlockFullscreenButton,
+    mcpServersRaw,
+    mcpDiscoveryRaw
+  ] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
     preferences.get(SETTINGS_KEYS.searchEnabled),
     preferences.get(SETTINGS_KEYS.showThinkingTimeline),
     preferences.get(SETTINGS_KEYS.showToolActivity),
+    preferences.get(SETTINGS_KEYS.showCodeBlockFullscreenButton),
     preferences.get(SETTINGS_KEYS.mcpServers),
     preferences.get(SETTINGS_KEYS.mcpDiscovery)
   ])
@@ -58,6 +70,7 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     searchEnabled: parseBool(searchEnabled, true),
     showThinkingTimeline: parseBool(showThinkingTimeline, true),
     showToolActivity: parseBool(showToolActivity, true),
+    showCodeBlockFullscreenButton: parseBool(showCodeBlockFullscreenButton, true),
     mcpServers: parseMcpServers(mcpServersRaw),
     mcpDiscovery: parseMcpDiscovery(mcpDiscoveryRaw)
   }

@@ -2,6 +2,8 @@ import {
   Component,
   Fragment,
   Suspense,
+  createContext,
+  useContext,
   useEffect,
   useMemo,
   useState,
@@ -110,12 +112,35 @@ type RendererBoundaryState = {
   hasError: boolean
 }
 
+export type ContentRenderOptions = {
+  codeBlockPersistenceScopeId?: string
+  showCodeBlockFullscreenButton?: boolean
+}
+
+const ContentRenderOptionsContext = createContext<ContentRenderOptions>({})
+
+export type ResolvedContentRenderOptions = {
+  codeBlockPersistenceScopeId?: string
+  showCodeBlockFullscreenButton: boolean
+}
+
+export const useContentRenderOptions = (): ResolvedContentRenderOptions => {
+  const raw = useContext(ContentRenderOptionsContext)
+  return {
+    ...(raw.codeBlockPersistenceScopeId
+      ? { codeBlockPersistenceScopeId: raw.codeBlockPersistenceScopeId }
+      : {}),
+    showCodeBlockFullscreenButton: raw.showCodeBlockFullscreenButton ?? true
+  }
+}
+
 export type ContentDocumentContentProps = {
   document: ContentDocument
   className?: string
   isStreaming?: boolean
   plugins?: readonly ReactContentPlugin[]
   executionPolicy?: RuntimeExecutionPolicy
+  renderOptions?: ContentRenderOptions
 }
 
 class RendererBoundary extends Component<RendererBoundaryProps, RendererBoundaryState> {
@@ -527,7 +552,8 @@ export const ContentDocumentContent = ({
   className,
   isStreaming = false,
   plugins,
-  executionPolicy
+  executionPolicy,
+  renderOptions
 }: ContentDocumentContentProps) => {
   const normalizedDocument = useMemo(() => assignNodeIds(document), [document])
   const runtime = useMemo(() => {
@@ -542,13 +568,20 @@ export const ContentDocumentContent = ({
     return built
   }, [executionPolicy, plugins])
 
+  const contextValue = useMemo<ContentRenderOptions>(
+    () => renderOptions ?? {},
+    [renderOptions]
+  )
+
   return (
-    <ContentDocumentRenderer
-      document={normalizedDocument}
-      isStreaming={isStreaming}
-      runtime={runtime}
-      {...(className ? { className } : {})}
-    />
+    <ContentRenderOptionsContext.Provider value={contextValue}>
+      <ContentDocumentRenderer
+        document={normalizedDocument}
+        isStreaming={isStreaming}
+        runtime={runtime}
+        {...(className ? { className } : {})}
+      />
+    </ContentRenderOptionsContext.Provider>
   )
 }
 
@@ -580,7 +613,7 @@ export const ContentDocumentRenderer = ({
       )}
     >
       {document.nodes.map((node) => (
-        <Fragment key={node.id}>{activeRuntime.renderNode(node)}</Fragment>
+        <Fragment key={node.id}>{activeRuntime.renderNode(node, { isStreaming })}</Fragment>
       ))}
     </div>
   )

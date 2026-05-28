@@ -145,6 +145,8 @@ export type SettingsSurfaceController = {
   setShowThinkingTimeline: (show: boolean) => Promise<void>
   showToolActivity: boolean
   setShowToolActivity: (show: boolean) => Promise<void>
+  showCodeBlockFullscreenButton: boolean
+  setShowCodeBlockFullscreenButton: (show: boolean) => Promise<void>
   searchUnavailable: boolean
   mcpServers: McpServerConfig[]
   mcpDiscovery: Record<string, McpDiscoveryResult>
@@ -172,6 +174,12 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const setShowThinkingTimeline = useSettingsStore((state) => state.setShowThinkingTimeline)
   const showToolActivity = useSettingsStore((state) => state.showToolActivity)
   const setShowToolActivity = useSettingsStore((state) => state.setShowToolActivity)
+  const showCodeBlockFullscreenButton = useSettingsStore(
+    (state) => state.showCodeBlockFullscreenButton
+  )
+  const setShowCodeBlockFullscreenButton = useSettingsStore(
+    (state) => state.setShowCodeBlockFullscreenButton
+  )
   const mcpServers = useSettingsStore((state) => state.mcpServers)
   const mcpDiscovery = useSettingsStore((state) => state.mcpDiscovery)
   const addMcpServer = useSettingsStore((state) => state.addMcpServer)
@@ -236,6 +244,8 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     setShowThinkingTimeline,
     showToolActivity,
     setShowToolActivity,
+    showCodeBlockFullscreenButton,
+    setShowCodeBlockFullscreenButton,
     searchUnavailable: effectiveStatus.search.state !== 'ready',
     mcpServers,
     mcpDiscovery,

@@ -7,9 +7,12 @@ import {
   buildTurns,
   canSendPrompt,
   defaultChatState,
+  defaultSettingsState,
   inferPlan,
   loadSettingsState,
-  normalizeSelectedModel
+  normalizeSelectedModel,
+  persistBooleanPreference,
+  SETTINGS_KEYS
 } from '../src/index.js'
 
 const event = <T extends ChatEvent['type']>(
@@ -217,6 +220,47 @@ describe('app-core helpers', () => {
     })
 
     expect(state.mcpServers).toEqual([validServer])
+  })
+
+  it('defaults showCodeBlockFullscreenButton to true when no preference is stored', async () => {
+    const state = await loadSettingsState({
+      get: () => Promise.resolve(undefined),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.showCodeBlockFullscreenButton).toBe(true)
+    expect(defaultSettingsState().showCodeBlockFullscreenButton).toBe(true)
+  })
+
+  it('hydrates showCodeBlockFullscreenButton from the stored preference key', async () => {
+    const state = await loadSettingsState({
+      get: (key) =>
+        Promise.resolve(
+          key === SETTINGS_KEYS.showCodeBlockFullscreenButton ? 'false' : undefined
+        ),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.showCodeBlockFullscreenButton).toBe(false)
+  })
+
+  it('persists showCodeBlockFullscreenButton via the shared boolean writer', async () => {
+    const writes: Array<{ key: string; value: string }> = []
+    await persistBooleanPreference(
+      {
+        get: () => Promise.resolve(undefined),
+        set: (key, value) => {
+          writes.push({ key, value })
+          return Promise.resolve()
+        }
+      },
+      SETTINGS_KEYS.showCodeBlockFullscreenButton,
+      false
+    )
+
+    expect(writes).toEqual([
+      { key: 'settings_show_code_block_fullscreen_button', value: 'false' }
+    ])
   })
 
   it('drops malformed persisted MCP discovery entries during settings hydration', async () => {
