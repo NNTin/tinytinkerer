@@ -86,50 +86,25 @@ export const MobilePage = () => {
   }
 
   return (
-    <div className="mx-auto flex h-[100dvh] w-full max-w-screen-sm flex-col bg-[var(--bg)] text-[var(--text)]">
-      <header className="px-4 pb-3 pt-[max(env(safe-area-inset-top),1rem)]">
-        <div className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--panel)] px-4 py-4 shadow-sm">
-          <div className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-[var(--muted)]">Mobile PWA</p>
-              <h1 className="mt-1 text-xl font-semibold text-stone-900">tinytinkerer</h1>
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                Hash-routed, installable, and tuned for quick sessions on narrow screens.
-              </p>
-            </div>
-            <button
-              type="button"
-              aria-label="Settings"
-              onClick={() => setSettingsOpen(true)}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-500 shadow-sm transition-colors hover:border-stone-300 hover:text-stone-700"
-            >
-              <Cog6ToothIcon className="h-5 w-5" />
-            </button>
-          </div>
-
-          {canInstall || showIosHint ? (
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
-              <div className="min-w-0 flex-1">
-                <p className="font-medium">Install tinytinkerer</p>
-                <p className="mt-1 text-xs text-amber-800">
-                  {canInstall
-                    ? 'Add the app to your home screen for faster launches and offline-ready shell assets.'
-                    : 'On iPhone or iPad, use Share → Add to Home Screen to install this app.'}
-                </p>
+    <div className="mx-auto flex h-[100dvh] w-full max-w-screen-sm flex-col text-[var(--text)]">
+      <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-[max(env(safe-area-inset-top),1rem)]">
+        {canInstall || showIosHint ? (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {showIosHint ? (
+              <div className="rounded-2xl bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                On iPhone or iPad, use Share {'>'} Add to Home Screen to install this app.
               </div>
-              {canInstall ? (
-                <Button type="button" size="sm" className="rounded-full" onClick={() => void promptToInstall()}>
-                  <ArrowDownTrayIcon className="mr-1 h-4 w-4" />
-                  Install app
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </header>
+            ) : <div />}
+            {canInstall ? (
+              <Button type="button" size="sm" className="rounded-full" onClick={() => void promptToInstall()}>
+                <ArrowDownTrayIcon className="mr-1 h-4 w-4" />
+                Install app
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
 
-      <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 pb-[max(env(safe-area-inset-bottom),1rem)]">
-        <section className="flex min-h-0 flex-1 flex-col rounded-[1.5rem] border border-[var(--border)] bg-[var(--panel)] px-4 py-4 shadow-sm">
+        <section className="flex min-h-0 flex-1 flex-col px-1 py-1">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Conversation</h2>
             <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] text-[var(--muted)]">
@@ -178,7 +153,7 @@ export const MobilePage = () => {
 
         {showThinkingTimeline ? (
           <Collapsible.Root open={openTimeline} onOpenChange={setOpenTimeline}>
-            <section className="rounded-[1.25rem] border border-[var(--border)] bg-[var(--panel)] px-4 py-3 shadow-sm">
+            <section className="rounded-[1.25rem] border border-[var(--border)] px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">Thinking</h2>
                 <Collapsible.Trigger asChild>
@@ -216,7 +191,7 @@ export const MobilePage = () => {
         ) : null}
 
         {showToolActivity ? (
-          <section className="rounded-[1.25rem] border border-[var(--border)] bg-[var(--panel)] px-4 py-3 shadow-sm">
+          <section className="rounded-[1.25rem] border border-[var(--border)] px-4 py-3">
             <div className="flex items-baseline justify-between gap-3">
               <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">Tool History</h2>
               <p className="text-[11px] text-[var(--muted)]">Conversation audit trail</p>
@@ -291,7 +266,7 @@ export const MobilePage = () => {
         ) : null}
 
         <form
-          className="rounded-[1.5rem] border border-[var(--border)] bg-[var(--panel)] px-3 py-3 shadow-[0_18px_40px_rgba(36,33,24,0.08)]"
+          className="px-1 py-1"
           onSubmit={(event) => {
             event.preventDefault()
             handlePromptSubmit()
@@ -314,6 +289,15 @@ export const MobilePage = () => {
           />
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              aria-label="Settings"
+              onClick={() => setSettingsOpen(true)}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700"
+            >
+              <Cog6ToothIcon className="h-4 w-4" />
+            </button>
+
             {!token ? (
               <button
                 type="button"
