@@ -8,7 +8,6 @@ const SAFE_MARGIN = 24
 
 const widgetWindow = document.getElementById('widget-window')
 const widgetFrame = document.getElementById('widget-frame')
-const widgetGrip = document.getElementById('widget-grip')
 const widgetResizeHandle = document.getElementById('widget-resize-handle')
 const resetButton = document.getElementById('reset-widget-layout')
 const webFrame = document.getElementById('web-frame')
@@ -17,7 +16,6 @@ const mobileFrame = document.getElementById('mobile-frame')
 if (
   !(widgetWindow instanceof HTMLDivElement) ||
   !(widgetFrame instanceof HTMLIFrameElement) ||
-  !(widgetGrip instanceof HTMLButtonElement) ||
   !(widgetResizeHandle instanceof HTMLButtonElement) ||
   !(resetButton instanceof HTMLButtonElement) ||
   !(webFrame instanceof HTMLIFrameElement) ||
@@ -25,10 +23,6 @@ if (
 ) {
   throw new Error('Expected the host compositor DOM to be available.')
 }
-
-const gripHeight = parseFloat(
-  getComputedStyle(document.documentElement).getPropertyValue('--widget-grip-height')
-) || 14
 
 const createSurfaceUrl = (relativePath) => new URL(relativePath, window.location.href)
 
@@ -53,7 +47,7 @@ configureStandaloneLinks()
 
 const defaultLayout = () => {
   const x = Math.round((window.innerWidth - DEFAULT_WIDTH) / 2)
-  const y = Math.round(window.innerHeight - DEFAULT_HEIGHT - gripHeight - 32)
+  const y = Math.round(window.innerHeight - DEFAULT_HEIGHT - 32)
 
   return clampLayout({
     x,
@@ -68,7 +62,7 @@ const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
 
 const getBox = (layout) => ({
   width: layout.minimized ? MINIMIZED_SIZE : layout.width,
-  height: (layout.minimized ? MINIMIZED_SIZE : layout.height) + gripHeight
+  height: layout.minimized ? MINIMIZED_SIZE : layout.height
 })
 
 function clampLayout(layout) {
@@ -76,7 +70,7 @@ function clampLayout(layout) {
   const height = clamp(
     Math.round(layout.height),
     MIN_HEIGHT,
-    window.innerHeight - SAFE_MARGIN * 2 - gripHeight
+    window.innerHeight - SAFE_MARGIN * 2
   )
 
   const draft = {
@@ -132,6 +126,9 @@ const loadLayout = () => {
 }
 
 let layout = loadLayout()
+let dragSession = null
+let pendingDragPoint = null
+let dragFrame = null
 
 const createWidgetSrc = (minimized) => {
   const url = createSurfaceUrl('./widget/')
@@ -150,8 +147,7 @@ const applyLayout = () => {
   const box = getBox(layout)
 
   widgetWindow.dataset.minimized = String(layout.minimized)
-  widgetWindow.style.left = `${layout.x}px`
-  widgetWindow.style.top = `${layout.y}px`
+  widgetWindow.style.transform = `translate3d(${layout.x}px, ${layout.y}px, 0)`
   widgetWindow.style.width = `${box.width}px`
   widgetWindow.style.height = `${box.height}px`
 }
@@ -163,44 +159,6 @@ const updateLayout = (nextLayout) => {
 }
 
 applyLayout()
-
-widgetGrip.addEventListener('pointerdown', (event) => {
-  const startLayout = { ...layout }
-  const startX = event.clientX
-  const startY = event.clientY
-
-  widgetWindow.dataset.dragging = 'true'
-  widgetGrip.setPointerCapture(event.pointerId)
-
-  const handleMove = (moveEvent) => {
-    const box = getBox(layout)
-    const nextX = clamp(
-      startLayout.x + (moveEvent.clientX - startX),
-      SAFE_MARGIN,
-      Math.max(SAFE_MARGIN, window.innerWidth - box.width - SAFE_MARGIN)
-    )
-    const nextY = clamp(
-      startLayout.y + (moveEvent.clientY - startY),
-      SAFE_MARGIN,
-      Math.max(SAFE_MARGIN, window.innerHeight - box.height - SAFE_MARGIN)
-    )
-
-    layout = { ...layout, x: Math.round(nextX), y: Math.round(nextY) }
-    applyLayout()
-  }
-
-  const handleEnd = () => {
-    widgetWindow.dataset.dragging = 'false'
-    widgetGrip.removeEventListener('pointermove', handleMove)
-    widgetGrip.removeEventListener('pointerup', handleEnd)
-    widgetGrip.removeEventListener('pointercancel', handleEnd)
-    saveLayout(layout)
-  }
-
-  widgetGrip.addEventListener('pointermove', handleMove)
-  widgetGrip.addEventListener('pointerup', handleEnd)
-  widgetGrip.addEventListener('pointercancel', handleEnd)
-})
 
 widgetResizeHandle.addEventListener('pointerdown', (event) => {
   if (layout.minimized) {
@@ -252,17 +210,100 @@ window.addEventListener('message', (event) => {
   }
 
   const data = event.data
-  if (
-    !data ||
-    typeof data !== 'object' ||
-    data.type !== 'tinytinkerer.widget.state' ||
-    (data.mode !== 'minimized' && data.mode !== 'expanded')
-  ) {
+  if (!data || typeof data !== 'object') {
     return
   }
 
-  updateLayout({
-    ...layout,
-    minimized: data.mode === 'minimized'
-  })
+  if (data.type === 'tinytinkerer.widget.state') {
+    if (data.mode !== 'minimized' && data.mode !== 'expanded') {
+      return
+    }
+
+    updateLayout({
+      ...layout,
+      minimized: data.mode === 'minimized'
+    })
+    return
+  }
+
+  if (data.type === 'tinytinkerer.widget.drag') {
+    if (
+      (data.phase !== 'start' && data.phase !== 'move' && data.phase !== 'end') ||
+      typeof data.clientX !== 'number' ||
+      typeof data.clientY !== 'number'
+    ) {
+      return
+    }
+
+    const resolvePointerPoint = () => {
+      if (typeof data.screenX === 'number' && typeof data.screenY === 'number') {
+        return { x: data.screenX, y: data.screenY }
+      }
+
+      return { x: data.clientX, y: data.clientY }
+    }
+
+    const flushDragPoint = () => {
+      dragFrame = null
+
+      if (!dragSession || !pendingDragPoint) {
+        return
+      }
+
+      const box = getBox(layout)
+      const nextX = clamp(
+        dragSession.startLayoutX + (pendingDragPoint.x - dragSession.startX),
+        SAFE_MARGIN,
+        Math.max(SAFE_MARGIN, window.innerWidth - box.width - SAFE_MARGIN)
+      )
+      const nextY = clamp(
+        dragSession.startLayoutY + (pendingDragPoint.y - dragSession.startY),
+        SAFE_MARGIN,
+        Math.max(SAFE_MARGIN, window.innerHeight - box.height - SAFE_MARGIN)
+      )
+
+      layout = { ...layout, x: Math.round(nextX), y: Math.round(nextY) }
+      applyLayout()
+    }
+
+    const scheduleDragFlush = () => {
+      if (dragFrame !== null) {
+        return
+      }
+
+      dragFrame = window.requestAnimationFrame(flushDragPoint)
+    }
+
+    if (data.phase === 'start') {
+      widgetWindow.dataset.dragging = 'true'
+      const point = resolvePointerPoint()
+      dragSession = {
+        startX: point.x,
+        startY: point.y,
+        startLayoutX: layout.x,
+        startLayoutY: layout.y
+      }
+      pendingDragPoint = point
+      return
+    }
+
+    if (!dragSession) {
+      return
+    }
+
+    pendingDragPoint = resolvePointerPoint()
+    scheduleDragFlush()
+
+    if (data.phase === 'end') {
+      if (dragFrame !== null) {
+        window.cancelAnimationFrame(dragFrame)
+        flushDragPoint()
+      }
+
+      widgetWindow.dataset.dragging = 'false'
+      dragSession = null
+      pendingDragPoint = null
+      saveLayout(layout)
+    }
+  }
 })

@@ -222,6 +222,35 @@ describe('app-core helpers', () => {
     expect(state.mcpServers).toEqual([validServer])
   })
 
+  it('defaults thinking timeline and tool activity to false when no preference is stored', async () => {
+    const state = await loadSettingsState({
+      get: () => Promise.resolve(undefined),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.showThinkingTimeline).toBe(false)
+    expect(state.showToolActivity).toBe(false)
+    expect(defaultSettingsState().showThinkingTimeline).toBe(false)
+    expect(defaultSettingsState().showToolActivity).toBe(false)
+  })
+
+  it('hydrates thinking timeline and tool activity from stored preference keys', async () => {
+    const state = await loadSettingsState({
+      get: (key) =>
+        Promise.resolve(
+          key === SETTINGS_KEYS.showThinkingTimeline
+            ? 'true'
+            : key === SETTINGS_KEYS.showToolActivity
+              ? 'true'
+              : undefined
+        ),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.showThinkingTimeline).toBe(true)
+    expect(state.showToolActivity).toBe(true)
+  })
+
   it('defaults showCodeBlockFullscreenButton to true when no preference is stored', async () => {
     const state = await loadSettingsState({
       get: () => Promise.resolve(undefined),

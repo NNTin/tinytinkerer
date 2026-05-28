@@ -44,8 +44,8 @@ const defaultSettingsState = (): Omit<SettingsState, 'initialize' | 'setSelected
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
   searchEnabled: true,
-  showThinkingTimeline: true,
-  showToolActivity: true,
+  showThinkingTimeline: false,
+  showToolActivity: false,
   showCodeBlockFullscreenButton: true,
   mcpServers: [],
   mcpDiscovery: {}
