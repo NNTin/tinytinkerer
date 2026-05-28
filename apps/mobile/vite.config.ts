@@ -75,6 +75,12 @@ export default defineConfig({
           ) {
             return 'react-vendor'
           }
+          if (
+            id.includes('node_modules/@codemirror/') ||
+            id.includes('node_modules/codemirror/')
+          ) {
+            return 'codemirror-vendor'
+          }
         }
       }
     }

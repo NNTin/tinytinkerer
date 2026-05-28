@@ -117,7 +117,7 @@ describe('web bundle regression guard', () => {
 
   it('keeps every non-vendor JS chunk under 120 kB', () => {
     for (const chunk of chunks) {
-      if (chunk.fileName.includes('react-vendor')) {
+      if (chunk.fileName.includes('-vendor')) {
         continue
       }
       expect(
@@ -131,6 +131,12 @@ describe('web bundle regression guard', () => {
     const vendor = chunks.find((chunk) => chunk.fileName.includes('react-vendor'))
     expect(vendor, 'No React vendor chunk found in build output').toBeDefined()
     expect((vendor!.code?.length ?? 0) / 1024).toBeLessThan(300)
+  })
+
+  it('keeps the CodeMirror vendor chunk under 800 kB', () => {
+    const vendor = chunks.find((chunk) => chunk.fileName.includes('codemirror-vendor'))
+    expect(vendor, 'No CodeMirror vendor chunk found in build output').toBeDefined()
+    expect((vendor!.code?.length ?? 0) / 1024).toBeLessThan(800)
   })
 
   it('does not emit production source maps', () => {

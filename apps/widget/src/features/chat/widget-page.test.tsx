@@ -47,19 +47,25 @@ const mockSettingsState = vi.hoisted(() => ({
   setSearchEnabled: vi.fn(),
   setShowThinkingTimeline: vi.fn(),
   setShowToolActivity: vi.fn(),
+  setShowCodeBlockFullscreenButton: vi.fn(),
   showThinkingTimeline: true,
-  showToolActivity: true
+  showToolActivity: true,
+  showCodeBlockFullscreenButton: true
 }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
   AssistantContent: ({
     content,
-    className
+    className,
+    turnId
   }: {
     content: { nodes: Array<{ children?: Array<{ value?: string }> }> }
     className?: string
+    turnId?: string
   }) => (
-    <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
+    <div className={className} data-turn-id={turnId}>
+      {content.nodes[0]?.children?.[0]?.value}
+    </div>
   ),
   McpServerList: () => null,
   TINYTINKERER_BRAND_ASSET_URLS: {
@@ -101,6 +107,8 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     setShowThinkingTimeline: mockSettingsState.setShowThinkingTimeline,
     showToolActivity: mockSettingsState.showToolActivity,
     setShowToolActivity: mockSettingsState.setShowToolActivity,
+    showCodeBlockFullscreenButton: mockSettingsState.showCodeBlockFullscreenButton,
+    setShowCodeBlockFullscreenButton: mockSettingsState.setShowCodeBlockFullscreenButton,
     searchUnavailable: mockSettingsState.effectiveStatus.search.state !== 'ready',
     mcpServers: [],
     mcpDiscovery: {},

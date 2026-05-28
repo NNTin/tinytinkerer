@@ -15,11 +15,13 @@ const mockSettingsState = vi.hoisted(() => ({
   searchEnabled: true,
   showThinkingTimeline: true,
   showToolActivity: true,
+  showCodeBlockFullscreenButton: true,
   initialize: vi.fn(),
   setSelectedModel: vi.fn(),
   setSearchEnabled: vi.fn(),
   setShowThinkingTimeline: vi.fn(),
-  setShowToolActivity: vi.fn()
+  setShowToolActivity: vi.fn(),
+  setShowCodeBlockFullscreenButton: vi.fn()
 }))
 
 const mockAuthState = vi.hoisted(() => ({
@@ -57,12 +59,16 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   LazyBrowserSettingsModal: () => null,
   AssistantContent: ({
     content,
-    className
+    className,
+    turnId
   }: {
     content: { nodes: Array<{ children?: Array<{ value?: string }> }> }
     className?: string
+    turnId?: string
   }) => (
-    <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
+    <div className={className} data-turn-id={turnId}>
+      {content.nodes[0]?.children?.[0]?.value}
+    </div>
   ),
   useSettingsStore: () => [],
   useChatSurfaceController: () => ({

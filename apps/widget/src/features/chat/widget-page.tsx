@@ -321,7 +321,7 @@ const WidgetSurface = ({ onMinimize }: { onMinimize: () => void }) => {
                       </div>
                     ) : null}
                     {turn.assistantContent ? (
-                      <AssistantContent content={turn.assistantContent} className="widget-prose text-sm" />
+                      <AssistantContent content={turn.assistantContent} className="widget-prose text-sm" turnId={turn.id} />
                     ) : null}
                   </div>
                 </div>

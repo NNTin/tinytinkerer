@@ -515,7 +515,9 @@ const InterfaceSection = () => {
     showThinkingTimeline,
     setShowThinkingTimeline,
     showToolActivity,
-    setShowToolActivity
+    setShowToolActivity,
+    showCodeBlockFullscreenButton,
+    setShowCodeBlockFullscreenButton
   } = useSettingsSurfaceController()
 
   return (
@@ -531,6 +533,12 @@ const InterfaceSection = () => {
         description="Show web search results and tool outputs."
         checked={showToolActivity}
         onChange={(next) => void setShowToolActivity(next)}
+      />
+      <ToggleRow
+        label="Code block fullscreen button"
+        description="Show a fullscreen toggle on code blocks."
+        checked={showCodeBlockFullscreenButton}
+        onChange={(next) => void setShowCodeBlockFullscreenButton(next)}
       />
     </div>
   )

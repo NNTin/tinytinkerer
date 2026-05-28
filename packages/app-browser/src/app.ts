@@ -96,3 +96,5 @@ export const useSettingsStore = <T>(selector: (state: SettingsState) => T): T =>
 
 export const useStatusStore = <T>(selector: (state: StatusState) => T): T =>
   useStore(useBrowserApp().stores.status, selector)
+
+export const useOptionalBrowserApp = (): BrowserApp | undefined => useContext(BrowserAppContext)

@@ -14,11 +14,13 @@ const mockSettingsState = vi.hoisted(() => ({
   searchEnabled: true,
   showThinkingTimeline: true,
   showToolActivity: true,
+  showCodeBlockFullscreenButton: true,
   initialize: vi.fn(),
   setSelectedModel: vi.fn(),
   setSearchEnabled: vi.fn(),
   setShowThinkingTimeline: vi.fn(),
-  setShowToolActivity: vi.fn()
+  setShowToolActivity: vi.fn(),
+  setShowCodeBlockFullscreenButton: vi.fn()
 }))
 
 const mockAuthState = vi.hoisted(() => ({
@@ -107,12 +109,16 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     ) : null,
   AssistantContent: ({
     content,
-    className
+    className,
+    turnId
   }: {
     content: { nodes: Array<{ children?: Array<{ value?: string }> }> }
     className?: string
+    turnId?: string
   }) => (
-    <div className={className}>{content.nodes[0]?.children?.[0]?.value}</div>
+    <div className={className} data-turn-id={turnId}>
+      {content.nodes[0]?.children?.[0]?.value}
+    </div>
   ),
   useSettingsStore: () => [],
   useChatSurfaceController: () => ({
@@ -221,6 +227,18 @@ describe('ChatPage secondary panel conditional rendering', () => {
     const sections = container.querySelectorAll('section')
     expect(sections).toHaveLength(1)
     expect(container.querySelector('form')).not.toBeNull()
+  })
+
+  it('passes turn.id through to AssistantContent', () => {
+    mockTurns.push({
+      id: 'turn-abc',
+      userText: 'hi',
+      assistantSource: '',
+      assistantContent: { nodes: [{ children: [{ value: 'reply' }] }] },
+      isStreaming: false
+    })
+    const { container } = renderChatPage()
+    expect(container.querySelector('[data-turn-id="turn-abc"]')).not.toBeNull()
   })
 
   it('marks MCP tool-reported errors distinctly in tool history', () => {
