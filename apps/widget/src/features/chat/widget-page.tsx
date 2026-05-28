@@ -25,7 +25,6 @@ const WIDGET_MIN_WIDTH = 320
 const WIDGET_MIN_HEIGHT = 420
 const WIDGET_MINIMIZED_SIZE = 64
 const WIDGET_SAFE_MARGIN = 24
-const WIDGET_SHELL_BAR_HEIGHT = 33
 
 type WidgetLayout = {
   x: number
