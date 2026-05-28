@@ -131,6 +131,12 @@ describe('POST /api/mcp/discover', () => {
     expect(res.status).not.toBe(400)
   })
 
+  it('allows public hostnames that only start with IPv6-private prefixes', async () => {
+    const res = await post('/api/mcp/discover', { url: 'https://fcn.example.com/mcp' })
+    expect([200, 502]).toContain(res.status)
+    expect(res.status).not.toBe(400)
+  })
+
   it('allows http to localhost', async () => {
     const res = await post('/api/mcp/discover', { url: 'http://localhost/mcp' })
     expect(res.status).toBe(200)

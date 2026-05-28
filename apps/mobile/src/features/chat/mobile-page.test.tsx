@@ -44,6 +44,7 @@ const mockTurns = vi.hoisted(() => [] as Array<{
 
 const mockChatState = vi.hoisted(() => ({
   events: [] as MockChatEvent[],
+  toolEvents: [] as MockChatEvent[],
   isRunning: false,
   isRetryPending: false,
   cooldownUntil: undefined as string | undefined,
@@ -69,7 +70,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     token: mockAuthState.token,
     turns: mockTurns,
     timeline: [],
-    toolEvents: [],
+    toolEvents: mockChatState.toolEvents,
     isRunning: mockChatState.isRunning,
     isRetryPending: mockChatState.isRetryPending,
     showThinkingTimeline: mockSettingsState.showThinkingTimeline,
@@ -113,6 +114,7 @@ beforeEach(() => {
   mockSettingsState.showToolActivity = true
   mockAuthState.token = null
   mockChatState.events = []
+  mockChatState.toolEvents = []
   mockChatState.isRunning = false
   mockChatState.isRetryPending = false
   mockChatState.cooldownUntil = undefined
@@ -151,5 +153,22 @@ describe('MobilePage', () => {
     })
 
     expect(prompt).toHaveBeenCalledTimes(1)
+  })
+
+  it('marks MCP tool-reported errors distinctly in tool history', () => {
+    mockChatState.toolEvents = [
+      {
+        id: 'tool-1',
+        type: 'tool.call.completed',
+        payload: {
+          toolId: 'mcp:server-1:get_weather',
+          output: { text: 'Unknown location', isError: true }
+        }
+      }
+    ]
+
+    renderMobilePage()
+
+    expect(screen.getByText('Error: Unknown location')).not.toBeNull()
   })
 })

@@ -1,6 +1,11 @@
 import { DEFAULT_MODEL, normalizeSelectedModel } from './models'
 import type { PreferencesStore } from './ports'
-import type { McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contracts'
+import {
+  mcpDiscoveryResultSchema,
+  mcpServerConfigSchema,
+  type McpDiscoveryResult,
+  type McpServerConfig
+} from '@tinytinkerer/contracts'
 
 export const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',
@@ -62,7 +67,11 @@ const parseMcpServers = (raw: string | undefined): McpServerConfig[] => {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? (parsed as McpServerConfig[]) : []
+    if (!Array.isArray(parsed)) return []
+    return parsed.flatMap((entry) => {
+      const result = mcpServerConfigSchema.safeParse(entry)
+      return result.success ? [result.data] : []
+    })
   } catch {
     return []
   }
@@ -72,7 +81,13 @@ const parseMcpDiscovery = (raw: string | undefined): Record<string, McpDiscovery
   if (!raw) return {}
   try {
     const parsed = JSON.parse(raw)
-    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, McpDiscoveryResult>) : {}
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([serverId, entry]) => {
+        const result = mcpDiscoveryResultSchema.safeParse(entry)
+        return result.success ? [[serverId, result.data]] : []
+      })
+    )
   } catch {
     return {}
   }

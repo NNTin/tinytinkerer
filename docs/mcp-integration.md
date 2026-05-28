@@ -137,7 +137,6 @@ Stored under `settings_mcp_discovery` as a JSON object keyed by `serverId`. Clea
 type McpDiscoveryResult = {
   serverId: string
   serverName: string
-  instructions?: string
   tools: McpToolMeta[]
   syncedAt: string      // ISO timestamp
   error?: string        // set when last sync failed; server contributes no tools

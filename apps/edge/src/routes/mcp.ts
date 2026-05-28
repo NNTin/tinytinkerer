@@ -47,10 +47,13 @@ const isPrivateHostname = (hostname: string): boolean => {
     return false
   }
 
-  // IPv6 private/reserved
-  if (h === '::1' || h === '0:0:0:0:0:0:0:1') return true
-  if (h.startsWith('fc') || h.startsWith('fd')) return true // fc00::/7 ULA
-  if (h.startsWith('fe80')) return true               // link-local
+  const isIpv6Literal = h.includes(':')
+  if (isIpv6Literal) {
+    // IPv6 private/reserved
+    if (h === '::1' || h === '0:0:0:0:0:0:0:1') return true
+    if (h.startsWith('fc') || h.startsWith('fd')) return true // fc00::/7 ULA
+    if (h.startsWith('fe80')) return true               // link-local
+  }
 
   return false
 }

@@ -263,18 +263,27 @@ export const MobilePage = () => {
                   }
 
                   const mcpOutput = event.type === 'tool.call.completed'
-                    ? event.payload.output as { text?: string } | null
+                    ? event.payload.output as { text?: string; isError?: boolean } | null
                     : null
-                  const summary = mcpOutput?.text ? mcpOutput.text.slice(0, 120) : '(no output)'
+                  const isMcpError = mcpOutput?.isError === true
+                  const summaryText = mcpOutput?.text ? mcpOutput.text.slice(0, 120) : '(no output)'
+                  const summary = isMcpError ? `Error: ${summaryText}` : summaryText
                   return (
-                    <details key={event.id} className="group rounded-md border border-stone-200/70 bg-white/70 text-xs">
-                      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-stone-600 hover:bg-stone-50/80">
+                    <details
+                      key={event.id}
+                      className={`group rounded-md border text-xs ${isMcpError ? 'border-rose-200 bg-rose-50/80' : 'border-stone-200/70 bg-white/70'}`}
+                    >
+                      <summary
+                        className={`flex cursor-pointer list-none items-center gap-2 px-3 py-2 hover:bg-stone-50/80 ${isMcpError ? 'text-rose-700' : 'text-stone-600'}`}
+                      >
                         <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-stone-100 text-[9px] font-bold text-stone-400 transition-transform group-open:rotate-90">
                           ▶
                         </span>
                         <span>{label}</span>
                       </summary>
-                      <div className="border-t border-stone-100 px-3 py-1.5 text-[var(--muted)]">
+                      <div
+                        className={`border-t px-3 py-1.5 ${isMcpError ? 'border-rose-100 text-rose-700' : 'border-stone-100 text-[var(--muted)]'}`}
+                      >
                         {summary}
                       </div>
                     </details>

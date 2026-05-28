@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ContentDocument, ChatEvent } from '@tinytinkerer/contracts'
+import type { ContentDocument, ChatEvent, McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contracts'
 import {
   activeCooldown,
   buildConversationHistory,
@@ -8,6 +8,7 @@ import {
   canSendPrompt,
   defaultChatState,
   inferPlan,
+  loadSettingsState,
   normalizeSelectedModel
 } from '../src/index.js'
 
@@ -198,6 +199,45 @@ describe('app-core helpers', () => {
     const timeline = buildCurrentTimeline(events)
     expect(timeline.every((entry) => entry.label !== '')).toBe(true)
     expect(timeline).toHaveLength(0)
+  })
+
+  it('drops malformed persisted MCP servers during settings hydration', async () => {
+    const validServer: McpServerConfig = {
+      id: 'server-1',
+      name: 'Weather Server',
+      url: 'https://mcp.example.com/mcp',
+      enabled: true
+    }
+    const state = await loadSettingsState({
+      get: async (key) =>
+        key === 'settings_mcp_servers'
+          ? JSON.stringify([validServer, { id: 'broken', enabled: 'yes' }])
+          : undefined,
+      set: async () => undefined
+    })
+
+    expect(state.mcpServers).toEqual([validServer])
+  })
+
+  it('drops malformed persisted MCP discovery entries during settings hydration', async () => {
+    const validDiscovery: McpDiscoveryResult = {
+      serverId: 'server-1',
+      serverName: 'Weather Server',
+      tools: [{ toolName: 'get_weather', description: 'Get weather', inputSchema: {} }],
+      syncedAt: new Date().toISOString()
+    }
+    const state = await loadSettingsState({
+      get: async (key) =>
+        key === 'settings_mcp_discovery'
+          ? JSON.stringify({
+            'server-1': validDiscovery,
+            broken: { serverId: 'broken', serverName: 42, tools: [], syncedAt: 'now' }
+          })
+          : undefined,
+      set: async () => undefined
+    })
+
+    expect(state.mcpDiscovery).toEqual({ 'server-1': validDiscovery })
   })
 
   describe('canSendPrompt', () => {
