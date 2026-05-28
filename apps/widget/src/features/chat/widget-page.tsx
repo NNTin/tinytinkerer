@@ -6,7 +6,15 @@ import {
   useSettingsSurfaceController
 } from '@tinytinkerer/app-browser'
 import { Button, GitHubMark } from '@tinytinkerer/ui'
-import { Suspense, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import {
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode
+} from 'react'
 import { WidgetChatLoading } from '../../app/loading-screen'
 import { resolveWidgetViewMode, resolveWidgetWindowMode } from '../../runtime-config'
 
@@ -147,13 +155,50 @@ const WidgetShellBar = ({
   </div>
 )
 
-const WidgetSurface = ({
+const WidgetWindow = ({
+  minimized,
+  dragging,
+  onRestore,
   onMinimize,
   onMovePointerDown,
-  framed = true
+  children,
+  resizeHandle,
+  className,
+  style
 }: {
+  minimized: boolean
+  dragging: boolean
+  onRestore: () => void
   onMinimize: () => void
   onMovePointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void
+  children: ReactNode
+  resizeHandle?: ReactNode
+  className?: string
+  style?: CSSProperties
+}) => (
+  <div
+    className={['widget-floating-shell', className].filter(Boolean).join(' ')}
+    data-dragging={dragging ? 'true' : 'false'}
+    data-minimized={minimized ? 'true' : 'false'}
+    style={style}
+  >
+    <div className="widget-shell-body">
+      {minimized ? (
+        <WidgetLauncher onRestore={onRestore} />
+      ) : (
+        <>
+          <WidgetShellBar onMinimize={onMinimize} onMovePointerDown={onMovePointerDown} />
+          {children}
+        </>
+      )}
+    </div>
+    {!minimized ? resizeHandle : null}
+  </div>
+)
+
+const WidgetSurface = ({
+  framed = true
+}: {
   framed?: boolean
 }) => {
   const {
@@ -201,7 +246,6 @@ const WidgetSurface = ({
             : 'bg-transparent'
         ].join(' ')}
       >
-        <WidgetShellBar onMinimize={onMinimize} onMovePointerDown={onMovePointerDown} />
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
           {turns.length === 0 ? (
             <p className="text-[13px] leading-5 text-[var(--widget-muted)]">
@@ -330,6 +374,13 @@ export const WidgetPage = () => {
   const isStandalone = viewMode === 'standalone'
   const isMinimized = isStandalone ? layout.minimized : hostMinimized
 
+  useEffect(() => {
+    document.body.dataset.widgetViewMode = viewMode
+    return () => {
+      delete document.body.dataset.widgetViewMode
+    }
+  }, [viewMode])
+
   const handleStandaloneMovePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     dragRef.current = {
       startX: event.clientX,
@@ -344,29 +395,40 @@ export const WidgetPage = () => {
       return
     }
 
+    setIsDragging(true)
+
     const target = event.currentTarget
     target.setPointerCapture(event.pointerId)
 
-    const postDragEvent = (phase: 'start' | 'move' | 'end', clientX: number, clientY: number) => {
+    const postDragEvent = (
+      phase: 'start' | 'move' | 'end',
+      clientX: number,
+      clientY: number,
+      screenX: number,
+      screenY: number
+    ) => {
       window.parent.postMessage(
         {
           type: 'tinytinkerer.widget.drag',
           phase,
           clientX,
-          clientY
+          clientY,
+          screenX,
+          screenY
         },
         window.location.origin
       )
     }
 
-    postDragEvent('start', event.clientX, event.clientY)
+    postDragEvent('start', event.clientX, event.clientY, event.screenX, event.screenY)
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      postDragEvent('move', moveEvent.clientX, moveEvent.clientY)
+      postDragEvent('move', moveEvent.clientX, moveEvent.clientY, moveEvent.screenX, moveEvent.screenY)
     }
 
     const handlePointerEnd = (endEvent: PointerEvent) => {
-      postDragEvent('end', endEvent.clientX, endEvent.clientY)
+      setIsDragging(false)
+      postDragEvent('end', endEvent.clientX, endEvent.clientY, endEvent.screenX, endEvent.screenY)
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerEnd)
       window.removeEventListener('pointercancel', handlePointerEnd)
@@ -470,42 +532,37 @@ export const WidgetPage = () => {
   }
 
   if (!isStandalone) {
-    return isMinimized ? (
-      <WidgetLauncher onRestore={handleRestore} />
-    ) : (
-      <WidgetSurface
-        framed={false}
-        onMinimize={handleMinimize}
-        onMovePointerDown={handleHostMovePointerDown}
-      />
+    return (
+      <div className="widget-stage widget-stage-host">
+        <WidgetWindow
+          minimized={isMinimized}
+          dragging={isDragging}
+          onRestore={handleRestore}
+          onMinimize={handleMinimize}
+          onMovePointerDown={handleHostMovePointerDown}
+          className="widget-embedded-shell"
+        >
+          <WidgetSurface framed={false} />
+        </WidgetWindow>
+      </div>
     )
   }
 
   return (
     <div className="widget-stage">
-      <div
-        className="widget-floating-shell"
-        data-dragging={isDragging ? 'true' : 'false'}
-        data-minimized={isMinimized ? 'true' : 'false'}
+      <WidgetWindow
+        minimized={isMinimized}
+        dragging={isDragging}
+        onRestore={handleRestore}
+        onMinimize={handleMinimize}
+        onMovePointerDown={handleStandaloneMovePointerDown}
         style={{
           left: layout.x,
           top: layout.y,
           width: isMinimized ? WIDGET_MINIMIZED_SIZE : layout.width,
           height: isMinimized ? WIDGET_MINIMIZED_SIZE : layout.height
         }}
-      >
-        <div className="widget-shell-body">
-          {isMinimized ? (
-            <WidgetLauncher onRestore={handleRestore} />
-          ) : (
-            <WidgetSurface
-              onMinimize={handleMinimize}
-              onMovePointerDown={handleStandaloneMovePointerDown}
-              framed={false}
-            />
-          )}
-        </div>
-        {!isMinimized ? (
+        resizeHandle={
           <button
             type="button"
             className="widget-shell-resize"
@@ -519,8 +576,10 @@ export const WidgetPage = () => {
               }
             }}
           />
-        ) : null}
-      </div>
+        }
+      >
+        <WidgetSurface framed={false} />
+      </WidgetWindow>
     </div>
   )
 }

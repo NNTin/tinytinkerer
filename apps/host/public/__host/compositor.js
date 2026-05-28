@@ -126,6 +126,9 @@ const loadLayout = () => {
 }
 
 let layout = loadLayout()
+let dragSession = null
+let pendingDragPoint = null
+let dragFrame = null
 
 const createWidgetSrc = (minimized) => {
   const url = createSurfaceUrl('./widget/')
@@ -144,8 +147,7 @@ const applyLayout = () => {
   const box = getBox(layout)
 
   widgetWindow.dataset.minimized = String(layout.minimized)
-  widgetWindow.style.left = `${layout.x}px`
-  widgetWindow.style.top = `${layout.y}px`
+  widgetWindow.style.transform = `translate3d(${layout.x}px, ${layout.y}px, 0)`
   widgetWindow.style.width = `${box.width}px`
   widgetWindow.style.height = `${box.height}px`
 }
@@ -233,50 +235,74 @@ window.addEventListener('message', (event) => {
       return
     }
 
+    const resolvePointerPoint = () => {
+      if (typeof data.screenX === 'number' && typeof data.screenY === 'number') {
+        return { x: data.screenX, y: data.screenY }
+      }
+
+      return { x: data.clientX, y: data.clientY }
+    }
+
+    const flushDragPoint = () => {
+      dragFrame = null
+
+      if (!dragSession || !pendingDragPoint) {
+        return
+      }
+
+      const box = getBox(layout)
+      const nextX = clamp(
+        dragSession.startLayoutX + (pendingDragPoint.x - dragSession.startX),
+        SAFE_MARGIN,
+        Math.max(SAFE_MARGIN, window.innerWidth - box.width - SAFE_MARGIN)
+      )
+      const nextY = clamp(
+        dragSession.startLayoutY + (pendingDragPoint.y - dragSession.startY),
+        SAFE_MARGIN,
+        Math.max(SAFE_MARGIN, window.innerHeight - box.height - SAFE_MARGIN)
+      )
+
+      layout = { ...layout, x: Math.round(nextX), y: Math.round(nextY) }
+      applyLayout()
+    }
+
+    const scheduleDragFlush = () => {
+      if (dragFrame !== null) {
+        return
+      }
+
+      dragFrame = window.requestAnimationFrame(flushDragPoint)
+    }
+
     if (data.phase === 'start') {
       widgetWindow.dataset.dragging = 'true'
-      widgetWindow.dataset.dragStartX = String(data.clientX)
-      widgetWindow.dataset.dragStartY = String(data.clientY)
-      widgetWindow.dataset.dragLayoutX = String(layout.x)
-      widgetWindow.dataset.dragLayoutY = String(layout.y)
+      const point = resolvePointerPoint()
+      dragSession = {
+        startX: point.x,
+        startY: point.y,
+        startLayoutX: layout.x,
+        startLayoutY: layout.y
+      }
+      pendingDragPoint = point
       return
     }
 
-    const startX = Number(widgetWindow.dataset.dragStartX)
-    const startY = Number(widgetWindow.dataset.dragStartY)
-    const startLayoutX = Number(widgetWindow.dataset.dragLayoutX)
-    const startLayoutY = Number(widgetWindow.dataset.dragLayoutY)
-
-    if (
-      Number.isNaN(startX) ||
-      Number.isNaN(startY) ||
-      Number.isNaN(startLayoutX) ||
-      Number.isNaN(startLayoutY)
-    ) {
+    if (!dragSession) {
       return
     }
 
-    const box = getBox(layout)
-    const nextX = clamp(
-      startLayoutX + (data.clientX - startX),
-      SAFE_MARGIN,
-      Math.max(SAFE_MARGIN, window.innerWidth - box.width - SAFE_MARGIN)
-    )
-    const nextY = clamp(
-      startLayoutY + (data.clientY - startY),
-      SAFE_MARGIN,
-      Math.max(SAFE_MARGIN, window.innerHeight - box.height - SAFE_MARGIN)
-    )
-
-    layout = { ...layout, x: Math.round(nextX), y: Math.round(nextY) }
-    applyLayout()
+    pendingDragPoint = resolvePointerPoint()
+    scheduleDragFlush()
 
     if (data.phase === 'end') {
+      if (dragFrame !== null) {
+        window.cancelAnimationFrame(dragFrame)
+        flushDragPoint()
+      }
+
       widgetWindow.dataset.dragging = 'false'
-      delete widgetWindow.dataset.dragStartX
-      delete widgetWindow.dataset.dragStartY
-      delete widgetWindow.dataset.dragLayoutX
-      delete widgetWindow.dataset.dragLayoutY
+      dragSession = null
+      pendingDragPoint = null
       saveLayout(layout)
     }
   }

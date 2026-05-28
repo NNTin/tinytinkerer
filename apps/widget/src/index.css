@@ -27,6 +27,11 @@ body {
   color: var(--widget-text);
 }
 
+body[data-widget-view-mode='host'] {
+  min-height: 100%;
+  background: transparent;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -34,6 +39,11 @@ body {
 .widget-stage {
   position: relative;
   min-height: 100vh;
+  overflow: hidden;
+}
+
+body[data-widget-view-mode='host'] .widget-stage {
+  min-height: 100%;
   overflow: hidden;
 }
 
@@ -46,6 +56,12 @@ body {
   background: rgba(255, 253, 248, 0.58);
   box-shadow: 0 24px 64px rgba(36, 33, 24, 0.2);
   backdrop-filter: blur(10px);
+}
+
+.widget-embedded-shell {
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .widget-shell-bar {
