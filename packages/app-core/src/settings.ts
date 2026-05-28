@@ -66,7 +66,7 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
 const parseMcpServers = (raw: string | undefined): McpServerConfig[] => {
   if (!raw) return []
   try {
-    const parsed = JSON.parse(raw)
+    const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
     return parsed.flatMap((entry) => {
       const result = mcpServerConfigSchema.safeParse(entry)
@@ -80,10 +80,10 @@ const parseMcpServers = (raw: string | undefined): McpServerConfig[] => {
 const parseMcpDiscovery = (raw: string | undefined): Record<string, McpDiscoveryResult> => {
   if (!raw) return {}
   try {
-    const parsed = JSON.parse(raw)
+    const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
     return Object.fromEntries(
-      Object.entries(parsed).flatMap(([serverId, entry]) => {
+      Object.entries(parsed as Record<string, unknown>).flatMap(([serverId, entry]) => {
         const result = mcpDiscoveryResultSchema.safeParse(entry)
         return result.success ? [[serverId, result.data]] : []
       })

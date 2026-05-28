@@ -167,7 +167,10 @@ export const registerMcpRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       const isError = callResult.isError === true
       const contentItems = Array.isArray(callResult.content) ? callResult.content : []
       const text = contentItems
-        .filter((item): item is { type: 'text'; text: string } => item.type === 'text')
+        .filter((item): item is { type: 'text'; text: string } => {
+          const candidate = item as Record<string, unknown>
+          return candidate.type === 'text' && typeof candidate.text === 'string'
+        })
         .map((item) => item.text)
         .join('\n')
 

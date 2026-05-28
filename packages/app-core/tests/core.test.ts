@@ -209,11 +209,11 @@ describe('app-core helpers', () => {
       enabled: true
     }
     const state = await loadSettingsState({
-      get: async (key) =>
+      get: (key) =>
         key === 'settings_mcp_servers'
-          ? JSON.stringify([validServer, { id: 'broken', enabled: 'yes' }])
-          : undefined,
-      set: async () => undefined
+          ? Promise.resolve(JSON.stringify([validServer, { id: 'broken', enabled: 'yes' }]))
+          : Promise.resolve(undefined),
+      set: () => Promise.resolve()
     })
 
     expect(state.mcpServers).toEqual([validServer])
@@ -227,14 +227,14 @@ describe('app-core helpers', () => {
       syncedAt: new Date().toISOString()
     }
     const state = await loadSettingsState({
-      get: async (key) =>
+      get: (key) =>
         key === 'settings_mcp_discovery'
-          ? JSON.stringify({
+          ? Promise.resolve(JSON.stringify({
             'server-1': validDiscovery,
             broken: { serverId: 'broken', serverName: 42, tools: [], syncedAt: 'now' }
-          })
-          : undefined,
-      set: async () => undefined
+          }))
+          : Promise.resolve(undefined),
+      set: () => Promise.resolve()
     })
 
     expect(state.mcpDiscovery).toEqual({ 'server-1': validDiscovery })
