@@ -67,7 +67,21 @@ vi.mock('@tinytinkerer/app-browser', () => ({
       {content.nodes[0]?.children?.[0]?.value}
     </div>
   ),
-  McpServerList: () => null,
+  LazyBrowserSettingsModal: ({
+    open,
+    onOpenChange
+  }: {
+    open: boolean
+    onOpenChange: (open: boolean) => void
+  }) =>
+    open ? (
+      <div>
+        <span>Settings modal</span>
+        <button type="button" aria-label="Close settings" onClick={() => onOpenChange(false)}>
+          Close
+        </button>
+      </div>
+    ) : null,
   TINYTINKERER_BRAND_ASSET_URLS: {
     icon192: '/brand/icon-192.png'
   },
@@ -137,12 +151,17 @@ beforeEach(() => {
 })
 
 describe('WidgetPage', () => {
-  it('disables search controls when the service is unavailable', () => {
+  it('shows conversation-first layout with footer settings and sign-in actions', () => {
     render(<WidgetPage />)
 
-    const checkbox = screen.getByRole('checkbox')
-    expect(checkbox).toBeDisabled()
-    expect(screen.getByText('Search temporarily unavailable')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign in with GitHub' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Minimize widget' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.queryByText('MCP Servers')).toBeNull()
+    expect(screen.queryByText('Search temporarily unavailable')).toBeNull()
+    expect(screen.queryByText('Embedded Workspace')).toBeNull()
+    expect(screen.queryByText('tinytinkerer widget')).toBeNull()
   })
 
   it('renders a turn notice and final assistant answer in the same card', () => {
@@ -169,19 +188,27 @@ describe('WidgetPage', () => {
     expect(mockChatState.submitPrompt).toHaveBeenCalledWith('Tell me something current')
   })
 
+  it('opens settings from the footer trigger', () => {
+    render(<WidgetPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+
+    expect(screen.getByText('Settings modal')).toBeInTheDocument()
+  })
+
   it('collapses to a launcher and restores in standalone mode', () => {
     render(<WidgetPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Minimize' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Minimize widget' }))
 
     expect(screen.getByRole('button', { name: 'Restore widget' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Restore widget' }))
 
-    expect(screen.getByRole('button', { name: 'Minimize' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Minimize widget' })).toBeInTheDocument()
   })
 
-  it('posts minimized state changes to the host when rendered in host mode', () => {
+  it('shows the shared minimize control in host mode and posts the minimized state', () => {
     window.history.replaceState({}, '', '/widget/?view=host')
     const postMessageSpy = vi.fn()
     Object.defineProperty(window, 'parent', {
@@ -190,9 +217,10 @@ describe('WidgetPage', () => {
     })
 
     render(<WidgetPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Minimize' }))
 
-    expect(postMessageSpy).toHaveBeenLastCalledWith(
+    fireEvent.click(screen.getByRole('button', { name: 'Minimize widget' }))
+
+    expect(postMessageSpy).toHaveBeenCalledWith(
       {
         type: 'tinytinkerer.widget.state',
         mode: 'minimized'

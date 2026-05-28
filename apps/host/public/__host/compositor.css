@@ -8,7 +8,6 @@
   --host-text: #2d261f;
   --host-muted: #766a5d;
   --host-accent: #9a5a17;
-  --widget-grip-height: 14px;
   font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
 }
 
@@ -209,32 +208,6 @@ button {
   background: rgba(255, 250, 245, 0.5);
   box-shadow: 0 30px 80px rgba(47, 35, 21, 0.24);
   backdrop-filter: blur(10px);
-}
-
-.widget-grip {
-  position: relative;
-  height: var(--widget-grip-height);
-  border: 0;
-  padding: 0;
-  background: transparent;
-  cursor: grab;
-  touch-action: none;
-}
-
-.widget-grip::before {
-  content: '';
-  position: absolute;
-  top: 4px;
-  left: 50%;
-  width: 64px;
-  height: 4px;
-  transform: translateX(-50%);
-  border-radius: 999px;
-  background: rgba(118, 106, 93, 0.45);
-}
-
-.widget-window[data-dragging='true'] .widget-grip {
-  cursor: grabbing;
 }
 
 .widget-frame {
