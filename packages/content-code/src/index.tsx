@@ -91,6 +91,8 @@ const labelForLanguage = (language: string | undefined): string => {
 
 const PERSISTENCE_KEY_PREFIX = 'tt-code-edit:v1'
 const PERSISTENCE_DEBOUNCE_MS = 250
+const LOCAL_EDIT_TOOLTIP =
+  'These changes are local only. They do not affect chat history, and the agent is unaware of them.'
 
 const persistenceKey = (scopeId: string, nodeId: string): string =>
   `${PERSISTENCE_KEY_PREFIX}:${scopeId}:${nodeId}`
@@ -317,6 +319,8 @@ const CodeBlockFrame = ({ node, isStreaming }: CodeBlockFrameProps) => {
   })
   const { copied, copy } = useCopyButtonState(value)
   const label = labelForLanguage(node.language)
+  const isEdited = value !== node.code
+  const resetToOriginal = () => setValue(node.code)
 
   return (
     <div
@@ -324,10 +328,31 @@ const CodeBlockFrame = ({ node, isStreaming }: CodeBlockFrameProps) => {
       className="my-3 overflow-hidden rounded-lg border border-stone-200 bg-stone-50"
     >
       <div className="flex items-center justify-between border-b border-stone-200 bg-white px-3 py-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
-          {label}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
+            {label}
+          </span>
+          {isEdited ? (
+            <span
+              data-tt-code-edited=""
+              title={LOCAL_EDIT_TOOLTIP}
+              aria-label={LOCAL_EDIT_TOOLTIP}
+              className="text-[11px] font-medium text-amber-600"
+            >
+              Edited locally
+            </span>
+          ) : null}
+        </div>
         <div className="flex items-center gap-1">
+          {isEdited ? (
+            <button
+              type="button"
+              onClick={resetToOriginal}
+              className="text-[11px] font-medium text-stone-500 hover:text-stone-700 transition-colors px-1.5 py-0.5 rounded"
+            >
+              Reset to original
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={copy}
@@ -353,7 +378,9 @@ const CodeBlockFrame = ({ node, isStreaming }: CodeBlockFrameProps) => {
           language={node.language}
           label={label}
           editable={!isStreaming}
+          isEdited={isEdited}
           onChange={setValue}
+          onReset={resetToOriginal}
           onClose={closeFullscreen}
         />
       ) : null}
@@ -366,7 +393,9 @@ type FullscreenCodeEditorProps = {
   language: string | undefined
   label: string
   editable: boolean
+  isEdited: boolean
   onChange: (next: string) => void
+  onReset: () => void
   onClose: () => void
 }
 
@@ -375,7 +404,9 @@ const FullscreenCodeEditor = ({
   language,
   label,
   editable,
+  isEdited,
   onChange,
+  onReset,
   onClose
 }: FullscreenCodeEditorProps) => {
   useBodyScrollLock(true)
@@ -408,16 +439,39 @@ const FullscreenCodeEditor = ({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-stone-200 bg-white px-3 py-2">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
-            {label}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-[11px] font-medium text-stone-500 hover:text-stone-700 transition-colors px-1.5 py-0.5 rounded"
-          >
-            Close
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
+              {label}
+            </span>
+            {isEdited ? (
+              <span
+                data-tt-code-edited=""
+                title={LOCAL_EDIT_TOOLTIP}
+                aria-label={LOCAL_EDIT_TOOLTIP}
+                className="text-[11px] font-medium text-amber-600"
+              >
+                Edited locally
+              </span>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-1">
+            {isEdited ? (
+              <button
+                type="button"
+                onClick={onReset}
+                className="text-[11px] font-medium text-stone-500 hover:text-stone-700 transition-colors px-1.5 py-0.5 rounded"
+              >
+                Reset to original
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-[11px] font-medium text-stone-500 hover:text-stone-700 transition-colors px-1.5 py-0.5 rounded"
+            >
+              Close
+            </button>
+          </div>
         </div>
         <div ref={editorRef} className="tt-code-editor tt-code-editor--fullscreen flex-1 overflow-auto" />
       </div>

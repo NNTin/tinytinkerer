@@ -105,6 +105,39 @@ describe('fullscreen behavior', () => {
     expect(screen.queryByRole('button', { name: 'Fullscreen' })).toBeNull()
   })
 
+  it('shows the Edited locally indicator with tooltip and resets via the Reset button', async () => {
+    const sourceNode = { id: 'n7', type: 'codeBlock' as const, code: 'src', language: 'json' }
+    const { container } = render(
+      <ContentDocumentContent
+        document={doc([sourceNode])}
+        plugins={[codePlugin]}
+      />
+    )
+
+    await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull())
+    expect(screen.queryByText('Edited locally')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reset to original' })).toBeNull()
+
+    const view = findEditorView(container)
+    act(() => {
+      view.dispatch({ changes: { from: 3, insert: '!' } })
+    })
+
+    const indicator = await screen.findByText('Edited locally')
+    expect(indicator).toHaveAttribute(
+      'title',
+      'These changes are local only. They do not affect chat history, and the agent is unaware of them.'
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to original' }))
+    await waitFor(() => expect(view.state.doc.toString()).toBe('src'))
+    expect(screen.queryByText('Edited locally')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reset to original' })).toBeNull()
+
+    // Sanity check: source node was not mutated.
+    expect(sourceNode.code).toBe('src')
+  })
+
   it('preserves the latest edited text from inline to fullscreen', async () => {
     const { container } = render(
       <ContentDocumentContent
