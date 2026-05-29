@@ -7,4 +7,8 @@ export type Bindings = {
   /** Set to 'true' to allow all origins (dev only). When absent, no CORS header is sent. */
   ALLOW_ALL_ORIGINS?: string
   GITHUB_MODELS_URL?: string
+  /** Sentry DSN for edge error reporting (secret; telemetry no-ops when absent). */
+  SENTRY_DSN?: string
+  /** Release identifier (build hash) for Sentry events. */
+  SENTRY_RELEASE?: string
 }

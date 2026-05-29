@@ -1,3 +1,5 @@
+import { getTelemetryHeaders } from '../telemetry/telemetry'
+
 export type EdgeFetch = (path: string, body: unknown, signal?: AbortSignal) => Promise<Response>
 
 export const createEdgeFetch = (
@@ -6,7 +8,10 @@ export const createEdgeFetch = (
 ): EdgeFetch =>
   async function edgeFetch(path, body, signal) {
     const token = getToken()
-    const headers: Record<string, string> = { 'content-type': 'application/json' }
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      ...getTelemetryHeaders()
+    }
     if (token) {
       headers['authorization'] = `Bearer ${token}`
     }

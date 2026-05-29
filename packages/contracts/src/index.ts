@@ -464,3 +464,24 @@ export type McpDiscoveryResult = z.infer<typeof mcpDiscoveryResultSchema>
 export type McpDiscoverRequest = z.infer<typeof mcpDiscoverRequestSchema>
 export type McpCallRequest = z.infer<typeof mcpCallRequestSchema>
 export type McpCallResponse = z.infer<typeof mcpCallResponseSchema>
+
+export const TELEMETRY_HEADERS = {
+  appVersion: 'X-App-Version',
+  buildHash: 'X-Build-Hash',
+  installId: 'X-Install-ID',
+  githubId: 'X-GitHub-ID'
+} as const
+
+// Upper bound on accepted header lengths. App version / build hash are short,
+// the install ID is a UUID, and the GitHub id/login is well under this. Caps the
+// blast radius of a malicious client stuffing arbitrary values into Sentry.
+const TELEMETRY_HEADER_MAX_LENGTH = 128
+
+export const telemetryHeadersSchema = z.object({
+  appVersion: z.string().max(TELEMETRY_HEADER_MAX_LENGTH).optional(),
+  buildHash: z.string().max(TELEMETRY_HEADER_MAX_LENGTH).optional(),
+  installId: z.string().max(TELEMETRY_HEADER_MAX_LENGTH).optional(),
+  githubId: z.string().max(TELEMETRY_HEADER_MAX_LENGTH).optional()
+})
+
+export type TelemetryHeaders = z.infer<typeof telemetryHeadersSchema>

@@ -1,9 +1,10 @@
-import { StrictMode } from 'react'
+import { StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   AppBrowserProvider,
   createBrowserApp,
+  LazyTelemetryConsentGate,
   resolveBrowserShellBootstrapConfig,
   useBrowserAppBootstrap
 } from '@tinytinkerer/app-browser'
@@ -19,7 +20,10 @@ const browserConfig = resolveBrowserShellBootstrapConfig({
   origin: window.location.origin,
   edgeBaseUrl: import.meta.env.VITE_EDGE_URL ?? '',
   manifestStartUrl: import.meta.env.BASE_URL,
-  githubClientId
+  githubClientId,
+  sentryDsn: import.meta.env.VITE_SENTRY_DSN,
+  appVersion: __APP_VERSION__,
+  buildHash: __BUILD_HASH__
 })
 
 const queryClient = new QueryClient()
@@ -37,6 +41,9 @@ const WebBootstrap = () => {
       <AppBrowserProvider app={browserApp}>
         <QueryClientProvider client={queryClient}>
           <RouterProvider router={router} />
+          <Suspense fallback={null}>
+            <LazyTelemetryConsentGate />
+          </Suspense>
         </QueryClientProvider>
       </AppBrowserProvider>
     </StrictMode>

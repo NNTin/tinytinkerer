@@ -10,6 +10,7 @@ import {
   type BrowserShellConfig,
   type ResolvedBrowserShellConfig
 } from './config'
+import { getTelemetryHeaders } from './telemetry/telemetry'
 
 export type BrowserShell = {
   config: ResolvedBrowserShellConfig
@@ -56,7 +57,9 @@ const toSystemStatus = (value: unknown): SystemStatus => {
 
 const createStatusGateway = (config: ResolvedBrowserShellConfig): StatusGateway => ({
   async fetchStatus() {
-    const response = await fetch(`${config.edgeBaseUrl}/health`)
+    const response = await fetch(`${config.edgeBaseUrl}/health`, {
+      headers: getTelemetryHeaders()
+    })
     if (!response.ok) {
       throw new Error('Unable to reach edge status endpoint')
     }

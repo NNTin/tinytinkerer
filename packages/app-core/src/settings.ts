@@ -14,7 +14,8 @@ export const SETTINGS_KEYS = {
   showToolActivity: 'settings_show_tool_activity',
   showCodeBlockFullscreenButton: 'settings_show_code_block_fullscreen_button',
   mcpServers: 'settings_mcp_servers',
-  mcpDiscovery: 'settings_mcp_discovery'
+  mcpDiscovery: 'settings_mcp_discovery',
+  telemetryEnabled: 'settings_telemetry_enabled'
 } as const
 
 export type SettingsState = {
@@ -26,6 +27,7 @@ export type SettingsState = {
   showCodeBlockFullscreenButton: boolean
   mcpServers: McpServerConfig[]
   mcpDiscovery: Record<string, McpDiscoveryResult>
+  telemetryEnabled: boolean
 }
 
 const parseBool = (value: string | undefined, fallback: boolean): boolean => {
@@ -42,7 +44,8 @@ export const defaultSettingsState = (): SettingsState => ({
   showToolActivity: false,
   showCodeBlockFullscreenButton: true,
   mcpServers: [],
-  mcpDiscovery: {}
+  mcpDiscovery: {},
+  telemetryEnabled: false
 })
 
 export const loadSettingsState = async (preferences: PreferencesStore): Promise<SettingsState> => {
@@ -53,7 +56,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     showToolActivity,
     showCodeBlockFullscreenButton,
     mcpServersRaw,
-    mcpDiscoveryRaw
+    mcpDiscoveryRaw,
+    telemetryEnabled
   ] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
     preferences.get(SETTINGS_KEYS.searchEnabled),
@@ -61,7 +65,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     preferences.get(SETTINGS_KEYS.showToolActivity),
     preferences.get(SETTINGS_KEYS.showCodeBlockFullscreenButton),
     preferences.get(SETTINGS_KEYS.mcpServers),
-    preferences.get(SETTINGS_KEYS.mcpDiscovery)
+    preferences.get(SETTINGS_KEYS.mcpDiscovery),
+    preferences.get(SETTINGS_KEYS.telemetryEnabled)
   ])
 
   return {
@@ -72,7 +77,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     showToolActivity: parseBool(showToolActivity, false),
     showCodeBlockFullscreenButton: parseBool(showCodeBlockFullscreenButton, true),
     mcpServers: parseMcpServers(mcpServersRaw),
-    mcpDiscovery: parseMcpDiscovery(mcpDiscoveryRaw)
+    mcpDiscovery: parseMcpDiscovery(mcpDiscoveryRaw),
+    telemetryEnabled: parseBool(telemetryEnabled, false)
   }
 }
 

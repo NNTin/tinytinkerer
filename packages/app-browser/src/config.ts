@@ -14,6 +14,9 @@ export type BrowserShellBootstrapOptions = {
   githubRedirectUri?: string | undefined
   manifestStartUrl?: string | undefined
   hostToken?: string | null
+  sentryDsn?: string | undefined
+  appVersion?: string | undefined
+  buildHash?: string | undefined
 }
 /* eslint-enable no-restricted-syntax */
 
@@ -25,6 +28,9 @@ export type BrowserShellConfig = {
   githubRedirectUri?: string
   manifestStartUrl?: string
   hostToken?: string | null
+  sentryDsn?: string
+  appVersion?: string
+  buildHash?: string
 }
 
 export type ResolvedBrowserShellConfig = {
@@ -35,13 +41,18 @@ export type ResolvedBrowserShellConfig = {
   githubRedirectUri?: string
   manifestStartUrl?: string
   hostToken: string | null
+  sentryDsn?: string
+  appVersion: string
+  buildHash: string
 }
 
 const DEFAULT_CONFIG: ResolvedBrowserShellConfig = {
   edgeBaseUrl: '',
   storageNamespace: 'tinytinkerer',
   authMode: 'hybrid',
-  hostToken: null
+  hostToken: null,
+  appVersion: 'dev',
+  buildHash: 'dev'
 }
 
 export const resolveBrowserShellConfig = (
@@ -51,7 +62,13 @@ export const resolveBrowserShellConfig = (
     edgeBaseUrl: config.edgeBaseUrl ?? DEFAULT_CONFIG.edgeBaseUrl,
     storageNamespace: config.storageNamespace ?? DEFAULT_CONFIG.storageNamespace,
     authMode: config.authMode ?? DEFAULT_CONFIG.authMode,
-    hostToken: config.hostToken ?? DEFAULT_CONFIG.hostToken
+    hostToken: config.hostToken ?? DEFAULT_CONFIG.hostToken,
+    appVersion: config.appVersion ?? DEFAULT_CONFIG.appVersion,
+    buildHash: config.buildHash ?? DEFAULT_CONFIG.buildHash
+  }
+
+  if (config.sentryDsn !== undefined) {
+    resolved.sentryDsn = config.sentryDsn
   }
 
   if (config.githubClientId !== undefined) {
@@ -81,6 +98,9 @@ export const resolveBrowserShellBootstrapConfig = (
     storageNamespace: options.storageNamespace ?? DEFAULT_CONFIG.storageNamespace,
     authMode: options.authMode ?? DEFAULT_CONFIG.authMode,
     hostToken: options.hostToken ?? DEFAULT_CONFIG.hostToken,
+    appVersion: options.appVersion ?? DEFAULT_CONFIG.appVersion,
+    buildHash: options.buildHash ?? DEFAULT_CONFIG.buildHash,
+    ...(options.sentryDsn ? { sentryDsn: options.sentryDsn } : {}),
     ...(options.manifestStartUrl !== undefined ? { manifestStartUrl: options.manifestStartUrl } : {}),
     ...(options.githubClientId ? { githubClientId: options.githubClientId } : {}),
     ...(githubRedirectUri ? { githubRedirectUri } : {})

@@ -1,6 +1,7 @@
 import { githubExchangeResponseSchema } from '@tinytinkerer/contracts'
 import type { BrowserApp } from './app'
 import type { BrowserShell } from './shell'
+import { getTelemetryHeaders } from './telemetry/telemetry'
 
 const oauthStateKey = (shell: BrowserShell): string => `${shell.config.storageNamespace}:oauth_state`
 const oauthReturnUrlKey = (shell: BrowserShell): string => `${shell.config.storageNamespace}:oauth_return_url`
@@ -94,7 +95,7 @@ const exchangeCode = async (shell: BrowserShell, code: string): Promise<string> 
   const config = shell.config
   const response = await fetch(`${config.edgeBaseUrl}/auth/github/exchange`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...getTelemetryHeaders() },
     body: JSON.stringify({
       code,
       ...(config.githubRedirectUri ? { redirectUri: config.githubRedirectUri } : {})

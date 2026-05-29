@@ -155,6 +155,8 @@ export type SettingsSurfaceController = {
   removeMcpServer: (id: string) => Promise<void>
   setMcpServerEnabled: (id: string, enabled: boolean) => Promise<void>
   refreshMcpServer: (server: McpServerConfig) => Promise<void>
+  telemetryEnabled: boolean
+  setTelemetryEnabled: (enabled: boolean) => Promise<void>
 }
 
 export const useSettingsSurfaceController = (): SettingsSurfaceController => {
@@ -188,6 +190,8 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const setMcpServerEnabled = useSettingsStore((state) => state.setMcpServerEnabled)
   const setMcpDiscovery = useSettingsStore((state) => state.setMcpDiscovery)
   const clearMcpDiscovery = useSettingsStore((state) => state.clearMcpDiscovery)
+  const telemetryEnabled = useSettingsStore((state) => state.telemetryEnabled)
+  const setTelemetryEnabled = useSettingsStore((state) => state.setTelemetryEnabled)
   const { shell } = useBrowserApp()
 
   const effectiveStatus = status ?? OFFLINE_SYSTEM_STATUS
@@ -253,7 +257,9 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     updateMcpServer,
     removeMcpServer,
     setMcpServerEnabled,
-    refreshMcpServer
+    refreshMcpServer,
+    telemetryEnabled,
+    setTelemetryEnabled
   }
 }
 

@@ -17,6 +17,7 @@ import {
   type SettingsStore
 } from './stores/settings-store'
 import { createStatusStore, type StatusState, type StatusStore } from './stores/status-store'
+import { configureTelemetry, setTelemetryConsent } from './telemetry/telemetry'
 
 export type BrowserApp = {
   shell: BrowserShell
@@ -71,10 +72,23 @@ export const initializeBrowserApp = async (
   config: BrowserShellConfig = {}
 ): Promise<void> => {
   applyBrandMetadata(config)
+  const { shell } = app
+  await configureTelemetry(
+    {
+      ...(shell.config.sentryDsn ? { dsn: shell.config.sentryDsn } : {}),
+      appVersion: shell.config.appVersion,
+      buildHash: shell.config.buildHash
+    },
+    shell.preferences
+  )
   await Promise.all([
     app.stores.auth.getState().initialize(),
     app.stores.settings.getState().initialize()
   ])
+  // Restore Sentry for returning users who previously opted in.
+  if (app.stores.settings.getState().telemetryEnabled) {
+    await setTelemetryConsent(true)
+  }
 }
 
 export const AppBrowserProvider = ({

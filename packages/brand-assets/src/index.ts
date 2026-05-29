@@ -1,5 +1,9 @@
 import type { BrandDefinition } from '@tinytinkerer/contracts'
 
+export { LICENSE_TEXT } from './license.generated'
+export { TINYTINKERER_SOCIALS, TINYTINKERER_LICENSE, type BrandSocial } from './brand-links'
+export { BrandSettingsFooter } from './react'
+
 export const TINYTINKERER_BRAND_ASSET_URLS = {
   faviconIco: new URL('../assets/generated/favicon.ico', import.meta.url).href,
   favicon16: new URL('../assets/generated/favicon-16.png', import.meta.url).href,

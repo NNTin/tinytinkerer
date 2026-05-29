@@ -3,6 +3,7 @@ import { SUPPORTED_MODELS } from '@tinytinkerer/app-core'
 import { modelsListResponseSchema, type GitHubModelEntry } from '@tinytinkerer/contracts'
 import { useAuthStore } from './app'
 import { useBrowserShellConfig } from './hooks'
+import { getTelemetryHeaders } from './telemetry/telemetry'
 
 export type ModelEntry = GitHubModelEntry
 
@@ -29,7 +30,7 @@ export const fetchGitHubModels = async (
 
   try {
     const response = await fetch(`${edgeBaseUrl}/api/models/list`, {
-      headers: { authorization: `Bearer ${token}` }
+      headers: { authorization: `Bearer ${token}`, ...getTelemetryHeaders() }
     })
 
     if (!response.ok) return [...SUPPORTED_MODELS]

@@ -3,6 +3,8 @@
   "name": "tinytinkerer-edge",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-21",
+  // nodejs_compat is required by the @sentry/cloudflare SDK (AsyncLocalStorage).
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "routes": [
     {
@@ -14,4 +16,5 @@
     "ALLOWED_ORIGINS": "http://localhost:3111,https://tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz"
   },
   // Required secrets (set via `wrangler secret put`): GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
+  // Optional secret: SENTRY_DSN. SENTRY_RELEASE is set at deploy time from the git SHA.
 }

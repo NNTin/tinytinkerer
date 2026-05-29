@@ -4,6 +4,8 @@ node_modules
 dist
 coverage
 packages/brand-assets/assets/generated/
+packages/brand-assets/src/license.generated.ts
+packages/app-browser/src/telemetry/privacy-policy.generated.ts
 .env
 .env.*
 !.env.example
