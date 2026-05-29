@@ -4,10 +4,13 @@ import type {
   ExecutionContext as AgentExecutionContext,
   ModelProvider as AgentModelProvider,
   ProviderCallOptions as AgentProviderCallOptions,
+  SynthesisChunk,
   Tool as AgentTool
 } from '@tinytinkerer/agent-core'
 import type { ExecutionPlan, PlanStep } from '@tinytinkerer/contracts'
 import type { ChatRuntime } from './ports'
+
+export type { SynthesisChunk } from '@tinytinkerer/agent-core'
 
 export type ConversationMessage = {
   role: 'user' | 'assistant'
@@ -30,7 +33,7 @@ export type ProviderCallOptions = {
 export interface ModelProvider {
   plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan>
   execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
-  synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<string>
+  synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk>
 }
 
 export type Tool<Input, Output> = AgentTool<Input, Output>

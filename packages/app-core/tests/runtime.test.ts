@@ -31,7 +31,7 @@ describe('createChatRuntime', () => {
         return Promise.resolve('used tool results')
       },
       async *synthesize() {
-        yield await Promise.resolve('done')
+        yield { kind: 'content' as const, text: await Promise.resolve('done') }
       }
     }
 
@@ -74,7 +74,7 @@ describe('createChatRuntime', () => {
         if (attempts === 1) {
           throw new RateLimitError('rate limited', { retryAfterMs: 1, retryAt })
         }
-        yield await Promise.resolve('retried')
+        yield { kind: 'content' as const, text: await Promise.resolve('retried') }
       }
     }
 

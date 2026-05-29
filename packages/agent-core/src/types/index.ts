@@ -22,10 +22,18 @@ export type ProviderCallOptions = {
   searchEnabled?: boolean
 }
 
+// A single piece of the synthesized response stream. `content` chunks build the
+// final answer; `reasoning` chunks carry the model's raw chain-of-thought when
+// the underlying model emits it (otherwise none are produced and consumers fall
+// back to the structured activity timeline).
+export type SynthesisChunk =
+  | { kind: 'content'; text: string }
+  | { kind: 'reasoning'; text: string }
+
 export interface ModelProvider {
   plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan>
   execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
-  synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<string>
+  synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk>
 }
 
 export type AssistantContentSnapshot = {

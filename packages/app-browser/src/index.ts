@@ -51,11 +51,11 @@ export { isSearchReady, OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 export {
   DEFAULT_MODEL,
   SUPPORTED_MODELS,
-  buildCurrentTimeline,
   buildTurns,
   normalizeSelectedModel
 } from '@tinytinkerer/app-core'
-export type { TimelineEntry, Turn } from '@tinytinkerer/app-core'
+export type { Turn, TurnActivity, TurnActivityItem } from '@tinytinkerer/app-core'
+export { TurnActivityPanel, toolLabel } from './turn-activity-panel'
 export type {
   ChatEvent,
   McpDiscoveryResult,

@@ -171,12 +171,27 @@ export class AgentRuntime {
   ): AsyncGenerator<ChatEvent> {
     while (true) {
       const session = await this.createAssistantContentSession()
+      let reasoningText = ''
       try {
         const synthesizeOptions = signal ? { signal } : undefined
         for await (const chunk of this.provider.synthesize(context, synthesizeOptions)) {
-          yield createEvent('assistant.chunk', session.append(chunk))
+          if (chunk.kind === 'reasoning') {
+            reasoningText += chunk.text
+            yield createEvent('reasoning.chunk', {
+              source: session.snapshot().source,
+              text: reasoningText
+            })
+            continue
+          }
+          yield createEvent('assistant.chunk', session.append(chunk.text))
         }
 
+        if (reasoningText.trim().length > 0) {
+          yield createEvent('reasoning.done', {
+            source: session.snapshot().source,
+            text: reasoningText
+          })
+        }
         yield createEvent('assistant.done', session.snapshot())
         return
       } catch (error) {

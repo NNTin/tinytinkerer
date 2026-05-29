@@ -122,7 +122,21 @@ export const executeChatPrompt = async (options: {
     'system',
     'rate.limit.waiting',
     'rate.limit.recovered',
-    'rate.limit.cancelled'
+    'rate.limit.cancelled',
+    // Reasoning & activity: persist the final/granular events so the inline
+    // per-turn panel reconstructs on reload. `reasoning.chunk` (like
+    // `assistant.chunk`) is live-stream only — the persisted `reasoning.done`
+    // carries the full text, keeping storage to ~one reasoning row per turn.
+    'reasoning.done',
+    'planning.started',
+    'plan.generated',
+    'execution.started',
+    'execution.step.started',
+    'execution.step.completed',
+    'execution.completed',
+    'tool.call.started',
+    'tool.call.completed',
+    'tool.call.failed'
   ])
 
   for await (const event of runPrompt(

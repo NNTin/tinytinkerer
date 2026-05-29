@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { RateLimitError, type ExecutionContext } from '@tinytinkerer/app-core'
+import { RateLimitError, type ExecutionContext, type SynthesisChunk } from '@tinytinkerer/app-core'
 import { GitHubModelsProvider } from '../src/runtime/github-models-provider.js'
 
 const context: ExecutionContext = {
@@ -10,10 +10,12 @@ const context: ExecutionContext = {
   toolResults: {}
 }
 
-const collect = async (stream: AsyncIterable<string>): Promise<string> => {
+const collect = async (stream: AsyncIterable<SynthesisChunk>): Promise<string> => {
   let output = ''
   for await (const chunk of stream) {
-    output += chunk
+    if (chunk.kind === 'content') {
+      output += chunk.text
+    }
   }
   return output
 }

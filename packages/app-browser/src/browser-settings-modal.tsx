@@ -515,10 +515,8 @@ export const McpServerList = () => {
 
 const InterfaceSection = () => {
   const {
-    showThinkingTimeline,
-    setShowThinkingTimeline,
-    showToolActivity,
-    setShowToolActivity,
+    showReasoningActivity,
+    setShowReasoningActivity,
     showCodeBlockFullscreenButton,
     setShowCodeBlockFullscreenButton
   } = useSettingsSurfaceController()
@@ -526,16 +524,10 @@ const InterfaceSection = () => {
   return (
     <div className="space-y-3">
       <ToggleRow
-        label="Thinking timeline"
-        description="Show step-by-step planning activity during a run."
-        checked={showThinkingTimeline}
-        onChange={(next) => void setShowThinkingTimeline(next)}
-      />
-      <ToggleRow
-        label="Tool activity"
-        description="Show web search results and tool outputs."
-        checked={showToolActivity}
-        onChange={(next) => void setShowToolActivity(next)}
+        label="Show reasoning & activity"
+        description="Show the model's reasoning, planning, and tool activity inline with each answer."
+        checked={showReasoningActivity}
+        onChange={(next) => void setShowReasoningActivity(next)}
       />
       <ToggleRow
         label="Code block fullscreen button"

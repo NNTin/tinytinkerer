@@ -4,7 +4,8 @@ import {
   type ConversationMessage,
   type ExecutionContext,
   type ModelProvider,
-  type ProviderCallOptions
+  type ProviderCallOptions,
+  type SynthesisChunk
 } from '@tinytinkerer/app-core'
 import {
   edgeErrorResponseSchema,
@@ -107,7 +108,7 @@ export class GitHubModelsProvider implements ModelProvider {
     return Promise.resolve('')
   }
 
-  async *synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<string> {
+  async *synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk> {
     if (this.synthesizing) {
       throw new Error('Assertion failed: synthesize called concurrently — canSendPrompt must gate this at the UI layer')
     }
@@ -120,7 +121,7 @@ export class GitHubModelsProvider implements ModelProvider {
     }
   }
 
-  private async *synthesizeInner(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<string> {
+  private async *synthesizeInner(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk> {
     const token = this.options.getToken?.()
 
     if (token) {
@@ -188,9 +189,16 @@ export class GitHubModelsProvider implements ModelProvider {
         return
       }
 
-      const parsed = modelsChatResponseSchema.parse(await response.json())
+      const rawJson = (await response.json()) as Record<string, unknown>
+      const reasoning = extractReasoning(
+        (rawJson['choices'] as Array<Record<string, unknown>> | undefined)?.[0]?.['message']
+      )
+      if (reasoning) {
+        yield { kind: 'reasoning', text: reasoning }
+      }
+      const parsed = modelsChatResponseSchema.parse(rawJson)
       const text = parsed.choices?.[0]?.message?.content ?? ''
-      yield text
+      yield { kind: 'content', text }
       return
     }
 
@@ -203,15 +211,37 @@ export class GitHubModelsProvider implements ModelProvider {
       : 'Sign in with GitHub to get AI responses. Without a token the runtime runs in local fallback mode.'
 
     for (const chunk of draft.split(' ')) {
-      yield `${chunk} `
+      yield { kind: 'content', text: `${chunk} ` }
     }
   }
+}
+
+// Surfaces the model's raw chain-of-thought when present. Different OpenAI-compatible
+// gateways expose it under different keys (DeepSeek-R1 uses `reasoning_content`, some
+// others use `reasoning`); absence is normal and yields nothing.
+const extractReasoning = (delta: unknown): string | undefined => {
+  if (!delta || typeof delta !== 'object') {
+    return undefined
+  }
+
+  const record = delta as Record<string, unknown>
+  const reasoningContent = record['reasoning_content']
+  if (typeof reasoningContent === 'string' && reasoningContent) {
+    return reasoningContent
+  }
+
+  const reasoning = record['reasoning']
+  if (typeof reasoning === 'string' && reasoning) {
+    return reasoning
+  }
+
+  return undefined
 }
 
 async function* parseSseStream(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal | undefined
-): AsyncGenerator<string> {
+): AsyncGenerator<SynthesisChunk> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
@@ -254,9 +284,13 @@ async function* parseSseStream(
           }
 
           const delta = (choices[0] as Record<string, unknown> | undefined)?.['delta']
+          const reasoning = extractReasoning(delta)
+          if (reasoning) {
+            yield { kind: 'reasoning', text: reasoning }
+          }
           const content = (delta as Record<string, unknown> | undefined)?.['content']
           if (typeof content === 'string' && content) {
-            yield content
+            yield { kind: 'content', text: content }
           }
         } catch {
           // Skip malformed SSE lines.
