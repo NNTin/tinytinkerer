@@ -115,7 +115,7 @@ export class GitHubModelsProvider implements ModelProvider {
     this.synthesizing = true
 
     try {
-      yield* this.synthesizeInner(context, options)
+      yield* splitInlineThink(this.synthesizeInner(context, options))
     } finally {
       this.synthesizing = false
     }
@@ -236,6 +236,69 @@ const extractReasoning = (delta: unknown): string | undefined => {
   }
 
   return undefined
+}
+
+const THINK_OPEN = '<think>'
+const THINK_CLOSE = '</think>'
+
+// Longest suffix of `text` that is a proper prefix of `tag` — i.e. the part we
+// must hold back because it could be the start of `tag` continued in the next
+// chunk.
+const partialTagSuffixLength = (text: string, tag: string): number => {
+  const max = Math.min(text.length, tag.length - 1)
+  for (let len = max; len > 0; len -= 1) {
+    if (tag.startsWith(text.slice(text.length - len))) {
+      return len
+    }
+  }
+  return 0
+}
+
+// Some reasoning models (e.g. DeepSeek-R1 via GitHub Models) stream their
+// chain-of-thought inline in the content wrapped in <think>…</think> rather than
+// in a separate reasoning_content delta. Re-route those regions to the reasoning
+// channel so they render in the activity panel instead of the final answer.
+// Tags may straddle chunk boundaries, so a partial-tag suffix is buffered.
+// Chunks already classified as reasoning pass through untouched.
+export async function* splitInlineThink(
+  stream: AsyncIterable<SynthesisChunk>
+): AsyncGenerator<SynthesisChunk> {
+  let insideThink = false
+  let buffer = ''
+
+  function* drain(flush: boolean): Generator<SynthesisChunk> {
+    for (;;) {
+      const tag = insideThink ? THINK_CLOSE : THINK_OPEN
+      const index = buffer.indexOf(tag)
+      if (index !== -1) {
+        const segment = buffer.slice(0, index)
+        if (segment) {
+          yield { kind: insideThink ? 'reasoning' : 'content', text: segment }
+        }
+        buffer = buffer.slice(index + tag.length)
+        insideThink = !insideThink
+        continue
+      }
+
+      const hold = flush ? 0 : partialTagSuffixLength(buffer, tag)
+      const emit = buffer.slice(0, buffer.length - hold)
+      if (emit) {
+        yield { kind: insideThink ? 'reasoning' : 'content', text: emit }
+      }
+      buffer = buffer.slice(buffer.length - hold)
+      break
+    }
+  }
+
+  for await (const chunk of stream) {
+    if (chunk.kind === 'reasoning') {
+      yield chunk
+      continue
+    }
+    buffer += chunk.text
+    yield* drain(false)
+  }
+  yield* drain(true)
 }
 
 async function* parseSseStream(
