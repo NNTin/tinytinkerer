@@ -110,8 +110,11 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     env:
-      # Job-level so the source map upload step can guard on it in `if:`.
+      # Job-level so the inject/upload steps can guard on it in `if:`.
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      # wrangler reads these from the environment for `deploy`/`triggers`.
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -125,9 +128,6 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-
-      - name: Build Edge Worker
-        run: pnpm --filter @tinytinkerer/edge build
 
       - name: Prepare Worker Secrets
         id: secrets-file
@@ -155,28 +155,50 @@ jobs:
 
           echo "path=$secrets_file" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy Worker Code and Secrets
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: apps/edge
-          command: deploy --secrets-file ${{ steps.secrets-file.outputs.path }} --var SENTRY_RELEASE:${{ github.sha }} --outdir dist
+      - name: Compute Release
+        id: release
+        # Unified 7-char short SHA, matching the frontend buildHash so every
+        # Sentry project shares one release identifier per commit.
+        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload source maps to Sentry
+      - name: Bundle Worker
+        working-directory: apps/edge
+        # Build the worker bundle and source maps (upload_source_maps) to dist
+        # WITHOUT deploying, so debug IDs can be injected before it ships.
+        run: pnpm exec wrangler deploy --dry-run --outdir dist
+
+      - name: Inject Sentry Debug IDs
+        if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
+        working-directory: apps/edge
+        # Embeds matching debug IDs into dist/index.js and its source map so the
+        # deployed worker carries them at runtime (robust de-minification).
+        run: pnpm exec sentry-cli sourcemaps inject dist
+
+      - name: Deploy Worker Code and Secrets
+        working-directory: apps/edge
+        # --no-bundle ships the already-built, debug-ID-injected dist/index.js
+        # as-is; wrangler still applies name/routes/compatibility_flags/vars from
+        # wrangler.jsonc and uploads the sibling source map to Cloudflare.
+        run: >
+          pnpm exec wrangler deploy dist/index.js --no-bundle
+          --secrets-file ${{ steps.secrets-file.outputs.path }}
+          --var SENTRY_RELEASE:${{ steps.release.outputs.sha }}
+
+      - name: Upload Source Maps and Finalize Sentry Release
         if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
         working-directory: apps/edge
         env:
           SENTRY_ORG: nntin-labs
           SENTRY_PROJECT: tinytinkerer-edge
-        # Release matches the SENTRY_RELEASE var passed to the worker above, so
-        # events de-minify against these artifacts.
-        run: pnpm exec sentry-cli sourcemaps upload --release ${{ github.sha }} dist
+        # Release matches the SENTRY_RELEASE var deployed above; commits are
+        # resolved server-side via the connected GitHub integration.
+        run: |
+          REL='${{ steps.release.outputs.sha }}'
+          pnpm exec sentry-cli releases new "$REL"
+          pnpm exec sentry-cli releases set-commits "$REL" --auto
+          pnpm exec sentry-cli sourcemaps upload --release "$REL" dist
+          pnpm exec sentry-cli releases finalize "$REL"
 
       - name: Apply Worker Domain Configuration
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: apps/edge
-          command: triggers deploy
+        working-directory: apps/edge
+        run: pnpm exec wrangler triggers deploy

@@ -31,7 +31,7 @@ export default defineConfig({
             org: 'nntin-labs',
             project: 'tinytinkerer-frontend',
             authToken: process.env.SENTRY_AUTH_TOKEN,
-            release: { name: buildHash },
+            release: { name: buildHash, setCommits: { auto: true } },
             sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] }
           })
         ]
