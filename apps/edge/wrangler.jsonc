@@ -6,6 +6,9 @@
   // nodejs_compat is required by the @sentry/cloudflare SDK (AsyncLocalStorage).
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
+  // Emit source maps during `wrangler deploy` so they can be uploaded to Sentry
+  // (see the source map upload step in .github/workflows/deploy-edge.yml).
+  "upload_source_maps": true,
   "routes": [
     {
       "pattern": "api.tiny.nntin.xyz",

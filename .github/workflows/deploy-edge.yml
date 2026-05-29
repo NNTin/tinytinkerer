@@ -109,6 +109,9 @@ jobs:
     name: Deploy Cloudflare Worker
     needs: ci
     runs-on: ubuntu-latest
+    env:
+      # Job-level so the source map upload step can guard on it in `if:`.
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -158,7 +161,17 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/edge
-          command: deploy --secrets-file ${{ steps.secrets-file.outputs.path }} --var SENTRY_RELEASE:${{ github.sha }}
+          command: deploy --secrets-file ${{ steps.secrets-file.outputs.path }} --var SENTRY_RELEASE:${{ github.sha }} --outdir dist
+
+      - name: Upload source maps to Sentry
+        if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
+        working-directory: apps/edge
+        env:
+          SENTRY_ORG: nntin-labs
+          SENTRY_PROJECT: tinytinkerer-edge
+        # Release matches the SENTRY_RELEASE var passed to the worker above, so
+        # events de-minify against these artifacts.
+        run: pnpm exec sentry-cli sourcemaps upload --release ${{ github.sha }} dist
 
       - name: Apply Worker Domain Configuration
         uses: cloudflare/wrangler-action@v3
