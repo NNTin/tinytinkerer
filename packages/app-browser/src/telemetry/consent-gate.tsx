@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useBrowserApp, useSettingsStore } from '../app'
 import { useGitHubUser } from '../github-user'
-import { setTelemetryLicenseId } from './telemetry'
+import { setTelemetryGitHubId } from './telemetry'
 import { PrivacyPolicyDialog } from './privacy-policy-dialog'
 
 export const CONSENT_PROMPTED_KEY = 'telemetry_consent_prompted'
 
 /**
  * Shows the one-time telemetry consent notice on first run and keeps the
- * telemetry license ID in sync with the signed-in GitHub user. Mount once near
+ * telemetry GitHub ID in sync with the signed-in GitHub user. Mount once near
  * the app root in standalone apps (web, mobile). Not used in the embedded
  * widget surface.
  */
@@ -21,9 +21,9 @@ export const TelemetryConsentGate = () => {
   const [promptVisible, setPromptVisible] = useState(false)
   const [policyOpen, setPolicyOpen] = useState(false)
 
-  // Keep the GitHub identity (license ID) current for telemetry headers.
+  // Keep the GitHub identity current for telemetry headers.
   useEffect(() => {
-    setTelemetryLicenseId(user?.login ?? null)
+    setTelemetryGitHubId(user?.login ?? null)
   }, [user])
 
   // Decide whether to show the first-run notice once settings have hydrated.

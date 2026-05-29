@@ -8,10 +8,21 @@ const TELEMETRY_HEADERS = {
   appVersion: 'X-App-Version',
   buildHash: 'X-Build-Hash',
   installId: 'X-Install-ID',
-  licenseId: 'X-License-ID'
+  githubId: 'X-GitHub-ID'
 } as const
 
 type SentryModule = typeof import('@sentry/react')
+
+// Removes the query string from a URL so breadcrumbs/events never carry
+// request payloads encoded as query params. Falls back to the raw value when
+// the input is not a parseable URL.
+const stripUrlQuery = (value: unknown): unknown => {
+  if (typeof value !== 'string') {
+    return value
+  }
+  const queryIndex = value.indexOf('?')
+  return queryIndex === -1 ? value : value.slice(0, queryIndex)
+}
 
 type TelemetryConfig = {
   dsn?: string
@@ -24,7 +35,7 @@ type TelemetryConfig = {
 let config: TelemetryConfig = { appVersion: 'dev', buildHash: 'dev' }
 let consent = false
 let installId: string | null = null
-let licenseId: string | null = null
+let githubId: string | null = null
 let sentry: SentryModule | null = null
 let sentryInitPromise: Promise<void> | null = null
 
@@ -33,7 +44,7 @@ const applySentryUser = (): void => {
     return
   }
   if (installId) {
-    sentry.setUser({ id: installId, ...(licenseId ? { username: licenseId } : {}) })
+    sentry.setUser({ id: installId, ...(githubId ? { username: githubId } : {}) })
   } else {
     sentry.setUser(null)
   }
@@ -51,7 +62,33 @@ const ensureSentry = async (): Promise<void> => {
         release: config.buildHash,
         // Errors only — no performance tracing, no session replay.
         integrations: [],
-        tracesSampleRate: 0
+        tracesSampleRate: 0,
+        // Never collect user-typed content. We keep the auto-detected IP
+        // (disclosed in PRIVACY.md) but strip request bodies and the console
+        // logs / network payloads that breadcrumbs would otherwise capture.
+        sendDefaultPii: false,
+        beforeBreadcrumb: (breadcrumb) => {
+          if (breadcrumb.category === 'console') {
+            return null
+          }
+          if (
+            (breadcrumb.category === 'fetch' || breadcrumb.category === 'xhr') &&
+            breadcrumb.data
+          ) {
+            breadcrumb.data.url = stripUrlQuery(breadcrumb.data.url)
+          }
+          return breadcrumb
+        },
+        beforeSend: (event) => {
+          if (event.request) {
+            delete event.request.data
+            delete event.request.query_string
+            if (typeof event.request.url === 'string') {
+              event.request.url = stripUrlQuery(event.request.url) as string
+            }
+          }
+          return event
+        }
       })
       sentry = mod
       applySentryUser()
@@ -100,9 +137,9 @@ export const setTelemetryConsent = async (enabled: boolean): Promise<void> => {
   }
 }
 
-/** Sets the GitHub account identifier sent as the license ID when signed in. */
-export const setTelemetryLicenseId = (value: string | null): void => {
-  licenseId = value
+/** Sets the GitHub account identifier sent as the GitHub ID when signed in. */
+export const setTelemetryGitHubId = (value: string | null): void => {
+  githubId = value
   if (consent) {
     applySentryUser()
   }
@@ -110,7 +147,7 @@ export const setTelemetryLicenseId = (value: string | null): void => {
 
 /**
  * Headers attached to edge requests. App version and build hash are always
- * sent (non-identifying operational metadata). The install ID and license ID
+ * sent (non-identifying operational metadata). The install ID and GitHub ID
  * are only sent once telemetry consent has been granted.
  */
 export const getTelemetryHeaders = (): Record<string, string> => {
@@ -122,16 +159,9 @@ export const getTelemetryHeaders = (): Record<string, string> => {
     if (installId) {
       headers[TELEMETRY_HEADERS.installId] = installId
     }
-    if (licenseId) {
-      headers[TELEMETRY_HEADERS.licenseId] = licenseId
+    if (githubId) {
+      headers[TELEMETRY_HEADERS.githubId] = githubId
     }
   }
   return headers
-}
-
-/** Reports an exception to Sentry when telemetry is enabled; no-op otherwise. */
-export const captureTelemetryException = (error: unknown): void => {
-  if (consent && sentry) {
-    sentry.captureException(error)
-  }
 }

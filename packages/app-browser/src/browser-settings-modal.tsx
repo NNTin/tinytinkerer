@@ -555,7 +555,7 @@ const PrivacySection = () => {
     <div className="space-y-3">
       <ToggleRow
         label="Enable telemetry"
-        description="Send anonymous crash reports to help fix bugs."
+        description="Send pseudonymous crash reports to help fix bugs."
         checked={telemetryEnabled}
         onChange={(next) => void setTelemetryEnabled(next)}
       />

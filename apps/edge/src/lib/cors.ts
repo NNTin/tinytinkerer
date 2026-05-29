@@ -1,5 +1,14 @@
 import type { MiddlewareHandler } from 'hono'
+import { TELEMETRY_HEADERS } from '@tinytinkerer/contracts'
 import type { Bindings } from './bindings'
+
+// Derived from the shared contract so adding a telemetry header automatically
+// keeps it CORS-allowed (no drift between the wire protocol and the allowlist).
+const ALLOWED_REQUEST_HEADERS = [
+  'Content-Type',
+  'Authorization',
+  ...Object.values(TELEMETRY_HEADERS)
+].join(', ')
 
 const matchesConfiguredOrigin = (configuredOrigin: string, requestOrigin: string): boolean => {
   if (!configuredOrigin.includes('*')) {
@@ -104,8 +113,7 @@ export const corsMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   if (c.req.method === 'OPTIONS') {
     const headers = new Headers({
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers':
-        'Content-Type, Authorization, X-App-Version, X-Build-Hash, X-Install-ID, X-License-ID',
+      'Access-Control-Allow-Headers': ALLOWED_REQUEST_HEADERS,
       'Access-Control-Max-Age': '86400'
     })
 
