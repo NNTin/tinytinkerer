@@ -2,6 +2,7 @@ import type { McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contract
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { BrowserShell } from '../shell'
 import { loadCoreModule } from '../core-module'
+import { setTelemetryConsent } from '../telemetry/telemetry'
 
 export type SettingsState = {
   hydrated: boolean
@@ -12,6 +13,7 @@ export type SettingsState = {
   showCodeBlockFullscreenButton: boolean
   mcpServers: McpServerConfig[]
   mcpDiscovery: Record<string, McpDiscoveryResult>
+  telemetryEnabled: boolean
   initialize: () => Promise<void>
   setSelectedModel: (model: string) => Promise<void>
   setSearchEnabled: (enabled: boolean) => Promise<void>
@@ -24,6 +26,7 @@ export type SettingsState = {
   setMcpServerEnabled: (id: string, enabled: boolean) => Promise<void>
   setMcpDiscovery: (result: McpDiscoveryResult) => Promise<void>
   clearMcpDiscovery: (serverId: string) => Promise<void>
+  setTelemetryEnabled: (enabled: boolean) => Promise<void>
 }
 
 export type SettingsStore = StoreApi<SettingsState>
@@ -37,10 +40,11 @@ const SETTINGS_KEYS = {
   showToolActivity: 'settings_show_tool_activity',
   showCodeBlockFullscreenButton: 'settings_show_code_block_fullscreen_button',
   mcpServers: 'settings_mcp_servers',
-  mcpDiscovery: 'settings_mcp_discovery'
+  mcpDiscovery: 'settings_mcp_discovery',
+  telemetryEnabled: 'settings_telemetry_enabled'
 } as const
 
-const defaultSettingsState = (): Omit<SettingsState, 'initialize' | 'setSelectedModel' | 'setSearchEnabled' | 'setShowThinkingTimeline' | 'setShowToolActivity' | 'setShowCodeBlockFullscreenButton' | 'addMcpServer' | 'updateMcpServer' | 'removeMcpServer' | 'setMcpServerEnabled' | 'setMcpDiscovery' | 'clearMcpDiscovery'> => ({
+const defaultSettingsState = (): Omit<SettingsState, 'initialize' | 'setSelectedModel' | 'setSearchEnabled' | 'setShowThinkingTimeline' | 'setShowToolActivity' | 'setShowCodeBlockFullscreenButton' | 'addMcpServer' | 'updateMcpServer' | 'removeMcpServer' | 'setMcpServerEnabled' | 'setMcpDiscovery' | 'clearMcpDiscovery' | 'setTelemetryEnabled'> => ({
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
   searchEnabled: true,
@@ -48,7 +52,8 @@ const defaultSettingsState = (): Omit<SettingsState, 'initialize' | 'setSelected
   showToolActivity: false,
   showCodeBlockFullscreenButton: true,
   mcpServers: [],
-  mcpDiscovery: {}
+  mcpDiscovery: {},
+  telemetryEnabled: false
 })
 
 export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
@@ -141,5 +146,11 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       delete nextDiscovery[serverId]
       await persistMcpDiscovery(shell.preferences, nextDiscovery)
       set({ mcpDiscovery: nextDiscovery })
+    },
+    setTelemetryEnabled: async (enabled) => {
+      const { persistBooleanPreference } = await loadCoreModule()
+      await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.telemetryEnabled, enabled)
+      set({ telemetryEnabled: enabled })
+      await setTelemetryConsent(enabled)
     }
   }))

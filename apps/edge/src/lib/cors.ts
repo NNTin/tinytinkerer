@@ -104,7 +104,8 @@ export const corsMiddleware: MiddlewareHandler<{ Bindings: Bindings }> = async (
   if (c.req.method === 'OPTIONS') {
     const headers = new Headers({
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers':
+        'Content-Type, Authorization, X-App-Version, X-Build-Hash, X-Install-ID, X-License-ID',
       'Access-Control-Max-Age': '86400'
     })
 

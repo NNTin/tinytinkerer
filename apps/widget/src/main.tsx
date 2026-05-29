@@ -19,7 +19,7 @@ import './index.css'
 const hostConfig: BrowserShellConfig = Object.freeze(window.__TINYTINKERER_WIDGET_CONFIG__ ?? {})
 
 const getEnvValue = (
-  key: 'VITE_EDGE_URL' | 'VITE_GITHUB_CLIENT_ID'
+  key: 'VITE_EDGE_URL' | 'VITE_GITHUB_CLIENT_ID' | 'VITE_SENTRY_DSN'
 ): string | undefined => {
   const value = (import.meta.env as Record<string, unknown>)[key]
   return typeof value === 'string' ? value : undefined
@@ -39,7 +39,10 @@ const browserConfig = resolveBrowserShellBootstrapConfig({
   origin: window.location.origin,
   manifestStartUrl: import.meta.env.BASE_URL,
   githubClientId,
-  githubRedirectUri: hostConfig.githubRedirectUri
+  githubRedirectUri: hostConfig.githubRedirectUri,
+  sentryDsn: getEnvValue('VITE_SENTRY_DSN'),
+  appVersion: __APP_VERSION__,
+  buildHash: __BUILD_HASH__
 })
 
 const queryClient = new QueryClient()

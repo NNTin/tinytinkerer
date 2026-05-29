@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { McpServerConfig, ServiceStatus } from '@tinytinkerer/contracts'
 import { BrandSettingsFooter } from '@tinytinkerer/brand-assets'
 import { useSettingsSurfaceController } from './surfaces'
+import { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
 
 const GitHubMark = () => (
   <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4" aria-hidden="true">
@@ -545,6 +546,34 @@ const InterfaceSection = () => {
   )
 }
 
+const PrivacySection = () => {
+  const { telemetryEnabled, setTelemetryEnabled } = useSettingsSurfaceController()
+  const [policyOpen, setPolicyOpen] = useState(false)
+
+  return (
+    <div className="space-y-3">
+      <ToggleRow
+        label="Enable telemetry"
+        description="Send anonymous crash reports to help fix bugs."
+        checked={telemetryEnabled}
+        onChange={(next) => void setTelemetryEnabled(next)}
+      />
+      <p className="text-xs text-[var(--muted)]">
+        This application uses optional telemetry to improve reliability and performance.{' '}
+        <button
+          type="button"
+          onClick={() => setPolicyOpen(true)}
+          className="font-medium text-amber-700 underline-offset-2 hover:underline"
+        >
+          See Privacy Policy
+        </button>{' '}
+        for details.
+      </p>
+      <PrivacyPolicyDialog open={policyOpen} onClose={() => setPolicyOpen(false)} />
+    </div>
+  )
+}
+
 export const BrowserSettingsModal = ({
   open,
   onOpenChange
@@ -621,6 +650,12 @@ export const BrowserSettingsModal = ({
 
           <SettingsSection title="MCP Servers">
             <McpServerList />
+          </SettingsSection>
+
+          <hr className="border-[var(--border)]" />
+
+          <SettingsSection title="Privacy">
+            <PrivacySection />
           </SettingsSection>
 
           <hr className="border-[var(--border)]" />

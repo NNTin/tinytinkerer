@@ -16,10 +16,10 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "pnpm -w generate:privacy-policy && tsc -p tsconfig.json",
     "lint": "eslint src tests",
-    "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc -p tsconfig.json"
+    "test": "pnpm -w generate:privacy-policy && vitest run --passWithNoTests",
+    "typecheck": "pnpm -w generate:privacy-policy && tsc -p tsconfig.json"
   },
   "dependencies": {
     "@tinytinkerer/app-core": "workspace:*",
@@ -34,6 +34,7 @@
     "@tinytinkerer/content-table": "workspace:*",
     "@tinytinkerer/content-wireframe": "workspace:*",
     "@tinytinkerer/contracts": "workspace:*",
+    "@sentry/react": "^10.17.0",
     "dexie": "^4.2.1",
     "zod": "^4.1.12",
     "zustand": "^5.0.8"

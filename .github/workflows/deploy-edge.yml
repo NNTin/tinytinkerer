@@ -133,6 +133,7 @@ jobs:
           OAUTH_GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
           OAUTH_GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
           secrets_file="$RUNNER_TEMP/cloudflare-worker-secrets.env"
 
@@ -145,6 +146,10 @@ jobs:
             printf 'TAVILY_API_KEY=%s\n' "$TAVILY_API_KEY" >> "$secrets_file"
           fi
 
+          if [ -n "$SENTRY_DSN" ]; then
+            printf 'SENTRY_DSN=%s\n' "$SENTRY_DSN" >> "$secrets_file"
+          fi
+
           echo "path=$secrets_file" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Worker Code and Secrets
@@ -153,7 +158,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/edge
-          command: deploy --secrets-file ${{ steps.secrets-file.outputs.path }}
+          command: deploy --secrets-file ${{ steps.secrets-file.outputs.path }} --var SENTRY_RELEASE:${{ github.sha }}
 
       - name: Apply Worker Domain Configuration
         uses: cloudflare/wrangler-action@v3

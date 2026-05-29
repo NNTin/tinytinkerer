@@ -2,12 +2,18 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { getBuildInfo } from '../../scripts/build-info.mjs'
 
 const deployBase = process.env.TINYTINKERER_DEPLOY_BASE?.replace(/\/+$/, '')
 const base = deployBase ? `${deployBase}/mobile/` : '/mobile/'
+const { appVersion, buildHash } = getBuildInfo()
 
 export default defineConfig({
   base,
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __BUILD_HASH__: JSON.stringify(buildHash)
+  },
   publicDir: '../../packages/brand-assets/assets/generated',
   plugins: [
     react(),
@@ -74,6 +80,12 @@ export default defineConfig({
             id.includes('node_modules/react-router')
           ) {
             return 'react-vendor'
+          }
+          if (
+            id.includes('node_modules/@sentry/') ||
+            id.includes('node_modules/@sentry-internal/')
+          ) {
+            return 'sentry-vendor'
           }
           if (
             id.includes('node_modules/@codemirror/') ||

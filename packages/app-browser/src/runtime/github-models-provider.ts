@@ -17,6 +17,7 @@ import { SYSTEM_STYLE_PROMPT } from './system-prompt'
 import { getRetryAfterMs } from './rate-limit'
 import { RateLimitQuota } from './quota-tracker'
 import { createEdgeFetch } from './edge-fetch'
+import { getTelemetryHeaders } from '../telemetry/telemetry'
 import { llmPlan, type PlannerToolDescriptor } from './mcp-planner'
 
 const estimateTokens = (context: ExecutionContext): number => {
@@ -147,7 +148,8 @@ export class GitHubModelsProvider implements ModelProvider {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          authorization: `Bearer ${token}`
+          authorization: `Bearer ${token}`,
+          ...getTelemetryHeaders()
         },
         body: JSON.stringify({
           stream: true,

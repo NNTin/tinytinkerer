@@ -464,3 +464,19 @@ export type McpDiscoveryResult = z.infer<typeof mcpDiscoveryResultSchema>
 export type McpDiscoverRequest = z.infer<typeof mcpDiscoverRequestSchema>
 export type McpCallRequest = z.infer<typeof mcpCallRequestSchema>
 export type McpCallResponse = z.infer<typeof mcpCallResponseSchema>
+
+export const TELEMETRY_HEADERS = {
+  appVersion: 'X-App-Version',
+  buildHash: 'X-Build-Hash',
+  installId: 'X-Install-ID',
+  licenseId: 'X-License-ID'
+} as const
+
+export const telemetryHeadersSchema = z.object({
+  appVersion: z.string().optional(),
+  buildHash: z.string().optional(),
+  installId: z.string().optional(),
+  licenseId: z.string().optional()
+})
+
+export type TelemetryHeaders = z.infer<typeof telemetryHeadersSchema>

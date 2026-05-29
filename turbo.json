@@ -1,6 +1,11 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalEnv": ["TINYTINKERER_SKIP_BRAND_ASSET_GENERATION", "TINYTINKERER_DEPLOY_BASE"],
+  "globalEnv": [
+    "TINYTINKERER_SKIP_BRAND_ASSET_GENERATION",
+    "TINYTINKERER_DEPLOY_BASE",
+    "GIT_SHA",
+    "VITE_SENTRY_DSN"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

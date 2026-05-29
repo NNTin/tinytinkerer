@@ -37,7 +37,9 @@ describe('resolveBrowserShellBootstrapConfig', () => {
       hostToken: 'host-token',
       manifestStartUrl: '/widget/',
       githubClientId: 'client-id',
-      githubRedirectUri: 'https://embed.example/widget/#/auth/callback'
+      githubRedirectUri: 'https://embed.example/widget/#/auth/callback',
+      appVersion: 'dev',
+      buildHash: 'dev'
     })
   })
 
@@ -51,7 +53,9 @@ describe('resolveBrowserShellBootstrapConfig', () => {
       edgeBaseUrl: '',
       storageNamespace: 'tinytinkerer',
       authMode: 'hybrid',
-      hostToken: null
+      hostToken: null,
+      appVersion: 'dev',
+      buildHash: 'dev'
     })
   })
 })
