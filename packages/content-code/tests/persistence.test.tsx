@@ -53,7 +53,9 @@ describe('code-block edit persistence', () => {
     )
     await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull())
     const view = findEditorView(container)
-    view.dispatch({ changes: { from: 6, insert: '!' } })
+    act(() => {
+      view.dispatch({ changes: { from: 6, insert: '!' } })
+    })
 
     await waitFor(
       () => expect(window.localStorage.getItem(key('turn-B', 'node-2'))).toBe('before!'),
@@ -74,8 +76,10 @@ describe('code-block edit persistence', () => {
     await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull())
     const view = findEditorView(container)
     const current = view.state.doc.toString()
-    view.dispatch({
-      changes: { from: 0, to: current.length, insert: 'original' }
+    act(() => {
+      view.dispatch({
+        changes: { from: 0, to: current.length, insert: 'original' }
+      })
     })
 
     await waitFor(
@@ -152,7 +156,9 @@ describe('code-block edit persistence', () => {
     )
     await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull())
     const view = findEditorView(container)
-    view.dispatch({ changes: { from: 9, insert: '!' } })
+    act(() => {
+      view.dispatch({ changes: { from: 9, insert: '!' } })
+    })
     await new Promise((resolve) => setTimeout(resolve, 400))
     expect(window.localStorage.length).toBe(0)
   })
