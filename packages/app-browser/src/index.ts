@@ -35,9 +35,12 @@ export { BrowserSettingsModal, McpServerList } from './browser-settings-modal'
 export { LazyBrowserSettingsModal } from './lazy-browser-settings-modal'
 export { TelemetryConsentGate } from './telemetry/consent-gate'
 export { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
+export { PrivacyPolicyUpdateGate } from './telemetry/privacy-update-gate'
+export { LazyPrivacyPolicyUpdateGate } from './telemetry/lazy-privacy-update-gate'
 export { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
 export { bootstrapBrowserShell } from './initialize'
 export { formatCooldown, useBrowserShellConfig, useChatCooldown, useGitHubOAuth } from './hooks'
+export { useWebSpeechInput } from './web-speech'
 export { resolveBrowserShellBootstrapConfig } from './config'
 export {
   useChatSurfaceController,

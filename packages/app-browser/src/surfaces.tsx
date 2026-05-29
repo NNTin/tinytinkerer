@@ -130,6 +130,8 @@ export type SettingsSurfaceController = {
   setSelectedModel: (model: string) => Promise<void>
   searchEnabled: boolean
   setSearchEnabled: (enabled: boolean) => Promise<void>
+  webSpeechEnabled: boolean
+  setWebSpeechEnabled: (enabled: boolean) => Promise<void>
   showReasoningActivity: boolean
   setShowReasoningActivity: (show: boolean) => Promise<void>
   showCodeBlockFullscreenButton: boolean
@@ -159,6 +161,8 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
   const searchEnabled = useSettingsStore((state) => state.searchEnabled)
   const setSearchEnabled = useSettingsStore((state) => state.setSearchEnabled)
+  const webSpeechEnabled = useSettingsStore((state) => state.webSpeechEnabled)
+  const setWebSpeechEnabled = useSettingsStore((state) => state.setWebSpeechEnabled)
   const showReasoningActivity = useSettingsStore((state) => state.showReasoningActivity)
   const setShowReasoningActivity = useSettingsStore((state) => state.setShowReasoningActivity)
   const showCodeBlockFullscreenButton = useSettingsStore(
@@ -229,6 +233,8 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     setSelectedModel,
     searchEnabled,
     setSearchEnabled,
+    webSpeechEnabled,
+    setWebSpeechEnabled,
     showReasoningActivity,
     setShowReasoningActivity,
     showCodeBlockFullscreenButton,

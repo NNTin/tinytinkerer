@@ -540,11 +540,18 @@ const InterfaceSection = () => {
 }
 
 const PrivacySection = () => {
-  const { telemetryEnabled, setTelemetryEnabled } = useSettingsSurfaceController()
+  const { telemetryEnabled, setTelemetryEnabled, webSpeechEnabled, setWebSpeechEnabled } =
+    useSettingsSurfaceController()
   const [policyOpen, setPolicyOpen] = useState(false)
 
   return (
     <div className="space-y-3">
+      <ToggleRow
+        label="Enable voice input (Web Speech API)"
+        description="Off by default. Your browser or device vendor provides this feature and may process speech on-device or in the cloud."
+        checked={webSpeechEnabled}
+        onChange={(next) => void setWebSpeechEnabled(next)}
+      />
       <ToggleRow
         label="Enable telemetry"
         description="Send pseudonymous crash reports to help fix bugs."
@@ -552,7 +559,9 @@ const PrivacySection = () => {
         onChange={(next) => void setTelemetryEnabled(next)}
       />
       <p className="text-xs text-[var(--muted)]">
-        This application uses optional telemetry to improve reliability and performance.{' '}
+        This application uses optional telemetry to improve reliability and performance. Voice
+        input uses the browser&apos;s Web Speech API, which may run locally on the device or through
+        a vendor cloud service.{' '}
         <button
           type="button"
           onClick={() => setPolicyOpen(true)}

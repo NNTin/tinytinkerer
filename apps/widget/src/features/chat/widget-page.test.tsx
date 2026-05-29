@@ -43,14 +43,22 @@ const mockSettingsState = vi.hoisted(() => ({
   },
   selectedModel: 'openai/gpt-4.1-mini',
   searchEnabled: true,
+  webSpeechEnabled: false,
   setSelectedModel: vi.fn(),
   setSearchEnabled: vi.fn(),
-  setShowThinkingTimeline: vi.fn(),
-  setShowToolActivity: vi.fn(),
+  setWebSpeechEnabled: vi.fn(),
+  setShowReasoningActivity: vi.fn(),
   setShowCodeBlockFullscreenButton: vi.fn(),
-  showThinkingTimeline: true,
-  showToolActivity: true,
+  showReasoningActivity: true,
   showCodeBlockFullscreenButton: true
+}))
+
+const mockSpeechState = vi.hoisted(() => ({
+  visible: false,
+  available: false,
+  listening: false,
+  toggle: vi.fn(() => Promise.resolve()),
+  stop: vi.fn()
 }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
@@ -85,6 +93,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   TINYTINKERER_BRAND_ASSET_URLS: {
     icon192: '/brand/icon-192.png'
   },
+  useWebSpeechInput: () => mockSpeechState,
   useChatSurfaceController: () => ({
     isBooting: false,
     events: mockChatState.events,
@@ -94,8 +103,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     toolEvents: [],
     isRunning: mockChatState.isRunning,
     isRetryPending: false,
-    showThinkingTimeline: true,
-    showToolActivity: true,
+    showReasoningActivity: true,
     cooldownRemainingMs: 0,
     isCoolingDown: false,
     submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
@@ -117,10 +125,10 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     setSelectedModel: mockSettingsState.setSelectedModel,
     searchEnabled: mockSettingsState.searchEnabled,
     setSearchEnabled: mockSettingsState.setSearchEnabled,
-    showThinkingTimeline: mockSettingsState.showThinkingTimeline,
-    setShowThinkingTimeline: mockSettingsState.setShowThinkingTimeline,
-    showToolActivity: mockSettingsState.showToolActivity,
-    setShowToolActivity: mockSettingsState.setShowToolActivity,
+    webSpeechEnabled: mockSettingsState.webSpeechEnabled,
+    setWebSpeechEnabled: mockSettingsState.setWebSpeechEnabled,
+    showReasoningActivity: mockSettingsState.showReasoningActivity,
+    setShowReasoningActivity: mockSettingsState.setShowReasoningActivity,
     showCodeBlockFullscreenButton: mockSettingsState.showCodeBlockFullscreenButton,
     setShowCodeBlockFullscreenButton: mockSettingsState.setShowCodeBlockFullscreenButton,
     searchUnavailable: mockSettingsState.effectiveStatus.search.state !== 'ready',
@@ -130,7 +138,9 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     updateMcpServer: vi.fn(),
     removeMcpServer: vi.fn(),
     setMcpServerEnabled: vi.fn(),
-    refreshMcpServer: vi.fn()
+    refreshMcpServer: vi.fn(),
+    telemetryEnabled: false,
+    setTelemetryEnabled: vi.fn()
   })
 }))
 
@@ -146,8 +156,14 @@ beforeEach(() => {
   window.history.replaceState({}, '', '/widget/')
   mockAuthState.token = null
   mockSettingsState.searchEnabled = true
+  mockSettingsState.webSpeechEnabled = false
   mockSettingsState.effectiveStatus.search.state = 'degraded'
   mockSettingsState.effectiveStatus.search.detail = 'Search temporarily unavailable'
+  mockSpeechState.visible = false
+  mockSpeechState.available = false
+  mockSpeechState.listening = false
+  mockSpeechState.toggle.mockClear()
+  mockSpeechState.stop.mockClear()
 })
 
 describe('WidgetPage', () => {
@@ -162,6 +178,7 @@ describe('WidgetPage', () => {
     expect(screen.queryByText('Search temporarily unavailable')).toBeNull()
     expect(screen.queryByText('Embedded Workspace')).toBeNull()
     expect(screen.queryByText('tinytinkerer widget')).toBeNull()
+    expect(screen.queryByRole('button', { name: /voice input/i })).toBeNull()
   })
 
   it('renders a turn notice and final assistant answer in the same card', () => {
@@ -194,6 +211,12 @@ describe('WidgetPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
 
     expect(screen.getByText('Settings modal')).toBeInTheDocument()
+  })
+
+  it('renders a disabled voice button when Web Speech API is unavailable', () => {
+    mockSpeechState.visible = true
+    render(<WidgetPage />)
+    expect(screen.getByRole('button', { name: /voice input unavailable/i })).toBeDisabled()
   })
 
   it('collapses to a launcher and restores in standalone mode', () => {

@@ -3,7 +3,8 @@ import {
   LazyBrowserSettingsModal,
   TINYTINKERER_BRAND_ASSET_URLS,
   useChatSurfaceController,
-  useSettingsSurfaceController
+  useSettingsSurfaceController,
+  useWebSpeechInput
 } from '@tinytinkerer/app-browser'
 import { Button, GitHubMark } from '@tinytinkerer/ui'
 import {
@@ -219,12 +220,14 @@ const WidgetSurface = ({
   const [prompt, setPrompt] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
+  const speech = useWebSpeechInput({ prompt, setPrompt })
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
   }, [events])
 
   const handleSubmit = async () => {
+    speech.stop()
     const didSend = await submitPrompt(prompt)
     if (didSend) {
       setPrompt('')
@@ -325,6 +328,22 @@ const WidgetSurface = ({
                 >
                   <GitHubMark />
                   Sign in
+                </button>
+              ) : null}
+              {speech.visible ? (
+                <button
+                  type="button"
+                  aria-label={speech.available ? 'Voice input' : 'Voice input unavailable'}
+                  title={
+                    speech.available
+                      ? 'Dictate with the Web Speech API'
+                      : 'Voice input is not available in this browser'
+                  }
+                  disabled={!speech.available}
+                  onClick={() => void speech.toggle()}
+                  className="inline-flex h-8 items-center rounded-md border border-[var(--widget-border)] bg-white px-2 text-[11px] text-[var(--widget-muted)] transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-[var(--widget-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {speech.listening ? 'Stop voice' : 'Voice'}
                 </button>
               ) : null}
             </div>

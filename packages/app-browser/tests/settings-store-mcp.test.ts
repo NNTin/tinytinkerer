@@ -55,6 +55,17 @@ beforeEach(() => {
 })
 
 describe('settings-store MCP actions', () => {
+  describe('setWebSpeechEnabled', () => {
+    it('persists the Web Speech API toggle', async () => {
+      const store = createSettingsStore(makeShell(preferences))
+
+      await store.getState().setWebSpeechEnabled(true)
+
+      expect(store.getState().webSpeechEnabled).toBe(true)
+      expect(await preferences.get('settings_web_speech_enabled')).toBe('true')
+    })
+  })
+
   describe('addMcpServer', () => {
     it('assigns a unique ID and persists the new server', async () => {
       const store = createSettingsStore(makeShell(preferences))

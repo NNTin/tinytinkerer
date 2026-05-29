@@ -2,7 +2,8 @@ import {
   AssistantContent,
   LazyBrowserSettingsModal,
   TurnActivityPanel,
-  useChatSurfaceController
+  useChatSurfaceController,
+  useWebSpeechInput
 } from '@tinytinkerer/app-browser'
 import { Button, GitHubMark, ThinkingDots } from '@tinytinkerer/ui'
 import { Cog6ToothIcon } from '@heroicons/react/24/outline'
@@ -36,6 +37,7 @@ export const ChatPage = () => {
   } = useChatSurfaceController()
   const [prompt, setPrompt] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const speech = useWebSpeechInput({ prompt, setPrompt })
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const conversationEndRef = useRef<HTMLDivElement>(null)
@@ -54,6 +56,7 @@ export const ChatPage = () => {
   }, [events])
 
   const handlePromptSubmit = () => {
+    speech.stop()
     void submitPrompt(prompt).then((didSend) => {
       if (didSend) {
         setPrompt('')
@@ -166,6 +169,23 @@ export const ChatPage = () => {
               >
                 <GitHubMark />
                 Sign in
+              </button>
+            ) : null}
+
+            {speech.visible ? (
+              <button
+                type="button"
+                aria-label={speech.available ? 'Voice input' : 'Voice input unavailable'}
+                title={
+                  speech.available
+                    ? 'Dictate with the Web Speech API'
+                    : 'Voice input is not available in this browser'
+                }
+                disabled={!speech.available}
+                onClick={() => void speech.toggle()}
+                className="inline-flex h-9 items-center rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {speech.listening ? 'Stop voice' : 'Voice'}
               </button>
             ) : null}
 

@@ -12,11 +12,13 @@ const mockSettingsState = vi.hoisted(() => ({
   hydrated: true,
   selectedModel: 'openai/gpt-4.1-mini',
   searchEnabled: true,
+  webSpeechEnabled: false,
   showReasoningActivity: true,
   showCodeBlockFullscreenButton: true,
   initialize: vi.fn(),
   setSelectedModel: vi.fn(),
   setSearchEnabled: vi.fn(),
+  setWebSpeechEnabled: vi.fn(),
   setShowReasoningActivity: vi.fn(),
   setShowCodeBlockFullscreenButton: vi.fn()
 }))
@@ -66,6 +68,14 @@ const mockChatState = vi.hoisted(() => ({
   submitPrompt: vi.fn(() => true),
   resetConversation: vi.fn(),
   cancelRetry: vi.fn()
+}))
+
+const mockSpeechState = vi.hoisted(() => ({
+  visible: false,
+  available: false,
+  listening: false,
+  toggle: vi.fn(() => Promise.resolve()),
+  stop: vi.fn()
 }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
@@ -134,6 +144,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
       ))}
     </section>
   ),
+  useWebSpeechInput: () => mockSpeechState,
   useSettingsStore: () => [],
   useChatSurfaceController: () => ({
     isBooting: false,
@@ -166,6 +177,7 @@ beforeEach(() => {
   mockSettingsState.hydrated = true
   mockSettingsState.selectedModel = 'openai/gpt-4.1-mini'
   mockSettingsState.searchEnabled = true
+  mockSettingsState.webSpeechEnabled = false
   mockSettingsState.showReasoningActivity = true
   mockAuthState.token = null
   mockChatState.events = []
@@ -173,6 +185,11 @@ beforeEach(() => {
   mockChatState.isRetryPending = false
   mockChatState.cooldownUntil = undefined
   mockChatState.submitPrompt.mockClear()
+  mockSpeechState.visible = false
+  mockSpeechState.available = false
+  mockSpeechState.listening = false
+  mockSpeechState.toggle.mockClear()
+  mockSpeechState.stop.mockClear()
   mockStatusState.status = {
     auth: { state: 'ready', detail: 'GitHub auth available' },
     models: { state: 'degraded', detail: 'Model responses are slower than usual' },
@@ -267,6 +284,27 @@ describe('ChatPage composer auth entry point', () => {
     mockAuthState.token = 'ghp_test_token'
     renderChatPage()
     expect(screen.queryByRole('button', { name: /sign in with github/i })).toBeNull()
+  })
+})
+
+describe('ChatPage voice input button', () => {
+  it('hides the voice button when Web Speech API is disabled in settings', () => {
+    renderChatPage()
+    expect(screen.queryByRole('button', { name: /voice input/i })).toBeNull()
+  })
+
+  it('renders a disabled voice button when the browser does not expose Web Speech API', () => {
+    mockSpeechState.visible = true
+    renderChatPage()
+    expect(screen.getByRole('button', { name: /voice input unavailable/i })).toBeDisabled()
+  })
+
+  it('starts voice input when the browser supports it', () => {
+    mockSpeechState.visible = true
+    mockSpeechState.available = true
+    renderChatPage()
+    fireEvent.click(screen.getByRole('button', { name: /voice input/i }))
+    expect(mockSpeechState.toggle).toHaveBeenCalledTimes(1)
   })
 })
 

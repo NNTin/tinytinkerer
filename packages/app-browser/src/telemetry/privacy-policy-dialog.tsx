@@ -2,7 +2,22 @@ import { useEffect } from 'react'
 import { MarkdownDocument } from '../markdown-document'
 import { PRIVACY_POLICY } from './privacy-policy.generated'
 
-export const PrivacyPolicyDialog = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
+export const PrivacyPolicyDialog = ({
+  open,
+  onClose,
+  onOpen
+}: {
+  open: boolean
+  onClose: () => void
+  onOpen?: () => void
+}) => {
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    onOpen?.()
+  }, [onOpen, open])
+
   useEffect(() => {
     if (!open) {
       return

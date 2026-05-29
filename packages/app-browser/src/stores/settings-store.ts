@@ -8,6 +8,7 @@ export type SettingsState = {
   hydrated: boolean
   selectedModel: string
   searchEnabled: boolean
+  webSpeechEnabled: boolean
   showReasoningActivity: boolean
   showCodeBlockFullscreenButton: boolean
   mcpServers: McpServerConfig[]
@@ -16,6 +17,7 @@ export type SettingsState = {
   initialize: () => Promise<void>
   setSelectedModel: (model: string) => Promise<void>
   setSearchEnabled: (enabled: boolean) => Promise<void>
+  setWebSpeechEnabled: (enabled: boolean) => Promise<void>
   setShowReasoningActivity: (show: boolean) => Promise<void>
   setShowCodeBlockFullscreenButton: (show: boolean) => Promise<void>
   addMcpServer: (server: Omit<McpServerConfig, 'id'>) => Promise<McpServerConfig>
@@ -34,6 +36,7 @@ const DEFAULT_MODEL = 'openai/gpt-4.1-mini'
 const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',
   searchEnabled: 'settings_search_enabled',
+  webSpeechEnabled: 'settings_web_speech_enabled',
   showReasoningActivity: 'settings_show_reasoning_activity',
   showCodeBlockFullscreenButton: 'settings_show_code_block_fullscreen_button',
   mcpServers: 'settings_mcp_servers',
@@ -41,10 +44,11 @@ const SETTINGS_KEYS = {
   telemetryEnabled: 'settings_telemetry_enabled'
 } as const
 
-const defaultSettingsState = (): Omit<SettingsState, 'initialize' | 'setSelectedModel' | 'setSearchEnabled' | 'setShowReasoningActivity' | 'setShowCodeBlockFullscreenButton' | 'addMcpServer' | 'updateMcpServer' | 'removeMcpServer' | 'setMcpServerEnabled' | 'setMcpDiscovery' | 'clearMcpDiscovery' | 'setTelemetryEnabled'> => ({
+const defaultSettingsState = (): Omit<SettingsState, 'initialize' | 'setSelectedModel' | 'setSearchEnabled' | 'setWebSpeechEnabled' | 'setShowReasoningActivity' | 'setShowCodeBlockFullscreenButton' | 'addMcpServer' | 'updateMcpServer' | 'removeMcpServer' | 'setMcpServerEnabled' | 'setMcpDiscovery' | 'clearMcpDiscovery' | 'setTelemetryEnabled'> => ({
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
   searchEnabled: true,
+  webSpeechEnabled: false,
   showReasoningActivity: false,
   showCodeBlockFullscreenButton: true,
   mcpServers: [],
@@ -69,6 +73,11 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       const { persistBooleanPreference } = await loadCoreModule()
       await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.searchEnabled, enabled)
       set({ searchEnabled: enabled })
+    },
+    setWebSpeechEnabled: async (enabled) => {
+      const { persistBooleanPreference } = await loadCoreModule()
+      await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.webSpeechEnabled, enabled)
+      set({ webSpeechEnabled: enabled })
     },
     setShowReasoningActivity: async (show) => {
       const { persistBooleanPreference } = await loadCoreModule()

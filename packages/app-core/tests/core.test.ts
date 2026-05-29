@@ -249,6 +249,25 @@ describe('app-core helpers', () => {
     expect(defaultSettingsState().showReasoningActivity).toBe(false)
   })
 
+  it('defaults Web Speech API voice input to false when no preference is stored', async () => {
+    const state = await loadSettingsState({
+      get: () => Promise.resolve(undefined),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.webSpeechEnabled).toBe(false)
+    expect(defaultSettingsState().webSpeechEnabled).toBe(false)
+  })
+
+  it('hydrates Web Speech API voice input from the stored preference key', async () => {
+    const state = await loadSettingsState({
+      get: (key) => Promise.resolve(key === SETTINGS_KEYS.webSpeechEnabled ? 'true' : undefined),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.webSpeechEnabled).toBe(true)
+  })
+
   it('hydrates reasoning & activity from the stored preference key', async () => {
     const state = await loadSettingsState({
       get: (key) => Promise.resolve(key === SETTINGS_KEYS.showReasoningActivity ? 'true' : undefined),
