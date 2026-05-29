@@ -199,6 +199,15 @@ export class AgentRuntime {
           throw error
         }
 
+        // Clear any live reasoning state so a stale partial reasoning chunk from
+        // the failed attempt does not persist into the retry or terminal response.
+        if (reasoningText.trim().length > 0) {
+          yield createEvent('reasoning.done', {
+            source: session.snapshot().source,
+            text: ''
+          })
+        }
+
         const autoRetry = error.retryAfterMs <= MAX_AUTO_RETRY_AFTER_MS
 
         if (!autoRetry) {

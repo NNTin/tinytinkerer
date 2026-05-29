@@ -78,6 +78,10 @@ const thinkingLabel = (event: ChatEvent): string | undefined => {
   switch (event.type) {
     case 'planning.started':
       return 'Planning research steps'
+    case 'plan.generated':
+      return `Generated ${event.payload.plan.steps.length}-step plan`
+    case 'execution.started':
+      return `Executing ${event.payload.steps} steps`
     case 'execution.step.started':
       return event.payload.step.summary
     case 'tool.call.started': {
@@ -86,6 +90,8 @@ const thinkingLabel = (event: ChatEvent): string | undefined => {
     }
     case 'execution.step.completed':
       return event.payload.note
+    case 'execution.completed':
+      return `Completed ${event.payload.steps} steps`
     default:
       return undefined
   }
@@ -98,8 +104,11 @@ const thinkingLabel = (event: ChatEvent): string | undefined => {
 const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
   switch (event.type) {
     case 'planning.started':
+    case 'plan.generated':
+    case 'execution.started':
     case 'execution.step.started':
-    case 'execution.step.completed': {
+    case 'execution.step.completed':
+    case 'execution.completed': {
       const label = thinkingLabel(event)
       if (label) {
         activity.items.push({ kind: 'label', id: event.id, label })
