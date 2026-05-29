@@ -7,6 +7,8 @@ import pngToIco from 'png-to-ico'
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const sourceImagePath = join(rootDir, 'packages', 'brand-assets', 'assets', 'source', 'tinytinkerer.jpg')
 const generatedDir = join(rootDir, 'packages', 'brand-assets', 'assets', 'generated')
+const licenseSourcePath = join(rootDir, 'LICENSE')
+const licenseModulePath = join(rootDir, 'packages', 'brand-assets', 'src', 'license.generated.ts')
 
 const PNG_OUTPUTS = [
   { fileName: 'favicon-16.png', size: 16 },
@@ -20,6 +22,12 @@ const PNG_OUTPUTS = [
 ]
 
 const ICO_SOURCES = ['favicon-16.png', 'favicon-32.png', 'favicon-48.png']
+
+const generateLicenseModule = async () => {
+  const licenseText = await readFile(licenseSourcePath, 'utf8')
+  const module = `// AUTO-GENERATED from /LICENSE by scripts/generate-brand-assets.mjs — do not edit.\nexport const LICENSE_TEXT = ${JSON.stringify(licenseText)}\n`
+  await writeFile(licenseModulePath, module)
+}
 
 const createSquarePng = async (inputBuffer, outputPath, size) => {
   await sharp(inputBuffer)
@@ -49,7 +57,10 @@ const main = async () => {
 
   await writeFile(join(generatedDir, 'favicon.ico'), icoBuffer)
 
+  await generateLicenseModule()
+
   console.log(`Generated ${PNG_OUTPUTS.length + 1} brand assets in ${generatedDir}`)
+  console.log(`Generated license module at ${licenseModulePath}`)
 }
 
 main().catch((error) => {

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { McpServerConfig, ServiceStatus } from '@tinytinkerer/contracts'
+import { BrandSettingsFooter } from '@tinytinkerer/brand-assets'
 import { useSettingsSurfaceController } from './surfaces'
 
 const GitHubMark = () => (
@@ -621,6 +622,10 @@ export const BrowserSettingsModal = ({
           <SettingsSection title="MCP Servers">
             <McpServerList />
           </SettingsSection>
+
+          <hr className="border-[var(--border)]" />
+
+          <BrandSettingsFooter />
         </div>
       </div>
     </div>

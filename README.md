@@ -19,4 +19,8 @@ pnpm dev
 
 `pnpm build` composes the static deployment artifact at `apps/host/dist`.
 
-See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for full setup instructions, environment variables, and project structure.
+## Learn more
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — monorepo map, layers, and dependency rules.
+- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) — contribution terms, security disclosure, and commercial licensing.
+- [LICENSE](LICENSE) — source-available license.

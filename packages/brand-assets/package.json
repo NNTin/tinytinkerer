@@ -13,12 +13,19 @@
   "types": "src/index.ts",
   "scripts": {
     "generate": "pnpm -w generate:brand-assets",
-    "build": "tsc -p tsconfig.json",
+    "build": "pnpm -w generate:brand-assets && tsc -p tsconfig.json",
     "lint": "eslint src tests",
     "test": "pnpm -w generate:brand-assets && vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "pnpm -w generate:brand-assets && tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tinytinkerer/contracts": "workspace:*"
+    "@tinytinkerer/contracts": "workspace:*",
+    "react-icons": "^5.5.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14"
   }
 }

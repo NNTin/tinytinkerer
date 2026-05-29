@@ -4,6 +4,7 @@ node_modules
 dist
 coverage
 packages/brand-assets/assets/generated/
+packages/brand-assets/src/license.generated.ts
 .env
 .env.*
 !.env.example

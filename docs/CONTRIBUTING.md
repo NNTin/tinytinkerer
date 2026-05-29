@@ -1,137 +1,70 @@
 # Contributing
 
-## Prerequisites
+Thank you for your interest in contributing to this project.
 
-- **Node.js 22+** — Wrangler (used by `apps/edge`) requires Node.js v22 or later.
-  If you are using [nvm](https://github.com/nvm-sh/nvm), run:
-  ```bash
-  nvm install 22
-  nvm use 22
-  ```
-  A `.nvmrc` file is included at the repo root so `nvm use` works without arguments.
+This repository is publicly available to promote transparency, security review, learning, and collaboration. While the project is not open source in the traditional OSI-approved sense, community feedback and improvements are welcome.
 
-- **pnpm 9.12.0** — managed via [Corepack](https://nodejs.org/api/corepack.html):
-  ```bash
-  corepack enable
-  ```
+## Before You Contribute
 
-## Setup
+Please understand the following:
 
-```bash
-corepack enable
-nvm use          # picks v22 from .nvmrc
-pnpm install
-```
+* The source code is provided under a source-available license.
+* Redistribution and commercial use are prohibited without a separate commercial agreement.
+* By contributing, you agree that your contributions may be incorporated into both free and commercial versions of the project.
 
-## Running locally
+If you do not agree with these terms, please do not submit contributions.
 
-Start local development:
+---
 
-```bash
-pnpm dev
-```
+# Security Issues
 
-This runs:
+If you discover a security vulnerability, please do NOT open a public issue.
 
-- Edge API (`http://localhost:8787`)
-- Frontend host (`http://localhost:3000/`)
-  - Composite: `http://localhost:3000/`
-  - Web: `http://localhost:3000/web/`
-  - Widget: `http://localhost:3000/widget/`
-  - Mobile: `http://localhost:3000/mobile/`
+Instead, contact:
 
-If port `3000` is occupied and `PORT` is not set, the frontend host automatically falls back to a free local port and logs the resolved URLs.
+* https://www.linkedin.com/in/tin-nguyen-019299279/
 
-Or start them individually in separate terminals:
+Please include:
 
-```bash
-# Terminal 1 — Edge API (http://localhost:8787)
-pnpm --filter @tinytinkerer/edge dev
+* Steps to reproduce
+* Impact assessment
+* Suggested mitigation if available
 
-# Terminal 2 — Frontend host (http://localhost:3000)
-pnpm --filter @tinytinkerer/host dev
-```
+Responsible disclosure is appreciated.
 
-## Environment variables
+---
 
-The app runs in **local fallback mode** without any API keys — useful for UI development. Features degrade gracefully with a status indicator in the top bar.
+# Contributor License Terms
 
-### Web — `apps/web/.env`
+By submitting a contribution, you agree that:
 
-```bash
-VITE_EDGE_URL=               # optional in local host dev; required for deployed builds
-VITE_GITHUB_CLIENT_ID=        # optional: GitHub OAuth app client ID
-VITE_GITHUB_REDIRECT_URI=     # optional: defaults to /web/#/auth/callback
-```
+* You have the right to submit the contribution
+* The contribution is your original work or appropriately licensed
+* You grant the project owner a perpetual, worldwide, non-exclusive, royalty-free license to use, modify, distribute, sublicense, and commercially use your contribution as part of the project
 
-When you run through `pnpm dev`, the unified host proxies `/health`, `/api/*`, and `/auth/github/exchange`, so `VITE_EDGE_URL` can be omitted for local same-origin development. For deployed builds, set `VITE_EDGE_URL` to the deployed edge origin. If `VITE_GITHUB_REDIRECT_URI` is omitted, the web app derives the callback from the current origin, which allows Vercel preview domains to complete OAuth.
+You retain copyright to your contributions unless otherwise agreed in writing.
 
-### Widget
+---
 
-The widget reads host-controlled runtime config from `window.__TINYTINKERER_WIDGET_CONFIG__`:
+# Commercial Licensing
 
-```ts
-window.__TINYTINKERER_WIDGET_CONFIG__ = {
-  edgeBaseUrl: '', // same-origin through the unified host, or the deployed edge origin
-  storageNamespace: 'tinytinkerer-widget',
-  authMode: 'hybrid', // 'oauth' | 'host-token' | 'hybrid'
-  hostToken: null,
-  githubClientId: '',
-  githubRedirectUri: 'http://localhost:3000/widget/#/auth/callback'
-}
-```
+Commercial licensing options are available separately.
 
-For standalone widget embedding outside the unified host, set `edgeBaseUrl` to the edge deployment origin explicitly. If `githubRedirectUri` is omitted but OAuth is enabled, the widget derives the callback from the current origin.
+If you are interested in:
 
-### Mobile — `apps/mobile/.env`
+* commercial use
+* redistribution rights
+* embedding this project into another product
+* enterprise licensing
 
-```bash
-VITE_EDGE_URL=               # optional in local host dev; required for deployed builds
-VITE_GITHUB_CLIENT_ID=        # optional: GitHub OAuth app client ID
-VITE_GITHUB_REDIRECT_URI=     # optional: defaults to /mobile/#/auth/callback
-```
+please contact:
 
-Like web, mobile can rely on same-origin requests in unified local development. For deployed builds, point `VITE_EDGE_URL` at the deployed edge origin.
+* https://www.linkedin.com/in/tin-nguyen-019299279/
 
-### Edge — `apps/edge/.dev.vars`
+---
 
-```bash
-GITHUB_CLIENT_ID=             # optional: GitHub OAuth app client ID
-GITHUB_CLIENT_SECRET=         # optional: GitHub OAuth app client secret
-TAVILY_API_KEY=               # optional: enables live web search
-ALLOWED_ORIGINS=http://localhost:3000,https://tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz
-```
+# Community Expectations
 
-`ALLOWED_ORIGINS` is a comma-separated CORS allowlist. Use it for local dev plus deployed frontend origins. Wildcard entries in the form `https://*.tiny.preview.nntin.xyz` are supported for preview subdomains. `ALLOWED_ORIGIN` remains supported as a single-origin fallback, but `ALLOWED_ORIGINS` should be preferred.
+Be respectful and constructive.
 
-AI model responses use the signed-in user's GitHub OAuth token — there is no separate `GITHUB_MODELS_TOKEN`. When `TAVILY_API_KEY` is absent the health endpoint reports `"state": "degraded"` for search and mock results are returned instead.
-
-## Other commands
-
-```bash
-pnpm check:boundaries   # Workspace boundary and cycle checks
-pnpm lint        # ESLint across all packages
-pnpm typecheck   # TypeScript across all packages
-pnpm test        # Vitest across all packages
-pnpm build       # Produces the composed static deployment artifact at apps/host/dist
-pnpm build:pages # Produces the legacy GitHub Pages-flavored artifact
-pnpm format      # Prettier
-```
-
-## Project structure
-
-```
-apps/
-  edge/          # Hono edge API (Cloudflare Workers compatible)
-  host/          # Unified frontend host and composed static deployment output
-  mobile/        # Mobile React frontend
-  web/           # React 19 + Vite + Tailwind CSS v4 frontend
-  widget/        # Embeddable React widget shell
-
-packages/
-  contracts/     # Shared Zod contracts and inferred types
-  agent-core/    # AgentRuntime, tool registry, runtime abstractions
-  app-core/      # Headless product logic and projections
-  app-browser/   # Browser adapters, persistence, runtime wiring
-  ui/            # Shared React component library
-```
+Good-faith discussion, security research, and thoughtful feedback are encouraged.
