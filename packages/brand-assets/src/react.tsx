@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType } from 'react'
+import { useEffect, useState, type ComponentType, type ReactNode } from 'react'
 import { FaGithub, FaInstagram, FaLinkedinIn, FaScaleBalanced } from 'react-icons/fa6'
 import { LICENSE_TEXT } from './license.generated'
 import { TINYTINKERER_LICENSE, TINYTINKERER_SOCIALS, type BrandSocial } from './brand-links'
@@ -9,7 +9,13 @@ const SOCIAL_ICONS: Record<BrandSocial['kind'], ComponentType<{ className?: stri
   linkedin: FaLinkedinIn
 }
 
-const LicenseDialog = ({ onClose }: { onClose: () => void }) => {
+const LicenseDialog = ({
+  onClose,
+  renderMarkdown
+}: {
+  onClose: () => void
+  renderMarkdown?: (markdown: string) => ReactNode
+}) => {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -50,16 +56,24 @@ const LicenseDialog = ({ onClose }: { onClose: () => void }) => {
           </button>
         </div>
         <div className="overflow-y-auto px-6 py-5">
-          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-stone-700">
-            {LICENSE_TEXT}
-          </pre>
+          {renderMarkdown ? (
+            renderMarkdown(LICENSE_TEXT)
+          ) : (
+            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-stone-700">
+              {LICENSE_TEXT}
+            </pre>
+          )}
         </div>
       </div>
     </div>
   )
 }
 
-export const BrandSettingsFooter = () => {
+export const BrandSettingsFooter = ({
+  renderMarkdown
+}: {
+  renderMarkdown?: (markdown: string) => ReactNode
+}) => {
   const [licenseOpen, setLicenseOpen] = useState(false)
 
   return (
@@ -92,7 +106,7 @@ export const BrandSettingsFooter = () => {
           <span>{TINYTINKERER_LICENSE.title}</span>
         </button>
       </div>
-      {licenseOpen ? <LicenseDialog onClose={() => setLicenseOpen(false)} /> : null}
+      {licenseOpen ? <LicenseDialog onClose={() => setLicenseOpen(false)} {...(renderMarkdown ? { renderMarkdown } : {})} /> : null}
     </section>
   )
 }

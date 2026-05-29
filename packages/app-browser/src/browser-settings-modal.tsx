@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { McpServerConfig, ServiceStatus } from '@tinytinkerer/contracts'
 import { BrandSettingsFooter } from '@tinytinkerer/brand-assets'
+import { MarkdownDocument } from './markdown-document'
 import { useSettingsSurfaceController } from './surfaces'
 import { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
 
@@ -660,7 +661,7 @@ export const BrowserSettingsModal = ({
 
           <hr className="border-[var(--border)]" />
 
-          <BrandSettingsFooter />
+          <BrandSettingsFooter renderMarkdown={(markdown) => <MarkdownDocument markdown={markdown} />} />
         </div>
       </div>
     </div>

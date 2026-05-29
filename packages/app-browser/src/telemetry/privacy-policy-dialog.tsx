@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { MarkdownDocument } from '../markdown-document'
 import { PRIVACY_POLICY } from './privacy-policy.generated'
 
 export const PrivacyPolicyDialog = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
@@ -49,9 +50,7 @@ export const PrivacyPolicyDialog = ({ open, onClose }: { open: boolean; onClose:
           </button>
         </div>
         <div className="overflow-y-auto px-6 py-5">
-          <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-stone-700">
-            {PRIVACY_POLICY}
-          </pre>
+          <MarkdownDocument markdown={PRIVACY_POLICY} />
         </div>
       </div>
     </div>
