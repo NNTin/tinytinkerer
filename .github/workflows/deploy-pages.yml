@@ -135,6 +135,10 @@ jobs:
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build Deployment Artifacts
+        # SENTRY_AUTH_TOKEN enables source map upload from the Sentry Vite plugin
+        # during the build (see apps/web/vite.config.ts). Production only.
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy to Vercel

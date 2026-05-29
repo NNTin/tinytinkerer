@@ -19,6 +19,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@sentry/cli": "^3.4.3",
     "wrangler": "^4.46.0"
   }
 }

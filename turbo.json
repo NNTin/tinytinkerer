@@ -4,7 +4,8 @@
     "TINYTINKERER_SKIP_BRAND_ASSET_GENERATION",
     "TINYTINKERER_DEPLOY_BASE",
     "GIT_SHA",
-    "VITE_SENTRY_DSN"
+    "VITE_SENTRY_DSN",
+    "SENTRY_AUTH_TOKEN"
   ],
   "tasks": {
     "build": {
