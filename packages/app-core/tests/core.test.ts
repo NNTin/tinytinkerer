@@ -3,7 +3,6 @@ import type { ContentDocument, ChatEvent, McpDiscoveryResult, McpServerConfig } 
 import {
   activeCooldown,
   buildConversationHistory,
-  buildCurrentTimeline,
   buildTurns,
   canSendPrompt,
   defaultChatState,
@@ -69,7 +68,7 @@ describe('app-core helpers', () => {
     ])
   })
 
-  it('projects turns and timeline entries', () => {
+  it('projects turns with per-turn activity entries', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hello' }),
       event('planning.started', { summary: 'Understanding request' }),
@@ -80,8 +79,28 @@ describe('app-core helpers', () => {
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
 
-    expect(buildTurns(events)).toHaveLength(1)
-    expect(buildCurrentTimeline(events)).toHaveLength(2)
+    const turns = buildTurns(events)
+    expect(turns).toHaveLength(1)
+    const labels = turns[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    expect(labels).toHaveLength(2)
+  })
+
+  it('coalesces tool start/completed into a single activity item and captures reasoning', () => {
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hello' }),
+      event('reasoning.chunk', { source: 'm', text: 'thinking…' }),
+      event('reasoning.done', { source: 'm', text: 'thinking… done' }),
+      event('tool.call.started', { toolId: 'web-search', input: { query: 'hello' } }),
+      event('tool.call.completed', { toolId: 'web-search', output: { query: 'hello', results: [] } }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ]
+
+    const activity = buildTurns(events)[0]?.activity
+    expect(activity?.reasoningText).toBe('thinking… done')
+    const tools = activity?.items.filter((item) => item.kind === 'tool') ?? []
+    expect(tools).toHaveLength(1)
+    expect(tools[0]).toMatchObject({ toolId: 'web-search', status: 'completed' })
+    expect(activity?.items.filter((item) => item.kind === 'reasoning')).toHaveLength(1)
   })
 
   it('keeps one turn when rate-limit waiting later completes', () => {
@@ -183,25 +202,23 @@ describe('app-core helpers', () => {
     expect(activeCooldown(new Date(Date.now() - 1_000).toISOString())).toBeUndefined()
   })
 
-  it('buildCurrentTimeline returns empty array when no user.message is present', () => {
-    expect(buildCurrentTimeline([])).toEqual([])
-    expect(
-      buildCurrentTimeline([
-        event('planning.started', { summary: 'Understanding request' }),
-        event('assistant.done', { source: 'hi', content: assistantContent('hi') })
-      ])
-    ).toEqual([])
+  it('does not attach activity to a turn without a preceding user.message', () => {
+    const turns = buildTurns([
+      event('planning.started', { summary: 'Understanding request' }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ])
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.activity.items).toEqual([])
   })
 
-  it('execution.step.completed with empty note does not appear in timeline', () => {
+  it('execution.step.completed with empty note does not appear in activity', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hello' }),
       event('execution.step.completed', { stepId: 'step-1', note: '' }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
-    const timeline = buildCurrentTimeline(events)
-    expect(timeline.every((entry) => entry.label !== '')).toBe(true)
-    expect(timeline).toHaveLength(0)
+    const labels = buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    expect(labels).toHaveLength(0)
   })
 
   it('drops malformed persisted MCP servers during settings hydration', async () => {
@@ -222,33 +239,32 @@ describe('app-core helpers', () => {
     expect(state.mcpServers).toEqual([validServer])
   })
 
-  it('defaults thinking timeline and tool activity to false when no preference is stored', async () => {
+  it('defaults reasoning & activity to false when no preference is stored', async () => {
     const state = await loadSettingsState({
       get: () => Promise.resolve(undefined),
       set: () => Promise.resolve()
     })
 
-    expect(state.showThinkingTimeline).toBe(false)
-    expect(state.showToolActivity).toBe(false)
-    expect(defaultSettingsState().showThinkingTimeline).toBe(false)
-    expect(defaultSettingsState().showToolActivity).toBe(false)
+    expect(state.showReasoningActivity).toBe(false)
+    expect(defaultSettingsState().showReasoningActivity).toBe(false)
   })
 
-  it('hydrates thinking timeline and tool activity from stored preference keys', async () => {
+  it('hydrates reasoning & activity from the stored preference key', async () => {
     const state = await loadSettingsState({
-      get: (key) =>
-        Promise.resolve(
-          key === SETTINGS_KEYS.showThinkingTimeline
-            ? 'true'
-            : key === SETTINGS_KEYS.showToolActivity
-              ? 'true'
-              : undefined
-        ),
+      get: (key) => Promise.resolve(key === SETTINGS_KEYS.showReasoningActivity ? 'true' : undefined),
       set: () => Promise.resolve()
     })
 
-    expect(state.showThinkingTimeline).toBe(true)
-    expect(state.showToolActivity).toBe(true)
+    expect(state.showReasoningActivity).toBe(true)
+  })
+
+  it('migrates reasoning & activity from either legacy toggle when the new key is unset', async () => {
+    const state = await loadSettingsState({
+      get: (key) => Promise.resolve(key === 'settings_show_tool_activity' ? 'true' : undefined),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.showReasoningActivity).toBe(true)
   })
 
   it('defaults showCodeBlockFullscreenButton to true when no preference is stored', async () => {

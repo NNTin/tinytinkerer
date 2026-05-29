@@ -10,20 +10,25 @@ import {
 export const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',
   searchEnabled: 'settings_search_enabled',
-  showThinkingTimeline: 'settings_show_thinking_timeline',
-  showToolActivity: 'settings_show_tool_activity',
+  showReasoningActivity: 'settings_show_reasoning_activity',
   showCodeBlockFullscreenButton: 'settings_show_code_block_fullscreen_button',
   mcpServers: 'settings_mcp_servers',
   mcpDiscovery: 'settings_mcp_discovery',
   telemetryEnabled: 'settings_telemetry_enabled'
 } as const
 
+// Superseded by the merged `showReasoningActivity` toggle; read once at load for
+// back-compat migration of users who set either of the old toggles.
+const LEGACY_SETTINGS_KEYS = {
+  showThinkingTimeline: 'settings_show_thinking_timeline',
+  showToolActivity: 'settings_show_tool_activity'
+} as const
+
 export type SettingsState = {
   hydrated: boolean
   selectedModel: string
   searchEnabled: boolean
-  showThinkingTimeline: boolean
-  showToolActivity: boolean
+  showReasoningActivity: boolean
   showCodeBlockFullscreenButton: boolean
   mcpServers: McpServerConfig[]
   mcpDiscovery: Record<string, McpDiscoveryResult>
@@ -36,12 +41,17 @@ const parseBool = (value: string | undefined, fallback: boolean): boolean => {
   return fallback
 }
 
+const parseBoolOptional = (value: string | undefined): boolean | undefined => {
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return undefined
+}
+
 export const defaultSettingsState = (): SettingsState => ({
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
   searchEnabled: true,
-  showThinkingTimeline: false,
-  showToolActivity: false,
+  showReasoningActivity: false,
   showCodeBlockFullscreenButton: true,
   mcpServers: [],
   mcpDiscovery: {},
@@ -52,8 +62,9 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
   const [
     selectedModel,
     searchEnabled,
-    showThinkingTimeline,
-    showToolActivity,
+    showReasoningActivity,
+    legacyThinkingTimeline,
+    legacyToolActivity,
     showCodeBlockFullscreenButton,
     mcpServersRaw,
     mcpDiscoveryRaw,
@@ -61,20 +72,25 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
   ] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
     preferences.get(SETTINGS_KEYS.searchEnabled),
-    preferences.get(SETTINGS_KEYS.showThinkingTimeline),
-    preferences.get(SETTINGS_KEYS.showToolActivity),
+    preferences.get(SETTINGS_KEYS.showReasoningActivity),
+    preferences.get(LEGACY_SETTINGS_KEYS.showThinkingTimeline),
+    preferences.get(LEGACY_SETTINGS_KEYS.showToolActivity),
     preferences.get(SETTINGS_KEYS.showCodeBlockFullscreenButton),
     preferences.get(SETTINGS_KEYS.mcpServers),
     preferences.get(SETTINGS_KEYS.mcpDiscovery),
     preferences.get(SETTINGS_KEYS.telemetryEnabled)
   ])
 
+  // When the merged key is unset, migrate: enabled if either legacy toggle was on.
+  const reasoningActivity =
+    parseBoolOptional(showReasoningActivity) ??
+    (parseBool(legacyThinkingTimeline, false) || parseBool(legacyToolActivity, false))
+
   return {
     hydrated: true,
     selectedModel: normalizeSelectedModel(selectedModel),
     searchEnabled: parseBool(searchEnabled, true),
-    showThinkingTimeline: parseBool(showThinkingTimeline, false),
-    showToolActivity: parseBool(showToolActivity, false),
+    showReasoningActivity: reasoningActivity,
     showCodeBlockFullscreenButton: parseBool(showCodeBlockFullscreenButton, true),
     mcpServers: parseMcpServers(mcpServersRaw),
     mcpDiscovery: parseMcpDiscovery(mcpDiscoveryRaw),

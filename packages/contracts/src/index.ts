@@ -53,6 +53,8 @@ export const eventTypeSchema = z.enum([
   'rate.limit.waiting',
   'rate.limit.recovered',
   'rate.limit.cancelled',
+  'reasoning.chunk',
+  'reasoning.done',
   'assistant.chunk',
   'assistant.done',
   'error',
@@ -168,6 +170,20 @@ export const rateLimitCancelledEventSchema = eventBaseSchema(
     reason: z.enum(['too_long', 'cancelled'])
   })
 )
+export const reasoningChunkEventSchema = eventBaseSchema(
+  'reasoning.chunk',
+  z.object({
+    source: z.string(),
+    text: z.string()
+  })
+)
+export const reasoningDoneEventSchema = eventBaseSchema(
+  'reasoning.done',
+  z.object({
+    source: z.string(),
+    text: z.string()
+  })
+)
 export const assistantChunkEventSchema = eventBaseSchema(
   'assistant.chunk',
   z.object({
@@ -208,6 +224,8 @@ export const chatEventSchema = z.discriminatedUnion('type', [
   rateLimitWaitingEventSchema,
   rateLimitRecoveredEventSchema,
   rateLimitCancelledEventSchema,
+  reasoningChunkEventSchema,
+  reasoningDoneEventSchema,
   assistantChunkEventSchema,
   assistantDoneEventSchema,
   errorEventSchema,
@@ -227,6 +245,8 @@ export type ExecutionCompletedEvent = z.infer<typeof executionCompletedEventSche
 export type RateLimitWaitingEvent = z.infer<typeof rateLimitWaitingEventSchema>
 export type RateLimitRecoveredEvent = z.infer<typeof rateLimitRecoveredEventSchema>
 export type RateLimitCancelledEvent = z.infer<typeof rateLimitCancelledEventSchema>
+export type ReasoningChunkEvent = z.infer<typeof reasoningChunkEventSchema>
+export type ReasoningDoneEvent = z.infer<typeof reasoningDoneEventSchema>
 export type AssistantChunkEvent = z.infer<typeof assistantChunkEventSchema>
 export type AssistantDoneEvent = z.infer<typeof assistantDoneEventSchema>
 export type ErrorEvent = z.infer<typeof errorEventSchema>

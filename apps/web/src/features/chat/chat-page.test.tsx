@@ -12,14 +12,12 @@ const mockSettingsState = vi.hoisted(() => ({
   hydrated: true,
   selectedModel: 'openai/gpt-4.1-mini',
   searchEnabled: true,
-  showThinkingTimeline: true,
-  showToolActivity: true,
+  showReasoningActivity: true,
   showCodeBlockFullscreenButton: true,
   initialize: vi.fn(),
   setSelectedModel: vi.fn(),
   setSearchEnabled: vi.fn(),
-  setShowThinkingTimeline: vi.fn(),
-  setShowToolActivity: vi.fn(),
+  setShowReasoningActivity: vi.fn(),
   setShowCodeBlockFullscreenButton: vi.fn()
 }))
 
@@ -39,12 +37,20 @@ const mockStatusState = vi.hoisted(() => ({
   refresh: vi.fn()
 }))
 
+type MockActivity = {
+  reasoningText: string
+  items: Array<{ kind: string; id: string; label?: string; toolId?: string; status?: string }>
+}
+
+const emptyActivity = (): MockActivity => ({ reasoningText: '', items: [] })
+
 const mockTurns = vi.hoisted(() => [] as Array<{
   id: string
   userText: string
   assistantSource: string
   assistantContent: { nodes: unknown[] } | null
   isStreaming: boolean
+  activity: MockActivity
   notice?: {
     kind: 'system' | 'error' | 'rate-limit'
     message: string
@@ -54,7 +60,6 @@ const mockTurns = vi.hoisted(() => [] as Array<{
 
 const mockChatState = vi.hoisted(() => ({
   events: [] as MockChatEvent[],
-  toolEvents: [] as MockChatEvent[],
   isRunning: false,
   isRetryPending: false,
   cooldownUntil: undefined as string | undefined,
@@ -120,18 +125,25 @@ vi.mock('@tinytinkerer/app-browser', () => ({
       {content.nodes[0]?.children?.[0]?.value}
     </div>
   ),
+  TurnActivityPanel: ({ activity, isLive }: { activity: MockActivity; isLive: boolean }) => (
+    <section aria-label="Reasoning and activity">
+      <h3>Reasoning &amp; activity{isLive ? ' (live)' : ''}</h3>
+      {activity.reasoningText ? <p>{activity.reasoningText}</p> : null}
+      {activity.items.map((item) => (
+        <span key={item.id}>{item.label ?? item.toolId}</span>
+      ))}
+    </section>
+  ),
   useSettingsStore: () => [],
   useChatSurfaceController: () => ({
     isBooting: false,
     events: mockChatState.events,
     token: mockAuthState.token,
     turns: mockTurns,
-    timeline: [],
-    toolEvents: mockChatState.toolEvents,
+    serverNameById: new Map<string, string>(),
     isRunning: mockChatState.isRunning,
     isRetryPending: mockChatState.isRetryPending,
-    showThinkingTimeline: mockSettingsState.showThinkingTimeline,
-    showToolActivity: mockSettingsState.showToolActivity,
+    showReasoningActivity: mockSettingsState.showReasoningActivity,
     cooldownRemainingMs: 0,
     isCoolingDown: false,
     submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
@@ -154,11 +166,9 @@ beforeEach(() => {
   mockSettingsState.hydrated = true
   mockSettingsState.selectedModel = 'openai/gpt-4.1-mini'
   mockSettingsState.searchEnabled = true
-  mockSettingsState.showThinkingTimeline = true
-  mockSettingsState.showToolActivity = true
+  mockSettingsState.showReasoningActivity = true
   mockAuthState.token = null
   mockChatState.events = []
-  mockChatState.toolEvents = []
   mockChatState.isRunning = false
   mockChatState.isRetryPending = false
   mockChatState.cooldownUntil = undefined
@@ -197,32 +207,36 @@ describe('ChatPage layout', () => {
   })
 })
 
-describe('ChatPage secondary panel conditional rendering', () => {
-  it('shows thinking timeline section when showThinkingTimeline is true', () => {
+describe('ChatPage reasoning & activity panel', () => {
+  it('renders the inline reasoning & activity panel for a turn when enabled', () => {
+    mockTurns.push({
+      id: 'turn-1',
+      userText: 'hi',
+      assistantSource: '',
+      assistantContent: { nodes: [{ children: [{ value: 'reply' }] }] },
+      isStreaming: false,
+      activity: emptyActivity()
+    })
     renderChatPage()
-    expect(screen.getByRole('heading', { name: /thinking/i })).not.toBeNull()
+    expect(screen.getByRole('heading', { name: /reasoning & activity/i })).not.toBeNull()
   })
 
-  it('hides thinking timeline section when showThinkingTimeline is false', () => {
-    mockSettingsState.showThinkingTimeline = false
+  it('hides the panel when showReasoningActivity is false', () => {
+    mockSettingsState.showReasoningActivity = false
+    mockTurns.push({
+      id: 'turn-1',
+      userText: 'hi',
+      assistantSource: '',
+      assistantContent: { nodes: [{ children: [{ value: 'reply' }] }] },
+      isStreaming: false,
+      activity: emptyActivity()
+    })
     renderChatPage()
-    expect(screen.queryByRole('heading', { name: /thinking/i })).toBeNull()
+    expect(screen.queryByRole('heading', { name: /reasoning & activity/i })).toBeNull()
   })
 
-  it('shows tool history section when showToolActivity is true', () => {
-    renderChatPage()
-    expect(screen.getByRole('heading', { name: /tool history/i })).not.toBeNull()
-  })
-
-  it('hides tool history section when showToolActivity is false', () => {
-    mockSettingsState.showToolActivity = false
-    renderChatPage()
-    expect(screen.queryByRole('heading', { name: /tool history/i })).toBeNull()
-  })
-
-  it('shows only the conversation and composer when both secondary panels are disabled', () => {
-    mockSettingsState.showThinkingTimeline = false
-    mockSettingsState.showToolActivity = false
+  it('shows only the conversation and composer when the panel is disabled', () => {
+    mockSettingsState.showReasoningActivity = false
     const { container } = renderChatPage()
     const sections = container.querySelectorAll('section')
     expect(sections).toHaveLength(1)
@@ -235,27 +249,11 @@ describe('ChatPage secondary panel conditional rendering', () => {
       userText: 'hi',
       assistantSource: '',
       assistantContent: { nodes: [{ children: [{ value: 'reply' }] }] },
-      isStreaming: false
+      isStreaming: false,
+      activity: emptyActivity()
     })
     const { container } = renderChatPage()
     expect(container.querySelector('[data-turn-id="turn-abc"]')).not.toBeNull()
-  })
-
-  it('marks MCP tool-reported errors distinctly in tool history', () => {
-    mockChatState.toolEvents = [
-      {
-        id: 'tool-1',
-        type: 'tool.call.completed',
-        payload: {
-          toolId: 'mcp:server-1:get_weather',
-          output: { text: 'Unknown location', isError: true }
-        }
-      }
-    ]
-
-    renderChatPage()
-
-    expect(screen.getByText('Error: Unknown location')).not.toBeNull()
   })
 })
 
@@ -342,6 +340,7 @@ describe('ChatPage turns', () => {
         nodes: [{ type: 'paragraph', children: [{ type: 'text', value: 'Hi there.' }] }]
       },
       isStreaming: false,
+      activity: emptyActivity(),
       notice: {
         kind: 'rate-limit',
         message: 'Recovered after a short wait.',

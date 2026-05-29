@@ -8,8 +8,7 @@ export type SettingsState = {
   hydrated: boolean
   selectedModel: string
   searchEnabled: boolean
-  showThinkingTimeline: boolean
-  showToolActivity: boolean
+  showReasoningActivity: boolean
   showCodeBlockFullscreenButton: boolean
   mcpServers: McpServerConfig[]
   mcpDiscovery: Record<string, McpDiscoveryResult>
@@ -17,8 +16,7 @@ export type SettingsState = {
   initialize: () => Promise<void>
   setSelectedModel: (model: string) => Promise<void>
   setSearchEnabled: (enabled: boolean) => Promise<void>
-  setShowThinkingTimeline: (show: boolean) => Promise<void>
-  setShowToolActivity: (show: boolean) => Promise<void>
+  setShowReasoningActivity: (show: boolean) => Promise<void>
   setShowCodeBlockFullscreenButton: (show: boolean) => Promise<void>
   addMcpServer: (server: Omit<McpServerConfig, 'id'>) => Promise<McpServerConfig>
   updateMcpServer: (id: string, patch: Partial<Omit<McpServerConfig, 'id'>>) => Promise<void>
@@ -36,20 +34,18 @@ const DEFAULT_MODEL = 'openai/gpt-4.1-mini'
 const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',
   searchEnabled: 'settings_search_enabled',
-  showThinkingTimeline: 'settings_show_thinking_timeline',
-  showToolActivity: 'settings_show_tool_activity',
+  showReasoningActivity: 'settings_show_reasoning_activity',
   showCodeBlockFullscreenButton: 'settings_show_code_block_fullscreen_button',
   mcpServers: 'settings_mcp_servers',
   mcpDiscovery: 'settings_mcp_discovery',
   telemetryEnabled: 'settings_telemetry_enabled'
 } as const
 
-const defaultSettingsState = (): Omit<SettingsState, 'initialize' | 'setSelectedModel' | 'setSearchEnabled' | 'setShowThinkingTimeline' | 'setShowToolActivity' | 'setShowCodeBlockFullscreenButton' | 'addMcpServer' | 'updateMcpServer' | 'removeMcpServer' | 'setMcpServerEnabled' | 'setMcpDiscovery' | 'clearMcpDiscovery' | 'setTelemetryEnabled'> => ({
+const defaultSettingsState = (): Omit<SettingsState, 'initialize' | 'setSelectedModel' | 'setSearchEnabled' | 'setShowReasoningActivity' | 'setShowCodeBlockFullscreenButton' | 'addMcpServer' | 'updateMcpServer' | 'removeMcpServer' | 'setMcpServerEnabled' | 'setMcpDiscovery' | 'clearMcpDiscovery' | 'setTelemetryEnabled'> => ({
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
   searchEnabled: true,
-  showThinkingTimeline: false,
-  showToolActivity: false,
+  showReasoningActivity: false,
   showCodeBlockFullscreenButton: true,
   mcpServers: [],
   mcpDiscovery: {},
@@ -74,15 +70,10 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.searchEnabled, enabled)
       set({ searchEnabled: enabled })
     },
-    setShowThinkingTimeline: async (show) => {
+    setShowReasoningActivity: async (show) => {
       const { persistBooleanPreference } = await loadCoreModule()
-      await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.showThinkingTimeline, show)
-      set({ showThinkingTimeline: show })
-    },
-    setShowToolActivity: async (show) => {
-      const { persistBooleanPreference } = await loadCoreModule()
-      await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.showToolActivity, show)
-      set({ showToolActivity: show })
+      await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.showReasoningActivity, show)
+      set({ showReasoningActivity: show })
     },
     setShowCodeBlockFullscreenButton: async (show) => {
       const { persistBooleanPreference } = await loadCoreModule()

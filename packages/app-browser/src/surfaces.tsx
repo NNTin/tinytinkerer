@@ -1,4 +1,4 @@
-import { buildCurrentTimeline, buildTurns, type TimelineEntry, type Turn } from '@tinytinkerer/app-core'
+import { buildTurns, type Turn } from '@tinytinkerer/app-core'
 import {
   mcpDiscoveryResultSchema,
   type ChatEvent,
@@ -15,20 +15,16 @@ import { startStatusPolling } from './status'
 import { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 import { createEdgeFetch } from './runtime/edge-fetch'
 
-type ToolEvent = Extract<ChatEvent, { type: 'tool.call.completed' | 'tool.call.failed' }>
-
 export type ChatSurfaceController = {
   isBooting: boolean
   initializeError: string | null
   events: ChatEvent[]
   token: string | null
   turns: Turn[]
-  timeline: TimelineEntry[]
-  toolEvents: ToolEvent[]
+  serverNameById: Map<string, string>
   isRunning: boolean
   isRetryPending: boolean
-  showThinkingTimeline: boolean
-  showToolActivity: boolean
+  showReasoningActivity: boolean
   cooldownRemainingMs: number
   isCoolingDown: boolean
   submitLabel: string
@@ -49,8 +45,8 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const cancelRetry = useChatStore((state) => state.cancelRetry)
   const refreshStatus = useStatusStore((state) => state.refresh)
   const token = useAuthStore((state) => state.token)
-  const showThinkingTimeline = useSettingsStore((state) => state.showThinkingTimeline)
-  const showToolActivity = useSettingsStore((state) => state.showToolActivity)
+  const showReasoningActivity = useSettingsStore((state) => state.showReasoningActivity)
+  const mcpServers = useSettingsStore((state) => state.mcpServers)
   const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
 
   useEffect(() => {
@@ -80,14 +76,9 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   useEffect(() => startStatusPolling(refreshStatus), [refreshStatus])
 
   const turns = useMemo(() => buildTurns(events), [events])
-  const timeline = useMemo(() => buildCurrentTimeline(events), [events])
-  const toolEvents = useMemo(
-    () =>
-      events.filter(
-        (event): event is ToolEvent =>
-          event.type === 'tool.call.completed' || event.type === 'tool.call.failed'
-      ),
-    [events]
+  const serverNameById = useMemo(
+    () => new Map(mcpServers.map((server) => [server.id, server.name])),
+    [mcpServers]
   )
 
   const submitLabel = isCoolingDown
@@ -112,12 +103,10 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     events,
     token,
     turns,
-    timeline,
-    toolEvents,
+    serverNameById,
     isRunning,
     isRetryPending,
-    showThinkingTimeline,
-    showToolActivity,
+    showReasoningActivity,
     cooldownRemainingMs,
     isCoolingDown,
     submitLabel,
@@ -141,10 +130,8 @@ export type SettingsSurfaceController = {
   setSelectedModel: (model: string) => Promise<void>
   searchEnabled: boolean
   setSearchEnabled: (enabled: boolean) => Promise<void>
-  showThinkingTimeline: boolean
-  setShowThinkingTimeline: (show: boolean) => Promise<void>
-  showToolActivity: boolean
-  setShowToolActivity: (show: boolean) => Promise<void>
+  showReasoningActivity: boolean
+  setShowReasoningActivity: (show: boolean) => Promise<void>
   showCodeBlockFullscreenButton: boolean
   setShowCodeBlockFullscreenButton: (show: boolean) => Promise<void>
   searchUnavailable: boolean
@@ -172,10 +159,8 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
   const searchEnabled = useSettingsStore((state) => state.searchEnabled)
   const setSearchEnabled = useSettingsStore((state) => state.setSearchEnabled)
-  const showThinkingTimeline = useSettingsStore((state) => state.showThinkingTimeline)
-  const setShowThinkingTimeline = useSettingsStore((state) => state.setShowThinkingTimeline)
-  const showToolActivity = useSettingsStore((state) => state.showToolActivity)
-  const setShowToolActivity = useSettingsStore((state) => state.setShowToolActivity)
+  const showReasoningActivity = useSettingsStore((state) => state.showReasoningActivity)
+  const setShowReasoningActivity = useSettingsStore((state) => state.setShowReasoningActivity)
   const showCodeBlockFullscreenButton = useSettingsStore(
     (state) => state.showCodeBlockFullscreenButton
   )
@@ -244,10 +229,8 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     setSelectedModel,
     searchEnabled,
     setSearchEnabled,
-    showThinkingTimeline,
-    setShowThinkingTimeline,
-    showToolActivity,
-    setShowToolActivity,
+    showReasoningActivity,
+    setShowReasoningActivity,
     showCodeBlockFullscreenButton,
     setShowCodeBlockFullscreenButton,
     searchUnavailable: effectiveStatus.search.state !== 'ready',

@@ -1,6 +1,28 @@
 import { describe, expect, it, vi } from 'vitest'
-import { RateLimitError, type ExecutionContext } from '@tinytinkerer/app-core'
-import { GitHubModelsProvider } from '../src/runtime/github-models-provider.js'
+import { RateLimitError, type ExecutionContext, type SynthesisChunk } from '@tinytinkerer/app-core'
+import { GitHubModelsProvider, splitInlineThink } from '../src/runtime/github-models-provider.js'
+
+async function* fromContentChunks(texts: string[]): AsyncGenerator<SynthesisChunk> {
+  for (const text of texts) {
+    await Promise.resolve()
+    yield { kind: 'content', text }
+  }
+}
+
+const drain = async (
+  stream: AsyncIterable<SynthesisChunk>
+): Promise<{ content: string; reasoning: string }> => {
+  let content = ''
+  let reasoning = ''
+  for await (const chunk of stream) {
+    if (chunk.kind === 'reasoning') {
+      reasoning += chunk.text
+    } else {
+      content += chunk.text
+    }
+  }
+  return { content, reasoning }
+}
 
 const context: ExecutionContext = {
   prompt: 'hello',
@@ -10,10 +32,12 @@ const context: ExecutionContext = {
   toolResults: {}
 }
 
-const collect = async (stream: AsyncIterable<string>): Promise<string> => {
+const collect = async (stream: AsyncIterable<SynthesisChunk>): Promise<string> => {
   let output = ''
   for await (const chunk of stream) {
-    output += chunk
+    if (chunk.kind === 'content') {
+      output += chunk.text
+    }
   }
   return output
 }
@@ -139,5 +163,40 @@ describe('GitHubModelsProvider', () => {
     ])
 
     vi.unstubAllGlobals()
+  })
+})
+
+describe('splitInlineThink', () => {
+  it('routes inline <think>…</think> content to the reasoning channel', async () => {
+    const result = await drain(
+      splitInlineThink(fromContentChunks(['<think>reasoning here</think>final answer']))
+    )
+    expect(result.reasoning).toBe('reasoning here')
+    expect(result.content).toBe('final answer')
+  })
+
+  it('handles think tags split across chunk boundaries', async () => {
+    const result = await drain(
+      splitInlineThink(fromContentChunks(['<th', 'ink>reason', 'ing</thi', 'nk>ans', 'wer']))
+    )
+    expect(result.reasoning).toBe('reasoning')
+    expect(result.content).toBe('answer')
+  })
+
+  it('passes through content untouched when there is no think block', async () => {
+    const result = await drain(splitInlineThink(fromContentChunks(['just ', 'an answer'])))
+    expect(result.reasoning).toBe('')
+    expect(result.content).toBe('just an answer')
+  })
+
+  it('preserves separate reasoning chunks emitted by the provider', async () => {
+    async function* mixed(): AsyncGenerator<SynthesisChunk> {
+      await Promise.resolve()
+      yield { kind: 'reasoning', text: 'native reasoning' }
+      yield { kind: 'content', text: 'answer' }
+    }
+    const result = await drain(splitInlineThink(mixed()))
+    expect(result.reasoning).toBe('native reasoning')
+    expect(result.content).toBe('answer')
   })
 })

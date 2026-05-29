@@ -56,8 +56,8 @@ const provider: ModelProvider = {
     return 'ok'
   },
   async *synthesize() {
-    yield 'hi '
-    yield 'there'
+    yield { kind: 'content' as const, text: 'hi ' }
+    yield { kind: 'content' as const, text: 'there' }
   }
 }
 
@@ -119,10 +119,10 @@ describe('AgentRuntime', () => {
       async *synthesize() {
         attempts += 1
         if (attempts === 1) {
-          yield 'partial '
+          yield { kind: 'content' as const, text: 'partial ' }
           throw new RateLimitError('rate limited', { retryAfterMs: 1, retryAt })
         }
-        yield 'retried'
+        yield { kind: 'content' as const, text: 'retried' }
       }
     }
 
@@ -232,7 +232,7 @@ describe('AgentRuntime', () => {
         return `done: ${step.id}`
       },
       async *synthesize() {
-        yield 'should not reach here'
+        yield { kind: 'content' as const, text: 'should not reach here' }
       }
     }
 
@@ -262,7 +262,7 @@ describe('AgentRuntime', () => {
       },
       async *synthesize(ctx) {
         capturedNotes.push(...ctx.notes)
-        yield 'done'
+        yield { kind: 'content' as const, text: 'done' }
       }
     }
 
@@ -285,7 +285,7 @@ describe('AgentRuntime', () => {
       },
       async *synthesize(ctx) {
         capturedHistory.push(...ctx.history)
-        yield 'done'
+        yield { kind: 'content' as const, text: 'done' }
       }
     }
 
@@ -327,7 +327,7 @@ describe('AgentRuntime', () => {
       },
       async *synthesize(ctx) {
         capturedNotes.push(...ctx.notes)
-        yield 'done'
+        yield { kind: 'content' as const, text: 'done' }
       }
     }
 
@@ -361,7 +361,7 @@ describe('AgentRuntime', () => {
         return 'ok'
       },
       async *synthesize() {
-        yield 'done'
+        yield { kind: 'content' as const, text: 'done' }
       }
     }
 

@@ -171,17 +171,41 @@ export class AgentRuntime {
   ): AsyncGenerator<ChatEvent> {
     while (true) {
       const session = await this.createAssistantContentSession()
+      let reasoningText = ''
       try {
         const synthesizeOptions = signal ? { signal } : undefined
         for await (const chunk of this.provider.synthesize(context, synthesizeOptions)) {
-          yield createEvent('assistant.chunk', session.append(chunk))
+          if (chunk.kind === 'reasoning') {
+            reasoningText += chunk.text
+            yield createEvent('reasoning.chunk', {
+              source: session.snapshot().source,
+              text: reasoningText
+            })
+            continue
+          }
+          yield createEvent('assistant.chunk', session.append(chunk.text))
         }
 
+        if (reasoningText.trim().length > 0) {
+          yield createEvent('reasoning.done', {
+            source: session.snapshot().source,
+            text: reasoningText
+          })
+        }
         yield createEvent('assistant.done', session.snapshot())
         return
       } catch (error) {
         if (!isRateLimitError(error)) {
           throw error
+        }
+
+        // Clear any live reasoning state so a stale partial reasoning chunk from
+        // the failed attempt does not persist into the retry or terminal response.
+        if (reasoningText.trim().length > 0) {
+          yield createEvent('reasoning.done', {
+            source: session.snapshot().source,
+            text: ''
+          })
         }
 
         const autoRetry = error.retryAfterMs <= MAX_AUTO_RETRY_AFTER_MS

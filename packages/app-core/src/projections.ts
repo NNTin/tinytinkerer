@@ -1,14 +1,28 @@
 import type { ChatEvent, ContentDocument } from '@tinytinkerer/contracts'
 
-export type TimelineEntry = {
-  id: string
-  label: string
-}
-
 export type TurnNotice = {
   kind: 'system' | 'error' | 'rate-limit'
   message: string
   level?: 'info' | 'warning' | 'error'
+}
+
+// Chronological items that make up a turn's inline reasoning & activity panel.
+export type TurnActivityItem =
+  | { kind: 'reasoning'; id: string; text: string }
+  | { kind: 'label'; id: string; label: string }
+  | {
+      kind: 'tool'
+      id: string
+      toolId: string
+      status: 'started' | 'completed' | 'failed'
+      input?: Record<string, unknown>
+      output?: unknown
+      error?: string
+    }
+
+export type TurnActivity = {
+  items: TurnActivityItem[]
+  reasoningText: string
 }
 
 export type Turn = {
@@ -17,8 +31,11 @@ export type Turn = {
   assistantSource: string
   assistantContent: ContentDocument | null
   isStreaming: boolean
+  activity: TurnActivity
   notice?: TurnNotice
 }
+
+const emptyActivity = (): TurnActivity => ({ items: [], reasoningText: '' })
 
 export const activeCooldown = (value: string | undefined): string | undefined => {
   if (!value) {
@@ -61,6 +78,10 @@ const thinkingLabel = (event: ChatEvent): string | undefined => {
   switch (event.type) {
     case 'planning.started':
       return 'Planning research steps'
+    case 'plan.generated':
+      return `Generated ${event.payload.plan.steps.length}-step plan`
+    case 'execution.started':
+      return `Executing ${event.payload.steps} steps`
     case 'execution.step.started':
       return event.payload.step.summary
     case 'tool.call.started': {
@@ -69,8 +90,93 @@ const thinkingLabel = (event: ChatEvent): string | undefined => {
     }
     case 'execution.step.completed':
       return event.payload.note
+    case 'execution.completed':
+      return `Completed ${event.payload.steps} steps`
     default:
       return undefined
+  }
+}
+
+// Routes an activity-bearing event into a turn's activity log, preserving
+// chronological order. Tool start/complete/fail are coalesced onto a single
+// item; reasoning chunks/done upsert a single reasoning item (the payload text
+// is the full accumulated reasoning, so last writer wins).
+const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
+  switch (event.type) {
+    case 'planning.started':
+    case 'plan.generated':
+    case 'execution.started':
+    case 'execution.step.started':
+    case 'execution.step.completed':
+    case 'execution.completed': {
+      const label = thinkingLabel(event)
+      if (label) {
+        activity.items.push({ kind: 'label', id: event.id, label })
+      }
+      return
+    }
+    case 'tool.call.started': {
+      activity.items.push({
+        kind: 'tool',
+        id: event.id,
+        toolId: event.payload.toolId,
+        status: 'started',
+        input: event.payload.input
+      })
+      return
+    }
+    case 'tool.call.completed':
+    case 'tool.call.failed': {
+      const open = [...activity.items]
+        .reverse()
+        .find(
+          (item): item is Extract<TurnActivityItem, { kind: 'tool' }> =>
+            item.kind === 'tool' &&
+            item.toolId === event.payload.toolId &&
+            item.status === 'started'
+        )
+      if (event.type === 'tool.call.completed') {
+        if (open) {
+          open.status = 'completed'
+          open.output = event.payload.output
+        } else {
+          activity.items.push({
+            kind: 'tool',
+            id: event.id,
+            toolId: event.payload.toolId,
+            status: 'completed',
+            output: event.payload.output
+          })
+        }
+      } else if (open) {
+        open.status = 'failed'
+        open.error = event.payload.error
+      } else {
+        activity.items.push({
+          kind: 'tool',
+          id: event.id,
+          toolId: event.payload.toolId,
+          status: 'failed',
+          error: event.payload.error
+        })
+      }
+      return
+    }
+    case 'reasoning.chunk':
+    case 'reasoning.done': {
+      activity.reasoningText = event.payload.text
+      const existing = activity.items.find(
+        (item): item is Extract<TurnActivityItem, { kind: 'reasoning' }> => item.kind === 'reasoning'
+      )
+      if (existing) {
+        existing.text = event.payload.text
+      } else {
+        activity.items.unshift({ kind: 'reasoning', id: event.id, text: event.payload.text })
+      }
+      return
+    }
+    default:
+      return
   }
 }
 
@@ -95,7 +201,8 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
         userText: event.payload.text,
         assistantSource: '',
         assistantContent: null,
-        isStreaming: false
+        isStreaming: false,
+        activity: emptyActivity()
       }
     } else if (event.type === 'assistant.chunk') {
       const content = coerceAssistantContent(event.payload.content)
@@ -109,7 +216,8 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
           userText: '',
           assistantSource: event.payload.source,
           assistantContent: content,
-          isStreaming: true
+          isStreaming: true,
+          activity: emptyActivity()
         })
       }
     } else if (event.type === 'assistant.done') {
@@ -126,7 +234,8 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
           userText: '',
           assistantSource: event.payload.source,
           assistantContent: content,
-          isStreaming: false
+          isStreaming: false,
+          activity: emptyActivity()
         })
       }
     } else if (event.type === 'error') {
@@ -140,6 +249,7 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
           assistantSource: '',
           assistantContent: null,
           isStreaming: false,
+          activity: emptyActivity(),
           notice
         })
       }
@@ -158,6 +268,7 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
           assistantSource: '',
           assistantContent: null,
           isStreaming: false,
+          activity: emptyActivity(),
           notice
         })
       }
@@ -176,9 +287,12 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
           assistantSource: '',
           assistantContent: null,
           isStreaming: false,
+          activity: emptyActivity(),
           notice
         })
       }
+    } else if (pendingTurn) {
+      applyActivityEvent(pendingTurn.activity, event)
     }
   }
 
@@ -187,26 +301,4 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
   }
 
   return turns
-}
-
-export const buildCurrentTimeline = (events: ChatEvent[]): TimelineEntry[] => {
-  let startIndex = -1
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (events[index]?.type === 'user.message') {
-      startIndex = index
-      break
-    }
-  }
-
-  if (startIndex === -1) {
-    return []
-  }
-
-  return events
-    .slice(startIndex)
-    .map((event) => {
-      const label = thinkingLabel(event)
-      return label ? { id: event.id, label } : undefined
-    })
-    .filter((value): value is TimelineEntry => Boolean(value))
 }
