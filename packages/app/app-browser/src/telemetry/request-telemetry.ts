@@ -129,6 +129,7 @@ export const fetchWithTelemetry = async (
   init: RequestInit
 ): Promise<Response> => {
   try {
+    // eslint-disable-next-line no-restricted-globals -- this IS the fetchWithTelemetry wrapper; it must call the raw global fetch internally.
     const response = await fetch(metadata.url, init)
     if (!response.ok) {
       const location = sanitizeRequestLocation(metadata.url)
