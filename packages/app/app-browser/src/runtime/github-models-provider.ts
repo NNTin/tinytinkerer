@@ -2,6 +2,7 @@ import {
   inferPlan,
   RateLimitError,
   type ConversationMessage,
+  type DecisionChunk,
   type ExecutionContext,
   type ModelProvider,
   type ProviderCallOptions,
@@ -27,7 +28,10 @@ import {
   type RequestTelemetryMetadata
 } from '../telemetry/request-telemetry'
 import { llmPlan, type PlannerToolDescriptor } from './mcp-planner'
-import { decideNextAction as llmDecideNextAction } from './react-decider'
+import {
+  decideNextAction as llmDecideNextAction,
+  streamDecision as llmStreamDecision
+} from './react-decider'
 
 const estimateTokens = (context: ExecutionContext): number => {
   const allText = [
@@ -132,6 +136,24 @@ export class GitHubModelsProvider implements ModelProvider {
     // Without a token there is no model to consult, so finish immediately and
     // let synthesize() produce the local fallback answer.
     return { kind: 'final' }
+  }
+
+  async *streamDecision(
+    context: ExecutionContext,
+    options?: ProviderCallOptions
+  ): AsyncIterable<DecisionChunk> {
+    const token = this.options.getToken?.()
+
+    if (token) {
+      const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
+      const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
+      const tools = this.options.allToolDescriptors ?? []
+      yield* llmStreamDecision(context, tools, model, edgeFetch, options?.signal)
+      return
+    }
+
+    // Local fallback: no model to stream, so finish immediately.
+    yield { kind: 'decision', decision: { kind: 'final' } }
   }
 
   async *synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk> {
@@ -340,7 +362,7 @@ export async function* splitInlineThink(
   yield* drain(true)
 }
 
-async function* parseSseStream(
+export async function* parseSseStream(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal | undefined
 ): AsyncGenerator<SynthesisChunk> {

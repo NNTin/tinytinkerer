@@ -156,6 +156,39 @@ describe('ReActRuntime', () => {
     expect(events.find(isEventType('assistant.done'))?.payload.source).toBe('recovered')
   })
 
+  it('streams thoughts via streamDecision and carries the final thought on completion', async () => {
+    const provider: ModelProvider = {
+      async plan() {
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return ''
+      },
+      async *streamDecision() {
+        yield { kind: 'thought' as const, text: 'Let me' }
+        yield { kind: 'thought' as const, text: 'Let me think' }
+        yield { kind: 'decision' as const, decision: { kind: 'final' as const } }
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'answer' }
+      }
+    }
+
+    const runtime = new ReActRuntime(provider, new ToolRegistry())
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    const deltas = events.filter(isEventType('agent.step.delta'))
+    expect(deltas).toHaveLength(2)
+    expect(deltas.at(-1)?.payload.text).toBe('Let me think')
+    // The think step's completion carries the final thought (persisted on reload).
+    const completed = events.filter(isEventType('agent.step.completed'))
+    expect(completed.some((event) => event.payload.summary === 'Let me think')).toBe(true)
+    expect(events.at(-1)?.type).toBe('assistant.done')
+  })
+
   it('surfaces an error when the provider cannot make ReAct decisions', async () => {
     const provider: ModelProvider = {
       async plan() {

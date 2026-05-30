@@ -1,8 +1,9 @@
 import { parseJsonWithTelemetry, parseWithTelemetry } from '../telemetry/request-telemetry'
-import type { ExecutionContext } from '@tinytinkerer/app-core'
+import type { DecisionChunk, ExecutionContext } from '@tinytinkerer/app-core'
 import { reactDecisionSchema, type ReActDecision } from '@tinytinkerer/contracts'
 import type { EdgeFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
+import { parseSseStream, splitInlineThink } from './github-models-provider'
 
 const buildDecisionSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
   const toolDocs = tools
@@ -23,6 +24,8 @@ Return ONLY a JSON object (no markdown, no explanation) matching one of these sh
 - To finish: { "kind": "final", "reasoning": "<why you can answer now>" }
 
 Rules:
+- Think through your decision step by step first; your thinking is shown to the user as it streams.
+- After thinking, your final message must be ONLY the JSON object — no markdown, no commentary.
 - Choose "action" only when a tool is genuinely needed to make progress.
 - Choose "final" as soon as the gathered observations are sufficient to answer.
 - Use exact tool IDs from the list above; arguments must match the tool's input schema.`
@@ -102,4 +105,58 @@ export const decideNextAction = async (
     () => reactDecisionSchema.parse(parsedJson),
     response
   )
+}
+
+const stripFences = (text: string): string =>
+  text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+
+// Streaming variant of decideNextAction. Requests a streamed completion and
+// splits it into the model's reasoning (yielded as growing `thought` chunks so
+// the UI can render the step live) and the answer content (accumulated and
+// parsed as the structured decision once the stream ends).
+export async function* streamDecision(
+  context: ExecutionContext,
+  tools: PlannerToolDescriptor[],
+  model: string,
+  edgeFetch: EdgeFetch,
+  signal?: AbortSignal
+): AsyncGenerator<DecisionChunk> {
+  const systemPrompt = buildDecisionSystemPrompt(tools)
+
+  const messages = [
+    { role: 'system' as const, content: systemPrompt },
+    ...context.history.map((m) => ({ role: m.role, content: m.content })),
+    { role: 'user' as const, content: buildObservations(context) }
+  ]
+
+  const response = await edgeFetch(
+    '/api/models/chat',
+    { model, stream: true, messages },
+    {
+      area: 'react.decide',
+      stream: true,
+      ...(signal ? { signal } : {})
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(`ReAct decision request failed (${response.status})`)
+  }
+
+  let thought = ''
+  let jsonBuffer = ''
+
+  if (response.body) {
+    for await (const chunk of splitInlineThink(parseSseStream(response.body, signal))) {
+      if (chunk.kind === 'reasoning') {
+        thought += chunk.text
+        yield { kind: 'thought', text: thought }
+      } else {
+        jsonBuffer += chunk.text
+      }
+    }
+  }
+
+  const decision = reactDecisionSchema.parse(JSON.parse(stripFences(jsonBuffer)))
+  yield { kind: 'decision', decision }
 }

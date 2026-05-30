@@ -1,4 +1,4 @@
-import type { ChatEvent } from '@tinytinkerer/contracts'
+import type { ChatEvent, ReActDecision } from '@tinytinkerer/contracts'
 import { isRateLimitError } from '../errors/rate-limit-error'
 import { createEvent } from '../events/create-event'
 import type {
@@ -6,7 +6,8 @@ import type {
   ConversationMessage,
   CreateAssistantContentSession,
   ExecutionContext,
-  ModelProvider
+  ModelProvider,
+  ProviderCallOptions
 } from '../types'
 import { ToolRegistry } from '../tools/registry'
 import { MAX_AUTO_RETRY_AFTER_MS, withTimeout } from './utils'
@@ -137,6 +138,65 @@ export abstract class AgentRuntimeBase {
     }
   }
 
+  // Emits a single "think" step and returns the decision. Prefers the streaming
+  // path (streamDecision) so the thought renders live via agent.step.delta; the
+  // final thought is carried on the completed step's summary so it survives a
+  // reload. Falls back to the non-streaming decideNextAction otherwise.
+  protected async *nextDecision(
+    context: ExecutionContext,
+    callOptions: ProviderCallOptions,
+    parentStepId: string | undefined
+  ): AsyncGenerator<ChatEvent, ReActDecision> {
+    const { provider } = this
+    const thoughtStepId = createStepId()
+    const parentField = parentStepId ? { parentStepId } : {}
+
+    if (provider.streamDecision) {
+      yield createEvent('agent.step.started', {
+        stepId: thoughtStepId,
+        ...parentField,
+        kind: 'think',
+        title: 'Thinking…'
+      })
+
+      let thought = ''
+      let decision: ReActDecision | undefined
+      // No withTimeout here: a stream can't be wrapped in a single race; the
+      // request honours the abort signal in callOptions instead.
+      for await (const chunk of provider.streamDecision(context, callOptions)) {
+        if (chunk.kind === 'thought') {
+          thought = chunk.text
+          yield createEvent('agent.step.delta', { stepId: thoughtStepId, text: thought })
+        } else {
+          decision = chunk.decision
+        }
+      }
+
+      yield createEvent('agent.step.completed', {
+        stepId: thoughtStepId,
+        ...(thought.trim().length > 0 ? { summary: thought } : {})
+      })
+
+      return decision ?? { kind: 'final' }
+    }
+
+    const decision = await withTimeout(
+      provider.decideNextAction!(context, callOptions),
+      this.stepTimeoutMs,
+      'ReAct decision timed out'
+    )
+    const thoughtTitle =
+      decision.reasoning ?? (decision.kind === 'final' ? 'Finalizing answer' : 'Deciding next action')
+    yield createEvent('agent.step.started', {
+      stepId: thoughtStepId,
+      ...parentField,
+      kind: 'think',
+      title: thoughtTitle
+    })
+    yield createEvent('agent.step.completed', { stepId: thoughtStepId })
+    return decision
+  }
+
   // The shared Think -> Act -> Observe loop used by ReAct and (per plan step) by
   // Hybrid. Each iteration asks the provider for the next action, executes it,
   // and records the observation back into `context` so the next decision sees
@@ -151,9 +211,9 @@ export abstract class AgentRuntimeBase {
     }
   ): AsyncGenerator<ChatEvent, ReActLoopResult> {
     const { provider } = this
-    if (!provider.decideNextAction) {
+    if (!provider.decideNextAction && !provider.streamDecision) {
       throw new Error(
-        'The configured provider does not implement decideNextAction, which the ReAct and Hybrid agents require.'
+        'The configured provider implements neither streamDecision nor decideNextAction, which the ReAct and Hybrid agents require.'
       )
     }
 
@@ -170,24 +230,8 @@ export abstract class AgentRuntimeBase {
         return { iterations, reachedFinal: false, note }
       }
 
-      const decision = await withTimeout(
-        provider.decideNextAction(context, callOptions),
-        this.stepTimeoutMs,
-        'ReAct decision timed out'
-      )
+      const decision = yield* this.nextDecision(context, callOptions, options.parentStepId)
       iterations += 1
-
-      const thoughtStepId = createStepId()
-      const thoughtTitle =
-        decision.reasoning ??
-        (decision.kind === 'final' ? 'Finalizing answer' : 'Deciding next action')
-      yield createEvent('agent.step.started', {
-        stepId: thoughtStepId,
-        ...(options.parentStepId ? { parentStepId: options.parentStepId } : {}),
-        kind: 'think',
-        title: thoughtTitle
-      })
-      yield createEvent('agent.step.completed', { stepId: thoughtStepId })
 
       if (decision.kind === 'final') {
         return { iterations, reachedFinal: true, note }

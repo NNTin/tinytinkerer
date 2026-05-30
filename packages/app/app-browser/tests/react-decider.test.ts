@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ExecutionContext } from '@tinytinkerer/app-core'
-import { decideNextAction } from '../src/runtime/react-decider.js'
+import { decideNextAction, streamDecision } from '../src/runtime/react-decider.js'
 import type { PlannerToolDescriptor } from '../src/runtime/mcp-planner.js'
 import type { EdgeFetch } from '../src/runtime/edge-fetch.js'
 
@@ -104,5 +104,65 @@ describe('decideNextAction', () => {
     await expect(
       decideNextAction(baseContext(), [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
     ).rejects.toThrow('ReAct decision request failed (503)')
+  })
+})
+
+const makeSseEdgeFetch = (lines: string[], status = 200): EdgeFetch =>
+  vi.fn().mockResolvedValue(
+    new Response(lines.join('\n'), {
+      status,
+      headers: { 'content-type': 'text/event-stream' }
+    })
+  )
+
+describe('streamDecision', () => {
+  it('streams reasoning as growing thoughts then yields the parsed decision', async () => {
+    const edgeFetch = makeSseEdgeFetch([
+      'data: {"choices":[{"delta":{"reasoning_content":"Let me "}}]}',
+      'data: {"choices":[{"delta":{"reasoning_content":"think"}}]}',
+      'data: {"choices":[{"delta":{"content":"{\\"kind\\":\\"final\\"}"}}]}',
+      'data: [DONE]',
+      ''
+    ])
+
+    const chunks = []
+    for await (const chunk of streamDecision(
+      baseContext(),
+      [descriptor],
+      'openai/gpt-4.1-mini',
+      edgeFetch
+    )) {
+      chunks.push(chunk)
+    }
+
+    const thoughts = chunks.filter((chunk) => chunk.kind === 'thought')
+    expect(thoughts.at(-1)?.kind === 'thought' && thoughts.at(-1)?.text).toBe('Let me think')
+    const decision = chunks.find((chunk) => chunk.kind === 'decision')
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
+  })
+
+  it('strips fences from the streamed JSON content', async () => {
+    const edgeFetch = makeSseEdgeFetch([
+      'data: {"choices":[{"delta":{"content":"```json\\n"}}]}',
+      'data: {"choices":[{"delta":{"content":"{\\"kind\\":\\"final\\"}"}}]}',
+      'data: {"choices":[{"delta":{"content":"\\n```"}}]}',
+      'data: [DONE]',
+      ''
+    ])
+
+    const chunks = []
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
+      chunks.push(chunk)
+    }
+
+    const decision = chunks.find((chunk) => chunk.kind === 'decision')
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
+  })
+
+  it('throws when the streaming response is not ok', async () => {
+    const edgeFetch = makeSseEdgeFetch(['data: [DONE]'], 503)
+
+    const iterator = streamDecision(baseContext(), [descriptor], 'm', edgeFetch)
+    await expect(iterator.next()).rejects.toThrow('ReAct decision request failed (503)')
   })
 })
