@@ -53,11 +53,11 @@ jobs:
       matrix:
         task:
           - name: Lint & Typecheck
-            run: turbo run lint typecheck --concurrency=2
+            run: pnpm exec turbo run lint typecheck --concurrency=2
           - name: Test
-            run: turbo run test --concurrency=1
+            run: pnpm exec turbo run test --concurrency=1
           - name: Build
-            run: turbo run build --concurrency=2
+            run: pnpm exec turbo run build --concurrency=2
     steps:
       - uses: actions/checkout@v4
 
