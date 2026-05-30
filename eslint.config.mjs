@@ -21,6 +21,14 @@ export default tseslint.config(
     },
     rules: {
       '@typescript-eslint/no-floating-promises': 'error',
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'fetch',
+          message:
+            'Use fetchWithTelemetry from @tinytinkerer/app-browser instead of the global fetch() so 4xx/5xx and network failures are captured for debugging. If a raw fetch is genuinely required (e.g. a low-level wrapper or a runtime that cannot import app-browser), add an inline eslint-disable-next-line no-restricted-globals with a short justification.'
+        }
+      ],
       '@typescript-eslint/no-restricted-types': [
         'error',
         {
@@ -49,6 +57,17 @@ export default tseslint.config(
             'Optional properties already accept missing values under exactOptionalPropertyTypes. Drop the explicit `undefined` type. See docs/ARCHITECTURE.md#coding-conventions.'
         }
       ]
+    }
+  },
+  {
+    // Tests legitimately exercise real or local servers (and stub/mock the
+    // global fetch), so the fetchWithTelemetry restriction does not apply here.
+    files: [
+      '**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}',
+      '**/tests/**'
+    ],
+    rules: {
+      'no-restricted-globals': 'off'
     }
   }
 )
