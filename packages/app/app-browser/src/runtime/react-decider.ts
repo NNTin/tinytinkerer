@@ -3,6 +3,7 @@ import type { DecisionChunk, ExecutionContext } from '@tinytinkerer/app-core'
 import { reactDecisionSchema, type ReActDecision } from '@tinytinkerer/contracts'
 import type { EdgeFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
+import { createRateLimitError } from './rate-limit'
 import { parseSseStream, splitInlineThink } from './sse-utils'
 
 const buildDecisionSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
@@ -74,6 +75,12 @@ export const decideNextAction = async (
     }
   )
 
+  // A 429 must go through the runtime's cooldown/retry path, so surface it as a
+  // RateLimitError rather than a generic failure that ends the run.
+  if (response.status === 429) {
+    throw await createRateLimitError(response)
+  }
+
   if (!response.ok) {
     throw new Error(`ReAct decision request failed (${response.status})`)
   }
@@ -138,6 +145,12 @@ export async function* streamDecision(
       ...(signal ? { signal } : {})
     }
   )
+
+  // A 429 must go through the runtime's cooldown/retry path, so surface it as a
+  // RateLimitError rather than a generic failure that ends the run.
+  if (response.status === 429) {
+    throw await createRateLimitError(response)
+  }
 
   if (!response.ok) {
     throw new Error(`ReAct decision request failed (${response.status})`)

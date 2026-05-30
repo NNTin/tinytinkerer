@@ -1,6 +1,7 @@
 import type { ChatEvent, ExecutionPlan, ReActDecision } from '@tinytinkerer/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
+import { RateLimitError } from '../src/errors/rate-limit-error'
 import { HybridRuntime } from '../src/runtime/hybrid-runtime'
 import { ToolRegistry } from '../src/tools/registry'
 import type { ModelProvider } from '../src/types'
@@ -106,7 +107,25 @@ describe('HybridRuntime', () => {
       .filter(isEventType('agent.step.started'))
       .filter((event) => event.payload.kind === 'replan')
     expect(replanSteps).toHaveLength(1)
-    expect(events.some((event) => event.type === 'agent.run.completed')).toBe(true)
+
+    // The stuck plan-step is surfaced as failed (it exhausted its budget), not
+    // completed, so progress is not overstated.
+    const planStepStart = events
+      .filter(isEventType('agent.step.started'))
+      .find((event) => event.payload.kind === 'plan-step')
+    expect(planStepStart).toBeDefined()
+    const planStepId = planStepStart?.payload.stepId
+    expect(
+      events.some((event) => event.type === 'agent.step.failed' && event.payload.stepId === planStepId)
+    ).toBe(true)
+    expect(
+      events.some((event) => event.type === 'agent.step.completed' && event.payload.stepId === planStepId)
+    ).toBe(false)
+
+    // The revised plan has no steps, so no step completes: the run summary
+    // reflects zero completed steps rather than counting the abandoned one.
+    const runCompleted = events.find(isEventType('agent.run.completed'))
+    expect(runCompleted?.payload.steps).toBe(0)
     expect(events.at(-1)?.type).toBe('assistant.done')
   })
 
@@ -125,6 +144,59 @@ describe('HybridRuntime', () => {
     const toolStarts = events.filter((event) => event.type === 'agent.tool.started')
     expect(toolStarts.length).toBeLessThanOrEqual(2)
     expect(events.some((event) => event.type === 'agent.run.completed')).toBe(true)
+  })
+
+  it('does not count a plan step as completed when a decision cooldown is too long', async () => {
+    const retryAt = new Date(Date.now() + 10 * 60_000).toISOString()
+    const provider: ModelProvider = {
+      async plan() {
+        return {
+          complexity: 'medium',
+          steps: [{ id: 's1', summary: 'Blocked step' }]
+        }
+      },
+      async execute() {
+        return ''
+      },
+      async decideNextAction() {
+        throw new RateLimitError('rate limited', { retryAfterMs: 10 * 60_000, retryAt })
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'composed anyway' }
+      }
+    }
+
+    const runtime = new HybridRuntime(provider, noopRegistry())
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    const planStepStart = events
+      .filter(isEventType('agent.step.started'))
+      .find((event) => event.payload.kind === 'plan-step')
+    expect(planStepStart).toBeDefined()
+    const planStepId = planStepStart?.payload.stepId
+
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'rate.limit.cancelled' &&
+          event.payload.reason === 'too_long' &&
+          event.payload.retryAt === retryAt
+      )
+    ).toBe(true)
+    expect(
+      events.some((event) => event.type === 'agent.step.failed' && event.payload.stepId === planStepId)
+    ).toBe(true)
+    expect(
+      events.some((event) => event.type === 'agent.step.completed' && event.payload.stepId === planStepId)
+    ).toBe(false)
+    expect(
+      events.some((event) => event.type === 'agent.step.started' && event.payload.kind === 'replan')
+    ).toBe(false)
+    expect(events.find(isEventType('agent.run.completed'))?.payload.steps).toBe(0)
+    expect(events.find(isEventType('assistant.done'))?.payload.source).toBe('composed anyway')
   })
 
   it('stops cleanly when the signal is aborted', async () => {

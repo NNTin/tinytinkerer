@@ -1,5 +1,5 @@
 import type { ChatEvent, ReActDecision } from '@tinytinkerer/contracts'
-import { isRateLimitError } from '../errors/rate-limit-error'
+import { isRateLimitError, type RateLimitError } from '../errors/rate-limit-error'
 import { createEvent } from '../events/create-event'
 import type {
   AssistantContentSession,
@@ -31,14 +31,23 @@ export type RunOptions = {
 // emitted events.
 export type ToolOutcome = { ok: true; output: unknown } | { ok: false; error: string }
 
+export type ReActLoopExitReason = 'final' | 'budget_exhausted' | 'decision_stopped' | 'aborted'
+
 // Result of a ReAct loop. `reachedFinal` is the concrete "the agent decided it
 // was done" signal; the Hybrid runtime treats a loop that exhausts its budget
-// without reaching final as a stuck step worth replanning.
+// without reaching final as a stuck step worth replanning. `exitReason`
+// distinguishes "finished normally" from "stopped early", which matters for
+// Hybrid when deciding whether to replan, stop the run, or count a step.
 export type ReActLoopResult = {
   iterations: number
   reachedFinal: boolean
   note: string
+  exitReason: ReActLoopExitReason
 }
+
+type DecisionLoopControl =
+  | { kind: 'decision'; decision: ReActDecision }
+  | { kind: 'stop'; reason: 'too_long' | 'cancelled' }
 
 export const createStepId = (): string => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -138,11 +147,41 @@ export abstract class AgentRuntimeBase {
     }
   }
 
-  // Emits a single "think" step and returns the decision. Prefers the streaming
-  // path (streamDecision) so the thought renders live via agent.step.delta; the
-  // final thought is carried on the completed step's summary so it survives a
-  // reload. Falls back to the non-streaming decideNextAction otherwise.
+  // Emits a single "think" step and returns the decision, transparently waiting
+  // out a short rate limit and retrying the decision. A rate limit too long to
+  // auto-retry (or a cancelled wait) finishes the loop so the run can wind down
+  // gracefully rather than ending with the generic execution-error fallback.
   protected async *nextDecision(
+    context: ExecutionContext,
+    callOptions: ProviderCallOptions,
+    parentStepId: string | undefined
+  ): AsyncGenerator<ChatEvent, DecisionLoopControl> {
+    while (true) {
+      try {
+        return { kind: 'decision', decision: yield* this.attemptDecision(context, callOptions, parentStepId) }
+      } catch (error) {
+        if (!isRateLimitError(error)) {
+          throw error
+        }
+        const outcome = yield* this.awaitRateLimitRetry(error, callOptions.signal)
+        if (outcome.retry) {
+          continue
+        }
+        // Cooldown too long or wait cancelled: stop deciding and let the run wind
+        // down. This is not a real `final` decision, so the caller can stop the
+        // sub-loop without counting the current step as successfully completed.
+        return { kind: 'stop', reason: outcome.reason }
+      }
+    }
+  }
+
+  // Asks the provider for the next decision once, emitting the "think" step.
+  // Prefers the streaming path (streamDecision) so the thought renders live via
+  // agent.step.delta; the final thought is carried on the completed step's
+  // summary so it survives a reload. Falls back to the non-streaming
+  // decideNextAction otherwise. Errors (including rate limits) propagate to
+  // nextDecision, which owns the retry policy.
+  private async *attemptDecision(
     context: ExecutionContext,
     callOptions: ProviderCallOptions,
     parentStepId: string | undefined
@@ -211,8 +250,15 @@ export abstract class AgentRuntimeBase {
         }
       } catch (error) {
         // A timeout-induced abort may surface as a thrown error; suppress it so
-        // the timeout is reported uniformly below. Any other error propagates.
+        // the timeout is reported uniformly below. Any other error fails this
+        // think step (so the timeline has no dangling open step) before
+        // propagating — nextDecision decides whether to retry, e.g. on a rate
+        // limit.
         if (!timedOut) {
+          yield createEvent('agent.step.failed', {
+            stepId: thoughtStepId,
+            error: error instanceof Error ? error.message : 'ReAct decision failed'
+          })
           throw error
         }
       } finally {
@@ -285,14 +331,24 @@ export abstract class AgentRuntimeBase {
 
     while (iterations < options.budget) {
       if (options.signal?.aborted) {
-        return { iterations, reachedFinal: false, note }
+        return { iterations, reachedFinal: false, note, exitReason: 'aborted' }
       }
 
-      const decision = yield* this.nextDecision(context, callOptions, options.parentStepId)
+      const control = yield* this.nextDecision(context, callOptions, options.parentStepId)
+      if (control.kind === 'stop') {
+        return {
+          iterations,
+          reachedFinal: false,
+          note,
+          exitReason: control.reason === 'cancelled' && options.signal?.aborted ? 'aborted' : 'decision_stopped'
+        }
+      }
+
+      const { decision } = control
       iterations += 1
 
       if (decision.kind === 'final') {
-        return { iterations, reachedFinal: true, note }
+        return { iterations, reachedFinal: true, note, exitReason: 'final' }
       }
 
       const actStepId = createStepId()
@@ -326,7 +382,51 @@ export abstract class AgentRuntimeBase {
       }
     }
 
-    return { iterations, reachedFinal: false, note }
+    return { iterations, reachedFinal: false, note, exitReason: 'budget_exhausted' }
+  }
+
+  // Emits the rate-limit lifecycle events for a RateLimitError and, when the
+  // cooldown is short enough to auto-retry, waits it out. Returns whether the
+  // caller should retry; on giving up it reports why (the cooldown was too long
+  // or the wait was cancelled) so the caller can choose its own terminal
+  // handling. Shared by synthesis and ReAct decisions so every rate-limited call
+  // funnels through the same cooldown/retry behaviour.
+  protected async *awaitRateLimitRetry(
+    error: RateLimitError,
+    signal: AbortSignal | undefined
+  ): AsyncGenerator<ChatEvent, { retry: true } | { retry: false; reason: 'too_long' | 'cancelled' }> {
+    const autoRetry = error.retryAfterMs <= MAX_AUTO_RETRY_AFTER_MS
+
+    if (!autoRetry) {
+      yield createEvent('rate.limit.cancelled', {
+        retryAfterMs: error.retryAfterMs,
+        retryAt: error.retryAt,
+        message: error.message,
+        reason: 'too_long'
+      })
+      return { retry: false, reason: 'too_long' }
+    }
+
+    yield createEvent('rate.limit.waiting', {
+      retryAfterMs: error.retryAfterMs,
+      retryAt: error.retryAt,
+      message: error.message,
+      autoRetry: true
+    })
+
+    const elapsed = await this.waitUntil(error.retryAt, signal)
+    if (!elapsed) {
+      yield createEvent('rate.limit.cancelled', {
+        retryAfterMs: error.retryAfterMs,
+        retryAt: error.retryAt,
+        message: 'Retry cancelled',
+        reason: 'cancelled'
+      })
+      return { retry: false, reason: 'cancelled' }
+    }
+
+    yield createEvent('rate.limit.recovered', { retryAt: error.retryAt })
+    return { retry: true }
   }
 
   // Streams the final answer, transparently waiting out short rate limits and
@@ -383,52 +483,25 @@ export abstract class AgentRuntimeBase {
           })
         }
 
-        const autoRetry = error.retryAfterMs <= MAX_AUTO_RETRY_AFTER_MS
-
-        if (!autoRetry) {
-          yield createEvent('rate.limit.cancelled', {
-            retryAfterMs: error.retryAfterMs,
-            retryAt: error.retryAt,
-            message: error.message,
-            reason: 'too_long'
-          })
-          yield createEvent('agent.step.failed', {
-            stepId: synthesizeStepId,
-            error: 'Rate limited'
-          })
-          yield createEvent(
-            'assistant.done',
-            session.replace(
-              'GitHub Models is rate limited. This request was cancelled because the cooldown is longer than five minutes.'
-            )
-          )
-          return
+        const outcome = yield* this.awaitRateLimitRetry(error, signal)
+        if (outcome.retry) {
+          continue
         }
 
-        yield createEvent('rate.limit.waiting', {
-          retryAfterMs: error.retryAfterMs,
-          retryAt: error.retryAt,
-          message: error.message,
-          autoRetry: true
+        const cancelled = outcome.reason === 'cancelled'
+        yield createEvent('agent.step.failed', {
+          stepId: synthesizeStepId,
+          error: cancelled ? 'Retry cancelled' : 'Rate limited'
         })
-
-        const elapsed = await this.waitUntil(error.retryAt, signal)
-        if (!elapsed) {
-          yield createEvent('rate.limit.cancelled', {
-            retryAfterMs: error.retryAfterMs,
-            retryAt: error.retryAt,
-            message: 'Retry cancelled',
-            reason: 'cancelled'
-          })
-          yield createEvent('agent.step.failed', {
-            stepId: synthesizeStepId,
-            error: 'Retry cancelled'
-          })
-          yield createEvent('assistant.done', session.replace('Retry cancelled.'))
-          return
-        }
-
-        yield createEvent('rate.limit.recovered', { retryAt: error.retryAt })
+        yield createEvent(
+          'assistant.done',
+          session.replace(
+            cancelled
+              ? 'Retry cancelled.'
+              : 'GitHub Models is rate limited. This request was cancelled because the cooldown is longer than five minutes.'
+          )
+        )
+        return
       }
     }
   }

@@ -1,6 +1,5 @@
 import {
   inferPlan,
-  RateLimitError,
   type ConversationMessage,
   type DecisionChunk,
   type ExecutionContext,
@@ -11,13 +10,12 @@ import {
 import {
   edgeErrorResponseSchema,
   modelsChatResponseSchema,
-  rateLimitPayloadSchema,
   type ExecutionPlan,
   type PlanStep,
   type ReActDecision
 } from '@tinytinkerer/contracts'
 import { SYSTEM_STYLE_PROMPT } from './system-prompt'
-import { getRetryAfterMs } from './rate-limit'
+import { createRateLimitError } from './rate-limit'
 import { RateLimitQuota } from './quota-tracker'
 import { createEdgeFetch } from './edge-fetch'
 import { getTelemetryHeaders } from '../telemetry/telemetry'
@@ -51,30 +49,6 @@ type GitHubModelsProviderOptions = {
   allToolDescriptors?: PlannerToolDescriptor[]
 }
 
-const isValidRetryAt = (value: string | undefined): value is string =>
-  Boolean(value && !Number.isNaN(Date.parse(value)))
-
-const createRateLimitError = async (response: Response): Promise<RateLimitError> => {
-  const rawText = await response.text()
-  const parsed = (() => {
-    try {
-      return rateLimitPayloadSchema.parse(JSON.parse(rawText))
-    } catch {
-      return undefined
-    }
-  })()
-
-  const retryAfterMs = parsed?.retryAfterMs ?? getRetryAfterMs(response.headers.get('retry-after'))
-  const retryAt = isValidRetryAt(parsed?.retryAt)
-    ? parsed.retryAt
-    : new Date(Date.now() + retryAfterMs).toISOString()
-
-  return new RateLimitError(parsed?.error ?? (rawText || 'GitHub Models is rate limited'), {
-    retryAfterMs,
-    retryAt
-  })
-}
-
 const createEdgeError = async (response: Response, fallback: string): Promise<Error> => {
   const parsed = await response
     .clone()
@@ -95,9 +69,12 @@ export class GitHubModelsProvider implements ModelProvider {
   async plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan> {
     const token = this.options.getToken?.()
     const allDescriptors = this.options.allToolDescriptors ?? []
-    const hasMcpTools = allDescriptors.some((d) => d.id.startsWith('mcp:'))
 
-    if (token && hasMcpTools) {
+    // Use the model-authored planner whenever there is a token and at least one
+    // tool for it to reason about — web-search alone qualifies, not just MCP
+    // tools. With no tools the LLM has nothing to plan around, so fall through
+    // to the heuristic planner.
+    if (token && allDescriptors.length > 0) {
       try {
         const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
         const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'

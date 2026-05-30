@@ -186,6 +186,76 @@ describe('ReActRuntime', () => {
     expect(events.find(isEventType('assistant.done'))?.payload.source).toBe('recovered')
   })
 
+  it('waits out a rate-limited decision and retries instead of failing the run', async () => {
+    const retryAt = new Date(Date.now() + 1).toISOString()
+    let attempts = 0
+    const provider: ModelProvider = {
+      async plan() {
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return ''
+      },
+      async decideNextAction() {
+        attempts += 1
+        if (attempts === 1) {
+          throw new RateLimitError('rate limited', { retryAfterMs: 1, retryAt })
+        }
+        return { kind: 'final' }
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'recovered' }
+      }
+    }
+
+    const runtime = new ReActRuntime(provider, new ToolRegistry())
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(attempts).toBe(2)
+    expect(events.some((event) => event.type === 'rate.limit.waiting')).toBe(true)
+    expect(events.some((event) => event.type === 'rate.limit.recovered')).toBe(true)
+    // The rate limit must not surface as a generic execution error.
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(events.find(isEventType('assistant.done'))?.payload.source).toBe('recovered')
+  })
+
+  it('finishes gracefully when a decision rate limit is too long to auto-retry', async () => {
+    // A cooldown beyond the auto-retry ceiling cancels the wait; the loop should
+    // finish so synthesis still runs, rather than ending with a generic error.
+    const retryAt = new Date(Date.now() + 10 * 60_000).toISOString()
+    const provider: ModelProvider = {
+      async plan() {
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return ''
+      },
+      async decideNextAction() {
+        throw new RateLimitError('rate limited', { retryAfterMs: 10 * 60_000, retryAt })
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'composed anyway' }
+      }
+    }
+
+    const runtime = new ReActRuntime(provider, new ToolRegistry())
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(
+      events.some(
+        (event) => event.type === 'rate.limit.cancelled' && event.payload.reason === 'too_long'
+      )
+    ).toBe(true)
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(events.find(isEventType('assistant.done'))?.payload.source).toBe('composed anyway')
+  })
+
   it('streams thoughts via streamDecision and carries the final thought on completion', async () => {
     const provider: ModelProvider = {
       async plan() {

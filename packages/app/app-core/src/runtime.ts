@@ -108,6 +108,19 @@ export const createChatRuntime = (options: {
   return runtime
 }
 
+// The app-core and agent-core layers each define their own RateLimitError;
+// translate the app-core flavour thrown by providers into the agent-core one the
+// runtime recognises, so a rate limit from any provider call (synthesis or a
+// ReAct decision) reaches the runtime's cooldown/retry path instead of being
+// treated as a generic failure.
+const toAgentError = (error: unknown): unknown =>
+  isRateLimitError(error)
+    ? new AgentRateLimitError(error.message, {
+        retryAfterMs: error.retryAfterMs,
+        retryAt: error.retryAt
+      })
+    : error
+
 const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => ({
   plan(prompt: string, history: ConversationMessage[], options?: AgentProviderCallOptions) {
     return provider.plan(prompt, history, options)
@@ -119,15 +132,23 @@ const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => (
   // implements it, so the adapter mirrors the provider's capabilities exactly.
   ...(provider.decideNextAction
     ? {
-        decideNextAction(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
-          return provider.decideNextAction!(toExecutionContext(context), options)
+        async decideNextAction(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
+          try {
+            return await provider.decideNextAction!(toExecutionContext(context), options)
+          } catch (error) {
+            throw toAgentError(error)
+          }
         }
       }
     : {}),
   ...(provider.streamDecision
     ? {
-        streamDecision(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
-          return provider.streamDecision!(toExecutionContext(context), options)
+        async *streamDecision(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
+          try {
+            yield* provider.streamDecision!(toExecutionContext(context), options)
+          } catch (error) {
+            throw toAgentError(error)
+          }
         }
       }
     : {}),
@@ -135,14 +156,7 @@ const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => (
     try {
       yield* provider.synthesize(toExecutionContext(context), options)
     } catch (error) {
-      if (isRateLimitError(error)) {
-        throw new AgentRateLimitError(error.message, {
-          retryAfterMs: error.retryAfterMs,
-          retryAt: error.retryAt
-        })
-      }
-
-      throw error
+      throw toAgentError(error)
     }
   }
 })

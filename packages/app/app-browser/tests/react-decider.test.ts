@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ExecutionContext } from '@tinytinkerer/app-core'
+import { isRateLimitError, type ExecutionContext } from '@tinytinkerer/app-core'
 import { decideNextAction, streamDecision } from '../src/runtime/react-decider.js'
 import type { PlannerToolDescriptor } from '../src/runtime/mcp-planner.js'
 import type { EdgeFetch } from '../src/runtime/edge-fetch.js'
@@ -105,6 +105,28 @@ describe('decideNextAction', () => {
       decideNextAction(baseContext(), [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
     ).rejects.toThrow('ReAct decision request failed (503)')
   })
+
+  it('throws a RateLimitError on 429 so the runtime can wait and retry', async () => {
+    const retryAt = new Date(Date.now() + 30_000).toISOString()
+    const edgeFetch = makeEdgeFetch(
+      { code: 'rate_limited', error: 'Slow down', retryAfterMs: 30_000, retryAt },
+      429
+    )
+
+    const error = await decideNextAction(
+      baseContext(),
+      [descriptor],
+      'openai/gpt-4.1-mini',
+      edgeFetch
+    ).catch((err: unknown) => err)
+
+    expect(isRateLimitError(error)).toBe(true)
+    if (!isRateLimitError(error)) {
+      throw new Error('Expected a RateLimitError')
+    }
+    expect(error.retryAfterMs).toBe(30_000)
+    expect(error.retryAt).toBe(retryAt)
+  })
 })
 
 const makeSseEdgeFetch = (lines: string[], status = 200): EdgeFetch =>
@@ -164,5 +186,23 @@ describe('streamDecision', () => {
 
     const iterator = streamDecision(baseContext(), [descriptor], 'm', edgeFetch)
     await expect(iterator.next()).rejects.toThrow('ReAct decision request failed (503)')
+  })
+
+  it('throws a RateLimitError on 429 so the runtime can wait and retry', async () => {
+    const retryAt = new Date(Date.now() + 30_000).toISOString()
+    const edgeFetch = makeEdgeFetch(
+      { code: 'rate_limited', error: 'Slow down', retryAfterMs: 30_000, retryAt },
+      429
+    )
+
+    const iterator = streamDecision(baseContext(), [descriptor], 'm', edgeFetch)
+    const error = await iterator.next().catch((err: unknown) => err)
+
+    expect(isRateLimitError(error)).toBe(true)
+    if (!isRateLimitError(error)) {
+      throw new Error('Expected a RateLimitError')
+    }
+    expect(error.retryAfterMs).toBe(30_000)
+    expect(error.retryAt).toBe(retryAt)
   })
 })
