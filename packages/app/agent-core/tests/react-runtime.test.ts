@@ -81,6 +81,36 @@ describe('ReActRuntime', () => {
     expect(observed.some((note) => note.includes('web-search'))).toBe(true)
   })
 
+  it('nests the tool run under the act step with its own stepId', async () => {
+    const provider = scriptedProvider(
+      [
+        { kind: 'action', toolId: 'web-search', input: { query: 'hello' } },
+        { kind: 'final' }
+      ],
+      async function* () {
+        yield { kind: 'content' as const, text: 'answer' }
+      }
+    )
+
+    const runtime = new ReActRuntime(provider, webSearchRegistry())
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    const actStep = events
+      .filter(isEventType('agent.step.started'))
+      .find((event) => event.payload.kind === 'act')
+    const toolStarted = events.find(isEventType('agent.tool.started'))
+
+    expect(actStep).toBeDefined()
+    expect(toolStarted).toBeDefined()
+    // The tool is a child of the act step, not the act step itself: distinct
+    // stepId, parented under the act step (never self-parented).
+    expect(toolStarted?.payload.stepId).not.toBe(actStep?.payload.stepId)
+    expect(toolStarted?.payload.parentStepId).toBe(actStep?.payload.stepId)
+  })
+
   it('respects the maxIterations cap and still synthesizes', async () => {
     const provider = scriptedProvider(
       [{ kind: 'action', toolId: 'web-search', input: { query: 'loop' } }],

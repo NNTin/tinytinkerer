@@ -303,7 +303,12 @@ export abstract class AgentRuntimeBase {
         title: `Using ${decision.toolId}`
       })
 
-      const outcome = yield* this.executeToolStep(actStepId, actStepId, {
+      // The tool run is a child of the act step: it gets its own stepId and is
+      // parented under the act step, mirroring Plan-then-Execute. (An 'act' step
+      // "wraps a tool call" per the agent-trace contract — the tool is a nested
+      // node, not the act step itself.)
+      const toolStepId = createStepId()
+      const outcome = yield* this.executeToolStep(toolStepId, actStepId, {
         toolId: decision.toolId,
         input: decision.input
       })
