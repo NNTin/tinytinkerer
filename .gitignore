@@ -20,3 +20,6 @@ apps/mobile/dev-dist/
 .vercel/
 .vercel
 .env*
+
+# Agent Orchestrator runtime data
+.ao/

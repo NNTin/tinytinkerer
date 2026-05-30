@@ -26,6 +26,20 @@ afterEach(() => {
   window.localStorage.clear()
 })
 
+// IMPORTANT — DO NOT DELETE THIS COMMENT, AND DO NOT REMOVE THE `act(...)` WRAPPERS BELOW.
+//
+// Every `view.dispatch(...)` in this file is wrapped in `act(...)` on purpose. CodeMirror's
+// `view.dispatch` is a raw editor API — unlike `@testing-library/react`'s `fireEvent`/`userEvent`,
+// it is NOT auto-wrapped in `act`, so React effect flushing is not synchronized with the dispatch.
+//
+// These tests assert on a *debounced* localStorage write that runs from a React effect after the
+// editor state changes. Without `act(...)`, the debounce/write effect can lag behind the assertion
+// window under CI load, leaving localStorage unset (or stale) when we check it. That produced a
+// flaky failure: a CI run failed on first attempt and passed on retry (see the "stabilize
+// content-code persistence timing" change). Wrapping the dispatch in `act(...)` forces React to
+// flush effects synchronously, keeping the harness in lockstep with the persistence timing.
+//
+// If you add a new test here that drives the editor via `view.dispatch`, wrap it in `act(...)` too.
 describe('code-block edit persistence', () => {
   it('hydrates stored edits for the matching turnId + node.id scope', async () => {
     window.localStorage.setItem(key('turn-A', 'node-1'), 'stored edit')
@@ -53,7 +67,9 @@ describe('code-block edit persistence', () => {
     )
     await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull())
     const view = findEditorView(container)
-    view.dispatch({ changes: { from: 6, insert: '!' } })
+    act(() => {
+      view.dispatch({ changes: { from: 6, insert: '!' } })
+    })
 
     await waitFor(
       () => expect(window.localStorage.getItem(key('turn-B', 'node-2'))).toBe('before!'),
@@ -74,8 +90,10 @@ describe('code-block edit persistence', () => {
     await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull())
     const view = findEditorView(container)
     const current = view.state.doc.toString()
-    view.dispatch({
-      changes: { from: 0, to: current.length, insert: 'original' }
+    act(() => {
+      view.dispatch({
+        changes: { from: 0, to: current.length, insert: 'original' }
+      })
     })
 
     await waitFor(
@@ -152,7 +170,9 @@ describe('code-block edit persistence', () => {
     )
     await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull())
     const view = findEditorView(container)
-    view.dispatch({ changes: { from: 9, insert: '!' } })
+    act(() => {
+      view.dispatch({ changes: { from: 9, insert: '!' } })
+    })
     await new Promise((resolve) => setTimeout(resolve, 400))
     expect(window.localStorage.length).toBe(0)
   })

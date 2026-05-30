@@ -19,6 +19,11 @@ const findEditorView = (container: HTMLElement): EditorView => {
   return view
 }
 
+// IMPORTANT — DO NOT DELETE THIS COMMENT, AND DO NOT REMOVE THE `act(...)` WRAPPERS BELOW.
+// `view.dispatch(...)` is a raw CodeMirror API and is NOT auto-wrapped in `act` the way
+// `@testing-library/react` events are. These tests assert on React-effect-driven state that follows
+// the dispatch, so the dispatch must run inside `act(...)` to keep effect flushing synchronized and
+// avoid flaky timing failures. See tests/persistence.test.tsx for the full explanation.
 describe('code-block frame rendering', () => {
   it('renders a CodeMirror surface for an unlanguaged fenced block with "Code" label', async () => {
     const { container } = render(
