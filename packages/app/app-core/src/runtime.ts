@@ -8,6 +8,7 @@ import {
 import type {
   AgentRuntimeBase,
   CreateAssistantContentSession,
+  DecisionChunk,
   ExecutionContext as AgentExecutionContext,
   ModelProvider as AgentModelProvider,
   ProviderCallOptions as AgentProviderCallOptions,
@@ -17,7 +18,7 @@ import type {
 import type { AgentType, ExecutionPlan, PlanStep, ReActDecision } from '@tinytinkerer/contracts'
 import type { ChatRuntime } from './ports'
 
-export type { SynthesisChunk } from '@tinytinkerer/agent-core'
+export type { DecisionChunk, SynthesisChunk } from '@tinytinkerer/agent-core'
 
 export type ConversationMessage = {
   role: 'user' | 'assistant'
@@ -42,6 +43,7 @@ export interface ModelProvider {
   execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
   synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk>
   decideNextAction?(context: ExecutionContext, options?: ProviderCallOptions): Promise<ReActDecision>
+  streamDecision?(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<DecisionChunk>
 }
 
 export type Tool<Input, Output> = AgentTool<Input, Output>
@@ -119,6 +121,13 @@ const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => (
     ? {
         decideNextAction(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
           return provider.decideNextAction!(toExecutionContext(context), options)
+        }
+      }
+    : {}),
+  ...(provider.streamDecision
+    ? {
+        streamDecision(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
+          return provider.streamDecision!(toExecutionContext(context), options)
         }
       }
     : {}),

@@ -81,6 +81,36 @@ describe('ReActRuntime', () => {
     expect(observed.some((note) => note.includes('web-search'))).toBe(true)
   })
 
+  it('nests the tool run under the act step with its own stepId', async () => {
+    const provider = scriptedProvider(
+      [
+        { kind: 'action', toolId: 'web-search', input: { query: 'hello' } },
+        { kind: 'final' }
+      ],
+      async function* () {
+        yield { kind: 'content' as const, text: 'answer' }
+      }
+    )
+
+    const runtime = new ReActRuntime(provider, webSearchRegistry())
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    const actStep = events
+      .filter(isEventType('agent.step.started'))
+      .find((event) => event.payload.kind === 'act')
+    const toolStarted = events.find(isEventType('agent.tool.started'))
+
+    expect(actStep).toBeDefined()
+    expect(toolStarted).toBeDefined()
+    // The tool is a child of the act step, not the act step itself: distinct
+    // stepId, parented under the act step (never self-parented).
+    expect(toolStarted?.payload.stepId).not.toBe(actStep?.payload.stepId)
+    expect(toolStarted?.payload.parentStepId).toBe(actStep?.payload.stepId)
+  })
+
   it('respects the maxIterations cap and still synthesizes', async () => {
     const provider = scriptedProvider(
       [{ kind: 'action', toolId: 'web-search', input: { query: 'loop' } }],
@@ -154,6 +184,77 @@ describe('ReActRuntime', () => {
     expect(events.some((event) => event.type === 'rate.limit.waiting')).toBe(true)
     expect(events.some((event) => event.type === 'rate.limit.recovered')).toBe(true)
     expect(events.find(isEventType('assistant.done'))?.payload.source).toBe('recovered')
+  })
+
+  it('streams thoughts via streamDecision and carries the final thought on completion', async () => {
+    const provider: ModelProvider = {
+      async plan() {
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return ''
+      },
+      async *streamDecision() {
+        yield { kind: 'thought' as const, text: 'Let me' }
+        yield { kind: 'thought' as const, text: 'Let me think' }
+        yield { kind: 'decision' as const, decision: { kind: 'final' as const } }
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'answer' }
+      }
+    }
+
+    const runtime = new ReActRuntime(provider, new ToolRegistry())
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    const deltas = events.filter(isEventType('agent.step.delta'))
+    expect(deltas).toHaveLength(2)
+    expect(deltas.at(-1)?.payload.text).toBe('Let me think')
+    // The think step's completion carries the final thought (persisted on reload).
+    const completed = events.filter(isEventType('agent.step.completed'))
+    expect(completed.some((event) => event.payload.summary === 'Let me think')).toBe(true)
+    expect(events.at(-1)?.type).toBe('assistant.done')
+  })
+
+  it('times out a stalled streaming decision and fails the step', async () => {
+    const provider: ModelProvider = {
+      async plan() {
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return ''
+      },
+      async *streamDecision(_context, options) {
+        yield { kind: 'thought' as const, text: 'thinking' }
+        // Stall until aborted (the runtime's idle timeout should abort us).
+        await new Promise<void>((resolve) => {
+          const signal = options?.signal
+          if (signal?.aborted) {
+            resolve()
+            return
+          }
+          signal?.addEventListener('abort', () => resolve(), { once: true })
+        })
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'unused' }
+      }
+    }
+
+    const runtime = new ReActRuntime(provider, new ToolRegistry(), { stepTimeoutMs: 5 })
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(events.some((event) => event.type === 'agent.step.failed')).toBe(true)
+    expect(
+      events.some((event) => event.type === 'error' && event.payload.message === 'ReAct decision timed out')
+    ).toBe(true)
+    expect(events.at(-1)?.type).toBe('assistant.done')
   })
 
   it('surfaces an error when the provider cannot make ReAct decisions', async () => {

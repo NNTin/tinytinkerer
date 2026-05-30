@@ -105,6 +105,66 @@ describe('app-core helpers', () => {
     expect(activity?.items.filter((item) => item.kind === 'reasoning')).toHaveLength(1)
   })
 
+  it('captures step hierarchy (stepId, parentId, kind) for nested agent steps', () => {
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hi' }),
+      event('agent.step.started', { stepId: 'plan', kind: 'plan', title: 'Created 1-step plan' }),
+      event('agent.step.started', {
+        stepId: 's1',
+        parentStepId: 'plan',
+        kind: 'plan-step',
+        title: 'Search'
+      }),
+      event('agent.tool.started', {
+        stepId: 't1',
+        parentStepId: 's1',
+        toolId: 'web-search',
+        input: { query: 'x' }
+      }),
+      event('agent.tool.completed', { stepId: 't1', toolId: 'web-search', output: {} }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ]
+
+    const items = buildTurns(events)[0]?.activity.items ?? []
+    expect(items.find((item) => item.kind === 'label' && item.stepId === 's1')).toMatchObject({
+      parentId: 'plan',
+      stepKind: 'plan-step'
+    })
+    expect(items.find((item) => item.kind === 'tool')).toMatchObject({
+      stepId: 't1',
+      parentId: 's1',
+      status: 'completed'
+    })
+  })
+
+  it('streams a thought into the matching think step label and does not duplicate it', () => {
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hi' }),
+      event('agent.step.started', { stepId: 'th1', kind: 'think', title: 'Thinking…' }),
+      event('agent.step.delta', { stepId: 'th1', text: 'Let me search' }),
+      event('agent.step.delta', { stepId: 'th1', text: 'Let me search the docs' }),
+      event('agent.step.completed', { stepId: 'th1', summary: 'Let me search the docs' }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ]
+
+    const labels = buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    expect(labels).toHaveLength(1)
+    expect(labels[0]).toMatchObject({ label: 'Let me search the docs', stepKind: 'think' })
+  })
+
+  it('appends a separate observation label for a non-think step completion', () => {
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hi' }),
+      event('agent.step.started', { stepId: 'a1', kind: 'act', title: 'Using web-search' }),
+      event('agent.step.completed', { stepId: 'a1', summary: 'web-search: {"r":1}' }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ]
+
+    const labels = buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    expect(labels).toHaveLength(2)
+    expect(labels.some((item) => item.kind === 'label' && item.label.startsWith('web-search'))).toBe(true)
+  })
+
   it('keeps one turn when rate-limit waiting later completes', () => {
     const turns = buildTurns(
       [

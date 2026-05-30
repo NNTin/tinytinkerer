@@ -48,6 +48,7 @@ export const eventTypeSchema = z.enum([
   'agent.run.started',
   'agent.run.completed',
   'agent.step.started',
+  'agent.step.delta',
   'agent.step.completed',
   'agent.step.failed',
   'agent.tool.started',
@@ -163,6 +164,14 @@ export const agentStepStartedEventSchema = eventBaseSchema(
     title: z.string()
   })
 )
+// Streamed, incrementally-growing text for a step (e.g. a ReAct thought as the
+// model emits it). `text` is the full accumulated text so far (last-writer-wins,
+// mirroring reasoning.chunk). Live-only: not persisted; the final value is
+// carried on the step's agent.step.completed summary for reload.
+export const agentStepDeltaEventSchema = eventBaseSchema(
+  'agent.step.delta',
+  z.object({ stepId: z.string(), text: z.string() })
+)
 export const agentStepCompletedEventSchema = eventBaseSchema(
   'agent.step.completed',
   z.object({ stepId: z.string(), summary: z.string().optional() })
@@ -258,6 +267,7 @@ export const chatEventSchema = z.discriminatedUnion('type', [
   agentRunStartedEventSchema,
   agentRunCompletedEventSchema,
   agentStepStartedEventSchema,
+  agentStepDeltaEventSchema,
   agentStepCompletedEventSchema,
   agentStepFailedEventSchema,
   agentToolStartedEventSchema,
@@ -278,6 +288,7 @@ export type UserMessageEvent = z.infer<typeof userMessageEventSchema>
 export type AgentRunStartedEvent = z.infer<typeof agentRunStartedEventSchema>
 export type AgentRunCompletedEvent = z.infer<typeof agentRunCompletedEventSchema>
 export type AgentStepStartedEvent = z.infer<typeof agentStepStartedEventSchema>
+export type AgentStepDeltaEvent = z.infer<typeof agentStepDeltaEventSchema>
 export type AgentStepCompletedEvent = z.infer<typeof agentStepCompletedEventSchema>
 export type AgentStepFailedEvent = z.infer<typeof agentStepFailedEventSchema>
 export type AgentToolStartedEvent = z.infer<typeof agentToolStartedEventSchema>

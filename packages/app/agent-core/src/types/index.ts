@@ -31,6 +31,13 @@ export type SynthesisChunk =
   | { kind: 'content'; text: string }
   | { kind: 'reasoning'; text: string }
 
+// A chunk of a streamed ReAct decision: `thought` carries the model's reasoning
+// as it streams (full accumulated text), and `decision` is the final structured
+// choice. Used by the optional streaming decision path.
+export type DecisionChunk =
+  | { kind: 'thought'; text: string }
+  | { kind: 'decision'; decision: ReActDecision }
+
 export interface ModelProvider {
   plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan>
   execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
@@ -41,6 +48,11 @@ export interface ModelProvider {
   // test mocks) need not implement it. The runtimes that need it guard at run
   // start and surface a clear error when it is absent.
   decideNextAction?(context: ExecutionContext, options?: ProviderCallOptions): Promise<ReActDecision>
+  // Streaming variant of decideNextAction: yields the model's reasoning as it
+  // streams, then the final decision. When present, the ReAct/Hybrid runtimes
+  // prefer it so per-step thoughts render live; otherwise they fall back to
+  // decideNextAction.
+  streamDecision?(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<DecisionChunk>
 }
 
 export type AssistantContentSnapshot = {
