@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useBrowserApp } from '../app'
+import { MarkdownDocument } from '../markdown-document'
 import { CONSENT_PROMPTED_KEY } from './consent-gate'
 import { PrivacyPolicyDialog } from './privacy-policy-dialog'
-import { PRIVACY_POLICY_VERSION } from './privacy-policy.generated'
+import { PRIVACY_POLICY_UPDATE_NOTICE, PRIVACY_POLICY_VERSION } from './privacy-policy.generated'
 
 const PRIVACY_POLICY_ACKNOWLEDGED_VERSION_KEY = 'privacy_policy_acknowledged_version'
 
@@ -53,12 +54,10 @@ export const PrivacyPolicyUpdateGate = () => {
         <>
           <div className="fixed inset-0 z-[55] bg-stone-900/20 backdrop-blur-[1px]" />
           <div className="fixed inset-x-4 bottom-4 z-[60] mx-auto max-w-lg rounded-2xl border border-amber-200 bg-white p-4 shadow-xl">
-            <h2 className="text-sm font-semibold text-stone-900">Privacy policy updated</h2>
-            <p className="mt-2 text-sm text-stone-700">
-              We updated the privacy policy to document Web Speech API voice input, including that
-              speech recognition depends on your browser or device vendor and may run locally or in
-              the cloud.
-            </p>
+            <MarkdownDocument
+              markdown={PRIVACY_POLICY_UPDATE_NOTICE}
+              className="[&>*:first-child]:mt-0"
+            />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
