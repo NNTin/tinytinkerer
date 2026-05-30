@@ -67,19 +67,19 @@ const ensureSentry = async (): Promise<void> => {
       mod.init({
         dsn: config.dsn,
         release: config.buildHash,
-        // Errors only — no performance tracing, no session replay. Keep the
-        // browser SDK on a minimal integration set so uncaught exceptions and
-        // unhandled rejections are reported without turning on the broader
-        // default browser instrumentation.
-        defaultIntegrations: false,
-        integrations: [mod.globalHandlersIntegration()],
+        // Errors only — no performance tracing, no session replay.
+        integrations: [],
         tracesSampleRate: 0,
         // Never collect user-typed content. We keep the auto-detected IP
         // (disclosed in PRIVACY.md) but strip request bodies and the console
         // logs / network payloads that breadcrumbs would otherwise capture.
         sendDefaultPii: false,
         beforeBreadcrumb: (breadcrumb) => {
-          if (breadcrumb.category === 'console') {
+          if (
+            breadcrumb.category === 'console' &&
+            breadcrumb.level !== 'error' &&
+            breadcrumb.level !== 'fatal'
+          ) {
             return null
           }
           if (
