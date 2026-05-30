@@ -24,7 +24,7 @@ export default defineConfig({
     // Must be last: injects debug IDs and uploads source maps to Sentry, then
     // deletes the .map files so they are never served publicly. The release name
     // must match the runtime release set in
-    // packages/app-browser/src/telemetry/telemetry.ts (config.buildHash).
+    // packages/app/app-browser/src/telemetry/telemetry.ts (config.buildHash).
     ...(sentryEnabled
       ? [
           sentryVitePlugin({

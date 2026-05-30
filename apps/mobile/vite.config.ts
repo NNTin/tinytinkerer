@@ -19,7 +19,7 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(appVersion),
     __BUILD_HASH__: JSON.stringify(buildHash)
   },
-  publicDir: '../../packages/brand-assets/assets/generated',
+  publicDir: '../../packages/brand/brand-assets/assets/generated',
   plugins: [
     react(),
     tailwindcss(),

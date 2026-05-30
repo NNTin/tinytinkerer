@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'apps/edge/**'
-      - 'packages/contracts/**'
+      - 'packages/shared/contracts/**'
       - 'package.json'
       - 'pnpm-workspace.yaml'
       - 'turbo.json'

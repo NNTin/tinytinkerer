@@ -9,6 +9,7 @@ const updateSourcePath = join(rootDir, 'docs', 'PRIVACY-UPDATE.md')
 const modulePath = join(
   rootDir,
   'packages',
+  'app',
   'app-browser',
   'src',
   'telemetry',

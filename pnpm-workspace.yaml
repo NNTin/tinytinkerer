@@ -1,5 +1,6 @@
 packages:
   - apps/*
-  - packages/*
+  - packages/*/*
+  - packages/content/renderers/*
 
 minimumReleaseAge: 10080
