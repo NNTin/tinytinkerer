@@ -123,10 +123,10 @@ const canFallbackToParse = (error) => {
 
 const parseBlock = (block) => {
   const jsdomModuleUrl = pathToFileURL(
-    join(process.cwd(), 'packages', 'content-mermaid', 'node_modules', 'jsdom', 'lib', 'api.js')
+    join(process.cwd(), 'packages', 'content', 'renderers', 'content-mermaid', 'node_modules', 'jsdom', 'lib', 'api.js')
   ).href
   const mermaidModuleUrl = pathToFileURL(
-    join(process.cwd(), 'packages', 'content-mermaid', 'node_modules', 'mermaid', 'dist', 'mermaid.core.mjs')
+    join(process.cwd(), 'packages', 'content', 'renderers', 'content-mermaid', 'node_modules', 'mermaid', 'dist', 'mermaid.core.mjs')
   ).href
   const parserScript = [
     "const jsdomModuleUrl = process.argv[1]",

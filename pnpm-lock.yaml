@@ -61,7 +61,7 @@ importers:
         version: 10.53.1
       '@tinytinkerer/contracts':
         specifier: workspace:*
-        version: link:../../packages/contracts
+        version: link:../../packages/shared/contracts
       hono:
         specifier: ^4.10.5
         version: 4.12.21
@@ -98,10 +98,10 @@ importers:
         version: 5.100.11(react@19.2.6)
       '@tinytinkerer/app-browser':
         specifier: workspace:*
-        version: link:../../packages/app-browser
+        version: link:../../packages/app/app-browser
       '@tinytinkerer/ui':
         specifier: workspace:*
-        version: link:../../packages/ui
+        version: link:../../packages/shared/ui
       react:
         specifier: ^19.2.0
         version: 19.2.6
@@ -165,10 +165,10 @@ importers:
         version: 5.100.11(react@19.2.6)
       '@tinytinkerer/app-browser':
         specifier: workspace:*
-        version: link:../../packages/app-browser
+        version: link:../../packages/app/app-browser
       '@tinytinkerer/ui':
         specifier: workspace:*
-        version: link:../../packages/ui
+        version: link:../../packages/shared/ui
       react:
         specifier: ^19.2.0
         version: 19.2.6
@@ -220,10 +220,10 @@ importers:
         version: 5.100.11(react@19.2.6)
       '@tinytinkerer/app-browser':
         specifier: workspace:*
-        version: link:../../packages/app-browser
+        version: link:../../packages/app/app-browser
       '@tinytinkerer/ui':
         specifier: workspace:*
-        version: link:../../packages/ui
+        version: link:../../packages/shared/ui
       react:
         specifier: ^19.2.0
         version: 19.2.6
@@ -265,16 +265,16 @@ importers:
         specifier: ^8.0.12
         version: 8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0)
 
-  packages/agent-core:
+  packages/app/agent-core:
     dependencies:
       '@tinytinkerer/contracts':
         specifier: workspace:*
-        version: link:../contracts
+        version: link:../../shared/contracts
       zod:
         specifier: ^4.1.12
         version: 4.4.3
 
-  packages/app-browser:
+  packages/app/app-browser:
     dependencies:
       '@sentry/react':
         specifier: ^10.17.0
@@ -284,37 +284,37 @@ importers:
         version: link:../app-core
       '@tinytinkerer/brand-assets':
         specifier: workspace:*
-        version: link:../brand-assets
+        version: link:../../brand/brand-assets
       '@tinytinkerer/content-callout':
         specifier: workspace:*
-        version: link:../content-callout
+        version: link:../../content/renderers/content-callout
       '@tinytinkerer/content-code':
         specifier: workspace:*
-        version: link:../content-code
+        version: link:../../content/renderers/content-code
       '@tinytinkerer/content-image':
         specifier: workspace:*
-        version: link:../content-image
+        version: link:../../content/renderers/content-image
       '@tinytinkerer/content-link-card':
         specifier: workspace:*
-        version: link:../content-link-card
+        version: link:../../content/renderers/content-link-card
       '@tinytinkerer/content-markdown':
         specifier: workspace:*
-        version: link:../content-markdown
+        version: link:../../content/content-markdown
       '@tinytinkerer/content-mermaid':
         specifier: workspace:*
-        version: link:../content-mermaid
+        version: link:../../content/renderers/content-mermaid
       '@tinytinkerer/content-react':
         specifier: workspace:*
-        version: link:../content-react
+        version: link:../../content/content-react
       '@tinytinkerer/content-table':
         specifier: workspace:*
-        version: link:../content-table
+        version: link:../../content/renderers/content-table
       '@tinytinkerer/content-wireframe':
         specifier: workspace:*
-        version: link:../content-wireframe
+        version: link:../../content/renderers/content-wireframe
       '@tinytinkerer/contracts':
         specifier: workspace:*
-        version: link:../contracts
+        version: link:../../shared/contracts
       dexie:
         specifier: ^4.2.1
         version: 4.4.2
@@ -356,20 +356,20 @@ importers:
         specifier: ^4.0.8
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
 
-  packages/app-core:
+  packages/app/app-core:
     dependencies:
       '@tinytinkerer/agent-core':
         specifier: workspace:*
         version: link:../agent-core
       '@tinytinkerer/contracts':
         specifier: workspace:*
-        version: link:../contracts
+        version: link:../../shared/contracts
 
-  packages/brand-assets:
+  packages/brand/brand-assets:
     dependencies:
       '@tinytinkerer/contracts':
         specifier: workspace:*
-        version: link:../contracts
+        version: link:../../shared/contracts
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -381,11 +381,49 @@ importers:
         specifier: ^19.2.14
         version: 19.2.15
 
-  packages/content-callout:
+  packages/content/content-core:
     dependencies:
-      '@tinytinkerer/content-react':
+      '@tinytinkerer/contracts':
         specifier: workspace:*
-        version: link:../content-react
+        version: link:../../shared/contracts
+    devDependencies:
+      vitest:
+        specifier: ^4.0.8
+        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
+
+  packages/content/content-markdown:
+    dependencies:
+      '@tinytinkerer/content-core':
+        specifier: workspace:*
+        version: link:../content-core
+      mdast-util-to-string:
+        specifier: ^4.0.0
+        version: 4.0.0
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0
+      unified:
+        specifier: ^11.0.5
+        version: 11.0.5
+    devDependencies:
+      '@types/mdast':
+        specifier: ^4.0.4
+        version: 4.0.4
+      vitest:
+        specifier: ^4.0.8
+        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
+
+  packages/content/content-react:
+    dependencies:
+      '@tinytinkerer/content-core':
+        specifier: workspace:*
+        version: link:../content-core
+      '@tinytinkerer/ui':
+        specifier: workspace:*
+        version: link:../../shared/ui
     devDependencies:
       '@testing-library/jest-dom':
         specifier: ^6.9.1
@@ -415,7 +453,41 @@ importers:
         specifier: ^4.0.8
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
 
-  packages/content-code:
+  packages/content/renderers/content-callout:
+    dependencies:
+      '@tinytinkerer/content-react':
+        specifier: workspace:*
+        version: link:../../content-react
+    devDependencies:
+      '@testing-library/jest-dom':
+        specifier: ^6.9.1
+        version: 6.9.1
+      '@testing-library/react':
+        specifier: ^16.3.2
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@types/react':
+        specifier: ^19.2.14
+        version: 19.2.15
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.15)
+      '@vitejs/plugin-react':
+        specifier: ^6.0.1
+        version: 6.0.2(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
+      jsdom:
+        specifier: ^29.1.1
+        version: 29.1.1
+      react:
+        specifier: ^19.0.0
+        version: 19.2.6
+      vite:
+        specifier: ^8.0.12
+        version: 8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0)
+      vitest:
+        specifier: ^4.0.8
+        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
+
+  packages/content/renderers/content-code:
     dependencies:
       '@codemirror/commands':
         specifier: ^6.6.0
@@ -458,7 +530,7 @@ importers:
         version: 6.43.0
       '@tinytinkerer/content-react':
         specifier: workspace:*
-        version: link:../content-react
+        version: link:../../content-react
       codemirror:
         specifier: ^6.0.0
         version: 6.0.2
@@ -491,21 +563,11 @@ importers:
         specifier: ^4.0.8
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
 
-  packages/content-core:
-    dependencies:
-      '@tinytinkerer/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-    devDependencies:
-      vitest:
-        specifier: ^4.0.8
-        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
-
-  packages/content-image:
+  packages/content/renderers/content-image:
     dependencies:
       '@tinytinkerer/content-react':
         specifier: workspace:*
-        version: link:../content-react
+        version: link:../../content-react
     devDependencies:
       '@testing-library/jest-dom':
         specifier: ^6.9.1
@@ -535,11 +597,11 @@ importers:
         specifier: ^4.0.8
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
 
-  packages/content-link-card:
+  packages/content/renderers/content-link-card:
     dependencies:
       '@tinytinkerer/content-react':
         specifier: workspace:*
-        version: link:../content-react
+        version: link:../../content-react
     devDependencies:
       '@testing-library/jest-dom':
         specifier: ^6.9.1
@@ -569,36 +631,11 @@ importers:
         specifier: ^4.0.8
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
 
-  packages/content-markdown:
-    dependencies:
-      '@tinytinkerer/content-core':
-        specifier: workspace:*
-        version: link:../content-core
-      mdast-util-to-string:
-        specifier: ^4.0.0
-        version: 4.0.0
-      remark-gfm:
-        specifier: ^4.0.1
-        version: 4.0.1
-      remark-parse:
-        specifier: ^11.0.0
-        version: 11.0.0
-      unified:
-        specifier: ^11.0.5
-        version: 11.0.5
-    devDependencies:
-      '@types/mdast':
-        specifier: ^4.0.4
-        version: 4.0.4
-      vitest:
-        specifier: ^4.0.8
-        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
-
-  packages/content-mermaid:
+  packages/content/renderers/content-mermaid:
     dependencies:
       '@tinytinkerer/content-react':
         specifier: workspace:*
-        version: link:../content-react
+        version: link:../../content-react
       '@types/dompurify':
         specifier: ^3.2.0
         version: 3.2.0
@@ -637,48 +674,11 @@ importers:
         specifier: ^4.0.8
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
 
-  packages/content-react:
-    dependencies:
-      '@tinytinkerer/content-core':
-        specifier: workspace:*
-        version: link:../content-core
-      '@tinytinkerer/ui':
-        specifier: workspace:*
-        version: link:../ui
-    devDependencies:
-      '@testing-library/jest-dom':
-        specifier: ^6.9.1
-        version: 6.9.1
-      '@testing-library/react':
-        specifier: ^16.3.2
-        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@types/react':
-        specifier: ^19.2.14
-        version: 19.2.15
-      '@types/react-dom':
-        specifier: ^19.2.3
-        version: 19.2.3(@types/react@19.2.15)
-      '@vitejs/plugin-react':
-        specifier: ^6.0.1
-        version: 6.0.2(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
-      jsdom:
-        specifier: ^29.1.1
-        version: 29.1.1
-      react:
-        specifier: ^19.0.0
-        version: 19.2.6
-      vite:
-        specifier: ^8.0.12
-        version: 8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0)
-      vitest:
-        specifier: ^4.0.8
-        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
-
-  packages/content-table:
+  packages/content/renderers/content-table:
     dependencies:
       '@tinytinkerer/content-react':
         specifier: workspace:*
-        version: link:../content-react
+        version: link:../../content-react
     devDependencies:
       '@testing-library/jest-dom':
         specifier: ^6.9.1
@@ -708,11 +708,11 @@ importers:
         specifier: ^4.0.8
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
 
-  packages/content-wireframe:
+  packages/content/renderers/content-wireframe:
     dependencies:
       '@tinytinkerer/content-react':
         specifier: workspace:*
-        version: link:../content-react
+        version: link:../../content-react
     devDependencies:
       '@testing-library/jest-dom':
         specifier: ^6.9.1
@@ -742,13 +742,13 @@ importers:
         specifier: ^4.0.8
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@29.1.1)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.27.3)(jiti@2.7.0)(terser@5.48.0))
 
-  packages/contracts:
+  packages/shared/contracts:
     dependencies:
       zod:
         specifier: ^4.1.12
         version: 4.4.3
 
-  packages/ui:
+  packages/shared/ui:
     dependencies:
       '@radix-ui/react-slot':
         specifier: ^1.2.4
@@ -1918,11 +1918,11 @@ packages:
   '@lezer/lr@1.4.10':
     resolution: {integrity: sha512-rnCpTIBafOx4mRp43xOxDJbFipJm/c0cia/V5TiGlhmMa+wsSdoGmUN3w5Bqrks/09Q/D4tNAmWaT8p6NRi77A==}
 
-  '@lezer/markdown@1.6.4':
-    resolution: {integrity: sha512-N0SxazMj4k65DBfaf1azqtMZd6u7MqluP84/NZnB/io8Td9aleFmAhz9hcbvSfsxT5tdYlJ5qgv5aMJGY4zEtA==}
+  '@lezer/markdown@1.6.3':
+    resolution: {integrity: sha512-jpGm5Ps+XErS+xA4urw7ogEGkeZOahVQF21Z6oECF0sj+2liwZopd2+I8uH5I/vZsRuuze3OxBREIANLf6KKUw==}
 
-  '@lezer/python@1.1.19':
-    resolution: {integrity: sha512-MhQIURHRytsNzP/YXnqpYKW6la6voAH3kyplTOOiCdjyFY6cWWGFVmYVdHIPrElqSDf4iCDktQCockB9FxuhzQ==}
+  '@lezer/python@1.1.18':
+    resolution: {integrity: sha512-31FiUrU7z9+d/ElGQLJFXl+dKOdx0jALlP3KEOsGTex8mvj+SoE1FgItcHWK/axkxCHGUSpqIHt6JAWfWu9Rhg==}
 
   '@lezer/xml@1.0.6':
     resolution: {integrity: sha512-CdDwirL0OEaStFue/66ZmFSeppuL6Dwjlk8qk153mSQwiSH/Dlri4GNymrNWnUmPl2Um7QfV1FO9KFUyX3Twww==}
@@ -6313,7 +6313,7 @@ snapshots:
       '@codemirror/state': 6.6.0
       '@codemirror/view': 6.43.0
       '@lezer/common': 1.5.2
-      '@lezer/markdown': 1.6.4
+      '@lezer/markdown': 1.6.3
 
   '@codemirror/lang-python@6.2.1':
     dependencies:
@@ -6321,7 +6321,7 @@ snapshots:
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.6.0
       '@lezer/common': 1.5.2
-      '@lezer/python': 1.1.19
+      '@lezer/python': 1.1.18
 
   '@codemirror/lang-sql@6.10.0':
     dependencies:
@@ -6760,12 +6760,12 @@ snapshots:
     dependencies:
       '@lezer/common': 1.5.2
 
-  '@lezer/markdown@1.6.4':
+  '@lezer/markdown@1.6.3':
     dependencies:
       '@lezer/common': 1.5.2
       '@lezer/highlight': 1.2.3
 
-  '@lezer/python@1.1.19':
+  '@lezer/python@1.1.18':
     dependencies:
       '@lezer/common': 1.5.2
       '@lezer/highlight': 1.2.3

@@ -122,28 +122,37 @@ console.log('Boundary checks passed.')
 async function loadWorkspacePackages() {
   const packages = []
 
-  for (const baseDir of workspaceRoots) {
-    const entries = await readdir(baseDir, { withFileTypes: true })
+  const collect = async (baseDir, dir) => {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+
     for (const entry of entries) {
-      if (!entry.isDirectory()) {
+      if (!entry.isDirectory() || entry.name === 'node_modules') {
         continue
       }
 
-      const dir = join(baseDir, entry.name)
-      const packageJsonPath = join(dir, 'package.json')
+      const childDir = join(dir, entry.name)
       try {
-        const manifest = JSON.parse(await readFile(packageJsonPath, 'utf8'))
+        const manifest = JSON.parse(await readFile(join(childDir, 'package.json'), 'utf8'))
         packages.push({
           name: manifest.name,
-          dir,
+          dir: childDir,
           kind: relative(rootDir, baseDir).startsWith('apps') ? 'app' : 'package',
           slug: entry.name,
           manifest
         })
       } catch {
-        // Ignore directories without a package manifest.
+        await collect(baseDir, childDir)
       }
     }
+  }
+
+  for (const baseDir of workspaceRoots) {
+    await collect(baseDir, baseDir)
   }
 
   return packages

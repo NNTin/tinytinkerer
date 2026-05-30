@@ -5,10 +5,10 @@ import sharp from 'sharp'
 import pngToIco from 'png-to-ico'
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const sourceImagePath = join(rootDir, 'packages', 'brand-assets', 'assets', 'source', 'tinytinkerer.jpg')
-const generatedDir = join(rootDir, 'packages', 'brand-assets', 'assets', 'generated')
+const sourceImagePath = join(rootDir, 'packages', 'brand', 'brand-assets', 'assets', 'source', 'tinytinkerer.jpg')
+const generatedDir = join(rootDir, 'packages', 'brand', 'brand-assets', 'assets', 'generated')
 const licenseSourcePath = join(rootDir, 'LICENSE')
-const licenseModulePath = join(rootDir, 'packages', 'brand-assets', 'src', 'license.generated.ts')
+const licenseModulePath = join(rootDir, 'packages', 'brand', 'brand-assets', 'src', 'license.generated.ts')
 
 const PNG_OUTPUTS = [
   { fileName: 'favicon-16.png', size: 16 },
