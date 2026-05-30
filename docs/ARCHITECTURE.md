@@ -149,6 +149,9 @@ Diagram convention: when a package consumes the content platform through its pub
 - Apps stay thin. `web`, `mobile`, and `widget` own routes, page composition, shell layout, and shell-specific UX, but not shared product behavior.
 - Shared product behavior stays headless where possible. Core orchestration, projections, and runtime policies live in packages that do not depend on React or browser APIs.
 - Shared browser-shell behavior has a single boundary. Browser-specific adapters, shell-facing React hooks and components, OAuth helpers, and shared browser styles live in `@tinytinkerer/app-browser`.
+- Shared browser request telemetry also lives at that boundary. Browser-side fetch wrappers,
+  request sanitization, and Sentry request-failure capture belong in `@tinytinkerer/app-browser`,
+  not in the thin app shells.
 - Contracts are the foundational shared schema and type source of truth. Shared request, response, event, payload, and canonical content-model schemas live in `@tinytinkerer/contracts`.
 - Rich assistant content is a dedicated subsystem. Markdown parsing, AST handling, and specialized renderers live in the content platform, not in apps and not in `ui`.
 

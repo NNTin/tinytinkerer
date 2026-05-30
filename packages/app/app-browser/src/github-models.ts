@@ -4,6 +4,12 @@ import { modelsListResponseSchema, type GitHubModelEntry } from '@tinytinkerer/c
 import { useAuthStore } from './app'
 import { useBrowserShellConfig } from './hooks'
 import { getTelemetryHeaders } from './telemetry/telemetry'
+import {
+  captureRequestIssue,
+  fetchWithTelemetry,
+  parseJsonWithTelemetry,
+  type RequestTelemetryMetadata
+} from './telemetry/request-telemetry'
 
 export type ModelEntry = GitHubModelEntry
 
@@ -28,17 +34,39 @@ export const fetchGitHubModels = async (
   const cached = modelsCache.get(cacheKey)
   if (cached && Date.now() - cached.cachedAt <= MODELS_CACHE_TTL_MS) return cached.models
 
+  const metadata: RequestTelemetryMetadata = {
+    area: 'models.list',
+    origin: 'edge',
+    method: 'GET',
+    url: `${edgeBaseUrl}/api/models/list`
+  }
+
   try {
-    const response = await fetch(`${edgeBaseUrl}/api/models/list`, {
+    const response = await fetchWithTelemetry(metadata, {
       headers: { authorization: `Bearer ${token}`, ...getTelemetryHeaders() }
     })
 
     if (!response.ok) return [...SUPPORTED_MODELS]
 
-    const parsed = modelsListResponseSchema.safeParse(await response.json())
-    if (!parsed.success) return [...SUPPORTED_MODELS]
+    const payload = await parseJsonWithTelemetry<unknown>(metadata, response)
+    const parsed = modelsListResponseSchema.safeParse(payload)
+    if (!parsed.success) {
+      captureRequestIssue(metadata, {
+        kind: 'schema_error',
+        message: 'Models list response did not match schema',
+        response
+      })
+      return [...SUPPORTED_MODELS]
+    }
     const models = parsed.data.models
-    if (models.length === 0) return [...SUPPORTED_MODELS]
+    if (models.length === 0) {
+      captureRequestIssue(metadata, {
+        kind: 'schema_error',
+        message: 'Models list response was empty',
+        response
+      })
+      return [...SUPPORTED_MODELS]
+    }
 
     modelsCache.set(cacheKey, { models, cachedAt: Date.now() })
     return models

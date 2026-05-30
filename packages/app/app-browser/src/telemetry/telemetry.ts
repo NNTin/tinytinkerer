@@ -12,6 +12,7 @@ const TELEMETRY_HEADERS = {
 } as const
 
 type SentryModule = typeof import('@sentry/react')
+type TelemetryLevel = 'warning' | 'error'
 
 // Removes the query string from a URL so breadcrumbs/events never carry
 // request payloads encoded as query params. Falls back to the raw value when
@@ -28,6 +29,12 @@ type TelemetryConfig = {
   dsn?: string
   appVersion: string
   buildHash: string
+}
+
+type TelemetryCaptureOptions = {
+  level?: TelemetryLevel
+  tags?: Record<string, string | number | boolean | undefined>
+  contexts?: Record<string, Record<string, unknown>>
 }
 
 // Module singleton: the browser apps are single-instance SPAs, so a shared
@@ -60,8 +67,12 @@ const ensureSentry = async (): Promise<void> => {
       mod.init({
         dsn: config.dsn,
         release: config.buildHash,
-        // Errors only — no performance tracing, no session replay.
-        integrations: [],
+        // Errors only — no performance tracing, no session replay. Keep the
+        // browser SDK on a minimal integration set so uncaught exceptions and
+        // unhandled rejections are reported without turning on the broader
+        // default browser instrumentation.
+        defaultIntegrations: false,
+        integrations: [mod.globalHandlersIntegration()],
         tracesSampleRate: 0,
         // Never collect user-typed content. We keep the auto-detected IP
         // (disclosed in PRIVACY.md) but strip request bodies and the console
@@ -143,6 +154,37 @@ export const setTelemetryGitHubId = (value: string | null): void => {
   if (consent) {
     applySentryUser()
   }
+}
+
+export const captureTelemetryException = (
+  error: unknown,
+  options: TelemetryCaptureOptions = {}
+): void => {
+  if (!sentry) {
+    return
+  }
+
+  const normalizedError =
+    error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'Unknown telemetry error')
+
+  sentry.withScope((scope) => {
+    if (options.level) {
+      scope.setLevel(options.level)
+    }
+    if (options.tags) {
+      for (const [key, value] of Object.entries(options.tags)) {
+        if (value !== undefined) {
+          scope.setTag(key, String(value))
+        }
+      }
+    }
+    if (options.contexts) {
+      for (const [key, value] of Object.entries(options.contexts)) {
+        scope.setContext(key, value)
+      }
+    }
+    sentry?.captureException(normalizedError)
+  })
 }
 
 /**

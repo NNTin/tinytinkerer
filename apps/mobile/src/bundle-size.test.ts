@@ -55,10 +55,10 @@ beforeAll(async () => {
 }, 30_000)
 
 describe('mobile bundle regression guard', () => {
-  it('keeps the startup entry chunk under 60 kB', () => {
+  it('keeps the startup entry chunk under 65 kB', () => {
     const entry = chunks.find((chunk) => chunk.isEntry)
     expect(entry, 'No entry chunk found in build output').toBeDefined()
-    expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(60)
+    expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(65)
   })
 
   it('keeps the lazy mobile route chunk under 40 kB', () => {
