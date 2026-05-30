@@ -41,15 +41,18 @@ export type {
 
 export const eventTypeSchema = z.enum([
   'user.message',
-  'planning.started',
-  'plan.generated',
-  'execution.started',
-  'execution.step.started',
-  'tool.call.started',
-  'tool.call.completed',
-  'tool.call.failed',
-  'execution.step.completed',
-  'execution.completed',
+  // Generic agent-trace events. These describe an agent's reasoning/acting
+  // timeline in a strategy-agnostic way so Plan-then-Execute, ReAct, Hybrid,
+  // and future agents share one vocabulary. New agents extend the timeline by
+  // widening `agentStepKindSchema`, not by adding event types here.
+  'agent.run.started',
+  'agent.run.completed',
+  'agent.step.started',
+  'agent.step.completed',
+  'agent.step.failed',
+  'agent.tool.started',
+  'agent.tool.completed',
+  'agent.tool.failed',
   'rate.limit.waiting',
   'rate.limit.recovered',
   'rate.limit.cancelled',
@@ -94,6 +97,40 @@ export const executionPlanSchema = z.object({
 
 export type ExecutionPlan = z.infer<typeof executionPlanSchema>
 
+// Which agent strategy drives a run. Persisted as a user setting and carried on
+// `agent.run.started` so the UI (and future tooling) can adapt per strategy.
+export const agentTypeSchema = z.enum(['plan-execute', 'react', 'hybrid'])
+export type AgentType = z.infer<typeof agentTypeSchema>
+
+// The semantic role of a single step in an agent's trace. Extensible: a new
+// agent strategy adds its concepts here without introducing new event types.
+export const agentStepKindSchema = z.enum([
+  'plan', // created an N-step plan (parent of plan-step children)
+  'plan-step', // one step of an upfront plan (Plan-then-Execute / Hybrid)
+  'think', // a reasoning/decision step (ReAct / Hybrid thought)
+  'act', // taking an action (typically wraps a tool call)
+  'observe', // recording an observation/result
+  'replan', // Hybrid revising the plan mid-run
+  'synthesize' // composing the final answer
+])
+export type AgentStepKind = z.infer<typeof agentStepKindSchema>
+
+// A single decision in a ReAct loop: either take one concrete action (tool
+// call) next, or finish and synthesize the answer.
+export const reactDecisionSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('action'),
+    reasoning: z.string().optional(),
+    toolId: z.string(),
+    input: z.record(z.string(), z.unknown())
+  }),
+  z.object({
+    kind: z.literal('final'),
+    reasoning: z.string().optional()
+  })
+])
+export type ReActDecision = z.infer<typeof reactDecisionSchema>
+
 const eventBaseSchema = <TType extends EventType, TPayload extends z.ZodTypeAny>(
   type: TType,
   payload: TPayload
@@ -109,41 +146,47 @@ export const userMessageEventSchema = eventBaseSchema(
   'user.message',
   z.object({ text: z.string() })
 )
-export const planningStartedEventSchema = eventBaseSchema(
-  'planning.started',
-  z.object({ summary: z.string() })
+export const agentRunStartedEventSchema = eventBaseSchema(
+  'agent.run.started',
+  z.object({ agentType: agentTypeSchema })
 )
-export const planGeneratedEventSchema = eventBaseSchema(
-  'plan.generated',
-  z.object({ plan: executionPlanSchema })
-)
-export const executionStartedEventSchema = eventBaseSchema(
-  'execution.started',
+export const agentRunCompletedEventSchema = eventBaseSchema(
+  'agent.run.completed',
   z.object({ steps: z.number().int().nonnegative() })
 )
-export const executionStepStartedEventSchema = eventBaseSchema(
-  'execution.step.started',
-  z.object({ step: planStepSchema, index: z.number().int().nonnegative() })
+export const agentStepStartedEventSchema = eventBaseSchema(
+  'agent.step.started',
+  z.object({
+    stepId: z.string(),
+    parentStepId: z.string().optional(),
+    kind: agentStepKindSchema,
+    title: z.string()
+  })
 )
-export const toolCallStartedEventSchema = eventBaseSchema(
-  'tool.call.started',
-  z.object({ toolId: z.string(), input: z.record(z.string(), z.unknown()) })
+export const agentStepCompletedEventSchema = eventBaseSchema(
+  'agent.step.completed',
+  z.object({ stepId: z.string(), summary: z.string().optional() })
 )
-export const toolCallCompletedEventSchema = eventBaseSchema(
-  'tool.call.completed',
-  z.object({ toolId: z.string(), output: z.unknown() })
+export const agentStepFailedEventSchema = eventBaseSchema(
+  'agent.step.failed',
+  z.object({ stepId: z.string(), error: z.string() })
 )
-export const toolCallFailedEventSchema = eventBaseSchema(
-  'tool.call.failed',
-  z.object({ toolId: z.string(), error: z.string() })
+export const agentToolStartedEventSchema = eventBaseSchema(
+  'agent.tool.started',
+  z.object({
+    stepId: z.string(),
+    parentStepId: z.string().optional(),
+    toolId: z.string(),
+    input: z.record(z.string(), z.unknown())
+  })
 )
-export const executionStepCompletedEventSchema = eventBaseSchema(
-  'execution.step.completed',
-  z.object({ stepId: z.string(), note: z.string() })
+export const agentToolCompletedEventSchema = eventBaseSchema(
+  'agent.tool.completed',
+  z.object({ stepId: z.string(), toolId: z.string(), output: z.unknown() })
 )
-export const executionCompletedEventSchema = eventBaseSchema(
-  'execution.completed',
-  z.object({ steps: z.number().int().nonnegative() })
+export const agentToolFailedEventSchema = eventBaseSchema(
+  'agent.tool.failed',
+  z.object({ stepId: z.string(), toolId: z.string(), error: z.string() })
 )
 const rateLimitDetailFields = {
   retryAfterMs: z.number().nonnegative(),
@@ -212,15 +255,14 @@ export const systemEventSchema = eventBaseSchema(
 
 export const chatEventSchema = z.discriminatedUnion('type', [
   userMessageEventSchema,
-  planningStartedEventSchema,
-  planGeneratedEventSchema,
-  executionStartedEventSchema,
-  executionStepStartedEventSchema,
-  toolCallStartedEventSchema,
-  toolCallCompletedEventSchema,
-  toolCallFailedEventSchema,
-  executionStepCompletedEventSchema,
-  executionCompletedEventSchema,
+  agentRunStartedEventSchema,
+  agentRunCompletedEventSchema,
+  agentStepStartedEventSchema,
+  agentStepCompletedEventSchema,
+  agentStepFailedEventSchema,
+  agentToolStartedEventSchema,
+  agentToolCompletedEventSchema,
+  agentToolFailedEventSchema,
   rateLimitWaitingEventSchema,
   rateLimitRecoveredEventSchema,
   rateLimitCancelledEventSchema,
@@ -233,15 +275,14 @@ export const chatEventSchema = z.discriminatedUnion('type', [
 ])
 
 export type UserMessageEvent = z.infer<typeof userMessageEventSchema>
-export type PlanningStartedEvent = z.infer<typeof planningStartedEventSchema>
-export type PlanGeneratedEvent = z.infer<typeof planGeneratedEventSchema>
-export type ExecutionStartedEvent = z.infer<typeof executionStartedEventSchema>
-export type ExecutionStepStartedEvent = z.infer<typeof executionStepStartedEventSchema>
-export type ToolCallStartedEvent = z.infer<typeof toolCallStartedEventSchema>
-export type ToolCallCompletedEvent = z.infer<typeof toolCallCompletedEventSchema>
-export type ToolCallFailedEvent = z.infer<typeof toolCallFailedEventSchema>
-export type ExecutionStepCompletedEvent = z.infer<typeof executionStepCompletedEventSchema>
-export type ExecutionCompletedEvent = z.infer<typeof executionCompletedEventSchema>
+export type AgentRunStartedEvent = z.infer<typeof agentRunStartedEventSchema>
+export type AgentRunCompletedEvent = z.infer<typeof agentRunCompletedEventSchema>
+export type AgentStepStartedEvent = z.infer<typeof agentStepStartedEventSchema>
+export type AgentStepCompletedEvent = z.infer<typeof agentStepCompletedEventSchema>
+export type AgentStepFailedEvent = z.infer<typeof agentStepFailedEventSchema>
+export type AgentToolStartedEvent = z.infer<typeof agentToolStartedEventSchema>
+export type AgentToolCompletedEvent = z.infer<typeof agentToolCompletedEventSchema>
+export type AgentToolFailedEvent = z.infer<typeof agentToolFailedEventSchema>
 export type RateLimitWaitingEvent = z.infer<typeof rateLimitWaitingEventSchema>
 export type RateLimitRecoveredEvent = z.infer<typeof rateLimitRecoveredEventSchema>
 export type RateLimitCancelledEvent = z.infer<typeof rateLimitCancelledEventSchema>

@@ -1,4 +1,4 @@
-import type { McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contracts'
+import type { AgentType, McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contracts'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { BrowserShell } from '../shell'
 import { loadCoreModule } from '../core-module'
@@ -7,6 +7,7 @@ import { setTelemetryConsent } from '../telemetry/telemetry'
 export type SettingsState = {
   hydrated: boolean
   selectedModel: string
+  agentType: AgentType
   searchEnabled: boolean
   webSpeechEnabled: boolean
   showReasoningActivity: boolean
@@ -16,6 +17,7 @@ export type SettingsState = {
   telemetryEnabled: boolean
   initialize: () => Promise<void>
   setSelectedModel: (model: string) => Promise<void>
+  setAgentType: (agentType: AgentType) => Promise<void>
   setSearchEnabled: (enabled: boolean) => Promise<void>
   setWebSpeechEnabled: (enabled: boolean) => Promise<void>
   setShowReasoningActivity: (show: boolean) => Promise<void>
@@ -32,9 +34,11 @@ export type SettingsState = {
 export type SettingsStore = StoreApi<SettingsState>
 
 const DEFAULT_MODEL = 'openai/gpt-4.1-mini'
+const DEFAULT_AGENT_TYPE: AgentType = 'plan-execute'
 
 const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',
+  agentType: 'settings_agent_type',
   searchEnabled: 'settings_search_enabled',
   webSpeechEnabled: 'settings_web_speech_enabled',
   showReasoningActivity: 'settings_show_reasoning_activity',
@@ -44,9 +48,10 @@ const SETTINGS_KEYS = {
   telemetryEnabled: 'settings_telemetry_enabled'
 } as const
 
-const defaultSettingsState = (): Omit<SettingsState, 'initialize' | 'setSelectedModel' | 'setSearchEnabled' | 'setWebSpeechEnabled' | 'setShowReasoningActivity' | 'setShowCodeBlockFullscreenButton' | 'addMcpServer' | 'updateMcpServer' | 'removeMcpServer' | 'setMcpServerEnabled' | 'setMcpDiscovery' | 'clearMcpDiscovery' | 'setTelemetryEnabled'> => ({
+const defaultSettingsState = (): Omit<SettingsState, 'initialize' | 'setSelectedModel' | 'setAgentType' | 'setSearchEnabled' | 'setWebSpeechEnabled' | 'setShowReasoningActivity' | 'setShowCodeBlockFullscreenButton' | 'addMcpServer' | 'updateMcpServer' | 'removeMcpServer' | 'setMcpServerEnabled' | 'setMcpDiscovery' | 'clearMcpDiscovery' | 'setTelemetryEnabled'> => ({
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
+  agentType: DEFAULT_AGENT_TYPE,
   searchEnabled: true,
   webSpeechEnabled: false,
   showReasoningActivity: false,
@@ -68,6 +73,11 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       const { persistSelectedModel } = await loadCoreModule()
       const normalizedModel = await persistSelectedModel(shell.preferences, model)
       set({ selectedModel: normalizedModel })
+    },
+    setAgentType: async (agentType) => {
+      const { persistAgentType } = await loadCoreModule()
+      const normalized = await persistAgentType(shell.preferences, agentType)
+      set({ agentType: normalized })
     },
     setSearchEnabled: async (enabled) => {
       const { persistBooleanPreference } = await loadCoreModule()

@@ -7,13 +7,16 @@ export type TurnNotice = {
 }
 
 // Chronological items that make up a turn's inline reasoning & activity panel.
+// `parentId`/`stepId` carry the agent-trace step hierarchy so the panel can
+// adopt nested rendering later without a data change; today it renders flat.
 export type TurnActivityItem =
   | { kind: 'reasoning'; id: string; text: string }
-  | { kind: 'label'; id: string; label: string }
+  | { kind: 'label'; id: string; label: string; parentId?: string }
   | {
       kind: 'tool'
       id: string
       toolId: string
+      stepId?: string
       status: 'started' | 'completed' | 'failed'
       input?: Record<string, unknown>
       output?: unknown
@@ -76,21 +79,15 @@ const coerceAssistantContent = (value: unknown): ContentDocument | null =>
 
 const thinkingLabel = (event: ChatEvent): string | undefined => {
   switch (event.type) {
-    case 'planning.started':
-      return 'Planning research steps'
-    case 'plan.generated':
-      return `Generated ${event.payload.plan.steps.length}-step plan`
-    case 'execution.started':
-      return `Executing ${event.payload.steps} steps`
-    case 'execution.step.started':
-      return event.payload.step.summary
-    case 'tool.call.started': {
-      const query = event.payload.input.query
-      return typeof query === 'string' ? `Searching: ${query}` : 'Searching web'
-    }
-    case 'execution.step.completed':
-      return event.payload.note
-    case 'execution.completed':
+    case 'agent.step.started':
+      return event.payload.title
+    case 'agent.step.completed':
+      return event.payload.summary && event.payload.summary.trim().length > 0
+        ? event.payload.summary
+        : undefined
+    case 'agent.step.failed':
+      return event.payload.error
+    case 'agent.run.completed':
       return `Completed ${event.payload.steps} steps`
     default:
       return undefined
@@ -103,39 +100,47 @@ const thinkingLabel = (event: ChatEvent): string | undefined => {
 // is the full accumulated reasoning, so last writer wins).
 const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
   switch (event.type) {
-    case 'planning.started':
-    case 'plan.generated':
-    case 'execution.started':
-    case 'execution.step.started':
-    case 'execution.step.completed':
-    case 'execution.completed': {
+    case 'agent.run.started':
+      return
+    case 'agent.step.started':
+    case 'agent.step.completed':
+    case 'agent.step.failed':
+    case 'agent.run.completed': {
       const label = thinkingLabel(event)
       if (label) {
-        activity.items.push({ kind: 'label', id: event.id, label })
+        const parentId =
+          event.type === 'agent.step.started' ? event.payload.parentStepId : undefined
+        activity.items.push({
+          kind: 'label',
+          id: event.id,
+          label,
+          ...(parentId ? { parentId } : {})
+        })
       }
       return
     }
-    case 'tool.call.started': {
+    case 'agent.tool.started': {
       activity.items.push({
         kind: 'tool',
         id: event.id,
         toolId: event.payload.toolId,
+        stepId: event.payload.stepId,
         status: 'started',
         input: event.payload.input
       })
       return
     }
-    case 'tool.call.completed':
-    case 'tool.call.failed': {
+    case 'agent.tool.completed':
+    case 'agent.tool.failed': {
       const open = [...activity.items]
         .reverse()
         .find(
           (item): item is Extract<TurnActivityItem, { kind: 'tool' }> =>
             item.kind === 'tool' &&
-            item.toolId === event.payload.toolId &&
+            item.stepId === event.payload.stepId &&
             item.status === 'started'
         )
-      if (event.type === 'tool.call.completed') {
+      if (event.type === 'agent.tool.completed') {
         if (open) {
           open.status = 'completed'
           open.output = event.payload.output
@@ -144,6 +149,7 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
             kind: 'tool',
             id: event.id,
             toolId: event.payload.toolId,
+            stepId: event.payload.stepId,
             status: 'completed',
             output: event.payload.output
           })
@@ -156,6 +162,7 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
           kind: 'tool',
           id: event.id,
           toolId: event.payload.toolId,
+          stepId: event.payload.stepId,
           status: 'failed',
           error: event.payload.error
         })

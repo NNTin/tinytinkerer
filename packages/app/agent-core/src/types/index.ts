@@ -1,7 +1,8 @@
 import type {
   ContentDocument,
   ExecutionPlan,
-  PlanStep
+  PlanStep,
+  ReActDecision
 } from '@tinytinkerer/contracts'
 
 export type ConversationMessage = {
@@ -34,6 +35,12 @@ export interface ModelProvider {
   plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan>
   execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
   synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk>
+  // Decide the next ReAct action (a single tool call) or to finish, given the
+  // observations accumulated so far in `context`. Required by the ReAct and
+  // Hybrid runtimes; optional so Plan-then-Execute-only providers (and existing
+  // test mocks) need not implement it. The runtimes that need it guard at run
+  // start and surface a clear error when it is absent.
+  decideNextAction?(context: ExecutionContext, options?: ProviderCallOptions): Promise<ReActDecision>
 }
 
 export type AssistantContentSnapshot = {

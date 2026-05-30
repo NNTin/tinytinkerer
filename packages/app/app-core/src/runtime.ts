@@ -1,5 +1,12 @@
-import { AgentRuntime, RateLimitError as AgentRateLimitError, ToolRegistry } from '@tinytinkerer/agent-core'
+import {
+  AgentRuntime,
+  RateLimitError as AgentRateLimitError,
+  HybridRuntime,
+  ReActRuntime,
+  ToolRegistry
+} from '@tinytinkerer/agent-core'
 import type {
+  AgentRuntimeBase,
   CreateAssistantContentSession,
   ExecutionContext as AgentExecutionContext,
   ModelProvider as AgentModelProvider,
@@ -7,7 +14,7 @@ import type {
   SynthesisChunk,
   Tool as AgentTool
 } from '@tinytinkerer/agent-core'
-import type { ExecutionPlan, PlanStep } from '@tinytinkerer/contracts'
+import type { AgentType, ExecutionPlan, PlanStep, ReActDecision } from '@tinytinkerer/contracts'
 import type { ChatRuntime } from './ports'
 
 export type { SynthesisChunk } from '@tinytinkerer/agent-core'
@@ -34,6 +41,7 @@ export interface ModelProvider {
   plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan>
   execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
   synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk>
+  decideNextAction?(context: ExecutionContext, options?: ProviderCallOptions): Promise<ReActDecision>
 }
 
 export type Tool<Input, Output> = AgentTool<Input, Output>
@@ -54,6 +62,7 @@ export const isRateLimitError = (error: unknown): error is RateLimitError => err
 
 export const createChatRuntime = (options: {
   provider: ModelProvider
+  agentType?: AgentType
   tools?: Tool<unknown, unknown>[]
   maxIterations?: number
   maxToolCallsPerStep?: number
@@ -67,7 +76,7 @@ export const createChatRuntime = (options: {
     registry.register(tool)
   }
 
-  return new AgentRuntime(createProviderAdapter(options.provider), registry, {
+  const runtimeOptions = {
     ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
     ...(options.maxToolCallsPerStep !== undefined
       ? { maxToolCallsPerStep: options.maxToolCallsPerStep }
@@ -78,7 +87,23 @@ export const createChatRuntime = (options: {
     ...(options.createAssistantContentSession
       ? { createAssistantContentSession: options.createAssistantContentSession }
       : {})
-  })
+  }
+
+  const adaptedProvider = createProviderAdapter(options.provider)
+
+  const runtime: AgentRuntimeBase = (() => {
+    switch (options.agentType) {
+      case 'react':
+        return new ReActRuntime(adaptedProvider, registry, runtimeOptions)
+      case 'hybrid':
+        return new HybridRuntime(adaptedProvider, registry, runtimeOptions)
+      case 'plan-execute':
+      default:
+        return new AgentRuntime(adaptedProvider, registry, runtimeOptions)
+    }
+  })()
+
+  return runtime
 }
 
 const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => ({
@@ -88,6 +113,15 @@ const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => (
   execute(step: PlanStep, context: AgentExecutionContext, options?: AgentProviderCallOptions) {
     return provider.execute(step, toExecutionContext(context), options)
   },
+  // Forward the optional ReAct decision method only when the wrapped provider
+  // implements it, so the adapter mirrors the provider's capabilities exactly.
+  ...(provider.decideNextAction
+    ? {
+        decideNextAction(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
+          return provider.decideNextAction!(toExecutionContext(context), options)
+        }
+      }
+    : {}),
   async *synthesize(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
     try {
       yield* provider.synthesize(toExecutionContext(context), options)

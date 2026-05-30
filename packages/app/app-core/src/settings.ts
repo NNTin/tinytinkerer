@@ -1,14 +1,19 @@
 import { DEFAULT_MODEL, normalizeSelectedModel } from './models'
 import type { PreferencesStore } from './ports'
 import {
+  agentTypeSchema,
   mcpDiscoveryResultSchema,
   mcpServerConfigSchema,
+  type AgentType,
   type McpDiscoveryResult,
   type McpServerConfig
 } from '@tinytinkerer/contracts'
 
+const DEFAULT_AGENT_TYPE: AgentType = 'plan-execute'
+
 export const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',
+  agentType: 'settings_agent_type',
   searchEnabled: 'settings_search_enabled',
   webSpeechEnabled: 'settings_web_speech_enabled',
   showReasoningActivity: 'settings_show_reasoning_activity',
@@ -28,6 +33,7 @@ const LEGACY_SETTINGS_KEYS = {
 export type SettingsState = {
   hydrated: boolean
   selectedModel: string
+  agentType: AgentType
   searchEnabled: boolean
   webSpeechEnabled: boolean
   showReasoningActivity: boolean
@@ -49,9 +55,15 @@ const parseBoolOptional = (value: string | undefined): boolean | undefined => {
   return undefined
 }
 
+const parseAgentType = (value: string | undefined): AgentType => {
+  const result = agentTypeSchema.safeParse(value)
+  return result.success ? result.data : DEFAULT_AGENT_TYPE
+}
+
 export const defaultSettingsState = (): SettingsState => ({
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
+  agentType: DEFAULT_AGENT_TYPE,
   searchEnabled: true,
   webSpeechEnabled: false,
   showReasoningActivity: false,
@@ -64,6 +76,7 @@ export const defaultSettingsState = (): SettingsState => ({
 export const loadSettingsState = async (preferences: PreferencesStore): Promise<SettingsState> => {
   const [
     selectedModel,
+    agentType,
     searchEnabled,
     webSpeechEnabled,
     showReasoningActivity,
@@ -75,6 +88,7 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     telemetryEnabled
   ] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
+    preferences.get(SETTINGS_KEYS.agentType),
     preferences.get(SETTINGS_KEYS.searchEnabled),
     preferences.get(SETTINGS_KEYS.webSpeechEnabled),
     preferences.get(SETTINGS_KEYS.showReasoningActivity),
@@ -94,6 +108,7 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
   return {
     hydrated: true,
     selectedModel: normalizeSelectedModel(selectedModel),
+    agentType: parseAgentType(agentType),
     searchEnabled: parseBool(searchEnabled, true),
     webSpeechEnabled: parseBool(webSpeechEnabled, false),
     showReasoningActivity: reasoningActivity,
@@ -155,6 +170,15 @@ export const persistSelectedModel = async (
   const normalizedModel = normalizeSelectedModel(model)
   await preferences.set(SETTINGS_KEYS.selectedModel, normalizedModel)
   return normalizedModel
+}
+
+export const persistAgentType = async (
+  preferences: PreferencesStore,
+  agentType: AgentType
+): Promise<AgentType> => {
+  const normalized = parseAgentType(agentType)
+  await preferences.set(SETTINGS_KEYS.agentType, normalized)
+  return normalized
 }
 
 export const persistBooleanPreference = async (

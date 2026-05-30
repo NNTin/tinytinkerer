@@ -1,6 +1,7 @@
 import { buildTurns, type Turn } from '@tinytinkerer/app-core'
 import {
   mcpDiscoveryResultSchema,
+  type AgentType,
   type ChatEvent,
   type McpDiscoveryResult,
   type McpServerConfig,
@@ -129,6 +130,8 @@ export type SettingsSurfaceController = {
   models: ModelEntry[]
   selectedModel: string
   setSelectedModel: (model: string) => Promise<void>
+  agentType: AgentType
+  setAgentType: (agentType: AgentType) => Promise<void>
   searchEnabled: boolean
   setSearchEnabled: (enabled: boolean) => Promise<void>
   webSpeechEnabled: boolean
@@ -160,6 +163,8 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const models = useGitHubModels()
   const selectedModel = useSettingsStore((state) => state.selectedModel)
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
+  const agentType = useSettingsStore((state) => state.agentType)
+  const setAgentType = useSettingsStore((state) => state.setAgentType)
   const searchEnabled = useSettingsStore((state) => state.searchEnabled)
   const setSearchEnabled = useSettingsStore((state) => state.setSearchEnabled)
   const webSpeechEnabled = useSettingsStore((state) => state.webSpeechEnabled)
@@ -252,6 +257,8 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     models,
     selectedModel,
     setSelectedModel,
+    agentType,
+    setAgentType,
     searchEnabled,
     setSearchEnabled,
     webSpeechEnabled,

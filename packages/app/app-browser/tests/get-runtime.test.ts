@@ -9,7 +9,8 @@ import { createBrowserRuntimeFactory } from '../src/runtime/get-runtime.js'
 
 const mockSettings = {
   searchEnabled: true,
-  selectedModel: 'openai/gpt-4.1-mini'
+  selectedModel: 'openai/gpt-4.1-mini',
+  agentType: 'plan-execute' as const
 }
 
 const mockAuth = {
@@ -103,8 +104,8 @@ describe('createBrowserRuntimeFactory', () => {
       events.push(event)
     }
 
-    expect(events.some((event) => event.type === 'tool.call.started')).toBe(true)
-    expect(events.some((event) => event.type === 'tool.call.completed')).toBe(true)
+    expect(events.some((event) => event.type === 'agent.tool.started')).toBe(true)
+    expect(events.some((event) => event.type === 'agent.tool.completed')).toBe(true)
     vi.unstubAllGlobals()
   })
 
@@ -116,7 +117,7 @@ describe('createBrowserRuntimeFactory', () => {
       events.push(event)
     }
 
-    expect(events.some((event) => event.type === 'tool.call.started')).toBe(false)
+    expect(events.some((event) => event.type === 'agent.tool.started')).toBe(false)
   })
 
   it('does not emit tool events when the service is not ready', async () => {
@@ -127,7 +128,7 @@ describe('createBrowserRuntimeFactory', () => {
       events.push(event)
     }
 
-    expect(events.some((event) => event.type === 'tool.call.started')).toBe(false)
+    expect(events.some((event) => event.type === 'agent.tool.started')).toBe(false)
   })
 
   it('forwards selectedModel from settings store to the HTTP request body', async () => {
@@ -172,14 +173,10 @@ describe('createBrowserRuntimeFactory', () => {
       events.push(event)
     }
 
-    const generatedPlan = events.find((event) => event.type === 'plan.generated')
-    expect(generatedPlan?.type).toBe('plan.generated')
-    if (generatedPlan?.type !== 'plan.generated') {
-      throw new Error('Expected plan.generated event')
-    }
-
-    expect(generatedPlan.payload.plan.steps.some((step) => step.id === 'search')).toBe(false)
-    expect(events.some((event) => event.type === 'tool.call.started')).toBe(false)
+    // With search disabled no web-search tool is registered, so the inferred
+    // plan has no search step and no tool runs.
+    expect(events.some((event) => event.type === 'agent.run.started')).toBe(true)
+    expect(events.some((event) => event.type === 'agent.tool.started')).toBe(false)
   })
 
   it('suppresses search planning when the service is unavailable', async () => {
@@ -191,13 +188,7 @@ describe('createBrowserRuntimeFactory', () => {
       events.push(event)
     }
 
-    const generatedPlan = events.find((event) => event.type === 'plan.generated')
-    expect(generatedPlan?.type).toBe('plan.generated')
-    if (generatedPlan?.type !== 'plan.generated') {
-      throw new Error('Expected plan.generated event')
-    }
-
-    expect(generatedPlan.payload.plan.steps.some((step) => step.id === 'search')).toBe(false)
-    expect(events.some((event) => event.type === 'tool.call.started')).toBe(false)
+    expect(events.some((event) => event.type === 'agent.run.started')).toBe(true)
+    expect(events.some((event) => event.type === 'agent.tool.started')).toBe(false)
   })
 })

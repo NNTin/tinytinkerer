@@ -12,7 +12,8 @@ import {
   modelsChatResponseSchema,
   rateLimitPayloadSchema,
   type ExecutionPlan,
-  type PlanStep
+  type PlanStep,
+  type ReActDecision
 } from '@tinytinkerer/contracts'
 import { SYSTEM_STYLE_PROMPT } from './system-prompt'
 import { getRetryAfterMs } from './rate-limit'
@@ -26,6 +27,7 @@ import {
   type RequestTelemetryMetadata
 } from '../telemetry/request-telemetry'
 import { llmPlan, type PlannerToolDescriptor } from './mcp-planner'
+import { decideNextAction as llmDecideNextAction } from './react-decider'
 
 const estimateTokens = (context: ExecutionContext): number => {
   const allText = [
@@ -112,6 +114,24 @@ export class GitHubModelsProvider implements ModelProvider {
     }
 
     return Promise.resolve('')
+  }
+
+  async decideNextAction(
+    context: ExecutionContext,
+    options?: ProviderCallOptions
+  ): Promise<ReActDecision> {
+    const token = this.options.getToken?.()
+
+    if (token) {
+      const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
+      const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
+      const tools = this.options.allToolDescriptors ?? []
+      return llmDecideNextAction(context, tools, model, edgeFetch, options?.signal)
+    }
+
+    // Without a token there is no model to consult, so finish immediately and
+    // let synthesize() produce the local fallback answer.
+    return { kind: 'final' }
   }
 
   async *synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk> {

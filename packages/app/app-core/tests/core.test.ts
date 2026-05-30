@@ -71,10 +71,12 @@ describe('app-core helpers', () => {
   it('projects turns with per-turn activity entries', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hello' }),
-      event('planning.started', { summary: 'Understanding request' }),
-      event('execution.step.started', {
-        step: { id: 'search', summary: 'Search web', toolCall: { toolId: 'web-search', input: { query: 'hello' } } },
-        index: 0
+      event('agent.step.started', { stepId: 'plan', kind: 'plan', title: 'Created 1-step plan' }),
+      event('agent.step.started', {
+        stepId: 'step-1',
+        parentStepId: 'plan',
+        kind: 'plan-step',
+        title: 'Search web'
       }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
@@ -90,8 +92,8 @@ describe('app-core helpers', () => {
       event('user.message', { text: 'hello' }),
       event('reasoning.chunk', { source: 'm', text: 'thinking…' }),
       event('reasoning.done', { source: 'm', text: 'thinking… done' }),
-      event('tool.call.started', { toolId: 'web-search', input: { query: 'hello' } }),
-      event('tool.call.completed', { toolId: 'web-search', output: { query: 'hello', results: [] } }),
+      event('agent.tool.started', { stepId: 'act-1', toolId: 'web-search', input: { query: 'hello' } }),
+      event('agent.tool.completed', { stepId: 'act-1', toolId: 'web-search', output: { query: 'hello', results: [] } }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
 
@@ -204,17 +206,17 @@ describe('app-core helpers', () => {
 
   it('does not attach activity to a turn without a preceding user.message', () => {
     const turns = buildTurns([
-      event('planning.started', { summary: 'Understanding request' }),
+      event('agent.step.started', { stepId: 'plan', kind: 'plan', title: 'Created 0-step plan' }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ])
     expect(turns).toHaveLength(1)
     expect(turns[0]?.activity.items).toEqual([])
   })
 
-  it('execution.step.completed with empty note does not appear in activity', () => {
+  it('agent.step.completed with empty summary does not appear in activity', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hello' }),
-      event('execution.step.completed', { stepId: 'step-1', note: '' }),
+      event('agent.step.completed', { stepId: 'step-1' }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
     const labels = buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
