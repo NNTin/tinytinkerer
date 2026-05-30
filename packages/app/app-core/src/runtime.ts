@@ -122,11 +122,19 @@ const toAgentError = (error: unknown): unknown =>
     : error
 
 const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => ({
-  plan(prompt: string, history: ConversationMessage[], options?: AgentProviderCallOptions) {
-    return provider.plan(prompt, history, options)
+  async plan(prompt: string, history: ConversationMessage[], options?: AgentProviderCallOptions) {
+    try {
+      return await provider.plan(prompt, history, options)
+    } catch (error) {
+      throw toAgentError(error)
+    }
   },
-  execute(step: PlanStep, context: AgentExecutionContext, options?: AgentProviderCallOptions) {
-    return provider.execute(step, toExecutionContext(context), options)
+  async execute(step: PlanStep, context: AgentExecutionContext, options?: AgentProviderCallOptions) {
+    try {
+      return await provider.execute(step, toExecutionContext(context), options)
+    } catch (error) {
+      throw toAgentError(error)
+    }
   },
   // Forward the optional ReAct decision method only when the wrapped provider
   // implements it, so the adapter mirrors the provider's capabilities exactly.

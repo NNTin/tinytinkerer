@@ -1,5 +1,6 @@
 import {
   inferPlan,
+  RateLimitError,
   type ConversationMessage,
   type DecisionChunk,
   type ExecutionContext,
@@ -81,6 +82,7 @@ export class GitHubModelsProvider implements ModelProvider {
         return await llmPlan(prompt, history, allDescriptors, model, edgeFetch, options?.signal)
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') throw error
+        if (error instanceof RateLimitError) throw error
         // fall through to heuristic
       }
     }
@@ -254,4 +256,3 @@ export class GitHubModelsProvider implements ModelProvider {
     }
   }
 }
-

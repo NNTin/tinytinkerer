@@ -2,6 +2,7 @@ import { parseJsonWithTelemetry, parseWithTelemetry } from '../telemetry/request
 import type { ConversationMessage } from '@tinytinkerer/app-core'
 import { executionPlanSchema, type ExecutionPlan } from '@tinytinkerer/contracts'
 import type { EdgeFetch } from './edge-fetch'
+import { createRateLimitError } from './rate-limit'
 
 export type PlannerToolDescriptor = {
   id: string
@@ -68,6 +69,9 @@ export const llmPlan = async (
   )
 
   if (!response.ok) {
+    if (response.status === 429) {
+      throw await createRateLimitError(response)
+    }
     throw new Error(`Planning request failed (${response.status})`)
   }
 

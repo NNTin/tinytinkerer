@@ -221,6 +221,43 @@ describe('GitHubModelsProvider', () => {
 
     vi.unstubAllGlobals()
   })
+
+  it('rethrows typed rate limit errors from LLM planning', async () => {
+    const retryAt = new Date(Date.now() + 120_000).toISOString()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              code: 'rate_limited',
+              error: 'planner rate limited',
+              retryAfterMs: 120_000,
+              retryAt
+            }),
+            {
+              status: 429,
+              headers: { 'retry-after': '120', 'content-type': 'application/json' }
+            }
+          )
+        )
+      )
+    )
+
+    const provider = new GitHubModelsProvider({
+      baseUrl: 'http://example.com',
+      getToken: () => 'token',
+      allToolDescriptors: [{ id: 'mcp:test:lookup', description: 'lookup', inputSchema: {} }]
+    })
+
+    await expect(provider.plan('Tell me something about this repo', [])).rejects.toMatchObject({
+      name: 'RateLimitError',
+      retryAfterMs: 120_000,
+      retryAt
+    } satisfies Partial<RateLimitError>)
+
+    vi.unstubAllGlobals()
+  })
 })
 
 describe('splitInlineThink', () => {
