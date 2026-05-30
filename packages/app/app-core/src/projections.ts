@@ -81,8 +81,6 @@ const coerceAssistantContent = (value: unknown): ContentDocument | null =>
 
 const thinkingLabel = (event: ChatEvent): string | undefined => {
   switch (event.type) {
-    case 'agent.step.failed':
-      return event.payload.error
     case 'agent.run.completed':
       return `Completed ${event.payload.steps} steps`
     default:
@@ -151,7 +149,17 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
       }
       return
     }
-    case 'agent.step.failed':
+    case 'agent.step.failed': {
+      // Carry stepId so the error renders at the failed step's depth, keeping
+      // it within the step hierarchy rather than at the root.
+      activity.items.push({
+        kind: 'label',
+        id: event.id,
+        label: event.payload.error,
+        stepId: event.payload.stepId
+      })
+      return
+    }
     case 'agent.run.completed': {
       const label = thinkingLabel(event)
       if (label) {

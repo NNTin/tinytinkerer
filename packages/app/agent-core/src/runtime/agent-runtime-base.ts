@@ -159,17 +159,75 @@ export abstract class AgentRuntimeBase {
         title: 'Thinking…'
       })
 
+      // Enforce the same per-step timeout as the non-streaming path. A stalled
+      // stream (no chunk within stepTimeoutMs) aborts the underlying request and
+      // fails the step rather than hanging the loop. The timer is an idle
+      // timeout: it resets on every chunk, so a steadily-streaming thought is
+      // never cut off. The controller is linked to the caller's signal so a
+      // user abort still cancels the request.
+      const controller = new AbortController()
+      const userSignal = callOptions.signal
+      const onUserAbort = () => controller.abort()
+      if (userSignal) {
+        if (userSignal.aborted) {
+          controller.abort()
+        } else {
+          userSignal.addEventListener('abort', onUserAbort, { once: true })
+        }
+      }
+
+      let timedOut = false
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const disarm = () => {
+        if (timer) {
+          clearTimeout(timer)
+          timer = undefined
+        }
+      }
+      const arm = () => {
+        disarm()
+        timer = setTimeout(() => {
+          timedOut = true
+          controller.abort()
+        }, this.stepTimeoutMs)
+      }
+
       let thought = ''
       let decision: ReActDecision | undefined
-      // No withTimeout here: a stream can't be wrapped in a single race; the
-      // request honours the abort signal in callOptions instead.
-      for await (const chunk of provider.streamDecision(context, callOptions)) {
-        if (chunk.kind === 'thought') {
-          thought = chunk.text
-          yield createEvent('agent.step.delta', { stepId: thoughtStepId, text: thought })
-        } else {
-          decision = chunk.decision
+      try {
+        arm()
+        for await (const chunk of provider.streamDecision(context, {
+          ...callOptions,
+          signal: controller.signal
+        })) {
+          disarm()
+          if (chunk.kind === 'thought') {
+            thought = chunk.text
+            yield createEvent('agent.step.delta', { stepId: thoughtStepId, text: thought })
+          } else {
+            decision = chunk.decision
+          }
+          arm()
         }
+      } catch (error) {
+        // A timeout-induced abort may surface as a thrown error; suppress it so
+        // the timeout is reported uniformly below. Any other error propagates.
+        if (!timedOut) {
+          throw error
+        }
+      } finally {
+        disarm()
+        if (userSignal && !userSignal.aborted) {
+          userSignal.removeEventListener('abort', onUserAbort)
+        }
+      }
+
+      if (timedOut) {
+        yield createEvent('agent.step.failed', {
+          stepId: thoughtStepId,
+          error: 'ReAct decision timed out'
+        })
+        throw new Error('ReAct decision timed out')
       }
 
       yield createEvent('agent.step.completed', {

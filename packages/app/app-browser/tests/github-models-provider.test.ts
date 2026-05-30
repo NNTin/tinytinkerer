@@ -18,7 +18,8 @@ vi.mock('../src/telemetry/telemetry.js', async () => {
   }
 })
 
-import { GitHubModelsProvider, splitInlineThink } from '../src/runtime/github-models-provider.js'
+import { GitHubModelsProvider } from '../src/runtime/github-models-provider.js'
+import { splitInlineThink } from '../src/runtime/sse-utils.js'
 
 async function* fromContentChunks(texts: string[]): AsyncGenerator<SynthesisChunk> {
   for (const text of texts) {

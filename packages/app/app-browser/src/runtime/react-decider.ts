@@ -3,7 +3,7 @@ import type { DecisionChunk, ExecutionContext } from '@tinytinkerer/app-core'
 import { reactDecisionSchema, type ReActDecision } from '@tinytinkerer/contracts'
 import type { EdgeFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
-import { parseSseStream, splitInlineThink } from './github-models-provider'
+import { parseSseStream, splitInlineThink } from './sse-utils'
 
 const buildDecisionSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
   const toolDocs = tools

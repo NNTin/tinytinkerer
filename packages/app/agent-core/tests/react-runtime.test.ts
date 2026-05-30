@@ -189,6 +189,44 @@ describe('ReActRuntime', () => {
     expect(events.at(-1)?.type).toBe('assistant.done')
   })
 
+  it('times out a stalled streaming decision and fails the step', async () => {
+    const provider: ModelProvider = {
+      async plan() {
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return ''
+      },
+      async *streamDecision(_context, options) {
+        yield { kind: 'thought' as const, text: 'thinking' }
+        // Stall until aborted (the runtime's idle timeout should abort us).
+        await new Promise<void>((resolve) => {
+          const signal = options?.signal
+          if (signal?.aborted) {
+            resolve()
+            return
+          }
+          signal?.addEventListener('abort', () => resolve(), { once: true })
+        })
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'unused' }
+      }
+    }
+
+    const runtime = new ReActRuntime(provider, new ToolRegistry(), { stepTimeoutMs: 5 })
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(events.some((event) => event.type === 'agent.step.failed')).toBe(true)
+    expect(
+      events.some((event) => event.type === 'error' && event.payload.message === 'ReAct decision timed out')
+    ).toBe(true)
+    expect(events.at(-1)?.type).toBe('assistant.done')
+  })
+
   it('surfaces an error when the provider cannot make ReAct decisions', async () => {
     const provider: ModelProvider = {
       async plan() {
