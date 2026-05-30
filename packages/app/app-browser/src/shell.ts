@@ -11,6 +11,12 @@ import {
   type ResolvedBrowserShellConfig
 } from './config'
 import { getTelemetryHeaders } from './telemetry/telemetry'
+import {
+  fetchWithTelemetry,
+  parseJsonWithTelemetry,
+  parseWithTelemetry,
+  type RequestTelemetryMetadata
+} from './telemetry/request-telemetry'
 
 export type BrowserShell = {
   config: ResolvedBrowserShellConfig
@@ -57,14 +63,27 @@ const toSystemStatus = (value: unknown): SystemStatus => {
 
 const createStatusGateway = (config: ResolvedBrowserShellConfig): StatusGateway => ({
   async fetchStatus() {
-    const response = await fetch(`${config.edgeBaseUrl}/health`, {
+    const metadata: RequestTelemetryMetadata = {
+      area: 'status.health',
+      origin: 'edge',
+      method: 'GET',
+      url: `${config.edgeBaseUrl}/health`
+    }
+    const response = await fetchWithTelemetry(metadata, {
       headers: getTelemetryHeaders()
     })
     if (!response.ok) {
       throw new Error('Unable to reach edge status endpoint')
     }
 
-    return toSystemStatus(await response.json())
+    const payload = await parseJsonWithTelemetry<unknown>(metadata, response)
+    return parseWithTelemetry(
+      metadata,
+      'schema_error',
+      'Edge status response was malformed',
+      () => toSystemStatus(payload),
+      response
+    )
   }
 })
 

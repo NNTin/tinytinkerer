@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useAuthStore } from './app'
+import {
+  captureRequestIssue,
+  fetchWithTelemetry,
+  parseJsonWithTelemetry,
+  type RequestTelemetryMetadata
+} from './telemetry/request-telemetry'
 
 export type GitHubUser = {
   login: string
@@ -15,8 +21,15 @@ export const fetchGitHubUser = async (token: string): Promise<GitHubUser | null>
     return cached
   }
 
+  const metadata: RequestTelemetryMetadata = {
+    area: 'github.user',
+    origin: 'github',
+    method: 'GET',
+    url: 'https://api.github.com/user'
+  }
+
   try {
-    const response = await fetch('https://api.github.com/user', {
+    const response = await fetchWithTelemetry(metadata, {
       headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json' }
     })
 
@@ -24,7 +37,7 @@ export const fetchGitHubUser = async (token: string): Promise<GitHubUser | null>
       return null
     }
 
-    const data = (await response.json()) as Record<string, unknown>
+    const data = await parseJsonWithTelemetry<Record<string, unknown>>(metadata, response)
     const user: GitHubUser = {
       login: typeof data['login'] === 'string' ? data['login'] : '',
       name: typeof data['name'] === 'string' ? data['name'] : null,
@@ -35,7 +48,16 @@ export const fetchGitHubUser = async (token: string): Promise<GitHubUser | null>
       githubUserCache.set(token, user)
     }
 
-    return user.login ? user : null
+    if (!user.login) {
+      captureRequestIssue(metadata, {
+        kind: 'schema_error',
+        message: 'GitHub user response did not include a login',
+        response
+      })
+      return null
+    }
+
+    return user
   } catch {
     return null
   }

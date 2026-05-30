@@ -8,6 +8,7 @@ import {
 } from '@tinytinkerer/contracts'
 import { z } from 'zod'
 import type { EdgeFetch } from './edge-fetch'
+import { parseJsonWithTelemetry, parseWithTelemetry } from '../telemetry/request-telemetry'
 
 export const createMcpTool = (
   server: McpServerConfig,
@@ -23,12 +24,16 @@ export const createMcpTool = (
       bearerToken: server.bearerToken,
       toolName: toolMeta.toolName,
       arguments: input
-    })
+    }, { area: 'mcp.call' })
+    const metadata = {
+      area: 'mcp.call' as const,
+      origin: 'edge' as const,
+      method: 'POST',
+      url: response.url
+    }
 
     if (!response.ok) {
-      const payload = await response
-        .clone()
-        .json()
+      const payload = await parseJsonWithTelemetry<unknown>(metadata, response.clone())
         .then((value) => edgeErrorResponseSchema.safeParse(value))
         .catch(() => undefined)
 
@@ -37,6 +42,13 @@ export const createMcpTool = (
       )
     }
 
-    return mcpCallResponseSchema.parse(await response.json())
+    const payload = await parseJsonWithTelemetry<unknown>(metadata, response)
+    return parseWithTelemetry(
+      metadata,
+      'schema_error',
+      'MCP call response did not match schema',
+      () => mcpCallResponseSchema.parse(payload),
+      response
+    )
   }
 })

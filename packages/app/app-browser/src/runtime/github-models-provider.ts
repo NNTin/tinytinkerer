@@ -19,6 +19,12 @@ import { getRetryAfterMs } from './rate-limit'
 import { RateLimitQuota } from './quota-tracker'
 import { createEdgeFetch } from './edge-fetch'
 import { getTelemetryHeaders } from '../telemetry/telemetry'
+import {
+  fetchWithTelemetry,
+  parseJsonWithTelemetry,
+  parseWithTelemetry,
+  type RequestTelemetryMetadata
+} from '../telemetry/request-telemetry'
 import { llmPlan, type PlannerToolDescriptor } from './mcp-planner'
 
 const estimateTokens = (context: ExecutionContext): number => {
@@ -167,7 +173,14 @@ export class GitHubModelsProvider implements ModelProvider {
         requestInit.signal = options.signal
       }
 
-      const response = await fetch(`${this.options.baseUrl}/api/models/chat`, requestInit)
+      const metadata: RequestTelemetryMetadata = {
+        area: 'models.chat',
+        origin: 'edge',
+        method: 'POST',
+        url: `${this.options.baseUrl}/api/models/chat`,
+        stream: true
+      }
+      const response = await fetchWithTelemetry(metadata, requestInit)
 
       this.quota.updateFromHeaders(response.headers)
 
@@ -189,14 +202,20 @@ export class GitHubModelsProvider implements ModelProvider {
         return
       }
 
-      const rawJson = (await response.json()) as Record<string, unknown>
+      const rawJson = await parseJsonWithTelemetry<Record<string, unknown>>(metadata, response)
       const reasoning = extractReasoning(
         (rawJson['choices'] as Array<Record<string, unknown>> | undefined)?.[0]?.['message']
       )
       if (reasoning) {
         yield { kind: 'reasoning', text: reasoning }
       }
-      const parsed = modelsChatResponseSchema.parse(rawJson)
+      const parsed = parseWithTelemetry(
+        metadata,
+        'schema_error',
+        'Models response did not match schema',
+        () => modelsChatResponseSchema.parse(rawJson),
+        response
+      )
       const text = parsed.choices?.[0]?.message?.content ?? ''
       yield { kind: 'content', text }
       return

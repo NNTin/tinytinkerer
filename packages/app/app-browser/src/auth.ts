@@ -2,6 +2,13 @@ import { githubExchangeResponseSchema } from '@tinytinkerer/contracts'
 import type { BrowserApp } from './app'
 import type { BrowserShell } from './shell'
 import { getTelemetryHeaders } from './telemetry/telemetry'
+import {
+  fetchWithTelemetry,
+  parseJsonWithTelemetry,
+  parseWithTelemetry,
+  tryParseJsonWithTelemetry,
+  type RequestTelemetryMetadata
+} from './telemetry/request-telemetry'
 
 const oauthStateKey = (shell: BrowserShell): string => `${shell.config.storageNamespace}:oauth_state`
 const oauthReturnUrlKey = (shell: BrowserShell): string => `${shell.config.storageNamespace}:oauth_return_url`
@@ -93,7 +100,13 @@ export const consumeGitHubOAuthReturnUrl = (shell: BrowserShell): string | null 
 
 const exchangeCode = async (shell: BrowserShell, code: string): Promise<string> => {
   const config = shell.config
-  const response = await fetch(`${config.edgeBaseUrl}/auth/github/exchange`, {
+  const metadata: RequestTelemetryMetadata = {
+    area: 'auth.exchange',
+    origin: 'edge',
+    method: 'POST',
+    url: `${config.edgeBaseUrl}/auth/github/exchange`
+  }
+  const response = await fetchWithTelemetry(metadata, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...getTelemetryHeaders() },
     body: JSON.stringify({
@@ -103,18 +116,24 @@ const exchangeCode = async (shell: BrowserShell, code: string): Promise<string> 
   })
 
   if (!response.ok) {
-    const parsedPayload = await response
-      .clone()
-      .json()
-      .then((value) => githubExchangeResponseSchema.safeParse(value))
-      .catch(() => undefined)
+    const payload = await tryParseJsonWithTelemetry<unknown>(metadata, response.clone())
+    const parsedPayload = payload === undefined
+      ? undefined
+      : githubExchangeResponseSchema.safeParse(payload)
 
     throw new Error(
       parsedPayload?.success ? (parsedPayload.data.error ?? 'OAuth exchange failed') : 'OAuth exchange failed'
     )
   }
 
-  const data = githubExchangeResponseSchema.parse(await response.json())
+  const payload = await parseJsonWithTelemetry<unknown>(metadata, response)
+  const data = parseWithTelemetry(
+    metadata,
+    'schema_error',
+    'OAuth exchange response did not match schema',
+    () => githubExchangeResponseSchema.parse(payload),
+    response
+  )
   if (!data.accessToken) {
     throw new Error('Authentication failed')
   }

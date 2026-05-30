@@ -88,8 +88,14 @@ describe('llmPlan', () => {
 
     await llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', edgeFetch, controller.signal)
 
-    const [, , signal] = (edgeFetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown, AbortSignal | undefined]
-    expect(signal).toBe(controller.signal)
+    const [, , options] = (edgeFetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      unknown,
+      { signal?: AbortSignal; area?: string; stream?: boolean } | undefined
+    ]
+    expect(options?.signal).toBe(controller.signal)
+    expect(options?.area).toBe('planning.chat')
+    expect(options?.stream).toBe(false)
   })
 
   it('includes conversation history before the user prompt', async () => {

@@ -9,6 +9,9 @@ only starts after you explicitly enable it.
 When telemetry is enabled, we collect:
 
 - Crash and error reports (error messages and stack traces).
+- Request-failure diagnostics for browser-initiated application requests, including
+  sanitized method/path/status metadata and failures while parsing or validating
+  responses.
 - The application version and build hash.
 - A random installation ID (a UUID generated on this device).
 - When you are signed in, your GitHub account identifier (id/login).
@@ -20,6 +23,7 @@ When telemetry is enabled, we collect:
 
 - The content of your conversations, prompts, or responses.
 - Your GitHub access token or any credentials.
+- Request bodies, query strings, cookies, or authorization headers in telemetry events.
 
 ## Voice input (Web Speech API)
 
@@ -42,6 +46,8 @@ your GitHub account so we can follow up on issues.
 ## Where it is sent
 
 - Crash and error reports are sent to Sentry (our error-monitoring provider).
+- Browser request-failure diagnostics are sent to Sentry with sanitized request metadata
+  (method, URL path without query string, status code, and failure type).
 - The application version, build hash, installation ID, and (when signed in) GitHub identifier
   are sent as request headers (X-App-Version, X-Build-Hash, X-Install-ID, X-GitHub-ID) to the
   TinyTinkerer edge API. X-App-Version and X-Build-Hash are always sent as non-identifying

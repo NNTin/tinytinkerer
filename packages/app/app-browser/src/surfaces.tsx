@@ -14,6 +14,7 @@ import { useGitHubModels, type ModelEntry } from './github-models'
 import { startStatusPolling } from './status'
 import { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 import { createEdgeFetch } from './runtime/edge-fetch'
+import { parseJsonWithTelemetry, parseWithTelemetry } from './telemetry/request-telemetry'
 
 export type ChatSurfaceController = {
   isBooting: boolean
@@ -192,9 +193,17 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
       const res = await edgeFetch('/api/mcp/discover', {
         url: server.url,
         bearerToken: server.bearerToken
-      })
+      }, { area: 'mcp.discover' })
       if (!res.ok) {
-        const errBody: unknown = await res.json().catch(() => ({}))
+        const errBody = (await parseJsonWithTelemetry<Record<string, unknown> | undefined>(
+          {
+            area: 'mcp.discover',
+            origin: 'edge',
+            method: 'POST',
+            url: res.url
+          },
+          res.clone()
+        ).catch(() => undefined)) ?? {}
         const errMsg = (errBody as { error?: string }).error ?? `HTTP ${res.status}`
         await setMcpDiscovery({
           serverId: server.id,
@@ -205,8 +214,20 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
         })
         return
       }
-      const raw: unknown = await res.json()
-      const result = mcpDiscoveryResultSchema.parse({ ...(raw as object), serverId: server.id })
+      const metadata = {
+        area: 'mcp.discover' as const,
+        origin: 'edge' as const,
+        method: 'POST',
+        url: res.url
+      }
+      const raw = await parseJsonWithTelemetry<unknown>(metadata, res)
+      const result = parseWithTelemetry(
+        metadata,
+        'schema_error',
+        'MCP discovery response did not match schema',
+        () => mcpDiscoveryResultSchema.parse({ ...(raw as object), serverId: server.id }),
+        res
+      )
       await setMcpDiscovery(result)
     } catch (e) {
       await setMcpDiscovery({

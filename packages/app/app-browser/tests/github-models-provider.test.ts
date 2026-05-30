@@ -1,5 +1,23 @@
 import { describe, expect, it, vi } from 'vitest'
 import { RateLimitError, type ExecutionContext, type SynthesisChunk } from '@tinytinkerer/app-core'
+
+type CaptureTelemetryException = typeof import('../src/telemetry/telemetry.js').captureTelemetryException
+
+const telemetryMocks = vi.hoisted(() => ({
+  captureTelemetryException: vi.fn<CaptureTelemetryException>()
+}))
+
+vi.mock('../src/telemetry/telemetry.js', async () => {
+  const actual = await vi.importActual<typeof import('../src/telemetry/telemetry.js')>(
+    '../src/telemetry/telemetry.js'
+  )
+  return {
+    ...actual,
+    captureTelemetryException: telemetryMocks.captureTelemetryException,
+    getTelemetryHeaders: () => ({})
+  }
+})
+
 import { GitHubModelsProvider, splitInlineThink } from '../src/runtime/github-models-provider.js'
 
 async function* fromContentChunks(texts: string[]): AsyncGenerator<SynthesisChunk> {
@@ -161,6 +179,44 @@ describe('GitHubModelsProvider', () => {
         ].join('')
       }
     ])
+
+    vi.unstubAllGlobals()
+  })
+
+  it('falls back to heuristic planning and emits telemetry for invalid planning JSON', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [{ message: { content: 'not valid json' } }]
+            }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' }
+            }
+          )
+        )
+      )
+    )
+    telemetryMocks.captureTelemetryException.mockClear()
+
+    const provider = new GitHubModelsProvider({
+      baseUrl: 'http://example.com',
+      getToken: () => 'token',
+      allToolDescriptors: [{ id: 'mcp:test:lookup', description: 'lookup', inputSchema: {} }]
+    })
+
+    const plan = await provider.plan('Tell me something about this repo', [])
+
+    expect(plan.steps.map((step) => step.id)).toEqual(['understand', 'compose'])
+    expect(telemetryMocks.captureTelemetryException).toHaveBeenCalledTimes(1)
+    const [, options] = vi.mocked(telemetryMocks.captureTelemetryException).mock.calls[0] ?? []
+    expect(options?.tags).toMatchObject({
+      request_area: 'planning.chat',
+      failure_kind: 'parse_error'
+    })
 
     vi.unstubAllGlobals()
   })

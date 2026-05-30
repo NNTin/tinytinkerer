@@ -1,3 +1,4 @@
+import { parseJsonWithTelemetry, parseWithTelemetry } from '../telemetry/request-telemetry'
 import type { ConversationMessage } from '@tinytinkerer/app-core'
 import { executionPlanSchema, type ExecutionPlan } from '@tinytinkerer/contracts'
 import type { EdgeFetch } from './edge-fetch'
@@ -56,17 +57,45 @@ export const llmPlan = async (
     { role: 'user' as const, content: prompt }
   ]
 
-  const response = await edgeFetch('/api/models/chat', { model, stream: false, messages }, signal)
+  const response = await edgeFetch(
+    '/api/models/chat',
+    { model, stream: false, messages },
+    {
+      area: 'planning.chat',
+      stream: false,
+      ...(signal ? { signal } : {})
+    }
+  )
 
   if (!response.ok) {
     throw new Error(`Planning request failed (${response.status})`)
   }
 
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string | null } }>
+  const metadata = {
+    area: 'planning.chat' as const,
+    origin: 'edge' as const,
+    method: 'POST',
+    url: response.url,
+    stream: false
   }
+  const data = await parseJsonWithTelemetry<{
+    choices?: Array<{ message?: { content?: string | null } }>
+  }>(metadata, response)
   const text = data.choices?.[0]?.message?.content ?? ''
 
   const jsonText = text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-  return executionPlanSchema.parse(JSON.parse(jsonText))
+  const parsedJson = parseWithTelemetry<unknown>(
+    metadata,
+    'parse_error',
+    'Planning response body was not valid JSON',
+    () => JSON.parse(jsonText) as unknown,
+    response
+  )
+  return parseWithTelemetry(
+    metadata,
+    'schema_error',
+    'Planning response did not match execution plan schema',
+    () => executionPlanSchema.parse(parsedJson),
+    response
+  )
 }
