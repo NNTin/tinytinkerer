@@ -1,9 +1,11 @@
-import { StrictMode } from 'react'
+import { StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   AppBrowserProvider,
   createBrowserApp,
+  LazyPrivacyPolicyUpdateGate,
+  LazyTelemetryConsentGate,
   resolveBrowserShellBootstrapConfig,
   useBrowserAppBootstrap,
   type BrowserShellConfig
@@ -60,6 +62,12 @@ const WidgetBootstrap = () => {
       <AppBrowserProvider app={browserApp}>
         <QueryClientProvider client={queryClient}>
           <RouterProvider router={router} />
+          <Suspense fallback={null}>
+            <LazyPrivacyPolicyUpdateGate />
+          </Suspense>
+          <Suspense fallback={null}>
+            <LazyTelemetryConsentGate />
+          </Suspense>
         </QueryClientProvider>
       </AppBrowserProvider>
     </StrictMode>

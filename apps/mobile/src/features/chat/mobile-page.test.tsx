@@ -13,11 +13,13 @@ const mockSettingsState = vi.hoisted(() => ({
   hydrated: true,
   selectedModel: 'openai/gpt-4.1-mini',
   searchEnabled: true,
+  webSpeechEnabled: false,
   showReasoningActivity: true,
   showCodeBlockFullscreenButton: true,
   initialize: vi.fn(),
   setSelectedModel: vi.fn(),
   setSearchEnabled: vi.fn(),
+  setWebSpeechEnabled: vi.fn(),
   setShowReasoningActivity: vi.fn(),
   setShowCodeBlockFullscreenButton: vi.fn()
 }))
@@ -60,6 +62,15 @@ const mockChatState = vi.hoisted(() => ({
   cancelRetry: vi.fn()
 }))
 
+const mockSpeechState = vi.hoisted(() => ({
+  visible: false,
+  available: false,
+  listening: false,
+  error: null as string | null,
+  toggle: vi.fn(() => Promise.resolve()),
+  stop: vi.fn()
+}))
+
 vi.mock('@tinytinkerer/app-browser', () => ({
   LazyBrowserSettingsModal: () => null,
   AssistantContent: ({
@@ -84,6 +95,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
       ))}
     </section>
   ),
+  useWebSpeechInput: () => mockSpeechState,
   useSettingsStore: () => [],
   useChatSurfaceController: () => ({
     isBooting: false,
@@ -129,6 +141,7 @@ beforeEach(() => {
   mockSettingsState.hydrated = true
   mockSettingsState.selectedModel = 'openai/gpt-4.1-mini'
   mockSettingsState.searchEnabled = true
+  mockSettingsState.webSpeechEnabled = false
   mockSettingsState.showReasoningActivity = true
   mockAuthState.token = null
   mockChatState.events = []
@@ -136,6 +149,12 @@ beforeEach(() => {
   mockChatState.isRetryPending = false
   mockChatState.cooldownUntil = undefined
   mockChatState.submitPrompt.mockClear()
+  mockSpeechState.visible = false
+  mockSpeechState.available = false
+  mockSpeechState.listening = false
+  mockSpeechState.error = null
+  mockSpeechState.toggle.mockClear()
+  mockSpeechState.stop.mockClear()
   mockTurns.length = 0
 })
 
@@ -201,5 +220,16 @@ describe('MobilePage', () => {
     renderMobilePage()
 
     expect(screen.queryByRole('heading', { name: /reasoning & activity/i })).toBeNull()
+  })
+
+  it('hides the voice button when Web Speech API is disabled in settings', () => {
+    renderMobilePage()
+    expect(screen.queryByRole('button', { name: /voice input/i })).toBeNull()
+  })
+
+  it('renders a disabled voice button when the browser does not expose Web Speech API', () => {
+    mockSpeechState.visible = true
+    renderMobilePage()
+    expect(screen.getByRole('button', { name: /voice input unavailable/i })).toBeDisabled()
   })
 })

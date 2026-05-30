@@ -3,9 +3,18 @@ import {
   LazyBrowserSettingsModal,
   TINYTINKERER_BRAND_ASSET_URLS,
   useChatSurfaceController,
-  useSettingsSurfaceController
+  useSettingsSurfaceController,
+  useWebSpeechInput
 } from '@tinytinkerer/app-browser'
-import { Button, GitHubMark } from '@tinytinkerer/ui'
+import {
+  Button,
+  FaArrowUp,
+  FaGear,
+  FaGithub,
+  FaMicrophone,
+  FaRotateLeft,
+  FaSpinner
+} from '@tinytinkerer/ui'
 import {
   Suspense,
   useEffect,
@@ -219,12 +228,14 @@ const WidgetSurface = ({
   const [prompt, setPrompt] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
+  const speech = useWebSpeechInput({ prompt, setPrompt })
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
   }, [events])
 
   const handleSubmit = async () => {
+    speech.stop()
     const didSend = await submitPrompt(prompt)
     if (didSend) {
       setPrompt('')
@@ -295,60 +306,91 @@ const WidgetSurface = ({
             className="min-h-16 max-h-28 w-full rounded-xl border border-[var(--widget-border)] bg-white px-3 py-2 text-[13px] leading-5 outline-none"
           />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-1.5">
+            {/* Left: settings, sign in, reset */}
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 aria-label="Settings"
+                title="Settings"
                 onClick={() => setSettingsOpen(true)}
                 className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-white text-[var(--widget-muted)] transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-[var(--widget-text)]"
               >
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 24 24"
-                  className="h-3.5 w-3.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
-                  <path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                </svg>
+                <FaGear className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
               {!token ? (
                 <button
                   type="button"
                   aria-label="Sign in with GitHub"
+                  title="Sign in with GitHub"
                   onClick={() => setSettingsOpen(true)}
-                  className="inline-flex h-8 items-center gap-1 rounded-md border border-[var(--widget-border)] bg-white px-2 text-[11px] text-[var(--widget-muted)] transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-[var(--widget-text)]"
+                  className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-white text-[var(--widget-muted)] transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-[var(--widget-text)]"
                 >
-                  <GitHubMark />
-                  Sign in
+                  <FaGithub className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               ) : null}
-            </div>
-            <div className="flex items-center gap-1.5">
               <button
                 type="button"
+                aria-label="Reset conversation"
+                title="Reset conversation"
                 onClick={() => void resetConversation()}
-                className="inline-flex h-8 items-center rounded-md border border-[var(--widget-border)] bg-white px-2 text-[12px] text-[var(--widget-muted)] transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-white text-[var(--widget-muted)] transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
               >
-                Reset
+                <FaRotateLeft className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
+            </div>
+            {/* Right: microphone, send */}
+            <div className="flex items-center gap-1.5">
+              {speech.visible ? (
+                <button
+                  type="button"
+                  aria-label={speech.available ? 'Voice input' : 'Voice input unavailable'}
+                  aria-pressed={speech.listening}
+                  title={
+                    !speech.available
+                      ? 'Voice input is not available in this browser'
+                      : speech.listening
+                        ? 'Stop voice input'
+                        : 'Dictate with the Web Speech API'
+                  }
+                  disabled={!speech.available}
+                  onClick={() => void speech.toggle()}
+                  className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    speech.listening
+                      ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                      : 'border-[var(--widget-border)] bg-white text-[var(--widget-muted)] hover:border-stone-300 hover:bg-stone-50 hover:text-[var(--widget-text)]'
+                  }`}
+                >
+                  <FaMicrophone className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              ) : null}
               {isRetryPending && isCoolingDown ? (
                 <Button size="sm" variant="secondary" onClick={cancelRetry}>
                   Cancel retry
                 </Button>
               ) : null}
               <Button
+                size="sm"
+                aria-label={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
+                title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
                 onClick={() => void handleSubmit()}
                 disabled={isRunning || isCoolingDown || !prompt.trim()}
+                className="h-8 min-w-8 px-2"
               >
-                {submitLabel}
+                {isCoolingDown ? (
+                  <span className="text-[11px] tabular-nums">{submitLabel}</span>
+                ) : isRunning ? (
+                  <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <FaArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
               </Button>
             </div>
           </div>
+          {speech.error ? (
+            <p role="alert" className="mt-1.5 text-[11px] text-rose-600">
+              {speech.error}
+            </p>
+          ) : null}
         </div>
       </div>
       {settingsOpen ? (

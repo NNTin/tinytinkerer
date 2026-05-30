@@ -21,6 +21,14 @@ When telemetry is enabled, we collect:
 - The content of your conversations, prompts, or responses.
 - Your GitHub access token or any credentials.
 
+## Voice input (Web Speech API)
+
+When you turn on voice input in Settings → Privacy, TinyTinkerer asks the browser for microphone
+access only when you start dictation. Speech recognition is provided by the device/browser through
+the Web Speech API (`SpeechRecognition`). Depending on the platform, speech processing may happen
+locally on your device or be sent by the browser vendor to a cloud speech service. TinyTinkerer
+does not run its own speech-to-text model or send audio to its backend for transcription.
+
 ## Why we collect it
 
 To detect, reproduce, and fix crashes and errors, and to improve reliability and security.

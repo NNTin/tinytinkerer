@@ -10,6 +10,7 @@ import {
 export const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',
   searchEnabled: 'settings_search_enabled',
+  webSpeechEnabled: 'settings_web_speech_enabled',
   showReasoningActivity: 'settings_show_reasoning_activity',
   showCodeBlockFullscreenButton: 'settings_show_code_block_fullscreen_button',
   mcpServers: 'settings_mcp_servers',
@@ -28,6 +29,7 @@ export type SettingsState = {
   hydrated: boolean
   selectedModel: string
   searchEnabled: boolean
+  webSpeechEnabled: boolean
   showReasoningActivity: boolean
   showCodeBlockFullscreenButton: boolean
   mcpServers: McpServerConfig[]
@@ -51,6 +53,7 @@ export const defaultSettingsState = (): SettingsState => ({
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
   searchEnabled: true,
+  webSpeechEnabled: false,
   showReasoningActivity: false,
   showCodeBlockFullscreenButton: true,
   mcpServers: [],
@@ -62,6 +65,7 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
   const [
     selectedModel,
     searchEnabled,
+    webSpeechEnabled,
     showReasoningActivity,
     legacyThinkingTimeline,
     legacyToolActivity,
@@ -72,6 +76,7 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
   ] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
     preferences.get(SETTINGS_KEYS.searchEnabled),
+    preferences.get(SETTINGS_KEYS.webSpeechEnabled),
     preferences.get(SETTINGS_KEYS.showReasoningActivity),
     preferences.get(LEGACY_SETTINGS_KEYS.showThinkingTimeline),
     preferences.get(LEGACY_SETTINGS_KEYS.showToolActivity),
@@ -90,6 +95,7 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     hydrated: true,
     selectedModel: normalizeSelectedModel(selectedModel),
     searchEnabled: parseBool(searchEnabled, true),
+    webSpeechEnabled: parseBool(webSpeechEnabled, false),
     showReasoningActivity: reasoningActivity,
     showCodeBlockFullscreenButton: parseBool(showCodeBlockFullscreenButton, true),
     mcpServers: parseMcpServers(mcpServersRaw),

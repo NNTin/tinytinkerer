@@ -9,8 +9,8 @@ export const CONSENT_PROMPTED_KEY = 'telemetry_consent_prompted'
 /**
  * Shows the one-time telemetry consent notice on first run and keeps the
  * telemetry GitHub ID in sync with the signed-in GitHub user. Mount once near
- * the app root in standalone apps (web, mobile). Not used in the embedded
- * widget surface.
+ * the app root in every frontend (web, mobile, widget) so telemetry/privacy
+ * consent behaves consistently across surfaces.
  */
 export const TelemetryConsentGate = () => {
   const { shell } = useBrowserApp()

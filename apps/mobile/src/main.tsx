@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   AppBrowserProvider,
   createBrowserApp,
+  LazyPrivacyPolicyUpdateGate,
   LazyTelemetryConsentGate,
   resolveBrowserShellBootstrapConfig,
   useBrowserAppBootstrap
@@ -41,6 +42,9 @@ const MobileBootstrap = () => {
       <AppBrowserProvider app={browserApp}>
         <QueryClientProvider client={queryClient}>
           <RouterProvider router={router} />
+          <Suspense fallback={null}>
+            <LazyPrivacyPolicyUpdateGate />
+          </Suspense>
           <Suspense fallback={null}>
             <LazyTelemetryConsentGate />
           </Suspense>
