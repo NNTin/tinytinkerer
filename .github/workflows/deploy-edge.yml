@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  preflight:
+  checks:
     name: Mermaid & Boundaries
     runs-on: ubuntu-latest
     steps:
@@ -46,7 +46,6 @@ jobs:
 
   ci:
     name: ${{ matrix.task.name }}
-    needs: preflight
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -77,7 +76,7 @@ jobs:
 
   deploy:
     name: Deploy Cloudflare Worker
-    needs: ci
+    needs: [checks, ci]
     runs-on: ubuntu-latest
     env:
       # Job-level so the inject/upload steps can guard on it in `if:`.

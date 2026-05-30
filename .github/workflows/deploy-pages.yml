@@ -22,7 +22,7 @@ env:
   VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN_FRONTEND }}
 
 jobs:
-  preflight:
+  checks:
     name: Mermaid & Boundaries
     runs-on: ubuntu-latest
     steps:
@@ -48,7 +48,6 @@ jobs:
 
   ci:
     name: ${{ matrix.task.name }}
-    needs: preflight
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -79,7 +78,7 @@ jobs:
 
   deploy-production:
     name: Deploy Production
-    needs: ci
+    needs: [checks, ci]
     if: >
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
@@ -122,7 +121,7 @@ jobs:
 
   deploy-preview:
     name: Deploy Preview
-    needs: ci
+    needs: [checks, ci]
     if: >
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
