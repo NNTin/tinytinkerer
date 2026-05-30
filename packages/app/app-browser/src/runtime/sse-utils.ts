@@ -103,6 +103,40 @@ export async function* parseSseStream(
   }
   signal?.addEventListener('abort', onAbort, { once: true })
 
+  const parseSseLine = (line: string): { chunks: SynthesisChunk[]; done: boolean } => {
+    if (!line.startsWith('data: ')) {
+      return { chunks: [], done: false }
+    }
+
+    const data = line.slice(6).trim()
+    if (data === '[DONE]') {
+      return { chunks: [], done: true }
+    }
+
+    try {
+      const json = JSON.parse(data) as Record<string, unknown>
+      const choices = json['choices']
+      if (!Array.isArray(choices)) {
+        return { chunks: [], done: false }
+      }
+
+      const chunks: SynthesisChunk[] = []
+      const delta = (choices[0] as Record<string, unknown> | undefined)?.['delta']
+      const reasoning = extractReasoning(delta)
+      if (reasoning) {
+        chunks.push({ kind: 'reasoning', text: reasoning })
+      }
+      const content = (delta as Record<string, unknown> | undefined)?.['content']
+      if (typeof content === 'string' && content) {
+        chunks.push({ kind: 'content', text: content })
+      }
+      return { chunks, done: false }
+    } catch {
+      // Skip malformed SSE lines.
+      return { chunks: [], done: false }
+    }
+  }
+
   try {
     while (true) {
       if (signal?.aborted) {
@@ -111,6 +145,16 @@ export async function* parseSseStream(
 
       const { done, value } = await reader.read()
       if (done) {
+        buffer += decoder.decode()
+        for (const line of buffer.split('\n')) {
+          const parsed = parseSseLine(line)
+          for (const chunk of parsed.chunks) {
+            yield chunk
+          }
+          if (parsed.done) {
+            return
+          }
+        }
         return
       }
 
@@ -119,33 +163,12 @@ export async function* parseSseStream(
       buffer = lines.pop() ?? ''
 
       for (const line of lines) {
-        if (!line.startsWith('data: ')) {
-          continue
+        const parsed = parseSseLine(line)
+        for (const chunk of parsed.chunks) {
+          yield chunk
         }
-
-        const data = line.slice(6).trim()
-        if (data === '[DONE]') {
+        if (parsed.done) {
           return
-        }
-
-        try {
-          const json = JSON.parse(data) as Record<string, unknown>
-          const choices = json['choices']
-          if (!Array.isArray(choices)) {
-            continue
-          }
-
-          const delta = (choices[0] as Record<string, unknown> | undefined)?.['delta']
-          const reasoning = extractReasoning(delta)
-          if (reasoning) {
-            yield { kind: 'reasoning', text: reasoning }
-          }
-          const content = (delta as Record<string, unknown> | undefined)?.['content']
-          if (typeof content === 'string' && content) {
-            yield { kind: 'content', text: content }
-          }
-        } catch {
-          // Skip malformed SSE lines.
         }
       }
     }

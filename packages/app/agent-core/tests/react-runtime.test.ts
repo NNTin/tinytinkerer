@@ -111,6 +111,32 @@ describe('ReActRuntime', () => {
     expect(toolStarted?.payload.parentStepId).toBe(actStep?.payload.stepId)
   })
 
+  it('stores tool results by toolId and accumulates repeated outputs', async () => {
+    let observedToolResults: Record<string, unknown> = {}
+    const provider = scriptedProvider(
+      [
+        { kind: 'action', toolId: 'web-search', input: { query: 'first' } },
+        { kind: 'action', toolId: 'web-search', input: { query: 'second' } },
+        { kind: 'final' }
+      ],
+      async function* () {
+        yield { kind: 'content' as const, text: 'answer' }
+      },
+      (ctx) => {
+        observedToolResults = { ...ctx.toolResults }
+      }
+    )
+
+    const runtime = new ReActRuntime(provider, webSearchRegistry())
+    for await (const _event of runtime.run('hello')) {
+      void _event
+    }
+
+    expect(observedToolResults).toEqual({
+      'web-search': [{ results: ['r1'] }, { results: ['r1'] }]
+    })
+  })
+
   it('respects the maxIterations cap and still synthesizes', async () => {
     const provider = scriptedProvider(
       [{ kind: 'action', toolId: 'web-search', input: { query: 'loop' } }],

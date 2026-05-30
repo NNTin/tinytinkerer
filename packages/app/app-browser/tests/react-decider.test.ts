@@ -181,11 +181,49 @@ describe('streamDecision', () => {
     expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
   })
 
+  it('parses the final SSE data line even without a trailing newline', async () => {
+    const edgeFetch: EdgeFetch = vi.fn().mockResolvedValue(
+      new Response('data: {"choices":[{"delta":{"content":"{\\"kind\\":\\"final\\"}"}}]}', {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    )
+
+    const chunks = []
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
+      chunks.push(chunk)
+    }
+
+    const decision = chunks.find((chunk) => chunk.kind === 'decision')
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
+  })
+
   it('throws when the streaming response is not ok', async () => {
     const edgeFetch = makeSseEdgeFetch(['data: [DONE]'], 503)
 
     const iterator = streamDecision(baseContext(), [descriptor], 'm', edgeFetch)
     await expect(iterator.next()).rejects.toThrow('ReAct decision request failed (503)')
+  })
+
+  it('throws when the streaming response has no body', async () => {
+    const edgeFetch: EdgeFetch = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 200, headers: { 'content-type': 'text/event-stream' } }))
+
+    const iterator = streamDecision(baseContext(), [descriptor], 'm', edgeFetch)
+    await expect(iterator.next()).rejects.toThrow('ReAct decision stream missing response body')
+  })
+
+  it('throws a clear error when the stream ends without decision JSON', async () => {
+    const edgeFetch = makeSseEdgeFetch([
+      'data: {"choices":[{"delta":{"reasoning_content":"thinking"}}]}',
+      'data: [DONE]',
+      ''
+    ])
+
+    const iterator = streamDecision(baseContext(), [descriptor], 'm', edgeFetch)
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: { kind: 'thought', text: 'thinking' } })
+    await expect(iterator.next()).rejects.toThrow('ReAct decision stream ended without decision JSON')
   })
 
   it('throws a RateLimitError on 429 so the runtime can wait and retry', async () => {

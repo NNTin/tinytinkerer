@@ -159,17 +159,24 @@ export async function* streamDecision(
   let thought = ''
   let jsonBuffer = ''
 
-  if (response.body) {
-    for await (const chunk of splitInlineThink(parseSseStream(response.body, signal))) {
-      if (chunk.kind === 'reasoning') {
-        thought += chunk.text
-        yield { kind: 'thought', text: thought }
-      } else {
-        jsonBuffer += chunk.text
-      }
+  if (!response.body) {
+    throw new Error('ReAct decision stream missing response body')
+  }
+
+  for await (const chunk of splitInlineThink(parseSseStream(response.body, signal))) {
+    if (chunk.kind === 'reasoning') {
+      thought += chunk.text
+      yield { kind: 'thought', text: thought }
+    } else {
+      jsonBuffer += chunk.text
     }
   }
 
-  const decision = reactDecisionSchema.parse(JSON.parse(stripFences(jsonBuffer)))
+  const jsonText = stripFences(jsonBuffer)
+  if (jsonText.trim().length === 0) {
+    throw new Error('ReAct decision stream ended without decision JSON')
+  }
+
+  const decision = reactDecisionSchema.parse(JSON.parse(jsonText) as unknown)
   yield { kind: 'decision', decision }
 }

@@ -371,7 +371,13 @@ export abstract class AgentRuntimeBase {
 
       if (outcome.ok) {
         note = `${decision.toolId}: ${JSON.stringify(outcome.output)}`
-        context.toolResults[actStepId] = outcome.output
+        const existing = context.toolResults[decision.toolId]
+        const nextResults = Array.isArray(existing)
+          ? [...(existing as unknown[]), outcome.output]
+          : existing === undefined
+            ? [outcome.output]
+            : [existing, outcome.output]
+        context.toolResults[decision.toolId] = nextResults
         context.notes.push(note)
         yield createEvent('agent.step.completed', { stepId: actStepId, summary: note })
       } else {
