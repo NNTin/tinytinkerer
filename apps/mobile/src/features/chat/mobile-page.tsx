@@ -174,86 +174,90 @@ export const MobilePage = () => {
             style={{ minHeight: '52px' }}
           />
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              aria-label="Settings"
-              title="Settings"
-              onClick={() => setSettingsOpen(true)}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700"
-            >
-              <FaGear className="h-4 w-4" aria-hidden="true" />
-            </button>
-
-            {!token ? (
+          <div className="mt-3 flex items-center justify-between gap-2">
+            {/* Left: settings, sign in, reset */}
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                aria-label="Sign in with GitHub"
-                title="Sign in with GitHub"
+                aria-label="Settings"
+                title="Settings"
                 onClick={() => setSettingsOpen(true)}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700"
               >
-                <FaGithub className="h-4 w-4" aria-hidden="true" />
+                <FaGear className="h-4 w-4" aria-hidden="true" />
               </button>
-            ) : null}
 
-            {speech.visible ? (
+              {!token ? (
+                <button
+                  type="button"
+                  aria-label="Sign in with GitHub"
+                  title="Sign in with GitHub"
+                  onClick={() => setSettingsOpen(true)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800"
+                >
+                  <FaGithub className="h-4 w-4" aria-hidden="true" />
+                </button>
+              ) : null}
+
               <button
                 type="button"
-                aria-label={speech.available ? 'Voice input' : 'Voice input unavailable'}
-                aria-pressed={speech.listening}
-                title={
-                  !speech.available
-                    ? 'Voice input is not available in this browser'
-                    : speech.listening
-                      ? 'Stop voice input'
-                      : 'Dictate with the Web Speech API'
-                }
-                disabled={!speech.available}
-                onClick={() => void speech.toggle()}
-                className={`flex h-10 w-10 items-center justify-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                  speech.listening
-                    ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
-                    : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800'
-                }`}
+                aria-label="Reset conversation"
+                title="Reset conversation"
+                onClick={() => void resetConversation()}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-300 bg-white text-stone-600 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
               >
-                <FaMicrophone className="h-4 w-4" aria-hidden="true" />
+                <FaRotateLeft className="h-4 w-4" aria-hidden="true" />
               </button>
-            ) : null}
+            </div>
 
-            <button
-              type="button"
-              aria-label="Reset conversation"
-              title="Reset conversation"
-              onClick={() => void resetConversation()}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-300 bg-white text-stone-600 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
-            >
-              <FaRotateLeft className="h-4 w-4" aria-hidden="true" />
-            </button>
+            {/* Right: microphone, send */}
+            <div className="flex items-center gap-2">
+              {speech.visible ? (
+                <button
+                  type="button"
+                  aria-label={speech.available ? 'Voice input' : 'Voice input unavailable'}
+                  aria-pressed={speech.listening}
+                  title={
+                    !speech.available
+                      ? 'Voice input is not available in this browser'
+                      : speech.listening
+                        ? 'Stop voice input'
+                        : 'Dictate with the Web Speech API'
+                  }
+                  disabled={!speech.available}
+                  onClick={() => void speech.toggle()}
+                  className={`flex h-10 w-10 items-center justify-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    speech.listening
+                      ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                      : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800'
+                  }`}
+                >
+                  <FaMicrophone className="h-4 w-4" aria-hidden="true" />
+                </button>
+              ) : null}
 
-            {isRetryPending && isCoolingDown ? (
-              <Button type="button" variant="secondary" onClick={cancelRetry} className="rounded-full">
-                Cancel retry
+              {isRetryPending && isCoolingDown ? (
+                <Button type="button" variant="secondary" onClick={cancelRetry} className="rounded-full">
+                  Cancel retry
+                </Button>
+              ) : null}
+
+              <Button
+                type="submit"
+                aria-label={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
+                title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
+                disabled={isRunning || isCoolingDown || !prompt.trim()}
+                className="h-10 min-w-10 rounded-full px-2"
+              >
+                {isCoolingDown ? (
+                  <span className="text-xs tabular-nums">{submitLabel}</span>
+                ) : isRunning ? (
+                  <FaSpinner className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <FaArrowUp className="h-4 w-4" aria-hidden="true" />
+                )}
               </Button>
-            ) : null}
-
-            <div className="ml-auto" />
-
-            <Button
-              type="submit"
-              aria-label={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
-              title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
-              disabled={isRunning || isCoolingDown || !prompt.trim()}
-              className="h-10 min-w-10 rounded-full px-2"
-            >
-              {isCoolingDown ? (
-                <span className="text-xs tabular-nums">{submitLabel}</span>
-              ) : isRunning ? (
-                <FaSpinner className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <FaArrowUp className="h-4 w-4" aria-hidden="true" />
-              )}
-            </Button>
+            </div>
           </div>
 
           {speech.error ? (

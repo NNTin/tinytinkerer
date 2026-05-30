@@ -156,91 +156,95 @@ export const ChatPage = () => {
           />
 
           {/* Composer actions */}
-          <div className="mt-2 flex items-center gap-2">
-            {/* Settings trigger */}
-            <button
-              type="button"
-              aria-label="Settings"
-              title="Settings"
-              onClick={() => setSettingsOpen(true)}
-              className="flex h-9 w-9 items-center justify-center rounded-md border border-stone-200 text-stone-500 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700 transition-colors"
-            >
-              <FaGear className="h-4 w-4" aria-hidden="true" />
-            </button>
-
-            {/* Auth entry point — visible only when not signed in */}
-            {!token ? (
+          <div className="mt-2 flex items-center justify-between gap-2">
+            {/* Left: settings, sign in, reset */}
+            <div className="flex items-center gap-2">
+              {/* Settings trigger */}
               <button
                 type="button"
-                aria-label="Sign in with GitHub"
-                title="Sign in with GitHub"
+                aria-label="Settings"
+                title="Settings"
                 onClick={() => setSettingsOpen(true)}
-                className="flex h-9 w-9 items-center justify-center rounded-md border border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800 transition-colors"
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-stone-200 text-stone-500 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700 transition-colors"
               >
-                <FaGithub className="h-4 w-4" aria-hidden="true" />
+                <FaGear className="h-4 w-4" aria-hidden="true" />
               </button>
-            ) : null}
 
-            {speech.visible ? (
+              {/* Auth entry point — visible only when not signed in */}
+              {!token ? (
+                <button
+                  type="button"
+                  aria-label="Sign in with GitHub"
+                  title="Sign in with GitHub"
+                  onClick={() => setSettingsOpen(true)}
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800 transition-colors"
+                >
+                  <FaGithub className="h-4 w-4" aria-hidden="true" />
+                </button>
+              ) : null}
+
+              {/* Reset */}
               <button
                 type="button"
-                aria-label={speech.available ? 'Voice input' : 'Voice input unavailable'}
-                aria-pressed={speech.listening}
-                title={
-                  !speech.available
-                    ? 'Voice input is not available in this browser'
-                    : speech.listening
-                      ? 'Stop voice input'
-                      : 'Dictate with the Web Speech API'
-                }
-                disabled={!speech.available}
-                onClick={() => void speech.toggle()}
-                className={`flex h-9 w-9 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                  speech.listening
-                    ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
-                    : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800'
-                }`}
+                aria-label="Reset conversation"
+                title="Reset conversation"
+                onClick={() => void resetConversation()}
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-stone-300 bg-white text-stone-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 transition-colors"
               >
-                <FaMicrophone className="h-4 w-4" aria-hidden="true" />
+                <FaRotateLeft className="h-4 w-4" aria-hidden="true" />
               </button>
-            ) : null}
+            </div>
 
-            <div className="flex-1" />
+            {/* Right: microphone, send */}
+            <div className="flex items-center gap-2">
+              {speech.visible ? (
+                <button
+                  type="button"
+                  aria-label={speech.available ? 'Voice input' : 'Voice input unavailable'}
+                  aria-pressed={speech.listening}
+                  title={
+                    !speech.available
+                      ? 'Voice input is not available in this browser'
+                      : speech.listening
+                        ? 'Stop voice input'
+                        : 'Dictate with the Web Speech API'
+                  }
+                  disabled={!speech.available}
+                  onClick={() => void speech.toggle()}
+                  className={`flex h-9 w-9 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    speech.listening
+                      ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                      : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800'
+                  }`}
+                >
+                  <FaMicrophone className="h-4 w-4" aria-hidden="true" />
+                </button>
+              ) : null}
 
-            {/* Reset */}
-            <button
-              type="button"
-              aria-label="Reset conversation"
-              title="Reset conversation"
-              onClick={() => void resetConversation()}
-              className="flex h-9 w-9 items-center justify-center rounded-md border border-stone-300 bg-white text-stone-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 transition-colors"
-            >
-              <FaRotateLeft className="h-4 w-4" aria-hidden="true" />
-            </button>
+              {/* Retry cancel */}
+              {isRetryPending && isCoolingDown ? (
+                <Button type="button" variant="secondary" onClick={cancelRetry}>
+                  Cancel retry
+                </Button>
+              ) : null}
 
-            {/* Retry cancel */}
-            {isRetryPending && isCoolingDown ? (
-              <Button type="button" variant="secondary" onClick={cancelRetry}>
-                Cancel retry
+              {/* Send */}
+              <Button
+                type="submit"
+                aria-label={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
+                title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
+                disabled={isRunning || isCoolingDown || !prompt.trim()}
+                className="h-9 min-w-9 px-2"
+              >
+                {isCoolingDown ? (
+                  <span className="text-xs tabular-nums">{submitLabel}</span>
+                ) : isRunning ? (
+                  <FaSpinner className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <FaArrowUp className="h-4 w-4" aria-hidden="true" />
+                )}
               </Button>
-            ) : null}
-
-            {/* Send */}
-            <Button
-              type="submit"
-              aria-label={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
-              title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
-              disabled={isRunning || isCoolingDown || !prompt.trim()}
-              className="h-9 min-w-9 px-2"
-            >
-              {isCoolingDown ? (
-                <span className="text-xs tabular-nums">{submitLabel}</span>
-              ) : isRunning ? (
-                <FaSpinner className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <FaArrowUp className="h-4 w-4" aria-hidden="true" />
-              )}
-            </Button>
+            </div>
           </div>
 
           {speech.error ? (

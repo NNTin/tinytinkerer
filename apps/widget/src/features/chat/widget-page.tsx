@@ -306,6 +306,7 @@ const WidgetSurface = ({
             className="min-h-16 max-h-28 w-full rounded-xl border border-[var(--widget-border)] bg-white px-3 py-2 text-[13px] leading-5 outline-none"
           />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-1.5">
+            {/* Left: settings, sign in, reset */}
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -327,6 +328,18 @@ const WidgetSurface = ({
                   <FaGithub className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               ) : null}
+              <button
+                type="button"
+                aria-label="Reset conversation"
+                title="Reset conversation"
+                onClick={() => void resetConversation()}
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-white text-[var(--widget-muted)] transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
+              >
+                <FaRotateLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
+            {/* Right: microphone, send */}
+            <div className="flex items-center gap-1.5">
               {speech.visible ? (
                 <button
                   type="button"
@@ -350,17 +363,6 @@ const WidgetSurface = ({
                   <FaMicrophone className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               ) : null}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                aria-label="Reset conversation"
-                title="Reset conversation"
-                onClick={() => void resetConversation()}
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-white text-[var(--widget-muted)] transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
-              >
-                <FaRotateLeft className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
               {isRetryPending && isCoolingDown ? (
                 <Button size="sm" variant="secondary" onClick={cancelRetry}>
                   Cancel retry
