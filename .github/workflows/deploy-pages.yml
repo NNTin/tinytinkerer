@@ -19,7 +19,6 @@ env:
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
   GIT_SHA: ${{ github.sha }}
-  VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN_FRONTEND }}
 
 jobs:
   checks:
@@ -104,9 +103,12 @@ jobs:
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build Deployment Artifacts
-        # SENTRY_AUTH_TOKEN enables source map upload from the Sentry Vite plugin
-        # during the build (see apps/web/vite.config.ts). Production only.
+        # VITE_SENTRY_DSN activates runtime error reporting and SENTRY_AUTH_TOKEN
+        # enables source map upload from the Sentry Vite plugin during the build
+        # (see apps/web/vite.config.ts). Production only — preview builds ship
+        # without a DSN so their errors never reach Sentry.
         env:
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN_FRONTEND }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: vercel build --prod --token="$VERCEL_TOKEN"
 
