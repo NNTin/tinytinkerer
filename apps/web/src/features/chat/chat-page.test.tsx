@@ -74,6 +74,7 @@ const mockSpeechState = vi.hoisted(() => ({
   visible: false,
   available: false,
   listening: false,
+  error: null as string | null,
   toggle: vi.fn(() => Promise.resolve()),
   stop: vi.fn()
 }))
@@ -188,6 +189,7 @@ beforeEach(() => {
   mockSpeechState.visible = false
   mockSpeechState.available = false
   mockSpeechState.listening = false
+  mockSpeechState.error = null
   mockSpeechState.toggle.mockClear()
   mockSpeechState.stop.mockClear()
   mockStatusState.status = {
@@ -305,6 +307,25 @@ describe('ChatPage voice input button', () => {
     renderChatPage()
     fireEvent.click(screen.getByRole('button', { name: /voice input/i }))
     expect(mockSpeechState.toggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('reflects the listening state on the voice button via aria-pressed', () => {
+    mockSpeechState.visible = true
+    mockSpeechState.available = true
+    mockSpeechState.listening = true
+    renderChatPage()
+    expect(screen.getByRole('button', { name: /voice input/i })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+  })
+
+  it('surfaces the speech error message to the user', () => {
+    mockSpeechState.visible = true
+    mockSpeechState.available = true
+    mockSpeechState.error = 'Microphone access was denied.'
+    renderChatPage()
+    expect(screen.getByRole('alert')).toHaveTextContent('Microphone access was denied.')
   })
 })
 

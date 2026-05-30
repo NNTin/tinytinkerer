@@ -66,6 +66,7 @@ const mockSpeechState = vi.hoisted(() => ({
   visible: false,
   available: false,
   listening: false,
+  error: null as string | null,
   toggle: vi.fn(() => Promise.resolve()),
   stop: vi.fn()
 }))
@@ -151,6 +152,7 @@ beforeEach(() => {
   mockSpeechState.visible = false
   mockSpeechState.available = false
   mockSpeechState.listening = false
+  mockSpeechState.error = null
   mockSpeechState.toggle.mockClear()
   mockSpeechState.stop.mockClear()
   mockTurns.length = 0

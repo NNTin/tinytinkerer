@@ -5,6 +5,7 @@ import {
   AppBrowserProvider,
   createBrowserApp,
   LazyPrivacyPolicyUpdateGate,
+  LazyTelemetryConsentGate,
   resolveBrowserShellBootstrapConfig,
   useBrowserAppBootstrap,
   type BrowserShellConfig
@@ -63,6 +64,9 @@ const WidgetBootstrap = () => {
           <RouterProvider router={router} />
           <Suspense fallback={null}>
             <LazyPrivacyPolicyUpdateGate />
+          </Suspense>
+          <Suspense fallback={null}>
+            <LazyTelemetryConsentGate />
           </Suspense>
         </QueryClientProvider>
       </AppBrowserProvider>

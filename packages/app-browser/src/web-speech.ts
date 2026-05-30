@@ -14,12 +14,16 @@ type SpeechRecognitionEventLike = {
   results: ArrayLike<SpeechRecognitionResultLike>
 }
 
+type SpeechRecognitionErrorEventLike = {
+  error?: string
+}
+
 type SpeechRecognitionLike = {
   continuous: boolean
   interimResults: boolean
   lang: string
   onend: (() => void) | null
-  onerror: (() => void) | null
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null
   onresult: ((event: SpeechRecognitionEventLike) => void) | null
   start: () => void
   stop: () => void
@@ -62,6 +66,38 @@ const requestMicrophonePermission = async (): Promise<void> => {
   }
 }
 
+const MICROPHONE_DENIED_MESSAGE =
+  'Microphone access was denied. Allow it in your browser settings to use voice input.'
+
+const describeMicrophoneError = (error: unknown): string => {
+  if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) {
+    return MICROPHONE_DENIED_MESSAGE
+  }
+  if (error instanceof DOMException && error.name === 'NotFoundError') {
+    return 'No microphone was found on this device.'
+  }
+  return 'Could not access the microphone for voice input.'
+}
+
+// Maps a SpeechRecognition error code to a user-facing message, or null when the
+// error is benign (e.g. the user stopped dictation, or a transient silence).
+const describeRecognitionError = (code: string | undefined): string | null => {
+  switch (code) {
+    case 'aborted':
+    case 'no-speech':
+      return null
+    case 'not-allowed':
+    case 'service-not-allowed':
+      return MICROPHONE_DENIED_MESSAGE
+    case 'audio-capture':
+      return 'No microphone was found on this device.'
+    case 'network':
+      return 'Voice input failed due to a network error.'
+    default:
+      return 'Voice input stopped unexpectedly. Please try again.'
+  }
+}
+
 export const useWebSpeechInput = ({
   prompt,
   setPrompt
@@ -72,6 +108,7 @@ export const useWebSpeechInput = ({
   visible: boolean
   available: boolean
   listening: boolean
+  error: string | null
   toggle: () => Promise<void>
   stop: () => void
 } => {
@@ -79,12 +116,9 @@ export const useWebSpeechInput = ({
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const promptBaseRef = useRef(prompt)
   const finalTranscriptRef = useRef('')
-  const [available, setAvailable] = useState(() => getSpeechRecognitionConstructor() !== undefined)
+  const [available] = useState(() => getSpeechRecognitionConstructor() !== undefined)
   const [listening, setListening] = useState(false)
-
-  useEffect(() => {
-    setAvailable(getSpeechRecognitionConstructor() !== undefined)
-  }, [])
+  const [error, setError] = useState<string | null>(null)
 
   const stop = useMemo(
     () => () => {
@@ -97,6 +131,14 @@ export const useWebSpeechInput = ({
 
   useEffect(() => stop, [stop])
 
+  // Stop an active session if the user disables voice input in Settings while
+  // dictating — otherwise the microphone would stay live with no UI to stop it.
+  useEffect(() => {
+    if (!visible) {
+      stop()
+    }
+  }, [visible, stop])
+
   const toggle = async (): Promise<void> => {
     if (listening) {
       stop()
@@ -105,16 +147,17 @@ export const useWebSpeechInput = ({
 
     const Recognition = getSpeechRecognitionConstructor()
     if (!Recognition) {
-      setAvailable(false)
       return
     }
 
     promptBaseRef.current = prompt
     finalTranscriptRef.current = ''
+    setError(null)
 
     try {
       await requestMicrophonePermission()
-    } catch {
+    } catch (permissionError) {
+      setError(describeMicrophoneError(permissionError))
       setListening(false)
       return
     }
@@ -147,7 +190,11 @@ export const useWebSpeechInput = ({
       finalTranscriptRef.current = nextFinalTranscript
       setPrompt(appendTranscript(promptBaseRef.current, appendTranscript(nextFinalTranscript, interimTranscript)))
     }
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
+      const message = describeRecognitionError(event.error)
+      if (message) {
+        setError(message)
+      }
       recognitionRef.current = null
       setListening(false)
     }
@@ -164,6 +211,7 @@ export const useWebSpeechInput = ({
     visible,
     available,
     listening,
+    error,
     toggle,
     stop
   }

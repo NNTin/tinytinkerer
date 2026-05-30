@@ -334,6 +334,7 @@ const WidgetSurface = ({
                 <button
                   type="button"
                   aria-label={speech.available ? 'Voice input' : 'Voice input unavailable'}
+                  aria-pressed={speech.listening}
                   title={
                     speech.available
                       ? 'Dictate with the Web Speech API'
@@ -368,6 +369,11 @@ const WidgetSurface = ({
               </Button>
             </div>
           </div>
+          {speech.error ? (
+            <p role="alert" className="mt-1.5 text-[11px] text-rose-600">
+              {speech.error}
+            </p>
+          ) : null}
         </div>
       </div>
       {settingsOpen ? (

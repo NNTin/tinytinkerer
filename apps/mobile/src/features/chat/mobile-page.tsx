@@ -191,6 +191,7 @@ export const MobilePage = () => {
               <button
                 type="button"
                 aria-label={speech.available ? 'Voice input' : 'Voice input unavailable'}
+                aria-pressed={speech.listening}
                 title={
                   speech.available
                     ? 'Dictate with the Web Speech API'
@@ -224,6 +225,12 @@ export const MobilePage = () => {
               {submitLabel}
             </Button>
           </div>
+
+          {speech.error ? (
+            <p role="alert" className="mt-2 text-xs text-rose-600">
+              {speech.error}
+            </p>
+          ) : null}
         </form>
       </main>
 
