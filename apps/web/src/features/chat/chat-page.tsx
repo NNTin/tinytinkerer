@@ -5,8 +5,16 @@ import {
   useChatSurfaceController,
   useWebSpeechInput
 } from '@tinytinkerer/app-browser'
-import { Button, GitHubMark, ThinkingDots } from '@tinytinkerer/ui'
-import { Cog6ToothIcon } from '@heroicons/react/24/outline'
+import {
+  Button,
+  FaArrowUp,
+  FaGear,
+  FaGithub,
+  FaMicrophone,
+  FaRotateLeft,
+  FaSpinner,
+  ThinkingDots
+} from '@tinytinkerer/ui'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { WebChatLoading, WebPanelLoading } from '../../app/loading-screen'
 
@@ -153,10 +161,11 @@ export const ChatPage = () => {
             <button
               type="button"
               aria-label="Settings"
+              title="Settings"
               onClick={() => setSettingsOpen(true)}
               className="flex h-9 w-9 items-center justify-center rounded-md border border-stone-200 text-stone-500 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700 transition-colors"
             >
-              <Cog6ToothIcon className="h-4 w-4" />
+              <FaGear className="h-4 w-4" aria-hidden="true" />
             </button>
 
             {/* Auth entry point — visible only when not signed in */}
@@ -164,11 +173,11 @@ export const ChatPage = () => {
               <button
                 type="button"
                 aria-label="Sign in with GitHub"
+                title="Sign in with GitHub"
                 onClick={() => setSettingsOpen(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800 transition-colors"
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800 transition-colors"
               >
-                <GitHubMark />
-                Sign in
+                <FaGithub className="h-4 w-4" aria-hidden="true" />
               </button>
             ) : null}
 
@@ -178,15 +187,21 @@ export const ChatPage = () => {
                 aria-label={speech.available ? 'Voice input' : 'Voice input unavailable'}
                 aria-pressed={speech.listening}
                 title={
-                  speech.available
-                    ? 'Dictate with the Web Speech API'
-                    : 'Voice input is not available in this browser'
+                  !speech.available
+                    ? 'Voice input is not available in this browser'
+                    : speech.listening
+                      ? 'Stop voice input'
+                      : 'Dictate with the Web Speech API'
                 }
                 disabled={!speech.available}
                 onClick={() => void speech.toggle()}
-                className="inline-flex h-9 items-center rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className={`flex h-9 w-9 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                  speech.listening
+                    ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                    : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800'
+                }`}
               >
-                {speech.listening ? 'Stop voice' : 'Voice'}
+                <FaMicrophone className="h-4 w-4" aria-hidden="true" />
               </button>
             ) : null}
 
@@ -195,10 +210,12 @@ export const ChatPage = () => {
             {/* Reset */}
             <button
               type="button"
+              aria-label="Reset conversation"
+              title="Reset conversation"
               onClick={() => void resetConversation()}
-              className="inline-flex h-9 items-center rounded-md border border-stone-300 bg-white px-3 text-sm text-stone-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 transition-colors"
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-stone-300 bg-white text-stone-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 transition-colors"
             >
-              Reset
+              <FaRotateLeft className="h-4 w-4" aria-hidden="true" />
             </button>
 
             {/* Retry cancel */}
@@ -209,8 +226,20 @@ export const ChatPage = () => {
             ) : null}
 
             {/* Send */}
-            <Button type="submit" disabled={isRunning || isCoolingDown || !prompt.trim()} className="min-w-24">
-              {submitLabel}
+            <Button
+              type="submit"
+              aria-label={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
+              title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
+              disabled={isRunning || isCoolingDown || !prompt.trim()}
+              className="h-9 min-w-9 px-2"
+            >
+              {isCoolingDown ? (
+                <span className="text-xs tabular-nums">{submitLabel}</span>
+              ) : isRunning ? (
+                <FaSpinner className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <FaArrowUp className="h-4 w-4" aria-hidden="true" />
+              )}
             </Button>
           </div>
 
