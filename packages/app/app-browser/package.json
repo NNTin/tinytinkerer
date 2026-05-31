@@ -34,6 +34,7 @@
     "@tinytinkerer/content-table": "workspace:*",
     "@tinytinkerer/content-wireframe": "workspace:*",
     "@tinytinkerer/contracts": "workspace:*",
+    "@tinytinkerer/sentry-telemetry": "workspace:*",
     "@sentry/react": "^10.17.0",
     "dexie": "^4.2.1",
     "zod": "^4.1.12",

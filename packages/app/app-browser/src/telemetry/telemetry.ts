@@ -1,5 +1,16 @@
 import type { PreferencesStore } from '@tinytinkerer/app-core'
+import {
+  scrubBreadcrumb,
+  scrubEvent,
+  setCaptureExceptionSink,
+  type TelemetryCaptureOptions
+} from '@tinytinkerer/sentry-telemetry'
 import { getOrCreateInstallId } from './install-id'
+
+// Re-exported so existing `./telemetry` importers keep a stable path; the
+// implementation (and the request-telemetry engine) now lives in the shared
+// @tinytinkerer/sentry-telemetry package. See docs/sentry-telemetry.md.
+export { captureTelemetryException } from '@tinytinkerer/sentry-telemetry'
 
 // Wire-protocol header names. Mirrors TELEMETRY_HEADERS in @tinytinkerer/contracts
 // (consumed by the edge). Inlined here to keep the eager client bundle free of the
@@ -12,29 +23,11 @@ const TELEMETRY_HEADERS = {
 } as const
 
 type SentryModule = typeof import('@sentry/react')
-type TelemetryLevel = 'warning' | 'error'
-
-// Removes the query string from a URL so breadcrumbs/events never carry
-// request payloads encoded as query params. Falls back to the raw value when
-// the input is not a parseable URL.
-const stripUrlQuery = (value: unknown): unknown => {
-  if (typeof value !== 'string') {
-    return value
-  }
-  const queryIndex = value.indexOf('?')
-  return queryIndex === -1 ? value : value.slice(0, queryIndex)
-}
 
 type TelemetryConfig = {
   dsn?: string
   appVersion: string
   buildHash: string
-}
-
-type TelemetryCaptureOptions = {
-  level?: TelemetryLevel
-  tags?: Record<string, string | number | boolean | undefined>
-  contexts?: Record<string, Record<string, unknown>>
 }
 
 // Module singleton: the browser apps are single-instance SPAs, so a shared
@@ -74,34 +67,11 @@ const ensureSentry = async (): Promise<void> => {
         // (disclosed in PRIVACY.md) but strip request bodies and the console
         // logs / network payloads that breadcrumbs would otherwise capture.
         sendDefaultPii: false,
-        beforeBreadcrumb: (breadcrumb) => {
-          if (
-            breadcrumb.category === 'console' &&
-            breadcrumb.level !== 'error' &&
-            breadcrumb.level !== 'fatal'
-          ) {
-            return null
-          }
-          if (
-            (breadcrumb.category === 'fetch' || breadcrumb.category === 'xhr') &&
-            breadcrumb.data
-          ) {
-            breadcrumb.data.url = stripUrlQuery(breadcrumb.data.url)
-          }
-          return breadcrumb
-        },
-        beforeSend: (event) => {
-          if (event.request) {
-            delete event.request.data
-            delete event.request.query_string
-            if (typeof event.request.url === 'string') {
-              event.request.url = stripUrlQuery(event.request.url) as string
-            }
-          }
-          return event
-        }
+        beforeBreadcrumb: scrubBreadcrumb,
+        beforeSend: scrubEvent
       })
       sentry = mod
+      setCaptureExceptionSink(dispatchToSentry)
       applySentryUser()
     })
     .catch((error) => {
@@ -141,6 +111,7 @@ export const setTelemetryConsent = async (enabled: boolean): Promise<void> => {
     return
   }
   if (sentry) {
+    setCaptureExceptionSink(null)
     sentry.setUser(null)
     await sentry.close()
     sentry = null
@@ -156,17 +127,13 @@ export const setTelemetryGitHubId = (value: string | null): void => {
   }
 }
 
-export const captureTelemetryException = (
-  error: unknown,
-  options: TelemetryCaptureOptions = {}
-): void => {
+// Browser capture sink registered with @tinytinkerer/sentry-telemetry once the
+// @sentry/react SDK is initialized. Maps the SDK-agnostic capture options onto a
+// Sentry scope. The package's `captureTelemetryException` dispatches here.
+const dispatchToSentry = (error: Error, options: TelemetryCaptureOptions): void => {
   if (!sentry) {
     return
   }
-
-  const normalizedError =
-    error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'Unknown telemetry error')
-
   sentry.withScope((scope) => {
     if (options.level) {
       scope.setLevel(options.level)
@@ -183,7 +150,7 @@ export const captureTelemetryException = (
         scope.setContext(key, value)
       }
     }
-    sentry?.captureException(normalizedError)
+    sentry?.captureException(error)
   })
 }
 

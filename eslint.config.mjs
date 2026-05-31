@@ -26,7 +26,7 @@ export default tseslint.config(
         {
           name: 'fetch',
           message:
-            'Use fetchWithTelemetry from @tinytinkerer/app-browser instead of the global fetch() so 4xx/5xx and network failures are captured for debugging. If a raw fetch is genuinely required (e.g. a low-level wrapper or a runtime that cannot import app-browser), add an inline eslint-disable-next-line no-restricted-globals with a short justification.'
+            'Use fetchWithTelemetry from @tinytinkerer/sentry-telemetry (re-exported by @tinytinkerer/app-browser) instead of the global fetch() so 4xx/5xx and network failures are captured for debugging. If a raw fetch is genuinely required (e.g. the wrapper itself or a low-level shim), add an inline eslint-disable-next-line no-restricted-globals with a short justification.'
         }
       ],
       '@typescript-eslint/no-restricted-types': [

@@ -1,11 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SUPPORTED_MODELS } from '@tinytinkerer/app-core'
-
-type CaptureTelemetryException = typeof import('../src/telemetry/telemetry.js').captureTelemetryException
-
-const telemetryMocks = vi.hoisted(() => ({
-  captureTelemetryException: vi.fn<CaptureTelemetryException>()
-}))
+import { setCaptureExceptionSink, type CaptureExceptionSink } from '@tinytinkerer/sentry-telemetry'
 
 vi.mock('../src/telemetry/telemetry.js', async () => {
   const actual = await vi.importActual<typeof import('../src/telemetry/telemetry.js')>(
@@ -13,18 +8,24 @@ vi.mock('../src/telemetry/telemetry.js', async () => {
   )
   return {
     ...actual,
-    captureTelemetryException: telemetryMocks.captureTelemetryException,
     getTelemetryHeaders: () => ({})
   }
 })
 
 import { fetchGitHubModels } from '../src/github-models.js'
 
+const sink = vi.fn<CaptureExceptionSink>()
+
 describe('fetchGitHubModels', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
-    telemetryMocks.captureTelemetryException.mockReset()
+    sink.mockReset()
+    setCaptureExceptionSink(sink)
+  })
+
+  afterEach(() => {
+    setCaptureExceptionSink(null)
   })
 
   it('returns fallback models and emits telemetry for non-ok responses', async () => {
@@ -36,8 +37,8 @@ describe('fetchGitHubModels', () => {
     const models = await fetchGitHubModels('https://api.example.com', 'token')
 
     expect(models).toEqual([...SUPPORTED_MODELS])
-    expect(telemetryMocks.captureTelemetryException).toHaveBeenCalledTimes(1)
-    const [, options] = vi.mocked(telemetryMocks.captureTelemetryException).mock.calls[0] ?? []
+    expect(sink).toHaveBeenCalledTimes(1)
+    const [, options] = sink.mock.calls[0] ?? []
     expect(options?.tags).toMatchObject({
       request_area: 'models.list',
       http_status: 502,
@@ -61,8 +62,8 @@ describe('fetchGitHubModels', () => {
     const models = await fetchGitHubModels('https://api.example.com', 'token')
 
     expect(models).toEqual([...SUPPORTED_MODELS])
-    expect(telemetryMocks.captureTelemetryException).toHaveBeenCalledTimes(1)
-    const [, options] = vi.mocked(telemetryMocks.captureTelemetryException).mock.calls[0] ?? []
+    expect(sink).toHaveBeenCalledTimes(1)
+    const [, options] = sink.mock.calls[0] ?? []
     expect(options?.tags).toMatchObject({
       request_area: 'models.list',
       failure_kind: 'schema_error'

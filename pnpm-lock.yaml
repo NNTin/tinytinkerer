@@ -62,6 +62,9 @@ importers:
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../../packages/shared/contracts
+      '@tinytinkerer/sentry-telemetry':
+        specifier: workspace:*
+        version: link:../../packages/shared/sentry-telemetry
       hono:
         specifier: ^4.10.5
         version: 4.12.21
@@ -315,6 +318,9 @@ importers:
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../../shared/contracts
+      '@tinytinkerer/sentry-telemetry':
+        specifier: workspace:*
+        version: link:../../shared/sentry-telemetry
       dexie:
         specifier: ^4.2.1
         version: 4.4.2
@@ -747,6 +753,12 @@ importers:
       zod:
         specifier: ^4.1.12
         version: 4.4.3
+
+  packages/shared/sentry-telemetry:
+    dependencies:
+      '@sentry/core':
+        specifier: ^10.17.0
+        version: 10.53.1
 
   packages/shared/ui:
     dependencies:

@@ -11,6 +11,8 @@
     "build:pages": "pnpm generate:brand-assets && pnpm generate:privacy-policy && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 TINYTINKERER_DEPLOY_BASE=/tinytinkerer turbo run build",
     "check:boundaries": "node ./scripts/check-boundaries.mjs",
     "check:mermaid": "node ./scripts/check-mermaid.mjs",
+    "sync:skill-readme": "node ./scripts/sync-skill-readme.mjs",
+    "check:skill-readme": "node ./scripts/sync-skill-readme.mjs --check",
     "lint": "pnpm generate:brand-assets && pnpm generate:privacy-policy && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 turbo run lint && node ./scripts/check-boundaries.mjs",
     "test": "pnpm generate:brand-assets && pnpm generate:privacy-policy && turbo run test",
     "typecheck": "pnpm generate:brand-assets && pnpm generate:privacy-policy && turbo run typecheck",

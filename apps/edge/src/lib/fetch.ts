@@ -1,5 +1,17 @@
+import {
+  fetchWithTelemetry,
+  type RequestTelemetryMetadata
+} from '@tinytinkerer/sentry-telemetry'
+
+/**
+ * Outbound fetch with a timeout, instrumented via the shared
+ * {@link fetchWithTelemetry} so upstream 4xx/5xx and network failures are
+ * captured in Sentry (the edge sink is registered in ./sentry). The timeout is
+ * composed with any caller-supplied signal and torn down once the request
+ * settles.
+ */
 export const fetchWithTimeout = (
-  url: string,
+  metadata: RequestTelemetryMetadata,
   init: RequestInit,
   timeoutMs: number
 ): Promise<Response> => {
@@ -8,6 +20,5 @@ export const fetchWithTimeout = (
   const signal = init.signal
     ? AbortSignal.any([controller.signal, init.signal])
     : controller.signal
-  // eslint-disable-next-line no-restricted-globals -- low-level timeout wrapper on the edge runtime, which cannot import the app-browser fetchWithTelemetry (it pulls in browser-only Sentry telemetry and is forbidden by the package boundary rules).
-  return fetch(url, { ...init, signal }).finally(() => clearTimeout(timeoutId))
+  return fetchWithTelemetry(metadata, { ...init, signal }).finally(() => clearTimeout(timeoutId))
 }

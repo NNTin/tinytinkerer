@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   checks:
-    name: Mermaid & Boundaries
+    name: Mermaid, Boundaries & Skill README
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +43,9 @@ jobs:
 
       - name: Boundary check
         run: pnpm check:boundaries
+
+      - name: Skill README sync check
+        run: pnpm check:skill-readme
 
   ci:
     name: ${{ matrix.task.name }}

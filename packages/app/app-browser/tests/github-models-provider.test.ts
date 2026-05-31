@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { RateLimitError, type ExecutionContext, type SynthesisChunk } from '@tinytinkerer/app-core'
-
-type CaptureTelemetryException = typeof import('../src/telemetry/telemetry.js').captureTelemetryException
-
-const telemetryMocks = vi.hoisted(() => ({
-  captureTelemetryException: vi.fn<CaptureTelemetryException>()
-}))
+import { setCaptureExceptionSink, type CaptureExceptionSink } from '@tinytinkerer/sentry-telemetry'
 
 vi.mock('../src/telemetry/telemetry.js', async () => {
   const actual = await vi.importActual<typeof import('../src/telemetry/telemetry.js')>(
@@ -13,13 +8,15 @@ vi.mock('../src/telemetry/telemetry.js', async () => {
   )
   return {
     ...actual,
-    captureTelemetryException: telemetryMocks.captureTelemetryException,
     getTelemetryHeaders: () => ({})
   }
 })
 
 import { GitHubModelsProvider } from '../src/runtime/github-models-provider.js'
 import { splitInlineThink } from '../src/runtime/sse-utils.js'
+
+const telemetrySink = vi.fn<CaptureExceptionSink>()
+setCaptureExceptionSink(telemetrySink)
 
 async function* fromContentChunks(texts: string[]): AsyncGenerator<SynthesisChunk> {
   for (const text of texts) {
@@ -201,7 +198,7 @@ describe('GitHubModelsProvider', () => {
         )
       )
     )
-    telemetryMocks.captureTelemetryException.mockClear()
+    telemetrySink.mockClear()
 
     const provider = new GitHubModelsProvider({
       baseUrl: 'http://example.com',
@@ -212,8 +209,8 @@ describe('GitHubModelsProvider', () => {
     const plan = await provider.plan('Tell me something about this repo', [])
 
     expect(plan.steps.map((step) => step.id)).toEqual(['understand', 'compose'])
-    expect(telemetryMocks.captureTelemetryException).toHaveBeenCalledTimes(1)
-    const [, options] = vi.mocked(telemetryMocks.captureTelemetryException).mock.calls[0] ?? []
+    expect(telemetrySink).toHaveBeenCalledTimes(1)
+    const [, options] = telemetrySink.mock.calls[0] ?? []
     expect(options?.tags).toMatchObject({
       request_area: 'planning.chat',
       failure_kind: 'parse_error'

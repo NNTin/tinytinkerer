@@ -200,7 +200,11 @@ export class GitHubModelsProvider implements ModelProvider {
         origin: 'edge',
         method: 'POST',
         url: `${this.options.baseUrl}/api/models/chat`,
-        stream: true
+        stream: true,
+        accept: {
+          kinds: ['abort'],
+          reason: 'User can cancel an in-flight chat stream; AbortError is expected, not a bug.'
+        }
       }
       const response = await fetchWithTelemetry(metadata, requestInit)
 

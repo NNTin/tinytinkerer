@@ -1,7 +1,9 @@
 import * as Sentry from '@sentry/cloudflare'
+import { scrubEvent } from '@tinytinkerer/sentry-telemetry'
 import { Hono } from 'hono'
 import type { Bindings } from './lib/bindings'
 import { corsMiddleware } from './lib/cors'
+import './lib/sentry'
 import { telemetryMiddleware } from './lib/telemetry'
 import { registerAuthRoutes } from './routes/auth'
 import { registerHealthRoute } from './routes/health'
@@ -28,27 +30,9 @@ export default Sentry.withSentry(
     tracesSampleRate: 0,
     // Never collect user-typed content. Request bodies (chat messages, search
     // queries), query strings, and auth headers are stripped before any event
-    // leaves the edge; see docs/PRIVACY.md.
+    // leaves the edge via the shared scrubber; see docs/PRIVACY.md.
     sendDefaultPii: false,
-    beforeSend(event) {
-      if (event.request) {
-        delete event.request.data
-        delete event.request.query_string
-        if (event.request.headers) {
-          delete event.request.headers['authorization']
-          delete event.request.headers['Authorization']
-          delete event.request.headers['cookie']
-          delete event.request.headers['Cookie']
-        }
-        if (typeof event.request.url === 'string') {
-          const queryIndex = event.request.url.indexOf('?')
-          if (queryIndex !== -1) {
-            event.request.url = event.request.url.slice(0, queryIndex)
-          }
-        }
-      }
-      return event
-    }
+    beforeSend: scrubEvent
   }),
   app
 )

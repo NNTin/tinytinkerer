@@ -13,6 +13,7 @@ See also:
 - [packages-concept.md](./packages-concept.md)
 - [ui-ux-concept.md](./ui-ux-concept.md)
 - [mcp-integration.md](./mcp-integration.md)
+- [sentry-telemetry.md](./sentry-telemetry.md)
 
 ## Route Model
 
@@ -53,6 +54,7 @@ flowchart LR
     appbrowser["@tinytinkerer/app-browser<br/>browser adapters + shell-facing exports"]
     brand["@tinytinkerer/brand-assets<br/>brand metadata + PWA assets"]
     ui["@tinytinkerer/ui<br/>presentational React primitives"]
+    sentrytelemetry["@tinytinkerer/sentry-telemetry<br/>SDK-agnostic telemetry core"]
 
     subgraph ContentPlatform["Content Platform"]
       contentcore["@tinytinkerer/content-core<br/>content behavior + stable-ID helpers + source-plugin contracts"]
@@ -79,6 +81,7 @@ flowchart LR
   common --> ui
   common --> appbrowser
 
+  edge --> sentrytelemetry
   edge --> contracts
   appcore --> agent
   appcore --> contracts
@@ -87,6 +90,7 @@ flowchart LR
   appbrowser --> appcore
   appbrowser --> contracts
   appbrowser --> brand
+  appbrowser --> sentrytelemetry
 
   contentreact --> contentcore
   contentreact --> ui
@@ -138,7 +142,7 @@ flowchart LR
   class ui,legendUi uiPrimitives;
   class contentcore,contentmarkdown,contentreact,contentmermaid,contentwireframe,contentimage,contentcode,contentcallout,contentlinkcard,contenttable,legendFeature sharedFeature;
   class contracts,legendContracts contractsLayer;
-  class agent,appcore,legendCore coreLayer;
+  class agent,appcore,sentrytelemetry,legendCore coreLayer;
   class brand,legendBrand brandLayer;
 ```
 
@@ -149,9 +153,14 @@ Diagram convention: when a package consumes the content platform through its pub
 - Apps stay thin. `web`, `mobile`, and `widget` own routes, page composition, shell layout, and shell-specific UX, but not shared product behavior.
 - Shared product behavior stays headless where possible. Core orchestration, projections, and runtime policies live in packages that do not depend on React or browser APIs.
 - Shared browser-shell behavior has a single boundary. Browser-specific adapters, shell-facing React hooks and components, OAuth helpers, and shared browser styles live in `@tinytinkerer/app-browser`.
-- Shared browser request telemetry also lives at that boundary. Browser-side fetch wrappers,
-  request sanitization, and Sentry request-failure capture belong in `@tinytinkerer/app-browser`,
-  not in the thin app shells.
+- Error telemetry has an SDK-agnostic core. Fetch wrappers (`fetchWithTelemetry`), request
+  sanitization, the PII scrubbers, and the capture-sink indirection live in
+  `@tinytinkerer/sentry-telemetry`, shared by both the browser shells and the edge backend
+  (which use different Sentry SDKs). The package carries no Sentry SDK runtime dependency; each
+  runtime keeps its own `Sentry.init`/`withSentry` and registers a capture sink.
+  `@tinytinkerer/app-browser` remains the browser-facing facade and re-exports the request
+  telemetry surface, so the thin app shells never touch telemetry directly. See
+  [sentry-telemetry.md](./sentry-telemetry.md).
 - Contracts are the foundational shared schema and type source of truth. Shared request, response, event, payload, and canonical content-model schemas live in `@tinytinkerer/contracts`.
 - Rich assistant content is a dedicated subsystem. Markdown parsing, AST handling, and specialized renderers live in the content platform, not in apps and not in `ui`.
 
@@ -219,6 +228,7 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 | `packages/app-core` | headless product behavior | chat/auth/settings orchestration, projections, ports | React, browser APIs, fetch, storage adapters |
 | `packages/app-browser` | shared browser composition boundary | browser adapters, shell bootstrap config, OAuth helpers, shell-facing hooks and components, shared browser styles | app-specific layout, app-owned screens |
 | `packages/brand-assets` | shared brand metadata | favicon, icon, manifest, and theme definitions | DOM mutation, app bootstrapping |
+| `packages/sentry-telemetry` | SDK-agnostic error-telemetry core | PII scrubbers, `fetchWithTelemetry` + request-failure capture, the `accept` mechanism, the capture-sink indirection | a Sentry SDK runtime dependency, consent UI, runtime `Sentry.init`/`withSentry` |
 | `packages/ui` | presentational primitives | buttons, icons, tiny visual atoms, styling helpers | feature runtimes, orchestration |
 | `packages/content-*` | shared content platform | content behavior over the canonical content model, stable IDs, source-plugin contracts, React runtime + chrome, markdown parsing, specialized content plugins | app shells, transport orchestration |
 
@@ -226,8 +236,9 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 
 - Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
-- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`).
+- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `sentry-telemetry`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`).
 - `brand-assets` may depend on `contracts` and nothing else.
+- `sentry-telemetry` is a leaf: it may depend only on `@sentry/core` (external, types only) and its own local modules.
 - `content-core` may depend only on `contracts` and local modules.
 - `content-react` may depend only on `content-core`, `ui`, and local modules. It owns the React runtime and re-exports the content-core symbols downstream content packages need.
 - `content-markdown` may depend only on `content-core` and local modules. It is a source-plugin package, not a rendering facade.
@@ -236,7 +247,7 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 - `ui` must stay primitive-only.
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
 - `agent-core` may depend only on `contracts` and agent-core-local modules.
-- `edge` may depend only on `contracts` and edge-local modules.
+- `edge` may depend only on `contracts`, `sentry-telemetry`, and edge-local modules.
 - `host` must not declare workspace dependencies on other apps. It composes the built or dev-served apps by path, not by module import.
 
 ## Contracts And Data Flow

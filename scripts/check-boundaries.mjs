@@ -303,9 +303,20 @@ function validateBoundary(sourcePkg, target, filePath) {
   }
 
   if (sourcePkg.name === '@tinytinkerer/edge') {
-    const allowed = new Set(['@tinytinkerer/edge', '@tinytinkerer/contracts'])
+    const allowed = new Set([
+      '@tinytinkerer/edge',
+      '@tinytinkerer/contracts',
+      '@tinytinkerer/sentry-telemetry'
+    ])
     if (!allowed.has(targetPkg.name)) {
-      errors.push(`${sourceLabel}: edge may import only contracts and edge-local modules (${targetPkg.name})`)
+      errors.push(`${sourceLabel}: edge may import only contracts, sentry-telemetry, and edge-local modules (${targetPkg.name})`)
+    }
+  }
+
+  if (sourcePkg.name === '@tinytinkerer/sentry-telemetry') {
+    const allowed = new Set(['@tinytinkerer/sentry-telemetry'])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(`${sourceLabel}: sentry-telemetry is a leaf (it may import only @sentry/core and sentry-telemetry-local modules) (${targetPkg.name})`)
     }
   }
 
@@ -341,11 +352,12 @@ function validateBoundary(sourcePkg, target, filePath) {
       '@tinytinkerer/content-react',
       '@tinytinkerer/content-table',
       '@tinytinkerer/content-wireframe',
-      '@tinytinkerer/contracts'
+      '@tinytinkerer/contracts',
+      '@tinytinkerer/sentry-telemetry'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, content-react, and the outward-facing content packages (content-markdown, content-mermaid, content-wireframe, content-image, content-code, content-callout, content-link-card, content-table), plus app-browser-local modules (${targetPkg.name})`
+        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, sentry-telemetry, content-react, and the outward-facing content packages (content-markdown, content-mermaid, content-wireframe, content-image, content-code, content-callout, content-link-card, content-table), plus app-browser-local modules (${targetPkg.name})`
       )
     }
   }
