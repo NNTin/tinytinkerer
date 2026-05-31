@@ -35,7 +35,16 @@ export const fetchGitHubUser = async (
     area: 'github.user',
     origin: 'github',
     method: 'GET',
-    url: 'https://api.github.com/user'
+    url: 'https://api.github.com/user',
+    // Reaching a third-party host (api.github.com) over the public internet can
+    // transiently fail (offline, DNS, GitHub edge blip). That network failure is
+    // normal & unavoidable and not our bug. We still capture http_error so a real
+    // 401/4xx/5xx from GitHub keeps surfacing (the 401 path clears the token).
+    accept: {
+      kinds: ['network_error'],
+      reason:
+        'Background user fetch to api.github.com; transient client-side network failure is expected (TINYTINKERER-FRONTEND-7).'
+    }
   }
 
   try {

@@ -35,6 +35,7 @@ Read the **Triage philosophy** in `../SKILL.md` before deciding statuses.
 
    - **`handled: no` (unhandled crash)** → a real bug. Investigate the stacktrace; identify root cause + file/line. Fix it in code.
      - *Exception — normal & unavoidable* (e.g. `AbortError: The operation was aborted` = client disconnected / timed out). These shouldn't be captured at all. Fix = declare `accept: { kinds: ['abort'], reason }` at the call site (see `accept-error.md`) — per-call-site, since an abort can be a real bug elsewhere; don't blanket-filter at `beforeSend`. Until accepted, `ignore` with a reason.
+     - *React DOM crash* — stacktrace entirely in `react-dom` (`removeChild`/`insertBefore` `NotFoundError`, "not a child of this node"). Don't `accept` it (that path is for `handled: yes` request telemetry only). Follow `diagnose-react-dom-crash.md` — usually an external DOM mutator (browser translation), fixed via `translate="no"` on the shell.
 
    - **`handled: yes` (caught & reported, e.g. via `request-telemetry.ts`)** → don't just close it. Ask *why the request failed* — this is the **accept-or-fix fork** (see `../SKILL.md`): fix the call site when the caller misbehaved, or `accept` the outcome in code when it's normal & unavoidable.
      - `401` / auth → caller hit an authenticated endpoint while unauthenticated. Fix the call site to gate on auth state.

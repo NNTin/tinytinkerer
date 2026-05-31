@@ -27,9 +27,15 @@ The `accept` gate lives in `captureRequestIssue` and only suppresses the **`hand
      }
    }
    ```
-   The gate lives in `captureRequestIssue` (`telemetry/request-telemetry.ts`) — every failure kind and both call paths funnel through it, so one `accept` covers `fetchWithTelemetry` and the `parse*WithTelemetry` helpers for that metadata.
+   `kinds` must be values from the `RequestTelemetryKind` union — `abort`, `network_error`, `http_error`, `parse_error`, `schema_error` (match the issue's `failure_kind` tag). See the kind table in `../SKILL.md`. Common cases: `kinds: ['abort']` for a user-cancellable stream; `kinds: ['network_error']` for a background poll to our edge or a third-party host that can transiently fail (e.g. `status.health` → `shell.ts`, `github.user` → `github-user.ts`). Accepting one kind still captures the rest, so a real `http_error` (e.g. a `401`/`5xx`) keeps surfacing.
 
-4. **Prove it with a test.** Add/extend a case in `packages/app/app-browser/tests/request-telemetry.test.ts`: with the `accept` block, the accepted status/kind must leave `captureTelemetryException` **uncalled**; a non-accepted outcome on the same call must still capture once. Run `pnpm --filter @tinytinkerer/app-browser test`.
+   The gate lives in `captureRequestIssue` (`request-telemetry.ts`) — every failure kind and both call paths funnel through it, so one `accept` covers `fetchWithTelemetry` and the `parse*WithTelemetry` helpers for that metadata.
+
+4. **Prove it with a test.** Two test homes:
+   - **Engine behaviour** (a kind/status is honoured at all): `packages/shared/sentry-telemetry/tests/request-telemetry.test.ts` — the engine moved to the shared `@tinytinkerer/sentry-telemetry` package. Run `pnpm --filter @tinytinkerer/sentry-telemetry test`.
+   - **Call-site behaviour** (this metadata accepts this kind): the call site's own test, e.g. `packages/app/app-browser/tests/github-user.test.ts`. Run `pnpm --filter @tinytinkerer/app-browser test`.
+
+   With the `accept` block, the accepted status/kind must leave the capture sink **uncalled**; a non-accepted outcome on the same call must still capture once.
 
 5. **Resolve the Sentry issue.** `update_issue(... status: "resolvedInNextRelease", reason: "Accepted in code at <file> — <accept.reason>")`. It auto-reopens if the *non-accepted* part ever recurs.
 

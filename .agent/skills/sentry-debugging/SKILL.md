@@ -47,6 +47,7 @@ The MCP gives you ~27 tools across three groups: **inspect** issues & events, re
 
 ## Triage philosophy (how to decide, not just how to click)
 - **`handled` tag is the pivot.** `handled: no` = an unhandled crash → a real bug; fix the root cause, don't just close it. `handled: yes` = an error our code caught and reported (e.g. frontend `request-telemetry.ts`).
+  - A `handled: no` crash whose stacktrace is entirely inside `react-dom` (`NotFoundError ... removeChild`, `insertBefore`, "not a child of this node") is its own diagnosis path — often an **external** DOM mutator (browser translation/extension), not our logic. Follow `workflows/diagnose-react-dom-crash.md`.
 - **Prevent the faulty request in the first place.** Don't call an authenticated endpoint while unauthenticated; respect rate-limit headers. A 401/429 in Sentry usually means the *caller* should have known better. Fix the call site, not the symptom. See **the accept-or-fix guideline** below for the fork.
 - **A general catch is bad.** Swallowing errors hides bugs. Let errors surface so we see and fix them. Only genuinely *normal and unavoidable* events (e.g. client-aborted requests) should avoid being reported — for those, *accept* them in code (see below), don't wrap call sites in try/catch.
 - **Resolve against a release.** Once fixed in code, mark `resolvedInNextRelease` so the issue auto-reopens (escalates) if it recurs after the fix ships. Only mark plain `resolved` if it is already fixed in the live production release. Close clearly stale issues.
@@ -62,9 +63,18 @@ When you triage a `handled: yes` request issue, you hit a fork:
 
 **How to accept:** add an `accept` block to that call site's `RequestTelemetryMetadata`:
 ```ts
-accept: { status: [404], kinds: ['abort'], reason: '<why it is normal & unavoidable + Sentry issue id>' }
+accept: { status: [404], kinds: ['network_error'], reason: '<why it is normal & unavoidable + Sentry issue id>' }
 ```
 `status` and `kinds` are both optional; `reason` is **required** by the type. If you can't write a one-line reason, it's a bug — fix the call site instead. Accept specific statuses/kinds only; never blanket a whole call site. Full procedure: `workflows/accept-error.md`.
+
+**The exact `kinds` values** (the `RequestTelemetryKind` union in `packages/shared/sentry-telemetry/src/request-telemetry.ts`) — match the issue's `failure_kind` tag:
+- `abort` — request cancelled (`AbortError`); user cancelled a stream, or a timeout fired.
+- `network_error` — `fetch` rejected before any response (offline, DNS, CORS, TLS, third-party host down). The Sentry title looks like `TypeError: Failed to fetch (<host>)`.
+- `http_error` — a response arrived but `!response.ok` (4xx/5xx). **Rarely accept this** — a 5xx from our own edge is a real bug; prefer fixing or accepting a specific `status:` instead.
+- `parse_error` — response body wasn't valid JSON.
+- `schema_error` — body parsed but failed our shape validation.
+
+Accept `abort`/`network_error` for *background or user-cancellable* calls where a transient client-side failure is expected and not our bug. Accepting one kind still captures the others — e.g. `kinds: ['network_error']` on a GitHub fetch leaves a real `401` (an `http_error`) reported.
 
 **Why in code, not Sentry `ignore`:** `ignore` only hides the issue in the dashboard — the event is still *sent* every time, still counts against quota, and can still trip rate limits. The tinytinkerer rule is **prevent the report at the source**. `ignore` is a stopgap; the code `accept` is the real fix. After adding an `accept`, resolve the Sentry issue (`resolvedInNextRelease`) with a `reason` naming the call site.
 
