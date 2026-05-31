@@ -1,19 +1,33 @@
 import { captureTelemetryException } from './telemetry'
 
-export type RequestTelemetryMetadata = {
-  area: string
-  origin: 'edge' | 'github'
-  method: string
-  url: string
-  stream?: boolean
-}
-
 export type RequestTelemetryKind =
   | 'abort'
   | 'network_error'
   | 'http_error'
   | 'parse_error'
   | 'schema_error'
+
+export type AcceptedOutcome = {
+  /** HTTP status codes that are an expected, non-actionable outcome for this call. */
+  status?: readonly number[]
+  /** Failure kinds expected for this call (e.g. 'abort' where the user can cancel). */
+  kinds?: readonly RequestTelemetryKind[]
+  /** Why this is normal & unavoidable + the Sentry issue it settled. Required: no silent accepts. */
+  reason: string
+}
+
+export type RequestTelemetryMetadata = {
+  area: string
+  origin: 'edge' | 'github'
+  method: string
+  url: string
+  stream?: boolean
+  /**
+   * Outcomes triaged as normal & unavoidable for this call site — never captured.
+   * Add only after triaging the Sentry issue; see .agent/skills/sentry-debugging.
+   */
+  accept?: AcceptedOutcome
+}
 
 type RequestTelemetryIssue = {
   kind: RequestTelemetryKind
@@ -108,10 +122,31 @@ const buildRequestContexts = (
 const classifyErrorKind = (error: Error): RequestTelemetryKind =>
   error.name === 'AbortError' ? 'abort' : 'network_error'
 
+const isAcceptedOutcome = (
+  metadata: RequestTelemetryMetadata,
+  kind: RequestTelemetryKind,
+  response?: Response
+): boolean => {
+  const accept = metadata.accept
+  if (!accept) {
+    return false
+  }
+  if (accept.kinds?.includes(kind)) {
+    return true
+  }
+  if (response && accept.status?.includes(response.status)) {
+    return true
+  }
+  return false
+}
+
 export const captureRequestIssue = (
   metadata: RequestTelemetryMetadata,
   issue: RequestTelemetryIssue
 ): void => {
+  if (isAcceptedOutcome(metadata, issue.kind, issue.response)) {
+    return
+  }
   const error = normalizeError(issue.error, issue.message)
   if (markCaptured(error)) {
     return

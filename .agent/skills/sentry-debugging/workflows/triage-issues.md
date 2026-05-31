@@ -34,9 +34,9 @@ Read the **Triage philosophy** in `../SKILL.md` before deciding statuses.
 5. **Decide — branch on `handled` and nature:**
 
    - **`handled: no` (unhandled crash)** → a real bug. Investigate the stacktrace; identify root cause + file/line. Fix it in code.
-     - *Exception — normal & unavoidable* (e.g. `AbortError: The operation was aborted` = client disconnected / timed out). These shouldn't be captured at all. Fix = filter them out at the SDK/`beforeSend` level, not a logic change. Until filtered, `ignore` with a reason.
+     - *Exception — normal & unavoidable* (e.g. `AbortError: The operation was aborted` = client disconnected / timed out). These shouldn't be captured at all. Fix = declare `accept: { kinds: ['abort'], reason }` at the call site (see `accept-error.md`) — per-call-site, since an abort can be a real bug elsewhere; don't blanket-filter at `beforeSend`. Until accepted, `ignore` with a reason.
 
-   - **`handled: yes` (caught & reported, e.g. via `request-telemetry.ts`)** → don't just close it. Ask *why the request failed*:
+   - **`handled: yes` (caught & reported, e.g. via `request-telemetry.ts`)** → don't just close it. Ask *why the request failed* — this is the **accept-or-fix fork** (see `../SKILL.md`): fix the call site when the caller misbehaved, or `accept` the outcome in code when it's normal & unavoidable.
      - `401` / auth → caller hit an authenticated endpoint while unauthenticated. Fix the call site to gate on auth state.
      - `429` / rate limit → caller ignored rate-limit headers. Fix to back off / respect them.
      - `502` / upstream → check whether it's our edge API crashing (correlate with an edge issue / `trace` id) vs. a transient upstream. Fix the real cause; don't blanket-catch.
@@ -49,7 +49,8 @@ Read the **Triage philosophy** in `../SKILL.md` before deciding statuses.
    | Fixed in code this session (fix not yet deployed) | `resolvedInNextRelease` |
    | Already fixed in the live production release (step 2), only old events remain | `resolved` |
    | Stale: not seen in the current prod release and not worth fixing | `resolved` (reason: stale / superseded) |
-   | Normal & unavoidable, can't yet be filtered | `ignored` (reason: why it's expected) |
+   | Normal & unavoidable — accepted in code this session (see `accept-error.md`) | `resolvedInNextRelease` (reason: accepted in code at `<file>`) |
+   | Normal & unavoidable, but a code change isn't possible this session | `ignored` (reason: why it's expected) — stopgap; accept it in code next |
    | Real bug, unfixed this session | leave `unresolved` — **report it to the user**, don't close |
 
    ```

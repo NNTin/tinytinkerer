@@ -78,6 +78,54 @@ describe('request telemetry', () => {
     })
   })
 
+  it('skips capture for an accepted status code', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('{}', { status: 404, statusText: 'Not Found' })))
+    )
+
+    const response = await fetchWithTelemetry(
+      { ...metadata, accept: { status: [404], reason: '404 is an expected existence-check miss.' } },
+      {}
+    )
+
+    expect(response.status).toBe(404)
+    expect(telemetryMocks.captureTelemetryException).not.toHaveBeenCalled()
+  })
+
+  it('skips capture for an accepted failure kind', async () => {
+    const abortError = Object.assign(new Error('The operation was aborted.'), {
+      name: 'AbortError'
+    })
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(abortError)))
+
+    await expect(
+      fetchWithTelemetry(
+        { ...metadata, accept: { kinds: ['abort'], reason: 'User can cancel the request.' } },
+        {}
+      )
+    ).rejects.toBe(abortError)
+
+    expect(telemetryMocks.captureTelemetryException).not.toHaveBeenCalled()
+  })
+
+  it('still captures outcomes outside the accept list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response('{}', { status: 502, statusText: 'Bad Gateway' }))
+      )
+    )
+
+    const response = await fetchWithTelemetry(
+      { ...metadata, accept: { status: [404], reason: '404 is an expected existence-check miss.' } },
+      {}
+    )
+
+    expect(response.status).toBe(502)
+    expect(telemetryMocks.captureTelemetryException).toHaveBeenCalledTimes(1)
+  })
+
   it('captures JSON parse failures', async () => {
     const response = new Response('not-json', {
       status: 200,
