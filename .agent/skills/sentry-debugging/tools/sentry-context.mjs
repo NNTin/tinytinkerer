@@ -12,11 +12,13 @@ const CONTEXT = {
     edge: {
       slug: "tinytinkerer-edge",
       platform: "Hono API on Cloudflare Workers (api.tiny.nntin.xyz, /api/*)",
+      sourceRoot: "apps/edge/src/ (routes/*.ts call upstreams via lib/fetch.ts fetchWithTimeout)",
       what: "Backend API. Unhandled crashes surface via Hono's error handler as handled:no.",
     },
     frontend: {
       slug: "tinytinkerer-frontend",
       platform: "javascript (browser) — web/widget/mobile, deployed on Vercel",
+      sourceRoot: "packages/app/app-browser/src/ (request-telemetry engine: packages/shared/sentry-telemetry/src/)",
       what: "HTTP failures surface via request-telemetry.ts (fetchWithTelemetry) as handled:yes.",
     },
   },
