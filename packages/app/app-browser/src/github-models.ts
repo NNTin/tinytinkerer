@@ -13,9 +13,17 @@ import {
 
 export type ModelEntry = GitHubModelEntry
 
-type CacheEntry = { models: ModelEntry[]; cachedAt: number }
+type CacheEntry = { models: ModelEntry[]; cachedAt: number; ttlMs: number }
 const modelsCache = new Map<string, CacheEntry>()
 const MODELS_CACHE_TTL_MS = 5 * 60_000
+// Brief negative cache: when a list fetch fails (e.g. the edge is rate limited),
+// don't re-probe — and re-report the failure — on every component remount. The
+// edge already serves a cached catalogue, so a short window here is enough to
+// stop the frontend hammering it during a rate-limit storm (TINYTINKERER-FRONTEND-5).
+const MODELS_FALLBACK_TTL_MS = 30_000
+
+/** Reset the in-memory models cache. Test-only — the cache is module-level. */
+export const clearModelsCache = (): void => modelsCache.clear()
 
 const hashToken = async (token: string): Promise<string> => {
   const data = new TextEncoder().encode(token)
@@ -32,7 +40,15 @@ export const fetchGitHubModels = async (
   const tokenHash = await hashToken(token)
   const cacheKey = `${edgeBaseUrl}:${tokenHash}`
   const cached = modelsCache.get(cacheKey)
-  if (cached && Date.now() - cached.cachedAt <= MODELS_CACHE_TTL_MS) return cached.models
+  if (cached && Date.now() - cached.cachedAt <= cached.ttlMs) return cached.models
+
+  // Cache the fallback briefly so rapid remounts during a rate-limit storm
+  // don't re-fetch (and re-report) the list every time.
+  const fallback = (): ModelEntry[] => {
+    const models = [...SUPPORTED_MODELS]
+    modelsCache.set(cacheKey, { models, cachedAt: Date.now(), ttlMs: MODELS_FALLBACK_TTL_MS })
+    return models
+  }
 
   const metadata: RequestTelemetryMetadata = {
     area: 'models.list',
@@ -46,7 +62,7 @@ export const fetchGitHubModels = async (
       headers: { authorization: `Bearer ${token}`, ...getTelemetryHeaders() }
     })
 
-    if (!response.ok) return [...SUPPORTED_MODELS]
+    if (!response.ok) return fallback()
 
     const payload = await parseJsonWithTelemetry<unknown>(metadata, response)
     const parsed = modelsListResponseSchema.safeParse(payload)
@@ -56,7 +72,7 @@ export const fetchGitHubModels = async (
         message: 'Models list response did not match schema',
         response
       })
-      return [...SUPPORTED_MODELS]
+      return fallback()
     }
     const models = parsed.data.models
     if (models.length === 0) {
@@ -65,13 +81,13 @@ export const fetchGitHubModels = async (
         message: 'Models list response was empty',
         response
       })
-      return [...SUPPORTED_MODELS]
+      return fallback()
     }
 
-    modelsCache.set(cacheKey, { models, cachedAt: Date.now() })
+    modelsCache.set(cacheKey, { models, cachedAt: Date.now(), ttlMs: MODELS_CACHE_TTL_MS })
     return models
   } catch {
-    return [...SUPPORTED_MODELS]
+    return fallback()
   }
 }
 

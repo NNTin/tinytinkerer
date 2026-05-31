@@ -39,7 +39,11 @@ Read the **Triage philosophy** in `../SKILL.md` before deciding statuses.
 
    - **`handled: yes` (caught & reported, e.g. via `request-telemetry.ts`)** → don't just close it. Ask *why the request failed* — this is the **accept-or-fix fork** (see `../SKILL.md`): fix the call site when the caller misbehaved, or `accept` the outcome in code when it's normal & unavoidable.
      - `401` / auth → caller hit an authenticated endpoint while unauthenticated. Fix the call site to gate on auth state.
-     - `429` / rate limit → caller ignored rate-limit headers. Fix to back off / respect them.
+     - `429` / rate limit → caller ignored rate-limit headers. Fix to back off / respect them. A
+       *repeated* 429 on a **cacheable** upstream (e.g. `models.list`) is a caching gap, not an
+       `accept`: cache the response durably + serve last-known on 429 (see `../SKILL.md` 429 guidance
+       and the cascade pattern in `correlate-trace.md`). If the issue is **REGRESSED**, a prior fix
+       didn't hold → `diagnose-regression.md` before reapplying.
      - `502` / upstream → check whether it's our edge API crashing (correlate with an edge issue / `trace` id) vs. a transient upstream vs. an edge status-mapping bug. **Follow `correlate-trace.md`** to decide which. Fix the real cause; don't blanket-catch.
      - `Failed to fetch` (network/CORS) → check the target host; may be user network (unavoidable) or a real CORS/config bug.
 
@@ -67,3 +71,4 @@ Read the **Triage philosophy** in `../SKILL.md` before deciding statuses.
 - `resolvedInNextRelease` is preferred over plain `resolved` for fresh fixes: Sentry auto-reopens (escalates) the issue if it recurs after the fix ships, so a bad fix doesn't silently stay "resolved".
 - To confirm a fix landed: after the next prod deploy, re-run step 3 — the issue should not reappear in `release:<new-sha>`.
 - Correlating a frontend 5xx to its edge crash (vs. an upstream/status-mapping bug) via trace id is captured as its own SOP: `correlate-trace.md`. Found another repeatable sub-procedure? Capture it as a new SOP in this folder.
+- An issue with `substatus: regressed` (a fix that reopened on a newer release) has its own SOP: `diagnose-regression.md` — find why the prior fix failed instead of reapplying it.
