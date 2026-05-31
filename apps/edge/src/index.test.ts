@@ -5,10 +5,15 @@ import {
   systemStatusSchema
 } from '@tinytinkerer/contracts'
 import app from './index.js'
+import { clearModelsBackoff } from './lib/rate-limit.js'
 
 describe('edge routes', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    // The GitHub Models backoff window is module-level (per-isolate); reset it so
+    // a 429 in one test doesn't short-circuit the next.
+    clearModelsBackoff()
   })
 
   it('returns 401 when search is called without authorization', async () => {
@@ -83,6 +88,69 @@ describe('edge routes', () => {
     expect(body['code']).toBe('rate_limited')
     expect(body['error']).toBe('GitHub Models rate limit reached')
     expect(body['retryAfterMs']).toBe(120_000)
+  })
+
+  it('forwards an upstream models/list rate limit as a 429, not a 502 (TINYTINKERER-FRONTEND-5)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response('rate limited', {
+            status: 429,
+            headers: { 'retry-after': '90' }
+          })
+        )
+      )
+    )
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/list', {
+        headers: { authorization: 'Bearer test-token' }
+      }),
+      {}
+    )
+
+    expect(response.status).toBe(429)
+    expect(response.headers.get('Retry-After')).toBe('90')
+    const body = (await response.json()) as Record<string, unknown>
+    rateLimitPayloadSchema.parse(body)
+    expect(body['retryAfterMs']).toBe(90_000)
+  })
+
+  it('backs off subsequent GitHub Models calls while the rate-limit window is open (TINYTINKERER-EDGE-4)', async () => {
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        new Response('rate limited', { status: 429, headers: { 'retry-after': '120' } })
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const chatRequest = () =>
+      app.fetch(
+        new Request('http://localhost/api/models/chat', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: 'Bearer test-token' },
+          body: JSON.stringify({
+            model: 'openai/gpt-4.1-mini',
+            stream: false,
+            messages: [{ role: 'user', content: 'hello' }]
+          })
+        }),
+        {}
+      )
+
+    // First call hits upstream, gets 429, and records the backoff window.
+    const first = await chatRequest()
+    expect(first.status).toBe(429)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    // Second call is short-circuited with a 429 without touching upstream.
+    const second = await chatRequest()
+    expect(second.status).toBe(429)
+    expect(second.headers.get('Retry-After')).not.toBeNull()
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    const body = (await second.json()) as Record<string, unknown>
+    rateLimitPayloadSchema.parse(body)
   })
 
   it('returns a typed models error for upstream authentication failures', async () => {

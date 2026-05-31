@@ -255,6 +255,49 @@ describe('GitHubModelsProvider', () => {
 
     vi.unstubAllGlobals()
   })
+
+  it('backs off the ReAct decision path after a 429 instead of retry-spamming (TINYTINKERER-FRONTEND-9)', async () => {
+    vi.useFakeTimers()
+    const rateLimited = () =>
+      new Response(
+        JSON.stringify({
+          code: 'rate_limited',
+          error: 'rate limited',
+          retryAfterMs: 120_000,
+          retryAt: new Date(Date.now() + 120_000).toISOString()
+        }),
+        { status: 429, headers: { 'retry-after': '120', 'content-type': 'application/json' } }
+      )
+    const fetchSpy = vi.fn(() => Promise.resolve(rateLimited()))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const provider = new GitHubModelsProvider({
+      baseUrl: 'http://example.com',
+      getToken: () => 'token'
+    })
+
+    // First decision reaches the edge, gets a 429, and records the backoff.
+    await expect(provider.decideNextAction(context)).rejects.toMatchObject({
+      name: 'RateLimitError'
+    } satisfies Partial<RateLimitError>)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    // Second decision must wait out the recorded backoff before calling the edge
+    // again rather than immediately re-hitting the rate-limited endpoint.
+    const second = provider.decideNextAction(context)
+    const secondAssertion = expect(second).rejects.toMatchObject({
+      name: 'RateLimitError'
+    } satisfies Partial<RateLimitError>)
+    await Promise.resolve()
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(200_000)
+    await secondAssertion
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
 })
 
 describe('splitInlineThink', () => {

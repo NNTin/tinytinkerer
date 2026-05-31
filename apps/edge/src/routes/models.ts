@@ -9,7 +9,13 @@ import type { Hono } from 'hono'
 import type { Bindings } from '../lib/bindings'
 import { applyCorsHeaders } from '../lib/cors'
 import { fetchWithTimeout } from '../lib/fetch'
-import { toRateLimitResponse } from '../lib/rate-limit'
+import {
+  clearModelsBackoff,
+  getModelsBackoffMs,
+  rateLimitResponseFromMs,
+  recordModelsBackoff,
+  toRateLimitResponse
+} from '../lib/rate-limit'
 
 const githubModelsListSchema = z.object({
   data: z.array(z.object({
@@ -57,6 +63,14 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     const useStream = body.stream === true
     const modelsBaseUrl = c.env.GITHUB_MODELS_URL ?? GITHUB_MODELS_DEFAULT_URL
 
+    // Respect a still-open upstream rate-limit window: short-circuit with a 429
+    // instead of re-hammering GitHub Models (TINYTINKERER-EDGE-4).
+    const backoffMs = getModelsBackoffMs()
+    if (backoffMs > 0) {
+      c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
+      return c.json(rateLimitResponseFromMs(backoffMs), 429)
+    }
+
     const response = await fetchWithTimeout(
       {
         area: 'models.chat',
@@ -93,6 +107,8 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       if (response.status === 429) {
         const retryAfter = response.headers.get('retry-after')
         const rateLimitBody = toRateLimitResponse(rawText, retryAfter)
+        // Remember the window so the next call backs off instead of re-probing.
+        recordModelsBackoff(rateLimitBody.retryAfterMs)
         c.header('Retry-After', retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000)))
         for (const header of RATE_LIMIT_HEADERS) {
           const value = response.headers.get(header)
@@ -113,6 +129,9 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
         : 502
       return c.json(edgeErrorResponseSchema.parse({ error: safeError }), statusCode)
     }
+
+    // Upstream accepted the request — clear any backoff window.
+    clearModelsBackoff()
 
     if (useStream && response.body) {
       const headers = new Headers({
@@ -154,6 +173,13 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       ? `${c.env.GITHUB_MODELS_URL}/models`
       : GITHUB_MODELS_LIST_URL
 
+    // Honor a still-open rate-limit window shared with the chat route.
+    const backoffMs = getModelsBackoffMs()
+    if (backoffMs > 0) {
+      c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
+      return c.json(rateLimitResponseFromMs(backoffMs), 429)
+    }
+
     const response = await fetchWithTimeout(
       { area: 'models.list', origin: 'github', method: 'GET', url: listUrl },
       { headers: { authorization, accept: 'application/json' } },
@@ -162,6 +188,22 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
 
     if (!response.ok) {
       console.error('[models/list] upstream error', { status: response.status, url: listUrl })
+
+      // A rate limit is not a gateway failure: forward it as a 429 with the
+      // retry hints (and record the backoff) rather than collapsing it to a
+      // misleading 502 (TINYTINKERER-FRONTEND-5).
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('retry-after')
+        const rateLimitBody = toRateLimitResponse(await response.text(), retryAfter)
+        recordModelsBackoff(rateLimitBody.retryAfterMs)
+        c.header('Retry-After', retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000)))
+        for (const header of RATE_LIMIT_HEADERS) {
+          const value = response.headers.get(header)
+          if (value !== null) c.header(header, value)
+        }
+        return c.json(rateLimitBody, 429)
+      }
+
       const safeError =
         UPSTREAM_ERROR_MESSAGES[response.status] ?? `Upstream error ${response.status}`
       const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
@@ -169,6 +211,9 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
         : 502
       return c.json(edgeErrorResponseSchema.parse({ error: safeError }), statusCode)
     }
+
+    // Upstream succeeded — clear any backoff window.
+    clearModelsBackoff()
 
     const parsed = githubModelsListSchema.safeParse(await response.json())
     const models = (parsed.success ? (parsed.data.data ?? []) : []).map((m) => ({

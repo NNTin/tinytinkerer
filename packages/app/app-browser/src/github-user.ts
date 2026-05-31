@@ -15,7 +15,17 @@ export type GitHubUser = {
 
 const githubUserCache = new Map<string, GitHubUser>()
 
-export const fetchGitHubUser = async (token: string): Promise<GitHubUser | null> => {
+export const fetchGitHubUser = async (
+  token: string,
+  onUnauthorized?: () => void
+): Promise<GitHubUser | null> => {
+  // Gate on GitHub auth state: never probe the authenticated /user endpoint
+  // without a real token. A blank token guarantees a 401, so short-circuit
+  // before the request is made (TINYTINKERER-FRONTEND-4).
+  if (!token.trim()) {
+    return null
+  }
+
   const cached = githubUserCache.get(token)
   if (cached) {
     return cached
@@ -34,6 +44,12 @@ export const fetchGitHubUser = async (token: string): Promise<GitHubUser | null>
     })
 
     if (!response.ok) {
+      // A 401 means the (persisted) token is invalid/expired/revoked. Signal the
+      // caller so it can drop the bad token instead of re-probing /user on every
+      // mount, which produced the repeated 401s in TINYTINKERER-FRONTEND-4.
+      if (response.status === 401) {
+        onUnauthorized?.()
+      }
       return null
     }
 
@@ -65,6 +81,7 @@ export const fetchGitHubUser = async (token: string): Promise<GitHubUser | null>
 
 export const useGitHubUser = (): GitHubUser | null => {
   const token = useAuthStore((state) => state.token)
+  const clearToken = useAuthStore((state) => state.clearToken)
   const [user, setUser] = useState<GitHubUser | null>(null)
 
   useEffect(() => {
@@ -73,8 +90,12 @@ export const useGitHubUser = (): GitHubUser | null => {
       return
     }
 
-    void fetchGitHubUser(token).then(setUser)
-  }, [token])
+    void fetchGitHubUser(token, () => {
+      // Drop the rejected token so we transition to the unauthenticated state
+      // and stop re-probing /user with a credential GitHub has refused.
+      void clearToken()
+    }).then(setUser)
+  }, [token, clearToken])
 
   return user
 }

@@ -1,5 +1,12 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { parseRetryAfterMs, toRateLimitResponse } from './rate-limit.js'
+import {
+  clearModelsBackoff,
+  getModelsBackoffMs,
+  parseRetryAfterMs,
+  rateLimitResponseFromMs,
+  recordModelsBackoff,
+  toRateLimitResponse
+} from './rate-limit.js'
 
 describe('parseRetryAfterMs', () => {
   afterEach(() => {
@@ -72,5 +79,49 @@ describe('toRateLimitResponse', () => {
   it('does not leak the raw upstream body in the response', () => {
     const result = toRateLimitResponse('sensitive upstream error details', '30')
     expect(JSON.stringify(result)).not.toContain('sensitive upstream error details')
+  })
+})
+
+describe('models backoff window', () => {
+  afterEach(() => {
+    clearModelsBackoff()
+    vi.useRealTimers()
+  })
+
+  it('reports no backoff before any rate limit is recorded', () => {
+    clearModelsBackoff()
+    expect(getModelsBackoffMs()).toBe(0)
+  })
+
+  it('remembers an upstream retry window and decays as time passes', () => {
+    const nowMs = 1_000_000
+    recordModelsBackoff(60_000, nowMs)
+    expect(getModelsBackoffMs(nowMs)).toBe(60_000)
+    expect(getModelsBackoffMs(nowMs + 40_000)).toBe(20_000)
+    // Once the window elapses it reports zero rather than a negative value.
+    expect(getModelsBackoffMs(nowMs + 60_001)).toBe(0)
+  })
+
+  it('extends but never shortens the active window', () => {
+    const nowMs = 1_000_000
+    recordModelsBackoff(60_000, nowMs)
+    recordModelsBackoff(10_000, nowMs)
+    expect(getModelsBackoffMs(nowMs)).toBe(60_000)
+  })
+
+  it('clears the window after a successful upstream response', () => {
+    const nowMs = 1_000_000
+    recordModelsBackoff(60_000, nowMs)
+    clearModelsBackoff()
+    expect(getModelsBackoffMs(nowMs)).toBe(0)
+  })
+
+  it('builds a rate-limit payload from a remaining delay', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2024-01-01T00:00:00.000Z'))
+    const result = rateLimitResponseFromMs(45_000)
+    expect(result.code).toBe('rate_limited')
+    expect(result.retryAfterMs).toBe(45_000)
+    expect(result.retryAt).toBe(new Date(Date.now() + 45_000).toISOString())
   })
 })
