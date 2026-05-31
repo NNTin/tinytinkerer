@@ -377,7 +377,7 @@ describe('AgentRuntime', () => {
     expect(events.some((event) => event.type === 'agent.tool.failed')).toBe(false)
   })
 
-  it('does not emit agent.tool.started when tool calls are disabled', async () => {
+  it('emits a started→failed tool pair when tool calls are disabled', async () => {
     const registry = new ToolRegistry()
     registry.register({
       id: 'web-search',
@@ -394,7 +394,14 @@ describe('AgentRuntime', () => {
       events.push(event)
     }
 
-    expect(events.some((event) => event.type === 'agent.tool.started')).toBe(false)
-    expect(events.some((event) => event.type === 'agent.tool.failed')).toBe(true)
+    // The disabled-policy failure still emits a started event first (sharing the
+    // failure's stepId) so the projection layer can nest it under its parent step.
+    const started = events.find((event) => event.type === 'agent.tool.started')
+    const failed = events.find((event) => event.type === 'agent.tool.failed')
+    expect(started).toBeDefined()
+    expect(failed).toBeDefined()
+    expect(started?.type === 'agent.tool.started' && started.payload.stepId).toBe(
+      failed?.type === 'agent.tool.failed' && failed.payload.stepId
+    )
   })
 })

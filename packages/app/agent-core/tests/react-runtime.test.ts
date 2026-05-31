@@ -212,6 +212,34 @@ describe('ReActRuntime', () => {
     expect(events.find(isEventType('assistant.done'))?.payload.source).toBe('recovered')
   })
 
+  it('closes the synthesize step as failed on a non-rate-limit synthesis error', async () => {
+    const provider = scriptedProvider([{ kind: 'final' }], async function* () {
+      // eslint-disable-next-line require-yield
+      throw new Error('synthesis boom')
+    })
+
+    const runtime = new ReActRuntime(provider, new ToolRegistry())
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    const synthesizeStart = events
+      .filter(isEventType('agent.step.started'))
+      .find((event) => event.payload.kind === 'synthesize')
+    expect(synthesizeStart).toBeDefined()
+    const synthesizeStepId = synthesizeStart?.payload.stepId
+    // The synthesize step must be closed (failed), not left open, before the run
+    // surfaces the generic error.
+    expect(
+      events.some(
+        (event) => event.type === 'agent.step.failed' && event.payload.stepId === synthesizeStepId
+      )
+    ).toBe(true)
+    expect(events.some((event) => event.type === 'error')).toBe(true)
+    expect(events.at(-1)?.type).toBe('assistant.done')
+  })
+
   it('waits out a rate-limited decision and retries instead of failing the run', async () => {
     const retryAt = new Date(Date.now() + 1).toISOString()
     let attempts = 0

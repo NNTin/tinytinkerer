@@ -119,18 +119,22 @@ export abstract class AgentRuntimeBase {
   ): AsyncGenerator<ChatEvent, ToolOutcome> {
     const { toolId, input } = toolCall
 
-    if (this.maxToolCallsPerStep < 1) {
-      const error = 'Tool calls disabled by runtime policy'
-      yield createEvent('agent.tool.failed', { stepId, toolId, error })
-      return { ok: false, error }
-    }
-
+    // Always emit a started→failed pair (even when policy disables tool calls),
+    // so the projection layer — which coalesces tool events by matching a failure
+    // to the most recent started tool with the same stepId — can nest the failure
+    // under its parent step and keep the input/parent linkage.
     yield createEvent('agent.tool.started', {
       stepId,
       ...(parentStepId ? { parentStepId } : {}),
       toolId,
       input
     })
+
+    if (this.maxToolCallsPerStep < 1) {
+      const error = 'Tool calls disabled by runtime policy'
+      yield createEvent('agent.tool.failed', { stepId, toolId, error })
+      return { ok: false, error }
+    }
 
     try {
       const output = await withTimeout(
@@ -477,6 +481,13 @@ export abstract class AgentRuntimeBase {
         return
       } catch (error) {
         if (!isRateLimitError(error)) {
+          // Close the synthesize step before propagating (including on an
+          // AbortError/cancellation) so handleRunError doesn't leave it open and
+          // break the activity timeline.
+          yield createEvent('agent.step.failed', {
+            stepId: synthesizeStepId,
+            error: error instanceof Error ? error.message : 'Synthesis failed'
+          })
           throw error
         }
 
