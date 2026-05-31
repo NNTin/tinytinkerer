@@ -99,6 +99,44 @@ const ToolEntry = ({
   )
 }
 
+// Maps each step's own id to its parent id, learned only from "started" step
+// labels (which carry stepKind). Observation labels and tools reference these
+// ids but do not define the hierarchy themselves.
+const buildParentByStep = (items: TurnActivityItem[]): Map<string, string | undefined> => {
+  const map = new Map<string, string | undefined>()
+  for (const item of items) {
+    if (item.kind === 'label' && item.stepKind && item.stepId) {
+      map.set(item.stepId, item.parentId)
+    }
+  }
+  return map
+}
+
+const stepDepth = (
+  parentByStep: Map<string, string | undefined>,
+  stepId: string | undefined
+): number => {
+  let depth = 0
+  let current = stepId
+  const seen = new Set<string>()
+  while (current && !seen.has(current) && parentByStep.get(current)) {
+    seen.add(current)
+    current = parentByStep.get(current)
+    depth += 1
+  }
+  return depth
+}
+
+const itemDepth = (
+  parentByStep: Map<string, string | undefined>,
+  item: Exclude<TurnActivityItem, { kind: 'reasoning' }>
+): number => {
+  if (item.kind === 'tool') {
+    return item.parentId ? stepDepth(parentByStep, item.parentId) + 1 : 0
+  }
+  return stepDepth(parentByStep, item.stepId)
+}
+
 // Inline, per-turn reasoning & activity. Auto-expands while the turn is live
 // (streaming/running) and collapses once complete; the user can toggle at any
 // time. Renders the model's raw chain-of-thought (when emitted) followed by the
@@ -125,6 +163,7 @@ export const TurnActivityPanel = ({
   const activityItems = activity.items.filter(
     (item): item is Exclude<TurnActivityItem, { kind: 'reasoning' }> => item.kind !== 'reasoning'
   )
+  const parentByStep = buildParentByStep(activity.items)
 
   // Nothing to show for a completed turn that produced no reasoning/activity.
   if (!isLive && !hasReasoning && activityItems.length === 0) {
@@ -164,18 +203,38 @@ export const TurnActivityPanel = ({
 
           {activityItems.length > 0 ? (
             <div className="space-y-1">
-              {activityItems.map((item, index) =>
-                item.kind === 'tool' ? (
-                  <ToolEntry key={item.id} item={item} serverNameById={serverNameById} />
-                ) : (
-                  <div key={item.id} className="flex items-start gap-2 py-1">
-                    <span className="mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[9px] font-semibold text-amber-700">
-                      {index + 1}
+              {activityItems.map((item) => {
+                const depth = Math.min(itemDepth(parentByStep, item), 4)
+                return (
+                  <div
+                    key={item.id}
+                    className="flex items-start gap-1.5"
+                    style={depth > 0 ? { paddingLeft: `${depth * 16}px` } : undefined}
+                  >
+                    <span
+                      aria-hidden
+                      className="mt-1 shrink-0 select-none font-mono text-[10px] leading-none text-stone-300"
+                    >
+                      {depth > 0 ? '└─' : '•'}
                     </span>
-                    <span className="text-xs text-stone-600">{item.label}</span>
+                    <div className="min-w-0 flex-1">
+                      {item.kind === 'tool' ? (
+                        <ToolEntry item={item} serverNameById={serverNameById} />
+                      ) : (
+                        <span
+                          className={
+                            item.stepKind === 'think'
+                              ? 'font-mono text-xs italic text-stone-500'
+                              : 'text-xs text-stone-600'
+                          }
+                        >
+                          {item.label}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )
-              )}
+              })}
             </div>
           ) : !hasReasoning && isLive ? (
             <p className="text-xs text-[var(--muted)]">

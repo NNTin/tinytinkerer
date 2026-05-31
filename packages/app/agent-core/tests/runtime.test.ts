@@ -62,7 +62,7 @@ const provider: ModelProvider = {
 }
 
 describe('AgentRuntime', () => {
-  it('emits core planning, execution and assistant events', async () => {
+  it('emits core run, step, tool and assistant events', async () => {
     const registry = new ToolRegistry()
     registry.register({
       id: 'web-search',
@@ -79,9 +79,10 @@ describe('AgentRuntime', () => {
       events.push(event)
     }
 
-    expect(events.some((event) => event.type === 'plan.generated')).toBe(true)
-    expect(events.some((event) => event.type === 'tool.call.completed')).toBe(true)
-    expect(events.some((event) => event.type === 'execution.completed')).toBe(true)
+    const runStarted = events.find(isEventType('agent.run.started'))
+    expect(runStarted?.payload.agentType).toBe('plan-execute')
+    expect(events.some((event) => event.type === 'agent.tool.completed')).toBe(true)
+    expect(events.some((event) => event.type === 'agent.run.completed')).toBe(true)
     expect(events.at(-1)?.type).toBe('assistant.done')
   })
 
@@ -103,7 +104,7 @@ describe('AgentRuntime', () => {
       events.push(event)
     }
 
-    expect(events.some((event) => event.type === 'tool.call.failed')).toBe(true)
+    expect(events.some((event) => event.type === 'agent.tool.failed')).toBe(true)
   })
 
   it('waits and retries synthesis after a short rate limit', async () => {
@@ -243,7 +244,7 @@ describe('AgentRuntime', () => {
     }
 
     expect(stepCount).toBe(1)
-    expect(events.some((event) => event.type === 'execution.completed')).toBe(true)
+    expect(events.some((event) => event.type === 'agent.run.completed')).toBe(true)
     expect(events.some((event) => event.type === 'error')).toBe(false)
     expect(events.at(-1)?.type).toBe('assistant.done')
   })
@@ -351,7 +352,7 @@ describe('AgentRuntime', () => {
     expect(capturedNotes[0]).not.toContain('Completed step:')
   })
 
-  it('does not emit tool.call.started or tool.call.failed for search when searchEnabled is false', async () => {
+  it('does not emit agent.tool.started or agent.tool.failed for search when searchEnabled is false', async () => {
     const searchProvider: ModelProvider = {
       plan: (_prompt: string, _history: ConversationMessage[], options?: ProviderCallOptions) => {
         const searchEnabled = options?.searchEnabled
@@ -371,13 +372,12 @@ describe('AgentRuntime', () => {
       events.push(event)
     }
 
-    expect(events.some((event) => event.type === 'tool.call.started')).toBe(false)
-    expect(events.some((event) => event.type === 'tool.call.failed')).toBe(false)
-    const planEvent = events.find(isEventType('plan.generated'))
-    expect(planEvent?.payload.plan.steps.every((s) => !s.toolCall)).toBe(true)
+    // With search disabled the inferred plan has no tool steps, so no tool runs.
+    expect(events.some((event) => event.type === 'agent.tool.started')).toBe(false)
+    expect(events.some((event) => event.type === 'agent.tool.failed')).toBe(false)
   })
 
-  it('does not emit tool.call.started when tool calls are disabled', async () => {
+  it('emits a started→failed tool pair when tool calls are disabled', async () => {
     const registry = new ToolRegistry()
     registry.register({
       id: 'web-search',
@@ -394,7 +394,14 @@ describe('AgentRuntime', () => {
       events.push(event)
     }
 
-    expect(events.some((event) => event.type === 'tool.call.started')).toBe(false)
-    expect(events.some((event) => event.type === 'tool.call.failed')).toBe(true)
+    // The disabled-policy failure still emits a started event first (sharing the
+    // failure's stepId) so the projection layer can nest it under its parent step.
+    const started = events.find((event) => event.type === 'agent.tool.started')
+    const failed = events.find((event) => event.type === 'agent.tool.failed')
+    expect(started).toBeDefined()
+    expect(failed).toBeDefined()
+    expect(started?.type === 'agent.tool.started' && started.payload.stepId).toBe(
+      failed?.type === 'agent.tool.failed' && failed.payload.stepId
+    )
   })
 })

@@ -128,15 +128,14 @@ export const executeChatPrompt = async (options: {
     // `assistant.chunk`) is live-stream only — the persisted `reasoning.done`
     // carries the full text, keeping storage to ~one reasoning row per turn.
     'reasoning.done',
-    'planning.started',
-    'plan.generated',
-    'execution.started',
-    'execution.step.started',
-    'execution.step.completed',
-    'execution.completed',
-    'tool.call.started',
-    'tool.call.completed',
-    'tool.call.failed'
+    'agent.run.started',
+    'agent.run.completed',
+    'agent.step.started',
+    'agent.step.completed',
+    'agent.step.failed',
+    'agent.tool.started',
+    'agent.tool.completed',
+    'agent.tool.failed'
   ])
 
   for await (const event of runPrompt(

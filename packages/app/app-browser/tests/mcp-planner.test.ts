@@ -82,6 +82,27 @@ describe('llmPlan', () => {
     ).rejects.toThrow('Planning request failed (503)')
   })
 
+  it('throws a typed rate limit error when the planner is rate limited', async () => {
+    const retryAt = new Date(Date.now() + 120_000).toISOString()
+    const edgeFetch = makeEdgeFetch(
+      {
+        code: 'rate_limited',
+        error: 'planner limited',
+        retryAfterMs: 120_000,
+        retryAt
+      },
+      429
+    )
+
+    await expect(
+      llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
+    ).rejects.toMatchObject({
+      name: 'RateLimitError',
+      retryAfterMs: 120_000,
+      retryAt
+    })
+  })
+
   it('forwards the abort signal to edgeFetch', async () => {
     const edgeFetch = makeEdgeFetch({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
     const controller = new AbortController()
@@ -177,8 +198,14 @@ describe('GitHubModelsProvider.plan — LLM branch', () => {
     await expect(provider.plan('what is the weather?', [])).rejects.toMatchObject({ name: 'AbortError' })
   })
 
-  it('falls back to inferPlan when there are no MCP tools in allToolDescriptors', async () => {
-    const fetchMock = vi.fn()
+  it('calls llmPlan when a token is present and web-search is the only available tool', async () => {
+    const planJson = JSON.stringify({
+      complexity: 'low',
+      steps: [{ id: 'understand', summary: 'ok' }, { id: 'compose', summary: 'ok' }]
+    })
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: planJson } }] }), { status: 200 })
+    )
     vi.stubGlobal('fetch', fetchMock)
 
     const provider = new GitHubModelsProvider({
@@ -189,8 +216,9 @@ describe('GitHubModelsProvider.plan — LLM branch', () => {
 
     const plan = await provider.plan('tell me a joke', [])
 
-    // llmPlan not attempted → fetch never called for planning
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url] = fetchMock.mock.calls[0] as [string]
+    expect(url).toContain('/api/models/chat')
     expect(plan.complexity).toBe('low')
   })
 

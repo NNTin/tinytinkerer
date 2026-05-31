@@ -2,6 +2,7 @@ import {
   inferPlan,
   RateLimitError,
   type ConversationMessage,
+  type DecisionChunk,
   type ExecutionContext,
   type ModelProvider,
   type ProviderCallOptions,
@@ -10,12 +11,12 @@ import {
 import {
   edgeErrorResponseSchema,
   modelsChatResponseSchema,
-  rateLimitPayloadSchema,
   type ExecutionPlan,
-  type PlanStep
+  type PlanStep,
+  type ReActDecision
 } from '@tinytinkerer/contracts'
 import { SYSTEM_STYLE_PROMPT } from './system-prompt'
-import { getRetryAfterMs } from './rate-limit'
+import { createRateLimitError } from './rate-limit'
 import { RateLimitQuota } from './quota-tracker'
 import { createEdgeFetch } from './edge-fetch'
 import { getTelemetryHeaders } from '../telemetry/telemetry'
@@ -26,6 +27,11 @@ import {
   type RequestTelemetryMetadata
 } from '../telemetry/request-telemetry'
 import { llmPlan, type PlannerToolDescriptor } from './mcp-planner'
+import {
+  decideNextAction as llmDecideNextAction,
+  streamDecision as llmStreamDecision
+} from './react-decider'
+import { extractReasoning, parseSseStream, splitInlineThink } from './sse-utils'
 
 const estimateTokens = (context: ExecutionContext): number => {
   const allText = [
@@ -42,30 +48,6 @@ type GitHubModelsProviderOptions = {
   getToken?: () => string | null | undefined
   getModel?: () => string | null | undefined
   allToolDescriptors?: PlannerToolDescriptor[]
-}
-
-const isValidRetryAt = (value: string | undefined): value is string =>
-  Boolean(value && !Number.isNaN(Date.parse(value)))
-
-const createRateLimitError = async (response: Response): Promise<RateLimitError> => {
-  const rawText = await response.text()
-  const parsed = (() => {
-    try {
-      return rateLimitPayloadSchema.parse(JSON.parse(rawText))
-    } catch {
-      return undefined
-    }
-  })()
-
-  const retryAfterMs = parsed?.retryAfterMs ?? getRetryAfterMs(response.headers.get('retry-after'))
-  const retryAt = isValidRetryAt(parsed?.retryAt)
-    ? parsed.retryAt
-    : new Date(Date.now() + retryAfterMs).toISOString()
-
-  return new RateLimitError(parsed?.error ?? (rawText || 'GitHub Models is rate limited'), {
-    retryAfterMs,
-    retryAt
-  })
 }
 
 const createEdgeError = async (response: Response, fallback: string): Promise<Error> => {
@@ -88,15 +70,19 @@ export class GitHubModelsProvider implements ModelProvider {
   async plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan> {
     const token = this.options.getToken?.()
     const allDescriptors = this.options.allToolDescriptors ?? []
-    const hasMcpTools = allDescriptors.some((d) => d.id.startsWith('mcp:'))
 
-    if (token && hasMcpTools) {
+    // Use the model-authored planner whenever there is a token and at least one
+    // tool for it to reason about — web-search alone qualifies, not just MCP
+    // tools. With no tools the LLM has nothing to plan around, so fall through
+    // to the heuristic planner.
+    if (token && allDescriptors.length > 0) {
       try {
         const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
         const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
         return await llmPlan(prompt, history, allDescriptors, model, edgeFetch, options?.signal)
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') throw error
+        if (error instanceof RateLimitError) throw error
         // fall through to heuristic
       }
     }
@@ -112,6 +98,42 @@ export class GitHubModelsProvider implements ModelProvider {
     }
 
     return Promise.resolve('')
+  }
+
+  async decideNextAction(
+    context: ExecutionContext,
+    options?: ProviderCallOptions
+  ): Promise<ReActDecision> {
+    const token = this.options.getToken?.()
+
+    if (token) {
+      const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
+      const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
+      const tools = this.options.allToolDescriptors ?? []
+      return llmDecideNextAction(context, tools, model, edgeFetch, options?.signal)
+    }
+
+    // Without a token there is no model to consult, so finish immediately and
+    // let synthesize() produce the local fallback answer.
+    return { kind: 'final' }
+  }
+
+  async *streamDecision(
+    context: ExecutionContext,
+    options?: ProviderCallOptions
+  ): AsyncIterable<DecisionChunk> {
+    const token = this.options.getToken?.()
+
+    if (token) {
+      const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
+      const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
+      const tools = this.options.allToolDescriptors ?? []
+      yield* llmStreamDecision(context, tools, model, edgeFetch, options?.signal)
+      return
+    }
+
+    // Local fallback: no model to stream, so finish immediately.
+    yield { kind: 'decision', decision: { kind: 'final' } }
   }
 
   async *synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk> {
@@ -232,155 +254,5 @@ export class GitHubModelsProvider implements ModelProvider {
     for (const chunk of draft.split(' ')) {
       yield { kind: 'content', text: `${chunk} ` }
     }
-  }
-}
-
-// Surfaces the model's raw chain-of-thought when present. Different OpenAI-compatible
-// gateways expose it under different keys (DeepSeek-R1 uses `reasoning_content`, some
-// others use `reasoning`); absence is normal and yields nothing.
-const extractReasoning = (delta: unknown): string | undefined => {
-  if (!delta || typeof delta !== 'object') {
-    return undefined
-  }
-
-  const record = delta as Record<string, unknown>
-  const reasoningContent = record['reasoning_content']
-  if (typeof reasoningContent === 'string' && reasoningContent) {
-    return reasoningContent
-  }
-
-  const reasoning = record['reasoning']
-  if (typeof reasoning === 'string' && reasoning) {
-    return reasoning
-  }
-
-  return undefined
-}
-
-const THINK_OPEN = '<think>'
-const THINK_CLOSE = '</think>'
-
-// Longest suffix of `text` that is a proper prefix of `tag` — i.e. the part we
-// must hold back because it could be the start of `tag` continued in the next
-// chunk.
-const partialTagSuffixLength = (text: string, tag: string): number => {
-  const max = Math.min(text.length, tag.length - 1)
-  for (let len = max; len > 0; len -= 1) {
-    if (tag.startsWith(text.slice(text.length - len))) {
-      return len
-    }
-  }
-  return 0
-}
-
-// Some reasoning models (e.g. DeepSeek-R1 via GitHub Models) stream their
-// chain-of-thought inline in the content wrapped in <think>…</think> rather than
-// in a separate reasoning_content delta. Re-route those regions to the reasoning
-// channel so they render in the activity panel instead of the final answer.
-// Tags may straddle chunk boundaries, so a partial-tag suffix is buffered.
-// Chunks already classified as reasoning pass through untouched.
-export async function* splitInlineThink(
-  stream: AsyncIterable<SynthesisChunk>
-): AsyncGenerator<SynthesisChunk> {
-  let insideThink = false
-  let buffer = ''
-
-  function* drain(flush: boolean): Generator<SynthesisChunk> {
-    for (;;) {
-      const tag = insideThink ? THINK_CLOSE : THINK_OPEN
-      const index = buffer.indexOf(tag)
-      if (index !== -1) {
-        const segment = buffer.slice(0, index)
-        if (segment) {
-          yield { kind: insideThink ? 'reasoning' : 'content', text: segment }
-        }
-        buffer = buffer.slice(index + tag.length)
-        insideThink = !insideThink
-        continue
-      }
-
-      const hold = flush ? 0 : partialTagSuffixLength(buffer, tag)
-      const emit = buffer.slice(0, buffer.length - hold)
-      if (emit) {
-        yield { kind: insideThink ? 'reasoning' : 'content', text: emit }
-      }
-      buffer = buffer.slice(buffer.length - hold)
-      break
-    }
-  }
-
-  for await (const chunk of stream) {
-    if (chunk.kind === 'reasoning') {
-      yield chunk
-      continue
-    }
-    buffer += chunk.text
-    yield* drain(false)
-  }
-  yield* drain(true)
-}
-
-async function* parseSseStream(
-  body: ReadableStream<Uint8Array>,
-  signal: AbortSignal | undefined
-): AsyncGenerator<SynthesisChunk> {
-  const reader = body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-
-  const onAbort = () => {
-    reader.cancel().catch(() => undefined)
-  }
-  signal?.addEventListener('abort', onAbort, { once: true })
-
-  try {
-    while (true) {
-      if (signal?.aborted) {
-        return
-      }
-
-      const { done, value } = await reader.read()
-      if (done) {
-        return
-      }
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) {
-          continue
-        }
-
-        const data = line.slice(6).trim()
-        if (data === '[DONE]') {
-          return
-        }
-
-        try {
-          const json = JSON.parse(data) as Record<string, unknown>
-          const choices = json['choices']
-          if (!Array.isArray(choices)) {
-            continue
-          }
-
-          const delta = (choices[0] as Record<string, unknown> | undefined)?.['delta']
-          const reasoning = extractReasoning(delta)
-          if (reasoning) {
-            yield { kind: 'reasoning', text: reasoning }
-          }
-          const content = (delta as Record<string, unknown> | undefined)?.['content']
-          if (typeof content === 'string' && content) {
-            yield { kind: 'content', text: content }
-          }
-        } catch {
-          // Skip malformed SSE lines.
-        }
-      }
-    }
-  } finally {
-    signal?.removeEventListener('abort', onAbort)
-    reader.releaseLock()
   }
 }

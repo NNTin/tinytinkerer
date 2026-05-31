@@ -170,13 +170,26 @@ jobs:
             branch_slug="preview"
           fi
 
-          max_branch_length=52
+          suffix=".tiny.preview.nntin.xyz"
+          prefix="pr-${{ github.event.pull_request.number }}-"
+
+          # TLS certificate common names are capped at 64 characters, so the
+          # whole domain (prefix + branch + suffix) must fit — truncating only
+          # the branch to a fixed length is not enough for long branch names or
+          # large PR numbers. Derive the branch budget from what's left after
+          # the fixed parts. Target 63 to keep a one-character safety margin
+          # under the hard 64-character limit.
+          max_domain_length=63
+          max_branch_length=$(( max_domain_length - ${#suffix} - ${#prefix} ))
+          if [ "$max_branch_length" -lt 1 ]; then
+            max_branch_length=1
+          fi
           branch_slug="${branch_slug:0:$max_branch_length}"
           branch_slug="${branch_slug%-}"
 
-          slug="pr-${{ github.event.pull_request.number }}-$branch_slug"
+          slug="${prefix}${branch_slug}"
           slug="${slug%-}"
-          domain="$slug.tiny.preview.nntin.xyz"
+          domain="$slug$suffix"
 
           echo "slug=$slug" >> "$GITHUB_OUTPUT"
           echo "domain=$domain" >> "$GITHUB_OUTPUT"

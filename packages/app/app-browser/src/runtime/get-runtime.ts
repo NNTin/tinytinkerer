@@ -19,6 +19,7 @@ export const createBrowserRuntimeFactory = (options: {
         settings.searchEnabled && isSearchReady(options.statusStore.getState()),
       getToken: () => options.authStore.getState().token,
       getModel: () => settings.selectedModel,
+      agentType: settings.agentType,
       mcpServers: settings.mcpServers,
       mcpDiscovery: settings.mcpDiscovery
     })

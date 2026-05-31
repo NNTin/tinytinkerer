@@ -51,11 +51,58 @@ describe('createChatRuntime', () => {
       })
     )
 
-    expect(events.some((event) => event.type === 'tool.call.started')).toBe(true)
-    expect(events.some((event) => event.type === 'tool.call.completed')).toBe(true)
+    expect(events.some((event) => event.type === 'agent.tool.started')).toBe(true)
+    expect(events.some((event) => event.type === 'agent.tool.completed')).toBe(true)
     expect(events.at(-1)).toMatchObject({
       type: 'assistant.done',
       payload: { source: 'done' }
+    })
+  })
+
+  it('selects the ReAct runtime when agentType is "react"', async () => {
+    let decisions = 0
+    const provider: ModelProvider = {
+      plan() {
+        return Promise.resolve({ complexity: 'low', steps: [] })
+      },
+      execute() {
+        return Promise.resolve('')
+      },
+      decideNextAction() {
+        decisions += 1
+        return Promise.resolve({ kind: 'final' as const })
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: await Promise.resolve('react answer') }
+      }
+    }
+
+    const events = await collectEvents(createChatRuntime({ provider, agentType: 'react' }))
+
+    expect(decisions).toBe(1)
+    expect(events.find((event) => event.type === 'agent.run.started')).toMatchObject({
+      payload: { agentType: 'react' }
+    })
+    expect(events.at(-1)).toMatchObject({ type: 'assistant.done', payload: { source: 'react answer' } })
+  })
+
+  it('defaults to the Plan-then-Execute runtime', async () => {
+    const provider: ModelProvider = {
+      plan() {
+        return Promise.resolve({ complexity: 'low', steps: [] })
+      },
+      execute() {
+        return Promise.resolve('')
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: await Promise.resolve('plan answer') }
+      }
+    }
+
+    const events = await collectEvents(createChatRuntime({ provider }))
+
+    expect(events.find((event) => event.type === 'agent.run.started')).toMatchObject({
+      payload: { agentType: 'plan-execute' }
     })
   })
 

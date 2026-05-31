@@ -71,10 +71,12 @@ describe('app-core helpers', () => {
   it('projects turns with per-turn activity entries', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hello' }),
-      event('planning.started', { summary: 'Understanding request' }),
-      event('execution.step.started', {
-        step: { id: 'search', summary: 'Search web', toolCall: { toolId: 'web-search', input: { query: 'hello' } } },
-        index: 0
+      event('agent.step.started', { stepId: 'plan', kind: 'plan', title: 'Created 1-step plan' }),
+      event('agent.step.started', {
+        stepId: 'step-1',
+        parentStepId: 'plan',
+        kind: 'plan-step',
+        title: 'Search web'
       }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
@@ -90,8 +92,8 @@ describe('app-core helpers', () => {
       event('user.message', { text: 'hello' }),
       event('reasoning.chunk', { source: 'm', text: 'thinking…' }),
       event('reasoning.done', { source: 'm', text: 'thinking… done' }),
-      event('tool.call.started', { toolId: 'web-search', input: { query: 'hello' } }),
-      event('tool.call.completed', { toolId: 'web-search', output: { query: 'hello', results: [] } }),
+      event('agent.tool.started', { stepId: 'act-1', toolId: 'web-search', input: { query: 'hello' } }),
+      event('agent.tool.completed', { stepId: 'act-1', toolId: 'web-search', output: { query: 'hello', results: [] } }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
 
@@ -101,6 +103,66 @@ describe('app-core helpers', () => {
     expect(tools).toHaveLength(1)
     expect(tools[0]).toMatchObject({ toolId: 'web-search', status: 'completed' })
     expect(activity?.items.filter((item) => item.kind === 'reasoning')).toHaveLength(1)
+  })
+
+  it('captures step hierarchy (stepId, parentId, kind) for nested agent steps', () => {
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hi' }),
+      event('agent.step.started', { stepId: 'plan', kind: 'plan', title: 'Created 1-step plan' }),
+      event('agent.step.started', {
+        stepId: 's1',
+        parentStepId: 'plan',
+        kind: 'plan-step',
+        title: 'Search'
+      }),
+      event('agent.tool.started', {
+        stepId: 't1',
+        parentStepId: 's1',
+        toolId: 'web-search',
+        input: { query: 'x' }
+      }),
+      event('agent.tool.completed', { stepId: 't1', toolId: 'web-search', output: {} }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ]
+
+    const items = buildTurns(events)[0]?.activity.items ?? []
+    expect(items.find((item) => item.kind === 'label' && item.stepId === 's1')).toMatchObject({
+      parentId: 'plan',
+      stepKind: 'plan-step'
+    })
+    expect(items.find((item) => item.kind === 'tool')).toMatchObject({
+      stepId: 't1',
+      parentId: 's1',
+      status: 'completed'
+    })
+  })
+
+  it('streams a thought into the matching think step label and does not duplicate it', () => {
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hi' }),
+      event('agent.step.started', { stepId: 'th1', kind: 'think', title: 'Thinking…' }),
+      event('agent.step.delta', { stepId: 'th1', text: 'Let me search' }),
+      event('agent.step.delta', { stepId: 'th1', text: 'Let me search the docs' }),
+      event('agent.step.completed', { stepId: 'th1', summary: 'Let me search the docs' }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ]
+
+    const labels = buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    expect(labels).toHaveLength(1)
+    expect(labels[0]).toMatchObject({ label: 'Let me search the docs', stepKind: 'think' })
+  })
+
+  it('appends a separate observation label for a non-think step completion', () => {
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hi' }),
+      event('agent.step.started', { stepId: 'a1', kind: 'act', title: 'Using web-search' }),
+      event('agent.step.completed', { stepId: 'a1', summary: 'web-search: {"r":1}' }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ]
+
+    const labels = buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    expect(labels).toHaveLength(2)
+    expect(labels.some((item) => item.kind === 'label' && item.label.startsWith('web-search'))).toBe(true)
   })
 
   it('keeps one turn when rate-limit waiting later completes', () => {
@@ -204,17 +266,17 @@ describe('app-core helpers', () => {
 
   it('does not attach activity to a turn without a preceding user.message', () => {
     const turns = buildTurns([
-      event('planning.started', { summary: 'Understanding request' }),
+      event('agent.step.started', { stepId: 'plan', kind: 'plan', title: 'Created 0-step plan' }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ])
     expect(turns).toHaveLength(1)
     expect(turns[0]?.activity.items).toEqual([])
   })
 
-  it('execution.step.completed with empty note does not appear in activity', () => {
+  it('agent.step.completed with empty summary does not appear in activity', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hello' }),
-      event('execution.step.completed', { stepId: 'step-1', note: '' }),
+      event('agent.step.completed', { stepId: 'step-1' }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
     const labels = buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { McpServerConfig, ServiceStatus } from '@tinytinkerer/contracts'
+import type { AgentType, McpServerConfig, ServiceStatus } from '@tinytinkerer/contracts'
 import { BrandSettingsFooter } from '@tinytinkerer/brand-assets'
 import { MarkdownDocument } from './markdown-document'
 import { useSettingsSurfaceController } from './surfaces'
@@ -212,12 +212,33 @@ const AuthSection = ({
   )
 }
 
+const AGENT_TYPE_OPTIONS: ReadonlyArray<{ id: AgentType; label: string; description: string }> = [
+  {
+    id: 'plan-execute',
+    label: 'Plan-then-Execute',
+    description: 'Plans every step upfront, then executes the plan. Predictable; best for structured workflows.'
+  },
+  {
+    id: 'react',
+    label: 'ReAct',
+    description: 'Reasons and acts one step at a time, adapting to each result. Best for research and exploration.'
+  },
+  {
+    id: 'hybrid',
+    label: 'Hybrid (Plan + ReAct)',
+    description: 'Plans upfront, then adapts within each step and replans if it gets stuck. Balanced for complex tasks.'
+  }
+]
+
 const ModelsSection = ({
   status
 }: {
   status: ServiceStatus
 }) => {
-  const { selectedModel, setSelectedModel, models } = useSettingsSurfaceController()
+  const { selectedModel, setSelectedModel, models, agentType, setAgentType } =
+    useSettingsSurfaceController()
+
+  const activeAgent = AGENT_TYPE_OPTIONS.find((option) => option.id === agentType)
 
   return (
     <div className="space-y-2">
@@ -238,6 +259,25 @@ const ModelsSection = ({
         ))}
       </select>
       <p className="text-xs text-[var(--muted)]">Requires a GitHub token with Models access.</p>
+
+      <label htmlFor="agent-type-select" className="block pt-2 text-sm text-stone-800">
+        Agent strategy
+      </label>
+      <select
+        id="agent-type-select"
+        value={agentType}
+        onChange={(event) => void setAgentType(event.target.value as AgentType)}
+        className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+      >
+        {AGENT_TYPE_OPTIONS.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {activeAgent ? (
+        <p className="text-xs text-[var(--muted)]">{activeAgent.description}</p>
+      ) : null}
     </div>
   )
 }

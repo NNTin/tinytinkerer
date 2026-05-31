@@ -1,16 +1,24 @@
-import { AgentRuntime, RateLimitError as AgentRateLimitError, ToolRegistry } from '@tinytinkerer/agent-core'
+import {
+  AgentRuntime,
+  RateLimitError as AgentRateLimitError,
+  HybridRuntime,
+  ReActRuntime,
+  ToolRegistry
+} from '@tinytinkerer/agent-core'
 import type {
+  AgentRuntimeBase,
   CreateAssistantContentSession,
+  DecisionChunk,
   ExecutionContext as AgentExecutionContext,
   ModelProvider as AgentModelProvider,
   ProviderCallOptions as AgentProviderCallOptions,
   SynthesisChunk,
   Tool as AgentTool
 } from '@tinytinkerer/agent-core'
-import type { ExecutionPlan, PlanStep } from '@tinytinkerer/contracts'
+import type { AgentType, ExecutionPlan, PlanStep, ReActDecision } from '@tinytinkerer/contracts'
 import type { ChatRuntime } from './ports'
 
-export type { SynthesisChunk } from '@tinytinkerer/agent-core'
+export type { DecisionChunk, SynthesisChunk } from '@tinytinkerer/agent-core'
 
 export type ConversationMessage = {
   role: 'user' | 'assistant'
@@ -34,6 +42,8 @@ export interface ModelProvider {
   plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan>
   execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
   synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk>
+  decideNextAction?(context: ExecutionContext, options?: ProviderCallOptions): Promise<ReActDecision>
+  streamDecision?(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<DecisionChunk>
 }
 
 export type Tool<Input, Output> = AgentTool<Input, Output>
@@ -54,6 +64,7 @@ export const isRateLimitError = (error: unknown): error is RateLimitError => err
 
 export const createChatRuntime = (options: {
   provider: ModelProvider
+  agentType?: AgentType
   tools?: Tool<unknown, unknown>[]
   maxIterations?: number
   maxToolCallsPerStep?: number
@@ -67,7 +78,7 @@ export const createChatRuntime = (options: {
     registry.register(tool)
   }
 
-  return new AgentRuntime(createProviderAdapter(options.provider), registry, {
+  const runtimeOptions = {
     ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
     ...(options.maxToolCallsPerStep !== undefined
       ? { maxToolCallsPerStep: options.maxToolCallsPerStep }
@@ -78,28 +89,82 @@ export const createChatRuntime = (options: {
     ...(options.createAssistantContentSession
       ? { createAssistantContentSession: options.createAssistantContentSession }
       : {})
-  })
+  }
+
+  const adaptedProvider = createProviderAdapter(options.provider)
+
+  const runtime: AgentRuntimeBase = (() => {
+    switch (options.agentType) {
+      case 'react':
+        return new ReActRuntime(adaptedProvider, registry, runtimeOptions)
+      case 'hybrid':
+        return new HybridRuntime(adaptedProvider, registry, runtimeOptions)
+      case 'plan-execute':
+      default:
+        return new AgentRuntime(adaptedProvider, registry, runtimeOptions)
+    }
+  })()
+
+  return runtime
 }
 
+// The app-core and agent-core layers each define their own RateLimitError;
+// translate the app-core flavour thrown by providers into the agent-core one the
+// runtime recognises, so a rate limit from any provider call (synthesis or a
+// ReAct decision) reaches the runtime's cooldown/retry path instead of being
+// treated as a generic failure.
+const toAgentError = (error: unknown): unknown =>
+  isRateLimitError(error)
+    ? new AgentRateLimitError(error.message, {
+        retryAfterMs: error.retryAfterMs,
+        retryAt: error.retryAt
+      })
+    : error
+
 const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => ({
-  plan(prompt: string, history: ConversationMessage[], options?: AgentProviderCallOptions) {
-    return provider.plan(prompt, history, options)
+  async plan(prompt: string, history: ConversationMessage[], options?: AgentProviderCallOptions) {
+    try {
+      return await provider.plan(prompt, history, options)
+    } catch (error) {
+      throw toAgentError(error)
+    }
   },
-  execute(step: PlanStep, context: AgentExecutionContext, options?: AgentProviderCallOptions) {
-    return provider.execute(step, toExecutionContext(context), options)
+  async execute(step: PlanStep, context: AgentExecutionContext, options?: AgentProviderCallOptions) {
+    try {
+      return await provider.execute(step, toExecutionContext(context), options)
+    } catch (error) {
+      throw toAgentError(error)
+    }
   },
+  // Forward the optional ReAct decision method only when the wrapped provider
+  // implements it, so the adapter mirrors the provider's capabilities exactly.
+  ...(provider.decideNextAction
+    ? {
+        async decideNextAction(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
+          try {
+            return await provider.decideNextAction!(toExecutionContext(context), options)
+          } catch (error) {
+            throw toAgentError(error)
+          }
+        }
+      }
+    : {}),
+  ...(provider.streamDecision
+    ? {
+        async *streamDecision(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
+          try {
+            yield* provider.streamDecision!(toExecutionContext(context), options)
+          } catch (error) {
+            throw toAgentError(error)
+          }
+        }
+      }
+    : {}),
   async *synthesize(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
     try {
       yield* provider.synthesize(toExecutionContext(context), options)
     } catch (error) {
-      if (isRateLimitError(error)) {
-        throw new AgentRateLimitError(error.message, {
-          retryAfterMs: error.retryAfterMs,
-          retryAt: error.retryAt
-        })
-      }
-
-      throw error
+      throw toAgentError(error)
     }
   }
 })
