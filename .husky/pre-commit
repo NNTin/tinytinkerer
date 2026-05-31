@@ -1,5 +1,13 @@
 #!/usr/bin/env sh
 
+# Keep each skill's embedded copy of .agent/README.md in sync. Only act when the
+# source or a target is part of this commit, so unrelated commits aren't touched.
+STAGED=$(git diff --cached --name-only)
+if printf '%s\n' "$STAGED" | grep -qE '^\.agent/README\.md$|^\.agent/skills/[^/]+/SKILL\.md$'; then
+  pnpm sync:skill-readme || exit 1
+  git add .agent/skills/*/SKILL.md
+fi
+
 MATCHES=$(
   git grep --cached -nE '(/home/|/Users/|C:\\Users\\)' -- . ':(exclude).husky/pre-commit' 2>/dev/null || true
 )

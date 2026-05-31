@@ -17,11 +17,3 @@ Skills the agent uses to work in this repo. Core idea: **offload deterministic s
 2. Scan workflow **filenames** for a relevant SOP — don't read every file.
 3. Follow the SOP; run the tool scripts instead of doing the steps by hand.
 4. **Self-evolve:** if you solved something repeatable the hard way, capture it as a new workflow SOP (+ tool). Future agents thank you.
-
-## Add a skill
-
-```
-node .agent/skills/create-skill/tools/create-skill.mjs <name>
-```
-
-Scaffolds the structure above, then fill in `SKILL.md`. See `create-skill/`.
