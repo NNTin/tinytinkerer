@@ -4,11 +4,15 @@ Goal: stop a `handled: yes` request failure that is the *normal, unavoidable res
 
 Use this only when the failure is genuinely not a bug and never will be (user-cancelled stream → `abort`, an existence check that legitimately `404`s). If the failure means the *caller* misbehaved (`401` unauthenticated, `429` ignored rate-limit headers, `5xx` our edge bug), **don't accept it** — fix the call site per `triage-issues.md`.
 
+## When `accept` does NOT apply (edge `handled:no` crashes)
+
+The `accept` gate lives in `captureRequestIssue` and only suppresses the **`handled:yes`** telemetry capture. On the **edge**, an error that escapes a route handler is *also* captured a second time by Hono's error handler as **`handled:no`** (`mechanism: auto.faas.hono.error_handler`) — and an `accept` block does **nothing** for that path. So a `handled:no` edge `AbortError` (client disconnect / upstream timeout, e.g. `EDGE-2`/`EDGE-3`) is **not** fixable with `accept`. The fix there is **route-level**: catch the abort in the route and return a benign response so it never reaches Hono. Reserve `accept` for the `handled:yes` request-telemetry captures (the frontend `fetchWithTelemetry` path and the edge upstream `fetchWithTimeout` path *when the error is swallowed by the caller, not rethrown past the route*).
+
 ## Steps
 
 1. **Confirm it's normal & unavoidable.** Write the one-line reason out loud. If you can't, it's a bug — stop and fix the call site instead.
 
-2. **Find the call site.** Use the Sentry issue's `request_area` + `request_origin` tags and the stacktrace to locate the `RequestTelemetryMetadata` it was built from (all live under `packages/app/app-browser/src/`). Example: `request_area: models.chat` → `runtime/github-models-provider.ts`.
+2. **Find the call site.** Use the Sentry issue's `request_area` + `request_origin` tags and the stacktrace to locate the `RequestTelemetryMetadata` it was built from. The source root depends on the project (see `sourceRoot` in `sentry-context.mjs`): **frontend** (`tinytinkerer-frontend`) call sites live under `packages/app/app-browser/src/` (e.g. `request_area: models.chat` → `runtime/github-models-provider.ts`); **edge** (`tinytinkerer-edge`) call sites live under `apps/edge/src/` (e.g. the `models.chat`/`models.list` upstream fetches → `routes/models.ts`, built for `lib/fetch.ts`'s `fetchWithTimeout`). The shared telemetry engine itself is in `packages/shared/sentry-telemetry/src/`.
 
 3. **Declare the acceptance.** Add an `accept` block to that site's metadata. Accept specific statuses/kinds only — never blanket the whole call site.
    ```ts
