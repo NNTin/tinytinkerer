@@ -1,8 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- In-browser translation (e.g. Google Translate) rewrites text nodes into
+         <font> wrappers, detaching nodes React owns; React's next removeChild then
+         throws "NotFoundError: ... not a child of this node" (TINYTINKERER-FRONTEND-6).
+         Opt the React-managed shell out of automatic translation. -->
+    <meta name="google" content="notranslate" />
     <title>web</title>
     <style>
       :root {

@@ -36,6 +36,17 @@ describe('fetchGitHubUser', () => {
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
   })
 
+  it('does not capture a transient network failure (TINYTINKERER-FRONTEND-7)', async () => {
+    const networkError = new TypeError('Failed to fetch')
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(networkError)))
+
+    const result = await fetchGitHubUser('valid-token')
+
+    expect(result).toBeNull()
+    // network_error is accepted at this call site; a real http_error (e.g. 401) still captures.
+    expect(sink).not.toHaveBeenCalled()
+  })
+
   it('returns the user and leaves the token in place on success', async () => {
     vi.stubGlobal(
       'fetch',

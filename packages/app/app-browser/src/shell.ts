@@ -67,7 +67,16 @@ const createStatusGateway = (config: ResolvedBrowserShellConfig): StatusGateway 
       area: 'status.health',
       origin: 'edge',
       method: 'GET',
-      url: `${config.edgeBaseUrl}/health`
+      url: `${config.edgeBaseUrl}/health`,
+      // A transient network failure (offline, flaky Wi-Fi, DNS hiccup) on this
+      // background health poll to our own edge is normal & unavoidable and not a
+      // bug — the gateway already throws and the status store retries. We still
+      // capture http_error (a real edge 5xx) so an actual outage surfaces.
+      accept: {
+        kinds: ['network_error'],
+        reason:
+          'Background health poll; transient client-side network failure to the edge is expected (TINYTINKERER-FRONTEND-8).'
+      }
     }
     const response = await fetchWithTelemetry(metadata, {
       headers: getTelemetryHeaders()

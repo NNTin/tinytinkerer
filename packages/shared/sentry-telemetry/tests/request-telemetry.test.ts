@@ -101,6 +101,23 @@ describe('request telemetry', () => {
     expect(sink).not.toHaveBeenCalled()
   })
 
+  it('skips capture for an accepted network_error kind', async () => {
+    const networkError = new TypeError('Failed to fetch')
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(networkError)))
+
+    await expect(
+      fetchWithTelemetry(
+        {
+          ...metadata,
+          accept: { kinds: ['network_error'], reason: 'Transient background network failure.' }
+        },
+        {}
+      )
+    ).rejects.toBe(networkError)
+
+    expect(sink).not.toHaveBeenCalled()
+  })
+
   it('still captures outcomes outside the accept list', async () => {
     vi.stubGlobal(
       'fetch',
