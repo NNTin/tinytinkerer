@@ -67,6 +67,16 @@ export class GitHubModelsProvider implements ModelProvider {
 
   constructor(private readonly options: GitHubModelsProviderOptions) {}
 
+  // Wait out any active rate-limit/quota backoff before issuing an edge model
+  // call. Shared by synthesis and the ReAct decision path so a 429 on one stops
+  // the others from retry-spamming the edge (TINYTINKERER-FRONTEND-9).
+  private async applyQuotaThrottle(context: ExecutionContext): Promise<void> {
+    const throttle = this.quota.checkThrottle(estimateTokens(context))
+    if (throttle.shouldThrottle) {
+      await new Promise<void>((resolve) => setTimeout(resolve, throttle.waitMs))
+    }
+  }
+
   async plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan> {
     const token = this.options.getToken?.()
     const allDescriptors = this.options.allToolDescriptors ?? []
@@ -107,10 +117,16 @@ export class GitHubModelsProvider implements ModelProvider {
     const token = this.options.getToken?.()
 
     if (token) {
+      await this.applyQuotaThrottle(context)
       const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
       const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
       const tools = this.options.allToolDescriptors ?? []
-      return llmDecideNextAction(context, tools, model, edgeFetch, options?.signal)
+      try {
+        return await llmDecideNextAction(context, tools, model, edgeFetch, options?.signal)
+      } catch (error) {
+        if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
+        throw error
+      }
     }
 
     // Without a token there is no model to consult, so finish immediately and
@@ -125,10 +141,16 @@ export class GitHubModelsProvider implements ModelProvider {
     const token = this.options.getToken?.()
 
     if (token) {
+      await this.applyQuotaThrottle(context)
       const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
       const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
       const tools = this.options.allToolDescriptors ?? []
-      yield* llmStreamDecision(context, tools, model, edgeFetch, options?.signal)
+      try {
+        yield* llmStreamDecision(context, tools, model, edgeFetch, options?.signal)
+      } catch (error) {
+        if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
+        throw error
+      }
       return
     }
 

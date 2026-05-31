@@ -32,7 +32,16 @@ export const createEdgeFetch = (
       origin: 'edge',
       method: 'POST',
       url,
-      ...(options?.stream !== undefined ? { stream: options.stream } : {})
+      ...(options?.stream !== undefined ? { stream: options.stream } : {}),
+      // Every edgeFetch is a cancellable model/agent call: the runtime aborts a
+      // step on its idle timeout and the user can cancel an in-flight run. An
+      // AbortError here is intentional control flow, never a bug
+      // (TINYTINKERER-FRONTEND-A).
+      accept: {
+        kinds: ['abort'],
+        reason:
+          'ReAct decision/plan calls are aborted by the runtime step-timeout or a user cancel; AbortError is expected (TINYTINKERER-FRONTEND-A).'
+      }
     }
     return fetchWithTelemetry(metadata, init)
   }
