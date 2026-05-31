@@ -58,7 +58,13 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     const modelsBaseUrl = c.env.GITHUB_MODELS_URL ?? GITHUB_MODELS_DEFAULT_URL
 
     const response = await fetchWithTimeout(
-      `${modelsBaseUrl}/chat/completions`,
+      {
+        area: 'models.chat',
+        origin: 'github',
+        method: 'POST',
+        url: `${modelsBaseUrl}/chat/completions`,
+        stream: useStream
+      },
       {
         method: 'POST',
         headers: {
@@ -149,7 +155,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       : GITHUB_MODELS_LIST_URL
 
     const response = await fetchWithTimeout(
-      listUrl,
+      { area: 'models.list', origin: 'github', method: 'GET', url: listUrl },
       { headers: { authorization, accept: 'application/json' } },
       10_000
     )

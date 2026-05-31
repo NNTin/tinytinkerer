@@ -25,7 +25,12 @@ export const registerAuthRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     }
 
     const response = await fetchWithTimeout(
-      'https://github.com/login/oauth/access_token',
+      {
+        area: 'auth.exchange',
+        origin: 'github',
+        method: 'POST',
+        url: 'https://github.com/login/oauth/access_token'
+      },
       {
         method: 'POST',
         headers: {

@@ -1,26 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-type CaptureTelemetryException = typeof import('../src/telemetry/telemetry.js').captureTelemetryException
-
-const telemetryMocks = vi.hoisted(() => ({
-  captureTelemetryException: vi.fn<CaptureTelemetryException>()
-}))
-
-vi.mock('../src/telemetry/telemetry.js', async () => {
-  const actual = await vi.importActual<typeof import('../src/telemetry/telemetry.js')>(
-    '../src/telemetry/telemetry.js'
-  )
-  return {
-    ...actual,
-    captureTelemetryException: telemetryMocks.captureTelemetryException
-  }
-})
-
+import { setCaptureExceptionSink, type CaptureExceptionSink } from '../src/capture.js'
 import {
   fetchWithTelemetry,
   parseJsonWithTelemetry,
   parseWithTelemetry
-} from '../src/telemetry/request-telemetry.js'
+} from '../src/request-telemetry.js'
+
+const sink = vi.fn<CaptureExceptionSink>()
 
 const metadata = {
   area: 'models.list',
@@ -33,7 +20,12 @@ describe('request telemetry', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
-    telemetryMocks.captureTelemetryException.mockReset()
+    sink.mockReset()
+    setCaptureExceptionSink(sink)
+  })
+
+  afterEach(() => {
+    setCaptureExceptionSink(null)
   })
 
   it('captures handled non-ok responses', async () => {
@@ -47,8 +39,8 @@ describe('request telemetry', () => {
     const response = await fetchWithTelemetry(metadata, {})
 
     expect(response.status).toBe(502)
-    expect(telemetryMocks.captureTelemetryException).toHaveBeenCalledTimes(1)
-    const [, options] = vi.mocked(telemetryMocks.captureTelemetryException).mock.calls[0] ?? []
+    expect(sink).toHaveBeenCalledTimes(1)
+    const [, options] = sink.mock.calls[0] ?? []
     expect(options?.level).toBe('error')
     expect(options?.tags).toMatchObject({
       request_area: 'models.list',
@@ -69,8 +61,8 @@ describe('request telemetry', () => {
 
     await expect(fetchWithTelemetry(metadata, {})).rejects.toBe(abortError)
 
-    expect(telemetryMocks.captureTelemetryException).toHaveBeenCalledTimes(1)
-    const [error, options] = vi.mocked(telemetryMocks.captureTelemetryException).mock.calls[0] ?? []
+    expect(sink).toHaveBeenCalledTimes(1)
+    const [error, options] = sink.mock.calls[0] ?? []
     expect(error).toBe(abortError)
     expect(options?.level).toBe('warning')
     expect(options?.tags).toMatchObject({
@@ -90,7 +82,7 @@ describe('request telemetry', () => {
     )
 
     expect(response.status).toBe(404)
-    expect(telemetryMocks.captureTelemetryException).not.toHaveBeenCalled()
+    expect(sink).not.toHaveBeenCalled()
   })
 
   it('skips capture for an accepted failure kind', async () => {
@@ -106,7 +98,7 @@ describe('request telemetry', () => {
       )
     ).rejects.toBe(abortError)
 
-    expect(telemetryMocks.captureTelemetryException).not.toHaveBeenCalled()
+    expect(sink).not.toHaveBeenCalled()
   })
 
   it('still captures outcomes outside the accept list', async () => {
@@ -123,7 +115,7 @@ describe('request telemetry', () => {
     )
 
     expect(response.status).toBe(502)
-    expect(telemetryMocks.captureTelemetryException).toHaveBeenCalledTimes(1)
+    expect(sink).toHaveBeenCalledTimes(1)
   })
 
   it('captures JSON parse failures', async () => {
@@ -134,8 +126,8 @@ describe('request telemetry', () => {
 
     await expect(parseJsonWithTelemetry(metadata, response)).rejects.toThrow()
 
-    expect(telemetryMocks.captureTelemetryException).toHaveBeenCalledTimes(1)
-    const [, options] = vi.mocked(telemetryMocks.captureTelemetryException).mock.calls[0] ?? []
+    expect(sink).toHaveBeenCalledTimes(1)
+    const [, options] = sink.mock.calls[0] ?? []
     expect(options?.tags).toMatchObject({
       failure_kind: 'parse_error'
     })
@@ -153,10 +145,23 @@ describe('request telemetry', () => {
       )
     ).toThrow('schema mismatch')
 
-    expect(telemetryMocks.captureTelemetryException).toHaveBeenCalledTimes(1)
-    const [, options] = vi.mocked(telemetryMocks.captureTelemetryException).mock.calls[0] ?? []
+    expect(sink).toHaveBeenCalledTimes(1)
+    const [, options] = sink.mock.calls[0] ?? []
     expect(options?.tags).toMatchObject({
       failure_kind: 'schema_error'
     })
+  })
+
+  it('no-ops when no sink is registered', async () => {
+    setCaptureExceptionSink(null)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('{}', { status: 500 })))
+    )
+
+    const response = await fetchWithTelemetry(metadata, {})
+
+    expect(response.status).toBe(500)
+    expect(sink).not.toHaveBeenCalled()
   })
 })

@@ -59,7 +59,12 @@ export const registerSearchRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     }
 
     const response = await fetchWithTimeout(
-      'https://api.tavily.com/search',
+      {
+        area: 'search.query',
+        origin: 'tavily',
+        method: 'POST',
+        url: 'https://api.tavily.com/search'
+      },
       {
         method: 'POST',
         headers: {

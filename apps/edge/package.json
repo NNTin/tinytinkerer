@@ -15,6 +15,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@sentry/cloudflare": "^10.17.0",
     "@tinytinkerer/contracts": "workspace:*",
+    "@tinytinkerer/sentry-telemetry": "workspace:*",
     "hono": "^4.10.5",
     "zod": "^4.1.12"
   },
