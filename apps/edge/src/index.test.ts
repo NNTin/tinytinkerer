@@ -5,7 +5,24 @@ import {
   systemStatusSchema
 } from '@tinytinkerer/contracts'
 import app from './index.js'
+import { CACHE_KEY } from './lib/models-cache.js'
 import { clearModelsBackoff } from './lib/rate-limit.js'
+
+// Minimal in-memory stand-in for Cloudflare's `caches.default`. Responses are
+// cloned on read/write so their single-use bodies survive multiple matches.
+const makeCacheMock = () => {
+  const store = new Map<string, Response>()
+  // The route only ever keys the cache by the string CACHE_KEY, so the mock
+  // takes a string directly (the real Cache API accepts RequestInfo | URL).
+  const cache = {
+    match: (key: string) => Promise.resolve(store.get(key)?.clone()),
+    put: (key: string, res: Response) => {
+      store.set(key, res.clone())
+      return Promise.resolve()
+    }
+  }
+  return { store, cache }
+}
 
 describe('edge routes', () => {
   afterEach(() => {
@@ -115,6 +132,71 @@ describe('edge routes', () => {
     const body = (await response.json()) as Record<string, unknown>
     rateLimitPayloadSchema.parse(body)
     expect(body['retryAfterMs']).toBe(90_000)
+  })
+
+  it('caches the models list and serves the second request without re-probing upstream (TINYTINKERER-EDGE-4)', async () => {
+    const { cache } = makeCacheMock()
+    vi.stubGlobal('caches', { default: cache })
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ data: [{ id: 'openai/gpt-4.1', name: 'GPT-4.1' }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const listRequest = () =>
+      app.fetch(
+        new Request('http://localhost/api/models/list', {
+          headers: { authorization: 'Bearer test-token' }
+        }),
+        {}
+      )
+
+    const first = await listRequest()
+    expect(first.status).toBe(200)
+    expect(await first.json()).toEqual({ models: [{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }] })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    // Second request is served from the colo-wide cache — upstream is untouched,
+    // so we stop hammering GitHub Models on every page load.
+    const second = await listRequest()
+    expect(second.status).toBe(200)
+    expect(await second.json()).toEqual({ models: [{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }] })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('serves the last-known list when upstream is rate limited, breaking the 429 cascade (TINYTINKERER-FRONTEND-5)', async () => {
+    const { store, cache } = makeCacheMock()
+    // Seed a previously-cached catalogue old enough to be past the fresh window.
+    store.set(
+      CACHE_KEY,
+      new Response(JSON.stringify([{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]), {
+        headers: { 'x-models-cached-at': String(Date.now() - 10 * 60_000) }
+      })
+    )
+    vi.stubGlobal('caches', { default: cache })
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        new Response('rate limited', { status: 429, headers: { 'retry-after': '120' } })
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/list', {
+        headers: { authorization: 'Bearer test-token' }
+      }),
+      {}
+    )
+
+    // Upstream 429'd once (backoff recorded), but the browser gets a usable list
+    // instead of a propagated 429 — no cascade into TINYTINKERER-FRONTEND-5.
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ models: [{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }] })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
   it('backs off subsequent GitHub Models calls while the rate-limit window is open (TINYTINKERER-EDGE-4)', async () => {

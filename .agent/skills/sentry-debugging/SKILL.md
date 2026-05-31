@@ -42,6 +42,7 @@ The MCP gives you ~27 tools across three groups: **inspect** issues & events, re
 - `tools/sentry-context.mjs` — prints org slug, region URL, project slugs, and the production environment name. Run it instead of guessing connection params.
 - Sentry MCP (load schemas via ToolSearch `select:<name>` before calling):
   - **Inspect:** `find_organizations`, `find_projects`, `find_releases`, `search_issues`, `search_events`, `search_issue_events`, `get_sentry_resource`, `get_issue_tag_values`, `whoami`.
+    - `get_sentry_resource` returns the **most-relevant frame + full stacktrace inline** for an issue/event — no extra call. It also fetches other resource types via `resourceType`: **`breadcrumbs`** (the fetch/navigation/console sequence *before* the error — use it when tags + stacktrace don't explain *why* a request fired), **`trace`** (span tree; but see `correlate-trace.md` — a trace often doesn't span both projects), and **`replay`**.
   - **Triage:** `update_issue` (resolve / resolveInNextRelease / unresolve / ignore / assign).
   - **Docs:** `search_docs`, `get_doc`.
 
@@ -51,6 +52,7 @@ The MCP gives you ~27 tools across three groups: **inspect** issues & events, re
 - **Prevent the faulty request in the first place.** Don't call an authenticated endpoint while unauthenticated; respect rate-limit headers. A 401/429 in Sentry usually means the *caller* should have known better. Fix the call site, not the symptom. See **the accept-or-fix guideline** below for the fork.
 - **A general catch is bad.** Swallowing errors hides bugs. Let errors surface so we see and fix them. Only genuinely *normal and unavoidable* events (e.g. client-aborted requests) should avoid being reported — for those, *accept* them in code (see below), don't wrap call sites in try/catch.
 - **Resolve against a release.** Once fixed in code, mark `resolvedInNextRelease` so the issue auto-reopens (escalates) if it recurs after the fix ships. Only mark plain `resolved` if it is already fixed in the live production release. Close clearly stale issues.
+- **A REGRESSED issue means the last fix didn't hold.** `substatus: regressed` (or the `is:regressed` filter) on an issue you previously resolved is a signal, not noise: it auto-reopened because it recurred on a newer release. **Don't reapply the old fix** — find why it failed first. Follow `workflows/diagnose-regression.md`.
 - **Leave a breadcrumb.** Always pass `reason` to `update_issue` — it posts to the issue's activity feed.
 
 ## The accept-or-fix guideline (tinytinkerer)
@@ -59,6 +61,7 @@ Every outbound browser request funnels through `fetchWithTelemetry` / `parse*Wit
 When you triage a `handled: yes` request issue, you hit a fork:
 
 - **Fix the call site** (the default). The failure means the caller misbehaved: `401` from an unauthenticated probe, `429` from ignoring rate-limit headers, `5xx` from our own edge bug. The error is signal — eliminate the bad request.
+  - **Repeated `429` on a *cacheable* upstream** (e.g. the GitHub Models catalogue, `models.list`) → never `accept` it. Fix = **cache the upstream response durably at the call site + honour `Retry-After` / serve the last-known value on a 429** so we stop re-probing and tripping the limit. **Cloudflare gotcha:** a `let`/module-level backoff is **per-isolate** and resets on every fresh Worker isolate — it is *not* durable and won't actually stop the hammering (this is how the `models.list` 429s REGRESSED after PR #100). Use the **Cache API (`caches.default`)**, which persists across requests and isolates within a colo. **Types gotcha:** the edge has no `@cloudflare/workers-types`, so `caches.default` (and `ExecutionContext`) aren't on the DOM `CacheStorage` type — reach them via a narrow cast and feature-detect so the code no-ops under vitest (`apps/edge/src/lib/models-cache.ts`). Full cascade recognition + the regression angle: `workflows/correlate-trace.md` and `workflows/diagnose-regression.md`.
 - **Accept the outcome.** The failure is the normal, unavoidable result of a *correct* call and will never be a bug — a user cancelling a streaming chat (`abort`), an existence check that legitimately `404`s. Declare it accepted **in code** at the call site so it is never captured.
 
 **How to accept:** add an `accept` block to that call site's `RequestTelemetryMetadata`:

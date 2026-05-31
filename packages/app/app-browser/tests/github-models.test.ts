@@ -12,7 +12,7 @@ vi.mock('../src/telemetry/telemetry.js', async () => {
   }
 })
 
-import { fetchGitHubModels } from '../src/github-models.js'
+import { clearModelsCache, fetchGitHubModels } from '../src/github-models.js'
 
 const sink = vi.fn<CaptureExceptionSink>()
 
@@ -22,6 +22,9 @@ describe('fetchGitHubModels', () => {
     vi.unstubAllGlobals()
     sink.mockReset()
     setCaptureExceptionSink(sink)
+    // The models cache is module-level; reset it so a fallback cached in one
+    // test doesn't short-circuit the next.
+    clearModelsCache()
   })
 
   afterEach(() => {
@@ -68,5 +71,21 @@ describe('fetchGitHubModels', () => {
       request_area: 'models.list',
       failure_kind: 'schema_error'
     })
+  })
+
+  it('briefly caches the fallback so a rate-limit storm is not re-probed on every call (TINYTINKERER-FRONTEND-5)', async () => {
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(new Response('rate limited', { status: 429, statusText: 'Too Many Requests' }))
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const first = await fetchGitHubModels('https://api.example.com', 'token')
+    const second = await fetchGitHubModels('https://api.example.com', 'token')
+
+    expect(first).toEqual([...SUPPORTED_MODELS])
+    expect(second).toEqual([...SUPPORTED_MODELS])
+    // Second call is served from the negative cache: no extra fetch, no extra report.
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(sink).toHaveBeenCalledTimes(1)
   })
 })

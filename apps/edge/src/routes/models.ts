@@ -9,6 +9,7 @@ import type { Hono } from 'hono'
 import type { Bindings } from '../lib/bindings'
 import { applyCorsHeaders } from '../lib/cors'
 import { fetchWithTimeout } from '../lib/fetch'
+import { isFresh, readCachedModels, writeCachedModels } from '../lib/models-cache'
 import {
   clearModelsBackoff,
   getModelsBackoffMs,
@@ -173,9 +174,22 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       ? `${c.env.GITHUB_MODELS_URL}/models`
       : GITHUB_MODELS_LIST_URL
 
-    // Honor a still-open rate-limit window shared with the chat route.
+    // The catalogue rarely changes and is identical for every caller. Serve a
+    // fresh cached copy without touching upstream — this is what actually stops
+    // us re-probing GitHub Models on every request and tripping its rate limit
+    // (TINYTINKERER-EDGE-4 / FRONTEND-5). The reactive backoff below is only a
+    // secondary guard; the per-isolate version shipped in PR #100 reset on every
+    // fresh Cloudflare isolate, which is why the 429s regressed.
+    const cached = await readCachedModels()
+    if (cached && isFresh(cached.ageMs)) {
+      return c.json({ models: cached.models })
+    }
+
+    // Honor a still-open rate-limit window shared with the chat route. Prefer the
+    // last-known catalogue over cascading a raw 429 to the browser.
     const backoffMs = getModelsBackoffMs()
     if (backoffMs > 0) {
+      if (cached) return c.json({ models: cached.models })
       c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
       return c.json(rateLimitResponseFromMs(backoffMs), 429)
     }
@@ -189,13 +203,15 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     if (!response.ok) {
       console.error('[models/list] upstream error', { status: response.status, url: listUrl })
 
-      // A rate limit is not a gateway failure: forward it as a 429 with the
-      // retry hints (and record the backoff) rather than collapsing it to a
-      // misleading 502 (TINYTINKERER-FRONTEND-5).
+      // A rate limit is not a gateway failure: record the backoff window and,
+      // when we have a previously cached catalogue, serve it instead of
+      // cascading the 429 downstream (TINYTINKERER-FRONTEND-5). Only fall back to
+      // a 429 response when there is nothing cached to serve.
       if (response.status === 429) {
         const retryAfter = response.headers.get('retry-after')
         const rateLimitBody = toRateLimitResponse(await response.text(), retryAfter)
         recordModelsBackoff(rateLimitBody.retryAfterMs)
+        if (cached) return c.json({ models: cached.models })
         c.header('Retry-After', retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000)))
         for (const header of RATE_LIMIT_HEADERS) {
           const value = response.headers.get(header)
@@ -220,6 +236,10 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       id: m.id,
       label: m.name ?? m.id
     }))
+
+    // Populate the colo-wide cache so the next request (in any isolate) skips
+    // the upstream fetch for the freshness window.
+    await writeCachedModels(models)
 
     return c.json({ models })
   })
