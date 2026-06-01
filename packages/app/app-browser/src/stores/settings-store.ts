@@ -33,8 +33,8 @@ export type SettingsState = {
 
 export type SettingsStore = StoreApi<SettingsState>
 
-const DEFAULT_MODEL = 'openai/gpt-4.1-mini'
-const DEFAULT_AGENT_TYPE: AgentType = 'plan-execute'
+const DEFAULT_MODEL = 'openai/gpt-5'
+const DEFAULT_AGENT_TYPE: AgentType = 'react'
 
 const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',

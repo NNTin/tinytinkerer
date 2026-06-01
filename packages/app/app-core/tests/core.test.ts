@@ -5,6 +5,7 @@ import {
   buildConversationHistory,
   buildTurns,
   canSendPrompt,
+  DEFAULT_MODEL,
   defaultChatState,
   defaultSettingsState,
   inferPlan,
@@ -43,10 +44,10 @@ describe('app-core helpers', () => {
   })
 
   it('falls back to the default model for null/empty values', () => {
-    expect(normalizeSelectedModel(null)).toBe('openai/gpt-4.1-mini')
-    expect(normalizeSelectedModel(undefined)).toBe('openai/gpt-4.1-mini')
-    expect(normalizeSelectedModel('')).toBe('openai/gpt-4.1-mini')
-    expect(normalizeSelectedModel('   ')).toBe('openai/gpt-4.1-mini')
+    expect(normalizeSelectedModel(null)).toBe(DEFAULT_MODEL)
+    expect(normalizeSelectedModel(undefined)).toBe(DEFAULT_MODEL)
+    expect(normalizeSelectedModel('')).toBe(DEFAULT_MODEL)
+    expect(normalizeSelectedModel('   ')).toBe(DEFAULT_MODEL)
   })
 
   it('preserves any non-empty model id including dynamic models', () => {

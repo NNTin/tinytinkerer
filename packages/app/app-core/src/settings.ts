@@ -9,7 +9,7 @@ import {
   type McpServerConfig
 } from '@tinytinkerer/contracts'
 
-const DEFAULT_AGENT_TYPE: AgentType = 'plan-execute'
+const DEFAULT_AGENT_TYPE: AgentType = 'react'
 
 export const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',
