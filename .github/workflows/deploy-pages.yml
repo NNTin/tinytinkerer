@@ -111,7 +111,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Install Vercel CLI
-        run: npm install --global vercel@latest
+        # Pinned: vercel@54.7.0 ships a broken @vercel/build-utils ESM interop
+        # ("Named export 'isPackageInstalled' not found") that fails `vercel build`.
+        run: npm install --global vercel@54.6.1
 
       - name: Pull Vercel Environment
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
@@ -161,7 +163,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Install Vercel CLI
-        run: npm install --global vercel@latest
+        # Pinned: vercel@54.7.0 ships a broken @vercel/build-utils ESM interop
+        # ("Named export 'isPackageInstalled' not found") that fails `vercel build`.
+        run: npm install --global vercel@54.6.1
 
       - name: Pull Vercel Environment
         run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
