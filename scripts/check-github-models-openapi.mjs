@@ -77,7 +77,7 @@ const fetchDocsOperations = async () => {
       enum: parameter.enum ?? []
     })),
     statuses: (operation.statusCodes ?? [])
-      .map((status) => status.httpStatusCode)
+      .map((status) => String(status.httpStatusCode))
       .sort()
   }))
 }

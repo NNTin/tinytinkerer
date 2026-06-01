@@ -24,6 +24,9 @@ jobs:
   checks:
     name: Mermaid, Boundaries & Skill README
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      models: read
     steps:
       - uses: actions/checkout@v4
 
@@ -47,7 +50,7 @@ jobs:
 
       - name: GitHub Models OpenAPI check
         env:
-          GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_MODELS_TOKEN }}
+          GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm check:github-models-openapi
 
       - name: Edge OpenAPI generation check
