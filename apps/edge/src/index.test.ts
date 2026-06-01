@@ -73,18 +73,17 @@ describe('edge routes', () => {
   })
 
   it('returns 429 with Retry-After header and rate-limit body when upstream is rate limited', async () => {
-    const fetchSpy = vi.fn(() =>
-      Promise.resolve(
+    const upstreamRequests: Array<{ input: RequestInfo | URL; init: RequestInit | undefined }> = []
+    const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      upstreamRequests.push({ input, init })
+      return Promise.resolve(
         new Response('rate limited', {
           status: 429,
           headers: { 'retry-after': '120' }
         })
       )
-    )
-    vi.stubGlobal(
-      'fetch',
-      fetchSpy
-    )
+    })
+    vi.stubGlobal('fetch', fetchSpy)
 
     const response = await app.fetch(
       new Request('http://localhost/api/models/chat', {
@@ -104,16 +103,11 @@ describe('edge routes', () => {
 
     expect(response.status).toBe(429)
     expect(response.headers.get('Retry-After')).toBe('120')
-    expect(fetchSpy).toHaveBeenCalledWith(
-      'https://models.github.ai/inference/chat/completions',
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          accept: 'application/vnd.github+json',
-          'x-github-api-version': '2026-03-10',
-          authorization: 'Bearer test-token'
-        })
-      })
-    )
+    expect(upstreamRequests[0]?.input).toBe('https://models.github.ai/inference/chat/completions')
+    const headers = new Headers(upstreamRequests[0]?.init?.headers)
+    expect(headers.get('accept')).toBe('application/vnd.github+json')
+    expect(headers.get('x-github-api-version')).toBe('2026-03-10')
+    expect(headers.get('authorization')).toBe('Bearer test-token')
     const body = (await response.json()) as Record<string, unknown>
     rateLimitPayloadSchema.parse(body)
     expect(body['code']).toBe('rate_limited')
@@ -166,14 +160,16 @@ describe('edge routes', () => {
   it('caches the models list and serves the second request without re-probing upstream (TINYTINKERER-EDGE-4)', async () => {
     const { cache } = makeCacheMock()
     vi.stubGlobal('caches', { default: cache })
-    const fetchSpy = vi.fn(() =>
-      Promise.resolve(
+    const upstreamRequests: Array<{ input: RequestInfo | URL; init: RequestInit | undefined }> = []
+    const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      upstreamRequests.push({ input, init })
+      return Promise.resolve(
         new Response(JSON.stringify({ data: [{ id: 'openai/gpt-4.1', name: 'GPT-4.1' }] }), {
           status: 200,
           headers: { 'content-type': 'application/json' }
         })
       )
-    )
+    })
     vi.stubGlobal('fetch', fetchSpy)
 
     const listRequest = () =>
@@ -188,16 +184,11 @@ describe('edge routes', () => {
     expect(first.status).toBe(200)
     expect(await first.json()).toEqual({ models: [{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }] })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
-    expect(fetchSpy).toHaveBeenCalledWith(
-      'https://models.github.ai/v1/models',
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          accept: 'application/vnd.github+json',
-          'x-github-api-version': '2026-03-10',
-          authorization: 'Bearer test-token'
-        })
-      })
-    )
+    expect(upstreamRequests[0]?.input).toBe('https://models.github.ai/v1/models')
+    const headers = new Headers(upstreamRequests[0]?.init?.headers)
+    expect(headers.get('accept')).toBe('application/vnd.github+json')
+    expect(headers.get('x-github-api-version')).toBe('2026-03-10')
+    expect(headers.get('authorization')).toBe('Bearer test-token')
 
     // Second request is served from the colo-wide cache — upstream is untouched,
     // so we stop hammering GitHub Models on every page load.
