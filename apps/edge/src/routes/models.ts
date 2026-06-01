@@ -11,10 +11,10 @@ import { applyCorsHeaders } from '../lib/cors'
 import { fetchWithTimeout } from '../lib/fetch'
 import { isFresh, readCachedModels, writeCachedModels } from '../lib/models-cache'
 import {
-  clearModelsBackoff,
-  getModelsBackoffMs,
+  clearBackoff,
+  getActiveBackoffMs,
   rateLimitResponseFromMs,
-  recordModelsBackoff,
+  recordBackoff,
   toRateLimitResponse
 } from '../lib/rate-limit'
 
@@ -64,9 +64,10 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     const useStream = body.stream === true
     const modelsBaseUrl = c.env.GITHUB_MODELS_URL ?? GITHUB_MODELS_DEFAULT_URL
 
-    // Respect a still-open upstream rate-limit window: short-circuit with a 429
-    // instead of re-hammering GitHub Models (TINYTINKERER-EDGE-4).
-    const backoffMs = getModelsBackoffMs()
+    // Respect a still-open upstream rate-limit window (durable across isolates):
+    // short-circuit with a 429 instead of re-hammering GitHub Models
+    // (TINYTINKERER-EDGE-4).
+    const backoffMs = await getActiveBackoffMs()
     if (backoffMs > 0) {
       c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
       return c.json(rateLimitResponseFromMs(backoffMs), 429)
@@ -78,7 +79,17 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
         origin: 'github',
         method: 'POST',
         url: `${modelsBaseUrl}/chat/completions`,
-        stream: useStream
+        stream: useStream,
+        // Chat completions are NOT cacheable, so after we durably honour the
+        // upstream rate-limit window (above) the residual 429 — the first call
+        // that opens a new window — is a user-triggered, unavoidable GitHub
+        // Models rate limit. The frontend surfaces it as a cooldown; capturing
+        // it adds no signal (TINYTINKERER-EDGE-4 / FRONTEND-9).
+        accept: {
+          status: [429],
+          reason:
+            'GitHub Models chat rate limit; honoured via durable backoff + clean 429/Retry-After, surfaced to the user as a cooldown (TINYTINKERER-EDGE-4).'
+        }
       },
       {
         method: 'POST',
@@ -108,8 +119,9 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       if (response.status === 429) {
         const retryAfter = response.headers.get('retry-after')
         const rateLimitBody = toRateLimitResponse(rawText, retryAfter)
-        // Remember the window so the next call backs off instead of re-probing.
-        recordModelsBackoff(rateLimitBody.retryAfterMs)
+        // Remember the window (durably, colo-wide) so the next call backs off
+        // instead of re-probing.
+        await recordBackoff(rateLimitBody.retryAfterMs)
         c.header('Retry-After', retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000)))
         for (const header of RATE_LIMIT_HEADERS) {
           const value = response.headers.get(header)
@@ -132,7 +144,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     }
 
     // Upstream accepted the request — clear any backoff window.
-    clearModelsBackoff()
+    await clearBackoff()
 
     if (useStream && response.body) {
       const headers = new Headers({
@@ -185,9 +197,9 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       return c.json({ models: cached.models })
     }
 
-    // Honor a still-open rate-limit window shared with the chat route. Prefer the
-    // last-known catalogue over cascading a raw 429 to the browser.
-    const backoffMs = getModelsBackoffMs()
+    // Honor a still-open rate-limit window shared with the chat route (durable
+    // across isolates). Prefer the last-known catalogue over cascading a raw 429.
+    const backoffMs = await getActiveBackoffMs()
     if (backoffMs > 0) {
       if (cached) return c.json({ models: cached.models })
       c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
@@ -210,7 +222,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       if (response.status === 429) {
         const retryAfter = response.headers.get('retry-after')
         const rateLimitBody = toRateLimitResponse(await response.text(), retryAfter)
-        recordModelsBackoff(rateLimitBody.retryAfterMs)
+        await recordBackoff(rateLimitBody.retryAfterMs)
         if (cached) return c.json({ models: cached.models })
         c.header('Retry-After', retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000)))
         for (const header of RATE_LIMIT_HEADERS) {
@@ -229,7 +241,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     }
 
     // Upstream succeeded — clear any backoff window.
-    clearModelsBackoff()
+    await clearBackoff()
 
     const parsed = githubModelsListSchema.safeParse(await response.json())
     const models = (parsed.success ? (parsed.data.data ?? []) : []).map((m) => ({

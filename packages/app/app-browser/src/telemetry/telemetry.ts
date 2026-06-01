@@ -150,6 +150,9 @@ const dispatchToSentry = (error: Error, options: TelemetryCaptureOptions): void 
         scope.setContext(key, value)
       }
     }
+    if (options.fingerprint) {
+      scope.setFingerprint(options.fingerprint)
+    }
     sentry?.captureException(error)
   })
 }

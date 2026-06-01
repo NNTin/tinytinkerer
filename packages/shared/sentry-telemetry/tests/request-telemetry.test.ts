@@ -53,6 +53,23 @@ describe('request telemetry', () => {
     })
   })
 
+  it('fingerprints by area + kind + status so endpoints/statuses do not conflate', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('{}', { status: 429, statusText: 'Too Many Requests' })))
+    )
+
+    await fetchWithTelemetry({ ...metadata, area: 'models.list' }, {})
+    await fetchWithTelemetry({ ...metadata, area: 'models.chat' }, {})
+
+    const listFingerprint = sink.mock.calls[0]?.[1]?.fingerprint
+    const chatFingerprint = sink.mock.calls[1]?.[1]?.fingerprint
+    expect(listFingerprint).toEqual(['request-telemetry', 'models.list', 'http_error', '429'])
+    expect(chatFingerprint).toEqual(['request-telemetry', 'models.chat', 'http_error', '429'])
+    // Same frame (normalizeError) but distinct fingerprints → distinct issues.
+    expect(listFingerprint).not.toEqual(chatFingerprint)
+  })
+
   it('captures aborted requests as warnings', async () => {
     const abortError = Object.assign(new Error('The operation was aborted.'), {
       name: 'AbortError'

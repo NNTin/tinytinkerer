@@ -1,9 +1,12 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import {
+  clearBackoff,
   clearModelsBackoff,
+  getActiveBackoffMs,
   getModelsBackoffMs,
   parseRetryAfterMs,
   rateLimitResponseFromMs,
+  recordBackoff,
   recordModelsBackoff,
   toRateLimitResponse
 } from './rate-limit.js'
@@ -123,5 +126,29 @@ describe('models backoff window', () => {
     expect(result.code).toBe('rate_limited')
     expect(result.retryAfterMs).toBe(45_000)
     expect(result.retryAt).toBe(new Date(Date.now() + 45_000).toISOString())
+  })
+})
+
+describe('durable backoff window', () => {
+  // Outside Cloudflare `caches.default` is absent, so the durable layer degrades
+  // to the in-memory mirror — the request path (getActiveBackoffMs/recordBackoff/
+  // clearBackoff) must still honour and clear the window.
+  afterEach(async () => {
+    await clearBackoff()
+    vi.useRealTimers()
+  })
+
+  it('reports an active window recorded via recordBackoff', async () => {
+    const nowMs = 2_000_000
+    await recordBackoff(60_000, nowMs)
+    expect(await getActiveBackoffMs(nowMs)).toBe(60_000)
+    expect(await getActiveBackoffMs(nowMs + 60_001)).toBe(0)
+  })
+
+  it('clears the window after a successful upstream response', async () => {
+    const nowMs = 2_000_000
+    await recordBackoff(60_000, nowMs)
+    await clearBackoff()
+    expect(await getActiveBackoffMs(nowMs)).toBe(0)
   })
 })
