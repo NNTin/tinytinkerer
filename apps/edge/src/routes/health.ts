@@ -1,9 +1,9 @@
 import type { Hono } from 'hono'
-import type { SystemStatus } from '@tinytinkerer/contracts'
+import { EDGE_ROUTE_PATHS, type SystemStatus } from '@tinytinkerer/contracts'
 import type { Bindings } from '../lib/bindings'
 
 export const registerHealthRoute = (app: Hono<{ Bindings: Bindings }>) => {
-  app.get('/health', (c) => {
+  app.get(EDGE_ROUTE_PATHS.health, (c) => {
     const status: SystemStatus = {
       auth: {
         state: c.env.GITHUB_CLIENT_ID ? 'ready' : 'degraded',

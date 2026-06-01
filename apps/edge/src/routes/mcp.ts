@@ -3,6 +3,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { zValidator } from '@hono/zod-validator'
 import {
+  EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
   mcpCallRequestSchema,
   mcpCallResponseSchema,
@@ -92,7 +93,7 @@ const makeTransport = (url: string, bearerToken: string | undefined): Transport 
 }
 
 export const registerMcpRoutes = (app: Hono<{ Bindings: Bindings }>) => {
-  app.post('/api/mcp/discover', zValidator('json', mcpDiscoverRequestSchema), async (c) => {
+  app.post(EDGE_ROUTE_PATHS.mcpDiscover, zValidator('json', mcpDiscoverRequestSchema), async (c) => {
     const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
     if (!authorization) {
       return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
@@ -139,7 +140,7 @@ export const registerMcpRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     }
   })
 
-  app.post('/api/mcp/call', zValidator('json', mcpCallRequestSchema), async (c) => {
+  app.post(EDGE_ROUTE_PATHS.mcpCall, zValidator('json', mcpCallRequestSchema), async (c) => {
     const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
     if (!authorization) {
       return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)

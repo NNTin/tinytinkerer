@@ -1,5 +1,6 @@
 import type { Tool } from '@tinytinkerer/app-core'
 import {
+  EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
   mcpCallResponseSchema,
   type McpCallResponse,
@@ -19,7 +20,7 @@ export const createMcpTool = (
   description: `[${server.name}] ${toolMeta.description}`,
   schema: z.record(z.string(), z.unknown()),
   async execute(input) {
-    const response = await edgeFetch('/api/mcp/call', {
+    const response = await edgeFetch(EDGE_ROUTE_PATHS.mcpCall, {
       url: server.url,
       bearerToken: server.bearerToken,
       toolName: toolMeta.toolName,

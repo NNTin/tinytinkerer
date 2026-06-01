@@ -1,5 +1,6 @@
 import { zValidator } from '@hono/zod-validator'
 import {
+  EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
   searchResponseSchema,
   searchResultSchema,
@@ -40,7 +41,7 @@ const normalizeSearchResults = (results: TavilyResultItem[]): SearchResult[] =>
     .filter((value): value is SearchResult => Boolean(value))
 
 export const registerSearchRoutes = (app: Hono<{ Bindings: Bindings }>) => {
-  app.post('/api/search', zValidator('json', searchRequestSchema), async (c) => {
+  app.post(EDGE_ROUTE_PATHS.search, zValidator('json', searchRequestSchema), async (c) => {
     const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
 
     if (!authorization) {

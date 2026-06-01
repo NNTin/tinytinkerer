@@ -1,4 +1,4 @@
-import { githubExchangeResponseSchema } from '@tinytinkerer/contracts'
+import { EDGE_ROUTE_PATHS, githubExchangeResponseSchema } from '@tinytinkerer/contracts'
 import type { BrowserApp } from './app'
 import type { BrowserShell } from './shell'
 import { getTelemetryHeaders } from './telemetry/telemetry'
@@ -104,7 +104,7 @@ const exchangeCode = async (shell: BrowserShell, code: string): Promise<string> 
     area: 'auth.exchange',
     origin: 'edge',
     method: 'POST',
-    url: `${config.edgeBaseUrl}/auth/github/exchange`
+    url: `${config.edgeBaseUrl}${EDGE_ROUTE_PATHS.authGithubExchange}`
   }
   const response = await fetchWithTelemetry(metadata, {
     method: 'POST',

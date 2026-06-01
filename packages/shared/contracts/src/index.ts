@@ -39,6 +39,12 @@ export type {
   ThematicBreakNode
 } from './content'
 
+// Edge API contracts — schemas, inferred types, and route/header constants — are
+// generated from the canonical OpenAPI source at
+// apps/edge/openapi/tinytinkerer-edge.openapi.json by
+// scripts/generate-edge-openapi.mjs. Do not redefine these names here.
+export * from './edge.generated'
+
 export const eventTypeSchema = z.enum([
   'user.message',
   // Generic agent-trace events. These describe an agent's reasoning/acting
@@ -66,14 +72,6 @@ export const eventTypeSchema = z.enum([
 ])
 
 export type EventType = z.infer<typeof eventTypeSchema>
-
-export const searchResultSchema = z.object({
-  title: z.string(),
-  url: z.string(),
-  snippet: z.string()
-})
-
-export type SearchResult = z.infer<typeof searchResultSchema>
 
 export const planComplexitySchema = z.enum(['low', 'medium', 'high'])
 export type PlanComplexity = z.infer<typeof planComplexitySchema>
@@ -132,7 +130,10 @@ export const reactDecisionSchema = z.discriminatedUnion('kind', [
 ])
 export type ReActDecision = z.infer<typeof reactDecisionSchema>
 
-const eventBaseSchema = <TType extends EventType, TPayload extends z.ZodTypeAny>(
+const eventBaseSchema = <
+  TType extends EventType,
+  TPayload extends z.ZodTypeAny
+>(
   type: TType,
   payload: TPayload
 ) =>
@@ -286,17 +287,27 @@ export const chatEventSchema = z.discriminatedUnion('type', [
 
 export type UserMessageEvent = z.infer<typeof userMessageEventSchema>
 export type AgentRunStartedEvent = z.infer<typeof agentRunStartedEventSchema>
-export type AgentRunCompletedEvent = z.infer<typeof agentRunCompletedEventSchema>
+export type AgentRunCompletedEvent = z.infer<
+  typeof agentRunCompletedEventSchema
+>
 export type AgentStepStartedEvent = z.infer<typeof agentStepStartedEventSchema>
 export type AgentStepDeltaEvent = z.infer<typeof agentStepDeltaEventSchema>
-export type AgentStepCompletedEvent = z.infer<typeof agentStepCompletedEventSchema>
+export type AgentStepCompletedEvent = z.infer<
+  typeof agentStepCompletedEventSchema
+>
 export type AgentStepFailedEvent = z.infer<typeof agentStepFailedEventSchema>
 export type AgentToolStartedEvent = z.infer<typeof agentToolStartedEventSchema>
-export type AgentToolCompletedEvent = z.infer<typeof agentToolCompletedEventSchema>
+export type AgentToolCompletedEvent = z.infer<
+  typeof agentToolCompletedEventSchema
+>
 export type AgentToolFailedEvent = z.infer<typeof agentToolFailedEventSchema>
 export type RateLimitWaitingEvent = z.infer<typeof rateLimitWaitingEventSchema>
-export type RateLimitRecoveredEvent = z.infer<typeof rateLimitRecoveredEventSchema>
-export type RateLimitCancelledEvent = z.infer<typeof rateLimitCancelledEventSchema>
+export type RateLimitRecoveredEvent = z.infer<
+  typeof rateLimitRecoveredEventSchema
+>
+export type RateLimitCancelledEvent = z.infer<
+  typeof rateLimitCancelledEventSchema
+>
 export type ReasoningChunkEvent = z.infer<typeof reasoningChunkEventSchema>
 export type ReasoningDoneEvent = z.infer<typeof reasoningDoneEventSchema>
 export type AssistantChunkEvent = z.infer<typeof assistantChunkEventSchema>
@@ -305,55 +316,11 @@ export type ErrorEvent = z.infer<typeof errorEventSchema>
 export type SystemEvent = z.infer<typeof systemEventSchema>
 export type ChatEvent = z.infer<typeof chatEventSchema>
 
-export const serviceStatusSchema = z.object({
-  state: z.enum(['ready', 'degraded', 'offline']),
-  detail: z.string(),
-  error: z.string().optional()
-})
-
-export type ServiceStatus = z.infer<typeof serviceStatusSchema>
-
-export const systemStatusSchema = z.object({
-  auth: serviceStatusSchema,
-  models: serviceStatusSchema,
-  search: serviceStatusSchema
-})
-
-export type SystemStatus = z.infer<typeof systemStatusSchema>
-
-export const githubExchangeRequestSchema = z.object({
-  code: z.string().min(1),
-  redirectUri: z.string().url().optional()
-})
-
-export const githubExchangeResponseSchema = z.object({
-  accessToken: z.string().optional(),
-  error: z.string().optional()
-})
-
-export type GitHubExchangeRequest = z.infer<typeof githubExchangeRequestSchema>
-export type GitHubExchangeResponse = z.infer<typeof githubExchangeResponseSchema>
-
-export const edgeErrorResponseSchema = z.object({
-  error: z.string()
-})
-
-export type EdgeErrorResponse = z.infer<typeof edgeErrorResponseSchema>
-
-export const searchRequestSchema = z.object({
-  query: z.string().min(2).max(500),
-  maxResults: z.number().int().positive().max(10).optional()
-})
-
-export const searchResponseSchema = z.object({
-  query: z.string(),
-  results: z.array(searchResultSchema)
-})
-
-export type SearchRequest = z.infer<typeof searchRequestSchema>
-export type SearchResponse = z.infer<typeof searchResponseSchema>
-
-export const brandLinkRelSchema = z.enum(['icon', 'apple-touch-icon', 'mask-icon'])
+export const brandLinkRelSchema = z.enum([
+  'icon',
+  'apple-touch-icon',
+  'mask-icon'
+])
 export type BrandLinkRel = z.infer<typeof brandLinkRelSchema>
 
 export const brandLinkAssetSchema = z.object({
@@ -372,8 +339,14 @@ export const brandThemeMetadataSchema = z.object({
 })
 export type BrandThemeMetadata = z.infer<typeof brandThemeMetadataSchema>
 
-export const brandManifestIconPurposeSchema = z.enum(['any', 'maskable', 'monochrome'])
-export type BrandManifestIconPurpose = z.infer<typeof brandManifestIconPurposeSchema>
+export const brandManifestIconPurposeSchema = z.enum([
+  'any',
+  'maskable',
+  'monochrome'
+])
+export type BrandManifestIconPurpose = z.infer<
+  typeof brandManifestIconPurposeSchema
+>
 
 export const brandManifestIconSchema = z.object({
   src: z.string().min(1),
@@ -410,50 +383,6 @@ export const brandDefinitionSchema = z.object({
 })
 export type BrandDefinition = z.infer<typeof brandDefinitionSchema>
 
-export const chatMessageSchema = z.object({
-  role: z.enum(['system', 'user', 'assistant']),
-  content: z.string().max(32_000)
-})
-
-export const modelsChatRequestSchema = z.object({
-  model: z.string().optional(),
-  stream: z.boolean().optional(),
-  messages: z.array(chatMessageSchema).max(100)
-})
-
-export const modelsChatChoiceSchema = z.object({
-  message: z
-    .object({
-      role: z.string().optional(),
-      content: z.string().nullable().optional()
-    })
-    .optional(),
-  finish_reason: z.string().optional()
-})
-
-export const modelsChatResponseSchema = z.object({
-  choices: z.array(modelsChatChoiceSchema).optional(),
-  usage: z
-    .object({
-      prompt_tokens: z.number().optional(),
-      completion_tokens: z.number().optional(),
-      total_tokens: z.number().optional()
-    })
-    .optional()
-})
-
-export type ChatMessage = z.infer<typeof chatMessageSchema>
-export type ModelsChatRequest = z.infer<typeof modelsChatRequestSchema>
-export type ModelsChatResponse = z.infer<typeof modelsChatResponseSchema>
-
-export const rateLimitPayloadSchema = z.object({
-  code: z.literal('rate_limited'),
-  error: z.string(),
-  ...rateLimitDetailFields
-})
-
-export type RateLimitPayload = z.infer<typeof rateLimitPayloadSchema>
-
 export const parseRetryAfterMs = (
   value: string | null | undefined,
   nowMs = Date.now()
@@ -475,85 +404,3 @@ export const parseRetryAfterMs = (
 
   return undefined
 }
-
-export const githubModelEntrySchema = z.object({
-  id: z.string(),
-  label: z.string()
-})
-
-export const modelsListResponseSchema = z.object({
-  models: z.array(githubModelEntrySchema)
-})
-
-export type GitHubModelEntry = z.infer<typeof githubModelEntrySchema>
-export type ModelsListResponse = z.infer<typeof modelsListResponseSchema>
-
-export const mcpServerConfigSchema = z.object({
-  id: z.string(),
-  name: z.string().min(1),
-  url: z.string().url(),
-  bearerToken: z.string().optional(),
-  enabled: z.boolean()
-})
-
-export const mcpToolMetaSchema = z.object({
-  toolName: z.string(),
-  description: z.string(),
-  inputSchema: z.record(z.string(), z.unknown())
-})
-
-export const mcpDiscoveryResultSchema = z.object({
-  serverId: z.string(),
-  serverName: z.string(),
-  tools: z.array(mcpToolMetaSchema),
-  syncedAt: z.string(),
-  error: z.string().optional()
-})
-
-export const mcpDiscoverRequestSchema = z.object({
-  url: z.string(),
-  bearerToken: z.string().optional()
-})
-
-export const mcpCallRequestSchema = z.object({
-  url: z.string(),
-  bearerToken: z.string().optional(),
-  toolName: z.string(),
-  arguments: z.record(z.string(), z.unknown())
-})
-
-export const mcpCallResponseSchema = z.object({
-  serverName: z.string(),
-  toolName: z.string(),
-  text: z.string(),
-  raw: z.unknown(),
-  isError: z.boolean()
-})
-
-export type McpServerConfig = z.infer<typeof mcpServerConfigSchema>
-export type McpToolMeta = z.infer<typeof mcpToolMetaSchema>
-export type McpDiscoveryResult = z.infer<typeof mcpDiscoveryResultSchema>
-export type McpDiscoverRequest = z.infer<typeof mcpDiscoverRequestSchema>
-export type McpCallRequest = z.infer<typeof mcpCallRequestSchema>
-export type McpCallResponse = z.infer<typeof mcpCallResponseSchema>
-
-export const TELEMETRY_HEADERS = {
-  appVersion: 'X-App-Version',
-  buildHash: 'X-Build-Hash',
-  installId: 'X-Install-ID',
-  githubId: 'X-GitHub-ID'
-} as const
-
-// Upper bound on accepted header lengths. App version / build hash are short,
-// the install ID is a UUID, and the GitHub id/login is well under this. Caps the
-// blast radius of a malicious client stuffing arbitrary values into Sentry.
-const TELEMETRY_HEADER_MAX_LENGTH = 128
-
-export const telemetryHeadersSchema = z.object({
-  appVersion: z.string().max(TELEMETRY_HEADER_MAX_LENGTH).optional(),
-  buildHash: z.string().max(TELEMETRY_HEADER_MAX_LENGTH).optional(),
-  installId: z.string().max(TELEMETRY_HEADER_MAX_LENGTH).optional(),
-  githubId: z.string().max(TELEMETRY_HEADER_MAX_LENGTH).optional()
-})
-
-export type TelemetryHeaders = z.infer<typeof telemetryHeadersSchema>

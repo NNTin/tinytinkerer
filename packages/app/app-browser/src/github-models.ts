@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SUPPORTED_MODELS } from '@tinytinkerer/app-core'
-import { modelsListResponseSchema, type GitHubModelEntry } from '@tinytinkerer/contracts'
+import {
+  EDGE_ROUTE_PATHS,
+  modelsListResponseSchema,
+  type GitHubModelEntry
+} from '@tinytinkerer/contracts'
 import { useAuthStore } from './app'
 import { useBrowserShellConfig } from './hooks'
 import { getTelemetryHeaders } from './telemetry/telemetry'
@@ -12,6 +16,12 @@ import {
 } from './telemetry/request-telemetry'
 
 export type ModelEntry = GitHubModelEntry
+export type GitHubModelsState = {
+  models: ModelEntry[]
+  isRefreshing: boolean
+  refreshError: string | null
+  refreshGitHubModels: () => Promise<ModelEntry[]>
+}
 
 type CacheEntry = { models: ModelEntry[]; cachedAt: number; ttlMs: number }
 const modelsCache = new Map<string, CacheEntry>()
@@ -21,6 +31,12 @@ const MODELS_CACHE_TTL_MS = 5 * 60_000
 // edge already serves a cached catalogue, so a short window here is enough to
 // stop the frontend hammering it during a rate-limit storm (TINYTINKERER-FRONTEND-5).
 const MODELS_FALLBACK_TTL_MS = 30_000
+const STATIC_MODELS = [...SUPPORTED_MODELS]
+
+const loadStaticCatalog = async (): Promise<ModelEntry[]> => {
+  const { loadSupportedChatModels } = await import('@tinytinkerer/app-core')
+  return loadSupportedChatModels()
+}
 
 /** Reset the in-memory models cache. Test-only — the cache is module-level. */
 export const clearModelsCache = (): void => modelsCache.clear()
@@ -40,7 +56,8 @@ export const fetchGitHubModels = async (
   const tokenHash = await hashToken(token)
   const cacheKey = `${edgeBaseUrl}:${tokenHash}`
   const cached = modelsCache.get(cacheKey)
-  if (cached && Date.now() - cached.cachedAt <= cached.ttlMs) return cached.models
+  if (cached && Date.now() - cached.cachedAt <= cached.ttlMs)
+    return cached.models
 
   // The model catalogue is cacheable, so when the edge is in a cooldown / cache-
   // miss state (429 or 503) we degrade gracefully: serve the LAST-KNOWN list —
@@ -51,8 +68,12 @@ export const fetchGitHubModels = async (
   // serves its own last-known catalogue (TINYTINKERER-FRONTEND-C / FRONTEND-D,
   // TINYTINKERER-FRONTEND-5).
   const fallback = (): ModelEntry[] => {
-    const models = cached?.models ?? [...SUPPORTED_MODELS]
-    modelsCache.set(cacheKey, { models, cachedAt: Date.now(), ttlMs: MODELS_FALLBACK_TTL_MS })
+    const models = cached?.models ?? [...STATIC_MODELS]
+    modelsCache.set(cacheKey, {
+      models,
+      cachedAt: Date.now(),
+      ttlMs: MODELS_FALLBACK_TTL_MS
+    })
     return models
   }
 
@@ -60,7 +81,7 @@ export const fetchGitHubModels = async (
     area: 'models.list',
     origin: 'edge',
     method: 'GET',
-    url: `${edgeBaseUrl}/api/models/list`,
+    url: `${edgeBaseUrl}${EDGE_ROUTE_PATHS.modelsList}`,
     // The edge deliberately emits a 429 (residual window-opener) or a 503 + Retry-
     // After (its designed cooldown / cache-miss signal) for this CACHEABLE
     // catalogue while GitHub Models is rate limited. Both mean "serve your cached
@@ -107,26 +128,84 @@ export const fetchGitHubModels = async (
       return fallback()
     }
 
-    modelsCache.set(cacheKey, { models, cachedAt: Date.now(), ttlMs: MODELS_CACHE_TTL_MS })
+    modelsCache.set(cacheKey, {
+      models,
+      cachedAt: Date.now(),
+      ttlMs: MODELS_CACHE_TTL_MS
+    })
     return models
   } catch {
     return fallback()
   }
 }
 
-export const useGitHubModels = (): ModelEntry[] => {
+const includeSelectedModel = (
+  models: ModelEntry[],
+  selectedModel: string | null | undefined
+): ModelEntry[] => {
+  const normalized = selectedModel?.trim()
+  if (!normalized || models.some((model) => model.id === normalized))
+    return models
+  return [{ id: normalized, label: normalized, kind: 'chat' }, ...models]
+}
+
+export const useGitHubModels = (selectedModel?: string): GitHubModelsState => {
   const token = useAuthStore((state) => state.token)
   const { edgeBaseUrl } = useBrowserShellConfig()
-  const [models, setModels] = useState<ModelEntry[]>([...SUPPORTED_MODELS])
+  const [models, setModels] = useState<ModelEntry[]>(STATIC_MODELS)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
+    loadStaticCatalog()
+      .then((catalogModels) => {
+        if (!cancelled && catalogModels.length > 0) {
+          setModels(catalogModels)
+        }
+      })
+      // The dynamic import can fail (bundler/JSON loading issue). Keep the
+      // built-in STATIC_MODELS defaults rather than throwing an unhandled
+      // rejection — a real refresh still surfaces errors via refreshError.
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const refreshGitHubModels = useCallback(async (): Promise<ModelEntry[]> => {
     if (!token) {
-      setModels([...SUPPORTED_MODELS])
-      return
+      const nextModels = [...STATIC_MODELS]
+      setModels(nextModels)
+      setRefreshError('Sign in with GitHub to refresh models.')
+      return includeSelectedModel(nextModels, selectedModel)
     }
 
-    void fetchGitHubModels(edgeBaseUrl, token).then(setModels)
-  }, [token, edgeBaseUrl])
+    setIsRefreshing(true)
+    setRefreshError(null)
+    try {
+      const nextModels = await fetchGitHubModels(edgeBaseUrl, token)
+      setModels(nextModels)
+      return includeSelectedModel(nextModels, selectedModel)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to refresh models.'
+      setRefreshError(message)
+      return includeSelectedModel(models, selectedModel)
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [edgeBaseUrl, models, selectedModel, token])
 
-  return models
+  const visibleModels = useMemo(
+    () => includeSelectedModel(models, selectedModel),
+    [models, selectedModel]
+  )
+
+  return {
+    models: visibleModels,
+    isRefreshing,
+    refreshError,
+    refreshGitHubModels
+  }
 }

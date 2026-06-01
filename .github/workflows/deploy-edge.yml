@@ -6,6 +6,8 @@ on:
     paths:
       - 'apps/edge/**'
       - 'packages/shared/contracts/**'
+      - 'docs/openapi/**'
+      - 'scripts/generate-edge-openapi.mjs'
       - 'package.json'
       - 'pnpm-workspace.yaml'
       - 'turbo.json'
@@ -23,6 +25,9 @@ jobs:
   checks:
     name: Mermaid, Boundaries & Skill README
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      models: read
     steps:
       - uses: actions/checkout@v4
 
@@ -43,6 +48,14 @@ jobs:
 
       - name: Boundary check
         run: pnpm check:boundaries
+
+      - name: GitHub Models OpenAPI check
+        env:
+          GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm check:github-models-openapi
+
+      - name: Edge OpenAPI generation check
+        run: pnpm check:edge-openapi
 
       - name: Skill README sync check
         run: pnpm check:skill-readme

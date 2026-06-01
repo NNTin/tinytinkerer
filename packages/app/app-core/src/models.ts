@@ -1,8 +1,28 @@
-export const SUPPORTED_MODELS = [
-  { id: 'openai/gpt-5', label: 'GPT-5' }
-] as const
+import type { GitHubModelEntry } from '@tinytinkerer/contracts'
 
-export const DEFAULT_MODEL = SUPPORTED_MODELS[0].id
+export const DEFAULT_MODEL = 'openai/gpt-5'
 
-export const normalizeSelectedModel = (value: string | null | undefined): string =>
-  value && value.trim() ? value : DEFAULT_MODEL
+export const SUPPORTED_MODELS: readonly GitHubModelEntry[] = [
+  { id: DEFAULT_MODEL, label: 'OpenAI GPT-5', kind: 'chat' }
+]
+
+export const loadGitHubModelsCatalog = async (): Promise<
+  GitHubModelEntry[]
+> => {
+  const { default: catalog } = await import('./github-models-catalog.json')
+  return catalog as GitHubModelEntry[]
+}
+
+export const loadSupportedChatModels = async (): Promise<GitHubModelEntry[]> =>
+  (await loadGitHubModelsCatalog()).filter((model) => model.kind === 'chat')
+
+export const loadSupportedEmbeddingModels = async (): Promise<
+  GitHubModelEntry[]
+> =>
+  (await loadGitHubModelsCatalog()).filter(
+    (model) => model.kind === 'embedding'
+  )
+
+export const normalizeSelectedModel = (
+  value: string | null | undefined
+): string => (value && value.trim() ? value : DEFAULT_MODEL)

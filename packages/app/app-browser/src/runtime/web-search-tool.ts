@@ -1,5 +1,6 @@
 import type { Tool } from '@tinytinkerer/app-core'
 import {
+  EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
   searchRequestSchema,
   searchResponseSchema,
@@ -14,7 +15,7 @@ export const createWebSearchTool = (edgeFetch: EdgeFetch): Tool<SearchRequest, S
   description: 'Search the web for fresh context using Tavily.',
   schema: searchRequestSchema,
   async execute(input) {
-    const response = await edgeFetch('/api/search', input, { area: 'search' })
+    const response = await edgeFetch(EDGE_ROUTE_PATHS.search, input, { area: 'search' })
     const metadata = {
       area: 'search' as const,
       origin: 'edge' as const,

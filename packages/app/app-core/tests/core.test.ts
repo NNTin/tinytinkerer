@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { ContentDocument, ChatEvent, McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contracts'
+import { githubModelEntrySchema } from '@tinytinkerer/contracts'
+import type {
+  ContentDocument,
+  ChatEvent,
+  McpDiscoveryResult,
+  McpServerConfig
+} from '@tinytinkerer/contracts'
 import {
   activeCooldown,
   buildConversationHistory,
@@ -9,6 +15,8 @@ import {
   defaultChatState,
   defaultSettingsState,
   inferPlan,
+  loadGitHubModelsCatalog,
+  loadSupportedEmbeddingModels,
   loadSettingsState,
   normalizeSelectedModel,
   persistBooleanPreference,
@@ -40,7 +48,9 @@ const assistantContent = (source: string): ContentDocument => ({
 
 describe('app-core helpers', () => {
   it('infers search plans', () => {
-    expect(inferPlan('latest ai news').steps.some((step) => step.id === 'search')).toBe(true)
+    expect(
+      inferPlan('latest ai news').steps.some((step) => step.id === 'search')
+    ).toBe(true)
   })
 
   it('falls back to the default model for null/empty values', () => {
@@ -52,14 +62,32 @@ describe('app-core helpers', () => {
 
   it('preserves any non-empty model id including dynamic models', () => {
     expect(normalizeSelectedModel('openai/gpt-4o')).toBe('openai/gpt-4o')
-    expect(normalizeSelectedModel('meta/llama-4-scout-17b-16e-instruct')).toBe('meta/llama-4-scout-17b-16e-instruct')
+    expect(normalizeSelectedModel('meta/llama-4-scout-17b-16e-instruct')).toBe(
+      'meta/llama-4-scout-17b-16e-instruct'
+    )
+  })
+
+  it('keeps a checked-in GitHub Models catalog with chat and embedding models', async () => {
+    const catalog = await loadGitHubModelsCatalog()
+    const embeddingModels = await loadSupportedEmbeddingModels()
+    expect(() =>
+      catalog.forEach((model) => githubModelEntrySchema.parse(model))
+    ).not.toThrow()
+    expect(DEFAULT_MODEL).toBe('openai/gpt-5')
+    expect(catalog.some((model) => model.id === DEFAULT_MODEL)).toBe(true)
+    expect(
+      embeddingModels.some((model) => model.id.includes('/text-embedding'))
+    ).toBe(true)
   })
 
   it('builds conversation history from completed turns only', () => {
     expect(
       buildConversationHistory([
         event('user.message', { text: 'hello' }),
-        event('assistant.done', { source: 'hi', content: assistantContent('hi') }),
+        event('assistant.done', {
+          source: 'hi',
+          content: assistantContent('hi')
+        }),
         event('user.message', { text: 'broken' }),
         event('error', { message: 'oops' })
       ])
@@ -72,7 +100,11 @@ describe('app-core helpers', () => {
   it('projects turns with per-turn activity entries', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hello' }),
-      event('agent.step.started', { stepId: 'plan', kind: 'plan', title: 'Created 1-step plan' }),
+      event('agent.step.started', {
+        stepId: 'plan',
+        kind: 'plan',
+        title: 'Created 1-step plan'
+      }),
       event('agent.step.started', {
         stepId: 'step-1',
         parentStepId: 'plan',
@@ -84,7 +116,8 @@ describe('app-core helpers', () => {
 
     const turns = buildTurns(events)
     expect(turns).toHaveLength(1)
-    const labels = turns[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    const labels =
+      turns[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
     expect(labels).toHaveLength(2)
   })
 
@@ -93,8 +126,16 @@ describe('app-core helpers', () => {
       event('user.message', { text: 'hello' }),
       event('reasoning.chunk', { source: 'm', text: 'thinking…' }),
       event('reasoning.done', { source: 'm', text: 'thinking… done' }),
-      event('agent.tool.started', { stepId: 'act-1', toolId: 'web-search', input: { query: 'hello' } }),
-      event('agent.tool.completed', { stepId: 'act-1', toolId: 'web-search', output: { query: 'hello', results: [] } }),
+      event('agent.tool.started', {
+        stepId: 'act-1',
+        toolId: 'web-search',
+        input: { query: 'hello' }
+      }),
+      event('agent.tool.completed', {
+        stepId: 'act-1',
+        toolId: 'web-search',
+        output: { query: 'hello', results: [] }
+      }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
 
@@ -102,14 +143,23 @@ describe('app-core helpers', () => {
     expect(activity?.reasoningText).toBe('thinking… done')
     const tools = activity?.items.filter((item) => item.kind === 'tool') ?? []
     expect(tools).toHaveLength(1)
-    expect(tools[0]).toMatchObject({ toolId: 'web-search', status: 'completed' })
-    expect(activity?.items.filter((item) => item.kind === 'reasoning')).toHaveLength(1)
+    expect(tools[0]).toMatchObject({
+      toolId: 'web-search',
+      status: 'completed'
+    })
+    expect(
+      activity?.items.filter((item) => item.kind === 'reasoning')
+    ).toHaveLength(1)
   })
 
   it('captures step hierarchy (stepId, parentId, kind) for nested agent steps', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hi' }),
-      event('agent.step.started', { stepId: 'plan', kind: 'plan', title: 'Created 1-step plan' }),
+      event('agent.step.started', {
+        stepId: 'plan',
+        kind: 'plan',
+        title: 'Created 1-step plan'
+      }),
       event('agent.step.started', {
         stepId: 's1',
         parentStepId: 'plan',
@@ -122,12 +172,18 @@ describe('app-core helpers', () => {
         toolId: 'web-search',
         input: { query: 'x' }
       }),
-      event('agent.tool.completed', { stepId: 't1', toolId: 'web-search', output: {} }),
+      event('agent.tool.completed', {
+        stepId: 't1',
+        toolId: 'web-search',
+        output: {}
+      }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
 
     const items = buildTurns(events)[0]?.activity.items ?? []
-    expect(items.find((item) => item.kind === 'label' && item.stepId === 's1')).toMatchObject({
+    expect(
+      items.find((item) => item.kind === 'label' && item.stepId === 's1')
+    ).toMatchObject({
       parentId: 'plan',
       stepKind: 'plan-step'
     })
@@ -141,47 +197,75 @@ describe('app-core helpers', () => {
   it('streams a thought into the matching think step label and does not duplicate it', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hi' }),
-      event('agent.step.started', { stepId: 'th1', kind: 'think', title: 'Thinking…' }),
+      event('agent.step.started', {
+        stepId: 'th1',
+        kind: 'think',
+        title: 'Thinking…'
+      }),
       event('agent.step.delta', { stepId: 'th1', text: 'Let me search' }),
-      event('agent.step.delta', { stepId: 'th1', text: 'Let me search the docs' }),
-      event('agent.step.completed', { stepId: 'th1', summary: 'Let me search the docs' }),
+      event('agent.step.delta', {
+        stepId: 'th1',
+        text: 'Let me search the docs'
+      }),
+      event('agent.step.completed', {
+        stepId: 'th1',
+        summary: 'Let me search the docs'
+      }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
 
-    const labels = buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    const labels =
+      buildTurns(events)[0]?.activity.items.filter(
+        (item) => item.kind === 'label'
+      ) ?? []
     expect(labels).toHaveLength(1)
-    expect(labels[0]).toMatchObject({ label: 'Let me search the docs', stepKind: 'think' })
+    expect(labels[0]).toMatchObject({
+      label: 'Let me search the docs',
+      stepKind: 'think'
+    })
   })
 
   it('appends a separate observation label for a non-think step completion', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hi' }),
-      event('agent.step.started', { stepId: 'a1', kind: 'act', title: 'Using web-search' }),
-      event('agent.step.completed', { stepId: 'a1', summary: 'web-search: {"r":1}' }),
+      event('agent.step.started', {
+        stepId: 'a1',
+        kind: 'act',
+        title: 'Using web-search'
+      }),
+      event('agent.step.completed', {
+        stepId: 'a1',
+        summary: 'web-search: {"r":1}'
+      }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
 
-    const labels = buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    const labels =
+      buildTurns(events)[0]?.activity.items.filter(
+        (item) => item.kind === 'label'
+      ) ?? []
     expect(labels).toHaveLength(2)
-    expect(labels.some((item) => item.kind === 'label' && item.label.startsWith('web-search'))).toBe(true)
+    expect(
+      labels.some(
+        (item) => item.kind === 'label' && item.label.startsWith('web-search')
+      )
+    ).toBe(true)
   })
 
   it('keeps one turn when rate-limit waiting later completes', () => {
-    const turns = buildTurns(
-      [
-        event('user.message', { text: 'latest news' }),
-        event('rate.limit.waiting', {
-          retryAfterMs: 1_000,
-          retryAt: new Date(Date.now() + 1_000).toISOString(),
-          message: 'Rate limited for a moment.',
-          autoRetry: true
-        }),
-        event('assistant.done', {
-          source: 'Here is the latest update.',
-          content: assistantContent('Here is the latest update.')
-        })
-      ]
-    )
+    const turns = buildTurns([
+      event('user.message', { text: 'latest news' }),
+      event('rate.limit.waiting', {
+        retryAfterMs: 1_000,
+        retryAt: new Date(Date.now() + 1_000).toISOString(),
+        message: 'Rate limited for a moment.',
+        autoRetry: true
+      }),
+      event('assistant.done', {
+        source: 'Here is the latest update.',
+        content: assistantContent('Here is the latest update.')
+      })
+    ])
 
     expect(turns).toHaveLength(1)
     expect(turns[0]?.id).toEqual(expect.any(String))
@@ -197,13 +281,14 @@ describe('app-core helpers', () => {
   })
 
   it('keeps one turn when a system notice later completes', () => {
-    const turns = buildTurns(
-      [
-        event('user.message', { text: 'hello' }),
-        event('system', { message: 'Using cached context.', level: 'info' }),
-        event('assistant.done', { source: 'Hi there.', content: assistantContent('Hi there.') })
-      ]
-    )
+    const turns = buildTurns([
+      event('user.message', { text: 'hello' }),
+      event('system', { message: 'Using cached context.', level: 'info' }),
+      event('assistant.done', {
+        source: 'Hi there.',
+        content: assistantContent('Hi there.')
+      })
+    ])
 
     expect(turns).toHaveLength(1)
     expect(turns[0]?.id).toEqual(expect.any(String))
@@ -249,7 +334,10 @@ describe('app-core helpers', () => {
         id: 'evt-done',
         timestamp: new Date().toISOString(),
         type: 'assistant.done',
-        payload: { source: 'hi there', content: 'hi there' as unknown as ContentDocument }
+        payload: {
+          source: 'hi there',
+          content: 'hi there' as unknown as ContentDocument
+        }
       }
     ] as ChatEvent[]
 
@@ -262,12 +350,18 @@ describe('app-core helpers', () => {
   })
 
   it('drops expired cooldowns', () => {
-    expect(activeCooldown(new Date(Date.now() - 1_000).toISOString())).toBeUndefined()
+    expect(
+      activeCooldown(new Date(Date.now() - 1_000).toISOString())
+    ).toBeUndefined()
   })
 
   it('does not attach activity to a turn without a preceding user.message', () => {
     const turns = buildTurns([
-      event('agent.step.started', { stepId: 'plan', kind: 'plan', title: 'Created 0-step plan' }),
+      event('agent.step.started', {
+        stepId: 'plan',
+        kind: 'plan',
+        title: 'Created 0-step plan'
+      }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ])
     expect(turns).toHaveLength(1)
@@ -280,7 +374,10 @@ describe('app-core helpers', () => {
       event('agent.step.completed', { stepId: 'step-1' }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
-    const labels = buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    const labels =
+      buildTurns(events)[0]?.activity.items.filter(
+        (item) => item.kind === 'label'
+      ) ?? []
     expect(labels).toHaveLength(0)
   })
 
@@ -294,7 +391,9 @@ describe('app-core helpers', () => {
     const state = await loadSettingsState({
       get: (key) =>
         key === 'settings_mcp_servers'
-          ? Promise.resolve(JSON.stringify([validServer, { id: 'broken', enabled: 'yes' }]))
+          ? Promise.resolve(
+              JSON.stringify([validServer, { id: 'broken', enabled: 'yes' }])
+            )
           : Promise.resolve(undefined),
       set: () => Promise.resolve()
     })
@@ -324,7 +423,10 @@ describe('app-core helpers', () => {
 
   it('hydrates Web Speech API voice input from the stored preference key', async () => {
     const state = await loadSettingsState({
-      get: (key) => Promise.resolve(key === SETTINGS_KEYS.webSpeechEnabled ? 'true' : undefined),
+      get: (key) =>
+        Promise.resolve(
+          key === SETTINGS_KEYS.webSpeechEnabled ? 'true' : undefined
+        ),
       set: () => Promise.resolve()
     })
 
@@ -333,7 +435,10 @@ describe('app-core helpers', () => {
 
   it('hydrates reasoning & activity from the stored preference key', async () => {
     const state = await loadSettingsState({
-      get: (key) => Promise.resolve(key === SETTINGS_KEYS.showReasoningActivity ? 'true' : undefined),
+      get: (key) =>
+        Promise.resolve(
+          key === SETTINGS_KEYS.showReasoningActivity ? 'true' : undefined
+        ),
       set: () => Promise.resolve()
     })
 
@@ -342,7 +447,10 @@ describe('app-core helpers', () => {
 
   it('migrates reasoning & activity from either legacy toggle when the new key is unset', async () => {
     const state = await loadSettingsState({
-      get: (key) => Promise.resolve(key === 'settings_show_tool_activity' ? 'true' : undefined),
+      get: (key) =>
+        Promise.resolve(
+          key === 'settings_show_tool_activity' ? 'true' : undefined
+        ),
       set: () => Promise.resolve()
     })
 
@@ -363,7 +471,9 @@ describe('app-core helpers', () => {
     const state = await loadSettingsState({
       get: (key) =>
         Promise.resolve(
-          key === SETTINGS_KEYS.showCodeBlockFullscreenButton ? 'false' : undefined
+          key === SETTINGS_KEYS.showCodeBlockFullscreenButton
+            ? 'false'
+            : undefined
         ),
       set: () => Promise.resolve()
     })
@@ -394,16 +504,25 @@ describe('app-core helpers', () => {
     const validDiscovery: McpDiscoveryResult = {
       serverId: 'server-1',
       serverName: 'Weather Server',
-      tools: [{ toolName: 'get_weather', description: 'Get weather', inputSchema: {} }],
+      tools: [
+        { toolName: 'get_weather', description: 'Get weather', inputSchema: {} }
+      ],
       syncedAt: new Date().toISOString()
     }
     const state = await loadSettingsState({
       get: (key) =>
         key === 'settings_mcp_discovery'
-          ? Promise.resolve(JSON.stringify({
-            'server-1': validDiscovery,
-            broken: { serverId: 'broken', serverName: 42, tools: [], syncedAt: 'now' }
-          }))
+          ? Promise.resolve(
+              JSON.stringify({
+                'server-1': validDiscovery,
+                broken: {
+                  serverId: 'broken',
+                  serverName: 42,
+                  tools: [],
+                  syncedAt: 'now'
+                }
+              })
+            )
           : Promise.resolve(undefined),
       set: () => Promise.resolve()
     })
@@ -413,25 +532,47 @@ describe('app-core helpers', () => {
 
   describe('canSendPrompt', () => {
     it('returns false when conversationId is absent', () => {
-      expect(canSendPrompt({ ...defaultChatState(), conversationId: undefined })).toBe(false)
+      expect(
+        canSendPrompt({ ...defaultChatState(), conversationId: undefined })
+      ).toBe(false)
     })
 
     it('returns false when isRunning is true', () => {
-      expect(canSendPrompt({ ...defaultChatState(), conversationId: 'id', isRunning: true })).toBe(false)
+      expect(
+        canSendPrompt({
+          ...defaultChatState(),
+          conversationId: 'id',
+          isRunning: true
+        })
+      ).toBe(false)
     })
 
     it('returns false when cooldown is active', () => {
       const future = new Date(Date.now() + 60_000).toISOString()
-      expect(canSendPrompt({ ...defaultChatState(), conversationId: 'id', cooldownUntil: future })).toBe(false)
+      expect(
+        canSendPrompt({
+          ...defaultChatState(),
+          conversationId: 'id',
+          cooldownUntil: future
+        })
+      ).toBe(false)
     })
 
     it('returns true when cooldown has expired', () => {
       const past = new Date(Date.now() - 1_000).toISOString()
-      expect(canSendPrompt({ ...defaultChatState(), conversationId: 'id', cooldownUntil: past })).toBe(true)
+      expect(
+        canSendPrompt({
+          ...defaultChatState(),
+          conversationId: 'id',
+          cooldownUntil: past
+        })
+      ).toBe(true)
     })
 
     it('returns true when all conditions are clear', () => {
-      expect(canSendPrompt({ ...defaultChatState(), conversationId: 'id' })).toBe(true)
+      expect(
+        canSendPrompt({ ...defaultChatState(), conversationId: 'id' })
+      ).toBe(true)
     })
   })
 })

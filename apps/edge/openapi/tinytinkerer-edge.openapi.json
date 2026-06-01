@@ -1,0 +1,868 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TinyTinkerer Edge API",
+    "version": "0.1.0",
+    "description": "OpenAPI contract for the TinyTinkerer edge Worker. The canonical source is apps/edge/openapi/tinytinkerer-edge.openapi.json; the published docs/openapi copy and the contracts Zod schemas (packages/shared/contracts/src/edge.generated.ts) are generated from it by scripts/generate-edge-openapi.mjs. Do not edit the generated outputs."
+  },
+  "servers": [
+    {
+      "url": "https://api.tiny.nntin.xyz"
+    }
+  ],
+  "security": [
+    {
+      "BearerToken": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "x-route-key": "health",
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Report edge service health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SystemStatus" }
+              }
+            }
+          }
+        }
+      },
+      "options": {
+        "operationId": "preflightHealth",
+        "summary": "CORS preflight",
+        "security": [],
+        "parameters": [
+          { "$ref": "#/components/parameters/OriginHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestMethodHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestHeadersHeader" }
+        ],
+        "responses": {
+          "204": { "$ref": "#/components/responses/Preflight" }
+        }
+      }
+    },
+    "/auth/github/exchange": {
+      "x-route-key": "authGithubExchange",
+      "post": {
+        "operationId": "exchangeGitHubCode",
+        "summary": "Exchange a GitHub OAuth code for an access token",
+        "parameters": [
+          { "$ref": "#/components/parameters/AppVersionHeader" },
+          { "$ref": "#/components/parameters/BuildHashHeader" },
+          { "$ref": "#/components/parameters/InstallIdHeader" },
+          { "$ref": "#/components/parameters/GitHubIdHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GitHubExchangeRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Access token or error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubExchangeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid code or failed exchange",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubExchangeResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "OAuth not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubExchangeResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "options": {
+        "operationId": "preflightAuthGitHubExchange",
+        "summary": "CORS preflight",
+        "security": [],
+        "parameters": [
+          { "$ref": "#/components/parameters/OriginHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestMethodHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestHeadersHeader" }
+        ],
+        "responses": {
+          "204": { "$ref": "#/components/responses/Preflight" }
+        }
+      }
+    },
+    "/api/search": {
+      "x-route-key": "search",
+      "post": {
+        "operationId": "createSearch",
+        "summary": "Proxy a Tavily web search",
+        "parameters": [
+          { "$ref": "#/components/parameters/AppVersionHeader" },
+          { "$ref": "#/components/parameters/BuildHashHeader" },
+          { "$ref": "#/components/parameters/InstallIdHeader" },
+          { "$ref": "#/components/parameters/GitHubIdHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SearchRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SearchResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Error" },
+          "502": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "options": {
+        "operationId": "preflightSearch",
+        "summary": "CORS preflight",
+        "security": [],
+        "parameters": [
+          { "$ref": "#/components/parameters/OriginHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestMethodHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestHeadersHeader" }
+        ],
+        "responses": {
+          "204": { "$ref": "#/components/responses/Preflight" }
+        }
+      }
+    },
+    "/api/models/list": {
+      "x-route-key": "modelsList",
+      "get": {
+        "operationId": "listModels",
+        "summary": "List GitHub Models through the edge proxy",
+        "parameters": [
+          { "$ref": "#/components/parameters/AppVersionHeader" },
+          { "$ref": "#/components/parameters/BuildHashHeader" },
+          { "$ref": "#/components/parameters/InstallIdHeader" },
+          { "$ref": "#/components/parameters/GitHubIdHeader" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Model catalog",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ModelsListResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Error" },
+          "503": {
+            "description": "Catalogue temporarily unavailable",
+            "headers": {
+              "Retry-After": { "$ref": "#/components/headers/Retry-After" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EdgeErrorResponse" }
+              }
+            }
+          }
+        }
+      },
+      "options": {
+        "operationId": "preflightModelsList",
+        "summary": "CORS preflight",
+        "security": [],
+        "parameters": [
+          { "$ref": "#/components/parameters/OriginHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestMethodHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestHeadersHeader" }
+        ],
+        "responses": {
+          "204": { "$ref": "#/components/responses/Preflight" }
+        }
+      }
+    },
+    "/api/models/chat": {
+      "x-route-key": "modelsChat",
+      "post": {
+        "operationId": "createModelsChat",
+        "summary": "Proxy a GitHub Models chat completion",
+        "parameters": [
+          { "$ref": "#/components/parameters/AppVersionHeader" },
+          { "$ref": "#/components/parameters/BuildHashHeader" },
+          { "$ref": "#/components/parameters/InstallIdHeader" },
+          { "$ref": "#/components/parameters/GitHubIdHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ModelsChatRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Chat completion (JSON) or Server-Sent Events stream",
+            "headers": {
+              "x-ratelimit-limit-requests": {
+                "$ref": "#/components/headers/x-ratelimit-limit-requests"
+              },
+              "x-ratelimit-remaining-requests": {
+                "$ref": "#/components/headers/x-ratelimit-remaining-requests"
+              },
+              "x-ratelimit-reset-requests": {
+                "$ref": "#/components/headers/x-ratelimit-reset-requests"
+              },
+              "x-ratelimit-renewalperiod-requests": {
+                "$ref": "#/components/headers/x-ratelimit-renewalperiod-requests"
+              },
+              "x-ratelimit-limit-tokens": {
+                "$ref": "#/components/headers/x-ratelimit-limit-tokens"
+              },
+              "x-ratelimit-remaining-tokens": {
+                "$ref": "#/components/headers/x-ratelimit-remaining-tokens"
+              },
+              "x-ratelimit-reset-tokens": {
+                "$ref": "#/components/headers/x-ratelimit-reset-tokens"
+              },
+              "x-ratelimit-renewalperiod-tokens": {
+                "$ref": "#/components/headers/x-ratelimit-renewalperiod-tokens"
+              },
+              "x-ratelimit-abusepenalty-active": {
+                "$ref": "#/components/headers/x-ratelimit-abusepenalty-active"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ModelsChatResponse" }
+              },
+              "text/event-stream": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/RateLimit" },
+          "500": { "$ref": "#/components/responses/Error" },
+          "502": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" },
+          "504": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "options": {
+        "operationId": "preflightModelsChat",
+        "summary": "CORS preflight",
+        "security": [],
+        "parameters": [
+          { "$ref": "#/components/parameters/OriginHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestMethodHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestHeadersHeader" }
+        ],
+        "responses": {
+          "204": { "$ref": "#/components/responses/Preflight" }
+        }
+      }
+    },
+    "/api/mcp/discover": {
+      "x-route-key": "mcpDiscover",
+      "post": {
+        "operationId": "discoverMcp",
+        "summary": "Discover tools exposed by an MCP server",
+        "parameters": [
+          { "$ref": "#/components/parameters/AppVersionHeader" },
+          { "$ref": "#/components/parameters/BuildHashHeader" },
+          { "$ref": "#/components/parameters/InstallIdHeader" },
+          { "$ref": "#/components/parameters/GitHubIdHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/McpDiscoverRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Discovered tools",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/McpDiscoveryResult" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "502": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "options": {
+        "operationId": "preflightMcpDiscover",
+        "summary": "CORS preflight",
+        "security": [],
+        "parameters": [
+          { "$ref": "#/components/parameters/OriginHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestMethodHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestHeadersHeader" }
+        ],
+        "responses": {
+          "204": { "$ref": "#/components/responses/Preflight" }
+        }
+      }
+    },
+    "/api/mcp/call": {
+      "x-route-key": "mcpCall",
+      "post": {
+        "operationId": "callMcpTool",
+        "summary": "Invoke a tool on an MCP server",
+        "parameters": [
+          { "$ref": "#/components/parameters/AppVersionHeader" },
+          { "$ref": "#/components/parameters/BuildHashHeader" },
+          { "$ref": "#/components/parameters/InstallIdHeader" },
+          { "$ref": "#/components/parameters/GitHubIdHeader" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/McpCallRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/McpCallResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "502": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "options": {
+        "operationId": "preflightMcpCall",
+        "summary": "CORS preflight",
+        "security": [],
+        "parameters": [
+          { "$ref": "#/components/parameters/OriginHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestMethodHeader" },
+          { "$ref": "#/components/parameters/AccessControlRequestHeadersHeader" }
+        ],
+        "responses": {
+          "204": { "$ref": "#/components/responses/Preflight" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ServiceStatus": {
+        "x-schema-const": "serviceStatusSchema",
+        "x-schema-type": "ServiceStatus",
+        "type": "object",
+        "required": ["state", "detail"],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["ready", "degraded", "offline"]
+          },
+          "detail": { "type": "string" },
+          "error": { "type": "string" }
+        }
+      },
+      "SystemStatus": {
+        "x-schema-const": "systemStatusSchema",
+        "x-schema-type": "SystemStatus",
+        "type": "object",
+        "required": ["auth", "models", "search"],
+        "properties": {
+          "auth": { "$ref": "#/components/schemas/ServiceStatus" },
+          "models": { "$ref": "#/components/schemas/ServiceStatus" },
+          "search": { "$ref": "#/components/schemas/ServiceStatus" }
+        }
+      },
+      "SearchResult": {
+        "x-schema-const": "searchResultSchema",
+        "x-schema-type": "SearchResult",
+        "type": "object",
+        "required": ["title", "url", "snippet"],
+        "properties": {
+          "title": { "type": "string" },
+          "url": { "type": "string" },
+          "snippet": { "type": "string" }
+        }
+      },
+      "SearchRequest": {
+        "x-schema-const": "searchRequestSchema",
+        "x-schema-type": "SearchRequest",
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": { "type": "string", "minLength": 2, "maxLength": 500 },
+          "maxResults": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 10
+          }
+        }
+      },
+      "SearchResponse": {
+        "x-schema-const": "searchResponseSchema",
+        "x-schema-type": "SearchResponse",
+        "type": "object",
+        "required": ["query", "results"],
+        "properties": {
+          "query": { "type": "string" },
+          "results": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SearchResult" }
+          }
+        }
+      },
+      "ChatMessage": {
+        "x-schema-const": "chatMessageSchema",
+        "x-schema-type": "ChatMessage",
+        "type": "object",
+        "required": ["role", "content"],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["developer", "system", "user", "assistant"]
+          },
+          "content": { "type": "string", "maxLength": 32000 }
+        }
+      },
+      "ModelsChatRequest": {
+        "x-schema-const": "modelsChatRequestSchema",
+        "x-schema-type": "ModelsChatRequest",
+        "type": "object",
+        "required": ["messages"],
+        "properties": {
+          "model": { "type": "string" },
+          "stream": { "type": "boolean" },
+          "messages": {
+            "type": "array",
+            "maxItems": 100,
+            "items": { "$ref": "#/components/schemas/ChatMessage" }
+          }
+        }
+      },
+      "ModelsChatChoice": {
+        "x-schema-const": "modelsChatChoiceSchema",
+        "x-schema-type": "ModelsChatChoice",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "object",
+            "properties": {
+              "role": { "type": "string" },
+              "content": { "type": ["string", "null"] }
+            }
+          },
+          "finish_reason": { "type": "string" }
+        }
+      },
+      "ModelsChatResponse": {
+        "x-schema-const": "modelsChatResponseSchema",
+        "x-schema-type": "ModelsChatResponse",
+        "type": "object",
+        "properties": {
+          "choices": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ModelsChatChoice" }
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "prompt_tokens": { "type": "number" },
+              "completion_tokens": { "type": "number" },
+              "total_tokens": { "type": "number" }
+            }
+          }
+        }
+      },
+      "GitHubModelKind": {
+        "x-schema-const": "githubModelKindSchema",
+        "x-schema-type": "GitHubModelKind",
+        "type": "string",
+        "enum": ["chat", "embedding"]
+      },
+      "GitHubModelLimits": {
+        "x-schema-const": "githubModelLimitsSchema",
+        "x-schema-type": "GitHubModelLimits",
+        "type": "object",
+        "properties": {
+          "max_input_tokens": { "type": ["number", "null"] },
+          "max_output_tokens": { "type": ["number", "null"] }
+        }
+      },
+      "GitHubModelEntry": {
+        "x-schema-const": "githubModelEntrySchema",
+        "x-schema-type": "GitHubModelEntry",
+        "type": "object",
+        "required": ["id", "label"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "kind": { "$ref": "#/components/schemas/GitHubModelKind" },
+          "name": { "type": "string" },
+          "publisher": { "type": "string" },
+          "registry": { "type": "string" },
+          "summary": { "type": "string" },
+          "html_url": { "type": "string", "format": "uri" },
+          "version": { "type": "string" },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "limits": { "$ref": "#/components/schemas/GitHubModelLimits" },
+          "rate_limit_tier": { "type": "string" },
+          "supported_input_modalities": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "supported_output_modalities": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "ModelsListResponse": {
+        "x-schema-const": "modelsListResponseSchema",
+        "x-schema-type": "ModelsListResponse",
+        "type": "object",
+        "required": ["models"],
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/GitHubModelEntry" }
+          }
+        }
+      },
+      "EdgeErrorResponse": {
+        "x-schema-const": "edgeErrorResponseSchema",
+        "x-schema-type": "EdgeErrorResponse",
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" }
+        }
+      },
+      "RateLimitPayload": {
+        "x-schema-const": "rateLimitPayloadSchema",
+        "x-schema-type": "RateLimitPayload",
+        "type": "object",
+        "required": ["code", "error", "retryAfterMs", "retryAt"],
+        "properties": {
+          "code": { "const": "rate_limited" },
+          "error": { "type": "string" },
+          "retryAfterMs": { "type": "number", "minimum": 0 },
+          "retryAt": { "type": "string" }
+        }
+      },
+      "GitHubExchangeRequest": {
+        "x-schema-const": "githubExchangeRequestSchema",
+        "x-schema-type": "GitHubExchangeRequest",
+        "type": "object",
+        "required": ["code"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1 },
+          "redirectUri": { "type": "string", "format": "uri" }
+        }
+      },
+      "GitHubExchangeResponse": {
+        "x-schema-const": "githubExchangeResponseSchema",
+        "x-schema-type": "GitHubExchangeResponse",
+        "type": "object",
+        "properties": {
+          "accessToken": { "type": "string" },
+          "error": { "type": "string" }
+        }
+      },
+      "McpServerConfig": {
+        "x-schema-const": "mcpServerConfigSchema",
+        "x-schema-type": "McpServerConfig",
+        "type": "object",
+        "required": ["id", "name", "url", "enabled"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "format": "uri" },
+          "bearerToken": { "type": "string" },
+          "enabled": { "type": "boolean" }
+        }
+      },
+      "McpToolMeta": {
+        "x-schema-const": "mcpToolMetaSchema",
+        "x-schema-type": "McpToolMeta",
+        "type": "object",
+        "required": ["toolName", "description", "inputSchema"],
+        "properties": {
+          "toolName": { "type": "string" },
+          "description": { "type": "string" },
+          "inputSchema": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "McpDiscoveryResult": {
+        "x-schema-const": "mcpDiscoveryResultSchema",
+        "x-schema-type": "McpDiscoveryResult",
+        "type": "object",
+        "required": ["serverId", "serverName", "tools", "syncedAt"],
+        "properties": {
+          "serverId": { "type": "string" },
+          "serverName": { "type": "string" },
+          "tools": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/McpToolMeta" }
+          },
+          "syncedAt": { "type": "string" },
+          "error": { "type": "string" }
+        }
+      },
+      "McpDiscoverRequest": {
+        "x-schema-const": "mcpDiscoverRequestSchema",
+        "x-schema-type": "McpDiscoverRequest",
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": { "type": "string" },
+          "bearerToken": { "type": "string" }
+        }
+      },
+      "McpCallRequest": {
+        "x-schema-const": "mcpCallRequestSchema",
+        "x-schema-type": "McpCallRequest",
+        "type": "object",
+        "required": ["url", "toolName", "arguments"],
+        "properties": {
+          "url": { "type": "string" },
+          "bearerToken": { "type": "string" },
+          "toolName": { "type": "string" },
+          "arguments": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "McpCallResponse": {
+        "x-schema-const": "mcpCallResponseSchema",
+        "x-schema-type": "McpCallResponse",
+        "type": "object",
+        "required": ["serverName", "toolName", "text", "raw", "isError"],
+        "properties": {
+          "serverName": { "type": "string" },
+          "toolName": { "type": "string" },
+          "text": { "type": "string" },
+          "raw": {},
+          "isError": { "type": "boolean" }
+        }
+      }
+    },
+    "parameters": {
+      "AppVersionHeader": {
+        "name": "X-App-Version",
+        "in": "header",
+        "required": false,
+        "x-const-key": "appVersion",
+        "x-telemetry": true,
+        "schema": { "type": "string", "maxLength": 128 }
+      },
+      "BuildHashHeader": {
+        "name": "X-Build-Hash",
+        "in": "header",
+        "required": false,
+        "x-const-key": "buildHash",
+        "x-telemetry": true,
+        "schema": { "type": "string", "maxLength": 128 }
+      },
+      "InstallIdHeader": {
+        "name": "X-Install-ID",
+        "in": "header",
+        "required": false,
+        "x-const-key": "installId",
+        "x-telemetry": true,
+        "schema": { "type": "string", "maxLength": 128 }
+      },
+      "GitHubIdHeader": {
+        "name": "X-GitHub-ID",
+        "in": "header",
+        "required": false,
+        "x-const-key": "githubId",
+        "x-telemetry": true,
+        "schema": { "type": "string", "maxLength": 128 }
+      },
+      "AuthorizationHeader": {
+        "name": "Authorization",
+        "in": "header",
+        "required": false,
+        "x-const-key": "authorization",
+        "schema": { "type": "string" }
+      },
+      "ContentTypeHeader": {
+        "name": "Content-Type",
+        "in": "header",
+        "required": false,
+        "x-const-key": "contentType",
+        "schema": { "type": "string" }
+      },
+      "OriginHeader": {
+        "name": "Origin",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string" }
+      },
+      "AccessControlRequestMethodHeader": {
+        "name": "Access-Control-Request-Method",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string" }
+      },
+      "AccessControlRequestHeadersHeader": {
+        "name": "Access-Control-Request-Headers",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string" }
+      }
+    },
+    "headers": {
+      "Retry-After": {
+        "description": "Seconds (or HTTP date) until the caller may retry.",
+        "x-const-key": "retryAfter",
+        "schema": { "type": "string" }
+      },
+      "Cache-Control": {
+        "description": "Caching directives for the streamed response.",
+        "x-const-key": "cacheControl",
+        "schema": { "type": "string" }
+      },
+      "X-Accel-Buffering": {
+        "description": "Disables proxy buffering for Server-Sent Events.",
+        "x-const-key": "accelBuffering",
+        "schema": { "type": "string" }
+      },
+      "x-ratelimit-limit-requests": {
+        "x-rate-limit": true,
+        "schema": { "type": "string" }
+      },
+      "x-ratelimit-remaining-requests": {
+        "x-rate-limit": true,
+        "schema": { "type": "string" }
+      },
+      "x-ratelimit-reset-requests": {
+        "x-rate-limit": true,
+        "schema": { "type": "string" }
+      },
+      "x-ratelimit-renewalperiod-requests": {
+        "x-rate-limit": true,
+        "schema": { "type": "string" }
+      },
+      "x-ratelimit-limit-tokens": {
+        "x-rate-limit": true,
+        "schema": { "type": "string" }
+      },
+      "x-ratelimit-remaining-tokens": {
+        "x-rate-limit": true,
+        "schema": { "type": "string" }
+      },
+      "x-ratelimit-reset-tokens": {
+        "x-rate-limit": true,
+        "schema": { "type": "string" }
+      },
+      "x-ratelimit-renewalperiod-tokens": {
+        "x-rate-limit": true,
+        "schema": { "type": "string" }
+      },
+      "x-ratelimit-abusepenalty-active": {
+        "x-rate-limit": true,
+        "schema": { "type": "string" }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/EdgeErrorResponse" }
+          }
+        }
+      },
+      "RateLimit": {
+        "description": "Rate limited",
+        "headers": {
+          "Retry-After": { "$ref": "#/components/headers/Retry-After" },
+          "x-ratelimit-limit-requests": {
+            "$ref": "#/components/headers/x-ratelimit-limit-requests"
+          },
+          "x-ratelimit-remaining-requests": {
+            "$ref": "#/components/headers/x-ratelimit-remaining-requests"
+          },
+          "x-ratelimit-reset-requests": {
+            "$ref": "#/components/headers/x-ratelimit-reset-requests"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/RateLimitPayload" }
+          }
+        }
+      },
+      "Preflight": {
+        "description": "CORS preflight response",
+        "headers": {
+          "Access-Control-Allow-Origin": { "schema": { "type": "string" } },
+          "Access-Control-Allow-Methods": { "schema": { "type": "string" } },
+          "Access-Control-Allow-Headers": { "schema": { "type": "string" } },
+          "Access-Control-Max-Age": { "schema": { "type": "string" } },
+          "Vary": { "schema": { "type": "string" } }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerToken": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
