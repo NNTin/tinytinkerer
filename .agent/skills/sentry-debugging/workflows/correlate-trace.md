@@ -79,8 +79,16 @@ branch of `triage-issues.md` step 5.
    This is **not** an edge crash and **not** a status-mapping bug — the edge faithfully forwarded a
    429. How you fix it depends on **whether the upstream is cacheable** (the 429 taxonomy):
    - **`models.list` → `GET /v1/models` (cacheable catalogue):** identical for every caller, changes
-     rarely → **fix, not accept**: durable, cross-request caching + Retry-After / serve-last-known at
-     the edge call site (`apps/edge/src/routes/models.ts` + `lib/models-cache.ts`).
+     rarely → **fix, not accept** the *upstream* 429: durable, cross-request caching + Retry-After /
+     serve-last-known at the edge call site (`apps/edge/src/routes/models.ts` + `lib/models-cache.ts`).
+     During cooldown the edge emits a single designed signal downstream — a graceful `503 + Retry-After`
+     (prefer serving last-known) rather than leaking the raw upstream 429 — so the browser contract is
+     one status. **Then harden the other side of the hop (cross-boundary relocation):** the FRONTEND
+     caller of `/api/models/list` (`app-browser/src/github-models.ts`) must mirror the edge — cache its
+     own last-known list and `accept: { status: [429, 503] }` for *that one area*, because that edge
+     503/429 is a by-design cooldown for a cacheable resource, not a server-down bug. Skip it and the
+     issue just relocates edge→frontend (`FRONTEND-C`/`FRONTEND-D`); this is the one legitimate
+     self-emitted-5xx accept (see `accept-error.md`).
    - **`models.chat` → `POST /inference/chat/completions` (non-cacheable completions):** the response
      is unique per prompt, so there is nothing to cache. The 429 cascades the *same* way (frontend
      `react.decide` `request_origin:edge` 429 ⇐ edge `models.chat` `request_origin:github` 429 against
