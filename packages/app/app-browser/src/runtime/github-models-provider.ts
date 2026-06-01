@@ -223,9 +223,20 @@ export class GitHubModelsProvider implements ModelProvider {
         method: 'POST',
         url: `${this.options.baseUrl}/api/models/chat`,
         stream: true,
+        // SYNTHESIZE is the *second* models.chat call site, alongside the DECIDE
+        // path (streamDecision/decideNextAction → edge-fetch.ts). A fix applied
+        // only to DECIDE leaves this one firing the identical 429, so both must
+        // accept the same outcomes. AbortError = the user cancelling an in-flight
+        // stream. A 429 is the unavoidable call that OPENS each GitHub Models
+        // backoff window — the edge already short-circuits /api/models/chat while a
+        // window is open (apps/edge/.../rate-limit.ts), and the runtime turns the
+        // 429 into a RateLimitError → cooldown banner, so it is handled, not a
+        // captured error (TINYTINKERER-FRONTEND-B).
         accept: {
           kinds: ['abort'],
-          reason: 'User can cancel an in-flight chat stream; AbortError is expected, not a bug.'
+          status: [429],
+          reason:
+            'AbortError = user cancels an in-flight stream; 429 = the call that opens the durable backoff window; cooldown UX handles it (FRONTEND-B).'
         }
       }
       const response = await fetchWithTelemetry(metadata, requestInit)

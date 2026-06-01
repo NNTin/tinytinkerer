@@ -56,10 +56,20 @@ Read the **Triage philosophy** in `../SKILL.md` before deciding statuses.
        - **cacheable** (the model *catalogue*, `models.list`) → caching gap, never `accept`: cache the
          response durably + serve last-known on 429.
        - **non-cacheable** (LLM *completions*, `models.chat`) → can't cache; durable Retry-After
-         backoff + graceful client cooldown + `accept` the residual 429.
+         backoff + graceful client cooldown + `accept` the residual 429. The backoff does **not**
+         suppress the call that *opens* each window — that first 429 still hits upstream and is
+         captured — so the call-site `accept: { status: [429] }` is mandatory, not optional (the
+         window-opener residual; see `../SKILL.md` trap #3). The cacheable side's analogue is the
+         cold-cache-miss (`EDGE-5`).
        Either way the backoff window must be **durable across isolates** (Cache API, not a per-isolate
        `let`). See `../SKILL.md` 429 guidance and the cascade pattern in `correlate-trace.md`. If the
        issue is **REGRESSED**, a prior fix didn't hold → `regressed-issue.md` before reapplying.
+     - **Harden sibling call sites together.** One `request_area` often has more than one upstream
+       call site (e.g. `models.chat` = a DECIDE call *and* a SYNTHESIZE call in
+       `github-models-provider.ts`); a fix on one leaves the other firing the identical error. When a
+       "fixed" request error reappears, grep the provider/route for **all** call sites of that area and
+       fix them as a set; the stacktrace's first-party frame (`synthesizeInner` vs `streamDecision`)
+       tells you which one fired. Full procedure in `regressed-issue.md` (Sibling call sites).
      - `502` / upstream → check whether it's our edge API crashing (correlate with an edge issue / `trace` id) vs. a transient upstream vs. an edge status-mapping bug. **Follow `correlate-trace.md`** to decide which. Fix the real cause; don't blanket-catch.
      - `Failed to fetch` (network/CORS) → check the target host; may be user network (unavoidable) or a real CORS/config bug.
 
