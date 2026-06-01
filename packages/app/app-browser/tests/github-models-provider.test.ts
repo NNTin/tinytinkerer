@@ -110,6 +110,48 @@ describe('GitHubModelsProvider', () => {
     vi.unstubAllGlobals()
   })
 
+  it('accepts the synthesize 429 window-opener without capturing it (TINYTINKERER-FRONTEND-B)', async () => {
+    const retryAt = new Date(Date.now() + 120_000).toISOString()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              code: 'rate_limited',
+              error: 'rate limited',
+              retryAfterMs: 120_000,
+              retryAt
+            }),
+            { status: 429, headers: { 'retry-after': '120', 'content-type': 'application/json' } }
+          )
+        )
+      )
+    )
+    telemetrySink.mockClear()
+
+    const provider = new GitHubModelsProvider({
+      baseUrl: 'http://example.com',
+      getToken: () => 'token'
+    })
+
+    // SYNTHESIZE is the sibling call site to DECIDE; its 429 opens the durable
+    // backoff window and surfaces as a RateLimitError cooldown — it must NOT be
+    // captured as an http_error (that was TINYTINKERER-FRONTEND-B).
+    await expect(collect(provider.synthesize(context))).rejects.toMatchObject({
+      name: 'RateLimitError'
+    } satisfies Partial<RateLimitError>)
+
+    const capturedChat429 = telemetrySink.mock.calls.some(
+      ([, options]) =>
+        options?.tags?.['request_area'] === 'models.chat' &&
+        options?.tags?.['failure_kind'] === 'http_error'
+    )
+    expect(capturedChat429).toBe(false)
+
+    vi.unstubAllGlobals()
+  })
+
   it('includes prior conversation turns before the current prompt', async () => {
     const fetchSpy = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
       void _input

@@ -4,6 +4,7 @@ import {
   rateLimitPayloadSchema,
   systemStatusSchema
 } from '@tinytinkerer/contracts'
+import { setCaptureExceptionSink, type CaptureExceptionSink } from '@tinytinkerer/sentry-telemetry'
 import app from './index.js'
 import { CACHE_KEY } from './lib/models-cache.js'
 import { clearModelsBackoff } from './lib/rate-limit.js'
@@ -31,6 +32,8 @@ describe('edge routes', () => {
     // The GitHub Models backoff window is module-level (per-isolate); reset it so
     // a 429 in one test doesn't short-circuit the next.
     clearModelsBackoff()
+    // Drop any telemetry sink a test registered so captures don't leak across.
+    setCaptureExceptionSink(null)
   })
 
   it('returns 401 when search is called without authorization', async () => {
@@ -107,7 +110,11 @@ describe('edge routes', () => {
     expect(body['retryAfterMs']).toBe(120_000)
   })
 
-  it('forwards an upstream models/list rate limit as a 429, not a 502 (TINYTINKERER-FRONTEND-5)', async () => {
+  it('serves a graceful 503 (not a 502, not a raw 429) on a cold-cache-miss models/list rate limit, and does not capture the window-opener (TINYTINKERER-EDGE-5)', async () => {
+    // No cache stub → cold isolate with an empty Cache API: the upstream fetch is
+    // the unavoidable cold-cache-miss window-opener.
+    const sink = vi.fn<CaptureExceptionSink>()
+    setCaptureExceptionSink(sink)
     vi.stubGlobal(
       'fetch',
       vi.fn(() =>
@@ -127,11 +134,22 @@ describe('edge routes', () => {
       {}
     )
 
-    expect(response.status).toBe(429)
+    // Graceful: the catalogue is temporarily unavailable, surfaced as a 503 +
+    // Retry-After so the browser falls back to its built-in list — not a 429
+    // (which would imply the browser itself is rate limited) and not a 502.
+    expect(response.status).toBe(503)
     expect(response.headers.get('Retry-After')).toBe('90')
-    const body = (await response.json()) as Record<string, unknown>
-    rateLimitPayloadSchema.parse(body)
-    expect(body['retryAfterMs']).toBe(90_000)
+    const body = edgeErrorResponseSchema.parse(await response.json())
+    expect(body).toEqual({ error: 'Upstream service unavailable' })
+
+    // The cold-start window-opener 429 is accepted at the call site, so it is
+    // never captured (TINYTINKERER-EDGE-5).
+    const captured429 = sink.mock.calls.some(
+      ([, options]) =>
+        options.tags?.['request_area'] === 'models.list' &&
+        options.tags?.['failure_kind'] === 'http_error'
+    )
+    expect(captured429).toBe(false)
   })
 
   it('caches the models list and serves the second request without re-probing upstream (TINYTINKERER-EDGE-4)', async () => {

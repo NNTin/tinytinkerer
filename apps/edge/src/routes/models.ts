@@ -207,7 +207,26 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     }
 
     const response = await fetchWithTimeout(
-      { area: 'models.list', origin: 'github', method: 'GET', url: listUrl },
+      {
+        area: 'models.list',
+        origin: 'github',
+        method: 'GET',
+        url: listUrl,
+        // models.list IS cacheable, so the catalogue cache + durable backoff above
+        // are the real fix — we only reach this upstream fetch on a cache miss with
+        // no active backoff window. A 429 here is therefore the cold-cache-miss
+        // window-opener: the one unavoidable probe on a fresh isolate / empty Cache
+        // API right after a deploy, the cacheable analogue of the non-cacheable
+        // window-opener. We record the backoff below and serve last-known / a 503
+        // instead of re-probing, so capturing this first probe adds no signal. This
+        // is NOT a blanket accept of the cacheable 429 — the caching machinery does
+        // the work; only the cold-start opener is accepted (TINYTINKERER-EDGE-5).
+        accept: {
+          status: [429],
+          reason:
+            'Cold-cache-miss window-opener: the one unavoidable probe of the GitHub Models catalogue on a fresh isolate; cache + durable backoff handle the rest and we serve last-known / 503 instead of re-probing (TINYTINKERER-EDGE-5).'
+        }
+      },
       { headers: { authorization, accept: 'application/json' } },
       10_000
     )
@@ -222,14 +241,22 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       if (response.status === 429) {
         const retryAfter = response.headers.get('retry-after')
         const rateLimitBody = toRateLimitResponse(await response.text(), retryAfter)
+        // Remember the window durably (colo-wide) so the next request — in any
+        // isolate — backs off instead of re-probing.
         await recordBackoff(rateLimitBody.retryAfterMs)
+        // Prefer the last-known catalogue over cascading the upstream 429.
         if (cached) return c.json({ models: cached.models })
+        // Cold-cache miss (fresh isolate, nothing cached yet): the catalogue is
+        // temporarily unavailable — the browser is not itself rate limited, so a
+        // 429 would be misleading. Surface a graceful 503 + Retry-After; the client
+        // falls back to its built-in model list and retries later, and the durable
+        // backoff already recorded above stops us re-probing GitHub Models in the
+        // meantime (TINYTINKERER-EDGE-5).
         c.header('Retry-After', retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000)))
-        for (const header of RATE_LIMIT_HEADERS) {
-          const value = response.headers.get(header)
-          if (value !== null) c.header(header, value)
-        }
-        return c.json(rateLimitBody, 429)
+        return c.json(
+          edgeErrorResponseSchema.parse({ error: UPSTREAM_ERROR_MESSAGES[503] }),
+          503
+        )
       }
 
       const safeError =

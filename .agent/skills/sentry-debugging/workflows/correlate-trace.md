@@ -87,8 +87,11 @@ branch of `triage-issues.md` step 5.
      `models.github.ai`, seconds apart, different trace_ids), but the fix differs: **durable
      Retry-After backoff** (short-circuit while the window is open) **+ a graceful client cooldown**
      (the frontend turns the 429 into a `RateLimitError` → cooldown banner) **+ `accept` the residual
-     429** (the unavoidable first call that opens each window) at both the edge `models.chat` fetch and
-     the frontend `runtime/edge-fetch.ts`. This is the `FRONTEND-9` / `EDGE-4`-chat cascade.
+     429** (the unavoidable window-opener — backoff can't suppress it) at the edge `models.chat` fetch
+     **and every frontend chat call site**: the DECIDE path (`runtime/edge-fetch.ts`) *and* the
+     SYNTHESIZE path (`runtime/github-models-provider.ts` `synthesizeInner`, a separate inline
+     metadata). Missing the SYNTHESIZE site is what kept `FRONTEND-B` firing. This is the
+     `FRONTEND-9` / `FRONTEND-B` / `EDGE-4`-chat cascade.
 
    Either way the backoff window must be **durable across isolates** — a per-isolate module `let`
    resets on every fresh Cloudflare isolate and won't actually stop the hammering (use

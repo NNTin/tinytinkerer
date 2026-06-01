@@ -35,6 +35,24 @@ as a regression of the original lesson:
 When you split a conflated issue (`triage-issues.md` step 4) you'll often see the relocation directly:
 two `(request_area + http_status)` groups, one old-and-fixed, one new-and-firing.
 
+### Sibling call sites: one `request_area`, more than one upstream call
+
+A provider/route often has **more than one call site for the same `request_area`**, and a fix
+applied to one leaves the others firing the identical error. The LLM-chat area (`models.chat`) has
+**two** frontend call sites in `runtime/github-models-provider.ts`: the **DECIDE** path
+(`streamDecision` / `decideNextAction` → `runtime/edge-fetch.ts`) and the **SYNTHESIZE** path
+(`synthesizeInner`, which builds its *own* inline `fetchWithTelemetry` metadata — not `edge-fetch.ts`).
+The first 429 round hardened only DECIDE; SYNTHESIZE kept firing the same 429 (`FRONTEND-B`).
+
+So when a "fixed" request error reappears:
+- **Grep the provider/route for ALL call sites of that `request_area`** (e.g.
+  `grep -n "area: 'models.chat'\|createEdgeFetch\|fetchWithTelemetry" runtime/github-models-provider.ts`)
+  and harden them **together** — same `accept` / backoff / cooldown on each — instead of patching one.
+- **Use the stacktrace's first-party frame to tell which site fired:** `synthesizeInner` vs
+  `streamDecision` / `decideNextAction` in the frontend; the route handler line (e.g.
+  `routes/models.ts:<n>`) on the edge. The deepest first-party frame above `request-telemetry.ts` is
+  the call site that needs the fix.
+
 ## The signature (how to spot it)
 
 - `get_sentry_resource({ url: ".../issues/<ID>" })` shows **`Substatus: regressed`** (the issue list
