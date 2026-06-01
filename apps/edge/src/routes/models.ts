@@ -198,12 +198,18 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     }
 
     // Honor a still-open rate-limit window shared with the chat route (durable
-    // across isolates). Prefer the last-known catalogue over cascading a raw 429.
+    // across isolates). Prefer the last-known catalogue over cascading anything.
     const backoffMs = await getActiveBackoffMs()
     if (backoffMs > 0) {
       if (cached) return c.json({ models: cached.models })
+      // No cached catalogue yet but a window is open: emit the SAME single
+      // cooldown signal as the cold-cache-miss path below — a graceful 503 +
+      // Retry-After — instead of leaking the raw upstream 429. The browser is not
+      // itself rate limited; one status keeps the frontend contract for this
+      // cacheable catalogue simple: serve last-known and retry later
+      // (TINYTINKERER-FRONTEND-C / FRONTEND-D).
       c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
-      return c.json(rateLimitResponseFromMs(backoffMs), 429)
+      return c.json(edgeErrorResponseSchema.parse({ error: UPSTREAM_ERROR_MESSAGES[503] }), 503)
     }
 
     const response = await fetchWithTimeout(
@@ -236,8 +242,10 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
 
       // A rate limit is not a gateway failure: record the backoff window and,
       // when we have a previously cached catalogue, serve it instead of
-      // cascading the 429 downstream (TINYTINKERER-FRONTEND-5). Only fall back to
-      // a 429 response when there is nothing cached to serve.
+      // cascading the 429 downstream (TINYTINKERER-FRONTEND-5). With nothing
+      // cached, fall back to the single 503 cooldown signal (below) — never a raw
+      // 429 — so the browser contract for this cacheable catalogue is one status
+      // (TINYTINKERER-FRONTEND-C / FRONTEND-D).
       if (response.status === 429) {
         const retryAfter = response.headers.get('retry-after')
         const rateLimitBody = toRateLimitResponse(await response.text(), retryAfter)

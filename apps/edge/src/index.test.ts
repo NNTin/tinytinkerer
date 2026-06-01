@@ -217,6 +217,38 @@ describe('edge routes', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the models/list cooldown single-valued: an open window with no cache yields a 503, never a raw 429 (TINYTINKERER-FRONTEND-C)', async () => {
+    const { cache } = makeCacheMock()
+    vi.stubGlobal('caches', { default: cache })
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        new Response('rate limited', { status: 429, headers: { 'retry-after': '120' } })
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const listRequest = () =>
+      app.fetch(
+        new Request('http://localhost/api/models/list', {
+          headers: { authorization: 'Bearer test-token' }
+        }),
+        {}
+      )
+
+    // First call: cold cache miss, upstream 429 → graceful 503 + Retry-After, and
+    // the backoff window is recorded.
+    const first = await listRequest()
+    expect(first.status).toBe(503)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    // Second call: the window is still open and nothing is cached. It must emit
+    // the SAME 503 cooldown signal (not a raw 429) without re-probing upstream.
+    const second = await listRequest()
+    expect(second.status).toBe(503)
+    expect(second.headers.get('Retry-After')).not.toBeNull()
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('backs off subsequent GitHub Models calls while the rate-limit window is open (TINYTINKERER-EDGE-4)', async () => {
     const fetchSpy = vi.fn(() =>
       Promise.resolve(

@@ -42,10 +42,16 @@ export const fetchGitHubModels = async (
   const cached = modelsCache.get(cacheKey)
   if (cached && Date.now() - cached.cachedAt <= cached.ttlMs) return cached.models
 
-  // Cache the fallback briefly so rapid remounts during a rate-limit storm
-  // don't re-fetch (and re-report) the list every time.
+  // The model catalogue is cacheable, so when the edge is in a cooldown / cache-
+  // miss state (429 or 503) we degrade gracefully: serve the LAST-KNOWN list —
+  // the most recent list we successfully fetched (even if its freshness TTL has
+  // lapsed) — and only fall back to the built-in defaults when we've never seen a
+  // real list. Cache the served value briefly so rapid remounts during a cooldown
+  // don't re-fetch (and re-report) every time. This mirrors the edge, which
+  // serves its own last-known catalogue (TINYTINKERER-FRONTEND-C / FRONTEND-D,
+  // TINYTINKERER-FRONTEND-5).
   const fallback = (): ModelEntry[] => {
-    const models = [...SUPPORTED_MODELS]
+    const models = cached?.models ?? [...SUPPORTED_MODELS]
     modelsCache.set(cacheKey, { models, cachedAt: Date.now(), ttlMs: MODELS_FALLBACK_TTL_MS })
     return models
   }
@@ -54,7 +60,18 @@ export const fetchGitHubModels = async (
     area: 'models.list',
     origin: 'edge',
     method: 'GET',
-    url: `${edgeBaseUrl}/api/models/list`
+    url: `${edgeBaseUrl}/api/models/list`,
+    // The edge deliberately emits a 429 (residual window-opener) or a 503 + Retry-
+    // After (its designed cooldown / cache-miss signal) for this CACHEABLE
+    // catalogue while GitHub Models is rate limited. Both mean "serve your cached
+    // list and retry later", which `fallback()` does — they are not server-down
+    // bugs and add no signal. Accept ONLY these two statuses for ONLY models.list;
+    // any other status (and network/parse/schema failures) still reports.
+    accept: {
+      status: [429, 503],
+      reason:
+        'edge cooldown/cache-miss for cacheable model catalogue; frontend serves last-known list (FRONTEND-C, FRONTEND-D)'
+    }
   }
 
   try {
