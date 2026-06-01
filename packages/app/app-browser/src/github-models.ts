@@ -65,12 +65,18 @@ export const fetchGitHubModels = async (
     // After (its designed cooldown / cache-miss signal) for this CACHEABLE
     // catalogue while GitHub Models is rate limited. Both mean "serve your cached
     // list and retry later", which `fallback()` does — they are not server-down
-    // bugs and add no signal. Accept ONLY these two statuses for ONLY models.list;
-    // any other status (and network/parse/schema failures) still reports.
+    // bugs and add no signal. A transient client-side `network_error` (Failed to
+    // fetch — host briefly unreachable / connection blip) on this background edge
+    // fetch is the same graceful-degradation path: `fallback()` serves the
+    // last-known list, exactly like our sibling background fetches already accept
+    // (shell.ts health poll → FRONTEND-8, github-user.ts → FRONTEND-7). Accept ONLY
+    // these two statuses and this one kind for ONLY models.list; any other status,
+    // and parse/schema failures, still report.
     accept: {
       status: [429, 503],
+      kinds: ['network_error'],
       reason:
-        'edge cooldown/cache-miss for cacheable model catalogue; frontend serves last-known list (FRONTEND-C, FRONTEND-D)'
+        'edge cooldown/cache-miss (429/503) for cacheable model catalogue, plus transient client-side network failure on this background edge fetch; frontend serves last-known list either way (FRONTEND-C, FRONTEND-D, FRONTEND-F)'
     }
   }
 

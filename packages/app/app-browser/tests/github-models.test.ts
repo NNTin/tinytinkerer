@@ -106,6 +106,21 @@ describe('fetchGitHubModels', () => {
     }
   )
 
+  it('serves the fallback WITHOUT capturing a transient network_error (TINYTINKERER-FRONTEND-F)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('Failed to fetch')))
+    )
+
+    const models = await fetchGitHubModels('https://api.example.com', 'token')
+
+    // Graceful degrade: serve the built-in list…
+    expect(models).toEqual([...SUPPORTED_MODELS])
+    // …and a transient client-side network failure on this background edge fetch
+    // is accepted, so it is never reported (the call already serves last-known).
+    expect(sink).not.toHaveBeenCalled()
+  })
+
   it('still captures non-cooldown http errors (e.g. 502) at the models.list call site', async () => {
     vi.stubGlobal(
       'fetch',
