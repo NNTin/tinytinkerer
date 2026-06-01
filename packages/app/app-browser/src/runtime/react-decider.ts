@@ -1,6 +1,6 @@
 import { parseJsonWithTelemetry, parseWithTelemetry } from '../telemetry/request-telemetry'
 import type { DecisionChunk, ExecutionContext } from '@tinytinkerer/app-core'
-import { reactDecisionSchema, type ReActDecision } from '@tinytinkerer/contracts'
+import { EDGE_ROUTE_PATHS, reactDecisionSchema, type ReActDecision } from '@tinytinkerer/contracts'
 import type { EdgeFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createRateLimitError } from './rate-limit'
@@ -66,7 +66,7 @@ export const decideNextAction = async (
   ]
 
   const response = await edgeFetch(
-    '/api/models/chat',
+    EDGE_ROUTE_PATHS.modelsChat,
     { model, stream: false, messages },
     {
       area: 'react.decide',
@@ -137,7 +137,7 @@ export async function* streamDecision(
   ]
 
   const response = await edgeFetch(
-    '/api/models/chat',
+    EDGE_ROUTE_PATHS.modelsChat,
     { model, stream: true, messages },
     {
       area: 'react.decide',

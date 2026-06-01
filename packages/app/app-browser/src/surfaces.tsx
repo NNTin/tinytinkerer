@@ -1,5 +1,6 @@
 import { buildTurns, type Turn } from '@tinytinkerer/app-core'
 import {
+  EDGE_ROUTE_PATHS,
   mcpDiscoveryResultSchema,
   type AgentType,
   type ChatEvent,
@@ -230,7 +231,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     try {
       const edgeFetch = createEdgeFetch(shell.config.edgeBaseUrl, () => token)
       const res = await edgeFetch(
-        '/api/mcp/discover',
+        EDGE_ROUTE_PATHS.mcpDiscover,
         {
           url: server.url,
           bearerToken: server.bearerToken

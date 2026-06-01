@@ -1,5 +1,7 @@
 import { zValidator } from '@hono/zod-validator'
 import {
+  EDGE_RATE_LIMIT_HEADERS,
+  EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
   githubModelEntrySchema,
   modelsChatRequestSchema,
@@ -46,18 +48,6 @@ const githubModelsCatalogEntrySchema = z.object({
 
 const githubModelsCatalogSchema = z.array(githubModelsCatalogEntrySchema)
 
-const RATE_LIMIT_HEADERS = [
-  'x-ratelimit-limit-requests',
-  'x-ratelimit-remaining-requests',
-  'x-ratelimit-reset-requests',
-  'x-ratelimit-renewalperiod-requests',
-  'x-ratelimit-limit-tokens',
-  'x-ratelimit-remaining-tokens',
-  'x-ratelimit-reset-tokens',
-  'x-ratelimit-renewalperiod-tokens',
-  'x-ratelimit-abusepenalty-active'
-] as const
-
 const GITHUB_MODELS_DEFAULT_URL = 'https://models.github.ai/inference'
 const GITHUB_MODELS_CATALOG_URL = 'https://models.github.ai/catalog/models'
 const GITHUB_MODELS_REFERENCE_HEADERS = {
@@ -79,7 +69,7 @@ const UPSTREAM_ERROR_STATUSES = new Set([400, 401, 403, 422, 500, 503, 504])
 
 export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
   app.post(
-    '/api/models/chat',
+    EDGE_ROUTE_PATHS.modelsChat,
     zValidator('json', modelsChatRequestSchema),
     async (c) => {
       const body = c.req.valid('json')
@@ -165,7 +155,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
             'Retry-After',
             retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000))
           )
-          for (const header of RATE_LIMIT_HEADERS) {
+          for (const header of EDGE_RATE_LIMIT_HEADERS) {
             const value = response.headers.get(header)
             if (value !== null) c.header(header, value)
           }
@@ -199,7 +189,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
           'X-Accel-Buffering': 'no'
         })
 
-        for (const header of RATE_LIMIT_HEADERS) {
+        for (const header of EDGE_RATE_LIMIT_HEADERS) {
           const value = response.headers.get(header)
           if (value !== null) headers.set(header, value)
         }
@@ -212,7 +202,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
         })
       }
 
-      for (const header of RATE_LIMIT_HEADERS) {
+      for (const header of EDGE_RATE_LIMIT_HEADERS) {
         const value = response.headers.get(header)
         if (value !== null) c.header(header, value)
       }
@@ -222,7 +212,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     }
   )
 
-  app.get('/api/models/list', async (c) => {
+  app.get(EDGE_ROUTE_PATHS.modelsList, async (c) => {
     const authorization =
       c.req.header('authorization') ?? c.req.header('Authorization')
 

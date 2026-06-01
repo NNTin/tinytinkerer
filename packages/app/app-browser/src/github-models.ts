@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SUPPORTED_MODELS } from '@tinytinkerer/app-core'
 import {
+  EDGE_ROUTE_PATHS,
   modelsListResponseSchema,
   type GitHubModelEntry
 } from '@tinytinkerer/contracts'
@@ -80,7 +81,7 @@ export const fetchGitHubModels = async (
     area: 'models.list',
     origin: 'edge',
     method: 'GET',
-    url: `${edgeBaseUrl}/api/models/list`,
+    url: `${edgeBaseUrl}${EDGE_ROUTE_PATHS.modelsList}`,
     // The edge deliberately emits a 429 (residual window-opener) or a 503 + Retry-
     // After (its designed cooldown / cache-miss signal) for this CACHEABLE
     // catalogue while GitHub Models is rate limited. Both mean "serve your cached

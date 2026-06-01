@@ -1,5 +1,5 @@
 import { zValidator } from '@hono/zod-validator'
-import { githubExchangeRequestSchema, githubExchangeResponseSchema } from '@tinytinkerer/contracts'
+import { EDGE_ROUTE_PATHS, githubExchangeRequestSchema, githubExchangeResponseSchema } from '@tinytinkerer/contracts'
 import type { Hono } from 'hono'
 import { z } from 'zod'
 import type { Bindings } from '../lib/bindings'
@@ -13,7 +13,7 @@ const githubOAuthResponseSchema = z.object({
 const GITHUB_CODE_RE = /^[a-zA-Z0-9_-]{10,40}$/
 
 export const registerAuthRoutes = (app: Hono<{ Bindings: Bindings }>) => {
-  app.post('/auth/github/exchange', zValidator('json', githubExchangeRequestSchema), async (c) => {
+  app.post(EDGE_ROUTE_PATHS.authGithubExchange, zValidator('json', githubExchangeRequestSchema), async (c) => {
     const { code, redirectUri } = c.req.valid('json')
 
     if (!GITHUB_CODE_RE.test(code)) {

@@ -1,12 +1,16 @@
 import type { MiddlewareHandler } from 'hono'
-import { TELEMETRY_HEADERS } from '@tinytinkerer/contracts'
+import {
+  EDGE_EXPOSED_HEADERS,
+  EDGE_HEADER_NAMES,
+  TELEMETRY_HEADERS
+} from '@tinytinkerer/contracts'
 import type { Bindings } from './bindings'
 
 // Derived from the shared contract so adding a telemetry header automatically
 // keeps it CORS-allowed (no drift between the wire protocol and the allowlist).
 const ALLOWED_REQUEST_HEADERS = [
-  'Content-Type',
-  'Authorization',
+  EDGE_HEADER_NAMES.contentType,
+  EDGE_HEADER_NAMES.authorization,
   ...Object.values(TELEMETRY_HEADERS)
 ].join(', ')
 
@@ -75,18 +79,9 @@ export const resolveAllowedOrigin = (
     : null
 }
 
-const EXPOSED_HEADERS = [
-  'x-ratelimit-limit-requests',
-  'x-ratelimit-remaining-requests',
-  'x-ratelimit-reset-requests',
-  'x-ratelimit-renewalperiod-requests',
-  'x-ratelimit-limit-tokens',
-  'x-ratelimit-remaining-tokens',
-  'x-ratelimit-reset-tokens',
-  'x-ratelimit-renewalperiod-tokens',
-  'x-ratelimit-abusepenalty-active',
-  'retry-after',
-].join(', ')
+// Generated from the OpenAPI source so the exposed set never drifts from the
+// GitHub Models rate-limit headers the proxy actually forwards (plus retry-after).
+const EXPOSED_HEADERS = [...EDGE_EXPOSED_HEADERS].join(', ')
 
 export const applyCorsHeaders = (
   headers: Headers,

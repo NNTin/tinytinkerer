@@ -5,6 +5,10 @@ dist
 coverage
 **/generated/
 **/*.generated.ts
+# Exception: the edge contracts are generated from the OpenAPI source but the
+# contracts package has no build step (it is consumed directly from src/), so the
+# generated module is committed and kept fresh in CI via `pnpm check:edge-openapi`.
+!packages/shared/contracts/src/edge.generated.ts
 .env
 .env.*
 !.env.example

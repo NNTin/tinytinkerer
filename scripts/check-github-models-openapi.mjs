@@ -7,10 +7,6 @@ const GITHUB_SPEC_PATH = new URL(
   'docs/openapi/github-models.openapi.json',
   ROOT
 )
-const EDGE_SPEC_PATH = new URL(
-  'docs/openapi/tinytinkerer-edge.openapi.json',
-  ROOT
-)
 const CATALOG_PATH = new URL(
   'packages/app/app-core/src/github-models-catalog.json',
   ROOT
@@ -239,38 +235,12 @@ const checkCatalog = async () => {
   assertEqual('GitHub Models catalog', checkedInCatalog, liveCatalog)
 }
 
-const checkEdgeOpenApi = async () => {
-  const spec = await readJson(EDGE_SPEC_PATH)
-  assertEqual('edge paths', Object.keys(spec.paths ?? {}).sort(), [
-    '/api/models/chat',
-    '/api/models/list'
-  ])
-  assertEqual(
-    'edge /api/models/chat methods',
-    Object.keys(spec.paths['/api/models/chat'] ?? {}),
-    ['post']
-  )
-  assertEqual(
-    'edge /api/models/list methods',
-    Object.keys(spec.paths['/api/models/list'] ?? {}),
-    ['get']
-  )
-  assertEqual(
-    'edge chat roles',
-    spec.components.schemas.ChatMessage.properties.role.enum.sort(),
-    ['assistant', 'developer', 'system', 'user']
-  )
-  assertEqual(
-    'edge model list required fields',
-    spec.components.schemas.GitHubModelEntry.required.sort(),
-    ['id', 'label']
-  )
-}
+// The TinyTinkerer edge OpenAPI spec is generated from its canonical source and
+// verified separately by `pnpm check:edge-openapi` (scripts/generate-edge-openapi.mjs).
 
 try {
   await checkGitHubOpenApi()
   await checkCatalog()
-  await checkEdgeOpenApi()
 } catch (error) {
   fail(error instanceof Error ? error.message : String(error))
 }

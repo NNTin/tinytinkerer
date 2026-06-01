@@ -6,6 +6,8 @@ on:
     paths:
       - 'apps/edge/**'
       - 'packages/shared/contracts/**'
+      - 'docs/openapi/**'
+      - 'scripts/generate-edge-openapi.mjs'
       - 'package.json'
       - 'pnpm-workspace.yaml'
       - 'turbo.json'
@@ -48,6 +50,9 @@ jobs:
         env:
           GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_MODELS_TOKEN }}
         run: pnpm check:github-models-openapi
+
+      - name: Edge OpenAPI generation check
+        run: pnpm check:edge-openapi
 
       - name: Skill README sync check
         run: pnpm check:skill-readme

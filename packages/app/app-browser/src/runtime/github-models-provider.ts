@@ -9,6 +9,7 @@ import {
   type SynthesisChunk
 } from '@tinytinkerer/app-core'
 import {
+  EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
   modelsChatResponseSchema,
   type ExecutionPlan,
@@ -221,7 +222,7 @@ export class GitHubModelsProvider implements ModelProvider {
         area: 'models.chat',
         origin: 'edge',
         method: 'POST',
-        url: `${this.options.baseUrl}/api/models/chat`,
+        url: `${this.options.baseUrl}${EDGE_ROUTE_PATHS.modelsChat}`,
         stream: true,
         // SYNTHESIZE is the *second* models.chat call site, alongside the DECIDE
         // path (streamDecision/decideNextAction → edge-fetch.ts). A fix applied
