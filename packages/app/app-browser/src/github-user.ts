@@ -14,6 +14,17 @@ export type GitHubUser = {
 }
 
 const githubUserCache = new Map<string, GitHubUser>()
+// Tokens GitHub has already rejected with a 401. Gating on token *presence*
+// alone (PR #100) wasn't enough: a persisted-but-expired token still probed
+// /user. Worse, two surfaces (consent-gate + the app shell) mount together and
+// each probed the SAME stale token before the store cleared it, so every load
+// captured ~2 fresh 401s — that is the FRONTEND-4 regression (two events ~1s
+// apart per load). Remembering a rejected token lets later callers short-circuit
+// on validity, not just presence.
+const rejectedTokens = new Set<string>()
+// In-flight probes keyed by token, so concurrent callers share one request (and
+// thus one capture) instead of each firing their own.
+const inFlightProbes = new Map<string, Promise<GitHubUser | null>>()
 
 export const fetchGitHubUser = async (
   token: string,
@@ -31,6 +42,31 @@ export const fetchGitHubUser = async (
     return cached
   }
 
+  // Validity gate: a token we already saw GitHub reject is known-bad. Never
+  // re-probe it (that re-probe is what FRONTEND-4 kept capturing); re-signal the
+  // caller so it drops the token if it is somehow still holding it.
+  if (rejectedTokens.has(token)) {
+    onUnauthorized?.()
+    return null
+  }
+
+  // Collapse concurrent callers (the two surfaces mount in the same tick) onto a
+  // single probe so a stale token is requested — and captured — at most once.
+  const inFlight = inFlightProbes.get(token)
+  if (inFlight) {
+    return inFlight
+  }
+  const probe = probeGitHubUser(token, onUnauthorized).finally(() => {
+    inFlightProbes.delete(token)
+  })
+  inFlightProbes.set(token, probe)
+  return probe
+}
+
+const probeGitHubUser = async (
+  token: string,
+  onUnauthorized?: () => void
+): Promise<GitHubUser | null> => {
   const metadata: RequestTelemetryMetadata = {
     area: 'github.user',
     origin: 'github',
@@ -53,10 +89,11 @@ export const fetchGitHubUser = async (
     })
 
     if (!response.ok) {
-      // A 401 means the (persisted) token is invalid/expired/revoked. Signal the
-      // caller so it can drop the bad token instead of re-probing /user on every
-      // mount, which produced the repeated 401s in TINYTINKERER-FRONTEND-4.
+      // A 401 means the (persisted) token is invalid/expired/revoked. Remember it
+      // so no later caller re-probes it, and signal the caller to drop it —
+      // together these stop the repeated /user 401s in TINYTINKERER-FRONTEND-4.
       if (response.status === 401) {
+        rejectedTokens.add(token)
         onUnauthorized?.()
       }
       return null

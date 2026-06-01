@@ -1,12 +1,39 @@
 # Workflow: Diagnose a REGRESSED issue (a prior fix that didn't hold)
 
-Goal: given an issue you (or a past agent) previously **resolved** that has reopened, find **why the
-earlier fix failed on the current release** and close the real gap — instead of blindly reapplying
-the same approach and watching it regress again.
+Goal: given an issue you (or a past agent) previously **resolved** that has reopened — or that has
+quietly **relocated to a sibling endpoint** — find **why the earlier fix failed on the current
+release** and close the real gap, instead of blindly reapplying the same approach and watching it
+regress again.
 
 A REGRESSED issue is Sentry telling you a hypothesis was wrong: a `resolvedInNextRelease` /
 `resolved` issue auto-reopened because matching events recurred on a **newer** release than the one
 that resolved it. Read the **Triage philosophy** in `../SKILL.md` first.
+
+## The one comparison that settles it: latest-event release vs fix-claiming release
+
+The single decisive check: **compare the LATEST event's `release` tag against the release that
+claimed the fix** (the resolving commit/PR / the `reason` breadcrumb's release).
+- Latest event's release is **newer than** (or equal to) the fix-claiming release ⇒ the fix is
+  **INCOMPLETE** — it shipped and the failure still fires. Find the gap (below); do **not** reapply.
+- Latest event's release is **older than** the fix-claiming release ⇒ only stragglers remain; the fix
+  held. Mark `resolved` (reason: pre-fix stragglers).
+
+Get it from the event itself (the `get_sentry_resource` issue view shows the latest event's
+`release` tag) and from `get_issue_tag_values(..., tagKey: "release")` for the full distribution.
+
+## Relocation: the failure didn't return, it *moved*
+
+A fix can hold for the exact call it patched yet the *same class* of failure resurfaces on a
+**sibling endpoint** — so it looks "new" but is the same unsolved problem. Recognise it and treat it
+as a regression of the original lesson:
+- **429 list → chat.** Caching the model *catalogue* (`models.list`) stopped its 429s, but LLM
+  *completions* (`models.chat`) — non-cacheable — kept tripping the same GitHub Models quota, because
+  the shared backoff was only per-isolate. The fix relocated, not the bug.
+- **401 returns on a sibling auth probe / a different validity case.** Gating `/user` on token
+  *presence* stopped the unauthenticated probe, but a persisted-but-*expired* token (validity, not
+  presence) still probed and 401'd — same issue, different trigger.
+When you split a conflated issue (`triage-issues.md` step 4) you'll often see the relocation directly:
+two `(request_area + http_status)` groups, one old-and-fixed, one new-and-firing.
 
 ## The signature (how to spot it)
 

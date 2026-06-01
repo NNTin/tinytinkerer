@@ -10,6 +10,13 @@ export type TelemetryCaptureOptions = {
   level?: TelemetryLevel
   tags?: Record<string, string | number | boolean | undefined>
   contexts?: Record<string, Record<string, unknown>>
+  /**
+   * Grouping override. Every request failure shares the same `normalizeError`
+   * frame, so without this Sentry collapses unrelated endpoints/statuses into
+   * one issue (e.g. `models.list` 429 and `models.chat` 429 conflated). Setting
+   * a per-(area+kind+status) fingerprint keeps each failure its own issue.
+   */
+  fingerprint?: string[]
 }
 
 export type CaptureExceptionSink = (error: Error, options: TelemetryCaptureOptions) => void

@@ -41,6 +41,38 @@ describe('createEdgeFetch', () => {
     expect(sink).not.toHaveBeenCalled()
   })
 
+  it('does not capture a 429 — rate limits surface as a cooldown (TINYTINKERER-FRONTEND-9)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('{"code":"rate_limited"}', { status: 429 })))
+    )
+
+    const edgeFetch = createEdgeFetch('http://example.com', () => 'token')
+    const response = await edgeFetch(
+      '/api/models/chat',
+      { prompt: 'hi' },
+      { area: 'react.decide', stream: true }
+    )
+
+    expect(response.status).toBe(429)
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it('still captures a non-429 http error on the same call site', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('boom', { status: 500 })))
+    )
+
+    const edgeFetch = createEdgeFetch('http://example.com', () => 'token')
+    const response = await edgeFetch('/api/models/chat', { prompt: 'hi' }, { area: 'react.decide' })
+
+    expect(response.status).toBe(500)
+    expect(sink).toHaveBeenCalledTimes(1)
+    const [, options] = sink.mock.calls[0] ?? []
+    expect(options?.tags).toMatchObject({ request_area: 'react.decide', http_status: 500 })
+  })
+
   it('still captures a genuine network error on the same call site', async () => {
     const networkError = new TypeError('Failed to fetch')
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(networkError)))

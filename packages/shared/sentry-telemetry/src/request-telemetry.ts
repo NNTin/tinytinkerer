@@ -94,6 +94,22 @@ const buildRequestTags = (
   stream: metadata.stream ?? false
 })
 
+// Group captured request failures by what actually distinguishes them — the
+// call area, failure kind, and (for http_error) the status — instead of the
+// shared `normalizeError` frame they all flow through. This stops unrelated
+// endpoints/statuses from conflating into a single Sentry issue (the EDGE-4
+// pile-up of models.list 429 + models.chat 429 + chat 401 under one id).
+const buildRequestFingerprint = (
+  metadata: RequestTelemetryMetadata,
+  kind: RequestTelemetryKind,
+  response?: Response
+): string[] => [
+  'request-telemetry',
+  metadata.area,
+  kind,
+  ...(response ? [String(response.status)] : [])
+]
+
 const buildRequestContexts = (
   metadata: RequestTelemetryMetadata,
   kind: RequestTelemetryKind,
@@ -155,7 +171,8 @@ export const captureRequestIssue = (
   captureTelemetryException(error, {
     level: issue.level ?? toLevel(issue.kind, issue.response),
     tags: buildRequestTags(metadata, issue.kind, issue.response),
-    contexts: buildRequestContexts(metadata, issue.kind, issue.response)
+    contexts: buildRequestContexts(metadata, issue.kind, issue.response),
+    fingerprint: buildRequestFingerprint(metadata, issue.kind, issue.response)
   })
 }
 

@@ -77,11 +77,24 @@ branch of `triage-issues.md` step 5.
      `host: models.github.ai` (`GET /v1/models`) — the **source**: a third-party (GitHub Models)
      rate limit the edge captured and propagated downstream.
    This is **not** an edge crash and **not** a status-mapping bug — the edge faithfully forwarded a
-   429. But a 429 the caller keeps tripping is **fix, not accept** (see `../SKILL.md`): the catalogue
-   is cacheable, so the fix is **durable, cross-request caching + Retry-After / serve-last-known at
-   the edge call site** (`apps/edge/src/routes/models.ts` + `lib/models-cache.ts`), not an `accept`
-   block. If the issue is **REGRESSED**, the previous attempt didn't hold — follow
-   `diagnose-regression.md` before reapplying anything.
+   429. How you fix it depends on **whether the upstream is cacheable** (the 429 taxonomy):
+   - **`models.list` → `GET /v1/models` (cacheable catalogue):** identical for every caller, changes
+     rarely → **fix, not accept**: durable, cross-request caching + Retry-After / serve-last-known at
+     the edge call site (`apps/edge/src/routes/models.ts` + `lib/models-cache.ts`).
+   - **`models.chat` → `POST /inference/chat/completions` (non-cacheable completions):** the response
+     is unique per prompt, so there is nothing to cache. The 429 cascades the *same* way (frontend
+     `react.decide` `request_origin:edge` 429 ⇐ edge `models.chat` `request_origin:github` 429 against
+     `models.github.ai`, seconds apart, different trace_ids), but the fix differs: **durable
+     Retry-After backoff** (short-circuit while the window is open) **+ a graceful client cooldown**
+     (the frontend turns the 429 into a `RateLimitError` → cooldown banner) **+ `accept` the residual
+     429** (the unavoidable first call that opens each window) at both the edge `models.chat` fetch and
+     the frontend `runtime/edge-fetch.ts`. This is the `FRONTEND-9` / `EDGE-4`-chat cascade.
+
+   Either way the backoff window must be **durable across isolates** — a per-isolate module `let`
+   resets on every fresh Cloudflare isolate and won't actually stop the hammering (use
+   `apps/edge/src/lib/rate-limit.ts` `getActiveBackoffMs` / `recordBackoff`, backed by the Cache API).
+   If the issue is **REGRESSED**, the previous attempt didn't hold — follow `regressed-issue.md`
+   before reapplying anything.
 
    > Inspecting an event: `get_sentry_resource` already returns the **most-relevant frame and the full
    > stacktrace inline** — no extra call. When the tags + stacktrace don't explain *why* a request
