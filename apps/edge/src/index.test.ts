@@ -73,16 +73,17 @@ describe('edge routes', () => {
   })
 
   it('returns 429 with Retry-After header and rate-limit body when upstream is rate limited', async () => {
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        new Response('rate limited', {
+          status: 429,
+          headers: { 'retry-after': '120' }
+        })
+      )
+    )
     vi.stubGlobal(
       'fetch',
-      vi.fn(() =>
-        Promise.resolve(
-          new Response('rate limited', {
-            status: 429,
-            headers: { 'retry-after': '120' }
-          })
-        )
-      )
+      fetchSpy
     )
 
     const response = await app.fetch(
@@ -103,6 +104,16 @@ describe('edge routes', () => {
 
     expect(response.status).toBe(429)
     expect(response.headers.get('Retry-After')).toBe('120')
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://models.github.ai/inference/chat/completions',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          accept: 'application/vnd.github+json',
+          'x-github-api-version': '2026-03-10',
+          authorization: 'Bearer test-token'
+        })
+      })
+    )
     const body = (await response.json()) as Record<string, unknown>
     rateLimitPayloadSchema.parse(body)
     expect(body['code']).toBe('rate_limited')
@@ -177,6 +188,16 @@ describe('edge routes', () => {
     expect(first.status).toBe(200)
     expect(await first.json()).toEqual({ models: [{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }] })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://models.github.ai/v1/models',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          accept: 'application/vnd.github+json',
+          'x-github-api-version': '2026-03-10',
+          authorization: 'Bearer test-token'
+        })
+      })
+    )
 
     // Second request is served from the colo-wide cache — upstream is untouched,
     // so we stop hammering GitHub Models on every page load.

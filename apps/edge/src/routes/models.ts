@@ -39,6 +39,10 @@ const RATE_LIMIT_HEADERS = [
 
 const GITHUB_MODELS_DEFAULT_URL = 'https://models.github.ai/inference'
 const GITHUB_MODELS_LIST_URL = 'https://models.github.ai/v1/models'
+const GITHUB_MODELS_REFERENCE_HEADERS = {
+  accept: 'application/vnd.github+json',
+  'x-github-api-version': '2026-03-10'
+} as const
 
 const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
   400: 'Invalid request',
@@ -94,6 +98,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       {
         method: 'POST',
         headers: {
+          ...GITHUB_MODELS_REFERENCE_HEADERS,
           authorization,
           'content-type': 'application/json'
         },
@@ -233,7 +238,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
             'Cold-cache-miss window-opener: the one unavoidable probe of the GitHub Models catalogue on a fresh isolate; cache + durable backoff handle the rest and we serve last-known / 503 instead of re-probing (TINYTINKERER-EDGE-5).'
         }
       },
-      { headers: { authorization, accept: 'application/json' } },
+      { headers: { ...GITHUB_MODELS_REFERENCE_HEADERS, authorization } },
       10_000
     )
 
