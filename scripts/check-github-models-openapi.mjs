@@ -33,6 +33,16 @@ const fail = (message) => {
   process.exitCode = 1
 }
 
+// Raised for upstream issues we can't control (rate limits, 5xx, network
+// errors). The live audit is best-effort, so these are reported as a skip
+// rather than failing CI on a transient GitHub hiccup.
+class TransientError extends Error {}
+
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504])
+const MAX_FETCH_ATTEMPTS = 4
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 const assertEqual = (label, actual, expected) => {
   const actualJson = JSON.stringify(actual)
   const expectedJson = JSON.stringify(expected)
@@ -41,12 +51,45 @@ const assertEqual = (label, actual, expected) => {
   }
 }
 
-const fetchText = async (url, init) => {
-  const response = await fetch(url, init)
-  if (!response.ok) {
-    throw new Error(`${url} returned ${response.status} ${response.statusText}`)
+const retryDelayMs = (response, attempt) => {
+  const retryAfter = Number(response?.headers?.get('retry-after'))
+  if (Number.isFinite(retryAfter) && retryAfter > 0) {
+    return retryAfter * 1000
   }
-  return response.text()
+  return 2 ** attempt * 1000
+}
+
+const fetchText = async (url, init) => {
+  for (let attempt = 0; attempt < MAX_FETCH_ATTEMPTS; attempt += 1) {
+    let response
+    try {
+      response = await fetch(url, init)
+    } catch (error) {
+      // Network-level failure (DNS, reset, etc.) — retry, then give up softly.
+      if (attempt < MAX_FETCH_ATTEMPTS - 1) {
+        await sleep(2 ** attempt * 1000)
+        continue
+      }
+      throw new TransientError(`${url} request failed: ${error.message}`)
+    }
+
+    if (response.ok) {
+      return response.text()
+    }
+
+    if (RETRYABLE_STATUS.has(response.status) && attempt < MAX_FETCH_ATTEMPTS - 1) {
+      await sleep(retryDelayMs(response, attempt))
+      continue
+    }
+
+    const message = `${url} returned ${response.status} ${response.statusText}`
+    if (RETRYABLE_STATUS.has(response.status)) {
+      throw new TransientError(message)
+    }
+    throw new Error(message)
+  }
+
+  throw new TransientError(`${url} exhausted retries`)
 }
 
 const fetchJson = async (url, init) => JSON.parse(await fetchText(url, init))
@@ -251,7 +294,14 @@ try {
   await checkGitHubOpenApi()
   await checkCatalog()
 } catch (error) {
-  fail(error instanceof Error ? error.message : String(error))
+  // A transient upstream issue (rate limit, 5xx, network) must not block CI on
+  // an unrelated PR — skip the best-effort audit. When refreshing the catalog
+  // we need real data, so surface it as a failure instead.
+  if (error instanceof TransientError && !updateCatalog) {
+    console.warn(`Skipping GitHub Models audit (transient upstream): ${error.message}`)
+  } else {
+    fail(error instanceof Error ? error.message : String(error))
+  }
 }
 
 if (!process.exitCode) {
