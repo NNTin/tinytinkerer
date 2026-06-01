@@ -1,5 +1,5 @@
 export const SUPPORTED_MODELS = [
-  { id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }
+  { id: 'openai/gpt-5', label: 'GPT-5' }
 ] as const
 
 export const DEFAULT_MODEL = SUPPORTED_MODELS[0].id
