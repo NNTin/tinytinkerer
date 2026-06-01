@@ -132,7 +132,10 @@ export const reactDecisionSchema = z.discriminatedUnion('kind', [
 ])
 export type ReActDecision = z.infer<typeof reactDecisionSchema>
 
-const eventBaseSchema = <TType extends EventType, TPayload extends z.ZodTypeAny>(
+const eventBaseSchema = <
+  TType extends EventType,
+  TPayload extends z.ZodTypeAny
+>(
   type: TType,
   payload: TPayload
 ) =>
@@ -286,17 +289,27 @@ export const chatEventSchema = z.discriminatedUnion('type', [
 
 export type UserMessageEvent = z.infer<typeof userMessageEventSchema>
 export type AgentRunStartedEvent = z.infer<typeof agentRunStartedEventSchema>
-export type AgentRunCompletedEvent = z.infer<typeof agentRunCompletedEventSchema>
+export type AgentRunCompletedEvent = z.infer<
+  typeof agentRunCompletedEventSchema
+>
 export type AgentStepStartedEvent = z.infer<typeof agentStepStartedEventSchema>
 export type AgentStepDeltaEvent = z.infer<typeof agentStepDeltaEventSchema>
-export type AgentStepCompletedEvent = z.infer<typeof agentStepCompletedEventSchema>
+export type AgentStepCompletedEvent = z.infer<
+  typeof agentStepCompletedEventSchema
+>
 export type AgentStepFailedEvent = z.infer<typeof agentStepFailedEventSchema>
 export type AgentToolStartedEvent = z.infer<typeof agentToolStartedEventSchema>
-export type AgentToolCompletedEvent = z.infer<typeof agentToolCompletedEventSchema>
+export type AgentToolCompletedEvent = z.infer<
+  typeof agentToolCompletedEventSchema
+>
 export type AgentToolFailedEvent = z.infer<typeof agentToolFailedEventSchema>
 export type RateLimitWaitingEvent = z.infer<typeof rateLimitWaitingEventSchema>
-export type RateLimitRecoveredEvent = z.infer<typeof rateLimitRecoveredEventSchema>
-export type RateLimitCancelledEvent = z.infer<typeof rateLimitCancelledEventSchema>
+export type RateLimitRecoveredEvent = z.infer<
+  typeof rateLimitRecoveredEventSchema
+>
+export type RateLimitCancelledEvent = z.infer<
+  typeof rateLimitCancelledEventSchema
+>
 export type ReasoningChunkEvent = z.infer<typeof reasoningChunkEventSchema>
 export type ReasoningDoneEvent = z.infer<typeof reasoningDoneEventSchema>
 export type AssistantChunkEvent = z.infer<typeof assistantChunkEventSchema>
@@ -332,7 +345,9 @@ export const githubExchangeResponseSchema = z.object({
 })
 
 export type GitHubExchangeRequest = z.infer<typeof githubExchangeRequestSchema>
-export type GitHubExchangeResponse = z.infer<typeof githubExchangeResponseSchema>
+export type GitHubExchangeResponse = z.infer<
+  typeof githubExchangeResponseSchema
+>
 
 export const edgeErrorResponseSchema = z.object({
   error: z.string()
@@ -353,7 +368,11 @@ export const searchResponseSchema = z.object({
 export type SearchRequest = z.infer<typeof searchRequestSchema>
 export type SearchResponse = z.infer<typeof searchResponseSchema>
 
-export const brandLinkRelSchema = z.enum(['icon', 'apple-touch-icon', 'mask-icon'])
+export const brandLinkRelSchema = z.enum([
+  'icon',
+  'apple-touch-icon',
+  'mask-icon'
+])
 export type BrandLinkRel = z.infer<typeof brandLinkRelSchema>
 
 export const brandLinkAssetSchema = z.object({
@@ -372,8 +391,14 @@ export const brandThemeMetadataSchema = z.object({
 })
 export type BrandThemeMetadata = z.infer<typeof brandThemeMetadataSchema>
 
-export const brandManifestIconPurposeSchema = z.enum(['any', 'maskable', 'monochrome'])
-export type BrandManifestIconPurpose = z.infer<typeof brandManifestIconPurposeSchema>
+export const brandManifestIconPurposeSchema = z.enum([
+  'any',
+  'maskable',
+  'monochrome'
+])
+export type BrandManifestIconPurpose = z.infer<
+  typeof brandManifestIconPurposeSchema
+>
 
 export const brandManifestIconSchema = z.object({
   src: z.string().min(1),
@@ -411,7 +436,7 @@ export const brandDefinitionSchema = z.object({
 export type BrandDefinition = z.infer<typeof brandDefinitionSchema>
 
 export const chatMessageSchema = z.object({
-  role: z.enum(['system', 'user', 'assistant']),
+  role: z.enum(['developer', 'system', 'user', 'assistant']),
   content: z.string().max(32_000)
 })
 
@@ -476,9 +501,31 @@ export const parseRetryAfterMs = (
   return undefined
 }
 
+export const githubModelKindSchema = z.enum(['chat', 'embedding'])
+export type GitHubModelKind = z.infer<typeof githubModelKindSchema>
+
+export const githubModelLimitsSchema = z.object({
+  max_input_tokens: z.number().nullable().optional(),
+  max_output_tokens: z.number().nullable().optional()
+})
+export type GitHubModelLimits = z.infer<typeof githubModelLimitsSchema>
+
 export const githubModelEntrySchema = z.object({
   id: z.string(),
-  label: z.string()
+  label: z.string(),
+  kind: githubModelKindSchema.optional(),
+  name: z.string().optional(),
+  publisher: z.string().optional(),
+  registry: z.string().optional(),
+  summary: z.string().optional(),
+  html_url: z.string().url().optional(),
+  version: z.string().optional(),
+  capabilities: z.array(z.string()).optional(),
+  limits: githubModelLimitsSchema.optional(),
+  rate_limit_tier: z.string().optional(),
+  supported_input_modalities: z.array(z.string()).optional(),
+  supported_output_modalities: z.array(z.string()).optional(),
+  tags: z.array(z.string()).optional()
 })
 
 export const modelsListResponseSchema = z.object({

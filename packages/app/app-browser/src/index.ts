@@ -10,7 +10,7 @@ export { TINYTINKERER_BRAND_ASSET_URLS } from '@tinytinkerer/brand-assets'
 export { useGitHubUser } from './github-user'
 export type { GitHubUser } from './github-user'
 export { useGitHubModels } from './github-models'
-export type { ModelEntry } from './github-models'
+export type { GitHubModelsState, ModelEntry } from './github-models'
 export {
   AppBrowserProvider,
   createBrowserApp,
@@ -39,7 +39,12 @@ export { PrivacyPolicyUpdateGate } from './telemetry/privacy-update-gate'
 export { LazyPrivacyPolicyUpdateGate } from './telemetry/lazy-privacy-update-gate'
 export { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
 export { bootstrapBrowserShell } from './initialize'
-export { formatCooldown, useBrowserShellConfig, useChatCooldown, useGitHubOAuth } from './hooks'
+export {
+  formatCooldown,
+  useBrowserShellConfig,
+  useChatCooldown,
+  useGitHubOAuth
+} from './hooks'
 export { useWebSpeechInput } from './web-speech'
 export { resolveBrowserShellBootstrapConfig } from './config'
 export {
@@ -57,7 +62,11 @@ export {
   buildTurns,
   normalizeSelectedModel
 } from '@tinytinkerer/app-core'
-export type { Turn, TurnActivity, TurnActivityItem } from '@tinytinkerer/app-core'
+export type {
+  Turn,
+  TurnActivity,
+  TurnActivityItem
+} from '@tinytinkerer/app-core'
 export { TurnActivityPanel, toolLabel } from './turn-activity-panel'
 export type {
   ChatEvent,

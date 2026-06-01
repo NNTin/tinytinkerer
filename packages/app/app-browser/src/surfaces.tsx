@@ -8,14 +8,23 @@ import {
   type SystemStatus
 } from '@tinytinkerer/contracts'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
-import { useAuthStore, useBrowserApp, useChatStore, useSettingsStore, useStatusStore } from './app'
+import {
+  useAuthStore,
+  useBrowserApp,
+  useChatStore,
+  useSettingsStore,
+  useStatusStore
+} from './app'
 import { formatCooldown, useChatCooldown, useGitHubOAuth } from './hooks'
 import { useGitHubUser } from './github-user'
 import { useGitHubModels, type ModelEntry } from './github-models'
 import { startStatusPolling } from './status'
 import { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 import { createEdgeFetch } from './runtime/edge-fetch'
-import { parseJsonWithTelemetry, parseWithTelemetry } from './telemetry/request-telemetry'
+import {
+  parseJsonWithTelemetry,
+  parseWithTelemetry
+} from './telemetry/request-telemetry'
 
 export type ChatSurfaceController = {
   isBooting: boolean
@@ -47,7 +56,9 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const cancelRetry = useChatStore((state) => state.cancelRetry)
   const refreshStatus = useStatusStore((state) => state.refresh)
   const token = useAuthStore((state) => state.token)
-  const showReasoningActivity = useSettingsStore((state) => state.showReasoningActivity)
+  const showReasoningActivity = useSettingsStore(
+    (state) => state.showReasoningActivity
+  )
   const mcpServers = useSettingsStore((state) => state.mcpServers)
   const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
 
@@ -128,6 +139,9 @@ export type SettingsSurfaceController = {
   startGitHubOAuth: () => void
   user: ReturnType<typeof useGitHubUser>
   models: ModelEntry[]
+  isRefreshingModels: boolean
+  modelsRefreshError: string | null
+  refreshGitHubModels: () => Promise<ModelEntry[]>
   selectedModel: string
   setSelectedModel: (model: string) => Promise<void>
   agentType: AgentType
@@ -143,8 +157,13 @@ export type SettingsSurfaceController = {
   searchUnavailable: boolean
   mcpServers: McpServerConfig[]
   mcpDiscovery: Record<string, McpDiscoveryResult>
-  addMcpServer: (server: Omit<McpServerConfig, 'id'>) => Promise<McpServerConfig>
-  updateMcpServer: (id: string, patch: Partial<Omit<McpServerConfig, 'id'>>) => Promise<void>
+  addMcpServer: (
+    server: Omit<McpServerConfig, 'id'>
+  ) => Promise<McpServerConfig>
+  updateMcpServer: (
+    id: string,
+    patch: Partial<Omit<McpServerConfig, 'id'>>
+  ) => Promise<void>
   removeMcpServer: (id: string) => Promise<void>
   setMcpServerEnabled: (id: string, enabled: boolean) => Promise<void>
   refreshMcpServer: (server: McpServerConfig) => Promise<void>
@@ -160,17 +179,28 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const setToken = useAuthStore((state) => state.setToken)
   const { canStartGitHubOAuth, startGitHubOAuth } = useGitHubOAuth()
   const user = useGitHubUser()
-  const models = useGitHubModels()
   const selectedModel = useSettingsStore((state) => state.selectedModel)
+  const {
+    models,
+    isRefreshing: isRefreshingModels,
+    refreshError: modelsRefreshError,
+    refreshGitHubModels
+  } = useGitHubModels(selectedModel)
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
   const agentType = useSettingsStore((state) => state.agentType)
   const setAgentType = useSettingsStore((state) => state.setAgentType)
   const searchEnabled = useSettingsStore((state) => state.searchEnabled)
   const setSearchEnabled = useSettingsStore((state) => state.setSearchEnabled)
   const webSpeechEnabled = useSettingsStore((state) => state.webSpeechEnabled)
-  const setWebSpeechEnabled = useSettingsStore((state) => state.setWebSpeechEnabled)
-  const showReasoningActivity = useSettingsStore((state) => state.showReasoningActivity)
-  const setShowReasoningActivity = useSettingsStore((state) => state.setShowReasoningActivity)
+  const setWebSpeechEnabled = useSettingsStore(
+    (state) => state.setWebSpeechEnabled
+  )
+  const showReasoningActivity = useSettingsStore(
+    (state) => state.showReasoningActivity
+  )
+  const setShowReasoningActivity = useSettingsStore(
+    (state) => state.setShowReasoningActivity
+  )
   const showCodeBlockFullscreenButton = useSettingsStore(
     (state) => state.showCodeBlockFullscreenButton
   )
@@ -182,11 +212,15 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const addMcpServer = useSettingsStore((state) => state.addMcpServer)
   const updateMcpServer = useSettingsStore((state) => state.updateMcpServer)
   const removeMcpServer = useSettingsStore((state) => state.removeMcpServer)
-  const setMcpServerEnabled = useSettingsStore((state) => state.setMcpServerEnabled)
+  const setMcpServerEnabled = useSettingsStore(
+    (state) => state.setMcpServerEnabled
+  )
   const setMcpDiscovery = useSettingsStore((state) => state.setMcpDiscovery)
   const clearMcpDiscovery = useSettingsStore((state) => state.clearMcpDiscovery)
   const telemetryEnabled = useSettingsStore((state) => state.telemetryEnabled)
-  const setTelemetryEnabled = useSettingsStore((state) => state.setTelemetryEnabled)
+  const setTelemetryEnabled = useSettingsStore(
+    (state) => state.setTelemetryEnabled
+  )
   const { shell } = useBrowserApp()
 
   const effectiveStatus = status ?? OFFLINE_SYSTEM_STATUS
@@ -195,21 +229,27 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     await clearMcpDiscovery(server.id)
     try {
       const edgeFetch = createEdgeFetch(shell.config.edgeBaseUrl, () => token)
-      const res = await edgeFetch('/api/mcp/discover', {
-        url: server.url,
-        bearerToken: server.bearerToken
-      }, { area: 'mcp.discover' })
+      const res = await edgeFetch(
+        '/api/mcp/discover',
+        {
+          url: server.url,
+          bearerToken: server.bearerToken
+        },
+        { area: 'mcp.discover' }
+      )
       if (!res.ok) {
-        const errBody = (await parseJsonWithTelemetry<Record<string, unknown> | undefined>(
-          {
-            area: 'mcp.discover',
-            origin: 'edge',
-            method: 'POST',
-            url: res.url
-          },
-          res.clone()
-        ).catch(() => undefined)) ?? {}
-        const errMsg = (errBody as { error?: string }).error ?? `HTTP ${res.status}`
+        const errBody =
+          (await parseJsonWithTelemetry<Record<string, unknown> | undefined>(
+            {
+              area: 'mcp.discover',
+              origin: 'edge',
+              method: 'POST',
+              url: res.url
+            },
+            res.clone()
+          ).catch(() => undefined)) ?? {}
+        const errMsg =
+          (errBody as { error?: string }).error ?? `HTTP ${res.status}`
         await setMcpDiscovery({
           serverId: server.id,
           serverName: server.name,
@@ -230,7 +270,11 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
         metadata,
         'schema_error',
         'MCP discovery response did not match schema',
-        () => mcpDiscoveryResultSchema.parse({ ...(raw as object), serverId: server.id }),
+        () =>
+          mcpDiscoveryResultSchema.parse({
+            ...(raw as object),
+            serverId: server.id
+          }),
         res
       )
       await setMcpDiscovery(result)
@@ -255,6 +299,9 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     startGitHubOAuth,
     user,
     models,
+    isRefreshingModels,
+    modelsRefreshError,
+    refreshGitHubModels,
     selectedModel,
     setSelectedModel,
     agentType,
@@ -284,8 +331,11 @@ export const useGitHubOAuthCallbackController = (
   onCompleteWithoutReturnUrl: () => void
 ): { error: string | null } => {
   const [error, setError] = useState<string | null>(null)
-  const { completeGitHubOAuthCallback, consumeGitHubOAuthReturnUrl } = useGitHubOAuth()
-  const handleCompleteWithoutReturnUrl = useEffectEvent(onCompleteWithoutReturnUrl)
+  const { completeGitHubOAuthCallback, consumeGitHubOAuthReturnUrl } =
+    useGitHubOAuth()
+  const handleCompleteWithoutReturnUrl = useEffectEvent(
+    onCompleteWithoutReturnUrl
+  )
 
   useEffect(() => {
     let isDisposed = false
@@ -323,7 +373,11 @@ export const useGitHubOAuthCallbackController = (
     return () => {
       isDisposed = true
     }
-  }, [completeGitHubOAuthCallback, consumeGitHubOAuthReturnUrl, handleCompleteWithoutReturnUrl])
+  }, [
+    completeGitHubOAuthCallback,
+    consumeGitHubOAuthReturnUrl,
+    handleCompleteWithoutReturnUrl
+  ])
 
   return { error }
 }

@@ -70,7 +70,9 @@ describe('contracts', () => {
       }).models.state
     ).toBe('degraded')
 
-    expect(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }).error).toBe('Unauthorized')
+    expect(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }).error).toBe(
+      'Unauthorized'
+    )
   })
 
   it('parses model and rate-limit payloads', () => {
@@ -78,9 +80,12 @@ describe('contracts', () => {
       modelsChatRequestSchema.parse({
         model: 'openai/gpt-4.1-mini',
         stream: true,
-        messages: [{ role: 'user', content: 'hi' }]
+        messages: [
+          { role: 'developer', content: 'answer tersely' },
+          { role: 'user', content: 'hi' }
+        ]
       }).messages
-    ).toHaveLength(1)
+    ).toHaveLength(2)
 
     expect(
       rateLimitPayloadSchema.parse({
@@ -96,13 +101,26 @@ describe('contracts', () => {
     expect(
       modelsListResponseSchema.parse({
         models: [
-          { id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' },
-          { id: 'openai/gpt-4o', label: 'GPT-4o' }
+          {
+            id: 'openai/gpt-4.1-mini',
+            label: 'GPT-4.1 mini',
+            kind: 'chat',
+            publisher: 'OpenAI',
+            capabilities: ['streaming'],
+            limits: { max_input_tokens: 1048576 }
+          },
+          {
+            id: 'openai/text-embedding-3-small',
+            label: 'text-embedding-3-small',
+            kind: 'embedding'
+          }
         ]
       }).models
     ).toHaveLength(2)
 
-    expect(modelsListResponseSchema.parse({ models: [] }).models).toHaveLength(0)
+    expect(modelsListResponseSchema.parse({ models: [] }).models).toHaveLength(
+      0
+    )
   })
 
   it('parses shared brand metadata', () => {
@@ -121,7 +139,13 @@ describe('contracts', () => {
           display: 'standalone',
           backgroundColor: '#fffaf5',
           themeColor: '#f6f2ec',
-          icons: [{ src: 'data:image/svg+xml,test', sizes: '512x512', type: 'image/svg+xml' }]
+          icons: [
+            {
+              src: 'data:image/svg+xml,test',
+              sizes: '512x512',
+              type: 'image/svg+xml'
+            }
+          ]
         }
       }).manifest.display
     ).toBe('standalone')

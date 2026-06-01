@@ -15,7 +15,12 @@ const mockChatState = vi.hoisted(() => ({
       userText: 'hello',
       assistantSource: 'Hi there.',
       assistantContent: {
-        nodes: [{ type: 'paragraph', children: [{ type: 'text', value: 'Hi there.' }] }]
+        nodes: [
+          {
+            type: 'paragraph',
+            children: [{ type: 'text', value: 'Hi there.' }]
+          }
+        ]
       },
       isStreaming: false,
       notice: {
@@ -86,7 +91,11 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     open ? (
       <div>
         <span>Settings modal</span>
-        <button type="button" aria-label="Close settings" onClick={() => onOpenChange(false)}>
+        <button
+          type="button"
+          aria-label="Close settings"
+          onClick={() => onOpenChange(false)}
+        >
           Close
         </button>
       </div>
@@ -122,6 +131,9 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     startGitHubOAuth: vi.fn(),
     user: null,
     models: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
+    isRefreshingModels: false,
+    modelsRefreshError: null,
+    refreshGitHubModels: vi.fn(),
     selectedModel: mockSettingsState.selectedModel,
     setSelectedModel: mockSettingsState.setSelectedModel,
     searchEnabled: mockSettingsState.searchEnabled,
@@ -130,9 +142,12 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     setWebSpeechEnabled: mockSettingsState.setWebSpeechEnabled,
     showReasoningActivity: mockSettingsState.showReasoningActivity,
     setShowReasoningActivity: mockSettingsState.setShowReasoningActivity,
-    showCodeBlockFullscreenButton: mockSettingsState.showCodeBlockFullscreenButton,
-    setShowCodeBlockFullscreenButton: mockSettingsState.setShowCodeBlockFullscreenButton,
-    searchUnavailable: mockSettingsState.effectiveStatus.search.state !== 'ready',
+    showCodeBlockFullscreenButton:
+      mockSettingsState.showCodeBlockFullscreenButton,
+    setShowCodeBlockFullscreenButton:
+      mockSettingsState.setShowCodeBlockFullscreenButton,
+    searchUnavailable:
+      mockSettingsState.effectiveStatus.search.state !== 'ready',
     mcpServers: [],
     mcpDiscovery: {},
     addMcpServer: vi.fn(),
@@ -159,7 +174,8 @@ beforeEach(() => {
   mockSettingsState.searchEnabled = true
   mockSettingsState.webSpeechEnabled = false
   mockSettingsState.effectiveStatus.search.state = 'degraded'
-  mockSettingsState.effectiveStatus.search.detail = 'Search temporarily unavailable'
+  mockSettingsState.effectiveStatus.search.detail =
+    'Search temporarily unavailable'
   mockSpeechState.visible = false
   mockSpeechState.available = false
   mockSpeechState.listening = false
@@ -173,8 +189,12 @@ describe('WidgetPage', () => {
     render(<WidgetPage />)
 
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Sign in with GitHub' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Minimize widget' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Sign in with GitHub' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Minimize widget' })
+    ).toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).toBeNull()
     expect(screen.queryByText('MCP Servers')).toBeNull()
     expect(screen.queryByText('Search temporarily unavailable')).toBeNull()
@@ -186,7 +206,9 @@ describe('WidgetPage', () => {
   it('renders a turn notice and final assistant answer in the same card', () => {
     render(<WidgetPage />)
 
-    expect(screen.getByText('Recovered after a short wait.')).toBeInTheDocument()
+    expect(
+      screen.getByText('Recovered after a short wait.')
+    ).toBeInTheDocument()
     expect(screen.getByText('Hi there.')).toBeInTheDocument()
   })
 
@@ -195,7 +217,9 @@ describe('WidgetPage', () => {
 
     await act(async () => {
       fireEvent.change(
-        screen.getByPlaceholderText('Ask something current, compare options, or continue the thread.'),
+        screen.getByPlaceholderText(
+          'Ask something current, compare options, or continue the thread.'
+        ),
         {
           target: { value: 'Tell me something current' }
         }
@@ -204,7 +228,9 @@ describe('WidgetPage', () => {
       await Promise.resolve()
     })
 
-    expect(mockChatState.submitPrompt).toHaveBeenCalledWith('Tell me something current')
+    expect(mockChatState.submitPrompt).toHaveBeenCalledWith(
+      'Tell me something current'
+    )
   })
 
   it('opens settings from the footer trigger', () => {
@@ -218,7 +244,9 @@ describe('WidgetPage', () => {
   it('renders a disabled voice button when Web Speech API is unavailable', () => {
     mockSpeechState.visible = true
     render(<WidgetPage />)
-    expect(screen.getByRole('button', { name: /voice input unavailable/i })).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: /voice input unavailable/i })
+    ).toBeDisabled()
   })
 
   it('collapses to a launcher and restores in standalone mode', () => {
@@ -226,11 +254,15 @@ describe('WidgetPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Minimize widget' }))
 
-    expect(screen.getByRole('button', { name: 'Restore widget' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Restore widget' })
+    ).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Restore widget' }))
 
-    expect(screen.getByRole('button', { name: 'Minimize widget' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Minimize widget' })
+    ).toBeInTheDocument()
   })
 
   it('shows the shared minimize control in host mode and posts the minimized state', () => {
