@@ -297,6 +297,13 @@ const buildGeneratedSource = async (source) => {
     (param) => param['x-telemetry']
   )
   if (telemetryParams.length > 0) {
+    for (const param of telemetryParams) {
+      if (!param['x-const-key']) {
+        throw new UnsupportedSchema(
+          `Telemetry parameter "${param.name}" is missing x-const-key`
+        )
+      }
+    }
     chunks.push(
       `export const TELEMETRY_HEADERS = ${objectLiteral(
         telemetryParams.map((param) => [

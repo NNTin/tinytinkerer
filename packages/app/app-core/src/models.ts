@@ -2,7 +2,7 @@ import type { GitHubModelEntry } from '@tinytinkerer/contracts'
 
 export const DEFAULT_MODEL = 'openai/gpt-5'
 
-export const SUPPORTED_MODELS: GitHubModelEntry[] = [
+export const SUPPORTED_MODELS: readonly GitHubModelEntry[] = [
   { id: DEFAULT_MODEL, label: 'OpenAI GPT-5', kind: 'chat' }
 ]
 
