@@ -248,8 +248,15 @@ const topoSortSchemas = (schemas) => {
   return ordered
 }
 
+const IDENTIFIER_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+
+const objectKey = (key) =>
+  IDENTIFIER_PATTERN.test(key) ? key : JSON.stringify(key)
+
 const objectLiteral = (entries) =>
-  `{\n${entries.map(([key, value]) => `  ${key}: ${value}`).join(',\n')}\n}`
+  `{\n${entries
+    .map(([key, value]) => `  ${objectKey(key)}: ${value}`)
+    .join(',\n')}\n}`
 
 const buildGeneratedSource = async (source) => {
   const schemas = source.components?.schemas ?? {}
@@ -299,10 +306,15 @@ const buildGeneratedSource = async (source) => {
       )} as const`
     )
     const telemetryFields = telemetryParams
-      .map(
-        (param) =>
-          `${JSON.stringify(param['x-const-key'])}: z.string().max(${param.schema.maxLength}).optional()`
-      )
+      .map((param) => {
+        const maxLength = param.schema?.maxLength
+        if (typeof maxLength !== 'number') {
+          throw new UnsupportedSchema(
+            `Telemetry parameter "${param.name}" is missing a numeric schema.maxLength`
+          )
+        }
+        return `${JSON.stringify(param['x-const-key'])}: z.string().max(${maxLength}).optional()`
+      })
       .join(', ')
     chunks.push(
       `export const telemetryHeadersSchema = z.object({ ${telemetryFields} })`

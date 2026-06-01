@@ -23,6 +23,11 @@ const updateCatalog = process.argv.includes('--update-catalog')
 
 const readJson = async (url) => JSON.parse(await readFile(url, 'utf8'))
 
+// Parameter ordering is not semantically meaningful, so normalize both the
+// docs- and spec-derived parameter lists with this comparator before comparing.
+const compareParameters = (a, b) =>
+  `${a.in}:${a.name}`.localeCompare(`${b.in}:${b.name}`)
+
 const fail = (message) => {
   console.error(`GitHub Models OpenAPI check failed: ${message}`)
   process.exitCode = 1
@@ -66,11 +71,13 @@ const fetchDocsOperations = async () => {
     method: operation.verb,
     path: operation.requestPath,
     serverUrl: operation.serverUrl,
-    parameters: (operation.parameters ?? []).map((parameter) => ({
-      in: parameter.in,
-      name: parameter.name,
-      required: parameter.required === true
-    })),
+    parameters: (operation.parameters ?? [])
+      .map((parameter) => ({
+        in: parameter.in,
+        name: parameter.name,
+        required: parameter.required === true
+      }))
+      .sort(compareParameters),
     bodyParameters: (operation.bodyParameters ?? []).map((parameter) => ({
       name: parameter.name,
       required: parameter.isRequired === true,
@@ -101,14 +108,16 @@ const operationFromSpec = (spec, path, method) => {
 }
 
 const normalizeSpecParameters = (spec, parameters = []) =>
-  parameters.map((parameter) => {
-    const resolved = resolveRef(spec, parameter)
-    return {
-      in: resolved.in,
-      name: resolved.name,
-      required: resolved.required === true
-    }
-  })
+  parameters
+    .map((parameter) => {
+      const resolved = resolveRef(spec, parameter)
+      return {
+        in: resolved.in,
+        name: resolved.name,
+        required: resolved.required === true
+      }
+    })
+    .sort(compareParameters)
 
 const checkGitHubOpenApi = async () => {
   const spec = await readJson(GITHUB_SPEC_PATH)
