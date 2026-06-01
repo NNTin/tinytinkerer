@@ -84,7 +84,7 @@ Read the **Triage philosophy** in `../SKILL.md` before deciding statuses.
 
 ## Notes / breadcrumbs
 
-- `resolvedInNextRelease` is preferred over plain `resolved` for fresh fixes: Sentry auto-reopens (escalates) the issue if it recurs after the fix ships, so a bad fix doesn't silently stay "resolved".
+- `resolvedInNextRelease` is preferred over plain `resolved` for fresh fixes: Sentry auto-reopens (escalates) the issue if it recurs after the fix ships, so a bad fix doesn't silently stay "resolved". **Quirk:** the `tinytinkerer-frontend` project has no "next release" association, so an `update_issue(status: "resolvedInNextRelease")` on a frontend issue is **coerced to plain `resolved`** (the edge project keeps `resolvedInNextRelease`). Either way Sentry auto-regresses a `resolved` issue when matching events recur on a newer release, so escalation still holds — just don't be surprised the frontend status reads `resolved`. Pass `reason` regardless; a `Fixes <ISSUE>` line in the PR also auto-closes on merge.
 - To confirm a fix landed: after the next prod deploy, re-run step 3 — the issue should not reappear in `release:<new-sha>`.
 - Correlating a frontend 5xx to its edge crash (vs. an upstream/status-mapping bug) via trace id is captured as its own SOP: `correlate-trace.md`. Found another repeatable sub-procedure? Capture it as a new SOP in this folder.
 - An issue with `substatus: regressed` (a fix that reopened on a newer release) has its own SOP: `regressed-issue.md` — find why the prior fix failed instead of reapplying it.
