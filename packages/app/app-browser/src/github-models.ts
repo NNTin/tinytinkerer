@@ -152,11 +152,16 @@ export const useGitHubModels = (selectedModel?: string): GitHubModelsState => {
 
   useEffect(() => {
     let cancelled = false
-    void loadStaticCatalog().then((catalogModels) => {
-      if (!cancelled && catalogModels.length > 0) {
-        setModels(catalogModels)
-      }
-    })
+    loadStaticCatalog()
+      .then((catalogModels) => {
+        if (!cancelled && catalogModels.length > 0) {
+          setModels(catalogModels)
+        }
+      })
+      // The dynamic import can fail (bundler/JSON loading issue). Keep the
+      // built-in STATIC_MODELS defaults rather than throwing an unhandled
+      // rejection — a real refresh still surfaces errors via refreshError.
+      .catch(() => {})
     return () => {
       cancelled = true
     }
