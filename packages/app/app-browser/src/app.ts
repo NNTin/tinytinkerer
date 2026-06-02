@@ -76,6 +76,7 @@ export const initializeBrowserApp = async (
   await configureTelemetry(
     {
       ...(shell.config.sentryDsn ? { dsn: shell.config.sentryDsn } : {}),
+      environment: shell.config.sentryEnvironment,
       appVersion: shell.config.appVersion,
       buildHash: shell.config.buildHash
     },

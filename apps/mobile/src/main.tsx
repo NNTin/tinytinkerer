@@ -23,6 +23,7 @@ const browserConfig = resolveBrowserShellBootstrapConfig({
   manifestStartUrl: import.meta.env.BASE_URL,
   githubClientId,
   sentryDsn: import.meta.env.VITE_SENTRY_DSN,
+  sentryEnvironment: import.meta.env.VITE_SENTRY_ENVIRONMENT,
   appVersion: __APP_VERSION__,
   buildHash: __BUILD_HASH__
 })

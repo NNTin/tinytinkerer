@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { resolveBrowserShellBootstrapConfig } from '../src/config.js'
+import {
+  resolveBrowserShellBootstrapConfig,
+  resolveBrowserShellConfig
+} from '../src/config.js'
 
 describe('resolveBrowserShellBootstrapConfig', () => {
   it('derives the GitHub callback from the current origin and base path', () => {
@@ -57,5 +60,36 @@ describe('resolveBrowserShellBootstrapConfig', () => {
       appVersion: 'dev',
       buildHash: 'dev'
     })
+  })
+
+  it('passes the Sentry environment through only when provided', () => {
+    expect(
+      resolveBrowserShellBootstrapConfig({
+        baseUrl: '/web/',
+        origin: 'http://localhost:3111',
+        sentryEnvironment: 'develop'
+      })
+    ).toMatchObject({ sentryEnvironment: 'develop' })
+
+    expect(
+      resolveBrowserShellBootstrapConfig({
+        baseUrl: '/web/',
+        origin: 'http://localhost:3111'
+      })
+    ).not.toHaveProperty('sentryEnvironment')
+  })
+})
+
+describe('resolveBrowserShellConfig', () => {
+  it("defaults the Sentry environment to 'development'", () => {
+    expect(resolveBrowserShellConfig()).toMatchObject({
+      sentryEnvironment: 'development'
+    })
+  })
+
+  it('preserves an explicit Sentry environment', () => {
+    expect(
+      resolveBrowserShellConfig({ sentryEnvironment: 'production' })
+    ).toMatchObject({ sentryEnvironment: 'production' })
   })
 })

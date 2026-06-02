@@ -12,4 +12,6 @@ export type Bindings = {
   SENTRY_DSN?: string
   /** Release identifier (build hash) for Sentry events. */
   SENTRY_RELEASE?: string
+  /** Deployment environment label for Sentry (production, develop). */
+  SENTRY_ENVIRONMENT?: string
 }

@@ -16,9 +16,36 @@
       "custom_domain": true
     }
   ],
+  // Production only serves the production frontend. PR previews now reuse the
+  // develop edge (see env.develop), so the preview wildcard is intentionally
+  // absent here.
   "vars": {
-    "ALLOWED_ORIGINS": "http://localhost:3111,https://tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz"
+    "ALLOWED_ORIGINS": "http://localhost:3111,https://tiny.nntin.xyz",
+    "SENTRY_ENVIRONMENT": "production"
   },
+  // The develop edge backs both the develop frontend (dev.tiny.nntin.xyz) and
+  // every PR preview (*.tiny.preview.nntin.xyz), so experimental edge work can
+  // ship without touching production. Deployed with `wrangler deploy --env
+  // develop` from .github/workflows/deploy-edge.yml on pushes to `develop`.
+  // `vars` and `routes` are NOT inherited from the top-level config — wrangler
+  // replaces them per environment, so both are redeclared here in full. The
+  // inheritable keys (main, compatibility_*, upload_source_maps, workers_dev)
+  // do carry over and are intentionally not repeated.
+  "env": {
+    "develop": {
+      "name": "tinytinkerer-edge-develop",
+      "routes": [
+        {
+          "pattern": "api.dev.tiny.nntin.xyz",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "ALLOWED_ORIGINS": "http://localhost:3111,https://dev.tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz",
+        "SENTRY_ENVIRONMENT": "develop"
+      }
+    }
+  }
   // Required secrets (set via `wrangler secret put`): GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
   // Optional secret: SENTRY_DSN. SENTRY_RELEASE is set at deploy time from the git SHA.
 }

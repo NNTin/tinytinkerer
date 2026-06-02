@@ -2,7 +2,7 @@ name: Deploy Edge
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - 'apps/edge/**'
       - 'packages/shared/contracts/**'
@@ -145,11 +145,26 @@ jobs:
         # Sentry project shares one release identifier per commit.
         run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve Deploy Environment
+        id: flags
+        shell: bash
+        # `main` deploys the default (production) worker; `develop` targets the
+        # named env in wrangler.jsonc (worker tinytinkerer-edge-develop at
+        # api.dev.tiny.nntin.xyz). The env-scoped ALLOWED_ORIGINS and
+        # SENTRY_ENVIRONMENT come from wrangler.jsonc, so the only CI difference
+        # is this `--env` flag, threaded into every wrangler invocation below.
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/develop" ]; then
+            echo "env_flag=--env develop" >> "$GITHUB_OUTPUT"
+          else
+            echo "env_flag=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Bundle Worker
         working-directory: apps/edge
         # Build the worker bundle and source maps (upload_source_maps) to dist
         # WITHOUT deploying, so debug IDs can be injected before it ships.
-        run: pnpm exec wrangler deploy --dry-run --outdir dist
+        run: pnpm exec wrangler deploy --dry-run --outdir dist ${{ steps.flags.outputs.env_flag }}
 
       - name: Inject Sentry Debug IDs
         if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
@@ -167,6 +182,7 @@ jobs:
           pnpm exec wrangler deploy dist/index.js --no-bundle
           --secrets-file ${{ steps.secrets-file.outputs.path }}
           --var SENTRY_RELEASE:${{ steps.release.outputs.sha }}
+          ${{ steps.flags.outputs.env_flag }}
 
       - name: Upload Source Maps and Finalize Sentry Release
         if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
@@ -185,4 +201,4 @@ jobs:
 
       - name: Apply Worker Domain Configuration
         working-directory: apps/edge
-        run: pnpm exec wrangler triggers deploy
+        run: pnpm exec wrangler triggers deploy ${{ steps.flags.outputs.env_flag }}
