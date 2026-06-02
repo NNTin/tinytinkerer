@@ -21,12 +21,12 @@ The current codebase expects a **GitHub OAuth App**, not a GitHub App installati
 There are three deployment tiers. Each frontend talks directly to a Cloudflare
 edge origin through `VITE_EDGE_URL`:
 
-| Tier | Branch / trigger | Frontend (Vercel) | Edge (Cloudflare) | Sentry environment |
+| Tier | Branch / trigger | Frontend (Vercel) | Edge (Cloudflare) | Frontend Sentry env |
 |---|---|---|---|---|
 | Production | `main` | `https://tiny.nntin.xyz` | `https://api.tiny.nntin.xyz` | `production` |
 | Develop | `develop` | `https://dev.tiny.nntin.xyz` | `https://api.dev.tiny.nntin.xyz` | `develop` |
 | PR preview | pull requests | `https://pr-<number>-<branch>.tiny.preview.nntin.xyz` | reuses the **develop** edge | `pr-preview` |
-| Local dev | — | `localhost` | `localhost:8787` | `development` |
+| Local dev | — | `http://localhost:3111` | `http://localhost:8787` | `development` |
 
 Key points:
 
@@ -37,6 +37,11 @@ Key points:
   without risking production stability.
 - Both the develop frontend and PR previews use the Vercel **Preview** env
   scope, so both pull `VITE_EDGE_URL=https://api.dev.tiny.nntin.xyz`.
+- The last column is the **frontend** Sentry environment. The **edge** has only
+  two environments — `production` and `develop` — because each edge tags events
+  by the worker that served them. So a PR preview's own (frontend) errors are
+  `pr-preview`, but the edge requests it makes hit the develop edge and are
+  tagged `develop`. See [Sentry Environments](#7-sentry-environments).
 
 ## 1. GitHub Setup
 
@@ -388,12 +393,28 @@ Usually caused by one of these:
 ## 7. Sentry Environments
 
 Both Sentry projects (`tinytinkerer-frontend`, `tinytinkerer-edge`) are shared
-across tiers and split by the event `environment` tag:
+across tiers and split by the event `environment` tag. **The frontend and edge
+do not use the same set of environments** — there is one edge per tier, but PR
+previews have their own frontend while reusing the develop edge.
+
+**Frontend** (`tinytinkerer-frontend`) — four environments:
 
 - `development` — localhost (default when `VITE_SENTRY_ENVIRONMENT` is unset)
 - `pr-preview` — all PR previews, grouped into one environment
 - `develop` — the `develop` branch deployment
 - `production` — the `main` branch deployment
+
+**Edge** (`tinytinkerer-edge`) — only two environments, because each worker tags
+events by which worker served the request:
+
+- `develop` — the develop worker (`api.dev.tiny.nntin.xyz`). This includes
+  requests made by PR previews, since they reuse the develop edge. There is no
+  `pr-preview` environment on the edge.
+- `production` — the production worker (`api.tiny.nntin.xyz`)
+
+So when triaging an edge error that originated from PR-preview traffic, look
+under `develop`, not `pr-preview`. To correlate it with a specific PR preview,
+use the frontend event (tagged `pr-preview`) and the shared release (git SHA).
 
 The environment is set explicitly in code (`VITE_SENTRY_ENVIRONMENT` baked into
 the frontend build; `SENTRY_ENVIRONMENT` worker var for the edge). The release
