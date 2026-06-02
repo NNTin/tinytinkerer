@@ -1,9 +1,9 @@
-import { zValidator } from '@hono/zod-validator'
-import { EDGE_ROUTE_PATHS, githubExchangeRequestSchema, githubExchangeResponseSchema } from '@tinytinkerer/contracts'
-import type { Hono } from 'hono'
+import type { OpenAPIHono } from '@hono/zod-openapi'
+import { githubExchangeResponseSchema } from '@tinytinkerer/contracts'
 import { z } from 'zod'
 import type { Bindings } from '../lib/bindings'
 import { fetchWithTimeout } from '../lib/fetch'
+import { authExchangeRoute } from '../openapi/routes'
 
 const githubOAuthResponseSchema = z.object({
   access_token: z.string().optional(),
@@ -12,16 +12,28 @@ const githubOAuthResponseSchema = z.object({
 
 const GITHUB_CODE_RE = /^[a-zA-Z0-9_-]{10,40}$/
 
-export const registerAuthRoutes = (app: Hono<{ Bindings: Bindings }>) => {
-  app.post(EDGE_ROUTE_PATHS.authGithubExchange, zValidator('json', githubExchangeRequestSchema), async (c) => {
+export const registerAuthRoutes = (
+  app: OpenAPIHono<{ Bindings: Bindings }>
+) => {
+  app.openapi(authExchangeRoute, async (c) => {
     const { code, redirectUri } = c.req.valid('json')
 
     if (!GITHUB_CODE_RE.test(code)) {
-      return c.json(githubExchangeResponseSchema.parse({ error: 'Invalid OAuth code format' }), 400)
+      return c.json(
+        githubExchangeResponseSchema.parse({
+          error: 'Invalid OAuth code format'
+        }),
+        400
+      )
     }
 
     if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_CLIENT_SECRET) {
-      return c.json(githubExchangeResponseSchema.parse({ error: 'OAuth is not configured' }), 501)
+      return c.json(
+        githubExchangeResponseSchema.parse({
+          error: 'OAuth is not configured'
+        }),
+        501
+      )
     }
 
     const response = await fetchWithTimeout(
@@ -59,6 +71,9 @@ export const registerAuthRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       )
     }
 
-    return c.json(githubExchangeResponseSchema.parse({ accessToken: payload.access_token }))
+    return c.json(
+      githubExchangeResponseSchema.parse({ accessToken: payload.access_token }),
+      200
+    )
   })
 }

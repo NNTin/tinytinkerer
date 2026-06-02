@@ -6,8 +6,8 @@
   "scripts": {
     "generate:brand-assets": "node ./scripts/generate-brand-assets.mjs",
     "generate:privacy-policy": "node ./scripts/generate-privacy-policy.mjs",
-    "generate:edge-openapi": "node ./scripts/generate-edge-openapi.mjs",
-    "check:edge-openapi": "node ./scripts/generate-edge-openapi.mjs --check",
+    "generate:edge-openapi": "tsx ./scripts/generate-edge-openapi.ts",
+    "check:edge-openapi": "tsx ./scripts/generate-edge-openapi.ts --check",
     "dev": "pnpm generate:brand-assets && pnpm generate:privacy-policy && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 turbo run dev --filter=@tinytinkerer/edge --filter=@tinytinkerer/host",
     "build": "pnpm generate:brand-assets && pnpm generate:privacy-policy && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 turbo run build",
     "build:pages": "pnpm generate:brand-assets && pnpm generate:privacy-policy && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 TINYTINKERER_DEPLOY_BASE=/tinytinkerer turbo run build",
@@ -32,6 +32,7 @@
     "png-to-ico": "3.0.1",
     "prettier": "^3.6.2",
     "sharp": "0.34.5",
+    "tsx": "^4.20.3",
     "turbo": "^2.5.8",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.4",

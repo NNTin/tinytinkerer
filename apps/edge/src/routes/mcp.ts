@@ -1,17 +1,14 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
-import { zValidator } from '@hono/zod-validator'
+import type { OpenAPIHono } from '@hono/zod-openapi'
 import {
-  EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
-  mcpCallRequestSchema,
   mcpCallResponseSchema,
-  mcpDiscoverRequestSchema,
   mcpDiscoveryResultSchema
 } from '@tinytinkerer/contracts'
-import type { Hono } from 'hono'
 import type { Bindings } from '../lib/bindings'
+import { mcpCallRoute, mcpDiscoverRoute } from '../openapi/routes'
 
 // NOTE: This check covers only literal IP addresses and a set of well-known
 // cloud-metadata hostnames. It cannot defend against a public-looking hostname
@@ -20,10 +17,10 @@ import type { Bindings } from '../lib/bindings'
 // connect-time IP check (unavailable in Cloudflare Workers without a
 // third-party DNS-over-HTTPS call) or Cloudflare's built-in SSRF guardrails.
 const METADATA_HOSTNAMES = new Set([
-  'metadata.google.internal',    // GCP
-  'instance-data',               // GCP alternate
-  'metadata.azure.internal',     // Azure IMDS
-  'metadata',                    // generic internal metadata alias
+  'metadata.google.internal', // GCP
+  'instance-data', // GCP alternate
+  'metadata.azure.internal', // Azure IMDS
+  'metadata' // generic internal metadata alias
 ])
 
 const isPrivateHostname = (hostname: string): boolean => {
@@ -37,13 +34,13 @@ const isPrivateHostname = (hostname: string): boolean => {
   const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
   if (v4) {
     const [a, b] = [Number(v4[1]), Number(v4[2])]
-    if (a === 10) return true                          // 10.0.0.0/8
-    if (a === 172 && b >= 16 && b <= 31) return true  // 172.16.0.0/12
-    if (a === 192 && b === 168) return true            // 192.168.0.0/16
-    if (a === 127) return true                         // 127.0.0.0/8
-    if (a === 169 && b === 254) return true            // 169.254.0.0/16 link-local
+    if (a === 10) return true // 10.0.0.0/8
+    if (a === 172 && b >= 16 && b <= 31) return true // 172.16.0.0/12
+    if (a === 192 && b === 168) return true // 192.168.0.0/16
+    if (a === 127) return true // 127.0.0.0/8
+    if (a === 169 && b === 254) return true // 169.254.0.0/16 link-local
     if (a === 100 && b >= 64 && b <= 127) return true // 100.64.0.0/10 CGNAT
-    if (a === 0) return true                           // 0.0.0.0/8
+    if (a === 0) return true // 0.0.0.0/8
     if (a === 198 && (b === 18 || b === 19)) return true // benchmarking
     return false
   }
@@ -53,7 +50,7 @@ const isPrivateHostname = (hostname: string): boolean => {
     // IPv6 private/reserved
     if (h === '::1' || h === '0:0:0:0:0:0:0:1') return true
     if (h.startsWith('fc') || h.startsWith('fd')) return true // fc00::/7 ULA
-    if (h.startsWith('fe80')) return true               // link-local
+    if (h.startsWith('fe80')) return true // link-local
   }
 
   return false
@@ -82,28 +79,39 @@ const validateMcpUrl = (raw: string): boolean => {
   return true
 }
 
-const toMcpHeaders = (bearerToken: string | undefined): Record<string, string> =>
+const toMcpHeaders = (
+  bearerToken: string | undefined
+): Record<string, string> =>
   bearerToken ? { authorization: `Bearer ${bearerToken}` } : {}
 
-const makeTransport = (url: string, bearerToken: string | undefined): Transport => {
+const makeTransport = (
+  url: string,
+  bearerToken: string | undefined
+): Transport => {
   const transport = new StreamableHTTPClientTransport(new URL(url), {
     requestInit: { headers: toMcpHeaders(bearerToken) }
   })
   return transport as unknown as Transport
 }
 
-export const registerMcpRoutes = (app: Hono<{ Bindings: Bindings }>) => {
-  app.post(EDGE_ROUTE_PATHS.mcpDiscover, zValidator('json', mcpDiscoverRequestSchema), async (c) => {
-    const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
+export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
+  app.openapi(mcpDiscoverRoute, async (c) => {
+    const authorization =
+      c.req.header('authorization') ?? c.req.header('Authorization')
     if (!authorization) {
-      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
+        401
+      )
     }
 
     const { url, bearerToken } = c.req.valid('json')
 
     if (!validateMcpUrl(url)) {
       return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Invalid or disallowed MCP server URL' }),
+        edgeErrorResponseSchema.parse({
+          error: 'Invalid or disallowed MCP server URL'
+        }),
         400
       )
     }
@@ -130,27 +138,40 @@ export const registerMcpRoutes = (app: Hono<{ Bindings: Bindings }>) => {
           serverName,
           tools,
           syncedAt: new Date().toISOString()
-        })
+        }),
+        200
       )
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'MCP discovery failed'
+      const message =
+        error instanceof Error ? error.message : 'MCP discovery failed'
       return c.json(edgeErrorResponseSchema.parse({ error: message }), 502)
     } finally {
       await client.close().catch(() => undefined)
     }
   })
 
-  app.post(EDGE_ROUTE_PATHS.mcpCall, zValidator('json', mcpCallRequestSchema), async (c) => {
-    const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
+  app.openapi(mcpCallRoute, async (c) => {
+    const authorization =
+      c.req.header('authorization') ?? c.req.header('Authorization')
     if (!authorization) {
-      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
+        401
+      )
     }
 
-    const { url, bearerToken, toolName, arguments: toolArgs } = c.req.valid('json')
+    const {
+      url,
+      bearerToken,
+      toolName,
+      arguments: toolArgs
+    } = c.req.valid('json')
 
     if (!validateMcpUrl(url)) {
       return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Invalid or disallowed MCP server URL' }),
+        edgeErrorResponseSchema.parse({
+          error: 'Invalid or disallowed MCP server URL'
+        }),
         400
       )
     }
@@ -163,10 +184,15 @@ export const registerMcpRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       const serverVersion = client.getServerVersion()
       const serverName = serverVersion?.name ?? 'Unknown Server'
 
-      const callResult = await client.callTool({ name: toolName, arguments: toolArgs })
+      const callResult = await client.callTool({
+        name: toolName,
+        arguments: toolArgs
+      })
 
       const isError = callResult.isError === true
-      const contentItems = Array.isArray(callResult.content) ? callResult.content : []
+      const contentItems = Array.isArray(callResult.content)
+        ? callResult.content
+        : []
       const text = contentItems
         .filter((item): item is { type: 'text'; text: string } => {
           const candidate = item as Record<string, unknown>
@@ -182,7 +208,8 @@ export const registerMcpRoutes = (app: Hono<{ Bindings: Bindings }>) => {
           text,
           raw: callResult,
           isError
-        })
+        }),
+        200
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : 'MCP call failed'

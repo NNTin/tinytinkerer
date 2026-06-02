@@ -1,16 +1,14 @@
-import { zValidator } from '@hono/zod-validator'
+import type { OpenAPIHono } from '@hono/zod-openapi'
 import {
   EDGE_RATE_LIMIT_HEADERS,
-  EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
   githubModelEntrySchema,
-  modelsChatRequestSchema,
   modelsChatResponseSchema
 } from '@tinytinkerer/contracts'
 import { z } from 'zod'
-import type { Hono } from 'hono'
 import type { Bindings } from '../lib/bindings'
 import { applyCorsHeaders } from '../lib/cors'
+import { modelsChatRoute, modelsListRoute } from '../openapi/routes'
 import { fetchWithTimeout } from '../lib/fetch'
 import {
   isFresh,
@@ -67,152 +65,150 @@ const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
 
 const UPSTREAM_ERROR_STATUSES = new Set([400, 401, 403, 422, 500, 503, 504])
 
-export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
-  app.post(
-    EDGE_ROUTE_PATHS.modelsChat,
-    zValidator('json', modelsChatRequestSchema),
-    async (c) => {
-      const body = c.req.valid('json')
-      const authorization =
-        c.req.header('authorization') ?? c.req.header('Authorization')
+export const registerModelRoutes = (
+  app: OpenAPIHono<{ Bindings: Bindings }>
+) => {
+  app.openapi(modelsChatRoute, async (c) => {
+    const body = c.req.valid('json')
+    const authorization =
+      c.req.header('authorization') ?? c.req.header('Authorization')
 
-      if (!authorization) {
-        return c.json(
-          edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
-          401
-        )
-      }
-
-      const useStream = body.stream === true
-      const modelsBaseUrl = c.env.GITHUB_MODELS_URL ?? GITHUB_MODELS_DEFAULT_URL
-
-      // Respect a still-open upstream rate-limit window (durable across isolates):
-      // short-circuit with a 429 instead of re-hammering GitHub Models
-      // (TINYTINKERER-EDGE-4).
-      const backoffMs = await getActiveBackoffMs()
-      if (backoffMs > 0) {
-        c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
-        return c.json(rateLimitResponseFromMs(backoffMs), 429)
-      }
-
-      const response = await fetchWithTimeout(
-        {
-          area: 'models.chat',
-          origin: 'github',
-          method: 'POST',
-          url: `${modelsBaseUrl}/chat/completions`,
-          stream: useStream,
-          // Chat completions are NOT cacheable, so after we durably honour the
-          // upstream rate-limit window (above) the residual 429 — the first call
-          // that opens a new window — is a user-triggered, unavoidable GitHub
-          // Models rate limit. The frontend surfaces it as a cooldown; capturing
-          // it adds no signal (TINYTINKERER-EDGE-4 / FRONTEND-9).
-          accept: {
-            status: [429],
-            reason:
-              'GitHub Models chat rate limit; honoured via durable backoff + clean 429/Retry-After, surfaced to the user as a cooldown (TINYTINKERER-EDGE-4).'
-          }
-        },
-        {
-          method: 'POST',
-          headers: {
-            ...GITHUB_MODELS_REFERENCE_HEADERS,
-            authorization,
-            'content-type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: body.model ?? 'openai/gpt-4.1-mini',
-            messages: body.messages,
-            stream: useStream
-          })
-        },
-        30_000
+    if (!authorization) {
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
+        401
       )
+    }
 
-      if (!response.ok) {
-        const rawText = await response.text()
-        console.error('[models/chat] upstream error', {
-          status: response.status,
-          'retry-after': response.headers.get('retry-after'),
-          'x-ratelimit-limit-requests': response.headers.get(
-            'x-ratelimit-limit-requests'
-          ),
-          'x-ratelimit-remaining-requests': response.headers.get(
-            'x-ratelimit-remaining-requests'
-          ),
-          'x-ratelimit-reset-requests': response.headers.get(
-            'x-ratelimit-reset-requests'
-          )
+    const useStream = body.stream === true
+    const modelsBaseUrl = c.env.GITHUB_MODELS_URL ?? GITHUB_MODELS_DEFAULT_URL
+
+    // Respect a still-open upstream rate-limit window (durable across isolates):
+    // short-circuit with a 429 instead of re-hammering GitHub Models
+    // (TINYTINKERER-EDGE-4).
+    const backoffMs = await getActiveBackoffMs()
+    if (backoffMs > 0) {
+      c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
+      return c.json(rateLimitResponseFromMs(backoffMs), 429)
+    }
+
+    const response = await fetchWithTimeout(
+      {
+        area: 'models.chat',
+        origin: 'github',
+        method: 'POST',
+        url: `${modelsBaseUrl}/chat/completions`,
+        stream: useStream,
+        // Chat completions are NOT cacheable, so after we durably honour the
+        // upstream rate-limit window (above) the residual 429 — the first call
+        // that opens a new window — is a user-triggered, unavoidable GitHub
+        // Models rate limit. The frontend surfaces it as a cooldown; capturing
+        // it adds no signal (TINYTINKERER-EDGE-4 / FRONTEND-9).
+        accept: {
+          status: [429],
+          reason:
+            'GitHub Models chat rate limit; honoured via durable backoff + clean 429/Retry-After, surfaced to the user as a cooldown (TINYTINKERER-EDGE-4).'
+        }
+      },
+      {
+        method: 'POST',
+        headers: {
+          ...GITHUB_MODELS_REFERENCE_HEADERS,
+          authorization,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: body.model ?? 'openai/gpt-4.1-mini',
+          messages: body.messages,
+          stream: useStream
         })
+      },
+      30_000
+    )
 
-        if (response.status === 429) {
-          const retryAfter = response.headers.get('retry-after')
-          const rateLimitBody = toRateLimitResponse(rawText, retryAfter)
-          // Remember the window (durably, colo-wide) so the next call backs off
-          // instead of re-probing.
-          await recordBackoff(rateLimitBody.retryAfterMs)
-          c.header(
-            'Retry-After',
-            retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000))
-          )
-          for (const header of EDGE_RATE_LIMIT_HEADERS) {
-            const value = response.headers.get(header)
-            if (value !== null) c.header(header, value)
-          }
-          return c.json(rateLimitBody, 429)
-        }
-
-        if (response.status === 503) {
-          const retryAfter = response.headers.get('retry-after')
-          if (retryAfter) c.header('Retry-After', retryAfter)
-        }
-
-        const safeError =
-          UPSTREAM_ERROR_MESSAGES[response.status] ??
-          `Upstream error ${response.status}`
-        const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
-          ? (response.status as 400 | 401 | 403 | 422 | 500 | 503 | 504)
-          : 502
-        return c.json(
-          edgeErrorResponseSchema.parse({ error: safeError }),
-          statusCode
+    if (!response.ok) {
+      const rawText = await response.text()
+      console.error('[models/chat] upstream error', {
+        status: response.status,
+        'retry-after': response.headers.get('retry-after'),
+        'x-ratelimit-limit-requests': response.headers.get(
+          'x-ratelimit-limit-requests'
+        ),
+        'x-ratelimit-remaining-requests': response.headers.get(
+          'x-ratelimit-remaining-requests'
+        ),
+        'x-ratelimit-reset-requests': response.headers.get(
+          'x-ratelimit-reset-requests'
         )
-      }
+      })
 
-      // Upstream accepted the request — clear any backoff window.
-      await clearBackoff()
-
-      if (useStream && response.body) {
-        const headers = new Headers({
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'X-Accel-Buffering': 'no'
-        })
-
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('retry-after')
+        const rateLimitBody = toRateLimitResponse(rawText, retryAfter)
+        // Remember the window (durably, colo-wide) so the next call backs off
+        // instead of re-probing.
+        await recordBackoff(rateLimitBody.retryAfterMs)
+        c.header(
+          'Retry-After',
+          retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000))
+        )
         for (const header of EDGE_RATE_LIMIT_HEADERS) {
           const value = response.headers.get(header)
-          if (value !== null) headers.set(header, value)
+          if (value !== null) c.header(header, value)
         }
-
-        applyCorsHeaders(headers, c.env, c.req.header('origin') ?? null)
-
-        return new Response(response.body, {
-          status: 200,
-          headers
-        })
+        return c.json(rateLimitBody, 429)
       }
+
+      if (response.status === 503) {
+        const retryAfter = response.headers.get('retry-after')
+        if (retryAfter) c.header('Retry-After', retryAfter)
+      }
+
+      const safeError =
+        UPSTREAM_ERROR_MESSAGES[response.status] ??
+        `Upstream error ${response.status}`
+      const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
+        ? (response.status as 400 | 401 | 403 | 422 | 500 | 503 | 504)
+        : 502
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: safeError }),
+        statusCode
+      )
+    }
+
+    // Upstream accepted the request — clear any backoff window.
+    await clearBackoff()
+
+    if (useStream && response.body) {
+      const headers = new Headers({
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no'
+      })
 
       for (const header of EDGE_RATE_LIMIT_HEADERS) {
         const value = response.headers.get(header)
-        if (value !== null) c.header(header, value)
+        if (value !== null) headers.set(header, value)
       }
 
-      const rawText = await response.text()
-      return c.json(modelsChatResponseSchema.parse(JSON.parse(rawText)), 200)
-    }
-  )
+      applyCorsHeaders(headers, c.env, c.req.header('origin') ?? null)
 
-  app.get(EDGE_ROUTE_PATHS.modelsList, async (c) => {
+      return new Response(response.body, {
+        status: 200,
+        headers
+      })
+    }
+
+    for (const header of EDGE_RATE_LIMIT_HEADERS) {
+      const value = response.headers.get(header)
+      if (value !== null) c.header(header, value)
+    }
+
+    const rawText = await response.text()
+    return c.json(modelsChatResponseSchema.parse(JSON.parse(rawText)), 200)
+  })
+
+  app.openapi(modelsListRoute, async (c) => {
     const authorization =
       c.req.header('authorization') ?? c.req.header('Authorization')
 
@@ -233,14 +229,14 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     // fresh Cloudflare isolate, which is why the 429s regressed.
     const cached = await readCachedModels()
     if (cached && isFresh(cached.ageMs)) {
-      return c.json({ models: cached.models })
+      return c.json({ models: cached.models }, 200)
     }
 
     // Honor a still-open rate-limit window shared with the chat route (durable
     // across isolates). Prefer the last-known catalogue over cascading anything.
     const backoffMs = await getActiveBackoffMs()
     if (backoffMs > 0) {
-      if (cached) return c.json({ models: cached.models })
+      if (cached) return c.json({ models: cached.models }, 200)
       // No cached catalogue yet but a window is open: emit the SAME single
       // cooldown signal as the cold-cache-miss path below — a graceful 503 +
       // Retry-After — instead of leaking the raw upstream 429. The browser is not
@@ -301,7 +297,7 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
         // isolate — backs off instead of re-probing.
         await recordBackoff(rateLimitBody.retryAfterMs)
         // Prefer the last-known catalogue over cascading the upstream 429.
-        if (cached) return c.json({ models: cached.models })
+        if (cached) return c.json({ models: cached.models }, 200)
         // Cold-cache miss (fresh isolate, nothing cached yet): the catalogue is
         // temporarily unavailable — the browser is not itself rate limited, so a
         // 429 would be misleading. Surface a graceful 503 + Retry-After; the client
@@ -352,6 +348,6 @@ export const registerModelRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     // the upstream fetch for the freshness window.
     await writeCachedModels(models)
 
-    return c.json({ models })
+    return c.json({ models }, 200)
   })
 }
