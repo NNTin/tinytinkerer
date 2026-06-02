@@ -136,6 +136,7 @@ export const searchRoute = createRoute({
       description: 'Search results',
       content: json(searchResponseSchema)
     },
+    400: errorResponse('Invalid request'),
     401: {
       description: 'Unauthorized',
       content: json(edgeErrorResponseSchema)
