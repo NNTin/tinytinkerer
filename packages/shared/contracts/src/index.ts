@@ -39,11 +39,12 @@ export type {
   ThematicBreakNode
 } from './content'
 
-// Edge API contracts — schemas, inferred types, and route/header constants — are
-// generated from the canonical OpenAPI source at
-// apps/edge/openapi/tinytinkerer-edge.openapi.json by
-// scripts/generate-edge-openapi.mjs. Do not redefine these names here.
-export * from './edge.generated'
+// Edge API contracts — schemas, inferred types, and route/header constants.
+// These are hand-authored in ./edge and are the source of truth: the edge app
+// builds its routes from them and emits the published OpenAPI document
+// (apps/edge/openapi/tinytinkerer-edge.openapi.json) from the code. Do not
+// redefine these names here.
+export * from './edge'
 
 export const eventTypeSchema = z.enum([
   'user.message',

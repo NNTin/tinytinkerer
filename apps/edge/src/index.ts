@@ -1,6 +1,7 @@
+import { OpenAPIHono } from '@hono/zod-openapi'
 import * as Sentry from '@sentry/cloudflare'
+import { edgeErrorResponseSchema } from '@tinytinkerer/contracts'
 import { scrubEvent } from '@tinytinkerer/sentry-telemetry'
-import { Hono } from 'hono'
 import type { Bindings } from './lib/bindings'
 import { corsMiddleware } from './lib/cors'
 import './lib/sentry'
@@ -11,7 +12,19 @@ import { registerMcpRoutes } from './routes/mcp'
 import { registerModelRoutes } from './routes/models'
 import { registerSearchRoutes } from './routes/search'
 
-const app = new Hono<{ Bindings: Bindings }>()
+const app = new OpenAPIHono<{ Bindings: Bindings }>({
+  // Failed request validation returns the same { error } shape every other edge
+  // error uses (and that the OpenAPI 4xx responses document), instead of the
+  // library's default validation-error payload.
+  defaultHook: (result, c) => {
+    if (!result.success) {
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: 'Invalid request' }),
+        400
+      )
+    }
+  }
+})
 
 app.use('*', corsMiddleware)
 app.use('*', telemetryMiddleware)

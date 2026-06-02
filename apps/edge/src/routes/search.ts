@@ -1,16 +1,14 @@
-import { zValidator } from '@hono/zod-validator'
+import type { OpenAPIHono } from '@hono/zod-openapi'
 import {
-  EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
   searchResponseSchema,
   searchResultSchema,
-  searchRequestSchema,
   type SearchResult
 } from '@tinytinkerer/contracts'
-import type { Hono } from 'hono'
 import { z } from 'zod'
 import type { Bindings } from '../lib/bindings'
 import { fetchWithTimeout } from '../lib/fetch'
+import { searchRoute } from '../openapi/routes'
 
 const tavilyResultItemSchema = z.object({
   title: z.string().optional(),
@@ -40,12 +38,18 @@ const normalizeSearchResults = (results: TavilyResultItem[]): SearchResult[] =>
     })
     .filter((value): value is SearchResult => Boolean(value))
 
-export const registerSearchRoutes = (app: Hono<{ Bindings: Bindings }>) => {
-  app.post(EDGE_ROUTE_PATHS.search, zValidator('json', searchRequestSchema), async (c) => {
-    const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
+export const registerSearchRoutes = (
+  app: OpenAPIHono<{ Bindings: Bindings }>
+) => {
+  app.openapi(searchRoute, async (c) => {
+    const authorization =
+      c.req.header('authorization') ?? c.req.header('Authorization')
 
     if (!authorization) {
-      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
+        401
+      )
     }
 
     const input = c.req.valid('json')
@@ -53,7 +57,8 @@ export const registerSearchRoutes = (app: Hono<{ Bindings: Bindings }>) => {
     if (!c.env.TAVILY_API_KEY) {
       return c.json(
         edgeErrorResponseSchema.parse({
-          error: 'Web search is currently unavailable. Configure Tavily to enable live search.'
+          error:
+            'Web search is currently unavailable. Configure Tavily to enable live search.'
         }),
         503
       )
@@ -96,7 +101,8 @@ export const registerSearchRoutes = (app: Hono<{ Bindings: Bindings }>) => {
       searchResponseSchema.parse({
         query: input.query,
         results: normalizeSearchResults(results)
-      })
+      }),
+      200
     )
   })
 }

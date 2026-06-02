@@ -1,9 +1,12 @@
-import type { Hono } from 'hono'
-import { EDGE_ROUTE_PATHS, type SystemStatus } from '@tinytinkerer/contracts'
+import type { OpenAPIHono } from '@hono/zod-openapi'
+import type { SystemStatus } from '@tinytinkerer/contracts'
 import type { Bindings } from '../lib/bindings'
+import { healthRoute } from '../openapi/routes'
 
-export const registerHealthRoute = (app: Hono<{ Bindings: Bindings }>) => {
-  app.get(EDGE_ROUTE_PATHS.health, (c) => {
+export const registerHealthRoute = (
+  app: OpenAPIHono<{ Bindings: Bindings }>
+) => {
+  app.openapi(healthRoute, (c) => {
     const status: SystemStatus = {
       auth: {
         state: c.env.GITHUB_CLIENT_ID ? 'ready' : 'degraded',
@@ -23,6 +26,6 @@ export const registerHealthRoute = (app: Hono<{ Bindings: Bindings }>) => {
       }
     }
 
-    return c.json(status)
+    return c.json(status, 200)
   })
 }

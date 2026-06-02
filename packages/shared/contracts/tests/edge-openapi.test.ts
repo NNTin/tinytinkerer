@@ -9,24 +9,25 @@ import {
   telemetryHeadersSchema
 } from '../src/index.js'
 
-// The published, generated edge OpenAPI doc. It is produced from the canonical
-// source by scripts/generate-edge-openapi.mjs and verified fresh in CI via
-// `pnpm check:edge-openapi`; these tests assert its shape and that the generated
-// contracts stay in sync with it.
+// The single, generated edge OpenAPI document. It is produced from the edge code
+// (apps/edge route definitions + these shared schemas) by
+// scripts/generate-edge-openapi.ts and verified fresh in CI via
+// `pnpm check:edge-openapi`; these tests assert its shape and that the contracts
+// it is generated from stay consistent with it.
 const spec = JSON.parse(
   readFileSync(
     new URL(
-      '../../../../docs/openapi/tinytinkerer-edge.openapi.json',
+      '../../../../apps/edge/openapi/tinytinkerer-edge.openapi.json',
       import.meta.url
     ),
     'utf8'
   )
 ) as {
   security: unknown
-  paths: Record<string, Record<string, { security?: unknown; responses: Record<string, unknown> }>>
-  components: {
-    responses: Record<string, { headers?: Record<string, unknown> }>
-  }
+  paths: Record<
+    string,
+    Record<string, { security?: unknown; responses: Record<string, unknown> }>
+  >
 }
 
 const ROUTE_METHOD: Record<string, string> = {
@@ -40,25 +41,21 @@ const ROUTE_METHOD: Record<string, string> = {
 }
 
 describe('edge openapi spec', () => {
-  it('documents every edge route with its method and an OPTIONS preflight', () => {
+  it('documents every edge route with its method', () => {
     expect(Object.keys(spec.paths).sort()).toEqual(
       Object.keys(ROUTE_METHOD).sort()
     )
 
     for (const [path, method] of Object.entries(ROUTE_METHOD)) {
       expect(spec.paths[path]?.[method], `${path} ${method}`).toBeDefined()
-      expect(spec.paths[path]?.options, `${path} options`).toBeDefined()
     }
   })
 
-  it('requires bearer auth globally and opts out only for /health and preflights', () => {
+  it('requires bearer auth globally and opts out only for /health', () => {
     expect(spec.security).toEqual([{ BearerToken: [] }])
 
-    // /health and every OPTIONS preflight override to no auth.
+    // /health overrides to no auth.
     expect(spec.paths['/health']?.get?.security).toEqual([])
-    for (const path of Object.keys(ROUTE_METHOD)) {
-      expect(spec.paths[path]?.options?.security, `${path} options auth`).toEqual([])
-    }
 
     // Protected operations inherit the global bearer requirement (no override).
     expect(spec.paths['/api/models/chat']?.post?.security).toBeUndefined()
@@ -79,25 +76,12 @@ describe('edge openapi spec', () => {
     }
   })
 
-  it('exposes Retry-After on rate-limited responses', () => {
-    expect(spec.paths['/api/models/chat']?.post?.responses?.['429']).toBeDefined()
-    expect(
-      spec.components.responses.RateLimit?.headers?.['Retry-After']
-    ).toBeDefined()
-  })
-
-  it('strips codegen-only vendor extensions from the published doc', () => {
-    const serialized = JSON.stringify(spec)
-    for (const ext of [
-      'x-route-key',
-      'x-schema-const',
-      'x-schema-type',
-      'x-const-key',
-      'x-telemetry',
-      'x-rate-limit'
-    ]) {
-      expect(serialized.includes(ext), ext).toBe(false)
-    }
+  it('exposes Retry-After on rate-limited chat responses', () => {
+    const rateLimited = spec.paths['/api/models/chat']?.post?.responses?.[
+      '429'
+    ] as { headers: Record<string, unknown> }
+    expect(rateLimited).toBeDefined()
+    expect(rateLimited.headers?.['Retry-After']).toBeDefined()
   })
 })
 
@@ -109,7 +93,7 @@ describe('generated edge contracts', () => {
     expect(EDGE_ROUTE_PATHS.modelsChat).toBe('/api/models/chat')
   })
 
-  it('keeps schema constraints from the OpenAPI source', () => {
+  it('keeps schema constraints from the contracts', () => {
     expect(searchRequestSchema.safeParse({ query: 'a' }).success).toBe(false)
     expect(searchRequestSchema.safeParse({ query: 'ab' }).success).toBe(true)
     expect(

@@ -11,7 +11,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@hono/zod-validator": "^0.7.5",
+    "@hono/zod-openapi": "^1.4.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@sentry/cloudflare": "^10.17.0",
     "@tinytinkerer/contracts": "workspace:*",

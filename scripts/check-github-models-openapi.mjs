@@ -287,8 +287,8 @@ const checkCatalog = async () => {
   assertEqual('GitHub Models catalog', checkedInCatalog, liveCatalog)
 }
 
-// The TinyTinkerer edge OpenAPI spec is generated from its canonical source and
-// verified separately by `pnpm check:edge-openapi` (scripts/generate-edge-openapi.mjs).
+// The TinyTinkerer edge OpenAPI spec is generated from the edge code and
+// verified separately by `pnpm check:edge-openapi` (scripts/generate-edge-openapi.ts).
 
 try {
   await checkGitHubOpenApi()
