@@ -81,6 +81,24 @@ describe('registerPwa', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
+  it('does not check for an update on the interval while backgrounded', async () => {
+    const { registerPwa } = await import('./register-pwa.js')
+    registerPwa()
+
+    const options = registerSW.mock.calls[0]?.[0] as RegisterSWOptions
+    const update = vi.fn().mockResolvedValue(undefined)
+    options.onRegisteredSW?.('/mobile/sw.js', {
+      installing: null,
+      update
+    } as unknown as ServiceWorkerRegistration)
+
+    setVisibility('hidden')
+    // Fast-forward past the hourly interval while the app is backgrounded.
+    vi.advanceTimersByTime(60 * 60 * 1000)
+
+    expect(update).not.toHaveBeenCalled()
+  })
+
   it('no-ops when service workers are unavailable', async () => {
     setServiceWorker(undefined)
     delete (navigator as { serviceWorker?: unknown }).serviceWorker

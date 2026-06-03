@@ -28,8 +28,13 @@ export function registerPwa(): void {
       }
 
       const checkForUpdate = () => {
-        // Skip while offline or while an install is already in flight.
-        if (!navigator.onLine || registration.installing) {
+        // Only check while the app is visible — skip when backgrounded, offline,
+        // or already installing — to avoid needless background network/battery use.
+        if (
+          document.visibilityState !== 'visible' ||
+          !navigator.onLine ||
+          registration.installing
+        ) {
           return
         }
         void registration.update()
@@ -42,7 +47,8 @@ export function registerPwa(): void {
         }
       })
 
-      // Fallback for sessions that stay foregrounded for a long time.
+      // Fallback for a session left open and visible for a long time; the
+      // visibility guard in checkForUpdate keeps it idle while backgrounded.
       setInterval(checkForUpdate, UPDATE_INTERVAL_MS)
     }
   })
