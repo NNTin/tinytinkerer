@@ -24,7 +24,10 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      injectRegister: 'auto',
+      // Registration is handled manually in src/app/register-pwa.ts so we can
+      // drive update checks on foreground + on an interval. `null` prevents the
+      // plugin from injecting a second, competing registration.
+      injectRegister: null,
       registerType: 'autoUpdate',
       manifest: {
         name: 'tinytinkerer',

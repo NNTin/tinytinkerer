@@ -12,6 +12,7 @@ import {
 import { RouterProvider } from 'react-router-dom'
 import { router } from './app/router'
 import { MobileBootScreen } from './app/loading-screen'
+import { registerPwa } from './app/register-pwa'
 import '@tinytinkerer/app-browser/styles.css'
 import './index.css'
 
@@ -53,5 +54,9 @@ const MobileBootstrap = () => {
     </StrictMode>
   )
 }
+
+// Register the service worker and start update checks independently of the React
+// render, so the PWA stays registered even while the boot screen is showing.
+registerPwa()
 
 createRoot(document.getElementById('root')!).render(<MobileBootstrap />)
