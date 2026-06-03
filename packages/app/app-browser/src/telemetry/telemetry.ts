@@ -51,8 +51,19 @@ const applySentryUser = (): void => {
   }
 }
 
+// Localhost (and any other non-deployed build) reports under the `development`
+// environment. Those events are never production signal — they pollute the
+// shared Sentry projects' triage list and burn quota — so we never initialize
+// Sentry there, even if a DSN leaks into the local env and consent is granted.
+// This is the "prevent the report at the source" rule applied per environment:
+// deployed builds set `pr-preview` / `develop` / `production` explicitly.
+const TELEMETRY_DISABLED_ENVIRONMENTS = new Set(['development'])
+
+const isTelemetryEnvironmentEnabled = (): boolean =>
+  !TELEMETRY_DISABLED_ENVIRONMENTS.has(config.environment ?? 'development')
+
 const ensureSentry = async (): Promise<void> => {
-  if (sentry || !config.dsn) {
+  if (sentry || !config.dsn || !isTelemetryEnvironmentEnabled()) {
     return
   }
   // Lazy import keeps @sentry/react out of the main bundle until consent.

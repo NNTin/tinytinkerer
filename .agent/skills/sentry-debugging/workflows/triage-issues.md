@@ -25,6 +25,21 @@ Read the **Triage philosophy** in `../SKILL.md` before deciding statuses.
    ```
    Run for both `tinytinkerer-edge` and `tinytinkerer-frontend`.
 
+   **Then segment by environment before investigating anything** (multi-environment
+   setup — full SOP: `triage-by-environment.md`). For each issue, get its
+   `environment` tag distribution and confirm whether any production events exist:
+   ```
+   get_issue_tag_values({ organizationSlug, regionUrl, issueId: "<ID>", tagKey: "environment" })
+   search_issue_events({ organizationSlug, regionUrl, issueId: "<ID>",
+                         query: "!environment:development", statsPeriod: "30d" })
+   ```
+   Zero non-`development` events ⇒ localhost/E2E **noise** — resolve with the env
+   evidence (env tag, `http://localhost` url, HeadlessChrome, a non-deployed
+   `release` SHA), don't chase a root cause. Has `production` ⇒ real prod bug
+   (priority). Edge `develop` may be PR-preview traffic (it reuses the develop
+   edge); the frontend tags it `pr-preview` — correlate via the shared 7-char SHA
+   release. Remember the asymmetry: **frontend has 4 envs, edge has 2.**
+
 4. **For each issue, get details and read the `handled` tag.**
    ```
    get_sentry_resource({ url: "https://nntin-labs.sentry.io/issues/<ISSUE-ID>" })

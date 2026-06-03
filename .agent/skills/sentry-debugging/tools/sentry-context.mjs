@@ -30,6 +30,25 @@ const CONTEXT = {
   eventEnvironmentTag: "production",
   // To find the live release at runtime: find_releases({organizationSlug, regionUrl, projectSlug})
   // and take the most recent whose Last Deploy environment === productionEnvironment.
+
+  // Multi-environment topology (see docs/vercel-deployment.md §7 and
+  // workflows/triage-by-environment.md). The two projects DO NOT share the same
+  // environment set — segment by the `environment` tag before triaging.
+  environments: {
+    // Frontend has FOUR; each maps to a deploy tier.
+    frontend: ["production", "develop", "pr-preview", "development"],
+    // Edge has only TWO — each worker tags by which worker served the request.
+    // PR-preview frontend traffic reuses the DEVELOP edge, so its edge events
+    // are tagged `develop`, NOT `pr-preview`.
+    edge: ["production", "develop"],
+    // `development` = localhost (default when VITE_SENTRY_ENVIRONMENT unset).
+    // The frontend NO LONGER initializes Sentry for `development` (telemetry.ts
+    // ensureSentry gate) — so new localhost/E2E events should stop appearing.
+    noise: ["development", "pr-preview"],
+    // Production errors are the priority. An edge error from PR-preview traffic
+    // shows under `develop`. Correlate cross-project via the shared 7-char SHA release.
+    productionFilter: "environment:production",
+  },
 };
 
 console.log(JSON.stringify(CONTEXT, null, 2));

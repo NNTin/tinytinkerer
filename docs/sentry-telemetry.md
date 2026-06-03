@@ -45,6 +45,11 @@ own Sentry scope:
   passes `scrubEvent` / `scrubBreadcrumb` to `Sentry.init`. app-browser **re-exports** the
   request-telemetry surface (via `src/telemetry/request-telemetry.ts`) so its call sites import
   from `@tinytinkerer/app-browser` as before — app-browser remains the single browser boundary.
+  **Environment gate:** `ensureSentry` never initializes Sentry for the `development`
+  environment (localhost, the default when `VITE_SENTRY_ENVIRONMENT` is unset), even if a DSN
+  leaks into the local env and consent is granted. Localhost / E2E errors are never production
+  signal — sending them only pollutes the shared Sentry projects' triage list and burns quota.
+  Deployed builds set `production` / `develop` / `pr-preview` explicitly and report normally.
 - **Edge** — `apps/edge/src/lib/sentry.ts` registers a `@sentry/cloudflare` sink at module
   load; `apps/edge/src/index.ts` passes `scrubEvent` as `beforeSend`; and
   `apps/edge/src/lib/fetch.ts` (`fetchWithTimeout`) now routes outbound calls (GitHub Models,
