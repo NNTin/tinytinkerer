@@ -7,8 +7,13 @@ import {
   type McpDiscoveryResult,
   type McpServerConfig,
   type ModelProviderId,
+  type PluginActivationState,
   type SystemStatus
 } from '@tinytinkerer/contracts'
+import {
+  feedbackPluginManifest,
+  type PluginManifest
+} from '@tinytinkerer/plugin-feedback'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import {
   useAuthStore,
@@ -175,7 +180,14 @@ export type SettingsSurfaceController = {
   refreshMcpServer: (server: McpServerConfig) => Promise<void>
   telemetryEnabled: boolean
   setTelemetryEnabled: (enabled: boolean) => Promise<void>
+  availablePlugins: PluginManifest[]
+  pluginActivation: PluginActivationState
+  setPluginEnabled: (pluginId: string, enabled: boolean) => Promise<void>
 }
+
+// Plugins surfaced as toggles in the Settings Modal. Each plugin package ships
+// its own manifest copy; aggregate them here.
+const AVAILABLE_PLUGINS: PluginManifest[] = [feedbackPluginManifest]
 
 export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const status = useStatusStore((state) => state.status)
@@ -237,6 +249,8 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const setTelemetryEnabled = useSettingsStore(
     (state) => state.setTelemetryEnabled
   )
+  const pluginActivation = useSettingsStore((state) => state.pluginActivation)
+  const setPluginEnabled = useSettingsStore((state) => state.setPluginEnabled)
   const { shell } = useBrowserApp()
 
   const effectiveStatus = status ?? OFFLINE_SYSTEM_STATUS
@@ -343,7 +357,10 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     setMcpServerEnabled,
     refreshMcpServer,
     telemetryEnabled,
-    setTelemetryEnabled
+    setTelemetryEnabled,
+    availablePlugins: AVAILABLE_PLUGINS,
+    pluginActivation,
+    setPluginEnabled
   }
 }
 

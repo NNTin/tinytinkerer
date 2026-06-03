@@ -747,6 +747,35 @@ export const McpServerList = () => {
   )
 }
 
+const PluginsSection = () => {
+  const { availablePlugins, pluginActivation, setPluginEnabled, telemetryEnabled } =
+    useSettingsSurfaceController()
+
+  if (availablePlugins.length === 0) {
+    return <p className="text-xs text-[var(--muted)]">No plugins available.</p>
+  }
+
+  return (
+    <div className="space-y-3">
+      {availablePlugins.map((plugin) => (
+        <ToggleRow
+          key={plugin.id}
+          label={plugin.label}
+          description={plugin.description}
+          checked={pluginActivation[plugin.id] ?? false}
+          onChange={(next) => void setPluginEnabled(plugin.id, next)}
+        />
+      ))}
+      {!telemetryEnabled ? (
+        <p className="text-xs text-[var(--muted)]">
+          Some plugins (including Feedback) deliver data through telemetry. Enable
+          telemetry in the Privacy section for them to send anything.
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 const InterfaceSection = () => {
   const {
     showReasoningActivity,
@@ -798,8 +827,12 @@ const PrivacySection = () => {
       />
       <p className="text-xs text-[var(--muted)]">
         This application uses optional telemetry to improve reliability and
-        performance. Voice input uses the browser&apos;s Web Speech API, which
-        may run locally on the device or through a vendor cloud service.{' '}
+        performance. The optional <strong>Feedback</strong> plugin (off by
+        default, enabled in the Plugins section) uses telemetry to deliver the
+        feedback text you submit — it has no separate backend, so when both the
+        plugin and telemetry are enabled, your feedback is sent through telemetry.
+        Voice input uses the browser&apos;s Web Speech API, which may run locally
+        on the device or through a vendor cloud service.{' '}
         <button
           type="button"
           onClick={() => setPolicyOpen(true)}
@@ -893,6 +926,12 @@ export const BrowserSettingsModal = ({
 
           <SettingsSection title="MCP Servers">
             <McpServerList />
+          </SettingsSection>
+
+          <hr className="border-[var(--border)]" />
+
+          <SettingsSection title="Plugins">
+            <PluginsSection />
           </SettingsSection>
 
           <hr className="border-[var(--border)]" />

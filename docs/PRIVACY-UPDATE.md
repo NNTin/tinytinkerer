@@ -9,5 +9,11 @@ browser-initiated application requests, including method, URL path without query
 status code, and failure type. This does not include conversation content, request bodies,
 query strings, cookies, authorization headers, or GitHub access tokens.
 
+We also added the optional Feedback plugin (`send_feedback`). It is off by default and enabled
+in Settings → Plugins. When both the plugin and telemetry are enabled, the feedback text you
+submit is sent to Sentry as a telemetry event so the maintainers can read it. This is the only
+case in which TinyTinkerer sends content you typed; if the plugin or telemetry is disabled, no
+feedback is sent.
+
 This change is needed to surface operational failures in the frontend and to support future
 rate limit prevention work without expanding the scope of personal or message data collected.

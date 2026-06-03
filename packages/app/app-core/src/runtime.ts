@@ -20,6 +20,16 @@ import type { ChatRuntime } from './ports'
 
 export type { DecisionChunk, SynthesisChunk } from '@tinytinkerer/agent-core'
 
+// Re-export the plugin runtime surface so app-browser composes plugins through
+// the app-core boundary, mirroring how `Tool` is surfaced here.
+export { PluginRegistry } from '@tinytinkerer/agent-core'
+export type {
+  AgentPlugin,
+  PluginHost,
+  PluginReport,
+  PluginCaptureSink
+} from '@tinytinkerer/agent-core'
+
 export type ConversationMessage = {
   role: 'user' | 'assistant'
   content: string

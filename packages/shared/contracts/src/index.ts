@@ -46,6 +46,9 @@ export type {
 // redefine these names here.
 export * from './edge'
 
+// Plugin contracts — feedback tool input + plugin activation state.
+export * from './plugins'
+
 export const eventTypeSchema = z.enum([
   'user.message',
   // Generic agent-trace events. These describe an agent's reasoning/acting

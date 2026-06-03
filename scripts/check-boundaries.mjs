@@ -65,6 +65,26 @@ const sourceRules = new Map([
     ]
   ],
   [
+    '@tinytinkerer/plugin-feedback',
+    [
+      { pattern: /\bfetch\s*\(/, label: 'fetch()' },
+      {
+        pattern: /(?<![\w$])window(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'window'
+      },
+      {
+        pattern: /(?<![\w$])document(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+        label: 'document'
+      },
+      { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
+      { pattern: /\blocalStorage\b/, label: 'localStorage' },
+      { pattern: /\bindexedDB\b/, label: 'indexedDB' },
+      { pattern: /\bDexie\b/, label: 'Dexie' },
+      { pattern: /from\s+['"]react(?:\/[^'"]*)?['"]/, label: 'React import' },
+      { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
+    ]
+  ],
+  [
     '@tinytinkerer/content-core',
     [
       { pattern: /\bfetch\s*\(/, label: 'fetch()' },
@@ -353,11 +373,25 @@ function validateBoundary(sourcePkg, target, filePath) {
       '@tinytinkerer/content-table',
       '@tinytinkerer/content-wireframe',
       '@tinytinkerer/contracts',
+      '@tinytinkerer/plugin-feedback',
       '@tinytinkerer/sentry-telemetry'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, sentry-telemetry, content-react, and the outward-facing content packages (content-markdown, content-mermaid, content-wireframe, content-image, content-code, content-callout, content-link-card, content-table), plus app-browser-local modules (${targetPkg.name})`
+        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, sentry-telemetry, content-react, the outward-facing content packages (content-markdown, content-mermaid, content-wireframe, content-image, content-code, content-callout, content-link-card, content-table), and plugin packages (plugin-feedback), plus app-browser-local modules (${targetPkg.name})`
+      )
+    }
+  }
+
+  if (sourcePkg.name === '@tinytinkerer/plugin-feedback') {
+    const allowed = new Set([
+      '@tinytinkerer/plugin-feedback',
+      '@tinytinkerer/agent-core',
+      '@tinytinkerer/contracts'
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(
+        `${sourceLabel}: plugin-feedback may import only agent-core, contracts, and plugin-feedback-local modules (${targetPkg.name})`
       )
     }
   }

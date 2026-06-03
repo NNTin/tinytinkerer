@@ -11,10 +11,12 @@ import {
   agentTypeSchema,
   mcpDiscoveryResultSchema,
   mcpServerConfigSchema,
+  pluginActivationStateSchema,
   type AgentType,
   type McpDiscoveryResult,
   type McpServerConfig,
-  type ModelProviderId
+  type ModelProviderId,
+  type PluginActivationState
 } from '@tinytinkerer/contracts'
 
 const DEFAULT_AGENT_TYPE: AgentType = 'react'
@@ -31,7 +33,8 @@ export const SETTINGS_KEYS = {
   showCodeBlockFullscreenButton: 'settings_show_code_block_fullscreen_button',
   mcpServers: 'settings_mcp_servers',
   mcpDiscovery: 'settings_mcp_discovery',
-  telemetryEnabled: 'settings_telemetry_enabled'
+  telemetryEnabled: 'settings_telemetry_enabled',
+  pluginActivation: 'settings_plugins_activation'
 } as const
 
 // Superseded by the merged `showReasoningActivity` toggle; read once at load for
@@ -55,6 +58,7 @@ export type SettingsState = {
   mcpServers: McpServerConfig[]
   mcpDiscovery: Record<string, McpDiscoveryResult>
   telemetryEnabled: boolean
+  pluginActivation: PluginActivationState
 }
 
 const parseBool = (value: string | undefined, fallback: boolean): boolean => {
@@ -87,7 +91,8 @@ export const defaultSettingsState = (): SettingsState => ({
   showCodeBlockFullscreenButton: true,
   mcpServers: [],
   mcpDiscovery: {},
-  telemetryEnabled: false
+  telemetryEnabled: false,
+  pluginActivation: {}
 })
 
 export const loadSettingsState = async (preferences: PreferencesStore): Promise<SettingsState> => {
@@ -105,7 +110,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     showCodeBlockFullscreenButton,
     mcpServersRaw,
     mcpDiscoveryRaw,
-    telemetryEnabled
+    telemetryEnabled,
+    pluginActivationRaw
   ] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
     preferences.get(SETTINGS_KEYS.selectedModelProvider),
@@ -120,7 +126,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     preferences.get(SETTINGS_KEYS.showCodeBlockFullscreenButton),
     preferences.get(SETTINGS_KEYS.mcpServers),
     preferences.get(SETTINGS_KEYS.mcpDiscovery),
-    preferences.get(SETTINGS_KEYS.telemetryEnabled)
+    preferences.get(SETTINGS_KEYS.telemetryEnabled),
+    preferences.get(SETTINGS_KEYS.pluginActivation)
   ])
 
   // When the merged key is unset, migrate: enabled if either legacy toggle was on.
@@ -150,7 +157,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     showCodeBlockFullscreenButton: parseBool(showCodeBlockFullscreenButton, true),
     mcpServers: parseMcpServers(mcpServersRaw),
     mcpDiscovery: parseMcpDiscovery(mcpDiscoveryRaw),
-    telemetryEnabled: parseBool(telemetryEnabled, false)
+    telemetryEnabled: parseBool(telemetryEnabled, false),
+    pluginActivation: parsePluginActivation(pluginActivationRaw)
   }
 }
 
@@ -181,6 +189,35 @@ const parseSelectedModelsByProvider = (
   }
   return models
 }
+
+const parsePluginActivation = (raw: string | undefined): PluginActivationState => {
+  if (!raw) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    const result = pluginActivationStateSchema.safeParse(parsed)
+    return result.success ? result.data : {}
+  } catch {
+    return {}
+  }
+}
+
+export const persistPluginActivation = async (
+  preferences: PreferencesStore,
+  activation: PluginActivationState
+): Promise<void> => {
+  await preferences.set(SETTINGS_KEYS.pluginActivation, JSON.stringify(activation))
+}
+
+// Headless helper: the set of plugin ids the user has switched on. A plugin with
+// no stored entry (or an explicit `false`) is treated as inactive.
+export const resolveActivePluginIds = (
+  activation: PluginActivationState
+): Set<string> =>
+  new Set(
+    Object.entries(activation)
+      .filter(([, enabled]) => enabled)
+      .map(([id]) => id)
+  )
 
 const parseMcpServers = (raw: string | undefined): McpServerConfig[] => {
   if (!raw) return []

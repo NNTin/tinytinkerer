@@ -2,7 +2,8 @@ import type {
   AgentType,
   McpDiscoveryResult,
   McpServerConfig,
-  ModelProviderId
+  ModelProviderId,
+  PluginActivationState
 } from '@tinytinkerer/contracts'
 import {
   DEFAULT_MODEL,
@@ -28,6 +29,7 @@ export type SettingsState = {
   mcpServers: McpServerConfig[]
   mcpDiscovery: Record<string, McpDiscoveryResult>
   telemetryEnabled: boolean
+  pluginActivation: PluginActivationState
   initialize: () => Promise<void>
   setSelectedModelProvider: (provider: ModelProviderId) => Promise<void>
   setSelectedModel: (model: string) => Promise<void>
@@ -49,6 +51,7 @@ export type SettingsState = {
   setMcpDiscovery: (result: McpDiscoveryResult) => Promise<void>
   clearMcpDiscovery: (serverId: string) => Promise<void>
   setTelemetryEnabled: (enabled: boolean) => Promise<void>
+  setPluginEnabled: (pluginId: string, enabled: boolean) => Promise<void>
 }
 
 export type SettingsStore = StoreApi<SettingsState>
@@ -67,7 +70,8 @@ const SETTINGS_KEYS = {
   showCodeBlockFullscreenButton: 'settings_show_code_block_fullscreen_button',
   mcpServers: 'settings_mcp_servers',
   mcpDiscovery: 'settings_mcp_discovery',
-  telemetryEnabled: 'settings_telemetry_enabled'
+  telemetryEnabled: 'settings_telemetry_enabled',
+  pluginActivation: 'settings_plugins_activation'
 } as const
 
 const defaultSettingsState = (): Omit<
@@ -88,6 +92,7 @@ const defaultSettingsState = (): Omit<
   | 'setMcpDiscovery'
   | 'clearMcpDiscovery'
   | 'setTelemetryEnabled'
+  | 'setPluginEnabled'
 > => ({
   hydrated: false,
   selectedModelProvider: DEFAULT_MODEL_PROVIDER,
@@ -101,7 +106,8 @@ const defaultSettingsState = (): Omit<
   showCodeBlockFullscreenButton: true,
   mcpServers: [],
   mcpDiscovery: {},
-  telemetryEnabled: false
+  telemetryEnabled: false,
+  pluginActivation: {}
 })
 
 export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
@@ -253,5 +259,11 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       )
       set({ telemetryEnabled: enabled })
       await setTelemetryConsent(enabled)
+    },
+    setPluginEnabled: async (pluginId, enabled) => {
+      const { persistPluginActivation } = await loadCoreModule()
+      const nextActivation = { ...get().pluginActivation, [pluginId]: enabled }
+      await persistPluginActivation(shell.preferences, nextActivation)
+      set({ pluginActivation: nextActivation })
     }
   }))

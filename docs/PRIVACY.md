@@ -25,6 +25,10 @@ When telemetry is enabled, we collect:
 - Your GitHub access token, OpenRouter API key, or any credentials.
 - Request bodies, query strings, cookies, or authorization headers in telemetry events.
 
+The one exception to "we do not collect your content" is the optional Feedback plugin: if
+you enable it and submit feedback, the feedback text you write is sent through telemetry on
+purpose. See "Feedback plugin (send_feedback)" below.
+
 ## Voice input (Web Speech API)
 
 When you turn on voice input in Settings → Privacy, TinyTinkerer asks the browser for microphone
@@ -32,6 +36,19 @@ access only when you start dictation. Speech recognition is provided by the devi
 the Web Speech API (`SpeechRecognition`). Depending on the platform, speech processing may happen
 locally on your device or be sent by the browser vendor to a cloud speech service. TinyTinkerer
 does not run its own speech-to-text model or send audio to its backend for transcription.
+
+## Feedback plugin (send_feedback)
+
+TinyTinkerer ships an optional **Feedback** plugin that exposes a `send_feedback` tool to the
+assistant. It is a plugin, off by default, and you enable it in Settings → Plugins.
+
+The plugin has no dedicated backend. When it is enabled **and** telemetry is also enabled, the
+feedback text you submit (plus an optional category such as bug/idea/praise) is sent to Sentry
+as a telemetry event so the maintainers can read it. This is the deliberate exception to the
+rule that we do not collect the content you type.
+
+If the plugin is disabled, or telemetry is disabled, no feedback is sent anywhere. As with all
+telemetry, feedback is only delivered from deployed builds, not from local development.
 
 ## Why we collect it
 

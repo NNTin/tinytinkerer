@@ -26,6 +26,7 @@ import {
   persistBooleanPreference,
   persistOpenRouterApiKey,
   persistSelectedModelProvider,
+  resolveActivePluginIds,
   SETTINGS_KEYS
 } from '../src/index.js'
 
@@ -414,6 +415,48 @@ describe('app-core helpers', () => {
     })
 
     expect(state.mcpServers).toEqual([validServer])
+  })
+
+  it('defaults plugin activation to an empty map when no preference is stored', async () => {
+    const state = await loadSettingsState({
+      get: () => Promise.resolve(undefined),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.pluginActivation).toEqual({})
+    expect(defaultSettingsState().pluginActivation).toEqual({})
+  })
+
+  it('hydrates plugin activation from the stored preference key', async () => {
+    const state = await loadSettingsState({
+      get: (key) =>
+        Promise.resolve(
+          key === SETTINGS_KEYS.pluginActivation
+            ? JSON.stringify({ 'send-feedback': true })
+            : undefined
+        ),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.pluginActivation).toEqual({ 'send-feedback': true })
+  })
+
+  it('ignores malformed plugin activation JSON', async () => {
+    const state = await loadSettingsState({
+      get: (key) =>
+        Promise.resolve(
+          key === SETTINGS_KEYS.pluginActivation ? '{ not json' : undefined
+        ),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.pluginActivation).toEqual({})
+  })
+
+  it('resolveActivePluginIds returns only enabled plugin ids', () => {
+    expect(
+      resolveActivePluginIds({ 'send-feedback': true, other: false })
+    ).toEqual(new Set(['send-feedback']))
   })
 
   it('defaults reasoning & activity to false when no preference is stored', async () => {

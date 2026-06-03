@@ -27,7 +27,8 @@ export const createBrowserRuntimeFactory = (options: {
       getModel: () => options.settingsStore.getState().selectedModel,
       agentType: settings.agentType,
       mcpServers: settings.mcpServers,
-      mcpDiscovery: settings.mcpDiscovery
+      mcpDiscovery: settings.mcpDiscovery,
+      pluginActivation: settings.pluginActivation
     })
   }
 })

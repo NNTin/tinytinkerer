@@ -14,6 +14,7 @@ See also:
 - [ui-ux-concept.md](./ui-ux-concept.md)
 - [mcp-integration.md](./mcp-integration.md)
 - [sentry-telemetry.md](./sentry-telemetry.md)
+- [plugin-infrastructure.md](./plugin-infrastructure.md)
 
 ## Route Model
 
@@ -55,6 +56,7 @@ flowchart LR
     brand["@tinytinkerer/brand-assets<br/>brand metadata + PWA assets"]
     ui["@tinytinkerer/ui<br/>presentational React primitives"]
     sentrytelemetry["@tinytinkerer/sentry-telemetry<br/>SDK-agnostic telemetry core"]
+    pluginfeedback["@tinytinkerer/plugin-feedback<br/>send_feedback plugin"]
 
     subgraph ContentPlatform["Content Platform"]
       contentcore["@tinytinkerer/content-core<br/>content behavior + stable-ID helpers + source-plugin contracts"]
@@ -91,6 +93,10 @@ flowchart LR
   appbrowser --> contracts
   appbrowser --> brand
   appbrowser --> sentrytelemetry
+  appbrowser --> pluginfeedback
+
+  pluginfeedback --> agent
+  pluginfeedback --> contracts
 
   contentreact --> contentcore
   contentreact --> ui
@@ -142,7 +148,7 @@ flowchart LR
   class ui,legendUi uiPrimitives;
   class contentcore,contentmarkdown,contentreact,contentmermaid,contentwireframe,contentimage,contentcode,contentcallout,contentlinkcard,contenttable,legendFeature sharedFeature;
   class contracts,legendContracts contractsLayer;
-  class agent,appcore,sentrytelemetry,legendCore coreLayer;
+  class agent,appcore,sentrytelemetry,pluginfeedback,legendCore coreLayer;
   class brand,legendBrand brandLayer;
 ```
 
@@ -224,7 +230,8 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 | `apps/mobile` | mobile browser shell | PWA shell, install affordances, narrow-screen layout | copied shared runtime logic, direct lower-layer imports |
 | `apps/edge` | stateless backend boundary | HTTP endpoints, upstream normalization, transport concerns | browser APIs, UI logic |
 | `packages/contracts` | foundational shared schemas and types | Zod schemas, inferred types, canonical content model, DTOs | runtime orchestration, UI code |
-| `packages/agent-core` | product-agnostic runtime abstractions | provider/tool abstractions, runtime mechanics | browser code, app-specific behavior |
+| `packages/agent-core` | product-agnostic runtime abstractions | provider/tool abstractions, runtime mechanics, the plugin contract + registry | browser code, app-specific behavior |
+| `packages/plugins/*` | optional plugin packages | one plugin's tools + UI manifest over the agent-core plugin contract | browser APIs, telemetry SDKs, app-specific UI |
 | `packages/app-core` | headless product behavior | chat/auth/settings orchestration, projections, ports | React, browser APIs, fetch, storage adapters |
 | `packages/app-browser` | shared browser composition boundary | browser adapters, shell bootstrap config, OAuth helpers, shell-facing hooks and components, shared browser styles | app-specific layout, app-owned screens |
 | `packages/brand-assets` | shared brand metadata | favicon, icon, manifest, and theme definitions | DOM mutation, app bootstrapping |
@@ -236,7 +243,7 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 
 - Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
-- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `sentry-telemetry`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`).
+- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `sentry-telemetry`, `content-react`, the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`), and plugin packages (`plugin-feedback`).
 - `brand-assets` may depend on `contracts` and nothing else.
 - `sentry-telemetry` is a leaf: it may depend only on `@sentry/core` (external, types only) and its own local modules.
 - `content-core` may depend only on `contracts` and local modules.
@@ -247,6 +254,8 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 - `ui` must stay primitive-only.
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
 - `agent-core` may depend only on `contracts` and agent-core-local modules.
+- `plugin-feedback` (and future `packages/plugins/*` packages) may depend only on `agent-core`, `contracts`, and plugin-local modules, and must stay product-agnostic (no browser APIs, React, or telemetry imports).
+- `app-browser` may additionally depend on plugin packages (`plugin-feedback`), wiring their capture sink to telemetry and surfacing their activation toggles.
 - `edge` may depend only on `contracts`, `sentry-telemetry`, and edge-local modules.
 - `host` must not declare workspace dependencies on other apps. It composes the built or dev-served apps by path, not by module import.
 
