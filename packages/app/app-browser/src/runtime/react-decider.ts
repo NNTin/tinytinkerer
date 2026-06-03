@@ -70,6 +70,7 @@ export const decideNextAction = async (
     { model, stream: false, messages },
     {
       area: 'react.decide',
+      model,
       stream: false,
       ...(signal ? { signal } : {})
     }
@@ -90,6 +91,7 @@ export const decideNextAction = async (
     origin: 'edge' as const,
     method: 'POST',
     url: response.url,
+    model,
     stream: false
   }
   const data = await parseJsonWithTelemetry<{
@@ -141,6 +143,7 @@ export async function* streamDecision(
     { model, stream: true, messages },
     {
       area: 'react.decide',
+      model,
       stream: true,
       ...(signal ? { signal } : {})
     }
@@ -174,9 +177,45 @@ export async function* streamDecision(
 
   const jsonText = stripFences(jsonBuffer)
   if (jsonText.trim().length === 0) {
-    throw new Error('ReAct decision stream ended without decision JSON')
+    parseWithTelemetry(
+      {
+        area: 'react.decide' as const,
+        origin: 'edge' as const,
+        method: 'POST',
+        url: response.url,
+        model,
+        stream: true
+      },
+      'parse_error',
+      'ReAct decision stream ended without decision JSON',
+      () => {
+        throw new Error('ReAct decision stream ended without decision JSON')
+      },
+      response
+    )
   }
 
-  const decision = reactDecisionSchema.parse(JSON.parse(jsonText) as unknown)
+  const metadata = {
+    area: 'react.decide' as const,
+    origin: 'edge' as const,
+    method: 'POST',
+    url: response.url,
+    model,
+    stream: true
+  }
+  const parsedJson = parseWithTelemetry<unknown>(
+    metadata,
+    'parse_error',
+    'ReAct decision stream body was not valid JSON',
+    () => JSON.parse(jsonText) as unknown,
+    response
+  )
+  const decision = parseWithTelemetry(
+    metadata,
+    'schema_error',
+    'ReAct decision stream did not match the decision schema',
+    () => reactDecisionSchema.parse(parsedJson),
+    response
+  )
   yield { kind: 'decision', decision }
 }

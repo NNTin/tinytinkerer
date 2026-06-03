@@ -1,5 +1,6 @@
 import {
   inferPlan,
+  DEFAULT_MODEL,
   RateLimitError,
   type ConversationMessage,
   type DecisionChunk,
@@ -196,6 +197,7 @@ export class GitHubModelsProvider implements ModelProvider {
         .filter(Boolean)
         .join('')
 
+      const selectedModel = this.options.getModel?.() ?? DEFAULT_MODEL
       const requestInit: RequestInit = {
         method: 'POST',
         headers: {
@@ -205,7 +207,7 @@ export class GitHubModelsProvider implements ModelProvider {
         },
         body: JSON.stringify({
           stream: true,
-          model: this.options.getModel?.() ?? undefined,
+          model: selectedModel,
           messages: [
             { role: 'system', content: SYSTEM_STYLE_PROMPT },
             ...context.history,
@@ -223,6 +225,7 @@ export class GitHubModelsProvider implements ModelProvider {
         origin: 'edge',
         method: 'POST',
         url: `${this.options.baseUrl}${EDGE_ROUTE_PATHS.modelsChat}`,
+        model: selectedModel,
         stream: true,
         // SYNTHESIZE is the *second* models.chat call site, alongside the DECIDE
         // path (streamDecision/decideNextAction → edge-fetch.ts). A fix applied

@@ -81,6 +81,7 @@ export const registerModelRoutes = (
     }
 
     const useStream = body.stream === true
+    const model = body.model ?? 'openai/gpt-4.1-mini'
     const modelsBaseUrl = c.env.GITHUB_MODELS_URL ?? GITHUB_MODELS_DEFAULT_URL
 
     // Respect a still-open upstream rate-limit window (durable across isolates):
@@ -98,6 +99,7 @@ export const registerModelRoutes = (
         origin: 'github',
         method: 'POST',
         url: `${modelsBaseUrl}/chat/completions`,
+        model,
         stream: useStream,
         // Chat completions are NOT cacheable, so after we durably honour the
         // upstream rate-limit window (above) the residual 429 — the first call
@@ -118,7 +120,7 @@ export const registerModelRoutes = (
           'content-type': 'application/json'
         },
         body: JSON.stringify({
-          model: body.model ?? 'openai/gpt-4.1-mini',
+          model,
           messages: body.messages,
           stream: useStream
         })

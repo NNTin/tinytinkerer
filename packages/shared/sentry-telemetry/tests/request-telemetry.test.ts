@@ -53,6 +53,40 @@ describe('request telemetry', () => {
     })
   })
 
+  it('adds sanitized model metadata and fingerprints model failures separately', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response('{}', { status: 502, statusText: 'Bad Gateway' }))
+      )
+    )
+
+    await fetchWithTelemetry({ ...metadata, area: 'models.chat', model: 'openai/gpt-5' }, {})
+    await fetchWithTelemetry({ ...metadata, area: 'models.chat', model: 'openai/gpt-4.1-mini' }, {})
+
+    const [, firstOptions] = sink.mock.calls[0] ?? []
+    const [, secondOptions] = sink.mock.calls[1] ?? []
+    expect(firstOptions?.tags).toMatchObject({ model: 'openai/gpt-5' })
+    expect(firstOptions?.contexts?.request).toMatchObject({ model: 'openai/gpt-5' })
+    expect(firstOptions?.fingerprint).toContain('model:openai/gpt-5')
+    expect(secondOptions?.fingerprint).toContain('model:openai/gpt-4.1-mini')
+    expect(firstOptions?.fingerprint).not.toEqual(secondOptions?.fingerprint)
+  })
+
+  it('hashes unsafe custom model strings before sending telemetry', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('{}', { status: 500 })))
+    )
+
+    await fetchWithTelemetry({ ...metadata, model: 'secret model value' }, {})
+
+    const [, options] = sink.mock.calls[0] ?? []
+    expect(options?.tags?.['model']).toMatch(/^custom:[0-9a-f]{8}$/)
+    expect(options?.tags?.['model']).not.toContain('secret')
+    expect(options?.fingerprint?.at(-1)).toBe(`model:${options?.tags?.['model']}`)
+  })
+
   it('fingerprints by area + kind + status so endpoints/statuses do not conflate', async () => {
     vi.stubGlobal(
       'fetch',
