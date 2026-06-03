@@ -349,6 +349,8 @@ describe('edge routes', () => {
   })
 
   it('returns a typed models error for upstream authentication failures', async () => {
+    const sink = vi.fn<CaptureExceptionSink>()
+    setCaptureExceptionSink(sink)
     vi.stubGlobal(
       'fetch',
       vi.fn(() =>
@@ -383,6 +385,18 @@ describe('edge routes', () => {
       error:
         'Authentication failed. Your GitHub token may be invalid or expired.'
     })
+    expect(sink).toHaveBeenCalledTimes(1)
+    const [, options] = sink.mock.calls[0] ?? []
+    expect(options?.tags).toMatchObject({
+      request_area: 'models.chat',
+      request_origin: 'github',
+      http_status: 401,
+      model: 'openai/gpt-4.1-mini'
+    })
+    expect(options?.contexts?.request).toMatchObject({
+      model: 'openai/gpt-4.1-mini'
+    })
+    expect(options?.fingerprint).toContain('model:openai/gpt-4.1-mini')
   })
 
   it('echoes an allowlisted origin for standard responses and preflight', async () => {

@@ -21,6 +21,7 @@ export type RequestTelemetryMetadata = {
   origin: 'edge' | 'github' | 'tavily'
   method: string
   url: string
+  model?: string | null
   stream?: boolean
   /**
    * Outcomes triaged as normal & unavoidable for this call site — never captured.
@@ -81,18 +82,51 @@ const toLevel = (
   return 'error'
 }
 
+const SAFE_MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/
+const MAX_TAG_VALUE_LENGTH = 200
+
+const hashString = (value: string): string => {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+const sanitizeModelForTelemetry = (model: string | null | undefined): string | undefined => {
+  const trimmed = model?.trim()
+  if (!trimmed) {
+    return undefined
+  }
+
+  const hash = hashString(trimmed)
+  if (!SAFE_MODEL_ID_PATTERN.test(trimmed)) {
+    return `custom:${hash}`
+  }
+  if (trimmed.length <= MAX_TAG_VALUE_LENGTH) {
+    return trimmed
+  }
+
+  return `${trimmed.slice(0, MAX_TAG_VALUE_LENGTH - hash.length - 1)}:${hash}`
+}
+
 const buildRequestTags = (
   metadata: RequestTelemetryMetadata,
   kind: RequestTelemetryKind,
   response?: Response
-): Record<string, string | number | boolean | undefined> => ({
-  request_area: metadata.area,
-  request_origin: metadata.origin,
-  http_method: metadata.method,
-  http_status: response?.status,
-  failure_kind: kind,
-  stream: metadata.stream ?? false
-})
+): Record<string, string | number | boolean | undefined> => {
+  const model = sanitizeModelForTelemetry(metadata.model)
+  return {
+    request_area: metadata.area,
+    request_origin: metadata.origin,
+    http_method: metadata.method,
+    http_status: response?.status,
+    failure_kind: kind,
+    stream: metadata.stream ?? false,
+    model
+  }
+}
 
 // Group captured request failures by what actually distinguishes them — the
 // call area, failure kind, and (for http_error) the status — instead of the
@@ -103,37 +137,45 @@ const buildRequestFingerprint = (
   metadata: RequestTelemetryMetadata,
   kind: RequestTelemetryKind,
   response?: Response
-): string[] => [
-  'request-telemetry',
-  metadata.area,
-  kind,
-  ...(response ? [String(response.status)] : [])
-]
+): string[] => {
+  const model = sanitizeModelForTelemetry(metadata.model)
+  return [
+    'request-telemetry',
+    metadata.area,
+    kind,
+    ...(response ? [String(response.status)] : []),
+    ...(model ? [`model:${model}`] : [])
+  ]
+}
 
 const buildRequestContexts = (
   metadata: RequestTelemetryMetadata,
   kind: RequestTelemetryKind,
   response?: Response
-): Record<string, Record<string, unknown>> => ({
-  request: {
-    area: metadata.area,
-    origin: metadata.origin,
-    method: metadata.method,
-    ...sanitizeRequestLocation(metadata.url),
-    stream: metadata.stream ?? false
-  },
-  failure: {
-    kind
-  },
-  ...(response
-    ? {
-        response: {
-          status: response.status,
-          statusText: response.statusText
+): Record<string, Record<string, unknown>> => {
+  const model = sanitizeModelForTelemetry(metadata.model)
+  return {
+    request: {
+      area: metadata.area,
+      origin: metadata.origin,
+      method: metadata.method,
+      ...sanitizeRequestLocation(metadata.url),
+      stream: metadata.stream ?? false,
+      ...(model ? { model } : {})
+    },
+    failure: {
+      kind
+    },
+    ...(response
+      ? {
+          response: {
+            status: response.status,
+            statusText: response.statusText
+          }
         }
-      }
-    : {})
-})
+      : {})
+  }
+}
 
 const classifyErrorKind = (error: Error): RequestTelemetryKind =>
   error.name === 'AbortError' ? 'abort' : 'network_error'

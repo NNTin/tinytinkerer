@@ -65,12 +65,21 @@ describe('createEdgeFetch', () => {
     )
 
     const edgeFetch = createEdgeFetch('http://example.com', () => 'token')
-    const response = await edgeFetch('/api/models/chat', { prompt: 'hi' }, { area: 'react.decide' })
+    const response = await edgeFetch(
+      '/api/models/chat',
+      { prompt: 'hi' },
+      { area: 'react.decide', model: 'openai/gpt-5' }
+    )
 
     expect(response.status).toBe(500)
     expect(sink).toHaveBeenCalledTimes(1)
     const [, options] = sink.mock.calls[0] ?? []
-    expect(options?.tags).toMatchObject({ request_area: 'react.decide', http_status: 500 })
+    expect(options?.tags).toMatchObject({
+      request_area: 'react.decide',
+      http_status: 500,
+      model: 'openai/gpt-5'
+    })
+    expect(options?.fingerprint).toContain('model:openai/gpt-5')
   })
 
   it('still captures a genuine network error on the same call site', async () => {

@@ -4,6 +4,7 @@ import { fetchWithTelemetry, type RequestTelemetryMetadata } from '../telemetry/
 export type EdgeFetchOptions = {
   signal?: AbortSignal
   area?: string
+  model?: string
   stream?: boolean
 }
 
@@ -32,6 +33,7 @@ export const createEdgeFetch = (
       origin: 'edge',
       method: 'POST',
       url,
+      ...(options?.model ? { model: options.model } : {}),
       ...(options?.stream !== undefined ? { stream: options.stream } : {}),
       // Every edgeFetch is a cancellable model/agent call: the runtime aborts a
       // step on its idle timeout and the user can cancel an in-flight run, so an

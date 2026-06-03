@@ -63,6 +63,7 @@ export const llmPlan = async (
     { model, stream: false, messages },
     {
       area: 'planning.chat',
+      model,
       stream: false,
       ...(signal ? { signal } : {})
     }
@@ -80,6 +81,7 @@ export const llmPlan = async (
     origin: 'edge' as const,
     method: 'POST',
     url: response.url,
+    model,
     stream: false
   }
   const data = await parseJsonWithTelemetry<{
