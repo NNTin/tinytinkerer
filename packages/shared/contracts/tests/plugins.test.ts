@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   feedbackInputSchema,
   pluginActivationStateSchema
-} from '../src/plugins'
+} from '../src/index.js'
 
 describe('feedbackInputSchema', () => {
   it('accepts a message with an optional category', () => {

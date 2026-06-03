@@ -62,11 +62,15 @@ registry.collectTools(activeIds: ReadonlySet<string>, host: PluginHost): Tool[]
 ```
 
 - A plugin whose id is not in `activeIds` contributes nothing.
-- A newly-active plugin gets a one-time `activate(host)` call; failures are swallowed so a
-  misbehaving plugin can never break a chat run.
+- A newly-active plugin gets a one-time `activate(host)` call; a plugin that was active on a
+  previous call and is now absent from `activeIds` gets `deactivate()`. Every lifecycle hook is
+  best-effort — never awaited, sync/async failures swallowed — so a misbehaving plugin can never
+  break runtime construction. A plugin's `createTools` that throws is caught and contributes no
+  tools.
 - Each contributed tool's `execute` is wrapped so that a thrown `PluginCaptureError` forwards
   its `report` to `host.capture` and is then **rethrown** — the agent runtime's normal
-  tool-failure path (`agent.tool.failed`) still runs.
+  tool-failure path (`agent.tool.failed`) still runs. The capture call is itself best-effort, so
+  a throwing sink never changes the error the runtime observes.
 
 ## The Feedback plugin (`@tinytinkerer/plugin-feedback`)
 

@@ -88,4 +88,60 @@ describe('PluginRegistry', () => {
 
     expect(activate).toHaveBeenCalledTimes(1)
   })
+
+  it('deactivates a plugin that becomes inactive between calls', () => {
+    const host: PluginHost = { capture: vi.fn() }
+    const deactivate = vi.fn()
+    const registry = new PluginRegistry()
+    registry.register(plugin('a', [], { deactivate }))
+
+    registry.collectTools(new Set(['a']), host)
+    expect(deactivate).not.toHaveBeenCalled()
+
+    registry.collectTools(new Set(), host)
+    expect(deactivate).toHaveBeenCalledTimes(1)
+
+    // Re-activation works after a deactivate.
+    const activate = vi.fn()
+    registry.register(plugin('a', [], { activate, deactivate }))
+    registry.collectTools(new Set(['a']), host)
+    expect(activate).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not let a throwing createTools break runtime construction', () => {
+    const host: PluginHost = { capture: vi.fn() }
+    const registry = new PluginRegistry()
+    registry.register({
+      id: 'bad',
+      createTools: () => {
+        throw new Error('construction failed')
+      }
+    })
+    registry.register(plugin('good', [echoTool('good:tool', async () => 'ok')]))
+
+    const tools = registry.collectTools(new Set(['bad', 'good']), host)
+
+    expect(tools.map((t) => t.id)).toEqual(['good:tool'])
+  })
+
+  it('rethrows the original tool error even when the capture sink throws', async () => {
+    const host: PluginHost = {
+      capture: () => {
+        throw new Error('sink exploded')
+      }
+    }
+    const report = { pluginId: 'a', kind: 'feedback', message: 'hello' }
+    const registry = new PluginRegistry()
+    registry.register(
+      plugin('a', [
+        echoTool('a:tool', async () => {
+          throw new PluginCaptureError(report, 'not implemented')
+        })
+      ])
+    )
+
+    const [tool] = registry.collectTools(new Set(['a']), host)
+
+    await expect(tool!.execute({})).rejects.toThrow('not implemented')
+  })
 })

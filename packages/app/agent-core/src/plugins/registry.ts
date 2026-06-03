@@ -22,13 +22,22 @@ export class PluginRegistry {
   }
 
   // Build the tool set for the active plugins, wrapping execute so structured
-  // PluginCaptureError reports reach the host sink. Newly-active plugins get a
-  // one-time `activate` call; its result is never awaited and failures are
-  // swallowed so a misbehaving plugin can never break a chat run.
+  // PluginCaptureError reports reach the host sink. Activation/deactivation
+  // lifecycle is driven by the change in `activeIds` between calls; every plugin
+  // hook is best-effort (never awaited, failures swallowed) so a misbehaving
+  // plugin can never break runtime construction.
   collectTools(
     activeIds: ReadonlySet<string>,
     host: PluginHost
   ): Tool<unknown, unknown>[] {
+    // Deactivate plugins that were active on a previous call but no longer are.
+    for (const id of [...this.activated]) {
+      if (!activeIds.has(id)) {
+        this.activated.delete(id)
+        runHook(() => this.plugins.get(id)?.deactivate?.())
+      }
+    }
+
     const tools: Tool<unknown, unknown>[] = []
 
     for (const plugin of this.plugins.values()) {
@@ -36,21 +45,36 @@ export class PluginRegistry {
         continue
       }
 
-      if (!this.activated.has(plugin.id) && plugin.activate) {
+      if (!this.activated.has(plugin.id)) {
         this.activated.add(plugin.id)
-        try {
-          void Promise.resolve(plugin.activate(host)).catch(() => {})
-        } catch {
-          // Activation must never break runtime construction.
-        }
+        runHook(() => plugin.activate?.(host))
       }
 
-      for (const tool of plugin.createTools?.(host) ?? []) {
+      // Tool construction is optional and may throw; an optional plugin must not
+      // be able to take down runtime creation, so skip its tools on failure.
+      let pluginTools: Tool<unknown, unknown>[]
+      try {
+        pluginTools = plugin.createTools?.(host) ?? []
+      } catch {
+        pluginTools = []
+      }
+
+      for (const tool of pluginTools) {
         tools.push(wrapToolCapture(tool, host))
       }
     }
 
     return tools
+  }
+}
+
+// Runs a best-effort lifecycle hook: never awaited, sync and async failures
+// swallowed so plugin lifecycle can never break runtime construction.
+const runHook = (hook: () => void | Promise<void> | undefined): void => {
+  try {
+    void Promise.resolve(hook()).catch(() => {})
+  } catch {
+    // Synchronous hook failure — ignored.
   }
 }
 
@@ -67,7 +91,13 @@ const wrapToolCapture = (
       return await tool.execute(input)
     } catch (error) {
       if (error instanceof PluginCaptureError) {
-        host.capture(error.report)
+        // Best-effort: a throwing capture sink must not change the error the
+        // runtime observes, so the original tool failure is always rethrown.
+        try {
+          host.capture(error.report)
+        } catch {
+          // Capture failures are swallowed.
+        }
       }
       throw error
     }
