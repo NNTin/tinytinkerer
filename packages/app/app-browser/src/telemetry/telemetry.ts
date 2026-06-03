@@ -26,13 +26,14 @@ type SentryModule = typeof import('@sentry/react')
 
 type TelemetryConfig = {
   dsn?: string
+  environment?: string
   appVersion: string
   buildHash: string
 }
 
 // Module singleton: the browser apps are single-instance SPAs, so a shared
 // telemetry state avoids threading an instance through every fetch call site.
-let config: TelemetryConfig = { appVersion: 'dev', buildHash: 'dev' }
+let config: TelemetryConfig = { environment: 'development', appVersion: 'dev', buildHash: 'dev' }
 let consent = false
 let installId: string | null = null
 let githubId: string | null = null
@@ -59,6 +60,7 @@ const ensureSentry = async (): Promise<void> => {
     .then((mod) => {
       mod.init({
         dsn: config.dsn,
+        environment: config.environment,
         release: config.buildHash,
         // Errors only — no performance tracing, no session replay.
         integrations: [],

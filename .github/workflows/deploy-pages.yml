@@ -2,7 +2,7 @@ name: Deploy Vercel
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
@@ -92,8 +92,11 @@ jobs:
   deploy-production:
     name: Deploy Production
     needs: [checks, ci]
+    # Only `main` is the production deployment. `develop` pushes now also match
+    # the push event, so the ref must be pinned here or develop would alias onto
+    # the production domain.
     if: >
-      github.event_name == 'push' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
@@ -121,10 +124,11 @@ jobs:
       - name: Build Deployment Artifacts
         # VITE_SENTRY_DSN activates runtime error reporting and SENTRY_AUTH_TOKEN
         # enables source map upload from the Sentry Vite plugin during the build
-        # (see apps/web/vite.config.ts). Production only — preview builds ship
-        # without a DSN so their errors never reach Sentry.
+        # (see apps/web/vite.config.ts). VITE_SENTRY_ENVIRONMENT tags every event
+        # so production, develop, and PR previews are distinguishable in Sentry.
         env:
           VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN_FRONTEND }}
+          VITE_SENTRY_ENVIRONMENT: production
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: vercel build --prod --token="$VERCEL_TOKEN"
 
@@ -136,6 +140,56 @@ jobs:
 
       - name: Alias Production Domain
         run: vercel alias set "${{ steps.deploy.outputs.url }}" "tiny.nntin.xyz" --token="$VERCEL_TOKEN"
+
+  deploy-develop:
+    name: Deploy Develop
+    needs: [checks, ci]
+    # The develop frontend is a Vercel *preview* build (only `main` is the true
+    # production deployment) manually aliased to the stable dev subdomain. It
+    # pulls the Preview env scope, so VITE_EDGE_URL points at the develop edge —
+    # the same edge PR previews use.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.16.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Vercel CLI
+        # Pinned: vercel@54.7.0 ships a broken @vercel/build-utils ESM interop
+        # ("Named export 'isPackageInstalled' not found") that fails `vercel build`.
+        run: npm install --global vercel@54.6.1
+
+      - name: Pull Vercel Environment
+        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+
+      - name: Build Deployment Artifacts
+        # develop reports to Sentry under the `develop` environment. Preview env
+        # vars (incl. VITE_EDGE_URL -> the develop edge) come from the pulled
+        # Preview scope.
+        env:
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN_FRONTEND }}
+          VITE_SENTRY_ENVIRONMENT: develop
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: vercel build --token="$VERCEL_TOKEN"
+
+      - name: Deploy to Vercel
+        id: deploy
+        run: |
+          url="$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Alias Develop Domain
+        run: vercel alias set "${{ steps.deploy.outputs.url }}" "dev.tiny.nntin.xyz" --token="$VERCEL_TOKEN"
 
   deploy-preview:
     name: Deploy Preview
@@ -171,6 +225,14 @@ jobs:
         run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
 
       - name: Build Deployment Artifacts
+        # PR previews report to Sentry under a single shared `pr-preview`
+        # environment. Preview env vars (incl. VITE_EDGE_URL -> the develop edge)
+        # come from the pulled Preview scope; the Sentry build inputs are passed
+        # here, matching the production build.
+        env:
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN_FRONTEND }}
+          VITE_SENTRY_ENVIRONMENT: pr-preview
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: vercel build --token="$VERCEL_TOKEN"
 
       - name: Deploy to Vercel

@@ -39,6 +39,7 @@ export default Sentry.withSentry(
   (env: Bindings) => ({
     ...(env.SENTRY_DSN ? { dsn: env.SENTRY_DSN } : {}),
     ...(env.SENTRY_RELEASE ? { release: env.SENTRY_RELEASE } : {}),
+    ...(env.SENTRY_ENVIRONMENT ? { environment: env.SENTRY_ENVIRONMENT } : {}),
     // Errors only — no performance tracing.
     tracesSampleRate: 0,
     // Never collect user-typed content. Request bodies (chat messages, search

@@ -5,7 +5,7 @@ This guide covers the full hosted setup for tinytinkerer:
 - Vercel serves the static frontend
 - Cloudflare Workers serves the edge API
 - GitHub provides user sign-in through an OAuth app
-- GitHub Actions deploys `main` and PR previews to Vercel
+- GitHub Actions deploys `main`, `develop`, and PR previews to Vercel
 
 ## Important Naming Note
 
@@ -18,11 +18,30 @@ The current codebase expects a **GitHub OAuth App**, not a GitHub App installati
 
 ## Architecture
 
-- Frontend production alias: `https://tiny.nntin.xyz`
-- Frontend PR preview aliases: `https://pr-<number>-<branch>.tiny.preview.nntin.xyz`
-- Edge API: deploy this separately on Cloudflare Workers at `https://api.tiny.nntin.xyz`
+There are three deployment tiers. Each frontend talks directly to a Cloudflare
+edge origin through `VITE_EDGE_URL`:
 
-The frontend talks directly to the Cloudflare edge origin through `VITE_EDGE_URL`.
+| Tier | Branch / trigger | Frontend (Vercel) | Edge (Cloudflare) | Frontend Sentry env |
+|---|---|---|---|---|
+| Production | `main` | `https://tiny.nntin.xyz` | `https://api.tiny.nntin.xyz` | `production` |
+| Develop | `develop` | `https://dev.tiny.nntin.xyz` | `https://api.dev.tiny.nntin.xyz` | `develop` |
+| PR preview | pull requests | `https://pr-<number>-<branch>.tiny.preview.nntin.xyz` | reuses the **develop** edge | `pr-preview` |
+| Local dev | — | `http://localhost:3111` | `http://localhost:8787` | `development` |
+
+Key points:
+
+- Only `main` is the true Vercel *production* deployment. `develop` is a Vercel
+  *preview* build aliased to a stable subdomain.
+- **PR previews reuse the develop edge** (`api.dev.tiny.nntin.xyz`), not
+  production. This lets a PR ship an experimental edge change to `develop`
+  without risking production stability.
+- Both the develop frontend and PR previews use the Vercel **Preview** env
+  scope, so both pull `VITE_EDGE_URL=https://api.dev.tiny.nntin.xyz`.
+- The last column is the **frontend** Sentry environment. The **edge** has only
+  two environments — `production` and `develop` — because each edge tags events
+  by the worker that served them. So a PR preview's own (frontend) errors are
+  `pr-preview`, but the edge requests it makes hit the develop edge and are
+  tagged `develop`. See [Sentry Environments](#7-sentry-environments).
 
 ## 1. GitHub Setup
 
@@ -95,12 +114,17 @@ Do not commit `.vercel/`.
 
 ### 2.2 Configure Vercel Environment Variables
 
-Set these variables in Vercel for both **Production** and **Preview**:
+`VITE_EDGE_URL` is **scope-specific** — this is what routes develop and PR
+previews to the develop edge while production stays on the production edge:
 
-```bash
-VITE_EDGE_URL=https://api.tiny.nntin.xyz
-VITE_GITHUB_CLIENT_ID=<your-github-oauth-client-id>
-```
+| Variable | Production scope | Preview scope |
+|---|---|---|
+| `VITE_EDGE_URL` | `https://api.tiny.nntin.xyz` | `https://api.dev.tiny.nntin.xyz` |
+| `VITE_GITHUB_CLIENT_ID` | `<oauth-client-id>` | `<oauth-client-id>` |
+
+`VITE_SENTRY_ENVIRONMENT` is **not** set in Vercel — it is passed per-job by the
+deploy workflow (`production` / `develop` / `pr-preview`) so the same Preview
+scope can serve both develop and PR builds with distinct Sentry environments.
 
 Optional:
 
@@ -108,18 +132,25 @@ Optional:
 VITE_GITHUB_REDIRECT_URI=
 ```
 
-Leave `VITE_GITHUB_REDIRECT_URI` unset for the preview-friendly default behavior.
+Leave `VITE_GITHUB_REDIRECT_URI` unset (in both scopes) for the preview-friendly
+default behavior — the registered parent-domain OAuth callback already covers
+`dev.tiny.nntin.xyz` and the preview wildcard.
 
 ### 2.3 Add Custom Domains
 
 Add these domains to the Vercel project:
 
 - `tiny.nntin.xyz`
+- `dev.tiny.nntin.xyz`
 - `*.tiny.preview.nntin.xyz`
+
+`dev.tiny.nntin.xyz` is not covered by the `*.tiny.preview.nntin.xyz` wildcard
+(different parent domain), so it needs its own domain entry and TLS cert.
 
 This repo's deploy workflow aliases:
 
 - `main` to `tiny.nntin.xyz`
+- `develop` to `dev.tiny.nntin.xyz`
 - PR previews to `pr-<number>-<branch>.tiny.preview.nntin.xyz`
 
 PR previews are only created for pull requests whose branch lives in the same repository. Fork PRs are intentionally skipped because the workflow depends on repository secrets.
@@ -150,11 +181,25 @@ Deploy it as a Cloudflare Worker on:
 
 The Worker config starts in `apps/edge/wrangler.jsonc`.
 
-The repository now contains the production Worker routing and non-secret runtime config in `apps/edge/wrangler.jsonc`:
+The repository contains both the production and develop Worker config in
+`apps/edge/wrangler.jsonc`. The top-level config is the production Worker; the
+`env.develop` block is the develop Worker. `vars` and `routes` are **not**
+inherited across wrangler environments, so each is declared in full.
+
+Production (top-level):
 
 - custom domain route: `api.tiny.nntin.xyz`
 - `workers_dev: false`
-- `ALLOWED_ORIGINS=http://localhost:3000,https://tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz`
+- `ALLOWED_ORIGINS=http://localhost:3111,https://tiny.nntin.xyz`
+- `SENTRY_ENVIRONMENT=production`
+
+Develop (`env.develop`, worker name `tinytinkerer-edge-develop`):
+
+- custom domain route: `api.dev.tiny.nntin.xyz`
+- `ALLOWED_ORIGINS=http://localhost:3111,https://dev.tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz`
+  (the preview wildcard lives here, not on production, because PR previews call
+  the develop edge)
+- `SENTRY_ENVIRONMENT=develop`
 
 ### 3.2 Create the Cloudflare API Token
 
@@ -212,24 +257,49 @@ Why this matters:
 
 The repo now includes `.github/workflows/deploy-edge.yml`.
 
-On every push to `main`, it:
+On every push to `main` or `develop` (touching edge-related paths), it:
 
 - installs dependencies
 - builds `apps/edge`
 - creates a temporary secrets file from GitHub Actions secrets
-- runs `wrangler deploy --config apps/edge/wrangler.jsonc --secrets-file ...`
-- runs `wrangler triggers deploy --config apps/edge/wrangler.jsonc`
+- runs `wrangler deploy ... --secrets-file ... <env_flag>`
+- runs `wrangler triggers deploy <env_flag>`
 
-The extra `triggers deploy` step is important because Cloudflare applies route and custom-domain changes through trigger deployment.
+`<env_flag>` is empty on `main` (deploys the production Worker) and `--env
+develop` on `develop` (deploys `tinytinkerer-edge-develop`). The extra `triggers
+deploy` step is important because Cloudflare applies route and custom-domain
+changes through trigger deployment.
+
+The worker secrets (`GITHUB_CLIENT_ID`, etc.) are uploaded per environment by
+`--secrets-file` on each deploy, so the develop Worker gets its own copy.
+
+#### First develop-edge deploy
+
+The edge workflow is **path-filtered** — a push to `develop` that doesn't touch
+edge paths will not run it, so `tinytinkerer-edge-develop` is not created
+automatically by an unrelated first push. Bootstrap it once via one of:
+
+- trigger `Deploy Edge` via **workflow_dispatch** on the `develop` branch, or
+- a manual deploy:
+
+  ```bash
+  pnpm --filter @tinytinkerer/edge exec wrangler deploy --env develop
+  pnpm --filter @tinytinkerer/edge exec wrangler triggers deploy --env develop
+  ```
+
+Confirm `https://api.dev.tiny.nntin.xyz/health` responds before relying on the
+develop frontend or PR previews.
 
 ### 3.5 First Deploy Checklist
 
 Before the workflow can succeed, confirm:
 
 - the `nntin.xyz` zone is in the target Cloudflare account
-- `api.tiny.nntin.xyz` is available for Worker custom domain attachment
+- `api.tiny.nntin.xyz` and `api.dev.tiny.nntin.xyz` are available for Worker
+  custom domain attachment
 - the GitHub Actions secrets listed above are present
-- Vercel uses `VITE_EDGE_URL=https://api.tiny.nntin.xyz`
+- Vercel Production scope uses `VITE_EDGE_URL=https://api.tiny.nntin.xyz` and
+  Preview scope uses `VITE_EDGE_URL=https://api.dev.tiny.nntin.xyz`
 
 ### 3.6 Manual Deploy Fallback
 
@@ -253,12 +323,15 @@ With OAuth configured, the `auth.state` value in `/health` should report `ready`
 
 Once all three systems are configured:
 
-1. Cloudflare exposes the edge API on a stable URL
-2. Vercel builds the frontend with `VITE_EDGE_URL` pointing at that URL
-3. GitHub Actions deploys `main` and PR previews to Vercel
-4. GitHub Actions deploys the edge Worker to `https://api.tiny.nntin.xyz`
+1. Cloudflare exposes the production and develop edge APIs on stable URLs
+2. Vercel builds each frontend with `VITE_EDGE_URL` pointing at the right edge
+   (production scope → production edge; preview scope → develop edge)
+3. GitHub Actions deploys `main`, `develop`, and PR previews to Vercel
+4. GitHub Actions deploys the edge Workers to `https://api.tiny.nntin.xyz`
+   (`main`) and `https://api.dev.tiny.nntin.xyz` (`develop`)
 5. GitHub OAuth redirects users back to the active Vercel origin
-6. Cloudflare CORS allows the production alias and preview wildcard domains
+6. Cloudflare CORS allows each edge's own frontend origins (production serves
+   `tiny.nntin.xyz`; develop serves `dev.tiny.nntin.xyz` + the preview wildcard)
 
 ## 5. Verification Checklist
 
@@ -316,6 +389,44 @@ Usually caused by one of these:
 - `OAUTH_GITHUB_CLIENT_ID` or `OAUTH_GITHUB_CLIENT_SECRET` is missing in GitHub Actions secrets
 - the Cloudflare token does not have enough scope for Workers deploys and zone routing changes
 - `api.tiny.nntin.xyz` cannot be provisioned as a Worker custom domain in the target zone
+
+## 7. Sentry Environments
+
+Both Sentry projects (`tinytinkerer-frontend`, `tinytinkerer-edge`) are shared
+across tiers and split by the event `environment` tag. **The frontend and edge
+do not use the same set of environments** — there is one edge per tier, but PR
+previews have their own frontend while reusing the develop edge.
+
+**Frontend** (`tinytinkerer-frontend`) — four environments:
+
+- `development` — localhost (default when `VITE_SENTRY_ENVIRONMENT` is unset)
+- `pr-preview` — all PR previews, grouped into one environment
+- `develop` — the `develop` branch deployment
+- `production` — the `main` branch deployment
+
+**Edge** (`tinytinkerer-edge`) — only two environments, because each worker tags
+events by which worker served the request:
+
+- `develop` — the develop worker (`api.dev.tiny.nntin.xyz`). This includes
+  requests made by PR previews, since they reuse the develop edge. There is no
+  `pr-preview` environment on the edge.
+- `production` — the production worker (`api.tiny.nntin.xyz`)
+
+So when triaging an edge error that originated from PR-preview traffic, look
+under `develop`, not `pr-preview`. To correlate it with a specific PR preview,
+use the frontend event (tagged `pr-preview`) and the shared release (git SHA).
+
+The environment is set explicitly in code (`VITE_SENTRY_ENVIRONMENT` baked into
+the frontend build; `SENTRY_ENVIRONMENT` worker var for the edge). The release
+stays the 7-char git SHA across all environments — the same commit deployed to
+develop and production is intentional and keeps source maps shared.
+
+> **Disable the Vercel↔Sentry integration.** CI already creates Sentry releases
+> explicitly (`sentry-cli` for the edge, `@sentry/vite-plugin` for the
+> frontend), so the Vercel integration is redundant and is the source of the
+> confusing `vercel-production` / `vercel-preview` release-deploy labels. Turn
+> it off in the Sentry/Vercel dashboard so the explicit environments above are
+> the only ones reported.
 
 ## References
 

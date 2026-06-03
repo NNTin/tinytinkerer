@@ -15,6 +15,7 @@ export type BrowserShellBootstrapOptions = {
   manifestStartUrl?: string | undefined
   hostToken?: string | null
   sentryDsn?: string | undefined
+  sentryEnvironment?: string | undefined
   appVersion?: string | undefined
   buildHash?: string | undefined
 }
@@ -29,6 +30,7 @@ export type BrowserShellConfig = {
   manifestStartUrl?: string
   hostToken?: string | null
   sentryDsn?: string
+  sentryEnvironment?: string
   appVersion?: string
   buildHash?: string
 }
@@ -42,6 +44,7 @@ export type ResolvedBrowserShellConfig = {
   manifestStartUrl?: string
   hostToken: string | null
   sentryDsn?: string
+  sentryEnvironment: string
   appVersion: string
   buildHash: string
 }
@@ -51,6 +54,7 @@ const DEFAULT_CONFIG: ResolvedBrowserShellConfig = {
   storageNamespace: 'tinytinkerer',
   authMode: 'hybrid',
   hostToken: null,
+  sentryEnvironment: 'development',
   appVersion: 'dev',
   buildHash: 'dev'
 }
@@ -63,6 +67,7 @@ export const resolveBrowserShellConfig = (
     storageNamespace: config.storageNamespace ?? DEFAULT_CONFIG.storageNamespace,
     authMode: config.authMode ?? DEFAULT_CONFIG.authMode,
     hostToken: config.hostToken ?? DEFAULT_CONFIG.hostToken,
+    sentryEnvironment: config.sentryEnvironment ?? DEFAULT_CONFIG.sentryEnvironment,
     appVersion: config.appVersion ?? DEFAULT_CONFIG.appVersion,
     buildHash: config.buildHash ?? DEFAULT_CONFIG.buildHash
   }
@@ -101,6 +106,7 @@ export const resolveBrowserShellBootstrapConfig = (
     appVersion: options.appVersion ?? DEFAULT_CONFIG.appVersion,
     buildHash: options.buildHash ?? DEFAULT_CONFIG.buildHash,
     ...(options.sentryDsn ? { sentryDsn: options.sentryDsn } : {}),
+    ...(options.sentryEnvironment ? { sentryEnvironment: options.sentryEnvironment } : {}),
     ...(options.manifestStartUrl !== undefined ? { manifestStartUrl: options.manifestStartUrl } : {}),
     ...(options.githubClientId ? { githubClientId: options.githubClientId } : {}),
     ...(githubRedirectUri ? { githubRedirectUri } : {})
