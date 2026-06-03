@@ -11,10 +11,10 @@ pnpm install
 pnpm dev
 ```
 
-- Frontend host: `http://localhost:3000/` (composite host page)
-  - Web: `http://localhost:3000/web/`
-  - Widget: `http://localhost:3000/widget/`
-  - Mobile: `http://localhost:3000/mobile/`
+- Frontend host: `http://localhost:3111/` (composite host page)
+  - Web: `http://localhost:3111/web/`
+  - Widget: `http://localhost:3111/widget/`
+  - Mobile: `http://localhost:3111/mobile/`
 - Edge API: `http://localhost:8787`
 
 `pnpm build` composes the static deployment artifact at `apps/host/dist`.

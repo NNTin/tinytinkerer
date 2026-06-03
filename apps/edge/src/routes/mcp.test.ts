@@ -144,7 +144,7 @@ describe('POST /api/mcp/discover', () => {
   })
 
   it('allows http to 127.0.0.1', async () => {
-    const res = await post('/api/mcp/discover', { url: 'http://127.0.0.1:3000/mcp' })
+    const res = await post('/api/mcp/discover', { url: 'http://127.0.0.1:3111/mcp' })
     expect(res.status).toBe(200)
   })
 

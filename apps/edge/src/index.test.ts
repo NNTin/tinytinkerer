@@ -387,12 +387,12 @@ describe('edge routes', () => {
 
   it('echoes an allowlisted origin for standard responses and preflight', async () => {
     const env = {
-      ALLOWED_ORIGINS: 'http://localhost:3000, https://tiny.nntin.xyz'
+      ALLOWED_ORIGINS: 'http://localhost:3111, https://tiny.nntin.xyz'
     }
 
     const response = await app.fetch(
       new Request('http://localhost/health', {
-        headers: { origin: 'http://localhost:3000' }
+        headers: { origin: 'http://localhost:3111' }
       }),
       env
     )
@@ -407,7 +407,7 @@ describe('edge routes', () => {
 
     systemStatusSchema.parse(await response.json())
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
-      'http://localhost:3000'
+      'http://localhost:3111'
     )
     expect(response.headers.get('Vary')).toBe('Origin')
     expect(preflightResponse.status).toBe(204)
@@ -437,7 +437,7 @@ describe('edge routes', () => {
       }),
       {
         ALLOWED_ORIGINS:
-          'http://localhost:3000, https://*.tiny.preview.nntin.xyz'
+          'http://localhost:3111, https://*.tiny.preview.nntin.xyz'
       }
     )
 
@@ -476,7 +476,7 @@ describe('edge routes', () => {
         headers: {
           'content-type': 'application/json',
           authorization: 'Bearer test-token',
-          origin: 'http://localhost:3000'
+          origin: 'http://localhost:3111'
         },
         body: JSON.stringify({
           model: 'openai/gpt-4.1-mini',
@@ -484,12 +484,12 @@ describe('edge routes', () => {
           messages: [{ role: 'user', content: 'hello' }]
         })
       }),
-      { ALLOWED_ORIGINS: 'http://localhost:3000' }
+      { ALLOWED_ORIGINS: 'http://localhost:3111' }
     )
 
     expect(response.status).toBe(200)
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
-      'http://localhost:3000'
+      'http://localhost:3111'
     )
     expect(response.headers.get('Vary')).toBe('Origin')
     await expect(response.text()).resolves.toContain('data: {"id":"stream"}')
