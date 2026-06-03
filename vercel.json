@@ -2,5 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm build",
-  "outputDirectory": "apps/host/dist"
+  "outputDirectory": "apps/host/dist",
+  "git": {
+    "deploymentEnabled": false
+  }
 }
