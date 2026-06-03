@@ -125,6 +125,44 @@ describe('fetchGitHubModels', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
 
+  it('fetches OpenRouter models with a provider-scoped cache key', async () => {
+    const githubModels = [{ id: 'openai/gpt-5', label: 'GPT-5' }]
+    const openRouterModels = [
+      { provider: 'openrouter', id: 'anthropic/claude-3.5-sonnet', label: 'Claude', kind: 'chat' }
+    ]
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ models: githubModels }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ models: openRouterModels }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await fetchGitHubModels('https://api.example.com', 'same-token', {
+      provider: 'github'
+    })
+    const openRouter = await fetchGitHubModels(
+      'https://api.example.com',
+      'same-token',
+      { provider: 'openrouter' }
+    )
+
+    expect(openRouter).toEqual(openRouterModels)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('provider=github')
+    expect(String(fetchSpy.mock.calls[1]?.[0])).toContain(
+      'provider=openrouter'
+    )
+  })
+
   it.each([429, 503])(
     'serves the fallback WITHOUT capturing the edge cooldown status %i (TINYTINKERER-FRONTEND-C / FRONTEND-D)',
     async (status) => {

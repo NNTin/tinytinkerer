@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { SUPPORTED_MODELS } from '@tinytinkerer/app-core'
+import {
+  DEFAULT_MODELS_BY_PROVIDER,
+  SUPPORTED_MODELS
+} from '@tinytinkerer/app-core'
 import {
   EDGE_ROUTE_PATHS,
   modelsListResponseSchema,
-  type GitHubModelEntry
+  type GitHubModelEntry,
+  type ModelProviderId
 } from '@tinytinkerer/contracts'
-import { useAuthStore } from './app'
+import { useAuthStore, useSettingsStore } from './app'
 import { useBrowserShellConfig } from './hooks'
 import { getTelemetryHeaders } from './telemetry/telemetry'
 import {
@@ -32,6 +36,17 @@ const MODELS_CACHE_TTL_MS = 5 * 60_000
 // stop the frontend hammering it during a rate-limit storm (TINYTINKERER-FRONTEND-5).
 const MODELS_FALLBACK_TTL_MS = 30_000
 const STATIC_MODELS = [...SUPPORTED_MODELS]
+const fallbackModelsForProvider = (provider: ModelProviderId): ModelEntry[] =>
+  provider === 'openrouter'
+    ? [
+        {
+          provider: 'openrouter',
+          id: DEFAULT_MODELS_BY_PROVIDER.openrouter,
+          label: DEFAULT_MODELS_BY_PROVIDER.openrouter,
+          kind: 'chat'
+        }
+      ]
+    : [...STATIC_MODELS]
 
 const loadStaticCatalog = async (): Promise<ModelEntry[]> => {
   const { loadSupportedChatModels } = await import('@tinytinkerer/app-core')
@@ -61,10 +76,13 @@ export const fetchGitHubModels = async (
   // `fallback()` still runs on a forced fetch, so background remounts / future
   // callers stay protected from a rate-limit storm (TINYTINKERER-FRONTEND-5);
   // only this deliberate user action bypasses the read.
-  { force = false }: { force?: boolean } = {}
+  {
+    force = false,
+    provider = 'github'
+  }: { force?: boolean; provider?: ModelProviderId } = {}
 ): Promise<ModelEntry[]> => {
   const tokenHash = await hashToken(token)
-  const cacheKey = `${edgeBaseUrl}:${tokenHash}`
+  const cacheKey = `${edgeBaseUrl}:${provider}:${tokenHash}`
   const cached = modelsCache.get(cacheKey)
   if (!force && cached && Date.now() - cached.cachedAt <= cached.ttlMs)
     return cached.models
@@ -78,7 +96,7 @@ export const fetchGitHubModels = async (
   // serves its own last-known catalogue (TINYTINKERER-FRONTEND-C / FRONTEND-D,
   // TINYTINKERER-FRONTEND-5).
   const fallback = (): ModelEntry[] => {
-    const models = cached?.models ?? [...STATIC_MODELS]
+    const models = cached?.models ?? fallbackModelsForProvider(provider)
     modelsCache.set(cacheKey, {
       models,
       cachedAt: Date.now(),
@@ -91,7 +109,7 @@ export const fetchGitHubModels = async (
     area: 'models.list',
     origin: 'edge',
     method: 'GET',
-    url: `${edgeBaseUrl}${EDGE_ROUTE_PATHS.modelsList}`,
+    url: `${edgeBaseUrl}${EDGE_ROUTE_PATHS.modelsList}?provider=${provider}`,
     // The edge deliberately emits a 429 (residual window-opener) or a 503 + Retry-
     // After (its designed cooldown / cache-miss signal) for this CACHEABLE
     // catalogue while GitHub Models is rate limited. Both mean "serve your cached
@@ -160,14 +178,22 @@ const includeSelectedModel = (
 }
 
 export const useGitHubModels = (selectedModel?: string): GitHubModelsState => {
-  const token = useAuthStore((state) => state.token)
+  const githubToken = useAuthStore((state) => state.token)
+  const provider = useSettingsStore((state) => state.selectedModelProvider)
+  const openRouterApiKey = useSettingsStore((state) => state.openRouterApiKey)
   const { edgeBaseUrl } = useBrowserShellConfig()
-  const [models, setModels] = useState<ModelEntry[]>(STATIC_MODELS)
+  const [models, setModels] = useState<ModelEntry[]>(fallbackModelsForProvider(provider))
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    if (provider !== 'github') {
+      setModels(fallbackModelsForProvider(provider))
+      return () => {
+        cancelled = true
+      }
+    }
     loadStaticCatalog()
       .then((catalogModels) => {
         if (!cancelled && catalogModels.length > 0) {
@@ -181,13 +207,18 @@ export const useGitHubModels = (selectedModel?: string): GitHubModelsState => {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [provider])
 
   const refreshGitHubModels = useCallback(async (): Promise<ModelEntry[]> => {
+    const token = provider === 'openrouter' ? openRouterApiKey : githubToken
     if (!token) {
-      const nextModels = [...STATIC_MODELS]
+      const nextModels = fallbackModelsForProvider(provider)
       setModels(nextModels)
-      setRefreshError('Sign in with GitHub to refresh models.')
+      setRefreshError(
+        provider === 'openrouter'
+          ? 'Add an OpenRouter API key to refresh models.'
+          : 'Sign in with GitHub to refresh models.'
+      )
       return includeSelectedModel(nextModels, selectedModel)
     }
 
@@ -197,7 +228,8 @@ export const useGitHubModels = (selectedModel?: string): GitHubModelsState => {
       // Force a real re-probe: this is a deliberate user action, so honour it
       // instead of returning the module-level cache from a previous click.
       const nextModels = await fetchGitHubModels(edgeBaseUrl, token, {
-        force: true
+        force: true,
+        provider
       })
       setModels(nextModels)
       return includeSelectedModel(nextModels, selectedModel)
@@ -209,7 +241,7 @@ export const useGitHubModels = (selectedModel?: string): GitHubModelsState => {
     } finally {
       setIsRefreshing(false)
     }
-  }, [edgeBaseUrl, models, selectedModel, token])
+  }, [edgeBaseUrl, githubToken, models, openRouterApiKey, provider, selectedModel])
 
   const visibleModels = useMemo(
     () => includeSelectedModel(models, selectedModel),

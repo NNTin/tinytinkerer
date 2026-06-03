@@ -9,8 +9,10 @@ import { createBrowserRuntimeFactory } from '../src/runtime/get-runtime.js'
 
 const mockSettings = {
   searchEnabled: true,
+  selectedModelProvider: 'github' as 'github' | 'openrouter',
   selectedModel: 'openai/gpt-4.1-mini',
-  agentType: 'plan-execute' as const
+  agentType: 'plan-execute' as const,
+  openRouterApiKey: null as string | null
 }
 
 const mockAuth = {
@@ -55,7 +57,9 @@ const toRequestUrl = (input: RequestInfo | URL): string => {
 
 beforeEach(() => {
   mockSettings.searchEnabled = true
+  mockSettings.selectedModelProvider = 'github'
   mockSettings.selectedModel = DEFAULT_MODEL
+  mockSettings.openRouterApiKey = null
   mockAuth.token = null
   mockStatus.hydrated = true
   mockStatus.status.search.state = 'ready'
@@ -161,6 +165,50 @@ describe('createBrowserRuntimeFactory', () => {
 
     expect(capturedBody).toBeDefined()
     expect((JSON.parse(capturedBody ?? '{}') as { model: string }).model).toBe(DEFAULT_MODEL)
+    vi.unstubAllGlobals()
+  })
+
+  it('forwards selected OpenRouter provider, model, and API key', async () => {
+    let capturedBody: string | undefined
+    let capturedAuthorization: string | null = null
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        capturedBody = init?.body as string | undefined
+        capturedAuthorization = new Headers(init?.headers).get('authorization')
+        const sseBody = [
+          'data: {"choices":[{"delta":{"content":"ok"}}]}',
+          '',
+          'data: [DONE]',
+          ''
+        ].join('\n')
+        return Promise.resolve(
+          new Response(sseBody, {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' }
+          })
+        )
+      })
+    )
+
+    mockSettings.selectedModelProvider = 'openrouter'
+    mockSettings.selectedModel = 'anthropic/claude-3.5-sonnet'
+    mockSettings.openRouterApiKey = 'sk-or-v1-test'
+    mockAuth.token = 'github-token'
+
+    const runtime = createRuntime()
+    const events: unknown[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(capturedAuthorization).toBe('Bearer sk-or-v1-test')
+    expect(
+      JSON.parse(capturedBody ?? '{}') as { provider: string; model: string }
+    ).toMatchObject({
+      provider: 'openrouter',
+      model: 'anthropic/claude-3.5-sonnet'
+    })
     vi.unstubAllGlobals()
   })
 

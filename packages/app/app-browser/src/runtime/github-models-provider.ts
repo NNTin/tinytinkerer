@@ -14,6 +14,7 @@ import {
   edgeErrorResponseSchema,
   modelsChatResponseSchema,
   type ExecutionPlan,
+  type ModelProviderId,
   type PlanStep,
   type ReActDecision
 } from '@tinytinkerer/contracts'
@@ -48,6 +49,7 @@ const estimateTokens = (context: ExecutionContext): number => {
 type GitHubModelsProviderOptions = {
   baseUrl: string
   getToken?: () => string | null | undefined
+  getProvider?: () => ModelProviderId | null | undefined
   getModel?: () => string | null | undefined
   allToolDescriptors?: PlannerToolDescriptor[]
 }
@@ -68,6 +70,10 @@ export class GitHubModelsProvider implements ModelProvider {
   private synthesizing = false
 
   constructor(private readonly options: GitHubModelsProviderOptions) {}
+
+  private getProvider(): ModelProviderId {
+    return this.options.getProvider?.() ?? 'github'
+  }
 
   // Wait out any active rate-limit/quota backoff before issuing an edge model
   // call. Shared by synthesis and the ReAct decision path so a 429 on one stops
@@ -91,7 +97,15 @@ export class GitHubModelsProvider implements ModelProvider {
       try {
         const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
         const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
-        return await llmPlan(prompt, history, allDescriptors, model, edgeFetch, options?.signal)
+        return await llmPlan(
+          prompt,
+          history,
+          allDescriptors,
+          model,
+          edgeFetch,
+          options?.signal,
+          this.getProvider()
+        )
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') throw error
         if (error instanceof RateLimitError) throw error
@@ -124,7 +138,14 @@ export class GitHubModelsProvider implements ModelProvider {
       const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
       const tools = this.options.allToolDescriptors ?? []
       try {
-        return await llmDecideNextAction(context, tools, model, edgeFetch, options?.signal)
+        return await llmDecideNextAction(
+          context,
+          tools,
+          model,
+          edgeFetch,
+          options?.signal,
+          this.getProvider()
+        )
       } catch (error) {
         if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
         throw error
@@ -148,7 +169,14 @@ export class GitHubModelsProvider implements ModelProvider {
       const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
       const tools = this.options.allToolDescriptors ?? []
       try {
-        yield* llmStreamDecision(context, tools, model, edgeFetch, options?.signal)
+        yield* llmStreamDecision(
+          context,
+          tools,
+          model,
+          edgeFetch,
+          options?.signal,
+          this.getProvider()
+        )
       } catch (error) {
         if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
         throw error
@@ -198,6 +226,7 @@ export class GitHubModelsProvider implements ModelProvider {
         .join('')
 
       const selectedModel = this.options.getModel?.() ?? DEFAULT_MODEL
+      const provider = this.getProvider()
       const requestInit: RequestInit = {
         method: 'POST',
         headers: {
@@ -206,6 +235,7 @@ export class GitHubModelsProvider implements ModelProvider {
           ...getTelemetryHeaders()
         },
         body: JSON.stringify({
+          provider,
           stream: true,
           model: selectedModel,
           messages: [
@@ -290,7 +320,9 @@ export class GitHubModelsProvider implements ModelProvider {
 
     const draft = collected
       ? `I worked through the plan and used tools where needed.\n\n${collected}`
-      : 'Sign in with GitHub to get AI responses. Without a token the runtime runs in local fallback mode.'
+      : this.getProvider() === 'openrouter'
+        ? 'Add an OpenRouter API key in Settings to get AI responses. Without a key the runtime runs in local fallback mode.'
+        : 'Sign in with GitHub to get AI responses. Without a token the runtime runs in local fallback mode.'
 
     for (const chunk of draft.split(' ')) {
       yield { kind: 'content', text: `${chunk} ` }

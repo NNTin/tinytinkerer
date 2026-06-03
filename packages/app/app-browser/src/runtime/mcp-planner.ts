@@ -1,6 +1,11 @@
 import { parseJsonWithTelemetry, parseWithTelemetry } from '../telemetry/request-telemetry'
 import type { ConversationMessage } from '@tinytinkerer/app-core'
-import { EDGE_ROUTE_PATHS, executionPlanSchema, type ExecutionPlan } from '@tinytinkerer/contracts'
+import {
+  EDGE_ROUTE_PATHS,
+  executionPlanSchema,
+  type ExecutionPlan,
+  type ModelProviderId
+} from '@tinytinkerer/contracts'
 import type { EdgeFetch } from './edge-fetch'
 import { createRateLimitError } from './rate-limit'
 
@@ -48,7 +53,8 @@ export const llmPlan = async (
   tools: PlannerToolDescriptor[],
   model: string,
   edgeFetch: EdgeFetch,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  provider?: ModelProviderId
 ): Promise<ExecutionPlan> => {
   const systemPrompt = buildPlanningSystemPrompt(tools)
 
@@ -60,7 +66,7 @@ export const llmPlan = async (
 
   const response = await edgeFetch(
     EDGE_ROUTE_PATHS.modelsChat,
-    { model, stream: false, messages },
+    { ...(provider ? { provider } : {}), model, stream: false, messages },
     {
       area: 'planning.chat',
       model,

@@ -1,5 +1,10 @@
 import { createChatRuntime, type Tool } from '@tinytinkerer/app-core'
-import type { AgentType, McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contracts'
+import type {
+  AgentType,
+  McpDiscoveryResult,
+  McpServerConfig,
+  ModelProviderId
+} from '@tinytinkerer/contracts'
 import { GitHubModelsProvider } from './github-models-provider'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch } from './edge-fetch'
@@ -10,6 +15,7 @@ export const createRuntime = (options: {
   baseUrl: string
   searchEnabled: boolean
   getToken: () => string | null | undefined
+  getProvider?: () => ModelProviderId | null | undefined
   getModel: () => string | null | undefined
   agentType?: AgentType
   mcpServers?: McpServerConfig[]
@@ -52,7 +58,8 @@ export const createRuntime = (options: {
       baseUrl: options.baseUrl,
       getToken: options.getToken,
       getModel: options.getModel,
-      allToolDescriptors
+      allToolDescriptors,
+      ...(options.getProvider ? { getProvider: options.getProvider } : {})
     }),
     createAssistantContentSession: async (initialSource = '') => {
       const { createMarkdownContentSession } = await import('@tinytinkerer/content-markdown')

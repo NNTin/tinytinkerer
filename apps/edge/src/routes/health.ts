@@ -16,7 +16,8 @@ export const registerHealthRoute = (
       },
       models: {
         state: 'ready',
-        detail: 'GitHub Models proxy ready (sign in with GitHub to enable)'
+        detail:
+          'Model proxy ready (sign in with GitHub or add an OpenRouter API key to enable)'
       },
       search: {
         state: c.env.TAVILY_API_KEY ? 'ready' : 'degraded',

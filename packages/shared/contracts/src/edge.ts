@@ -68,8 +68,15 @@ export const chatMessageSchema = z
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>
 
+export const modelProviderIdSchema = z
+  .enum(['github', 'openrouter'])
+  .meta({ id: 'ModelProviderId' })
+
+export type ModelProviderId = z.infer<typeof modelProviderIdSchema>
+
 export const modelsChatRequestSchema = z
   .object({
+    provider: modelProviderIdSchema.optional(),
     model: z.string().optional(),
     stream: z.boolean().optional(),
     messages: z.array(chatMessageSchema).max(100)
@@ -124,6 +131,7 @@ export type GitHubModelLimits = z.infer<typeof githubModelLimitsSchema>
 
 export const githubModelEntrySchema = z
   .object({
+    provider: modelProviderIdSchema.optional(),
     id: z.string(),
     label: z.string(),
     kind: githubModelKindSchema.optional(),
@@ -135,6 +143,9 @@ export const githubModelEntrySchema = z
     version: z.string().optional(),
     capabilities: z.array(z.string()).optional(),
     limits: githubModelLimitsSchema.optional(),
+    context_length: z.number().nullable().optional(),
+    pricing: z.record(z.string(), z.unknown()).optional(),
+    architecture: z.record(z.string(), z.unknown()).optional(),
     rate_limit_tier: z.string().optional(),
     supported_input_modalities: z.array(z.string()).optional(),
     supported_output_modalities: z.array(z.string()).optional(),

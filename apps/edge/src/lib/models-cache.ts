@@ -1,4 +1,4 @@
-import type { GitHubModelEntry } from '@tinytinkerer/contracts'
+import type { GitHubModelEntry, ModelProviderId } from '@tinytinkerer/contracts'
 
 /**
  * Durable, colo-wide cache for the GitHub Models catalogue.
@@ -23,7 +23,10 @@ import type { GitHubModelEntry } from '@tinytinkerer/contracts'
 
 // Stable synthetic key — the catalogue is global, not per-token, so one cached
 // entry serves every user in the colo. Exported as a test seam for seeding.
-export const CACHE_KEY = 'https://models-list-cache.tiny.nntin.xyz/v1/models'
+export const CACHE_KEY = 'https://models-list-cache.tiny.nntin.xyz/github/v1/models'
+
+const cacheKeyForProvider = (provider: ModelProviderId): string =>
+  `https://models-list-cache.tiny.nntin.xyz/${provider}/v1/models`
 
 /** Within this age the cached list is served without touching upstream. */
 const FRESH_TTL_MS = 5 * 60_000
@@ -45,13 +48,14 @@ export const isFresh = (ageMs: number): boolean => ageMs <= FRESH_TTL_MS
 
 /** Read the cached catalogue, or `undefined` on a miss / when caching is unavailable. */
 export const readCachedModels = async (
+  provider: ModelProviderId = 'github',
   nowMs = Date.now()
 ): Promise<CachedModels | undefined> => {
   const store = cacheStore()
   if (!store) return undefined
 
   try {
-    const hit = await store.match(CACHE_KEY)
+    const hit = await store.match(cacheKeyForProvider(provider))
     if (!hit) return undefined
     const cachedAt = Number(hit.headers.get(CACHED_AT_HEADER) ?? '0')
     const models = (await hit.json()) as GitHubModelEntry[]
@@ -65,6 +69,7 @@ export const readCachedModels = async (
 /** Store the catalogue so subsequent requests (and isolates) skip the upstream fetch. */
 export const writeCachedModels = async (
   models: GitHubModelEntry[],
+  provider: ModelProviderId = 'github',
   nowMs = Date.now()
 ): Promise<void> => {
   const store = cacheStore()
@@ -80,7 +85,7 @@ export const writeCachedModels = async (
         [CACHED_AT_HEADER]: String(nowMs)
       }
     })
-    await store.put(CACHE_KEY, response)
+    await store.put(cacheKeyForProvider(provider), response)
   } catch {
     // Caching is best-effort; a write failure just means the next request refetches.
   }

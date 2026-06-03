@@ -3,7 +3,9 @@ import {
   EDGE_RATE_LIMIT_HEADERS,
   edgeErrorResponseSchema,
   githubModelEntrySchema,
-  modelsChatResponseSchema
+  modelsChatResponseSchema,
+  type GitHubModelEntry,
+  type ModelProviderId
 } from '@tinytinkerer/contracts'
 import { z } from 'zod'
 import type { Bindings } from '../lib/bindings'
@@ -46,12 +48,38 @@ const githubModelsCatalogEntrySchema = z.object({
 
 const githubModelsCatalogSchema = z.array(githubModelsCatalogEntrySchema)
 
+const openRouterModelsCatalogEntrySchema = z
+  .object({
+    id: z.string(),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    context_length: z.number().nullable().optional(),
+    pricing: z.record(z.string(), z.unknown()).optional(),
+    architecture: z
+      .object({
+        input_modalities: z.array(z.string()).optional(),
+        output_modalities: z.array(z.string()).optional()
+      })
+      .passthrough()
+      .optional(),
+    supported_parameters: z.array(z.string()).optional()
+  })
+  .passthrough()
+
+const openRouterModelsCatalogSchema = z.object({
+  data: z.array(openRouterModelsCatalogEntrySchema)
+})
+
 const GITHUB_MODELS_DEFAULT_URL = 'https://models.github.ai/inference'
 const GITHUB_MODELS_CATALOG_URL = 'https://models.github.ai/catalog/models'
 const GITHUB_MODELS_REFERENCE_HEADERS = {
   accept: 'application/vnd.github+json',
   'x-github-api-version': '2026-03-10'
 } as const
+const OPENROUTER_DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
+const OPENROUTER_DEFAULT_MODELS_URL = `${OPENROUTER_DEFAULT_BASE_URL}/models`
+const DEFAULT_OPENROUTER_REFERER = 'https://tiny.nntin.xyz'
+const DEFAULT_OPENROUTER_TITLE = 'TinyTinkerer'
 
 const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
   400: 'Invalid request',
@@ -64,6 +92,124 @@ const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
 }
 
 const UPSTREAM_ERROR_STATUSES = new Set([400, 401, 403, 422, 500, 503, 504])
+
+type ModelProviderAdapter = {
+  id: ModelProviderId
+  origin: 'github' | 'openrouter'
+  displayName: string
+  defaultModel: string
+  chatUrl: (env: Bindings) => string
+  listUrl: (env: Bindings) => string
+  headers: (
+    env: Bindings,
+    authorization: string
+  ) => Record<string, string>
+  parseCatalog: (raw: unknown) => GitHubModelEntry[]
+  errorMessages: Partial<Record<number, string>>
+}
+
+const toGitHubModels = (raw: unknown): GitHubModelEntry[] => {
+  const parsed = githubModelsCatalogSchema.safeParse(raw)
+  return (parsed.success ? parsed.data : []).map((model) =>
+    githubModelEntrySchema.parse({
+      provider: 'github',
+      ...model,
+      label: model.name ?? model.id,
+      kind:
+        model.id.includes('/text-embedding') ||
+        model.tags?.includes('embedding')
+          ? 'embedding'
+          : 'chat'
+    })
+  )
+}
+
+const toOpenRouterModels = (raw: unknown): GitHubModelEntry[] => {
+  const parsed = openRouterModelsCatalogSchema.safeParse(raw)
+  const entries = parsed.success ? parsed.data.data : []
+  return entries.flatMap((model) => {
+    const inputModalities = model.architecture?.input_modalities ?? []
+    const outputModalities = model.architecture?.output_modalities ?? []
+    if (!outputModalities.includes('text')) return []
+
+    const publisher = model.id.includes('/')
+      ? model.id.split('/')[0]
+      : undefined
+    const limits = model.context_length
+      ? { max_input_tokens: model.context_length }
+      : undefined
+    return [
+      githubModelEntrySchema.parse({
+        provider: 'openrouter',
+        id: model.id,
+        label: model.name ?? model.id,
+        kind: 'chat',
+        ...(model.name ? { name: model.name } : {}),
+        ...(publisher ? { publisher } : {}),
+        ...(model.description ? { summary: model.description } : {}),
+        ...(model.context_length !== undefined
+          ? { context_length: model.context_length }
+          : {}),
+        ...(model.pricing ? { pricing: model.pricing } : {}),
+        ...(model.architecture ? { architecture: model.architecture } : {}),
+        ...(model.supported_parameters
+          ? { capabilities: model.supported_parameters }
+          : {}),
+        ...(limits ? { limits } : {}),
+        supported_input_modalities: inputModalities,
+        supported_output_modalities: outputModalities
+      })
+    ]
+  })
+}
+
+const providerAdapters: Record<ModelProviderId, ModelProviderAdapter> = {
+  github: {
+    id: 'github',
+    origin: 'github',
+    displayName: 'GitHub Models',
+    defaultModel: 'openai/gpt-4.1-mini',
+    chatUrl: (env) =>
+      `${env.GITHUB_MODELS_URL ?? GITHUB_MODELS_DEFAULT_URL}/chat/completions`,
+    listUrl: (env) =>
+      env.GITHUB_MODELS_CATALOG_URL ?? GITHUB_MODELS_CATALOG_URL,
+    headers: (_env, authorization) => ({
+      ...GITHUB_MODELS_REFERENCE_HEADERS,
+      authorization
+    }),
+    parseCatalog: toGitHubModels,
+    errorMessages: UPSTREAM_ERROR_MESSAGES
+  },
+  openrouter: {
+    id: 'openrouter',
+    origin: 'openrouter',
+    displayName: 'OpenRouter',
+    defaultModel: 'openai/gpt-4.1-mini',
+    chatUrl: (env) =>
+      `${env.OPENROUTER_BASE_URL ?? OPENROUTER_DEFAULT_BASE_URL}/chat/completions`,
+    listUrl: (env) =>
+      env.OPENROUTER_MODELS_URL ?? OPENROUTER_DEFAULT_MODELS_URL,
+    headers: (env, authorization) => ({
+      authorization,
+      'HTTP-Referer':
+        env.OPENROUTER_HTTP_REFERER ?? DEFAULT_OPENROUTER_REFERER,
+      'X-OpenRouter-Title':
+        env.OPENROUTER_APP_TITLE ?? DEFAULT_OPENROUTER_TITLE,
+      ...(env.OPENROUTER_CATEGORIES
+        ? { 'X-OpenRouter-Categories': env.OPENROUTER_CATEGORIES }
+        : {})
+    }),
+    parseCatalog: toOpenRouterModels,
+    errorMessages: {
+      ...UPSTREAM_ERROR_MESSAGES,
+      401: 'Authentication failed. Your OpenRouter API key may be invalid.',
+      403: 'Access denied. Check your OpenRouter API key permissions.'
+    }
+  }
+}
+
+const getAdapter = (provider: ModelProviderId | undefined): ModelProviderAdapter =>
+  providerAdapters[provider ?? 'github']
 
 export const registerModelRoutes = (
   app: OpenAPIHono<{ Bindings: Bindings }>
@@ -81,24 +227,24 @@ export const registerModelRoutes = (
     }
 
     const useStream = body.stream === true
-    const model = body.model ?? 'openai/gpt-4.1-mini'
-    const modelsBaseUrl = c.env.GITHUB_MODELS_URL ?? GITHUB_MODELS_DEFAULT_URL
+    const adapter = getAdapter(body.provider)
+    const model = body.model ?? adapter.defaultModel
 
     // Respect a still-open upstream rate-limit window (durable across isolates):
     // short-circuit with a 429 instead of re-hammering GitHub Models
     // (TINYTINKERER-EDGE-4).
-    const backoffMs = await getActiveBackoffMs()
+    const backoffMs = await getActiveBackoffMs(Date.now(), adapter.id)
     if (backoffMs > 0) {
       c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
-      return c.json(rateLimitResponseFromMs(backoffMs), 429)
+      return c.json(rateLimitResponseFromMs(backoffMs, adapter.id), 429)
     }
 
     const response = await fetchWithTimeout(
       {
         area: 'models.chat',
-        origin: 'github',
+        origin: adapter.origin,
         method: 'POST',
-        url: `${modelsBaseUrl}/chat/completions`,
+        url: adapter.chatUrl(c.env),
         model,
         stream: useStream,
         // Chat completions are NOT cacheable, so after we durably honour the
@@ -115,8 +261,7 @@ export const registerModelRoutes = (
       {
         method: 'POST',
         headers: {
-          ...GITHUB_MODELS_REFERENCE_HEADERS,
-          authorization,
+          ...adapter.headers(c.env, authorization),
           'content-type': 'application/json'
         },
         body: JSON.stringify({
@@ -146,10 +291,14 @@ export const registerModelRoutes = (
 
       if (response.status === 429) {
         const retryAfter = response.headers.get('retry-after')
-        const rateLimitBody = toRateLimitResponse(rawText, retryAfter)
+        const rateLimitBody = toRateLimitResponse(
+          rawText,
+          retryAfter,
+          adapter.id
+        )
         // Remember the window (durably, colo-wide) so the next call backs off
         // instead of re-probing.
-        await recordBackoff(rateLimitBody.retryAfterMs)
+        await recordBackoff(rateLimitBody.retryAfterMs, Date.now(), adapter.id)
         c.header(
           'Retry-After',
           retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000))
@@ -167,7 +316,7 @@ export const registerModelRoutes = (
       }
 
       const safeError =
-        UPSTREAM_ERROR_MESSAGES[response.status] ??
+        adapter.errorMessages[response.status] ??
         `Upstream error ${response.status}`
       const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
         ? (response.status as 400 | 401 | 403 | 422 | 500 | 503 | 504)
@@ -179,7 +328,7 @@ export const registerModelRoutes = (
     }
 
     // Upstream accepted the request — clear any backoff window.
-    await clearBackoff()
+    await clearBackoff(adapter.id)
 
     if (useStream && response.body) {
       const headers = new Headers({
@@ -221,7 +370,9 @@ export const registerModelRoutes = (
       )
     }
 
-    const listUrl = c.env.GITHUB_MODELS_CATALOG_URL ?? GITHUB_MODELS_CATALOG_URL
+    const query = c.req.valid('query')
+    const adapter = getAdapter(query.provider)
+    const listUrl = adapter.listUrl(c.env)
 
     // The catalogue rarely changes and is identical for every caller. Serve a
     // fresh cached copy without touching upstream — this is what actually stops
@@ -229,14 +380,14 @@ export const registerModelRoutes = (
     // (TINYTINKERER-EDGE-4 / FRONTEND-5). The reactive backoff below is only a
     // secondary guard; the per-isolate version shipped in PR #100 reset on every
     // fresh Cloudflare isolate, which is why the 429s regressed.
-    const cached = await readCachedModels()
+    const cached = await readCachedModels(adapter.id)
     if (cached && isFresh(cached.ageMs)) {
       return c.json({ models: cached.models }, 200)
     }
 
     // Honor a still-open rate-limit window shared with the chat route (durable
     // across isolates). Prefer the last-known catalogue over cascading anything.
-    const backoffMs = await getActiveBackoffMs()
+    const backoffMs = await getActiveBackoffMs(Date.now(), adapter.id)
     if (backoffMs > 0) {
       if (cached) return c.json({ models: cached.models }, 200)
       // No cached catalogue yet but a window is open: emit the SAME single
@@ -255,7 +406,7 @@ export const registerModelRoutes = (
     const response = await fetchWithTimeout(
       {
         area: 'models.list',
-        origin: 'github',
+        origin: adapter.origin,
         method: 'GET',
         url: listUrl,
         // models.list IS cacheable, so the catalogue cache + durable backoff above
@@ -273,7 +424,7 @@ export const registerModelRoutes = (
             'Cold-cache-miss window-opener: the one unavoidable probe of the GitHub Models catalogue on a fresh isolate; cache + durable backoff handle the rest and we serve last-known / 503 instead of re-probing (TINYTINKERER-EDGE-5).'
         }
       },
-      { headers: { ...GITHUB_MODELS_REFERENCE_HEADERS, authorization } },
+      { headers: adapter.headers(c.env, authorization) },
       10_000
     )
 
@@ -293,11 +444,12 @@ export const registerModelRoutes = (
         const retryAfter = response.headers.get('retry-after')
         const rateLimitBody = toRateLimitResponse(
           await response.text(),
-          retryAfter
+          retryAfter,
+          adapter.id
         )
         // Remember the window durably (colo-wide) so the next request — in any
         // isolate — backs off instead of re-probing.
-        await recordBackoff(rateLimitBody.retryAfterMs)
+        await recordBackoff(rateLimitBody.retryAfterMs, Date.now(), adapter.id)
         // Prefer the last-known catalogue over cascading the upstream 429.
         if (cached) return c.json({ models: cached.models }, 200)
         // Cold-cache miss (fresh isolate, nothing cached yet): the catalogue is
@@ -319,7 +471,7 @@ export const registerModelRoutes = (
       }
 
       const safeError =
-        UPSTREAM_ERROR_MESSAGES[response.status] ??
+        adapter.errorMessages[response.status] ??
         `Upstream error ${response.status}`
       const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
         ? (response.status as 400 | 401 | 403 | 422 | 500 | 503 | 504)
@@ -331,24 +483,13 @@ export const registerModelRoutes = (
     }
 
     // Upstream succeeded — clear any backoff window.
-    await clearBackoff()
+    await clearBackoff(adapter.id)
 
-    const parsed = githubModelsCatalogSchema.safeParse(await response.json())
-    const models = (parsed.success ? parsed.data : []).map((model) =>
-      githubModelEntrySchema.parse({
-        ...model,
-        label: model.name ?? model.id,
-        kind:
-          model.id.includes('/text-embedding') ||
-          model.tags?.includes('embedding')
-            ? 'embedding'
-            : 'chat'
-      })
-    )
+    const models = adapter.parseCatalog(await response.json())
 
     // Populate the colo-wide cache so the next request (in any isolate) skips
     // the upstream fetch for the freshness window.
-    await writeCachedModels(models)
+    await writeCachedModels(models, adapter.id)
 
     return c.json({ models }, 200)
   })

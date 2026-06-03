@@ -78,6 +78,7 @@ describe('contracts', () => {
   it('parses model and rate-limit payloads', () => {
     expect(
       modelsChatRequestSchema.parse({
+        provider: 'openrouter',
         model: 'openai/gpt-4.1-mini',
         stream: true,
         messages: [
@@ -102,6 +103,8 @@ describe('contracts', () => {
       modelsListResponseSchema.parse({
         models: [
           {
+            provider: 'openrouter',
+            context_length: 128000,
             id: 'openai/gpt-4.1-mini',
             label: 'GPT-4.1 mini',
             kind: 'chat',

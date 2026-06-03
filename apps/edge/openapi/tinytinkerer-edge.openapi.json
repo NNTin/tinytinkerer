@@ -175,6 +175,9 @@
       "GitHubModelEntry": {
         "type": "object",
         "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/ModelProviderId"
+          },
           "id": {
             "type": "string"
           },
@@ -212,6 +215,20 @@
           "limits": {
             "$ref": "#/components/schemas/GitHubModelLimits"
           },
+          "context_length": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "pricing": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "architecture": {
+            "type": "object",
+            "additionalProperties": {}
+          },
           "rate_limit_tier": {
             "type": "string"
           },
@@ -237,6 +254,13 @@
         "required": [
           "id",
           "label"
+        ]
+      },
+      "ModelProviderId": {
+        "type": "string",
+        "enum": [
+          "github",
+          "openrouter"
         ]
       },
       "GitHubModelKind": {
@@ -340,6 +364,9 @@
       "ModelsChatRequest": {
         "type": "object",
         "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/ModelProviderId"
+          },
           "model": {
             "type": "string"
           },
@@ -696,8 +723,16 @@
     },
     "/api/models/list": {
       "get": {
-        "summary": "List GitHub Models through the edge proxy",
+        "summary": "List models through the edge proxy",
         "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/ModelProviderId"
+            },
+            "required": false,
+            "name": "provider",
+            "in": "query"
+          },
           {
             "schema": {
               "type": "string"
@@ -835,7 +870,7 @@
     },
     "/api/models/chat": {
       "post": {
-        "summary": "Proxy a GitHub Models chat completion",
+        "summary": "Proxy a provider chat completion",
         "parameters": [
           {
             "schema": {

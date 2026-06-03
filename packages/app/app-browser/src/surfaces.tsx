@@ -6,6 +6,7 @@ import {
   type ChatEvent,
   type McpDiscoveryResult,
   type McpServerConfig,
+  type ModelProviderId,
   type SystemStatus
 } from '@tinytinkerer/contracts'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
@@ -143,8 +144,12 @@ export type SettingsSurfaceController = {
   isRefreshingModels: boolean
   modelsRefreshError: string | null
   refreshGitHubModels: () => Promise<ModelEntry[]>
+  selectedModelProvider: ModelProviderId
+  setSelectedModelProvider: (provider: ModelProviderId) => Promise<void>
   selectedModel: string
   setSelectedModel: (model: string) => Promise<void>
+  openRouterApiKey: string | null
+  setOpenRouterApiKey: (apiKey: string | null) => Promise<void>
   agentType: AgentType
   setAgentType: (agentType: AgentType) => Promise<void>
   searchEnabled: boolean
@@ -180,6 +185,12 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const setToken = useAuthStore((state) => state.setToken)
   const { canStartGitHubOAuth, startGitHubOAuth } = useGitHubOAuth()
   const user = useGitHubUser()
+  const selectedModelProvider = useSettingsStore(
+    (state) => state.selectedModelProvider
+  )
+  const setSelectedModelProvider = useSettingsStore(
+    (state) => state.setSelectedModelProvider
+  )
   const selectedModel = useSettingsStore((state) => state.selectedModel)
   const {
     models,
@@ -188,6 +199,10 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     refreshGitHubModels
   } = useGitHubModels(selectedModel)
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
+  const openRouterApiKey = useSettingsStore((state) => state.openRouterApiKey)
+  const setOpenRouterApiKey = useSettingsStore(
+    (state) => state.setOpenRouterApiKey
+  )
   const agentType = useSettingsStore((state) => state.agentType)
   const setAgentType = useSettingsStore((state) => state.setAgentType)
   const searchEnabled = useSettingsStore((state) => state.searchEnabled)
@@ -303,8 +318,12 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     isRefreshingModels,
     modelsRefreshError,
     refreshGitHubModels,
+    selectedModelProvider,
+    setSelectedModelProvider,
     selectedModel,
     setSelectedModel,
+    openRouterApiKey,
+    setOpenRouterApiKey,
     agentType,
     setAgentType,
     searchEnabled,

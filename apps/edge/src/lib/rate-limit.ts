@@ -1,4 +1,9 @@
-import { parseRetryAfterMs, rateLimitPayloadSchema, type RateLimitPayload } from '@tinytinkerer/contracts'
+import {
+  parseRetryAfterMs,
+  rateLimitPayloadSchema,
+  type ModelProviderId,
+  type RateLimitPayload
+} from '@tinytinkerer/contracts'
 
 export { parseRetryAfterMs }
 
@@ -6,7 +11,8 @@ const DEFAULT_RATE_LIMIT_RETRY_AFTER_MS = 60_000
 
 export const toRateLimitResponse = (
   rawText: string,
-  retryAfter: string | null
+  retryAfter: string | null,
+  provider: ModelProviderId = 'github'
 ): RateLimitPayload => {
   if (rawText) {
     console.error('[rate-limit] upstream 429 body', rawText)
@@ -16,17 +22,26 @@ export const toRateLimitResponse = (
 
   return rateLimitPayloadSchema.parse({
     code: 'rate_limited',
-    error: 'GitHub Models rate limit reached',
+    error:
+      provider === 'openrouter'
+        ? 'OpenRouter rate limit reached'
+        : 'GitHub Models rate limit reached',
     retryAfterMs,
     retryAt
   })
 }
 
 /** Build a rate-limit payload directly from a known remaining delay (ms). */
-export const rateLimitResponseFromMs = (retryAfterMs: number): RateLimitPayload =>
+export const rateLimitResponseFromMs = (
+  retryAfterMs: number,
+  provider: ModelProviderId = 'github'
+): RateLimitPayload =>
   rateLimitPayloadSchema.parse({
     code: 'rate_limited',
-    error: 'GitHub Models rate limit reached',
+    error:
+      provider === 'openrouter'
+        ? 'OpenRouter rate limit reached'
+        : 'GitHub Models rate limit reached',
     retryAfterMs,
     retryAt: new Date(Date.now() + retryAfterMs).toISOString()
   })
@@ -46,20 +61,36 @@ export const rateLimitResponseFromMs = (retryAfterMs: number): RateLimitPayload 
 // over this with a durable model-catalogue cache, but the (non-cacheable) chat
 // route has no such cache, so its backoff MUST be durable to actually stop the
 // hammering. See .agent/skills/sentry-debugging (diagnose-regression.md).
-let backoffUntilMs = 0
+const backoffUntilMsByProvider = new Map<ModelProviderId, number>()
 
 /** Remaining in-memory backoff in ms (0 when cleared / never set). */
-export const getModelsBackoffMs = (nowMs = Date.now()): number =>
-  backoffUntilMs > nowMs ? backoffUntilMs - nowMs : 0
+export const getModelsBackoffMs = (
+  nowMs = Date.now(),
+  provider: ModelProviderId = 'github'
+): number => {
+  const backoffUntilMs = backoffUntilMsByProvider.get(provider) ?? 0
+  return backoffUntilMs > nowMs ? backoffUntilMs - nowMs : 0
+}
 
 /** Extend the in-memory backoff window to cover the upstream-advertised delay. */
-export const recordModelsBackoff = (retryAfterMs: number, nowMs = Date.now()): void => {
-  backoffUntilMs = Math.max(backoffUntilMs, nowMs + retryAfterMs)
+export const recordModelsBackoff = (
+  retryAfterMs: number,
+  nowMs = Date.now(),
+  provider: ModelProviderId = 'github'
+): void => {
+  backoffUntilMsByProvider.set(
+    provider,
+    Math.max(backoffUntilMsByProvider.get(provider) ?? 0, nowMs + retryAfterMs)
+  )
 }
 
 /** Clear the in-memory backoff after a confirmed successful upstream response. */
-export const clearModelsBackoff = (): void => {
-  backoffUntilMs = 0
+export const clearModelsBackoff = (provider?: ModelProviderId): void => {
+  if (provider) {
+    backoffUntilMsByProvider.delete(provider)
+    return
+  }
+  backoffUntilMsByProvider.clear()
 }
 
 // --- Durable, colo-wide backoff window (Workers Cache API) --------------------
@@ -69,17 +100,20 @@ export const clearModelsBackoff = (): void => {
 // every function below degrades to the in-memory mirror so tests stay
 // synchronous and hermetic.
 
-const BACKOFF_CACHE_KEY = 'https://models-backoff.tiny.nntin.xyz/window'
+const backoffCacheKeyForProvider = (provider: ModelProviderId): string =>
+  `https://models-backoff.tiny.nntin.xyz/${provider}/window`
 const BACKOFF_UNTIL_HEADER = 'x-models-backoff-until'
 
 const cacheStore = (): Cache | undefined =>
   (globalThis as { caches?: { default?: Cache } }).caches?.default
 
-const readDurableBackoffUntilMs = async (): Promise<number> => {
+const readDurableBackoffUntilMs = async (
+  provider: ModelProviderId
+): Promise<number> => {
   const store = cacheStore()
   if (!store) return 0
   try {
-    const hit = await store.match(BACKOFF_CACHE_KEY)
+    const hit = await store.match(backoffCacheKeyForProvider(provider))
     if (!hit) return 0
     return Number(hit.headers.get(BACKOFF_UNTIL_HEADER) ?? '0')
   } catch {
@@ -93,21 +127,28 @@ const readDurableBackoffUntilMs = async (): Promise<number> => {
  * returns the larger of the two. Use this — not {@link getModelsBackoffMs} — on
  * the request path so a window opened by another isolate is honoured here too.
  */
-export const getActiveBackoffMs = async (nowMs = Date.now()): Promise<number> => {
-  const durableUntil = await readDurableBackoffUntilMs()
+export const getActiveBackoffMs = async (
+  nowMs = Date.now(),
+  provider: ModelProviderId = 'github'
+): Promise<number> => {
+  const durableUntil = await readDurableBackoffUntilMs(provider)
   if (durableUntil > nowMs) {
-    recordModelsBackoff(durableUntil - nowMs, nowMs)
+    recordModelsBackoff(durableUntil - nowMs, nowMs, provider)
   }
-  return getModelsBackoffMs(nowMs)
+  return getModelsBackoffMs(nowMs, provider)
 }
 
 /** Record an upstream retry window in both the in-memory mirror and the colo cache. */
-export const recordBackoff = async (retryAfterMs: number, nowMs = Date.now()): Promise<void> => {
-  recordModelsBackoff(retryAfterMs, nowMs)
+export const recordBackoff = async (
+  retryAfterMs: number,
+  nowMs = Date.now(),
+  provider: ModelProviderId = 'github'
+): Promise<void> => {
+  recordModelsBackoff(retryAfterMs, nowMs, provider)
   const store = cacheStore()
   if (!store) return
   try {
-    const untilMs = backoffUntilMs
+    const untilMs = backoffUntilMsByProvider.get(provider) ?? 0
     const response = new Response('', {
       headers: {
         // Auto-evict the entry once the window elapses.
@@ -115,19 +156,21 @@ export const recordBackoff = async (retryAfterMs: number, nowMs = Date.now()): P
         [BACKOFF_UNTIL_HEADER]: String(untilMs)
       }
     })
-    await store.put(BACKOFF_CACHE_KEY, response)
+    await store.put(backoffCacheKeyForProvider(provider), response)
   } catch {
     // Best-effort: a write failure just means the next isolate may re-probe once.
   }
 }
 
 /** Clear the backoff in both layers after a confirmed successful upstream response. */
-export const clearBackoff = async (): Promise<void> => {
-  clearModelsBackoff()
+export const clearBackoff = async (
+  provider: ModelProviderId = 'github'
+): Promise<void> => {
+  clearModelsBackoff(provider)
   const store = cacheStore()
   if (!store) return
   try {
-    await store.delete(BACKOFF_CACHE_KEY)
+    await store.delete(backoffCacheKeyForProvider(provider))
   } catch {
     // Best-effort.
   }

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type {
   AgentType,
   McpServerConfig,
+  ModelProviderId,
   ServiceStatus
 } from '@tinytinkerer/contracts'
 import { BrandSettingsFooter } from '@tinytinkerer/brand-assets'
@@ -284,11 +285,23 @@ const AGENT_TYPE_OPTIONS: ReadonlyArray<{
   }
 ]
 
+const MODEL_PROVIDER_OPTIONS: ReadonlyArray<{
+  id: ModelProviderId
+  label: string
+}> = [
+  { id: 'github', label: 'GitHub Models' },
+  { id: 'openrouter', label: 'OpenRouter' }
+]
+
 const ModelsSection = ({ status }: { status: ServiceStatus }) => {
   const {
     token,
+    selectedModelProvider,
+    setSelectedModelProvider,
     selectedModel,
     setSelectedModel,
+    openRouterApiKey,
+    setOpenRouterApiKey,
     models,
     isRefreshingModels,
     modelsRefreshError,
@@ -300,20 +313,95 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
   const activeAgent = AGENT_TYPE_OPTIONS.find(
     (option) => option.id === agentType
   )
-  const canRefresh = Boolean(token) && !isRefreshingModels
+  const providerToken =
+    selectedModelProvider === 'openrouter' ? openRouterApiKey : token
+  const canRefresh = Boolean(providerToken) && !isRefreshingModels
+  const [openRouterKeyValue, setOpenRouterKeyValue] = useState('')
+
+  const handleSaveOpenRouterKey = async () => {
+    const trimmed = openRouterKeyValue.trim()
+    if (!trimmed) return
+    await setOpenRouterApiKey(trimmed)
+    setOpenRouterKeyValue('')
+  }
 
   return (
     <div className="space-y-2">
       <SectionStatus label="Models" status={status} />
+      <label htmlFor="provider-select" className="block text-sm text-stone-800">
+        Provider
+      </label>
+      <select
+        id="provider-select"
+        value={selectedModelProvider}
+        onChange={(event) =>
+          void setSelectedModelProvider(event.target.value as ModelProviderId)
+        }
+        className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+      >
+        {MODEL_PROVIDER_OPTIONS.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+
+      {selectedModelProvider === 'openrouter' ? (
+        <div className="space-y-2 rounded-lg border border-stone-200 bg-white p-3">
+          <p className="text-xs text-[var(--muted)]">
+            OpenRouter uses your own API key, stored locally in this browser.
+          </p>
+          {openRouterApiKey ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-stone-700">
+                OpenRouter API key saved.
+              </span>
+              <button
+                type="button"
+                onClick={() => void setOpenRouterApiKey(null)}
+                className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:bg-stone-50"
+              >
+                Clear key
+              </button>
+            </div>
+          ) : null}
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={openRouterKeyValue}
+              onChange={(event) => setOpenRouterKeyValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  void handleSaveOpenRouterKey()
+                }
+              }}
+              placeholder="sk-or-v1-…"
+              className="flex-1 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+            />
+            <button
+              type="button"
+              onClick={() => void handleSaveOpenRouterKey()}
+              className="inline-flex items-center rounded-md border border-stone-800 bg-stone-900 px-3 py-1.5 text-xs text-white transition-colors hover:bg-stone-700"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex items-center justify-between gap-3">
         <label htmlFor="model-select" className="block text-sm text-stone-800">
           Model
         </label>
         <button
           type="button"
-          aria-label="Refresh GitHub Models"
+          aria-label={`Refresh ${selectedModelProvider === 'openrouter' ? 'OpenRouter' : 'GitHub'} models`}
           title={
-            token ? 'Refresh GitHub Models' : 'Sign in to refresh GitHub Models'
+            providerToken
+              ? `Refresh ${selectedModelProvider === 'openrouter' ? 'OpenRouter' : 'GitHub'} models`
+              : selectedModelProvider === 'openrouter'
+                ? 'Add an OpenRouter API key to refresh models'
+                : 'Sign in to refresh GitHub Models'
           }
           disabled={!canRefresh}
           onClick={() => void refreshGitHubModels()}
@@ -337,7 +425,9 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
         ))}
       </select>
       <p className="text-xs text-[var(--muted)]">
-        Requires a GitHub token with Models access.
+        {selectedModelProvider === 'openrouter'
+          ? 'Requires your OpenRouter API key. The model list shows all text-output OpenRouter models.'
+          : 'Requires a GitHub token with Models access.'}
       </p>
       {modelsRefreshError ? (
         <p className="text-xs text-rose-600">{modelsRefreshError}</p>

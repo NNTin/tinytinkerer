@@ -19,6 +19,7 @@ import {
   mcpCallResponseSchema,
   mcpDiscoverRequestSchema,
   mcpDiscoveryResultSchema,
+  modelProviderIdSchema,
   modelsChatRequestSchema,
   modelsChatResponseSchema,
   modelsListResponseSchema,
@@ -152,9 +153,10 @@ export const searchRoute = createRoute({
 export const modelsListRoute = createRoute({
   method: 'get',
   path: EDGE_ROUTE_PATHS.modelsList,
-  summary: 'List GitHub Models through the edge proxy',
+  summary: 'List models through the edge proxy',
   request: {
-    headers: telemetryHeaders
+    headers: telemetryHeaders,
+    query: z.object({ provider: modelProviderIdSchema.optional() })
   },
   responses: {
     200: {
@@ -173,7 +175,7 @@ export const modelsListRoute = createRoute({
 export const modelsChatRoute = createRoute({
   method: 'post',
   path: EDGE_ROUTE_PATHS.modelsChat,
-  summary: 'Proxy a GitHub Models chat completion',
+  summary: 'Proxy a provider chat completion',
   request: {
     headers: telemetryHeaders,
     body: jsonBody(modelsChatRequestSchema)

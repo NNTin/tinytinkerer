@@ -199,6 +199,7 @@ describe('edge routes', () => {
     expect(await first.json()).toEqual({
       models: [
         {
+          provider: 'github',
           id: 'openai/gpt-4.1',
           label: 'GPT-4.1',
           name: 'GPT-4.1',
@@ -222,6 +223,7 @@ describe('edge routes', () => {
     expect(await second.json()).toEqual({
       models: [
         {
+          provider: 'github',
           id: 'openai/gpt-4.1',
           label: 'GPT-4.1',
           name: 'GPT-4.1',
@@ -230,6 +232,143 @@ describe('edge routes', () => {
       ]
     })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('lists OpenRouter text-output models through the provider-aware proxy', async () => {
+    const upstreamRequests: Array<{
+      input: RequestInfo | URL
+      init: RequestInit | undefined
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        upstreamRequests.push({ input, init })
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: 'openai/gpt-4o',
+                  name: 'GPT-4o',
+                  description: 'Text model',
+                  context_length: 128000,
+                  architecture: {
+                    input_modalities: ['text'],
+                    output_modalities: ['text']
+                  },
+                  supported_parameters: ['tools']
+                },
+                {
+                  id: 'example/image-only',
+                  name: 'Image Only',
+                  architecture: { output_modalities: ['image'] }
+                }
+              ]
+            }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' }
+            }
+          )
+        )
+      })
+    )
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/list?provider=openrouter', {
+        headers: { authorization: 'Bearer openrouter-key' }
+      }),
+      {}
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      models: [
+        {
+          provider: 'openrouter',
+          id: 'openai/gpt-4o',
+          label: 'GPT-4o',
+          kind: 'chat',
+          name: 'GPT-4o',
+          publisher: 'openai',
+          summary: 'Text model',
+          context_length: 128000,
+          architecture: {
+            input_modalities: ['text'],
+            output_modalities: ['text']
+          },
+          capabilities: ['tools'],
+          limits: { max_input_tokens: 128000 },
+          supported_input_modalities: ['text'],
+          supported_output_modalities: ['text']
+        }
+      ]
+    })
+    expect(upstreamRequests[0]?.input).toBe(
+      'https://openrouter.ai/api/v1/models'
+    )
+    const headers = new Headers(upstreamRequests[0]?.init?.headers)
+    expect(headers.get('authorization')).toBe('Bearer openrouter-key')
+    expect(headers.get('HTTP-Referer')).toBe('https://tiny.nntin.xyz')
+    expect(headers.get('X-OpenRouter-Title')).toBe('TinyTinkerer')
+  })
+
+  it('proxies OpenRouter chat completions with the selected provider', async () => {
+    const upstreamRequests: Array<{
+      input: RequestInfo | URL
+      init: RequestInit | undefined
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        upstreamRequests.push({ input, init })
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [{ message: { role: 'assistant', content: 'hi' } }]
+            }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' }
+            }
+          )
+        )
+      })
+    )
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer openrouter-key'
+        },
+        body: JSON.stringify({
+          provider: 'openrouter',
+          model: 'openai/gpt-4o',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      {}
+    )
+
+    expect(response.status).toBe(200)
+    expect(upstreamRequests[0]?.input).toBe(
+      'https://openrouter.ai/api/v1/chat/completions'
+    )
+    const headers = new Headers(upstreamRequests[0]?.init?.headers)
+    expect(headers.get('authorization')).toBe('Bearer openrouter-key')
+    const upstreamBody = upstreamRequests[0]?.init?.body
+    if (typeof upstreamBody !== 'string') {
+      throw new Error('Expected OpenRouter request body to be a JSON string')
+    }
+    const body = JSON.parse(upstreamBody) as {
+      provider?: string
+      model: string
+    }
+    expect(body.provider).toBeUndefined()
+    expect(body.model).toBe('openai/gpt-4o')
   })
 
   it('serves the last-known list when upstream is rate limited, breaking the 429 cascade (TINYTINKERER-FRONTEND-5)', async () => {

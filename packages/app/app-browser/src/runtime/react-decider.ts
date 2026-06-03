@@ -1,6 +1,11 @@
 import { parseJsonWithTelemetry, parseWithTelemetry } from '../telemetry/request-telemetry'
 import type { DecisionChunk, ExecutionContext } from '@tinytinkerer/app-core'
-import { EDGE_ROUTE_PATHS, reactDecisionSchema, type ReActDecision } from '@tinytinkerer/contracts'
+import {
+  EDGE_ROUTE_PATHS,
+  reactDecisionSchema,
+  type ModelProviderId,
+  type ReActDecision
+} from '@tinytinkerer/contracts'
 import type { EdgeFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createRateLimitError } from './rate-limit'
@@ -55,7 +60,8 @@ export const decideNextAction = async (
   tools: PlannerToolDescriptor[],
   model: string,
   edgeFetch: EdgeFetch,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  provider?: ModelProviderId
 ): Promise<ReActDecision> => {
   const systemPrompt = buildDecisionSystemPrompt(tools)
 
@@ -67,7 +73,7 @@ export const decideNextAction = async (
 
   const response = await edgeFetch(
     EDGE_ROUTE_PATHS.modelsChat,
-    { model, stream: false, messages },
+    { ...(provider ? { provider } : {}), model, stream: false, messages },
     {
       area: 'react.decide',
       model,
@@ -128,7 +134,8 @@ export async function* streamDecision(
   tools: PlannerToolDescriptor[],
   model: string,
   edgeFetch: EdgeFetch,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  provider?: ModelProviderId
 ): AsyncGenerator<DecisionChunk> {
   const systemPrompt = buildDecisionSystemPrompt(tools)
 
@@ -140,7 +147,7 @@ export async function* streamDecision(
 
   const response = await edgeFetch(
     EDGE_ROUTE_PATHS.modelsChat,
-    { model, stream: true, messages },
+    { ...(provider ? { provider } : {}), model, stream: true, messages },
     {
       area: 'react.decide',
       model,

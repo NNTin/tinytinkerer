@@ -1,4 +1,11 @@
-import { DEFAULT_MODEL, normalizeSelectedModel } from './models'
+import {
+  DEFAULT_MODEL,
+  DEFAULT_MODEL_PROVIDER,
+  DEFAULT_MODELS_BY_PROVIDER,
+  normalizeModelProvider,
+  normalizeSelectedModel,
+  normalizeSelectedModelForProvider
+} from './models'
 import type { PreferencesStore } from './ports'
 import {
   agentTypeSchema,
@@ -6,13 +13,17 @@ import {
   mcpServerConfigSchema,
   type AgentType,
   type McpDiscoveryResult,
-  type McpServerConfig
+  type McpServerConfig,
+  type ModelProviderId
 } from '@tinytinkerer/contracts'
 
 const DEFAULT_AGENT_TYPE: AgentType = 'react'
 
 export const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',
+  selectedModelProvider: 'settings_model_provider',
+  selectedModelsByProvider: 'settings_selected_models_by_provider',
+  openRouterApiKey: 'settings_openrouter_api_key',
   agentType: 'settings_agent_type',
   searchEnabled: 'settings_search_enabled',
   webSpeechEnabled: 'settings_web_speech_enabled',
@@ -32,7 +43,10 @@ const LEGACY_SETTINGS_KEYS = {
 
 export type SettingsState = {
   hydrated: boolean
+  selectedModelProvider: ModelProviderId
   selectedModel: string
+  selectedModelsByProvider: Record<ModelProviderId, string>
+  openRouterApiKey: string | null
   agentType: AgentType
   searchEnabled: boolean
   webSpeechEnabled: boolean
@@ -62,7 +76,10 @@ const parseAgentType = (value: string | undefined): AgentType => {
 
 export const defaultSettingsState = (): SettingsState => ({
   hydrated: false,
+  selectedModelProvider: DEFAULT_MODEL_PROVIDER,
   selectedModel: DEFAULT_MODEL,
+  selectedModelsByProvider: { ...DEFAULT_MODELS_BY_PROVIDER },
+  openRouterApiKey: null,
   agentType: DEFAULT_AGENT_TYPE,
   searchEnabled: true,
   webSpeechEnabled: false,
@@ -76,6 +93,9 @@ export const defaultSettingsState = (): SettingsState => ({
 export const loadSettingsState = async (preferences: PreferencesStore): Promise<SettingsState> => {
   const [
     selectedModel,
+    selectedModelProviderRaw,
+    selectedModelsByProviderRaw,
+    openRouterApiKey,
     agentType,
     searchEnabled,
     webSpeechEnabled,
@@ -88,6 +108,9 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     telemetryEnabled
   ] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
+    preferences.get(SETTINGS_KEYS.selectedModelProvider),
+    preferences.get(SETTINGS_KEYS.selectedModelsByProvider),
+    preferences.get(SETTINGS_KEYS.openRouterApiKey),
     preferences.get(SETTINGS_KEYS.agentType),
     preferences.get(SETTINGS_KEYS.searchEnabled),
     preferences.get(SETTINGS_KEYS.webSpeechEnabled),
@@ -105,9 +128,21 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     parseBoolOptional(showReasoningActivity) ??
     (parseBool(legacyThinkingTimeline, false) || parseBool(legacyToolActivity, false))
 
+  const selectedModelProvider = normalizeModelProvider(selectedModelProviderRaw)
+  const selectedModelsByProvider = parseSelectedModelsByProvider(
+    selectedModelsByProviderRaw,
+    selectedModel
+  )
+
   return {
     hydrated: true,
-    selectedModel: normalizeSelectedModel(selectedModel),
+    selectedModelProvider,
+    selectedModel: normalizeSelectedModelForProvider(
+      selectedModelProvider,
+      selectedModelsByProvider[selectedModelProvider]
+    ),
+    selectedModelsByProvider,
+    openRouterApiKey: openRouterApiKey || null,
     agentType: parseAgentType(agentType),
     searchEnabled: parseBool(searchEnabled, true),
     webSpeechEnabled: parseBool(webSpeechEnabled, false),
@@ -117,6 +152,34 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     mcpDiscovery: parseMcpDiscovery(mcpDiscoveryRaw),
     telemetryEnabled: parseBool(telemetryEnabled, false)
   }
+}
+
+const parseSelectedModelsByProvider = (
+  raw: string | undefined,
+  legacySelectedModel: string | undefined
+): Record<ModelProviderId, string> => {
+  const models: Record<ModelProviderId, string> = {
+    ...DEFAULT_MODELS_BY_PROVIDER,
+    github: normalizeSelectedModel(legacySelectedModel)
+  }
+
+  if (!raw) return models
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return models
+    }
+    const record = parsed as Partial<Record<ModelProviderId, unknown>>
+    for (const provider of ['github', 'openrouter'] as const) {
+      const value = record[provider]
+      if (typeof value === 'string' && value.trim()) {
+        models[provider] = value
+      }
+    }
+  } catch {
+    return models
+  }
+  return models
 }
 
 const parseMcpServers = (raw: string | undefined): McpServerConfig[] => {
@@ -165,11 +228,40 @@ export const persistMcpDiscovery = async (
 
 export const persistSelectedModel = async (
   preferences: PreferencesStore,
-  model: string
+  model: string,
+  provider: ModelProviderId = DEFAULT_MODEL_PROVIDER,
+  currentModelsByProvider?: Record<ModelProviderId, string>
 ): Promise<string> => {
-  const normalizedModel = normalizeSelectedModel(model)
+  const normalizedModel = normalizeSelectedModelForProvider(provider, model)
+  const modelsByProvider = {
+    ...DEFAULT_MODELS_BY_PROVIDER,
+    ...(currentModelsByProvider ?? {}),
+    [provider]: normalizedModel
+  }
   await preferences.set(SETTINGS_KEYS.selectedModel, normalizedModel)
+  await preferences.set(
+    SETTINGS_KEYS.selectedModelsByProvider,
+    JSON.stringify(modelsByProvider)
+  )
   return normalizedModel
+}
+
+export const persistSelectedModelProvider = async (
+  preferences: PreferencesStore,
+  provider: ModelProviderId
+): Promise<ModelProviderId> => {
+  const normalized = normalizeModelProvider(provider)
+  await preferences.set(SETTINGS_KEYS.selectedModelProvider, normalized)
+  return normalized
+}
+
+export const persistOpenRouterApiKey = async (
+  preferences: PreferencesStore,
+  apiKey: string | null
+): Promise<string | null> => {
+  const normalized = apiKey?.trim() || null
+  await preferences.set(SETTINGS_KEYS.openRouterApiKey, normalized ?? '')
+  return normalized
 }
 
 export const persistAgentType = async (

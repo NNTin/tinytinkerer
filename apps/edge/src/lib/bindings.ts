@@ -8,6 +8,11 @@ export type Bindings = {
   ALLOW_ALL_ORIGINS?: string
   GITHUB_MODELS_URL?: string
   GITHUB_MODELS_CATALOG_URL?: string
+  OPENROUTER_BASE_URL?: string
+  OPENROUTER_MODELS_URL?: string
+  OPENROUTER_HTTP_REFERER?: string
+  OPENROUTER_APP_TITLE?: string
+  OPENROUTER_CATEGORIES?: string
   /** Sentry DSN for edge error reporting (secret; telemetry no-ops when absent). */
   SENTRY_DSN?: string
   /** Release identifier (build hash) for Sentry events. */

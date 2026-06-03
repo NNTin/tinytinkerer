@@ -12,14 +12,20 @@ import {
   buildTurns,
   canSendPrompt,
   DEFAULT_MODEL,
+  DEFAULT_MODEL_PROVIDER,
+  DEFAULT_MODELS_BY_PROVIDER,
   defaultChatState,
   defaultSettingsState,
   inferPlan,
   loadGitHubModelsCatalog,
   loadSupportedEmbeddingModels,
   loadSettingsState,
+  normalizeModelProvider,
   normalizeSelectedModel,
+  normalizeSelectedModelForProvider,
   persistBooleanPreference,
+  persistOpenRouterApiKey,
+  persistSelectedModelProvider,
   SETTINGS_KEYS
 } from '../src/index.js'
 
@@ -64,6 +70,15 @@ describe('app-core helpers', () => {
     expect(normalizeSelectedModel('openai/gpt-4o')).toBe('openai/gpt-4o')
     expect(normalizeSelectedModel('meta/llama-4-scout-17b-16e-instruct')).toBe(
       'meta/llama-4-scout-17b-16e-instruct'
+    )
+  })
+
+  it('defaults model provider to GitHub and normalizes provider-specific models', () => {
+    expect(DEFAULT_MODEL_PROVIDER).toBe('github')
+    expect(normalizeModelProvider(undefined)).toBe('github')
+    expect(normalizeModelProvider('openrouter')).toBe('openrouter')
+    expect(normalizeSelectedModelForProvider('openrouter', '')).toBe(
+      DEFAULT_MODELS_BY_PROVIDER.openrouter
     )
   })
 
@@ -431,6 +446,48 @@ describe('app-core helpers', () => {
     })
 
     expect(state.webSpeechEnabled).toBe(true)
+  })
+
+  it('hydrates model provider, per-provider selected models, and OpenRouter API key', async () => {
+    const state = await loadSettingsState({
+      get: (key) =>
+        Promise.resolve(
+          key === SETTINGS_KEYS.selectedModelProvider
+            ? 'openrouter'
+            : key === SETTINGS_KEYS.selectedModelsByProvider
+              ? JSON.stringify({
+                  github: 'openai/gpt-5',
+                  openrouter: 'anthropic/claude-3.5-sonnet'
+                })
+              : key === SETTINGS_KEYS.openRouterApiKey
+                ? 'sk-or-v1-test'
+                : undefined
+        ),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.selectedModelProvider).toBe('openrouter')
+    expect(state.selectedModel).toBe('anthropic/claude-3.5-sonnet')
+    expect(state.openRouterApiKey).toBe('sk-or-v1-test')
+  })
+
+  it('persists model provider and OpenRouter API key', async () => {
+    const writes: Array<{ key: string; value: string }> = []
+    const preferences = {
+      get: () => Promise.resolve(undefined),
+      set: (key: string, value: string) => {
+        writes.push({ key, value })
+        return Promise.resolve()
+      }
+    }
+
+    await persistSelectedModelProvider(preferences, 'openrouter')
+    await persistOpenRouterApiKey(preferences, '  sk-or-v1-test  ')
+
+    expect(writes).toEqual([
+      { key: SETTINGS_KEYS.selectedModelProvider, value: 'openrouter' },
+      { key: SETTINGS_KEYS.openRouterApiKey, value: 'sk-or-v1-test' }
+    ])
   })
 
   it('hydrates reasoning & activity from the stored preference key', async () => {
