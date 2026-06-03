@@ -249,13 +249,13 @@ export const registerModelRoutes = (
         stream: useStream,
         // Chat completions are NOT cacheable, so after we durably honour the
         // upstream rate-limit window (above) the residual 429 — the first call
-        // that opens a new window — is a user-triggered, unavoidable GitHub
-        // Models rate limit. The frontend surfaces it as a cooldown; capturing
+        // that opens a new window — is a user-triggered, unavoidable provider
+        // rate limit. The frontend surfaces it as a cooldown; capturing
         // it adds no signal (TINYTINKERER-EDGE-4 / FRONTEND-9).
         accept: {
           status: [429],
           reason:
-            'GitHub Models chat rate limit; honoured via durable backoff + clean 429/Retry-After, surfaced to the user as a cooldown (TINYTINKERER-EDGE-4).'
+            `${adapter.displayName} chat rate limit; honoured via durable backoff + clean 429/Retry-After, surfaced to the user as a cooldown (TINYTINKERER-EDGE-4).`
         }
       },
       {
@@ -411,7 +411,7 @@ export const registerModelRoutes = (
         url: listUrl,
         // models.list IS cacheable, so the catalogue cache + durable backoff above
         // are the real fix — we only reach this upstream fetch on a cache miss with
-        // no active backoff window. A 429 here is therefore the cold-cache-miss
+        // no active backoff window for this provider. A 429 here is therefore the cold-cache-miss
         // window-opener: the one unavoidable probe on a fresh isolate / empty Cache
         // API right after a deploy, the cacheable analogue of the non-cacheable
         // window-opener. We record the backoff below and serve last-known / a 503
@@ -421,7 +421,7 @@ export const registerModelRoutes = (
         accept: {
           status: [429],
           reason:
-            'Cold-cache-miss window-opener: the one unavoidable probe of the GitHub Models catalogue on a fresh isolate; cache + durable backoff handle the rest and we serve last-known / 503 instead of re-probing (TINYTINKERER-EDGE-5).'
+            `Cold-cache-miss window-opener: the one unavoidable probe of the ${adapter.displayName} catalogue on a fresh isolate; cache + durable backoff handle the rest and we serve last-known / 503 instead of re-probing (TINYTINKERER-EDGE-5).`
         }
       },
       { headers: adapter.headers(c.env, authorization) },
@@ -456,7 +456,7 @@ export const registerModelRoutes = (
         // temporarily unavailable — the browser is not itself rate limited, so a
         // 429 would be misleading. Surface a graceful 503 + Retry-After; the client
         // falls back to its built-in model list and retries later, and the durable
-        // backoff already recorded above stops us re-probing GitHub Models in the
+        // backoff already recorded above stops us re-probing the provider in the
         // meantime (TINYTINKERER-EDGE-5).
         c.header(
           'Retry-After',

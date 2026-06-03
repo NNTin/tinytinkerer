@@ -24,7 +24,7 @@ export const createBrowserRuntimeFactory = (options: {
           ? current.openRouterApiKey
           : options.authStore.getState().token
       },
-      getModel: () => settings.selectedModel,
+      getModel: () => options.settingsStore.getState().selectedModel,
       agentType: settings.agentType,
       mcpServers: settings.mcpServers,
       mcpDiscovery: settings.mcpDiscovery

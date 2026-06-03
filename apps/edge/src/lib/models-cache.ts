@@ -1,9 +1,9 @@
 import type { GitHubModelEntry, ModelProviderId } from '@tinytinkerer/contracts'
 
 /**
- * Durable, colo-wide cache for the GitHub Models catalogue.
+ * Durable, colo-wide cache for provider model catalogues.
  *
- * The `/v1/models` list is identical for every authenticated caller and changes
+ * Each provider's `/v1/models` list is identical for every authenticated caller and changes
  * rarely, so it is highly cacheable. PR #100 only added a *reactive* backoff
  * (see {@link ./rate-limit}) that lives in per-isolate module memory — a fresh
  * Cloudflare isolate resets it to zero, so under any real concurrency we kept
@@ -12,7 +12,7 @@ import type { GitHubModelEntry, ModelProviderId } from '@tinytinkerer/contracts'
  *
  * This cache fixes the root cause: it persists across requests and isolates
  * within a Cloudflare colo (via the Workers Cache API), so after the first
- * successful fetch we serve the catalogue from cache and stop hammering
+ * successful fetch we serve that provider's catalogue from cache and stop hammering
  * upstream entirely for {@link FRESH_TTL_MS}. We keep the entry around for
  * {@link STALE_TTL_MS} so that, when upstream is rate limited, we can serve the
  * last-known list instead of cascading a raw 429 to the browser.
@@ -21,8 +21,9 @@ import type { GitHubModelEntry, ModelProviderId } from '@tinytinkerer/contracts'
  * function below degrades to a no-op so callers fall back to a live fetch.
  */
 
-// Stable synthetic key — the catalogue is global, not per-token, so one cached
-// entry serves every user in the colo. Exported as a test seam for seeding.
+// Stable synthetic key for the GitHub catalogue — each provider has its own
+// global, not-per-token cache entry serving every user in the colo. Exported as
+// a backwards-compatible test seam for seeding GitHub cache entries.
 export const CACHE_KEY = 'https://models-list-cache.tiny.nntin.xyz/github/v1/models'
 
 const cacheKeyForProvider = (provider: ModelProviderId): string =>

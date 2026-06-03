@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DEFAULT_MODELS_BY_PROVIDER,
   SUPPORTED_MODELS
@@ -185,8 +185,12 @@ export const useGitHubModels = (selectedModel?: string): GitHubModelsState => {
   const [models, setModels] = useState<ModelEntry[]>(fallbackModelsForProvider(provider))
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  const activeProviderRef = useRef(provider)
 
   useEffect(() => {
+    activeProviderRef.current = provider
+    setIsRefreshing(false)
+    setRefreshError(null)
     let cancelled = false
     if (provider !== 'github') {
       setModels(fallbackModelsForProvider(provider))
@@ -231,15 +235,21 @@ export const useGitHubModels = (selectedModel?: string): GitHubModelsState => {
         force: true,
         provider
       })
-      setModels(nextModels)
+      if (activeProviderRef.current === provider) {
+        setModels(nextModels)
+      }
       return includeSelectedModel(nextModels, selectedModel)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to refresh models.'
-      setRefreshError(message)
+      if (activeProviderRef.current === provider) {
+        setRefreshError(message)
+      }
       return includeSelectedModel(models, selectedModel)
     } finally {
-      setIsRefreshing(false)
+      if (activeProviderRef.current === provider) {
+        setIsRefreshing(false)
+      }
     }
   }, [edgeBaseUrl, githubToken, models, openRouterApiKey, provider, selectedModel])
 

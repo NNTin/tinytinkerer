@@ -168,6 +168,53 @@ describe('createBrowserRuntimeFactory', () => {
     vi.unstubAllGlobals()
   })
 
+  it('reads provider, model, and token from live settings after runtime creation', async () => {
+    let capturedBody: string | undefined
+    let capturedAuthorization: string | null = null
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        capturedBody = init?.body as string | undefined
+        capturedAuthorization = new Headers(init?.headers).get('authorization')
+        const sseBody = [
+          'data: {"choices":[{"delta":{"content":"ok"}}]}',
+          '',
+          'data: [DONE]',
+          ''
+        ].join('\n')
+        return Promise.resolve(
+          new Response(sseBody, {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' }
+          })
+        )
+      })
+    )
+
+    mockSettings.selectedModelProvider = 'github'
+    mockSettings.selectedModel = DEFAULT_MODEL
+    mockAuth.token = 'github-token'
+    const runtime = createRuntime()
+
+    mockSettings.selectedModelProvider = 'openrouter'
+    mockSettings.selectedModel = 'anthropic/claude-3.5-sonnet'
+    mockSettings.openRouterApiKey = 'sk-or-v1-live'
+
+    const events: unknown[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(capturedAuthorization).toBe('Bearer sk-or-v1-live')
+    expect(
+      JSON.parse(capturedBody ?? '{}') as { provider: string; model: string }
+    ).toMatchObject({
+      provider: 'openrouter',
+      model: 'anthropic/claude-3.5-sonnet'
+    })
+    vi.unstubAllGlobals()
+  })
+
   it('forwards selected OpenRouter provider, model, and API key', async () => {
     let capturedBody: string | undefined
     let capturedAuthorization: string | null = null
