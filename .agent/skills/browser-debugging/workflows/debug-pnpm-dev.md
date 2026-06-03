@@ -4,11 +4,14 @@ Get from a cold checkout to a consented, signed-in app you can drive with `agent
 
 ## 1. Start the dev servers
 
+**Fast path — use the preflight tool.** It frees stale ports, ensures deps +
+native builds, generates brand assets, and waits for both servers:
+
 ```
-pnpm dev
+bash .agent/skills/browser-debugging/tools/start-dev.sh
 ```
 
-Run it in the background and wait until both are up:
+Or do it by hand with `pnpm dev`, then wait until both are up:
 
 - **frontend (host):** `http://localhost:3111` — logs `@tinytinkerer/host listening at http://127.0.0.1:3111`
 - **edge (worker):** `http://localhost:8787` — `GET /health` returns 200
@@ -19,7 +22,19 @@ Readiness check:
 curl -sf -o /dev/null http://localhost:3111 && curl -sf http://localhost:8787/health
 ```
 
-If the edge fails to build with `Could not resolve "@hono/zod-openapi"`, deps are stale — run `pnpm install`, then restart. The frontend and PAT login still work without the edge; only `:8787`-proxied model/chat calls won't.
+### Cold-start gotchas (a fresh worktree hits all of these)
+
+- **`Cannot find package 'sharp'`** at `generate:brand-assets` → `node_modules`
+  is missing or pnpm skipped native build scripts. Run `pnpm install`, then
+  `pnpm rebuild sharp esbuild workerd` (pnpm ignores those build scripts by
+  default). The `start-dev.sh` tool does this for you.
+- **`Address already in use ... 0.0.0.0:8787`** → a stale/orphaned `workerd`
+  (often from *another* worktree's dev run, re-parented to PID 1) still holds the
+  edge port. Find and kill it: `lsof -ti:8787` then `kill -9 <pid>`. `pnpm dev`
+  brings up host+edge together, so an occupied :8787 takes the whole run down.
+- **`Could not resolve "@hono/zod-openapi"`** → deps are stale; `pnpm install`.
+  The frontend and PAT login still work without the edge; only `:8787`-proxied
+  model/chat calls won't.
 
 ## 2. Open + consent + sign in
 
@@ -28,6 +43,16 @@ node .agent/skills/browser-debugging/tools/browser-login.mjs
 ```
 
 This opens `http://localhost:3111/web/` (the web shell — **not** `/`, which is an iframe host), clicks **Accept** on the telemetry/privacy notice if it appears, and pastes the PAT into Settings → Auth. The token comes from the `GITHUB_MODELS_TOKEN` environment variable (exported in `~/.bashrc`), falling back to `.env.github` when it is unset.
+
+> **Token gotcha (non-interactive shells):** `~/.bashrc` is only sourced by
+> *interactive* shells, so a tool-invoked bash often has `GITHUB_MODELS_TOKEN`
+> unset, and `.env.github` is per-worktree (it may live only in a *different*
+> checkout). If login can't find the token, either `source ~/.bashrc` first, or
+> hand it through inline for one command, e.g.:
+> ```
+> export GITHUB_MODELS_TOKEN="$(grep -oP 'export GITHUB_MODELS_TOKEN=\K.*' ~/.bashrc | tr -d '\"')"
+> node .agent/skills/browser-debugging/tools/browser-login.mjs
+> ```
 
 Exit codes:
 
@@ -43,11 +68,30 @@ agent-browser snapshot -i              # interactive elements + @refs
 agent-browser click @e23               # act on a ref
 agent-browser console                  # console logs
 agent-browser errors                   # uncaught page errors
-agent-browser network requests --filter github   # filter network
+agent-browser network requests         # network history (method/url/status)
 agent-browser screenshot /tmp/state.png
 ```
 
 Find elements without snapshotting: `agent-browser find role button click --name "Settings"`.
+
+### agent-browser command quirks (this CLI version)
+
+- **`find` needs an ACTION.** `find role button --name X` errors with
+  *"Unknown subaction: --name"*. Put the action before the flags:
+  `find role button click --name "Refresh GitHub Models"`.
+- **`network` has no `--filter` / `clear`.** Valid subactions are `route`,
+  `unroute`, `requests`, `request`, `har`. Filter by piping:
+  `agent-browser network requests | grep models/list`. Count fired requests with
+  `... | grep -c <path>` before/after an action to prove a click actually hit the
+  network (the model-refresh no-op was caught exactly this way).
+- **Reload with `agent-browser open <url>`, not `eval 'location.reload()'`.**
+  An eval-triggered reload while CDP is attached double-mounts React in dev mode
+  and spews bogus `createRoot()` / `removeChild NotFoundError` console errors that
+  look like app bugs but aren't. A clean `open` re-load avoids them.
+- **`[role="dialog"]` is keyed by `aria-label`.** Wait on the exact label, e.g.
+  `agent-browser wait '[aria-label="Settings"][role="dialog"]'`; a generic
+  `[role=dialog]` wait can time out. Opening Settings can need a second click if
+  the login tool just closed it.
 
 ## 4. Finish
 

@@ -88,6 +88,43 @@ describe('fetchGitHubModels', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
+  it('re-probes the edge on a forced refresh instead of returning the cache (refresh button)', async () => {
+    const lastKnown = [{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]
+    const updated = [{ id: 'openai/gpt-5', label: 'GPT-5' }]
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ models: lastKnown }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ models: updated }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    // First call populates the (5-min) success cache.
+    const first = await fetchGitHubModels('https://api.example.com', 'token')
+    expect(first).toEqual(lastKnown)
+
+    // A non-forced call within the TTL is served from cache — no second fetch.
+    const cachedHit = await fetchGitHubModels('https://api.example.com', 'token')
+    expect(cachedHit).toEqual(lastKnown)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    // The refresh button forces a real re-probe and picks up the new catalogue,
+    // even though the cache is still fresh.
+    const forced = await fetchGitHubModels('https://api.example.com', 'token', {
+      force: true
+    })
+    expect(forced).toEqual(updated)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
   it.each([429, 503])(
     'serves the fallback WITHOUT capturing the edge cooldown status %i (TINYTINKERER-FRONTEND-C / FRONTEND-D)',
     async (status) => {

@@ -51,12 +51,22 @@ const hashToken = async (token: string): Promise<string> => {
 
 export const fetchGitHubModels = async (
   edgeBaseUrl: string,
-  token: string
+  token: string,
+  // An explicit user-triggered refresh (the Settings → Models refresh button)
+  // must re-probe the edge, so it sets `force` to skip the fresh-cache read
+  // below. Without this, the button is a silent no-op: it is the ONLY caller of
+  // this function, so the first click populates the cache and every subsequent
+  // click within the TTL (5 min on success, 30s on a fallback) returns the same
+  // cached list without a network request. The negative-cache WRITE in
+  // `fallback()` still runs on a forced fetch, so background remounts / future
+  // callers stay protected from a rate-limit storm (TINYTINKERER-FRONTEND-5);
+  // only this deliberate user action bypasses the read.
+  { force = false }: { force?: boolean } = {}
 ): Promise<ModelEntry[]> => {
   const tokenHash = await hashToken(token)
   const cacheKey = `${edgeBaseUrl}:${tokenHash}`
   const cached = modelsCache.get(cacheKey)
-  if (cached && Date.now() - cached.cachedAt <= cached.ttlMs)
+  if (!force && cached && Date.now() - cached.cachedAt <= cached.ttlMs)
     return cached.models
 
   // The model catalogue is cacheable, so when the edge is in a cooldown / cache-
@@ -184,7 +194,11 @@ export const useGitHubModels = (selectedModel?: string): GitHubModelsState => {
     setIsRefreshing(true)
     setRefreshError(null)
     try {
-      const nextModels = await fetchGitHubModels(edgeBaseUrl, token)
+      // Force a real re-probe: this is a deliberate user action, so honour it
+      // instead of returning the module-level cache from a previous click.
+      const nextModels = await fetchGitHubModels(edgeBaseUrl, token, {
+        force: true
+      })
       setModels(nextModels)
       return includeSelectedModel(nextModels, selectedModel)
     } catch (error) {
