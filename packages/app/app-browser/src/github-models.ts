@@ -112,7 +112,7 @@ export const fetchGitHubModels = async (
     url: `${edgeBaseUrl}${EDGE_ROUTE_PATHS.modelsList}?provider=${provider}`,
     // The edge deliberately emits a 429 (residual window-opener) or a 503 + Retry-
     // After (its designed cooldown / cache-miss signal) for this CACHEABLE
-    // catalogue while GitHub Models is rate limited. Both mean "serve your cached
+    // catalogue while the upstream provider is rate limited. Both mean "serve your cached
     // list and retry later", which `fallback()` does — they are not server-down
     // bugs and add no signal. A transient client-side `network_error` (Failed to
     // fetch — host briefly unreachable / connection blip) on this background edge

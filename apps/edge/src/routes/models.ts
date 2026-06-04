@@ -231,7 +231,7 @@ export const registerModelRoutes = (
     const model = body.model ?? adapter.defaultModel
 
     // Respect a still-open upstream rate-limit window (durable across isolates):
-    // short-circuit with a 429 instead of re-hammering GitHub Models
+    // short-circuit with a 429 instead of re-hammering the upstream provider
     // (TINYTINKERER-EDGE-4).
     const backoffMs = await getActiveBackoffMs(Date.now(), adapter.id)
     if (backoffMs > 0) {
@@ -376,7 +376,7 @@ export const registerModelRoutes = (
 
     // The catalogue rarely changes and is identical for every caller. Serve a
     // fresh cached copy without touching upstream — this is what actually stops
-    // us re-probing GitHub Models on every request and tripping its rate limit
+    // us re-probing the upstream provider on every request and tripping its rate limit
     // (TINYTINKERER-EDGE-4 / FRONTEND-5). The reactive backoff below is only a
     // secondary guard; the per-isolate version shipped in PR #100 reset on every
     // fresh Cloudflare isolate, which is why the 429s regressed.

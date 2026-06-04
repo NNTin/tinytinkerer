@@ -369,6 +369,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
             <input
               type="password"
               autoComplete="off"
+              aria-label="OpenRouter API key"
               value={openRouterKeyValue}
               onChange={(event) => setOpenRouterKeyValue(event.target.value)}
               onKeyDown={(event) => {
