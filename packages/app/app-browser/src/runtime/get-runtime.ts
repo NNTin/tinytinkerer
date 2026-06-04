@@ -1,4 +1,4 @@
-import type { ChatRuntimeFactory } from '@tinytinkerer/app-core'
+import type { ChatRuntimeFactory, PluginModule } from '@tinytinkerer/app-core'
 import type { BrowserShell } from '../shell'
 import type { AuthStore } from '../stores/auth-store'
 import type { SettingsStore } from '../stores/settings-store'
@@ -10,6 +10,9 @@ export const createBrowserRuntimeFactory = (options: {
   authStore: AuthStore
   settingsStore: SettingsStore
   statusStore: StatusStore
+  // Plugins the caller discovered dynamically (see ../plugins/registry). Optional
+  // so a host with no plugins — or a test — can omit them entirely.
+  pluginModules?: PluginModule[]
 }): ChatRuntimeFactory => ({
   create: () => {
     const settings = options.settingsStore.getState()
@@ -28,7 +31,8 @@ export const createBrowserRuntimeFactory = (options: {
       agentType: settings.agentType,
       mcpServers: settings.mcpServers,
       mcpDiscovery: settings.mcpDiscovery,
-      pluginActivation: settings.pluginActivation
+      pluginActivation: settings.pluginActivation,
+      ...(options.pluginModules ? { pluginModules: options.pluginModules } : {})
     })
   }
 })

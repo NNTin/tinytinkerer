@@ -373,12 +373,11 @@ function validateBoundary(sourcePkg, target, filePath) {
       '@tinytinkerer/content-table',
       '@tinytinkerer/content-wireframe',
       '@tinytinkerer/contracts',
-      '@tinytinkerer/plugin-feedback',
       '@tinytinkerer/sentry-telemetry'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, sentry-telemetry, content-react, the outward-facing content packages (content-markdown, content-mermaid, content-wireframe, content-image, content-code, content-callout, content-link-card, content-table), and plugin packages (plugin-feedback), plus app-browser-local modules (${targetPkg.name})`
+        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, sentry-telemetry, content-react, the outward-facing content packages (content-markdown, content-mermaid, content-wireframe, content-image, content-code, content-callout, content-link-card, content-table), plus app-browser-local modules. Concrete plugin packages must NOT be imported statically — they are discovered dynamically via import.meta.glob (${targetPkg.name})`
       )
     }
   }

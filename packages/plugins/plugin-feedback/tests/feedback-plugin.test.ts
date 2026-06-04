@@ -1,5 +1,6 @@
-import { PluginRegistry, type PluginHost } from '@tinytinkerer/agent-core'
+import { isPluginModule, PluginRegistry, type PluginHost } from '@tinytinkerer/agent-core'
 import { describe, expect, it, vi } from 'vitest'
+import * as feedbackModule from '../src/index'
 import {
   FeedbackPendingError,
   SEND_FEEDBACK_PLUGIN_ID,
@@ -63,5 +64,19 @@ describe('feedbackPlugin', () => {
   it('manifest id matches the plugin id', () => {
     expect(feedbackPluginManifest.id).toBe(SEND_FEEDBACK_PLUGIN_ID)
     expect(feedbackPlugin().id).toBe(SEND_FEEDBACK_PLUGIN_ID)
+  })
+
+  it('exposes planner tool descriptors on the manifest', () => {
+    expect(feedbackPluginManifest.toolDescriptors?.map((d) => d.id)).toEqual([
+      'send_feedback'
+    ])
+  })
+
+  it('satisfies the PluginModule contract for dynamic discovery', () => {
+    // The host loads this module dynamically and validates it with isPluginModule,
+    // so the package must export a contract-shaped `manifest` + `createPlugin`.
+    expect(isPluginModule(feedbackModule)).toBe(true)
+    expect(feedbackModule.manifest.id).toBe(SEND_FEEDBACK_PLUGIN_ID)
+    expect(feedbackModule.createPlugin().id).toBe(SEND_FEEDBACK_PLUGIN_ID)
   })
 })

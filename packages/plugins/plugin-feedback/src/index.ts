@@ -1,6 +1,8 @@
 import {
   PluginCaptureError,
   type AgentPlugin,
+  type PluginManifest,
+  type PluginModule,
   type Tool
 } from '@tinytinkerer/agent-core'
 import { feedbackInputSchema, type FeedbackInput } from '@tinytinkerer/contracts'
@@ -9,19 +11,27 @@ import { feedbackInputSchema, type FeedbackInput } from '@tinytinkerer/contracts
 // id surfaced in the Settings Modal.
 export const SEND_FEEDBACK_PLUGIN_ID = 'send-feedback'
 
-// UI metadata for the Settings Modal "Plugins" section. Co-located with the
-// plugin so a new plugin ships its own toggle copy.
-export type PluginManifest = {
-  id: string
-  label: string
-  description: string
-}
-
+// UI + planner metadata for the host. The shape is the generic PluginManifest
+// contract from agent-core; this plugin ships its own copy and tool descriptors.
 export const feedbackPluginManifest: PluginManifest = {
   id: SEND_FEEDBACK_PLUGIN_ID,
   label: 'Feedback (send_feedback tool)',
   description:
-    "Lets the assistant submit your feedback. There's no backend yet, so when telemetry is also enabled your feedback is sent through telemetry. Turning it on adds the send_feedback tool to every chat, which takes up a little of the assistant's context and spends some extra tokens — so the Chat Assistant may perform slightly worse. Leaving it on is a small way to support the project (think of it as buying me a coffee) and saves me development time. Off by default."
+    "Lets the assistant submit your feedback. There's no backend yet, so when telemetry is also enabled your feedback is sent through telemetry. Turning it on adds the send_feedback tool to every chat, which takes up a little of the assistant's context and spends some extra tokens — so the Chat Assistant may perform slightly worse. Leaving it on is a small way to support the project (think of it as buying me a coffee) and saves me development time. Off by default.",
+  toolDescriptors: [
+    {
+      id: 'send_feedback',
+      description:
+        'Send the user’s feedback about TinyTinkerer (bug, idea, or praise) to the maintainers.',
+      inputSchema: {
+        message: { type: 'string', description: 'The feedback text (1–2000 chars)' },
+        category: {
+          type: 'string',
+          description: 'Optional: bug | idea | praise | general'
+        }
+      }
+    }
+  ]
 }
 
 // Thrown by the send_feedback tool. Carries the feedback as a structured report
@@ -68,3 +78,9 @@ export const feedbackPlugin = (): AgentPlugin => ({
   id: SEND_FEEDBACK_PLUGIN_ID,
   createTools: (): Tool<unknown, unknown>[] => [createSendFeedbackTool()]
 })
+
+// PluginModule contract surface: the named exports a host discovers dynamically.
+// `manifest` and `createPlugin` are the only members the host relies on, so a
+// host never needs to know this package by name.
+export const manifest: PluginManifest = feedbackPluginManifest
+export const createPlugin: PluginModule['createPlugin'] = feedbackPlugin

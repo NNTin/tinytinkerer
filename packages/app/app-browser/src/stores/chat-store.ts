@@ -76,11 +76,14 @@ export const createChatStore = (options: {
       }
 
       const { createBrowserRuntimeFactory } = await import('../runtime/get-runtime')
+      const { loadPluginModules } = await import('../plugins/registry')
+      const pluginModules = await loadPluginModules()
       const runtimeFactory = createBrowserRuntimeFactory({
         shell: options.shell,
         authStore: options.authStore,
         settingsStore: options.settingsStore,
-        statusStore: options.statusStore
+        statusStore: options.statusStore,
+        pluginModules
       })
       const runController = new AbortController()
       activeRunController = runController

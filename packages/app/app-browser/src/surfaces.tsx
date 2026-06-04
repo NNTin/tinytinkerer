@@ -1,4 +1,4 @@
-import { buildTurns, type Turn } from '@tinytinkerer/app-core'
+import { buildTurns, type PluginManifest, type Turn } from '@tinytinkerer/app-core'
 import {
   EDGE_ROUTE_PATHS,
   mcpDiscoveryResultSchema,
@@ -10,11 +10,8 @@ import {
   type PluginActivationState,
   type SystemStatus
 } from '@tinytinkerer/contracts'
-import {
-  feedbackPluginManifest,
-  type PluginManifest
-} from '@tinytinkerer/plugin-feedback'
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
+import { loadPluginModules } from './plugins/registry'
 import {
   useAuthStore,
   useBrowserApp,
@@ -185,10 +182,6 @@ export type SettingsSurfaceController = {
   setPluginEnabled: (pluginId: string, enabled: boolean) => Promise<void>
 }
 
-// Plugins surfaced as toggles in the Settings Modal. Each plugin package ships
-// its own manifest copy; aggregate them here.
-const AVAILABLE_PLUGINS: PluginManifest[] = [feedbackPluginManifest]
-
 export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const status = useStatusStore((state) => state.status)
   const refreshStatus = useStatusStore((state) => state.refresh)
@@ -197,6 +190,20 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const setToken = useAuthStore((state) => state.setToken)
   const { canStartGitHubOAuth, startGitHubOAuth } = useGitHubOAuth()
   const user = useGitHubUser()
+  // Plugin manifests are discovered dynamically (see ./plugins/registry); the
+  // settings UI has no static dependency on any concrete plugin package.
+  const [availablePlugins, setAvailablePlugins] = useState<PluginManifest[]>([])
+  useEffect(() => {
+    let cancelled = false
+    void loadPluginModules().then((modules) => {
+      if (!cancelled) {
+        setAvailablePlugins(modules.map((mod) => mod.manifest))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const selectedModelProvider = useSettingsStore(
     (state) => state.selectedModelProvider
   )
@@ -358,7 +365,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     refreshMcpServer,
     telemetryEnabled,
     setTelemetryEnabled,
-    availablePlugins: AVAILABLE_PLUGINS,
+    availablePlugins,
     pluginActivation,
     setPluginEnabled
   }

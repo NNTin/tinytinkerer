@@ -93,7 +93,7 @@ flowchart LR
   appbrowser --> contracts
   appbrowser --> brand
   appbrowser --> sentrytelemetry
-  appbrowser --> pluginfeedback
+  appbrowser -. "discovers dynamically<br/>(import.meta.glob, no static dep)" .-> pluginfeedback
 
   pluginfeedback --> agent
   pluginfeedback --> contracts
@@ -243,7 +243,7 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 
 - Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
-- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `sentry-telemetry`, `content-react`, the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`), and plugin packages (`plugin-feedback`).
+- `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `sentry-telemetry`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`). It must **not** statically depend on any concrete plugin package — plugins are discovered dynamically via `import.meta.glob` over `packages/plugins/*` (see [plugin-infrastructure.md](./plugin-infrastructure.md)).
 - `brand-assets` may depend on `contracts` and nothing else.
 - `sentry-telemetry` is a leaf: it may depend only on `@sentry/core` (external, types only) and its own local modules.
 - `content-core` may depend only on `contracts` and local modules.
@@ -254,8 +254,8 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 - `ui` must stay primitive-only.
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
 - `agent-core` may depend only on `contracts` and agent-core-local modules.
-- `plugin-feedback` (and future `packages/plugins/*` packages) may depend only on `agent-core`, `contracts`, and plugin-local modules, and must stay product-agnostic (no browser APIs, React, or telemetry imports).
-- `app-browser` may additionally depend on plugin packages (`plugin-feedback`), wiring their capture sink to telemetry and surfacing their activation toggles.
+- `plugin-feedback` (and future `packages/plugins/*` packages) may depend only on `agent-core`, `contracts`, and plugin-local modules, and must stay product-agnostic (no browser APIs, React, or telemetry imports). Each exports the `PluginModule` contract (`manifest` + `createPlugin`) so the host can discover it dynamically.
+- `app-browser` discovers plugins dynamically (no static plugin dependency), wiring their capture sink to telemetry and surfacing their activation toggles from the discovered manifests.
 - `edge` may depend only on `contracts`, `sentry-telemetry`, and edge-local modules.
 - `host` must not declare workspace dependencies on other apps. It composes the built or dev-served apps by path, not by module import.
 

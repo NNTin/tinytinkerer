@@ -330,9 +330,6 @@ importers:
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../../shared/contracts
-      '@tinytinkerer/plugin-feedback':
-        specifier: workspace:*
-        version: link:../../plugins/plugin-feedback
       '@tinytinkerer/sentry-telemetry':
         specifier: workspace:*
         version: link:../../shared/sentry-telemetry

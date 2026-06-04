@@ -47,3 +47,57 @@ export interface AgentPlugin {
   activate?(host: PluginHost): void | Promise<void>
   deactivate?(): void | Promise<void>
 }
+
+// Planner-facing description of a tool a plugin contributes. Lets a host name the
+// tool to its planner/model without instantiating the plugin. Structurally
+// matches the host's own planner descriptor shape (id / description / schema).
+export type PluginToolDescriptor = {
+  id: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+
+// Host-agnostic metadata about a plugin: the copy a host surfaces in its settings
+// UI plus the planner descriptors for the tools the plugin contributes. Lives in
+// the contract layer (not inside any concrete plugin) so hosts depend only on the
+// abstraction. A plugin ships its own manifest.
+export type PluginManifest = {
+  id: string
+  label: string
+  description: string
+  toolDescriptors?: PluginToolDescriptor[]
+}
+
+// The shape every plugin package's entry module must export for dynamic
+// discovery. A host loads candidate plugin modules with `import()` and validates
+// them with `isPluginModule`, tolerating a missing or malformed module so an
+// optional plugin can simply be absent. The host never statically imports a
+// concrete plugin; it only depends on this contract.
+export type PluginModule = {
+  manifest: PluginManifest
+  createPlugin: () => AgentPlugin
+}
+
+// Runtime guard so a host can validate a dynamically-imported module before
+// trusting it as a plugin. Keeps plugin loading best-effort: anything that does
+// not match the contract (absent package, wrong export shape) is rejected here
+// instead of throwing into runtime construction.
+export const isPluginModule = (value: unknown): value is PluginModule => {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const candidate = value as { manifest?: unknown; createPlugin?: unknown }
+  if (typeof candidate.createPlugin !== 'function') {
+    return false
+  }
+  const manifest = candidate.manifest
+  if (typeof manifest !== 'object' || manifest === null) {
+    return false
+  }
+  const m = manifest as { id?: unknown; label?: unknown; description?: unknown }
+  return (
+    typeof m.id === 'string' &&
+    typeof m.label === 'string' &&
+    typeof m.description === 'string'
+  )
+}

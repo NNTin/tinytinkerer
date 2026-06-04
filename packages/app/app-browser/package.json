@@ -34,7 +34,6 @@
     "@tinytinkerer/content-table": "workspace:*",
     "@tinytinkerer/content-wireframe": "workspace:*",
     "@tinytinkerer/contracts": "workspace:*",
-    "@tinytinkerer/plugin-feedback": "workspace:*",
     "@tinytinkerer/sentry-telemetry": "workspace:*",
     "@sentry/react": "^10.17.0",
     "dexie": "^4.2.1",

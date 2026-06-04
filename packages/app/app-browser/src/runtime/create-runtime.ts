@@ -3,6 +3,7 @@ import {
   PluginRegistry,
   resolveActivePluginIds,
   type PluginHost,
+  type PluginModule,
   type Tool
 } from '@tinytinkerer/app-core'
 import type {
@@ -12,36 +13,12 @@ import type {
   ModelProviderId,
   PluginActivationState
 } from '@tinytinkerer/contracts'
-import { feedbackPlugin, SEND_FEEDBACK_PLUGIN_ID } from '@tinytinkerer/plugin-feedback'
 import { GitHubModelsProvider } from './github-models-provider'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch } from './edge-fetch'
 import { createWebSearchTool } from './web-search-tool'
 import { createMcpTool } from './mcp-tool'
 import { captureTelemetryException } from '../telemetry/telemetry'
-
-// Plugins registered for browser runtimes. Activation gating is applied per run
-// from the user's settings; an unlisted/disabled plugin contributes no tools.
-const browserPlugins = [feedbackPlugin()]
-
-// Static descriptors so the planner can name plugin tools when active. Kept in
-// step with the tools each plugin contributes.
-const pluginToolDescriptors: Record<string, PlannerToolDescriptor[]> = {
-  [SEND_FEEDBACK_PLUGIN_ID]: [
-    {
-      id: 'send_feedback',
-      description:
-        'Send the user’s feedback about TinyTinkerer (bug, idea, or praise) to the maintainers.',
-      inputSchema: {
-        message: { type: 'string', description: 'The feedback text (1–2000 chars)' },
-        category: {
-          type: 'string',
-          description: 'Optional: bug | idea | praise | general'
-        }
-      }
-    }
-  ]
-}
 
 export const createRuntime = (options: {
   baseUrl: string
@@ -53,6 +30,9 @@ export const createRuntime = (options: {
   mcpServers?: McpServerConfig[]
   mcpDiscovery?: Record<string, McpDiscoveryResult>
   pluginActivation?: PluginActivationState
+  // Plugin modules the host discovered dynamically; only those whose id is
+  // active in settings contribute tools and planner descriptors.
+  pluginModules?: PluginModule[]
 }) => {
   const edgeFetch = createEdgeFetch(options.baseUrl, options.getToken)
 
@@ -86,10 +66,15 @@ export const createRuntime = (options: {
   }
 
   // Optional plugins: register tools only for the plugins the user activated in
-  // Settings. The capture sink forwards structured plugin reports (e.g. feedback)
-  // to telemetry; it no-ops unless telemetry consent is granted.
+  // Settings. Concrete plugins are discovered dynamically by the host and handed
+  // in as `pluginModules`; this layer knows only the generic PluginModule shape.
+  // The capture sink forwards structured plugin reports (e.g. feedback) to
+  // telemetry; it no-ops unless telemetry consent is granted.
   const activePluginIds = resolveActivePluginIds(options.pluginActivation ?? {})
-  if (activePluginIds.size > 0) {
+  const activePluginModules = (options.pluginModules ?? []).filter((mod) =>
+    activePluginIds.has(mod.manifest.id)
+  )
+  if (activePluginModules.length > 0) {
     const pluginHost: PluginHost = {
       capture: (report) =>
         captureTelemetryException(report.message, {
@@ -100,12 +85,12 @@ export const createRuntime = (options: {
         })
     }
     const pluginRegistry = new PluginRegistry()
-    for (const plugin of browserPlugins) {
-      pluginRegistry.register(plugin)
+    for (const mod of activePluginModules) {
+      pluginRegistry.register(mod.createPlugin())
     }
     tools.push(...pluginRegistry.collectTools(activePluginIds, pluginHost))
-    for (const id of activePluginIds) {
-      for (const descriptor of pluginToolDescriptors[id] ?? []) {
+    for (const mod of activePluginModules) {
+      for (const descriptor of mod.manifest.toolDescriptors ?? []) {
         allToolDescriptors.push(descriptor)
       }
     }

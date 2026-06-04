@@ -1,12 +1,19 @@
 # Plugin Infrastructure
 
-TinyTinkerer supports optional **plugins** that contribute tools to the agent runtime. Plugins
-register at `@tinytinkerer/agent-core` (the product-agnostic runtime layer), are activated and
-deactivated per-user in the Settings Modal, and are gated by that activation state when a chat
-run builds its runtime.
+TinyTinkerer supports optional **plugins** that contribute tools to the agent runtime. A plugin
+implements the product-agnostic contract from `@tinytinkerer/agent-core`, lives as its own
+package under `packages/plugins/*`, and is **discovered dynamically** by the host — the host
+never imports a concrete plugin by name. Plugins are activated/deactivated per-user in the
+Settings Modal and gated by that activation state when a chat run builds its runtime.
 
 The first plugin is the **Feedback** plugin (`send_feedback`). It has no backend: submitted
 feedback is routed into Sentry telemetry instead of a real service.
+
+> **Decoupling:** `app-browser` has **no static dependency** on any concrete plugin — not in its
+> `package.json`, not as an import. It depends only on the `PluginModule` contract in
+> `agent-core`. A plugin package can be added or removed from `packages/plugins/*` and the project
+> still type-checks and builds; the plugin's tools simply appear or disappear. See
+> [Dynamic discovery](#dynamic-discovery-app-browser).
 
 See also:
 - [ARCHITECTURE.md](./ARCHITECTURE.md)
@@ -47,7 +54,30 @@ type PluginReport = {
 class PluginCaptureError extends Error {
   readonly report: PluginReport   // routed to host.capture by the registry
 }
+
+// Host-agnostic discovery contract. A plugin package's entry module exports a
+// `manifest` and a `createPlugin` factory; the host loads it dynamically and
+// validates it with `isPluginModule` before trusting it.
+type PluginToolDescriptor = { id: string; description: string; inputSchema: Record<string, unknown> }
+
+type PluginManifest = {
+  id: string
+  label: string                       // Settings toggle copy
+  description: string
+  toolDescriptors?: PluginToolDescriptor[]   // planner descriptors for the plugin's tools
+}
+
+type PluginModule = {
+  manifest: PluginManifest
+  createPlugin: () => AgentPlugin
+}
+
+function isPluginModule(value: unknown): value is PluginModule  // runtime guard
 ```
+
+`PluginManifest`/`PluginModule` live in the **contract layer**, not inside any concrete plugin,
+so the host depends only on the abstraction. `isPluginModule` keeps dynamic loading best-effort:
+an absent or malformed module is rejected here rather than throwing into host construction.
 
 `PluginHost.capture` is an **inversion-of-control sink**, exactly like the telemetry
 `setCaptureExceptionSink` in `@tinytinkerer/sentry-telemetry`: `agent-core` defines the *type*,
@@ -75,8 +105,10 @@ registry.collectTools(activeIds: ReadonlySet<string>, host: PluginHost): Tool[]
 ## The Feedback plugin (`@tinytinkerer/plugin-feedback`)
 
 A dedicated package at `packages/plugins/plugin-feedback`, depending only on `agent-core` and
-`contracts`. It exports `feedbackPlugin()`, `FeedbackPendingError`, `feedbackPluginManifest`
-(UI copy for the Settings toggle), and `SEND_FEEDBACK_PLUGIN_ID`.
+`contracts`. To be discoverable it exports the `PluginModule` surface — `manifest` (a
+`PluginManifest` with the Settings copy and the `send_feedback` planner descriptor) and
+`createPlugin` — plus `FeedbackPendingError`, `feedbackPluginManifest`, `feedbackPlugin()`, and
+`SEND_FEEDBACK_PLUGIN_ID` for direct/test use.
 
 Its single `send_feedback` tool takes `{ message, category? }` (validated by
 `feedbackInputSchema` from `contracts`) and **throws** a typed `FeedbackPendingError`:
@@ -104,8 +136,9 @@ Settings Modal toggle (app-browser/browser-settings-modal.tsx)
   → persistPluginActivation (app-core/settings.ts) → PreferencesStore (IndexedDB)
   ──────────────────────────────────────────────────────────────────────────────
   next chat run:
-  get-runtime reads settings.pluginActivation
-  → create-runtime: resolveActivePluginIds() + PluginRegistry.collectTools()
+  chat-store: loadPluginModules()  (dynamic discovery, see below)
+  → get-runtime reads settings.pluginActivation, forwards the loaded modules
+  → create-runtime: resolveActivePluginIds() filters modules → PluginRegistry.collectTools()
   → agent-core ToolRegistry  (only active plugins' tools)
 ```
 
@@ -113,8 +146,46 @@ Settings Modal toggle (app-browser/browser-settings-modal.tsx)
 - **Default:** `{}` — every plugin is **off by default** (opt-in, like MCP servers and
   telemetry).
 - **Persistence key:** `settings_plugins_activation`.
-- **Planner exposure:** active plugin tools are also added to the planner tool descriptors in
-  `create-runtime.ts`, so the model can name and invoke them (e.g. `send_feedback`).
+- **Planner exposure:** for each active plugin, `create-runtime.ts` adds its
+  `manifest.toolDescriptors` to the planner tool descriptors, so the model can name and invoke
+  them (e.g. `send_feedback`). Descriptors travel with the plugin — the host hard-codes none.
+
+## Dynamic discovery (`app-browser`)
+
+`app-browser/src/plugins/registry.ts` is the **only** module aware of where plugins live, and it
+references them by location, not by package name:
+
+```ts
+const pluginModuleLoaders = import.meta.glob<unknown>('../../../../plugins/*/src/index.ts')
+
+export const loadPluginModules = async (): Promise<PluginModule[]> => {
+  const modules: PluginModule[] = []
+  for (const load of Object.values(pluginModuleLoaders)) {
+    try {
+      const mod = await load()
+      if (isPluginModule(mod)) modules.push(mod)   // tolerate-missing / tolerate-malformed
+    } catch { /* optional plugin failed to load — skip */ }
+  }
+  return modules
+}
+```
+
+Why `import.meta.glob` rather than a static or literal dynamic `import('@tinytinkerer/plugin-…')`:
+
+- **Compiles if missing.** Glob patterns are not module specifiers, so `tsc` never resolves a
+  concrete plugin. Delete `packages/plugins/plugin-feedback` and `pnpm typecheck` + the Vite
+  builds still succeed — the glob simply matches nothing. (Verified by removing the package.)
+- **Bundles when present.** Vite resolves the glob at build time and emits each matched plugin as
+  its own lazy chunk, so the feature works in the production browser bundle. A literal
+  `import('<bare specifier>')` would force the package to exist at build; a *variable* bare
+  specifier would not bundle at all. The glob is the only mechanism that satisfies both.
+- **True drop-in.** Any package placed under `packages/plugins/*` that exports a valid
+  `PluginModule` is discovered automatically. Nothing about a specific plugin is hard-coded in
+  `app-browser`.
+
+`loadPluginModules()` is consumed in two places, both via the loaded `PluginModule[]`:
+`chat-store` awaits it and passes the modules to `createBrowserRuntimeFactory` (runtime tools +
+descriptors), and the Settings controller (`surfaces.tsx`) loads the manifests for the toggles.
 
 ## Routing into Sentry (`app-browser`)
 
@@ -139,17 +210,24 @@ telemetry are enabled; otherwise it silently no-ops while the tool still reports
 ## Dependency rules
 
 - `@tinytinkerer/agent-core` still imports only `contracts` (the plugin layer adds no new edge).
-- `@tinytinkerer/plugin-feedback` may import only `agent-core`, `contracts`, and local modules,
-  and must stay product-agnostic (no browser APIs, React, or telemetry imports). Enforced by
-  `scripts/check-boundaries.mjs`.
-- `@tinytinkerer/app-browser` may additionally depend on `plugin-feedback` (and future plugin
-  packages); it wires the capture sink to telemetry and surfaces the Settings toggle.
+- `@tinytinkerer/plugin-feedback` (and any `packages/plugins/*` package) may import only
+  `agent-core`, `contracts`, and local modules, and must stay product-agnostic (no browser APIs,
+  React, or telemetry imports). Enforced by `scripts/check-boundaries.mjs`.
+- `@tinytinkerer/app-browser` **must not** import a concrete plugin package, statically or via a
+  literal dynamic import — plugins are discovered through `import.meta.glob`. The boundary check
+  rejects any `@tinytinkerer/plugin-*` import from `app-browser`. It wires the capture sink to
+  telemetry and surfaces the Settings toggles from the discovered manifests.
 
 ## Adding a new plugin
 
+Because discovery is dynamic, adding a plugin touches **no host code**:
+
 1. Create `packages/plugins/plugin-<name>` depending on `agent-core` + `contracts`.
-2. Export an `AgentPlugin` (with `createTools`) and a `pluginManifest` (`{ id, label, description }`).
-3. Add the package to `app-browser` deps, register it in `create-runtime.ts`'s `browserPlugins`,
-   add its planner descriptors, and add its manifest to `AVAILABLE_PLUGINS` in `surfaces.tsx`.
-4. Add the boundary rules for the new package in `scripts/check-boundaries.mjs`.
-5. If the plugin sends user content anywhere, document it in `PRIVACY.md` / `PRIVACY-UPDATE.md`.
+2. From its `src/index.ts`, export the `PluginModule` surface: a `manifest`
+   (`{ id, label, description, toolDescriptors? }`) and a `createPlugin()` returning an
+   `AgentPlugin` (with `createTools`).
+3. Add the boundary rules for the new package in `scripts/check-boundaries.mjs`.
+4. If the plugin sends user content anywhere, document it in `PRIVACY.md` / `PRIVACY-UPDATE.md`.
+
+That's it — the host discovers it via `import.meta.glob`, shows its toggle, and wires its tools
+when active. No `app-browser` dependency, registration, or descriptor edits are needed.

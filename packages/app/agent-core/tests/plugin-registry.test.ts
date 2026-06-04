@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { PluginRegistry } from '../src/plugins/registry'
-import { PluginCaptureError, type AgentPlugin, type PluginHost } from '../src/plugins/types'
+import {
+  isPluginModule,
+  PluginCaptureError,
+  type AgentPlugin,
+  type PluginHost
+} from '../src/plugins/types'
 import type { Tool } from '../src/tools/registry'
 
 const echoTool = (id: string, execute: Tool<unknown, unknown>['execute']): Tool<unknown, unknown> => ({
@@ -143,5 +148,39 @@ describe('PluginRegistry', () => {
     const [tool] = registry.collectTools(new Set(['a']), host)
 
     await expect(tool!.execute({})).rejects.toThrow('not implemented')
+  })
+})
+
+describe('isPluginModule', () => {
+  const validModule = {
+    manifest: { id: 'a', label: 'A', description: 'desc' },
+    createPlugin: () => ({ id: 'a' })
+  }
+
+  it('accepts a well-formed plugin module', () => {
+    expect(isPluginModule(validModule)).toBe(true)
+  })
+
+  it('accepts a manifest carrying tool descriptors', () => {
+    expect(
+      isPluginModule({
+        ...validModule,
+        manifest: { ...validModule.manifest, toolDescriptors: [] }
+      })
+    ).toBe(true)
+  })
+
+  it.each([
+    ['null', null],
+    ['a non-object', 'nope'],
+    ['a missing createPlugin', { manifest: validModule.manifest }],
+    ['a non-function createPlugin', { manifest: validModule.manifest, createPlugin: 1 }],
+    ['a missing manifest', { createPlugin: () => ({ id: 'a' }) }],
+    [
+      'a manifest missing string fields',
+      { manifest: { id: 'a' }, createPlugin: () => ({ id: 'a' }) }
+    ]
+  ])('rejects %s', (_label, value) => {
+    expect(isPluginModule(value)).toBe(false)
   })
 })
