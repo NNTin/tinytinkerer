@@ -368,6 +368,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
           <div className="flex gap-2">
             <input
               type="password"
+              autoComplete="off"
               value={openRouterKeyValue}
               onChange={(event) => setOpenRouterKeyValue(event.target.value)}
               onKeyDown={(event) => {

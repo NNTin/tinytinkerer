@@ -142,7 +142,7 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
       selectedModelsByProvider[selectedModelProvider]
     ),
     selectedModelsByProvider,
-    openRouterApiKey: openRouterApiKey || null,
+    openRouterApiKey: openRouterApiKey?.trim() || null,
     agentType: parseAgentType(agentType),
     searchEnabled: parseBool(searchEnabled, true),
     webSpeechEnabled: parseBool(webSpeechEnabled, false),
@@ -173,7 +173,7 @@ const parseSelectedModelsByProvider = (
     for (const provider of ['github', 'openrouter'] as const) {
       const value = record[provider]
       if (typeof value === 'string' && value.trim()) {
-        models[provider] = value
+        models[provider] = value.trim()
       }
     }
   } catch {
