@@ -48,7 +48,19 @@ const cases = [
   ['(GPL-3.0-only AND MIT) AND (MIT OR ISC)', 'block'],
 
   // Nested groups settle to the strictest tolerated verdict
-  ['(MIT OR Apache-2.0) AND (LGPL-3.0 OR MPL-2.0)', 'warn']
+  ['(MIT OR Apache-2.0) AND (LGPL-3.0 OR MPL-2.0)', 'warn'],
+
+  // Malformed expressions must never pass silently as their first token — they
+  // are 'unknown' (and therefore fail the gate).
+  ['MIT GPL-3.0-only', 'unknown'], // two licenses, no operator (leftover token)
+  ['MIT License', 'unknown'], // stray trailing word
+  ['MIT OR', 'unknown'], // dangling OR
+  ['MIT AND', 'unknown'], // dangling AND
+  ['(MIT', 'unknown'], // unmatched '('
+  ['MIT)', 'unknown'], // stray ')'
+  ['MIT WITH', 'unknown'], // WITH without an exception
+  ['AND MIT', 'unknown'], // leading operator
+  ['()', 'unknown'] // empty group
 ]
 
 for (const [expression, expected] of cases) {

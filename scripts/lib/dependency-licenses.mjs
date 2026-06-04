@@ -2,16 +2,20 @@ import { execFileSync } from 'node:child_process'
 
 /**
  * Corrected licenses for packages whose published metadata is missing or wrong,
- * keyed by package name. Each entry must be verified against the package's own
- * source/repository — this is for fixing bad metadata, NOT for waiving the
- * policy: an unrecognized license still fails the gate unless it is corrected to
- * a real SPDX id here.
+ * keyed by the exact `name@version` so a correction is scoped to the version we
+ * actually verified. A future version that changes (or fixes) its metadata will
+ * NOT silently inherit the old override — it falls through to its real reported
+ * license and, if still unrecognized, re-fails the gate for a fresh review.
+ *
+ * Each entry must be verified against that version's own source/repository —
+ * this is for fixing bad metadata, NOT for waiving the policy: an unrecognized
+ * license still fails the gate unless it is corrected to a real SPDX id here.
  */
 export const LICENSE_OVERRIDES = {
   // khroma@2.1.0 ships no `license` field in its package.json, so pnpm reports it
   // as Unknown. Its repository declares MIT.
   // https://github.com/fabiospampinato/khroma#readme
-  khroma: 'MIT'
+  'khroma@2.1.0': 'MIT'
 }
 
 /**
@@ -45,9 +49,7 @@ export const collectDependencyLicenses = () => {
       const name = String(entry.name ?? '').trim()
       if (!name) continue
 
-      // A verified override wins over pnpm's reported license so packages with
-      // missing/incorrect metadata (e.g. khroma) are categorized correctly.
-      const license = LICENSE_OVERRIDES[name] ?? normalizeLicense(String(entry.license ?? licenseKey ?? 'Unknown'))
+      const reportedLicense = normalizeLicense(String(entry.license ?? licenseKey ?? 'Unknown'))
       const versions = Array.isArray(entry.versions) ? entry.versions : []
       const author = typeof entry.author === 'string' ? entry.author : ''
       const homepage = typeof entry.homepage === 'string' ? entry.homepage : ''
@@ -59,6 +61,10 @@ export const collectDependencyLicenses = () => {
       for (const version of versions.length > 0 ? versions : ['']) {
         const key = `${name}@${version}`
         if (byKey.has(key)) continue
+        // A verified, version-scoped override wins over pnpm's reported license so
+        // packages with missing/incorrect metadata (e.g. khroma@2.1.0) are
+        // categorized correctly, without affecting other versions of the package.
+        const license = LICENSE_OVERRIDES[key] ?? reportedLicense
         byKey.set(key, { name, version: String(version), license, author, homepage, description })
       }
     }

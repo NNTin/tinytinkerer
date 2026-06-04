@@ -13,11 +13,11 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "generate": "pnpm -w generate:brand-assets",
-    "build": "pnpm -w generate:brand-assets && tsc -p tsconfig.json",
+    "generate": "pnpm -w generate:brand-assets && pnpm -w generate:notices",
+    "build": "pnpm -w generate:brand-assets && pnpm -w generate:notices && tsc -p tsconfig.json",
     "lint": "eslint src tests",
-    "test": "pnpm -w generate:brand-assets && vitest run",
-    "typecheck": "pnpm -w generate:brand-assets && tsc -p tsconfig.json"
+    "test": "pnpm -w generate:brand-assets && pnpm -w generate:notices && vitest run",
+    "typecheck": "pnpm -w generate:brand-assets && pnpm -w generate:notices && tsc -p tsconfig.json"
   },
   "dependencies": {
     "@tinytinkerer/contracts": "workspace:*",

@@ -106,6 +106,14 @@ const tokenizeExpression = (expression) => {
 }
 
 /**
+ * Thrown internally when the token stream is not a well-formed SPDX expression
+ * (dangling operator, missing operand, unmatched parenthesis, leftover tokens,
+ * `WITH` without an exception). Surfaced to callers as the UNKNOWN verdict so a
+ * malformed/garbled license string can never be mistaken for a permissive one.
+ */
+class MalformedExpression extends Error {}
+
+/**
  * Evaluate a full SPDX license expression against the policy.
  *
  * Unlike a flat OR/AND split, this is a proper recursive-descent parser that
@@ -118,6 +126,11 @@ const tokenizeExpression = (expression) => {
  * AND combines to the most restrictive (every operand must be satisfied). An
  * "<license> WITH <exception>" only relaxes the base license, so the exception
  * identifier is consumed and ignored.
+ *
+ * The grammar is enforced strictly: anything that is not a well-formed
+ * expression (e.g. "MIT GPL-3.0-only", "MIT OR", "(MIT", "MIT License") is
+ * UNKNOWN, not silently treated as its first recognizable token. This preserves
+ * the "unknown/malformed never passes silently" guarantee of the gate.
  *
  * @param {string} expression
  * @returns {'allow' | 'warn' | 'block' | 'unknown'}
@@ -137,27 +150,28 @@ export const evaluateLicense = (expression) => {
   // primary := '(' or-expr ')' | license-id [ 'WITH' exception-id ]
   const parsePrimary = () => {
     const token = peek()
-    if (token === undefined) return VERDICT.UNKNOWN
+    // A missing operand (end of input where a license was expected), a stray
+    // operator, or a stray ')' all make the expression malformed.
+    if (token === undefined || token === ')' || isOperator(token)) {
+      throw new MalformedExpression()
+    }
 
     if (token === '(') {
       advance()
       const verdict = parseOr()
-      if (peek() === ')') advance()
+      if (peek() !== ')') throw new MalformedExpression() // unmatched '('
+      advance()
       return verdict
     }
-    if (token === ')' || isOperator(token)) return VERDICT.UNKNOWN
 
     advance() // the license id (possibly with a trailing '+')
     if (peek()?.toUpperCase() === 'WITH') {
       advance() // consume 'WITH'
       const exception = peek()
-      if (
-        exception !== undefined &&
-        exception !== ')' &&
-        !isOperator(exception)
-      ) {
-        advance() // consume the exception id and discard it
+      if (exception === undefined || exception === ')' || isOperator(exception)) {
+        throw new MalformedExpression() // 'WITH' without an exception id
       }
+      advance() // consume the exception id and discard it
     }
     return classifyToken(token.replace(/\+$/, ''))
   }
@@ -182,5 +196,14 @@ export const evaluateLicense = (expression) => {
     return verdict
   }
 
-  return parseOr()
+  try {
+    const verdict = parseOr()
+    // Leftover tokens (e.g. "MIT GPL-3.0-only", "MIT License") mean the input is
+    // not a single well-formed expression.
+    if (pos !== tokens.length) throw new MalformedExpression()
+    return verdict
+  } catch (error) {
+    if (error instanceof MalformedExpression) return VERDICT.UNKNOWN
+    throw error
+  }
 }

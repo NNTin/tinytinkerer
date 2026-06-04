@@ -19,6 +19,7 @@ on:
       - 'scripts/generate-notices.mjs'
       - 'scripts/enforce-licenses.mjs'
       - 'scripts/license-policy.mjs'
+      - 'scripts/license-policy.test.mjs'
       - 'scripts/lib/dependency-licenses.mjs'
       - '.github/workflows/compliance.yml'
   pull_request:
