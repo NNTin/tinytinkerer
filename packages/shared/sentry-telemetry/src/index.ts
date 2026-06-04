@@ -1,7 +1,10 @@
 export {
   captureTelemetryException,
+  captureTelemetryMessage,
   setCaptureExceptionSink,
+  setCaptureMessageSink,
   type CaptureExceptionSink,
+  type CaptureMessageSink,
   type TelemetryCaptureOptions,
   type TelemetryLevel
 } from './capture'

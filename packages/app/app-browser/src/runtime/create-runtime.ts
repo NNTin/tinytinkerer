@@ -18,7 +18,7 @@ import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch } from './edge-fetch'
 import { createWebSearchTool } from './web-search-tool'
 import { createMcpTool } from './mcp-tool'
-import { captureTelemetryException } from '../telemetry/telemetry'
+import { captureTelemetryException, captureTelemetryMessage } from '../telemetry/telemetry'
 
 export const createRuntime = (options: {
   baseUrl: string
@@ -69,20 +69,28 @@ export const createRuntime = (options: {
   // Settings. Concrete plugins are discovered dynamically by the host and handed
   // in as `pluginModules`; this layer knows only the generic PluginModule shape.
   // The capture sink forwards structured plugin reports (e.g. feedback) to
-  // telemetry; it no-ops unless telemetry consent is granted.
+  // telemetry; it no-ops unless telemetry consent is granted. An `info` report is
+  // routed to `captureTelemetryMessage` so it surfaces as an informational
+  // message (not an error issue); `warning`/`error` go through the exception path.
   const activePluginIds = resolveActivePluginIds(options.pluginActivation ?? {})
   const activePluginModules = (options.pluginModules ?? []).filter((mod) =>
     activePluginIds.has(mod.manifest.id)
   )
   if (activePluginModules.length > 0) {
     const pluginHost: PluginHost = {
-      capture: (report) =>
-        captureTelemetryException(report.message, {
+      capture: (report) => {
+        const captureOptions = {
           level: report.level ?? 'warning',
           tags: { plugin: report.pluginId, plugin_kind: report.kind },
           ...(report.contexts ? { contexts: report.contexts } : {}),
           fingerprint: ['plugin', report.pluginId, report.kind]
-        })
+        }
+        if (report.level === 'info') {
+          captureTelemetryMessage(report.message, captureOptions)
+        } else {
+          captureTelemetryException(report.message, captureOptions)
+        }
+      }
     }
     const pluginRegistry = new PluginRegistry()
     for (const mod of activePluginModules) {

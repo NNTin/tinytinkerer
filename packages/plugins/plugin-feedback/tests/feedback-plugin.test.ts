@@ -29,7 +29,7 @@ describe('feedbackPlugin', () => {
     expect((error as FeedbackPendingError).report).toMatchObject({
       pluginId: SEND_FEEDBACK_PLUGIN_ID,
       kind: 'feedback',
-      level: 'warning',
+      level: 'info',
       message: 'Feedback (idea): Add dark mode',
       contexts: { feedback: { category: 'idea', message: 'Add dark mode' } }
     })

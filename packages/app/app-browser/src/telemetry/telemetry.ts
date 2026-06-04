@@ -3,14 +3,16 @@ import {
   scrubBreadcrumb,
   scrubEvent,
   setCaptureExceptionSink,
+  setCaptureMessageSink,
   type TelemetryCaptureOptions
 } from '@tinytinkerer/sentry-telemetry'
+import type { Scope } from '@sentry/react'
 import { getOrCreateInstallId } from './install-id'
 
 // Re-exported so existing `./telemetry` importers keep a stable path; the
 // implementation (and the request-telemetry engine) now lives in the shared
 // @tinytinkerer/sentry-telemetry package. See docs/sentry-telemetry.md.
-export { captureTelemetryException } from '@tinytinkerer/sentry-telemetry'
+export { captureTelemetryException, captureTelemetryMessage } from '@tinytinkerer/sentry-telemetry'
 
 // Wire-protocol header names. Mirrors TELEMETRY_HEADERS in @tinytinkerer/contracts
 // (consumed by the edge). Inlined here to keep the eager client bundle free of the
@@ -85,6 +87,7 @@ const ensureSentry = async (): Promise<void> => {
       })
       sentry = mod
       setCaptureExceptionSink(dispatchToSentry)
+      setCaptureMessageSink(dispatchMessageToSentry)
       applySentryUser()
     })
     .catch((error) => {
@@ -125,6 +128,7 @@ export const setTelemetryConsent = async (enabled: boolean): Promise<void> => {
   }
   if (sentry) {
     setCaptureExceptionSink(null)
+    setCaptureMessageSink(null)
     sentry.setUser(null)
     await sentry.close()
     sentry = null
@@ -140,6 +144,29 @@ export const setTelemetryGitHubId = (value: string | null): void => {
   }
 }
 
+// Applies the SDK-agnostic capture options (level, tags, contexts, fingerprint)
+// onto a Sentry scope. Shared by the exception and message dispatchers.
+const applyCaptureOptions = (scope: Scope, options: TelemetryCaptureOptions): void => {
+  if (options.level) {
+    scope.setLevel(options.level)
+  }
+  if (options.tags) {
+    for (const [key, value] of Object.entries(options.tags)) {
+      if (value !== undefined) {
+        scope.setTag(key, String(value))
+      }
+    }
+  }
+  if (options.contexts) {
+    for (const [key, value] of Object.entries(options.contexts)) {
+      scope.setContext(key, value)
+    }
+  }
+  if (options.fingerprint) {
+    scope.setFingerprint(options.fingerprint)
+  }
+}
+
 // Browser capture sink registered with @tinytinkerer/sentry-telemetry once the
 // @sentry/react SDK is initialized. Maps the SDK-agnostic capture options onto a
 // Sentry scope. The package's `captureTelemetryException` dispatches here.
@@ -148,25 +175,21 @@ const dispatchToSentry = (error: Error, options: TelemetryCaptureOptions): void 
     return
   }
   sentry.withScope((scope) => {
-    if (options.level) {
-      scope.setLevel(options.level)
-    }
-    if (options.tags) {
-      for (const [key, value] of Object.entries(options.tags)) {
-        if (value !== undefined) {
-          scope.setTag(key, String(value))
-        }
-      }
-    }
-    if (options.contexts) {
-      for (const [key, value] of Object.entries(options.contexts)) {
-        scope.setContext(key, value)
-      }
-    }
-    if (options.fingerprint) {
-      scope.setFingerprint(options.fingerprint)
-    }
+    applyCaptureOptions(scope, options)
     sentry?.captureException(error)
+  })
+}
+
+// Message sink counterpart: reports a plain message via `captureMessage` so the
+// event is filed as a (typically `info`-level) message rather than an error
+// issue with a synthetic stack trace. Used for non-error telemetry like feedback.
+const dispatchMessageToSentry = (message: string, options: TelemetryCaptureOptions): void => {
+  if (!sentry) {
+    return
+  }
+  sentry.withScope((scope) => {
+    applyCaptureOptions(scope, options)
+    sentry?.captureMessage(message)
   })
 }
 

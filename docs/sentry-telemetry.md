@@ -30,19 +30,24 @@ lazy-load discipline is preserved.
   `parseJsonWithTelemetry` / `tryParseJsonWithTelemetry`, `parseWithTelemetry`, and
   `captureRequestIssue`, plus the structured tags/contexts and the **accept** mechanism
   (`RequestTelemetryMetadata.accept`) documented in `.agent/skills/sentry-debugging`.
-- **`capture.ts` — the capture sink (IoC).** `captureRequestIssue` dispatches through
+- **`capture.ts` — the capture sinks (IoC).** `captureRequestIssue` dispatches through
   `captureTelemetryException`, which forwards to a sink registered via
   `setCaptureExceptionSink`. This inverts the old dependency (request-telemetry no longer
-  imports a browser-only module), making the engine SDK-agnostic.
+  imports a browser-only module), making the engine SDK-agnostic. There is a parallel
+  **message** path — `captureTelemetryMessage` + `setCaptureMessageSink` — for non-error
+  telemetry that should surface as an informational message (via Sentry's `captureMessage`)
+  rather than an error issue. The plugin Feedback flow uses it for `info`-level reports. The
+  shared `TelemetryLevel` is `'info' | 'warning' | 'error'`.
 
 ## How each runtime wires it
 
 Each app registers one sink that maps the SDK-agnostic `{ level, tags, contexts }` onto its
 own Sentry scope:
 
-- **Browser** — `packages/app/app-browser/src/telemetry/telemetry.ts` registers a
-  `@sentry/react` sink once the SDK initializes (and clears it on consent-off teardown), and
-  passes `scrubEvent` / `scrubBreadcrumb` to `Sentry.init`. app-browser **re-exports** the
+- **Browser** — `packages/app/app-browser/src/telemetry/telemetry.ts` registers its
+  `@sentry/react` sinks once the SDK initializes — an exception sink (`captureException`) and a
+  message sink (`captureMessage`), both clearing on consent-off teardown — and passes
+  `scrubEvent` / `scrubBreadcrumb` to `Sentry.init`. app-browser **re-exports** the
   request-telemetry surface (via `src/telemetry/request-telemetry.ts`) so its call sites import
   from `@tinytinkerer/app-browser` as before — app-browser remains the single browser boundary.
   **Environment gate:** `ensureSentry` never initializes Sentry for the `development`

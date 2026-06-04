@@ -4,7 +4,7 @@
 // edge an `@sentry/cloudflare` sink. This keeps this package free of any Sentry
 // SDK runtime dependency. See docs/sentry-telemetry.md.
 
-export type TelemetryLevel = 'warning' | 'error'
+export type TelemetryLevel = 'info' | 'warning' | 'error'
 
 export type TelemetryCaptureOptions = {
   level?: TelemetryLevel
@@ -21,7 +21,14 @@ export type TelemetryCaptureOptions = {
 
 export type CaptureExceptionSink = (error: Error, options: TelemetryCaptureOptions) => void
 
+// A message sink reports a plain informational/diagnostic message rather than an
+// exception. The browser wires this to Sentry's `captureMessage`, which files the
+// event as a *message* (e.g. an `info`-level entry) instead of an *error issue*
+// with a synthetic stack trace. Used for non-error telemetry like user feedback.
+export type CaptureMessageSink = (message: string, options: TelemetryCaptureOptions) => void
+
 let sink: CaptureExceptionSink | null = null
+let messageSink: CaptureMessageSink | null = null
 
 /**
  * Registers (or clears, with `null`) the runtime's Sentry sink. Called once by
@@ -29,6 +36,15 @@ let sink: CaptureExceptionSink | null = null
  */
 export const setCaptureExceptionSink = (fn: CaptureExceptionSink | null): void => {
   sink = fn
+}
+
+/**
+ * Registers (or clears, with `null`) the runtime's Sentry *message* sink. Like
+ * the exception sink, each app wires this after initializing its SDK and clears
+ * it on teardown. A runtime that registers nothing simply drops messages.
+ */
+export const setCaptureMessageSink = (fn: CaptureMessageSink | null): void => {
+  messageSink = fn
 }
 
 /**
@@ -47,4 +63,19 @@ export const captureTelemetryException = (
       ? error
       : new Error(typeof error === 'string' ? error : 'Unknown telemetry error')
   sink(normalized, options)
+}
+
+/**
+ * Dispatches a telemetry *message* to the registered message sink. Use this for
+ * non-error telemetry (e.g. feedback) so it surfaces as an informational message
+ * rather than an error issue. No-ops when no message sink is registered.
+ */
+export const captureTelemetryMessage = (
+  message: string,
+  options: TelemetryCaptureOptions = {}
+): void => {
+  if (!messageSink) {
+    return
+  }
+  messageSink(message, options)
 }

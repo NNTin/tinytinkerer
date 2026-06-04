@@ -8,7 +8,10 @@ export type PluginReport = {
   pluginId: string
   kind: string
   message: string
-  level?: 'warning' | 'error'
+  // `info` is captured as an informational telemetry *message* (not an error
+  // issue); `warning`/`error` are captured as exceptions. See the host capture
+  // sink in app-browser's create-runtime.
+  level?: 'info' | 'warning' | 'error'
   contexts?: Record<string, Record<string, unknown>>
 }
 

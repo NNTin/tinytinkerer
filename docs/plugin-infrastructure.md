@@ -47,7 +47,7 @@ type PluginReport = {
   pluginId: string
   kind: string
   message: string
-  level?: 'warning' | 'error'
+  level?: 'info' | 'warning' | 'error'   // 'info' is captured as a message, not an error issue
   contexts?: Record<string, Record<string, unknown>>
 }
 
@@ -118,16 +118,18 @@ tool, capability, or permission. It then **throws** a typed `FeedbackPendingErro
 
 ```
 send_feedback (throws FeedbackPendingError)
-        │  carries PluginReport { kind: 'feedback', message, contexts }
+        │  carries PluginReport { kind: 'feedback', level: 'info', message, contexts }
         ▼
-PluginRegistry tool wrapper  ──catches PluginCaptureError──▶ host.capture(report)  ──▶ Sentry
+PluginRegistry tool wrapper  ──catches PluginCaptureError──▶ host.capture(report)  ──▶ Sentry (info message)
         │ rethrows
         ▼
 AgentRuntimeBase.runToolCall  ──▶ agent.tool.failed ("send_feedback: not implemented")
 ```
 
-So feedback is **captured** (to telemetry) and then surfaced as a graceful tool failure. There
-is intentionally no backend.
+Feedback is not an error condition, so its report is **`info`-level**: the host captures it as an
+informational Sentry *message* (via `captureMessage`), not an error issue with a synthetic stack
+trace. It is then surfaced to the runtime as a graceful tool failure. There is intentionally no
+backend.
 
 ## Activation state flow
 
@@ -193,22 +195,30 @@ descriptors), and the Settings controller (`surfaces.tsx`) loads the manifests f
 ## Routing into Sentry (`app-browser`)
 
 `create-runtime.ts` builds the `PluginHost` whose `capture` forwards to the shared telemetry
-sink:
+sink, choosing the message path for `info`-level reports and the exception path otherwise:
 
 ```ts
-capture: (report) => captureTelemetryException(report.message, {
-  level: report.level ?? 'warning',
-  tags: { plugin: report.pluginId, plugin_kind: report.kind },
-  contexts: report.contexts,
-  fingerprint: ['plugin', report.pluginId, report.kind]
-})
+capture: (report) => {
+  const options = {
+    level: report.level ?? 'warning',
+    tags: { plugin: report.pluginId, plugin_kind: report.kind },
+    contexts: report.contexts,
+    fingerprint: ['plugin', report.pluginId, report.kind]
+  }
+  if (report.level === 'info') {
+    captureTelemetryMessage(report.message, options)   // → Sentry captureMessage (info message)
+  } else {
+    captureTelemetryException(report.message, options)  // → Sentry captureException (error issue)
+  }
+}
 ```
 
-`captureTelemetryException` is a **no-op unless** the browser has registered its `@sentry/react`
-sink — which only happens after the user grants telemetry consent and only on deployed builds
-(never `development`). So a feedback submission is delivered only when **both** the plugin and
-telemetry are enabled; otherwise it silently no-ops while the tool still reports
-"not implemented". See [sentry-telemetry.md](./sentry-telemetry.md) and [PRIVACY.md](./PRIVACY.md).
+Both `captureTelemetryMessage` and `captureTelemetryException` are **no-ops unless** the browser
+has registered its `@sentry/react` sinks — which only happens after the user grants telemetry
+consent and only on deployed builds (never `development`). So a feedback submission is delivered
+only when **both** the plugin and telemetry are enabled; otherwise it silently no-ops while the
+tool still reports "not implemented". Feedback uses `info`, so it lands as an informational message
+rather than an error issue. See [sentry-telemetry.md](./sentry-telemetry.md) and [PRIVACY.md](./PRIVACY.md).
 
 ## Dependency rules
 

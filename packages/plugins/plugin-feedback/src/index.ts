@@ -52,13 +52,15 @@ export const feedbackPluginManifest: PluginManifest = {
 // Thrown by the send_feedback tool. Carries the feedback as a structured report
 // so the agent-core plugin registry routes it to the host capture sink (Sentry
 // in the browser), then signals that no backend exists yet via "not implemented".
+// Feedback is not an error condition, so the report is `info`-level: the host
+// captures it as an informational Sentry *message*, not an error issue.
 export class FeedbackPendingError extends PluginCaptureError {
   constructor(input: FeedbackInput) {
     super(
       {
         pluginId: SEND_FEEDBACK_PLUGIN_ID,
         kind: 'feedback',
-        level: 'warning',
+        level: 'info',
         message: `Feedback (${input.category}): ${input.message}`,
         contexts: {
           feedback: {
