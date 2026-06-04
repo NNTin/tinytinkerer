@@ -87,6 +87,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm generate:brand-assets
       - run: pnpm generate:privacy-policy
+      - run: pnpm generate:notices
       - run: TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 ${{ matrix.task.run }}
 
   deploy-production:

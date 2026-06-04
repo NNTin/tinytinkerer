@@ -26,3 +26,10 @@ apps/mobile/dev-dist/
 
 # Agent Orchestrator runtime data
 .ao/
+
+# Compliance artifacts — generated on demand by the Compliance workflow
+# (scripts/generate-sbom.mjs / generate-notices.mjs). Not versioned: they are
+# derived from the dependency tree and shipped as CI artifacts, not source.
+sbom.json
+THIRD_PARTY_NOTICES.md
+licenses.json
