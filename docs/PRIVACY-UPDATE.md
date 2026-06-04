@@ -11,9 +11,8 @@ query strings, cookies, authorization headers, or GitHub access tokens.
 
 We also added the optional Feedback plugin (`send_feedback`). It is off by default and enabled
 in Settings → Plugins. When both the plugin and telemetry are enabled, the feedback text you
-submit is sent to Sentry as a telemetry event so the maintainers can read it. This is the only
-case in which TinyTinkerer sends content you typed; if the plugin or telemetry is disabled, no
-feedback is sent. Note that enabling the plugin adds the `send_feedback` tool to every chat,
+submit is sent to Sentry so the maintainers can read it. This is the only case in which
+TinyTinkerer sends content you typed; if the plugin or telemetry is disabled, no feedback is sent. Note that enabling the plugin adds the `send_feedback` tool to every chat,
 which uses a little of the assistant's context and some extra tokens, so the Chat Assistant may
 perform slightly worse — leaving it on is a small, voluntary way to support the project and save
 the maintainer development time.
