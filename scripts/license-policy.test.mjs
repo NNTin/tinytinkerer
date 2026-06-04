@@ -11,12 +11,17 @@ const cases = [
   ['ISC', 'allow'],
   ['Apache-2.0', 'allow'],
   ['BSD-3-Clause', 'allow'],
+  ['0BSD', 'allow'],
   ['MPL-2.0', 'warn'],
+  ['Unlicense', 'warn'],
   ['LGPL-2.1-only', 'warn'],
   ['GPL-3.0', 'block'],
   ['AGPL-3.0-or-later', 'block'],
-  ['SomeWeirdLicense', 'review'],
-  ['', 'review'],
+
+  // Unrecognized / undefined / missing licenses must fail (verdict 'unknown')
+  ['SomeWeirdLicense', 'unknown'],
+  ['UNKNOWN', 'unknown'],
+  ['', 'unknown'],
 
   // Family-aware matching (AGPL/LGPL must not be swallowed by the GPL family)
   ['LGPL-3.0-only', 'warn'],
@@ -27,6 +32,10 @@ const cases = [
   ['MIT OR GPL-3.0', 'allow'],
   ['MIT AND GPL-3.0', 'block'],
   ['(MPL-2.0 OR Apache-2.0)', 'allow'],
+
+  // An unknown term can be escaped by OR, but taints an AND
+  ['MIT OR SomeWeirdLicense', 'allow'],
+  ['MIT AND SomeWeirdLicense', 'unknown'],
 
   // WITH exceptions only relax the base license
   ['Apache-2.0 WITH LLVM-exception', 'allow'],

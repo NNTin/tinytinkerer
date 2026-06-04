@@ -1,6 +1,20 @@
 import { execFileSync } from 'node:child_process'
 
 /**
+ * Corrected licenses for packages whose published metadata is missing or wrong,
+ * keyed by package name. Each entry must be verified against the package's own
+ * source/repository — this is for fixing bad metadata, NOT for waiving the
+ * policy: an unrecognized license still fails the gate unless it is corrected to
+ * a real SPDX id here.
+ */
+export const LICENSE_OVERRIDES = {
+  // khroma@2.1.0 ships no `license` field in its package.json, so pnpm reports it
+  // as Unknown. Its repository declares MIT.
+  // https://github.com/fabiospampinato/khroma#readme
+  khroma: 'MIT'
+}
+
+/**
  * Collect production dependency license metadata straight from pnpm.
  *
  * We deliberately use pnpm's own `licenses list` instead of npm-oriented tools
@@ -31,7 +45,9 @@ export const collectDependencyLicenses = () => {
       const name = String(entry.name ?? '').trim()
       if (!name) continue
 
-      const license = normalizeLicense(String(entry.license ?? licenseKey ?? 'Unknown'))
+      // A verified override wins over pnpm's reported license so packages with
+      // missing/incorrect metadata (e.g. khroma) are categorized correctly.
+      const license = LICENSE_OVERRIDES[name] ?? normalizeLicense(String(entry.license ?? licenseKey ?? 'Unknown'))
       const versions = Array.isArray(entry.versions) ? entry.versions : []
       const author = typeof entry.author === 'string' ? entry.author : ''
       const homepage = typeof entry.homepage === 'string' ? entry.homepage : ''
