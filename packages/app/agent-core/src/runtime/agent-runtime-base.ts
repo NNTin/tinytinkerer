@@ -12,6 +12,14 @@ import type {
 import { ToolRegistry } from '../tools/registry'
 import { MAX_AUTO_RETRY_AFTER_MS, withTimeout } from './utils'
 
+// Reports a terminal runtime failure to the host's telemetry sink (e.g. Sentry
+// in the browser). Injected like `createAssistantContentSession` so agent-core
+// stays a leaf with no telemetry dependency; a host that registers nothing
+// simply drops the report. Only terminal failures reach here — an aborted run
+// and the dedicated rate-limit cooldown/retry paths are handled upstream and
+// never reported.
+export type RuntimeErrorReporter = (error: Error) => void
+
 export type AgentRuntimeOptions = {
   maxIterations?: number
   maxToolCallsPerStep?: number
@@ -19,6 +27,7 @@ export type AgentRuntimeOptions = {
   stepTimeoutMs?: number
   searchEnabled?: boolean
   createAssistantContentSession?: CreateAssistantContentSession
+  reportError?: RuntimeErrorReporter
 }
 
 export type RunOptions = {
@@ -67,6 +76,7 @@ export abstract class AgentRuntimeBase {
   protected readonly stepTimeoutMs: number
   protected readonly searchEnabled: boolean
   protected readonly createAssistantContentSession: CreateAssistantContentSession
+  protected readonly reportError: RuntimeErrorReporter
 
   constructor(
     protected readonly provider: ModelProvider,
@@ -80,6 +90,7 @@ export abstract class AgentRuntimeBase {
     this.searchEnabled = options.searchEnabled ?? true
     this.createAssistantContentSession =
       options.createAssistantContentSession ?? createPlainTextAssistantContentSession
+    this.reportError = options.reportError ?? (() => {})
   }
 
   abstract run(prompt: string, options?: RunOptions): AsyncGenerator<ChatEvent>
@@ -95,14 +106,26 @@ export abstract class AgentRuntimeBase {
   }
 
   // Terminal error handling shared by every strategy: an aborted run ends
-  // cleanly with an empty answer; any other failure surfaces an error event and
-  // a friendly fallback answer.
+  // cleanly with an empty answer; any other failure is reported to the host's
+  // telemetry sink, then surfaces an error event and a friendly fallback answer.
   protected async *handleRunError(error: unknown): AsyncGenerator<ChatEvent> {
     if (error instanceof Error && error.name === 'AbortError') {
+      // An aborted run is the user cancelling — never an issue worth reporting.
       yield createEvent('assistant.done', (await this.createAssistantContentSession()).snapshot())
       return
     }
-    const message = error instanceof Error ? error.message : 'Unknown runtime error'
+    // Any non-abort failure that reaches the terminal handler is reported. The
+    // dedicated cooldown/retry path consumes handled rate limits before they get
+    // here, so a RateLimitError arriving at this point is an *unhandled* rate
+    // limit and is reported like any other failure. Guarded so a misbehaving
+    // sink can never break the run.
+    const normalized = error instanceof Error ? error : new Error('Unknown runtime error')
+    try {
+      this.reportError(normalized)
+    } catch {
+      // Telemetry must never break the run.
+    }
+    const message = normalized.message
     yield createEvent('error', { message })
     yield createEvent(
       'assistant.done',

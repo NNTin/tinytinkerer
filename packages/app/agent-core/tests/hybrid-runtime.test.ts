@@ -235,4 +235,38 @@ describe('HybridRuntime', () => {
     expect(done?.type).toBe('assistant.done')
     expect(done?.type === 'assistant.done' && done.payload.source).toBe('')
   })
+
+  it('reports an unhandled planner rate limit to the reportError sink', async () => {
+    const retryAt = new Date(Date.now() + 10 * 60_000).toISOString()
+    const reported: Error[] = []
+    const provider: ModelProvider = {
+      // The planner is not wrapped in the cooldown/retry path, so a rate limit
+      // here escapes to the terminal handler — an unhandled rate-limit path that
+      // must still reach telemetry.
+      async plan() {
+        throw new RateLimitError('rate limited', { retryAfterMs: 10 * 60_000, retryAt })
+      },
+      async execute() {
+        return ''
+      },
+      async decideNextAction() {
+        return { kind: 'final' }
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'unused' }
+      }
+    }
+
+    const runtime = new HybridRuntime(provider, noopRegistry(), {
+      reportError: (error) => reported.push(error)
+    })
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(reported).toHaveLength(1)
+    expect(reported[0]).toBeInstanceOf(RateLimitError)
+    expect(events.some((event) => event.type === 'error')).toBe(true)
+  })
 })
