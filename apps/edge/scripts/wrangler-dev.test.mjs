@@ -7,7 +7,7 @@ import {
 } from './wrangler-dev.mjs'
 
 const rootDir = '/workspace/tinytinkerer'
-const repoWorkerdCommand = `${rootDir}/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260520.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd serve --binary --experimental --socket-addr=entry=0.0.0.0:8787 --control-fd=3 -`
+const repoWorkerdCommand = `${rootDir}/node_modules/.pnpm/@cloudflare+workerd-linux-64@0.0.0/node_modules/@cloudflare/workerd-linux-64/bin/workerd serve --binary --experimental --socket-addr=entry=0.0.0.0:8787 --control-fd=3 -`
 
 describe('wrangler dev process cleanup', () => {
   it('parses process list rows with long commands', () => {
@@ -46,7 +46,7 @@ describe('wrangler dev process cleanup', () => {
           pgid: 43947,
           stat: 'Sl',
           command:
-            '/workspace/worktrees/tin-39/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260520.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd serve --binary --experimental'
+            '/workspace/worktrees/tin-39/node_modules/.pnpm/@cloudflare+workerd-linux-64@0.0.0/node_modules/@cloudflare/workerd-linux-64/bin/workerd serve --binary --experimental'
         },
         rootDir
       )
@@ -75,7 +75,7 @@ describe('wrangler dev process cleanup', () => {
         pgid: 43947,
         stat: 'Sl',
         command:
-          '/workspace/worktrees/tin-39/node_modules/.pnpm/@cloudflare+workerd-linux-64@1.20260520.1/node_modules/@cloudflare/workerd-linux-64/bin/workerd serve --binary --experimental'
+          '/workspace/worktrees/tin-39/node_modules/.pnpm/@cloudflare+workerd-linux-64@0.0.0/node_modules/@cloudflare/workerd-linux-64/bin/workerd serve --binary --experimental'
       }
     ]
 
