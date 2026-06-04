@@ -1,9 +1,16 @@
 import { useEffect, type ReactNode } from 'react'
 import { LICENSE_TEXT } from './license.generated'
+import { THIRD_PARTY_NOTICES } from './third-party-notices.generated'
 import { TINYTINKERER_LICENSE } from './brand-links'
-import { TINYTINKERER_CREDITS, TINYTINKERER_CREDITS_TITLE } from './credits'
+import {
+  TINYTINKERER_CREDITS,
+  TINYTINKERER_CREDITS_NOTE,
+  TINYTINKERER_CREDITS_TITLE
+} from './credits'
 
-export type AboutDialogKind = 'license' | 'credits'
+export type AboutDialogKind = 'license' | 'credits' | 'notices'
+
+const NOTICES_TITLE = 'Third-Party Notices'
 
 // Shared modal shell for the About footer dialogs. This whole module is loaded
 // lazily (see BrandSettingsFooter) so the license text, credits list, and dialog
@@ -64,35 +71,52 @@ const SettingsDialog = ({
   )
 }
 
-const LicenseBody = ({ renderMarkdown }: { renderMarkdown?: (markdown: string) => ReactNode }) =>
+// License text and the third-party notices are both Markdown documents; render
+// them with the host's Markdown renderer when available, otherwise fall back to
+// monospace preformatted text.
+const MarkdownBody = ({
+  markdown,
+  renderMarkdown
+}: {
+  markdown: string
+  renderMarkdown?: (markdown: string) => ReactNode
+}) =>
   renderMarkdown ? (
-    renderMarkdown(LICENSE_TEXT)
+    renderMarkdown(markdown)
   ) : (
     <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-stone-700">
-      {LICENSE_TEXT}
+      {markdown}
     </pre>
   )
 
 const CreditsBody = () => (
-  <ul className="flex flex-col gap-3">
-    {TINYTINKERER_CREDITS.map((credit) => (
-      <li key={credit.name} className="text-sm leading-relaxed text-stone-700">
-        {credit.href ? (
-          <a
-            href={credit.href}
-            target="_blank"
-            rel="noreferrer"
-            className="font-semibold text-stone-900 underline decoration-stone-300 underline-offset-2 hover:decoration-stone-500"
-          >
-            {credit.name}
-          </a>
-        ) : (
-          <span className="font-semibold text-stone-900">{credit.name}</span>
-        )}
-        <span className="text-stone-500"> — {credit.thanks}</span>
-      </li>
-    ))}
-  </ul>
+  <div className="flex flex-col gap-4">
+    <ul className="flex flex-col gap-3">
+      {TINYTINKERER_CREDITS.map((credit) => (
+        <li
+          key={credit.name}
+          className="text-sm leading-relaxed text-stone-700"
+        >
+          {credit.href ? (
+            <a
+              href={credit.href}
+              target="_blank"
+              rel="noreferrer"
+              className="font-semibold text-stone-900 underline decoration-stone-300 underline-offset-2 hover:decoration-stone-500"
+            >
+              {credit.name}
+            </a>
+          ) : (
+            <span className="font-semibold text-stone-900">{credit.name}</span>
+          )}
+          <span className="text-stone-500"> — {credit.thanks}</span>
+        </li>
+      ))}
+    </ul>
+    <p className="text-xs italic leading-relaxed text-stone-500">
+      {TINYTINKERER_CREDITS_NOTE}
+    </p>
+  </div>
 )
 
 const AboutDialogs = ({
@@ -112,9 +136,23 @@ const AboutDialogs = ({
     )
   }
 
+  if (kind === 'notices') {
+    return (
+      <SettingsDialog title={NOTICES_TITLE} onClose={onClose}>
+        <MarkdownBody
+          markdown={THIRD_PARTY_NOTICES}
+          {...(renderMarkdown ? { renderMarkdown } : {})}
+        />
+      </SettingsDialog>
+    )
+  }
+
   return (
     <SettingsDialog title={TINYTINKERER_LICENSE.title} onClose={onClose}>
-      <LicenseBody {...(renderMarkdown ? { renderMarkdown } : {})} />
+      <MarkdownBody
+        markdown={LICENSE_TEXT}
+        {...(renderMarkdown ? { renderMarkdown } : {})}
+      />
     </SettingsDialog>
   )
 }

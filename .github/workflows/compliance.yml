@@ -56,7 +56,7 @@ jobs:
         run: pnpm licenses list --json -P > licenses.json
 
       - name: Build third-party notices
-        run: pnpm compliance:notices
+        run: pnpm generate:notices
 
       # Upload before enforcement so the artifacts are always available for review,
       # even when the license policy gate fails the run.

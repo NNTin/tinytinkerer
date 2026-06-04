@@ -52,7 +52,10 @@ describe('brand assets', () => {
     const names = TINYTINKERER_CREDITS.map((credit) => credit.name)
     expect(names).toContain('CodeMirror')
     expect(names).toContain('Cloudflare')
-    expect(names).toContain('Claude, Codex and Copilot')
+    // The AI assistants are credited individually, each with its own note.
+    expect(names).toContain('Claude')
+    expect(names).toContain('Codex')
+    expect(names).toContain('Copilot')
 
     for (const credit of TINYTINKERER_CREDITS) {
       expect(credit.thanks.length).toBeGreaterThan(0)
