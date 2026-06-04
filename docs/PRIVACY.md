@@ -43,9 +43,11 @@ TinyTinkerer ships an optional **Feedback** plugin that exposes a `send_feedback
 assistant. It is a plugin, off by default, and you enable it in Settings → Plugins.
 
 The plugin has no dedicated backend. When it is enabled **and** telemetry is also enabled, the
-feedback text you submit (plus an optional category such as bug/idea/praise) is sent to Sentry
-as a telemetry event so the maintainers can read it. This is the deliberate exception to the
-rule that we do not collect the content you type.
+feedback text (plus its category, either `bug` or `idea`) is sent to Sentry as a telemetry event
+so the maintainers can read it. The feedback can come from you (reporting a bug or suggesting an
+improvement) or from the assistant itself, which may send an `idea` when it runs into a limitation
+in its environment. Either way this is the deliberate exception to the rule that we do not collect
+the content you type.
 
 Enabling the plugin also adds the `send_feedback` tool to every chat. That occupies a small part
 of the assistant's context window and spends some extra tokens on each request, so the Chat

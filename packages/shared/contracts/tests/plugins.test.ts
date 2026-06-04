@@ -5,30 +5,35 @@ import {
 } from '../src/index.js'
 
 describe('feedbackInputSchema', () => {
-  it('accepts a message with an optional category', () => {
-    expect(feedbackInputSchema.parse({ message: 'Love it', category: 'praise' })).toEqual({
-      message: 'Love it',
-      category: 'praise'
+  it('accepts a bug report and an idea', () => {
+    expect(feedbackInputSchema.parse({ message: 'It crashed', category: 'bug' })).toEqual({
+      message: 'It crashed',
+      category: 'bug'
     })
-    expect(feedbackInputSchema.parse({ message: 'Just a message' })).toEqual({
-      message: 'Just a message'
+    expect(feedbackInputSchema.parse({ message: 'Add dark mode', category: 'idea' })).toEqual({
+      message: 'Add dark mode',
+      category: 'idea'
     })
   })
 
+  it('requires a category', () => {
+    expect(feedbackInputSchema.safeParse({ message: 'Just a message' }).success).toBe(false)
+  })
+
   it('rejects an empty message', () => {
-    expect(feedbackInputSchema.safeParse({ message: '' }).success).toBe(false)
+    expect(feedbackInputSchema.safeParse({ message: '', category: 'bug' }).success).toBe(false)
   })
 
   it('rejects an over-long message', () => {
     expect(
-      feedbackInputSchema.safeParse({ message: 'x'.repeat(2001) }).success
+      feedbackInputSchema.safeParse({ message: 'x'.repeat(2001), category: 'bug' }).success
     ).toBe(false)
   })
 
-  it('rejects an unknown category', () => {
-    expect(
-      feedbackInputSchema.safeParse({ message: 'hi', category: 'other' }).success
-    ).toBe(false)
+  it('rejects retired or unknown categories', () => {
+    for (const category of ['praise', 'general', 'other']) {
+      expect(feedbackInputSchema.safeParse({ message: 'hi', category }).success).toBe(false)
+    }
   })
 })
 

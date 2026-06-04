@@ -17,17 +17,32 @@ export const feedbackPluginManifest: PluginManifest = {
   id: SEND_FEEDBACK_PLUGIN_ID,
   label: 'Feedback (send_feedback tool)',
   description:
-    "Lets the assistant submit your feedback. There's no backend yet, so when telemetry is also enabled your feedback is sent through telemetry. Turning it on adds the send_feedback tool to every chat, which takes up a little of the assistant's context and spends some extra tokens — so the Chat Assistant may perform slightly worse. Leaving it on is a small way to support the project (think of it as buying me a coffee) and saves me development time. Off by default.",
+    "Lets you report a bug or suggest an improvement through the assistant — and lets the assistant flag its own limitations (a tool or capability it was missing) as an idea. There's no backend yet, so when telemetry is also enabled the feedback is sent through telemetry. Turning it on adds the send_feedback tool to every chat, which takes up a little of the assistant's context and spends some extra tokens — so the Chat Assistant may perform slightly worse. Leaving it on is a small way to support the project (think of it as buying me a coffee) and saves me development time. Off by default.",
   toolDescriptors: [
     {
       id: 'send_feedback',
       description:
-        'Send the user’s feedback about TinyTinkerer (bug, idea, or praise) to the maintainers.',
+        'Report a bug or suggest an improvement for TinyTinkerer to the maintainers. ' +
+        'Invoke it in two situations: (1) when the user asks to report a bug or share an ' +
+        'idea/improvement; (2) proactively, on your own initiative, when you hit a limitation ' +
+        'in your own environment — a tool, capability, permission, or context you needed but ' +
+        'did not have to fully help the user. In case (2) send category "idea" describing what ' +
+        'you were trying to do and what was missing. Do not ask permission to send feedback ' +
+        'about your own limitations; just send it once, then continue helping as best you can. ' +
+        'Send at most one feedback per limitation and avoid duplicates within a conversation.',
       inputSchema: {
-        message: { type: 'string', description: 'The feedback text (1–2000 chars)' },
+        message: {
+          type: 'string',
+          description:
+            'The feedback (1–2000 chars). For an environment limitation, describe what you ' +
+            'were trying to do and which tool/capability/permission was missing.'
+        },
         category: {
           type: 'string',
-          description: 'Optional: bug | idea | praise | general'
+          enum: ['bug', 'idea'],
+          description:
+            'Required. "bug" for something broken or behaving incorrectly; "idea" for an ' +
+            'improvement or feature suggestion (including your own environment limitations).'
         }
       }
     }
@@ -44,10 +59,10 @@ export class FeedbackPendingError extends PluginCaptureError {
         pluginId: SEND_FEEDBACK_PLUGIN_ID,
         kind: 'feedback',
         level: 'warning',
-        message: `User feedback: ${input.message}`,
+        message: `Feedback (${input.category}): ${input.message}`,
         contexts: {
           feedback: {
-            category: input.category ?? 'general',
+            category: input.category,
             message: input.message
           }
         }
@@ -61,7 +76,10 @@ export class FeedbackPendingError extends PluginCaptureError {
 const createSendFeedbackTool = (): Tool<FeedbackInput, never> => ({
   id: 'send_feedback',
   description:
-    'Send the user’s feedback about TinyTinkerer to the maintainers. Use when the user wants to report a bug, suggest an idea, or share praise.',
+    'Report a bug or suggest an improvement for TinyTinkerer to the maintainers. Use it when ' +
+    'the user asks to report a bug or share an idea, and also proactively when you hit a ' +
+    'limitation in your own environment (a missing tool, capability, or permission) — send ' +
+    'category "idea" describing what you needed. category is required: "bug" or "idea".',
   schema: feedbackInputSchema,
   execute(input): Promise<never> {
     // No backend: route the feedback to telemetry (via the capture sink wired by

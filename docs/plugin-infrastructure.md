@@ -110,8 +110,11 @@ A dedicated package at `packages/plugins/plugin-feedback`, depending only on `ag
 `createPlugin` — plus `FeedbackPendingError`, `feedbackPluginManifest`, `feedbackPlugin()`, and
 `SEND_FEEDBACK_PLUGIN_ID` for direct/test use.
 
-Its single `send_feedback` tool takes `{ message, category? }` (validated by
-`feedbackInputSchema` from `contracts`) and **throws** a typed `FeedbackPendingError`:
+Its single `send_feedback` tool takes `{ message, category }` where `category` is the required
+enum `'bug' | 'idea'` (validated by `feedbackInputSchema` from `contracts`). The tool description
+tells the assistant to invoke it both when the user asks to report a bug / suggest an idea **and**
+proactively (as an `idea`) when the assistant hits a limitation in its own environment — a missing
+tool, capability, or permission. It then **throws** a typed `FeedbackPendingError`:
 
 ```
 send_feedback (throws FeedbackPendingError)

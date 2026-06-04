@@ -20,7 +20,7 @@ describe('feedbackPlugin', () => {
     const [tool] = feedbackPlugin().createTools?.(host) ?? []
 
     const error = await tool!
-      .execute({ message: 'Great app', category: 'praise' })
+      .execute({ message: 'Add dark mode', category: 'idea' })
       .then(() => null)
       .catch((e: unknown) => e)
 
@@ -30,7 +30,8 @@ describe('feedbackPlugin', () => {
       pluginId: SEND_FEEDBACK_PLUGIN_ID,
       kind: 'feedback',
       level: 'warning',
-      contexts: { feedback: { category: 'praise', message: 'Great app' } }
+      message: 'Feedback (idea): Add dark mode',
+      contexts: { feedback: { category: 'idea', message: 'Add dark mode' } }
     })
   })
 
@@ -52,12 +53,14 @@ describe('feedbackPlugin', () => {
     })
   })
 
-  it('defaults the category to general when omitted', async () => {
+  it('carries an agent-reported environment limitation as an idea', async () => {
     const host: PluginHost = { capture: vi.fn() }
     const [tool] = feedbackPlugin().createTools?.(host) ?? []
-    const error = await tool!.execute({ message: 'no category' }).catch((e: unknown) => e)
+    const error = await tool!
+      .execute({ message: 'Needed file write access but had none', category: 'idea' })
+      .catch((e: unknown) => e)
     expect((error as FeedbackPendingError).report.contexts).toEqual({
-      feedback: { category: 'general', message: 'no category' }
+      feedback: { category: 'idea', message: 'Needed file write access but had none' }
     })
   })
 
