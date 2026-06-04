@@ -17,7 +17,7 @@ export const feedbackPluginManifest: PluginManifest = {
   id: SEND_FEEDBACK_PLUGIN_ID,
   label: 'Feedback (send_feedback tool)',
   description:
-    "Lets you report a bug or suggest an improvement through the assistant — and lets the assistant flag its own limitations (a tool or capability it was missing) as an idea. There's no backend yet, so when telemetry is also enabled the feedback is sent through telemetry. Turning it on adds the send_feedback tool to every chat, which takes up a little of the assistant's context and spends some extra tokens — so the Chat Assistant may perform slightly worse. Leaving it on is a small way to support the project (think of it as buying me a coffee) and saves me development time. Off by default.",
+    "Report a bug or suggest an improvement through the assistant — it can also flag its own limitations as ideas. Unlike other plugins this tool helps me rather than you directly, so the assistant may perform slightly worse while it's on. Leaving it on is a small way to support the project — think of it as buying me a coffee. Off by default.",
   toolDescriptors: [
     {
       id: 'send_feedback',
