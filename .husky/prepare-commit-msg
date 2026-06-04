@@ -1,0 +1,44 @@
+#!/usr/bin/env sh
+
+COMMIT_MSG_FILE=$1
+COMMIT_SOURCE=$2
+
+if [ "$COMMIT_SOURCE" != "merge" ]; then
+  exit 0
+fi
+
+FIRST_LINE=$(sed -n '1p' "$COMMIT_MSG_FILE")
+case "$FIRST_LINE" in
+  Merge\ *)
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+
+MERGE_HEAD_FILE=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
+MERGED_COMMIT=""
+
+if [ -n "$MERGE_HEAD_FILE" ] && [ -f "$MERGE_HEAD_FILE" ]; then
+  MERGED_COMMIT=$(sed -n '1p' "$MERGE_HEAD_FILE" | xargs git rev-parse 2>/dev/null)
+fi
+
+if [ -z "$MERGED_COMMIT" ]; then
+  MERGED_COMMIT=$(printf '%s\n' "$FIRST_LINE" | sed -n "s/^Merge commit '\([0-9a-fA-F]\{40\}\)'.*/\1/p")
+fi
+
+if [ -z "$MERGED_COMMIT" ]; then
+  MERGED_COMMIT="unknown"
+fi
+
+TARGET_COMMIT=$(git rev-parse HEAD 2>/dev/null || printf '%s' "unknown")
+MERGE_MESSAGE="chore(merge): merge $MERGED_COMMIT into $TARGET_COMMIT"
+TMP_FILE=$(mktemp)
+
+{
+  printf '%s\n' "$MERGE_MESSAGE"
+  sed '1d' "$COMMIT_MSG_FILE"
+} > "$TMP_FILE"
+
+cat "$TMP_FILE" > "$COMMIT_MSG_FILE"
+rm -f "$TMP_FILE"
