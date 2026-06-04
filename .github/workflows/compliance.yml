@@ -11,6 +11,8 @@ on:
     branches: [main, develop]
     paths: &compliance-paths
       - 'package.json'
+      - 'apps/**/package.json'
+      - 'packages/**/package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'scripts/generate-sbom.mjs'
@@ -67,6 +69,9 @@ jobs:
             licenses.json
             THIRD_PARTY_NOTICES.md
           if-no-files-found: error
+
+      - name: Validate license policy parser
+        run: pnpm compliance:test
 
       - name: Enforce license policy
         run: pnpm compliance:enforce

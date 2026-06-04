@@ -16,6 +16,21 @@ export const LICENSE_POLICY = {
   block: ['GPL', 'GPL-2.0', 'GPL-3.0', 'AGPL', 'AGPL-3.0']
 }
 
+/**
+ * Dependencies whose license pnpm cannot resolve to a recognized SPDX id, but
+ * which a human has already reviewed and accepted. Keyed by package name; the
+ * value records why it is safe.
+ *
+ * The compliance gate fails on any unrecognized license that is NOT listed here,
+ * so a new unreviewed dependency can never pass silently — while the known,
+ * already-vetted exceptions don't break CI on every run.
+ */
+export const REVIEWED_LICENSE_EXCEPTIONS = {
+  // khroma is published under MIT (see its repository) but ships no `license`
+  // field in package.json, so pnpm reports it as UNKNOWN. Manually verified MIT.
+  khroma: 'MIT (declared in source, missing from package metadata)'
+}
+
 const VERDICT = /** @type {const} */ ({
   ALLOW: 'allow',
   WARN: 'warn',
@@ -44,7 +59,8 @@ const classifyToken = (token) => {
   if (/^GPL/.test(id)) return VERDICT.BLOCK
   if (id.startsWith('MPL')) return VERDICT.WARN
 
-  if (id === 'MIT' || id === 'ISC' || id === '0BSD' || id === 'UNLICENSE') return VERDICT.ALLOW
+  if (id === 'MIT' || id === 'ISC' || id === '0BSD' || id === 'UNLICENSE')
+    return VERDICT.ALLOW
   if (id.startsWith('BSD')) return VERDICT.ALLOW
   if (id.startsWith('APACHE')) return VERDICT.ALLOW
   if (id.startsWith('CC0')) return VERDICT.ALLOW
@@ -70,35 +86,96 @@ const mostRestrictive = (verdicts) => {
 }
 
 /**
- * Evaluate a full license expression (which may be an SPDX expression such as
- * "(MPL-2.0 OR Apache-2.0)") against the policy.
+ * Split an SPDX expression into its atomic tokens: parentheses are their own
+ * tokens, everything else is separated by whitespace. License ids, `AND`, `OR`,
+ * `WITH`, exception ids, and a trailing `+` all come through as plain tokens.
+ */
+const tokenizeExpression = (expression) => {
+  const tokens = []
+  const matcher = /\(|\)|[^\s()]+/g
+  let match
+  while ((match = matcher.exec(expression)) !== null) {
+    tokens.push(match[0])
+  }
+  return tokens
+}
+
+/**
+ * Evaluate a full SPDX license expression against the policy.
  *
- * OR operands are the most permissive (the consumer may pick any one), while AND
- * operands are the most restrictive (the consumer must satisfy all of them) — so
- * a blocked license can't hide behind "MIT AND GPL-3.0".
+ * Unlike a flat OR/AND split, this is a proper recursive-descent parser that
+ * honours parentheses and SPDX precedence (`WITH` binds tightest, then `AND`,
+ * then `OR`). That matters for nested expressions: "GPL-3.0-only AND (MIT OR
+ * BSD-3-Clause)" correctly resolves to BLOCK, because the GPL term is mandatory
+ * and can't be escaped by the permissive OR branch beside it.
+ *
+ * OR combines to the most permissive verdict (the consumer may pick any branch);
+ * AND combines to the most restrictive (every operand must be satisfied). An
+ * "<license> WITH <exception>" only relaxes the base license, so the exception
+ * identifier is consumed and ignored.
  *
  * @param {string} expression
  * @returns {'allow' | 'warn' | 'block' | 'review'}
  */
 export const evaluateLicense = (expression) => {
-  const orGroups = expression
-    .replace(/[()]/g, ' ')
-    .split(/\s+OR\s+/i)
-    .map((group) => group.trim())
-    .filter(Boolean)
+  const tokens = tokenizeExpression(String(expression ?? ''))
+  if (tokens.length === 0) return VERDICT.REVIEW
 
-  if (orGroups.length === 0) return VERDICT.REVIEW
+  let pos = 0
+  const peek = () => tokens[pos]
+  const advance = () => tokens[pos++]
+  const isOperator = (token) => {
+    const upper = token?.toUpperCase()
+    return upper === 'AND' || upper === 'OR'
+  }
 
-  const groupVerdicts = orGroups.map((group) => {
-    const tokens = group
-      .split(/\s+AND\s+/i)
-      // An SPDX "<license> WITH <exception>" only relaxes the base license, so we
-      // classify by the license and discard the exception identifier.
-      .map((token) => token.replace(/\s+WITH\s+.*$/i, '').trim())
-      .filter(Boolean)
-    if (tokens.length === 0) return VERDICT.REVIEW
-    return mostRestrictive(tokens.map(classifyToken))
-  })
+  // primary := '(' or-expr ')' | license-id [ 'WITH' exception-id ]
+  const parsePrimary = () => {
+    const token = peek()
+    if (token === undefined) return VERDICT.REVIEW
 
-  return mostPermissive(groupVerdicts)
+    if (token === '(') {
+      advance()
+      const verdict = parseOr()
+      if (peek() === ')') advance()
+      return verdict
+    }
+    if (token === ')' || isOperator(token)) return VERDICT.REVIEW
+
+    advance() // the license id (possibly with a trailing '+')
+    if (peek()?.toUpperCase() === 'WITH') {
+      advance() // consume 'WITH'
+      const exception = peek()
+      if (
+        exception !== undefined &&
+        exception !== ')' &&
+        !isOperator(exception)
+      ) {
+        advance() // consume the exception id and discard it
+      }
+    }
+    return classifyToken(token.replace(/\+$/, ''))
+  }
+
+  // and-expr := primary ( 'AND' primary )*
+  const parseAnd = () => {
+    let verdict = parsePrimary()
+    while (peek()?.toUpperCase() === 'AND') {
+      advance()
+      verdict = mostRestrictive([verdict, parsePrimary()])
+    }
+    return verdict
+  }
+
+  // or-expr := and-expr ( 'OR' and-expr )*
+  const parseOr = () => {
+    let verdict = parseAnd()
+    while (peek()?.toUpperCase() === 'OR') {
+      advance()
+      verdict = mostPermissive([verdict, parseAnd()])
+    }
+    return verdict
+  }
+
+  return parseOr()
 }

@@ -4,7 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { collectDependencyLicenses } from './lib/dependency-licenses.mjs'
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const outputPath = join(rootDir, process.env.NOTICES_OUTPUT ?? 'THIRD_PARTY_NOTICES.md')
+const outputPath = join(
+  rootDir,
+  process.env.NOTICES_OUTPUT ?? 'THIRD_PARTY_NOTICES.md'
+)
 
 const main = () => {
   const dependencies = collectDependencyLicenses()
@@ -21,12 +24,17 @@ const main = () => {
   const licenses = [...byLicense.keys()].sort((a, b) => a.localeCompare(b))
 
   const lines = [
-    '# Third-Party Notices',
+    '# Third-Party Notices (Attribution Summary)',
     '',
-    'This project bundles or depends on the third-party software listed below. This',
-    'file is a user-facing attribution summary, auto-generated from the production',
-    'dependency tree by `scripts/generate-notices.mjs` — do not edit it by hand, and',
-    'it is intentionally not committed to source control (see `.gitignore`).',
+    'This project depends on the third-party software listed below. This file is a',
+    'user-facing **attribution summary** — it identifies each production dependency,',
+    'its version, license, author, and homepage. It is **not** a substitute for the',
+    'full license texts: the authoritative terms ship with each package (its bundled',
+    '`LICENSE` file under `node_modules`) and are linked from the homepages below.',
+    '',
+    'It is auto-generated from the production dependency tree by',
+    '`scripts/generate-notices.mjs` — do not edit it by hand, and it is intentionally',
+    'not committed to source control (see `.gitignore`).',
     '',
     'For machine-readable details, generate the SBOM with `pnpm compliance:sbom`.',
     '',
