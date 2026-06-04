@@ -3,12 +3,13 @@ name: Compliance
 # Lightweight, attribution-focused compliance. Proper SBOM/release provenance is
 # out of scope until this project ships build artifacts; until then this workflow
 # lets anyone generate an SBOM + third-party notices on demand (workflow_dispatch)
-# and gates dependency changes against the license policy.
+# and gates dependency changes against the license policy on pull requests and on
+# pushes to the long-lived branches.
 on:
   workflow_dispatch:
   push:
     branches: [main, develop]
-    paths:
+    paths: &compliance-paths
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -18,6 +19,8 @@ on:
       - 'scripts/license-policy.mjs'
       - 'scripts/lib/dependency-licenses.mjs'
       - '.github/workflows/compliance.yml'
+  pull_request:
+    paths: *compliance-paths
 
 permissions:
   contents: read
