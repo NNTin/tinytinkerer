@@ -49,14 +49,23 @@ flowchart LR
   common["Frontend Composition Layer"]
 
   subgraph Packages
+
+
+    %%subgraph PluginInfrastructure["Plugin Infrastructure"]
+    %%  pluginfeedback["@tinytinkerer/plugin-feedback<br/>send_feedback plugin"]
+    %%end
+
     contracts["@tinytinkerer/contracts<br/>canonical schemas + types"]
     agent["@tinytinkerer/agent-core<br/>runtime abstractions"]
+    brand["@tinytinkerer/brand-assets<br/>brand metadata + PWA assets"]
     appcore["@tinytinkerer/app-core<br/>headless product logic + runtime facade"]
     appbrowser["@tinytinkerer/app-browser<br/>browser adapters + shell-facing exports"]
-    brand["@tinytinkerer/brand-assets<br/>brand metadata + PWA assets"]
     ui["@tinytinkerer/ui<br/>presentational React primitives"]
     sentrytelemetry["@tinytinkerer/sentry-telemetry<br/>SDK-agnostic telemetry core"]
-    pluginfeedback["@tinytinkerer/plugin-feedback<br/>send_feedback plugin"]
+
+    subgraph PluginInfrastructure["Plugin Infrastructure"]
+      pluginfeedback["@tinytinkerer/plugin-feedback<br/>send_feedback plugin"]
+    end
 
     subgraph ContentPlatform["Content Platform"]
       contentcore["@tinytinkerer/content-core<br/>content behavior + stable-ID helpers + source-plugin contracts"]
@@ -85,18 +94,18 @@ flowchart LR
 
   edge --> sentrytelemetry
   edge --> contracts
-  appcore --> agent
   appcore --> contracts
+  appcore --> agent
 
+  appbrowser --> brand
+  appbrowser --> contracts
   appbrowser --> ContentPlatform
   appbrowser --> appcore
-  appbrowser --> contracts
-  appbrowser --> brand
+  appbrowser -. "discovers dynamically<br/>(import.meta.glob, no static dep)" .-> PluginInfrastructure
   appbrowser --> sentrytelemetry
-  appbrowser -. "discovers dynamically<br/>(import.meta.glob, no static dep)" .-> pluginfeedback
 
-  pluginfeedback --> agent
-  pluginfeedback --> contracts
+  PluginInfrastructure --> agent
+  PluginInfrastructure --> contracts
 
   contentreact --> contentcore
   contentreact --> ui
