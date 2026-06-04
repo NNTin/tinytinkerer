@@ -16,6 +16,24 @@ const SPECIALIZED_CONTENT_PACKAGES = new Set([
   '@tinytinkerer/content-table'
 ])
 
+const PRODUCT_AGNOSTIC_SOURCE_RULES = [
+  { pattern: /\bfetch\s*\(/, label: 'fetch()' },
+  {
+    pattern: /(?<![\w$])window(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+    label: 'window'
+  },
+  {
+    pattern: /(?<![\w$])document(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
+    label: 'document'
+  },
+  { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
+  { pattern: /\blocalStorage\b/, label: 'localStorage' },
+  { pattern: /\bindexedDB\b/, label: 'indexedDB' },
+  { pattern: /\bDexie\b/, label: 'Dexie' },
+  { pattern: /from\s+['"]react(?:\/[^'"]*)?['"]/, label: 'React import' },
+  { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
+]
+
 const importPattern =
   /\b(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g
 
@@ -26,83 +44,15 @@ const graph = new Map(workspacePackages.map((pkg) => [pkg.name, new Set()]))
 const sourceRules = new Map([
   [
     '@tinytinkerer/app-core',
-    [
-      { pattern: /\bfetch\s*\(/, label: 'fetch()' },
-      {
-        pattern: /(?<![\w$])window(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
-        label: 'window'
-      },
-      {
-        pattern: /(?<![\w$])document(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
-        label: 'document'
-      },
-      { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
-      { pattern: /\blocalStorage\b/, label: 'localStorage' },
-      { pattern: /\bindexedDB\b/, label: 'indexedDB' },
-      { pattern: /\bDexie\b/, label: 'Dexie' },
-      { pattern: /from\s+['"]react(?:\/[^'"]*)?['"]/, label: 'React import' },
-      { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
-    ]
+    PRODUCT_AGNOSTIC_SOURCE_RULES
   ],
   [
     '@tinytinkerer/agent-core',
-    [
-      { pattern: /\bfetch\s*\(/, label: 'fetch()' },
-      {
-        pattern: /(?<![\w$])window(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
-        label: 'window'
-      },
-      {
-        pattern: /(?<![\w$])document(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
-        label: 'document'
-      },
-      { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
-      { pattern: /\blocalStorage\b/, label: 'localStorage' },
-      { pattern: /\bindexedDB\b/, label: 'indexedDB' },
-      { pattern: /\bDexie\b/, label: 'Dexie' },
-      { pattern: /from\s+['"]react(?:\/[^'"]*)?['"]/, label: 'React import' },
-      { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
-    ]
-  ],
-  [
-    '@tinytinkerer/plugin-feedback',
-    [
-      { pattern: /\bfetch\s*\(/, label: 'fetch()' },
-      {
-        pattern: /(?<![\w$])window(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
-        label: 'window'
-      },
-      {
-        pattern: /(?<![\w$])document(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
-        label: 'document'
-      },
-      { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
-      { pattern: /\blocalStorage\b/, label: 'localStorage' },
-      { pattern: /\bindexedDB\b/, label: 'indexedDB' },
-      { pattern: /\bDexie\b/, label: 'Dexie' },
-      { pattern: /from\s+['"]react(?:\/[^'"]*)?['"]/, label: 'React import' },
-      { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
-    ]
+    PRODUCT_AGNOSTIC_SOURCE_RULES
   ],
   [
     '@tinytinkerer/content-core',
-    [
-      { pattern: /\bfetch\s*\(/, label: 'fetch()' },
-      {
-        pattern: /(?<![\w$])window(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
-        label: 'window'
-      },
-      {
-        pattern: /(?<![\w$])document(?![\w$])(?=[ \t]*(?:[.\[!=<>+\-*/%&|^~?,;)\]}]|\r?\n|$))/,
-        label: 'document'
-      },
-      { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
-      { pattern: /\blocalStorage\b/, label: 'localStorage' },
-      { pattern: /\bindexedDB\b/, label: 'indexedDB' },
-      { pattern: /\bDexie\b/, label: 'Dexie' },
-      { pattern: /from\s+['"]react(?:\/[^'"]*)?['"]/, label: 'React import' },
-      { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
-    ]
+    PRODUCT_AGNOSTIC_SOURCE_RULES
   ]
 ])
 
@@ -382,15 +332,15 @@ function validateBoundary(sourcePkg, target, filePath) {
     }
   }
 
-  if (sourcePkg.name === '@tinytinkerer/plugin-feedback') {
+  if (isPluginPackage(sourcePkg)) {
     const allowed = new Set([
-      '@tinytinkerer/plugin-feedback',
+      sourcePkg.name,
       '@tinytinkerer/agent-core',
       '@tinytinkerer/contracts'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: plugin-feedback may import only agent-core, contracts, and plugin-feedback-local modules (${targetPkg.name})`
+        `${sourceLabel}: plugin packages may import only agent-core, contracts, and plugin-local modules (${targetPkg.name})`
       )
     }
   }
@@ -472,7 +422,7 @@ function validateBoundary(sourcePkg, target, filePath) {
 
 function validateSourceConstraints(pkg, filePath, source) {
   const sourceLabel = relative(rootDir, filePath)
-  const rules = sourceRules.get(pkg.name)
+  const rules = sourceRules.get(pkg.name) ?? (isPluginPackage(pkg) ? PRODUCT_AGNOSTIC_SOURCE_RULES : undefined)
 
   for (const rule of rules ?? []) {
     if (rule.pattern.test(source)) {
@@ -485,6 +435,14 @@ function isBrowserAppDependencyAllowed(targetPkg) {
   return (
     targetPkg.name === '@tinytinkerer/app-browser' ||
     targetPkg.name === '@tinytinkerer/ui'
+  )
+}
+
+function isPluginPackage(pkg) {
+  return (
+    typeof pkg.name === 'string' &&
+    pkg.name.startsWith('@tinytinkerer/plugin-') &&
+    relative(rootDir, pkg.dir).startsWith('packages/plugins/')
   )
 }
 

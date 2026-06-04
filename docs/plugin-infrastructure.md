@@ -77,7 +77,9 @@ function isPluginModule(value: unknown): value is PluginModule  // runtime guard
 
 `PluginManifest`/`PluginModule` live in the **contract layer**, not inside any concrete plugin,
 so the host depends only on the abstraction. `isPluginModule` keeps dynamic loading best-effort:
-an absent or malformed module is rejected here rather than throwing into host construction.
+an absent or malformed module is rejected here rather than throwing into host construction. The
+browser host performs the final validation after instantiating the plugin: `createPlugin().id`
+must match `manifest.id`, and duplicate plugin ids are ignored after the first valid plugin.
 
 `PluginHost.capture` is an **inversion-of-control sink**, exactly like the telemetry
 `setCaptureExceptionSink` in `@tinytinkerer/sentry-telemetry`: `agent-core` defines the *type*,
@@ -95,12 +97,16 @@ registry.collectTools(activeIds: ReadonlySet<string>, host: PluginHost): Tool[]
 - A newly-active plugin gets a one-time `activate(host)` call; a plugin that was active on a
   previous call and is now absent from `activeIds` gets `deactivate()`. Every lifecycle hook is
   best-effort — never awaited, sync/async failures swallowed — so a misbehaving plugin can never
-  break runtime construction. A plugin's `createTools` that throws is caught and contributes no
-  tools.
+  break runtime construction. In the browser, the chat store owns one runtime factory / plugin
+  registry, so lifecycle state is preserved across prompts. A plugin's `createTools` that throws
+  is caught and contributes no tools.
 - Each contributed tool's `execute` is wrapped so that a thrown `PluginCaptureError` forwards
   its `report` to `host.capture` and is then **rethrown** — the agent runtime's normal
   tool-failure path (`agent.tool.failed`) still runs. The capture call is itself best-effort, so
   a throwing sink never changes the error the runtime observes.
+- Tool ids are unique within a runtime. Duplicate ids are skipped before registration in the
+  browser host, and the core `ToolRegistry` rejects duplicate registration as a last line of
+  defense. A skipped plugin tool does not expose its planner descriptor.
 
 ## The Feedback plugin (`@tinytinkerer/plugin-feedback`)
 
@@ -142,9 +148,9 @@ Settings Modal toggle (app-browser/browser-settings-modal.tsx)
   ──────────────────────────────────────────────────────────────────────────────
   next chat run:
   chat-store: loadPluginModules()  (dynamic discovery, see below)
-  → get-runtime reads settings.pluginActivation, forwards the loaded modules
-  → create-runtime: resolveActivePluginIds() filters modules → PluginRegistry.collectTools()
-  → agent-core ToolRegistry  (only active plugins' tools)
+    → get-runtime creates a persistent PluginRegistry for the loaded modules
+    → create-runtime: resolveActivePluginIds() filters modules → PluginRegistry.collectTools()
+    → agent-core ToolRegistry  (only active plugins' tools)
 ```
 
 - **State shape:** `PluginActivationState = Record<pluginId, boolean>` in `contracts`.
@@ -189,8 +195,9 @@ Why `import.meta.glob` rather than a static or literal dynamic `import('@tinytin
   `app-browser`.
 
 `loadPluginModules()` is consumed in two places, both via the loaded `PluginModule[]`:
-`chat-store` awaits it and passes the modules to `createBrowserRuntimeFactory` (runtime tools +
-descriptors), and the Settings controller (`surfaces.tsx`) loads the manifests for the toggles.
+`chat-store` awaits it once and passes the modules to `createBrowserRuntimeFactory` (runtime tools
++ descriptors, with lifecycle preserved across prompts), and the Settings controller
+(`surfaces.tsx`) loads the manifests for the toggles.
 
 ## Routing into Sentry (`app-browser`)
 
@@ -223,9 +230,9 @@ rather than an error issue. See [sentry-telemetry.md](./sentry-telemetry.md) and
 ## Dependency rules
 
 - `@tinytinkerer/agent-core` still imports only `contracts` (the plugin layer adds no new edge).
-- `@tinytinkerer/plugin-feedback` (and any `packages/plugins/*` package) may import only
-  `agent-core`, `contracts`, and local modules, and must stay product-agnostic (no browser APIs,
-  React, or telemetry imports). Enforced by `scripts/check-boundaries.mjs`.
+- Any `@tinytinkerer/plugin-*` package under `packages/plugins/*` may import only `agent-core`,
+  `contracts`, and local modules, and must stay product-agnostic (no browser APIs, React, or
+  telemetry imports). Enforced generically by `scripts/check-boundaries.mjs`.
 - `@tinytinkerer/app-browser` **must not** import a concrete plugin package, statically or via a
   literal dynamic import — plugins are discovered through `import.meta.glob`. The boundary check
   rejects any `@tinytinkerer/plugin-*` import from `app-browser`. It wires the capture sink to
@@ -239,7 +246,7 @@ Because discovery is dynamic, adding a plugin touches **no host code**:
 2. From its `src/index.ts`, export the `PluginModule` surface: a `manifest`
    (`{ id, label, description, toolDescriptors? }`) and a `createPlugin()` returning an
    `AgentPlugin` (with `createTools`).
-3. Add the boundary rules for the new package in `scripts/check-boundaries.mjs`.
+3. Run `pnpm check:boundaries` to verify it stays product-agnostic.
 4. If the plugin sends user content anywhere, document it in `PRIVACY.md` / `PRIVACY-UPDATE.md`.
 
 That's it — the host discovers it via `import.meta.glob`, shows its toggle, and wires its tools

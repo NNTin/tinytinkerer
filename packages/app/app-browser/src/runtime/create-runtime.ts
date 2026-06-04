@@ -20,6 +20,37 @@ import { createWebSearchTool } from './web-search-tool'
 import { createMcpTool } from './mcp-tool'
 import { captureTelemetryException, captureTelemetryMessage } from '../telemetry/telemetry'
 
+export type BrowserPluginRuntime = {
+  registry: PluginRegistry
+  modulesById: ReadonlyMap<string, PluginModule>
+}
+
+export const createPluginRuntime = (
+  pluginModules: readonly PluginModule[] = []
+): BrowserPluginRuntime => {
+  const registry = new PluginRegistry()
+  const modulesById = new Map<string, PluginModule>()
+
+  for (const mod of pluginModules) {
+    if (modulesById.has(mod.manifest.id)) {
+      continue
+    }
+
+    try {
+      const plugin = mod.createPlugin()
+      if (plugin.id !== mod.manifest.id) {
+        continue
+      }
+      registry.register(plugin)
+      modulesById.set(mod.manifest.id, mod)
+    } catch {
+      // Optional plugin failed to instantiate — tolerate and skip.
+    }
+  }
+
+  return { registry, modulesById }
+}
+
 export const createRuntime = (options: {
   baseUrl: string
   searchEnabled: boolean
@@ -33,15 +64,37 @@ export const createRuntime = (options: {
   // Plugin modules the host discovered dynamically; only those whose id is
   // active in settings contribute tools and planner descriptors.
   pluginModules?: PluginModule[]
+  // Persistent plugin runtime owned by a browser runtime factory. Keeping it
+  // outside individual chat runtime instances lets lifecycle hooks observe
+  // activation changes across runs.
+  pluginRuntime?: BrowserPluginRuntime
 }) => {
   const edgeFetch = createEdgeFetch(options.baseUrl, options.getToken)
 
   const tools: Tool<unknown, unknown>[] = []
   const allToolDescriptors: PlannerToolDescriptor[] = []
+  const registeredToolIds = new Set<string>()
+
+  const addTool = (tool: Tool<unknown, unknown>): boolean => {
+    if (registeredToolIds.has(tool.id)) {
+      return false
+    }
+    registeredToolIds.add(tool.id)
+    tools.push(tool)
+    return true
+  }
+
+  const addToolWithDescriptor = (
+    tool: Tool<unknown, unknown>,
+    descriptor: PlannerToolDescriptor
+  ): void => {
+    if (addTool(tool)) {
+      allToolDescriptors.push(descriptor)
+    }
+  }
 
   if (options.searchEnabled) {
-    tools.push(createWebSearchTool(edgeFetch))
-    allToolDescriptors.push({
+    addToolWithDescriptor(createWebSearchTool(edgeFetch), {
       id: 'web-search',
       description: 'Search the web for fresh context using Tavily.',
       inputSchema: {
@@ -56,8 +109,7 @@ export const createRuntime = (options: {
     const disc = options.mcpDiscovery?.[server.id]
     if (!disc || disc.error) continue
     for (const toolMeta of disc.tools) {
-      tools.push(createMcpTool(server, toolMeta, edgeFetch))
-      allToolDescriptors.push({
+      addToolWithDescriptor(createMcpTool(server, toolMeta, edgeFetch), {
         id: `mcp:${server.id}:${toolMeta.toolName}`,
         description: `[${server.name}] ${toolMeta.description}`,
         inputSchema: toolMeta.inputSchema
@@ -73,10 +125,12 @@ export const createRuntime = (options: {
   // routed to `captureTelemetryMessage` so it surfaces as an informational
   // message (not an error issue); `warning`/`error` go through the exception path.
   const activePluginIds = resolveActivePluginIds(options.pluginActivation ?? {})
-  const activePluginModules = (options.pluginModules ?? []).filter((mod) =>
-    activePluginIds.has(mod.manifest.id)
+  const pluginRuntime =
+    options.pluginRuntime ?? createPluginRuntime(options.pluginModules ?? [])
+  const activePluginModules = [...pluginRuntime.modulesById.values()].filter(
+    (mod) => activePluginIds.has(mod.manifest.id)
   )
-  if (activePluginModules.length > 0) {
+  if (activePluginIds.size > 0 || pluginRuntime.registry.list().length > 0) {
     const pluginHost: PluginHost = {
       capture: (report) => {
         const captureOptions = {
@@ -92,14 +146,17 @@ export const createRuntime = (options: {
         }
       }
     }
-    const pluginRegistry = new PluginRegistry()
-    for (const mod of activePluginModules) {
-      pluginRegistry.register(mod.createPlugin())
+    const addedPluginToolIds = new Set<string>()
+    for (const tool of pluginRuntime.registry.collectTools(activePluginIds, pluginHost)) {
+      if (addTool(tool)) {
+        addedPluginToolIds.add(tool.id)
+      }
     }
-    tools.push(...pluginRegistry.collectTools(activePluginIds, pluginHost))
     for (const mod of activePluginModules) {
       for (const descriptor of mod.manifest.toolDescriptors ?? []) {
-        allToolDescriptors.push(descriptor)
+        if (addedPluginToolIds.has(descriptor.id)) {
+          allToolDescriptors.push(descriptor)
+        }
       }
     }
   }

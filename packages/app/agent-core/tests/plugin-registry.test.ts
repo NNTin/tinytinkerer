@@ -7,7 +7,7 @@ import {
   type AgentPlugin,
   type PluginHost
 } from '../src/plugins/types'
-import type { Tool } from '../src/tools/registry'
+import { ToolRegistry, type Tool } from '../src/tools/registry'
 
 const echoTool = (id: string, execute: Tool<unknown, unknown>['execute']): Tool<unknown, unknown> => ({
   id,
@@ -148,6 +148,17 @@ describe('PluginRegistry', () => {
     const [tool] = registry.collectTools(new Set(['a']), host)
 
     await expect(tool!.execute({})).rejects.toThrow('not implemented')
+  })
+})
+
+describe('ToolRegistry', () => {
+  it('rejects duplicate tool ids instead of replacing the existing tool', () => {
+    const registry = new ToolRegistry()
+    registry.register(echoTool('tool', async () => 'first'))
+
+    expect(() => registry.register(echoTool('tool', async () => 'second'))).toThrow(
+      'Tool already registered: tool'
+    )
   })
 })
 

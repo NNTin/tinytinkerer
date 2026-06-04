@@ -11,6 +11,9 @@ export class ToolRegistry {
   private readonly tools = new Map<string, Tool<unknown, unknown>>()
 
   register<Input, Output>(tool: Tool<Input, Output>): void {
+    if (this.tools.has(tool.id)) {
+      throw new Error(`Tool already registered: ${tool.id}`)
+    }
     this.tools.set(tool.id, tool)
   }
 

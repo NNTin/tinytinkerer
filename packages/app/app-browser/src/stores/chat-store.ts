@@ -1,6 +1,5 @@
-import {
-  type ChatEvent
-} from '@tinytinkerer/contracts'
+import type { ChatEvent } from '@tinytinkerer/contracts'
+import type { ChatRuntimeFactory } from '@tinytinkerer/app-core'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { BrowserShell } from '../shell'
 import { loadCoreModule } from '../core-module'
@@ -31,6 +30,7 @@ export const createChatStore = (options: {
 }): ChatStore => {
   let activeRunController: AbortController | undefined
   let initializePromise: Promise<void> | null = null
+  let runtimeFactoryPromise: Promise<ChatRuntimeFactory> | null = null
 
   const ensureInitialized = async (set: ChatStore['setState'], get: ChatStore['getState']) => {
     if (get().hydrated) {
@@ -50,6 +50,22 @@ export const createChatStore = (options: {
       })
 
     return initializePromise
+  }
+
+  const getRuntimeFactory = async (): Promise<ChatRuntimeFactory> => {
+    runtimeFactoryPromise ??= (async () => {
+      const { createBrowserRuntimeFactory } = await import('../runtime/get-runtime')
+      const { loadPluginModules } = await import('../plugins/registry')
+      const pluginModules = await loadPluginModules()
+      return createBrowserRuntimeFactory({
+        shell: options.shell,
+        authStore: options.authStore,
+        settingsStore: options.settingsStore,
+        statusStore: options.statusStore,
+        pluginModules
+      })
+    })()
+    return runtimeFactoryPromise
   }
 
   return createStore<ChatState>((set, get) => ({
@@ -75,16 +91,7 @@ export const createChatStore = (options: {
         return
       }
 
-      const { createBrowserRuntimeFactory } = await import('../runtime/get-runtime')
-      const { loadPluginModules } = await import('../plugins/registry')
-      const pluginModules = await loadPluginModules()
-      const runtimeFactory = createBrowserRuntimeFactory({
-        shell: options.shell,
-        authStore: options.authStore,
-        settingsStore: options.settingsStore,
-        statusStore: options.statusStore,
-        pluginModules
-      })
+      const runtimeFactory = await getRuntimeFactory()
       const runController = new AbortController()
       activeRunController = runController
       set({ isRunning: true, isRetryPending: false })
