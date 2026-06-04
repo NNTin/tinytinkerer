@@ -2,6 +2,7 @@
   "name": "tinytinkerer",
   "private": true,
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "packageManager": "pnpm@10.16.1",
   "scripts": {
     "generate:brand-assets": "node ./scripts/generate-brand-assets.mjs",
