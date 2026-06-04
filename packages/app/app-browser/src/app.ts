@@ -17,7 +17,6 @@ import {
   type SettingsStore
 } from './stores/settings-store'
 import { createStatusStore, type StatusState, type StatusStore } from './stores/status-store'
-import { setContentRenderErrorReporter } from '@tinytinkerer/content-react'
 import {
   captureTelemetryException,
   configureTelemetry,
@@ -78,20 +77,24 @@ export const initializeBrowserApp = async (
 ): Promise<void> => {
   applyBrandMetadata(config)
   const { shell } = app
-  // Route content render-boundary failures to Sentry. Registered once at
-  // bootstrap; `captureTelemetryException` no-ops until telemetry is initialized
-  // (consent granted, DSN set, non-dev environment), mirroring how the SDK's
-  // global error handlers only fire after init. The component stack is attached
-  // as context, and the per-message fingerprint keeps distinct render failures
-  // as distinct issues.
-  setContentRenderErrorReporter((error, info) => {
-    captureTelemetryException(error, {
-      level: 'error',
-      tags: { source: 'content-render' },
-      ...(info.componentStack
-        ? { contexts: { react: { componentStack: info.componentStack } } }
-        : {}),
-      fingerprint: ['content-render', error.message]
+  // Route content render-boundary failures to Sentry. Imported dynamically so
+  // the heavy content-react chunk stays out of the startup entry bundle (it is
+  // lazily loaded when content first renders — which is also the only point a
+  // render error can occur, so registering asynchronously here is safe). The
+  // sink no-ops until telemetry is initialized (consent granted, DSN set,
+  // non-dev environment), mirroring how the SDK's global handlers only fire
+  // after init. Component stack goes in context; the per-message fingerprint
+  // keeps distinct render failures as distinct issues.
+  void import('@tinytinkerer/content-react').then(({ setContentRenderErrorReporter }) => {
+    setContentRenderErrorReporter((error, info) => {
+      captureTelemetryException(error, {
+        level: 'error',
+        tags: { source: 'content-render' },
+        ...(info.componentStack
+          ? { contexts: { react: { componentStack: info.componentStack } } }
+          : {}),
+        fingerprint: ['content-render', error.message]
+      })
     })
   })
   await configureTelemetry(
