@@ -62,9 +62,9 @@ jobs:
 
             const developSha = developBranch.data.commit.sha
             const mainSha = baseBranch.data.commit.sha
-            const totalCommits = meta.total_commits ?? compare.length
+            const rawAheadCommits = meta.total_commits ?? compare.length
 
-            if (totalCommits === 0) {
+            if (rawAheadCommits === 0) {
               core.notice(`${HEAD} is not ahead of ${BASE}; nothing to release. No PR created.`)
               return
             }
@@ -185,7 +185,7 @@ jobs:
                 repo,
                 commit_sha: commit.sha,
               })
-              const pr = associated.data.find((p) => p.base.ref === HEAD || p.merged_at) ?? associated.data[0]
+              const pr = associated.data.find((p) => p.base.ref === HEAD && p.merged_at)
 
               if (pr) {
                 if (!prByNumber.has(pr.number)) {
@@ -316,7 +316,7 @@ jobs:
             lines.push(`Promotes [\`${HEAD}\`](${compareUrl}) into \`${BASE}\`.`, '')
             lines.push('### 📊 Stats', '')
             lines.push(
-              `**${totalCommits}** commits · ` +
+              `**${commitEntries.length}** commits · ` +
                 `**${prByNumber.size}** merged PRs · ` +
                 `**${changedFiles.length}** files changed · ` +
                 `**+${additions} / −${deletions}** · ` +
