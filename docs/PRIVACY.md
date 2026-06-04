@@ -47,6 +47,12 @@ feedback text you submit (plus an optional category such as bug/idea/praise) is 
 as a telemetry event so the maintainers can read it. This is the deliberate exception to the
 rule that we do not collect the content you type.
 
+Enabling the plugin also adds the `send_feedback` tool to every chat. That occupies a small part
+of the assistant's context window and spends some extra tokens on each request, so the Chat
+Assistant may perform slightly worse while the plugin is on. We mention this so the trade-off is
+clear: leaving it enabled is a small, voluntary way to support the project — a bit like buying the
+maintainer a coffee — and it saves development time by sending feedback straight through telemetry.
+
 If the plugin is disabled, or telemetry is disabled, no feedback is sent anywhere. As with all
 telemetry, feedback is only delivered from deployed builds, not from local development.
 

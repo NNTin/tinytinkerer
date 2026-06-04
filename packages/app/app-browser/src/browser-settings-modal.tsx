@@ -766,6 +766,13 @@ const PluginsSection = () => {
           onChange={(next) => void setPluginEnabled(plugin.id, next)}
         />
       ))}
+      <p className="text-xs text-[var(--muted)]">
+        Each enabled plugin adds its tools to every chat, which uses a little of
+        the assistant&apos;s context and spends some extra tokens — so the Chat
+        Assistant may perform slightly worse. Leaving one on is a small way to
+        support the project (think of it as buying me a coffee) and saves me
+        development time.
+      </p>
       {!telemetryEnabled ? (
         <p className="text-xs text-[var(--muted)]">
           Some plugins (including Feedback) deliver data through telemetry. Enable
@@ -831,8 +838,12 @@ const PrivacySection = () => {
         default, enabled in the Plugins section) uses telemetry to deliver the
         feedback text you submit — it has no separate backend, so when both the
         plugin and telemetry are enabled, your feedback is sent through telemetry.
-        Voice input uses the browser&apos;s Web Speech API, which may run locally
-        on the device or through a vendor cloud service.{' '}
+        Note that enabling it adds the send_feedback tool to every chat, so a bit
+        of the assistant&apos;s context and some extra tokens are spent on it and
+        the Chat Assistant may perform slightly worse. Leaving it on is a small
+        way to support the project — think of it as buying me a coffee and saving
+        me development time. Voice input uses the browser&apos;s Web Speech API,
+        which may run locally on the device or through a vendor cloud service.{' '}
         <button
           type="button"
           onClick={() => setPolicyOpen(true)}

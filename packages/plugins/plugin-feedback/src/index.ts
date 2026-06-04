@@ -21,7 +21,7 @@ export const feedbackPluginManifest: PluginManifest = {
   id: SEND_FEEDBACK_PLUGIN_ID,
   label: 'Feedback (send_feedback tool)',
   description:
-    'Let the assistant submit your feedback. There is no backend yet — when telemetry is also enabled, feedback is sent via telemetry. Off by default.'
+    "Lets the assistant submit your feedback. There's no backend yet, so when telemetry is also enabled your feedback is sent through telemetry. Turning it on adds the send_feedback tool to every chat, which takes up a little of the assistant's context and spends some extra tokens — so the Chat Assistant may perform slightly worse. Leaving it on is a small way to support the project (think of it as buying me a coffee) and saves me development time. Off by default."
 }
 
 // Thrown by the send_feedback tool. Carries the feedback as a structured report
