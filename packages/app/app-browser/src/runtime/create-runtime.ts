@@ -18,7 +18,11 @@ import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch } from './edge-fetch'
 import { createWebSearchTool } from './web-search-tool'
 import { createMcpTool } from './mcp-tool'
-import { captureTelemetryException, captureTelemetryMessage } from '../telemetry/telemetry'
+import {
+  captureTelemetryException,
+  captureTelemetryMessage,
+  fingerprintMessage
+} from '../telemetry/telemetry'
 
 export type BrowserPluginRuntime = {
   registry: PluginRegistry
@@ -180,7 +184,7 @@ export const createRuntime = (options: {
       captureTelemetryException(error, {
         level: 'error',
         tags: { source: 'agent-runtime' },
-        fingerprint: ['agent-runtime', error.message]
+        fingerprint: ['agent-runtime', fingerprintMessage(error.message)]
       })
     },
     createAssistantContentSession: async (initialSource = '') => {

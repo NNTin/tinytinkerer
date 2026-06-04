@@ -1,11 +1,20 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createContentRuntime,
   type NodeRendererPlugin,
   type RuntimeFailureReason
 } from '../src/runtime.js'
+import {
+  setContentRenderErrorReporter,
+  type ContentRenderErrorInfo
+} from '../src/error-reporter.js'
 
 describe('createContentRuntime', () => {
+  afterEach(() => {
+    // The reporter is a module singleton; clear it so tests stay isolated.
+    setContentRenderErrorReporter(null)
+  })
+
   it('dispatches the highest-priority matching plugin for a node type', () => {
     const runtime = createContentRuntime<string>({
       fallback: () => 'fallback'
@@ -132,6 +141,33 @@ describe('createContentRuntime', () => {
     ])
 
     expect(load).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports loadFailed to the registered reporter when plugin.load rejects', async () => {
+    const reported: Array<{ error: Error; info: ContentRenderErrorInfo }> = []
+    setContentRenderErrorReporter((error, info) => {
+      reported.push({ error, info })
+    })
+
+    const runtime = createContentRuntime<string>({ fallback: () => 'fallback' })
+    runtime.register({
+      id: 'mermaid-code',
+      nodeType: 'codeBlock',
+      matches: (node) => node.language === 'mermaid',
+      requirements: { lazy: true },
+      load: () => Promise.reject(new Error('chunk load failed')),
+      render: (node) => node.code
+    })
+
+    await expect(
+      runtime.prepareNode({ type: 'codeBlock', code: 'graph', language: 'mermaid' })
+    ).rejects.toThrow('chunk load failed')
+
+    expect(reported).toHaveLength(1)
+    expect(reported[0]?.error.message).toBe('chunk load failed')
+    expect(reported[0]?.info.reason).toBe('loadFailed')
+    expect(reported[0]?.info.pluginId).toBe('mermaid-code')
+    expect(reported[0]?.info.nodeType).toBe('codeBlock')
   })
 
   it('retries plugin.load after a failure', async () => {

@@ -44,8 +44,12 @@ import { cn } from '@tinytinkerer/ui'
 
 // Re-export the render-error reporter surface so hosts wire telemetry through
 // the package entry point (the sink itself lives in ./error-reporter to avoid a
-// circular import with the runtime).
+// circular import with the runtime, and because cross-package subpath imports
+// are forbidden by the workspace boundary checks). `reportContentRenderError`
+// is exported too so hosts that perform their own lazy plugin loading (e.g. the
+// browser's code-block plugins) can report load failures through the same sink.
 export {
+  reportContentRenderError,
   setContentRenderErrorReporter,
   type ContentRenderErrorInfo,
   type ContentRenderErrorReporter

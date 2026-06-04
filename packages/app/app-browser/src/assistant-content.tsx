@@ -2,6 +2,7 @@ import type { ContentDocument } from '@tinytinkerer/contracts'
 import {
   CodeBlockFallback,
   ContentDocumentContent,
+  reportContentRenderError,
   type CodeBlockNode,
   type ContentRenderOptions,
   type RenderContext,
@@ -80,7 +81,14 @@ const createLazyCodeBlockPlugin = (options: {
             setRevision((value) => value + 1)
           }
         })
-        .catch(() => {
+        .catch((error: unknown) => {
+          // The lazy code-block plugin chunk failed to load. This path renders a
+          // plain-code fallback; report it so the failure is not invisible.
+          reportContentRenderError(error, {
+            reason: 'loadFailed',
+            nodeType: 'codeBlock',
+            pluginId: options.id
+          })
           if (!cancelled) {
             setFailed(true)
             setRevision((value) => value + 1)

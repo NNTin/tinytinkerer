@@ -340,6 +340,15 @@ export const createContentRuntime = <TResult>(
           status: 'failed',
           error
         })
+        // A lazy renderer's load() rejected — without this the failure only ever
+        // becomes a silent `loadFailed` fallback. Report once per load attempt
+        // (this catch runs once per attempt) before re-throwing so Suspense's
+        // boundary still falls back gracefully.
+        reportContentRenderError(error, {
+          reason: 'loadFailed',
+          nodeType: plugin.nodeType,
+          ...(plugin.id ? { pluginId: plugin.id } : {})
+        })
         throw error
       })
 
