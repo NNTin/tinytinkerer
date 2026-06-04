@@ -71,6 +71,14 @@ const ensureSentry = async (): Promise<void> => {
   // Lazy import keeps @sentry/react out of the main bundle until consent.
   sentryInitPromise ??= import('@sentry/react')
     .then((mod) => {
+      // Consent can be revoked while the dynamic import is in flight. In that
+      // race `setTelemetryConsent(false)` sees `sentry === null` and clears
+      // nothing, so we must re-check here: if consent is gone, abort init (no
+      // SDK boot, no sinks) and reset the promise so a later re-grant retries.
+      if (!consent) {
+        sentryInitPromise = null
+        return
+      }
       mod.init({
         dsn: config.dsn,
         environment: config.environment,

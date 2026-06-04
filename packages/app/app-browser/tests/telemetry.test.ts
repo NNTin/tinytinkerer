@@ -72,6 +72,22 @@ describe('telemetry environment gating', () => {
     )
     expect(init).not.toHaveBeenCalled()
   })
+
+  it('aborts init when consent is revoked while the dynamic import is in flight', async () => {
+    const telemetry = await loadTelemetry()
+    await telemetry.configureTelemetry(
+      { dsn: 'https://dsn@sentry.io/1', environment: 'production', appVersion: '1.0.0', buildHash: 'abc1234' },
+      preferences
+    )
+    // Grant consent but do not await: the @sentry/react import is now in flight
+    // and the init `.then` callback has not run yet.
+    const granting = telemetry.setTelemetryConsent(true)
+    // Revoke before the import resolves. `sentry` is still null here, so the
+    // teardown path is a no-op — the consent gate must be enforced in the `.then`.
+    await telemetry.setTelemetryConsent(false)
+    await granting
+    expect(init).not.toHaveBeenCalled()
+  })
 })
 
 describe('telemetry message capture', () => {
