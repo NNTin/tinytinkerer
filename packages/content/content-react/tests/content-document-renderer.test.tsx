@@ -13,6 +13,8 @@ import {
   MARKDOWN_STREAMING_CLASS,
   PreviewCodeFrame,
   REACT_SSR_EXECUTION_POLICY,
+  setContentRenderErrorReporter,
+  type ContentRenderErrorInfo,
   TableNodeView,
   tableToMarkdown
 } from '../src/index.js'
@@ -109,6 +111,154 @@ describe('ContentDocumentRenderer', () => {
     )
 
     expect(screen.getByText('[Button]')).toBeInTheDocument()
+  })
+
+  // A component that throws during React's render phase. Unlike a plugin whose
+  // `render()` throws eagerly (caught by the runtime and turned into a fallback),
+  // this error escapes into React's renderer and is caught by the RendererBoundary
+  // — the path that was previously swallowed by an empty componentDidCatch.
+  const ThrowDuringRender = (): ReactElement => {
+    throw new Error('boom')
+  }
+
+  type Reported = { error: Error; info: ContentRenderErrorInfo }
+
+  it('reports a render-boundary failure to the registered reporter', () => {
+    // React logs caught render errors to console.error; silence it so the test
+    // output stays clean.
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const reported: Reported[] = []
+    setContentRenderErrorReporter((error, info) => reported.push({ error, info }))
+
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:wireframe',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'wireframe',
+      render: () => <ThrowDuringRender />
+    })
+
+    try {
+      render(
+        <ContentDocumentRenderer
+          runtime={runtime}
+          document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
+        />
+      )
+
+      // Fallback still renders, and the failure is no longer swallowed.
+      expect(screen.getByText('[Button]')).toBeInTheDocument()
+      expect(reported).toHaveLength(1)
+      expect(reported[0]?.error).toBeInstanceOf(Error)
+      expect(reported[0]?.error.message).toBe('boom')
+      expect(reported[0]?.info.reason).toBe('renderFailed')
+      expect(reported[0]?.info.nodeType).toBe('codeBlock')
+      expect(reported[0]?.info.pluginId).toBe('test:wireframe')
+    } finally {
+      setContentRenderErrorReporter(null)
+      consoleError.mockRestore()
+    }
+  })
+
+  it('reports an eager plugin render() throw caught at the runtime level', () => {
+    const reported: Reported[] = []
+    setContentRenderErrorReporter((error, info) => reported.push({ error, info }))
+
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:wireframe',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'wireframe',
+      render: () => {
+        throw new Error('eager boom')
+      }
+    })
+
+    try {
+      render(
+        <ContentDocumentRenderer
+          runtime={runtime}
+          document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
+        />
+      )
+
+      // Fallback still renders, and the previously-swallowed eager throw is now
+      // reported with structured context (no React component stack on this path).
+      expect(screen.getByText('[Button]')).toBeInTheDocument()
+      expect(reported).toHaveLength(1)
+      expect(reported[0]?.error.message).toBe('eager boom')
+      expect(reported[0]?.info.reason).toBe('renderFailed')
+      expect(reported[0]?.info.nodeType).toBe('codeBlock')
+      expect(reported[0]?.info.pluginId).toBe('test:wireframe')
+    } finally {
+      setContentRenderErrorReporter(null)
+    }
+  })
+
+  it('reports when a plugin fallback throws, then still renders the host fallback', () => {
+    const reported: Reported[] = []
+    setContentRenderErrorReporter((error, info) => reported.push({ error, info }))
+
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:wireframe',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'wireframe',
+      render: () => {
+        throw new Error('render boom')
+      },
+      fallback: () => {
+        throw new Error('fallback boom')
+      }
+    })
+
+    try {
+      render(
+        <ContentDocumentRenderer
+          runtime={runtime}
+          document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
+        />
+      )
+
+      // Host fallback still renders. Both the render throw and the fallback throw
+      // are reported, with distinct reasons.
+      expect(screen.getByText('[Button]')).toBeInTheDocument()
+      const reasons = reported.map((entry) => entry.info.reason)
+      expect(reasons).toContain('renderFailed')
+      expect(reasons).toContain('fallbackFailed')
+    } finally {
+      setContentRenderErrorReporter(null)
+    }
+  })
+
+  it('does not break rendering when no reporter is registered', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    setContentRenderErrorReporter(null)
+
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:wireframe',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'wireframe',
+      render: () => <ThrowDuringRender />
+    })
+
+    try {
+      render(
+        <ContentDocumentRenderer
+          runtime={runtime}
+          document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
+        />
+      )
+
+      expect(screen.getByText('[Button]')).toBeInTheDocument()
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('keeps default renderers while adding custom plugins through the supplied runtime', () => {

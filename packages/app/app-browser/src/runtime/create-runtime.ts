@@ -18,7 +18,11 @@ import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch } from './edge-fetch'
 import { createWebSearchTool } from './web-search-tool'
 import { createMcpTool } from './mcp-tool'
-import { captureTelemetryException, captureTelemetryMessage } from '../telemetry/telemetry'
+import {
+  captureTelemetryException,
+  captureTelemetryMessage,
+  fingerprintMessage
+} from '../telemetry/telemetry'
 
 export type BrowserPluginRuntime = {
   registry: PluginRegistry
@@ -170,6 +174,19 @@ export const createRuntime = (options: {
       allToolDescriptors,
       ...(options.getProvider ? { getProvider: options.getProvider } : {})
     }),
+    // Terminal runtime failures (e.g. a ReAct decision timeout, a provider/edge
+    // error, or a rate limit that escaped the cooldown path) are swallowed into
+    // a friendly fallback for the user; route them to Sentry here so they are
+    // not lost. No-ops without telemetry consent. Aborts and handled rate-limit
+    // cooldowns never reach this sink. The fingerprint keeps each distinct
+    // failure its own issue rather than collapsing them under the shared frame.
+    reportError: (error) => {
+      captureTelemetryException(error, {
+        level: 'error',
+        tags: { source: 'agent-runtime' },
+        fingerprint: ['agent-runtime', fingerprintMessage(error.message)]
+      })
+    },
     createAssistantContentSession: async (initialSource = '') => {
       const { createMarkdownContentSession } = await import('@tinytinkerer/content-markdown')
       const session = createMarkdownContentSession(initialSource)

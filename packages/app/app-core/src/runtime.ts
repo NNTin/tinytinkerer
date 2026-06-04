@@ -12,13 +12,14 @@ import type {
   ExecutionContext as AgentExecutionContext,
   ModelProvider as AgentModelProvider,
   ProviderCallOptions as AgentProviderCallOptions,
+  RuntimeErrorReporter,
   SynthesisChunk,
   Tool as AgentTool
 } from '@tinytinkerer/agent-core'
 import type { AgentType, ExecutionPlan, PlanStep, ReActDecision } from '@tinytinkerer/contracts'
 import type { ChatRuntime } from './ports'
 
-export type { DecisionChunk, SynthesisChunk } from '@tinytinkerer/agent-core'
+export type { DecisionChunk, RuntimeErrorReporter, SynthesisChunk } from '@tinytinkerer/agent-core'
 
 // Re-export the plugin runtime surface so app-browser composes plugins through
 // the app-core boundary, mirroring how `Tool` is surfaced here.
@@ -85,6 +86,7 @@ export const createChatRuntime = (options: {
   stepTimeoutMs?: number
   searchEnabled?: boolean
   createAssistantContentSession?: CreateAssistantContentSession
+  reportError?: RuntimeErrorReporter
 }): ChatRuntime => {
   const registry = new ToolRegistry()
   for (const tool of options.tools ?? []) {
@@ -101,7 +103,8 @@ export const createChatRuntime = (options: {
     ...(options.searchEnabled !== undefined ? { searchEnabled: options.searchEnabled } : {}),
     ...(options.createAssistantContentSession
       ? { createAssistantContentSession: options.createAssistantContentSession }
-      : {})
+      : {}),
+    ...(options.reportError ? { reportError: options.reportError } : {})
   }
 
   const adaptedProvider = createProviderAdapter(options.provider)

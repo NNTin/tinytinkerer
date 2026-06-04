@@ -17,7 +17,13 @@ import {
   type SettingsStore
 } from './stores/settings-store'
 import { createStatusStore, type StatusState, type StatusStore } from './stores/status-store'
-import { configureTelemetry, setTelemetryConsent } from './telemetry/telemetry'
+import {
+  captureTelemetryException,
+  configureTelemetry,
+  fingerprintMessage,
+  setTelemetryConsent
+} from './telemetry/telemetry'
+import type { ContentRenderErrorInfo } from '@tinytinkerer/content-react'
 
 export type BrowserApp = {
   shell: BrowserShell
@@ -73,6 +79,48 @@ export const initializeBrowserApp = async (
 ): Promise<void> => {
   applyBrandMetadata(config)
   const { shell } = app
+  // Route content render failures (React boundary, runtime per-node catch, and
+  // failed lazy plugin loads) to Sentry. The sink no-ops until telemetry is
+  // initialized (consent granted, DSN set, non-dev environment), mirroring how
+  // the SDK's global handlers only fire after init. Component stack goes in
+  // context; the reason + plugin/node fingerprint keeps distinct render failures
+  // as distinct issues rather than collapsing under the shared frame.
+  const reportContentRender = (error: Error, info: ContentRenderErrorInfo): void => {
+    captureTelemetryException(error, {
+      level: 'error',
+      tags: {
+        source: 'content-render',
+        ...(info.reason ? { content_render_reason: info.reason } : {}),
+        ...(info.nodeType ? { content_node_type: info.nodeType } : {}),
+        ...(info.pluginId ? { content_plugin: info.pluginId } : {})
+      },
+      ...(info.componentStack
+        ? { contexts: { react: { componentStack: info.componentStack } } }
+        : {}),
+      fingerprint: [
+        'content-render',
+        info.reason ?? 'render',
+        info.pluginId ?? info.nodeType ?? 'unknown',
+        fingerprintMessage(error.message)
+      ]
+    })
+  }
+  // content-react is imported dynamically so its heavy chunk stays out of the
+  // startup entry bundle (cross-package subpath imports are forbidden, so we
+  // cannot reach the leaf reporter module on its own). The import is kicked off
+  // here and awaited at the end of initialization — overlapping store init so it
+  // adds little latency — so this function only resolves once the sink is
+  // registered. That closes the race where content rendered before a
+  // fire-and-forget registration would silently drop its error.
+  const reporterReady = import('@tinytinkerer/content-react')
+    .then(({ setContentRenderErrorReporter }) => {
+      setContentRenderErrorReporter(reportContentRender)
+    })
+    .catch((error: unknown) => {
+      // Telemetry wiring must never break startup; surface the failure in dev
+      // and continue without the content-render sink.
+      console.error('Failed to wire content render telemetry', error)
+    })
   await configureTelemetry(
     {
       ...(shell.config.sentryDsn ? { dsn: shell.config.sentryDsn } : {}),
@@ -90,6 +138,9 @@ export const initializeBrowserApp = async (
   if (app.stores.settings.getState().telemetryEnabled) {
     await setTelemetryConsent(true)
   }
+  // Ensure the content-render sink is registered before initialization resolves
+  // (and thus before the UI is marked ready) so no early render slips past it.
+  await reporterReady
 }
 
 export const AppBrowserProvider = ({

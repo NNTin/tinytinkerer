@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
   type ComponentPropsWithoutRef,
+  type ErrorInfo,
   type ReactNode
 } from 'react'
 import {
@@ -33,7 +34,26 @@ import {
   type RenderContext,
   type RuntimeExecutionPolicy
 } from './runtime'
+import {
+  reportContentRenderError,
+  setContentRenderErrorReporter,
+  type ContentRenderErrorInfo,
+  type ContentRenderErrorReporter
+} from './error-reporter'
 import { cn } from '@tinytinkerer/ui'
+
+// Re-export the render-error reporter surface so hosts wire telemetry through
+// the package entry point (the sink itself lives in ./error-reporter to avoid a
+// circular import with the runtime, and because cross-package subpath imports
+// are forbidden by the workspace boundary checks). `reportContentRenderError`
+// is exported too so hosts that perform their own lazy plugin loading (e.g. the
+// browser's code-block plugins) can report load failures through the same sink.
+export {
+  reportContentRenderError,
+  setContentRenderErrorReporter,
+  type ContentRenderErrorInfo,
+  type ContentRenderErrorReporter
+}
 
 export { assignNodeIds, computeNodeId, hashContent } from '@tinytinkerer/content-core'
 export type {
@@ -106,6 +126,8 @@ type ContentDocumentRendererProps = {
 type RendererBoundaryProps = {
   fallback: ReactNode
   children: ReactNode
+  nodeType?: string
+  pluginId?: string
 }
 
 type RendererBoundaryState = {
@@ -150,7 +172,17 @@ class RendererBoundary extends Component<RendererBoundaryProps, RendererBoundary
     return { hasError: true }
   }
 
-  override componentDidCatch() {}
+  override componentDidCatch(error: unknown, info: ErrorInfo) {
+    // A render-phase failure here is otherwise invisible: getDerivedStateFromError
+    // swaps in the fallback and the error is swallowed. Forward it to the host's
+    // telemetry sink (if registered) so these surface in Sentry.
+    reportContentRenderError(error, {
+      reason: 'renderFailed',
+      ...(info.componentStack ? { componentStack: info.componentStack } : {}),
+      ...(this.props.nodeType ? { nodeType: this.props.nodeType } : {}),
+      ...(this.props.pluginId ? { pluginId: this.props.pluginId } : {})
+    })
+  }
 
   override render() {
     if (this.state.hasError) {
@@ -532,7 +564,7 @@ export const createReactContentRuntime = (
       const lazyFallback = <>{ctx.fallback()}</>
       return (
         <Suspense fallback={lazyFallback}>
-          <RendererBoundary fallback={lazyFallback}>
+          <RendererBoundary fallback={lazyFallback} nodeType={ctx.node.type} pluginId={ctx.plugin.id}>
             <PreparedNodeBoundary runtime={runtime} node={ctx.node}>
               {children}
             </PreparedNodeBoundary>

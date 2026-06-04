@@ -14,6 +14,20 @@ import { getOrCreateInstallId } from './install-id'
 // @tinytinkerer/sentry-telemetry package. See docs/sentry-telemetry.md.
 export { captureTelemetryException, captureTelemetryMessage } from '@tinytinkerer/sentry-telemetry'
 
+// Bounds the cardinality of an error message used inside a Sentry fingerprint.
+// Provider and render messages can carry unbounded detail (ids, paths, payload
+// snippets); left whole they fragment one logical failure into many issues and
+// blow up the issue list. Collapse whitespace and cap the length so grouping
+// stays stable while still telling genuinely distinct failures apart.
+const FINGERPRINT_MESSAGE_MAX_LENGTH = 120
+
+export const fingerprintMessage = (message: string): string => {
+  const normalized = message.trim().replace(/\s+/g, ' ')
+  return normalized.length > FINGERPRINT_MESSAGE_MAX_LENGTH
+    ? `${normalized.slice(0, FINGERPRINT_MESSAGE_MAX_LENGTH)}…`
+    : normalized
+}
+
 // Wire-protocol header names. Mirrors TELEMETRY_HEADERS in @tinytinkerer/contracts
 // (consumed by the edge). Inlined here to keep the eager client bundle free of the
 // contracts/zod barrel.

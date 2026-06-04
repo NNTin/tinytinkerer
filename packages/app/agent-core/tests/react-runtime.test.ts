@@ -403,4 +403,79 @@ describe('ReActRuntime', () => {
     expect(events.some((event) => event.type === 'error')).toBe(true)
     expect(events.at(-1)?.type).toBe('assistant.done')
   })
+
+  it('reports a terminal error to the injected reportError sink', async () => {
+    const reported: Error[] = []
+    const provider: ModelProvider = {
+      async plan() {
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return ''
+      },
+      async *streamDecision(_context, options) {
+        yield { kind: 'thought' as const, text: 'thinking' }
+        // Stall until the runtime's idle timeout aborts us.
+        await new Promise<void>((resolve) => {
+          const signal = options?.signal
+          if (signal?.aborted) {
+            resolve()
+            return
+          }
+          signal?.addEventListener('abort', () => resolve(), { once: true })
+        })
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'unused' }
+      }
+    }
+
+    const runtime = new ReActRuntime(provider, new ToolRegistry(), {
+      stepTimeoutMs: 5,
+      reportError: (error) => reported.push(error)
+    })
+    for await (const _event of runtime.run('hello')) {
+      // drain
+    }
+
+    expect(reported).toHaveLength(1)
+    expect(reported[0]).toBeInstanceOf(Error)
+    expect(reported[0]?.message).toBe('ReAct decision timed out')
+  })
+
+  it('does not report an AbortError to the reportError sink', async () => {
+    const reported: Error[] = []
+    const provider: ModelProvider = {
+      async plan() {
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return ''
+      },
+      async decideNextAction() {
+        return { kind: 'final' }
+      },
+      // eslint-disable-next-line require-yield
+      async *synthesize() {
+        // The user cancelled mid-synthesis: surfaces as an AbortError, which the
+        // terminal handler treats as a clean stop, not a reportable issue.
+        const error = new Error('Aborted')
+        error.name = 'AbortError'
+        throw error
+      }
+    }
+
+    const runtime = new ReActRuntime(provider, new ToolRegistry(), {
+      reportError: (error) => reported.push(error)
+    })
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(reported).toHaveLength(0)
+    // No error notice on a clean abort, and the run still ends with a done event.
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(events.at(-1)?.type).toBe('assistant.done')
+  })
 })
