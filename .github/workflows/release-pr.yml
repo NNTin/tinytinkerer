@@ -1,0 +1,238 @@
+name: Release PR
+
+# Manually open (or refresh) the single "release" pull request that promotes
+# `develop` into `main`. The PR title and body are generated from the commits and
+# merged PRs that have landed on `develop` since it last diverged from `main`.
+#
+# Tooling note: this uses the default GITHUB_TOKEN. PRs created with GITHUB_TOKEN
+# do NOT trigger other workflows (Deploy Vercel / Compliance won't run their
+# `pull_request` jobs on this PR). Pushing to `main` after the merge still fires
+# the production deploys normally. Swap in a PAT/App token if CI must run on the
+# release PR itself.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: release-pr
+  cancel-in-progress: true
+
+jobs:
+  release-pr:
+    name: Open/update develop → main PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the compare/SHA resolution below has everything.
+          fetch-depth: 0
+
+      - name: Build release PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const BASE = 'main'
+            const HEAD = 'develop'
+            const MARKER = '<!-- release-pr -->'
+
+            const { owner, repo } = context.repo
+
+            // 1. Resolve SHAs and the set of commits develop is ahead by.
+            const compare = await github.paginate(
+              github.rest.repos.compareCommitsWithBasehead,
+              { owner, repo, basehead: `${BASE}...${HEAD}`, per_page: 100 },
+              (response) => response.data.commits,
+            )
+
+            // paginate() only accumulates `commits`; fetch page 1 again for the
+            // top-level metadata (base SHA, totals, file stats).
+            const { data: meta } = await github.rest.repos.compareCommitsWithBasehead({
+              owner,
+              repo,
+              basehead: `${BASE}...${HEAD}`,
+              per_page: 1,
+            })
+
+            const developBranch = await github.rest.repos.getBranch({ owner, repo, branch: HEAD })
+            const baseBranch = await github.rest.repos.getBranch({ owner, repo, branch: BASE })
+
+            const developSha = developBranch.data.commit.sha
+            const mainSha = baseBranch.data.commit.sha
+            const totalCommits = meta.total_commits ?? compare.length
+
+            if (totalCommits === 0) {
+              core.notice(`${HEAD} is not ahead of ${BASE}; nothing to release. No PR created.`)
+              return
+            }
+
+            // Compare file stats (capped at 300 files in the API response, but the
+            // aggregate additions/deletions still reflect the full diff).
+            const files = meta.files ?? []
+            const additions = files.reduce((sum, f) => sum + (f.additions ?? 0), 0)
+            const deletions = files.reduce((sum, f) => sum + (f.deletions ?? 0), 0)
+            const filesChanged = files.length
+
+            // 2. Associate each commit with its merged PR(s).
+            const MERGE_RE = /^chore\(merge\): merge [0-9a-f]{40} into [0-9a-f]{40}$/
+
+            const prByNumber = new Map() // number -> { number, title, author }
+            const contributors = new Set()
+            const commitEntries = [] // { sha, subject, author, prNumber, prTitle }
+
+            for (const commit of compare) {
+              const subject = commit.commit.message.split('\n')[0]
+              const author = commit.author?.login ?? commit.commit.author?.name ?? 'unknown'
+              if (commit.author?.login) contributors.add(commit.author.login)
+
+              // Skip the repo's auto-rewritten merge commits (commitlint ignores
+              // these too) — they carry no human-meaningful change description.
+              if (MERGE_RE.test(subject)) continue
+
+              const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner,
+                repo,
+                commit_sha: commit.sha,
+              })
+              const pr = associated.data.find((p) => p.base.ref === HEAD || p.merged_at) ?? associated.data[0]
+
+              if (pr) {
+                if (pr.user?.login) contributors.add(pr.user.login)
+                if (!prByNumber.has(pr.number)) {
+                  prByNumber.set(pr.number, {
+                    number: pr.number,
+                    title: pr.title,
+                    author: pr.user?.login ?? author,
+                  })
+                }
+              }
+
+              commitEntries.push({
+                sha: commit.sha,
+                subject,
+                author,
+                prNumber: pr?.number,
+                prTitle: pr?.title,
+              })
+            }
+
+            // 3. Group changes by conventional-commit type.
+            const CONVENTIONAL_RE = /^(?<type>\w+)(?<scope>\([^)]*\))?(?<bang>!)?:\s*(?<desc>.+)$/
+            const SECTIONS = [
+              { title: '🚀 Features', types: ['feat'] },
+              { title: '🐛 Fixes', types: ['fix'] },
+              { title: '⚡ Performance', types: ['perf'] },
+              { title: '♻️ Refactors', types: ['refactor'] },
+              { title: '📝 Docs', types: ['docs'] },
+              { title: '✅ Tests', types: ['test'] },
+              { title: '🔧 Build/CI', types: ['build', 'ci'] },
+              { title: '🧹 Chores', types: ['chore', 'style'] },
+              { title: '📦 Other', types: ['__other__'] },
+            ]
+            const typeToSection = new Map()
+            for (const section of SECTIONS) {
+              for (const t of section.types) typeToSection.set(t, section.title)
+            }
+
+            // Prefer one entry per merged PR; fall back to bare commits (direct
+            // pushes) so nothing is dropped.
+            const grouped = new Map(SECTIONS.map((s) => [s.title, []]))
+            const seenPrs = new Set()
+
+            const classify = (text) => {
+              const match = text.match(CONVENTIONAL_RE)
+              const type = match?.groups?.type?.toLowerCase()
+              const desc = match?.groups?.desc ?? text
+              const section = (type && typeToSection.get(type)) || typeToSection.get('__other__')
+              return { section, desc }
+            }
+
+            for (const entry of commitEntries) {
+              const shortSha = entry.sha.slice(0, 7)
+              let line
+              let sourceText
+              if (entry.prNumber && !seenPrs.has(entry.prNumber)) {
+                seenPrs.add(entry.prNumber)
+                const pr = prByNumber.get(entry.prNumber)
+                sourceText = pr.title
+                const { desc } = classify(pr.title)
+                line = `- ${desc} (#${pr.number}) \`${shortSha}\` — @${pr.author}`
+              } else if (!entry.prNumber) {
+                sourceText = entry.subject
+                const { desc } = classify(entry.subject)
+                line = `- ${desc} \`${shortSha}\` — @${entry.author}`
+              } else {
+                continue // additional commit of an already-listed PR
+              }
+              const { section } = classify(sourceText)
+              grouped.get(section).push(line)
+            }
+
+            // 4. Compose the body.
+            const compareUrl = `https://github.com/${owner}/${repo}/compare/${BASE}...${HEAD}`
+            const lines = [MARKER, '']
+            lines.push(`Promotes [\`${HEAD}\`](${compareUrl}) into \`${BASE}\`.`, '')
+            lines.push('### 📊 Stats', '')
+            lines.push(
+              `**${totalCommits}** commits · ` +
+                `**${prByNumber.size}** merged PRs · ` +
+                `**${filesChanged}** files changed · ` +
+                `**+${additions} / −${deletions}** · ` +
+                `**${contributors.size}** contributors`,
+            )
+            lines.push('', `[Compare ${BASE}...${HEAD}](${compareUrl})`, '')
+
+            lines.push('### 🔀 Changes', '')
+            let anyChanges = false
+            for (const section of SECTIONS) {
+              const items = grouped.get(section.title)
+              if (items.length === 0) continue
+              anyChanges = true
+              lines.push(`#### ${section.title}`, '', ...items, '')
+            }
+            if (!anyChanges) lines.push('_No conventional-commit changes detected._', '')
+
+            lines.push('<details>', '<summary>📜 Commits (full SHAs)</summary>', '')
+            for (const entry of commitEntries) {
+              const prRef = entry.prNumber ? ` (#${entry.prNumber})` : ''
+              lines.push(`- \`${entry.sha}\` ${entry.subject}${prRef}`)
+            }
+            lines.push('', '</details>', '')
+
+            const contributorList = [...contributors].sort()
+            lines.push('### 🙌 Contributors', '')
+            lines.push(
+              contributorList.length
+                ? contributorList.map((c) => `@${c}`).join(', ')
+                : '_None detected._',
+            )
+
+            const body = lines.join('\n')
+            const title = `chore(release): merge develop (${developSha}) into main (${mainSha})`
+
+            // 5. Create or update the open develop → main PR.
+            const existing = await github.rest.pulls.list({
+              owner,
+              repo,
+              base: BASE,
+              head: `${owner}:${HEAD}`,
+              state: 'open',
+            })
+
+            if (existing.data.length > 0) {
+              const pull_number = existing.data[0].number
+              await github.rest.pulls.update({ owner, repo, pull_number, title, body })
+              core.notice(`Updated release PR #${pull_number}: ${existing.data[0].html_url}`)
+            } else {
+              const created = await github.rest.pulls.create({
+                owner,
+                repo,
+                base: BASE,
+                head: HEAD,
+                title,
+                body,
+              })
+              core.notice(`Created release PR #${created.data.number}: ${created.data.html_url}`)
+            }
