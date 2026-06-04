@@ -17,7 +17,12 @@ import {
   type SettingsStore
 } from './stores/settings-store'
 import { createStatusStore, type StatusState, type StatusStore } from './stores/status-store'
-import { configureTelemetry, setTelemetryConsent } from './telemetry/telemetry'
+import { setContentRenderErrorReporter } from '@tinytinkerer/content-react'
+import {
+  captureTelemetryException,
+  configureTelemetry,
+  setTelemetryConsent
+} from './telemetry/telemetry'
 
 export type BrowserApp = {
   shell: BrowserShell
@@ -73,6 +78,22 @@ export const initializeBrowserApp = async (
 ): Promise<void> => {
   applyBrandMetadata(config)
   const { shell } = app
+  // Route content render-boundary failures to Sentry. Registered once at
+  // bootstrap; `captureTelemetryException` no-ops until telemetry is initialized
+  // (consent granted, DSN set, non-dev environment), mirroring how the SDK's
+  // global error handlers only fire after init. The component stack is attached
+  // as context, and the per-message fingerprint keeps distinct render failures
+  // as distinct issues.
+  setContentRenderErrorReporter((error, info) => {
+    captureTelemetryException(error, {
+      level: 'error',
+      tags: { source: 'content-render' },
+      ...(info.componentStack
+        ? { contexts: { react: { componentStack: info.componentStack } } }
+        : {}),
+      fingerprint: ['content-render', error.message]
+    })
+  })
   await configureTelemetry(
     {
       ...(shell.config.sentryDsn ? { dsn: shell.config.sentryDsn } : {}),

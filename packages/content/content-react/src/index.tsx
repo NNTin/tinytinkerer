@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
   type ComponentPropsWithoutRef,
+  type ErrorInfo,
   type ReactNode
 } from 'react'
 import {
@@ -112,6 +113,30 @@ type RendererBoundaryState = {
   hasError: boolean
 }
 
+// Reports a render error caught by the content RendererBoundary to the host's
+// telemetry sink (e.g. Sentry in the browser). Injected like the
+// sentry-telemetry capture sinks so this package stays a leaf with no telemetry
+// dependency; a host that registers nothing (SSR, tests, opted-out hosts) simply
+// drops the report and the boundary still shows its fallback.
+export type ContentRenderErrorReporter = (
+  error: Error,
+  info: { componentStack?: string }
+) => void
+
+let renderErrorReporter: ContentRenderErrorReporter | null = null
+
+/**
+ * Registers (or clears, with `null`) the reporter the content RendererBoundary
+ * calls when a node fails to render. Without it, render errors are caught and a
+ * fallback is shown but nothing is reported — the boundary never breaks the page
+ * either way. Called once by the host after bootstrap.
+ */
+export const setContentRenderErrorReporter = (
+  reporter: ContentRenderErrorReporter | null
+): void => {
+  renderErrorReporter = reporter
+}
+
 export type ContentRenderOptions = {
   codeBlockPersistenceScopeId?: string
   showCodeBlockFullscreenButton?: boolean
@@ -150,7 +175,27 @@ class RendererBoundary extends Component<RendererBoundaryProps, RendererBoundary
     return { hasError: true }
   }
 
-  override componentDidCatch() {}
+  override componentDidCatch(error: unknown, info: ErrorInfo) {
+    // A render failure here is otherwise invisible: getDerivedStateFromError
+    // swaps in the fallback and the error is swallowed. Forward it to the host's
+    // telemetry sink (if registered) so these surface in Sentry. Guarded so a
+    // misbehaving sink can never turn a recovered render error into a crash.
+    if (!renderErrorReporter) {
+      return
+    }
+    const normalized =
+      error instanceof Error
+        ? error
+        : new Error(typeof error === 'string' ? error : 'Content render error')
+    try {
+      renderErrorReporter(
+        normalized,
+        info.componentStack ? { componentStack: info.componentStack } : {}
+      )
+    } catch {
+      // Telemetry must never break rendering.
+    }
+  }
 
   override render() {
     if (this.state.hasError) {

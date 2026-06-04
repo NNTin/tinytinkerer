@@ -13,6 +13,7 @@ import {
   MARKDOWN_STREAMING_CLASS,
   PreviewCodeFrame,
   REACT_SSR_EXECUTION_POLICY,
+  setContentRenderErrorReporter,
   TableNodeView,
   tableToMarkdown
 } from '../src/index.js'
@@ -109,6 +110,76 @@ describe('ContentDocumentRenderer', () => {
     )
 
     expect(screen.getByText('[Button]')).toBeInTheDocument()
+  })
+
+  // A component that throws during React's render phase. Unlike a plugin whose
+  // `render()` throws eagerly (caught by the runtime and turned into a fallback),
+  // this error escapes into React's renderer and is caught by the RendererBoundary
+  // — the path that was previously swallowed by an empty componentDidCatch.
+  const ThrowDuringRender = (): ReactElement => {
+    throw new Error('boom')
+  }
+
+  it('reports a render-boundary failure to the registered reporter', () => {
+    // React logs caught render errors to console.error; silence it so the test
+    // output stays clean.
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const reported: Error[] = []
+    setContentRenderErrorReporter((error) => reported.push(error))
+
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:wireframe',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'wireframe',
+      render: () => <ThrowDuringRender />
+    })
+
+    try {
+      render(
+        <ContentDocumentRenderer
+          runtime={runtime}
+          document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
+        />
+      )
+
+      // Fallback still renders, and the failure is no longer swallowed.
+      expect(screen.getByText('[Button]')).toBeInTheDocument()
+      expect(reported).toHaveLength(1)
+      expect(reported[0]).toBeInstanceOf(Error)
+      expect(reported[0]?.message).toBe('boom')
+    } finally {
+      setContentRenderErrorReporter(null)
+      consoleError.mockRestore()
+    }
+  })
+
+  it('does not break rendering when no reporter is registered', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    setContentRenderErrorReporter(null)
+
+    const runtime = createReactContentRuntime()
+    runtime.register({
+      id: 'test:wireframe',
+      nodeType: 'codeBlock',
+      priority: 10,
+      matches: (node) => node.language === 'wireframe',
+      render: () => <ThrowDuringRender />
+    })
+
+    try {
+      render(
+        <ContentDocumentRenderer
+          runtime={runtime}
+          document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
+        />
+      )
+
+      expect(screen.getByText('[Button]')).toBeInTheDocument()
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('keeps default renderers while adding custom plugins through the supplied runtime', () => {
