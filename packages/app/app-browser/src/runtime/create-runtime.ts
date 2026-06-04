@@ -12,7 +12,7 @@ import type {
   ModelProviderId,
   PluginActivationState
 } from '@tinytinkerer/contracts'
-import { feedbackPlugin } from '@tinytinkerer/plugin-feedback'
+import { feedbackPlugin, SEND_FEEDBACK_PLUGIN_ID } from '@tinytinkerer/plugin-feedback'
 import { GitHubModelsProvider } from './github-models-provider'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch } from './edge-fetch'
@@ -27,7 +27,7 @@ const browserPlugins = [feedbackPlugin()]
 // Static descriptors so the planner can name plugin tools when active. Kept in
 // step with the tools each plugin contributes.
 const pluginToolDescriptors: Record<string, PlannerToolDescriptor[]> = {
-  'send-feedback': [
+  [SEND_FEEDBACK_PLUGIN_ID]: [
     {
       id: 'send_feedback',
       description:
