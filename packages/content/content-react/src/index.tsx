@@ -34,7 +34,22 @@ import {
   type RenderContext,
   type RuntimeExecutionPolicy
 } from './runtime'
+import {
+  reportContentRenderError,
+  setContentRenderErrorReporter,
+  type ContentRenderErrorInfo,
+  type ContentRenderErrorReporter
+} from './error-reporter'
 import { cn } from '@tinytinkerer/ui'
+
+// Re-export the render-error reporter surface so hosts wire telemetry through
+// the package entry point (the sink itself lives in ./error-reporter to avoid a
+// circular import with the runtime).
+export {
+  setContentRenderErrorReporter,
+  type ContentRenderErrorInfo,
+  type ContentRenderErrorReporter
+}
 
 export { assignNodeIds, computeNodeId, hashContent } from '@tinytinkerer/content-core'
 export type {
@@ -107,34 +122,12 @@ type ContentDocumentRendererProps = {
 type RendererBoundaryProps = {
   fallback: ReactNode
   children: ReactNode
+  nodeType?: string
+  pluginId?: string
 }
 
 type RendererBoundaryState = {
   hasError: boolean
-}
-
-// Reports a render error caught by the content RendererBoundary to the host's
-// telemetry sink (e.g. Sentry in the browser). Injected like the
-// sentry-telemetry capture sinks so this package stays a leaf with no telemetry
-// dependency; a host that registers nothing (SSR, tests, opted-out hosts) simply
-// drops the report and the boundary still shows its fallback.
-export type ContentRenderErrorReporter = (
-  error: Error,
-  info: { componentStack?: string }
-) => void
-
-let renderErrorReporter: ContentRenderErrorReporter | null = null
-
-/**
- * Registers (or clears, with `null`) the reporter the content RendererBoundary
- * calls when a node fails to render. Without it, render errors are caught and a
- * fallback is shown but nothing is reported — the boundary never breaks the page
- * either way. Called once by the host after bootstrap.
- */
-export const setContentRenderErrorReporter = (
-  reporter: ContentRenderErrorReporter | null
-): void => {
-  renderErrorReporter = reporter
 }
 
 export type ContentRenderOptions = {
@@ -176,25 +169,15 @@ class RendererBoundary extends Component<RendererBoundaryProps, RendererBoundary
   }
 
   override componentDidCatch(error: unknown, info: ErrorInfo) {
-    // A render failure here is otherwise invisible: getDerivedStateFromError
+    // A render-phase failure here is otherwise invisible: getDerivedStateFromError
     // swaps in the fallback and the error is swallowed. Forward it to the host's
-    // telemetry sink (if registered) so these surface in Sentry. Guarded so a
-    // misbehaving sink can never turn a recovered render error into a crash.
-    if (!renderErrorReporter) {
-      return
-    }
-    const normalized =
-      error instanceof Error
-        ? error
-        : new Error(typeof error === 'string' ? error : 'Content render error')
-    try {
-      renderErrorReporter(
-        normalized,
-        info.componentStack ? { componentStack: info.componentStack } : {}
-      )
-    } catch {
-      // Telemetry must never break rendering.
-    }
+    // telemetry sink (if registered) so these surface in Sentry.
+    reportContentRenderError(error, {
+      reason: 'renderFailed',
+      ...(info.componentStack ? { componentStack: info.componentStack } : {}),
+      ...(this.props.nodeType ? { nodeType: this.props.nodeType } : {}),
+      ...(this.props.pluginId ? { pluginId: this.props.pluginId } : {})
+    })
   }
 
   override render() {
@@ -577,7 +560,7 @@ export const createReactContentRuntime = (
       const lazyFallback = <>{ctx.fallback()}</>
       return (
         <Suspense fallback={lazyFallback}>
-          <RendererBoundary fallback={lazyFallback}>
+          <RendererBoundary fallback={lazyFallback} nodeType={ctx.node.type} pluginId={ctx.plugin.id}>
             <PreparedNodeBoundary runtime={runtime} node={ctx.node}>
               {children}
             </PreparedNodeBoundary>

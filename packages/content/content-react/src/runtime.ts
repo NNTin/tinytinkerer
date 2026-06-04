@@ -2,6 +2,7 @@ import type {
   ContentNode,
   ContentNodeByType
 } from '@tinytinkerer/content-core'
+import { reportContentRenderError } from './error-reporter'
 
 export type NodeRendererPluginRequirements = {
   readonly lazy?: boolean
@@ -254,8 +255,14 @@ export const createContentRuntime = <TResult>(
             ctx: RuntimeFailureContext<TResult>
           ) => TResult
         )(failure.node, failure)
-      } catch {
-        // Fall through to the host fallback below.
+      } catch (error) {
+        // The plugin's own fallback threw — report it (otherwise invisible) and
+        // fall through to the host fallback below.
+        reportContentRenderError(error, {
+          reason: 'fallbackFailed',
+          nodeType: failure.node.type,
+          ...(failure.plugin.id ? { pluginId: failure.plugin.id } : {})
+        })
       }
     }
     return options.fallback(failure)
@@ -289,6 +296,14 @@ export const createContentRuntime = <TResult>(
         isStreaming
       })
     } catch (error) {
+      // The plugin's render() threw synchronously (before producing a result to
+      // wrap, so the React RendererBoundary never sees it). Report it here so
+      // this eager-failure path is no longer swallowed by the fallback.
+      reportContentRenderError(error, {
+        reason: 'renderFailed',
+        nodeType: node.type,
+        ...(resolution.plugin.id ? { pluginId: resolution.plugin.id } : {})
+      })
       return createFallback('renderFailed', error)
     }
 

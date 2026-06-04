@@ -89,11 +89,23 @@ export const initializeBrowserApp = async (
     setContentRenderErrorReporter((error, info) => {
       captureTelemetryException(error, {
         level: 'error',
-        tags: { source: 'content-render' },
+        tags: {
+          source: 'content-render',
+          ...(info.reason ? { content_render_reason: info.reason } : {}),
+          ...(info.nodeType ? { content_node_type: info.nodeType } : {}),
+          ...(info.pluginId ? { content_plugin: info.pluginId } : {})
+        },
         ...(info.componentStack
           ? { contexts: { react: { componentStack: info.componentStack } } }
           : {}),
-        fingerprint: ['content-render', error.message]
+        // Group by reason + the failing plugin/node so distinct render failures
+        // stay distinct issues rather than collapsing under the shared frame.
+        fingerprint: [
+          'content-render',
+          info.reason ?? 'render',
+          info.pluginId ?? info.nodeType ?? 'unknown',
+          error.message
+        ]
       })
     })
   })
