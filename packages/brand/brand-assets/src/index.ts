@@ -2,6 +2,11 @@ import type { BrandDefinition } from '@tinytinkerer/contracts'
 
 export { LICENSE_TEXT } from './license.generated'
 export { TINYTINKERER_SOCIALS, TINYTINKERER_LICENSE, type BrandSocial } from './brand-links'
+export {
+  TINYTINKERER_CREDITS,
+  TINYTINKERER_CREDITS_TITLE,
+  type BrandCredit
+} from './credits'
 export { BrandSettingsFooter } from './react'
 
 export const TINYTINKERER_BRAND_ASSET_URLS = {

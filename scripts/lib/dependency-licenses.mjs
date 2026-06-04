@@ -1,0 +1,61 @@
+import { execFileSync } from 'node:child_process'
+
+/**
+ * Collect production dependency license metadata straight from pnpm.
+ *
+ * We deliberately use pnpm's own `licenses list` instead of npm-oriented tools
+ * (license-checker, cyclonedx-npm): those read npm's nested node_modules and
+ * return almost nothing against pnpm's symlinked `.pnpm` store. pnpm understands
+ * its own workspace + lockfile, so this is the reliable single source of truth
+ * for the SBOM, the THIRD_PARTY_NOTICES file, and the license-policy gate.
+ *
+ * @returns {Array<{ name: string, version: string, license: string, author: string, homepage: string, description: string }>}
+ *   One entry per resolved (name, version), sorted by name then version.
+ */
+export const collectDependencyLicenses = () => {
+  // -P limits the output to production dependencies (the ones we actually ship
+  // and therefore must attribute). --json groups packages by license string.
+  const raw = execFileSync('pnpm', ['licenses', 'list', '--json', '-P'], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024
+  })
+
+  /** @type {Record<string, Array<Record<string, unknown>>>} */
+  const grouped = JSON.parse(raw)
+
+  /** @type {Map<string, { name: string, version: string, license: string, author: string, homepage: string, description: string }>} */
+  const byKey = new Map()
+
+  for (const [licenseKey, entries] of Object.entries(grouped)) {
+    for (const entry of entries) {
+      const name = String(entry.name ?? '').trim()
+      if (!name) continue
+
+      const license = normalizeLicense(String(entry.license ?? licenseKey ?? 'Unknown'))
+      const versions = Array.isArray(entry.versions) ? entry.versions : []
+      const author = typeof entry.author === 'string' ? entry.author : ''
+      const homepage = typeof entry.homepage === 'string' ? entry.homepage : ''
+      const description = typeof entry.description === 'string' ? entry.description : ''
+
+      // Notably absent: pnpm's `paths` field. It contains absolute machine paths
+      // (…/node_modules/.pnpm/…) which must never leak into committed or shared
+      // artifacts, so we drop it here at the boundary.
+      for (const version of versions.length > 0 ? versions : ['']) {
+        const key = `${name}@${version}`
+        if (byKey.has(key)) continue
+        byKey.set(key, { name, version: String(version), license, author, homepage, description })
+      }
+    }
+  }
+
+  return [...byKey.values()].sort(
+    (a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version)
+  )
+}
+
+/** Collapse pnpm's "Unknown" sentinel and blank values to a single token. */
+const normalizeLicense = (license) => {
+  const trimmed = license.trim()
+  if (!trimmed || trimmed.toLowerCase() === 'unknown') return 'UNKNOWN'
+  return trimmed
+}

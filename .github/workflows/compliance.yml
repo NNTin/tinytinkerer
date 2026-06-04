@@ -1,0 +1,69 @@
+name: Compliance
+
+# Lightweight, attribution-focused compliance. Proper SBOM/release provenance is
+# out of scope until this project ships build artifacts; until then this workflow
+# lets anyone generate an SBOM + third-party notices on demand (workflow_dispatch)
+# and gates dependency changes against the license policy.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'scripts/generate-sbom.mjs'
+      - 'scripts/generate-notices.mjs'
+      - 'scripts/enforce-licenses.mjs'
+      - 'scripts/license-policy.mjs'
+      - 'scripts/lib/dependency-licenses.mjs'
+      - '.github/workflows/compliance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compliance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compliance:
+    name: SBOM, Notices & License Policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.16.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate SBOM (CycloneDX)
+        run: pnpm compliance:sbom
+
+      - name: Generate licenses report
+        run: pnpm licenses list --json -P > licenses.json
+
+      - name: Build third-party notices
+        run: pnpm compliance:notices
+
+      # Upload before enforcement so the artifacts are always available for review,
+      # even when the license policy gate fails the run.
+      - name: Upload compliance artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-artifacts
+          path: |
+            sbom.json
+            licenses.json
+            THIRD_PARTY_NOTICES.md
+          if-no-files-found: error
+
+      - name: Enforce license policy
+        run: pnpm compliance:enforce

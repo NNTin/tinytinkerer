@@ -5,6 +5,7 @@ import {
   LICENSE_TEXT,
   TINYTINKERER_BRAND,
   TINYTINKERER_BRAND_ASSET_URLS,
+  TINYTINKERER_CREDITS,
   TINYTINKERER_SOCIALS
 } from '../src/index.js'
 
@@ -44,6 +45,20 @@ describe('brand assets', () => {
     )
     for (const social of TINYTINKERER_SOCIALS) {
       expect(social.href).toMatch(/^https:\/\//)
+    }
+  })
+
+  it('exposes the curated credits list with valid links', () => {
+    const names = TINYTINKERER_CREDITS.map((credit) => credit.name)
+    expect(names).toContain('CodeMirror')
+    expect(names).toContain('Cloudflare')
+    expect(names).toContain('Claude, Codex and Copilot')
+
+    for (const credit of TINYTINKERER_CREDITS) {
+      expect(credit.thanks.length).toBeGreaterThan(0)
+      if (credit.href !== undefined) {
+        expect(credit.href).toMatch(/^https:\/\//)
+      }
     }
   })
 
