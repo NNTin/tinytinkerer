@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/kucherenko/jscpd/master/packages/jscpd/schema.json",
+  "path": ["apps", "packages", "scripts"],
+  "format": ["typescript", "tsx", "javascript", "jsx"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.turbo/**",
+    "**/coverage/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.test.js",
+    "**/tests/**",
+    "**/*.config.ts",
+    "**/*.config.js",
+    "**/*.config.mjs",
+    "**/*.generated.ts"
+  ],
+  "minLines": 5,
+  "minTokens": 50,
+  "threshold": 5,
+  "gitignore": true,
+  "reporters": ["console"],
+  "absolute": true
+}
