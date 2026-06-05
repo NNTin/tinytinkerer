@@ -4,10 +4,17 @@ Goal: triage a `handled: yes` request issue whose `failure_kind` is `parse_error
 or `schema_error` and whose `request_area` *parses model output* (e.g.
 `react.decide`). These are **not** request failures — the HTTP request succeeded
 (`http_status: 200`); what failed is interpreting the model's free-form text as
-structured JSON. That is inherent, unavoidable LLM non-compliance, and the fix is
-**recover-don't-crash + accept the unavoidable kind**, not a plain `accept` and not
-a try/catch that swallows. Read the **accept-or-fix guideline** in `../SKILL.md`
-first.
+structured JSON.
+
+The fix is **recover-don't-crash, but stay loud — do NOT `accept`.** It is
+tempting to call model non-compliance "normal & unavoidable" and suppress it, but
+that **hides a real defect**: a *truncated* decision means the stream was cut off
+mid-action, so we abandon the tool call the model was emitting and answer from
+**incomplete tool results**. You cannot reliably tell that lossy case apart from a
+clean "model finished in prose" at parse time, so the safe, honest rule is to keep
+capturing every failure while still recovering for the user. Read the
+**accept-or-fix guideline** in `../SKILL.md` first — this is a case where the
+answer is *fix/recover*, not *accept*.
 
 Settled `TINYTINKERER-FRONTEND-J` (truncated/malformed decision JSON —
 `Unterminated string` / `Expected property name`) and `TINYTINKERER-FRONTEND-K`
@@ -38,40 +45,45 @@ A model call has **two** parse steps; do not accept the wrong one:
    for it carrying the `accept`, so accepting the content parse_error does not
    blind you to a malformed envelope.
 
-## The fix (recover, then accept)
+## The fix (recover, but stay loud)
 A thrown `parse_error` is fatal: it propagates through `nextDecision` (which only
 catches rate-limit errors) and **kills the whole agent run**. So:
 
 1. **Recover to a sane default instead of throwing.** Wrap the content parse and,
    on failure, fall back to the graceful no-op decision so the loop winds down
-   cleanly. For the ReAct decider that is `{ kind: 'final' }` — the model emitting
-   prose ("I now have enough information…") literally *means* it is done, and the
-   runtime already has a `decision ?? { kind: 'final' }` fallback to mirror. The
-   `final` path then synthesizes an answer from context.
-2. **`accept` the `parse_error`** on the decision-content metadata — it is
-   unavoidable model behaviour and now handled, so it should not be captured:
-   ```ts
-   accept: {
-     kinds: ['parse_error'],
-     reason: 'Model may stream non-decision content (prose / empty / truncated JSON); loop falls back to a final answer. Settles <ISSUE>.'
-   }
-   ```
-3. **Keep `schema_error` CAPTURED** (do *not* add it to `kinds`). Valid JSON of the
-   wrong shape can mean the model misbehaved OR *our own decision contract drifted*
-   — that second case is a real bug we want surfaced. Still **recover** from it
-   (fall back to `final`) so it never crashes a run, but let it report.
-4. **Harden sibling call sites together** (`../SKILL.md` trap #2). The decider has a
+   cleanly. For the ReAct decider that is `{ kind: 'final' }` — when the model
+   finished in prose ("I now have enough information…") that is the correct
+   outcome (the runtime already has a `decision ?? { kind: 'final' }` fallback to
+   mirror), and the `final` path then synthesizes an answer from context. When the
+   stream was *truncated*, `final` still keeps the user from a crash, but the
+   answer is built from whatever tool results we had — degraded, not perfect.
+2. **Do NOT `accept` the failure — keep capturing both `parse_error` and
+   `schema_error`.** Recovering does not make the failure expected: the truncated
+   case dropped an in-flight tool action and produced an *incomplete* answer, and
+   a `schema_error` can mean *our own decision contract drifted*. Both are real
+   bugs to investigate (why is the decision stream truncating / the model not
+   conforming?), so they must stay visible. Recover for the user; stay loud for us.
+   No `accept` block on the decision-content metadata.
+3. **Harden sibling call sites together** (`../SKILL.md` trap #2). The decider has a
    streaming (`streamDecision`) and a non-streaming (`decideNextAction`) sibling in
    the same file; fix BOTH or the issue relocates to the other path. A shared
    `parseDecisionOrFinal(metadata, jsonText, response)` helper keeps them identical.
 
 ## Prove it
-Add call-site tests that the consumer **returns/yields the fallback decision**
-(not throws) for: prose content, empty body, truncated JSON, and a valid-but-wrong
-shape — e.g. `packages/app/app-browser/tests/react-decider.test.ts`. Update any
+Add call-site tests, in `packages/app/app-browser/tests/react-decider.test.ts`,
+that for prose content, empty body, truncated JSON, and a valid-but-wrong shape the
+consumer **returns/yields the fallback `final` decision** (not throws). Update any
 older test that asserted these *throw* (they encoded the pre-fix crash contract).
+**Also assert it stays loud:** register a spy via `setCaptureExceptionSink` and
+check the capture sink is **still called** (with `failure_kind: parse_error`,
+`request_area: react.decide`) on a truncated decision — this locks in "recover but
+don't suppress" so nobody silently re-adds an `accept`.
 
 ## Resolve
-`update_issue(... status: "resolvedInNextRelease", reason: "Recover to final + accept parse_error at react-decider.ts (streamDecision + decideNextAction). Settles <ISSUE>.")`.
-The frontend project coerces this to plain `resolved` (see `triage-issues.md` quirk)
-and auto-regresses if a *non-accepted* kind (e.g. a real `schema_error`) recurs.
+The hard *crash* is fixed, but the underlying non-conformance is **not** — and we
+deliberately keep reporting it. So do **not** mark these as cleanly fixed/accepted.
+Leave a comment recording the crash fix and that capture is intentionally retained
+for root-cause work, and either keep the issue `unresolved` (it is a real, open
+bug) or let it auto-regress on the next occurrence. If you instead chase the root
+cause (token limits / streaming cutoff / prompt tightening) and land that, resolve
+against that fix.

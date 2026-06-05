@@ -64,32 +64,26 @@ type DecisionRequestMetadata = {
 const stripFences = (text: string): string =>
   text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
 
-// Turn the model's answer text into a ReActDecision, tolerating the model's
-// inherent non-compliance. A streaming model will sometimes emit prose ("I now
-// have enough information…"), an empty answer, or truncated/malformed JSON when
-// the stream is cut short. Rather than letting that crash the whole run (the
-// parse error propagates through nextDecision, which only retries rate limits),
-// treat any unusable decision as the model choosing to answer directly — a
-// `final` decision — and let the loop synthesize the answer. This mirrors the
+// Turn the model's answer text into a ReActDecision, recovering — but never
+// silently — from the model's inherent non-compliance. A streaming model will
+// sometimes emit prose ("I now have enough information…"), an empty answer, or
+// truncated/malformed JSON when the stream is cut short. We must not let that
+// crash the whole run: the parse error otherwise propagates through nextDecision
+// (which only retries rate limits) and kills the run, so an unusable decision
+// falls back to `final` and the loop synthesizes an answer — mirroring the
 // runtime's existing `decision ?? { kind: 'final' }` fallback.
-//   - parse_error (not JSON / empty / truncated): unavoidable model behaviour,
-//     accepted so it is not captured.
-//   - schema_error (valid JSON, wrong shape): still captured — it can also mean
-//     our decision contract drifted — but we recover to `final` either way.
-// Settles TINYTINKERER-FRONTEND-J & TINYTINKERER-FRONTEND-K.
+//
+// Crucially we do NOT `accept` (suppress) the parse/schema failure. A truncated
+// decision means we ABANDONED the tool action the model was mid-way through
+// emitting and answered from incomplete tool results — that incompleteness is a
+// real bug to investigate (why is the decision stream truncating / the model not
+// conforming?), not expected noise. So every failure is still captured: we
+// recover for the user, but stay loud for us. (TINYTINKERER-FRONTEND-J / -K.)
 const parseDecisionOrFinal = (
-  base: DecisionRequestMetadata,
+  metadata: DecisionRequestMetadata,
   jsonText: string,
   response: Response
 ): ReActDecision => {
-  const metadata = {
-    ...base,
-    accept: {
-      kinds: ['parse_error'] as const,
-      reason:
-        'Model may stream a non-decision answer (prose / empty / truncated JSON); the ReAct loop falls back to a final answer. Settles TINYTINKERER-FRONTEND-J & -K.'
-    }
-  }
   try {
     const parsedJson = parseWithTelemetry<unknown>(
       metadata,

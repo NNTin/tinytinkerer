@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setCaptureExceptionSink, type CaptureExceptionSink } from '@tinytinkerer/sentry-telemetry'
 import { isRateLimitError, type ExecutionContext } from '@tinytinkerer/app-core'
 import { decideNextAction, streamDecision } from '../src/runtime/react-decider.js'
 import type { PlannerToolDescriptor } from '../src/runtime/mcp-planner.js'
@@ -304,5 +305,43 @@ describe('streamDecision', () => {
     }
     expect(error.retryAfterMs).toBe(30_000)
     expect(error.retryAt).toBe(retryAt)
+  })
+})
+
+// Recovering to `final` keeps the user from seeing a crashed run, but a truncated
+// decision means we abandoned the model's in-flight tool action and answered from
+// incomplete tool results. That incompleteness is a real bug to surface, so the
+// parse failure must STILL be captured — never suppressed via `accept`.
+describe('streamDecision keeps non-conforming output visible (recover but stay loud)', () => {
+  const sink = vi.fn<CaptureExceptionSink>()
+
+  beforeEach(() => {
+    sink.mockReset()
+    setCaptureExceptionSink(sink)
+  })
+
+  afterEach(() => {
+    setCaptureExceptionSink(null)
+  })
+
+  it('captures the parse_error on truncated decision JSON while still recovering to final', async () => {
+    const edgeFetch = makeSseEdgeFetch([
+      'data: {"choices":[{"delta":{"content":"{\\"kind\\":\\"action\\",\\"toolId\\":\\"web-sea"}}]}',
+      'data: [DONE]',
+      ''
+    ])
+
+    const chunks = []
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
+      chunks.push(chunk)
+    }
+
+    const decision = chunks.find((chunk) => chunk.kind === 'decision')
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
+
+    expect(sink).toHaveBeenCalledTimes(1)
+    const [, options] = sink.mock.calls[0] as [Error, { tags?: Record<string, unknown> }]
+    expect(options.tags?.failure_kind).toBe('parse_error')
+    expect(options.tags?.request_area).toBe('react.decide')
   })
 })
