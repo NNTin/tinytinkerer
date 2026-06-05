@@ -1,9 +1,10 @@
 # CodeQL advanced setup, tuned for this pnpm monorepo.
 #
-# Both analyzed languages use `build-mode: none` (buildless extraction), so no
-# compilation is required. For `javascript-typescript` we still run a pnpm
-# install before extraction so CodeQL can resolve workspace packages and their
-# types, which yields more accurate cross-package data-flow results.
+# Both analyzed languages use `build-mode: none` (buildless extraction). For
+# `javascript-typescript` we still run `pnpm install` + `pnpm build` before
+# extraction: CodeQL analyzes best when the project is built, so generated
+# sources exist and types resolve across workspace packages, yielding more
+# accurate cross-package data-flow results.
 #
 # Supported 'language' keywords: 'actions', 'c-cpp', 'csharp', 'go',
 # 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'rust', 'swift'.
@@ -71,6 +72,13 @@ jobs:
     - name: Install dependencies
       if: matrix.language == 'javascript-typescript'
       run: pnpm install --frozen-lockfile
+
+    # Build the workspace before extraction. CodeQL produces the most accurate
+    # results when analyzing a built project (generated/compiled sources are
+    # present and types resolve across packages).
+    - name: Build
+      if: matrix.language == 'javascript-typescript'
+      run: pnpm build
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
