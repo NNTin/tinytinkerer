@@ -51,6 +51,65 @@ const buildObservations = (context: ExecutionContext): string => {
     .join('')
 }
 
+type DecisionRequestMetadata = {
+  area: 'react.decide'
+  origin: 'edge'
+  method: string
+  url: string
+  model: string
+  stream: boolean
+}
+
+// Strip an optional ```json … ``` fence the model sometimes wraps its answer in.
+const stripFences = (text: string): string =>
+  text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+
+// Turn the model's answer text into a ReActDecision, tolerating the model's
+// inherent non-compliance. A streaming model will sometimes emit prose ("I now
+// have enough information…"), an empty answer, or truncated/malformed JSON when
+// the stream is cut short. Rather than letting that crash the whole run (the
+// parse error propagates through nextDecision, which only retries rate limits),
+// treat any unusable decision as the model choosing to answer directly — a
+// `final` decision — and let the loop synthesize the answer. This mirrors the
+// runtime's existing `decision ?? { kind: 'final' }` fallback.
+//   - parse_error (not JSON / empty / truncated): unavoidable model behaviour,
+//     accepted so it is not captured.
+//   - schema_error (valid JSON, wrong shape): still captured — it can also mean
+//     our decision contract drifted — but we recover to `final` either way.
+// Settles TINYTINKERER-FRONTEND-J & TINYTINKERER-FRONTEND-K.
+const parseDecisionOrFinal = (
+  base: DecisionRequestMetadata,
+  jsonText: string,
+  response: Response
+): ReActDecision => {
+  const metadata = {
+    ...base,
+    accept: {
+      kinds: ['parse_error'] as const,
+      reason:
+        'Model may stream a non-decision answer (prose / empty / truncated JSON); the ReAct loop falls back to a final answer. Settles TINYTINKERER-FRONTEND-J & -K.'
+    }
+  }
+  try {
+    const parsedJson = parseWithTelemetry<unknown>(
+      metadata,
+      'parse_error',
+      'ReAct decision body was not valid JSON',
+      () => JSON.parse(jsonText) as unknown,
+      response
+    )
+    return parseWithTelemetry(
+      metadata,
+      'schema_error',
+      'ReAct decision did not match the decision schema',
+      () => reactDecisionSchema.parse(parsedJson),
+      response
+    )
+  } catch {
+    return { kind: 'final' }
+  }
+}
+
 // Asks the model for the next ReAct decision (one action, or finish) given the
 // observations accumulated in `context`. Mirrors the planner's edge call shape:
 // a non-streaming /api/models/chat request whose JSON body is validated against
@@ -92,9 +151,9 @@ export const decideNextAction = async (
     throw new Error(`ReAct decision request failed (${response.status})`)
   }
 
-  const metadata = {
-    area: 'react.decide' as const,
-    origin: 'edge' as const,
+  const metadata: DecisionRequestMetadata = {
+    area: 'react.decide',
+    origin: 'edge',
     method: 'POST',
     url: response.url,
     model,
@@ -105,25 +164,8 @@ export const decideNextAction = async (
   }>(metadata, response)
   const text = data.choices?.[0]?.message?.content ?? ''
 
-  const jsonText = text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-  const parsedJson = parseWithTelemetry<unknown>(
-    metadata,
-    'parse_error',
-    'ReAct decision body was not valid JSON',
-    () => JSON.parse(jsonText) as unknown,
-    response
-  )
-  return parseWithTelemetry(
-    metadata,
-    'schema_error',
-    'ReAct decision did not match the decision schema',
-    () => reactDecisionSchema.parse(parsedJson),
-    response
-  )
+  return parseDecisionOrFinal(metadata, stripFences(text), response)
 }
-
-const stripFences = (text: string): string =>
-  text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
 
 // Streaming variant of decideNextAction. Requests a streamed completion and
 // splits it into the model's reasoning (yielded as growing `thought` chunks so
@@ -182,47 +224,14 @@ export async function* streamDecision(
     }
   }
 
-  const jsonText = stripFences(jsonBuffer)
-  if (jsonText.trim().length === 0) {
-    parseWithTelemetry(
-      {
-        area: 'react.decide' as const,
-        origin: 'edge' as const,
-        method: 'POST',
-        url: response.url,
-        model,
-        stream: true
-      },
-      'parse_error',
-      'ReAct decision stream ended without decision JSON',
-      () => {
-        throw new Error('ReAct decision stream ended without decision JSON')
-      },
-      response
-    )
-  }
-
-  const metadata = {
-    area: 'react.decide' as const,
-    origin: 'edge' as const,
+  const metadata: DecisionRequestMetadata = {
+    area: 'react.decide',
+    origin: 'edge',
     method: 'POST',
     url: response.url,
     model,
     stream: true
   }
-  const parsedJson = parseWithTelemetry<unknown>(
-    metadata,
-    'parse_error',
-    'ReAct decision stream body was not valid JSON',
-    () => JSON.parse(jsonText) as unknown,
-    response
-  )
-  const decision = parseWithTelemetry(
-    metadata,
-    'schema_error',
-    'ReAct decision stream did not match the decision schema',
-    () => reactDecisionSchema.parse(parsedJson),
-    response
-  )
+  const decision = parseDecisionOrFinal(metadata, stripFences(jsonBuffer), response)
   yield { kind: 'decision', decision }
 }

@@ -88,14 +88,38 @@ describe('decideNextAction', () => {
     expect(decision.kind).toBe('final')
   })
 
-  it('throws when the model returns a non-decision shape', async () => {
+  // The model is non-deterministic: it sometimes answers in prose, emits an
+  // empty body, returns truncated/malformed JSON, or valid JSON of the wrong
+  // shape. None of these should crash the run — they mean the model is done, so
+  // we fall back to a `final` decision and let the loop synthesize the answer.
+  it('falls back to a final decision when the model returns a non-decision shape', async () => {
     const edgeFetch = makeEdgeFetch({
       choices: [{ message: { content: JSON.stringify({ kind: 'unknown' }) } }]
     })
 
-    await expect(
-      decideNextAction(baseContext(), [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
-    ).rejects.toThrow()
+    const decision = await decideNextAction(baseContext(), [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
+
+    expect(decision.kind).toBe('final')
+  })
+
+  it('falls back to a final decision when the model answers in prose instead of JSON', async () => {
+    const edgeFetch = makeEdgeFetch({
+      choices: [{ message: { content: 'I now have enough information to answer.' } }]
+    })
+
+    const decision = await decideNextAction(baseContext(), [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
+
+    expect(decision.kind).toBe('final')
+  })
+
+  it('falls back to a final decision when the model emits truncated JSON', async () => {
+    const edgeFetch = makeEdgeFetch({
+      choices: [{ message: { content: '{"kind":"action","toolId":"web-sea' } }]
+    })
+
+    const decision = await decideNextAction(baseContext(), [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
+
+    expect(decision.kind).toBe('final')
   })
 
   it('throws when the response is not ok', async () => {
@@ -214,16 +238,54 @@ describe('streamDecision', () => {
     await expect(iterator.next()).rejects.toThrow('ReAct decision stream missing response body')
   })
 
-  it('throws a clear error when the stream ends without decision JSON', async () => {
+  it('falls back to a final decision when the stream ends without decision JSON', async () => {
     const edgeFetch = makeSseEdgeFetch([
       'data: {"choices":[{"delta":{"reasoning_content":"thinking"}}]}',
       'data: [DONE]',
       ''
     ])
 
-    const iterator = streamDecision(baseContext(), [descriptor], 'm', edgeFetch)
-    await expect(iterator.next()).resolves.toEqual({ done: false, value: { kind: 'thought', text: 'thinking' } })
-    await expect(iterator.next()).rejects.toThrow('ReAct decision stream ended without decision JSON')
+    const chunks = []
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks.some((chunk) => chunk.kind === 'thought' && chunk.text === 'thinking')).toBe(true)
+    const decision = chunks.find((chunk) => chunk.kind === 'decision')
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
+  })
+
+  it('falls back to a final decision when the model streams prose instead of JSON', async () => {
+    const edgeFetch = makeSseEdgeFetch([
+      'data: {"choices":[{"delta":{"content":"I now have "}}]}',
+      'data: {"choices":[{"delta":{"content":"enough info."}}]}',
+      'data: [DONE]',
+      ''
+    ])
+
+    const chunks = []
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
+      chunks.push(chunk)
+    }
+
+    const decision = chunks.find((chunk) => chunk.kind === 'decision')
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
+  })
+
+  it('falls back to a final decision when the streamed JSON is truncated', async () => {
+    const edgeFetch = makeSseEdgeFetch([
+      'data: {"choices":[{"delta":{"content":"{\\"kind\\":\\"action\\",\\"toolId\\":\\"web-sea"}}]}',
+      'data: [DONE]',
+      ''
+    ])
+
+    const chunks = []
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
+      chunks.push(chunk)
+    }
+
+    const decision = chunks.find((chunk) => chunk.kind === 'decision')
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
   })
 
   it('throws a RateLimitError on 429 so the runtime can wait and retry', async () => {
