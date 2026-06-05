@@ -8,6 +8,14 @@ export {
   type TelemetryCaptureOptions,
   type TelemetryLevel
 } from './capture'
+export {
+  ModelJsonError,
+  parseModelJsonWithTelemetry,
+  parseRobustModelJson,
+  stripModelJsonFences,
+  type ModelJsonMessages,
+  type ModelJsonSchema
+} from './model-json'
 export { scrubBreadcrumb, scrubEvent, stripUrlQuery } from './scrub'
 export {
   captureRequestIssue,

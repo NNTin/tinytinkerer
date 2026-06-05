@@ -41,11 +41,13 @@ A model call has **two** parse steps; harden only the right one:
    `{ choices: [{ message: { content } }] }`. This MUST be valid JSON; a
    `parse_error` here is a **real edge bug** → fix it. Do NOT make it lenient.
 2. **Decision-content parse** — the model's `content` *string* → robust JSON →
-   your schema. THIS is the unavoidable one: apply `parseRobustModelJson` +
-   recover-to-`final` here, on its **own** metadata, so the leniency and the
-   fallback never weaken the strict envelope check above. (Earlier drafts said to
-   `accept` the content parse_error on this metadata — that is **wrong**; see
-   "The fix" below: we recover but keep capturing, never `accept`.)
+   your schema. THIS is the unavoidable one: route it through the shared
+   `parseModelJsonWithTelemetry` helper (`@tinytinkerer/sentry-telemetry`), on its
+   **own** metadata, so the leniency never weakens the strict envelope check above.
+   The decider then recovers-to-`final`; the planner surfaces the error (see
+   "The fix" below). (Earlier drafts said to `accept` the content parse_error on
+   this metadata — that is **wrong**: we recover/surface but keep capturing, never
+   `accept`.)
 
 ## The fix (recover, but stay loud)
 A thrown `parse_error` is fatal: it propagates through `nextDecision` (which only
@@ -54,23 +56,35 @@ catches rate-limit errors) and **kills the whole agent run**. So:
 0. **Parse robustly first, so you only fall back when there's truly nothing to
    recover.** Model output is frequently *sloppy-but-complete*: wrapped in prose,
    single-quoted, trailing commas, unquoted keys. Recover those instead of
-   needlessly dropping to `final` (which loses the action). `parseRobustModelJson`
-   (`app-browser/src/runtime/robust-json.ts`) does strict `JSON.parse` first, then
-   extracts the first **balanced** object and re-parses with **JSON5**. Crucially
-   it **never repairs a truncated value** (no auto-closing brackets/strings) — a
+   needlessly dropping to `final` (which loses the action). The shared
+   `parseModelJsonWithTelemetry` helper (`@tinytinkerer/sentry-telemetry`,
+   `src/model-json.ts`) folds the whole boilerplate into one call — strip ```` ```json ````
+   fences → `parseRobustModelJson` (strict `JSON.parse`, else first **balanced**
+   object re-parsed with **JSON5**) → `zod` schema → telemetry. Crucially it
+   **never repairs a truncated value** (no auto-closing brackets/strings) — a
    cut-off `action` must NOT become a runnable action with a fabricated argument,
    so genuine incompleteness still throws and falls back. (Robustness ≠ guessing.)
-   > Adopting this robustly across **every** model-output parse site (a shared
-   > helper + ESLint guard; e.g. `mcp-planner.ts` still uses raw `JSON.parse`) is
-   > tracked as a follow-up refactor in **issue #139** — not done in PR #138.
-1. **Recover to a sane default instead of throwing.** Wrap the content parse and,
-   on failure, fall back to the graceful no-op decision so the loop winds down
-   cleanly. For the ReAct decider that is `{ kind: 'final' }` — when the model
-   finished in prose ("I now have enough information…") that is the correct
-   outcome (the runtime already has a `decision ?? { kind: 'final' }` fallback to
-   mirror), and the `final` path then synthesizes an answer from context. When the
-   stream was *truncated*, `final` still keeps the user from a crash, but the
-   answer is built from whatever tool results we had — degraded, not perfect.
+   > **Use the shared helper everywhere — don't hand-roll a parse.** An ESLint
+   > rule (`no-restricted-properties` on `JSON.parse`, scoped to
+   > `**/runtime/*-decider.ts` / `**/runtime/*-planner.ts` in `eslint.config.mjs`)
+   > fails the build if a model decision/planner path raw-`JSON.parse`s model
+   > output. Envelope / tool-result / storage parsers stay on strict `JSON.parse`
+   > and are intentionally out of scope. (Adopted in issue #139; origin PR #138.)
+1. **Recover *or surface*, but never throw uncaught — and the choice differs by
+   call site, on purpose.** `parseModelJsonWithTelemetry` is policy-free: it
+   returns the value or throws a `ModelJsonError`. Each caller owns its fallback:
+   - **ReAct decider** (`react-decider.ts`) — **recover to `{ kind: 'final' }`**.
+     When the model finished in prose ("I now have enough information…") that is
+     the correct outcome (the runtime already has a `decision ?? { kind: 'final' }`
+     fallback to mirror), and the `final` path then synthesizes an answer from
+     context. When the stream was *truncated*, `final` still keeps the user from a
+     crash, but the answer is built from whatever tool results we had — degraded,
+     not perfect.
+   - **Planner** (`mcp-planner.ts`) — **surface the error** to the run-error path
+     (`handleRunError`); do NOT degrade to the heuristic `inferPlan`. A
+     wrong/guessed plan is worse than a clear failure. `GitHubModelsProvider.plan`
+     re-throws a `ModelJsonError` (only transport/network failures still fall
+     through to the heuristic, since there we never got model output to misread).
 2. **Do NOT `accept` the failure — keep capturing both `parse_error` and
    `schema_error`.** Recovering does not make the failure expected: the truncated
    case dropped an in-flight tool action and produced an *incomplete* answer, and

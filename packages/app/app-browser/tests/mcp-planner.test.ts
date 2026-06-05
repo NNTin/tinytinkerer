@@ -182,6 +182,32 @@ describe('GitHubModelsProvider.plan — LLM branch', () => {
     expect(plan.steps.map((s) => s.id)).toContain('compose')
   })
 
+  it('surfaces a model-content parse failure instead of degrading to a guessed plan', async () => {
+    // A 200 response whose model `content` is prose, not JSON. A wrong/guessed
+    // plan is worse than a clear failure, so this must propagate (issue #139) —
+    // NOT silently fall back to the heuristic inferPlan.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: 'I cannot plan this.' } }] }),
+          { status: 200 }
+        )
+      )
+    )
+
+    const provider = new GitHubModelsProvider({
+      baseUrl: 'http://edge.local',
+      getToken: () => 'my-token',
+      allToolDescriptors: [descriptor]
+    })
+
+    await expect(provider.plan('what is the weather?', [])).rejects.toMatchObject({
+      name: 'ModelJsonError',
+      kind: 'parse_error'
+    })
+  })
+
   it('re-throws AbortError instead of falling back to inferPlan', async () => {
     const abortError = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
     vi.stubGlobal(

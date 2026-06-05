@@ -1,4 +1,4 @@
-import { parseJsonWithTelemetry, parseWithTelemetry } from '../telemetry/request-telemetry'
+import { parseJsonWithTelemetry, parseModelJsonWithTelemetry } from '../telemetry/request-telemetry'
 import type { DecisionChunk, ExecutionContext } from '@tinytinkerer/app-core'
 import {
   EDGE_ROUTE_PATHS,
@@ -9,7 +9,6 @@ import {
 import type { EdgeFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createRateLimitError } from './rate-limit'
-import { parseRobustModelJson } from './robust-json'
 import { parseSseStream, splitInlineThink } from './sse-utils'
 
 const buildDecisionSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
@@ -61,10 +60,6 @@ type DecisionRequestMetadata = {
   stream: boolean
 }
 
-// Strip an optional ```json … ``` fence the model sometimes wraps its answer in.
-const stripFences = (text: string): string =>
-  text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-
 // Turn the model's answer text into a ReActDecision, recovering — but never
 // silently — from the model's inherent non-compliance. A streaming model will
 // sometimes emit prose ("I now have enough information…"), an empty answer, or
@@ -86,21 +81,17 @@ const parseDecisionOrFinal = (
   response: Response
 ): ReActDecision => {
   try {
-    // parseRobustModelJson tolerates sloppy-but-complete model output (prose
-    // wrapping, single quotes, trailing commas) but never repairs a truncated
-    // value — so genuine incompleteness still surfaces as a parse_error below.
-    const parsedJson = parseWithTelemetry<unknown>(
+    // The shared helper strips ```json fences, parses robustly (tolerating
+    // sloppy-but-complete output, never repairing a truncated value), and
+    // validates the schema — capturing parse_error/schema_error along the way.
+    return parseModelJsonWithTelemetry(
       metadata,
-      'parse_error',
-      'ReAct decision body was not valid JSON',
-      () => parseRobustModelJson(jsonText),
-      response
-    )
-    return parseWithTelemetry(
-      metadata,
-      'schema_error',
-      'ReAct decision did not match the decision schema',
-      () => reactDecisionSchema.parse(parsedJson),
+      jsonText,
+      reactDecisionSchema,
+      {
+        parseError: 'ReAct decision body was not valid JSON',
+        schemaError: 'ReAct decision did not match the decision schema'
+      },
       response
     )
   } catch {
@@ -162,7 +153,7 @@ export const decideNextAction = async (
   }>(metadata, response)
   const text = data.choices?.[0]?.message?.content ?? ''
 
-  return parseDecisionOrFinal(metadata, stripFences(text), response)
+  return parseDecisionOrFinal(metadata, text, response)
 }
 
 // Streaming variant of decideNextAction. Requests a streamed completion and
@@ -230,6 +221,6 @@ export async function* streamDecision(
     model,
     stream: true
   }
-  const decision = parseDecisionOrFinal(metadata, stripFences(jsonBuffer), response)
+  const decision = parseDecisionOrFinal(metadata, jsonBuffer, response)
   yield { kind: 'decision', decision }
 }

@@ -25,6 +25,7 @@ import { createEdgeFetch } from './edge-fetch'
 import { getTelemetryHeaders } from '../telemetry/telemetry'
 import {
   fetchWithTelemetry,
+  ModelJsonError,
   parseJsonWithTelemetry,
   parseWithTelemetry,
   type RequestTelemetryMetadata
@@ -109,6 +110,13 @@ export class GitHubModelsProvider implements ModelProvider {
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') throw error
         if (error instanceof RateLimitError) throw error
+        // A model-content parse/schema failure means the model answered with
+        // something we cannot turn into a plan. Surface it to the run-error path
+        // instead of silently degrading to a heuristic (guessed) plan — a wrong
+        // plan is worse than a clear failure (issue #139). Transport failures
+        // (network/HTTP) still fall through to the heuristic below, since there we
+        // never received model output to misinterpret.
+        if (error instanceof ModelJsonError) throw error
         // fall through to heuristic
       }
     }
