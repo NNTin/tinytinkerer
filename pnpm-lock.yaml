@@ -84,6 +84,9 @@ importers:
       '@sentry/cli':
         specifier: 3.4.3
         version: 3.4.3
+      workerd:
+        specifier: 1.20260526.1
+        version: 1.20260526.1
       wrangler:
         specifier: 4.95.0
         version: 4.95.0

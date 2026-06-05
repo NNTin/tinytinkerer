@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@sentry/cli": "3.4.3",
+    "workerd": "1.20260526.1",
     "wrangler": "4.95.0"
   }
 }
