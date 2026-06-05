@@ -9,6 +9,7 @@ import {
 import type { EdgeFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createRateLimitError } from './rate-limit'
+import { parseRobustModelJson } from './robust-json'
 import { parseSseStream, splitInlineThink } from './sse-utils'
 
 const buildDecisionSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
@@ -85,11 +86,14 @@ const parseDecisionOrFinal = (
   response: Response
 ): ReActDecision => {
   try {
+    // parseRobustModelJson tolerates sloppy-but-complete model output (prose
+    // wrapping, single quotes, trailing commas) but never repairs a truncated
+    // value — so genuine incompleteness still surfaces as a parse_error below.
     const parsedJson = parseWithTelemetry<unknown>(
       metadata,
       'parse_error',
       'ReAct decision body was not valid JSON',
-      () => JSON.parse(jsonText) as unknown,
+      () => parseRobustModelJson(jsonText),
       response
     )
     return parseWithTelemetry(

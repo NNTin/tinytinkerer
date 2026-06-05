@@ -49,6 +49,15 @@ A model call has **two** parse steps; do not accept the wrong one:
 A thrown `parse_error` is fatal: it propagates through `nextDecision` (which only
 catches rate-limit errors) and **kills the whole agent run**. So:
 
+0. **Parse robustly first, so you only fall back when there's truly nothing to
+   recover.** Model output is frequently *sloppy-but-complete*: wrapped in prose,
+   single-quoted, trailing commas, unquoted keys. Recover those instead of
+   needlessly dropping to `final` (which loses the action). `parseRobustModelJson`
+   (`app-browser/src/runtime/robust-json.ts`) does strict `JSON.parse` first, then
+   extracts the first **balanced** object and re-parses with **JSON5**. Crucially
+   it **never repairs a truncated value** (no auto-closing brackets/strings) — a
+   cut-off `action` must NOT become a runnable action with a fabricated argument,
+   so genuine incompleteness still throws and falls back. (Robustness ≠ guessing.)
 1. **Recover to a sane default instead of throwing.** Wrap the content parse and,
    on failure, fall back to the graceful no-op decision so the loop winds down
    cleanly. For the ReAct decider that is `{ kind: 'final' }` — when the model

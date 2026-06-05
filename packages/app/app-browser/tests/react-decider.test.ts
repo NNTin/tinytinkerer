@@ -123,6 +123,56 @@ describe('decideNextAction', () => {
     expect(decision.kind).toBe('final')
   })
 
+  // Robust parsing: recover sloppy-but-COMPLETE decisions instead of needlessly
+  // dropping to final (which loses the action). Truncated input is NOT repaired.
+  it('recovers a complete decision wrapped in prose', async () => {
+    const edgeFetch = makeEdgeFetch({
+      choices: [
+        {
+          message: {
+            content: 'Sure! {"kind":"action","toolId":"web-search","input":{"query":"x"}} hope that helps'
+          }
+        }
+      ]
+    })
+
+    const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
+
+    expect(decision.kind).toBe('action')
+    if (decision.kind !== 'action') {
+      throw new Error('Expected an action decision')
+    }
+    expect(decision.toolId).toBe('web-search')
+  })
+
+  it('recovers single-quoted JSON via lenient parsing', async () => {
+    const edgeFetch = makeEdgeFetch({ choices: [{ message: { content: "{'kind':'final'}" } }] })
+
+    const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
+
+    expect(decision.kind).toBe('final')
+  })
+
+  it('recovers JSON with a trailing comma', async () => {
+    const edgeFetch = makeEdgeFetch({ choices: [{ message: { content: '{"kind":"final",}' } }] })
+
+    const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
+
+    expect(decision.kind).toBe('final')
+  })
+
+  it('does NOT fabricate an action from truncated JSON — falls back to final', async () => {
+    const edgeFetch = makeEdgeFetch({
+      choices: [{ message: { content: '{"kind":"action","toolId":"web-search","input":{"query":"Ber' } }]
+    })
+
+    const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
+
+    // The truncated action must NOT be auto-completed into a runnable action with
+    // a fabricated argument; we degrade to final instead.
+    expect(decision.kind).toBe('final')
+  })
+
   it('throws when the response is not ok', async () => {
     const edgeFetch = makeEdgeFetch({ error: 'Service Unavailable' }, 503)
 
