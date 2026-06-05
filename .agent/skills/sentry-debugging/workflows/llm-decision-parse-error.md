@@ -35,15 +35,17 @@ Settled `TINYTINKERER-FRONTEND-J` (truncated/malformed decision JSON —
   as env noise (contrast: a `development`/localhost crash *is* noise; see
   `triage-by-environment.md`).
 
-## Two parses live at these call sites — only ONE is unavoidable
-A model call has **two** parse steps; do not accept the wrong one:
+## Two parses live at these call sites — keep them distinct
+A model call has **two** parse steps; harden only the right one:
 1. **Envelope parse** — `parseJsonWithTelemetry` of the edge's OpenAI-shaped
    `{ choices: [{ message: { content } }] }`. This MUST be valid JSON; a
-   `parse_error` here is a **real edge bug** → fix it, never `accept`.
-2. **Decision-content parse** — the model's `content` *string* → `JSON.parse` →
-   your schema. THIS is the unavoidable one. Build a **separate** metadata object
-   for it carrying the `accept`, so accepting the content parse_error does not
-   blind you to a malformed envelope.
+   `parse_error` here is a **real edge bug** → fix it. Do NOT make it lenient.
+2. **Decision-content parse** — the model's `content` *string* → robust JSON →
+   your schema. THIS is the unavoidable one: apply `parseRobustModelJson` +
+   recover-to-`final` here, on its **own** metadata, so the leniency and the
+   fallback never weaken the strict envelope check above. (Earlier drafts said to
+   `accept` the content parse_error on this metadata — that is **wrong**; see
+   "The fix" below: we recover but keep capturing, never `accept`.)
 
 ## The fix (recover, but stay loud)
 A thrown `parse_error` is fatal: it propagates through `nextDecision` (which only
@@ -89,10 +91,18 @@ check the capture sink is **still called** (with `failure_kind: parse_error`,
 don't suppress" so nobody silently re-adds an `accept`.
 
 ## Resolve
-The hard *crash* is fixed, but the underlying non-conformance is **not** — and we
-deliberately keep reporting it. So do **not** mark these as cleanly fixed/accepted.
-Leave a comment recording the crash fix and that capture is intentionally retained
-for root-cause work, and either keep the issue `unresolved` (it is a real, open
-bug) or let it auto-regress on the next occurrence. If you instead chase the root
-cause (token limits / streaming cutoff / prompt tightening) and land that, resolve
-against that fix.
+Mark the issue **`resolvedInNextRelease`** with a `reason` naming the fix (the
+crash is gone, sloppy-but-complete decisions are recovered, and the residual
+truncation/prose cases degrade gracefully to `final`). Keep these two axes
+separate — they are **not** in tension:
+- **Code:** still capture (no `accept`) — *stay loud*.
+- **Status:** `resolvedInNextRelease` — *acknowledge the fix shipped*.
+
+Because we keep emitting events, Sentry **auto-regresses** (reopens + escalates)
+the issue if the residual cases recur on the new release — so the signal is not
+lost, it just resurfaces louder if reality disagrees with the fix. That is
+cleaner than leaving it permanently `unresolved`. (Frontend coerces
+`resolvedInNextRelease` → plain `resolved`; it still auto-regresses — see the
+`triage-issues.md` quirk.) If those residual cases *do* keep firing post-deploy,
+chase the root cause (token limits / streaming cutoff / prompt tightening / a
+JSON/response-format constraint) and resolve against that fix.
