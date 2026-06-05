@@ -262,8 +262,12 @@ const createRequestHandler = (apps, publicDir) => (req, res) => {
   }
 
   void handleRequest().catch((error) => {
+    // Log the real error server-side; never reflect exception text back to the
+    // client, where it could be interpreted as HTML (CodeQL js/xss-through-exception).
+    console.error('Unhandled error while handling request.', error)
     res.statusCode = 500
-    res.end(error instanceof Error ? error.message : 'Internal server error')
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    res.end('Internal server error')
   })
 }
 
