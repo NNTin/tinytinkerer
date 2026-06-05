@@ -20,6 +20,6 @@
   "dependencies": {
     "@tinytinkerer/agent-core": "workspace:*",
     "@tinytinkerer/contracts": "workspace:*",
-    "zod": "^4.1.12"
+    "zod": "4.4.3"
   }
 }

@@ -11,6 +11,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "vite": "^8.0.12"
+    "vite": "8.0.14"
   }
 }

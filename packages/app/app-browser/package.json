@@ -22,7 +22,7 @@
     "typecheck": "pnpm -w generate:privacy-policy && tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@sentry/react": "^10.17.0",
+    "@sentry/react": "10.55.0",
     "@tinytinkerer/app-core": "workspace:*",
     "@tinytinkerer/brand-assets": "workspace:*",
     "@tinytinkerer/content-callout": "workspace:*",
@@ -36,25 +36,25 @@
     "@tinytinkerer/content-wireframe": "workspace:*",
     "@tinytinkerer/contracts": "workspace:*",
     "@tinytinkerer/sentry-telemetry": "workspace:*",
-    "dexie": "^4.2.1",
-    "json5": "^2.2.3",
-    "zod": "^4.1.12",
-    "zustand": "^5.0.8"
+    "dexie": "4.4.3",
+    "json5": "2.2.3",
+    "zod": "4.4.3",
+    "zustand": "5.0.14"
   },
   "peerDependencies": {
     "react": "^19.0.0",
     "react-router-dom": "^7.0.0"
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "jsdom": "^29.1.1",
-    "react": "^19.0.0",
-    "react-router-dom": "^7.9.5",
-    "vite": "^8.0.12",
-    "vitest": "^4.0.8"
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@types/react": "19.2.15",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "jsdom": "29.1.1",
+    "react": "19.2.6",
+    "react-router-dom": "7.16.0",
+    "vite": "8.0.14",
+    "vitest": "4.1.7"
   }
 }

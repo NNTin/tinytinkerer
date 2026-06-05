@@ -3,4 +3,13 @@ packages:
   - packages/*/*
   - packages/content/renderers/*
 
+# Strict one-week age gate. Do not add minimumReleaseAgeExclude; if a newer package is needed, stop and ask a human.
 minimumReleaseAge: 10080
+saveExact: true
+auditLevel: moderate
+onlyBuiltDependencies: []
+ignoredBuiltDependencies:
+  - '@sentry/cli'
+  - esbuild
+  - sharp
+  - workerd

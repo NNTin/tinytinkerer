@@ -19,13 +19,13 @@
   },
   "dependencies": {
     "@tinytinkerer/content-core": "workspace:*",
-    "mdast-util-to-string": "^4.0.0",
-    "remark-gfm": "^4.0.1",
-    "remark-parse": "^11.0.0",
-    "unified": "^11.0.5"
+    "mdast-util-to-string": "4.0.0",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
+    "unified": "11.0.5"
   },
   "devDependencies": {
-    "@types/mdast": "^4.0.4",
-    "vitest": "^4.0.8"
+    "@types/mdast": "4.0.4",
+    "vitest": "4.1.7"
   }
 }
