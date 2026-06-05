@@ -1,4 +1,4 @@
-# pnpm-dependency-updates
+# pnpm-workspace
 
 <!-- BEGIN GENERATED: .agent/README.md — do not edit; run `pnpm sync:skill-readme`
 
@@ -24,23 +24,26 @@ Skills the agent uses to work in this repo. Core idea: **offload deterministic s
 
 END GENERATED: .agent/README.md -->
 
-Keep pnpm workspace dependency updates deterministic, age-gated, exact-pinned, and supply-chain reviewed. Read `../../README.md` first for the WAT framework.
+Set up the pnpm workspace and keep its dependency updates deterministic, age-gated, exact-pinned, and supply-chain reviewed — so local work gets the same install-time protections as CI. Read `../../README.md` first for the WAT framework.
 
 ## When to use
 
+- Setting up the workspace (first checkout, fresh clone, or after lockfile changes).
 - Updating npm dependencies in this pnpm monorepo.
 - Reviewing dependency drift, install lifecycle scripts, audit findings, or exact-version policy failures.
 - Preparing CI or package-manager changes that affect dependency resolution/install security.
 
 ## How
 
-1. Follow `workflows/update-dependencies.md`.
-2. Use the tools under `tools/` or the equivalent root scripts instead of manually editing many package manifests.
-3. Keep `peerDependencies` as compatibility ranges; exact-pin only direct `dependencies` and `devDependencies`.
-4. Preserve the one-week `minimumReleaseAge` gate. Do **not** add `minimumReleaseAgeExclude`; if a dependency newer than the gate is required, stop and ask a human.
+1. To install the environment, follow `workflows/setup-workspace.md` (`pnpm setup`).
+2. To change dependencies, follow `workflows/update-dependencies.md`.
+3. Use the tools under `tools/` or the equivalent root scripts instead of manually editing many package manifests.
+4. Keep `peerDependencies` as compatibility ranges; exact-pin only direct `dependencies` and `devDependencies`.
+5. Preserve the one-week `minimumReleaseAge` gate. Do **not** add `minimumReleaseAgeExclude`; if a dependency newer than the gate is required, stop and ask a human.
 
 ## Available tools
 
+- `tools/setup-workspace.sh` / `pnpm setup` — install the workspace the secure way: frozen, scriptless install, then rebuild only the reviewed native binaries via `pnpm bootstrap:scriptless-install`.
 - `tools/dependency-status.sh` / `pnpm dependency:status` — print pnpm policy settings and direct outdated dependency status.
 - `tools/pin-direct-dependencies.sh` / `pnpm pin:dependencies` — rewrite direct non-workspace dependencies/devDependencies to the exact resolved versions, then refresh the lockfile.
 - `tools/check-supply-chain.sh` — run exact-specifier, install-lifecycle, audit, and skill README checks.

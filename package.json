@@ -32,7 +32,8 @@
     "check:exact-dependencies": "node ./scripts/check-exact-dependencies.mjs",
     "check:install-scripts": "node ./scripts/check-install-scripts.mjs",
     "dependency:status": "node ./scripts/dependency-status.mjs",
-    "bootstrap:scriptless-install": "node ./scripts/bootstrap-scriptless-install.mjs"
+    "bootstrap:scriptless-install": "node ./scripts/bootstrap-scriptless-install.mjs",
+    "setup": "pnpm install --frozen-lockfile --ignore-scripts && pnpm bootstrap:scriptless-install"
   },
   "devDependencies": {
     "@commitlint/cli": "21.0.2",

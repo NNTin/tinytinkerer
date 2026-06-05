@@ -52,8 +52,7 @@ pnpm audit --audit-level=moderate
 ## 5. Validate before pushing
 
 ```
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm bootstrap:scriptless-install
+pnpm setup
 pnpm check:exact-dependencies
 pnpm check:install-scripts
 pnpm audit --audit-level=moderate
