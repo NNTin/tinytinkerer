@@ -361,10 +361,13 @@ export const createHostServer = async ({
 
     await startListening(httpServer, { host, port, preferredPort })
   } catch (error) {
+    // Only tear down the servers that were actually created. Routing the
+    // partially-initialized apps through getAppServer() here would throw on the
+    // first app whose server never started, masking the original failure.
     await Promise.allSettled(
       apps
-        .map((app) => getAppServer(app))
-        .map((server) => server.close())
+        .filter((app) => app.server)
+        .map((app) => /** @type {ViteDevServer} */ (app.server).close())
     )
 
     if (httpServer.listening) {

@@ -82,17 +82,22 @@ const createTempHostRoot = async (backendPort) => {
   for (const app of apps) {
     const appRoot = join(rootDir, 'apps', app.name)
     await mkdir(join(appRoot, 'src'), { recursive: true })
+    // Deliberately avoid `import { defineConfig } from 'vite'` here. These
+    // configs are written into an OS temp dir that has no node_modules, so a
+    // bare `vite` import is only resolvable when the ambient NODE_PATH happens
+    // to expose vite (e.g. some local harnesses) — in a clean CI environment it
+    // fails with "Cannot find module 'vite'". A plain object is a valid Vite
+    // config and needs no module resolution. defineConfig is only an identity
+    // helper for type inference, which a synthetic `.ts` fixture does not need.
     await writeFile(
       join(appRoot, 'vite.config.ts'),
       [
-        "import { defineConfig } from 'vite'",
-        '',
-        'export default defineConfig({',
+        'export default {',
         `  base: '${app.mountPath}',`,
         app.proxyHealth
           ? `  server: { proxy: { '/health': { target: 'http://localhost:${backendPort}', changeOrigin: true } } }`
           : '  server: {}',
-        '})',
+        '}',
         ''
       ].join('\n')
     )
