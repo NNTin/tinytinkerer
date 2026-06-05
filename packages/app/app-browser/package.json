@@ -37,7 +37,6 @@
     "@tinytinkerer/contracts": "workspace:*",
     "@tinytinkerer/sentry-telemetry": "workspace:*",
     "dexie": "^4.2.1",
-    "json5": "^2.2.3",
     "zod": "^4.1.12",
     "zustand": "^5.0.8"
   },

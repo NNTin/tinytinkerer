@@ -60,6 +60,27 @@ export default tseslint.config(
     }
   },
   {
+    // Model decision/planner paths turn an LLM's free-form `content` string into
+    // structured data. A raw `JSON.parse` there is brittle: it crashes on the
+    // prose-wrapped / single-quoted / trailing-comma output models routinely emit,
+    // and (worse) it bypasses the parse_error/schema_error telemetry. Force these
+    // files through the shared robust helper (issue #139). This mirrors the
+    // fetchWithTelemetry-over-fetch rule above; envelope / tool-result / storage
+    // parsers stay on strict JSON.parse and are intentionally NOT in scope.
+    files: ['**/runtime/*-planner.ts', '**/runtime/*-decider.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'JSON',
+          property: 'parse',
+          message:
+            'Do not raw-JSON.parse model output. Use parseModelJsonWithTelemetry from @tinytinkerer/sentry-telemetry (re-exported by @tinytinkerer/app-browser): it strips ```json fences, parses robustly (sloppy-but-complete output, never repairing truncation), validates the schema, and captures parse_error/schema_error.'
+        }
+      ]
+    }
+  },
+  {
     // Tests legitimately exercise real or local servers (and stub/mock the
     // global fetch), so the fetchWithTelemetry restriction does not apply here.
     files: [

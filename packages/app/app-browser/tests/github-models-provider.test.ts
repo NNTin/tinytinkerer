@@ -223,7 +223,7 @@ describe('GitHubModelsProvider', () => {
     vi.unstubAllGlobals()
   })
 
-  it('falls back to heuristic planning and emits telemetry for invalid planning JSON', async () => {
+  it('surfaces an error (does not degrade to a guessed plan) and emits telemetry for invalid planning JSON', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() =>
@@ -248,9 +248,15 @@ describe('GitHubModelsProvider', () => {
       allToolDescriptors: [{ id: 'mcp:test:lookup', description: 'lookup', inputSchema: {} }]
     })
 
-    const plan = await provider.plan('Tell me something about this repo', [])
+    // A wrong/guessed plan is worse than a clear failure, so the planner must
+    // surface the parse failure to the run-error path rather than silently
+    // degrading to the heuristic inferPlan (issue #139).
+    await expect(provider.plan('Tell me something about this repo', [])).rejects.toMatchObject({
+      name: 'ModelJsonError',
+      kind: 'parse_error'
+    })
 
-    expect(plan.steps.map((step) => step.id)).toEqual(['understand', 'compose'])
+    // It still stays loud: the parse_error is captured before the throw.
     expect(telemetrySink).toHaveBeenCalledTimes(1)
     const [, options] = telemetrySink.mock.calls[0] ?? []
     expect(options?.tags).toMatchObject({

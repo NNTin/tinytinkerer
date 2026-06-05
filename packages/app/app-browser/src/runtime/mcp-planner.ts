@@ -1,4 +1,4 @@
-import { parseJsonWithTelemetry, parseWithTelemetry } from '../telemetry/request-telemetry'
+import { parseJsonWithTelemetry, parseModelJsonWithTelemetry } from '../telemetry/request-telemetry'
 import type { ConversationMessage } from '@tinytinkerer/app-core'
 import {
   EDGE_ROUTE_PATHS,
@@ -95,19 +95,19 @@ export const llmPlan = async (
   }>(metadata, response)
   const text = data.choices?.[0]?.message?.content ?? ''
 
-  const jsonText = text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-  const parsedJson = parseWithTelemetry<unknown>(
+  // Robustly turn the model's free-form content into a validated plan. Unlike the
+  // ReAct decider (which recovers to a `final` answer), the planner does NOT have
+  // a safe local fallback: a wrong/guessed plan is worse than a clear failure, so
+  // on an unrecoverable parse/schema failure this throws a ModelJsonError that the
+  // caller surfaces to the run-error path rather than silently degrading.
+  return parseModelJsonWithTelemetry(
     metadata,
-    'parse_error',
-    'Planning response body was not valid JSON',
-    () => JSON.parse(jsonText) as unknown,
-    response
-  )
-  return parseWithTelemetry(
-    metadata,
-    'schema_error',
-    'Planning response did not match execution plan schema',
-    () => executionPlanSchema.parse(parsedJson),
+    text,
+    executionPlanSchema,
+    {
+      parseError: 'Planning response body was not valid JSON',
+      schemaError: 'Planning response did not match execution plan schema'
+    },
     response
   )
 }
