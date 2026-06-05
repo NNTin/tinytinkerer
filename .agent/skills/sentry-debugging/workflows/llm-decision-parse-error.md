@@ -60,6 +60,9 @@ catches rate-limit errors) and **kills the whole agent run**. So:
    it **never repairs a truncated value** (no auto-closing brackets/strings) — a
    cut-off `action` must NOT become a runnable action with a fabricated argument,
    so genuine incompleteness still throws and falls back. (Robustness ≠ guessing.)
+   > Adopting this robustly across **every** model-output parse site (a shared
+   > helper + ESLint guard; e.g. `mcp-planner.ts` still uses raw `JSON.parse`) is
+   > tracked as a follow-up refactor in **issue #139** — not done in PR #138.
 1. **Recover to a sane default instead of throwing.** Wrap the content parse and,
    on failure, fall back to the graceful no-op decision so the loop winds down
    cleanly. For the ReAct decider that is `{ kind: 'final' }` — when the model
