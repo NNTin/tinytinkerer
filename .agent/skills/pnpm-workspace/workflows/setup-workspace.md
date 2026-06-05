@@ -5,10 +5,13 @@ scriptless install followed by an explicit rebuild of only the reviewed native
 binaries (`onlyBuiltDependencies`).
 
 ```
-pnpm setup
+pnpm setup:workspace
 ```
 
-`pnpm setup` is:
+The script is named `setup:workspace` (not `setup`) because bare `pnpm setup`
+is a pnpm built-in command and would shadow a `setup` script.
+
+`pnpm setup:workspace` is:
 
 ```
 pnpm install --frozen-lockfile --ignore-scripts && pnpm bootstrap:scriptless-install

@@ -52,7 +52,7 @@ pnpm audit --audit-level=moderate
 ## 5. Validate before pushing
 
 ```
-pnpm setup
+pnpm setup:workspace
 pnpm check:exact-dependencies
 pnpm check:install-scripts
 pnpm audit --audit-level=moderate

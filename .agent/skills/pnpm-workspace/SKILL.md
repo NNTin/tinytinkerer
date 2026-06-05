@@ -35,7 +35,7 @@ Set up the pnpm workspace and keep its dependency updates deterministic, age-gat
 
 ## How
 
-1. To install the environment, follow `workflows/setup-workspace.md` (`pnpm setup`).
+1. To install the environment, follow `workflows/setup-workspace.md` (`pnpm setup:workspace`).
 2. To change dependencies, follow `workflows/update-dependencies.md`.
 3. Use the root `pnpm` scripts below instead of manually editing many package manifests.
 4. Keep `peerDependencies` as compatibility ranges; exact-pin only direct `dependencies` and `devDependencies`.
@@ -43,7 +43,7 @@ Set up the pnpm workspace and keep its dependency updates deterministic, age-gat
 
 ## Available tools
 
-- `pnpm setup` — install the workspace the secure way: frozen, scriptless install, then rebuild only the reviewed native binaries via `pnpm bootstrap:scriptless-install`.
+- `pnpm setup:workspace` — install the workspace the secure way: frozen, scriptless install, then rebuild only the reviewed native binaries via `pnpm bootstrap:scriptless-install`. (Named `setup:workspace`, not `setup`, because bare `pnpm setup` is a pnpm built-in command.)
 - `pnpm dependency:status` — print pnpm policy settings and direct outdated dependency status.
 - `pnpm pin:dependencies` — rewrite direct non-workspace dependencies/devDependencies to the exact resolved versions (run `pnpm install --lockfile-only` afterwards to refresh the lockfile).
 - `tools/check-supply-chain.sh` — run exact-specifier, install-lifecycle, audit, and skill README checks in one shot.
