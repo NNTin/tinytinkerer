@@ -54,7 +54,12 @@ const extractBalancedJson = (text: string): string | null => {
 //   1. Strict `JSON.parse` (fast path for well-formed output).
 //   2. Extract the first balanced object/array (drops a prose preamble / trailing
 //      commentary) and parse it with JSON5 (tolerates single quotes, trailing
-//      commas, unquoted keys, comments).
+//      commas, unquoted keys).
+// Note: JSON5's own comment support is intentionally NOT relied on here — the
+// balanced-extraction scan in `extractBalancedJson` is string-aware but not
+// comment-aware, so a `}`/`]` inside a `//` or `/* … */` region could prematurely
+// terminate extraction. Models effectively never emit comments in a JSON answer,
+// so we keep the scanner simple rather than parse comment syntax we don't need.
 // Throws when neither works — i.e. there is no *complete* JSON value to recover
 // (the stream was truncated, or it is pure prose). We never auto-close brackets
 // or strings, so a truncated value is reported and falls back rather than being

@@ -56,8 +56,11 @@ describe('parseRobustModelJson', () => {
     expect(() => parseRobustModelJson('{"kind":"action","toolId":"web-search","inp')).toThrow()
   })
 
-  it('does not treat a brace inside a string as the closing brace', () => {
-    expect(parseRobustModelJson('{"q":"a } b"}')).toEqual({ q: 'a } b' })
+  it('does not treat a brace inside a string as the closing brace (extraction path)', () => {
+    // A prose preamble makes strict JSON.parse fail, so this exercises
+    // extractBalancedJson: its string-awareness must skip the `}` inside "a } b"
+    // and only stop at the real closing brace.
+    expect(parseRobustModelJson('Here you go: {"q":"a } b"}')).toEqual({ q: 'a } b' })
   })
 })
 
