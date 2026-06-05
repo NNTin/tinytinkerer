@@ -1,7 +1,7 @@
 # CodeQL advanced setup, tuned for this pnpm monorepo.
 #
 # Both analyzed languages use `build-mode: none` (buildless extraction). For
-# `javascript-typescript` we still run `pnpm install` + `pnpm build` before
+# `javascript-typescript` we still run `pnpm run setup` + `pnpm build` before
 # extraction: CodeQL analyzes best when the project is built, so generated
 # sources exist and types resolve across workspace packages, yielding more
 # accurate cross-package data-flow results.
@@ -69,9 +69,14 @@ jobs:
         node-version: '22'
         cache: pnpm
 
+    # The repo's `setup` script is the secure install: a frozen, scriptless
+    # install followed by an explicit rebuild of only the allowlisted native
+    # binaries (onlyBuiltDependencies). See .agent/skills/pnpm-workspace.
+    # Invoked via `pnpm run setup` because bare `pnpm setup` resolves to pnpm's
+    # built-in command instead of the package.json script.
     - name: Install dependencies
       if: matrix.language == 'javascript-typescript'
-      run: pnpm install --frozen-lockfile
+      run: pnpm run setup
 
     # Build the workspace before extraction. CodeQL produces the most accurate
     # results when analyzing a built project (generated/compiled sources are
