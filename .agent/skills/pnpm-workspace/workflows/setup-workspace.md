@@ -8,7 +8,7 @@ binaries (`onlyBuiltDependencies`).
 pnpm setup
 ```
 
-`tools/setup-workspace.sh` runs the same thing. `pnpm setup` is:
+`pnpm setup` is:
 
 ```
 pnpm install --frozen-lockfile --ignore-scripts && pnpm bootstrap:scriptless-install
