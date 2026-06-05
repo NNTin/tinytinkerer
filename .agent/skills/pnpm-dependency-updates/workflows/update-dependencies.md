@@ -10,7 +10,7 @@ Verify `pnpm-workspace.yaml` still has:
 - `minimumReleaseAge: 10080` and no `minimumReleaseAgeExclude`.
 - `saveExact: true`.
 - `auditLevel: moderate`.
-- Reviewed build-script policy (`onlyBuiltDependencies` / `ignoredBuiltDependencies`).
+- Reviewed build-script policy (`onlyBuiltDependencies` for packages explicitly bootstrapped in CI / `ignoredBuiltDependencies` for blocked packages).
 
 If a newer package is required but blocked by the 7-day age gate, stop and ask a human. Do not bypass the gate locally or in config.
 
@@ -35,10 +35,10 @@ pnpm check:install-scripts
 ```
 
 For every dependency with `preinstall`, `install`, or `postinstall`, review the package and then add only the package name to:
-- `onlyBuiltDependencies` if CI/local installs may run it, or
+- `onlyBuiltDependencies` if an explicit, reviewed bootstrap/rebuild step may run it, or
 - `ignoredBuiltDependencies` if installs must block it.
 
-Prefer blocking by default; scriptless CI installs remain mandatory.
+Prefer blocking by default; scriptless CI installs remain mandatory. When a CI job needs native/CLI binaries from approved packages, run `pnpm bootstrap:scriptless-install` after the scriptless install.
 
 ## 4. Audit and handle vulnerabilities
 
@@ -53,6 +53,7 @@ pnpm audit --audit-level=moderate
 
 ```
 pnpm install --frozen-lockfile --ignore-scripts
+pnpm bootstrap:scriptless-install
 pnpm check:exact-dependencies
 pnpm check:install-scripts
 pnpm audit --audit-level=moderate

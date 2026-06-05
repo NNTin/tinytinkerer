@@ -7,9 +7,9 @@ packages:
 minimumReleaseAge: 10080
 saveExact: true
 auditLevel: moderate
-onlyBuiltDependencies: []
-ignoredBuiltDependencies:
+onlyBuiltDependencies:
   - '@sentry/cli'
   - esbuild
   - sharp
   - workerd
+ignoredBuiltDependencies: []

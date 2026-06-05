@@ -40,8 +40,6 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: npm install --global @mermaid-js/mermaid-cli@11.12.0
-
       - name: Exact dependency specifier check
         run: pnpm check:exact-dependencies
 
@@ -94,6 +92,7 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm bootstrap:scriptless-install
       - run: pnpm generate:brand-assets
       - run: pnpm generate:privacy-policy
       - run: pnpm generate:notices
@@ -122,6 +121,7 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm bootstrap:scriptless-install
 
       - name: Prepare Worker Secrets
         id: secrets-file

@@ -29,7 +29,8 @@
     "pin:dependencies": "node ./scripts/pin-direct-dependencies.mjs",
     "check:exact-dependencies": "node ./scripts/check-exact-dependencies.mjs",
     "check:install-scripts": "node ./scripts/check-install-scripts.mjs",
-    "dependency:status": "node ./scripts/dependency-status.mjs"
+    "dependency:status": "node ./scripts/dependency-status.mjs",
+    "bootstrap:scriptless-install": "node ./scripts/bootstrap-scriptless-install.mjs"
   },
   "devDependencies": {
     "@commitlint/cli": "21.0.2",
