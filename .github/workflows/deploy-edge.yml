@@ -91,8 +91,7 @@ jobs:
           node-version: '22'
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm bootstrap:scriptless-install
+      - run: pnpm setup:workspace
       - run: pnpm generate:brand-assets
       - run: pnpm generate:privacy-policy
       - run: pnpm generate:notices
@@ -120,8 +119,7 @@ jobs:
           node-version: '22'
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm bootstrap:scriptless-install
+      - run: pnpm setup:workspace
 
       - name: Prepare Worker Secrets
         id: secrets-file

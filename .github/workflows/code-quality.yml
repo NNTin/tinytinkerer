@@ -34,7 +34,9 @@ jobs:
           node-version: '22'
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      # Secure install: scriptless, then rebuild only the allowlisted native
+      # binaries (sharp is needed by the brand-asset generation knip runs).
+      - run: pnpm setup:workspace
 
       - name: Duplicate code check (jscpd)
         run: pnpm jscpd
