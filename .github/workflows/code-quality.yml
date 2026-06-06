@@ -38,6 +38,11 @@ jobs:
       # binaries (sharp is needed by the brand-asset generation knip runs).
       - run: pnpm setup:workspace
 
+      # Validates the release PR body parser (scripts/release-pr-body.mjs) so
+      # changes to reference parsing / rendering are caught before release time.
+      - name: Release PR body parser tests
+        run: pnpm release-pr:test
+
       - name: Duplicate code check (jscpd)
         run: pnpm jscpd
 

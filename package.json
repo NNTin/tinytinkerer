@@ -16,6 +16,7 @@
     "compliance:sbom": "node ./scripts/generate-sbom.mjs",
     "compliance:enforce": "node ./scripts/enforce-licenses.mjs",
     "compliance:test": "node --test scripts/license-policy.test.mjs",
+    "release-pr:test": "node --test scripts/release-pr-body.test.mjs",
     "check:boundaries": "node ./scripts/check-boundaries.mjs",
     "check:github-models-openapi": "node ./scripts/check-github-models-openapi.mjs",
     "check:mermaid": "node ./scripts/check-mermaid.mjs",

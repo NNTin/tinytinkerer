@@ -4,6 +4,10 @@ name: Release PR
 # `develop` into `main`. The PR title and body are generated from the commits and
 # merged PRs that have landed on `develop` since it last diverged from `main`.
 #
+# This workflow owns the GitHub API calls (compare range, commits, PRs, files,
+# reference resolution); the parsing, grouping, sorting, and rendering live in the
+# testable helper `scripts/release-pr-body.mjs` (see scripts/release-pr-body.test.mjs).
+#
 # Tooling note: this uses the default GITHUB_TOKEN. PRs created with GITHUB_TOKEN
 # do NOT trigger other workflows (Deploy Vercel / Compliance won't run their
 # `pull_request` jobs on this PR). Pushing to `main` after the merge still fires
@@ -15,6 +19,9 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  # `issues: read` lets us resolve ambiguous same-repo refs (bare `#132`) to an
+  # issue-vs-PR via issues.get when building the audit trail.
+  issues: read
 
 concurrency:
   group: release-pr
@@ -36,10 +43,14 @@ jobs:
           script: |
             const BASE = 'main'
             const HEAD = 'develop'
-            const MARKER = '<!-- release-pr -->'
 
             const { owner, repo } = context.repo
             const repoFullName = `${owner}/${repo}`
+
+            // Load the testable body builder (ESM helper) via a file URL.
+            const { pathToFileURL } = require('node:url')
+            const helperPath = `${process.env.GITHUB_WORKSPACE}/scripts/release-pr-body.mjs`
+            const { buildReleaseBody } = await import(pathToFileURL(helperPath).href)
 
             // 1. Resolve SHAs and the set of commits develop is ahead by.
             const compare = await github.paginate(
@@ -69,31 +80,22 @@ jobs:
               return
             }
 
+            // The repo's auto-rewritten merge commits (commitlint ignores these
+            // too) carry no human-meaningful change description.
             const MERGE_RE = /^chore\(merge\): merge [0-9a-f]{40} into [0-9a-f]{40}$/
-            const CLOSING_CLAUSE_RE =
-              /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+((?:(?:https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+|[\w.-]+\/[\w.-]+#\d+|#\d+)(?:\s*(?:,|and)\s*)?)+)/gi
-            const ISSUE_REF_RE =
-              /https:\/\/github\.com\/(?<urlRepo>[\w.-]+\/[\w.-]+)\/issues\/(?<urlNumber>\d+)|(?:(?<repo>[\w.-]+\/[\w.-]+))?#(?<number>\d+)/gi
-            const DEPENDENCY_FILE_RE =
-              /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|apps\/[^/]+\/package\.json|packages\/.+\/package\.json|scripts\/(?:generate-sbom|generate-notices|enforce-licenses|license-policy|license-policy\.test)\.mjs|scripts\/lib\/dependency-licenses\.mjs|\.github\/workflows\/compliance\.yml)$/
 
-            const compareFiles = meta.files ?? []
             const allChangedFiles = new Map()
-            for (const file of compareFiles) {
+            for (const file of meta.files ?? []) {
               allChangedFiles.set(file.filename, file)
             }
-
-            const contributorStats = new Map()
-            const linkedIssues = new Map()
-            const prByNumber = new Map()
-            const commitEntries = []
-            const directEntries = []
+            const rememberFiles = (files) => {
+              for (const file of files ?? []) allChangedFiles.set(file.filename, file)
+            }
 
             const normalizeAuthor = (commit, fullCommit) =>
               fullCommit.author?.login ?? commit.author?.login ?? commit.commit.author?.name ?? 'unknown'
 
-            const formatContributor = (name) => (name.includes(' ') ? name : `@${name}`)
-
+            const contributorStats = new Map()
             const addContributorStats = (name, additions, deletions) => {
               const existing = contributorStats.get(name) ?? { additions: 0, deletions: 0 }
               existing.additions += additions ?? 0
@@ -101,68 +103,14 @@ jobs:
               contributorStats.set(name, existing)
             }
 
-            const rememberFiles = (files) => {
-              for (const file of files ?? []) {
-                allChangedFiles.set(file.filename, file)
-              }
-            }
+            const prByNumber = new Map()
+            const directCommits = []
+            const commitEntries = []
 
-            const rememberIssues = (target, issues) => {
-              for (const issue of issues) {
-                linkedIssues.set(issue.key, issue)
-                target.set(issue.key, issue)
-              }
-            }
-
-            const extractClosingIssues = (...texts) => {
-              const issues = new Map()
-              for (const text of texts.filter(Boolean)) {
-                for (const clause of text.matchAll(CLOSING_CLAUSE_RE)) {
-                  const refs = clause[1] ?? ''
-                  for (const ref of refs.matchAll(ISSUE_REF_RE)) {
-                    const issueRepo = ref.groups.urlRepo ?? ref.groups.repo ?? repoFullName
-                    const issueNumber = ref.groups.urlNumber ?? ref.groups.number
-                    const key = `${issueRepo.toLowerCase()}#${issueNumber}`
-                    const label = issueRepo === repoFullName ? `#${issueNumber}` : `${issueRepo}#${issueNumber}`
-                    issues.set(key, {
-                      key,
-                      label,
-                      url: `https://github.com/${issueRepo}/issues/${issueNumber}`,
-                    })
-                  }
-                }
-              }
-              return [...issues.values()]
-            }
-
-            const formatIssueLinks = (issues) =>
-              [...issues.values()]
-                .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
-                .map((issue) => `[${issue.label}](${issue.url})`)
-                .join(', ')
-
-            const workspaceLabelsForFiles = (files) => {
-              const labels = new Set()
-              for (const file of files ?? []) {
-                const parts = file.filename.split('/')
-                if (parts[0] === 'apps' && parts[1]) {
-                  labels.add(`apps/${parts[1]}`)
-                } else if (parts[0] === 'packages' && parts[1] === 'content' && parts[2] === 'renderers' && parts[3]) {
-                  labels.add(`packages/content/renderers/${parts[3]}`)
-                } else if (parts[0] === 'packages' && parts[1] && parts[2]) {
-                  labels.add(`packages/${parts[1]}/${parts[2]}`)
-                }
-              }
-              return labels.size > 0 ? [...labels].sort() : ['Repository']
-            }
-
-            // 2. Associate each commit with its merged PR(s), and collect file,
-            // issue, and contributor metadata while each API object is still in hand.
+            // 2. Associate each commit with its merged PR(s), and collect file and
+            // contributor metadata while each API object is still in hand.
             for (const commit of compare) {
               const subject = commit.commit.message.split('\n')[0]
-
-              // Skip the repo's auto-rewritten merge commits (commitlint ignores
-              // these too) — they carry no human-meaningful change description.
               if (MERGE_RE.test(subject)) continue
 
               const { data: fullCommit } = await github.rest.repos.getCommit({
@@ -201,190 +149,67 @@ jobs:
                   )
                   rememberFiles(prFiles)
 
-                  const issueMap = new Map()
-                  rememberIssues(issueMap, extractClosingIssues(fullPr.title, fullPr.body))
-
                   prByNumber.set(pr.number, {
                     number: pr.number,
                     title: fullPr.title,
-                    author: fullPr.user?.login ?? author,
                     body: fullPr.body ?? '',
+                    author: fullPr.user?.login ?? author,
                     files: prFiles,
                     commits: [],
-                    issues: issueMap,
                   })
                 }
 
-                const prEntry = prByNumber.get(pr.number)
-                prEntry.commits.push({ sha: commit.sha, subject, message: commit.commit.message })
-                rememberIssues(prEntry.issues, extractClosingIssues(commit.commit.message))
-              } else {
-                const issues = extractClosingIssues(commit.commit.message)
-                directEntries.push({
+                prByNumber.get(pr.number).commits.push({
                   sha: commit.sha,
                   subject,
+                  message: commit.commit.message,
+                })
+              } else {
+                directCommits.push({
+                  sha: commit.sha,
+                  subject,
+                  message: commit.commit.message,
                   author,
                   files: commitFiles,
-                  issues: new Map(issues.map((issue) => [issue.key, issue])),
                 })
-                rememberIssues(linkedIssues, issues)
               }
 
-              commitEntries.push({
-                sha: commit.sha,
-                subject,
-                author,
-                prNumber: pr?.number,
+              commitEntries.push({ sha: commit.sha, subject, prNumber: pr?.number })
+            }
+
+            // 3. Resolve ambiguous `#n` refs to issue-vs-PR. Cached by the helper;
+            // failures are non-fatal and surface as unresolved references.
+            const resolveReference = async ({ owner: refOwner, repo: refRepo, number }) => {
+              const { data } = await github.rest.issues.get({
+                owner: refOwner,
+                repo: refRepo,
+                issue_number: number,
               })
+              return data.pull_request ? 'pull' : 'issue'
             }
 
-            // 3. Group changes by conventional-commit type and workspace impact.
-            const CONVENTIONAL_RE = /^(?<type>\w+)(?<scope>\([^)]*\))?(?<bang>!)?:\s*(?<desc>.+)$/
-            const SECTIONS = [
-              { title: '🚀 Features', types: ['feat'] },
-              { title: '🐛 Fixes', types: ['fix'] },
-              { title: '⚡ Performance', types: ['perf'] },
-              { title: '♻️ Refactors', types: ['refactor'] },
-              { title: '📝 Docs', types: ['docs'] },
-              { title: '✅ Tests', types: ['test'] },
-              { title: '🔧 Build/CI', types: ['build', 'ci'] },
-              { title: '🧹 Chores', types: ['chore', 'style'] },
-              { title: '📦 Other', types: ['__other__'] },
-            ]
-            const typeToSection = new Map()
-            for (const section of SECTIONS) {
-              for (const t of section.types) typeToSection.set(t, section.title)
-            }
-
-            const grouped = new Map(SECTIONS.map((s) => [s.title, []]))
-            const workspaceGrouped = new Map()
-
-            const classify = (text) => {
-              const match = text.match(CONVENTIONAL_RE)
-              const type = match?.groups?.type?.toLowerCase()
-              const desc = match?.groups?.desc ?? text
-              const section = (type && typeToSection.get(type)) || typeToSection.get('__other__')
-              return { section, desc }
-            }
-
-            const rememberReleaseItem = ({ sourceText, line, files }) => {
-              const { section } = classify(sourceText)
-              grouped.get(section).push(line)
-
-              for (const label of workspaceLabelsForFiles(files)) {
-                if (!workspaceGrouped.has(label)) workspaceGrouped.set(label, [])
-                workspaceGrouped.get(label).push(line)
-              }
-            }
-
-            for (const pr of [...prByNumber.values()].sort((a, b) => a.number - b.number)) {
-              const firstCommit = pr.commits[0]
-              const shortSha = firstCommit?.sha.slice(0, 7) ?? 'unknown'
-              const { desc } = classify(pr.title)
-              const issueLinks = formatIssueLinks(pr.issues)
-              const issueSuffix = issueLinks ? ` · closes ${issueLinks}` : ''
-              rememberReleaseItem({
-                sourceText: pr.title,
-                line: `- ${desc} (#${pr.number}) \`${shortSha}\` — ${formatContributor(pr.author)}${issueSuffix}`,
-                files: pr.files,
-              })
-            }
-
-            for (const entry of directEntries) {
-              const shortSha = entry.sha.slice(0, 7)
-              const { desc } = classify(entry.subject)
-              const issueLinks = formatIssueLinks(entry.issues)
-              const issueSuffix = issueLinks ? ` · closes ${issueLinks}` : ''
-              rememberReleaseItem({
-                sourceText: entry.subject,
-                line: `- ${desc} \`${shortSha}\` — ${formatContributor(entry.author)}${issueSuffix}`,
-                files: entry.files,
-              })
-            }
-
-            // 4. Compose the body.
-            const compareUrl = `https://github.com/${owner}/${repo}/compare/${BASE}...${HEAD}`
-            const changedFiles = [...allChangedFiles.values()]
-            const additions = changedFiles.reduce((sum, f) => sum + (f.additions ?? 0), 0)
-            const deletions = changedFiles.reduce((sum, f) => sum + (f.deletions ?? 0), 0)
-            const dependencyFiles = changedFiles
-              .map((file) => file.filename)
-              .filter((filename) => DEPENDENCY_FILE_RE.test(filename))
-              .sort()
-
-            const lines = [MARKER, '']
-            lines.push(`Promotes [\`${HEAD}\`](${compareUrl}) into \`${BASE}\`.`, '')
-            lines.push('### 📊 Stats', '')
-            lines.push(
-              `**${commitEntries.length}** commits · ` +
-                `**${prByNumber.size}** merged PRs · ` +
-                `**${changedFiles.length}** files changed · ` +
-                `**+${additions} / −${deletions}** · ` +
-                `**${contributorStats.size}** contributors`,
+            // 4. Hand the snapshot to the testable builder.
+            const { title, body, warnings } = await buildReleaseBody(
+              {
+                repoFullName,
+                base: BASE,
+                head: HEAD,
+                developSha,
+                mainSha,
+                mergedPrs: [...prByNumber.values()],
+                directCommits,
+                commitEntries,
+                contributors: [...contributorStats.entries()].map(([name, stats]) => ({
+                  name,
+                  additions: stats.additions,
+                  deletions: stats.deletions,
+                })),
+                changedFiles: [...allChangedFiles.values()],
+              },
+              { resolveReference },
             )
-            lines.push('', `[Compare ${BASE}...${HEAD}](${compareUrl})`, '')
 
-            lines.push('### 🔗 Linked Issues', '')
-            const issueLinks = formatIssueLinks(linkedIssues)
-            lines.push(issueLinks || '_None detected._', '')
-
-            lines.push('### 📦 Dependency Changes', '')
-            if (dependencyFiles.length > 0) {
-              lines.push(`Detected in **${dependencyFiles.length}** file(s):`, '')
-              for (const filename of dependencyFiles.slice(0, 20)) {
-                lines.push(`- \`${filename}\``)
-              }
-              if (dependencyFiles.length > 20) {
-                lines.push(`- _${dependencyFiles.length - 20} more dependency files omitted._`)
-              }
-              lines.push('')
-            } else {
-              lines.push('_None detected._', '')
-            }
-
-            lines.push('### 🔀 Changes', '')
-            let anyChanges = false
-            for (const section of SECTIONS) {
-              const items = grouped.get(section.title)
-              if (items.length === 0) continue
-              anyChanges = true
-              lines.push(`#### ${section.title}`, '', ...items, '')
-            }
-            if (!anyChanges) lines.push('_No conventional-commit changes detected._', '')
-
-            lines.push('### 🧭 Workspace Impact', '')
-            const workspaceLabels = [...workspaceGrouped.keys()].sort((a, b) => {
-              if (a === 'Repository') return 1
-              if (b === 'Repository') return -1
-              return a.localeCompare(b)
-            })
-            if (workspaceLabels.length > 0) {
-              for (const label of workspaceLabels) {
-                lines.push(`#### ${label}`, '', ...workspaceGrouped.get(label), '')
-              }
-            } else {
-              lines.push('_No workspace impact detected._', '')
-            }
-
-            lines.push('<details>', '<summary>📜 Commits (full SHAs)</summary>', '')
-            for (const entry of commitEntries) {
-              const prRef = entry.prNumber ? ` (#${entry.prNumber})` : ''
-              lines.push(`- \`${entry.sha}\` ${entry.subject}${prRef}`)
-            }
-            lines.push('', '</details>', '')
-
-            lines.push('### 🙌 Contributors', '')
-            const contributorLines = [...contributorStats.entries()]
-              .sort((a, b) => {
-                const aTotal = a[1].additions + a[1].deletions
-                const bTotal = b[1].additions + b[1].deletions
-                return bTotal - aTotal || a[0].localeCompare(b[0])
-              })
-              .map(([name, stats]) => `- ${formatContributor(name)}: +${stats.additions} / −${stats.deletions}`)
-            lines.push(contributorLines.length ? contributorLines.join('\n') : '_None detected._')
-
-            const body = lines.join('\n')
-            const title = `chore(release): merge develop (${developSha}) into main (${mainSha})`
+            for (const warning of warnings) core.warning(warning)
 
             // 5. Create or update the open develop → main PR.
             const existing = await github.rest.pulls.list({
