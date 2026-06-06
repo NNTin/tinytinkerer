@@ -415,9 +415,9 @@ export const registerModelRoutes = (
       litellmBaseUrl && litellmBaseUrl.ok ? litellmBaseUrl.baseUrl : undefined
     const model = body.model ?? adapter.defaultModel
 
-    // Scope the backoff to THIS caller's credential. The caller's token/key is
-    // forwarded upstream, so each credential has its own provider quota — one
-    // caller's 429 must not short-circuit another (issue #146).
+    // Scope the backoff to the upstream credential/quota bucket. For GitHub/OpenRouter
+    // this is the caller's token/key; for LiteLLM it's the shared edge-managed key
+    // (plus base URL) so one caller's 429 correctly backs off all callers.
     const credentialKey = await deriveCredentialKey(
       adapter.id === 'litellm' && resolvedLiteLLMBaseUrl
         ? liteLLMSharedCredentialKeyInput(c.env, resolvedLiteLLMBaseUrl)
@@ -605,9 +605,9 @@ export const registerModelRoutes = (
         ? liteLLMCacheScope(resolvedLiteLLMBaseUrl)
         : ''
 
-    // Scope the backoff to this caller's credential (issue #146). The catalogue
-    // cache below stays provider-global — its contents are identical for every
-    // caller — but the rate-limit window must follow the credential that hit it.
+    // Scope the backoff to the upstream credential/quota bucket (issue #146). For
+    // GitHub/OpenRouter this is the caller token/key; for LiteLLM it is the shared
+    // edge-managed key (plus base URL), so one caller's 429 backs off all callers.
     const credentialKey = await deriveCredentialKey(
       adapter.id === 'litellm' && resolvedLiteLLMBaseUrl
         ? liteLLMSharedCredentialKeyInput(c.env, resolvedLiteLLMBaseUrl)
