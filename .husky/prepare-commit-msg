@@ -86,11 +86,20 @@ rewrite_merge_message() {
   return 0
 }
 
+is_merge_commit_context() {
+  if [ "$COMMIT_SOURCE" = "merge" ]; then
+    return 0
+  fi
+
+  MERGE_HEAD_FILE=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
+  [ -n "$MERGE_HEAD_FILE" ] && [ -f "$MERGE_HEAD_FILE" ]
+}
+
 if rewrite_revert_message; then
   exit 0
 fi
 
-if [ "$COMMIT_SOURCE" = "merge" ]; then
+if is_merge_commit_context; then
   rewrite_merge_message
 fi
 
