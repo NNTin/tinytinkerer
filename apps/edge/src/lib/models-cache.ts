@@ -24,6 +24,11 @@ import type { GitHubModelEntry, ModelProviderId } from '@tinytinkerer/contracts'
 // Stable synthetic key for the GitHub catalogue — each provider has its own
 // global, not-per-token cache entry serving every user in the colo. Exported as
 // a backwards-compatible test seam for seeding GitHub cache entries.
+//
+// Unlike the backoff window (see ./rate-limit), this cache is intentionally NOT
+// scoped per credential for issue #146: the catalogue payload is identical for
+// every authenticated caller, so a shared entry leaks nothing and per-credential
+// keys would only add cache churn for no functional gain.
 export const CACHE_KEY = 'https://models-list-cache.tiny.nntin.xyz/github/v1/models'
 
 const cacheKeyForProvider = (provider: ModelProviderId): string =>

@@ -8,15 +8,19 @@ import type {
 } from '@tinytinkerer/contracts'
 import {
   activeCooldown,
+  applyRateLimitEvent,
   buildConversationHistory,
   buildTurns,
   canSendPrompt,
+  cooldownKeyForProvider,
   DEFAULT_MODEL,
   DEFAULT_MODEL_PROVIDER,
   DEFAULT_MODELS_BY_PROVIDER,
   defaultChatState,
   defaultSettingsState,
   inferPlan,
+  initializeChatState,
+  loadCooldown,
   loadGitHubModelsCatalog,
   loadSupportedEmbeddingModels,
   loadSettingsState,
@@ -674,5 +678,89 @@ describe('app-core helpers', () => {
         canSendPrompt({ ...defaultChatState(), conversationId: 'id' })
       ).toBe(true)
     })
+  })
+})
+
+describe('per-provider rate-limit cooldown (issue #146)', () => {
+  const makePreferences = (initial: Record<string, string> = {}) => {
+    const store = new Map<string, string>(Object.entries(initial))
+    return {
+      get: (key: string) => Promise.resolve(store.get(key)),
+      set: (key: string, value: string) => {
+        store.set(key, value)
+        return Promise.resolve()
+      }
+    }
+  }
+
+  const conversation = { id: 'c1', title: '', createdAt: '', updatedAt: '' }
+  const makeConversations = () => ({
+    getLatestConversation: () => Promise.resolve(conversation),
+    createConversation: () => Promise.resolve(conversation),
+    loadConversationEvents: () => Promise.resolve([]),
+    appendEvent: () => Promise.resolve(),
+    clearConversationEvents: () => Promise.resolve()
+  })
+
+  const waitingEvent = (retryAt: string) =>
+    event('rate.limit.waiting', {
+      retryAfterMs: 60_000,
+      retryAt,
+      message: 'rate limited',
+      autoRetry: false
+    })
+
+  it('derives a distinct cooldown key per provider', () => {
+    expect(cooldownKeyForProvider('github')).not.toBe(
+      cooldownKeyForProvider('openrouter')
+    )
+    expect(cooldownKeyForProvider('github')).toContain('github')
+  })
+
+  it('records a 429 cooldown only under the active provider', async () => {
+    const prefs = makePreferences()
+    const future = new Date(Date.now() + 60_000).toISOString()
+
+    const result = await applyRateLimitEvent(waitingEvent(future), prefs, 'github')
+
+    expect(result?.cooldownUntil).toBe(future)
+    expect(await loadCooldown(prefs, 'github')).toBe(future)
+    // A different provider draws on a separate quota — it must stay sendable.
+    expect(await loadCooldown(prefs, 'openrouter')).toBeUndefined()
+  })
+
+  it('clears only the active provider on recovery', async () => {
+    const future = new Date(Date.now() + 60_000).toISOString()
+    const prefs = makePreferences({
+      [cooldownKeyForProvider('github')]: future,
+      [cooldownKeyForProvider('openrouter')]: future
+    })
+
+    await applyRateLimitEvent(
+      event('rate.limit.recovered', { retryAt: future }),
+      prefs,
+      'github'
+    )
+
+    expect(await loadCooldown(prefs, 'github')).toBeUndefined()
+    expect(await loadCooldown(prefs, 'openrouter')).toBe(future)
+  })
+
+  it('initializeChatState loads only the requested provider’s cooldown', async () => {
+    const future = new Date(Date.now() + 60_000).toISOString()
+    const prefs = makePreferences({
+      [cooldownKeyForProvider('openrouter')]: future
+    })
+    const conversations = makeConversations()
+
+    const githubState = await initializeChatState(conversations, prefs, 'github')
+    expect(githubState.cooldownUntil).toBeUndefined()
+
+    const openrouterState = await initializeChatState(
+      conversations,
+      prefs,
+      'openrouter'
+    )
+    expect(openrouterState.cooldownUntil).toBe(future)
   })
 })
