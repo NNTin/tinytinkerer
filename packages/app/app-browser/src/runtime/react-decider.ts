@@ -60,8 +60,8 @@ type DecisionRequestMetadata = {
   stream: boolean
 }
 
-// Turn the model's answer text into a ReActDecision, recovering — but never
-// silently — from the model's inherent non-compliance. A streaming model will
+// Turn the model's answer text into a ReActDecision, recovering from the model's
+// inherent non-compliance without ever crashing the run. A streaming model will
 // sometimes emit prose ("I now have enough information…"), an empty answer, or
 // truncated/malformed JSON when the stream is cut short. We must not let that
 // crash the whole run: the parse error otherwise propagates through nextDecision
@@ -69,12 +69,19 @@ type DecisionRequestMetadata = {
 // falls back to `final` and the loop synthesizes an answer — mirroring the
 // runtime's existing `decision ?? { kind: 'final' }` fallback.
 //
-// Crucially we do NOT `accept` (suppress) the parse/schema failure. A truncated
-// decision means we ABANDONED the tool action the model was mid-way through
-// emitting and answered from incomplete tool results — that incompleteness is a
-// real bug to investigate (why is the decision stream truncating / the model not
-// conforming?), not expected noise. So every failure is still captured: we
-// recover for the user, but stay loud for us. (TINYTINKERER-FRONTEND-J / -K.)
+// Distinguish two flavours of "no decision JSON" (they are NOT the same defect):
+//   - PURE PROSE (no `{`/`[` at all) — the model simply *finished in prose*. That
+//     is the correct, expected `final` outcome, not a bug, so we pass
+//     `silentWhenNoJson` to recover WITHOUT capturing telemetry (it was generating
+//     recurring noise that auto-regressed TINYTINKERER-FRONTEND-K every time the
+//     model answered in prose).
+//   - TRUNCATED / MALFORMED JSON or a WRONG SHAPE — a JSON value was present but
+//     cut off mid-action or did not validate. That means we ABANDONED the tool
+//     action the model was emitting and answered from incomplete results — a real
+//     defect. We do NOT `accept`/suppress it: it is still captured (stays loud) so
+//     we can investigate why the stream truncates / the model misconforms.
+// We recover for the user in both cases, but only stay loud for the lossy one.
+// (TINYTINKERER-FRONTEND-J / -K.)
 const parseDecisionOrFinal = (
   metadata: DecisionRequestMetadata,
   jsonText: string,
@@ -83,7 +90,8 @@ const parseDecisionOrFinal = (
   try {
     // The shared helper strips ```json fences, parses robustly (tolerating
     // sloppy-but-complete output, never repairing a truncated value), and
-    // validates the schema — capturing parse_error/schema_error along the way.
+    // validates the schema. With `silentWhenNoJson` a pure-prose finish is a
+    // benign no_json (not captured); truncation/schema failures stay loud.
     return parseModelJsonWithTelemetry(
       metadata,
       jsonText,
@@ -92,7 +100,8 @@ const parseDecisionOrFinal = (
         parseError: 'ReAct decision body was not valid JSON',
         schemaError: 'ReAct decision did not match the decision schema'
       },
-      response
+      response,
+      { silentWhenNoJson: true }
     )
   } catch {
     return { kind: 'final' }

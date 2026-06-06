@@ -82,18 +82,35 @@ export const parseRobustModelJson = (text: string): unknown => {
 export const stripModelJsonFences = (text: string): string =>
   text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
 
+// True when `text` contains at least one JSON object/array opener (`{` or `[`).
+// Mirrors the start-detection in `extractBalancedJson`: when this is false the
+// model emitted no JSON value at all (pure prose — it declined to produce a
+// structured answer), which is a *different* situation from a value that was
+// present but truncated/malformed. Callers use this to tell a benign prose
+// finish ("I now have enough information…") apart from a real defect. A bare
+// JSON primitive without braces (e.g. `42`) is rare from a model asked for an
+// object and is treated as no-decision prose here.
+export const containsJsonValue = (text: string): boolean =>
+  text.includes('{') || text.includes('[')
+
 // Raised by `parseModelJsonWithTelemetry` when the model's free-form output
-// cannot be turned into the expected structured value. `kind` distinguishes a
-// failure to parse any complete JSON (`parse_error`) from valid JSON that did
-// not match the schema (`schema_error`); the original error is preserved as
-// `cause`. Callers use it to tell a *model-content* failure (recover or surface,
-// per the call site's policy) apart from a transport/network failure.
+// cannot be turned into the expected structured value. `kind` distinguishes:
+//   - `no_json`      — the model emitted no JSON value at all (pure prose). Only
+//                      produced when the caller opts in via `silentWhenNoJson`;
+//                      it is a benign "the model finished in prose" outcome and
+//                      is NOT captured as telemetry (see the option below).
+//   - `parse_error`  — a JSON value was present but truncated/malformed (a real
+//                      defect — captured / loud).
+//   - `schema_error` — valid JSON that did not match the schema (loud).
+// The original error is preserved as `cause`. Callers use it to tell a
+// *model-content* failure (recover or surface, per the call site's policy) apart
+// from a transport/network failure.
 export class ModelJsonError extends Error {
   override readonly name = 'ModelJsonError'
-  readonly kind: 'parse_error' | 'schema_error'
+  readonly kind: 'no_json' | 'parse_error' | 'schema_error'
 
   constructor(
-    kind: 'parse_error' | 'schema_error',
+    kind: 'no_json' | 'parse_error' | 'schema_error',
     message: string,
     options?: { cause?: unknown }
   ) {
@@ -115,6 +132,26 @@ export interface ModelJsonMessages {
   schemaError: string
 }
 
+export interface ModelJsonOptions {
+  /**
+   * When `true`, a response that contains NO JSON value at all (pure prose, e.g.
+   * "I now have enough information…") is treated as a benign, expected outcome
+   * rather than a defect: it is surfaced as a `ModelJsonError` of kind `no_json`
+   * WITHOUT capturing telemetry, so the caller can recover silently. A response
+   * that *did* contain JSON but was truncated/malformed (`parse_error`), or valid
+   * JSON of the wrong shape (`schema_error`), still stays loud (captured).
+   *
+   * Default `false` — every failure is captured. Use it only at a call site that
+   * may legitimately finish in prose (the ReAct decider, which recovers to
+   * `{ kind: 'final' }`). The planner must leave it off: it has no safe prose
+   * fallback, so a planner answering in prose is a real defect to surface.
+   * (Distinguishes the benign prose-finish from the lossy truncation case;
+   * see .agent/skills/sentry-debugging/workflows/llm-decision-parse-error.md —
+   * TINYTINKERER-FRONTEND-K.)
+   */
+  silentWhenNoJson?: boolean
+}
+
 // The single, shared way to turn an LLM's free-form `content` string into a
 // validated, structured value. It folds together the boilerplate that used to be
 // copy-pasted at every model-output call site:
@@ -132,9 +169,20 @@ export const parseModelJsonWithTelemetry = <T>(
   text: string,
   schema: ModelJsonSchema<T>,
   messages: ModelJsonMessages,
-  response?: Response
+  response?: Response,
+  options?: ModelJsonOptions
 ): T => {
   const stripped = stripModelJsonFences(text)
+
+  // A response with no JSON value at all is the model declining to emit a
+  // structured answer (pure prose) — distinct from a truncated/malformed value.
+  // At a prose-tolerant call site this is benign and expected, so surface it
+  // WITHOUT telemetry. Everything else (truncation, schema mismatch, and ALL
+  // failures when the option is off) flows through `parseWithTelemetry` below and
+  // stays loud.
+  if (options?.silentWhenNoJson && !containsJsonValue(stripped)) {
+    throw new ModelJsonError('no_json', messages.parseError)
+  }
 
   let parsed: unknown
   try {

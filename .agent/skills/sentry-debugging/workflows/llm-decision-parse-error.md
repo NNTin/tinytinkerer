@@ -6,21 +6,42 @@ or `schema_error` and whose `request_area` *parses model output* (e.g.
 (`http_status: 200`); what failed is interpreting the model's free-form text as
 structured JSON.
 
-The fix is **recover-don't-crash, but stay loud — do NOT `accept`.** It is
-tempting to call model non-compliance "normal & unavoidable" and suppress it, but
-that **hides a real defect**: a *truncated* decision means the stream was cut off
-mid-action, so we abandon the tool call the model was emitting and answer from
-**incomplete tool results**. You cannot reliably tell that lossy case apart from a
-clean "model finished in prose" at parse time, so the safe, honest rule is to keep
-capturing every failure while still recovering for the user. Read the
-**accept-or-fix guideline** in `../SKILL.md` first — this is a case where the
-answer is *fix/recover*, not *accept*.
+The fix is **recover-don't-crash; stay loud for the lossy cases, silent for a
+clean prose finish — and never `accept`.** Model non-compliance comes in two
+distinct flavours and they are NOT the same defect:
+- A **truncated/malformed** decision (a JSON value *was* present but cut off
+  mid-action, or a valid value of the wrong shape) means we abandoned the tool
+  call the model was emitting and answered from **incomplete tool results** — a
+  real defect. **Keep capturing it (stay loud).**
+- A **pure-prose finish** (the model emitted *no* JSON value at all) is the model
+  correctly deciding it is *done* — the expected `final` outcome, not a bug.
+  Capturing it just generates recurring noise that **auto-regresses the issue**
+  every time the model answers in prose (this is exactly what reopened
+  `FRONTEND-K`). **Recover it silently (no capture).**
+
+You *can* tell them apart at parse time: pure prose has no JSON opener (`{`/`[`),
+truncation has one that never balances. So this is **not** an `accept` (that would
+suppress *all* outcomes, including the lossy ones) — it is a narrow, per-call-site
+distinction. Read the **accept-or-fix guideline** in `../SKILL.md` first — the
+answer here is *fix/recover*, never *accept*.
 
 Settled `TINYTINKERER-FRONTEND-J` (truncated/malformed decision JSON —
 `Unterminated string` / `Expected property name`) and `TINYTINKERER-FRONTEND-K`
-(model answered in prose: `"I now have"... is not valid JSON`). Both
-`react.decide`, `handled: yes`, `http_status: 200`, stacktrace ending in
-`JSON.parse` under `parseWithTelemetry` in `react-decider.ts`.
+(model answered in prose: `"I now have"... is not valid JSON`, later
+`No complete JSON value found in model output`). Both `react.decide`,
+`handled: yes`, `http_status: 200`, stacktrace ending in `JSON.parse` /
+`extractBalancedJson` under `parseWithTelemetry` in `react-decider.ts`.
+
+> **`FRONTEND-K` regression (release `8fbd56a`) — the prose-vs-truncation split.**
+> After the recover-to-`final` fix shipped, `-K` kept auto-regressing: every time
+> the model finished a step in *prose* (no JSON at all) the decider recovered
+> correctly **but still captured** a `parse_error`, so Sentry reopened the issue
+> on each new release. Root cause: a pure-prose finish is the *expected* `final`
+> outcome, not a defect — capturing it was pure noise. Fix: the decider now passes
+> `silentWhenNoJson: true` to `parseModelJsonWithTelemetry`, which recovers a
+> no-JSON response **silently** (a benign `no_json` `ModelJsonError`, no capture)
+> while truncation/malformed/wrong-shape responses still capture. The planner
+> leaves the option off (a planner answering in prose IS a defect).
 
 ## Recognize it
 - `failure_kind: parse_error` (model text isn't valid JSON: prose, empty, or
@@ -73,25 +94,32 @@ catches rate-limit errors) and **kills the whole agent run**. So:
 1. **Recover *or surface*, but never throw uncaught — and the choice differs by
    call site, on purpose.** `parseModelJsonWithTelemetry` is policy-free: it
    returns the value or throws a `ModelJsonError`. Each caller owns its fallback:
-   - **ReAct decider** (`react-decider.ts`) — **recover to `{ kind: 'final' }`**.
-     When the model finished in prose ("I now have enough information…") that is
-     the correct outcome (the runtime already has a `decision ?? { kind: 'final' }`
-     fallback to mirror), and the `final` path then synthesizes an answer from
-     context. When the stream was *truncated*, `final` still keeps the user from a
-     crash, but the answer is built from whatever tool results we had — degraded,
-     not perfect.
+   - **ReAct decider** (`react-decider.ts`) — **recover to `{ kind: 'final' }`**,
+     and pass **`silentWhenNoJson: true`** to `parseModelJsonWithTelemetry`. When
+     the model finished in *pure prose* ("I now have enough information…", no JSON
+     opener) that is the correct `final` outcome (the runtime mirrors it with
+     `decision ?? { kind: 'final' }`) — so it recovers **silently** (a benign
+     `no_json` `ModelJsonError`, **not captured**; this is the `FRONTEND-K`
+     regression fix). When the stream was *truncated/malformed* (a JSON value was
+     present but cut off / wrong shape), `final` still keeps the user from a crash
+     but the answer is built from incomplete tool results — degraded, and **still
+     captured** (stays loud).
    - **Planner** (`mcp-planner.ts`) — **surface the error** to the run-error path
-     (`handleRunError`); do NOT degrade to the heuristic `inferPlan`. A
+     (`handleRunError`); do NOT degrade to the heuristic `inferPlan`, and do **not**
+     pass `silentWhenNoJson` (a planner answering in prose is itself a defect). A
      wrong/guessed plan is worse than a clear failure. `GitHubModelsProvider.plan`
      re-throws a `ModelJsonError` (only transport/network failures still fall
      through to the heuristic, since there we never got model output to misread).
-2. **Do NOT `accept` the failure — keep capturing both `parse_error` and
-   `schema_error`.** Recovering does not make the failure expected: the truncated
-   case dropped an in-flight tool action and produced an *incomplete* answer, and
-   a `schema_error` can mean *our own decision contract drifted*. Both are real
-   bugs to investigate (why is the decision stream truncating / the model not
-   conforming?), so they must stay visible. Recover for the user; stay loud for us.
-   No `accept` block on the decision-content metadata.
+2. **Do NOT `accept` — keep capturing the *lossy* cases (`parse_error` from a
+   truncated/malformed value, and `schema_error`).** Recovering does not make those
+   expected: the truncated case dropped an in-flight tool action and produced an
+   *incomplete* answer, and a `schema_error` can mean *our own decision contract
+   drifted*. Both are real bugs to investigate, so they stay visible. The **only**
+   silenced case is a clean **pure-prose finish** (`no_json` — no JSON value at
+   all), which is the model's correct `final` and pure noise to capture. `accept`
+   would suppress *everything* including the lossy cases — that is why this is a
+   narrow `silentWhenNoJson`, not an `accept` block. Recover for the user always;
+   stay loud for the lossy cases, silent for the prose finish.
 3. **Harden sibling call sites together** (`../SKILL.md` trap #2). The decider has a
    streaming (`streamDecision`) and a non-streaming (`decideNextAction`) sibling in
    the same file; fix BOTH or the issue relocates to the other path. A shared
@@ -102,10 +130,16 @@ Add call-site tests, in `packages/app/app-browser/tests/react-decider.test.ts`,
 that for prose content, empty body, truncated JSON, and a valid-but-wrong shape the
 consumer **returns/yields the fallback `final` decision** (not throws). Update any
 older test that asserted these *throw* (they encoded the pre-fix crash contract).
-**Also assert it stays loud:** register a spy via `setCaptureExceptionSink` and
-check the capture sink is **still called** (with `failure_kind: parse_error`,
-`request_area: react.decide`) on a truncated decision — this locks in "recover but
-don't suppress" so nobody silently re-adds an `accept`.
+**Also assert the loud/silent split** (register a spy via `setCaptureExceptionSink`):
+- On a **truncated** decision (and a wrong-shape one): the sink is **still called**
+  (`failure_kind: parse_error` / `schema_error`, `request_area: react.decide`) —
+  locks in "recover but don't suppress" so nobody re-adds an `accept`.
+- On a **pure-prose finish** (no JSON at all): the sink is **NOT called** — locks
+  in the `FRONTEND-K` regression fix so nobody re-captures the benign prose finish.
+Add matching unit tests for the helper itself in
+`packages/shared/sentry-telemetry/tests/model-json.test.ts`: with `silentWhenNoJson`,
+prose → `no_json` thrown + no capture; truncated → `parse_error` captured;
+wrong-shape → `schema_error` captured.
 
 ## Resolve
 Mark the issue **`resolvedInNextRelease`** with a `reason` naming the fix (the

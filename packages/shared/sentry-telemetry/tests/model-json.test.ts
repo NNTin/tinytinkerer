@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setCaptureExceptionSink, type CaptureExceptionSink } from '../src/capture.js'
 import {
+  containsJsonValue,
   ModelJsonError,
   parseModelJsonWithTelemetry,
   parseRobustModelJson,
@@ -135,5 +136,61 @@ describe('parseModelJsonWithTelemetry', () => {
       caught = error
     }
     expect((caught as ModelJsonError).cause).toBeInstanceOf(Error)
+  })
+
+  // `silentWhenNoJson` distinguishes a benign "model finished in prose" (no JSON
+  // value at all) from a real defect (a JSON value that was present but truncated
+  // / wrong shape). The prose case recovers WITHOUT telemetry; the lossy cases
+  // still stay loud. (TINYTINKERER-FRONTEND-K.)
+  describe('with silentWhenNoJson', () => {
+    it('surfaces pure prose as a no_json ModelJsonError WITHOUT capturing', () => {
+      let caught: unknown
+      try {
+        parseModelJsonWithTelemetry(metadata, 'I now have enough information.', okSchema, messages, undefined, {
+          silentWhenNoJson: true
+        })
+      } catch (error) {
+        caught = error
+      }
+
+      expect(caught).toBeInstanceOf(ModelJsonError)
+      expect((caught as ModelJsonError).kind).toBe('no_json')
+      expect(sink).not.toHaveBeenCalled()
+    })
+
+    it('STILL captures a truncated value (a JSON value was present, so it stays loud)', () => {
+      expect(() =>
+        parseModelJsonWithTelemetry(metadata, '{"ok":tr', okSchema, messages, undefined, {
+          silentWhenNoJson: true
+        })
+      ).toThrow(ModelJsonError)
+
+      expect(sink).toHaveBeenCalledTimes(1)
+      expect(sink.mock.calls[0]?.[1]?.tags).toMatchObject({ failure_kind: 'parse_error' })
+    })
+
+    it('STILL captures a wrong-shape value as schema_error (stays loud)', () => {
+      expect(() =>
+        parseModelJsonWithTelemetry(metadata, '{"ok":false}', okSchema, messages, undefined, {
+          silentWhenNoJson: true
+        })
+      ).toThrow(ModelJsonError)
+
+      expect(sink).toHaveBeenCalledTimes(1)
+      expect(sink.mock.calls[0]?.[1]?.tags).toMatchObject({ failure_kind: 'schema_error' })
+    })
+  })
+})
+
+describe('containsJsonValue', () => {
+  it('is true when an object or array opener is present', () => {
+    expect(containsJsonValue('Sure: {"k":1}')).toBe(true)
+    expect(containsJsonValue('[1,2,3]')).toBe(true)
+    expect(containsJsonValue('{"kind":"action"')).toBe(true) // truncated still counts
+  })
+
+  it('is false for pure prose with no JSON opener', () => {
+    expect(containsJsonValue('I now have enough information.')).toBe(false)
+    expect(containsJsonValue('')).toBe(false)
   })
 })

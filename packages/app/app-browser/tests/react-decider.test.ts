@@ -394,4 +394,37 @@ describe('streamDecision keeps non-conforming output visible (recover but stay l
     expect(options.tags?.failure_kind).toBe('parse_error')
     expect(options.tags?.request_area).toBe('react.decide')
   })
+
+  // A PURE-PROSE finish (no JSON value at all) is the model correctly deciding it
+  // is done, not a defect — recover to final SILENTLY, without capturing. This is
+  // the regression fix for FRONTEND-K: a prose finish must no longer generate
+  // telemetry noise (which kept auto-regressing the issue).
+  it('does NOT capture when the model finishes in prose (no JSON), but still recovers to final', async () => {
+    const edgeFetch = makeSseEdgeFetch([
+      'data: {"choices":[{"delta":{"content":"I now have "}}]}',
+      'data: {"choices":[{"delta":{"content":"enough information to answer."}}]}',
+      'data: [DONE]',
+      ''
+    ])
+
+    const chunks = []
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
+      chunks.push(chunk)
+    }
+
+    const decision = chunks.find((chunk) => chunk.kind === 'decision')
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it('does NOT capture a prose finish on the non-streaming decideNextAction path either', async () => {
+    const edgeFetch = makeEdgeFetch({
+      choices: [{ message: { content: 'I now have enough information to answer.' } }]
+    })
+
+    const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
+
+    expect(decision.kind).toBe('final')
+    expect(sink).not.toHaveBeenCalled()
+  })
 })
