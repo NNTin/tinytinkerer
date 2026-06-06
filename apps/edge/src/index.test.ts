@@ -487,6 +487,50 @@ describe('edge routes', () => {
     rateLimitPayloadSchema.parse(body)
   })
 
+  it('does not let one caller’s rate-limit short-circuit a different caller (issue #146)', async () => {
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        new Response('rate limited', {
+          status: 429,
+          headers: { 'retry-after': '120' }
+        })
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const chatRequest = (token: string) =>
+      app.fetch(
+        new Request('http://localhost/api/models/chat', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            model: 'openai/gpt-4.1-mini',
+            stream: false,
+            messages: [{ role: 'user', content: 'hello' }]
+          })
+        }),
+        {}
+      )
+
+    // Caller A hits upstream, gets 429, and records a backoff window for its token.
+    const first = await chatRequest('token-a')
+    expect(first.status).toBe(429)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    // Caller A is now short-circuited (window is open for its credential).
+    await chatRequest('token-a')
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    // Caller B forwards a DIFFERENT token, so it has its own upstream quota and
+    // must NOT be short-circuited by A's window — it reaches upstream itself.
+    const other = await chatRequest('token-b')
+    expect(other.status).toBe(429)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
   it('returns a typed models error for upstream authentication failures', async () => {
     const sink = vi.fn<CaptureExceptionSink>()
     setCaptureExceptionSink(sink)
