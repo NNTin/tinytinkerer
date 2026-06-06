@@ -1,25 +1,5 @@
 [
   {
-    "id": "ai21-labs/ai21-jamba-1.5-large",
-    "label": "AI21 Jamba 1.5 Large",
-    "kind": "chat",
-    "name": "AI21 Jamba 1.5 Large",
-    "publisher": "AI21 Labs",
-    "registry": "azureml-ai21",
-    "summary": "A 398B parameters (94B active) multilingual model, offering a 256K long context window, function calling, structured output, and grounded generation.",
-    "html_url": "https://github.com/marketplace/models/azureml-ai21/AI21-Jamba-1-5-Large",
-    "version": "1",
-    "capabilities": ["streaming", "tool-calling"],
-    "limits": {
-      "max_input_tokens": 262144,
-      "max_output_tokens": 4096
-    },
-    "rate_limit_tier": "high",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["rag", "multilingual", "large context"]
-  },
-  {
     "id": "cohere/cohere-command-a",
     "label": "Cohere Command A",
     "kind": "chat",
@@ -35,49 +15,16 @@
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["rag", "multilingual"]
-  },
-  {
-    "id": "cohere/cohere-command-r-08-2024",
-    "label": "Cohere Command R 08-2024",
-    "kind": "chat",
-    "name": "Cohere Command R 08-2024",
-    "publisher": "Cohere",
-    "registry": "azureml-cohere",
-    "summary": "Command R is a scalable generative model targeting RAG and Tool Use to enable production-scale AI for enterprise.",
-    "html_url": "https://github.com/marketplace/models/azureml-cohere/Cohere-command-r-08-2024",
-    "version": "1",
-    "capabilities": ["streaming"],
-    "limits": {
-      "max_input_tokens": 131072,
-      "max_output_tokens": 4096
-    },
-    "rate_limit_tier": "low",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["rag", "multilingual"]
-  },
-  {
-    "id": "cohere/cohere-command-r-plus-08-2024",
-    "label": "Cohere Command R+ 08-2024",
-    "kind": "chat",
-    "name": "Cohere Command R+ 08-2024",
-    "publisher": "Cohere",
-    "registry": "azureml-cohere",
-    "summary": "Command R+ is a state-of-the-art RAG-optimized model designed to tackle enterprise-grade workloads.",
-    "html_url": "https://github.com/marketplace/models/azureml-cohere/Cohere-command-r-plus-08-2024",
-    "version": "1",
-    "capabilities": ["streaming", "tool-calling"],
-    "limits": {
-      "max_input_tokens": 131072,
-      "max_output_tokens": 4096
-    },
-    "rate_limit_tier": "high",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["rag", "multilingual"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "rag",
+      "multilingual"
+    ]
   },
   {
     "id": "deepseek/deepseek-r1",
@@ -89,15 +36,27 @@
     "summary": "DeepSeek-R1 excels at reasoning tasks using a step-by-step training process, such as language, scientific reasoning, and coding tasks.",
     "html_url": "https://github.com/marketplace/models/azureml-deepseek/DeepSeek-R1",
     "version": "1",
-    "capabilities": ["reasoning", "streaming", "tool-calling"],
+    "capabilities": [
+      "reasoning",
+      "streaming",
+      "tool-calling"
+    ],
     "limits": {
       "max_input_tokens": 128000,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["reasoning", "coding", "agents"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "reasoning",
+      "coding",
+      "agents"
+    ]
   },
   {
     "id": "deepseek/deepseek-r1-0528",
@@ -109,15 +68,28 @@
     "summary": "The DeepSeek R1 0528 model has improved reasoning capabilities, this version also offers a reduced hallucination rate, enhanced support for function calling, and better experience for vibe coding.",
     "html_url": "https://github.com/marketplace/models/azureml-deepseek/DeepSeek-R1-0528",
     "version": "1",
-    "capabilities": ["agentsV2", "reasoning", "streaming", "tool-calling"],
+    "capabilities": [
+      "agentsV2",
+      "reasoning",
+      "streaming",
+      "tool-calling"
+    ],
     "limits": {
       "max_input_tokens": 128000,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["reasoning", "coding", "agents"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "reasoning",
+      "coding",
+      "agents"
+    ]
   },
   {
     "id": "deepseek/deepseek-v3-0324",
@@ -129,15 +101,26 @@
     "summary": "DeepSeek-V3-0324 demonstrates notable improvements over its predecessor, DeepSeek-V3, in several key aspects, including enhanced reasoning, improved function calling, and superior code generation capabilities.",
     "html_url": "https://github.com/marketplace/models/azureml-deepseek/DeepSeek-V3-0324",
     "version": "1",
-    "capabilities": ["agentsV2", "streaming", "tool-calling"],
+    "capabilities": [
+      "agentsV2",
+      "streaming",
+      "tool-calling"
+    ],
     "limits": {
       "max_input_tokens": 128000,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "high",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["coding", "agents"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "coding",
+      "agents"
+    ]
   },
   {
     "id": "meta/llama-3.2-11b-vision-instruct",
@@ -149,15 +132,27 @@
     "summary": "Excels in image reasoning capabilities on high-res images for visual understanding apps.",
     "html_url": "https://github.com/marketplace/models/azureml-meta/Llama-3-2-11B-Vision-Instruct",
     "version": "6",
-    "capabilities": ["streaming"],
+    "capabilities": [
+      "streaming"
+    ],
     "limits": {
       "max_input_tokens": 128000,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text", "image", "audio"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multimodal", "reasoning", "conversation"]
+    "supported_input_modalities": [
+      "text",
+      "image",
+      "audio"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multimodal",
+      "reasoning",
+      "conversation"
+    ]
   },
   {
     "id": "meta/llama-3.2-90b-vision-instruct",
@@ -169,15 +164,27 @@
     "summary": "Advanced image reasoning capabilities for visual understanding agentic apps.",
     "html_url": "https://github.com/marketplace/models/azureml-meta/Llama-3-2-90B-Vision-Instruct",
     "version": "5",
-    "capabilities": ["streaming"],
+    "capabilities": [
+      "streaming"
+    ],
     "limits": {
       "max_input_tokens": 128000,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "high",
-    "supported_input_modalities": ["text", "image", "audio"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multimodal", "reasoning", "conversation"]
+    "supported_input_modalities": [
+      "text",
+      "image",
+      "audio"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multimodal",
+      "reasoning",
+      "conversation"
+    ]
   },
   {
     "id": "meta/llama-3.3-70b-instruct",
@@ -189,15 +196,24 @@
     "summary": "Llama 3.3 70B Instruct offers enhanced reasoning, math, and instruction following with performance comparable to Llama 3.1 405B.",
     "html_url": "https://github.com/marketplace/models/azureml-meta/Llama-3-3-70B-Instruct",
     "version": "8",
-    "capabilities": ["agentsV2", "streaming"],
+    "capabilities": [
+      "agentsV2",
+      "streaming"
+    ],
     "limits": {
       "max_input_tokens": 128000,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "high",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["conversation"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "conversation"
+    ]
   },
   {
     "id": "meta/llama-4-maverick-17b-128e-instruct-fp8",
@@ -221,9 +237,18 @@
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "high",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multimodal", "conversation", "multilingual"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multimodal",
+      "conversation",
+      "multilingual"
+    ]
   },
   {
     "id": "meta/llama-4-scout-17b-16e-instruct",
@@ -235,15 +260,29 @@
     "summary": "Llama 4 Scout 17B 16E Instruct is great at multi-document summarization, parsing extensive user activity for personalized tasks, and reasoning over vast codebases.",
     "html_url": "https://github.com/marketplace/models/azureml-meta/Llama-4-Scout-17B-16E-Instruct",
     "version": "2",
-    "capabilities": ["agents", "assistants", "streaming", "tool-calling"],
+    "capabilities": [
+      "agents",
+      "assistants",
+      "streaming",
+      "tool-calling"
+    ],
     "limits": {
       "max_input_tokens": 10000000,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "high",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multimodal", "conversation", "multilingual"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multimodal",
+      "conversation",
+      "multilingual"
+    ]
   },
   {
     "id": "meta/meta-llama-3.1-405b-instruct",
@@ -255,15 +294,23 @@
     "summary": "The Llama 3.1 instruction tuned text only models are optimized for multilingual dialogue use cases and outperform many of the available open source and closed chat models on common industry benchmarks.",
     "html_url": "https://github.com/marketplace/models/azureml-meta/Meta-Llama-3-1-405B-Instruct",
     "version": "1",
-    "capabilities": ["agents"],
+    "capabilities": [
+      "agents"
+    ],
     "limits": {
       "max_input_tokens": 131072,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "high",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["conversation"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "conversation"
+    ]
   },
   {
     "id": "meta/meta-llama-3.1-8b-instruct",
@@ -275,35 +322,23 @@
     "summary": "The Llama 3.1 instruction tuned text only models are optimized for multilingual dialogue use cases and outperform many of the available open source and closed chat models on common industry benchmarks.",
     "html_url": "https://github.com/marketplace/models/azureml-meta/Meta-Llama-3-1-8B-Instruct",
     "version": "5",
-    "capabilities": ["streaming"],
+    "capabilities": [
+      "streaming"
+    ],
     "limits": {
       "max_input_tokens": 131072,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["conversation"]
-  },
-  {
-    "id": "microsoft/mai-ds-r1",
-    "label": "MAI-DS-R1",
-    "kind": "chat",
-    "name": "MAI-DS-R1",
-    "publisher": "Microsoft",
-    "registry": "azureml",
-    "summary": "MAI-DS-R1 is a DeepSeek-R1 reasoning model that has been post-trained by the Microsoft AI team to fill in information gaps in the previous version of the model and improve its harm protections while maintaining R1 reasoning capabilities.",
-    "html_url": "https://github.com/marketplace/models/azureml/MAI-DS-R1",
-    "version": "1",
-    "capabilities": ["agentsV2", "reasoning", "streaming"],
-    "limits": {
-      "max_input_tokens": 128000,
-      "max_output_tokens": 4096
-    },
-    "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["reasoning", "coding", "agents"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "conversation"
+    ]
   },
   {
     "id": "microsoft/phi-4",
@@ -321,9 +356,17 @@
       "max_output_tokens": 16384
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["reasoning", "understanding", "low latency"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "reasoning",
+      "understanding",
+      "low latency"
+    ]
   },
   {
     "id": "microsoft/phi-4-mini-instruct",
@@ -341,9 +384,17 @@
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["reasoning", "agents", "multilingual"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "reasoning",
+      "agents",
+      "multilingual"
+    ]
   },
   {
     "id": "microsoft/phi-4-mini-reasoning",
@@ -355,15 +406,25 @@
     "summary": "Lightweight math reasoning model optimized for multi-step problem solving",
     "html_url": "https://github.com/marketplace/models/azureml/Phi-4-mini-reasoning",
     "version": "1",
-    "capabilities": ["reasoning"],
+    "capabilities": [
+      "reasoning"
+    ],
     "limits": {
       "max_input_tokens": 128000,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["reasoning", "large context", "low latency"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "reasoning",
+      "large context",
+      "low latency"
+    ]
   },
   {
     "id": "microsoft/phi-4-multimodal-instruct",
@@ -375,15 +436,27 @@
     "summary": "First small multimodal model to have 3 modality inputs (text, audio, image), excelling in quality and efficiency",
     "html_url": "https://github.com/marketplace/models/azureml/Phi-4-multimodal-instruct",
     "version": "2",
-    "capabilities": ["streaming"],
+    "capabilities": [
+      "streaming"
+    ],
     "limits": {
       "max_input_tokens": 128000,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["audio", "image", "text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["vision", "audio", "summarization"]
+    "supported_input_modalities": [
+      "audio",
+      "image",
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "vision",
+      "audio",
+      "summarization"
+    ]
   },
   {
     "id": "microsoft/phi-4-reasoning",
@@ -395,15 +468,26 @@
     "summary": "State-of-the-art open-weight reasoning model.",
     "html_url": "https://github.com/marketplace/models/azureml/Phi-4-reasoning",
     "version": "1",
-    "capabilities": ["reasoning", "streaming"],
+    "capabilities": [
+      "reasoning",
+      "streaming"
+    ],
     "limits": {
       "max_input_tokens": 32768,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["reasoning", "large context", "low latency"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "reasoning",
+      "large context",
+      "low latency"
+    ]
   },
   {
     "id": "mistral-ai/codestral-2501",
@@ -415,15 +499,24 @@
     "summary": "Codestral 25.01 by Mistral AI is designed for code generation, supporting 80+ programming languages, and optimized for tasks like code completion and fill-in-the-middle",
     "html_url": "https://github.com/marketplace/models/azureml-mistral/Codestral-2501",
     "version": "2",
-    "capabilities": ["streaming"],
+    "capabilities": [
+      "streaming"
+    ],
     "limits": {
       "max_input_tokens": 256000,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["reasoning", "coding"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "reasoning",
+      "coding"
+    ]
   },
   {
     "id": "mistral-ai/ministral-3b",
@@ -435,15 +528,26 @@
     "summary": "Ministral 3B is a state-of-the-art Small Language Model (SLM) optimized for edge computing and on-device applications. As it is designed for low-latency and compute-efficient inference, it it also the perfect model for standard GenAI applications that have",
     "html_url": "https://github.com/marketplace/models/azureml-mistral/Ministral-3B",
     "version": "1",
-    "capabilities": ["streaming", "tool-calling"],
+    "capabilities": [
+      "streaming",
+      "tool-calling"
+    ],
     "limits": {
       "max_input_tokens": 131072,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["low latency", "agents", "reasoning"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "low latency",
+      "agents",
+      "reasoning"
+    ]
   },
   {
     "id": "mistral-ai/mistral-medium-2505",
@@ -455,15 +559,26 @@
     "summary": "Mistral Medium 3 is an advanced Large Language Model (LLM) with state-of-the-art reasoning, knowledge, coding and vision capabilities.",
     "html_url": "https://github.com/marketplace/models/azureml-mistral/mistral-medium-2505",
     "version": "1",
-    "capabilities": ["streaming", "tool-calling"],
+    "capabilities": [
+      "streaming",
+      "tool-calling"
+    ],
     "limits": {
       "max_input_tokens": 128000,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "vision"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "vision"
+    ]
   },
   {
     "id": "mistral-ai/mistral-small-2503",
@@ -475,15 +590,29 @@
     "summary": "Enhanced Mistral Small 3 with multimodal capabilities and a 128k context length.",
     "html_url": "https://github.com/marketplace/models/azureml-mistral/mistral-small-2503",
     "version": "1",
-    "capabilities": ["agents", "assistants", "streaming", "tool-calling"],
+    "capabilities": [
+      "agents",
+      "assistants",
+      "streaming",
+      "tool-calling"
+    ],
     "limits": {
       "max_input_tokens": 128000,
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "vision", "multimodal"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "vision",
+      "multimodal"
+    ]
   },
   {
     "id": "openai/gpt-4.1",
@@ -495,15 +624,29 @@
     "summary": "gpt-4.1 outperforms gpt-4o across the board, with major gains in coding, instruction following, and long-context understanding",
     "html_url": "https://github.com/marketplace/models/azure-openai/gpt-4-1",
     "version": "2025-04-14",
-    "capabilities": ["agents", "streaming", "tool-calling", "agentsV2"],
+    "capabilities": [
+      "agents",
+      "streaming",
+      "tool-calling",
+      "agentsV2"
+    ],
     "limits": {
       "max_input_tokens": 1048576,
       "max_output_tokens": 32768
     },
     "rate_limit_tier": "high",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "multilingual", "multimodal"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "multilingual",
+      "multimodal"
+    ]
   },
   {
     "id": "openai/gpt-4.1-mini",
@@ -515,15 +658,29 @@
     "summary": "gpt-4.1-mini outperform gpt-4o-mini across the board, with major gains in coding, instruction following, and long-context handling",
     "html_url": "https://github.com/marketplace/models/azure-openai/gpt-4-1-mini",
     "version": "2025-04-14",
-    "capabilities": ["agents", "streaming", "tool-calling", "agentsV2"],
+    "capabilities": [
+      "agents",
+      "streaming",
+      "tool-calling",
+      "agentsV2"
+    ],
     "limits": {
       "max_input_tokens": 1048576,
       "max_output_tokens": 32768
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "multilingual", "multimodal"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "multilingual",
+      "multimodal"
+    ]
   },
   {
     "id": "openai/gpt-4.1-nano",
@@ -535,15 +692,29 @@
     "summary": "gpt-4.1-nano provides gains in coding, instruction following, and long-context handling along with lower latency and cost",
     "html_url": "https://github.com/marketplace/models/azure-openai/gpt-4-1-nano",
     "version": "2025-04-14",
-    "capabilities": ["agents", "streaming", "tool-calling", "agentsV2"],
+    "capabilities": [
+      "agents",
+      "streaming",
+      "tool-calling",
+      "agentsV2"
+    ],
     "limits": {
       "max_input_tokens": 1048576,
       "max_output_tokens": 32768
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "multilingual", "multimodal"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "multilingual",
+      "multimodal"
+    ]
   },
   {
     "id": "openai/gpt-4o",
@@ -567,9 +738,19 @@
       "max_output_tokens": 16384
     },
     "rate_limit_tier": "high",
-    "supported_input_modalities": ["text", "image", "audio"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "multilingual", "multimodal"]
+    "supported_input_modalities": [
+      "text",
+      "image",
+      "audio"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "multilingual",
+      "multimodal"
+    ]
   },
   {
     "id": "openai/gpt-4o-mini",
@@ -593,9 +774,19 @@
       "max_output_tokens": 4096
     },
     "rate_limit_tier": "low",
-    "supported_input_modalities": ["text", "image", "audio"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "multilingual", "multimodal"]
+    "supported_input_modalities": [
+      "text",
+      "image",
+      "audio"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "multilingual",
+      "multimodal"
+    ]
   },
   {
     "id": "openai/gpt-5",
@@ -619,9 +810,18 @@
       "max_output_tokens": 100000
     },
     "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "multilingual", "multimodal"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "multilingual",
+      "multimodal"
+    ]
   },
   {
     "id": "openai/gpt-5-chat",
@@ -645,9 +845,18 @@
       "max_output_tokens": 100000
     },
     "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "multilingual", "multimodal"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "multilingual",
+      "multimodal"
+    ]
   },
   {
     "id": "openai/gpt-5-mini",
@@ -671,9 +880,18 @@
       "max_output_tokens": 100000
     },
     "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "multilingual", "multimodal"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "multilingual",
+      "multimodal"
+    ]
   },
   {
     "id": "openai/gpt-5-nano",
@@ -697,9 +915,18 @@
       "max_output_tokens": 100000
     },
     "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "multilingual", "multimodal"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "multilingual",
+      "multimodal"
+    ]
   },
   {
     "id": "openai/o1",
@@ -711,15 +938,29 @@
     "summary": "Focused on advanced reasoning and solving complex problems, including math and science tasks. Ideal for applications that require deep contextual understanding and agentic workflows.",
     "html_url": "https://github.com/marketplace/models/azure-openai/o1",
     "version": "2024-12-17",
-    "capabilities": ["agents", "reasoning", "tool-calling", "agentsV2"],
+    "capabilities": [
+      "agents",
+      "reasoning",
+      "tool-calling",
+      "agentsV2"
+    ],
     "limits": {
       "max_input_tokens": 200000,
       "max_output_tokens": 100000
     },
     "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["reasoning", "multilingual", "coding"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "reasoning",
+      "multilingual",
+      "coding"
+    ]
   },
   {
     "id": "openai/o1-mini",
@@ -731,15 +972,27 @@
     "summary": "Smaller, faster, and 80% cheaper than o1-preview, performs well at code generation and small context operations.",
     "html_url": "https://github.com/marketplace/models/azure-openai/o1-mini",
     "version": "2024-09-12",
-    "capabilities": ["reasoning", "streaming", "agentsV2"],
+    "capabilities": [
+      "reasoning",
+      "streaming",
+      "agentsV2"
+    ],
     "limits": {
       "max_input_tokens": 128000,
       "max_output_tokens": 65536
     },
     "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["reasoning", "multilingual", "coding"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "reasoning",
+      "multilingual",
+      "coding"
+    ]
   },
   {
     "id": "openai/o1-preview",
@@ -751,15 +1004,26 @@
     "summary": "Focused on advanced reasoning and solving complex problems, including math and science tasks. Ideal for applications that require deep contextual understanding and agentic workflows.",
     "html_url": "https://github.com/marketplace/models/azure-openai/o1-preview",
     "version": "1",
-    "capabilities": ["agentsV2", "reasoning"],
+    "capabilities": [
+      "agentsV2",
+      "reasoning"
+    ],
     "limits": {
       "max_input_tokens": 128000,
       "max_output_tokens": 32768
     },
     "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["reasoning", "multilingual", "coding"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "reasoning",
+      "multilingual",
+      "coding"
+    ]
   },
   {
     "id": "openai/o3",
@@ -783,9 +1047,18 @@
       "max_output_tokens": 100000
     },
     "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "multilingual", "multimodal"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "multilingual",
+      "multimodal"
+    ]
   },
   {
     "id": "openai/o3-mini",
@@ -809,9 +1082,17 @@
       "max_output_tokens": 100000
     },
     "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["reasoning", "multilingual", "coding"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "reasoning",
+      "multilingual",
+      "coding"
+    ]
   },
   {
     "id": "openai/o4-mini",
@@ -835,9 +1116,18 @@
       "max_output_tokens": 100000
     },
     "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text", "image"],
-    "supported_output_modalities": ["text"],
-    "tags": ["multipurpose", "multilingual", "multimodal"]
+    "supported_input_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "tags": [
+      "multipurpose",
+      "multilingual",
+      "multimodal"
+    ]
   },
   {
     "id": "openai/text-embedding-3-large",
@@ -855,9 +1145,15 @@
       "max_output_tokens": null
     },
     "rate_limit_tier": "embeddings",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["embeddings"],
-    "tags": ["rag"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "embeddings"
+    ],
+    "tags": [
+      "rag"
+    ]
   },
   {
     "id": "openai/text-embedding-3-small",
@@ -875,48 +1171,14 @@
       "max_output_tokens": null
     },
     "rate_limit_tier": "embeddings",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["embeddings"],
-    "tags": ["rag"]
-  },
-  {
-    "id": "xai/grok-3",
-    "label": "Grok 3",
-    "kind": "chat",
-    "name": "Grok 3",
-    "publisher": "xAI",
-    "registry": "azureml-xai",
-    "summary": "Grok 3 is xAI's debut model, pretrained by Colossus at supermassive scale to excel in specialized domains like finance, healthcare, and the law.",
-    "html_url": "https://github.com/marketplace/models/azureml-xai/grok-3",
-    "version": "1",
-    "capabilities": ["agentsV2"],
-    "limits": {
-      "max_input_tokens": 131072,
-      "max_output_tokens": 4096
-    },
-    "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["understanding", "instruction", "summarization"]
-  },
-  {
-    "id": "xai/grok-3-mini",
-    "label": "Grok 3 Mini",
-    "kind": "chat",
-    "name": "Grok 3 Mini",
-    "publisher": "xAI",
-    "registry": "azureml-xai",
-    "summary": "Grok 3 Mini is a lightweight model that thinks before responding. Trained on mathematic and scientific problems, it is great for logic-based tasks.",
-    "html_url": "https://github.com/marketplace/models/azureml-xai/grok-3-mini",
-    "version": "1",
-    "capabilities": ["agentsV2"],
-    "limits": {
-      "max_input_tokens": 131072,
-      "max_output_tokens": 4096
-    },
-    "rate_limit_tier": "custom",
-    "supported_input_modalities": ["text"],
-    "supported_output_modalities": ["text"],
-    "tags": ["agents", "reasoning", "coding"]
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "embeddings"
+    ],
+    "tags": [
+      "rag"
+    ]
   }
 ]
