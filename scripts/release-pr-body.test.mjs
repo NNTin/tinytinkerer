@@ -24,6 +24,22 @@ test('captures closing issue refs and distinguishes them from general mentions',
   assert.equal(two.type, 'ambiguous')
 })
 
+test('keeps every ref in a comma/and/Oxford-comma closing list closing', () => {
+  for (const text of [
+    'fixes #1, #2',
+    'fixes #1 and #2',
+    'fixes #1, and #2',
+    'closes #1, #2, and #3'
+  ]) {
+    const result = refs(text)
+    assert.ok(result.length >= 2, `expected multiple refs in: ${text}`)
+    for (const ref of result) {
+      assert.equal(ref.closing, true, `${text} -> #${ref.number} should close`)
+      assert.equal(ref.type, 'issue')
+    }
+  }
+})
+
 test('captures explicit issue URLs', () => {
   const [ref] = refs('see https://github.com/owner/repo/issues/132')
   assert.deepEqual(
@@ -151,6 +167,48 @@ test('renders canonical PR/issue/commit markdown links', async () => {
   )
   // change line separates closing semantics
   assert.match(body, /closes \[#1\]/)
+})
+
+test('does not leak closing state across release items sharing an issue', async () => {
+  const prSha = 'c'.repeat(40)
+  const commitSha = 'd'.repeat(40)
+  const { body } = await buildReleaseBody(
+    {
+      ...baseContext,
+      mergedPrs: [
+        {
+          number: 10,
+          title: 'feat: a',
+          body: 'closes #5',
+          author: 'x',
+          commits: [{ sha: prSha, subject: 'feat: a', message: 'feat: a' }],
+          files: []
+        }
+      ],
+      directCommits: [
+        {
+          sha: commitSha,
+          subject: 'fix: b',
+          message: 'fix: b\n\nmentions #5',
+          author: 'y',
+          files: []
+        }
+      ],
+      commitEntries: [
+        { sha: prSha, subject: 'feat: a', prNumber: 10 },
+        { sha: commitSha, subject: 'fix: b' }
+      ],
+      contributors: [{ name: 'x', additions: 1, deletions: 0 }]
+    },
+    { resolveReference: async () => 'issue' }
+  )
+
+  const prLine = body.split('\n').find((l) => l.startsWith('- a ('))
+  const commitLine = body.split('\n').find((l) => l.startsWith('- b '))
+  // The PR closes #5; the commit only mentions it, so it must say `refs`.
+  assert.match(prLine, /closes \[#5\]/)
+  assert.doesNotMatch(commitLine, /closes \[#5\]/)
+  assert.match(commitLine, /refs \[#5\]/)
 })
 
 test('resolves ambiguous #132 to an issue or a PR via the injected resolver', async () => {

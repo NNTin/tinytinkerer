@@ -41,9 +41,11 @@ const CONVENTIONAL_RE =
 
 // Closing keywords + the trailing list of refs they apply to. The captured
 // group (clause[1]) is the refs portion; we use its position to decide which
-// extracted references carry a "closing" relationship.
+// extracted references carry a "closing" relationship. The separator between
+// refs allows a comma and/or `and` (including the Oxford-comma `, and`) so the
+// whole list stays inside the closing range.
 const CLOSING_CLAUSE_RE =
-  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+((?:(?:https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+|[\w.-]+\/[\w.-]+#\d+|#\d+)(?:\s*(?:,|and)\s*)?)+)/gi
+  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+((?:(?:https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+|[\w.-]+\/[\w.-]+#\d+|#\d+)(?:\s*,?\s*(?:and\s+)?)?)+)/gi
 
 // A single ordered alternation so the more specific forms win before the bare
 // `#number` fallback can re-consume them (e.g. `PR #132` stays a PR ref, and
@@ -210,7 +212,11 @@ export async function buildReleaseBody(context, options = {}) {
   const keyOf = (repo, number) => `${repo.toLowerCase()}#${number}`
 
   const ingest = (text, source) => {
-    const found = new Set()
+    // key -> whether this text closes the ref (per-occurrence, OR-ed). The
+    // closing flag is tracked per item rather than only globally so a closing
+    // ref in one PR does not make a mere mention of the same issue in another
+    // commit render as `closes`.
+    const found = new Map()
     for (const ref of extractReferences(text, { repoFullName })) {
       const key = keyOf(ref.repoFullName, ref.number)
       let entry = refs.get(key)
@@ -234,9 +240,20 @@ export async function buildReleaseBody(context, options = {}) {
       }
       const sourceKey = `${source.kind}:${source.prNumber ?? source.sha}`
       if (!entry.sources.has(sourceKey)) entry.sources.set(sourceKey, source)
-      found.add(key)
+      found.set(key, (found.get(key) ?? false) || ref.closing)
     }
     return found
+  }
+
+  // Merge per-text reference maps for one release item, OR-ing the closing flag.
+  const mergeRefMaps = (...maps) => {
+    const merged = new Map()
+    for (const map of maps) {
+      for (const [key, closing] of map) {
+        merged.set(key, (merged.get(key) ?? false) || closing)
+      }
+    }
+    return merged
   }
 
   // Index every PR and commit, recording per-item reference keys for the change
@@ -247,30 +264,25 @@ export async function buildReleaseBody(context, options = {}) {
   const sortedMergedPrs = [...mergedPrs].sort((a, b) => a.number - b.number)
 
   for (const pr of sortedMergedPrs) {
-    const titleKeys = ingest(pr.title, {
-      kind: 'pr-title',
-      prNumber: pr.number
-    })
-    const bodyKeys = ingest(pr.body, { kind: 'pr-body', prNumber: pr.number })
-    pr._refKeys = new Set([...titleKeys, ...bodyKeys])
+    const maps = [
+      ingest(pr.title, { kind: 'pr-title', prNumber: pr.number }),
+      ingest(pr.body, { kind: 'pr-body', prNumber: pr.number })
+    ]
     for (const commit of pr.commits ?? []) {
       const subject = commit.subject ?? commit.message?.split('\n')[0] ?? ''
-      const subjKeys = ingest(subject, {
-        kind: 'commit-subject',
-        sha: commit.sha
-      })
+      maps.push(ingest(subject, { kind: 'commit-subject', sha: commit.sha }))
       const msgBody = (commit.message ?? '').split('\n').slice(1).join('\n')
-      const bKeys = ingest(msgBody, { kind: 'commit-body', sha: commit.sha })
-      for (const k of [...subjKeys, ...bKeys]) pr._refKeys.add(k)
+      maps.push(ingest(msgBody, { kind: 'commit-body', sha: commit.sha }))
     }
+    pr._refs = mergeRefMaps(...maps)
   }
 
   for (const entry of directCommits) {
     const subject = entry.subject ?? entry.message?.split('\n')[0] ?? ''
-    const subjKeys = ingest(subject, { kind: 'commit-subject', sha: entry.sha })
+    const subjMap = ingest(subject, { kind: 'commit-subject', sha: entry.sha })
     const msgBody = (entry.message ?? '').split('\n').slice(1).join('\n')
-    const bKeys = ingest(msgBody, { kind: 'commit-body', sha: entry.sha })
-    entry._refKeys = new Set([...subjKeys, ...bKeys])
+    const bMap = ingest(msgBody, { kind: 'commit-body', sha: entry.sha })
+    entry._refs = mergeRefMaps(subjMap, bMap)
   }
 
   // ── Resolve ambiguous references ─────────────────────────────────────────
@@ -375,14 +387,16 @@ export async function buildReleaseBody(context, options = {}) {
     }
   }
 
-  // Split an item's referenced issue keys into closing vs mentioned link lists.
-  const issueSuffixForKeys = (keys) => {
+  // Split an item's referenced issues into closing vs mentioned link lists,
+  // using the per-item closing flag (not the global one) so the relationship is
+  // accurate for this specific PR/commit.
+  const issueSuffixForRefs = (refMap) => {
     const closing = []
     const mentioned = []
-    for (const key of keys ?? []) {
+    for (const [key, isClosing] of refMap ?? []) {
       const entry = refs.get(key)
       if (!entry || entry.type !== 'issue') continue
-      ;(entry.closing ? closing : mentioned).push(linkFor(entry))
+      ;(isClosing ? closing : mentioned).push(linkFor(entry))
     }
     closing.sort()
     mentioned.sort()
@@ -400,7 +414,7 @@ export async function buildReleaseBody(context, options = {}) {
       : '`unknown`'
     const { desc } = classifyConventional(pr.title)
     const prLink = `[#${pr.number}](${referenceUrl(repoFullName, pr.number, 'pull')})`
-    const suffix = issueSuffixForKeys(pr._refKeys)
+    const suffix = issueSuffixForRefs(pr._refs)
     rememberReleaseItem({
       sourceText: pr.title,
       line: `- ${desc} (${prLink}) ${shaLink} — ${formatContributor(pr.author)}${suffix}`,
@@ -416,7 +430,7 @@ export async function buildReleaseBody(context, options = {}) {
   for (const entry of directCommits) {
     const shaLink = `[\`${entry.sha.slice(0, 7)}\`](${commitUrl(repoFullName, entry.sha)})`
     const { desc } = classifyConventional(entry.subject)
-    const suffix = issueSuffixForKeys(entry._refKeys)
+    const suffix = issueSuffixForRefs(entry._refs)
     rememberReleaseItem({
       sourceText: entry.subject,
       line: `- ${desc} ${shaLink} — ${formatContributor(entry.author)}${suffix}`,
