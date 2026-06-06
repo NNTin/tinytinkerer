@@ -127,6 +127,8 @@ type LiteLLMBaseUrlResult =
   | { ok: true; baseUrl: string }
   | { ok: false; error: string }
 
+type LiteLLMCallerValidationResult = 'valid' | 'invalid' | 'unavailable'
+
 const normalizeLiteLLMBaseUrl = (
   value: string | null | undefined
 ): string | undefined => {
@@ -199,7 +201,7 @@ const requireLiteLLMConfiguration = (
 
 const validateLiteLLMCaller = async (
   authorization: string
-): Promise<boolean> => {
+): Promise<LiteLLMCallerValidationResult> => {
   const response = await fetchWithTimeout(
     {
       area: 'models.litellm.auth',
@@ -221,7 +223,11 @@ const validateLiteLLMCaller = async (
     },
     10_000
   ).catch(() => undefined)
-  return response?.ok === true
+
+  if (!response) return 'unavailable'
+  if (response.ok) return 'valid'
+  if (response.status === 401 || response.status === 403) return 'invalid'
+  return 'unavailable'
 }
 
 const toGitHubModels = (raw: unknown): GitHubModelEntry[] => {
@@ -403,11 +409,19 @@ export const registerModelRoutes = (
           503
         )
       }
-      const validCaller = await validateLiteLLMCaller(authorization)
-      if (!validCaller) {
+      const callerValidation = await validateLiteLLMCaller(authorization)
+      if (callerValidation === 'invalid') {
         return c.json(
           edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
           401
+        )
+      }
+      if (callerValidation === 'unavailable') {
+        return c.json(
+          edgeErrorResponseSchema.parse({
+            error: 'LiteLLM caller validation is temporarily unavailable.'
+          }),
+          503
         )
       }
     }
@@ -589,11 +603,19 @@ export const registerModelRoutes = (
           503
         )
       }
-      const validCaller = await validateLiteLLMCaller(authorization)
-      if (!validCaller) {
+      const callerValidation = await validateLiteLLMCaller(authorization)
+      if (callerValidation === 'invalid') {
         return c.json(
           edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
           401
+        )
+      }
+      if (callerValidation === 'unavailable') {
+        return c.json(
+          edgeErrorResponseSchema.parse({
+            error: 'LiteLLM caller validation is temporarily unavailable.'
+          }),
+          503
         )
       }
     }

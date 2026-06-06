@@ -537,6 +537,54 @@ describe('edge routes', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  it('returns 401 for invalid callers before using the shared LiteLLM key', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      if (toRequestUrl(input) === 'https://api.github.com/user') {
+        return Promise.resolve(new Response('bad credentials', { status: 401 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/list?provider=litellm', {
+        headers: { authorization: 'Bearer bad-token' }
+      }),
+      { LITELLM_API_KEY: 'litellm-shared-key' }
+    )
+
+    expect(response.status).toBe(401)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'Unauthorized'
+    })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns 503 when LiteLLM caller validation is unavailable', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      if (toRequestUrl(input) === 'https://api.github.com/user') {
+        return Promise.resolve(
+          new Response('github unavailable', { status: 503 })
+        )
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/list?provider=litellm', {
+        headers: { authorization: 'Bearer github-token' }
+      }),
+      { LITELLM_API_KEY: 'litellm-shared-key' }
+    )
+
+    expect(response.status).toBe(503)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'LiteLLM caller validation is temporarily unavailable.'
+    })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('serves the last-known list when upstream is rate limited, breaking the 429 cascade (TINYTINKERER-FRONTEND-5)', async () => {
     const { store, cache } = makeCacheMock()
     // Seed a previously-cached catalogue old enough to be past the fresh window.
