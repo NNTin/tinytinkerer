@@ -62,6 +62,14 @@ const REFERENCE_RE = new RegExp(
   'gi'
 )
 
+// GitHub's generic documentation placeholders (`owner/repo`, `org/repo`,
+// `user/repo`) routinely appear in commit/PR prose that explains the reference
+// syntax itself — e.g. a commit body listing "shorthand #132, owner/repo#132".
+// They never name a real repository, so extracting them only yields a perpetual
+// "unresolved reference" warning. We drop them up front; a genuinely broken
+// cross-repo ref (a real-looking slug that 404s) is still surfaced as unresolved.
+const PLACEHOLDER_REPO_SLUGS = new Set(['owner/repo', 'org/repo', 'user/repo'])
+
 const DEPENDENCY_FILE_RE =
   /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|apps\/[^/]+\/package\.json|packages\/.+\/package\.json|scripts\/(?:generate-sbom|generate-notices|enforce-licenses|license-policy|license-policy\.test)\.mjs|scripts\/lib\/dependency-licenses\.mjs|\.github\/workflows\/compliance\.yml)$/
 
@@ -149,6 +157,14 @@ export function extractReferences(text, { repoFullName }) {
       number = g.proseNum
       type = 'pull'
     } else if (g.shortRepoNum) {
+      const slug = g.shortRepo.toLowerCase()
+      // Skip a documentation placeholder unless it happens to be this very repo.
+      if (
+        PLACEHOLDER_REPO_SLUGS.has(slug) &&
+        slug !== repoFullName.toLowerCase()
+      ) {
+        continue
+      }
       repo = g.shortRepo
       number = g.shortRepoNum
     } else if (g.bareNum) {

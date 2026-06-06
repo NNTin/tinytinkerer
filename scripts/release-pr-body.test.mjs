@@ -68,6 +68,25 @@ test('captures cross-repo owner/repo#132 shorthand', () => {
   assert.equal(ref.type, 'ambiguous')
 })
 
+test('ignores generic placeholder repo slugs (doc examples) in shorthand', () => {
+  // Commit/PR prose that documents the ref syntax — e.g. a body listing
+  // "shorthand owner/repo#132" — must not register as a real cross-repo
+  // reference and then surface as a perpetual unresolved warning.
+  const found = extractReferences(
+    'supports owner/repo#132, org/repo#7 and user/repo#9 shorthand',
+    { repoFullName: 'NNTin/tinytinkerer' }
+  )
+  assert.deepEqual(found, [])
+})
+
+test('keeps a placeholder slug when it is the current repo', () => {
+  const [ref] = extractReferences('see owner/repo#5', {
+    repoFullName: 'owner/repo'
+  })
+  assert.equal(ref.repoFullName, 'owner/repo')
+  assert.equal(ref.number, 5)
+})
+
 test('captures prose PR references as pull requests', () => {
   const result = refs('follows PR #132 and pull request #45')
   assert.deepEqual(
