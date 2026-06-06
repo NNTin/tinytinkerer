@@ -18,7 +18,7 @@ export type AcceptedOutcome = {
 
 export type RequestTelemetryMetadata = {
   area: string
-  origin: 'edge' | 'github' | 'openrouter' | 'tavily'
+  origin: 'edge' | 'github' | 'openrouter' | 'litellm' | 'tavily'
   method: string
   url: string
   model?: string | null

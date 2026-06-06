@@ -31,8 +31,11 @@ import type { GitHubModelEntry, ModelProviderId } from '@tinytinkerer/contracts'
 // keys would only add cache churn for no functional gain.
 export const CACHE_KEY = 'https://models-list-cache.tiny.nntin.xyz/github/v1/models'
 
-const cacheKeyForProvider = (provider: ModelProviderId): string =>
-  `https://models-list-cache.tiny.nntin.xyz/${provider}/v1/models`
+const cacheKeyForProvider = (
+  provider: ModelProviderId,
+  scope = ''
+): string =>
+  `https://models-list-cache.tiny.nntin.xyz/${provider}${scope ? `/${scope}` : ''}/v1/models`
 
 /** Within this age the cached list is served without touching upstream. */
 const FRESH_TTL_MS = 5 * 60_000
@@ -55,13 +58,14 @@ export const isFresh = (ageMs: number): boolean => ageMs <= FRESH_TTL_MS
 /** Read the cached catalogue, or `undefined` on a miss / when caching is unavailable. */
 export const readCachedModels = async (
   provider: ModelProviderId = 'github',
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  scope = ''
 ): Promise<CachedModels | undefined> => {
   const store = cacheStore()
   if (!store) return undefined
 
   try {
-    const hit = await store.match(cacheKeyForProvider(provider))
+    const hit = await store.match(cacheKeyForProvider(provider, scope))
     if (!hit) return undefined
     const cachedAt = Number(hit.headers.get(CACHED_AT_HEADER) ?? '0')
     const models = (await hit.json()) as GitHubModelEntry[]
@@ -76,7 +80,8 @@ export const readCachedModels = async (
 export const writeCachedModels = async (
   models: GitHubModelEntry[],
   provider: ModelProviderId = 'github',
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  scope = ''
 ): Promise<void> => {
   const store = cacheStore()
   if (!store || models.length === 0) return
@@ -91,7 +96,7 @@ export const writeCachedModels = async (
         [CACHED_AT_HEADER]: String(nowMs)
       }
     })
-    await store.put(cacheKeyForProvider(provider), response)
+    await store.put(cacheKeyForProvider(provider, scope), response)
   } catch {
     // Caching is best-effort; a write failure just means the next request refetches.
   }

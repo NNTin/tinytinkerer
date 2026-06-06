@@ -6,6 +6,7 @@ import type {
   ServiceStatus
 } from '@tinytinkerer/contracts'
 import { BrandSettingsFooter } from '@tinytinkerer/brand-assets'
+import { DEFAULT_LITELLM_BASE_URL } from '@tinytinkerer/app-core'
 import { MarkdownDocument } from './markdown-document'
 import { useSettingsSurfaceController } from './surfaces'
 import { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
@@ -290,8 +291,13 @@ const MODEL_PROVIDER_OPTIONS: ReadonlyArray<{
   label: string
 }> = [
   { id: 'github', label: 'GitHub Models' },
-  { id: 'openrouter', label: 'OpenRouter' }
+  { id: 'openrouter', label: 'OpenRouter' },
+  { id: 'litellm', label: 'LiteLLM' }
 ]
+
+const labelForModelProvider = (provider: ModelProviderId): string =>
+  MODEL_PROVIDER_OPTIONS.find((option) => option.id === provider)?.label ??
+  'Models'
 
 const ModelsSection = ({ status }: { status: ServiceStatus }) => {
   const {
@@ -302,6 +308,8 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
     setSelectedModel,
     openRouterApiKey,
     setOpenRouterApiKey,
+    litellmBaseUrl,
+    setLiteLLMBaseUrl,
     models,
     isRefreshingModels,
     modelsRefreshError,
@@ -317,6 +325,12 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
     selectedModelProvider === 'openrouter' ? openRouterApiKey : token
   const canRefresh = Boolean(providerToken) && !isRefreshingModels
   const [openRouterKeyValue, setOpenRouterKeyValue] = useState('')
+  const [litellmBaseUrlValue, setLiteLLMBaseUrlValue] =
+    useState(litellmBaseUrl)
+
+  useEffect(() => {
+    setLiteLLMBaseUrlValue(litellmBaseUrl)
+  }, [litellmBaseUrl])
 
   const handleSaveOpenRouterKey = async () => {
     const trimmed = openRouterKeyValue.trim()
@@ -324,6 +338,12 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
     await setOpenRouterApiKey(trimmed)
     setOpenRouterKeyValue('')
   }
+
+  const handleSaveLiteLLMBaseUrl = async () => {
+    await setLiteLLMBaseUrl(litellmBaseUrlValue.trim() || null)
+  }
+
+  const providerLabel = labelForModelProvider(selectedModelProvider)
 
   return (
     <div className="space-y-2">
@@ -391,19 +411,69 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
         </div>
       ) : null}
 
+      {selectedModelProvider === 'litellm' ? (
+        <div className="space-y-2 rounded-lg border border-stone-200 bg-white p-3">
+          <p className="text-xs text-[var(--muted)]">
+            LiteLLM uses the edge-managed virtual key. Custom URLs must be
+            allowlisted by the edge service.
+          </p>
+          <label
+            htmlFor="litellm-base-url"
+            className="block text-xs text-stone-700"
+          >
+            Base URL
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="litellm-base-url"
+              type="url"
+              autoComplete="off"
+              aria-label="LiteLLM base URL"
+              value={litellmBaseUrlValue}
+              onChange={(event) => setLiteLLMBaseUrlValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  void handleSaveLiteLLMBaseUrl()
+                }
+              }}
+              placeholder={DEFAULT_LITELLM_BASE_URL}
+              className="flex-1 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+            />
+            <button
+              type="button"
+              onClick={() => void handleSaveLiteLLMBaseUrl()}
+              className="inline-flex items-center rounded-md border border-stone-800 bg-stone-900 px-3 py-1.5 text-xs text-white transition-colors hover:bg-stone-700"
+            >
+              Save
+            </button>
+          </div>
+          {litellmBaseUrl !== DEFAULT_LITELLM_BASE_URL ? (
+            <button
+              type="button"
+              onClick={() => void setLiteLLMBaseUrl(DEFAULT_LITELLM_BASE_URL)}
+              className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:bg-stone-50"
+            >
+              Reset to default
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="flex items-center justify-between gap-3">
         <label htmlFor="model-select" className="block text-sm text-stone-800">
           Model
         </label>
         <button
           type="button"
-          aria-label={`Refresh ${selectedModelProvider === 'openrouter' ? 'OpenRouter' : 'GitHub'} models`}
+          aria-label={`Refresh ${providerLabel} models`}
           title={
             providerToken
-              ? `Refresh ${selectedModelProvider === 'openrouter' ? 'OpenRouter' : 'GitHub'} models`
+              ? `Refresh ${providerLabel} models`
               : selectedModelProvider === 'openrouter'
                 ? 'Add an OpenRouter API key to refresh models'
-                : 'Sign in to refresh GitHub Models'
+                : selectedModelProvider === 'litellm'
+                  ? 'Sign in to refresh LiteLLM models'
+                  : 'Sign in to refresh GitHub Models'
           }
           disabled={!canRefresh}
           onClick={() => void refreshGitHubModels()}
@@ -429,6 +499,8 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
       <p className="text-xs text-[var(--muted)]">
         {selectedModelProvider === 'openrouter'
           ? 'Requires your OpenRouter API key. The model list shows all text-output OpenRouter models.'
+          : selectedModelProvider === 'litellm'
+            ? 'Uses LiteLLM model discovery through the edge proxy.'
           : 'Requires a GitHub token with Models access.'}
       </p>
       {modelsRefreshError ? (

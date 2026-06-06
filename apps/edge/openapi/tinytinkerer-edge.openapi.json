@@ -260,7 +260,8 @@
         "type": "string",
         "enum": [
           "github",
-          "openrouter"
+          "openrouter",
+          "litellm"
         ]
       },
       "GitHubModelKind": {
@@ -369,6 +370,10 @@
           },
           "model": {
             "type": "string"
+          },
+          "litellmBaseUrl": {
+            "type": "string",
+            "format": "uri"
           },
           "stream": {
             "type": "boolean"
@@ -731,6 +736,15 @@
             },
             "required": false,
             "name": "provider",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "required": false,
+            "name": "litellmBaseUrl",
             "in": "query"
           },
           {

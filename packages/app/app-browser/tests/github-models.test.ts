@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SUPPORTED_MODELS } from '@tinytinkerer/app-core'
+import {
+  DEFAULT_MODELS_BY_PROVIDER,
+  SUPPORTED_MODELS
+} from '@tinytinkerer/app-core'
 import { setCaptureExceptionSink, type CaptureExceptionSink } from '@tinytinkerer/sentry-telemetry'
 
 vi.mock('../src/telemetry/telemetry.js', async () => {
@@ -160,6 +163,68 @@ describe('fetchGitHubModels', () => {
     expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('provider=github')
     expect(String(fetchSpy.mock.calls[1]?.[0])).toContain(
       'provider=openrouter'
+    )
+  })
+
+  it('fetches LiteLLM models with a provider and base-url scoped cache key', async () => {
+    const defaultModels = [
+      {
+        provider: 'litellm',
+        id: DEFAULT_MODELS_BY_PROVIDER.litellm,
+        label: DEFAULT_MODELS_BY_PROVIDER.litellm,
+        kind: 'chat'
+      }
+    ]
+    const customModels = [
+      {
+        provider: 'litellm',
+        id: 'openai/gpt-4.1-mini',
+        label: 'openai/gpt-4.1-mini',
+        kind: 'chat'
+      }
+    ]
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ models: defaultModels }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ models: customModels }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const defaultResult = await fetchGitHubModels(
+      'https://api.example.com',
+      'github-token',
+      {
+        provider: 'litellm',
+        litellmBaseUrl: 'https://litellm.labs.lair.nntin.xyz/'
+      }
+    )
+    const customResult = await fetchGitHubModels(
+      'https://api.example.com',
+      'github-token',
+      {
+        provider: 'litellm',
+        litellmBaseUrl: 'https://litellm.example.com/'
+      }
+    )
+
+    expect(defaultResult).toEqual(defaultModels)
+    expect(customResult).toEqual(customModels)
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('provider=litellm')
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain(
+      'litellmBaseUrl=https%3A%2F%2Flitellm.labs.lair.nntin.xyz%2F'
+    )
+    expect(String(fetchSpy.mock.calls[1]?.[0])).toContain(
+      'litellmBaseUrl=https%3A%2F%2Flitellm.example.com%2F'
     )
   })
 

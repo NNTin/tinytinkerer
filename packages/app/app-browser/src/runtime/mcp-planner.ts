@@ -54,7 +54,8 @@ export const llmPlan = async (
   model: string,
   edgeFetch: EdgeFetch,
   signal?: AbortSignal,
-  provider?: ModelProviderId
+  provider?: ModelProviderId,
+  litellmBaseUrl?: string
 ): Promise<ExecutionPlan> => {
   const systemPrompt = buildPlanningSystemPrompt(tools)
 
@@ -66,7 +67,13 @@ export const llmPlan = async (
 
   const response = await edgeFetch(
     EDGE_ROUTE_PATHS.modelsChat,
-    { ...(provider ? { provider } : {}), model, stream: false, messages },
+    {
+      ...(provider ? { provider } : {}),
+      ...(provider === 'litellm' && litellmBaseUrl ? { litellmBaseUrl } : {}),
+      model,
+      stream: false,
+      messages
+    },
     {
       area: 'planning.chat',
       model,

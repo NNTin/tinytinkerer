@@ -78,7 +78,8 @@ describe('contracts', () => {
   it('parses model and rate-limit payloads', () => {
     expect(
       modelsChatRequestSchema.parse({
-        provider: 'openrouter',
+        provider: 'litellm',
+        litellmBaseUrl: 'https://litellm.labs.lair.nntin.xyz/',
         model: 'openai/gpt-4.1-mini',
         stream: true,
         messages: [

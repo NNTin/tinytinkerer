@@ -13,6 +13,7 @@ import {
   buildTurns,
   canSendPrompt,
   cooldownKeyForProvider,
+  DEFAULT_LITELLM_BASE_URL,
   DEFAULT_MODEL,
   DEFAULT_MODEL_PROVIDER,
   DEFAULT_MODELS_BY_PROVIDER,
@@ -24,10 +25,12 @@ import {
   loadGitHubModelsCatalog,
   loadSupportedEmbeddingModels,
   loadSettingsState,
+  normalizeLiteLLMBaseUrl,
   normalizeModelProvider,
   normalizeSelectedModel,
   normalizeSelectedModelForProvider,
   persistBooleanPreference,
+  persistLiteLLMBaseUrl,
   persistOpenRouterApiKey,
   persistSelectedModelProvider,
   resolveActivePluginIds,
@@ -82,8 +85,18 @@ describe('app-core helpers', () => {
     expect(DEFAULT_MODEL_PROVIDER).toBe('github')
     expect(normalizeModelProvider(undefined)).toBe('github')
     expect(normalizeModelProvider('openrouter')).toBe('openrouter')
+    expect(normalizeModelProvider('litellm')).toBe('litellm')
     expect(normalizeSelectedModelForProvider('openrouter', '')).toBe(
       DEFAULT_MODELS_BY_PROVIDER.openrouter
+    )
+    expect(normalizeSelectedModelForProvider('litellm', '')).toBe(
+      DEFAULT_MODELS_BY_PROVIDER.litellm
+    )
+    expect(normalizeLiteLLMBaseUrl('https://litellm.example.com')).toBe(
+      'https://litellm.example.com/'
+    )
+    expect(normalizeLiteLLMBaseUrl('http://litellm.example.com')).toBe(
+      DEFAULT_LITELLM_BASE_URL
     )
   })
 
@@ -495,30 +508,34 @@ describe('app-core helpers', () => {
     expect(state.webSpeechEnabled).toBe(true)
   })
 
-  it('hydrates model provider, per-provider selected models, and OpenRouter API key', async () => {
+  it('hydrates model provider, per-provider selected models, OpenRouter API key, and LiteLLM base URL', async () => {
     const state = await loadSettingsState({
       get: (key) =>
         Promise.resolve(
           key === SETTINGS_KEYS.selectedModelProvider
-            ? 'openrouter'
+            ? 'litellm'
             : key === SETTINGS_KEYS.selectedModelsByProvider
               ? JSON.stringify({
                   github: 'openai/gpt-5',
-                  openrouter: 'anthropic/claude-3.5-sonnet'
+                  openrouter: 'anthropic/claude-3.5-sonnet',
+                  litellm: 'openai/gpt-4.1-mini'
                 })
               : key === SETTINGS_KEYS.openRouterApiKey
                 ? 'sk-or-v1-test'
-                : undefined
+                : key === SETTINGS_KEYS.litellmBaseUrl
+                  ? 'https://litellm.example.com'
+                  : undefined
         ),
       set: () => Promise.resolve()
     })
 
-    expect(state.selectedModelProvider).toBe('openrouter')
-    expect(state.selectedModel).toBe('anthropic/claude-3.5-sonnet')
+    expect(state.selectedModelProvider).toBe('litellm')
+    expect(state.selectedModel).toBe('openai/gpt-4.1-mini')
     expect(state.openRouterApiKey).toBe('sk-or-v1-test')
+    expect(state.litellmBaseUrl).toBe('https://litellm.example.com/')
   })
 
-  it('persists model provider and OpenRouter API key', async () => {
+  it('persists model provider, OpenRouter API key, and LiteLLM base URL', async () => {
     const writes: Array<{ key: string; value: string }> = []
     const preferences = {
       get: () => Promise.resolve(undefined),
@@ -530,10 +547,15 @@ describe('app-core helpers', () => {
 
     await persistSelectedModelProvider(preferences, 'openrouter')
     await persistOpenRouterApiKey(preferences, '  sk-or-v1-test  ')
+    await persistLiteLLMBaseUrl(preferences, 'https://litellm.example.com')
 
     expect(writes).toEqual([
       { key: SETTINGS_KEYS.selectedModelProvider, value: 'openrouter' },
-      { key: SETTINGS_KEYS.openRouterApiKey, value: 'sk-or-v1-test' }
+      { key: SETTINGS_KEYS.openRouterApiKey, value: 'sk-or-v1-test' },
+      {
+        key: SETTINGS_KEYS.litellmBaseUrl,
+        value: 'https://litellm.example.com/'
+      }
     ])
   })
 

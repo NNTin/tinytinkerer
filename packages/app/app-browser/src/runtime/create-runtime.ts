@@ -61,6 +61,7 @@ export const createRuntime = (options: {
   getToken: () => string | null | undefined
   getProvider?: () => ModelProviderId | null | undefined
   getModel: () => string | null | undefined
+  getLiteLLMBaseUrl?: () => string | null | undefined
   agentType?: AgentType
   mcpServers?: McpServerConfig[]
   mcpDiscovery?: Record<string, McpDiscoveryResult>
@@ -171,6 +172,9 @@ export const createRuntime = (options: {
       baseUrl: options.baseUrl,
       getToken: options.getToken,
       getModel: options.getModel,
+      ...(options.getLiteLLMBaseUrl
+        ? { getLiteLLMBaseUrl: options.getLiteLLMBaseUrl }
+        : {}),
       allToolDescriptors,
       ...(options.getProvider ? { getProvider: options.getProvider } : {})
     }),

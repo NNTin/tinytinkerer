@@ -28,6 +28,12 @@ const makeCacheMock = () => {
   return { store, cache }
 }
 
+const toRequestUrl = (input: RequestInfo | URL): string => {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.href
+  return input.url
+}
+
 describe('edge routes', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -369,6 +375,166 @@ describe('edge routes', () => {
     }
     expect(body.provider).toBeUndefined()
     expect(body.model).toBe('openai/gpt-4o')
+  })
+
+  it('lists LiteLLM chat models through the shared-key proxy', async () => {
+    const upstreamRequests: Array<{
+      input: RequestInfo | URL
+      init: RequestInit | undefined
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        upstreamRequests.push({ input, init })
+        if (toRequestUrl(input) === 'https://api.github.com/user') {
+          return Promise.resolve(
+            new Response(JSON.stringify({ login: 'nntin' }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' }
+            })
+          )
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              object: 'list',
+              data: [
+                { id: 'openai/gpt-5', object: 'model' },
+                { id: 'openai/text-embedding-3-small', object: 'model' }
+              ]
+            }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' }
+            }
+          )
+        )
+      })
+    )
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/list?provider=litellm', {
+        headers: { authorization: 'Bearer github-token' }
+      }),
+      { LITELLM_API_KEY: 'litellm-shared-key' }
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      models: [
+        {
+          provider: 'litellm',
+          id: 'openai/gpt-5',
+          label: 'openai/gpt-5',
+          kind: 'chat',
+          publisher: 'openai'
+        }
+      ]
+    })
+    expect(upstreamRequests[0]?.input).toBe('https://api.github.com/user')
+    expect(upstreamRequests[1]?.input).toBe(
+      'https://litellm.labs.lair.nntin.xyz/v1/models'
+    )
+    expect(new Headers(upstreamRequests[0]?.init?.headers).get('authorization')).toBe(
+      'Bearer github-token'
+    )
+    expect(new Headers(upstreamRequests[1]?.init?.headers).get('authorization')).toBe(
+      'Bearer litellm-shared-key'
+    )
+  })
+
+  it('proxies LiteLLM chat completions with the selected allowlisted base URL', async () => {
+    const upstreamRequests: Array<{
+      input: RequestInfo | URL
+      init: RequestInit | undefined
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        upstreamRequests.push({ input, init })
+        if (toRequestUrl(input) === 'https://api.github.com/user') {
+          return Promise.resolve(
+            new Response(JSON.stringify({ login: 'nntin' }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' }
+            })
+          )
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [{ message: { role: 'assistant', content: 'hi' } }]
+            }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' }
+            }
+          )
+        )
+      })
+    )
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer github-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          litellmBaseUrl: 'https://litellm.example.com/',
+          model: 'openai/gpt-5',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      {
+        LITELLM_API_KEY: 'litellm-shared-key',
+        LITELLM_ALLOWED_BASE_URLS: 'https://litellm.example.com'
+      }
+    )
+
+    expect(response.status).toBe(200)
+    expect(upstreamRequests[0]?.input).toBe('https://api.github.com/user')
+    expect(upstreamRequests[1]?.input).toBe(
+      'https://litellm.example.com/v1/chat/completions'
+    )
+    const headers = new Headers(upstreamRequests[1]?.init?.headers)
+    expect(headers.get('authorization')).toBe('Bearer litellm-shared-key')
+    const upstreamBody = upstreamRequests[1]?.init?.body
+    if (typeof upstreamBody !== 'string') {
+      throw new Error('Expected LiteLLM request body to be a JSON string')
+    }
+    const body = JSON.parse(upstreamBody) as {
+      provider?: string
+      litellmBaseUrl?: string
+      model: string
+    }
+    expect(body.provider).toBeUndefined()
+    expect(body.litellmBaseUrl).toBeUndefined()
+    expect(body.model).toBe('openai/gpt-5')
+  })
+
+  it('rejects unallowlisted LiteLLM base URLs before validating or proxying', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request(
+        'http://localhost/api/models/list?provider=litellm&litellmBaseUrl=https%3A%2F%2Fevil.example.com%2F',
+        {
+          headers: { authorization: 'Bearer github-token' }
+        }
+      ),
+      { LITELLM_API_KEY: 'litellm-shared-key' }
+    )
+
+    expect(response.status).toBe(400)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'LiteLLM base URL is not allowed'
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('serves the last-known list when upstream is rate limited, breaking the 429 cascade (TINYTINKERER-FRONTEND-5)', async () => {

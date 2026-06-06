@@ -7,6 +7,7 @@ import type {
 } from '@tinytinkerer/contracts'
 import {
   DEFAULT_MODEL,
+  DEFAULT_LITELLM_BASE_URL,
   DEFAULT_MODEL_PROVIDER,
   DEFAULT_MODELS_BY_PROVIDER
 } from '@tinytinkerer/app-core'
@@ -21,6 +22,7 @@ export type SettingsState = {
   selectedModel: string
   selectedModelsByProvider: Record<ModelProviderId, string>
   openRouterApiKey: string | null
+  litellmBaseUrl: string
   agentType: AgentType
   searchEnabled: boolean
   webSpeechEnabled: boolean
@@ -34,6 +36,7 @@ export type SettingsState = {
   setSelectedModelProvider: (provider: ModelProviderId) => Promise<void>
   setSelectedModel: (model: string) => Promise<void>
   setOpenRouterApiKey: (apiKey: string | null) => Promise<void>
+  setLiteLLMBaseUrl: (baseUrl: string | null) => Promise<void>
   setAgentType: (agentType: AgentType) => Promise<void>
   setSearchEnabled: (enabled: boolean) => Promise<void>
   setWebSpeechEnabled: (enabled: boolean) => Promise<void>
@@ -63,6 +66,7 @@ const SETTINGS_KEYS = {
   selectedModelProvider: 'settings_model_provider',
   selectedModelsByProvider: 'settings_selected_models_by_provider',
   openRouterApiKey: 'settings_openrouter_api_key',
+  litellmBaseUrl: 'settings_litellm_base_url',
   agentType: 'settings_agent_type',
   searchEnabled: 'settings_search_enabled',
   webSpeechEnabled: 'settings_web_speech_enabled',
@@ -80,6 +84,7 @@ const defaultSettingsState = (): Omit<
   | 'setSelectedModelProvider'
   | 'setSelectedModel'
   | 'setOpenRouterApiKey'
+  | 'setLiteLLMBaseUrl'
   | 'setAgentType'
   | 'setSearchEnabled'
   | 'setWebSpeechEnabled'
@@ -99,6 +104,7 @@ const defaultSettingsState = (): Omit<
   selectedModel: DEFAULT_MODEL,
   selectedModelsByProvider: { ...DEFAULT_MODELS_BY_PROVIDER },
   openRouterApiKey: null,
+  litellmBaseUrl: DEFAULT_LITELLM_BASE_URL,
   agentType: DEFAULT_AGENT_TYPE,
   searchEnabled: true,
   webSpeechEnabled: false,
@@ -150,6 +156,11 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       const { persistOpenRouterApiKey } = await loadCoreModule()
       const normalized = await persistOpenRouterApiKey(shell.preferences, apiKey)
       set({ openRouterApiKey: normalized })
+    },
+    setLiteLLMBaseUrl: async (baseUrl) => {
+      const { persistLiteLLMBaseUrl } = await loadCoreModule()
+      const normalized = await persistLiteLLMBaseUrl(shell.preferences, baseUrl)
+      set({ litellmBaseUrl: normalized })
     },
     setAgentType: async (agentType) => {
       const { persistAgentType } = await loadCoreModule()

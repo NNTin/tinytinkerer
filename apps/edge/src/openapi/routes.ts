@@ -156,7 +156,10 @@ export const modelsListRoute = createRoute({
   summary: 'List models through the edge proxy',
   request: {
     headers: telemetryHeaders,
-    query: z.object({ provider: modelProviderIdSchema.optional() })
+    query: z.object({
+      provider: modelProviderIdSchema.optional(),
+      litellmBaseUrl: z.string().url().optional()
+    })
   },
   responses: {
     200: {

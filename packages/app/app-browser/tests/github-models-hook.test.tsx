@@ -8,12 +8,14 @@ const mockState = vi.hoisted((): {
   settings: {
     selectedModelProvider: ModelProviderId
     openRouterApiKey: string | null
+    litellmBaseUrl: string
   }
 } => ({
   auth: { token: null },
   settings: {
     selectedModelProvider: 'github',
-    openRouterApiKey: null
+    openRouterApiKey: null,
+    litellmBaseUrl: 'https://litellm.labs.lair.nntin.xyz/'
   }
 }))
 
@@ -45,6 +47,7 @@ describe('useGitHubModels', () => {
     mockState.auth.token = null
     mockState.settings.selectedModelProvider = 'github'
     mockState.settings.openRouterApiKey = null
+    mockState.settings.litellmBaseUrl = 'https://litellm.labs.lair.nntin.xyz/'
   })
 
   afterEach(() => {

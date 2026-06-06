@@ -71,6 +71,18 @@ const openRouterModelsCatalogSchema = z.object({
   data: z.array(openRouterModelsCatalogEntrySchema)
 })
 
+const liteLLMModelsCatalogEntrySchema = z
+  .object({
+    id: z.string(),
+    object: z.string().optional(),
+    owned_by: z.string().optional()
+  })
+  .passthrough()
+
+const liteLLMModelsCatalogSchema = z.object({
+  data: z.array(liteLLMModelsCatalogEntrySchema)
+})
+
 const GITHUB_MODELS_DEFAULT_URL = 'https://models.github.ai/inference'
 const GITHUB_MODELS_CATALOG_URL = 'https://models.github.ai/catalog/models'
 const GITHUB_MODELS_REFERENCE_HEADERS = {
@@ -81,6 +93,7 @@ const OPENROUTER_DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
 const OPENROUTER_DEFAULT_MODELS_URL = `${OPENROUTER_DEFAULT_BASE_URL}/models`
 const DEFAULT_OPENROUTER_REFERER = 'https://tiny.nntin.xyz'
 const DEFAULT_OPENROUTER_TITLE = 'TinyTinkerer'
+const LITELLM_DEFAULT_BASE_URL = 'https://litellm.labs.lair.nntin.xyz/'
 
 const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
   400: 'Invalid request',
@@ -96,17 +109,119 @@ const UPSTREAM_ERROR_STATUSES = new Set([400, 401, 403, 422, 500, 503, 504])
 
 type ModelProviderAdapter = {
   id: ModelProviderId
-  origin: 'github' | 'openrouter'
+  origin: 'github' | 'openrouter' | 'litellm'
   displayName: string
   defaultModel: string
-  chatUrl: (env: Bindings) => string
-  listUrl: (env: Bindings) => string
+  chatUrl: (env: Bindings, baseUrl?: string) => string
+  listUrl: (env: Bindings, baseUrl?: string) => string
   headers: (
     env: Bindings,
-    authorization: string
+    authorization: string,
+    baseUrl?: string
   ) => Record<string, string>
   parseCatalog: (raw: unknown) => GitHubModelEntry[]
   errorMessages: Partial<Record<number, string>>
+}
+
+type LiteLLMBaseUrlResult =
+  | { ok: true; baseUrl: string }
+  | { ok: false; error: string }
+
+const normalizeLiteLLMBaseUrl = (
+  value: string | null | undefined
+): string | undefined => {
+  const trimmed = value?.trim()
+  if (!trimmed) return undefined
+  try {
+    const url = new URL(trimmed)
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
+      return undefined
+    }
+    return url.href.replace(/\/+$/, '')
+  } catch {
+    return undefined
+  }
+}
+
+const configuredLiteLLMBaseUrl = (env: Bindings): string =>
+  normalizeLiteLLMBaseUrl(env.LITELLM_BASE_URL) ??
+  normalizeLiteLLMBaseUrl(LITELLM_DEFAULT_BASE_URL) ??
+  LITELLM_DEFAULT_BASE_URL.replace(/\/+$/, '')
+
+const configuredLiteLLMAllowedBaseUrls = (env: Bindings): Set<string> => {
+  const urls = new Set<string>([configuredLiteLLMBaseUrl(env)])
+  for (const rawUrl of env.LITELLM_ALLOWED_BASE_URLS?.split(',') ?? []) {
+    const normalized = normalizeLiteLLMBaseUrl(rawUrl)
+    if (normalized) urls.add(normalized)
+  }
+  return urls
+}
+
+const resolveLiteLLMBaseUrl = (
+  env: Bindings,
+  requestedBaseUrl: string | null | undefined
+): LiteLLMBaseUrlResult => {
+  const baseUrl = requestedBaseUrl
+    ? normalizeLiteLLMBaseUrl(requestedBaseUrl)
+    : configuredLiteLLMBaseUrl(env)
+  if (!baseUrl) {
+    return { ok: false, error: 'Invalid LiteLLM base URL' }
+  }
+  if (!configuredLiteLLMAllowedBaseUrls(env).has(baseUrl)) {
+    return { ok: false, error: 'LiteLLM base URL is not allowed' }
+  }
+  return { ok: true, baseUrl }
+}
+
+const appendPath = (baseUrl: string, path: string): string =>
+  `${baseUrl.replace(/\/+$/, '')}${path}`
+
+const liteLLMCacheScope = (baseUrl: string): string =>
+  encodeURIComponent(baseUrl)
+
+const liteLLMSharedCredentialKeyInput = (
+  env: Bindings,
+  baseUrl: string
+): string => `litellm:${env.LITELLM_API_KEY ?? ''}:${baseUrl}`
+
+const requireLiteLLMConfiguration = (
+  env: Bindings
+): string | undefined => {
+  const apiKey = env.LITELLM_API_KEY?.trim()
+  return apiKey ? undefined : 'LiteLLM is not configured.'
+}
+
+const validateLiteLLMCaller = async (
+  authorization: string
+): Promise<boolean> => {
+  const response = await fetchWithTimeout(
+    {
+      area: 'models.litellm.auth',
+      origin: 'github',
+      method: 'GET',
+      url: 'https://api.github.com/user',
+      accept: {
+        status: [401, 403],
+        reason:
+          'Expected GitHub token rejection while validating a caller before using the shared LiteLLM key.'
+      }
+    },
+    {
+      headers: {
+        authorization,
+        accept: 'application/vnd.github+json',
+        'x-github-api-version': '2026-03-10'
+      }
+    },
+    10_000
+  ).catch(() => undefined)
+  return response?.ok === true
 }
 
 const toGitHubModels = (raw: unknown): GitHubModelEntry[] => {
@@ -164,6 +279,25 @@ const toOpenRouterModels = (raw: unknown): GitHubModelEntry[] => {
   })
 }
 
+const toLiteLLMModels = (raw: unknown): GitHubModelEntry[] => {
+  const parsed = liteLLMModelsCatalogSchema.safeParse(raw)
+  const entries = parsed.success ? parsed.data.data : []
+  return entries.flatMap((model) => {
+    const id = model.id.trim()
+    if (!id || id.toLowerCase().includes('embedding')) return []
+    const publisher = id.includes('/') ? id.split('/')[0] : model.owned_by
+    return [
+      githubModelEntrySchema.parse({
+        provider: 'litellm',
+        id,
+        label: id,
+        kind: 'chat',
+        ...(publisher ? { publisher } : {})
+      })
+    ]
+  })
+}
+
 const providerAdapters: Record<ModelProviderId, ModelProviderAdapter> = {
   github: {
     id: 'github',
@@ -206,6 +340,28 @@ const providerAdapters: Record<ModelProviderId, ModelProviderAdapter> = {
       401: 'Authentication failed. Your OpenRouter API key may be invalid.',
       403: 'Access denied. Check your OpenRouter API key permissions.'
     }
+  },
+  litellm: {
+    id: 'litellm',
+    origin: 'litellm',
+    displayName: 'LiteLLM',
+    defaultModel: 'openai/gpt-5',
+    chatUrl: (env, baseUrl) =>
+      appendPath(
+        baseUrl ?? configuredLiteLLMBaseUrl(env),
+        '/v1/chat/completions'
+      ),
+    listUrl: (env, baseUrl) =>
+      appendPath(baseUrl ?? configuredLiteLLMBaseUrl(env), '/v1/models'),
+    headers: (env) => ({
+      authorization: `Bearer ${env.LITELLM_API_KEY?.trim() ?? ''}`
+    }),
+    parseCatalog: toLiteLLMModels,
+    errorMessages: {
+      ...UPSTREAM_ERROR_MESSAGES,
+      401: 'Authentication failed. The configured LiteLLM virtual key may be invalid.',
+      403: 'Access denied. Check the configured LiteLLM virtual key permissions.'
+    }
   }
 }
 
@@ -229,12 +385,44 @@ export const registerModelRoutes = (
 
     const useStream = body.stream === true
     const adapter = getAdapter(body.provider)
+    const litellmBaseUrl =
+      adapter.id === 'litellm'
+        ? resolveLiteLLMBaseUrl(c.env, body.litellmBaseUrl)
+        : undefined
+    if (litellmBaseUrl && !litellmBaseUrl.ok) {
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: litellmBaseUrl.error }),
+        400
+      )
+    }
+    if (adapter.id === 'litellm') {
+      const configurationError = requireLiteLLMConfiguration(c.env)
+      if (configurationError) {
+        return c.json(
+          edgeErrorResponseSchema.parse({ error: configurationError }),
+          503
+        )
+      }
+      const validCaller = await validateLiteLLMCaller(authorization)
+      if (!validCaller) {
+        return c.json(
+          edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
+          401
+        )
+      }
+    }
+    const resolvedLiteLLMBaseUrl =
+      litellmBaseUrl && litellmBaseUrl.ok ? litellmBaseUrl.baseUrl : undefined
     const model = body.model ?? adapter.defaultModel
 
     // Scope the backoff to THIS caller's credential. The caller's token/key is
     // forwarded upstream, so each credential has its own provider quota — one
     // caller's 429 must not short-circuit another (issue #146).
-    const credentialKey = await deriveCredentialKey(authorization)
+    const credentialKey = await deriveCredentialKey(
+      adapter.id === 'litellm' && resolvedLiteLLMBaseUrl
+        ? liteLLMSharedCredentialKeyInput(c.env, resolvedLiteLLMBaseUrl)
+        : authorization
+    )
 
     // Respect a still-open upstream rate-limit window (durable across isolates):
     // short-circuit with a 429 instead of re-hammering the upstream provider
@@ -250,7 +438,7 @@ export const registerModelRoutes = (
         area: 'models.chat',
         origin: adapter.origin,
         method: 'POST',
-        url: adapter.chatUrl(c.env),
+        url: adapter.chatUrl(c.env, resolvedLiteLLMBaseUrl),
         model,
         stream: useStream,
         // Chat completions are NOT cacheable, so after we durably honour the
@@ -267,7 +455,7 @@ export const registerModelRoutes = (
       {
         method: 'POST',
         headers: {
-          ...adapter.headers(c.env, authorization),
+          ...adapter.headers(c.env, authorization, resolvedLiteLLMBaseUrl),
           'content-type': 'application/json'
         },
         body: JSON.stringify({
@@ -383,12 +571,48 @@ export const registerModelRoutes = (
 
     const query = c.req.valid('query')
     const adapter = getAdapter(query.provider)
-    const listUrl = adapter.listUrl(c.env)
+    const litellmBaseUrl =
+      adapter.id === 'litellm'
+        ? resolveLiteLLMBaseUrl(c.env, query.litellmBaseUrl)
+        : undefined
+    if (litellmBaseUrl && !litellmBaseUrl.ok) {
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: litellmBaseUrl.error }),
+        400
+      )
+    }
+    if (adapter.id === 'litellm') {
+      const configurationError = requireLiteLLMConfiguration(c.env)
+      if (configurationError) {
+        return c.json(
+          edgeErrorResponseSchema.parse({ error: configurationError }),
+          503
+        )
+      }
+      const validCaller = await validateLiteLLMCaller(authorization)
+      if (!validCaller) {
+        return c.json(
+          edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
+          401
+        )
+      }
+    }
+    const resolvedLiteLLMBaseUrl =
+      litellmBaseUrl && litellmBaseUrl.ok ? litellmBaseUrl.baseUrl : undefined
+    const listUrl = adapter.listUrl(c.env, resolvedLiteLLMBaseUrl)
+    const cacheScope =
+      adapter.id === 'litellm' && resolvedLiteLLMBaseUrl
+        ? liteLLMCacheScope(resolvedLiteLLMBaseUrl)
+        : ''
 
     // Scope the backoff to this caller's credential (issue #146). The catalogue
     // cache below stays provider-global — its contents are identical for every
     // caller — but the rate-limit window must follow the credential that hit it.
-    const credentialKey = await deriveCredentialKey(authorization)
+    const credentialKey = await deriveCredentialKey(
+      adapter.id === 'litellm' && resolvedLiteLLMBaseUrl
+        ? liteLLMSharedCredentialKeyInput(c.env, resolvedLiteLLMBaseUrl)
+        : authorization
+    )
 
     // The catalogue rarely changes and is identical for every caller. Serve a
     // fresh cached copy without touching upstream — this is what actually stops
@@ -396,7 +620,7 @@ export const registerModelRoutes = (
     // (TINYTINKERER-EDGE-4 / FRONTEND-5). The reactive backoff below is only a
     // secondary guard; the per-isolate version shipped in PR #100 reset on every
     // fresh Cloudflare isolate, which is why the 429s regressed.
-    const cached = await readCachedModels(adapter.id)
+    const cached = await readCachedModels(adapter.id, Date.now(), cacheScope)
     if (cached && isFresh(cached.ageMs)) {
       return c.json({ models: cached.models }, 200)
     }
@@ -441,7 +665,7 @@ export const registerModelRoutes = (
             `Cold-cache-miss window-opener: the one unavoidable probe of the ${adapter.displayName} catalogue on a fresh isolate; cache + durable backoff handle the rest and we serve last-known / 503 instead of re-probing (TINYTINKERER-EDGE-5).`
         }
       },
-      { headers: adapter.headers(c.env, authorization) },
+      { headers: adapter.headers(c.env, authorization, resolvedLiteLLMBaseUrl) },
       10_000
     )
 
@@ -511,7 +735,7 @@ export const registerModelRoutes = (
 
     // Populate the colo-wide cache so the next request (in any isolate) skips
     // the upstream fetch for the freshness window.
-    await writeCachedModels(models, adapter.id)
+    await writeCachedModels(models, adapter.id, Date.now(), cacheScope)
 
     return c.json({ models }, 200)
   })

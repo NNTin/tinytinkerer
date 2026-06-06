@@ -152,6 +152,8 @@ export type SettingsSurfaceController = {
   setSelectedModel: (model: string) => Promise<void>
   openRouterApiKey: string | null
   setOpenRouterApiKey: (apiKey: string | null) => Promise<void>
+  litellmBaseUrl: string
+  setLiteLLMBaseUrl: (baseUrl: string | null) => Promise<void>
   agentType: AgentType
   setAgentType: (agentType: AgentType) => Promise<void>
   searchEnabled: boolean
@@ -221,6 +223,10 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const openRouterApiKey = useSettingsStore((state) => state.openRouterApiKey)
   const setOpenRouterApiKey = useSettingsStore(
     (state) => state.setOpenRouterApiKey
+  )
+  const litellmBaseUrl = useSettingsStore((state) => state.litellmBaseUrl)
+  const setLiteLLMBaseUrl = useSettingsStore(
+    (state) => state.setLiteLLMBaseUrl
   )
   const agentType = useSettingsStore((state) => state.agentType)
   const setAgentType = useSettingsStore((state) => state.setAgentType)
@@ -345,6 +351,8 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     setSelectedModel,
     openRouterApiKey,
     setOpenRouterApiKey,
+    litellmBaseUrl,
+    setLiteLLMBaseUrl,
     agentType,
     setAgentType,
     searchEnabled,

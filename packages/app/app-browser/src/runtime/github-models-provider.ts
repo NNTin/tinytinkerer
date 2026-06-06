@@ -52,6 +52,7 @@ type GitHubModelsProviderOptions = {
   getToken?: () => string | null | undefined
   getProvider?: () => ModelProviderId | null | undefined
   getModel?: () => string | null | undefined
+  getLiteLLMBaseUrl?: () => string | null | undefined
   allToolDescriptors?: PlannerToolDescriptor[]
 }
 
@@ -74,6 +75,17 @@ export class GitHubModelsProvider implements ModelProvider {
 
   private getProvider(): ModelProviderId {
     return this.options.getProvider?.() ?? 'github'
+  }
+
+  private getLiteLLMBaseUrl(): string | undefined {
+    const baseUrl = this.options.getLiteLLMBaseUrl?.()?.trim()
+    return baseUrl || undefined
+  }
+
+  private modelRequestExtras(): { litellmBaseUrl?: string } {
+    if (this.getProvider() !== 'litellm') return {}
+    const litellmBaseUrl = this.getLiteLLMBaseUrl()
+    return litellmBaseUrl ? { litellmBaseUrl } : {}
   }
 
   // Wait out any active rate-limit/quota backoff before issuing an edge model
@@ -105,7 +117,8 @@ export class GitHubModelsProvider implements ModelProvider {
           model,
           edgeFetch,
           options?.signal,
-          this.getProvider()
+          this.getProvider(),
+          this.getLiteLLMBaseUrl()
         )
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') throw error
@@ -152,7 +165,8 @@ export class GitHubModelsProvider implements ModelProvider {
           model,
           edgeFetch,
           options?.signal,
-          this.getProvider()
+          this.getProvider(),
+          this.getLiteLLMBaseUrl()
         )
       } catch (error) {
         if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
@@ -183,7 +197,8 @@ export class GitHubModelsProvider implements ModelProvider {
           model,
           edgeFetch,
           options?.signal,
-          this.getProvider()
+          this.getProvider(),
+          this.getLiteLLMBaseUrl()
         )
       } catch (error) {
         if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
@@ -244,6 +259,7 @@ export class GitHubModelsProvider implements ModelProvider {
         },
         body: JSON.stringify({
           provider,
+          ...this.modelRequestExtras(),
           stream: true,
           model: selectedModel,
           messages: [
@@ -330,7 +346,9 @@ export class GitHubModelsProvider implements ModelProvider {
       ? `I worked through the plan and used tools where needed.\n\n${collected}`
       : this.getProvider() === 'openrouter'
         ? 'Add an OpenRouter API key in Settings to get AI responses. Without a key the runtime runs in local fallback mode.'
-        : 'Sign in with GitHub to get AI responses. Without a token the runtime runs in local fallback mode.'
+        : this.getProvider() === 'litellm'
+          ? 'Sign in with GitHub to use LiteLLM. Without a token the runtime runs in local fallback mode.'
+          : 'Sign in with GitHub to get AI responses. Without a token the runtime runs in local fallback mode.'
 
     for (const chunk of draft.split(' ')) {
       yield { kind: 'content', text: `${chunk} ` }

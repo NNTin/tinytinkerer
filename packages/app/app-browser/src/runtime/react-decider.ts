@@ -118,7 +118,8 @@ export const decideNextAction = async (
   model: string,
   edgeFetch: EdgeFetch,
   signal?: AbortSignal,
-  provider?: ModelProviderId
+  provider?: ModelProviderId,
+  litellmBaseUrl?: string
 ): Promise<ReActDecision> => {
   const systemPrompt = buildDecisionSystemPrompt(tools)
 
@@ -130,7 +131,13 @@ export const decideNextAction = async (
 
   const response = await edgeFetch(
     EDGE_ROUTE_PATHS.modelsChat,
-    { ...(provider ? { provider } : {}), model, stream: false, messages },
+    {
+      ...(provider ? { provider } : {}),
+      ...(provider === 'litellm' && litellmBaseUrl ? { litellmBaseUrl } : {}),
+      model,
+      stream: false,
+      messages
+    },
     {
       area: 'react.decide',
       model,
@@ -175,7 +182,8 @@ export async function* streamDecision(
   model: string,
   edgeFetch: EdgeFetch,
   signal?: AbortSignal,
-  provider?: ModelProviderId
+  provider?: ModelProviderId,
+  litellmBaseUrl?: string
 ): AsyncGenerator<DecisionChunk> {
   const systemPrompt = buildDecisionSystemPrompt(tools)
 
@@ -187,7 +195,13 @@ export async function* streamDecision(
 
   const response = await edgeFetch(
     EDGE_ROUTE_PATHS.modelsChat,
-    { ...(provider ? { provider } : {}), model, stream: true, messages },
+    {
+      ...(provider ? { provider } : {}),
+      ...(provider === 'litellm' && litellmBaseUrl ? { litellmBaseUrl } : {}),
+      model,
+      stream: true,
+      messages
+    },
     {
       area: 'react.decide',
       model,

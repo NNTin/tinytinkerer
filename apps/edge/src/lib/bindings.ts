@@ -13,6 +13,9 @@ export type Bindings = {
   OPENROUTER_HTTP_REFERER?: string
   OPENROUTER_APP_TITLE?: string
   OPENROUTER_CATEGORIES?: string
+  LITELLM_API_KEY?: string
+  LITELLM_BASE_URL?: string
+  LITELLM_ALLOWED_BASE_URLS?: string
   /** Sentry DSN for edge error reporting (secret; telemetry no-ops when absent). */
   SENTRY_DSN?: string
   /** Release identifier (build hash) for Sentry events. */

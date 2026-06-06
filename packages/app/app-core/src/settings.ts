@@ -1,7 +1,9 @@
 import {
   DEFAULT_MODEL,
+  DEFAULT_LITELLM_BASE_URL,
   DEFAULT_MODEL_PROVIDER,
   DEFAULT_MODELS_BY_PROVIDER,
+  normalizeLiteLLMBaseUrl,
   normalizeModelProvider,
   normalizeSelectedModel,
   normalizeSelectedModelForProvider
@@ -26,6 +28,7 @@ export const SETTINGS_KEYS = {
   selectedModelProvider: 'settings_model_provider',
   selectedModelsByProvider: 'settings_selected_models_by_provider',
   openRouterApiKey: 'settings_openrouter_api_key',
+  litellmBaseUrl: 'settings_litellm_base_url',
   agentType: 'settings_agent_type',
   searchEnabled: 'settings_search_enabled',
   webSpeechEnabled: 'settings_web_speech_enabled',
@@ -50,6 +53,7 @@ export type SettingsState = {
   selectedModel: string
   selectedModelsByProvider: Record<ModelProviderId, string>
   openRouterApiKey: string | null
+  litellmBaseUrl: string
   agentType: AgentType
   searchEnabled: boolean
   webSpeechEnabled: boolean
@@ -84,6 +88,7 @@ export const defaultSettingsState = (): SettingsState => ({
   selectedModel: DEFAULT_MODEL,
   selectedModelsByProvider: { ...DEFAULT_MODELS_BY_PROVIDER },
   openRouterApiKey: null,
+  litellmBaseUrl: DEFAULT_LITELLM_BASE_URL,
   agentType: DEFAULT_AGENT_TYPE,
   searchEnabled: true,
   webSpeechEnabled: false,
@@ -101,6 +106,7 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     selectedModelProviderRaw,
     selectedModelsByProviderRaw,
     openRouterApiKey,
+    litellmBaseUrl,
     agentType,
     searchEnabled,
     webSpeechEnabled,
@@ -117,6 +123,7 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     preferences.get(SETTINGS_KEYS.selectedModelProvider),
     preferences.get(SETTINGS_KEYS.selectedModelsByProvider),
     preferences.get(SETTINGS_KEYS.openRouterApiKey),
+    preferences.get(SETTINGS_KEYS.litellmBaseUrl),
     preferences.get(SETTINGS_KEYS.agentType),
     preferences.get(SETTINGS_KEYS.searchEnabled),
     preferences.get(SETTINGS_KEYS.webSpeechEnabled),
@@ -150,6 +157,7 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     ),
     selectedModelsByProvider,
     openRouterApiKey: openRouterApiKey?.trim() || null,
+    litellmBaseUrl: normalizeLiteLLMBaseUrl(litellmBaseUrl),
     agentType: parseAgentType(agentType),
     searchEnabled: parseBool(searchEnabled, true),
     webSpeechEnabled: parseBool(webSpeechEnabled, false),
@@ -178,7 +186,7 @@ const parseSelectedModelsByProvider = (
       return models
     }
     const record = parsed as Partial<Record<ModelProviderId, unknown>>
-    for (const provider of ['github', 'openrouter'] as const) {
+    for (const provider of ['github', 'openrouter', 'litellm'] as const) {
       const value = record[provider]
       if (typeof value === 'string' && value.trim()) {
         models[provider] = value.trim()
@@ -298,6 +306,15 @@ export const persistOpenRouterApiKey = async (
 ): Promise<string | null> => {
   const normalized = apiKey?.trim() || null
   await preferences.set(SETTINGS_KEYS.openRouterApiKey, normalized ?? '')
+  return normalized
+}
+
+export const persistLiteLLMBaseUrl = async (
+  preferences: PreferencesStore,
+  baseUrl: string | null
+): Promise<string> => {
+  const normalized = normalizeLiteLLMBaseUrl(baseUrl)
+  await preferences.set(SETTINGS_KEYS.litellmBaseUrl, normalized)
   return normalized
 }
 

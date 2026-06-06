@@ -31,6 +31,8 @@ export const createBrowserRuntimeFactory = (options: {
             : options.authStore.getState().token
         },
         getModel: () => options.settingsStore.getState().selectedModel,
+        getLiteLLMBaseUrl: () =>
+          options.settingsStore.getState().litellmBaseUrl,
         agentType: settings.agentType,
         mcpServers: settings.mcpServers,
         mcpDiscovery: settings.mcpDiscovery,

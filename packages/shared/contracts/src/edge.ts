@@ -69,7 +69,7 @@ export const chatMessageSchema = z
 export type ChatMessage = z.infer<typeof chatMessageSchema>
 
 export const modelProviderIdSchema = z
-  .enum(['github', 'openrouter'])
+  .enum(['github', 'openrouter', 'litellm'])
   .meta({ id: 'ModelProviderId' })
 
 export type ModelProviderId = z.infer<typeof modelProviderIdSchema>
@@ -78,6 +78,7 @@ export const modelsChatRequestSchema = z
   .object({
     provider: modelProviderIdSchema.optional(),
     model: z.string().optional(),
+    litellmBaseUrl: z.string().url().optional(),
     stream: z.boolean().optional(),
     messages: z.array(chatMessageSchema).max(100)
   })
