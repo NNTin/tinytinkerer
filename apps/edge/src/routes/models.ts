@@ -19,6 +19,7 @@ import {
 } from '../lib/models-cache'
 import {
   clearBackoff,
+  deriveCredentialKey,
   getActiveBackoffMs,
   rateLimitResponseFromMs,
   recordBackoff,
@@ -230,10 +231,15 @@ export const registerModelRoutes = (
     const adapter = getAdapter(body.provider)
     const model = body.model ?? adapter.defaultModel
 
+    // Scope the backoff to THIS caller's credential. The caller's token/key is
+    // forwarded upstream, so each credential has its own provider quota — one
+    // caller's 429 must not short-circuit another (issue #146).
+    const credentialKey = await deriveCredentialKey(authorization)
+
     // Respect a still-open upstream rate-limit window (durable across isolates):
     // short-circuit with a 429 instead of re-hammering the upstream provider
     // (TINYTINKERER-EDGE-4).
-    const backoffMs = await getActiveBackoffMs(Date.now(), adapter.id)
+    const backoffMs = await getActiveBackoffMs(Date.now(), adapter.id, credentialKey)
     if (backoffMs > 0) {
       c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
       return c.json(rateLimitResponseFromMs(backoffMs, adapter.id), 429)
@@ -298,7 +304,12 @@ export const registerModelRoutes = (
         )
         // Remember the window (durably, colo-wide) so the next call backs off
         // instead of re-probing.
-        await recordBackoff(rateLimitBody.retryAfterMs, Date.now(), adapter.id)
+        await recordBackoff(
+          rateLimitBody.retryAfterMs,
+          Date.now(),
+          adapter.id,
+          credentialKey
+        )
         c.header(
           'Retry-After',
           retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000))
@@ -328,7 +339,7 @@ export const registerModelRoutes = (
     }
 
     // Upstream accepted the request — clear any backoff window.
-    await clearBackoff(adapter.id)
+    await clearBackoff(adapter.id, credentialKey)
 
     if (useStream && response.body) {
       const headers = new Headers({
@@ -374,6 +385,11 @@ export const registerModelRoutes = (
     const adapter = getAdapter(query.provider)
     const listUrl = adapter.listUrl(c.env)
 
+    // Scope the backoff to this caller's credential (issue #146). The catalogue
+    // cache below stays provider-global — its contents are identical for every
+    // caller — but the rate-limit window must follow the credential that hit it.
+    const credentialKey = await deriveCredentialKey(authorization)
+
     // The catalogue rarely changes and is identical for every caller. Serve a
     // fresh cached copy without touching upstream — this is what actually stops
     // us re-probing the upstream provider on every request and tripping its rate limit
@@ -385,9 +401,10 @@ export const registerModelRoutes = (
       return c.json({ models: cached.models }, 200)
     }
 
-    // Honor a still-open rate-limit window shared with the chat route (durable
-    // across isolates). Prefer the last-known catalogue over cascading anything.
-    const backoffMs = await getActiveBackoffMs(Date.now(), adapter.id)
+    // Honor a still-open rate-limit window shared with the chat route for this
+    // credential (durable across isolates). Prefer the last-known catalogue over
+    // cascading anything.
+    const backoffMs = await getActiveBackoffMs(Date.now(), adapter.id, credentialKey)
     if (backoffMs > 0) {
       if (cached) return c.json({ models: cached.models }, 200)
       // No cached catalogue yet but a window is open: emit the SAME single
@@ -449,7 +466,12 @@ export const registerModelRoutes = (
         )
         // Remember the window durably (colo-wide) so the next request — in any
         // isolate — backs off instead of re-probing.
-        await recordBackoff(rateLimitBody.retryAfterMs, Date.now(), adapter.id)
+        await recordBackoff(
+          rateLimitBody.retryAfterMs,
+          Date.now(),
+          adapter.id,
+          credentialKey
+        )
         // Prefer the last-known catalogue over cascading the upstream 429.
         if (cached) return c.json({ models: cached.models }, 200)
         // Cold-cache miss (fresh isolate, nothing cached yet): the catalogue is
@@ -483,7 +505,7 @@ export const registerModelRoutes = (
     }
 
     // Upstream succeeded — clear any backoff window.
-    await clearBackoff(adapter.id)
+    await clearBackoff(adapter.id, credentialKey)
 
     const models = adapter.parseCatalog(await response.json())
 

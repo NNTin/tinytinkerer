@@ -2,12 +2,14 @@ import { describe, expect, it, vi, afterEach } from 'vitest'
 import {
   clearBackoff,
   clearModelsBackoff,
+  deriveCredentialKey,
   getActiveBackoffMs,
   getModelsBackoffMs,
   parseRetryAfterMs,
   rateLimitResponseFromMs,
   recordBackoff,
   recordModelsBackoff,
+  SHARED_CREDENTIAL_KEY,
   toRateLimitResponse
 } from './rate-limit.js'
 
@@ -126,6 +128,61 @@ describe('models backoff window', () => {
     expect(result.code).toBe('rate_limited')
     expect(result.retryAfterMs).toBe(45_000)
     expect(result.retryAt).toBe(new Date(Date.now() + 45_000).toISOString())
+  })
+})
+
+describe('deriveCredentialKey', () => {
+  it('falls back to the shared bucket when no credential is present', async () => {
+    expect(await deriveCredentialKey(null)).toBe(SHARED_CREDENTIAL_KEY)
+    expect(await deriveCredentialKey(undefined)).toBe(SHARED_CREDENTIAL_KEY)
+    expect(await deriveCredentialKey('')).toBe(SHARED_CREDENTIAL_KEY)
+  })
+
+  it('derives a stable, non-reversible key per credential', async () => {
+    const key = await deriveCredentialKey('Bearer token-a')
+    expect(key).toBe(await deriveCredentialKey('Bearer token-a'))
+    // The raw token never appears in the key.
+    expect(key).not.toContain('token-a')
+    expect(key).toMatch(/^[0-9a-f]{32}$/)
+  })
+
+  it('derives distinct keys for distinct credentials', async () => {
+    expect(await deriveCredentialKey('Bearer token-a')).not.toBe(
+      await deriveCredentialKey('Bearer token-b')
+    )
+  })
+})
+
+describe('credential-scoped backoff window (issue #146)', () => {
+  afterEach(() => {
+    clearModelsBackoff()
+  })
+
+  it('keeps one credential’s backoff from affecting another', () => {
+    const nowMs = 3_000_000
+    recordModelsBackoff(60_000, nowMs, 'github', 'cred-a')
+
+    // The credential that hit the limit is backed off...
+    expect(getModelsBackoffMs(nowMs, 'github', 'cred-a')).toBe(60_000)
+    // ...but a different credential on the same provider is not.
+    expect(getModelsBackoffMs(nowMs, 'github', 'cred-b')).toBe(0)
+  })
+
+  it('also partitions by provider for the same credential', () => {
+    const nowMs = 3_000_000
+    recordModelsBackoff(60_000, nowMs, 'github', 'cred-a')
+    expect(getModelsBackoffMs(nowMs, 'openrouter', 'cred-a')).toBe(0)
+  })
+
+  it('clears only the targeted (provider, credential) scope', () => {
+    const nowMs = 3_000_000
+    recordModelsBackoff(60_000, nowMs, 'github', 'cred-a')
+    recordModelsBackoff(60_000, nowMs, 'github', 'cred-b')
+
+    clearModelsBackoff('github', 'cred-a')
+
+    expect(getModelsBackoffMs(nowMs, 'github', 'cred-a')).toBe(0)
+    expect(getModelsBackoffMs(nowMs, 'github', 'cred-b')).toBe(60_000)
   })
 })
 

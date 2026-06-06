@@ -42,7 +42,12 @@ export const createChatStore = (options: {
 
     initializePromise = loadCoreModule()
       .then(async ({ initializeChatState }) => {
-        const state = await initializeChatState(options.shell.conversations, options.shell.preferences)
+        const provider = options.settingsStore.getState().selectedModelProvider
+        const state = await initializeChatState(
+          options.shell.conversations,
+          options.shell.preferences,
+          provider
+        )
         set({ ...state, hydrated: true })
       })
       .finally(() => {
@@ -68,7 +73,7 @@ export const createChatStore = (options: {
     return runtimeFactoryPromise
   }
 
-  return createStore<ChatState>((set, get) => ({
+  const store = createStore<ChatState>((set, get) => ({
     hydrated: false,
     conversationId: undefined,
     events: [],
@@ -92,6 +97,9 @@ export const createChatStore = (options: {
       }
 
       const runtimeFactory = await getRuntimeFactory()
+      // Capture the provider in effect at send-time: the run uses exactly this
+      // provider, so any rate-limit cooldown it triggers is attributed to it.
+      const provider = options.settingsStore.getState().selectedModelProvider
       const runController = new AbortController()
       activeRunController = runController
       set({ isRunning: true, isRetryPending: false })
@@ -104,6 +112,7 @@ export const createChatStore = (options: {
           runtimeFactory,
           conversations: options.shell.conversations,
           preferences: options.shell.preferences,
+          provider,
           signal: runController.signal,
           onEvent: (event) => {
             set((currentState) => ({
@@ -133,4 +142,23 @@ export const createChatStore = (options: {
       set({ events })
     }
   }))
+
+  // Cooldowns are scoped per provider (issue #146). When the user switches
+  // provider, reload that provider's cooldown so send gating reflects it
+  // immediately instead of carrying the previous provider's window. The store
+  // lives for the app's lifetime, so we never need to unsubscribe.
+  options.settingsStore.subscribe((state, prev) => {
+    if (state.selectedModelProvider === prev.selectedModelProvider) {
+      return
+    }
+    void loadCoreModule().then(async ({ loadCooldown }) => {
+      const cooldownUntil = await loadCooldown(
+        options.shell.preferences,
+        state.selectedModelProvider
+      )
+      store.setState({ cooldownUntil })
+    })
+  })
+
+  return store
 }
