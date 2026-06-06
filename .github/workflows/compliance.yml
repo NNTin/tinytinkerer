@@ -45,7 +45,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Dependency Review
         uses: actions/dependency-review-action@v5
@@ -58,13 +58,13 @@ jobs:
     name: SBOM, Notices, License Policy & Supply Chain
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.16.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: pnpm
@@ -95,7 +95,7 @@ jobs:
       # Upload before enforcement so the artifacts are always available for review,
       # even when the license policy gate fails the run.
       - name: Upload compliance artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: compliance-artifacts
           path: |
