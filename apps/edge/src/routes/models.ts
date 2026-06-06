@@ -89,6 +89,12 @@ const GITHUB_MODELS_REFERENCE_HEADERS = {
   accept: 'application/vnd.github+json',
   'x-github-api-version': '2026-03-10'
 } as const
+// api.github.com (the core REST API) rejects requests without a User-Agent with
+// a 403 ("Request forbidden by administrative rules ... User-Agent header
+// required"). Cloudflare Workers' `fetch` does not set one, so the LiteLLM
+// caller-validation probe below must send it explicitly or EVERY call 403s and
+// is mis-read as an invalid caller -> a spurious 401 (TINYTINKERER-FRONTEND-N/P/Q/R).
+const GITHUB_API_USER_AGENT = 'tinytinkerer-edge'
 const OPENROUTER_DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
 const OPENROUTER_DEFAULT_MODELS_URL = `${OPENROUTER_DEFAULT_BASE_URL}/models`
 const DEFAULT_OPENROUTER_REFERER = 'https://tiny.nntin.xyz'
@@ -218,7 +224,8 @@ const validateLiteLLMCaller = async (
       headers: {
         authorization,
         accept: 'application/vnd.github+json',
-        'x-github-api-version': '2026-03-10'
+        'x-github-api-version': '2026-03-10',
+        'user-agent': GITHUB_API_USER_AGENT
       }
     },
     10_000
