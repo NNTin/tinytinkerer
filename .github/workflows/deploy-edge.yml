@@ -127,6 +127,7 @@ jobs:
         env:
           OAUTH_GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
           OAUTH_GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN_EDGE }}
         run: |
@@ -136,6 +137,10 @@ jobs:
             printf 'GITHUB_CLIENT_ID=%s\n' "$OAUTH_GITHUB_CLIENT_ID"
             printf 'GITHUB_CLIENT_SECRET=%s\n' "$OAUTH_GITHUB_CLIENT_SECRET"
           } > "$secrets_file"
+
+          if [ -n "$LITELLM_API_KEY" ]; then
+            printf 'LITELLM_API_KEY=%s\n' "$LITELLM_API_KEY" >> "$secrets_file"
+          fi
 
           if [ -n "$TAVILY_API_KEY" ]; then
             printf 'TAVILY_API_KEY=%s\n' "$TAVILY_API_KEY" >> "$secrets_file"
