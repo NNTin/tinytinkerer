@@ -21,6 +21,11 @@ import type { ChatRuntime } from './ports'
 
 export type { DecisionChunk, RuntimeErrorReporter, SynthesisChunk } from '@tinytinkerer/agent-core'
 
+// Surface the runtime timeout error + guard through the app-core boundary so the
+// host (app-browser) can classify a terminal timeout as a Sentry warning rather
+// than a hard error, mirroring how RateLimitError is re-exported here.
+export { RuntimeTimeoutError, isRuntimeTimeoutError } from '@tinytinkerer/agent-core'
+
 // Re-export the plugin runtime surface so app-browser composes plugins through
 // the app-core boundary, mirroring how `Tool` is surfaced here.
 export { PluginRegistry, isPluginModule } from '@tinytinkerer/agent-core'
@@ -84,6 +89,7 @@ export const createChatRuntime = (options: {
   maxToolCallsPerStep?: number
   toolTimeoutMs?: number
   stepTimeoutMs?: number
+  firstChunkTimeoutMs?: number
   searchEnabled?: boolean
   createAssistantContentSession?: CreateAssistantContentSession
   reportError?: RuntimeErrorReporter
@@ -100,6 +106,9 @@ export const createChatRuntime = (options: {
       : {}),
     ...(options.toolTimeoutMs !== undefined ? { toolTimeoutMs: options.toolTimeoutMs } : {}),
     ...(options.stepTimeoutMs !== undefined ? { stepTimeoutMs: options.stepTimeoutMs } : {}),
+    ...(options.firstChunkTimeoutMs !== undefined
+      ? { firstChunkTimeoutMs: options.firstChunkTimeoutMs }
+      : {}),
     ...(options.searchEnabled !== undefined ? { searchEnabled: options.searchEnabled } : {}),
     ...(options.createAssistantContentSession
       ? { createAssistantContentSession: options.createAssistantContentSession }

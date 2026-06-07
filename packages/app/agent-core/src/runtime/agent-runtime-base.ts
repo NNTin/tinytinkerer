@@ -9,6 +9,7 @@ import type {
   ModelProvider,
   ProviderCallOptions
 } from '../types'
+import { RuntimeTimeoutError } from '../errors/timeout-error'
 import { ToolRegistry } from '../tools/registry'
 import { MAX_AUTO_RETRY_AFTER_MS, withTimeout } from './utils'
 
@@ -26,13 +27,18 @@ export type AgentRuntimeOptions = {
   toolTimeoutMs?: number
   stepTimeoutMs?: number
   /**
-   * Time-to-first-token budget for a decision. Reasoning models (e.g.
-   * `openai/gpt-5` via LiteLLM) routinely take much longer to emit their first
-   * chunk than the inter-chunk `stepTimeoutMs` idle gap, so reusing the idle
-   * timeout for the first chunk kills slow-but-healthy reasoning streams before
-   * they start (TINYTINKERER-FRONTEND-S). This larger budget governs only the
-   * wait for the first chunk (streaming) / the whole decision (non-streaming);
-   * `stepTimeoutMs` still applies as the idle gap once tokens flow.
+   * Whole-response budget for a single-shot model call: the wait for the first
+   * chunk of a streaming decision, the entire non-streaming decision, and the
+   * planner / execution-step calls. Reasoning models (e.g. `openai/gpt-5` via
+   * LiteLLM) routinely take much longer to produce a full response — or even
+   * their first chunk — than the inter-chunk `stepTimeoutMs` idle gap, so reusing
+   * the idle timeout here killed slow-but-healthy reasoning calls before they
+   * finished: the streaming decision was cut off before its first token
+   * (TINYTINKERER-FRONTEND-S) and the planner tripped "Planner timed out". This
+   * larger budget governs those whole-response waits; `stepTimeoutMs` still
+   * applies only as the idle gap between chunks once a stream is flowing. Kept
+   * below the edge's upstream backstop (120s) so the frontend budget — not the
+   * edge — is the user-facing authority and never aborts a healthy stream first.
    */
   firstChunkTimeoutMs?: number
   searchEnabled?: boolean
@@ -98,10 +104,13 @@ export abstract class AgentRuntimeBase {
     this.maxToolCallsPerStep = options.maxToolCallsPerStep ?? 1
     this.toolTimeoutMs = options.toolTimeoutMs ?? 10_000
     this.stepTimeoutMs = options.stepTimeoutMs ?? 15_000
-    // Allow a generous first-token wait (>= the idle gap) so slow reasoning
-    // models are not cut off before they start streaming (FRONTEND-S).
+    // Allow a generous whole-response wait (>= the idle gap) so slow reasoning
+    // models are not cut off before they finish a single-shot call — first
+    // streamed token, full non-streaming decision, or the planner (FRONTEND-S).
+    // 90s gives gpt-5-class models room to first token while staying under the
+    // edge's 120s upstream backstop, so the frontend stays the authority.
     this.firstChunkTimeoutMs =
-      options.firstChunkTimeoutMs ?? Math.max(this.stepTimeoutMs, 60_000)
+      options.firstChunkTimeoutMs ?? Math.max(this.stepTimeoutMs, 90_000)
     this.searchEnabled = options.searchEnabled ?? true
     this.createAssistantContentSession =
       options.createAssistantContentSession ?? createPlainTextAssistantContentSession
@@ -322,7 +331,9 @@ export abstract class AgentRuntimeBase {
           stepId: thoughtStepId,
           error: 'ReAct decision timed out'
         })
-        throw new Error('ReAct decision timed out')
+        // Typed so the terminal handler reports it as a warning, not a hard
+        // error: a slow model is degraded, not a crash (FRONTEND-S).
+        throw new RuntimeTimeoutError('ReAct decision timed out')
       }
 
       yield createEvent('agent.step.completed', {

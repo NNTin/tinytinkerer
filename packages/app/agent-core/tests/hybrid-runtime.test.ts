@@ -2,6 +2,7 @@ import type { ChatEvent, ExecutionPlan, ReActDecision } from '@tinytinkerer/cont
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { RateLimitError } from '../src/errors/rate-limit-error'
+import { isRuntimeTimeoutError } from '../src/errors/timeout-error'
 import { HybridRuntime } from '../src/runtime/hybrid-runtime'
 import { ToolRegistry } from '../src/tools/registry'
 import type { ModelProvider } from '../src/types'
@@ -268,5 +269,82 @@ describe('HybridRuntime', () => {
     expect(reported).toHaveLength(1)
     expect(reported[0]).toBeInstanceOf(RateLimitError)
     expect(events.some((event) => event.type === 'error')).toBe(true)
+  })
+
+  it('does not time out a slow planner within the whole-response budget (FRONTEND-S)', async () => {
+    // The planner is a single-shot model call. A slow reasoning model takes
+    // longer than the inter-chunk idle gap (stepTimeoutMs) to return the plan;
+    // the larger firstChunkTimeoutMs whole-response budget must govern it so the
+    // plan is not cut off with "Planner timed out".
+    const provider: ModelProvider = {
+      async plan() {
+        await new Promise<void>((resolve) => setTimeout(resolve, 40))
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return ''
+      },
+      async decideNextAction() {
+        return { kind: 'final' }
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'answer' }
+      }
+    }
+
+    const runtime = new HybridRuntime(provider, noopRegistry(), {
+      stepTimeoutMs: 5,
+      firstChunkTimeoutMs: 500
+    })
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(
+      events.some(
+        (event) => event.type === 'error' && event.payload.message === 'Planner timed out'
+      )
+    ).toBe(false)
+    expect(events.at(-1)?.type).toBe('assistant.done')
+  })
+
+  it('reports a planner timeout as a RuntimeTimeoutError', async () => {
+    const reported: Error[] = []
+    const provider: ModelProvider = {
+      async plan() {
+        // Outlasts the whole-response budget below.
+        await new Promise<void>((resolve) => setTimeout(resolve, 50))
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return ''
+      },
+      async decideNextAction() {
+        return { kind: 'final' }
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'unused' }
+      }
+    }
+
+    const runtime = new HybridRuntime(provider, noopRegistry(), {
+      firstChunkTimeoutMs: 5,
+      reportError: (error) => reported.push(error)
+    })
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(
+      events.some(
+        (event) => event.type === 'error' && event.payload.message === 'Planner timed out'
+      )
+    ).toBe(true)
+    expect(reported).toHaveLength(1)
+    expect(reported[0]?.message).toBe('Planner timed out')
+    // Typed so the host classifies it as a warning, not a hard error (FRONTEND-S).
+    expect(isRuntimeTimeoutError(reported[0])).toBe(true)
   })
 })

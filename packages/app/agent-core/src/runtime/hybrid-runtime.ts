@@ -52,9 +52,12 @@ export class HybridRuntime extends AgentRuntimeBase {
     const callOptions = { ...(signal ? { signal } : {}), searchEnabled: this.searchEnabled }
 
     try {
+      // The planner is a single-shot model call, so it gets the generous
+      // whole-response budget rather than the inter-chunk idle gap that tripped
+      // "Planner timed out" on slow reasoning models (FRONTEND-S).
       let plan = await withTimeout(
         this.provider.plan(prompt, context.history, callOptions),
-        this.stepTimeoutMs,
+        this.firstChunkTimeoutMs,
         'Planner timed out'
       )
       context.plan = plan
@@ -136,7 +139,7 @@ export class HybridRuntime extends AgentRuntimeBase {
             })
             plan = await withTimeout(
               this.provider.plan(buildReplanPrompt(prompt, context), context.history, callOptions),
-              this.stepTimeoutMs,
+              this.firstChunkTimeoutMs,
               'Planner timed out'
             )
             context.plan = plan

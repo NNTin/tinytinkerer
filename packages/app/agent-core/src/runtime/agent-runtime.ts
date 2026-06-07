@@ -20,9 +20,13 @@ export class AgentRuntime extends AgentRuntimeBase {
     const callOptions = { ...(signal ? { signal } : {}), searchEnabled: this.searchEnabled }
 
     try {
+      // The planner is a single-shot model call (a full plan in one response),
+      // so it gets the generous whole-response budget — not the short
+      // inter-chunk idle gap, which is meaningless here and tripped "Planner
+      // timed out" on slow reasoning models (FRONTEND-S).
       context.plan = await withTimeout(
         this.provider.plan(prompt, context.history, callOptions),
-        this.stepTimeoutMs,
+        this.firstChunkTimeoutMs,
         'Planner timed out'
       )
 
@@ -64,9 +68,12 @@ export class AgentRuntime extends AgentRuntimeBase {
           }
         }
 
+        // An execution step may also consult the model for a single response,
+        // so it shares the planner's whole-response budget rather than the
+        // inter-chunk idle gap (FRONTEND-S).
         const note = await withTimeout(
           this.provider.execute(step, context, callOptions),
-          this.stepTimeoutMs,
+          this.firstChunkTimeoutMs,
           'Execution step timed out'
         )
         if (note) {

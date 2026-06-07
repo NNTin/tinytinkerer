@@ -2,6 +2,7 @@ import type { ChatEvent, ReActDecision } from '@tinytinkerer/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { RateLimitError } from '../src/errors/rate-limit-error'
+import { isRuntimeTimeoutError } from '../src/errors/timeout-error'
 import { ReActRuntime } from '../src/runtime/react-runtime'
 import { ToolRegistry } from '../src/tools/registry'
 import type { ExecutionContext, ModelProvider } from '../src/types'
@@ -482,6 +483,9 @@ describe('ReActRuntime', () => {
     expect(reported).toHaveLength(1)
     expect(reported[0]).toBeInstanceOf(Error)
     expect(reported[0]?.message).toBe('ReAct decision timed out')
+    // Typed as a RuntimeTimeoutError so the host's telemetry sink can report it
+    // as a warning rather than a hard error (FRONTEND-S).
+    expect(isRuntimeTimeoutError(reported[0])).toBe(true)
   })
 
   it('does not report an AbortError to the reportError sink', async () => {

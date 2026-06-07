@@ -1,5 +1,6 @@
 import {
   createChatRuntime,
+  isRuntimeTimeoutError,
   PluginRegistry,
   resolveActivePluginIds,
   type PluginHost,
@@ -184,10 +185,18 @@ export const createRuntime = (options: {
     // not lost. No-ops without telemetry consent. Aborts and handled rate-limit
     // cooldowns never reach this sink. The fingerprint keeps each distinct
     // failure its own issue rather than collapsing them under the shared frame.
+    //
+    // A RuntimeTimeoutError (a slow model tripped the planner / decision budget —
+    // e.g. openai/gpt-5 via LiteLLM) is reported at `warning`, not `error`: the
+    // run degraded into a friendly fallback rather than crashing, so it should be
+    // visible to spot a misbehaving model/route without paging like an unexpected
+    // exception (TINYTINKERER-FRONTEND-S). The `reason: 'timeout'` tag lets triage
+    // filter these out of the hard-error signal.
     reportError: (error) => {
+      const timedOut = isRuntimeTimeoutError(error)
       captureTelemetryException(error, {
-        level: 'error',
-        tags: { source: 'agent-runtime' },
+        level: timedOut ? 'warning' : 'error',
+        tags: { source: 'agent-runtime', ...(timedOut ? { reason: 'timeout' } : {}) },
         fingerprint: ['agent-runtime', fingerprintMessage(error.message)]
       })
     },
