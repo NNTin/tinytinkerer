@@ -381,6 +381,47 @@ describe('ReActRuntime', () => {
     expect(events.at(-1)?.type).toBe('assistant.done')
   })
 
+  it('does not cut off a slow first chunk within the first-chunk budget (FRONTEND-S)', async () => {
+    // A slow reasoning model (e.g. openai/gpt-5 via LiteLLM) takes longer than
+    // the inter-chunk idle gap to emit its first token. The larger
+    // firstChunkTimeoutMs must govern that first wait — the short stepTimeoutMs
+    // idle gap only applies once tokens flow — so the stream is not killed before
+    // it starts.
+    const provider: ModelProvider = {
+      async plan() {
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return ''
+      },
+      async *streamDecision() {
+        // First token arrives after the idle gap but within the first-chunk budget.
+        await new Promise<void>((resolve) => setTimeout(resolve, 40))
+        yield { kind: 'thought' as const, text: 'thinking' }
+        yield { kind: 'decision' as const, decision: { kind: 'final' as const } }
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'answer' }
+      }
+    }
+
+    const runtime = new ReActRuntime(provider, new ToolRegistry(), {
+      stepTimeoutMs: 5,
+      firstChunkTimeoutMs: 500
+    })
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    expect(
+      events.some(
+        (event) => event.type === 'error' && event.payload.message === 'ReAct decision timed out'
+      )
+    ).toBe(false)
+    expect(events.at(-1)?.type).toBe('assistant.done')
+  })
+
   it('surfaces an error when the provider cannot make ReAct decisions', async () => {
     const provider: ModelProvider = {
       async plan() {

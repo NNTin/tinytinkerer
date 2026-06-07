@@ -25,6 +25,16 @@ export type AgentRuntimeOptions = {
   maxToolCallsPerStep?: number
   toolTimeoutMs?: number
   stepTimeoutMs?: number
+  /**
+   * Time-to-first-token budget for a decision. Reasoning models (e.g.
+   * `openai/gpt-5` via LiteLLM) routinely take much longer to emit their first
+   * chunk than the inter-chunk `stepTimeoutMs` idle gap, so reusing the idle
+   * timeout for the first chunk kills slow-but-healthy reasoning streams before
+   * they start (TINYTINKERER-FRONTEND-S). This larger budget governs only the
+   * wait for the first chunk (streaming) / the whole decision (non-streaming);
+   * `stepTimeoutMs` still applies as the idle gap once tokens flow.
+   */
+  firstChunkTimeoutMs?: number
   searchEnabled?: boolean
   createAssistantContentSession?: CreateAssistantContentSession
   reportError?: RuntimeErrorReporter
@@ -74,6 +84,7 @@ export abstract class AgentRuntimeBase {
   protected readonly maxToolCallsPerStep: number
   protected readonly toolTimeoutMs: number
   protected readonly stepTimeoutMs: number
+  protected readonly firstChunkTimeoutMs: number
   protected readonly searchEnabled: boolean
   protected readonly createAssistantContentSession: CreateAssistantContentSession
   protected readonly reportError: RuntimeErrorReporter
@@ -87,6 +98,10 @@ export abstract class AgentRuntimeBase {
     this.maxToolCallsPerStep = options.maxToolCallsPerStep ?? 1
     this.toolTimeoutMs = options.toolTimeoutMs ?? 10_000
     this.stepTimeoutMs = options.stepTimeoutMs ?? 15_000
+    // Allow a generous first-token wait (>= the idle gap) so slow reasoning
+    // models are not cut off before they start streaming (FRONTEND-S).
+    this.firstChunkTimeoutMs =
+      options.firstChunkTimeoutMs ?? Math.max(this.stepTimeoutMs, 60_000)
     this.searchEnabled = options.searchEnabled ?? true
     this.createAssistantContentSession =
       options.createAssistantContentSession ?? createPlainTextAssistantContentSession
@@ -225,12 +240,16 @@ export abstract class AgentRuntimeBase {
         title: 'Thinking…'
       })
 
-      // Enforce the same per-step timeout as the non-streaming path. A stalled
-      // stream (no chunk within stepTimeoutMs) aborts the underlying request and
-      // fails the step rather than hanging the loop. The timer is an idle
-      // timeout: it resets on every chunk, so a steadily-streaming thought is
-      // never cut off. The controller is linked to the caller's signal so a
-      // user abort still cancels the request.
+      // Enforce a per-step timeout. A stalled stream aborts the underlying
+      // request and fails the step rather than hanging the loop. The timer is an
+      // idle timeout: it resets on every chunk, so a steadily-streaming thought
+      // is never cut off. The FIRST chunk gets a larger budget
+      // (firstChunkTimeoutMs) because slow reasoning models — e.g. `openai/gpt-5`
+      // via LiteLLM — take much longer to emit their first token than the
+      // inter-chunk gap; reusing the idle gap here killed healthy streams before
+      // they started (TINYTINKERER-FRONTEND-S). Subsequent chunks use the shorter
+      // stepTimeoutMs idle gap. The controller is linked to the caller's signal
+      // so a user abort still cancels the request.
       const controller = new AbortController()
       const userSignal = callOptions.signal
       const onUserAbort = () => controller.abort()
@@ -243,6 +262,7 @@ export abstract class AgentRuntimeBase {
       }
 
       let timedOut = false
+      let firstChunk = true
       let timer: ReturnType<typeof setTimeout> | undefined
       const disarm = () => {
         if (timer) {
@@ -252,10 +272,11 @@ export abstract class AgentRuntimeBase {
       }
       const arm = () => {
         disarm()
+        const budget = firstChunk ? this.firstChunkTimeoutMs : this.stepTimeoutMs
         timer = setTimeout(() => {
           timedOut = true
           controller.abort()
-        }, this.stepTimeoutMs)
+        }, budget)
       }
 
       let thought = ''
@@ -267,6 +288,7 @@ export abstract class AgentRuntimeBase {
           signal: controller.signal
         })) {
           disarm()
+          firstChunk = false
           if (chunk.kind === 'thought') {
             thought = chunk.text
             yield createEvent('agent.step.delta', { stepId: thoughtStepId, text: thought })
@@ -311,9 +333,12 @@ export abstract class AgentRuntimeBase {
       return decision ?? { kind: 'final' }
     }
 
+    // Non-streaming decisions wait for the whole model response in one shot, so
+    // they get the same generous reasoning-model budget as a streaming first
+    // chunk rather than the short inter-chunk idle gap (FRONTEND-S).
     const decision = await withTimeout(
       provider.decideNextAction!(context, callOptions),
-      this.stepTimeoutMs,
+      this.firstChunkTimeoutMs,
       'ReAct decision timed out'
     )
     const thoughtTitle =

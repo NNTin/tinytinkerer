@@ -6,7 +6,9 @@ import {
 } from '@tinytinkerer/contracts'
 import {
   setCaptureExceptionSink,
-  type CaptureExceptionSink
+  setCaptureMessageSink,
+  type CaptureExceptionSink,
+  type CaptureMessageSink
 } from '@tinytinkerer/sentry-telemetry'
 import app from './index.js'
 import { CACHE_KEY } from './lib/models-cache.js'
@@ -43,6 +45,7 @@ describe('edge routes', () => {
     clearModelsBackoff()
     // Drop any telemetry sink a test registered so captures don't leak across.
     setCaptureExceptionSink(null)
+    setCaptureMessageSink(null)
   })
 
   it('returns 401 when search is called without authorization', async () => {
@@ -127,6 +130,49 @@ describe('edge routes', () => {
     expect(body['code']).toBe('rate_limited')
     expect(body['error']).toBe('GitHub Models rate limit reached')
     expect(body['retryAfterMs']).toBe(120_000)
+  })
+
+  it('surfaces a missing provider field as a telemetry message instead of silently defaulting to github', async () => {
+    const messageSink = vi.fn<CaptureMessageSink>()
+    setCaptureMessageSink(messageSink)
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer test-token'
+        },
+        // No `provider` field → the route defaults to the github adapter, which
+        // would otherwise hide a misbehaving client.
+        body: JSON.stringify({
+          model: 'openai/gpt-4.1-mini',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      {}
+    )
+
+    // The request still succeeds (github default), but the omission is reported.
+    expect(response.status).toBe(200)
+    const missingProviderReport = messageSink.mock.calls.find(
+      ([, options]) =>
+        options.tags?.['request_area'] === 'models.chat' &&
+        options.tags?.['provider_missing'] === true
+    )
+    expect(missingProviderReport).toBeDefined()
+    expect(missingProviderReport?.[1].tags?.['request_provider']).toBe('absent')
+    expect(missingProviderReport?.[1].level).toBe('warning')
   })
 
   it('serves a graceful 503 (not a 502, not a raw 429) on a cold-cache-miss models/list rate limit, and does not capture the window-opener (TINYTINKERER-EDGE-5)', async () => {

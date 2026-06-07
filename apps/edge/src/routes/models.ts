@@ -8,6 +8,7 @@ import {
   type ModelProviderId
 } from '@tinytinkerer/contracts'
 import { z } from 'zod'
+import { captureTelemetryMessage } from '@tinytinkerer/sentry-telemetry'
 import type { Bindings } from '../lib/bindings'
 import { applyCorsHeaders } from '../lib/cors'
 import { modelsChatRoute, modelsListRoute } from '../openapi/routes'
@@ -381,6 +382,39 @@ const providerAdapters: Record<ModelProviderId, ModelProviderAdapter> = {
 const getAdapter = (provider: ModelProviderId | undefined): ModelProviderAdapter =>
   providerAdapters[provider ?? 'github']
 
+// Sentinel recorded on telemetry when the client omitted the provider field, so
+// a silent default to GitHub Models is surfaced rather than dropped.
+const ABSENT_PROVIDER = 'absent'
+
+// A request without an explicit provider is silently served by the GitHub
+// adapter (getAdapter's default). That hides a misbehaving client, so surface it
+// as a Sentry message tagged with the area and the provider we fell back to —
+// instead of letting it vanish into request_origin:github. Returns the value to
+// stamp on request telemetry: the requested provider id, or the ABSENT sentinel.
+const trackRequestedProvider = (
+  area: 'models.chat' | 'models.list',
+  requested: ModelProviderId | undefined
+): string => {
+  if (requested !== undefined) return requested
+  captureTelemetryMessage(
+    `${area} request omitted the provider field; defaulting to github`,
+    {
+      level: 'warning',
+      tags: {
+        request_area: area,
+        request_provider: ABSENT_PROVIDER,
+        provider_missing: true,
+        resolved_provider: 'github'
+      },
+      contexts: {
+        request: { area, provider_missing: true, resolved_provider: 'github' }
+      },
+      fingerprint: ['models-provider-missing', area]
+    }
+  )
+  return ABSENT_PROVIDER
+}
+
 export const registerModelRoutes = (
   app: OpenAPIHono<{ Bindings: Bindings }>
 ) => {
@@ -397,6 +431,7 @@ export const registerModelRoutes = (
     }
 
     const useStream = body.stream === true
+    const telemetryProvider = trackRequestedProvider('models.chat', body.provider)
     const adapter = getAdapter(body.provider)
     const litellmBaseUrl =
       adapter.id === 'litellm'
@@ -461,16 +496,26 @@ export const registerModelRoutes = (
         method: 'POST',
         url: adapter.chatUrl(c.env, resolvedLiteLLMBaseUrl),
         model,
+        provider: telemetryProvider,
         stream: useStream,
         // Chat completions are NOT cacheable, so after we durably honour the
         // upstream rate-limit window (above) the residual 429 — the first call
         // that opens a new window — is a user-triggered, unavoidable provider
         // rate limit. The frontend surfaces it as a cooldown; capturing
         // it adds no signal (TINYTINKERER-EDGE-4 / FRONTEND-9).
+        //
+        // `abort` is also accepted here: this chat fetch is wired to the client's
+        // request signal (below), so an abort means the browser/runtime cancelled
+        // the in-flight stream — its step idle-timeout fired or the user stopped
+        // the run — or our own backstop timeout tripped on a slow reasoning model.
+        // That is expected control flow, not an edge bug, mirroring the frontend
+        // call sites that already accept abort (edge-fetch.ts / synthesize)
+        // (TINYTINKERER-EDGE-7).
         accept: {
+          kinds: ['abort'],
           status: [429],
           reason:
-            `${adapter.displayName} chat rate limit; honoured via durable backoff + clean 429/Retry-After, surfaced to the user as a cooldown (TINYTINKERER-EDGE-4).`
+            `${adapter.displayName} chat rate limit; honoured via durable backoff + clean 429/Retry-After, surfaced to the user as a cooldown (TINYTINKERER-EDGE-4). abort = client cancelled the stream / backstop timeout on a slow reasoning model (TINYTINKERER-EDGE-7).`
         }
       },
       {
@@ -483,9 +528,17 @@ export const registerModelRoutes = (
           model,
           messages: body.messages,
           stream: useStream
-        })
+        }),
+        // Stop hammering the upstream as soon as the client disconnects instead
+        // of keeping a doomed request alive until the backstop timeout fires
+        // (TINYTINKERER-EDGE-7). fetchWithTimeout composes this with its timeout.
+        signal: c.req.raw.signal
       },
-      30_000
+      // Backstop only. Slow reasoning models (e.g. openai/gpt-5 via LiteLLM) can
+      // take well over 30s to first byte; the frontend's first-token budget is
+      // the user-facing authority, so keep this comfortably above it so the edge
+      // is not the one that prematurely aborts a healthy stream (FRONTEND-S).
+      120_000
     )
 
     if (!response.ok) {
@@ -591,6 +644,7 @@ export const registerModelRoutes = (
     }
 
     const query = c.req.valid('query')
+    const telemetryProvider = trackRequestedProvider('models.list', query.provider)
     const adapter = getAdapter(query.provider)
     const litellmBaseUrl =
       adapter.id === 'litellm'
@@ -679,6 +733,7 @@ export const registerModelRoutes = (
         origin: adapter.origin,
         method: 'GET',
         url: listUrl,
+        provider: telemetryProvider,
         // models.list IS cacheable, so the catalogue cache + durable backoff above
         // are the real fix — we only reach this upstream fetch on a cache miss with
         // no active backoff window for this provider. A 429 here is therefore the cold-cache-miss
