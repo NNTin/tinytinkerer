@@ -438,6 +438,12 @@ describe('edge routes', () => {
     expect(new Headers(upstreamRequests[0]?.init?.headers).get('authorization')).toBe(
       'Bearer github-token'
     )
+    // api.github.com 403s without a User-Agent; the caller-validation probe must
+    // send one or every LiteLLM request is wrongly rejected as an invalid caller
+    // (TINYTINKERER-FRONTEND-N/P/Q/R).
+    expect(
+      new Headers(upstreamRequests[0]?.init?.headers).get('user-agent')
+    ).toBe('tinytinkerer-edge')
     expect(new Headers(upstreamRequests[1]?.init?.headers).get('authorization')).toBe(
       'Bearer litellm-shared-key'
     )
