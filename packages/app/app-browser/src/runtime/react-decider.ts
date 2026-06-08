@@ -1,7 +1,11 @@
-import { parseJsonWithTelemetry, parseModelJsonWithTelemetry } from '../telemetry/request-telemetry'
+import {
+  parseJsonWithTelemetry,
+  parseModelJsonWithTelemetry
+} from '../telemetry/request-telemetry'
 import type { DecisionChunk, ExecutionContext } from '@tinytinkerer/app-core'
 import {
   EDGE_ROUTE_PATHS,
+  edgeErrorResponseSchema,
   reactDecisionSchema,
   type ModelProviderId,
   type ReActDecision
@@ -10,6 +14,19 @@ import type { EdgeFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createRateLimitError } from './rate-limit'
 import { parseSseStream, splitInlineThink } from './sse-utils'
+
+const createEdgeError = async (
+  response: Response,
+  fallback: string
+): Promise<Error> => {
+  const parsed = await response
+    .clone()
+    .json()
+    .then((value) => edgeErrorResponseSchema.safeParse(value))
+    .catch(() => undefined)
+
+  return new Error(parsed?.success ? parsed.data.error : fallback)
+}
 
 const buildDecisionSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
   const toolDocs = tools
@@ -44,7 +61,8 @@ const buildObservations = (context: ExecutionContext): string => {
 
   return [
     `Request: ${context.prompt}`,
-    context.notes.filter(Boolean).length > 0 && `\nObservations so far:\n${context.notes.join('\n')}`,
+    context.notes.filter(Boolean).length > 0 &&
+      `\nObservations so far:\n${context.notes.join('\n')}`,
     toolSection && `\nTool results:\n${toolSection}`
   ]
     .filter(Boolean)
@@ -153,7 +171,10 @@ export const decideNextAction = async (
   }
 
   if (!response.ok) {
-    throw new Error(`ReAct decision request failed (${response.status})`)
+    throw await createEdgeError(
+      response,
+      `ReAct decision request failed (${response.status})`
+    )
   }
 
   const metadata: DecisionRequestMetadata = {
@@ -217,7 +238,10 @@ export async function* streamDecision(
   }
 
   if (!response.ok) {
-    throw new Error(`ReAct decision request failed (${response.status})`)
+    throw await createEdgeError(
+      response,
+      `ReAct decision request failed (${response.status})`
+    )
   }
 
   let thought = ''
@@ -227,7 +251,9 @@ export async function* streamDecision(
     throw new Error('ReAct decision stream missing response body')
   }
 
-  for await (const chunk of splitInlineThink(parseSseStream(response.body, signal))) {
+  for await (const chunk of splitInlineThink(
+    parseSseStream(response.body, signal)
+  )) {
     if (chunk.kind === 'reasoning') {
       thought += chunk.text
       yield { kind: 'thought', text: thought }

@@ -481,18 +481,18 @@ describe('edge routes', () => {
     expect(upstreamRequests[1]?.input).toBe(
       'https://litellm.labs.lair.nntin.xyz/v1/models'
     )
-    expect(new Headers(upstreamRequests[0]?.init?.headers).get('authorization')).toBe(
-      'Bearer github-token'
-    )
+    expect(
+      new Headers(upstreamRequests[0]?.init?.headers).get('authorization')
+    ).toBe('Bearer github-token')
     // api.github.com 403s without a User-Agent; the caller-validation probe must
     // send one or every LiteLLM request is wrongly rejected as an invalid caller
     // (TINYTINKERER-FRONTEND-N/P/Q/R).
     expect(
       new Headers(upstreamRequests[0]?.init?.headers).get('user-agent')
     ).toBe('tinytinkerer-edge')
-    expect(new Headers(upstreamRequests[1]?.init?.headers).get('authorization')).toBe(
-      'Bearer litellm-shared-key'
-    )
+    expect(
+      new Headers(upstreamRequests[1]?.init?.headers).get('authorization')
+    ).toBe('Bearer litellm-shared-key')
   })
 
   it('proxies LiteLLM chat completions with the selected allowlisted base URL', async () => {
@@ -846,6 +846,63 @@ describe('edge routes', () => {
       model: 'openai/gpt-4.1-mini'
     })
     expect(options?.fingerprint).toContain('model:openai/gpt-4.1-mini')
+  })
+
+  it('preserves LiteLLM bad-request details for unsupported chat models', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        if (toRequestUrl(input) === 'https://api.github.com/user') {
+          return Promise.resolve(
+            new Response(JSON.stringify({ login: 'nntin' }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' }
+            })
+          )
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: {
+                message:
+                  "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."
+              }
+            }),
+            {
+              status: 400,
+              headers: { 'content-type': 'application/json' }
+            }
+          )
+        )
+      })
+    )
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer github-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          litellmBaseUrl: 'https://litellm.example.com/',
+          model: 'chatgpt/gpt-5.3-codex',
+          stream: true,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      {
+        LITELLM_API_KEY: 'litellm-shared-key',
+        LITELLM_ALLOWED_BASE_URLS: 'https://litellm.example.com'
+      }
+    )
+
+    expect(response.status).toBe(400)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error:
+        "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."
+    })
   })
 
   it('echoes an allowlisted origin for standard responses and preflight', async () => {

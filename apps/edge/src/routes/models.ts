@@ -113,6 +113,7 @@ const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
 }
 
 const UPSTREAM_ERROR_STATUSES = new Set([400, 401, 403, 422, 500, 503, 504])
+const MAX_UPSTREAM_ERROR_MESSAGE_LENGTH = 500
 
 type ModelProviderAdapter = {
   id: ModelProviderId
@@ -191,6 +192,45 @@ const resolveLiteLLMBaseUrl = (
 const appendPath = (baseUrl: string, path: string): string =>
   `${baseUrl.replace(/\/+$/, '')}${path}`
 
+const textValue = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.trim() ? value.trim() : undefined
+
+const extractUpstreamErrorMessage = (rawText: string): string | undefined => {
+  const raw = rawText.trim()
+  if (!raw) return undefined
+
+  try {
+    const body = JSON.parse(raw) as unknown
+    if (typeof body === 'object' && body !== null) {
+      const record = body as Record<string, unknown>
+      const nestedError = record.error
+      if (typeof nestedError === 'object' && nestedError !== null) {
+        const errorRecord = nestedError as Record<string, unknown>
+        const nestedMessage =
+          textValue(errorRecord.message) ?? textValue(errorRecord.detail)
+        if (nestedMessage) return nestedMessage
+      }
+      const message =
+        textValue(record.error) ??
+        textValue(record.message) ??
+        textValue(record.detail)
+      if (message) return message
+    }
+  } catch {
+    const message = textValue(raw)
+    if (message) return message
+  }
+
+  return undefined
+}
+
+const safeUpstreamError = (rawText: string, fallback: string): string => {
+  const message = extractUpstreamErrorMessage(rawText) ?? fallback
+  return message.length > MAX_UPSTREAM_ERROR_MESSAGE_LENGTH
+    ? `${message.slice(0, MAX_UPSTREAM_ERROR_MESSAGE_LENGTH - 3)}...`
+    : message
+}
+
 const liteLLMCacheScope = (baseUrl: string): string =>
   encodeURIComponent(baseUrl)
 
@@ -199,9 +239,7 @@ const liteLLMSharedCredentialKeyInput = (
   baseUrl: string
 ): string => `litellm:${env.LITELLM_API_KEY ?? ''}:${baseUrl}`
 
-const requireLiteLLMConfiguration = (
-  env: Bindings
-): string | undefined => {
+const requireLiteLLMConfiguration = (env: Bindings): string | undefined => {
   const apiKey = env.LITELLM_API_KEY?.trim()
   return apiKey ? undefined : 'LiteLLM is not configured.'
 }
@@ -340,8 +378,7 @@ const providerAdapters: Record<ModelProviderId, ModelProviderAdapter> = {
       env.OPENROUTER_MODELS_URL ?? OPENROUTER_DEFAULT_MODELS_URL,
     headers: (env, authorization) => ({
       authorization,
-      'HTTP-Referer':
-        env.OPENROUTER_HTTP_REFERER ?? DEFAULT_OPENROUTER_REFERER,
+      'HTTP-Referer': env.OPENROUTER_HTTP_REFERER ?? DEFAULT_OPENROUTER_REFERER,
       'X-OpenRouter-Title':
         env.OPENROUTER_APP_TITLE ?? DEFAULT_OPENROUTER_TITLE,
       ...(env.OPENROUTER_CATEGORIES
@@ -379,8 +416,9 @@ const providerAdapters: Record<ModelProviderId, ModelProviderAdapter> = {
   }
 }
 
-const getAdapter = (provider: ModelProviderId | undefined): ModelProviderAdapter =>
-  providerAdapters[provider ?? 'github']
+const getAdapter = (
+  provider: ModelProviderId | undefined
+): ModelProviderAdapter => providerAdapters[provider ?? 'github']
 
 // Sentinel recorded on telemetry when the client omitted the provider field, so
 // a silent default to GitHub Models is surfaced rather than dropped.
@@ -431,7 +469,10 @@ export const registerModelRoutes = (
     }
 
     const useStream = body.stream === true
-    const telemetryProvider = trackRequestedProvider('models.chat', body.provider)
+    const telemetryProvider = trackRequestedProvider(
+      'models.chat',
+      body.provider
+    )
     const adapter = getAdapter(body.provider)
     const litellmBaseUrl =
       adapter.id === 'litellm'
@@ -483,7 +524,11 @@ export const registerModelRoutes = (
     // Respect a still-open upstream rate-limit window (durable across isolates):
     // short-circuit with a 429 instead of re-hammering the upstream provider
     // (TINYTINKERER-EDGE-4).
-    const backoffMs = await getActiveBackoffMs(Date.now(), adapter.id, credentialKey)
+    const backoffMs = await getActiveBackoffMs(
+      Date.now(),
+      adapter.id,
+      credentialKey
+    )
     if (backoffMs > 0) {
       c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
       return c.json(rateLimitResponseFromMs(backoffMs, adapter.id), 429)
@@ -514,8 +559,7 @@ export const registerModelRoutes = (
         accept: {
           kinds: ['abort'],
           status: [429],
-          reason:
-            `${adapter.displayName} chat rate limit; honoured via durable backoff + clean 429/Retry-After, surfaced to the user as a cooldown (TINYTINKERER-EDGE-4). abort = client cancelled the stream / backstop timeout on a slow reasoning model (TINYTINKERER-EDGE-7).`
+          reason: `${adapter.displayName} chat rate limit; honoured via durable backoff + clean 429/Retry-After, surfaced to the user as a cooldown (TINYTINKERER-EDGE-4). abort = client cancelled the stream / backstop timeout on a slow reasoning model (TINYTINKERER-EDGE-7).`
         }
       },
       {
@@ -588,9 +632,13 @@ export const registerModelRoutes = (
         if (retryAfter) c.header('Retry-After', retryAfter)
       }
 
-      const safeError =
+      const fallbackError =
         adapter.errorMessages[response.status] ??
         `Upstream error ${response.status}`
+      const safeError =
+        response.status === 400 || response.status === 422
+          ? safeUpstreamError(rawText, fallbackError)
+          : fallbackError
       const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
         ? (response.status as 400 | 401 | 403 | 422 | 500 | 503 | 504)
         : 502
@@ -644,7 +692,10 @@ export const registerModelRoutes = (
     }
 
     const query = c.req.valid('query')
-    const telemetryProvider = trackRequestedProvider('models.list', query.provider)
+    const telemetryProvider = trackRequestedProvider(
+      'models.list',
+      query.provider
+    )
     const adapter = getAdapter(query.provider)
     const litellmBaseUrl =
       adapter.id === 'litellm'
@@ -711,7 +762,11 @@ export const registerModelRoutes = (
     // Honor a still-open rate-limit window shared with the chat route for this
     // credential (durable across isolates). Prefer the last-known catalogue over
     // cascading anything.
-    const backoffMs = await getActiveBackoffMs(Date.now(), adapter.id, credentialKey)
+    const backoffMs = await getActiveBackoffMs(
+      Date.now(),
+      adapter.id,
+      credentialKey
+    )
     if (backoffMs > 0) {
       if (cached) return c.json({ models: cached.models }, 200)
       // No cached catalogue yet but a window is open: emit the SAME single
@@ -745,11 +800,12 @@ export const registerModelRoutes = (
         // the work; only the cold-start opener is accepted (TINYTINKERER-EDGE-5).
         accept: {
           status: [429],
-          reason:
-            `Cold-cache-miss window-opener: the one unavoidable probe of the ${adapter.displayName} catalogue on a fresh isolate; cache + durable backoff handle the rest and we serve last-known / 503 instead of re-probing (TINYTINKERER-EDGE-5).`
+          reason: `Cold-cache-miss window-opener: the one unavoidable probe of the ${adapter.displayName} catalogue on a fresh isolate; cache + durable backoff handle the rest and we serve last-known / 503 instead of re-probing (TINYTINKERER-EDGE-5).`
         }
       },
-      { headers: adapter.headers(c.env, authorization, resolvedLiteLLMBaseUrl) },
+      {
+        headers: adapter.headers(c.env, authorization, resolvedLiteLLMBaseUrl)
+      },
       10_000
     )
 
