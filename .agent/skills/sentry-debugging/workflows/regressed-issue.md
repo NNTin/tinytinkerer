@@ -39,14 +39,14 @@ two `(request_area + http_status)` groups, one old-and-fixed, one new-and-firing
 
 A provider/route often has **more than one call site for the same `request_area`**, and a fix
 applied to one leaves the others firing the identical error. The LLM-chat area (`models.chat`) has
-**two** frontend call sites in `runtime/github-models-provider.ts`: the **DECIDE** path
+**two** frontend call sites in `runtime/litellm-provider.ts`: the **DECIDE** path
 (`streamDecision` / `decideNextAction` → `runtime/edge-fetch.ts`) and the **SYNTHESIZE** path
 (`synthesizeInner`, which builds its *own* inline `fetchWithTelemetry` metadata — not `edge-fetch.ts`).
 The first 429 round hardened only DECIDE; SYNTHESIZE kept firing the same 429 (`FRONTEND-B`).
 
 So when a "fixed" request error reappears:
 - **Grep the provider/route for ALL call sites of that `request_area`** (e.g.
-  `grep -n "area: 'models.chat'\|createEdgeFetch\|fetchWithTelemetry" runtime/github-models-provider.ts`)
+  `grep -n "area: 'models.chat'\|createEdgeFetch\|fetchWithTelemetry" runtime/litellm-provider.ts`)
   and harden them **together** — same `accept` / backoff / cooldown on each — instead of patching one.
 - **Use the stacktrace's first-party frame to tell which site fired:** `synthesizeInner` vs
   `streamDecision` / `decideNextAction` in the frontend; the route handler line (e.g.

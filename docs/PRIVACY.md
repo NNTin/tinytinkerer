@@ -22,7 +22,7 @@ When telemetry is enabled, we collect:
 ## What we do NOT collect
 
 - The content of your conversations, prompts, or responses.
-- Your GitHub access token, OpenRouter API key, or any credentials.
+- Your GitHub access token or any credentials.
 - Request bodies, query strings, cookies, or authorization headers in telemetry events.
 
 The one exception to "we do not collect your content" is the optional Feedback plugin: if

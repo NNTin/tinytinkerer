@@ -37,9 +37,9 @@ export const TINYTINKERER_CREDITS: readonly BrandCredit[] = [
     href: 'https://tailwindcss.com/'
   },
   {
-    name: 'GitHub Models',
-    thanks: 'Thanks for enabling access to a wide range of AI models.',
-    href: 'https://github.com/marketplace/models'
+    name: 'LiteLLM',
+    thanks: 'Thanks for the unified proxy that enables access to a wide range of AI models.',
+    href: 'https://www.litellm.ai/'
   },
   {
     name: 'Sentry',

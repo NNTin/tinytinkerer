@@ -57,7 +57,7 @@ own Sentry scope:
   Deployed builds set `production` / `develop` / `pr-preview` explicitly and report normally.
 - **Edge** — `apps/edge/src/lib/sentry.ts` registers a `@sentry/cloudflare` sink at module
   load; `apps/edge/src/index.ts` passes `scrubEvent` as `beforeSend`; and
-  `apps/edge/src/lib/fetch.ts` (`fetchWithTimeout`) now routes outbound calls (GitHub Models,
+  `apps/edge/src/lib/fetch.ts` (`fetchWithTimeout`) now routes outbound calls (LiteLLM,
   OAuth exchange, Tavily search) through `fetchWithTelemetry`, so the edge captures upstream
   4xx/5xx and network failures with the same `request_area` / `http_status` / `failure_kind`
   tags as the browser.

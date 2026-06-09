@@ -84,7 +84,7 @@ branch of `triage-issues.md` step 5.
      During cooldown the edge emits a single designed signal downstream — a graceful `503 + Retry-After`
      (prefer serving last-known) rather than leaking the raw upstream 429 — so the browser contract is
      one status. **Then harden the other side of the hop (cross-boundary relocation):** the FRONTEND
-     caller of `/api/models/list` (`app-browser/src/github-models.ts`) must mirror the edge — cache its
+     caller of `/api/models/list` (`app-browser/src/models.ts`) must mirror the edge — cache its
      own last-known list and `accept: { status: [429, 503] }` for *that one area*, because that edge
      503/429 is a by-design cooldown for a cacheable resource, not a server-down bug. Skip it and the
      issue just relocates edge→frontend (`FRONTEND-C`/`FRONTEND-D`); this is the one legitimate
@@ -97,7 +97,7 @@ branch of `triage-issues.md` step 5.
      (the frontend turns the 429 into a `RateLimitError` → cooldown banner) **+ `accept` the residual
      429** (the unavoidable window-opener — backoff can't suppress it) at the edge `models.chat` fetch
      **and every frontend chat call site**: the DECIDE path (`runtime/edge-fetch.ts`) *and* the
-     SYNTHESIZE path (`runtime/github-models-provider.ts` `synthesizeInner`, a separate inline
+     SYNTHESIZE path (`runtime/litellm-provider.ts` `synthesizeInner`, a separate inline
      metadata). Missing the SYNTHESIZE site is what kept `FRONTEND-B` firing. This is the
      `FRONTEND-9` / `FRONTEND-B` / `EDGE-4`-chat cascade.
 

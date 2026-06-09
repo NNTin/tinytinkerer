@@ -26,7 +26,7 @@ When a chat run starts, `createRuntime` reads the current MCP server configs and
 
 ### 4 — Planning
 
-If a GitHub Models token exists and at least one MCP tool is registered, the planner sends a one-shot request to `/api/models/chat` asking the model to produce a JSON `ExecutionPlan` that names which tools to call and what arguments to pass. On any failure it falls back to the keyword-based `inferPlan` heuristic.
+If the user is signed in with GitHub and at least one MCP tool is registered, the planner sends a one-shot request to `/api/models/chat` asking the model to produce a JSON `ExecutionPlan` that names which tools to call and what arguments to pass. On any failure it falls back to the keyword-based `inferPlan` heuristic.
 
 ### 5 — Tool call
 

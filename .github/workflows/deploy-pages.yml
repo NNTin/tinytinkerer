@@ -26,7 +26,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      models: read
     steps:
       - uses: actions/checkout@v5
 
@@ -54,11 +53,6 @@ jobs:
 
       - name: Boundary check
         run: pnpm check:boundaries
-
-      - name: GitHub Models OpenAPI check
-        env:
-          GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm check:github-models-openapi
 
       - name: Edge OpenAPI generation check
         run: pnpm check:edge-openapi

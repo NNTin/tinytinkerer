@@ -58,8 +58,8 @@ All read secrets inside the containers and print only model IDs/statuses — nev
 ## Important paths
 - Service docs/config (lair repo): `README.md`, `Architecture.md`, `ChatGPT-Models-Runbook.md`, `config.yaml`, `docker-compose.yml` under `~/git/lair.nntin.xyz/projects/nntin-labs/services/litellm/`
 - Compose root: `~/git/lair.nntin.xyz/projects/nntin-labs`
-- tinytinkerer edge integration: `apps/edge/src/routes/models.ts` (provider adapter, caching, backoff, caller validation)
-- tinytinkerer browser side: `packages/app/app-browser/src/github-models.ts`, `packages/app/app-browser/src/runtime/github-models-provider.ts`, `packages/app/app-browser/src/runtime/react-decider.ts`
+- tinytinkerer edge integration: `apps/edge/src/routes/models.ts` (LiteLLM proxying, caching, backoff, caller validation)
+- tinytinkerer browser side: `packages/app/app-browser/src/models.ts`, `packages/app/app-browser/src/runtime/litellm-provider.ts`, `packages/app/app-browser/src/runtime/react-decider.ts`
 
 ## Live service facts
 - Public LiteLLM host: `https://litellm.labs.lair.nntin.xyz`

@@ -81,7 +81,7 @@ Read the **Triage philosophy** in `../SKILL.md` before deciding statuses.
        issue is **REGRESSED**, a prior fix didn't hold → `regressed-issue.md` before reapplying.
      - **Harden sibling call sites together.** One `request_area` often has more than one upstream
        call site (e.g. `models.chat` = a DECIDE call *and* a SYNTHESIZE call in
-       `github-models-provider.ts`); a fix on one leaves the other firing the identical error. When a
+       `litellm-provider.ts`); a fix on one leaves the other firing the identical error. When a
        "fixed" request error reappears, grep the provider/route for **all** call sites of that area and
        fix them as a set; the stacktrace's first-party frame (`synthesizeInner` vs `streamDecision`)
        tells you which one fired. Full procedure in `regressed-issue.md` (Sibling call sites).
@@ -89,7 +89,7 @@ Read the **Triage philosophy** in `../SKILL.md` before deciding statuses.
        hop (browser → edge → third-party) has a call site on *each* side, and hardening one side only
        fixes that side. After the edge `models.list` call site was hardened (cache + serve-last-known
        / graceful 503), the SAME failure resurfaced one hop downstream at the FRONTEND caller of
-       `/api/models/list` (`app-browser/src/github-models.ts`), which still captured the edge's 429/503
+       `/api/models/list` (`app-browser/src/models.ts`), which still captured the edge's 429/503
        — the issue hopped `EDGE-4`/`EDGE-5` → `FRONTEND-C`/`FRONTEND-D`, same `request_area`, same
        trace. **Each project calling a cacheable resource needs its own graceful handling:** the edge
        serves-last-known / 503; the frontend caches-last-known *and* accepts the edge's cooldown status

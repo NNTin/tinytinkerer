@@ -40,11 +40,15 @@ const fail = (message) => {
 const log = (message) => console.log(`[browser-login] ${message}`)
 
 // Read the GitHub token by *reference* — never echo it, never write it anywhere
-// it would be committed. Prefer the GITHUB_MODELS_TOKEN environment variable
-// (exported from ~/.bashrc); fall back to the .env.github file when it is unset
-// (e.g. a non-interactive shell). Only its value is handed to the local browser.
+// it would be committed. Prefer the TINYTINKERER_GITHUB_TOKEN environment
+// variable (exported from ~/.bashrc), honouring the legacy GITHUB_MODELS_TOKEN
+// name from the GitHub-Models-provider era; fall back to the .env.github file
+// when both are unset (e.g. a non-interactive shell). Only its value is handed
+// to the local browser.
 const readToken = (tokenFile) => {
-  const fromEnv = process.env.GITHUB_MODELS_TOKEN?.trim()
+  const fromEnv =
+    process.env.TINYTINKERER_GITHUB_TOKEN?.trim() ||
+    process.env.GITHUB_MODELS_TOKEN?.trim()
   if (fromEnv) return fromEnv
 
   let contents
@@ -52,15 +56,17 @@ const readToken = (tokenFile) => {
     contents = readFileSync(tokenFile, 'utf8')
   } catch {
     fail(
-      `GITHUB_MODELS_TOKEN is not set and ${tokenFile} is unreadable — ` +
-        'export GITHUB_MODELS_TOKEN (see ~/.bashrc) or create the file'
+      `TINYTINKERER_GITHUB_TOKEN is not set and ${tokenFile} is unreadable — ` +
+        'export TINYTINKERER_GITHUB_TOKEN (see ~/.bashrc) or create the file'
     )
   }
-  const match = contents.match(/^\s*GITHUB_MODELS_TOKEN\s*=\s*(.+?)\s*$/m)
+  const match = contents.match(
+    /^\s*(?:TINYTINKERER_GITHUB_TOKEN|GITHUB_MODELS_TOKEN)\s*=\s*(.+?)\s*$/m
+  )
   const token = match?.[1]?.replace(/^['"]|['"]$/g, '')
   if (!token) {
     fail(
-      `GITHUB_MODELS_TOKEN is empty in ${tokenFile} and not set in the environment`
+      `TINYTINKERER_GITHUB_TOKEN is empty in ${tokenFile} and not set in the environment`
     )
   }
   return token

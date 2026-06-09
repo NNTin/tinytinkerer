@@ -42,22 +42,22 @@ curl -sf -o /dev/null http://localhost:3111 && curl -sf http://localhost:8787/he
 node .agent/skills/browser-debugging/tools/browser-login.mjs
 ```
 
-This opens `http://localhost:3111/web/` (the web shell — **not** `/`, which is an iframe host), clicks **Accept** on the telemetry/privacy notice if it appears, and pastes the PAT into Settings → Auth. The token comes from the `GITHUB_MODELS_TOKEN` environment variable (exported in `~/.bashrc`), falling back to `.env.github` when it is unset.
+This opens `http://localhost:3111/web/` (the web shell — **not** `/`, which is an iframe host), clicks **Accept** on the telemetry/privacy notice if it appears, and pastes the PAT into Settings → Auth. The token comes from the `TINYTINKERER_GITHUB_TOKEN` environment variable (exported in `~/.bashrc`), falling back to `.env.github` when it is unset.
 
 > **Token gotcha (non-interactive shells):** `~/.bashrc` is only sourced by
-> *interactive* shells, so a tool-invoked bash often has `GITHUB_MODELS_TOKEN`
+> *interactive* shells, so a tool-invoked bash often has `TINYTINKERER_GITHUB_TOKEN`
 > unset, and `.env.github` is per-worktree (it may live only in a *different*
 > checkout). If login can't find the token, either `source ~/.bashrc` first, or
 > hand it through inline for one command, e.g.:
 > ```
-> export GITHUB_MODELS_TOKEN="$(grep -oP 'export GITHUB_MODELS_TOKEN=\K.*' ~/.bashrc | tr -d '\"')"
+> export TINYTINKERER_GITHUB_TOKEN="$(grep -oP 'export (TINYTINKERER_GITHUB_TOKEN|GITHUB_MODELS_TOKEN)=\K.*' ~/.bashrc | tr -d '\"')"
 > node .agent/skills/browser-debugging/tools/browser-login.mjs
 > ```
 
 Exit codes:
 
 - **0** — app is open and signed in (or was already). Proceed.
-- **non-zero** — read the message. The common ones: _"GITHUB_MODELS_TOKEN is not set …"_ → export it (open a fresh shell so `~/.bashrc` runs, or `source ~/.bashrc`) or populate `.env.github`. _"the app dropped it: api.github.com/user returned 401"_ → the token lacks profile access (Models-only fine-grained token). Supply a classic PAT or a fine-grained token with profile read access. The browser is left open regardless, so you can still debug the signed-out UI.
+- **non-zero** — read the message. The common ones: _"TINYTINKERER_GITHUB_TOKEN is not set …"_ → export it (open a fresh shell so `~/.bashrc` runs, or `source ~/.bashrc`) or populate `.env.github`. _"the app dropped it: api.github.com/user returned 401"_ → the token lacks profile access. Supply a classic PAT or a fine-grained token with profile read access. The browser is left open regardless, so you can still debug the signed-out UI.
 
 ## 3. Drive and inspect
 
@@ -78,7 +78,7 @@ Find elements without snapshotting: `agent-browser find role button click --name
 
 - **`find` needs an ACTION.** `find role button --name X` errors with
   *"Unknown subaction: --name"*. Put the action before the flags:
-  `find role button click --name "Refresh GitHub Models"`.
+  `find role button click --name "Refresh models"`.
 - **`network` has no `--filter` / `clear`.** Valid subactions are `route`,
   `unroute`, `requests`, `request`, `har`. Filter by piping:
   `agent-browser network requests | grep models/list`. Count fired requests with
