@@ -11,21 +11,22 @@ import {
   type CaptureMessageSink
 } from '@tinytinkerer/sentry-telemetry'
 import app from './index.js'
-import { CACHE_KEY } from './lib/models-cache.js'
+import { cacheKeyForScope } from './lib/models-cache.js'
 import { clearModelsBackoff } from './lib/rate-limit.js'
 
 // Minimal in-memory stand-in for Cloudflare's `caches.default`. Responses are
 // cloned on read/write so their single-use bodies survive multiple matches.
 const makeCacheMock = () => {
   const store = new Map<string, Response>()
-  // The route only ever keys the cache by the string CACHE_KEY, so the mock
-  // takes a string directly (the real Cache API accepts RequestInfo | URL).
+  // The route only ever keys the cache by a string key, so the mock takes a
+  // string directly (the real Cache API accepts RequestInfo | URL).
   const cache = {
     match: (key: string) => Promise.resolve(store.get(key)?.clone()),
     put: (key: string, res: Response) => {
       store.set(key, res.clone())
       return Promise.resolve()
-    }
+    },
+    delete: (key: string) => Promise.resolve(store.delete(key))
   }
   return { store, cache }
 }
@@ -36,11 +37,45 @@ const toRequestUrl = (input: RequestInfo | URL): string => {
   return input.url
 }
 
+// Every models route validates the caller's GitHub identity before touching the
+// shared LiteLLM key, so model tests need both the env and a mocked
+// api.github.com/user probe.
+const LITELLM_ENV = { LITELLM_API_KEY: 'litellm-shared-key' }
+const GITHUB_USER_URL = 'https://api.github.com/user'
+const githubUserOk = () =>
+  new Response(JSON.stringify({ login: 'nntin' }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' }
+  })
+
+/** Fetch stub that answers the caller-validation probe and delegates the rest. */
+const withCallerValidation = (
+  handler: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+) =>
+  vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (toRequestUrl(input) === GITHUB_USER_URL) {
+      return Promise.resolve(githubUserOk())
+    }
+    return handler(input, init)
+  })
+
+/** Upstream fetches excluding the caller-validation probe. */
+const upstreamCalls = (
+  fetchSpy: ReturnType<typeof vi.fn>
+): Array<[RequestInfo | URL, RequestInit | undefined]> =>
+  (fetchSpy.mock.calls as Array<[RequestInfo | URL, RequestInit | undefined]>).filter(
+    ([input]) => toRequestUrl(input) !== GITHUB_USER_URL
+  )
+
+const DEFAULT_LITELLM_SCOPE = encodeURIComponent(
+  'https://litellm.labs.lair.nntin.xyz'
+)
+
 describe('edge routes', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
-    // The GitHub Models backoff window is module-level (per-isolate); reset it so
+    // The LiteLLM backoff window is module-level (per-isolate); reset it so
     // a 429 in one test doesn't short-circuit the next.
     clearModelsBackoff()
     // Drop any telemetry sink a test registered so captures don't leak across.
@@ -85,19 +120,14 @@ describe('edge routes', () => {
   })
 
   it('returns 429 with Retry-After header and rate-limit body when upstream is rate limited', async () => {
-    const upstreamRequests: Array<{
-      input: RequestInfo | URL
-      init: RequestInit | undefined
-    }> = []
-    const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      upstreamRequests.push({ input, init })
-      return Promise.resolve(
+    const fetchSpy = withCallerValidation(() =>
+      Promise.resolve(
         new Response('rate limited', {
           status: 429,
           headers: { 'retry-after': '120' }
         })
       )
-    })
+    )
     vi.stubGlobal('fetch', fetchSpy)
 
     const response = await app.fetch(
@@ -108,7 +138,70 @@ describe('edge routes', () => {
           authorization: 'Bearer test-token'
         },
         body: JSON.stringify({
+          provider: 'litellm',
           model: 'openai/gpt-4.1-mini',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      LITELLM_ENV
+    )
+
+    expect(response.status).toBe(429)
+    expect(response.headers.get('Retry-After')).toBe('120')
+    const [chatCall] = upstreamCalls(fetchSpy)
+    expect(chatCall?.[0]).toBe(
+      'https://litellm.labs.lair.nntin.xyz/v1/chat/completions'
+    )
+    const headers = new Headers(chatCall?.[1]?.headers)
+    expect(headers.get('authorization')).toBe('Bearer litellm-shared-key')
+    const body = (await response.json()) as Record<string, unknown>
+    rateLimitPayloadSchema.parse(body)
+    expect(body['code']).toBe('rate_limited')
+    expect(body['error']).toBe('LiteLLM rate limit reached')
+    expect(body['retryAfterMs']).toBe(120_000)
+  })
+
+  it('rejects the removed github/openrouter providers with a validation error', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+
+    for (const provider of ['github', 'openrouter']) {
+      const response = await app.fetch(
+        new Request('http://localhost/api/models/chat', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer test-token'
+          },
+          body: JSON.stringify({
+            provider,
+            model: 'openai/gpt-4.1-mini',
+            stream: false,
+            messages: [{ role: 'user', content: 'hello' }]
+          })
+        }),
+        LITELLM_ENV
+      )
+
+      expect(response.status).toBe(400)
+    }
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 when LiteLLM is not configured', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer test-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
           stream: false,
           messages: [{ role: 'user', content: 'hello' }]
         })
@@ -116,26 +209,15 @@ describe('edge routes', () => {
       {}
     )
 
-    expect(response.status).toBe(429)
-    expect(response.headers.get('Retry-After')).toBe('120')
-    expect(upstreamRequests[0]?.input).toBe(
-      'https://models.github.ai/inference/chat/completions'
-    )
-    const headers = new Headers(upstreamRequests[0]?.init?.headers)
-    expect(headers.get('accept')).toBe('application/vnd.github+json')
-    expect(headers.get('x-github-api-version')).toBe('2026-03-10')
-    expect(headers.get('authorization')).toBe('Bearer test-token')
-    const body = (await response.json()) as Record<string, unknown>
-    rateLimitPayloadSchema.parse(body)
-    expect(body['code']).toBe('rate_limited')
-    expect(body['error']).toBe('GitHub Models rate limit reached')
-    expect(body['retryAfterMs']).toBe(120_000)
+    expect(response.status).toBe(503)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'LiteLLM is not configured.'
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('surfaces a missing provider field as a telemetry message instead of silently defaulting to github', async () => {
-    const messageSink = vi.fn<CaptureMessageSink>()
-    setCaptureMessageSink(messageSink)
-    const fetchSpy = vi.fn(() =>
+  it('applies the default model when the request omits one', async () => {
+    const fetchSpy = withCallerValidation(() =>
       Promise.resolve(
         new Response(
           JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
@@ -152,18 +234,58 @@ describe('edge routes', () => {
           'content-type': 'application/json',
           authorization: 'Bearer test-token'
         },
-        // No `provider` field → the route defaults to the github adapter, which
-        // would otherwise hide a misbehaving client.
+        body: JSON.stringify({
+          provider: 'litellm',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      LITELLM_ENV
+    )
+
+    expect(response.status).toBe(200)
+    const [chatCall] = upstreamCalls(fetchSpy)
+    const upstreamBody = chatCall?.[1]?.body
+    if (typeof upstreamBody !== 'string') {
+      throw new Error('Expected LiteLLM request body to be a JSON string')
+    }
+    expect((JSON.parse(upstreamBody) as { model: string }).model).toBe(
+      'openai/gpt-5'
+    )
+  })
+
+  it('surfaces a missing provider field as a telemetry message instead of silently defaulting to litellm', async () => {
+    const messageSink = vi.fn<CaptureMessageSink>()
+    setCaptureMessageSink(messageSink)
+    const fetchSpy = withCallerValidation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer test-token'
+        },
+        // No `provider` field → the route serves LiteLLM (the sole provider),
+        // which would otherwise hide a misbehaving client.
         body: JSON.stringify({
           model: 'openai/gpt-4.1-mini',
           stream: false,
           messages: [{ role: 'user', content: 'hello' }]
         })
       }),
-      {}
+      LITELLM_ENV
     )
 
-    // The request still succeeds (github default), but the omission is reported.
+    // The request still succeeds (litellm default), but the omission is reported.
     expect(response.status).toBe(200)
     const missingProviderReport = messageSink.mock.calls.find(
       ([, options]) =>
@@ -172,6 +294,9 @@ describe('edge routes', () => {
     )
     expect(missingProviderReport).toBeDefined()
     expect(missingProviderReport?.[1].tags?.['request_provider']).toBe('absent')
+    expect(missingProviderReport?.[1].tags?.['resolved_provider']).toBe(
+      'litellm'
+    )
     expect(missingProviderReport?.[1].level).toBe('warning')
   })
 
@@ -182,7 +307,7 @@ describe('edge routes', () => {
     setCaptureExceptionSink(sink)
     vi.stubGlobal(
       'fetch',
-      vi.fn(() =>
+      withCallerValidation(() =>
         Promise.resolve(
           new Response('rate limited', {
             status: 429,
@@ -193,10 +318,10 @@ describe('edge routes', () => {
     )
 
     const response = await app.fetch(
-      new Request('http://localhost/api/models/list', {
+      new Request('http://localhost/api/models/list?provider=litellm', {
         headers: { authorization: 'Bearer test-token' }
       }),
-      {}
+      LITELLM_ENV
     )
 
     // Graceful: the catalogue is temporarily unavailable, surfaced as a 503 +
@@ -220,207 +345,104 @@ describe('edge routes', () => {
   it('caches the models list and serves the second request without re-probing upstream (TINYTINKERER-EDGE-4)', async () => {
     const { cache } = makeCacheMock()
     vi.stubGlobal('caches', { default: cache })
-    const upstreamRequests: Array<{
-      input: RequestInfo | URL
-      init: RequestInit | undefined
-    }> = []
-    const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      upstreamRequests.push({ input, init })
-      return Promise.resolve(
+    const fetchSpy = withCallerValidation(() =>
+      Promise.resolve(
         new Response(
-          JSON.stringify([{ id: 'openai/gpt-4.1', name: 'GPT-4.1' }]),
+          JSON.stringify({
+            object: 'list',
+            data: [{ id: 'openai/gpt-4.1', object: 'model' }]
+          }),
           {
             status: 200,
             headers: { 'content-type': 'application/json' }
           }
         )
       )
-    })
+    )
     vi.stubGlobal('fetch', fetchSpy)
 
     const listRequest = () =>
       app.fetch(
-        new Request('http://localhost/api/models/list', {
+        new Request('http://localhost/api/models/list?provider=litellm', {
           headers: { authorization: 'Bearer test-token' }
         }),
-        {}
+        LITELLM_ENV
       )
+
+    const expectedModels = {
+      models: [
+        {
+          provider: 'litellm',
+          id: 'openai/gpt-4.1',
+          label: 'openai/gpt-4.1',
+          kind: 'chat',
+          publisher: 'openai'
+        }
+      ]
+    }
 
     const first = await listRequest()
     expect(first.status).toBe(200)
-    expect(await first.json()).toEqual({
-      models: [
-        {
-          provider: 'github',
-          id: 'openai/gpt-4.1',
-          label: 'GPT-4.1',
-          name: 'GPT-4.1',
-          kind: 'chat'
-        }
-      ]
-    })
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
-    expect(upstreamRequests[0]?.input).toBe(
-      'https://models.github.ai/catalog/models'
+    expect(await first.json()).toEqual(expectedModels)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
+    expect(upstreamCalls(fetchSpy)[0]?.[0]).toBe(
+      'https://litellm.labs.lair.nntin.xyz/v1/models'
     )
-    const headers = new Headers(upstreamRequests[0]?.init?.headers)
-    expect(headers.get('accept')).toBe('application/vnd.github+json')
-    expect(headers.get('x-github-api-version')).toBe('2026-03-10')
-    expect(headers.get('authorization')).toBe('Bearer test-token')
+    const headers = new Headers(upstreamCalls(fetchSpy)[0]?.[1]?.headers)
+    expect(headers.get('authorization')).toBe('Bearer litellm-shared-key')
 
-    // Second request is served from the colo-wide cache — upstream is untouched,
-    // so we stop hammering GitHub Models on every page load.
+    // Second request is served from the colo-wide cache — the upstream catalogue
+    // is untouched, so we stop hammering LiteLLM on every page load.
     const second = await listRequest()
     expect(second.status).toBe(200)
-    expect(await second.json()).toEqual({
-      models: [
-        {
-          provider: 'github',
-          id: 'openai/gpt-4.1',
-          label: 'GPT-4.1',
-          name: 'GPT-4.1',
-          kind: 'chat'
-        }
-      ]
-    })
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(await second.json()).toEqual(expectedModels)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
   })
 
-  it('lists OpenRouter text-output models through the provider-aware proxy', async () => {
-    const upstreamRequests: Array<{
-      input: RequestInfo | URL
-      init: RequestInit | undefined
-    }> = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        upstreamRequests.push({ input, init })
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              data: [
-                {
-                  id: 'openai/gpt-4o',
-                  name: 'GPT-4o',
-                  description: 'Text model',
-                  context_length: 128000,
-                  architecture: {
-                    input_modalities: ['text'],
-                    output_modalities: ['text']
-                  },
-                  supported_parameters: ['tools']
-                },
-                {
-                  id: 'example/image-only',
-                  name: 'Image Only',
-                  architecture: { output_modalities: ['image'] }
-                }
-              ]
-            }),
-            {
-              status: 200,
-              headers: { 'content-type': 'application/json' }
-            }
-          )
+  it('scopes the models-list cache per LiteLLM base URL', async () => {
+    const { cache } = makeCacheMock()
+    vi.stubGlobal('caches', { default: cache })
+    const fetchSpy = withCallerValidation((input) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            object: 'list',
+            data: [
+              {
+                id: toRequestUrl(input).includes('litellm.example.com')
+                  ? 'custom/model'
+                  : 'openai/gpt-5',
+                object: 'model'
+              }
+            ]
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
         )
-      })
+      )
     )
+    vi.stubGlobal('fetch', fetchSpy)
 
-    const response = await app.fetch(
-      new Request('http://localhost/api/models/list?provider=openrouter', {
-        headers: { authorization: 'Bearer openrouter-key' }
-      }),
-      {}
-    )
-
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({
-      models: [
-        {
-          provider: 'openrouter',
-          id: 'openai/gpt-4o',
-          label: 'GPT-4o',
-          kind: 'chat',
-          name: 'GPT-4o',
-          publisher: 'openai',
-          summary: 'Text model',
-          context_length: 128000,
-          architecture: {
-            input_modalities: ['text'],
-            output_modalities: ['text']
-          },
-          capabilities: ['tools'],
-          limits: { max_input_tokens: 128000 },
-          supported_input_modalities: ['text'],
-          supported_output_modalities: ['text']
-        }
-      ]
-    })
-    expect(upstreamRequests[0]?.input).toBe(
-      'https://openrouter.ai/api/v1/models'
-    )
-    const headers = new Headers(upstreamRequests[0]?.init?.headers)
-    expect(headers.get('authorization')).toBe('Bearer openrouter-key')
-    expect(headers.get('HTTP-Referer')).toBe('https://tiny.nntin.xyz')
-    expect(headers.get('X-OpenRouter-Title')).toBe('TinyTinkerer')
-  })
-
-  it('proxies OpenRouter chat completions with the selected provider', async () => {
-    const upstreamRequests: Array<{
-      input: RequestInfo | URL
-      init: RequestInit | undefined
-    }> = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        upstreamRequests.push({ input, init })
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              choices: [{ message: { role: 'assistant', content: 'hi' } }]
-            }),
-            {
-              status: 200,
-              headers: { 'content-type': 'application/json' }
-            }
-          )
-        )
-      })
-    )
-
-    const response = await app.fetch(
-      new Request('http://localhost/api/models/chat', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: 'Bearer openrouter-key'
-        },
-        body: JSON.stringify({
-          provider: 'openrouter',
-          model: 'openai/gpt-4o',
-          stream: false,
-          messages: [{ role: 'user', content: 'hello' }]
-        })
-      }),
-      {}
-    )
-
-    expect(response.status).toBe(200)
-    expect(upstreamRequests[0]?.input).toBe(
-      'https://openrouter.ai/api/v1/chat/completions'
-    )
-    const headers = new Headers(upstreamRequests[0]?.init?.headers)
-    expect(headers.get('authorization')).toBe('Bearer openrouter-key')
-    const upstreamBody = upstreamRequests[0]?.init?.body
-    if (typeof upstreamBody !== 'string') {
-      throw new Error('Expected OpenRouter request body to be a JSON string')
+    const env = {
+      ...LITELLM_ENV,
+      LITELLM_ALLOWED_BASE_URLS: 'https://litellm.example.com'
     }
-    const body = JSON.parse(upstreamBody) as {
-      provider?: string
-      model: string
-    }
-    expect(body.provider).toBeUndefined()
-    expect(body.model).toBe('openai/gpt-4o')
+    const listRequest = (baseUrl?: string) =>
+      app.fetch(
+        new Request(
+          `http://localhost/api/models/list?provider=litellm${baseUrl ? `&litellmBaseUrl=${encodeURIComponent(baseUrl)}` : ''}`,
+          { headers: { authorization: 'Bearer test-token' } }
+        ),
+        env
+      )
+
+    const defaultList = await listRequest()
+    expect(((await defaultList.json()) as { models: Array<{ id: string }> }).models[0]?.id).toBe('openai/gpt-5')
+
+    // A different allowlisted base URL is a separate catalogue: it must hit
+    // upstream itself instead of being served the default deployment's cache.
+    const customList = await listRequest('https://litellm.example.com/')
+    expect(((await customList.json()) as { models: Array<{ id: string }> }).models[0]?.id).toBe('custom/model')
+    expect(upstreamCalls(fetchSpy)).toHaveLength(2)
   })
 
   it('lists LiteLLM chat models through the shared-key proxy', async () => {
@@ -432,13 +454,8 @@ describe('edge routes', () => {
       'fetch',
       vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         upstreamRequests.push({ input, init })
-        if (toRequestUrl(input) === 'https://api.github.com/user') {
-          return Promise.resolve(
-            new Response(JSON.stringify({ login: 'nntin' }), {
-              status: 200,
-              headers: { 'content-type': 'application/json' }
-            })
-          )
+        if (toRequestUrl(input) === GITHUB_USER_URL) {
+          return Promise.resolve(githubUserOk())
         }
         return Promise.resolve(
           new Response(
@@ -462,7 +479,7 @@ describe('edge routes', () => {
       new Request('http://localhost/api/models/list?provider=litellm', {
         headers: { authorization: 'Bearer github-token' }
       }),
-      { LITELLM_API_KEY: 'litellm-shared-key' }
+      LITELLM_ENV
     )
 
     expect(response.status).toBe(200)
@@ -477,7 +494,7 @@ describe('edge routes', () => {
         }
       ]
     })
-    expect(upstreamRequests[0]?.input).toBe('https://api.github.com/user')
+    expect(upstreamRequests[0]?.input).toBe(GITHUB_USER_URL)
     expect(upstreamRequests[1]?.input).toBe(
       'https://litellm.labs.lair.nntin.xyz/v1/models'
     )
@@ -504,13 +521,8 @@ describe('edge routes', () => {
       'fetch',
       vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         upstreamRequests.push({ input, init })
-        if (toRequestUrl(input) === 'https://api.github.com/user') {
-          return Promise.resolve(
-            new Response(JSON.stringify({ login: 'nntin' }), {
-              status: 200,
-              headers: { 'content-type': 'application/json' }
-            })
-          )
+        if (toRequestUrl(input) === GITHUB_USER_URL) {
+          return Promise.resolve(githubUserOk())
         }
         return Promise.resolve(
           new Response(
@@ -548,7 +560,7 @@ describe('edge routes', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(upstreamRequests[0]?.input).toBe('https://api.github.com/user')
+    expect(upstreamRequests[0]?.input).toBe(GITHUB_USER_URL)
     expect(upstreamRequests[1]?.input).toBe(
       'https://litellm.example.com/v1/chat/completions'
     )
@@ -579,7 +591,7 @@ describe('edge routes', () => {
           headers: { authorization: 'Bearer github-token' }
         }
       ),
-      { LITELLM_API_KEY: 'litellm-shared-key' }
+      LITELLM_ENV
     )
 
     expect(response.status).toBe(400)
@@ -591,7 +603,7 @@ describe('edge routes', () => {
 
   it('returns 401 for invalid callers before using the shared LiteLLM key', async () => {
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
-      if (toRequestUrl(input) === 'https://api.github.com/user') {
+      if (toRequestUrl(input) === GITHUB_USER_URL) {
         return Promise.resolve(new Response('bad credentials', { status: 401 }))
       }
       return Promise.resolve(new Response('{}', { status: 200 }))
@@ -602,7 +614,7 @@ describe('edge routes', () => {
       new Request('http://localhost/api/models/list?provider=litellm', {
         headers: { authorization: 'Bearer bad-token' }
       }),
-      { LITELLM_API_KEY: 'litellm-shared-key' }
+      LITELLM_ENV
     )
 
     expect(response.status).toBe(401)
@@ -614,7 +626,7 @@ describe('edge routes', () => {
 
   it('returns 503 when LiteLLM caller validation is unavailable', async () => {
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
-      if (toRequestUrl(input) === 'https://api.github.com/user') {
+      if (toRequestUrl(input) === GITHUB_USER_URL) {
         return Promise.resolve(
           new Response('github unavailable', { status: 503 })
         )
@@ -627,7 +639,7 @@ describe('edge routes', () => {
       new Request('http://localhost/api/models/list?provider=litellm', {
         headers: { authorization: 'Bearer github-token' }
       }),
-      { LITELLM_API_KEY: 'litellm-shared-key' }
+      LITELLM_ENV
     )
 
     expect(response.status).toBe(503)
@@ -641,7 +653,7 @@ describe('edge routes', () => {
     const { store, cache } = makeCacheMock()
     // Seed a previously-cached catalogue old enough to be past the fresh window.
     store.set(
-      CACHE_KEY,
+      cacheKeyForScope(DEFAULT_LITELLM_SCOPE),
       new Response(
         JSON.stringify([{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]),
         {
@@ -650,7 +662,7 @@ describe('edge routes', () => {
       )
     )
     vi.stubGlobal('caches', { default: cache })
-    const fetchSpy = vi.fn(() =>
+    const fetchSpy = withCallerValidation(() =>
       Promise.resolve(
         new Response('rate limited', {
           status: 429,
@@ -661,10 +673,10 @@ describe('edge routes', () => {
     vi.stubGlobal('fetch', fetchSpy)
 
     const response = await app.fetch(
-      new Request('http://localhost/api/models/list', {
+      new Request('http://localhost/api/models/list?provider=litellm', {
         headers: { authorization: 'Bearer test-token' }
       }),
-      {}
+      LITELLM_ENV
     )
 
     // Upstream 429'd once (backoff recorded), but the browser gets a usable list
@@ -673,13 +685,13 @@ describe('edge routes', () => {
     expect(await response.json()).toEqual({
       models: [{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]
     })
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
   })
 
   it('keeps the models/list cooldown single-valued: an open window with no cache yields a 503, never a raw 429 (TINYTINKERER-FRONTEND-C)', async () => {
     const { cache } = makeCacheMock()
     vi.stubGlobal('caches', { default: cache })
-    const fetchSpy = vi.fn(() =>
+    const fetchSpy = withCallerValidation(() =>
       Promise.resolve(
         new Response('rate limited', {
           status: 429,
@@ -691,28 +703,28 @@ describe('edge routes', () => {
 
     const listRequest = () =>
       app.fetch(
-        new Request('http://localhost/api/models/list', {
+        new Request('http://localhost/api/models/list?provider=litellm', {
           headers: { authorization: 'Bearer test-token' }
         }),
-        {}
+        LITELLM_ENV
       )
 
     // First call: cold cache miss, upstream 429 → graceful 503 + Retry-After, and
     // the backoff window is recorded.
     const first = await listRequest()
     expect(first.status).toBe(503)
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
 
     // Second call: the window is still open and nothing is cached. It must emit
     // the SAME 503 cooldown signal (not a raw 429) without re-probing upstream.
     const second = await listRequest()
     expect(second.status).toBe(503)
     expect(second.headers.get('Retry-After')).not.toBeNull()
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
   })
 
-  it('backs off subsequent GitHub Models calls while the rate-limit window is open (TINYTINKERER-EDGE-4)', async () => {
-    const fetchSpy = vi.fn(() =>
+  it('backs off subsequent LiteLLM calls while the rate-limit window is open (TINYTINKERER-EDGE-4)', async () => {
+    const fetchSpy = withCallerValidation(() =>
       Promise.resolve(
         new Response('rate limited', {
           status: 429,
@@ -731,30 +743,31 @@ describe('edge routes', () => {
             authorization: 'Bearer test-token'
           },
           body: JSON.stringify({
+            provider: 'litellm',
             model: 'openai/gpt-4.1-mini',
             stream: false,
             messages: [{ role: 'user', content: 'hello' }]
           })
         }),
-        {}
+        LITELLM_ENV
       )
 
     // First call hits upstream, gets 429, and records the backoff window.
     const first = await chatRequest()
     expect(first.status).toBe(429)
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
 
     // Second call is short-circuited with a 429 without touching upstream.
     const second = await chatRequest()
     expect(second.status).toBe(429)
     expect(second.headers.get('Retry-After')).not.toBeNull()
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
     const body = (await second.json()) as Record<string, unknown>
     rateLimitPayloadSchema.parse(body)
   })
 
-  it('does not let one caller’s rate-limit short-circuit a different caller (issue #146)', async () => {
-    const fetchSpy = vi.fn(() =>
+  it('keeps backoff windows separate per LiteLLM deployment (issue #146)', async () => {
+    const fetchSpy = withCallerValidation(() =>
       Promise.resolve(
         new Response('rate limited', {
           status: 429,
@@ -764,37 +777,43 @@ describe('edge routes', () => {
     )
     vi.stubGlobal('fetch', fetchSpy)
 
-    const chatRequest = (token: string) =>
+    const env = {
+      ...LITELLM_ENV,
+      LITELLM_ALLOWED_BASE_URLS: 'https://litellm.example.com'
+    }
+    const chatRequest = (baseUrl?: string) =>
       app.fetch(
         new Request('http://localhost/api/models/chat', {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            authorization: `Bearer ${token}`
+            authorization: 'Bearer test-token'
           },
           body: JSON.stringify({
+            provider: 'litellm',
+            ...(baseUrl ? { litellmBaseUrl: baseUrl } : {}),
             model: 'openai/gpt-4.1-mini',
             stream: false,
             messages: [{ role: 'user', content: 'hello' }]
           })
         }),
-        {}
+        env
       )
 
-    // Caller A hits upstream, gets 429, and records a backoff window for its token.
-    const first = await chatRequest('token-a')
+    // The default deployment hits upstream, gets 429, and records its window.
+    const first = await chatRequest()
     expect(first.status).toBe(429)
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
 
-    // Caller A is now short-circuited (window is open for its credential).
-    await chatRequest('token-a')
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    // The default deployment is now short-circuited (window open for its scope).
+    await chatRequest()
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
 
-    // Caller B forwards a DIFFERENT token, so it has its own upstream quota and
-    // must NOT be short-circuited by A's window — it reaches upstream itself.
-    const other = await chatRequest('token-b')
+    // A DIFFERENT allowlisted deployment has its own upstream quota and must NOT
+    // be short-circuited by the first one's window — it reaches upstream itself.
+    const other = await chatRequest('https://litellm.example.com/')
     expect(other.status).toBe(429)
-    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(2)
   })
 
   it('returns a typed models error for upstream authentication failures', async () => {
@@ -802,7 +821,7 @@ describe('edge routes', () => {
     setCaptureExceptionSink(sink)
     vi.stubGlobal(
       'fetch',
-      vi.fn(() =>
+      withCallerValidation(() =>
         Promise.resolve(
           new Response('upstream unauthorized', {
             status: 401,
@@ -820,25 +839,26 @@ describe('edge routes', () => {
           authorization: 'Bearer test-token'
         },
         body: JSON.stringify({
+          provider: 'litellm',
           model: 'openai/gpt-4.1-mini',
           stream: true,
           messages: [{ role: 'user', content: 'hello' }]
         })
       }),
-      {}
+      LITELLM_ENV
     )
 
     expect(response.status).toBe(401)
     const body = edgeErrorResponseSchema.parse(await response.json())
     expect(body).toEqual({
       error:
-        'Authentication failed. Your GitHub token may be invalid or expired.'
+        'Authentication failed. The configured LiteLLM virtual key may be invalid.'
     })
     expect(sink).toHaveBeenCalledTimes(1)
     const [, options] = sink.mock.calls[0] ?? []
     expect(options?.tags).toMatchObject({
       request_area: 'models.chat',
-      request_origin: 'github',
+      request_origin: 'litellm',
       http_status: 401,
       model: 'openai/gpt-4.1-mini'
     })
@@ -852,13 +872,8 @@ describe('edge routes', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
-        if (toRequestUrl(input) === 'https://api.github.com/user') {
-          return Promise.resolve(
-            new Response(JSON.stringify({ login: 'nntin' }), {
-              status: 200,
-              headers: { 'content-type': 'application/json' }
-            })
-          )
+        if (toRequestUrl(input) === GITHUB_USER_URL) {
+          return Promise.resolve(githubUserOk())
         }
         return Promise.resolve(
           new Response(
@@ -980,7 +995,7 @@ describe('edge routes', () => {
   it('applies the resolved cors origin to streaming model responses', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() =>
+      withCallerValidation(() =>
         Promise.resolve(
           new Response('data: {"id":"stream"}\n\n', {
             status: 200,
@@ -999,12 +1014,13 @@ describe('edge routes', () => {
           origin: 'http://localhost:3111'
         },
         body: JSON.stringify({
+          provider: 'litellm',
           model: 'openai/gpt-4.1-mini',
           stream: true,
           messages: [{ role: 'user', content: 'hello' }]
         })
       }),
-      { ALLOWED_ORIGINS: 'http://localhost:3111' }
+      { ...LITELLM_ENV, ALLOWED_ORIGINS: 'http://localhost:3111' }
     )
 
     expect(response.status).toBe(200)

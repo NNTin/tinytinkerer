@@ -15,9 +15,10 @@ export const registerHealthRoute = (
           : 'Missing GitHub OAuth environment variables'
       },
       models: {
-        state: 'ready',
-        detail:
-          'Model proxy ready (sign in with GitHub or add an OpenRouter API key to enable)'
+        state: c.env.LITELLM_API_KEY ? 'ready' : 'degraded',
+        detail: c.env.LITELLM_API_KEY
+          ? 'Model proxy ready (sign in with GitHub to enable)'
+          : 'LiteLLM is not configured'
       },
       search: {
         state: c.env.TAVILY_API_KEY ? 'ready' : 'degraded',

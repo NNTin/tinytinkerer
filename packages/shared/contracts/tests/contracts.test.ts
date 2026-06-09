@@ -5,6 +5,7 @@ import {
   contentDocumentSchema,
   edgeErrorResponseSchema,
   githubExchangeRequestSchema,
+  modelProviderIdSchema,
   modelsChatRequestSchema,
   modelsListResponseSchema,
   rateLimitPayloadSchema,
@@ -104,7 +105,7 @@ describe('contracts', () => {
       modelsListResponseSchema.parse({
         models: [
           {
-            provider: 'openrouter',
+            provider: 'litellm',
             context_length: 128000,
             id: 'openai/gpt-4.1-mini',
             label: 'GPT-4.1 mini',
@@ -125,6 +126,12 @@ describe('contracts', () => {
     expect(modelsListResponseSchema.parse({ models: [] }).models).toHaveLength(
       0
     )
+  })
+
+  it('rejects the removed github/openrouter provider ids', () => {
+    expect(modelProviderIdSchema.parse('litellm')).toBe('litellm')
+    expect(modelProviderIdSchema.safeParse('github').success).toBe(false)
+    expect(modelProviderIdSchema.safeParse('openrouter').success).toBe(false)
   })
 
   it('parses shared brand metadata', () => {

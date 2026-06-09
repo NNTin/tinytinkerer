@@ -18,7 +18,9 @@ export type AcceptedOutcome = {
 
 export type RequestTelemetryMetadata = {
   area: string
-  origin: 'edge' | 'github' | 'openrouter' | 'litellm' | 'tavily'
+  // 'github' is the OAuth/identity API (token exchange, caller validation),
+  // not an LLM provider.
+  origin: 'edge' | 'github' | 'litellm' | 'tavily'
   method: string
   url: string
   model?: string | null

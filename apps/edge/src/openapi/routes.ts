@@ -43,7 +43,7 @@ const retryAfterHeader = z.object({
   'Retry-After': z.string().optional()
 })
 
-// All GitHub Models rate-limit headers the proxy forwards on chat completions.
+// All upstream rate-limit headers the proxy forwards on chat completions.
 const rateLimitForwardHeaders = z.object(
   Object.fromEntries(
     EDGE_RATE_LIMIT_HEADERS.map((name) => [name, z.string().optional()])
@@ -73,7 +73,7 @@ const errorResponse = (description: string) => ({
   content: json(edgeErrorResponseSchema)
 })
 
-// Upstream (GitHub Models) failures the proxy can surface on either models route.
+// Upstream (LiteLLM) failures the proxy can surface on either models route.
 // The handlers map any unrecognised upstream status to 502, but can pass these
 // through, so all are documented as { error } responses.
 const upstreamErrorResponses = {

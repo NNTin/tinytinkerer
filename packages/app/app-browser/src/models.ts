@@ -3,7 +3,7 @@ import { DEFAULT_LITELLM_BASE_URL, FALLBACK_MODELS } from '@tinytinkerer/app-cor
 import {
   EDGE_ROUTE_PATHS,
   modelsListResponseSchema,
-  type GitHubModelEntry
+  type ModelEntry
 } from '@tinytinkerer/contracts'
 import { useAuthStore, useSettingsStore } from './app'
 import { useBrowserShellConfig } from './hooks'
@@ -15,7 +15,7 @@ import {
   type RequestTelemetryMetadata
 } from './telemetry/request-telemetry'
 
-export type ModelEntry = GitHubModelEntry
+export type { ModelEntry }
 export type ModelsState = {
   models: ModelEntry[]
   isRefreshing: boolean

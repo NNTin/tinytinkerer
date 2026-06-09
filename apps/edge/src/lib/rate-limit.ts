@@ -1,18 +1,17 @@
 import {
   parseRetryAfterMs,
   rateLimitPayloadSchema,
-  type ModelProviderId,
   type RateLimitPayload
 } from '@tinytinkerer/contracts'
 
 export { parseRetryAfterMs }
 
 const DEFAULT_RATE_LIMIT_RETRY_AFTER_MS = 60_000
+const RATE_LIMIT_ERROR = 'LiteLLM rate limit reached'
 
 export const toRateLimitResponse = (
   rawText: string,
-  retryAfter: string | null,
-  provider: ModelProviderId = 'github'
+  retryAfter: string | null
 ): RateLimitPayload => {
   if (rawText) {
     console.error('[rate-limit] upstream 429 body', rawText)
@@ -22,10 +21,7 @@ export const toRateLimitResponse = (
 
   return rateLimitPayloadSchema.parse({
     code: 'rate_limited',
-    error:
-      provider === 'openrouter'
-        ? 'OpenRouter rate limit reached'
-        : 'GitHub Models rate limit reached',
+    error: RATE_LIMIT_ERROR,
     retryAfterMs,
     retryAt
   })
@@ -33,32 +29,28 @@ export const toRateLimitResponse = (
 
 /** Build a rate-limit payload directly from a known remaining delay (ms). */
 export const rateLimitResponseFromMs = (
-  retryAfterMs: number,
-  provider: ModelProviderId = 'github'
+  retryAfterMs: number
 ): RateLimitPayload =>
   rateLimitPayloadSchema.parse({
     code: 'rate_limited',
-    error:
-      provider === 'openrouter'
-        ? 'OpenRouter rate limit reached'
-        : 'GitHub Models rate limit reached',
+    error: RATE_LIMIT_ERROR,
     retryAfterMs,
     retryAt: new Date(Date.now() + retryAfterMs).toISOString()
   })
 
-// Backoff window for upstream model providers. When upstream returns a 429 we
+// Backoff window for the upstream LiteLLM proxy. When upstream returns a 429 we
 // remember when its rate-limit window clears (from Retry-After /
 // x-ratelimit-reset) and short-circuit subsequent calls until then, so we
 // respect the upstream headers instead of re-hammering the provider on every
 // retry (TINYTINKERER-EDGE-4 / FRONTEND-5).
 //
-// The window is scoped per (provider, credential), NOT per provider alone. Each
-// authenticated caller forwards their own GitHub token / OpenRouter key, so they
-// draw on SEPARATE upstream quotas: a 429 triggered by one caller's credential
-// must not short-circuit a different caller who still has quota left. Keying the
-// backoff only by provider made one user's rate limit fence off everyone else in
-// the colo (issue #146). The credential is hashed into a {@link CredentialKey}
-// (see {@link deriveCredentialKey}) so the raw token never lands in a map key or
+// The window is scoped per credential (issue #146). All callers share the
+// edge-managed LiteLLM key, but the credential-key INPUT includes the resolved
+// base URL (see liteLLMSharedCredentialKeyInput in routes/models.ts), so
+// distinct allowlisted LiteLLM deployments keep separate windows: one
+// deployment's 429 must not short-circuit another that still has quota left.
+// The credential input is hashed into a {@link CredentialKey} (see
+// {@link deriveCredentialKey}) so the raw key never lands in a map key or
 // cache URL.
 //
 // Two layers: a per-isolate in-memory mirror (cheap, synchronous) and a durable
@@ -101,21 +93,15 @@ export const deriveCredentialKey = async (
   }
 }
 
-// In-memory mirror keyed by the composite (provider, credential) scope.
-const scopeKey = (
-  provider: ModelProviderId,
-  credentialKey: CredentialKey
-): string => `${provider}:${credentialKey}`
-
+// In-memory mirror keyed by the credential scope.
 const backoffUntilMsByScope = new Map<string, number>()
 
 /** Remaining in-memory backoff in ms (0 when cleared / never set). */
 export const getModelsBackoffMs = (
   nowMs = Date.now(),
-  provider: ModelProviderId = 'github',
   credentialKey: CredentialKey = SHARED_CREDENTIAL_KEY
 ): number => {
-  const backoffUntilMs = backoffUntilMsByScope.get(scopeKey(provider, credentialKey)) ?? 0
+  const backoffUntilMs = backoffUntilMsByScope.get(credentialKey) ?? 0
   return backoffUntilMs > nowMs ? backoffUntilMs - nowMs : 0
 }
 
@@ -123,23 +109,20 @@ export const getModelsBackoffMs = (
 export const recordModelsBackoff = (
   retryAfterMs: number,
   nowMs = Date.now(),
-  provider: ModelProviderId = 'github',
   credentialKey: CredentialKey = SHARED_CREDENTIAL_KEY
 ): void => {
-  const key = scopeKey(provider, credentialKey)
   backoffUntilMsByScope.set(
-    key,
-    Math.max(backoffUntilMsByScope.get(key) ?? 0, nowMs + retryAfterMs)
+    credentialKey,
+    Math.max(backoffUntilMsByScope.get(credentialKey) ?? 0, nowMs + retryAfterMs)
   )
 }
 
 /** Clear the in-memory backoff after a confirmed successful upstream response. */
 export const clearModelsBackoff = (
-  provider?: ModelProviderId,
-  credentialKey: CredentialKey = SHARED_CREDENTIAL_KEY
+  credentialKey?: CredentialKey
 ): void => {
-  if (provider) {
-    backoffUntilMsByScope.delete(scopeKey(provider, credentialKey))
+  if (credentialKey) {
+    backoffUntilMsByScope.delete(credentialKey)
     return
   }
   backoffUntilMsByScope.clear()
@@ -152,26 +135,23 @@ export const clearModelsBackoff = (
 // every function below degrades to the in-memory mirror so tests stay
 // synchronous and hermetic.
 
-// Scoped per (provider, credential) so a window opened by one caller's token is
-// not honoured for a different caller's token (issue #146).
-const backoffCacheKey = (
-  provider: ModelProviderId,
-  credentialKey: CredentialKey
-): string =>
-  `https://models-backoff.tiny.nntin.xyz/${provider}/${credentialKey}/window`
+// Scoped per credential so a window opened for one LiteLLM deployment is not
+// honoured for a different one (issue #146). The literal `litellm` path segment
+// is kept so entries written by per-provider builds simply expire unused.
+const backoffCacheKey = (credentialKey: CredentialKey): string =>
+  `https://models-backoff.tiny.nntin.xyz/litellm/${credentialKey}/window`
 const BACKOFF_UNTIL_HEADER = 'x-models-backoff-until'
 
 const cacheStore = (): Cache | undefined =>
   (globalThis as { caches?: { default?: Cache } }).caches?.default
 
 const readDurableBackoffUntilMs = async (
-  provider: ModelProviderId,
   credentialKey: CredentialKey
 ): Promise<number> => {
   const store = cacheStore()
   if (!store) return 0
   try {
-    const hit = await store.match(backoffCacheKey(provider, credentialKey))
+    const hit = await store.match(backoffCacheKey(credentialKey))
     if (!hit) return 0
     return Number(hit.headers.get(BACKOFF_UNTIL_HEADER) ?? '0')
   } catch {
@@ -187,28 +167,26 @@ const readDurableBackoffUntilMs = async (
  */
 export const getActiveBackoffMs = async (
   nowMs = Date.now(),
-  provider: ModelProviderId = 'github',
   credentialKey: CredentialKey = SHARED_CREDENTIAL_KEY
 ): Promise<number> => {
-  const durableUntil = await readDurableBackoffUntilMs(provider, credentialKey)
+  const durableUntil = await readDurableBackoffUntilMs(credentialKey)
   if (durableUntil > nowMs) {
-    recordModelsBackoff(durableUntil - nowMs, nowMs, provider, credentialKey)
+    recordModelsBackoff(durableUntil - nowMs, nowMs, credentialKey)
   }
-  return getModelsBackoffMs(nowMs, provider, credentialKey)
+  return getModelsBackoffMs(nowMs, credentialKey)
 }
 
 /** Record an upstream retry window in both the in-memory mirror and the colo cache. */
 export const recordBackoff = async (
   retryAfterMs: number,
   nowMs = Date.now(),
-  provider: ModelProviderId = 'github',
   credentialKey: CredentialKey = SHARED_CREDENTIAL_KEY
 ): Promise<void> => {
-  recordModelsBackoff(retryAfterMs, nowMs, provider, credentialKey)
+  recordModelsBackoff(retryAfterMs, nowMs, credentialKey)
   const store = cacheStore()
   if (!store) return
   try {
-    const untilMs = backoffUntilMsByScope.get(scopeKey(provider, credentialKey)) ?? 0
+    const untilMs = backoffUntilMsByScope.get(credentialKey) ?? 0
     const response = new Response('', {
       headers: {
         // Auto-evict the entry once the window elapses.
@@ -216,7 +194,7 @@ export const recordBackoff = async (
         [BACKOFF_UNTIL_HEADER]: String(untilMs)
       }
     })
-    await store.put(backoffCacheKey(provider, credentialKey), response)
+    await store.put(backoffCacheKey(credentialKey), response)
   } catch {
     // Best-effort: a write failure just means the next isolate may re-probe once.
   }
@@ -224,14 +202,13 @@ export const recordBackoff = async (
 
 /** Clear the backoff in both layers after a confirmed successful upstream response. */
 export const clearBackoff = async (
-  provider: ModelProviderId = 'github',
   credentialKey: CredentialKey = SHARED_CREDENTIAL_KEY
 ): Promise<void> => {
-  clearModelsBackoff(provider, credentialKey)
+  clearModelsBackoff(credentialKey)
   const store = cacheStore()
   if (!store) return
   try {
-    await store.delete(backoffCacheKey(provider, credentialKey))
+    await store.delete(backoffCacheKey(credentialKey))
   } catch {
     // Best-effort.
   }

@@ -1,10 +1,10 @@
-import type { GitHubModelEntry, ModelProviderId } from '@tinytinkerer/contracts'
+import type { ModelEntry, ModelProviderId } from '@tinytinkerer/contracts'
 
 export const DEFAULT_MODEL = 'openai/gpt-5'
 export const DEFAULT_MODEL_PROVIDER: ModelProviderId = 'litellm'
 export const DEFAULT_LITELLM_BASE_URL = 'https://litellm.labs.lair.nntin.xyz/'
 
-export const FALLBACK_MODELS: readonly GitHubModelEntry[] = [
+export const FALLBACK_MODELS: readonly ModelEntry[] = [
   {
     provider: DEFAULT_MODEL_PROVIDER,
     id: DEFAULT_MODEL,

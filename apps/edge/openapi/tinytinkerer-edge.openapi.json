@@ -164,7 +164,7 @@
           "models": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/GitHubModelEntry"
+              "$ref": "#/components/schemas/ModelEntry"
             }
           }
         },
@@ -172,7 +172,7 @@
           "models"
         ]
       },
-      "GitHubModelEntry": {
+      "ModelEntry": {
         "type": "object",
         "properties": {
           "provider": {
@@ -185,7 +185,7 @@
             "type": "string"
           },
           "kind": {
-            "$ref": "#/components/schemas/GitHubModelKind"
+            "$ref": "#/components/schemas/ModelKind"
           },
           "name": {
             "type": "string"
@@ -213,7 +213,7 @@
             }
           },
           "limits": {
-            "$ref": "#/components/schemas/GitHubModelLimits"
+            "$ref": "#/components/schemas/ModelLimits"
           },
           "context_length": {
             "type": [
@@ -259,19 +259,17 @@
       "ModelProviderId": {
         "type": "string",
         "enum": [
-          "github",
-          "openrouter",
           "litellm"
         ]
       },
-      "GitHubModelKind": {
+      "ModelKind": {
         "type": "string",
         "enum": [
           "chat",
           "embedding"
         ]
       },
-      "GitHubModelLimits": {
+      "ModelLimits": {
         "type": "object",
         "properties": {
           "max_input_tokens": {

@@ -66,7 +66,7 @@ describe('toRateLimitResponse', () => {
     const result = toRateLimitResponse('', '60')
 
     expect(result.code).toBe('rate_limited')
-    expect(result.error).toBe('GitHub Models rate limit reached')
+    expect(result.error).toBe('LiteLLM rate limit reached')
     expect(result.retryAfterMs).toBe(60_000)
     expect(result.retryAt).toBe(new Date(Date.now() + 60_000).toISOString())
   })
@@ -160,29 +160,25 @@ describe('credential-scoped backoff window (issue #146)', () => {
 
   it('keeps one credential’s backoff from affecting another', () => {
     const nowMs = 3_000_000
-    recordModelsBackoff(60_000, nowMs, 'github', 'cred-a')
+    // Credential keys are derived from the shared LiteLLM key + base URL, so
+    // distinct allowlisted deployments land in distinct buckets.
+    recordModelsBackoff(60_000, nowMs, 'cred-a')
 
     // The credential that hit the limit is backed off...
-    expect(getModelsBackoffMs(nowMs, 'github', 'cred-a')).toBe(60_000)
-    // ...but a different credential on the same provider is not.
-    expect(getModelsBackoffMs(nowMs, 'github', 'cred-b')).toBe(0)
+    expect(getModelsBackoffMs(nowMs, 'cred-a')).toBe(60_000)
+    // ...but a different credential (e.g. another base URL) is not.
+    expect(getModelsBackoffMs(nowMs, 'cred-b')).toBe(0)
   })
 
-  it('also partitions by provider for the same credential', () => {
+  it('clears only the targeted credential scope', () => {
     const nowMs = 3_000_000
-    recordModelsBackoff(60_000, nowMs, 'github', 'cred-a')
-    expect(getModelsBackoffMs(nowMs, 'openrouter', 'cred-a')).toBe(0)
-  })
+    recordModelsBackoff(60_000, nowMs, 'cred-a')
+    recordModelsBackoff(60_000, nowMs, 'cred-b')
 
-  it('clears only the targeted (provider, credential) scope', () => {
-    const nowMs = 3_000_000
-    recordModelsBackoff(60_000, nowMs, 'github', 'cred-a')
-    recordModelsBackoff(60_000, nowMs, 'github', 'cred-b')
+    clearModelsBackoff('cred-a')
 
-    clearModelsBackoff('github', 'cred-a')
-
-    expect(getModelsBackoffMs(nowMs, 'github', 'cred-a')).toBe(0)
-    expect(getModelsBackoffMs(nowMs, 'github', 'cred-b')).toBe(60_000)
+    expect(getModelsBackoffMs(nowMs, 'cred-a')).toBe(0)
+    expect(getModelsBackoffMs(nowMs, 'cred-b')).toBe(60_000)
   })
 })
 

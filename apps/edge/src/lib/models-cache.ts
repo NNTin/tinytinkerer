@@ -1,18 +1,18 @@
-import type { GitHubModelEntry, ModelProviderId } from '@tinytinkerer/contracts'
+import type { ModelEntry } from '@tinytinkerer/contracts'
 
 /**
- * Durable, colo-wide cache for provider model catalogues.
+ * Durable, colo-wide cache for the LiteLLM model catalogue.
  *
- * Each provider's `/v1/models` list is identical for every authenticated caller and changes
+ * The `/v1/models` list is identical for every authenticated caller and changes
  * rarely, so it is highly cacheable. PR #100 only added a *reactive* backoff
  * (see {@link ./rate-limit}) that lives in per-isolate module memory — a fresh
  * Cloudflare isolate resets it to zero, so under any real concurrency we kept
- * re-probing `models.github.ai` and tripping its rate limit (the regression
+ * re-probing the upstream catalogue and tripping its rate limit (the regression
  * behind TINYTINKERER-EDGE-4 / FRONTEND-5).
  *
  * This cache fixes the root cause: it persists across requests and isolates
  * within a Cloudflare colo (via the Workers Cache API), so after the first
- * successful fetch we serve that provider's catalogue from cache and stop hammering
+ * successful fetch we serve the catalogue from cache and stop hammering
  * upstream entirely for {@link FRESH_TTL_MS}. We keep the entry around for
  * {@link STALE_TTL_MS} so that, when upstream is rate limited, we can serve the
  * last-known list instead of cascading a raw 429 to the browser.
@@ -21,21 +21,17 @@ import type { GitHubModelEntry, ModelProviderId } from '@tinytinkerer/contracts'
  * function below degrades to a no-op so callers fall back to a live fetch.
  */
 
-// Stable synthetic key for the GitHub catalogue — each provider has its own
-// global, not-per-token cache entry serving every user in the colo. Exported as
-// a backwards-compatible test seam for seeding GitHub cache entries.
+// Stable synthetic key per LiteLLM deployment (the scope is the encoded base
+// URL) — a global, not-per-token cache entry serving every user in the colo.
+// The literal `litellm` path segment keeps entries written by older
+// per-provider builds expiring unused.
 //
 // Unlike the backoff window (see ./rate-limit), this cache is intentionally NOT
 // scoped per credential for issue #146: the catalogue payload is identical for
 // every authenticated caller, so a shared entry leaks nothing and per-credential
 // keys would only add cache churn for no functional gain.
-export const CACHE_KEY = 'https://models-list-cache.tiny.nntin.xyz/github/v1/models'
-
-const cacheKeyForProvider = (
-  provider: ModelProviderId,
-  scope = ''
-): string =>
-  `https://models-list-cache.tiny.nntin.xyz/${provider}${scope ? `/${scope}` : ''}/v1/models`
+export const cacheKeyForScope = (scope = ''): string =>
+  `https://models-list-cache.tiny.nntin.xyz/litellm${scope ? `/${scope}` : ''}/v1/models`
 
 /** Within this age the cached list is served without touching upstream. */
 const FRESH_TTL_MS = 5 * 60_000
@@ -44,7 +40,7 @@ const STALE_TTL_MS = 60 * 60_000
 
 const CACHED_AT_HEADER = 'x-models-cached-at'
 
-export type CachedModels = { models: GitHubModelEntry[]; ageMs: number }
+export type CachedModels = { models: ModelEntry[]; ageMs: number }
 
 // Cloudflare exposes a non-standard default cache at `caches.default`. The DOM
 // `CacheStorage` lib type (and we don't pull in @cloudflare/workers-types)
@@ -57,7 +53,6 @@ export const isFresh = (ageMs: number): boolean => ageMs <= FRESH_TTL_MS
 
 /** Read the cached catalogue, or `undefined` on a miss / when caching is unavailable. */
 export const readCachedModels = async (
-  provider: ModelProviderId = 'github',
   nowMs = Date.now(),
   scope = ''
 ): Promise<CachedModels | undefined> => {
@@ -65,10 +60,10 @@ export const readCachedModels = async (
   if (!store) return undefined
 
   try {
-    const hit = await store.match(cacheKeyForProvider(provider, scope))
+    const hit = await store.match(cacheKeyForScope(scope))
     if (!hit) return undefined
     const cachedAt = Number(hit.headers.get(CACHED_AT_HEADER) ?? '0')
-    const models = (await hit.json()) as GitHubModelEntry[]
+    const models = (await hit.json()) as ModelEntry[]
     return { models, ageMs: Math.max(0, nowMs - cachedAt) }
   } catch {
     // A malformed/partial cache entry must never break the request.
@@ -78,8 +73,7 @@ export const readCachedModels = async (
 
 /** Store the catalogue so subsequent requests (and isolates) skip the upstream fetch. */
 export const writeCachedModels = async (
-  models: GitHubModelEntry[],
-  provider: ModelProviderId = 'github',
+  models: ModelEntry[],
   nowMs = Date.now(),
   scope = ''
 ): Promise<void> => {
@@ -96,7 +90,7 @@ export const writeCachedModels = async (
         [CACHED_AT_HEADER]: String(nowMs)
       }
     })
-    await store.put(cacheKeyForProvider(provider, scope), response)
+    await store.put(cacheKeyForScope(scope), response)
   } catch {
     // Caching is best-effort; a write failure just means the next request refetches.
   }

@@ -68,8 +68,12 @@ export const chatMessageSchema = z
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>
 
+// LiteLLM is the sole provider — it proxies the upstream LLM providers itself.
+// The enum (and the optional `provider` request field) is kept so the wire
+// shape stays extensible; legacy 'github'/'openrouter' values now fail
+// validation.
 export const modelProviderIdSchema = z
-  .enum(['github', 'openrouter', 'litellm'])
+  .enum(['litellm'])
   .meta({ id: 'ModelProviderId' })
 
 export type ModelProviderId = z.infer<typeof modelProviderIdSchema>
@@ -115,27 +119,27 @@ export const modelsChatResponseSchema = z
 
 export type ModelsChatResponse = z.infer<typeof modelsChatResponseSchema>
 
-export const githubModelKindSchema = z
+export const modelKindSchema = z
   .enum(['chat', 'embedding'])
-  .meta({ id: 'GitHubModelKind' })
+  .meta({ id: 'ModelKind' })
 
-export type GitHubModelKind = z.infer<typeof githubModelKindSchema>
+export type ModelKind = z.infer<typeof modelKindSchema>
 
-export const githubModelLimitsSchema = z
+export const modelLimitsSchema = z
   .object({
     max_input_tokens: z.number().nullable().optional(),
     max_output_tokens: z.number().nullable().optional()
   })
-  .meta({ id: 'GitHubModelLimits' })
+  .meta({ id: 'ModelLimits' })
 
-export type GitHubModelLimits = z.infer<typeof githubModelLimitsSchema>
+export type ModelLimits = z.infer<typeof modelLimitsSchema>
 
-export const githubModelEntrySchema = z
+export const modelEntrySchema = z
   .object({
     provider: modelProviderIdSchema.optional(),
     id: z.string(),
     label: z.string(),
-    kind: githubModelKindSchema.optional(),
+    kind: modelKindSchema.optional(),
     name: z.string().optional(),
     publisher: z.string().optional(),
     registry: z.string().optional(),
@@ -143,7 +147,7 @@ export const githubModelEntrySchema = z
     html_url: z.string().url().optional(),
     version: z.string().optional(),
     capabilities: z.array(z.string()).optional(),
-    limits: githubModelLimitsSchema.optional(),
+    limits: modelLimitsSchema.optional(),
     context_length: z.number().nullable().optional(),
     pricing: z.record(z.string(), z.unknown()).optional(),
     architecture: z.record(z.string(), z.unknown()).optional(),
@@ -152,13 +156,13 @@ export const githubModelEntrySchema = z
     supported_output_modalities: z.array(z.string()).optional(),
     tags: z.array(z.string()).optional()
   })
-  .meta({ id: 'GitHubModelEntry' })
+  .meta({ id: 'ModelEntry' })
 
-export type GitHubModelEntry = z.infer<typeof githubModelEntrySchema>
+export type ModelEntry = z.infer<typeof modelEntrySchema>
 
 export const modelsListResponseSchema = z
   .object({
-    models: z.array(githubModelEntrySchema)
+    models: z.array(modelEntrySchema)
   })
   .meta({ id: 'ModelsListResponse' })
 

@@ -6,13 +6,6 @@ export type Bindings = {
   ALLOWED_ORIGINS?: string
   /** Set to 'true' to allow all origins (dev only). When absent, no CORS header is sent. */
   ALLOW_ALL_ORIGINS?: string
-  GITHUB_MODELS_URL?: string
-  GITHUB_MODELS_CATALOG_URL?: string
-  OPENROUTER_BASE_URL?: string
-  OPENROUTER_MODELS_URL?: string
-  OPENROUTER_HTTP_REFERER?: string
-  OPENROUTER_APP_TITLE?: string
-  OPENROUTER_CATEGORIES?: string
   LITELLM_API_KEY?: string
   LITELLM_BASE_URL?: string
   LITELLM_ALLOWED_BASE_URLS?: string
