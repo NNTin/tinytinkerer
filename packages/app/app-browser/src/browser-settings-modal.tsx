@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type {
   AgentType,
   McpServerConfig,
-  ModelProviderId,
   ServiceStatus
 } from '@tinytinkerer/contracts'
 import { BrandSettingsFooter } from '@tinytinkerer/brand-assets'
@@ -192,7 +191,7 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
     <div className="space-y-3">
       <SectionStatus label="Auth" status={status} />
       <p className="text-xs text-[var(--muted)]">
-        Sign in to enable AI responses via GitHub Models.
+        Sign in with GitHub to enable AI responses.
       </p>
 
       {canStartGitHubOAuth ? (
@@ -209,11 +208,7 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
       {showPat ? (
         <div className="space-y-2">
           <p className="text-xs text-[var(--muted)]">
-            Paste a GitHub PAT with{' '}
-            <code className="rounded bg-stone-100 px-1 font-mono">
-              models:read
-            </code>{' '}
-            scope.
+            Paste a GitHub personal access token.
           </p>
           <div className="flex gap-2">
             <input
@@ -286,34 +281,17 @@ const AGENT_TYPE_OPTIONS: ReadonlyArray<{
   }
 ]
 
-const MODEL_PROVIDER_OPTIONS: ReadonlyArray<{
-  id: ModelProviderId
-  label: string
-}> = [
-  { id: 'github', label: 'GitHub Models' },
-  { id: 'openrouter', label: 'OpenRouter' },
-  { id: 'litellm', label: 'LiteLLM' }
-]
-
-const labelForModelProvider = (provider: ModelProviderId): string =>
-  MODEL_PROVIDER_OPTIONS.find((option) => option.id === provider)?.label ??
-  'Models'
-
 const ModelsSection = ({ status }: { status: ServiceStatus }) => {
   const {
     token,
-    selectedModelProvider,
-    setSelectedModelProvider,
     selectedModel,
     setSelectedModel,
-    openRouterApiKey,
-    setOpenRouterApiKey,
     litellmBaseUrl,
     setLiteLLMBaseUrl,
     models,
     isRefreshingModels,
     modelsRefreshError,
-    refreshGitHubModels,
+    refreshModels,
     agentType,
     setAgentType
   } = useSettingsSurfaceController()
@@ -321,10 +299,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
   const activeAgent = AGENT_TYPE_OPTIONS.find(
     (option) => option.id === agentType
   )
-  const providerToken =
-    selectedModelProvider === 'openrouter' ? openRouterApiKey : token
-  const canRefresh = Boolean(providerToken) && !isRefreshingModels
-  const [openRouterKeyValue, setOpenRouterKeyValue] = useState('')
+  const canRefresh = Boolean(token) && !isRefreshingModels
   const [litellmBaseUrlValue, setLiteLLMBaseUrlValue] =
     useState(litellmBaseUrl)
 
@@ -332,87 +307,14 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
     setLiteLLMBaseUrlValue(litellmBaseUrl)
   }, [litellmBaseUrl])
 
-  const handleSaveOpenRouterKey = async () => {
-    const trimmed = openRouterKeyValue.trim()
-    if (!trimmed) return
-    await setOpenRouterApiKey(trimmed)
-    setOpenRouterKeyValue('')
-  }
-
   const handleSaveLiteLLMBaseUrl = async () => {
     await setLiteLLMBaseUrl(litellmBaseUrlValue.trim() || null)
   }
 
-  const providerLabel = labelForModelProvider(selectedModelProvider)
-
   return (
     <div className="space-y-2">
       <SectionStatus label="Models" status={status} />
-      <label htmlFor="provider-select" className="block text-sm text-stone-800">
-        Provider
-      </label>
-      <select
-        id="provider-select"
-        value={selectedModelProvider}
-        onChange={(event) =>
-          void setSelectedModelProvider(event.target.value as ModelProviderId)
-        }
-        className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
-      >
-        {MODEL_PROVIDER_OPTIONS.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-
-      {selectedModelProvider === 'openrouter' ? (
-        <div className="space-y-2 rounded-lg border border-stone-200 bg-white p-3">
-          <p className="text-xs text-[var(--muted)]">
-            OpenRouter uses your own API key, stored locally in this browser.
-          </p>
-          {openRouterApiKey ? (
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-stone-700">
-                OpenRouter API key saved.
-              </span>
-              <button
-                type="button"
-                onClick={() => void setOpenRouterApiKey(null)}
-                className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:bg-stone-50"
-              >
-                Clear key
-              </button>
-            </div>
-          ) : null}
-          <div className="flex gap-2">
-            <input
-              type="password"
-              autoComplete="off"
-              aria-label="OpenRouter API key"
-              value={openRouterKeyValue}
-              onChange={(event) => setOpenRouterKeyValue(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  void handleSaveOpenRouterKey()
-                }
-              }}
-              placeholder="sk-or-v1-…"
-              className="flex-1 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
-            />
-            <button
-              type="button"
-              onClick={() => void handleSaveOpenRouterKey()}
-              className="inline-flex items-center rounded-md border border-stone-800 bg-stone-900 px-3 py-1.5 text-xs text-white transition-colors hover:bg-stone-700"
-            >
-              Save
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {selectedModelProvider === 'litellm' ? (
-        <div className="space-y-2 rounded-lg border border-stone-200 bg-white p-3">
+      <div className="space-y-2 rounded-lg border border-stone-200 bg-white p-3">
           <p className="text-xs text-[var(--muted)]">
             LiteLLM uses the edge-managed virtual key. Custom URLs must be
             allowlisted by the edge service.
@@ -456,8 +358,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
               Reset to default
             </button>
           ) : null}
-        </div>
-      ) : null}
+      </div>
 
       <div className="flex items-center justify-between gap-3">
         <label htmlFor="model-select" className="block text-sm text-stone-800">
@@ -465,18 +366,10 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
         </label>
         <button
           type="button"
-          aria-label={`Refresh ${providerLabel} models`}
-          title={
-            providerToken
-              ? `Refresh ${providerLabel} models`
-              : selectedModelProvider === 'openrouter'
-                ? 'Add an OpenRouter API key to refresh models'
-                : selectedModelProvider === 'litellm'
-                  ? 'Sign in to refresh LiteLLM models'
-                  : 'Sign in to refresh GitHub Models'
-          }
+          aria-label="Refresh models"
+          title={token ? 'Refresh models' : 'Sign in to refresh models'}
           disabled={!canRefresh}
-          onClick={() => void refreshGitHubModels()}
+          onClick={() => void refreshModels()}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-stone-200 bg-white text-stone-500 transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RotateIcon
@@ -497,11 +390,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
         ))}
       </select>
       <p className="text-xs text-[var(--muted)]">
-        {selectedModelProvider === 'openrouter'
-          ? 'Requires your OpenRouter API key. The model list shows all text-output OpenRouter models.'
-          : selectedModelProvider === 'litellm'
-            ? 'Uses LiteLLM model discovery through the edge proxy.'
-          : 'Requires a GitHub token with Models access.'}
+        Uses LiteLLM model discovery through the edge proxy.
       </p>
       {modelsRefreshError ? (
         <p className="text-xs text-rose-600">{modelsRefreshError}</p>

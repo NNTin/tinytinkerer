@@ -1,14 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  DEFAULT_MODELS_BY_PROVIDER,
-  DEFAULT_LITELLM_BASE_URL,
-  SUPPORTED_MODELS
-} from '@tinytinkerer/app-core'
+import { useCallback, useMemo, useState } from 'react'
+import { DEFAULT_LITELLM_BASE_URL, FALLBACK_MODELS } from '@tinytinkerer/app-core'
 import {
   EDGE_ROUTE_PATHS,
   modelsListResponseSchema,
-  type GitHubModelEntry,
-  type ModelProviderId
+  type GitHubModelEntry
 } from '@tinytinkerer/contracts'
 import { useAuthStore, useSettingsStore } from './app'
 import { useBrowserShellConfig } from './hooks'
@@ -21,11 +16,11 @@ import {
 } from './telemetry/request-telemetry'
 
 export type ModelEntry = GitHubModelEntry
-export type GitHubModelsState = {
+export type ModelsState = {
   models: ModelEntry[]
   isRefreshing: boolean
   refreshError: string | null
-  refreshGitHubModels: () => Promise<ModelEntry[]>
+  refreshModels: () => Promise<ModelEntry[]>
 }
 
 type CacheEntry = { models: ModelEntry[]; cachedAt: number; ttlMs: number }
@@ -36,32 +31,7 @@ const MODELS_CACHE_TTL_MS = 5 * 60_000
 // edge already serves a cached catalogue, so a short window here is enough to
 // stop the frontend hammering it during a rate-limit storm (TINYTINKERER-FRONTEND-5).
 const MODELS_FALLBACK_TTL_MS = 30_000
-const STATIC_MODELS = [...SUPPORTED_MODELS]
-const fallbackModelsForProvider = (provider: ModelProviderId): ModelEntry[] =>
-  provider === 'openrouter'
-    ? [
-        {
-          provider: 'openrouter',
-          id: DEFAULT_MODELS_BY_PROVIDER.openrouter,
-          label: DEFAULT_MODELS_BY_PROVIDER.openrouter,
-          kind: 'chat'
-        }
-      ]
-    : provider === 'litellm'
-      ? [
-          {
-            provider: 'litellm',
-            id: DEFAULT_MODELS_BY_PROVIDER.litellm,
-            label: DEFAULT_MODELS_BY_PROVIDER.litellm,
-            kind: 'chat'
-          }
-        ]
-      : [...STATIC_MODELS]
-
-const loadStaticCatalog = async (): Promise<ModelEntry[]> => {
-  const { loadSupportedChatModels } = await import('@tinytinkerer/app-core')
-  return loadSupportedChatModels()
-}
+const fallbackModels = (): ModelEntry[] => [...FALLBACK_MODELS]
 
 /** Reset the in-memory models cache. Test-only — the cache is module-level. */
 export const clearModelsCache = (): void => modelsCache.clear()
@@ -74,7 +44,7 @@ const hashToken = async (token: string): Promise<string> => {
     .join('')
 }
 
-export const fetchGitHubModels = async (
+export const fetchModels = async (
   edgeBaseUrl: string,
   token: string,
   // An explicit user-triggered refresh (the Settings → Models refresh button)
@@ -88,15 +58,11 @@ export const fetchGitHubModels = async (
   // only this deliberate user action bypasses the read.
   {
     force = false,
-    provider = 'github',
     litellmBaseUrl = DEFAULT_LITELLM_BASE_URL
-  }: { force?: boolean; provider?: ModelProviderId; litellmBaseUrl?: string } = {}
+  }: { force?: boolean; litellmBaseUrl?: string } = {}
 ): Promise<ModelEntry[]> => {
   const tokenHash = await hashToken(token)
-  const cacheKey =
-    provider === 'litellm'
-      ? `${edgeBaseUrl}:${provider}:${litellmBaseUrl}:${tokenHash}`
-      : `${edgeBaseUrl}:${provider}:${tokenHash}`
+  const cacheKey = `${edgeBaseUrl}:litellm:${litellmBaseUrl}:${tokenHash}`
   const cached = modelsCache.get(cacheKey)
   if (!force && cached && Date.now() - cached.cachedAt <= cached.ttlMs)
     return cached.models
@@ -110,7 +76,7 @@ export const fetchGitHubModels = async (
   // serves its own last-known catalogue (TINYTINKERER-FRONTEND-C / FRONTEND-D,
   // TINYTINKERER-FRONTEND-5).
   const fallback = (): ModelEntry[] => {
-    const models = cached?.models ?? fallbackModelsForProvider(provider)
+    const models = cached?.models ?? fallbackModels()
     modelsCache.set(cacheKey, {
       models,
       cachedAt: Date.now(),
@@ -119,10 +85,7 @@ export const fetchGitHubModels = async (
     return models
   }
 
-  const params = new URLSearchParams({ provider })
-  if (provider === 'litellm') {
-    params.set('litellmBaseUrl', litellmBaseUrl)
-  }
+  const params = new URLSearchParams({ provider: 'litellm', litellmBaseUrl })
   const url = `${edgeBaseUrl}${EDGE_ROUTE_PATHS.modelsList}?${params.toString()}`
   const metadata: RequestTelemetryMetadata = {
     area: 'models.list',
@@ -196,55 +159,19 @@ const includeSelectedModel = (
   return [{ id: normalized, label: normalized, kind: 'chat' }, ...models]
 }
 
-export const useGitHubModels = (selectedModel?: string): GitHubModelsState => {
-  const githubToken = useAuthStore((state) => state.token)
-  const provider = useSettingsStore((state) => state.selectedModelProvider)
-  const openRouterApiKey = useSettingsStore((state) => state.openRouterApiKey)
+export const useModels = (selectedModel?: string): ModelsState => {
+  const token = useAuthStore((state) => state.token)
   const litellmBaseUrl = useSettingsStore((state) => state.litellmBaseUrl)
   const { edgeBaseUrl } = useBrowserShellConfig()
-  const [models, setModels] = useState<ModelEntry[]>(fallbackModelsForProvider(provider))
+  const [models, setModels] = useState<ModelEntry[]>(fallbackModels())
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
-  const activeProviderRef = useRef(provider)
 
-  useEffect(() => {
-    activeProviderRef.current = provider
-    setIsRefreshing(false)
-    setRefreshError(null)
-    let cancelled = false
-    if (provider !== 'github') {
-      setModels(fallbackModelsForProvider(provider))
-      return () => {
-        cancelled = true
-      }
-    }
-    loadStaticCatalog()
-      .then((catalogModels) => {
-        if (!cancelled && catalogModels.length > 0) {
-          setModels(catalogModels)
-        }
-      })
-      // The dynamic import can fail (bundler/JSON loading issue). Keep the
-      // built-in STATIC_MODELS defaults rather than throwing an unhandled
-      // rejection — a real refresh still surfaces errors via refreshError.
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [provider])
-
-  const refreshGitHubModels = useCallback(async (): Promise<ModelEntry[]> => {
-    const token = provider === 'openrouter' ? openRouterApiKey : githubToken
+  const refreshModels = useCallback(async (): Promise<ModelEntry[]> => {
     if (!token) {
-      const nextModels = fallbackModelsForProvider(provider)
+      const nextModels = fallbackModels()
       setModels(nextModels)
-      setRefreshError(
-        provider === 'openrouter'
-          ? 'Add an OpenRouter API key to refresh models.'
-          : provider === 'litellm'
-            ? 'Sign in with GitHub to refresh LiteLLM models.'
-          : 'Sign in with GitHub to refresh models.'
-      )
+      setRefreshError('Sign in with GitHub to refresh models.')
       return includeSelectedModel(nextModels, selectedModel)
     }
 
@@ -253,36 +180,21 @@ export const useGitHubModels = (selectedModel?: string): GitHubModelsState => {
     try {
       // Force a real re-probe: this is a deliberate user action, so honour it
       // instead of returning the module-level cache from a previous click.
-      const nextModels = await fetchGitHubModels(edgeBaseUrl, token, {
+      const nextModels = await fetchModels(edgeBaseUrl, token, {
         force: true,
-        provider,
         litellmBaseUrl
       })
-      if (activeProviderRef.current === provider) {
-        setModels(nextModels)
-      }
+      setModels(nextModels)
       return includeSelectedModel(nextModels, selectedModel)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to refresh models.'
-      if (activeProviderRef.current === provider) {
-        setRefreshError(message)
-      }
+      setRefreshError(message)
       return includeSelectedModel(models, selectedModel)
     } finally {
-      if (activeProviderRef.current === provider) {
-        setIsRefreshing(false)
-      }
+      setIsRefreshing(false)
     }
-  }, [
-    edgeBaseUrl,
-    githubToken,
-    litellmBaseUrl,
-    models,
-    openRouterApiKey,
-    provider,
-    selectedModel
-  ])
+  }, [edgeBaseUrl, litellmBaseUrl, models, selectedModel, token])
 
   const visibleModels = useMemo(
     () => includeSelectedModel(models, selectedModel),
@@ -293,6 +205,6 @@ export const useGitHubModels = (selectedModel?: string): GitHubModelsState => {
     models: visibleModels,
     isRefreshing,
     refreshError,
-    refreshGitHubModels
+    refreshModels
   }
 }

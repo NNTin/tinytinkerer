@@ -23,13 +23,7 @@ export const createBrowserRuntimeFactory = (options: {
         baseUrl: options.shell.config.edgeBaseUrl,
         searchEnabled:
           settings.searchEnabled && isSearchReady(options.statusStore.getState()),
-        getProvider: () => options.settingsStore.getState().selectedModelProvider,
-        getToken: () => {
-          const current = options.settingsStore.getState()
-          return current.selectedModelProvider === 'openrouter'
-            ? current.openRouterApiKey
-            : options.authStore.getState().token
-        },
+        getToken: () => options.authStore.getState().token,
         getModel: () => options.settingsStore.getState().selectedModel,
         getLiteLLMBaseUrl: () =>
           options.settingsStore.getState().litellmBaseUrl,

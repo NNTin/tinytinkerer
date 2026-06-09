@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { githubModelEntrySchema } from '@tinytinkerer/contracts'
 import type {
   ContentDocument,
   ChatEvent,
@@ -12,27 +11,21 @@ import {
   buildConversationHistory,
   buildTurns,
   canSendPrompt,
-  cooldownKeyForProvider,
   DEFAULT_LITELLM_BASE_URL,
   DEFAULT_MODEL,
   DEFAULT_MODEL_PROVIDER,
-  DEFAULT_MODELS_BY_PROVIDER,
   defaultChatState,
   defaultSettingsState,
   inferPlan,
   initializeChatState,
   loadCooldown,
-  loadGitHubModelsCatalog,
-  loadSupportedEmbeddingModels,
   loadSettingsState,
   normalizeLiteLLMBaseUrl,
-  normalizeModelProvider,
   normalizeSelectedModel,
-  normalizeSelectedModelForProvider,
   persistBooleanPreference,
   persistLiteLLMBaseUrl,
-  persistOpenRouterApiKey,
-  persistSelectedModelProvider,
+  persistSelectedModel,
+  RATE_LIMIT_COOLDOWN_KEY,
   resolveActivePluginIds,
   SETTINGS_KEYS
 } from '../src/index.js'
@@ -81,36 +74,15 @@ describe('app-core helpers', () => {
     )
   })
 
-  it('defaults model provider to GitHub and normalizes provider-specific models', () => {
-    expect(DEFAULT_MODEL_PROVIDER).toBe('github')
-    expect(normalizeModelProvider(undefined)).toBe('github')
-    expect(normalizeModelProvider('openrouter')).toBe('openrouter')
-    expect(normalizeModelProvider('litellm')).toBe('litellm')
-    expect(normalizeSelectedModelForProvider('openrouter', '')).toBe(
-      DEFAULT_MODELS_BY_PROVIDER.openrouter
-    )
-    expect(normalizeSelectedModelForProvider('litellm', '')).toBe(
-      DEFAULT_MODELS_BY_PROVIDER.litellm
-    )
+  it('uses LiteLLM as the sole model provider and normalizes the base URL', () => {
+    expect(DEFAULT_MODEL_PROVIDER).toBe('litellm')
+    expect(DEFAULT_MODEL).toBe('openai/gpt-5')
     expect(normalizeLiteLLMBaseUrl('https://litellm.example.com')).toBe(
       'https://litellm.example.com/'
     )
     expect(normalizeLiteLLMBaseUrl('http://litellm.example.com')).toBe(
       DEFAULT_LITELLM_BASE_URL
     )
-  })
-
-  it('keeps a checked-in GitHub Models catalog with chat and embedding models', async () => {
-    const catalog = await loadGitHubModelsCatalog()
-    const embeddingModels = await loadSupportedEmbeddingModels()
-    expect(() =>
-      catalog.forEach((model) => githubModelEntrySchema.parse(model))
-    ).not.toThrow()
-    expect(DEFAULT_MODEL).toBe('openai/gpt-5')
-    expect(catalog.some((model) => model.id === DEFAULT_MODEL)).toBe(true)
-    expect(
-      embeddingModels.some((model) => model.id.includes('/text-embedding'))
-    ).toBe(true)
   })
 
   it('builds conversation history from completed turns only', () => {
@@ -508,34 +480,61 @@ describe('app-core helpers', () => {
     expect(state.webSpeechEnabled).toBe(true)
   })
 
-  it('hydrates model provider, per-provider selected models, OpenRouter API key, and LiteLLM base URL', async () => {
+  it('migrates the legacy per-provider model map and clears the orphaned OpenRouter key', async () => {
+    const writes: Array<{ key: string; value: string }> = []
     const state = await loadSettingsState({
       get: (key) =>
         Promise.resolve(
-          key === SETTINGS_KEYS.selectedModelProvider
-            ? 'litellm'
-            : key === SETTINGS_KEYS.selectedModelsByProvider
-              ? JSON.stringify({
-                  github: 'openai/gpt-5',
-                  openrouter: 'anthropic/claude-3.5-sonnet',
-                  litellm: 'openai/gpt-4.1-mini'
-                })
-              : key === SETTINGS_KEYS.openRouterApiKey
-                ? 'sk-or-v1-test'
-                : key === SETTINGS_KEYS.litellmBaseUrl
-                  ? 'https://litellm.example.com'
-                  : undefined
+          key === 'settings_selected_models_by_provider'
+            ? JSON.stringify({
+                github: 'openai/gpt-5',
+                openrouter: 'anthropic/claude-3.5-sonnet',
+                litellm: 'openai/gpt-4.1-mini'
+              })
+            : key === 'settings_openrouter_api_key'
+              ? 'sk-or-v1-test'
+              : key === SETTINGS_KEYS.litellmBaseUrl
+                ? 'https://litellm.example.com'
+                : undefined
+        ),
+      set: (key, value) => {
+        writes.push({ key, value })
+        return Promise.resolve()
+      }
+    })
+
+    expect(state.selectedModel).toBe('openai/gpt-4.1-mini')
+    expect(state.litellmBaseUrl).toBe('https://litellm.example.com/')
+    // The migrated pick is written forward; legacy keys are emptied so a stale
+    // map entry can never override later model changes and the orphaned
+    // OpenRouter credential does not linger in storage.
+    expect(writes).toContainEqual({
+      key: SETTINGS_KEYS.selectedModel,
+      value: 'openai/gpt-4.1-mini'
+    })
+    expect(writes).toContainEqual({
+      key: 'settings_selected_models_by_provider',
+      value: ''
+    })
+    expect(writes).toContainEqual({
+      key: 'settings_openrouter_api_key',
+      value: ''
+    })
+  })
+
+  it('keeps the stored selected model when no legacy per-provider map exists', async () => {
+    const state = await loadSettingsState({
+      get: (key) =>
+        Promise.resolve(
+          key === SETTINGS_KEYS.selectedModel ? 'openai/gpt-4o' : undefined
         ),
       set: () => Promise.resolve()
     })
 
-    expect(state.selectedModelProvider).toBe('litellm')
-    expect(state.selectedModel).toBe('openai/gpt-4.1-mini')
-    expect(state.openRouterApiKey).toBe('sk-or-v1-test')
-    expect(state.litellmBaseUrl).toBe('https://litellm.example.com/')
+    expect(state.selectedModel).toBe('openai/gpt-4o')
   })
 
-  it('persists model provider, OpenRouter API key, and LiteLLM base URL', async () => {
+  it('persists the selected model and LiteLLM base URL', async () => {
     const writes: Array<{ key: string; value: string }> = []
     const preferences = {
       get: () => Promise.resolve(undefined),
@@ -545,13 +544,11 @@ describe('app-core helpers', () => {
       }
     }
 
-    await persistSelectedModelProvider(preferences, 'openrouter')
-    await persistOpenRouterApiKey(preferences, '  sk-or-v1-test  ')
+    await persistSelectedModel(preferences, 'openai/gpt-4.1-mini')
     await persistLiteLLMBaseUrl(preferences, 'https://litellm.example.com')
 
     expect(writes).toEqual([
-      { key: SETTINGS_KEYS.selectedModelProvider, value: 'openrouter' },
-      { key: SETTINGS_KEYS.openRouterApiKey, value: 'sk-or-v1-test' },
+      { key: SETTINGS_KEYS.selectedModel, value: 'openai/gpt-4.1-mini' },
       {
         key: SETTINGS_KEYS.litellmBaseUrl,
         value: 'https://litellm.example.com/'
@@ -703,7 +700,7 @@ describe('app-core helpers', () => {
   })
 })
 
-describe('per-provider rate-limit cooldown (issue #146)', () => {
+describe('rate-limit cooldown', () => {
   const makePreferences = (initial: Record<string, string> = {}) => {
     const store = new Map<string, string>(Object.entries(initial))
     return {
@@ -732,57 +729,43 @@ describe('per-provider rate-limit cooldown (issue #146)', () => {
       autoRetry: false
     })
 
-  it('derives a distinct cooldown key per provider', () => {
-    expect(cooldownKeyForProvider('github')).not.toBe(
-      cooldownKeyForProvider('openrouter')
-    )
-    expect(cooldownKeyForProvider('github')).toContain('github')
-  })
-
-  it('records a 429 cooldown only under the active provider', async () => {
+  it('records a 429 cooldown under the litellm-scoped key', async () => {
     const prefs = makePreferences()
     const future = new Date(Date.now() + 60_000).toISOString()
 
-    const result = await applyRateLimitEvent(waitingEvent(future), prefs, 'github')
+    const result = await applyRateLimitEvent(waitingEvent(future), prefs)
 
     expect(result?.cooldownUntil).toBe(future)
-    expect(await loadCooldown(prefs, 'github')).toBe(future)
-    // A different provider draws on a separate quota — it must stay sendable.
-    expect(await loadCooldown(prefs, 'openrouter')).toBeUndefined()
+    expect(RATE_LIMIT_COOLDOWN_KEY).toBe('rate_limit_cooldown_until:litellm')
+    expect(await loadCooldown(prefs)).toBe(future)
   })
 
-  it('clears only the active provider on recovery', async () => {
+  it('clears the cooldown on recovery', async () => {
     const future = new Date(Date.now() + 60_000).toISOString()
     const prefs = makePreferences({
-      [cooldownKeyForProvider('github')]: future,
-      [cooldownKeyForProvider('openrouter')]: future
+      [RATE_LIMIT_COOLDOWN_KEY]: future
     })
 
     await applyRateLimitEvent(
       event('rate.limit.recovered', { retryAt: future }),
-      prefs,
-      'github'
+      prefs
     )
 
-    expect(await loadCooldown(prefs, 'github')).toBeUndefined()
-    expect(await loadCooldown(prefs, 'openrouter')).toBe(future)
+    expect(await loadCooldown(prefs)).toBeUndefined()
   })
 
-  it('initializeChatState loads only the requested provider’s cooldown', async () => {
+  it('initializeChatState loads the stored cooldown and ignores legacy provider-scoped keys', async () => {
     const future = new Date(Date.now() + 60_000).toISOString()
     const prefs = makePreferences({
-      [cooldownKeyForProvider('openrouter')]: future
+      [RATE_LIMIT_COOLDOWN_KEY]: future,
+      // Values written by the removed GitHub Models/OpenRouter providers are
+      // simply orphaned; they self-expire without migration.
+      'rate_limit_cooldown_until:github': future,
+      'rate_limit_cooldown_until:openrouter': future
     })
     const conversations = makeConversations()
 
-    const githubState = await initializeChatState(conversations, prefs, 'github')
-    expect(githubState.cooldownUntil).toBeUndefined()
-
-    const openrouterState = await initializeChatState(
-      conversations,
-      prefs,
-      'openrouter'
-    )
-    expect(openrouterState.cooldownUntil).toBe(future)
+    const state = await initializeChatState(conversations, prefs)
+    expect(state.cooldownUntil).toBe(future)
   })
 })

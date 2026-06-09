@@ -6,7 +6,6 @@ import {
   type ChatEvent,
   type McpDiscoveryResult,
   type McpServerConfig,
-  type ModelProviderId,
   type PluginActivationState,
   type SystemStatus
 } from '@tinytinkerer/contracts'
@@ -21,7 +20,7 @@ import {
 } from './app'
 import { formatCooldown, useChatCooldown, useGitHubOAuth } from './hooks'
 import { useGitHubUser } from './github-user'
-import { useGitHubModels, type ModelEntry } from './github-models'
+import { useModels, type ModelEntry } from './models'
 import { startStatusPolling } from './status'
 import { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 import { createEdgeFetch } from './runtime/edge-fetch'
@@ -145,13 +144,9 @@ export type SettingsSurfaceController = {
   models: ModelEntry[]
   isRefreshingModels: boolean
   modelsRefreshError: string | null
-  refreshGitHubModels: () => Promise<ModelEntry[]>
-  selectedModelProvider: ModelProviderId
-  setSelectedModelProvider: (provider: ModelProviderId) => Promise<void>
+  refreshModels: () => Promise<ModelEntry[]>
   selectedModel: string
   setSelectedModel: (model: string) => Promise<void>
-  openRouterApiKey: string | null
-  setOpenRouterApiKey: (apiKey: string | null) => Promise<void>
   litellmBaseUrl: string
   setLiteLLMBaseUrl: (baseUrl: string | null) => Promise<void>
   agentType: AgentType
@@ -206,24 +201,14 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
       cancelled = true
     }
   }, [])
-  const selectedModelProvider = useSettingsStore(
-    (state) => state.selectedModelProvider
-  )
-  const setSelectedModelProvider = useSettingsStore(
-    (state) => state.setSelectedModelProvider
-  )
   const selectedModel = useSettingsStore((state) => state.selectedModel)
   const {
     models,
     isRefreshing: isRefreshingModels,
     refreshError: modelsRefreshError,
-    refreshGitHubModels
-  } = useGitHubModels(selectedModel)
+    refreshModels
+  } = useModels(selectedModel)
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
-  const openRouterApiKey = useSettingsStore((state) => state.openRouterApiKey)
-  const setOpenRouterApiKey = useSettingsStore(
-    (state) => state.setOpenRouterApiKey
-  )
   const litellmBaseUrl = useSettingsStore((state) => state.litellmBaseUrl)
   const setLiteLLMBaseUrl = useSettingsStore(
     (state) => state.setLiteLLMBaseUrl
@@ -344,13 +329,9 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     models,
     isRefreshingModels,
     modelsRefreshError,
-    refreshGitHubModels,
-    selectedModelProvider,
-    setSelectedModelProvider,
+    refreshModels,
     selectedModel,
     setSelectedModel,
-    openRouterApiKey,
-    setOpenRouterApiKey,
     litellmBaseUrl,
     setLiteLLMBaseUrl,
     agentType,

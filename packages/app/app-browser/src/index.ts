@@ -9,8 +9,8 @@ export {
 export { TINYTINKERER_BRAND_ASSET_URLS } from '@tinytinkerer/brand-assets'
 export { useGitHubUser } from './github-user'
 export type { GitHubUser } from './github-user'
-export { useGitHubModels } from './github-models'
-export type { GitHubModelsState, ModelEntry } from './github-models'
+export { useModels } from './models'
+export type { ModelsState, ModelEntry } from './models'
 export {
   AppBrowserProvider,
   createBrowserApp,
@@ -58,7 +58,7 @@ export { createBrowserShell } from './shell'
 export { isSearchReady, OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 export {
   DEFAULT_MODEL,
-  SUPPORTED_MODELS,
+  FALLBACK_MODELS,
   buildTurns,
   normalizeSelectedModel
 } from '@tinytinkerer/app-core'

@@ -53,16 +53,11 @@ const makeShell = (): BrowserShell =>
   }) as unknown as BrowserShell
 
 const makeAuthStore = (): AuthStore => ({ getState: vi.fn(() => ({ token: 'tok' })) }) as unknown as AuthStore
-// A real zustand store so chat-store's subscribe()/getState() work and tests can
-// simulate a provider switch via setState.
-const makeSettingsStore = (
-  initial: { selectedModelProvider?: string } = {}
-): SettingsStore =>
+// A real zustand store so chat-store's getState() works.
+const makeSettingsStore = (): SettingsStore =>
   createStore(() => ({
     searchEnabled: true,
-    selectedModel: 'gpt-4o',
-    selectedModelProvider: 'github',
-    ...initial
+    selectedModel: 'gpt-4o'
   })) as unknown as SettingsStore
 const makeStatusStore = (): StatusStore => ({ getState: vi.fn(() => ({ hydrated: true, status: { auth: { state: 'ready', detail: '' }, models: { state: 'ready', detail: '' }, search: { state: 'ready', detail: '' } } })) }) as unknown as StatusStore
 
@@ -132,48 +127,4 @@ describe('createChatStore', () => {
     expect(store.getState().isRunning).toBe(false)
   })
 
-  it('forwards the selected provider to executeChatPrompt (issue #146)', async () => {
-    mockExecuteChatPrompt.mockResolvedValue(undefined)
-
-    const store = createChatStore({
-      shell: makeShell(),
-      authStore: makeAuthStore(),
-      settingsStore: makeSettingsStore({ selectedModelProvider: 'openrouter' }),
-      statusStore: makeStatusStore(),
-    })
-
-    store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: false })
-
-    await store.getState().sendPrompt('hello')
-
-    expect(mockExecuteChatPrompt).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'openrouter' })
-    )
-  })
-
-  it('refreshes cooldownUntil from the new provider on a provider switch (issue #146)', async () => {
-    const future = new Date(Date.now() + 60_000).toISOString()
-    const shell = makeShell()
-    shell.preferences = {
-      get: vi.fn((key: string) =>
-        Promise.resolve(key.endsWith(':openrouter') ? future : undefined)
-      ),
-      set: vi.fn(() => Promise.resolve()),
-    }
-
-    const settingsStore = makeSettingsStore({ selectedModelProvider: 'github' })
-    const store = createChatStore({
-      shell,
-      authStore: makeAuthStore(),
-      settingsStore,
-      statusStore: makeStatusStore(),
-    })
-
-    // Switching to OpenRouter, which has an active cooldown, must surface it.
-    settingsStore.setState({ selectedModelProvider: 'openrouter' })
-
-    await vi.waitFor(() => {
-      expect(store.getState().cooldownUntil).toBe(future)
-    })
-  })
 })

@@ -53,6 +53,20 @@ export default defineConfig({
           if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router')) {
             return 'react-vendor'
           }
+          if (id.includes('node_modules/zod/')) {
+            return 'zod-vendor'
+          }
+          // Keep the core workspace packages out of the startup entry chunk.
+          // They used to fall into a shared chunk naturally (app-core had a
+          // second dynamic importer); with LiteLLM as the sole provider that
+          // importer is gone, so the split is pinned explicitly.
+          if (
+            id.includes('packages/app/app-core/') ||
+            id.includes('packages/app/agent-core/') ||
+            id.includes('packages/shared/contracts/')
+          ) {
+            return 'app-core'
+          }
           if (id.includes('node_modules/@sentry/') || id.includes('node_modules/@sentry-internal/')) {
             return 'sentry-vendor'
           }

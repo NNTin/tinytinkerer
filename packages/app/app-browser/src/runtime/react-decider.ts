@@ -7,7 +7,6 @@ import {
   EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
   reactDecisionSchema,
-  type ModelProviderId,
   type ReActDecision
 } from '@tinytinkerer/contracts'
 import type { EdgeFetch } from './edge-fetch'
@@ -136,7 +135,6 @@ export const decideNextAction = async (
   model: string,
   edgeFetch: EdgeFetch,
   signal?: AbortSignal,
-  provider?: ModelProviderId,
   litellmBaseUrl?: string
 ): Promise<ReActDecision> => {
   const systemPrompt = buildDecisionSystemPrompt(tools)
@@ -150,8 +148,8 @@ export const decideNextAction = async (
   const response = await edgeFetch(
     EDGE_ROUTE_PATHS.modelsChat,
     {
-      ...(provider ? { provider } : {}),
-      ...(provider === 'litellm' && litellmBaseUrl ? { litellmBaseUrl } : {}),
+      provider: 'litellm',
+      ...(litellmBaseUrl ? { litellmBaseUrl } : {}),
       model,
       stream: false,
       messages
@@ -203,7 +201,6 @@ export async function* streamDecision(
   model: string,
   edgeFetch: EdgeFetch,
   signal?: AbortSignal,
-  provider?: ModelProviderId,
   litellmBaseUrl?: string
 ): AsyncGenerator<DecisionChunk> {
   const systemPrompt = buildDecisionSystemPrompt(tools)
@@ -217,8 +214,8 @@ export async function* streamDecision(
   const response = await edgeFetch(
     EDGE_ROUTE_PATHS.modelsChat,
     {
-      ...(provider ? { provider } : {}),
-      ...(provider === 'litellm' && litellmBaseUrl ? { litellmBaseUrl } : {}),
+      provider: 'litellm',
+      ...(litellmBaseUrl ? { litellmBaseUrl } : {}),
       model,
       stream: true,
       messages

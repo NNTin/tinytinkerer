@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { llmPlan, type PlannerToolDescriptor } from '../src/runtime/mcp-planner.js'
-import { GitHubModelsProvider } from '../src/runtime/github-models-provider.js'
+import { LiteLLMProvider } from '../src/runtime/litellm-provider.js'
 import type { EdgeFetch } from '../src/runtime/edge-fetch.js'
 
 const descriptor: PlannerToolDescriptor = {
@@ -37,8 +37,9 @@ describe('llmPlan', () => {
     await llmPlan('What is the weather?', [], [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
 
     expect(edgeFetch).toHaveBeenCalledOnce()
-    const [path, body] = (edgeFetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, { model: string; messages: Array<{ role: string; content: string }> }]
+    const [path, body] = (edgeFetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, { provider: string; model: string; messages: Array<{ role: string; content: string }> }]
     expect(path).toBe('/api/models/chat')
+    expect(body.provider).toBe('litellm')
     expect(body.model).toBe('openai/gpt-4.1-mini')
 
     const systemMsg = body.messages.find((m) => m.role === 'system')
@@ -135,7 +136,7 @@ describe('llmPlan', () => {
   })
 })
 
-describe('GitHubModelsProvider.plan — LLM branch', () => {
+describe('LiteLLMProvider.plan — LLM branch', () => {
   it('calls llmPlan when a token is present and MCP tools are in allToolDescriptors', async () => {
     const planJson = JSON.stringify({
       complexity: 'low',
@@ -148,7 +149,7 @@ describe('GitHubModelsProvider.plan — LLM branch', () => {
       )
     )
 
-    const provider = new GitHubModelsProvider({
+    const provider = new LiteLLMProvider({
       baseUrl: 'http://edge.local',
       getToken: () => 'my-token',
       allToolDescriptors: [descriptor]
@@ -169,7 +170,7 @@ describe('GitHubModelsProvider.plan — LLM branch', () => {
       vi.fn().mockRejectedValue(new Error('Network error'))
     )
 
-    const provider = new GitHubModelsProvider({
+    const provider = new LiteLLMProvider({
       baseUrl: 'http://edge.local',
       getToken: () => 'my-token',
       allToolDescriptors: [descriptor]
@@ -196,7 +197,7 @@ describe('GitHubModelsProvider.plan — LLM branch', () => {
       )
     )
 
-    const provider = new GitHubModelsProvider({
+    const provider = new LiteLLMProvider({
       baseUrl: 'http://edge.local',
       getToken: () => 'my-token',
       allToolDescriptors: [descriptor]
@@ -215,7 +216,7 @@ describe('GitHubModelsProvider.plan — LLM branch', () => {
       vi.fn().mockRejectedValue(abortError)
     )
 
-    const provider = new GitHubModelsProvider({
+    const provider = new LiteLLMProvider({
       baseUrl: 'http://edge.local',
       getToken: () => 'my-token',
       allToolDescriptors: [descriptor]
@@ -234,7 +235,7 @@ describe('GitHubModelsProvider.plan — LLM branch', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const provider = new GitHubModelsProvider({
+    const provider = new LiteLLMProvider({
       baseUrl: 'http://edge.local',
       getToken: () => 'my-token',
       allToolDescriptors: [{ id: 'web-search', description: 'Search the web', inputSchema: {} }]
@@ -252,7 +253,7 @@ describe('GitHubModelsProvider.plan — LLM branch', () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    const provider = new GitHubModelsProvider({
+    const provider = new LiteLLMProvider({
       baseUrl: 'http://edge.local',
       getToken: () => null,
       allToolDescriptors: [descriptor]

@@ -133,7 +133,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     models: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
     isRefreshingModels: false,
     modelsRefreshError: null,
-    refreshGitHubModels: vi.fn(),
+    refreshModels: vi.fn(),
     selectedModel: mockSettingsState.selectedModel,
     setSelectedModel: mockSettingsState.setSelectedModel,
     searchEnabled: mockSettingsState.searchEnabled,

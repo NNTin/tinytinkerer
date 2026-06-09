@@ -1,7 +1,7 @@
 import type { SynthesisChunk } from '@tinytinkerer/app-core'
 
 // Shared Server-Sent-Events / inline-think parsing used by both the chat
-// synthesizer (github-models-provider) and the ReAct decision streamer
+// synthesizer (litellm-provider) and the ReAct decision streamer
 // (react-decider). Kept in its own module so neither imports the other, which
 // would create a circular module dependency.
 

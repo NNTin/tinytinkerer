@@ -1,0 +1,113 @@
+// @vitest-environment jsdom
+import { act, cleanup, renderHook } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { FALLBACK_MODELS } from '@tinytinkerer/app-core'
+
+const mockState = vi.hoisted(
+  (): {
+    auth: { token: string | null }
+    settings: { litellmBaseUrl: string }
+  } => ({
+    auth: { token: null },
+    settings: { litellmBaseUrl: 'https://litellm.labs.lair.nntin.xyz/' }
+  })
+)
+
+vi.mock('../src/app.js', () => ({
+  useAuthStore: <T,>(selector: (state: typeof mockState.auth) => T): T =>
+    selector(mockState.auth),
+  useSettingsStore: <T,>(selector: (state: typeof mockState.settings) => T): T =>
+    selector(mockState.settings)
+}))
+
+vi.mock('../src/hooks.js', () => ({
+  useBrowserShellConfig: () => ({ edgeBaseUrl: 'https://edge.example.com' })
+}))
+
+vi.mock('../src/telemetry/telemetry.js', async () => {
+  const actual = await vi.importActual<typeof import('../src/telemetry/telemetry.js')>(
+    '../src/telemetry/telemetry.js'
+  )
+  return {
+    ...actual,
+    getTelemetryHeaders: () => ({})
+  }
+})
+
+import { clearModelsCache, useModels } from '../src/models.js'
+
+describe('useModels', () => {
+  beforeEach(() => {
+    mockState.auth.token = null
+    mockState.settings.litellmBaseUrl = 'https://litellm.labs.lair.nntin.xyz/'
+    clearModelsCache()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it('serves the built-in fallback on mount without a network call', () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const { result } = renderHook(() => useModels('openai/gpt-5'))
+
+    expect(result.current.models).toEqual([...FALLBACK_MODELS])
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('asks the user to sign in when refreshing without a token', async () => {
+    const { result } = renderHook(() => useModels('openai/gpt-5'))
+
+    await act(async () => {
+      await result.current.refreshModels()
+    })
+
+    expect(result.current.refreshError).toBe(
+      'Sign in with GitHub to refresh models.'
+    )
+  })
+
+  it('refreshes against the edge with the litellm provider and base URL', async () => {
+    mockState.auth.token = 'gh-token'
+    const models = [
+      {
+        provider: 'litellm',
+        id: 'openai/gpt-4.1-mini',
+        label: 'openai/gpt-4.1-mini',
+        kind: 'chat'
+      }
+    ]
+    let capturedUrl = ''
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      capturedUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url
+      return Promise.resolve(
+        new Response(JSON.stringify({ models }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const { result } = renderHook(() => useModels())
+
+    await act(async () => {
+      await result.current.refreshModels()
+    })
+
+    expect(result.current.refreshError).toBeNull()
+    expect(result.current.models).toEqual(models)
+    expect(capturedUrl).toContain('provider=litellm')
+    expect(capturedUrl).toContain(
+      'litellmBaseUrl=https%3A%2F%2Flitellm.labs.lair.nntin.xyz%2F'
+    )
+  })
+})

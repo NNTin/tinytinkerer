@@ -1,6 +1,5 @@
-import type { ChatEvent, ModelProviderId } from '@tinytinkerer/contracts'
+import type { ChatEvent } from '@tinytinkerer/contracts'
 import { buildConversationHistory } from './history'
-import { DEFAULT_MODEL_PROVIDER } from './models'
 import { activeCooldown } from './projections'
 import type {
   ChatRuntimeFactory,
@@ -10,29 +9,23 @@ import type {
   PreferencesStore
 } from './ports'
 
-// Rate-limit cooldowns are scoped per provider, NOT globally: each provider
-// (GitHub Models, OpenRouter) draws on a separate upstream quota, so a 429 from
-// one must not block sending with the other (issue #146). The cooldown is
-// stored under a per-provider preference key derived from this legacy base.
-export const RATE_LIMIT_COOLDOWN_KEY = 'rate_limit_cooldown_until'
-
-export const cooldownKeyForProvider = (provider: ModelProviderId): string =>
-  `${RATE_LIMIT_COOLDOWN_KEY}:${provider}`
+// Cooldowns were once scoped per provider (issue #146: GitHub Models vs
+// OpenRouter drew on separate upstream quotas). With LiteLLM as the sole
+// provider a single key suffices; the `:litellm` suffix is kept so values
+// written by per-provider builds carry over. Old `:github`/`:openrouter`
+// values are simply ignored — cooldowns are short-lived (≤ ~60s), so any
+// orphaned value self-expires without migration.
+export const RATE_LIMIT_COOLDOWN_KEY = 'rate_limit_cooldown_until:litellm'
 
 /**
- * Read the active (non-expired) cooldown for a provider, or `undefined`. Shared
- * by {@link initializeChatState} and the chat store's provider-switch refresh so
- * send gating always reflects the selected provider's cooldown.
- *
- * Note on upgrades: a value stored under the old flat `RATE_LIMIT_COOLDOWN_KEY`
- * (pre per-provider scoping) is simply ignored — cooldowns are short-lived
- * (≤ ~60s), so any orphaned flat value self-expires without migration.
+ * Read the active (non-expired) cooldown, or `undefined`. Shared by
+ * {@link initializeChatState} and the chat store so send gating always
+ * reflects the current cooldown.
  */
 export const loadCooldown = async (
-  preferences: PreferencesStore,
-  provider: ModelProviderId = DEFAULT_MODEL_PROVIDER
+  preferences: PreferencesStore
 ): Promise<string | undefined> =>
-  activeCooldown(await preferences.get(cooldownKeyForProvider(provider)))
+  activeCooldown(await preferences.get(RATE_LIMIT_COOLDOWN_KEY))
 
 export type ChatStateSnapshot = {
   conversationId: string | undefined
@@ -52,15 +45,14 @@ export const defaultChatState = (): ChatStateSnapshot => ({
 
 export const initializeChatState = async (
   conversations: ConversationRepository,
-  preferences: PreferencesStore,
-  provider: ModelProviderId = DEFAULT_MODEL_PROVIDER
+  preferences: PreferencesStore
 ): Promise<ChatStateSnapshot> => {
   const conversation = await getLatestConversationOrCreate(conversations)
   const storedEvents = await conversations.loadConversationEvents(conversation.id)
-  const cooldownUntil = await loadCooldown(preferences, provider)
+  const cooldownUntil = await loadCooldown(preferences)
 
   if (!cooldownUntil) {
-    await preferences.set(cooldownKeyForProvider(provider), '')
+    await preferences.set(RATE_LIMIT_COOLDOWN_KEY, '')
   }
 
   return {
@@ -81,10 +73,9 @@ export const createPersistedEvent = (
 
 export const applyRateLimitEvent = async (
   event: ChatEvent,
-  preferences: PreferencesStore,
-  provider: ModelProviderId = DEFAULT_MODEL_PROVIDER
+  preferences: PreferencesStore
 ): Promise<Pick<ChatStateSnapshot, 'cooldownUntil' | 'isRetryPending'> | undefined> => {
-  const cooldownKey = cooldownKeyForProvider(provider)
+  const cooldownKey = RATE_LIMIT_COOLDOWN_KEY
 
   if (event.type === 'rate.limit.waiting') {
     await preferences.set(cooldownKey, event.payload.retryAt)
@@ -134,14 +125,12 @@ export const executeChatPrompt = async (options: {
   runtimeFactory: ChatRuntimeFactory
   conversations: ConversationRepository
   preferences: PreferencesStore
-  provider?: ModelProviderId
   signal?: AbortSignal
   onEvent: (event: ChatEvent) => void | Promise<void>
   onRateLimitState: (
     state: Pick<ChatStateSnapshot, 'cooldownUntil' | 'isRetryPending'>
   ) => void | Promise<void>
 }): Promise<void> => {
-  const provider = options.provider ?? DEFAULT_MODEL_PROVIDER
   const history = buildConversationHistory(options.existingEvents)
 
   const persistableTypes = new Set<ChatEvent['type']>([
@@ -179,7 +168,7 @@ export const executeChatPrompt = async (options: {
       await options.conversations.appendEvent(createPersistedEvent(options.conversationId, event))
     }
 
-    const rateLimitState = await applyRateLimitEvent(event, options.preferences, provider)
+    const rateLimitState = await applyRateLimitEvent(event, options.preferences)
     if (rateLimitState) {
       await options.onRateLimitState(rateLimitState)
     }

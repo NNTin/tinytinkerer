@@ -11,10 +11,9 @@ import type {
   AgentType,
   McpDiscoveryResult,
   McpServerConfig,
-  ModelProviderId,
   PluginActivationState
 } from '@tinytinkerer/contracts'
-import { GitHubModelsProvider } from './github-models-provider'
+import { LiteLLMProvider } from './litellm-provider'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch } from './edge-fetch'
 import { createWebSearchTool } from './web-search-tool'
@@ -60,7 +59,6 @@ export const createRuntime = (options: {
   baseUrl: string
   searchEnabled: boolean
   getToken: () => string | null | undefined
-  getProvider?: () => ModelProviderId | null | undefined
   getModel: () => string | null | undefined
   getLiteLLMBaseUrl?: () => string | null | undefined
   agentType?: AgentType
@@ -169,15 +167,14 @@ export const createRuntime = (options: {
 
   return createChatRuntime({
     ...(options.agentType ? { agentType: options.agentType } : {}),
-    provider: new GitHubModelsProvider({
+    provider: new LiteLLMProvider({
       baseUrl: options.baseUrl,
       getToken: options.getToken,
       getModel: options.getModel,
       ...(options.getLiteLLMBaseUrl
         ? { getLiteLLMBaseUrl: options.getLiteLLMBaseUrl }
         : {}),
-      allToolDescriptors,
-      ...(options.getProvider ? { getProvider: options.getProvider } : {})
+      allToolDescriptors
     }),
     // Terminal runtime failures (e.g. a ReAct decision timeout, a provider/edge
     // error, or a rate limit that escaped the cooldown path) are swallowed into

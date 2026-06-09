@@ -9,10 +9,8 @@ import { createBrowserRuntimeFactory } from '../src/runtime/get-runtime.js'
 
 const mockSettings = {
   searchEnabled: true,
-  selectedModelProvider: 'github' as 'github' | 'openrouter' | 'litellm',
   selectedModel: 'openai/gpt-4.1-mini',
   agentType: 'plan-execute' as const,
-  openRouterApiKey: null as string | null,
   litellmBaseUrl: 'https://litellm.labs.lair.nntin.xyz/'
 }
 
@@ -58,9 +56,7 @@ const toRequestUrl = (input: RequestInfo | URL): string => {
 
 beforeEach(() => {
   mockSettings.searchEnabled = true
-  mockSettings.selectedModelProvider = 'github'
   mockSettings.selectedModel = DEFAULT_MODEL
-  mockSettings.openRouterApiKey = null
   mockSettings.litellmBaseUrl = 'https://litellm.labs.lair.nntin.xyz/'
   mockAuth.token = null
   mockStatus.hydrated = true
@@ -193,31 +189,35 @@ describe('createBrowserRuntimeFactory', () => {
       })
     )
 
-    mockSettings.selectedModelProvider = 'github'
     mockSettings.selectedModel = DEFAULT_MODEL
     mockAuth.token = 'github-token'
     const runtime = createRuntime()
 
-    mockSettings.selectedModelProvider = 'openrouter'
     mockSettings.selectedModel = 'anthropic/claude-3.5-sonnet'
-    mockSettings.openRouterApiKey = 'sk-or-v1-live'
+    mockSettings.litellmBaseUrl = 'https://litellm.example.com/'
+    mockAuth.token = 'rotated-token'
 
     const events: unknown[] = []
     for await (const event of runtime.run('hello')) {
       events.push(event)
     }
 
-    expect(capturedAuthorization).toBe('Bearer sk-or-v1-live')
+    expect(capturedAuthorization).toBe('Bearer rotated-token')
     expect(
-      JSON.parse(capturedBody ?? '{}') as { provider: string; model: string }
+      JSON.parse(capturedBody ?? '{}') as {
+        provider: string
+        model: string
+        litellmBaseUrl: string
+      }
     ).toMatchObject({
-      provider: 'openrouter',
-      model: 'anthropic/claude-3.5-sonnet'
+      provider: 'litellm',
+      model: 'anthropic/claude-3.5-sonnet',
+      litellmBaseUrl: 'https://litellm.example.com/'
     })
     vi.unstubAllGlobals()
   })
 
-  it('forwards selected OpenRouter provider, model, and API key', async () => {
+  it('forwards the LiteLLM provider, model, GitHub token, and base URL', async () => {
     let capturedBody: string | undefined
     let capturedAuthorization: string | null = null
     vi.stubGlobal(
@@ -240,51 +240,6 @@ describe('createBrowserRuntimeFactory', () => {
       })
     )
 
-    mockSettings.selectedModelProvider = 'openrouter'
-    mockSettings.selectedModel = 'anthropic/claude-3.5-sonnet'
-    mockSettings.openRouterApiKey = 'sk-or-v1-test'
-    mockAuth.token = 'github-token'
-
-    const runtime = createRuntime()
-    const events: unknown[] = []
-    for await (const event of runtime.run('hello')) {
-      events.push(event)
-    }
-
-    expect(capturedAuthorization).toBe('Bearer sk-or-v1-test')
-    expect(
-      JSON.parse(capturedBody ?? '{}') as { provider: string; model: string }
-    ).toMatchObject({
-      provider: 'openrouter',
-      model: 'anthropic/claude-3.5-sonnet'
-    })
-    vi.unstubAllGlobals()
-  })
-
-  it('forwards selected LiteLLM provider, model, GitHub token, and base URL', async () => {
-    let capturedBody: string | undefined
-    let capturedAuthorization: string | null = null
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
-        capturedBody = init?.body as string | undefined
-        capturedAuthorization = new Headers(init?.headers).get('authorization')
-        const sseBody = [
-          'data: {"choices":[{"delta":{"content":"ok"}}]}',
-          '',
-          'data: [DONE]',
-          ''
-        ].join('\n')
-        return Promise.resolve(
-          new Response(sseBody, {
-            status: 200,
-            headers: { 'content-type': 'text/event-stream' }
-          })
-        )
-      })
-    )
-
-    mockSettings.selectedModelProvider = 'litellm'
     mockSettings.selectedModel = 'openai/gpt-5'
     mockSettings.litellmBaseUrl = 'https://litellm.example.com/'
     mockAuth.token = 'github-token'

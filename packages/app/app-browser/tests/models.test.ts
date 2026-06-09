@@ -1,8 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  DEFAULT_MODELS_BY_PROVIDER,
-  SUPPORTED_MODELS
-} from '@tinytinkerer/app-core'
+import { FALLBACK_MODELS } from '@tinytinkerer/app-core'
 import { setCaptureExceptionSink, type CaptureExceptionSink } from '@tinytinkerer/sentry-telemetry'
 
 vi.mock('../src/telemetry/telemetry.js', async () => {
@@ -15,11 +12,11 @@ vi.mock('../src/telemetry/telemetry.js', async () => {
   }
 })
 
-import { clearModelsCache, fetchGitHubModels } from '../src/github-models.js'
+import { clearModelsCache, fetchModels } from '../src/models.js'
 
 const sink = vi.fn<CaptureExceptionSink>()
 
-describe('fetchGitHubModels', () => {
+describe('fetchModels', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -40,9 +37,9 @@ describe('fetchGitHubModels', () => {
       vi.fn(() => Promise.resolve(new Response('{}', { status: 502, statusText: 'Bad Gateway' })))
     )
 
-    const models = await fetchGitHubModels('https://api.example.com', 'token')
+    const models = await fetchModels('https://api.example.com', 'token')
 
-    expect(models).toEqual([...SUPPORTED_MODELS])
+    expect(models).toEqual([...FALLBACK_MODELS])
     expect(sink).toHaveBeenCalledTimes(1)
     const [, options] = sink.mock.calls[0] ?? []
     expect(options?.tags).toMatchObject({
@@ -65,9 +62,9 @@ describe('fetchGitHubModels', () => {
       )
     )
 
-    const models = await fetchGitHubModels('https://api.example.com', 'token')
+    const models = await fetchModels('https://api.example.com', 'token')
 
-    expect(models).toEqual([...SUPPORTED_MODELS])
+    expect(models).toEqual([...FALLBACK_MODELS])
     expect(sink).toHaveBeenCalledTimes(1)
     const [, options] = sink.mock.calls[0] ?? []
     expect(options?.tags).toMatchObject({
@@ -82,11 +79,11 @@ describe('fetchGitHubModels', () => {
     )
     vi.stubGlobal('fetch', fetchSpy)
 
-    const first = await fetchGitHubModels('https://api.example.com', 'token')
-    const second = await fetchGitHubModels('https://api.example.com', 'token')
+    const first = await fetchModels('https://api.example.com', 'token')
+    const second = await fetchModels('https://api.example.com', 'token')
 
-    expect(first).toEqual([...SUPPORTED_MODELS])
-    expect(second).toEqual([...SUPPORTED_MODELS])
+    expect(first).toEqual([...FALLBACK_MODELS])
+    expect(second).toEqual([...FALLBACK_MODELS])
     // Second call is served from the negative cache: no extra fetch, no extra report.
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
@@ -111,67 +108,29 @@ describe('fetchGitHubModels', () => {
     vi.stubGlobal('fetch', fetchSpy)
 
     // First call populates the (5-min) success cache.
-    const first = await fetchGitHubModels('https://api.example.com', 'token')
+    const first = await fetchModels('https://api.example.com', 'token')
     expect(first).toEqual(lastKnown)
 
     // A non-forced call within the TTL is served from cache — no second fetch.
-    const cachedHit = await fetchGitHubModels('https://api.example.com', 'token')
+    const cachedHit = await fetchModels('https://api.example.com', 'token')
     expect(cachedHit).toEqual(lastKnown)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
 
     // The refresh button forces a real re-probe and picks up the new catalogue,
     // even though the cache is still fresh.
-    const forced = await fetchGitHubModels('https://api.example.com', 'token', {
+    const forced = await fetchModels('https://api.example.com', 'token', {
       force: true
     })
     expect(forced).toEqual(updated)
     expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
 
-  it('fetches OpenRouter models with a provider-scoped cache key', async () => {
-    const githubModels = [{ id: 'openai/gpt-5', label: 'GPT-5' }]
-    const openRouterModels = [
-      { provider: 'openrouter', id: 'anthropic/claude-3.5-sonnet', label: 'Claude', kind: 'chat' }
-    ]
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ models: githubModels }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' }
-        })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ models: openRouterModels }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' }
-        })
-      )
-    vi.stubGlobal('fetch', fetchSpy)
-
-    await fetchGitHubModels('https://api.example.com', 'same-token', {
-      provider: 'github'
-    })
-    const openRouter = await fetchGitHubModels(
-      'https://api.example.com',
-      'same-token',
-      { provider: 'openrouter' }
-    )
-
-    expect(openRouter).toEqual(openRouterModels)
-    expect(fetchSpy).toHaveBeenCalledTimes(2)
-    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('provider=github')
-    expect(String(fetchSpy.mock.calls[1]?.[0])).toContain(
-      'provider=openrouter'
-    )
-  })
-
-  it('fetches LiteLLM models with a provider and base-url scoped cache key', async () => {
+  it('fetches LiteLLM models with a base-url scoped cache key', async () => {
     const defaultModels = [
       {
         provider: 'litellm',
-        id: DEFAULT_MODELS_BY_PROVIDER.litellm,
-        label: DEFAULT_MODELS_BY_PROVIDER.litellm,
+        id: 'openai/gpt-5',
+        label: 'openai/gpt-5',
         kind: 'chat'
       }
     ]
@@ -199,21 +158,15 @@ describe('fetchGitHubModels', () => {
       )
     vi.stubGlobal('fetch', fetchSpy)
 
-    const defaultResult = await fetchGitHubModels(
+    const defaultResult = await fetchModels(
       'https://api.example.com',
       'github-token',
-      {
-        provider: 'litellm',
-        litellmBaseUrl: 'https://litellm.labs.lair.nntin.xyz/'
-      }
+      { litellmBaseUrl: 'https://litellm.labs.lair.nntin.xyz/' }
     )
-    const customResult = await fetchGitHubModels(
+    const customResult = await fetchModels(
       'https://api.example.com',
       'github-token',
-      {
-        provider: 'litellm',
-        litellmBaseUrl: 'https://litellm.example.com/'
-      }
+      { litellmBaseUrl: 'https://litellm.example.com/' }
     )
 
     expect(defaultResult).toEqual(defaultModels)
@@ -236,10 +189,10 @@ describe('fetchGitHubModels', () => {
         vi.fn(() => Promise.resolve(new Response('cooldown', { status })))
       )
 
-      const models = await fetchGitHubModels('https://api.example.com', 'token')
+      const models = await fetchModels('https://api.example.com', 'token')
 
       // Graceful degrade: serve the built-in list…
-      expect(models).toEqual([...SUPPORTED_MODELS])
+      expect(models).toEqual([...FALLBACK_MODELS])
       // …and the edge's intentional cooldown/cache-miss signal is accepted, so it
       // is never reported (it is not a server-down bug).
       expect(sink).not.toHaveBeenCalled()
@@ -252,10 +205,10 @@ describe('fetchGitHubModels', () => {
       vi.fn(() => Promise.reject(new TypeError('Failed to fetch')))
     )
 
-    const models = await fetchGitHubModels('https://api.example.com', 'token')
+    const models = await fetchModels('https://api.example.com', 'token')
 
     // Graceful degrade: serve the built-in list…
-    expect(models).toEqual([...SUPPORTED_MODELS])
+    expect(models).toEqual([...FALLBACK_MODELS])
     // …and a transient client-side network failure on this background edge fetch
     // is accepted, so it is never reported (the call already serves last-known).
     expect(sink).not.toHaveBeenCalled()
@@ -267,7 +220,7 @@ describe('fetchGitHubModels', () => {
       vi.fn(() => Promise.resolve(new Response('{}', { status: 502 })))
     )
 
-    await fetchGitHubModels('https://api.example.com', 'token')
+    await fetchModels('https://api.example.com', 'token')
 
     // 502 is not an accepted cooldown status — it still reports.
     expect(sink).toHaveBeenCalledTimes(1)
@@ -294,15 +247,15 @@ describe('fetchGitHubModels', () => {
       vi.stubGlobal('fetch', fetchSpy)
 
       // First fetch succeeds and is remembered as the last-known catalogue.
-      const first = await fetchGitHubModels('https://api.example.com', 'token')
+      const first = await fetchModels('https://api.example.com', 'token')
       expect(first).toEqual(lastKnown)
 
       // Advance past the success TTL (5 min) so the next call re-fetches and the
       // edge answers with its cooldown signal.
       vi.advanceTimersByTime(6 * 60_000)
 
-      const second = await fetchGitHubModels('https://api.example.com', 'token')
-      // Degrade to the LAST-KNOWN real list, not the built-in SUPPORTED_MODELS.
+      const second = await fetchModels('https://api.example.com', 'token')
+      // Degrade to the LAST-KNOWN real list, not the built-in FALLBACK_MODELS.
       expect(second).toEqual(lastKnown)
       expect(fetchSpy).toHaveBeenCalledTimes(2)
       expect(sink).not.toHaveBeenCalled()

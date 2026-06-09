@@ -3,8 +3,7 @@ import type { ConversationMessage } from '@tinytinkerer/app-core'
 import {
   EDGE_ROUTE_PATHS,
   executionPlanSchema,
-  type ExecutionPlan,
-  type ModelProviderId
+  type ExecutionPlan
 } from '@tinytinkerer/contracts'
 import type { EdgeFetch } from './edge-fetch'
 import { createRateLimitError } from './rate-limit'
@@ -54,7 +53,6 @@ export const llmPlan = async (
   model: string,
   edgeFetch: EdgeFetch,
   signal?: AbortSignal,
-  provider?: ModelProviderId,
   litellmBaseUrl?: string
 ): Promise<ExecutionPlan> => {
   const systemPrompt = buildPlanningSystemPrompt(tools)
@@ -68,8 +66,8 @@ export const llmPlan = async (
   const response = await edgeFetch(
     EDGE_ROUTE_PATHS.modelsChat,
     {
-      ...(provider ? { provider } : {}),
-      ...(provider === 'litellm' && litellmBaseUrl ? { litellmBaseUrl } : {}),
+      provider: 'litellm',
+      ...(litellmBaseUrl ? { litellmBaseUrl } : {}),
       model,
       stream: false,
       messages

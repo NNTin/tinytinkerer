@@ -1,12 +1,8 @@
 import {
   DEFAULT_MODEL,
   DEFAULT_LITELLM_BASE_URL,
-  DEFAULT_MODEL_PROVIDER,
-  DEFAULT_MODELS_BY_PROVIDER,
   normalizeLiteLLMBaseUrl,
-  normalizeModelProvider,
-  normalizeSelectedModel,
-  normalizeSelectedModelForProvider
+  normalizeSelectedModel
 } from './models'
 import type { PreferencesStore } from './ports'
 import {
@@ -17,7 +13,6 @@ import {
   type AgentType,
   type McpDiscoveryResult,
   type McpServerConfig,
-  type ModelProviderId,
   type PluginActivationState
 } from '@tinytinkerer/contracts'
 
@@ -25,9 +20,6 @@ const DEFAULT_AGENT_TYPE: AgentType = 'react'
 
 export const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',
-  selectedModelProvider: 'settings_model_provider',
-  selectedModelsByProvider: 'settings_selected_models_by_provider',
-  openRouterApiKey: 'settings_openrouter_api_key',
   litellmBaseUrl: 'settings_litellm_base_url',
   agentType: 'settings_agent_type',
   searchEnabled: 'settings_search_enabled',
@@ -40,19 +32,22 @@ export const SETTINGS_KEYS = {
   pluginActivation: 'settings_plugins_activation'
 } as const
 
-// Superseded by the merged `showReasoningActivity` toggle; read once at load for
-// back-compat migration of users who set either of the old toggles.
+// Superseded settings, read once at load for back-compat migration:
+// - showThinkingTimeline/showToolActivity merged into `showReasoningActivity`.
+// - selectedModelsByProvider held per-provider model picks from the multi-provider
+//   era (GitHub Models/OpenRouter); only the litellm entry is migrated forward.
+// - openRouterApiKey is a credential from the removed OpenRouter provider; it is
+//   cleared from storage on load rather than left behind.
 const LEGACY_SETTINGS_KEYS = {
   showThinkingTimeline: 'settings_show_thinking_timeline',
-  showToolActivity: 'settings_show_tool_activity'
+  showToolActivity: 'settings_show_tool_activity',
+  selectedModelsByProvider: 'settings_selected_models_by_provider',
+  openRouterApiKey: 'settings_openrouter_api_key'
 } as const
 
 export type SettingsState = {
   hydrated: boolean
-  selectedModelProvider: ModelProviderId
   selectedModel: string
-  selectedModelsByProvider: Record<ModelProviderId, string>
-  openRouterApiKey: string | null
   litellmBaseUrl: string
   agentType: AgentType
   searchEnabled: boolean
@@ -84,10 +79,7 @@ const parseAgentType = (value: string | undefined): AgentType => {
 
 export const defaultSettingsState = (): SettingsState => ({
   hydrated: false,
-  selectedModelProvider: DEFAULT_MODEL_PROVIDER,
   selectedModel: DEFAULT_MODEL,
-  selectedModelsByProvider: { ...DEFAULT_MODELS_BY_PROVIDER },
-  openRouterApiKey: null,
   litellmBaseUrl: DEFAULT_LITELLM_BASE_URL,
   agentType: DEFAULT_AGENT_TYPE,
   searchEnabled: true,
@@ -103,9 +95,8 @@ export const defaultSettingsState = (): SettingsState => ({
 export const loadSettingsState = async (preferences: PreferencesStore): Promise<SettingsState> => {
   const [
     selectedModel,
-    selectedModelProviderRaw,
-    selectedModelsByProviderRaw,
-    openRouterApiKey,
+    legacyModelsByProviderRaw,
+    legacyOpenRouterApiKey,
     litellmBaseUrl,
     agentType,
     searchEnabled,
@@ -120,9 +111,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     pluginActivationRaw
   ] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
-    preferences.get(SETTINGS_KEYS.selectedModelProvider),
-    preferences.get(SETTINGS_KEYS.selectedModelsByProvider),
-    preferences.get(SETTINGS_KEYS.openRouterApiKey),
+    preferences.get(LEGACY_SETTINGS_KEYS.selectedModelsByProvider),
+    preferences.get(LEGACY_SETTINGS_KEYS.openRouterApiKey),
     preferences.get(SETTINGS_KEYS.litellmBaseUrl),
     preferences.get(SETTINGS_KEYS.agentType),
     preferences.get(SETTINGS_KEYS.searchEnabled),
@@ -142,21 +132,23 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     parseBoolOptional(showReasoningActivity) ??
     (parseBool(legacyThinkingTimeline, false) || parseBool(legacyToolActivity, false))
 
-  const selectedModelProvider = normalizeModelProvider(selectedModelProviderRaw)
-  const selectedModelsByProvider = parseSelectedModelsByProvider(
-    selectedModelsByProviderRaw,
-    selectedModel
-  )
+  // Migrate the litellm pick out of the legacy per-provider map, then clear the
+  // map so a stale entry can never override later model changes (which write
+  // only `settings_selected_model`).
+  let migratedSelectedModel = normalizeSelectedModel(selectedModel)
+  const legacyLitellmModel = parseLegacyLitellmModel(legacyModelsByProviderRaw)
+  if (legacyLitellmModel) {
+    migratedSelectedModel = legacyLitellmModel
+    await preferences.set(SETTINGS_KEYS.selectedModel, migratedSelectedModel)
+    await preferences.set(LEGACY_SETTINGS_KEYS.selectedModelsByProvider, '')
+  }
+  if (legacyOpenRouterApiKey?.trim()) {
+    await preferences.set(LEGACY_SETTINGS_KEYS.openRouterApiKey, '')
+  }
 
   return {
     hydrated: true,
-    selectedModelProvider,
-    selectedModel: normalizeSelectedModelForProvider(
-      selectedModelProvider,
-      selectedModelsByProvider[selectedModelProvider]
-    ),
-    selectedModelsByProvider,
-    openRouterApiKey: openRouterApiKey?.trim() || null,
+    selectedModel: migratedSelectedModel,
     litellmBaseUrl: normalizeLiteLLMBaseUrl(litellmBaseUrl),
     agentType: parseAgentType(agentType),
     searchEnabled: parseBool(searchEnabled, true),
@@ -170,32 +162,18 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
   }
 }
 
-const parseSelectedModelsByProvider = (
-  raw: string | undefined,
-  legacySelectedModel: string | undefined
-): Record<ModelProviderId, string> => {
-  const models: Record<ModelProviderId, string> = {
-    ...DEFAULT_MODELS_BY_PROVIDER,
-    github: normalizeSelectedModel(legacySelectedModel)
-  }
-
-  if (!raw) return models
+const parseLegacyLitellmModel = (raw: string | undefined): string | undefined => {
+  if (!raw) return undefined
   try {
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      return models
+      return undefined
     }
-    const record = parsed as Partial<Record<ModelProviderId, unknown>>
-    for (const provider of ['github', 'openrouter', 'litellm'] as const) {
-      const value = record[provider]
-      if (typeof value === 'string' && value.trim()) {
-        models[provider] = value.trim()
-      }
-    }
+    const value = (parsed as Record<string, unknown>).litellm
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined
   } catch {
-    return models
+    return undefined
   }
-  return models
 }
 
 const parsePluginActivation = (raw: string | undefined): PluginActivationState => {
@@ -273,40 +251,11 @@ export const persistMcpDiscovery = async (
 
 export const persistSelectedModel = async (
   preferences: PreferencesStore,
-  model: string,
-  provider: ModelProviderId = DEFAULT_MODEL_PROVIDER,
-  currentModelsByProvider?: Record<ModelProviderId, string>
+  model: string
 ): Promise<string> => {
-  const normalizedModel = normalizeSelectedModelForProvider(provider, model)
-  const modelsByProvider = {
-    ...DEFAULT_MODELS_BY_PROVIDER,
-    ...(currentModelsByProvider ?? {}),
-    [provider]: normalizedModel
-  }
+  const normalizedModel = normalizeSelectedModel(model)
   await preferences.set(SETTINGS_KEYS.selectedModel, normalizedModel)
-  await preferences.set(
-    SETTINGS_KEYS.selectedModelsByProvider,
-    JSON.stringify(modelsByProvider)
-  )
   return normalizedModel
-}
-
-export const persistSelectedModelProvider = async (
-  preferences: PreferencesStore,
-  provider: ModelProviderId
-): Promise<ModelProviderId> => {
-  const normalized = normalizeModelProvider(provider)
-  await preferences.set(SETTINGS_KEYS.selectedModelProvider, normalized)
-  return normalized
-}
-
-export const persistOpenRouterApiKey = async (
-  preferences: PreferencesStore,
-  apiKey: string | null
-): Promise<string | null> => {
-  const normalized = apiKey?.trim() || null
-  await preferences.set(SETTINGS_KEYS.openRouterApiKey, normalized ?? '')
-  return normalized
 }
 
 export const persistLiteLLMBaseUrl = async (

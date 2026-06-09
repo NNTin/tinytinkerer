@@ -14,7 +14,6 @@ import {
   edgeErrorResponseSchema,
   modelsChatResponseSchema,
   type ExecutionPlan,
-  type ModelProviderId,
   type PlanStep,
   type ReActDecision
 } from '@tinytinkerer/contracts'
@@ -47,10 +46,9 @@ const estimateTokens = (context: ExecutionContext): number => {
   return Math.ceil(allText.length / 4)
 }
 
-type GitHubModelsProviderOptions = {
+type LiteLLMProviderOptions = {
   baseUrl: string
   getToken?: () => string | null | undefined
-  getProvider?: () => ModelProviderId | null | undefined
   getModel?: () => string | null | undefined
   getLiteLLMBaseUrl?: () => string | null | undefined
   allToolDescriptors?: PlannerToolDescriptor[]
@@ -66,16 +64,12 @@ const createEdgeError = async (response: Response, fallback: string): Promise<Er
   return new Error(parsed?.success ? parsed.data.error : fallback)
 }
 
-export class GitHubModelsProvider implements ModelProvider {
+export class LiteLLMProvider implements ModelProvider {
   private readonly quota = new RateLimitQuota()
   // canSendPrompt gates the UI so only one synthesis runs at a time.
   private synthesizing = false
 
-  constructor(private readonly options: GitHubModelsProviderOptions) {}
-
-  private getProvider(): ModelProviderId {
-    return this.options.getProvider?.() ?? 'github'
-  }
+  constructor(private readonly options: LiteLLMProviderOptions) {}
 
   private getLiteLLMBaseUrl(): string | undefined {
     const baseUrl = this.options.getLiteLLMBaseUrl?.()?.trim()
@@ -83,7 +77,6 @@ export class GitHubModelsProvider implements ModelProvider {
   }
 
   private modelRequestExtras(): { litellmBaseUrl?: string } {
-    if (this.getProvider() !== 'litellm') return {}
     const litellmBaseUrl = this.getLiteLLMBaseUrl()
     return litellmBaseUrl ? { litellmBaseUrl } : {}
   }
@@ -109,7 +102,7 @@ export class GitHubModelsProvider implements ModelProvider {
     if (token && allDescriptors.length > 0) {
       try {
         const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
-        const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
+        const model = this.options.getModel?.() ?? DEFAULT_MODEL
         return await llmPlan(
           prompt,
           history,
@@ -117,7 +110,6 @@ export class GitHubModelsProvider implements ModelProvider {
           model,
           edgeFetch,
           options?.signal,
-          this.getProvider(),
           this.getLiteLLMBaseUrl()
         )
       } catch (error) {
@@ -156,7 +148,7 @@ export class GitHubModelsProvider implements ModelProvider {
     if (token) {
       await this.applyQuotaThrottle(context)
       const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
-      const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
+      const model = this.options.getModel?.() ?? DEFAULT_MODEL
       const tools = this.options.allToolDescriptors ?? []
       try {
         return await llmDecideNextAction(
@@ -165,7 +157,6 @@ export class GitHubModelsProvider implements ModelProvider {
           model,
           edgeFetch,
           options?.signal,
-          this.getProvider(),
           this.getLiteLLMBaseUrl()
         )
       } catch (error) {
@@ -188,7 +179,7 @@ export class GitHubModelsProvider implements ModelProvider {
     if (token) {
       await this.applyQuotaThrottle(context)
       const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
-      const model = this.options.getModel?.() ?? 'openai/gpt-4.1-mini'
+      const model = this.options.getModel?.() ?? DEFAULT_MODEL
       const tools = this.options.allToolDescriptors ?? []
       try {
         yield* llmStreamDecision(
@@ -197,7 +188,6 @@ export class GitHubModelsProvider implements ModelProvider {
           model,
           edgeFetch,
           options?.signal,
-          this.getProvider(),
           this.getLiteLLMBaseUrl()
         )
       } catch (error) {
@@ -249,7 +239,6 @@ export class GitHubModelsProvider implements ModelProvider {
         .join('')
 
       const selectedModel = this.options.getModel?.() ?? DEFAULT_MODEL
-      const provider = this.getProvider()
       const requestInit: RequestInit = {
         method: 'POST',
         headers: {
@@ -258,7 +247,7 @@ export class GitHubModelsProvider implements ModelProvider {
           ...getTelemetryHeaders()
         },
         body: JSON.stringify({
-          provider,
+          provider: 'litellm',
           ...this.modelRequestExtras(),
           stream: true,
           model: selectedModel,
@@ -285,7 +274,7 @@ export class GitHubModelsProvider implements ModelProvider {
         // path (streamDecision/decideNextAction → edge-fetch.ts). A fix applied
         // only to DECIDE leaves this one firing the identical 429, so both must
         // accept the same outcomes. AbortError = the user cancelling an in-flight
-        // stream. A 429 is the unavoidable call that OPENS each GitHub Models
+        // stream. A 429 is the unavoidable call that OPENS each LiteLLM
         // backoff window — the edge already short-circuits /api/models/chat while a
         // window is open (apps/edge/.../rate-limit.ts), and the runtime turns the
         // 429 into a RateLimitError → cooldown banner, so it is handled, not a
@@ -344,11 +333,7 @@ export class GitHubModelsProvider implements ModelProvider {
 
     const draft = collected
       ? `I worked through the plan and used tools where needed.\n\n${collected}`
-      : this.getProvider() === 'openrouter'
-        ? 'Add an OpenRouter API key in Settings to get AI responses. Without a key the runtime runs in local fallback mode.'
-        : this.getProvider() === 'litellm'
-          ? 'Sign in with GitHub to use LiteLLM. Without a token the runtime runs in local fallback mode.'
-          : 'Sign in with GitHub to get AI responses. Without a token the runtime runs in local fallback mode.'
+      : 'Sign in with GitHub to get AI responses. Without a token the runtime runs in local fallback mode.'
 
     for (const chunk of draft.split(' ')) {
       yield { kind: 'content', text: `${chunk} ` }

@@ -12,7 +12,7 @@ vi.mock('../src/telemetry/telemetry.js', async () => {
   }
 })
 
-import { GitHubModelsProvider } from '../src/runtime/github-models-provider.js'
+import { LiteLLMProvider } from '../src/runtime/litellm-provider.js'
 import { splitInlineThink } from '../src/runtime/sse-utils.js'
 
 const telemetrySink = vi.fn<CaptureExceptionSink>()
@@ -58,16 +58,16 @@ const collect = async (stream: AsyncIterable<SynthesisChunk>): Promise<string> =
   return output
 }
 
-describe('GitHubModelsProvider', () => {
+describe('LiteLLMProvider', () => {
   it('returns a low-complexity plan for a plain prompt', async () => {
-    const provider = new GitHubModelsProvider({ baseUrl: 'http://example.com' })
+    const provider = new LiteLLMProvider({ baseUrl: 'http://example.com' })
     const plan = await provider.plan('tell me a joke', [])
     expect(plan.complexity).toBe('low')
     expect(plan.steps.map((step) => step.id)).toEqual(['understand', 'compose'])
   })
 
   it('returns a medium-complexity plan with a search step for search-keyword prompts', async () => {
-    const provider = new GitHubModelsProvider({ baseUrl: 'http://example.com' })
+    const provider = new LiteLLMProvider({ baseUrl: 'http://example.com' })
     const plan = await provider.plan('what is the latest news today?', [])
     expect(plan.complexity).toBe('medium')
     expect(plan.steps.map((step) => step.id)).toEqual(['understand', 'search', 'compose'])
@@ -96,7 +96,7 @@ describe('GitHubModelsProvider', () => {
       )
     )
 
-    const provider = new GitHubModelsProvider({
+    const provider = new LiteLLMProvider({
       baseUrl: 'http://example.com',
       getToken: () => 'token'
     })
@@ -130,7 +130,7 @@ describe('GitHubModelsProvider', () => {
     )
     telemetrySink.mockClear()
 
-    const provider = new GitHubModelsProvider({
+    const provider = new LiteLLMProvider({
       baseUrl: 'http://example.com',
       getToken: () => 'token'
     })
@@ -171,7 +171,7 @@ describe('GitHubModelsProvider', () => {
     })
     vi.stubGlobal('fetch', fetchSpy)
 
-    const provider = new GitHubModelsProvider({
+    const provider = new LiteLLMProvider({
       baseUrl: 'http://example.com',
       getToken: () => 'token'
     })
@@ -242,7 +242,7 @@ describe('GitHubModelsProvider', () => {
     )
     telemetrySink.mockClear()
 
-    const provider = new GitHubModelsProvider({
+    const provider = new LiteLLMProvider({
       baseUrl: 'http://example.com',
       getToken: () => 'token',
       allToolDescriptors: [{ id: 'mcp:test:lookup', description: 'lookup', inputSchema: {} }]
@@ -289,7 +289,7 @@ describe('GitHubModelsProvider', () => {
       )
     )
 
-    const provider = new GitHubModelsProvider({
+    const provider = new LiteLLMProvider({
       baseUrl: 'http://example.com',
       getToken: () => 'token',
       allToolDescriptors: [{ id: 'mcp:test:lookup', description: 'lookup', inputSchema: {} }]
@@ -319,7 +319,7 @@ describe('GitHubModelsProvider', () => {
     const fetchSpy = vi.fn(() => Promise.resolve(rateLimited()))
     vi.stubGlobal('fetch', fetchSpy)
 
-    const provider = new GitHubModelsProvider({
+    const provider = new LiteLLMProvider({
       baseUrl: 'http://example.com',
       getToken: () => 'token'
     })
