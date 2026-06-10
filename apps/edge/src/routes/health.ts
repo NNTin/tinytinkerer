@@ -17,7 +17,7 @@ export const registerHealthRoute = (
       models: {
         state: c.env.LITELLM_API_KEY ? 'ready' : 'degraded',
         detail: c.env.LITELLM_API_KEY
-          ? 'Model proxy ready (sign in with GitHub to enable)'
+          ? 'Model proxy ready'
           : 'LiteLLM is not configured'
       },
       search: {

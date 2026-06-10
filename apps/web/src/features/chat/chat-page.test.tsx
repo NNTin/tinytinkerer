@@ -96,10 +96,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
           <p>Auth status</p>
           <p>{mockStatusState.status.auth.detail}</p>
           {mockAuthState.token ? null : (
-            <>
-              <button type="button">Sign in with GitHub</button>
-              <button type="button">Use a personal access token instead</button>
-            </>
+            <button type="button">Sign in with GitHub</button>
           )}
         </section>
         <section role="region" aria-label="Models">
@@ -367,7 +364,6 @@ describe('ChatPage settings modal', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Settings' })
     const authRegion = within(dialog).getByRole('region', { name: 'Auth' })
     expect(await within(authRegion).findByRole('button', { name: /sign in with github/i })).not.toBeNull()
-    expect(within(authRegion).getByRole('button', { name: /use a personal access token instead/i })).not.toBeNull()
   })
 
   it('closes the modal when the close button is clicked', async () => {

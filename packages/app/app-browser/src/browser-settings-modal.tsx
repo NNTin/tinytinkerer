@@ -125,27 +125,8 @@ const ToggleRow = ({
 )
 
 const AuthSection = ({ status }: { status: ServiceStatus }) => {
-  const {
-    token,
-    clearToken,
-    setToken,
-    canStartGitHubOAuth,
-    startGitHubOAuth,
-    user
-  } = useSettingsSurfaceController()
-  const [showPat, setShowPat] = useState(false)
-  const [patValue, setPatValue] = useState('')
-
-  const handlePatSave = async () => {
-    const trimmed = patValue.trim()
-    if (!trimmed) {
-      return
-    }
-
-    await setToken(trimmed)
-    setPatValue('')
-    setShowPat(false)
-  }
+  const { token, clearToken, canStartGitHubOAuth, startGitHubOAuth, user } =
+    useSettingsSurfaceController()
 
   if (token) {
     return (
@@ -204,54 +185,6 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
           Sign in with GitHub
         </button>
       ) : null}
-
-      {showPat ? (
-        <div className="space-y-2">
-          <p className="text-xs text-[var(--muted)]">
-            Paste a GitHub personal access token.
-          </p>
-          <div className="flex gap-2">
-            <input
-              type="password"
-              value={patValue}
-              onChange={(event) => setPatValue(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  void handlePatSave()
-                }
-              }}
-              placeholder="ghp_…"
-              autoFocus
-              className="flex-1 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
-            />
-            <button
-              type="button"
-              onClick={() => void handlePatSave()}
-              className="inline-flex items-center rounded-md border border-stone-800 bg-stone-900 px-3 py-1.5 text-xs text-white transition-colors hover:bg-stone-700"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowPat(false)
-                setPatValue('')
-              }}
-              className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:bg-stone-50"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setShowPat(true)}
-          className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50"
-        >
-          Use a personal access token instead
-        </button>
-      )}
     </div>
   )
 }
@@ -314,11 +247,9 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
   return (
     <div className="space-y-2">
       <SectionStatus label="Models" status={status} />
+      {/* LiteLLM uses the edge-managed virtual key; custom base URLs must be
+          allowlisted by the edge service (LITELLM_ALLOWED_BASE_URLS). */}
       <div className="space-y-2 rounded-lg border border-stone-200 bg-white p-3">
-          <p className="text-xs text-[var(--muted)]">
-            LiteLLM uses the edge-managed virtual key. Custom URLs must be
-            allowlisted by the edge service.
-          </p>
           <label
             htmlFor="litellm-base-url"
             className="block text-xs text-stone-700"
