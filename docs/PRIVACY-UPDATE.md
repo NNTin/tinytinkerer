@@ -1,21 +1,18 @@
 ## Privacy policy updated
 
-We updated the privacy policy to document Web Speech API voice input, including that speech
-recognition depends on your browser or device vendor and may run locally or in the cloud.
+TinyTinkerer now routes all model requests through a self-hosted
+[LiteLLM](https://docs.litellm.ai/docs/) proxy operated by the maintainer. Previously,
+requests went to GitHub Models or OpenRouter using your own credentials; those providers
+have been removed.
 
-We also updated the privacy policy to document browser request-failure telemetry. When
-telemetry is enabled, TinyTinkerer may now send sanitized request diagnostics to Sentry for
-browser-initiated application requests, including method, URL path without query string,
-status code, and failure type. This does not include conversation content, request bodies,
-query strings, cookies, authorization headers, or GitHub access tokens.
+Your conversation content passes through this proxy to the model providers the maintainer
+has configured, in order to generate responses. The proxy does not store your messages: it
+records only operational metadata per request (model, token counts, cost, timing, and
+success/error status), which the maintainer can view in the LiteLLM dashboard to monitor
+usage and reliability. Model requests are sent with a shared service credential and are
+not linked to your GitHub identity.
 
-We also added the optional Feedback plugin (`send_feedback`). It is off by default and enabled
-in Settings → Plugins. When both the plugin and telemetry are enabled, the feedback text you
-submit is sent to Sentry so the maintainers can read it. This is the only case in which
-TinyTinkerer sends content you typed; if the plugin or telemetry is disabled, no feedback is sent. Note that enabling the plugin adds the `send_feedback` tool to every chat,
-which uses a little of the assistant's context and some extra tokens, so the Chat Assistant may
-perform slightly worse — leaving it on is a small, voluntary way to support the project and save
-the maintainer development time.
-
-This change is needed to surface operational failures in the frontend and to support future
-rate limit prevention work without expanding the scope of personal or message data collected.
+GitHub sign-in is now used only for access control — verifying that you hold a valid
+GitHub token before requests are forwarded. Personal access tokens and user-supplied
+provider API keys are no longer used. See the new "Chat content and the model proxy
+(LiteLLM)" section of the privacy policy for details.

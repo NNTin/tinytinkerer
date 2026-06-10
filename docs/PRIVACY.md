@@ -21,13 +21,38 @@ When telemetry is enabled, we collect:
 
 ## What we do NOT collect
 
-- The content of your conversations, prompts, or responses.
+- The content of your conversations, prompts, or responses. (Conversation content is
+  processed in transit to generate responses — see "Chat content and the model proxy
+  (LiteLLM)" below — but it is not collected as telemetry.)
 - Your GitHub access token or any credentials.
 - Request bodies, query strings, cookies, or authorization headers in telemetry events.
 
 The one exception to "we do not collect your content" is the optional Feedback plugin: if
 you enable it and submit feedback, the feedback text you write is sent through telemetry on
 purpose. See "Feedback plugin (send_feedback)" below.
+
+## Chat content and the model proxy (LiteLLM)
+
+When you send a chat message, the conversation content (your messages and the model's
+responses) is transmitted through the TinyTinkerer edge API to a self-hosted
+[LiteLLM](https://docs.litellm.ai/docs/) proxy operated by the maintainer, which forwards
+it to the third-party model providers configured by the maintainer to generate responses.
+Those providers process the content under their own terms.
+
+Model requests carry no account identity: they are sent with a shared service credential,
+and no GitHub identifier, installation ID, or telemetry header is attached to them.
+GitHub sign-in is used only to verify that the caller holds a valid GitHub token before a
+request is forwarded; the edge reads only the validity of the token and forwards nothing
+from your GitHub account.
+
+The proxy does not store conversation content. It records per-request operational
+metadata — model name, token counts, cost, timestamps and request duration, and
+success/error status (error logs include the error message) — which the maintainer can
+view in the LiteLLM dashboard to monitor usage, cost, and reliability. This metadata is
+not linked to your GitHub account. Because requests reach the proxy from the edge
+infrastructure, the proxy sees the edge's network address, not your device's IP address.
+
+The LiteLLM instance is self-hosted and sends no telemetry to LiteLLM (the vendor).
 
 ## Voice input (Web Speech API)
 
@@ -68,6 +93,9 @@ your GitHub account so we can follow up on issues.
 
 ## Where it is sent
 
+- Chat messages are sent through the TinyTinkerer edge API to the maintainer-operated
+  LiteLLM proxy and onward to its configured model providers, without any account
+  identity attached. See "Chat content and the model proxy (LiteLLM)" above.
 - Crash and error reports are sent to Sentry (our error-monitoring provider).
 - Browser request-failure diagnostics are sent to Sentry with sanitized request metadata
   (method, URL path without query string, status code, and failure type).
