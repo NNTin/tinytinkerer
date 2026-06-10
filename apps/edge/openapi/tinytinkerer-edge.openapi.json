@@ -286,6 +286,14 @@
           }
         }
       },
+      "RequestedModelProviderId": {
+        "type": "string",
+        "enum": [
+          "litellm",
+          "github",
+          "openrouter"
+        ]
+      },
       "ModelsChatResponse": {
         "type": "object",
         "properties": {
@@ -364,7 +372,7 @@
         "type": "object",
         "properties": {
           "provider": {
-            "$ref": "#/components/schemas/ModelProviderId"
+            "$ref": "#/components/schemas/RequestedModelProviderId"
           },
           "model": {
             "type": "string"
@@ -730,7 +738,7 @@
         "parameters": [
           {
             "schema": {
-              "$ref": "#/components/schemas/ModelProviderId"
+              "$ref": "#/components/schemas/RequestedModelProviderId"
             },
             "required": false,
             "name": "provider",

@@ -162,11 +162,25 @@ describe('edge routes', () => {
     expect(body['retryAfterMs']).toBe(120_000)
   })
 
-  it('rejects the removed github/openrouter providers with a validation error', async () => {
-    const fetchSpy = vi.fn()
-    vi.stubGlobal('fetch', fetchSpy)
-
+  it('serves the legacy github/openrouter providers via LiteLLM and reports them to telemetry (deprecation window, issue #178)', async () => {
+    // A stale frontend bundle (a tab opened before the LiteLLM-only cutover)
+    // still sends the removed provider ids on every call. A hard zod 400 would
+    // break those tabs until a reload, so the edge accepts them, serves the
+    // request via LiteLLM, and surfaces the sighting as a fingerprinted Sentry
+    // warning so the enum can be narrowed once the legacy values die out.
     for (const provider of ['github', 'openrouter']) {
+      const messageSink = vi.fn<CaptureMessageSink>()
+      setCaptureMessageSink(messageSink)
+      const fetchSpy = withCallerValidation(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        )
+      )
+      vi.stubGlobal('fetch', fetchSpy)
+
       const response = await app.fetch(
         new Request('http://localhost/api/models/chat', {
           method: 'POST',
@@ -184,9 +198,21 @@ describe('edge routes', () => {
         LITELLM_ENV
       )
 
-      expect(response.status).toBe(400)
+      expect(response.status).toBe(200)
+      const legacyProviderReport = messageSink.mock.calls.find(
+        ([, options]) =>
+          options.tags?.['request_area'] === 'models.chat' &&
+          options.tags?.['provider_legacy'] === true
+      )
+      expect(legacyProviderReport).toBeDefined()
+      expect(legacyProviderReport?.[1].tags?.['request_provider']).toBe(
+        provider
+      )
+      expect(legacyProviderReport?.[1].tags?.['resolved_provider']).toBe(
+        'litellm'
+      )
+      expect(legacyProviderReport?.[1].level).toBe('warning')
     }
-    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('returns 503 when LiteLLM is not configured', async () => {

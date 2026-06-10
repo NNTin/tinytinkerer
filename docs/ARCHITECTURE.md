@@ -289,6 +289,19 @@ The current flow is:
 7. `AssistantContent` in `app-browser` passes that document directly to `content-react`, applies the specialized Mermaid and wireframe plugins, and renders through the content platform.
 8. `@tinytinkerer/edge` exposes stateless endpoints and returns payloads that conform to `contracts`.
 
+### Wire-contract rollout: the edge deploys instantly, clients do not
+
+The edge Worker switches over for every request the moment it deploys, but a browser tab can keep a stale SPA bundle — and the request shapes baked into it — alive for days. Tightening a *request* schema therefore breaks exactly the clients that were behaving correctly a deploy ago, and they fail with a generic validation 400 until the user happens to reload.
+
+So shrinking what the edge accepts is a two-phase change:
+
+1. **Deprecation window**: keep accepting the old wire value in the request schema, coerce it to the new behavior at the edge, and emit a fingerprinted Sentry warning so the stragglers are visible (see `trackRequestedProvider` in `apps/edge/src/routes/models.ts`, fingerprints `models-provider-missing` / `models-provider-legacy`).
+2. **Narrowing**: once telemetry shows the legacy values have died out, remove them from the request schema in a follow-up.
+
+Response schemas don't need the window — the edge controls both what it emits and the schema it emits against — which is why `modelProviderIdSchema` (responses) is `litellm`-only while `requestedModelProviderIdSchema` (requests) still accepts the removed `github`/`openrouter` ids (issue #178).
+
+When a hard break is unavoidable, deploy the frontends *before* the edge to keep the stale-bundle window as small as possible, and make the rejection message actionable ("reload the app"), not a raw zod issue list.
+
 ## Browser App Model
 
 All three browser shells consume the same browser-facing shared layer.

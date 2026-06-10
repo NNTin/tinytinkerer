@@ -70,17 +70,35 @@ export type ChatMessage = z.infer<typeof chatMessageSchema>
 
 // LiteLLM is the sole provider — it proxies the upstream LLM providers itself.
 // The enum (and the optional `provider` request field) is kept so the wire
-// shape stays extensible; legacy 'github'/'openrouter' values now fail
-// validation.
+// shape stays extensible.
 export const modelProviderIdSchema = z
   .enum(['litellm'])
   .meta({ id: 'ModelProviderId' })
 
 export type ModelProviderId = z.infer<typeof modelProviderIdSchema>
 
+// Deprecation window for stale frontend bundles (issue #178): a browser tab
+// that loaded the SPA before the LiteLLM-only cutover still sends the removed
+// 'github'/'openrouter' ids on every model call. Edges deploy instantly while
+// clients can hold a stale bundle for a long time, so REQUEST schemas keep
+// accepting the legacy ids — the edge serves them via LiteLLM and reports the
+// sighting to Sentry — instead of hard-failing with a zod 400 until the user
+// happens to reload. Narrow this back to modelProviderIdSchema once telemetry
+// shows the legacy values have died out. Response shapes (ModelEntry) only
+// ever emit 'litellm' and stay on the narrow enum.
+export const legacyModelProviderIds = ['github', 'openrouter'] as const
+
+export const requestedModelProviderIdSchema = z
+  .enum(['litellm', ...legacyModelProviderIds])
+  .meta({ id: 'RequestedModelProviderId' })
+
+export type RequestedModelProviderId = z.infer<
+  typeof requestedModelProviderIdSchema
+>
+
 export const modelsChatRequestSchema = z
   .object({
-    provider: modelProviderIdSchema.optional(),
+    provider: requestedModelProviderIdSchema.optional(),
     model: z.string().optional(),
     litellmBaseUrl: z.string().url().optional(),
     stream: z.boolean().optional(),

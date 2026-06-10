@@ -19,11 +19,11 @@ import {
   mcpCallResponseSchema,
   mcpDiscoverRequestSchema,
   mcpDiscoveryResultSchema,
-  modelProviderIdSchema,
   modelsChatRequestSchema,
   modelsChatResponseSchema,
   modelsListResponseSchema,
   rateLimitPayloadSchema,
+  requestedModelProviderIdSchema,
   searchRequestSchema,
   searchResponseSchema,
   systemStatusSchema
@@ -157,7 +157,7 @@ export const modelsListRoute = createRoute({
   request: {
     headers: telemetryHeaders,
     query: z.object({
-      provider: modelProviderIdSchema.optional(),
+      provider: requestedModelProviderIdSchema.optional(),
       litellmBaseUrl: z.string().url().optional()
     })
   },

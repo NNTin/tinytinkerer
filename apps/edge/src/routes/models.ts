@@ -3,9 +3,10 @@ import {
   EDGE_RATE_LIMIT_HEADERS,
   edgeErrorResponseSchema,
   modelEntrySchema,
+  legacyModelProviderIds,
   modelsChatResponseSchema,
   type ModelEntry,
-  type ModelProviderId
+  type RequestedModelProviderId
 } from '@tinytinkerer/contracts'
 import { z } from 'zod'
 import { captureTelemetryMessage } from '@tinytinkerer/sentry-telemetry'
@@ -239,33 +240,73 @@ const toLiteLLMModels = (raw: unknown): ModelEntry[] => {
 // a misbehaving client is surfaced rather than dropped.
 const ABSENT_PROVIDER = 'absent'
 
-// A request without an explicit provider is silently served by LiteLLM (the
-// sole provider). That hides a misbehaving client, so surface it as a Sentry
-// message tagged with the area and the provider we fell back to. Returns the
-// value to stamp on request telemetry: the requested provider id, or the
-// ABSENT sentinel.
+const isLegacyProvider = (
+  requested: RequestedModelProviderId
+): boolean =>
+  (legacyModelProviderIds as readonly string[]).includes(requested)
+
+// Requests that don't name 'litellm' are still served by LiteLLM (the sole
+// provider), which would silently hide the client that sent them. Surface both
+// shapes as fingerprinted Sentry messages tagged with the area and the
+// provider we fell back to:
+//  - the provider field is absent entirely (a very old or misbehaving client)
+//  - the provider is a legacy 'github'/'openrouter' id from a stale frontend
+//    bundle still open in a browser tab (issue #178); accepted during the
+//    deprecation window instead of hard-failing validation, until telemetry
+//    shows these values have died out.
+// Returns the value to stamp on request telemetry: the requested provider id,
+// or the ABSENT sentinel.
 const trackRequestedProvider = (
   area: 'models.chat' | 'models.list',
-  requested: ModelProviderId | undefined
+  requested: RequestedModelProviderId | undefined
 ): string => {
-  if (requested !== undefined) return requested
-  captureTelemetryMessage(
-    `${area} request omitted the provider field; defaulting to litellm`,
-    {
-      level: 'warning',
-      tags: {
-        request_area: area,
-        request_provider: ABSENT_PROVIDER,
-        provider_missing: true,
-        resolved_provider: 'litellm'
-      },
-      contexts: {
-        request: { area, provider_missing: true, resolved_provider: 'litellm' }
-      },
-      fingerprint: ['models-provider-missing', area]
-    }
-  )
-  return ABSENT_PROVIDER
+  if (requested === undefined) {
+    captureTelemetryMessage(
+      `${area} request omitted the provider field; defaulting to litellm`,
+      {
+        level: 'warning',
+        tags: {
+          request_area: area,
+          request_provider: ABSENT_PROVIDER,
+          provider_missing: true,
+          resolved_provider: 'litellm'
+        },
+        contexts: {
+          request: {
+            area,
+            provider_missing: true,
+            resolved_provider: 'litellm'
+          }
+        },
+        fingerprint: ['models-provider-missing', area]
+      }
+    )
+    return ABSENT_PROVIDER
+  }
+  if (isLegacyProvider(requested)) {
+    captureTelemetryMessage(
+      `${area} request sent the legacy provider '${requested}'; serving via litellm`,
+      {
+        level: 'warning',
+        tags: {
+          request_area: area,
+          request_provider: requested,
+          provider_legacy: true,
+          resolved_provider: 'litellm'
+        },
+        contexts: {
+          request: {
+            area,
+            requested_provider: requested,
+            provider_legacy: true,
+            resolved_provider: 'litellm'
+          }
+        },
+        fingerprint: ['models-provider-legacy', area, requested]
+      }
+    )
+  }
+  return requested
 }
 
 export const registerModelRoutes = (

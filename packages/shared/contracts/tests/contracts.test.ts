@@ -9,6 +9,7 @@ import {
   modelsChatRequestSchema,
   modelsListResponseSchema,
   rateLimitPayloadSchema,
+  requestedModelProviderIdSchema,
   searchResponseSchema,
   systemStatusSchema
 } from '../src/index.js'
@@ -128,10 +129,22 @@ describe('contracts', () => {
     )
   })
 
-  it('rejects the removed github/openrouter provider ids', () => {
+  it('keeps the canonical provider enum litellm-only', () => {
     expect(modelProviderIdSchema.parse('litellm')).toBe('litellm')
     expect(modelProviderIdSchema.safeParse('github').success).toBe(false)
     expect(modelProviderIdSchema.safeParse('openrouter').success).toBe(false)
+  })
+
+  it('still accepts the legacy github/openrouter ids on requests (deprecation window, issue #178)', () => {
+    for (const provider of ['github', 'openrouter'] as const) {
+      expect(requestedModelProviderIdSchema.parse(provider)).toBe(provider)
+      expect(
+        modelsChatRequestSchema.parse({
+          provider,
+          messages: [{ role: 'user', content: 'hi' }]
+        }).provider
+      ).toBe(provider)
+    }
   })
 
   it('parses shared brand metadata', () => {
