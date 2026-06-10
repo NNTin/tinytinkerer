@@ -12,6 +12,7 @@ import {
 } from '@tinytinkerer/sentry-telemetry'
 import app from './index.js'
 import { cacheKeyForScope } from './lib/models-cache.js'
+import { clearCallerValidationCache } from './lib/caller-validation-cache.js'
 import { clearModelsBackoff } from './lib/rate-limit.js'
 
 // Minimal in-memory stand-in for Cloudflare's `caches.default`. Responses are
@@ -67,6 +68,14 @@ const upstreamCalls = (
     ([input]) => toRequestUrl(input) !== GITHUB_USER_URL
   )
 
+/** Calls to the api.github.com/user caller-validation probe only. */
+const githubProbeCalls = (
+  fetchSpy: ReturnType<typeof vi.fn>
+): Array<[RequestInfo | URL, RequestInit | undefined]> =>
+  (fetchSpy.mock.calls as Array<[RequestInfo | URL, RequestInit | undefined]>).filter(
+    ([input]) => toRequestUrl(input) === GITHUB_USER_URL
+  )
+
 const DEFAULT_LITELLM_SCOPE = encodeURIComponent(
   'https://litellm.labs.lair.nntin.xyz'
 )
@@ -78,6 +87,9 @@ describe('edge routes', () => {
     // The LiteLLM backoff window is module-level (per-isolate); reset it so
     // a 429 in one test doesn't short-circuit the next.
     clearModelsBackoff()
+    // Likewise the caller-validation cache: a token validated in one test must
+    // not skip the GitHub probe in the next.
+    clearCallerValidationCache()
     // Drop any telemetry sink a test registered so captures don't leak across.
     setCaptureExceptionSink(null)
     setCaptureMessageSink(null)
@@ -647,6 +659,142 @@ describe('edge routes', () => {
       error: 'LiteLLM caller validation is temporarily unavailable.'
     })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('caches a successful caller validation and skips the GitHub probe on subsequent calls (issue #177)', async () => {
+    const fetchSpy = withCallerValidation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const chatRequest = () =>
+      app.fetch(
+        new Request('http://localhost/api/models/chat', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer test-token'
+          },
+          body: JSON.stringify({
+            provider: 'litellm',
+            model: 'openai/gpt-4.1-mini',
+            stream: false,
+            messages: [{ role: 'user', content: 'hello' }]
+          })
+        }),
+        LITELLM_ENV
+      )
+
+    // First call probes GitHub once and caches the positive result.
+    const first = await chatRequest()
+    expect(first.status).toBe(200)
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
+
+    // A ReAct prompt issues several edge calls back to back: the follow-ups
+    // must reuse the cached validation instead of re-probing GitHub.
+    const second = await chatRequest()
+    expect(second.status).toBe(200)
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(2)
+  })
+
+  it('does not cache an invalid caller validation — revocation bites on the next call (issue #177)', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      if (toRequestUrl(input) === GITHUB_USER_URL) {
+        return Promise.resolve(new Response('bad credentials', { status: 401 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const listRequest = () =>
+      app.fetch(
+        new Request('http://localhost/api/models/list?provider=litellm', {
+          headers: { authorization: 'Bearer bad-token' }
+        }),
+        LITELLM_ENV
+      )
+
+    const first = await listRequest()
+    expect(first.status).toBe(401)
+    const second = await listRequest()
+    expect(second.status).toBe(401)
+    // Negative results are never cached, so each call re-probes.
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(2)
+  })
+
+  it('does not cache an unavailable caller validation — a GitHub outage is never sticky (issue #177)', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      if (toRequestUrl(input) === GITHUB_USER_URL) {
+        return Promise.resolve(
+          new Response('github unavailable', { status: 503 })
+        )
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const listRequest = () =>
+      app.fetch(
+        new Request('http://localhost/api/models/list?provider=litellm', {
+          headers: { authorization: 'Bearer test-token' }
+        }),
+        LITELLM_ENV
+      )
+
+    const first = await listRequest()
+    expect(first.status).toBe(503)
+    const second = await listRequest()
+    expect(second.status).toBe(503)
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(2)
+  })
+
+  it('checks the chat backoff window before probing GitHub (issue #177)', async () => {
+    const fetchSpy = withCallerValidation(() =>
+      Promise.resolve(
+        new Response('rate limited', {
+          status: 429,
+          headers: { 'retry-after': '120' }
+        })
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const chatRequest = (token: string) =>
+      app.fetch(
+        new Request('http://localhost/api/models/chat', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            provider: 'litellm',
+            model: 'openai/gpt-4.1-mini',
+            stream: false,
+            messages: [{ role: 'user', content: 'hello' }]
+          })
+        }),
+        LITELLM_ENV
+      )
+
+    // First caller opens the (deployment-wide) backoff window.
+    const first = await chatRequest('first-token')
+    expect(first.status).toBe(429)
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
+
+    // A DIFFERENT caller (validation not cached for this token) arrives while
+    // the window is open: the 429 short-circuit must answer before the GitHub
+    // probe, so no new probe is spent just to be told to back off.
+    const second = await chatRequest('second-token')
+    expect(second.status).toBe(429)
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
   })
 
   it('serves the last-known list when upstream is rate limited, breaking the 429 cascade (TINYTINKERER-FRONTEND-5)', async () => {

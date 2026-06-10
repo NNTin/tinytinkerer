@@ -26,6 +26,10 @@ import {
   recordBackoff,
   toRateLimitResponse
 } from '../lib/rate-limit'
+import {
+  readCachedCallerValidation,
+  writeCachedCallerValidation
+} from '../lib/caller-validation-cache'
 
 const liteLLMModelsCatalogEntrySchema = z
   .object({
@@ -187,6 +191,14 @@ const requireLiteLLMConfiguration = (env: Bindings): string | undefined => {
 const validateLiteLLMCaller = async (
   authorization: string
 ): Promise<LiteLLMCallerValidationResult> => {
+  // A ReAct prompt fans out into several edge calls, each of which would pay
+  // this uncached GitHub round trip (~100–300 ms) and burn the caller's GitHub
+  // rate limit. Serve a recent successful validation instead; only positive
+  // results are cached (short TTL), so revocation still bites within minutes
+  // and a GitHub outage is never sticky (issue #177).
+  const callerKey = await deriveCredentialKey(authorization)
+  if (await readCachedCallerValidation(callerKey)) return 'valid'
+
   const response = await fetchWithTimeout(
     {
       area: 'models.litellm.auth',
@@ -211,7 +223,10 @@ const validateLiteLLMCaller = async (
   ).catch(() => undefined)
 
   if (!response) return 'unavailable'
-  if (response.ok) return 'valid'
+  if (response.ok) {
+    await writeCachedCallerValidation(callerKey)
+    return 'valid'
+  }
   if (response.status === 401 || response.status === 403) return 'invalid'
   return 'unavailable'
 }
@@ -302,6 +317,30 @@ export const registerModelRoutes = (
         503
       )
     }
+    const resolvedBaseUrl = litellmBaseUrl.baseUrl
+    const model = body.model ?? LITELLM_DEFAULT_MODEL
+
+    // Scope the backoff to the upstream credential/quota bucket: the shared
+    // edge-managed key (plus base URL) so one caller's 429 correctly backs off
+    // all callers of the same LiteLLM deployment.
+    const credentialKey = await deriveCredentialKey(
+      liteLLMSharedCredentialKeyInput(c.env, resolvedBaseUrl)
+    )
+
+    // Respect a still-open upstream rate-limit window (durable across isolates):
+    // short-circuit with a 429 instead of re-hammering the upstream provider
+    // (TINYTINKERER-EDGE-4). This runs BEFORE the caller-validation probe — the
+    // window has no auth dependency, and while it is open every request would
+    // otherwise pay the GitHub round trip just to be answered with a 429
+    // (issue #177). Trade-off: an unauthenticated caller can observe backoff
+    // state via 429-vs-401 — that leaks only the shared deployment's cooldown,
+    // not anything about a user, so it is an accepted, low-risk leak.
+    const backoffMs = await getActiveBackoffMs(Date.now(), credentialKey)
+    if (backoffMs > 0) {
+      c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
+      return c.json(rateLimitResponseFromMs(backoffMs), 429)
+    }
+
     const callerValidation = await validateLiteLLMCaller(authorization)
     if (callerValidation === 'invalid') {
       return c.json(
@@ -316,24 +355,6 @@ export const registerModelRoutes = (
         }),
         503
       )
-    }
-    const resolvedBaseUrl = litellmBaseUrl.baseUrl
-    const model = body.model ?? LITELLM_DEFAULT_MODEL
-
-    // Scope the backoff to the upstream credential/quota bucket: the shared
-    // edge-managed key (plus base URL) so one caller's 429 correctly backs off
-    // all callers of the same LiteLLM deployment.
-    const credentialKey = await deriveCredentialKey(
-      liteLLMSharedCredentialKeyInput(c.env, resolvedBaseUrl)
-    )
-
-    // Respect a still-open upstream rate-limit window (durable across isolates):
-    // short-circuit with a 429 instead of re-hammering the upstream provider
-    // (TINYTINKERER-EDGE-4).
-    const backoffMs = await getActiveBackoffMs(Date.now(), credentialKey)
-    if (backoffMs > 0) {
-      c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
-      return c.json(rateLimitResponseFromMs(backoffMs), 429)
     }
 
     const response = await fetchWithTimeout(
