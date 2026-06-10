@@ -409,7 +409,7 @@ describe('edge routes', () => {
             object: 'list',
             data: [
               {
-                id: toRequestUrl(input).includes('litellm.example.com')
+                id: new URL(toRequestUrl(input)).hostname === 'litellm.example.com'
                   ? 'custom/model'
                   : 'openai/gpt-5',
                 object: 'model'
