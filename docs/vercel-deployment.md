@@ -7,6 +7,9 @@ This guide covers the full hosted setup for tinytinkerer:
 - GitHub provides user sign-in through an OAuth app
 - GitHub Actions deploys `main`, `develop`, and PR previews to Vercel
 
+The edge also needs a LiteLLM instance to serve models — see
+[litellm-setup.md](litellm-setup.md) for hosting one and wiring it in.
+
 ## Important Naming Note
 
 The current codebase expects a **GitHub OAuth App**, not a GitHub App installation flow.
@@ -80,6 +83,7 @@ In the GitHub repository:
    - `CLOUDFLARE_ACCOUNT_ID`
    - `OAUTH_GITHUB_CLIENT_ID`
    - `OAUTH_GITHUB_CLIENT_SECRET`
+   - `LITELLM_API_KEY` (see [litellm-setup.md](litellm-setup.md))
    - `TAVILY_API_KEY` (optional)
 
 The deploy workflow at `.github/workflows/deploy-pages.yml` uses those secrets for both production and preview deploys.
@@ -222,7 +226,12 @@ The Worker requires these secrets:
 ```bash
 GITHUB_CLIENT_ID
 GITHUB_CLIENT_SECRET
+LITELLM_API_KEY
 ```
+
+`LITELLM_API_KEY` is the virtual key for the LiteLLM instance named in the
+Worker's `LITELLM_BASE_URL` var — see [litellm-setup.md](litellm-setup.md)
+for hosting an instance, generating the key, and pointing the vars at it.
 
 In GitHub Actions, store them under these repository secret names instead:
 
