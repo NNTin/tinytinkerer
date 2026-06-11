@@ -23,6 +23,7 @@ vi.mock('../src/runtime/get-runtime.js', () => ({
 }))
 
 const { createChatStore } = await import('../src/stores/chat-store.js')
+const { rateLimitCooldownKey } = await import('@tinytinkerer/app-core')
 
 const makeShell = (): BrowserShell =>
   ({
@@ -53,11 +54,16 @@ const makeShell = (): BrowserShell =>
   }) as unknown as BrowserShell
 
 const makeAuthStore = (): AuthStore => ({ getState: vi.fn(() => ({ token: 'tok' })) }) as unknown as AuthStore
-// A real zustand store so chat-store's getState() works.
-const makeSettingsStore = (): SettingsStore =>
+// A real zustand store so chat-store's subscribe()/getState() work and tests can
+// simulate a base-URL switch via setState.
+const makeSettingsStore = (
+  initial: { litellmBaseUrl?: string } = {}
+): SettingsStore =>
   createStore(() => ({
     searchEnabled: true,
-    selectedModel: 'gpt-4o'
+    selectedModel: 'gpt-4o',
+    litellmBaseUrl: 'https://litellm-a.example.com',
+    ...initial
   })) as unknown as SettingsStore
 const makeStatusStore = (): StatusStore => ({ getState: vi.fn(() => ({ hydrated: true, status: { auth: { state: 'ready', detail: '' }, models: { state: 'ready', detail: '' }, search: { state: 'ready', detail: '' } } })) }) as unknown as StatusStore
 
@@ -127,4 +133,69 @@ describe('createChatStore', () => {
     expect(store.getState().isRunning).toBe(false)
   })
 
+  it('forwards the configured litellmBaseUrl to executeChatPrompt (issue #179)', async () => {
+    mockExecuteChatPrompt.mockResolvedValue(undefined)
+
+    const store = createChatStore({
+      shell: makeShell(),
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore({ litellmBaseUrl: 'https://litellm-b.example.com' }),
+      statusStore: makeStatusStore(),
+    })
+
+    store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: false })
+
+    await store.getState().sendPrompt('hello')
+
+    expect(mockExecuteChatPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({ litellmBaseUrl: 'https://litellm-b.example.com' })
+    )
+  })
+
+  it('refreshes cooldownUntil from the new deployment on a base-URL switch (issues #146/#179)', async () => {
+    const future = new Date(Date.now() + 60_000).toISOString()
+    const shell = makeShell()
+    shell.preferences = {
+      get: vi.fn((key: string) =>
+        Promise.resolve(
+          key === rateLimitCooldownKey('https://litellm-b.example.com') ? future : undefined
+        )
+      ),
+      set: vi.fn(() => Promise.resolve()),
+    }
+
+    const settingsStore = makeSettingsStore({ litellmBaseUrl: 'https://litellm-a.example.com' })
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore,
+      statusStore: makeStatusStore(),
+    })
+
+    // Switching to a deployment with an active cooldown must surface it.
+    settingsStore.setState({ litellmBaseUrl: 'https://litellm-b.example.com' })
+
+    await vi.waitFor(() => {
+      expect(store.getState().cooldownUntil).toBe(future)
+    })
+  })
+
+  it('does not reload the cooldown when an unrelated setting changes', async () => {
+    const getPreference = vi.fn(() => Promise.resolve(undefined))
+    const shell = makeShell()
+    shell.preferences = { get: getPreference, set: vi.fn(() => Promise.resolve()) }
+    const settingsStore = makeSettingsStore()
+    createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore,
+      statusStore: makeStatusStore(),
+    })
+
+    settingsStore.setState({ searchEnabled: false })
+
+    // Give the (unwanted) async reload a chance to fire before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(getPreference).not.toHaveBeenCalled()
+  })
 })

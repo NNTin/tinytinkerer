@@ -140,5 +140,23 @@ export const createChatStore = (options: {
     }
   }))
 
+  // Cooldowns are scoped per LiteLLM deployment (issue #179). When the user
+  // switches the base URL, reload that deployment's cooldown so send gating
+  // reflects it immediately instead of carrying the previous deployment's
+  // window (issue #146). The store lives for the app's lifetime, so we never
+  // need to unsubscribe.
+  options.settingsStore.subscribe((state, prev) => {
+    if (state.litellmBaseUrl === prev.litellmBaseUrl) {
+      return
+    }
+    void loadCoreModule().then(async ({ loadCooldown }) => {
+      const cooldownUntil = await loadCooldown(
+        options.shell.preferences,
+        state.litellmBaseUrl
+      )
+      store.setState({ cooldownUntil })
+    })
+  })
+
   return store
 }
