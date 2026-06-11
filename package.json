@@ -4,6 +4,14 @@
   "version": "0.1.0",
   "license": "SEE LICENSE IN LICENSE",
   "packageManager": "pnpm@10.16.1",
+  "engines": {
+    "node": "22.x"
+  },
+  "prettier": {
+    "semi": false,
+    "singleQuote": true,
+    "trailingComma": "none"
+  },
   "scripts": {
     "generate:brand-assets": "node ./scripts/generate-brand-assets.mjs",
     "generate:privacy-policy": "node ./scripts/generate-privacy-policy.mjs",
@@ -21,8 +29,8 @@
     "check:mermaid": "node ./scripts/check-mermaid.mjs",
     "sync:skill-readme": "node ./scripts/sync-skill-readme.mjs",
     "check:skill-readme": "node ./scripts/sync-skill-readme.mjs --check",
-    "jscpd": "jscpd",
-    "knip": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && knip",
+    "jscpd": "jscpd apps packages scripts --config config/jscpd.json",
+    "knip": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && knip --config config/knip.ts",
     "lint": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 turbo run lint && node ./scripts/check-boundaries.mjs",
     "test": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && turbo run test && pnpm compliance:test",
     "typecheck": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && turbo run typecheck",

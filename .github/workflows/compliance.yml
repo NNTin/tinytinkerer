@@ -87,7 +87,7 @@ jobs:
         run: pnpm compliance:sbom
 
       - name: Generate licenses report
-        run: pnpm licenses list --json -P > licenses.json
+        run: mkdir -p dist/compliance && pnpm licenses list --json -P > dist/compliance/licenses.json
 
       - name: Build third-party notices
         run: pnpm generate:notices
@@ -99,9 +99,9 @@ jobs:
         with:
           name: compliance-artifacts
           path: |
-            sbom.json
-            licenses.json
-            THIRD_PARTY_NOTICES.md
+            dist/compliance/sbom.json
+            dist/compliance/licenses.json
+            dist/compliance/THIRD_PARTY_NOTICES.md
           if-no-files-found: error
 
       - name: Validate license policy parser

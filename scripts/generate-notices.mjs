@@ -9,7 +9,8 @@ const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // workflow); it is intentionally not committed (see .gitignore).
 const markdownPath = join(
   rootDir,
-  process.env.NOTICES_OUTPUT ?? 'THIRD_PARTY_NOTICES.md'
+  process.env.NOTICES_OUTPUT ??
+    join('dist', 'compliance', 'THIRD_PARTY_NOTICES.md')
 )
 
 // The same content is embedded in a generated module so the app can show it in
@@ -65,6 +66,7 @@ const main = () => {
   const dependencies = collectDependencyLicenses()
   const markdown = buildMarkdown(dependencies)
 
+  mkdirSync(dirname(markdownPath), { recursive: true })
   writeFileSync(markdownPath, markdown)
 
   mkdirSync(dirname(modulePath), { recursive: true })

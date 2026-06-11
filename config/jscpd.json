@@ -1,6 +1,5 @@
 {
   "$schema": "https://raw.githubusercontent.com/kucherenko/jscpd/master/packages/jscpd/schema.json",
-  "path": ["apps", "packages", "scripts"],
   "format": ["typescript", "tsx", "javascript", "jsx"],
   "ignore": [
     "**/node_modules/**",

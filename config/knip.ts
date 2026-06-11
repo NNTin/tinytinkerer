@@ -11,6 +11,12 @@ import type { KnipConfig } from 'knip'
 // public surface that isn't always consumed within the monorepo, so failing on
 // them would be noisy. Burn the warnings down over time (see issue #143).
 const config: KnipConfig = {
+  // The commitlint config lives in config/ (issue #182), outside the plugin's
+  // default detection, so point the plugin at it explicitly. This keeps the
+  // file recognized as a config entry and its `extends` dependency traced.
+  commitlint: {
+    config: ['config/commitlint.config.cjs']
+  },
   ignore: [
     // Agent skill tools are invoked by external tooling, not imported by the app.
     '.agent/**',
@@ -50,10 +56,17 @@ const config: KnipConfig = {
     'apps/web': {
       // Radix primitives kept for parity with the shared UI package; not yet
       // imported directly by the app.
-      ignoreDependencies: ['@radix-ui/react-collapsible', '@radix-ui/react-dialog', '@radix-ui/react-tooltip']
+      ignoreDependencies: [
+        '@radix-ui/react-collapsible',
+        '@radix-ui/react-dialog',
+        '@radix-ui/react-tooltip'
+      ]
     },
     'apps/mobile': {
-      ignoreDependencies: ['@radix-ui/react-collapsible', '@radix-ui/react-dialog']
+      ignoreDependencies: [
+        '@radix-ui/react-collapsible',
+        '@radix-ui/react-dialog'
+      ]
     },
     'packages/plugins/plugin-feedback': {
       // Declared for the plugin's schema work; no runtime import yet.
