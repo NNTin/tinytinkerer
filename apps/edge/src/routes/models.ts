@@ -204,7 +204,12 @@ const liteLLMSharedCredentialKeyInput = (
   baseUrl: string
 ): string => `litellm:${env.LITELLM_API_KEY ?? ''}:${baseUrl}`
 
-const requireLiteLLMConfiguration = (env: Bindings): string | undefined => {
+// Exported so /health reports `degraded` under EXACTLY the rule the models
+// routes 503 on — including base-URL validity (https, no credentials/query/
+// fragment), not just presence.
+export const requireLiteLLMConfiguration = (
+  env: Bindings
+): string | undefined => {
   const apiKey = env.LITELLM_API_KEY?.trim()
   return apiKey && configuredLiteLLMBaseUrl(env)
     ? undefined

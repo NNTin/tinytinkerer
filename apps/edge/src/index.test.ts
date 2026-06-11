@@ -242,6 +242,33 @@ describe('edge routes', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  it('health reports models degraded under the same rule the models routes 503 on, including base-URL validity', async () => {
+    const healthStatus = async (env: Record<string, string>) => {
+      const response = await app.fetch(
+        new Request('http://localhost/health'),
+        env
+      )
+      return systemStatusSchema.parse(await response.json()).models
+    }
+
+    expect((await healthStatus(LITELLM_ENV)).state).toBe('ready')
+    // Present but INVALID base URL (http, credentials, query): the models
+    // routes reject it via normalizeLiteLLMBaseUrl and answer 503, so /health
+    // must not claim ready for the same env value.
+    for (const badUrl of [
+      'http://litellm.example.com/',
+      'https://user:pw@litellm.example.com/',
+      'https://litellm.example.com/?key=1'
+    ]) {
+      const models = await healthStatus({
+        LITELLM_API_KEY: 'litellm-shared-key',
+        LITELLM_BASE_URL: badUrl
+      })
+      expect(models.state).toBe('degraded')
+      expect(models.detail).toBe('LiteLLM is not configured')
+    }
+  })
+
   it('applies the default model when the request omits one', async () => {
     const fetchSpy = withCallerValidation(() =>
       Promise.resolve(

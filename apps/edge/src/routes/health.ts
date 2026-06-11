@@ -2,16 +2,17 @@ import type { OpenAPIHono } from '@hono/zod-openapi'
 import type { SystemStatus } from '@tinytinkerer/contracts'
 import type { Bindings } from '../lib/bindings'
 import { healthRoute } from '../openapi/routes'
+import { requireLiteLLMConfiguration } from './models'
 
 export const registerHealthRoute = (
   app: OpenAPIHono<{ Bindings: Bindings }>
 ) => {
   app.openapi(healthRoute, (c) => {
-    // Mirrors requireLiteLLMConfiguration in ./models: both the key and the
-    // base URL must be set (there is no code-level base-URL fallback).
-    const litellmConfigured = Boolean(
-      c.env.LITELLM_API_KEY?.trim() && c.env.LITELLM_BASE_URL?.trim()
-    )
+    // The same check the models routes 503 on: key present AND base URL
+    // present and valid (there is no code-level base-URL fallback). Sharing
+    // the helper keeps /health from reporting `ready` for an env value the
+    // models routes would reject.
+    const litellmConfigured = !requireLiteLLMConfiguration(c.env)
     const status: SystemStatus = {
       auth: {
         state: c.env.GITHUB_CLIENT_ID ? 'ready' : 'degraded',
