@@ -3,7 +3,8 @@ name: Code Quality
 # Static code-health gates that complement lint/typecheck/test:
 #   - jscpd  → fails when copy/paste duplication exceeds the configured threshold
 #   - knip   → fails on unused files and dependencies (unused exports are warnings)
-# Both are baselined against the current codebase (see .jscpd.json and knip.ts),
+# Both are baselined against the current codebase (see config/jscpd.json and
+# config/knip.ts),
 # so a green run means no *new* duplication or dead weight was introduced.
 on:
   push:

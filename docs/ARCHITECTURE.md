@@ -185,7 +185,7 @@ These conventions are load-bearing. Several of them are enforced by `pnpm -r lin
 
 ### TypeScript strictness
 
-`tsconfig.base.json` enables `strict`, `exactOptionalPropertyTypes`, and `noUncheckedIndexedAccess` for every package. **Never weaken these.** They catch real bugs and shape the type contracts below.
+`config/tsconfig.base.json` enables `strict`, `exactOptionalPropertyTypes`, and `noUncheckedIndexedAccess` for every package. **Never weaken these.** They catch real bugs and shape the type contracts below.
 
 ### Optional properties
 
