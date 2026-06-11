@@ -14,23 +14,7 @@ import app from './index.js'
 import { cacheKeyForScope } from './lib/models-cache.js'
 import { clearCallerValidationCache } from './lib/caller-validation-cache.js'
 import { clearModelsBackoff } from './lib/rate-limit.js'
-
-// Minimal in-memory stand-in for Cloudflare's `caches.default`. Responses are
-// cloned on read/write so their single-use bodies survive multiple matches.
-const makeCacheMock = () => {
-  const store = new Map<string, Response>()
-  // The route only ever keys the cache by a string key, so the mock takes a
-  // string directly (the real Cache API accepts RequestInfo | URL).
-  const cache = {
-    match: (key: string) => Promise.resolve(store.get(key)?.clone()),
-    put: (key: string, res: Response) => {
-      store.set(key, res.clone())
-      return Promise.resolve()
-    },
-    delete: (key: string) => Promise.resolve(store.delete(key))
-  }
-  return { store, cache }
-}
+import { makeCacheMock } from './test/cache-mock.js'
 
 const toRequestUrl = (input: RequestInfo | URL): string => {
   if (typeof input === 'string') return input
@@ -241,6 +225,71 @@ describe('edge routes', () => {
     })
     expect(fetchSpy).not.toHaveBeenCalled()
   })
+
+  // Both models routes duplicate the same guard sequence; pin the missing-
+  // Authorization 401 on each so a refactor that unifies them cannot drop it
+  // from either route.
+  it('returns 401 when the models routes are called without authorization', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const chatResponse = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'litellm',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      LITELLM_ENV
+    )
+    expect(chatResponse.status).toBe(401)
+    expect(edgeErrorResponseSchema.parse(await chatResponse.json())).toEqual({
+      error: 'Unauthorized'
+    })
+
+    const listResponse = await app.fetch(
+      new Request('http://localhost/api/models/list?provider=litellm'),
+      LITELLM_ENV
+    )
+    expect(listResponse.status).toBe(401)
+    expect(edgeErrorResponseSchema.parse(await listResponse.json())).toEqual({
+      error: 'Unauthorized'
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  // Mirror of the chat-route unconfigured cases above: the list route runs the
+  // same configuration guard.
+  it.each([
+    ['nothing is set', {}],
+    ['the base URL is missing', { LITELLM_API_KEY: 'litellm-shared-key' }],
+    [
+      'the key is missing',
+      { LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/' }
+    ]
+  ])(
+    'returns 503 on models/list when LiteLLM is not configured (%s)',
+    async (_label, env) => {
+      const fetchSpy = vi.fn()
+      vi.stubGlobal('fetch', fetchSpy)
+
+      const response = await app.fetch(
+        new Request('http://localhost/api/models/list?provider=litellm', {
+          headers: { authorization: 'Bearer test-token' }
+        }),
+        env
+      )
+
+      expect(response.status).toBe(503)
+      expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+        error: 'LiteLLM is not configured.'
+      })
+      expect(fetchSpy).not.toHaveBeenCalled()
+    }
+  )
 
   it('health reports models degraded under the same rule the models routes 503 on, including base-URL validity', async () => {
     const healthStatus = async (env: Record<string, string>) => {
@@ -691,6 +740,80 @@ describe('edge routes', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  // Mirror of the list-route test above: the chat route runs the same
+  // allowlist guard before validating or proxying.
+  it('rejects unallowlisted LiteLLM base URLs on chat before validating or proxying', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer github-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          litellmBaseUrl: 'https://evil.example.com/',
+          model: 'openai/gpt-5',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      LITELLM_ENV
+    )
+
+    expect(response.status).toBe(400)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'LiteLLM base URL is not allowed'
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  // A well-formed but non-https URL passes the contracts-level z.string().url()
+  // check and must be rejected by the routes' own normalization on BOTH routes.
+  it('rejects a non-https LiteLLM base URL with 400 on both models routes', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    const insecureBaseUrl = 'http://litellm.example.com/'
+
+    const chatResponse = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer github-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          litellmBaseUrl: insecureBaseUrl,
+          model: 'openai/gpt-5',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      LITELLM_ENV
+    )
+    expect(chatResponse.status).toBe(400)
+    expect(edgeErrorResponseSchema.parse(await chatResponse.json())).toEqual({
+      error: 'Invalid LiteLLM base URL'
+    })
+
+    const listResponse = await app.fetch(
+      new Request(
+        `http://localhost/api/models/list?provider=litellm&litellmBaseUrl=${encodeURIComponent(insecureBaseUrl)}`,
+        { headers: { authorization: 'Bearer github-token' } }
+      ),
+      LITELLM_ENV
+    )
+    expect(listResponse.status).toBe(400)
+    expect(edgeErrorResponseSchema.parse(await listResponse.json())).toEqual({
+      error: 'Invalid LiteLLM base URL'
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
   it('returns 401 for invalid callers before using the shared LiteLLM key', async () => {
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
       if (toRequestUrl(input) === GITHUB_USER_URL) {
@@ -728,6 +851,76 @@ describe('edge routes', () => {
     const response = await app.fetch(
       new Request('http://localhost/api/models/list?provider=litellm', {
         headers: { authorization: 'Bearer github-token' }
+      }),
+      LITELLM_ENV
+    )
+
+    expect(response.status).toBe(503)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'LiteLLM caller validation is temporarily unavailable.'
+    })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  // Mirrors of the list-route caller-validation tests above: the chat route
+  // runs the same probe and must answer identically.
+  it('returns 401 on chat for invalid callers before using the shared LiteLLM key', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      if (toRequestUrl(input) === GITHUB_USER_URL) {
+        return Promise.resolve(new Response('bad credentials', { status: 401 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer bad-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          model: 'openai/gpt-4.1-mini',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      LITELLM_ENV
+    )
+
+    expect(response.status).toBe(401)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'Unauthorized'
+    })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns 503 on chat when LiteLLM caller validation is unavailable', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      if (toRequestUrl(input) === GITHUB_USER_URL) {
+        return Promise.resolve(
+          new Response('github unavailable', { status: 503 })
+        )
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer github-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          model: 'openai/gpt-4.1-mini',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
       }),
       LITELLM_ENV
     )
@@ -914,6 +1107,55 @@ describe('edge routes', () => {
     expect(upstreamCalls(fetchSpy)).toHaveLength(1)
   })
 
+  it('serves the last-known list while the backoff window is open without re-probing upstream', async () => {
+    const { store, cache } = makeCacheMock()
+    // Seed a previously-cached catalogue old enough to be past the fresh window,
+    // so every request takes the backoff-check path instead of the fresh-hit one.
+    store.set(
+      cacheKeyForScope(DEFAULT_LITELLM_SCOPE),
+      new Response(
+        JSON.stringify([{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]),
+        {
+          headers: { 'x-models-cached-at': String(Date.now() - 10 * 60_000) }
+        }
+      )
+    )
+    vi.stubGlobal('caches', { default: cache })
+    const fetchSpy = withCallerValidation(() =>
+      Promise.resolve(
+        new Response('rate limited', {
+          status: 429,
+          headers: { 'retry-after': '120' }
+        })
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const listRequest = () =>
+      app.fetch(
+        new Request('http://localhost/api/models/list?provider=litellm', {
+          headers: { authorization: 'Bearer test-token' }
+        }),
+        LITELLM_ENV
+      )
+
+    // First call probes upstream, gets 429, records the window, and falls back
+    // to the last-known catalogue.
+    const first = await listRequest()
+    expect(first.status).toBe(200)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
+
+    // Second call arrives while the window is still open WITH a warm catalogue
+    // cache: it must serve the last-known list from the backoff branch — a 200,
+    // not the no-cache 503 — without touching upstream again.
+    const second = await listRequest()
+    expect(second.status).toBe(200)
+    expect(await second.json()).toEqual({
+      models: [{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]
+    })
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
+  })
+
   it('keeps the models/list cooldown single-valued: an open window with no cache yields a 503, never a raw 429 (TINYTINKERER-FRONTEND-C)', async () => {
     const { cache } = makeCacheMock()
     vi.stubGlobal('caches', { default: cache })
@@ -1092,6 +1334,46 @@ describe('edge routes', () => {
       model: 'openai/gpt-4.1-mini'
     })
     expect(options?.fingerprint).toContain('model:openai/gpt-4.1-mini')
+  })
+
+  // Mirror of the chat-route upstream-error mapping above: the list route maps
+  // non-429 upstream failures through the same status/message table.
+  it('maps non-429 upstream errors on models/list to typed errors and unknown statuses to 502', async () => {
+    const listRequest = () =>
+      app.fetch(
+        new Request('http://localhost/api/models/list?provider=litellm', {
+          headers: { authorization: 'Bearer test-token' }
+        }),
+        LITELLM_ENV
+      )
+
+    // A mapped upstream status (401) keeps its status code and gets the typed
+    // message instead of leaking the upstream body.
+    vi.stubGlobal(
+      'fetch',
+      withCallerValidation(() =>
+        Promise.resolve(new Response('upstream unauthorized', { status: 401 }))
+      )
+    )
+    const mapped = await listRequest()
+    expect(mapped.status).toBe(401)
+    expect(edgeErrorResponseSchema.parse(await mapped.json())).toEqual({
+      error:
+        'Authentication failed. The configured LiteLLM virtual key may be invalid.'
+    })
+
+    // An unmapped upstream status collapses to a 502 with a generic message.
+    vi.stubGlobal(
+      'fetch',
+      withCallerValidation(() =>
+        Promise.resolve(new Response('teapot', { status: 418 }))
+      )
+    )
+    const unmapped = await listRequest()
+    expect(unmapped.status).toBe(502)
+    expect(edgeErrorResponseSchema.parse(await unmapped.json())).toEqual({
+      error: 'Upstream error 418'
+    })
   })
 
   it('preserves LiteLLM bad-request details for unsupported chat models', async () => {
