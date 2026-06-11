@@ -1205,6 +1205,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Caller validation unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1289,6 +1299,16 @@
           },
           "502": {
             "description": "Bad gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Caller validation unavailable",
             "content": {
               "application/json": {
                 "schema": {

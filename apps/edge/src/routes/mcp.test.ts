@@ -1,10 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { edgeErrorResponseSchema, mcpCallResponseSchema, mcpDiscoveryResultSchema } from '@tinytinkerer/contracts'
 import app from '../index.js'
+import { clearCallerValidationCache } from '../lib/caller-validation-cache.js'
 
 const AUTH = { authorization: 'Bearer test-token' }
 const CT = { 'content-type': 'application/json' }
 const HEADERS = { ...CT, ...AUTH }
+
+// Both MCP routes validate the caller's GitHub identity (an api.github.com/user
+// probe) before connecting, so the SDK mocks alone are not enough — global
+// `fetch` must answer that probe. The SDK transport is mocked, so the GitHub
+// probe is the only real fetch these tests make.
+const GITHUB_USER_URL = 'https://api.github.com/user'
+const toRequestUrl = (input: RequestInfo | URL): string =>
+  typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+const githubUserOk = () =>
+  new Response(JSON.stringify({ login: 'nntin' }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' }
+  })
+/** Stub `fetch` so the caller-validation probe answers with `status`; nothing else is fetched. */
+const stubCallerValidation = (status = 200) =>
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL) => {
+      if (toRequestUrl(input) === GITHUB_USER_URL) {
+        return Promise.resolve(
+          status === 200 ? githubUserOk() : new Response('', { status })
+        )
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+  )
 
 const post = (path: string, body: unknown, headers: Record<string, string> = HEADERS) =>
   app.fetch(
@@ -40,6 +67,8 @@ vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
 }))
 
 beforeEach(() => {
+  // Default: a valid caller. Individual tests override for invalid/unavailable.
+  stubCallerValidation(200)
   mockConnect.mockResolvedValue(undefined)
   mockGetServerVersion.mockReturnValue({ name: 'TestServer', version: '1.0' })
   mockListTools.mockResolvedValue({
@@ -60,6 +89,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks()
+  vi.unstubAllGlobals()
+  // A caller validated in one test must not skip the GitHub probe in the next.
+  clearCallerValidationCache()
 })
 
 describe('POST /api/mcp/discover', () => {
@@ -67,6 +99,24 @@ describe('POST /api/mcp/discover', () => {
     const res = await post('/api/mcp/discover', { url: 'https://mcp.example.com' }, CT)
     expect(res.status).toBe(401)
     expect(edgeErrorResponseSchema.parse(await res.json())).toEqual({ error: 'Unauthorized' })
+  })
+
+  it('returns 401 when the caller fails GitHub validation, without connecting', async () => {
+    stubCallerValidation(401)
+    const res = await post('/api/mcp/discover', { url: 'https://mcp.example.com/mcp' })
+    expect(res.status).toBe(401)
+    expect(edgeErrorResponseSchema.parse(await res.json())).toEqual({ error: 'Unauthorized' })
+    // The outbound MCP connection must never be attempted for an invalid caller.
+    expect(mockConnect).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 when caller validation is unavailable (GitHub outage), without connecting', async () => {
+    stubCallerValidation(503)
+    const res = await post('/api/mcp/discover', { url: 'https://mcp.example.com/mcp' })
+    expect(res.status).toBe(503)
+    const body = edgeErrorResponseSchema.parse(await res.json())
+    expect(body.error).toMatch(/validation is temporarily unavailable/i)
+    expect(mockConnect).not.toHaveBeenCalled()
   })
 
   it('returns 400 for a non-http(s) scheme', async () => {
@@ -161,12 +211,14 @@ describe('POST /api/mcp/discover', () => {
     expect(body.syncedAt).toMatch(/^\d{4}-\d{2}-\d{2}/)
   })
 
-  it('returns 502 when the MCP SDK connect throws', async () => {
-    mockConnect.mockRejectedValueOnce(new Error('Connection refused'))
+  it('returns 502 with a generic message (no raw SDK detail) when connect throws', async () => {
+    mockConnect.mockRejectedValueOnce(new Error('Connection refused to 10.0.0.5:443'))
     const res = await post('/api/mcp/discover', { url: 'https://mcp.example.com/mcp' })
     expect(res.status).toBe(502)
     const body = edgeErrorResponseSchema.parse(await res.json())
-    expect(body.error).toContain('Connection refused')
+    // LOW-1: the raw transport error must not be reflected to the client.
+    expect(body.error).toBe('MCP discovery failed')
+    expect(body.error).not.toContain('10.0.0.5')
   })
 
   it('returns 502 when listTools throws', async () => {
@@ -201,6 +253,31 @@ describe('POST /api/mcp/call', () => {
       CT
     )
     expect(res.status).toBe(401)
+  })
+
+  it('returns 401 when the caller fails GitHub validation, without connecting', async () => {
+    stubCallerValidation(401)
+    const res = await post('/api/mcp/call', {
+      url: 'https://mcp.example.com/mcp',
+      toolName: 'get_weather',
+      arguments: {}
+    })
+    expect(res.status).toBe(401)
+    expect(edgeErrorResponseSchema.parse(await res.json())).toEqual({ error: 'Unauthorized' })
+    expect(mockConnect).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 when caller validation is unavailable, without connecting', async () => {
+    stubCallerValidation(503)
+    const res = await post('/api/mcp/call', {
+      url: 'https://mcp.example.com/mcp',
+      toolName: 'get_weather',
+      arguments: {}
+    })
+    expect(res.status).toBe(503)
+    const body = edgeErrorResponseSchema.parse(await res.json())
+    expect(body.error).toMatch(/validation is temporarily unavailable/i)
+    expect(mockConnect).not.toHaveBeenCalled()
   })
 
   it('returns 400 for a private IP URL', async () => {
@@ -243,8 +320,8 @@ describe('POST /api/mcp/call', () => {
     expect(body.text).toBe('Unknown location')
   })
 
-  it('returns 502 when callTool throws', async () => {
-    mockCallTool.mockRejectedValueOnce(new Error('ToolNotFound'))
+  it('returns 502 with a generic message (no raw SDK detail) when callTool throws', async () => {
+    mockCallTool.mockRejectedValueOnce(new Error('ToolNotFound at internal-host:9000'))
     const res = await post('/api/mcp/call', {
       url: 'https://mcp.example.com/mcp',
       toolName: 'missing_tool',
@@ -252,7 +329,9 @@ describe('POST /api/mcp/call', () => {
     })
     expect(res.status).toBe(502)
     const body = edgeErrorResponseSchema.parse(await res.json())
-    expect(body.error).toContain('ToolNotFound')
+    // LOW-1: the raw transport error must not be reflected to the client.
+    expect(body.error).toBe('MCP call failed')
+    expect(body.error).not.toContain('internal-host')
   })
 
   it('closes the client even when the call fails', async () => {

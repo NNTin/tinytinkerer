@@ -219,7 +219,11 @@ export const mcpDiscoverRoute = createRoute({
       description: 'Unauthorized',
       content: json(edgeErrorResponseSchema)
     },
-    502: { description: 'Bad gateway', content: json(edgeErrorResponseSchema) }
+    502: { description: 'Bad gateway', content: json(edgeErrorResponseSchema) },
+    503: {
+      description: 'Caller validation unavailable',
+      content: json(edgeErrorResponseSchema)
+    }
   }
 })
 
@@ -238,7 +242,11 @@ export const mcpCallRoute = createRoute({
       description: 'Unauthorized',
       content: json(edgeErrorResponseSchema)
     },
-    502: { description: 'Bad gateway', content: json(edgeErrorResponseSchema) }
+    502: { description: 'Bad gateway', content: json(edgeErrorResponseSchema) },
+    503: {
+      description: 'Caller validation unavailable',
+      content: json(edgeErrorResponseSchema)
+    }
   }
 })
 
