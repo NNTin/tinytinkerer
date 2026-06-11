@@ -40,8 +40,12 @@ const toRequestUrl = (input: RequestInfo | URL): string => {
 
 // Every models route validates the caller's GitHub identity before touching the
 // shared LiteLLM key, so model tests need both the env and a mocked
-// api.github.com/user probe.
-const LITELLM_ENV = { LITELLM_API_KEY: 'litellm-shared-key' }
+// api.github.com/user probe. LITELLM_BASE_URL is required too: there is no
+// code-level fallback (issue #179).
+const LITELLM_ENV = {
+  LITELLM_API_KEY: 'litellm-shared-key',
+  LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/'
+}
 const GITHUB_USER_URL = 'https://api.github.com/user'
 const githubUserOk = () =>
   new Response(JSON.stringify({ login: 'nntin' }), {
@@ -201,7 +205,17 @@ describe('edge routes', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('returns 503 when LiteLLM is not configured', async () => {
+  // A missing LITELLM_BASE_URL is "not configured" exactly like a missing
+  // key: a fork that forgets the var must get a clear 503, not be silently
+  // pointed at the maintainer's deployment (issue #179).
+  it.each([
+    ['nothing is set', {}],
+    ['the base URL is missing', { LITELLM_API_KEY: 'litellm-shared-key' }],
+    [
+      'the key is missing',
+      { LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/' }
+    ]
+  ])('returns 503 when LiteLLM is not configured (%s)', async (_label, env) => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
 
@@ -218,7 +232,7 @@ describe('edge routes', () => {
           messages: [{ role: 'user', content: 'hello' }]
         })
       }),
-      {}
+      env
     )
 
     expect(response.status).toBe(503)
@@ -396,9 +410,14 @@ describe('edge routes', () => {
     const first = await listRequest()
     expect(first.status).toBe(200)
     expect(await first.json()).toEqual(expectedModels)
-    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
+    // A cache miss makes two upstream calls: the catalogue plus the
+    // best-effort /model/info mode lookup (issue #179).
+    expect(upstreamCalls(fetchSpy)).toHaveLength(2)
     expect(upstreamCalls(fetchSpy)[0]?.[0]).toBe(
       'https://litellm.labs.lair.nntin.xyz/v1/models'
+    )
+    expect(upstreamCalls(fetchSpy)[1]?.[0]).toBe(
+      'https://litellm.labs.lair.nntin.xyz/model/info'
     )
     const headers = new Headers(upstreamCalls(fetchSpy)[0]?.[1]?.headers)
     expect(headers.get('authorization')).toBe('Bearer litellm-shared-key')
@@ -408,7 +427,7 @@ describe('edge routes', () => {
     const second = await listRequest()
     expect(second.status).toBe(200)
     expect(await second.json()).toEqual(expectedModels)
-    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(2)
   })
 
   it('scopes the models-list cache per LiteLLM base URL', async () => {
@@ -452,12 +471,13 @@ describe('edge routes', () => {
 
     // A different allowlisted base URL is a separate catalogue: it must hit
     // upstream itself instead of being served the default deployment's cache.
+    // Each cache miss is two upstream calls (catalogue + /model/info).
     const customList = await listRequest('https://litellm.example.com/')
     expect(((await customList.json()) as { models: Array<{ id: string }> }).models[0]?.id).toBe('custom/model')
-    expect(upstreamCalls(fetchSpy)).toHaveLength(2)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(4)
   })
 
-  it('lists LiteLLM chat models through the shared-key proxy', async () => {
+  it('lists LiteLLM chat models through the shared-key proxy, dropping embedding models by mode and by name', async () => {
     const upstreamRequests: Array<{
       input: RequestInfo | URL
       init: RequestInit | undefined
@@ -466,8 +486,28 @@ describe('edge routes', () => {
       'fetch',
       vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         upstreamRequests.push({ input, init })
-        if (toRequestUrl(input) === GITHUB_USER_URL) {
+        const url = toRequestUrl(input)
+        if (url === GITHUB_USER_URL) {
           return Promise.resolve(githubUserOk())
+        }
+        if (url.endsWith('/model/info')) {
+          // /model/info exposes the mode that /v1/models omits. voyage-2 has
+          // no embedding hint in its NAME, so only this lookup can drop it;
+          // gpt-5 is explicitly chat (issue #179).
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                data: [
+                  {
+                    model_name: 'openai/gpt-5',
+                    model_info: { mode: 'chat' }
+                  },
+                  { model_name: 'voyage-2', model_info: { mode: 'embedding' } }
+                ]
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } }
+            )
+          )
         }
         return Promise.resolve(
           new Response(
@@ -475,7 +515,11 @@ describe('edge routes', () => {
               object: 'list',
               data: [
                 { id: 'openai/gpt-5', object: 'model' },
-                { id: 'openai/text-embedding-3-small', object: 'model' }
+                { id: 'openai/text-embedding-3-small', object: 'model' },
+                // Embedding models without 'embedding' in the id: caught by
+                // the standalone 'embed' token / the /model/info mode.
+                { id: 'cohere/embed-english-v3.0', object: 'model' },
+                { id: 'voyage-2', object: 'model' }
               ]
             }),
             {
@@ -510,6 +554,9 @@ describe('edge routes', () => {
     expect(upstreamRequests[1]?.input).toBe(
       'https://litellm.labs.lair.nntin.xyz/v1/models'
     )
+    expect(upstreamRequests[2]?.input).toBe(
+      'https://litellm.labs.lair.nntin.xyz/model/info'
+    )
     expect(
       new Headers(upstreamRequests[0]?.init?.headers).get('authorization')
     ).toBe('Bearer github-token')
@@ -521,6 +568,9 @@ describe('edge routes', () => {
     ).toBe('tinytinkerer-edge')
     expect(
       new Headers(upstreamRequests[1]?.init?.headers).get('authorization')
+    ).toBe('Bearer litellm-shared-key')
+    expect(
+      new Headers(upstreamRequests[2]?.init?.headers).get('authorization')
     ).toBe('Bearer litellm-shared-key')
   })
 
@@ -567,6 +617,7 @@ describe('edge routes', () => {
       }),
       {
         LITELLM_API_KEY: 'litellm-shared-key',
+        LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
         LITELLM_ALLOWED_BASE_URLS: 'https://litellm.example.com'
       }
     )
@@ -1057,6 +1108,7 @@ describe('edge routes', () => {
       }),
       {
         LITELLM_API_KEY: 'litellm-shared-key',
+        LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
         LITELLM_ALLOWED_BASE_URLS: 'https://litellm.example.com'
       }
     )

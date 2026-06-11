@@ -1,5 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi'
 import {
+  DEFAULT_LITELLM_MODEL,
   EDGE_RATE_LIMIT_HEADERS,
   edgeErrorResponseSchema,
   modelEntrySchema,
@@ -43,14 +44,26 @@ const liteLLMModelsCatalogSchema = z.object({
   data: z.array(liteLLMModelsCatalogEntrySchema)
 })
 
+const liteLLMModelInfoEntrySchema = z
+  .object({
+    model_name: z.string(),
+    model_info: z
+      .object({ mode: z.string().nullable().optional() })
+      .passthrough()
+      .optional()
+  })
+  .passthrough()
+
+const liteLLMModelInfoSchema = z.object({
+  data: z.array(liteLLMModelInfoEntrySchema)
+})
+
 // api.github.com (the core REST API) rejects requests without a User-Agent with
 // a 403 ("Request forbidden by administrative rules ... User-Agent header
 // required"). Cloudflare Workers' `fetch` does not set one, so the LiteLLM
 // caller-validation probe below must send it explicitly or EVERY call 403s and
 // is mis-read as an invalid caller -> a spurious 401 (TINYTINKERER-FRONTEND-N/P/Q/R).
 const GITHUB_API_USER_AGENT = 'tinytinkerer-edge'
-const LITELLM_DEFAULT_BASE_URL = 'https://litellm.labs.lair.nntin.xyz/'
-const LITELLM_DEFAULT_MODEL = 'openai/gpt-5'
 
 const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
   400: 'Invalid request',
@@ -93,13 +106,18 @@ const normalizeLiteLLMBaseUrl = (
   }
 }
 
-const configuredLiteLLMBaseUrl = (env: Bindings): string =>
-  normalizeLiteLLMBaseUrl(env.LITELLM_BASE_URL) ??
-  normalizeLiteLLMBaseUrl(LITELLM_DEFAULT_BASE_URL) ??
-  LITELLM_DEFAULT_BASE_URL.replace(/\/+$/, '')
+// No code-level fallback: a deployment without LITELLM_BASE_URL is "not
+// configured" (503), exactly like a missing LITELLM_API_KEY. A fork that
+// forgets the var must not be silently pointed at someone else's LiteLLM and
+// get a confusing upstream 401 — the default lives in wrangler.jsonc, not
+// here (issue #179).
+const configuredLiteLLMBaseUrl = (env: Bindings): string | undefined =>
+  normalizeLiteLLMBaseUrl(env.LITELLM_BASE_URL)
 
 const configuredLiteLLMAllowedBaseUrls = (env: Bindings): Set<string> => {
-  const urls = new Set<string>([configuredLiteLLMBaseUrl(env)])
+  const urls = new Set<string>()
+  const configured = configuredLiteLLMBaseUrl(env)
+  if (configured) urls.add(configured)
   for (const rawUrl of env.LITELLM_ALLOWED_BASE_URLS?.split(',') ?? []) {
     const normalized = normalizeLiteLLMBaseUrl(rawUrl)
     if (normalized) urls.add(normalized)
@@ -131,6 +149,9 @@ const litellmChatUrl = (baseUrl: string): string =>
 
 const litellmListUrl = (baseUrl: string): string =>
   appendPath(baseUrl, '/v1/models')
+
+const litellmModelInfoUrl = (baseUrl: string): string =>
+  appendPath(baseUrl, '/model/info')
 
 const litellmHeaders = (env: Bindings): Record<string, string> => ({
   authorization: `Bearer ${env.LITELLM_API_KEY?.trim() ?? ''}`
@@ -185,7 +206,9 @@ const liteLLMSharedCredentialKeyInput = (
 
 const requireLiteLLMConfiguration = (env: Bindings): string | undefined => {
   const apiKey = env.LITELLM_API_KEY?.trim()
-  return apiKey ? undefined : 'LiteLLM is not configured.'
+  return apiKey && configuredLiteLLMBaseUrl(env)
+    ? undefined
+    : 'LiteLLM is not configured.'
 }
 
 const validateLiteLLMCaller = async (
@@ -231,12 +254,72 @@ const validateLiteLLMCaller = async (
   return 'unavailable'
 }
 
-const toLiteLLMModels = (raw: unknown): ModelEntry[] => {
+// `/v1/models` carries no `mode`, so when `/model/info` is unavailable the
+// model NAME is the only embedding signal: match 'embedding' anywhere plus
+// 'embed' as a standalone token (cohere/embed-english-v3.0). Models whose
+// names carry no hint at all (voyage-2) are only caught by the mode lookup.
+const looksLikeEmbeddingModel = (id: string): boolean => {
+  const lower = id.toLowerCase()
+  return lower.includes('embedding') || /(^|[^a-z])embed($|[^a-z])/.test(lower)
+}
+
+/**
+ * Best-effort `id -> mode` lookup from LiteLLM's `/model/info`, which exposes
+ * `mode: chat|embedding|...` that the OpenAI-compatible `/v1/models` omits.
+ * Returns an empty map on any failure (older LiteLLM deployments or
+ * restricted virtual keys may not serve the endpoint) — the catalogue then
+ * falls back to the name heuristic. Only runs on a catalogue cache miss, so
+ * the extra upstream call is rare.
+ */
+const fetchLiteLLMModelModes = async (
+  env: Bindings,
+  baseUrl: string
+): Promise<Map<string, string>> => {
+  const modes = new Map<string, string>()
+  const response = await fetchWithTimeout(
+    {
+      area: 'models.list.info',
+      origin: 'litellm',
+      method: 'GET',
+      url: litellmModelInfoUrl(baseUrl),
+      accept: {
+        status: [400, 401, 403, 404, 429],
+        reason:
+          'mode enrichment is best-effort: older LiteLLM deployments or restricted virtual keys may not serve /model/info; the catalogue falls back to the embedding name heuristic (issue #179)'
+      }
+    },
+    { headers: litellmHeaders(env) },
+    10_000
+  ).catch(() => undefined)
+  if (!response?.ok) return modes
+  const parsed = liteLLMModelInfoSchema.safeParse(
+    await response.json().catch(() => undefined)
+  )
+  if (!parsed.success) return modes
+  for (const entry of parsed.data.data) {
+    const mode = entry.model_info?.mode
+    if (typeof mode === 'string' && mode.trim()) {
+      modes.set(entry.model_name.trim(), mode.trim().toLowerCase())
+    }
+  }
+  return modes
+}
+
+const toLiteLLMModels = (
+  raw: unknown,
+  modes: ReadonlyMap<string, string> = new Map()
+): ModelEntry[] => {
   const parsed = liteLLMModelsCatalogSchema.safeParse(raw)
   const entries = parsed.success ? parsed.data.data : []
   return entries.flatMap((model) => {
     const id = model.id.trim()
-    if (!id || id.toLowerCase().includes('embedding')) return []
+    if (!id) return []
+    // Drop embedding models from the chat picker: trust the /model/info mode
+    // when known, fall back to the name heuristic otherwise.
+    const mode = modes.get(id)
+    const isEmbedding =
+      mode !== undefined ? mode === 'embedding' : looksLikeEmbeddingModel(id)
+    if (isEmbedding) return []
     const publisher = id.includes('/') ? id.split('/')[0] : model.owned_by
     return [
       modelEntrySchema.parse({
@@ -303,13 +386,8 @@ export const registerModelRoutes = (
       'models.chat',
       body.provider
     )
-    const litellmBaseUrl = resolveLiteLLMBaseUrl(c.env, body.litellmBaseUrl)
-    if (!litellmBaseUrl.ok) {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: litellmBaseUrl.error }),
-        400
-      )
-    }
+    // Configuration first: a deployment without a key or base URL is a 503
+    // "not configured", not a 400 about the (absent) default base URL.
     const configurationError = requireLiteLLMConfiguration(c.env)
     if (configurationError) {
       return c.json(
@@ -317,8 +395,15 @@ export const registerModelRoutes = (
         503
       )
     }
+    const litellmBaseUrl = resolveLiteLLMBaseUrl(c.env, body.litellmBaseUrl)
+    if (!litellmBaseUrl.ok) {
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: litellmBaseUrl.error }),
+        400
+      )
+    }
     const resolvedBaseUrl = litellmBaseUrl.baseUrl
-    const model = body.model ?? LITELLM_DEFAULT_MODEL
+    const model = body.model ?? DEFAULT_LITELLM_MODEL
 
     // Scope the backoff to the upstream credential/quota bucket: the shared
     // edge-managed key (plus base URL) so one caller's 429 correctly backs off
@@ -515,18 +600,20 @@ export const registerModelRoutes = (
       'models.list',
       query.provider
     )
-    const litellmBaseUrl = resolveLiteLLMBaseUrl(c.env, query.litellmBaseUrl)
-    if (!litellmBaseUrl.ok) {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: litellmBaseUrl.error }),
-        400
-      )
-    }
+    // Configuration first: a deployment without a key or base URL is a 503
+    // "not configured", not a 400 about the (absent) default base URL.
     const configurationError = requireLiteLLMConfiguration(c.env)
     if (configurationError) {
       return c.json(
         edgeErrorResponseSchema.parse({ error: configurationError }),
         503
+      )
+    }
+    const litellmBaseUrl = resolveLiteLLMBaseUrl(c.env, query.litellmBaseUrl)
+    if (!litellmBaseUrl.ok) {
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: litellmBaseUrl.error }),
+        400
       )
     }
     const callerValidation = await validateLiteLLMCaller(authorization)
@@ -673,7 +760,10 @@ export const registerModelRoutes = (
     // Upstream succeeded — clear any backoff window.
     await clearBackoff(credentialKey)
 
-    const models = toLiteLLMModels(await response.json())
+    // Enrich with /model/info modes (best-effort) so embedding models are
+    // dropped by their declared mode, not just by name (issue #179).
+    const modes = await fetchLiteLLMModelModes(c.env, resolvedBaseUrl)
+    const models = toLiteLLMModels(await response.json(), modes)
 
     // Populate the colo-wide cache so the next request (in any isolate) skips
     // the upstream fetch for the freshness window.

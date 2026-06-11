@@ -51,5 +51,8 @@
     }
   }
   // Required secrets (set via `wrangler secret put`): GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, LITELLM_API_KEY
+  // LITELLM_BASE_URL (vars above) is required too: the edge has no code-level
+  // fallback, and a deployment without it serves 503 "LiteLLM is not configured."
+  // — forks must point the var at their own LiteLLM deployment.
   // Optional secret: SENTRY_DSN. SENTRY_RELEASE is set at deploy time from the git SHA.
 }

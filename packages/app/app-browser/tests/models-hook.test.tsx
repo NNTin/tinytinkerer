@@ -110,4 +110,26 @@ describe('useModels', () => {
       'litellmBaseUrl=https%3A%2F%2Flitellm.labs.lair.nntin.xyz%2F'
     )
   })
+
+  it('surfaces a soft message instead of silently serving the fallback when the refresh fails (issue #179)', async () => {
+    mockState.auth.token = 'gh-token'
+    // Edge down/cooldown: fetchModels degrades to the fallback list, which
+    // used to leave refreshError null — the button spun and stopped with no
+    // feedback.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('cooldown', { status: 503 })))
+    )
+
+    const { result } = renderHook(() => useModels())
+
+    await act(async () => {
+      await result.current.refreshModels()
+    })
+
+    expect(result.current.models).toEqual([...FALLBACK_MODELS])
+    expect(result.current.refreshError).toBe(
+      "Couldn't refresh models — showing the last-known list."
+    )
+  })
 })

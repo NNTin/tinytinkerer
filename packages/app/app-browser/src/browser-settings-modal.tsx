@@ -220,6 +220,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
     selectedModel,
     setSelectedModel,
     litellmBaseUrl,
+    litellmBaseUrlError,
     setLiteLLMBaseUrl,
     models,
     isRefreshingModels,
@@ -280,6 +281,9 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
               Save
             </button>
           </div>
+          {litellmBaseUrlError ? (
+            <p className="text-xs text-rose-600">{litellmBaseUrlError}</p>
+          ) : null}
           {litellmBaseUrl !== DEFAULT_LITELLM_BASE_URL ? (
             <button
               type="button"

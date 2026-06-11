@@ -37,9 +37,10 @@ describe('fetchModels', () => {
       vi.fn(() => Promise.resolve(new Response('{}', { status: 502, statusText: 'Bad Gateway' })))
     )
 
-    const models = await fetchModels('https://api.example.com', 'token')
+    const result = await fetchModels('https://api.example.com', 'token')
 
-    expect(models).toEqual([...FALLBACK_MODELS])
+    expect(result.models).toEqual([...FALLBACK_MODELS])
+    expect(result.fromFallback).toBe(true)
     expect(sink).toHaveBeenCalledTimes(1)
     const [, options] = sink.mock.calls[0] ?? []
     expect(options?.tags).toMatchObject({
@@ -62,9 +63,10 @@ describe('fetchModels', () => {
       )
     )
 
-    const models = await fetchModels('https://api.example.com', 'token')
+    const result = await fetchModels('https://api.example.com', 'token')
 
-    expect(models).toEqual([...FALLBACK_MODELS])
+    expect(result.models).toEqual([...FALLBACK_MODELS])
+    expect(result.fromFallback).toBe(true)
     expect(sink).toHaveBeenCalledTimes(1)
     const [, options] = sink.mock.calls[0] ?? []
     expect(options?.tags).toMatchObject({
@@ -82,8 +84,8 @@ describe('fetchModels', () => {
     const first = await fetchModels('https://api.example.com', 'token')
     const second = await fetchModels('https://api.example.com', 'token')
 
-    expect(first).toEqual([...FALLBACK_MODELS])
-    expect(second).toEqual([...FALLBACK_MODELS])
+    expect(first).toEqual({ models: [...FALLBACK_MODELS], fromFallback: true })
+    expect(second).toEqual({ models: [...FALLBACK_MODELS], fromFallback: true })
     // Second call is served from the negative cache: no extra fetch, no extra report.
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
@@ -109,11 +111,11 @@ describe('fetchModels', () => {
 
     // First call populates the (5-min) success cache.
     const first = await fetchModels('https://api.example.com', 'token')
-    expect(first).toEqual(lastKnown)
+    expect(first).toEqual({ models: lastKnown, fromFallback: false })
 
     // A non-forced call within the TTL is served from cache — no second fetch.
     const cachedHit = await fetchModels('https://api.example.com', 'token')
-    expect(cachedHit).toEqual(lastKnown)
+    expect(cachedHit).toEqual({ models: lastKnown, fromFallback: false })
     expect(fetchSpy).toHaveBeenCalledTimes(1)
 
     // The refresh button forces a real re-probe and picks up the new catalogue,
@@ -121,7 +123,7 @@ describe('fetchModels', () => {
     const forced = await fetchModels('https://api.example.com', 'token', {
       force: true
     })
-    expect(forced).toEqual(updated)
+    expect(forced).toEqual({ models: updated, fromFallback: false })
     expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
 
@@ -169,8 +171,8 @@ describe('fetchModels', () => {
       { litellmBaseUrl: 'https://litellm.example.com/' }
     )
 
-    expect(defaultResult).toEqual(defaultModels)
-    expect(customResult).toEqual(customModels)
+    expect(defaultResult).toEqual({ models: defaultModels, fromFallback: false })
+    expect(customResult).toEqual({ models: customModels, fromFallback: false })
     expect(fetchSpy).toHaveBeenCalledTimes(2)
     expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('provider=litellm')
     expect(String(fetchSpy.mock.calls[0]?.[0])).toContain(
@@ -189,10 +191,10 @@ describe('fetchModels', () => {
         vi.fn(() => Promise.resolve(new Response('cooldown', { status })))
       )
 
-      const models = await fetchModels('https://api.example.com', 'token')
+      const result = await fetchModels('https://api.example.com', 'token')
 
       // Graceful degrade: serve the built-in list…
-      expect(models).toEqual([...FALLBACK_MODELS])
+      expect(result).toEqual({ models: [...FALLBACK_MODELS], fromFallback: true })
       // …and the edge's intentional cooldown/cache-miss signal is accepted, so it
       // is never reported (it is not a server-down bug).
       expect(sink).not.toHaveBeenCalled()
@@ -205,10 +207,10 @@ describe('fetchModels', () => {
       vi.fn(() => Promise.reject(new TypeError('Failed to fetch')))
     )
 
-    const models = await fetchModels('https://api.example.com', 'token')
+    const result = await fetchModels('https://api.example.com', 'token')
 
     // Graceful degrade: serve the built-in list…
-    expect(models).toEqual([...FALLBACK_MODELS])
+    expect(result).toEqual({ models: [...FALLBACK_MODELS], fromFallback: true })
     // …and a transient client-side network failure on this background edge fetch
     // is accepted, so it is never reported (the call already serves last-known).
     expect(sink).not.toHaveBeenCalled()
@@ -248,15 +250,16 @@ describe('fetchModels', () => {
 
       // First fetch succeeds and is remembered as the last-known catalogue.
       const first = await fetchModels('https://api.example.com', 'token')
-      expect(first).toEqual(lastKnown)
+      expect(first).toEqual({ models: lastKnown, fromFallback: false })
 
       // Advance past the success TTL (5 min) so the next call re-fetches and the
       // edge answers with its cooldown signal.
       vi.advanceTimersByTime(6 * 60_000)
 
       const second = await fetchModels('https://api.example.com', 'token')
-      // Degrade to the LAST-KNOWN real list, not the built-in FALLBACK_MODELS.
-      expect(second).toEqual(lastKnown)
+      // Degrade to the LAST-KNOWN real list, not the built-in FALLBACK_MODELS —
+      // flagged as a fallback so the refresh button can say so (issue #179).
+      expect(second).toEqual({ models: lastKnown, fromFallback: true })
       expect(fetchSpy).toHaveBeenCalledTimes(2)
       expect(sink).not.toHaveBeenCalled()
     } finally {

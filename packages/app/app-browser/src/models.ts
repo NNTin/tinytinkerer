@@ -23,7 +23,22 @@ export type ModelsState = {
   refreshModels: () => Promise<ModelEntry[]>
 }
 
-type CacheEntry = { models: ModelEntry[]; cachedAt: number; ttlMs: number }
+export type FetchModelsResult = {
+  models: ModelEntry[]
+  /**
+   * True when the list is the fallback (last-known or built-in) catalogue
+   * rather than a fresh fetch, so a user-triggered refresh can say "couldn't
+   * refresh" instead of silently spinning and stopping (issue #179).
+   */
+  fromFallback: boolean
+}
+
+type CacheEntry = {
+  models: ModelEntry[]
+  cachedAt: number
+  ttlMs: number
+  fromFallback: boolean
+}
 const modelsCache = new Map<string, CacheEntry>()
 const MODELS_CACHE_TTL_MS = 5 * 60_000
 // Brief negative cache: when a list fetch fails (e.g. the edge is rate limited),
@@ -60,12 +75,12 @@ export const fetchModels = async (
     force = false,
     litellmBaseUrl = DEFAULT_LITELLM_BASE_URL
   }: { force?: boolean; litellmBaseUrl?: string } = {}
-): Promise<ModelEntry[]> => {
+): Promise<FetchModelsResult> => {
   const tokenHash = await hashToken(token)
   const cacheKey = `${edgeBaseUrl}:litellm:${litellmBaseUrl}:${tokenHash}`
   const cached = modelsCache.get(cacheKey)
   if (!force && cached && Date.now() - cached.cachedAt <= cached.ttlMs)
-    return cached.models
+    return { models: cached.models, fromFallback: cached.fromFallback }
 
   // The model catalogue is cacheable, so when the edge is in a cooldown / cache-
   // miss state (429 or 503) we degrade gracefully: serve the LAST-KNOWN list —
@@ -75,14 +90,15 @@ export const fetchModels = async (
   // don't re-fetch (and re-report) every time. This mirrors the edge, which
   // serves its own last-known catalogue (TINYTINKERER-FRONTEND-C / FRONTEND-D,
   // TINYTINKERER-FRONTEND-5).
-  const fallback = (): ModelEntry[] => {
+  const fallback = (): FetchModelsResult => {
     const models = cached?.models ?? fallbackModels()
     modelsCache.set(cacheKey, {
       models,
       cachedAt: Date.now(),
-      ttlMs: MODELS_FALLBACK_TTL_MS
+      ttlMs: MODELS_FALLBACK_TTL_MS,
+      fromFallback: true
     })
-    return models
+    return { models, fromFallback: true }
   }
 
   const params = new URLSearchParams({ provider: 'litellm', litellmBaseUrl })
@@ -141,9 +157,10 @@ export const fetchModels = async (
     modelsCache.set(cacheKey, {
       models,
       cachedAt: Date.now(),
-      ttlMs: MODELS_CACHE_TTL_MS
+      ttlMs: MODELS_CACHE_TTL_MS,
+      fromFallback: false
     })
-    return models
+    return { models, fromFallback: false }
   } catch {
     return fallback()
   }
@@ -180,12 +197,20 @@ export const useModels = (selectedModel?: string): ModelsState => {
     try {
       // Force a real re-probe: this is a deliberate user action, so honour it
       // instead of returning the module-level cache from a previous click.
-      const nextModels = await fetchModels(edgeBaseUrl, token, {
+      const result = await fetchModels(edgeBaseUrl, token, {
         force: true,
         litellmBaseUrl
       })
-      setModels(nextModels)
-      return includeSelectedModel(nextModels, selectedModel)
+      setModels(result.models)
+      // Every failure inside fetchModels degrades to the fallback list, so
+      // without this the refresh button spins and stops with no feedback when
+      // the edge is down (issue #179). Soft message: the list shown is usable.
+      if (result.fromFallback) {
+        setRefreshError(
+          "Couldn't refresh models — showing the last-known list."
+        )
+      }
+      return includeSelectedModel(result.models, selectedModel)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to refresh models.'

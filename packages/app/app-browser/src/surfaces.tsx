@@ -148,6 +148,7 @@ export type SettingsSurfaceController = {
   selectedModel: string
   setSelectedModel: (model: string) => Promise<void>
   litellmBaseUrl: string
+  litellmBaseUrlError: string | null
   setLiteLLMBaseUrl: (baseUrl: string | null) => Promise<void>
   agentType: AgentType
   setAgentType: (agentType: AgentType) => Promise<void>
@@ -210,6 +211,9 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   } = useModels(selectedModel)
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
   const litellmBaseUrl = useSettingsStore((state) => state.litellmBaseUrl)
+  const litellmBaseUrlError = useSettingsStore(
+    (state) => state.litellmBaseUrlError
+  )
   const setLiteLLMBaseUrl = useSettingsStore(
     (state) => state.setLiteLLMBaseUrl
   )
@@ -333,6 +337,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     selectedModel,
     setSelectedModel,
     litellmBaseUrl,
+    litellmBaseUrlError,
     setLiteLLMBaseUrl,
     agentType,
     setAgentType,

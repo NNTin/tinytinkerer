@@ -11,11 +11,20 @@ import type {
 
 // Cooldowns were once scoped per provider (issue #146: GitHub Models vs
 // OpenRouter drew on separate upstream quotas). With LiteLLM as the sole
-// provider a single key suffices; the `:litellm` suffix is kept so values
-// written by per-provider builds carry over. Old `:github`/`:openrouter`
-// values are simply ignored — cooldowns are short-lived (≤ ~60s), so any
-// orphaned value self-expires without migration.
-export const RATE_LIMIT_COOLDOWN_KEY = 'rate_limit_cooldown_until:litellm'
+// provider the key is scoped per deployment (base URL) instead, mirroring the
+// edge's per-(key, base URL) backoff: switching base URLs in Settings must
+// not carry the old deployment's cooldown over (issue #179). Old unscoped
+// `:litellm` and per-provider `:github`/`:openrouter` values are simply
+// ignored — cooldowns are short-lived (≤ ~60s), so any orphaned value
+// self-expires without migration.
+export const RATE_LIMIT_COOLDOWN_KEY_PREFIX = 'rate_limit_cooldown_until:litellm'
+
+export const rateLimitCooldownKey = (litellmBaseUrl?: string): string => {
+  const baseUrl = litellmBaseUrl?.trim()
+  return baseUrl
+    ? `${RATE_LIMIT_COOLDOWN_KEY_PREFIX}:${baseUrl}`
+    : RATE_LIMIT_COOLDOWN_KEY_PREFIX
+}
 
 /**
  * Read the active (non-expired) cooldown, or `undefined`. Shared by
@@ -23,9 +32,10 @@ export const RATE_LIMIT_COOLDOWN_KEY = 'rate_limit_cooldown_until:litellm'
  * reflects the current cooldown.
  */
 export const loadCooldown = async (
-  preferences: PreferencesStore
+  preferences: PreferencesStore,
+  litellmBaseUrl?: string
 ): Promise<string | undefined> =>
-  activeCooldown(await preferences.get(RATE_LIMIT_COOLDOWN_KEY))
+  activeCooldown(await preferences.get(rateLimitCooldownKey(litellmBaseUrl)))
 
 export type ChatStateSnapshot = {
   conversationId: string | undefined
@@ -45,14 +55,15 @@ export const defaultChatState = (): ChatStateSnapshot => ({
 
 export const initializeChatState = async (
   conversations: ConversationRepository,
-  preferences: PreferencesStore
+  preferences: PreferencesStore,
+  litellmBaseUrl?: string
 ): Promise<ChatStateSnapshot> => {
   const conversation = await getLatestConversationOrCreate(conversations)
   const storedEvents = await conversations.loadConversationEvents(conversation.id)
-  const cooldownUntil = await loadCooldown(preferences)
+  const cooldownUntil = await loadCooldown(preferences, litellmBaseUrl)
 
   if (!cooldownUntil) {
-    await preferences.set(RATE_LIMIT_COOLDOWN_KEY, '')
+    await preferences.set(rateLimitCooldownKey(litellmBaseUrl), '')
   }
 
   return {
@@ -73,9 +84,10 @@ export const createPersistedEvent = (
 
 export const applyRateLimitEvent = async (
   event: ChatEvent,
-  preferences: PreferencesStore
+  preferences: PreferencesStore,
+  litellmBaseUrl?: string
 ): Promise<Pick<ChatStateSnapshot, 'cooldownUntil' | 'isRetryPending'> | undefined> => {
-  const cooldownKey = RATE_LIMIT_COOLDOWN_KEY
+  const cooldownKey = rateLimitCooldownKey(litellmBaseUrl)
 
   if (event.type === 'rate.limit.waiting') {
     await preferences.set(cooldownKey, event.payload.retryAt)
@@ -125,6 +137,8 @@ export const executeChatPrompt = async (options: {
   runtimeFactory: ChatRuntimeFactory
   conversations: ConversationRepository
   preferences: PreferencesStore
+  /** Scopes the rate-limit cooldown to the active LiteLLM deployment. */
+  litellmBaseUrl?: string
   signal?: AbortSignal
   onEvent: (event: ChatEvent) => void | Promise<void>
   onRateLimitState: (
@@ -168,7 +182,11 @@ export const executeChatPrompt = async (options: {
       await options.conversations.appendEvent(createPersistedEvent(options.conversationId, event))
     }
 
-    const rateLimitState = await applyRateLimitEvent(event, options.preferences)
+    const rateLimitState = await applyRateLimitEvent(
+      event,
+      options.preferences,
+      options.litellmBaseUrl
+    )
     if (rateLimitState) {
       await options.onRateLimitState(rateLimitState)
     }

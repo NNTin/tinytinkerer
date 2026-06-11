@@ -44,7 +44,9 @@ export const createChatStore = (options: {
       .then(async ({ initializeChatState }) => {
         const state = await initializeChatState(
           options.shell.conversations,
-          options.shell.preferences
+          options.shell.preferences,
+          // Cooldowns are scoped per LiteLLM deployment (issue #179).
+          options.settingsStore.getState().litellmBaseUrl
         )
         set({ ...state, hydrated: true })
       })
@@ -107,6 +109,7 @@ export const createChatStore = (options: {
           runtimeFactory,
           conversations: options.shell.conversations,
           preferences: options.shell.preferences,
+          litellmBaseUrl: options.settingsStore.getState().litellmBaseUrl,
           signal: runController.signal,
           onEvent: (event) => {
             set((currentState) => ({

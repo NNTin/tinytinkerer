@@ -14,6 +14,8 @@ export type SettingsState = {
   hydrated: boolean
   selectedModel: string
   litellmBaseUrl: string
+  /** Validation message from the last setLiteLLMBaseUrl attempt, or null. */
+  litellmBaseUrlError: string | null
   agentType: AgentType
   searchEnabled: boolean
   webSpeechEnabled: boolean
@@ -86,6 +88,7 @@ const defaultSettingsState = (): Omit<
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
   litellmBaseUrl: DEFAULT_LITELLM_BASE_URL,
+  litellmBaseUrlError: null,
   agentType: DEFAULT_AGENT_TYPE,
   searchEnabled: true,
   webSpeechEnabled: false,
@@ -111,9 +114,18 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       set({ selectedModel: normalizedModel })
     },
     setLiteLLMBaseUrl: async (baseUrl) => {
-      const { persistLiteLLMBaseUrl } = await loadCoreModule()
+      const { persistLiteLLMBaseUrl, validateLiteLLMBaseUrl } =
+        await loadCoreModule()
+      // Reject invalid input with an inline message instead of silently
+      // persisting the default — the input used to visibly jump after Save
+      // with no explanation (issue #179).
+      const validation = validateLiteLLMBaseUrl(baseUrl)
+      if (!validation.ok) {
+        set({ litellmBaseUrlError: validation.error })
+        return
+      }
       const normalized = await persistLiteLLMBaseUrl(shell.preferences, baseUrl)
-      set({ litellmBaseUrl: normalized })
+      set({ litellmBaseUrl: normalized, litellmBaseUrlError: null })
     },
     setAgentType: async (agentType) => {
       const { persistAgentType } = await loadCoreModule()

@@ -25,9 +25,10 @@ import {
   persistBooleanPreference,
   persistLiteLLMBaseUrl,
   persistSelectedModel,
-  RATE_LIMIT_COOLDOWN_KEY,
+  rateLimitCooldownKey,
   resolveActivePluginIds,
-  SETTINGS_KEYS
+  SETTINGS_KEYS,
+  validateLiteLLMBaseUrl
 } from '../src/index.js'
 
 const event = <T extends ChatEvent['type']>(
@@ -81,6 +82,29 @@ describe('app-core helpers', () => {
       'https://litellm.example.com/'
     )
     expect(normalizeLiteLLMBaseUrl('http://litellm.example.com')).toBe(
+      DEFAULT_LITELLM_BASE_URL
+    )
+  })
+
+  it('validates the base URL with the same rules as the edge instead of silently stripping', () => {
+    expect(validateLiteLLMBaseUrl('https://litellm.example.com')).toEqual({
+      ok: true,
+      url: 'https://litellm.example.com/'
+    })
+    // Empty means "use the default".
+    expect(validateLiteLLMBaseUrl('')).toEqual({
+      ok: true,
+      url: DEFAULT_LITELLM_BASE_URL
+    })
+    expect(validateLiteLLMBaseUrl('not a url').ok).toBe(false)
+    expect(validateLiteLLMBaseUrl('http://litellm.example.com').ok).toBe(false)
+    // The edge REJECTS credentials/query/fragment; the client used to strip
+    // them, so the two could disagree about the same input (issue #179).
+    expect(validateLiteLLMBaseUrl('https://user:pw@litellm.example.com').ok).toBe(false)
+    expect(validateLiteLLMBaseUrl('https://litellm.example.com/?key=1').ok).toBe(false)
+    expect(validateLiteLLMBaseUrl('https://litellm.example.com/#frag').ok).toBe(false)
+    // …and the load-path normalizer maps those rejects to the default.
+    expect(normalizeLiteLLMBaseUrl('https://litellm.example.com/?key=1')).toBe(
       DEFAULT_LITELLM_BASE_URL
     )
   })
@@ -736,14 +760,32 @@ describe('rate-limit cooldown', () => {
     const result = await applyRateLimitEvent(waitingEvent(future), prefs)
 
     expect(result?.cooldownUntil).toBe(future)
-    expect(RATE_LIMIT_COOLDOWN_KEY).toBe('rate_limit_cooldown_until:litellm')
+    expect(rateLimitCooldownKey()).toBe('rate_limit_cooldown_until:litellm')
     expect(await loadCooldown(prefs)).toBe(future)
+  })
+
+  it('scopes the cooldown per LiteLLM deployment, mirroring the edge backoff (issue #179)', async () => {
+    const prefs = makePreferences()
+    const future = new Date(Date.now() + 60_000).toISOString()
+    const deploymentA = 'https://litellm.labs.lair.nntin.xyz/'
+    const deploymentB = 'https://litellm.example.com/'
+
+    expect(rateLimitCooldownKey(deploymentA)).toBe(
+      `rate_limit_cooldown_until:litellm:${deploymentA}`
+    )
+
+    await applyRateLimitEvent(waitingEvent(future), prefs, deploymentA)
+
+    // Switching base URLs in Settings must not carry the old deployment's
+    // cooldown over.
+    expect(await loadCooldown(prefs, deploymentA)).toBe(future)
+    expect(await loadCooldown(prefs, deploymentB)).toBeUndefined()
   })
 
   it('clears the cooldown on recovery', async () => {
     const future = new Date(Date.now() + 60_000).toISOString()
     const prefs = makePreferences({
-      [RATE_LIMIT_COOLDOWN_KEY]: future
+      [rateLimitCooldownKey()]: future
     })
 
     await applyRateLimitEvent(
@@ -756,16 +798,19 @@ describe('rate-limit cooldown', () => {
 
   it('initializeChatState loads the stored cooldown and ignores legacy provider-scoped keys', async () => {
     const future = new Date(Date.now() + 60_000).toISOString()
+    const baseUrl = 'https://litellm.labs.lair.nntin.xyz/'
     const prefs = makePreferences({
-      [RATE_LIMIT_COOLDOWN_KEY]: future,
-      // Values written by the removed GitHub Models/OpenRouter providers are
-      // simply orphaned; they self-expire without migration.
+      [rateLimitCooldownKey(baseUrl)]: future,
+      // Values written by the removed GitHub Models/OpenRouter providers (and
+      // by builds that used an unscoped litellm key) are simply orphaned; they
+      // self-expire without migration.
+      'rate_limit_cooldown_until:litellm': future,
       'rate_limit_cooldown_until:github': future,
       'rate_limit_cooldown_until:openrouter': future
     })
     const conversations = makeConversations()
 
-    const state = await initializeChatState(conversations, prefs)
+    const state = await initializeChatState(conversations, prefs, baseUrl)
     expect(state.cooldownUntil).toBe(future)
   })
 })
