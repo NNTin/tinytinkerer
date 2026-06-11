@@ -8,6 +8,7 @@ import {
 import { z } from 'zod'
 import type { Bindings } from '../lib/bindings'
 import { fetchWithTimeout } from '../lib/fetch'
+import { validateLiteLLMCaller } from '../lib/caller-validation'
 import { searchRoute } from '../openapi/routes'
 
 const tavilyResultItemSchema = z.object({
@@ -59,6 +60,25 @@ export const registerSearchRoutes = (
         edgeErrorResponseSchema.parse({
           error:
             'Web search is currently unavailable. Configure Tavily to enable live search.'
+        }),
+        503
+      )
+    }
+
+    // The Tavily key is a shared, server-funded credential, so validate the
+    // caller's GitHub identity before spending it — a merely present
+    // Authorization header is not enough (mirrors the models routes).
+    const callerValidation = await validateLiteLLMCaller(authorization)
+    if (callerValidation === 'invalid') {
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
+        401
+      )
+    }
+    if (callerValidation === 'unavailable') {
+      return c.json(
+        edgeErrorResponseSchema.parse({
+          error: 'Caller validation is temporarily unavailable.'
         }),
         503
       )

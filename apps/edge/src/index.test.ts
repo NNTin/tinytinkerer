@@ -119,6 +119,109 @@ describe('edge routes', () => {
     })
   })
 
+  it('returns 401 for an invalid caller before spending the Tavily key', async () => {
+    // GitHub rejects the token → invalid caller. The Tavily search must never run.
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      if (toRequestUrl(input) === GITHUB_USER_URL) {
+        return Promise.resolve(new Response('bad credentials', { status: 401 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/search', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer bad-token'
+        },
+        body: JSON.stringify({ query: 'latest ai news' })
+      }),
+      { TAVILY_API_KEY: 'tavily-shared-key' }
+    )
+
+    expect(response.status).toBe(401)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'Unauthorized'
+    })
+    // Only the GitHub probe ran — the Tavily endpoint was never called.
+    expect(upstreamCalls(fetchSpy)).toHaveLength(0)
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
+  })
+
+  it('returns 503 when search caller validation is unavailable', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      if (toRequestUrl(input) === GITHUB_USER_URL) {
+        return Promise.resolve(
+          new Response('github unavailable', { status: 503 })
+        )
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/search', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer test-token'
+        },
+        body: JSON.stringify({ query: 'latest ai news' })
+      }),
+      { TAVILY_API_KEY: 'tavily-shared-key' }
+    )
+
+    expect(response.status).toBe(503)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'Caller validation is temporarily unavailable.'
+    })
+    expect(upstreamCalls(fetchSpy)).toHaveLength(0)
+  })
+
+  it('proxies the Tavily search once the caller is validated', async () => {
+    const fetchSpy = withCallerValidation((input) => {
+      expect(toRequestUrl(input)).toBe('https://api.tavily.com/search')
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                title: 'AI news',
+                url: 'https://example.com/ai',
+                content: 'Lots happened.'
+              }
+            ]
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      )
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/search', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer test-token'
+        },
+        body: JSON.stringify({ query: 'latest ai news' })
+      }),
+      { TAVILY_API_KEY: 'tavily-shared-key' }
+    )
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      results: Array<{ url: string }>
+    }
+    expect(body.results[0]?.url).toBe('https://example.com/ai')
+    // The caller was validated (one probe) before the Tavily key was used.
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
+  })
+
   it('returns 429 with Retry-After header and rate-limit body when upstream is rate limited', async () => {
     const fetchSpy = withCallerValidation(() =>
       Promise.resolve(

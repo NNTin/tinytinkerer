@@ -27,10 +27,7 @@ import {
   recordBackoff,
   toRateLimitResponse
 } from '../lib/rate-limit'
-import {
-  readCachedCallerValidation,
-  writeCachedCallerValidation
-} from '../lib/caller-validation-cache'
+import { validateLiteLLMCaller } from '../lib/caller-validation'
 
 const liteLLMModelsCatalogEntrySchema = z
   .object({
@@ -58,13 +55,6 @@ const liteLLMModelInfoSchema = z.object({
   data: z.array(liteLLMModelInfoEntrySchema)
 })
 
-// api.github.com (the core REST API) rejects requests without a User-Agent with
-// a 403 ("Request forbidden by administrative rules ... User-Agent header
-// required"). Cloudflare Workers' `fetch` does not set one, so the LiteLLM
-// caller-validation probe below must send it explicitly or EVERY call 403s and
-// is mis-read as an invalid caller -> a spurious 401 (TINYTINKERER-FRONTEND-N/P/Q/R).
-const GITHUB_API_USER_AGENT = 'tinytinkerer-edge'
-
 const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
   400: 'Invalid request',
   401: 'Authentication failed. The configured LiteLLM virtual key may be invalid.',
@@ -81,8 +71,6 @@ const MAX_UPSTREAM_ERROR_MESSAGE_LENGTH = 500
 type LiteLLMBaseUrlResult =
   | { ok: true; baseUrl: string }
   | { ok: false; error: string }
-
-type LiteLLMCallerValidationResult = 'valid' | 'invalid' | 'unavailable'
 
 const normalizeLiteLLMBaseUrl = (
   value: string | null | undefined
@@ -214,49 +202,6 @@ export const requireLiteLLMConfiguration = (
   return apiKey && configuredLiteLLMBaseUrl(env)
     ? undefined
     : 'LiteLLM is not configured.'
-}
-
-const validateLiteLLMCaller = async (
-  authorization: string
-): Promise<LiteLLMCallerValidationResult> => {
-  // A ReAct prompt fans out into several edge calls, each of which would pay
-  // this uncached GitHub round trip (~100–300 ms) and burn the caller's GitHub
-  // rate limit. Serve a recent successful validation instead; only positive
-  // results are cached (short TTL), so revocation still bites within minutes
-  // and a GitHub outage is never sticky (issue #177).
-  const callerKey = await deriveCredentialKey(authorization)
-  if (await readCachedCallerValidation(callerKey)) return 'valid'
-
-  const response = await fetchWithTimeout(
-    {
-      area: 'models.litellm.auth',
-      origin: 'github',
-      method: 'GET',
-      url: 'https://api.github.com/user',
-      accept: {
-        status: [401, 403],
-        reason:
-          'Expected GitHub token rejection while validating a caller before using the shared LiteLLM key.'
-      }
-    },
-    {
-      headers: {
-        authorization,
-        accept: 'application/vnd.github+json',
-        'x-github-api-version': '2026-03-10',
-        'user-agent': GITHUB_API_USER_AGENT
-      }
-    },
-    10_000
-  ).catch(() => undefined)
-
-  if (!response) return 'unavailable'
-  if (response.ok) {
-    await writeCachedCallerValidation(callerKey)
-    return 'valid'
-  }
-  if (response.status === 401 || response.status === 403) return 'invalid'
-  return 'unavailable'
 }
 
 // `/v1/models` carries no `mode`, so when `/model/info` is unavailable the

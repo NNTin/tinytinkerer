@@ -8,6 +8,7 @@ import {
   mcpDiscoveryResultSchema
 } from '@tinytinkerer/contracts'
 import type { Bindings } from '../lib/bindings'
+import { validateLiteLLMCaller } from '../lib/caller-validation'
 import { mcpCallRoute, mcpDiscoverRoute } from '../openapi/routes'
 
 // NOTE: This check covers only literal IP addresses and a set of well-known
@@ -105,6 +106,26 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
       )
     }
 
+    // The MCP proxy makes an outbound request on the caller's behalf, so a
+    // present-but-unverified Authorization header must not be enough to drive
+    // it (otherwise the edge is an open SSRF proxy). Validate the caller's
+    // GitHub identity before connecting, mirroring the models routes.
+    const callerValidation = await validateLiteLLMCaller(authorization)
+    if (callerValidation === 'invalid') {
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
+        401
+      )
+    }
+    if (callerValidation === 'unavailable') {
+      return c.json(
+        edgeErrorResponseSchema.parse({
+          error: 'Caller validation is temporarily unavailable.'
+        }),
+        503
+      )
+    }
+
     const { url, bearerToken } = c.req.valid('json')
 
     if (!validateMcpUrl(url)) {
@@ -142,9 +163,14 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
         200
       )
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'MCP discovery failed'
-      return c.json(edgeErrorResponseSchema.parse({ error: message }), 502)
+      // Don't reflect the raw transport/SDK error to the client: it can leak
+      // internal hostnames, IPs, or connection detail. Log it server-side and
+      // return a generic message (security review LOW-1).
+      console.error('[mcp/discover] connection error', error)
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: 'MCP discovery failed' }),
+        502
+      )
     } finally {
       await client.close().catch(() => undefined)
     }
@@ -157,6 +183,25 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
       return c.json(
         edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
         401
+      )
+    }
+
+    // Validate the caller's GitHub identity before making any outbound MCP
+    // request: a present-but-unverified Authorization header must not turn the
+    // edge into an open SSRF proxy (mirrors the models routes).
+    const callerValidation = await validateLiteLLMCaller(authorization)
+    if (callerValidation === 'invalid') {
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
+        401
+      )
+    }
+    if (callerValidation === 'unavailable') {
+      return c.json(
+        edgeErrorResponseSchema.parse({
+          error: 'Caller validation is temporarily unavailable.'
+        }),
+        503
       )
     }
 
@@ -212,8 +257,12 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
         200
       )
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'MCP call failed'
-      return c.json(edgeErrorResponseSchema.parse({ error: message }), 502)
+      // Generic message only — see the discover handler (security review LOW-1).
+      console.error('[mcp/call] connection error', error)
+      return c.json(
+        edgeErrorResponseSchema.parse({ error: 'MCP call failed' }),
+        502
+      )
     } finally {
       await client.close().catch(() => undefined)
     }
