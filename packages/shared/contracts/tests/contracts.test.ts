@@ -10,7 +10,8 @@ import {
   modelsListResponseSchema,
   rateLimitPayloadSchema,
   searchResponseSchema,
-  systemStatusSchema
+  systemStatusSchema,
+  validateLiteLLMBaseUrlPolicy
 } from '../src/index.js'
 
 describe('contracts', () => {
@@ -131,6 +132,53 @@ describe('contracts', () => {
     expect(modelProviderIdSchema.parse('litellm')).toBe('litellm')
     expect(modelProviderIdSchema.safeParse('github').success).toBe(false)
     expect(modelProviderIdSchema.safeParse('openrouter').success).toBe(false)
+  })
+
+  it('validates the shared LiteLLM base URL policy', () => {
+    const accepted = validateLiteLLMBaseUrlPolicy(
+      'https://litellm.example.com'
+    )
+    expect(accepted).toMatchObject({
+      ok: true,
+      canonicalUrl: 'https://litellm.example.com/'
+    })
+
+    expect(
+      validateLiteLLMBaseUrlPolicy('http://litellm.example.com')
+    ).toEqual({ ok: false, reason: 'non-https' })
+
+    for (const value of [
+      'https://user:pw@litellm.example.com',
+      'https://litellm.example.com/?key=1',
+      'https://litellm.example.com/#frag'
+    ]) {
+      expect(validateLiteLLMBaseUrlPolicy(value)).toEqual({
+        ok: false,
+        reason: 'forbidden-url-parts'
+      })
+    }
+  })
+
+  it('checks LiteLLM base URLs against a caller-canonicalized allowlist', () => {
+    const canonicalize = (url: URL): string => url.href.replace(/\/+$/, '')
+    const allowedBaseUrls = new Set(['https://litellm.example.com'])
+
+    expect(
+      validateLiteLLMBaseUrlPolicy('https://litellm.example.com/', {
+        allowedBaseUrls,
+        canonicalize
+      })
+    ).toMatchObject({
+      ok: true,
+      canonicalUrl: 'https://litellm.example.com'
+    })
+
+    expect(
+      validateLiteLLMBaseUrlPolicy('https://evil.example.com/', {
+        allowedBaseUrls,
+        canonicalize
+      })
+    ).toEqual({ ok: false, reason: 'not-allowed' })
   })
 
   it('parses shared brand metadata', () => {

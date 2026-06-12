@@ -6,7 +6,8 @@ import {
   modelEntrySchema,
   modelsChatResponseSchema,
   type ModelEntry,
-  type ModelProviderId
+  type ModelProviderId,
+  validateLiteLLMBaseUrlPolicy
 } from '@tinytinkerer/contracts'
 import { z } from 'zod'
 import type { Context, TypedResponse } from 'hono'
@@ -74,26 +75,16 @@ type LiteLLMBaseUrlResult =
   | { ok: true; baseUrl: string }
   | { ok: false; error: string }
 
+const canonicalizeLiteLLMBaseUrl = (url: URL): string =>
+  url.href.replace(/\/+$/, '')
+
 const normalizeLiteLLMBaseUrl = (
   value: string | null | undefined
 ): string | undefined => {
-  const trimmed = value?.trim()
-  if (!trimmed) return undefined
-  try {
-    const url = new URL(trimmed)
-    if (
-      url.protocol !== 'https:' ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash
-    ) {
-      return undefined
-    }
-    return url.href.replace(/\/+$/, '')
-  } catch {
-    return undefined
-  }
+  const result = validateLiteLLMBaseUrlPolicy(value, {
+    canonicalize: canonicalizeLiteLLMBaseUrl
+  })
+  return result.ok ? result.canonicalUrl : undefined
 }
 
 // No code-level fallback: a deployment without LITELLM_BASE_URL is "not
@@ -119,16 +110,23 @@ const resolveLiteLLMBaseUrl = (
   env: Bindings,
   requestedBaseUrl: string | null | undefined
 ): LiteLLMBaseUrlResult => {
-  const baseUrl = requestedBaseUrl
-    ? normalizeLiteLLMBaseUrl(requestedBaseUrl)
-    : configuredLiteLLMBaseUrl(env)
-  if (!baseUrl) {
+  const result = requestedBaseUrl
+    ? validateLiteLLMBaseUrlPolicy(requestedBaseUrl, {
+        allowedBaseUrls: configuredLiteLLMAllowedBaseUrls(env),
+        canonicalize: canonicalizeLiteLLMBaseUrl
+      })
+    : validateLiteLLMBaseUrlPolicy(env.LITELLM_BASE_URL, {
+        canonicalize: canonicalizeLiteLLMBaseUrl
+      })
+
+  if (!result.ok) {
+    if (result.reason === 'not-allowed') {
+      return { ok: false, error: 'LiteLLM base URL is not allowed' }
+    }
     return { ok: false, error: 'Invalid LiteLLM base URL' }
   }
-  if (!configuredLiteLLMAllowedBaseUrls(env).has(baseUrl)) {
-    return { ok: false, error: 'LiteLLM base URL is not allowed' }
-  }
-  return { ok: true, baseUrl }
+
+  return { ok: true, baseUrl: result.canonicalUrl }
 }
 
 const appendPath = (baseUrl: string, path: string): string =>

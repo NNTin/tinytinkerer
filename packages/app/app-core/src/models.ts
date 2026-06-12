@@ -1,7 +1,8 @@
 import {
   DEFAULT_LITELLM_MODEL,
   type ModelEntry,
-  type ModelProviderId
+  type ModelProviderId,
+  validateLiteLLMBaseUrlPolicy
 } from '@tinytinkerer/contracts'
 
 export const DEFAULT_MODEL = DEFAULT_LITELLM_MODEL
@@ -35,15 +36,14 @@ export type LiteLLMBaseUrlValidation =
   | { ok: false; error: string }
 
 /**
- * Validate a user-entered LiteLLM base URL with the same ACCEPT/REJECT rules
- * as the edge (`normalizeLiteLLMBaseUrl` in apps/edge/src/routes/models.ts):
- * https only, no credentials, query, or fragment. The client used to silently
- * strip those parts while the edge rejects them, so the two could disagree
- * about the same input — rejecting here keeps them aligned and gives Settings
- * a concrete error to show instead of silently replacing the value
- * (issue #179). An empty value means "use the deployment default": it is kept
- * as the {@link LITELLM_DEPLOYMENT_DEFAULT} sentinel so requests omit the
- * field and the edge resolves its own configured URL.
+ * Validate a user-entered LiteLLM base URL with the shared contracts
+ * ACCEPT/REJECT policy: https only, no credentials, query, or fragment. The
+ * client used to silently strip those parts while the edge rejects them, so
+ * the two could disagree about the same input — rejecting here keeps them
+ * aligned and gives Settings a concrete error to show instead of silently
+ * replacing the value (issue #179). An empty value means "use the deployment
+ * default": it is kept as the {@link LITELLM_DEPLOYMENT_DEFAULT} sentinel so
+ * requests omit the field and the edge resolves its own configured URL.
  *
  * Only the accept/reject decision is mirrored, not the canonical string: this
  * returns `url.href` (host-only URLs keep their trailing slash), while the
@@ -55,23 +55,25 @@ export const validateLiteLLMBaseUrl = (
 ): LiteLLMBaseUrlValidation => {
   const trimmed = value?.trim()
   if (!trimmed) return { ok: true, url: LITELLM_DEPLOYMENT_DEFAULT }
-  let url: URL
-  try {
-    url = new URL(trimmed)
-  } catch {
-    return { ok: false, error: 'Enter a valid https:// URL.' }
-  }
-  if (url.protocol !== 'https:') {
-    return { ok: false, error: 'The base URL must start with https://.' }
-  }
-  if (url.username || url.password || url.search || url.hash) {
-    return {
-      ok: false,
-      error:
-        'The base URL must not include credentials, a query string, or a fragment.'
+
+  const result = validateLiteLLMBaseUrlPolicy(trimmed)
+  if (!result.ok) {
+    switch (result.reason) {
+      case 'non-https':
+        return { ok: false, error: 'The base URL must start with https://.' }
+      case 'forbidden-url-parts':
+        return {
+          ok: false,
+          error:
+            'The base URL must not include credentials, a query string, or a fragment.'
+        }
+      case 'not-allowed':
+      case 'invalid-url':
+        return { ok: false, error: 'Enter a valid https:// URL.' }
     }
   }
-  return { ok: true, url: url.href }
+
+  return { ok: true, url: result.canonicalUrl }
 }
 
 // Load-path normalization for stored preferences: an invalid stored value

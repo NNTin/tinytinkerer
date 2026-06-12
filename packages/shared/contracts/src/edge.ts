@@ -78,6 +78,61 @@ export const modelProviderIdSchema = z
 
 export type ModelProviderId = z.infer<typeof modelProviderIdSchema>
 
+export type LiteLLMBaseUrlRejectionReason =
+  | 'invalid-url'
+  | 'non-https'
+  | 'forbidden-url-parts'
+  | 'not-allowed'
+
+export type LiteLLMBaseUrlPolicyResult =
+  | { ok: true; url: URL; canonicalUrl: string }
+  | { ok: false; reason: LiteLLMBaseUrlRejectionReason }
+
+export interface ValidateLiteLLMBaseUrlPolicyOptions {
+  allowedBaseUrls?: ReadonlySet<string> | readonly string[]
+  canonicalize?: (url: URL) => string
+}
+
+const includesLiteLLMBaseUrl = (
+  allowedBaseUrls: ReadonlySet<string> | readonly string[],
+  baseUrl: string
+): boolean =>
+  'has' in allowedBaseUrls
+    ? allowedBaseUrls.has(baseUrl)
+    : allowedBaseUrls.includes(baseUrl)
+
+export const validateLiteLLMBaseUrlPolicy = (
+  value: string | null | undefined,
+  options: ValidateLiteLLMBaseUrlPolicyOptions = {}
+): LiteLLMBaseUrlPolicyResult => {
+  const trimmed = value?.trim()
+  if (!trimmed) return { ok: false, reason: 'invalid-url' }
+
+  let url: URL
+  try {
+    url = new URL(trimmed)
+  } catch {
+    return { ok: false, reason: 'invalid-url' }
+  }
+
+  if (url.protocol !== 'https:') {
+    return { ok: false, reason: 'non-https' }
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    return { ok: false, reason: 'forbidden-url-parts' }
+  }
+
+  const canonicalUrl = options.canonicalize?.(url) ?? url.href
+  if (
+    options.allowedBaseUrls &&
+    !includesLiteLLMBaseUrl(options.allowedBaseUrls, canonicalUrl)
+  ) {
+    return { ok: false, reason: 'not-allowed' }
+  }
+
+  return { ok: true, url, canonicalUrl }
+}
+
 export const modelsChatRequestSchema = z
   .object({
     provider: modelProviderIdSchema.optional(),
