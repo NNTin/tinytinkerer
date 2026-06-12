@@ -6,12 +6,9 @@ const makeHeaders = (overrides: Record<string, string> = {}): Headers => {
     'x-ratelimit-limit-requests': '20000',
     'x-ratelimit-remaining-requests': '19999',
     'x-ratelimit-reset-requests': '0',
-    'x-ratelimit-renewalperiod-requests': '60',
     'x-ratelimit-limit-tokens': '2000000',
     'x-ratelimit-remaining-tokens': '1999990',
     'x-ratelimit-reset-tokens': '0',
-    'x-ratelimit-renewalperiod-tokens': '60',
-    'x-ratelimit-abusepenalty-active': 'False',
   }
   return new Headers({ ...defaults, ...overrides })
 }
@@ -94,15 +91,6 @@ describe('RateLimitQuota', () => {
     )
     const result = quota.checkThrottle(500, nowMs)
     expect(result.shouldThrottle).toBe(false)
-  })
-
-  it('blocks with abuse penalty when abuse flag is active', () => {
-    const quota = new RateLimitQuota()
-    quota.updateFromHeaders(makeHeaders({ 'x-ratelimit-abusepenalty-active': 'True' }))
-    const result = quota.checkThrottle()
-    expect(result.shouldThrottle).toBe(true)
-    expect(result.reason).toBe('abuse_penalty')
-    expect(result.waitMs).toBeGreaterThan(5000)
   })
 
   it('applies heuristic backoff after a recorded 429 when no headers present', () => {

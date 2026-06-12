@@ -111,7 +111,6 @@ describe('contracts', () => {
             label: 'GPT-4.1 mini',
             kind: 'chat',
             publisher: 'OpenAI',
-            capabilities: ['streaming'],
             limits: { max_input_tokens: 1048576 }
           },
           {

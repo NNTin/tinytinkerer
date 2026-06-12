@@ -109,7 +109,8 @@ export const createChatStore = (options: {
           runtimeFactory,
           conversations: options.shell.conversations,
           preferences: options.shell.preferences,
-          litellmBaseUrl: options.settingsStore.getState().litellmBaseUrl,
+          // Cooldowns are scoped per LiteLLM deployment (issue #179).
+          cooldownScope: options.settingsStore.getState().litellmBaseUrl,
           signal: runController.signal,
           onEvent: (event) => {
             set((currentState) => ({

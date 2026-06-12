@@ -140,13 +140,7 @@ export const modelEntrySchema = z
     id: z.string(),
     label: z.string(),
     kind: modelKindSchema.optional(),
-    name: z.string().optional(),
     publisher: z.string().optional(),
-    registry: z.string().optional(),
-    summary: z.string().optional(),
-    html_url: z.string().url().optional(),
-    version: z.string().optional(),
-    capabilities: z.array(z.string()).optional(),
     limits: modelLimitsSchema.optional(),
     context_length: z.number().nullable().optional(),
     pricing: z.record(z.string(), z.unknown()).optional(),
@@ -324,12 +318,9 @@ export const EDGE_RATE_LIMIT_HEADERS = [
   'x-ratelimit-limit-requests',
   'x-ratelimit-remaining-requests',
   'x-ratelimit-reset-requests',
-  'x-ratelimit-renewalperiod-requests',
   'x-ratelimit-limit-tokens',
   'x-ratelimit-remaining-tokens',
-  'x-ratelimit-reset-tokens',
-  'x-ratelimit-renewalperiod-tokens',
-  'x-ratelimit-abusepenalty-active'
+  'x-ratelimit-reset-tokens'
 ] as const
 
 export const EDGE_EXPOSED_HEADERS = [

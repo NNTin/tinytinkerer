@@ -133,7 +133,7 @@ describe('createChatStore', () => {
     expect(store.getState().isRunning).toBe(false)
   })
 
-  it('forwards the configured litellmBaseUrl to executeChatPrompt (issue #179)', async () => {
+  it('forwards the configured base URL as the cooldownScope to executeChatPrompt (issue #179)', async () => {
     mockExecuteChatPrompt.mockResolvedValue(undefined)
 
     const store = createChatStore({
@@ -148,7 +148,7 @@ describe('createChatStore', () => {
     await store.getState().sendPrompt('hello')
 
     expect(mockExecuteChatPrompt).toHaveBeenCalledWith(
-      expect.objectContaining({ litellmBaseUrl: 'https://litellm-b.example.com' })
+      expect.objectContaining({ cooldownScope: 'https://litellm-b.example.com' })
     )
   })
 

@@ -187,30 +187,8 @@
           "kind": {
             "$ref": "#/components/schemas/ModelKind"
           },
-          "name": {
-            "type": "string"
-          },
           "publisher": {
             "type": "string"
-          },
-          "registry": {
-            "type": "string"
-          },
-          "summary": {
-            "type": "string"
-          },
-          "html_url": {
-            "type": "string",
-            "format": "uri"
-          },
-          "version": {
-            "type": "string"
-          },
-          "capabilities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           },
           "limits": {
             "$ref": "#/components/schemas/ModelLimits"
@@ -949,12 +927,6 @@
                 },
                 "required": false
               },
-              "x-ratelimit-renewalperiod-requests": {
-                "schema": {
-                  "type": "string"
-                },
-                "required": false
-              },
               "x-ratelimit-limit-tokens": {
                 "schema": {
                   "type": "string"
@@ -968,18 +940,6 @@
                 "required": false
               },
               "x-ratelimit-reset-tokens": {
-                "schema": {
-                  "type": "string"
-                },
-                "required": false
-              },
-              "x-ratelimit-renewalperiod-tokens": {
-                "schema": {
-                  "type": "string"
-                },
-                "required": false
-              },
-              "x-ratelimit-abusepenalty-active": {
                 "schema": {
                   "type": "string"
                 },

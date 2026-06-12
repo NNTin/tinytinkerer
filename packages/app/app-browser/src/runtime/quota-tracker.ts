@@ -11,9 +11,13 @@ const parseNonNegativeInt = (headers: Headers, name: string): number | undefined
   return Number.isFinite(n) && n >= 0 ? n : undefined
 }
 
-// GitHub sends x-ratelimit-reset-* as either relative seconds (<= 86400) or absolute Unix epoch seconds.
-const resolveResetAt = (resetSec: number | undefined, nowMs: number, renewalMs: number): number => {
-  if (resetSec === undefined || resetSec <= 0) return nowMs + renewalMs
+// Default renewal window used as the reset fallback when the upstream omits a
+// usable x-ratelimit-reset-* value (LiteLLM windows are minute-scoped).
+const DEFAULT_RENEWAL_MS = 60_000
+
+// LiteLLM sends x-ratelimit-reset-* as either relative seconds (<= 86400) or absolute Unix epoch seconds.
+const resolveResetAt = (resetSec: number | undefined, nowMs: number): number => {
+  if (resetSec === undefined || resetSec <= 0) return nowMs + DEFAULT_RENEWAL_MS
   return resetSec > 86400 ? resetSec * 1000 : nowMs + resetSec * 1000
 }
 
@@ -21,19 +25,17 @@ type QuotaWindow = {
   limit: number
   remaining: number
   resetAt: number
-  renewalPeriodMs: number
 }
 
 export type ThrottleResult = {
   shouldThrottle: boolean
   waitMs: number
-  reason: 'request_quota' | 'token_quota' | 'abuse_penalty' | 'heuristic' | 'none'
+  reason: 'request_quota' | 'token_quota' | 'heuristic' | 'none'
 }
 
 export class RateLimitQuota {
   private requests: QuotaWindow | null = null
   private tokens: QuotaWindow | null = null
-  private abuseActive = false
   private heuristicBackoffMs = 0
   private lastRateLimitAt = 0
 
@@ -41,36 +43,26 @@ export class RateLimitQuota {
     const limitReq = parseNonNegativeInt(headers, 'x-ratelimit-limit-requests')
     const remainingReq = parseNonNegativeInt(headers, 'x-ratelimit-remaining-requests')
     const resetReq = parseNonNegativeInt(headers, 'x-ratelimit-reset-requests')
-    const renewalReq = parseNonNegativeInt(headers, 'x-ratelimit-renewalperiod-requests')
 
     const limitTok = parseNonNegativeInt(headers, 'x-ratelimit-limit-tokens')
     const remainingTok = parseNonNegativeInt(headers, 'x-ratelimit-remaining-tokens')
     const resetTok = parseNonNegativeInt(headers, 'x-ratelimit-reset-tokens')
-    const renewalTok = parseNonNegativeInt(headers, 'x-ratelimit-renewalperiod-tokens')
-
-    const abusePenalty = headers.get('x-ratelimit-abusepenalty-active')
 
     if (limitReq !== undefined && remainingReq !== undefined) {
-      const renewalMs = (renewalReq ?? 60) * 1000
       this.requests = {
         limit: limitReq,
         remaining: remainingReq,
-        resetAt: resolveResetAt(resetReq, nowMs, renewalMs),
-        renewalPeriodMs: renewalMs,
+        resetAt: resolveResetAt(resetReq, nowMs),
       }
     }
 
     if (limitTok !== undefined && remainingTok !== undefined) {
-      const renewalMs = (renewalTok ?? 60) * 1000
       this.tokens = {
         limit: limitTok,
         remaining: remainingTok,
-        resetAt: resolveResetAt(resetTok, nowMs, renewalMs),
-        renewalPeriodMs: renewalMs,
+        resetAt: resolveResetAt(resetTok, nowMs),
       }
     }
-
-    this.abuseActive = abusePenalty !== null && abusePenalty.toLowerCase() === 'true'
   }
 
   // Call after a confirmed successful response to clear any heuristic backoff.
@@ -85,10 +77,6 @@ export class RateLimitQuota {
   }
 
   checkThrottle(estimatedTokens = 0, nowMs = Date.now()): ThrottleResult {
-    if (this.abuseActive) {
-      return { shouldThrottle: true, waitMs: 5000 + jitter(), reason: 'abuse_penalty' }
-    }
-
     const requests = this.requests
     const tokens = this.tokens
 

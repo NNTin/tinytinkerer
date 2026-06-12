@@ -117,6 +117,6 @@ describe('generated edge contracts', () => {
     expect(
       telemetryHeadersSchema.safeParse({ appVersion: 'x'.repeat(129) }).success
     ).toBe(false)
-    expect(EDGE_RATE_LIMIT_HEADERS).toHaveLength(9)
+    expect(EDGE_RATE_LIMIT_HEADERS).toHaveLength(6)
   })
 })

@@ -1,30 +1,22 @@
 import type {
   AgentType,
   McpDiscoveryResult,
-  McpServerConfig,
-  PluginActivationState
+  McpServerConfig
 } from '@tinytinkerer/contracts'
-import { DEFAULT_MODEL, LITELLM_DEPLOYMENT_DEFAULT } from '@tinytinkerer/app-core'
+import {
+  SETTINGS_KEYS,
+  defaultSettingsState,
+  type SettingsState as CoreSettingsState
+} from '@tinytinkerer/app-core'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { BrowserShell } from '../shell'
 import { loadCoreModule } from '../core-module'
 import { setTelemetryConsent } from '../telemetry/telemetry'
 
-export type SettingsState = {
-  hydrated: boolean
-  selectedModel: string
-  litellmBaseUrl: string
-  /** Validation message from the last setLiteLLMBaseUrl attempt, or null. */
-  litellmBaseUrlError: string | null
-  agentType: AgentType
-  searchEnabled: boolean
-  webSpeechEnabled: boolean
-  showReasoningActivity: boolean
-  showCodeBlockFullscreenButton: boolean
-  mcpServers: McpServerConfig[]
-  mcpDiscovery: Record<string, McpDiscoveryResult>
-  telemetryEnabled: boolean
-  pluginActivation: PluginActivationState
+// The browser store layers UI-only state and actions onto the headless
+// app-core settings shape. The data fields and their storage keys live in
+// app-core/src/settings.ts; importing them keeps the two in lockstep.
+type SettingsActions = {
   initialize: () => Promise<void>
   setSelectedModel: (model: string) => Promise<void>
   setLiteLLMBaseUrl: (baseUrl: string | null) => Promise<void>
@@ -48,61 +40,17 @@ export type SettingsState = {
   setPluginEnabled: (pluginId: string, enabled: boolean) => Promise<void>
 }
 
+export type SettingsState = CoreSettingsState & {
+  /** Validation message from the last setLiteLLMBaseUrl attempt, or null. */
+  litellmBaseUrlError: string | null
+} & SettingsActions
+
 export type SettingsStore = StoreApi<SettingsState>
-
-const DEFAULT_AGENT_TYPE: AgentType = 'react'
-
-const SETTINGS_KEYS = {
-  selectedModel: 'settings_selected_model',
-  litellmBaseUrl: 'settings_litellm_base_url',
-  agentType: 'settings_agent_type',
-  searchEnabled: 'settings_search_enabled',
-  webSpeechEnabled: 'settings_web_speech_enabled',
-  showReasoningActivity: 'settings_show_reasoning_activity',
-  showCodeBlockFullscreenButton: 'settings_show_code_block_fullscreen_button',
-  mcpServers: 'settings_mcp_servers',
-  mcpDiscovery: 'settings_mcp_discovery',
-  telemetryEnabled: 'settings_telemetry_enabled',
-  pluginActivation: 'settings_plugins_activation'
-} as const
-
-const defaultSettingsState = (): Omit<
-  SettingsState,
-  | 'initialize'
-  | 'setSelectedModel'
-  | 'setLiteLLMBaseUrl'
-  | 'setAgentType'
-  | 'setSearchEnabled'
-  | 'setWebSpeechEnabled'
-  | 'setShowReasoningActivity'
-  | 'setShowCodeBlockFullscreenButton'
-  | 'addMcpServer'
-  | 'updateMcpServer'
-  | 'removeMcpServer'
-  | 'setMcpServerEnabled'
-  | 'setMcpDiscovery'
-  | 'clearMcpDiscovery'
-  | 'setTelemetryEnabled'
-  | 'setPluginEnabled'
-> => ({
-  hydrated: false,
-  selectedModel: DEFAULT_MODEL,
-  litellmBaseUrl: LITELLM_DEPLOYMENT_DEFAULT,
-  litellmBaseUrlError: null,
-  agentType: DEFAULT_AGENT_TYPE,
-  searchEnabled: true,
-  webSpeechEnabled: false,
-  showReasoningActivity: false,
-  showCodeBlockFullscreenButton: true,
-  mcpServers: [],
-  mcpDiscovery: {},
-  telemetryEnabled: false,
-  pluginActivation: {}
-})
 
 export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
   createStore<SettingsState>((set, get) => ({
     ...defaultSettingsState(),
+    litellmBaseUrlError: null,
     initialize: async () => {
       const { loadSettingsState } = await loadCoreModule()
       const state = await loadSettingsState(shell.preferences)

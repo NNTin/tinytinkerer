@@ -10,19 +10,20 @@ import type {
 } from './ports'
 
 // Cooldowns were once scoped per provider (issue #146: GitHub Models vs
-// OpenRouter drew on separate upstream quotas). With LiteLLM as the sole
-// provider the key is scoped per deployment (base URL) instead, mirroring the
-// edge's per-(key, base URL) backoff: switching base URLs in Settings must
-// not carry the old deployment's cooldown over (issue #179). Old unscoped
-// `:litellm` and per-provider `:github`/`:openrouter` values are simply
-// ignored — cooldowns are short-lived (≤ ~60s), so any orphaned value
+// OpenRouter drew on separate upstream quotas). The key is now scoped by a
+// caller-supplied `cooldownScope` instead — app-core stays agnostic about what
+// the scope means; the browser layer happens to pass the LiteLLM deployment
+// base URL, mirroring the edge's per-(key, base URL) backoff so switching base
+// URLs in Settings must not carry the old deployment's cooldown over (issue
+// #179). Old unscoped and per-provider (`:github`/`:openrouter`) values are
+// simply ignored — cooldowns are short-lived (≤ ~60s), so any orphaned value
 // self-expires without migration.
 export const RATE_LIMIT_COOLDOWN_KEY_PREFIX = 'rate_limit_cooldown_until:litellm'
 
-export const rateLimitCooldownKey = (litellmBaseUrl?: string): string => {
-  const baseUrl = litellmBaseUrl?.trim()
-  return baseUrl
-    ? `${RATE_LIMIT_COOLDOWN_KEY_PREFIX}:${baseUrl}`
+export const rateLimitCooldownKey = (cooldownScope?: string): string => {
+  const scope = cooldownScope?.trim()
+  return scope
+    ? `${RATE_LIMIT_COOLDOWN_KEY_PREFIX}:${scope}`
     : RATE_LIMIT_COOLDOWN_KEY_PREFIX
 }
 
@@ -33,9 +34,9 @@ export const rateLimitCooldownKey = (litellmBaseUrl?: string): string => {
  */
 export const loadCooldown = async (
   preferences: PreferencesStore,
-  litellmBaseUrl?: string
+  cooldownScope?: string
 ): Promise<string | undefined> =>
-  activeCooldown(await preferences.get(rateLimitCooldownKey(litellmBaseUrl)))
+  activeCooldown(await preferences.get(rateLimitCooldownKey(cooldownScope)))
 
 export type ChatStateSnapshot = {
   conversationId: string | undefined
@@ -56,14 +57,14 @@ export const defaultChatState = (): ChatStateSnapshot => ({
 export const initializeChatState = async (
   conversations: ConversationRepository,
   preferences: PreferencesStore,
-  litellmBaseUrl?: string
+  cooldownScope?: string
 ): Promise<ChatStateSnapshot> => {
   const conversation = await getLatestConversationOrCreate(conversations)
   const storedEvents = await conversations.loadConversationEvents(conversation.id)
-  const cooldownUntil = await loadCooldown(preferences, litellmBaseUrl)
+  const cooldownUntil = await loadCooldown(preferences, cooldownScope)
 
   if (!cooldownUntil) {
-    await preferences.set(rateLimitCooldownKey(litellmBaseUrl), '')
+    await preferences.set(rateLimitCooldownKey(cooldownScope), '')
   }
 
   return {
@@ -85,9 +86,9 @@ export const createPersistedEvent = (
 export const applyRateLimitEvent = async (
   event: ChatEvent,
   preferences: PreferencesStore,
-  litellmBaseUrl?: string
+  cooldownScope?: string
 ): Promise<Pick<ChatStateSnapshot, 'cooldownUntil' | 'isRetryPending'> | undefined> => {
-  const cooldownKey = rateLimitCooldownKey(litellmBaseUrl)
+  const cooldownKey = rateLimitCooldownKey(cooldownScope)
 
   if (event.type === 'rate.limit.waiting') {
     await preferences.set(cooldownKey, event.payload.retryAt)
@@ -137,8 +138,11 @@ export const executeChatPrompt = async (options: {
   runtimeFactory: ChatRuntimeFactory
   conversations: ConversationRepository
   preferences: PreferencesStore
-  /** Scopes the rate-limit cooldown to the active LiteLLM deployment. */
-  litellmBaseUrl?: string
+  /**
+   * Scopes the rate-limit cooldown. Opaque to app-core; the browser layer
+   * passes the active LiteLLM deployment base URL.
+   */
+  cooldownScope?: string
   signal?: AbortSignal
   onEvent: (event: ChatEvent) => void | Promise<void>
   onRateLimitState: (
@@ -185,7 +189,7 @@ export const executeChatPrompt = async (options: {
     const rateLimitState = await applyRateLimitEvent(
       event,
       options.preferences,
-      options.litellmBaseUrl
+      options.cooldownScope
     )
     if (rateLimitState) {
       await options.onRateLimitState(rateLimitState)
