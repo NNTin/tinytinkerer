@@ -7,6 +7,15 @@ packages:
 minimumReleaseAge: 10080
 saveExact: true
 auditLevel: moderate
+# Temporary suppression: GHSA-gv7w-rqvm-qjhr (esbuild) is only patched in
+# esbuild@0.28.1 (published 2026-06-11), which is younger than the 7-day age
+# gate above. The advisory affects esbuild's Deno binary download path
+# (NPM_CONFIG_REGISTRY); this repo only uses esbuild under Node via tsx and
+# wrangler, so the exploit path is not reachable. Remove this entry once
+# esbuild@0.28.1 clears the age gate (~2026-06-18) and esbuild is upgraded.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-gv7w-rqvm-qjhr
 onlyBuiltDependencies:
   - '@sentry/cli'
   - esbuild
