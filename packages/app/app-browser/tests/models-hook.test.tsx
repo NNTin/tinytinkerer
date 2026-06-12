@@ -17,8 +17,9 @@ const mockState = vi.hoisted(
 vi.mock('../src/app.js', () => ({
   useAuthStore: <T,>(selector: (state: typeof mockState.auth) => T): T =>
     selector(mockState.auth),
-  useSettingsStore: <T,>(selector: (state: typeof mockState.settings) => T): T =>
-    selector(mockState.settings)
+  useSettingsStore: <T,>(
+    selector: (state: typeof mockState.settings) => T
+  ): T => selector(mockState.settings)
 }))
 
 vi.mock('../src/hooks.js', () => ({
@@ -26,9 +27,9 @@ vi.mock('../src/hooks.js', () => ({
 }))
 
 vi.mock('../src/telemetry/telemetry.js', async () => {
-  const actual = await vi.importActual<typeof import('../src/telemetry/telemetry.js')>(
-    '../src/telemetry/telemetry.js'
-  )
+  const actual = await vi.importActual<
+    typeof import('../src/telemetry/telemetry.js')
+  >('../src/telemetry/telemetry.js')
   return {
     ...actual,
     getTelemetryHeaders: () => ({})
@@ -163,5 +164,58 @@ describe('useModels', () => {
     expect(result.current.refreshError).toBe(
       "Couldn't refresh models — showing the last-known list."
     )
+  })
+
+  it('resets the catalogue and refreshError to the fallback when the base URL changes (LOW-4)', async () => {
+    mockState.auth.token = 'gh-token'
+    // Models that belong to the FIRST deployment, distinct from FALLBACK_MODELS.
+    const firstDeploymentModels = [
+      {
+        provider: 'litellm',
+        id: 'openai/gpt-4.1-mini',
+        label: 'openai/gpt-4.1-mini',
+        kind: 'chat'
+      }
+    ]
+    // First refresh succeeds; any later fetch reports a cooldown so the soft
+    // refreshError is set while the last-known list is still shown.
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ models: firstDeploymentModels }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+      .mockResolvedValue(new Response('cooldown', { status: 503 }))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const { result, rerender } = renderHook(() => useModels())
+
+    await act(async () => {
+      await result.current.refreshModels()
+    })
+    expect(result.current.models).toEqual(firstDeploymentModels)
+    expect(result.current.refreshError).toBeNull()
+
+    // A second refresh fails: the last-known list stays, with the soft message.
+    await act(async () => {
+      await result.current.refreshModels()
+    })
+    expect(result.current.models).toEqual(firstDeploymentModels)
+    expect(result.current.refreshError).toBe(
+      "Couldn't refresh models — showing the last-known list."
+    )
+
+    // The user points Settings at a different LiteLLM deployment. The previous
+    // deployment's catalogue and the stale error must not linger — they reset to
+    // the built-in fallback without a manual refresh.
+    act(() => {
+      mockState.settings.litellmBaseUrl = 'https://other.example.com/'
+      rerender()
+    })
+
+    expect(result.current.models).toEqual([...FALLBACK_MODELS])
+    expect(result.current.refreshError).toBeNull()
   })
 })
