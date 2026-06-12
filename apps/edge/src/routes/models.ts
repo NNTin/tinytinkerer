@@ -23,7 +23,6 @@ import {
 } from '../lib/models-cache'
 import {
   clearBackoff,
-  deriveCredentialKey,
   getActiveBackoffMs,
   rateLimitResponseFromMs,
   recordBackoff,
@@ -36,7 +35,7 @@ import {
 } from '../lib/caller-validation'
 import {
   clearLiteLLMUserKeyCache,
-  liteLLMUserCredentialKeyInput,
+  deriveLiteLLMUserCredentialKey,
   requireLiteLLMUserKeyConfiguration,
   resolveLiteLLMUserKey,
   type LiteLLMUserKey
@@ -187,8 +186,18 @@ const extractUpstreamErrorMessage = (rawText: string): string | undefined => {
   return undefined
 }
 
+// Defense-in-depth: never let a credential survive into a client-visible error
+// body. The chat route surfaces LiteLLM 400/422 messages verbatim, and some
+// LiteLLM error formats echo the bearer that was presented (e.g. "Received
+// Key=sk-...") — which here is the per-user virtual key the edge mints. Scrub
+// `sk-` style keys and `Bearer <token>` before returning the message.
+const redactSecrets = (message: string): string =>
+  message
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+    .replace(/\bsk-[A-Za-z0-9._-]{6,}/g, 'sk-[redacted]')
+
 const safeUpstreamError = (rawText: string, fallback: string): string => {
-  const message = extractUpstreamErrorMessage(rawText) ?? fallback
+  const message = redactSecrets(extractUpstreamErrorMessage(rawText) ?? fallback)
   return message.length > MAX_UPSTREAM_ERROR_MESSAGE_LENGTH
     ? `${message.slice(0, MAX_UPSTREAM_ERROR_MESSAGE_LENGTH - 3)}...`
     : message
@@ -453,10 +462,15 @@ const preflightLiteLLM = async <S = never>(
   }
 
   const identity = callerValidation.identity
-  // Scope the backoff to the authenticated user and LiteLLM deployment. One
-  // user's exhausted virtual key must not short-circuit another user's quota.
-  const credentialKey = await deriveCredentialKey(
-    liteLLMUserCredentialKeyInput(identity, resolvedBaseUrl)
+  // Scope the backoff to the authenticated user, LiteLLM deployment, AND the
+  // per-deployment key namespace. One user's exhausted virtual key must not
+  // short-circuit another user's quota, and two deployments sharing a backend
+  // must not share each other's provisioning marker (see
+  // deriveLiteLLMUserCredentialKey).
+  const credentialKey = await deriveLiteLLMUserCredentialKey(
+    c.env,
+    identity,
+    resolvedBaseUrl
   )
 
   if (shortCircuit) {

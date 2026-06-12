@@ -165,7 +165,8 @@ const arraysEqual = (a: readonly string[], b: readonly string[]): boolean =>
 
 const expectedConfig = (
   env: Bindings,
-  identity: CallerIdentity
+  identity: CallerIdentity,
+  namespace: string
 ): ExpectedKeyConfig => {
   const models = configuredModels(env).sort()
   const maxBudget = toPositiveNumber(
@@ -183,7 +184,7 @@ const expectedConfig = (
     DEFAULT_USER_TPM_LIMIT
   )
   const userId = `github-${identity.id}`
-  const keyAlias = `tinytinkerer-github-${identity.id}`
+  const keyAlias = `tinytinkerer-${namespace}-github-${identity.id}`
   const fingerprint = JSON.stringify({
     maxBudget,
     budgetDuration,
@@ -208,6 +209,30 @@ const bytesToHex = (bytes: Uint8Array): string => {
   let hex = ''
   for (const byte of bytes) hex += byte.toString(16).padStart(2, '0')
   return hex
+}
+
+// Per-deployment namespace derived from the key-minting secret. The reconcile
+// path trusts "alias exists ⇒ its value equals our derived key", and the key
+// VALUE already depends on LITELLM_USER_KEY_SECRET (see deriveUserApiKey). When
+// two deployments share ONE LiteLLM backend — exactly the wrangler.jsonc setup,
+// where production AND develop (which also backs every PR preview) both point
+// LITELLM_BASE_URL at the same upstream — but hold DIFFERENT secrets, an
+// un-namespaced alias (`tinytinkerer-github-<id>`) collides: the second
+// deployment finds the FIRST deployment's key by alias, assumes its value
+// matches (info never returns the secret value), and hands LiteLLM a bearer that
+// does not exist there — a silent, persistent 401 that regenerate can't recover
+// from (the alias is already taken). If instead the secret is SHARED across
+// those deployments, the collision silently merges their budgets, so the preview
+// edge spends production's per-user budget. Namespacing the alias (and the
+// durable provisioning/backoff scope) by a non-reversible digest of the secret
+// makes the alias as specific as the value: each deployment owns a disjoint
+// alias space, restoring the per-deployment isolation this module relies on.
+const deploymentKeyNamespace = async (secret: string): Promise<string> => {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`tinytinkerer-litellm-deployment:v1:${secret}`)
+  )
+  return bytesToHex(new Uint8Array(digest)).slice(0, 12)
 }
 
 // The derived key value must depend on EXACTLY the same inputs as the LiteLLM
@@ -242,10 +267,27 @@ const deriveUserApiKey = async (
   return `sk-tt-${bytesToHex(new Uint8Array(signature)).slice(0, 48)}`
 }
 
-export const liteLLMUserCredentialKeyInput = (
+// Durable per-user scope for the backoff window AND the provisioning marker.
+// Includes the same per-deployment namespace as the key alias: the Workers Cache
+// the marker lives in is keyed by URL within the zone and can be shared by two
+// deployments on the same backend, so an un-namespaced scope would let one
+// deployment read the other's "already provisioned" marker and short-circuit
+// past minting its OWN (disjoint-alias) key — handing LiteLLM a non-existent
+// bearer. deriveCredentialKey hashes the whole input, so the secret-derived
+// namespace never lands anywhere reversible.
+export const deriveLiteLLMUserCredentialKey = async (
+  env: Bindings,
   identity: CallerIdentity,
   baseUrl: string
-): string => `litellm-user:${baseUrl}:github-${identity.id}`
+): Promise<CredentialKey> => {
+  const secret = env.LITELLM_USER_KEY_SECRET?.trim()
+  const namespace = secret
+    ? await deploymentKeyNamespace(secret)
+    : 'unconfigured'
+  return deriveCredentialKey(
+    `litellm-user:${namespace}:${baseUrl}:github-${identity.id}`
+  )
+}
 
 const managementHeaders = (env: Bindings): Record<string, string> => ({
   authorization: `Bearer ${env.LITELLM_KEY_MANAGEMENT_API_KEY?.trim() ?? ''}`,
@@ -428,10 +470,15 @@ export const resolveLiteLLMUserKey = async (
 ): Promise<LiteLLMUserKey | undefined> => {
   if (!managementConfigured(env)) return undefined
 
-  const expected = expectedConfig(env, identity)
+  const secret = env.LITELLM_USER_KEY_SECRET?.trim()
+  if (!secret) return undefined
+  const namespace = await deploymentKeyNamespace(secret).catch(() => undefined)
+  if (!namespace) return undefined
+
+  const expected = expectedConfig(env, identity, namespace)
   const resolved = await Promise.all([
     deriveUserApiKey(env, identity),
-    deriveCredentialKey(liteLLMUserCredentialKeyInput(identity, baseUrl))
+    deriveLiteLLMUserCredentialKey(env, identity, baseUrl)
   ]).catch(() => undefined)
   if (!resolved) return undefined
   const [apiKey, credentialKey] = resolved
