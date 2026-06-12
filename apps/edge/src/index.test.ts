@@ -14,6 +14,7 @@ import app from './index.js'
 import { cacheKeyForScope } from './lib/models-cache.js'
 import { clearCallerValidationCache } from './lib/caller-validation-cache.js'
 import { clearInboundRateLimits } from './lib/inbound-rate-limit.js'
+import { clearLiteLLMUserKeyCache } from './lib/litellm-user-keys.js'
 import { clearModelsBackoff } from './lib/rate-limit.js'
 import { makeCacheMock } from './test/cache-mock.js'
 
@@ -23,38 +24,80 @@ const toRequestUrl = (input: RequestInfo | URL): string => {
   return input.url
 }
 
-// Every models route validates the caller's GitHub identity before touching the
-// shared LiteLLM key, so model tests need both the env and a mocked
+// Every models route validates the caller's GitHub identity before resolving a
+// per-user LiteLLM virtual key, so model tests need both the env and a mocked
 // api.github.com/user probe. LITELLM_BASE_URL is required too: there is no
 // code-level fallback (issue #179).
 const LITELLM_ENV = {
-  LITELLM_API_KEY: 'litellm-shared-key',
+  LITELLM_KEY_MANAGEMENT_API_KEY: 'litellm-management-key',
+  LITELLM_USER_KEY_SECRET: 'litellm-user-key-secret',
   LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/'
 }
 const GITHUB_USER_URL = 'https://api.github.com/user'
 const githubUserOk = () =>
-  new Response(JSON.stringify({ login: 'nntin' }), {
+  new Response(JSON.stringify({ id: 12345, login: 'nntin' }), {
     status: 200,
     headers: { 'content-type': 'application/json' }
   })
+
+const isLiteLLMKeyManagementUrl = (url: string): boolean => {
+  const path = new URL(url).pathname
+  return (
+    path === '/v2/key/info' ||
+    path === '/key/generate' ||
+    path === '/key/update'
+  )
+}
+
+const litellmKeyManagementOk = (
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Response => {
+  const path = new URL(toRequestUrl(input)).pathname
+  if (path === '/v2/key/info') {
+    return new Response(JSON.stringify({ key: [], info: [] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    })
+  }
+  if (path === '/key/generate') {
+    const rawBody = typeof init?.body === 'string' ? init.body : '{}'
+    const body = JSON.parse(rawBody) as { key?: string }
+    return new Response(JSON.stringify({ key: body.key ?? 'sk-tt-test' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    })
+  }
+  return new Response(JSON.stringify({ updated: true }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' }
+  })
+}
 
 /** Fetch stub that answers the caller-validation probe and delegates the rest. */
 const withCallerValidation = (
   handler: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 ) =>
   vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-    if (toRequestUrl(input) === GITHUB_USER_URL) {
+    const url = toRequestUrl(input)
+    if (url === GITHUB_USER_URL) {
       return Promise.resolve(githubUserOk())
+    }
+    if (isLiteLLMKeyManagementUrl(url)) {
+      return Promise.resolve(litellmKeyManagementOk(input, init))
     }
     return handler(input, init)
   })
 
-/** Upstream fetches excluding the caller-validation probe. */
+/** Data-plane upstream fetches excluding caller-validation and LiteLLM key management. */
 const upstreamCalls = (
   fetchSpy: ReturnType<typeof vi.fn>
 ): Array<[RequestInfo | URL, RequestInit | undefined]> =>
   (fetchSpy.mock.calls as Array<[RequestInfo | URL, RequestInit | undefined]>).filter(
-    ([input]) => toRequestUrl(input) !== GITHUB_USER_URL
+    ([input]) => {
+      const url = toRequestUrl(input)
+      return url !== GITHUB_USER_URL && !isLiteLLMKeyManagementUrl(url)
+    }
   )
 
 /** Calls to the api.github.com/user caller-validation probe only. */
@@ -82,6 +125,8 @@ describe('edge routes', () => {
     // And the inbound rate-limit windows, so repeated search calls across tests
     // never trip the per-credential budget.
     clearInboundRateLimits()
+    // Per-user LiteLLM provisioning markers are module-level too.
+    clearLiteLLMUserKeyCache()
     // Drop any telemetry sink a test registered so captures don't leak across.
     setCaptureExceptionSink(null)
     setCaptureMessageSink(null)
@@ -261,7 +306,7 @@ describe('edge routes', () => {
       'https://litellm.labs.lair.nntin.xyz/v1/chat/completions'
     )
     const headers = new Headers(chatCall?.[1]?.headers)
-    expect(headers.get('authorization')).toBe('Bearer litellm-shared-key')
+    expect(headers.get('authorization')).toMatch(/^Bearer sk-tt-/)
     const body = (await response.json()) as Record<string, unknown>
     rateLimitPayloadSchema.parse(body)
     expect(body['code']).toBe('rate_limited')
@@ -296,17 +341,35 @@ describe('edge routes', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  // A missing LITELLM_BASE_URL is "not configured" exactly like a missing
-  // key: a fork that forgets the var must get a clear 503, not be silently
-  // pointed at the maintainer's deployment (issue #179).
+  // A missing LITELLM_BASE_URL is "not configured"; missing per-user key
+  // provisioning secrets are a distinct deployment error.
   it.each([
-    ['nothing is set', {}],
-    ['the base URL is missing', { LITELLM_API_KEY: 'litellm-shared-key' }],
+    ['nothing is set', {}, 'LiteLLM is not configured.'],
     [
-      'the key is missing',
-      { LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/' }
+      'the base URL is missing',
+      {
+        LITELLM_KEY_MANAGEMENT_API_KEY: 'litellm-management-key',
+        LITELLM_USER_KEY_SECRET: 'litellm-user-key-secret'
+      },
+      'LiteLLM is not configured.'
+    ],
+    [
+      'the key-management key is missing',
+      {
+        LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
+        LITELLM_USER_KEY_SECRET: 'litellm-user-key-secret'
+      },
+      'LiteLLM user key provisioning is not configured.'
+    ],
+    [
+      'the user key secret is missing',
+      {
+        LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
+        LITELLM_KEY_MANAGEMENT_API_KEY: 'litellm-management-key'
+      },
+      'LiteLLM user key provisioning is not configured.'
     ]
-  ])('returns 503 when LiteLLM is not configured (%s)', async (_label, env) => {
+  ])('returns 503 when LiteLLM is not configured (%s)', async (_label, env, error) => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
 
@@ -328,7 +391,7 @@ describe('edge routes', () => {
 
     expect(response.status).toBe(503)
     expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
-      error: 'LiteLLM is not configured.'
+      error
     })
     expect(fetchSpy).not.toHaveBeenCalled()
   })
@@ -371,15 +434,34 @@ describe('edge routes', () => {
   // Mirror of the chat-route unconfigured cases above: the list route runs the
   // same configuration guard.
   it.each([
-    ['nothing is set', {}],
-    ['the base URL is missing', { LITELLM_API_KEY: 'litellm-shared-key' }],
+    ['nothing is set', {}, 'LiteLLM is not configured.'],
     [
-      'the key is missing',
-      { LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/' }
+      'the base URL is missing',
+      {
+        LITELLM_KEY_MANAGEMENT_API_KEY: 'litellm-management-key',
+        LITELLM_USER_KEY_SECRET: 'litellm-user-key-secret'
+      },
+      'LiteLLM is not configured.'
+    ],
+    [
+      'the key-management key is missing',
+      {
+        LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
+        LITELLM_USER_KEY_SECRET: 'litellm-user-key-secret'
+      },
+      'LiteLLM user key provisioning is not configured.'
+    ],
+    [
+      'the user key secret is missing',
+      {
+        LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
+        LITELLM_KEY_MANAGEMENT_API_KEY: 'litellm-management-key'
+      },
+      'LiteLLM user key provisioning is not configured.'
     ]
   ])(
     'returns 503 on models/list when LiteLLM is not configured (%s)',
-    async (_label, env) => {
+    async (_label, env, error) => {
       const fetchSpy = vi.fn()
       vi.stubGlobal('fetch', fetchSpy)
 
@@ -392,7 +474,7 @@ describe('edge routes', () => {
 
       expect(response.status).toBe(503)
       expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
-        error: 'LiteLLM is not configured.'
+        error
       })
       expect(fetchSpy).not.toHaveBeenCalled()
     }
@@ -417,11 +499,12 @@ describe('edge routes', () => {
       'https://litellm.example.com/?key=1'
     ]) {
       const models = await healthStatus({
-        LITELLM_API_KEY: 'litellm-shared-key',
-        LITELLM_BASE_URL: badUrl
+        LITELLM_BASE_URL: badUrl,
+        LITELLM_KEY_MANAGEMENT_API_KEY: 'litellm-management-key',
+        LITELLM_USER_KEY_SECRET: 'litellm-user-key-secret'
       })
       expect(models.state).toBe('degraded')
-      expect(models.detail).toBe('LiteLLM is not configured')
+      expect(models.detail).toBe('LiteLLM is not configured.')
     }
   })
 
@@ -603,7 +686,7 @@ describe('edge routes', () => {
       'https://litellm.labs.lair.nntin.xyz/model/info'
     )
     const headers = new Headers(upstreamCalls(fetchSpy)[0]?.[1]?.headers)
-    expect(headers.get('authorization')).toBe('Bearer litellm-shared-key')
+    expect(headers.get('authorization')).toMatch(/^Bearer sk-tt-/)
 
     // Second request is served from the colo-wide cache — the upstream catalogue
     // is untouched, so we stop hammering LiteLLM on every page load.
@@ -613,11 +696,9 @@ describe('edge routes', () => {
     expect(upstreamCalls(fetchSpy)).toHaveLength(2)
   })
 
-  // A fresh catalogue is identical for every caller, so the list route serves it
-  // before — and WITHOUT — the GitHub caller-validation probe, mirroring the
-  // chat route's backoff-before-probe ordering (issue #177). Pinned with a token
-  // GitHub would reject: the cache hit must still answer 200 and never probe.
-  it('serves a fresh cached models list before (and without) the GitHub caller-validation probe (issue #177)', async () => {
+  // Per-user LiteLLM keys make identity part of the model access decision. Even
+  // a fresh catalogue cache must not be visible to a caller GitHub rejects.
+  it('validates the caller before serving a fresh cached models list', async () => {
     const { store, cache } = makeCacheMock()
     store.set(
       cacheKeyForScope(DEFAULT_LITELLM_SCOPE),
@@ -626,8 +707,8 @@ describe('edge routes', () => {
       })
     )
     vi.stubGlobal('caches', { default: cache })
-    // Any GitHub probe here would reject the caller (401); reaching it at all
-    // would be the bug. The catalogue fetch must never run either.
+    // The cached catalogue exists, but the GitHub probe rejects the caller.
+    // The catalogue fetch must never run.
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
       if (toRequestUrl(input) === GITHUB_USER_URL) {
         return Promise.resolve(new Response('bad credentials', { status: 401 }))
@@ -643,11 +724,11 @@ describe('edge routes', () => {
       LITELLM_ENV
     )
 
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({
-      models: [{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]
+    expect(response.status).toBe(401)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'Unauthorized'
     })
-    expect(githubProbeCalls(fetchSpy)).toHaveLength(0)
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
     expect(upstreamCalls(fetchSpy)).toHaveLength(0)
   })
 
@@ -703,14 +784,15 @@ describe('edge routes', () => {
       input: RequestInfo | URL
       init: RequestInit | undefined
     }> = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        upstreamRequests.push({ input, init })
+    const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         const url = toRequestUrl(input)
         if (url === GITHUB_USER_URL) {
           return Promise.resolve(githubUserOk())
         }
+        if (isLiteLLMKeyManagementUrl(url)) {
+          return Promise.resolve(litellmKeyManagementOk(input, init))
+        }
+        upstreamRequests.push({ input, init })
         if (url.endsWith('/model/info')) {
           // /model/info exposes the mode that /v1/models omits. voyage-2 has
           // no embedding hint in its NAME, so only this lookup can drop it;
@@ -750,7 +832,7 @@ describe('edge routes', () => {
           )
         )
       })
-    )
+    vi.stubGlobal('fetch', fetchSpy)
 
     const response = await app.fetch(
       new Request('http://localhost/api/models/list?provider=litellm', {
@@ -771,28 +853,28 @@ describe('edge routes', () => {
         }
       ]
     })
-    expect(upstreamRequests[0]?.input).toBe(GITHUB_USER_URL)
-    expect(upstreamRequests[1]?.input).toBe(
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
+    expect(upstreamRequests[0]?.input).toBe(
       'https://litellm.labs.lair.nntin.xyz/v1/models'
     )
-    expect(upstreamRequests[2]?.input).toBe(
+    expect(upstreamRequests[1]?.input).toBe(
       'https://litellm.labs.lair.nntin.xyz/model/info'
     )
     expect(
-      new Headers(upstreamRequests[0]?.init?.headers).get('authorization')
+      new Headers(githubProbeCalls(fetchSpy)[0]?.[1]?.headers).get('authorization')
     ).toBe('Bearer github-token')
     // api.github.com 403s without a User-Agent; the caller-validation probe must
     // send one or every LiteLLM request is wrongly rejected as an invalid caller
     // (TINYTINKERER-FRONTEND-N/P/Q/R).
     expect(
-      new Headers(upstreamRequests[0]?.init?.headers).get('user-agent')
+      new Headers(githubProbeCalls(fetchSpy)[0]?.[1]?.headers).get('user-agent')
     ).toBe('tinytinkerer-edge')
     expect(
-      new Headers(upstreamRequests[1]?.init?.headers).get('authorization')
-    ).toBe('Bearer litellm-shared-key')
+      new Headers(upstreamRequests[0]?.init?.headers).get('authorization')
+    ).toMatch(/^Bearer sk-tt-/)
     expect(
-      new Headers(upstreamRequests[2]?.init?.headers).get('authorization')
-    ).toBe('Bearer litellm-shared-key')
+      new Headers(upstreamRequests[1]?.init?.headers).get('authorization')
+    ).toMatch(/^Bearer sk-tt-/)
   })
 
   it('proxies LiteLLM chat completions with the selected allowlisted base URL', async () => {
@@ -803,10 +885,14 @@ describe('edge routes', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        upstreamRequests.push({ input, init })
-        if (toRequestUrl(input) === GITHUB_USER_URL) {
+        const url = toRequestUrl(input)
+        if (url === GITHUB_USER_URL) {
           return Promise.resolve(githubUserOk())
         }
+        if (isLiteLLMKeyManagementUrl(url)) {
+          return Promise.resolve(litellmKeyManagementOk(input, init))
+        }
+        upstreamRequests.push({ input, init })
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -837,20 +923,19 @@ describe('edge routes', () => {
         })
       }),
       {
-        LITELLM_API_KEY: 'litellm-shared-key',
+        ...LITELLM_ENV,
         LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
         LITELLM_ALLOWED_BASE_URLS: 'https://litellm.example.com'
       }
     )
 
     expect(response.status).toBe(200)
-    expect(upstreamRequests[0]?.input).toBe(GITHUB_USER_URL)
-    expect(upstreamRequests[1]?.input).toBe(
+    expect(upstreamRequests[0]?.input).toBe(
       'https://litellm.example.com/v1/chat/completions'
     )
-    const headers = new Headers(upstreamRequests[1]?.init?.headers)
-    expect(headers.get('authorization')).toBe('Bearer litellm-shared-key')
-    const upstreamBody = upstreamRequests[1]?.init?.body
+    const headers = new Headers(upstreamRequests[0]?.init?.headers)
+    expect(headers.get('authorization')).toMatch(/^Bearer sk-tt-/)
+    const upstreamBody = upstreamRequests[0]?.init?.body
     if (typeof upstreamBody !== 'string') {
       throw new Error('Expected LiteLLM request body to be a JSON string')
     }
@@ -959,7 +1044,7 @@ describe('edge routes', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('returns 401 for invalid callers before using the shared LiteLLM key', async () => {
+  it('returns 401 for invalid callers before provisioning a LiteLLM user key', async () => {
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
       if (toRequestUrl(input) === GITHUB_USER_URL) {
         return Promise.resolve(new Response('bad credentials', { status: 401 }))
@@ -1009,7 +1094,7 @@ describe('edge routes', () => {
 
   // Mirrors of the list-route caller-validation tests above: the chat route
   // runs the same probe and must answer identically.
-  it('returns 401 on chat for invalid callers before using the shared LiteLLM key', async () => {
+  it('returns 401 on chat for invalid callers before provisioning a LiteLLM user key', async () => {
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
       if (toRequestUrl(input) === GITHUB_USER_URL) {
         return Promise.resolve(new Response('bad credentials', { status: 401 }))
@@ -1170,7 +1255,7 @@ describe('edge routes', () => {
     expect(githubProbeCalls(fetchSpy)).toHaveLength(2)
   })
 
-  it('checks the chat backoff window before probing GitHub (issue #177)', async () => {
+  it('checks the chat backoff window after identifying the GitHub user', async () => {
     const fetchSpy = withCallerValidation(() =>
       Promise.resolve(
         new Response('rate limited', {
@@ -1199,18 +1284,69 @@ describe('edge routes', () => {
         LITELLM_ENV
       )
 
-    // First caller opens the (deployment-wide) backoff window.
+    // First token opens the backoff window for its GitHub identity.
     const first = await chatRequest('first-token')
     expect(first.status).toBe(429)
     expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
 
-    // A DIFFERENT caller (validation not cached for this token) arrives while
-    // the window is open: the 429 short-circuit must answer before the GitHub
-    // probe, so no new probe is spent just to be told to back off.
+    // A different GitHub token still has to be identified before the route can
+    // know whether it belongs to the same user-scoped LiteLLM bucket.
     const second = await chatRequest('second-token')
     expect(second.status).toBe(429)
-    expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(2)
     expect(upstreamCalls(fetchSpy)).toHaveLength(1)
+  })
+
+  it('keeps one GitHub user’s chat backoff from affecting another user', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = toRequestUrl(input)
+      if (url === GITHUB_USER_URL) {
+        const authorization = new Headers(init?.headers).get('authorization') ?? ''
+        const secondUser = authorization.includes('second-token')
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: secondUser ? 67890 : 12345,
+              login: secondUser ? 'other-user' : 'nntin'
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        )
+      }
+      if (isLiteLLMKeyManagementUrl(url)) {
+        return Promise.resolve(litellmKeyManagementOk(input, init))
+      }
+      return Promise.resolve(
+        new Response('rate limited', {
+          status: 429,
+          headers: { 'retry-after': '120' }
+        })
+      )
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const chatRequest = (token: string) =>
+      app.fetch(
+        new Request('http://localhost/api/models/chat', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            provider: 'litellm',
+            model: 'openai/gpt-4.1-mini',
+            stream: false,
+            messages: [{ role: 'user', content: 'hello' }]
+          })
+        }),
+        LITELLM_ENV
+      )
+
+    expect((await chatRequest('first-token')).status).toBe(429)
+    expect((await chatRequest('second-token')).status).toBe(429)
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(2)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(2)
   })
 
   it('serves the last-known list when upstream is rate limited, breaking the 429 cascade (TINYTINKERER-FRONTEND-5)', async () => {
@@ -1465,7 +1601,7 @@ describe('edge routes', () => {
     const body = edgeErrorResponseSchema.parse(await response.json())
     expect(body).toEqual({
       error:
-        'Authentication failed. The configured LiteLLM virtual key may be invalid.'
+        'Authentication failed. The LiteLLM user virtual key may be invalid.'
     })
     expect(sink).toHaveBeenCalledTimes(1)
     const [, options] = sink.mock.calls[0] ?? []
@@ -1504,7 +1640,7 @@ describe('edge routes', () => {
     expect(mapped.status).toBe(401)
     expect(edgeErrorResponseSchema.parse(await mapped.json())).toEqual({
       error:
-        'Authentication failed. The configured LiteLLM virtual key may be invalid.'
+        'Authentication failed. The LiteLLM user virtual key may be invalid.'
     })
 
     // An unmapped upstream status collapses to a 502 with a generic message.
@@ -1524,9 +1660,13 @@ describe('edge routes', () => {
   it('preserves LiteLLM bad-request details for unsupported chat models', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn((input: RequestInfo | URL) => {
-        if (toRequestUrl(input) === GITHUB_USER_URL) {
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = toRequestUrl(input)
+        if (url === GITHUB_USER_URL) {
           return Promise.resolve(githubUserOk())
+        }
+        if (isLiteLLMKeyManagementUrl(url)) {
+          return Promise.resolve(litellmKeyManagementOk(input, init))
         }
         return Promise.resolve(
           new Response(
@@ -1561,7 +1701,7 @@ describe('edge routes', () => {
         })
       }),
       {
-        LITELLM_API_KEY: 'litellm-shared-key',
+        ...LITELLM_ENV,
         LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
         LITELLM_ALLOWED_BASE_URLS: 'https://litellm.example.com'
       }

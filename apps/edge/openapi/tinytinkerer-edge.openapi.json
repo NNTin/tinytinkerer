@@ -679,6 +679,16 @@
               }
             }
           },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeErrorResponse"
+                }
+              }
+            }
+          },
           "502": {
             "description": "Bad gateway",
             "content": {
@@ -1156,6 +1166,16 @@
               }
             }
           },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeErrorResponse"
+                }
+              }
+            }
+          },
           "502": {
             "description": "Bad gateway",
             "content": {
@@ -1249,6 +1269,16 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {

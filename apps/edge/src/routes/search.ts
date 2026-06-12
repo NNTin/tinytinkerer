@@ -68,14 +68,17 @@ export const registerSearchRoutes = (
     // The Tavily key is a shared, server-funded credential, so validate the
     // caller's GitHub identity before spending it — a merely present
     // Authorization header is not enough (mirrors the models routes).
-    const callerValidation = await validateLiteLLMCaller(authorization)
-    if (callerValidation === 'invalid') {
+    const callerValidation = await validateLiteLLMCaller(authorization, c.env)
+    if (callerValidation.status === 'invalid') {
       return c.json(
         edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
         401
       )
     }
-    if (callerValidation === 'unavailable') {
+    if (callerValidation.status === 'forbidden') {
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
+    }
+    if (callerValidation.status === 'unavailable') {
       return c.json(
         edgeErrorResponseSchema.parse({
           error: 'Caller validation is temporarily unavailable.'

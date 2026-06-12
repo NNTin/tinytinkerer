@@ -160,8 +160,8 @@ describe('credential-scoped backoff window (issue #146)', () => {
 
   it('keeps one credential’s backoff from affecting another', () => {
     const nowMs = 3_000_000
-    // Credential keys are derived from the shared LiteLLM key + base URL, so
-    // distinct allowlisted deployments land in distinct buckets.
+    // Credential keys are derived by callers; distinct callers/deployments land
+    // in distinct buckets.
     recordModelsBackoff(60_000, nowMs, 'cred-a')
 
     // The credential that hit the limit is backed off...

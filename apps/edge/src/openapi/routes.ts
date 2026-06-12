@@ -142,6 +142,10 @@ export const searchRoute = createRoute({
       description: 'Unauthorized',
       content: json(edgeErrorResponseSchema)
     },
+    403: {
+      description: 'Forbidden',
+      content: json(edgeErrorResponseSchema)
+    },
     502: { description: 'Bad gateway', content: json(edgeErrorResponseSchema) },
     503: {
       description: 'Search unavailable',
@@ -219,6 +223,10 @@ export const mcpDiscoverRoute = createRoute({
       description: 'Unauthorized',
       content: json(edgeErrorResponseSchema)
     },
+    403: {
+      description: 'Forbidden',
+      content: json(edgeErrorResponseSchema)
+    },
     502: { description: 'Bad gateway', content: json(edgeErrorResponseSchema) },
     503: {
       description: 'Caller validation unavailable',
@@ -240,6 +248,10 @@ export const mcpCallRoute = createRoute({
     400: { description: 'Bad request', content: json(edgeErrorResponseSchema) },
     401: {
       description: 'Unauthorized',
+      content: json(edgeErrorResponseSchema)
+    },
+    403: {
+      description: 'Forbidden',
       content: json(edgeErrorResponseSchema)
     },
     502: { description: 'Bad gateway', content: json(edgeErrorResponseSchema) },

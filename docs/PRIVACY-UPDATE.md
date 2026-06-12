@@ -7,12 +7,13 @@ have been removed.
 
 Your conversation content passes through this proxy to the model providers the maintainer
 has configured, in order to generate responses. The proxy does not store your messages: it
-records only operational metadata per request (model, token counts, cost, timing, and
-success/error status), which the maintainer can view in the LiteLLM dashboard to monitor
-usage and reliability. Model requests are sent with a shared service credential and are
-not linked to your GitHub identity.
+records operational metadata per request (model, token counts, cost, timing, LiteLLM key
+alias/user id, and success/error status), which the maintainer can view in the LiteLLM
+dashboard to monitor usage, reliability, and per-account budgets.
 
-GitHub sign-in is now used only for access control — verifying that you hold a valid
-GitHub token before requests are forwarded. Personal access tokens and user-supplied
-provider API keys are no longer used. See the new "Chat content and the model proxy
-(LiteLLM)" section of the privacy policy for details.
+GitHub sign-in is used for access control and per-user budgeting. The edge verifies that
+you hold a valid GitHub token, reads the `id` and `login` fields from GitHub's `/user`
+response, and provisions or reuses a LiteLLM virtual key for that GitHub account. Your
+GitHub access token is not forwarded to LiteLLM or model providers. Personal access
+tokens and user-supplied provider API keys are no longer used. See the new "Chat content
+and the model proxy (LiteLLM)" section of the privacy policy for details.

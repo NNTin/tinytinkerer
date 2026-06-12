@@ -83,7 +83,8 @@ In the GitHub repository:
    - `CLOUDFLARE_ACCOUNT_ID`
    - `OAUTH_GITHUB_CLIENT_ID`
    - `OAUTH_GITHUB_CLIENT_SECRET`
-   - `LITELLM_API_KEY` (see [litellm-setup.md](litellm-setup.md))
+   - `LITELLM_KEY_MANAGEMENT_API_KEY` (see [litellm-setup.md](litellm-setup.md))
+   - `LITELLM_USER_KEY_SECRET` (see [litellm-setup.md](litellm-setup.md))
    - `TAVILY_API_KEY` (optional)
 
 The deploy workflow at `.github/workflows/deploy-pages.yml` uses those secrets for both production and preview deploys.
@@ -226,24 +227,33 @@ The Worker requires these secrets:
 ```bash
 GITHUB_CLIENT_ID
 GITHUB_CLIENT_SECRET
-LITELLM_API_KEY
+LITELLM_KEY_MANAGEMENT_API_KEY
+LITELLM_USER_KEY_SECRET
 ```
 
-`LITELLM_API_KEY` is the virtual key for the LiteLLM instance named in the
-Worker's `LITELLM_BASE_URL` var — see [litellm-setup.md](litellm-setup.md)
-for hosting an instance, generating the key, and pointing the vars at it.
+`LITELLM_KEY_MANAGEMENT_API_KEY` is a LiteLLM proxy-admin service-user key. The
+Worker uses it only on `/v2/key/info`, `/key/generate`, and `/key/update` to
+provision one LiteLLM virtual key per authenticated GitHub user.
+`LITELLM_USER_KEY_SECRET` is a high-entropy secret used to derive stable
+per-user LiteLLM key values. See [litellm-setup.md](litellm-setup.md) for
+hosting an instance, creating the management service user, and pointing the vars
+at it.
 
 In GitHub Actions, store them under these repository secret names instead:
 
 ```bash
 OAUTH_GITHUB_CLIENT_ID
 OAUTH_GITHUB_CLIENT_SECRET
+LITELLM_KEY_MANAGEMENT_API_KEY
+LITELLM_USER_KEY_SECRET
 ```
 
 The edge deploy workflow maps:
 
 - `OAUTH_GITHUB_CLIENT_ID` -> Worker secret `GITHUB_CLIENT_ID`
 - `OAUTH_GITHUB_CLIENT_SECRET` -> Worker secret `GITHUB_CLIENT_SECRET`
+- `LITELLM_KEY_MANAGEMENT_API_KEY` -> Worker secret `LITELLM_KEY_MANAGEMENT_API_KEY`
+- `LITELLM_USER_KEY_SECRET` -> Worker secret `LITELLM_USER_KEY_SECRET`
 
 Optional:
 
@@ -396,6 +406,7 @@ Usually caused by one of these:
 
 - `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ACCOUNT_ID` is missing in GitHub Actions secrets
 - `OAUTH_GITHUB_CLIENT_ID` or `OAUTH_GITHUB_CLIENT_SECRET` is missing in GitHub Actions secrets
+- `LITELLM_KEY_MANAGEMENT_API_KEY` or `LITELLM_USER_KEY_SECRET` is missing in GitHub Actions secrets
 - the Cloudflare token does not have enough scope for Workers deploys and zone routing changes
 - `api.tiny.nntin.xyz` cannot be provisioned as a Worker custom domain in the target zone
 

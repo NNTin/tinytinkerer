@@ -39,18 +39,18 @@ responses) is transmitted through the TinyTinkerer edge API to a self-hosted
 it to the third-party model providers configured by the maintainer to generate responses.
 Those providers process the content under their own terms.
 
-Model requests carry no account identity: they are sent with a shared service credential,
-and no GitHub identifier, installation ID, or telemetry header is attached to them.
-GitHub sign-in is used only to verify that the caller holds a valid GitHub token before a
-request is forwarded; the edge reads only the validity of the token and forwards nothing
-from your GitHub account.
+Model requests are sent to LiteLLM with a per-user LiteLLM virtual key derived from
+your GitHub account id. GitHub sign-in is used to verify that the caller holds a valid
+GitHub token and to read the `id` and `login` fields from GitHub's `/user` response.
+The edge does not forward your GitHub access token to LiteLLM or model providers.
 
 The proxy does not store conversation content. It records per-request operational
-metadata — model name, token counts, cost, timestamps and request duration, and
-success/error status (error logs include the error message) — which the maintainer can
-view in the LiteLLM dashboard to monitor usage, cost, and reliability. This metadata is
-not linked to your GitHub account. Because requests reach the proxy from the edge
-infrastructure, the proxy sees the edge's network address, not your device's IP address.
+metadata — model name, token counts, cost, timestamps and request duration, the
+LiteLLM key alias/user id for your GitHub account, and success/error status (error logs
+include the error message) — which the maintainer can view in the LiteLLM dashboard to
+monitor usage, cost, reliability, and per-account budgets. Because requests reach the
+proxy from the edge infrastructure, the proxy sees the edge's network address, not your
+device's IP address.
 
 The LiteLLM instance is self-hosted and sends no telemetry to LiteLLM (the vendor).
 
@@ -94,8 +94,9 @@ your GitHub account so we can follow up on issues.
 ## Where it is sent
 
 - Chat messages are sent through the TinyTinkerer edge API to the maintainer-operated
-  LiteLLM proxy and onward to its configured model providers, without any account
-  identity attached. See "Chat content and the model proxy (LiteLLM)" above.
+  LiteLLM proxy and onward to its configured model providers. LiteLLM receives a
+  per-user virtual key tied to your GitHub id/login for budget and rate enforcement.
+  See "Chat content and the model proxy (LiteLLM)" above.
 - Crash and error reports are sent to Sentry (our error-monitoring provider).
 - Browser request-failure diagnostics are sent to Sentry with sanitized request metadata
   (method, URL path without query string, status code, and failure type).

@@ -16,7 +16,7 @@ const GITHUB_USER_URL = 'https://api.github.com/user'
 const toRequestUrl = (input: RequestInfo | URL): string =>
   typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
 const githubUserOk = () =>
-  new Response(JSON.stringify({ login: 'nntin' }), {
+  new Response(JSON.stringify({ id: 12345, login: 'nntin' }), {
     status: 200,
     headers: { 'content-type': 'application/json' }
   })

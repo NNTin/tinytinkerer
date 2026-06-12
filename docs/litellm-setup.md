@@ -2,9 +2,11 @@
 
 tinytinkerer has exactly one model provider: a [LiteLLM proxy](https://docs.litellm.ai/docs/simple_proxy).
 The edge Worker forwards every chat completion and model-list request to the
-LiteLLM instance configured by its deployment, using a single shared service
-credential. There is no code-level fallback — a deployment without a configured
-LiteLLM instance serves `503 LiteLLM is not configured.` and `/health` reports
+LiteLLM instance configured by its deployment. It identifies the caller through
+GitHub, provisions a LiteLLM virtual key for that GitHub account, and sends
+upstream requests with that user's key. There is no code-level fallback - a
+deployment without a configured LiteLLM instance and key-management credentials
+serves `503 LiteLLM is not configured.` and `/health` reports
 `models.state: degraded`.
 
 This guide explains how to host your own LiteLLM instance and point a
@@ -13,7 +15,8 @@ Cloudflare, GitHub OAuth) see [vercel-deployment.md](vercel-deployment.md).
 
 ## How tinytinkerer talks to LiteLLM
 
-The edge (`apps/edge`) calls three OpenAI-compatible endpoints on the instance:
+The edge (`apps/edge`) calls three OpenAI-compatible data-plane endpoints on the
+instance:
 
 | Endpoint | Used for | Required |
 |---|---|---|
@@ -21,25 +24,50 @@ The edge (`apps/edge`) calls three OpenAI-compatible endpoints on the instance:
 | `GET /v1/models` | The model picker catalogue | yes |
 | `GET /model/info` | Best-effort `mode` lookup so embedding models are hidden from the chat picker | no — falls back to a name heuristic |
 
-Configuration lives in three values on the Worker:
+It also calls LiteLLM key-management endpoints to create and maintain per-user
+virtual keys:
+
+| Endpoint | Used for | Required |
+|---|---|---|
+| `POST /v2/key/info` | Look up an existing per-user key by alias | yes |
+| `POST /key/generate` | Create the per-user key on first use | yes |
+| `POST /key/update` | Reconcile budget/rate/model settings when Worker vars change | yes |
+
+Configuration lives in these Worker values:
 
 - `LITELLM_BASE_URL` (var) — the instance the edge calls by default.
 - `LITELLM_ALLOWED_BASE_URLS` (var) — comma-separated allowlist. Signed-in
   users may override the base URL in Settings, but the edge only accepts URLs
   on this list (the configured `LITELLM_BASE_URL` is always allowed).
-- `LITELLM_API_KEY` (secret) — the key the edge sends as
-  `Authorization: Bearer …` on every upstream call. Use a LiteLLM
-  **virtual key**, not the master key (see below).
+- `LITELLM_KEY_MANAGEMENT_API_KEY` (secret) — a LiteLLM virtual key for a
+  proxy-admin service user. The edge uses it only for `/v2/key/info`,
+  `/key/generate`, and `/key/update`.
+- `LITELLM_USER_KEY_SECRET` (secret) — a high-entropy secret used to derive
+  stable LiteLLM virtual key values for each GitHub account. Rotating it makes
+  the edge provision new per-user keys.
+- `LITELLM_USER_MAX_BUDGET_USD` (var, default `1`) — hard budget for each
+  generated user key.
+- `LITELLM_USER_BUDGET_DURATION` (var, default `30d`) — budget reset duration.
+- `LITELLM_USER_RPM_LIMIT` (var, default `10`) — request-per-minute limit for
+  each generated user key.
+- `LITELLM_USER_TPM_LIMIT` (var, default `100000`) — token-per-minute limit for
+  each generated user key.
+- `LITELLM_USER_MODELS` (var, optional) — comma-separated LiteLLM model aliases
+  assigned to generated user keys. Empty means all configured models.
+- `GITHUB_ALLOWED_USERS` (var, optional) — comma-separated GitHub numeric ids or
+  logins allowed to use model/search/MCP routes. Empty allows any valid GitHub
+  token.
 
 The edge validates the base URL strictly: it must be `https://`, with no
 username/password, query string, or fragment. A plain-HTTP or otherwise
 malformed URL is treated as "not configured".
 
-Chat requests carry no user identity to LiteLLM — the edge verifies the
-caller's GitHub token first, then forwards the request with only the shared
-key. See [PRIVACY.md](PRIVACY.md) for the full data-flow description, and keep
-those statements true for your own instance (notably: LiteLLM vendor telemetry
-disabled, no logging of conversation content).
+Chat requests are enforced by LiteLLM per GitHub account. The edge verifies the
+caller with GitHub's `/user` API, reads the returned `id` and `login`, and then
+uses or provisions a key alias like `tinytinkerer-github-<id>` with
+`user_id=github-<id>`. See [PRIVACY.md](PRIVACY.md) for the full data-flow
+description, and keep those statements true for your own instance (notably:
+LiteLLM vendor telemetry disabled, no logging of conversation content).
 
 ## 1. Host a LiteLLM instance
 
@@ -120,31 +148,64 @@ Put the proxy behind a TLS-terminating reverse proxy (Caddy, nginx, Traefik,
 a tunnel — whatever you already run) so it is reachable at a stable
 `https://` hostname. The edge refuses plain-HTTP base URLs.
 
-## 2. Create a virtual key for tinytinkerer
+## 2. Create a management service user for tinytinkerer
 
-Never hand the edge your `LITELLM_MASTER_KEY`. Generate a scoped
+Never hand the edge your `LITELLM_MASTER_KEY`. Create a dedicated LiteLLM
+proxy-admin service user and use its auto-created
 [virtual key](https://docs.litellm.ai/docs/proxy/virtual_keys) instead:
 
 ```bash
-curl -sS https://litellm.example.com/key/generate \
+curl -sS http://localhost:4000/user/new \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "key_alias": "tinytinkerer-edge",
-    "models": []
+    "user_id": "tinytinkerer-edge-management",
+    "user_alias": "tinytinkerer Edge Management",
+    "user_role": "proxy_admin",
+    "auto_create_key": true,
+    "key_alias": "tinytinkerer-edge-management",
+    "models": ["no-default-models"],
+    "metadata": {
+      "app": "tinytinkerer",
+      "purpose": "edge per-user key provisioning"
+    }
   }'
 ```
 
 The response contains the key (`sk-…`) — that value becomes the Worker secret
-`LITELLM_API_KEY`. An empty `models` array means the key can call every model
-in the config; list explicit model names instead if you want the key (and
-therefore tinytinkerer's picker) restricted to a subset. You can also set
-`max_budget`, `tpm_limit`, and `rpm_limit` on the key to cap spend — the edge
-already converts upstream `429` responses into a durable cooldown shared by
-all callers, so rate limits degrade gracefully.
+`LITELLM_KEY_MANAGEMENT_API_KEY`. The edge does not use this key for chat. It
+uses it to read, create, and update per-user `llm_api` keys with the configured
+budget, RPM, TPM, and model scope. Store it carefully: the service user is a
+LiteLLM proxy admin so it can manage keys.
 
-If you scope the key, keep its model list in sync with `config.yaml`: the
-catalogue tinytinkerer sees is whatever `/v1/models` returns **for that key**.
+Run this from a trusted admin context, such as the LiteLLM host or Docker
+network. You do not need to expose `/user/new` publicly for tinytinkerer; the
+edge only needs public access to `/v2/key/info`, `/key/generate`, and
+`/key/update`.
+
+Create a separate random secret for `LITELLM_USER_KEY_SECRET`. A 32-byte value is
+enough:
+
+```bash
+openssl rand -hex 32
+```
+
+The edge derives deterministic per-user key values from this secret, the
+LiteLLM base URL, and the GitHub numeric id. LiteLLM stores spend against those
+virtual keys, so budget/rate enforcement and per-user spend visibility live in
+LiteLLM.
+
+### Legacy shared-key safety net
+
+Older tinytinkerer deployments used one shared LiteLLM virtual key. If that key
+still exists while you roll this change out, set hard limits on it in LiteLLM
+(`max_budget`, `budget_duration`, `rpm_limit`, and `tpm_limit`) so a rollback or
+stale Worker cannot spend without a server-side cap. This dashboard/database
+state is not represented in this repo, so record and verify it during incident
+response, restores, and LiteLLM migrations.
+
+The hosted legacy key `tinytinkerer-edge-20260606213400` is currently capped at
+`max_budget=5`, `budget_duration=30d`, `rpm_limit=30`, and `tpm_limit=300000`.
 
 ## 3. Point tinytinkerer at your instance
 
@@ -163,15 +224,22 @@ catalogue tinytinkerer sees is whatever `/v1/models` returns **for that key**.
    }
    ```
 
-2. Add the virtual key as a GitHub Actions repository secret named
-   `LITELLM_API_KEY`. The edge deploy workflow
-   (`.github/workflows/deploy-edge.yml`) uploads it to the Worker on every
-   deploy via `wrangler deploy --secrets-file`.
-
-   For a manual deploy without CI, set it directly instead:
+2. Add these GitHub Actions repository secrets:
 
    ```bash
-   pnpm --filter @tinytinkerer/edge exec wrangler secret put LITELLM_API_KEY
+   LITELLM_KEY_MANAGEMENT_API_KEY
+   LITELLM_USER_KEY_SECRET
+   ```
+
+   The edge deploy workflow
+   (`.github/workflows/deploy-edge.yml`) uploads them to the Worker on every
+   deploy via `wrangler deploy --secrets-file`.
+
+   For a manual deploy without CI, set them directly instead:
+
+   ```bash
+   pnpm --filter @tinytinkerer/edge exec wrangler secret put LITELLM_KEY_MANAGEMENT_API_KEY
+   pnpm --filter @tinytinkerer/edge exec wrangler secret put LITELLM_USER_KEY_SECRET
    ```
 
 ### Local development
@@ -179,9 +247,14 @@ catalogue tinytinkerer sees is whatever `/v1/models` returns **for that key**.
 Create `apps/edge/.dev.vars` (gitignored):
 
 ```bash
-LITELLM_API_KEY=sk-...
+LITELLM_KEY_MANAGEMENT_API_KEY=sk-...
+LITELLM_USER_KEY_SECRET=<hex secret>
 LITELLM_BASE_URL=https://litellm.example.com/
 LITELLM_ALLOWED_BASE_URLS=https://litellm.example.com/
+LITELLM_USER_MAX_BUDGET_USD=1
+LITELLM_USER_BUDGET_DURATION=30d
+LITELLM_USER_RPM_LIMIT=10
+LITELLM_USER_TPM_LIMIT=100000
 ```
 
 ### Optional: let users pick between instances
@@ -192,18 +265,24 @@ URL not on the list are rejected with `400 LiteLLM base URL is not allowed`.
 
 ## 4. Verify
 
-1. The instance itself, with the virtual key (not the master key):
+1. The instance itself, with the management key:
 
    ```bash
-   curl -sS https://litellm.example.com/v1/models \
-     -H "Authorization: Bearer $LITELLM_API_KEY"
+   curl -sS https://litellm.example.com/v2/key/info \
+     -H "Authorization: Bearer $LITELLM_KEY_MANAGEMENT_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"key_aliases": []}'
    ```
 
-   Every model you expect should be listed. Then a one-message smoke test:
+   A healthy management key should return a JSON object. Then create or refresh
+   a user key by signing in through the app and loading the model picker.
+
+   To smoke-test a generated per-user key from the LiteLLM dashboard, use that
+   user key (not the management key):
 
    ```bash
    curl -sS https://litellm.example.com/v1/chat/completions \
-     -H "Authorization: Bearer $LITELLM_API_KEY" \
+     -H "Authorization: Bearer $LITELLM_USER_API_KEY" \
      -H "Content-Type: application/json" \
      -d '{"model": "openai/gpt-5", "messages": [{"role": "user", "content": "ping"}]}'
    ```
@@ -217,8 +296,9 @@ URL not on the list are rejected with `400 LiteLLM base URL is not allowed`.
    curl -sS https://api.your-domain.example/health
    ```
 
-   `models.state` must be `ready`. `degraded` means `LITELLM_API_KEY` is
-   missing or `LITELLM_BASE_URL` is absent/invalid on that Worker.
+   `models.state` must be `ready`. `degraded` means `LITELLM_BASE_URL` is
+   absent/invalid, or `LITELLM_KEY_MANAGEMENT_API_KEY` /
+   `LITELLM_USER_KEY_SECRET` is missing on that Worker.
 
 3. The app: sign in, open the model picker, and confirm your models appear.
    Two caches sit between you and the instance — the edge caches the
@@ -230,9 +310,11 @@ URL not on the list are rejected with `400 LiteLLM base URL is not allowed`.
 
 | Symptom | Likely cause |
 |---|---|
-| `503 LiteLLM is not configured.` | `LITELLM_API_KEY` secret missing, or `LITELLM_BASE_URL` unset / not `https://` / contains credentials, query, or fragment |
+| `503 LiteLLM is not configured.` | `LITELLM_BASE_URL` unset / not `https://` / contains credentials, query, or fragment |
+| `503 LiteLLM user key provisioning is not configured.` | `LITELLM_KEY_MANAGEMENT_API_KEY` or `LITELLM_USER_KEY_SECRET` missing |
+| `503 LiteLLM user key provisioning is temporarily unavailable.` | LiteLLM key-management endpoint failed, the management key is invalid, or the Traefik/reverse-proxy route blocks `/v2/key/info`, `/key/generate`, or `/key/update` |
 | `400 LiteLLM base URL is not allowed` | A Settings override points at a URL missing from `LITELLM_ALLOWED_BASE_URLS` |
-| `401 Authentication failed. The configured LiteLLM virtual key may be invalid.` | The virtual key was deleted, expired, or doesn't match the instance |
-| `403 Access denied.` | The virtual key exists but is not scoped to the requested model |
-| Models missing from the picker | Key scope out of sync with `config.yaml`, proxy not restarted after a config change, or the 5-minute edge cache hasn't expired yet |
-| `429` cooldowns in the app | Upstream provider rate limit; the edge honours `Retry-After` and backs off all callers of the instance until the window closes |
+| `401 Authentication failed. The LiteLLM user virtual key may be invalid.` | The generated user virtual key was deleted, expired, or doesn't match the instance |
+| `403 Access denied.` | The generated user key exists but is not scoped to the requested model, or the GitHub account is not in `GITHUB_ALLOWED_USERS` |
+| Models missing from the picker | `LITELLM_USER_MODELS` out of sync with `config.yaml`, proxy not restarted after a config change, or the 5-minute edge cache hasn't expired yet |
+| `429` cooldowns in the app | The user's LiteLLM key or upstream provider hit a rate limit; the edge honors `Retry-After` and backs off that user until the window closes |

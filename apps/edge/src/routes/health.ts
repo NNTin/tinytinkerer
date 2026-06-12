@@ -12,7 +12,8 @@ export const registerHealthRoute = (
     // present and valid (there is no code-level base-URL fallback). Sharing
     // the helper keeps /health from reporting `ready` for an env value the
     // models routes would reject.
-    const litellmConfigured = !requireLiteLLMConfiguration(c.env)
+    const litellmConfigurationError = requireLiteLLMConfiguration(c.env)
+    const litellmConfigured = !litellmConfigurationError
     const status: SystemStatus = {
       auth: {
         state: c.env.GITHUB_CLIENT_ID ? 'ready' : 'degraded',
@@ -24,7 +25,7 @@ export const registerHealthRoute = (
         state: litellmConfigured ? 'ready' : 'degraded',
         detail: litellmConfigured
           ? 'Model proxy ready'
-          : 'LiteLLM is not configured'
+          : (litellmConfigurationError ?? 'LiteLLM is not configured')
       },
       search: {
         state: c.env.TAVILY_API_KEY ? 'ready' : 'degraded',

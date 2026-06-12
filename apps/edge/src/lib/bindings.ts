@@ -6,9 +6,24 @@ export type Bindings = {
   ALLOWED_ORIGINS?: string
   /** Set to 'true' to allow all origins (dev only). When absent, no CORS header is sent. */
   ALLOW_ALL_ORIGINS?: string
-  LITELLM_API_KEY?: string
+  /** LiteLLM key with permission to create/update/read virtual keys. */
+  LITELLM_KEY_MANAGEMENT_API_KEY?: string
+  /** Secret used to derive stable per-GitHub-user LiteLLM virtual key values. */
+  LITELLM_USER_KEY_SECRET?: string
   LITELLM_BASE_URL?: string
   LITELLM_ALLOWED_BASE_URLS?: string
+  /** Optional comma-separated allowlist of GitHub numeric ids or logins. */
+  GITHUB_ALLOWED_USERS?: string
+  /** Per-user LiteLLM virtual-key budget in USD (default 1). */
+  LITELLM_USER_MAX_BUDGET_USD?: string
+  /** Per-user LiteLLM budget reset duration (default 30d). */
+  LITELLM_USER_BUDGET_DURATION?: string
+  /** Per-user LiteLLM request-per-minute limit (default 10). */
+  LITELLM_USER_RPM_LIMIT?: string
+  /** Per-user LiteLLM token-per-minute limit (default 100000). */
+  LITELLM_USER_TPM_LIMIT?: string
+  /** Comma-separated model aliases assigned to generated per-user keys. Empty means all configured models. */
+  LITELLM_USER_MODELS?: string
   /**
    * Comma-separated hostnames the MCP proxy may connect to. Unset/empty keeps
    * the built-in private-address blocklist; when set, ONLY listed hosts pass

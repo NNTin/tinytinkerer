@@ -23,6 +23,10 @@
     "ALLOWED_ORIGINS": "http://localhost:3111,https://tiny.nntin.xyz",
     "LITELLM_BASE_URL": "https://litellm.labs.lair.nntin.xyz/",
     "LITELLM_ALLOWED_BASE_URLS": "https://litellm.labs.lair.nntin.xyz/",
+    "LITELLM_USER_MAX_BUDGET_USD": "1",
+    "LITELLM_USER_BUDGET_DURATION": "30d",
+    "LITELLM_USER_RPM_LIMIT": "10",
+    "LITELLM_USER_TPM_LIMIT": "100000",
     "SENTRY_ENVIRONMENT": "production"
   },
   // The develop edge backs both the develop frontend (dev.tiny.nntin.xyz) and
@@ -46,11 +50,16 @@
         "ALLOWED_ORIGINS": "http://localhost:3111,https://dev.tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz",
         "LITELLM_BASE_URL": "https://litellm.labs.lair.nntin.xyz/",
         "LITELLM_ALLOWED_BASE_URLS": "https://litellm.labs.lair.nntin.xyz/",
+        "LITELLM_USER_MAX_BUDGET_USD": "1",
+        "LITELLM_USER_BUDGET_DURATION": "30d",
+        "LITELLM_USER_RPM_LIMIT": "10",
+        "LITELLM_USER_TPM_LIMIT": "100000",
         "SENTRY_ENVIRONMENT": "develop"
       }
     }
   }
-  // Required secrets (set via `wrangler secret put`): GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, LITELLM_API_KEY
+  // Required secrets (set via `wrangler secret put`): GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET,
+  // LITELLM_KEY_MANAGEMENT_API_KEY, LITELLM_USER_KEY_SECRET.
   // LITELLM_BASE_URL (vars above) is required too: the edge has no code-level
   // fallback, and a deployment without it serves 503 "LiteLLM is not configured."
   // — forks must point the var at their own LiteLLM deployment.
@@ -66,4 +75,8 @@
   //   requests per caller per window for the OAuth exchange (default 10),
   //   search (default 30), and MCP (default 60) routes; "0" disables that
   //   scope's limit. See src/lib/inbound-rate-limit.ts.
+  // - GITHUB_ALLOWED_USERS: comma-separated GitHub ids or logins allowed to use
+  //   model/search/MCP proxy routes. Unset allows any valid GitHub token.
+  // - LITELLM_USER_MODELS: comma-separated LiteLLM model aliases assigned to
+  //   generated per-user keys. Unset/empty lets keys call all configured models.
 }

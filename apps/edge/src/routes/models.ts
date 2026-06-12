@@ -30,7 +30,17 @@ import {
   toRateLimitResponse,
   type CredentialKey
 } from '../lib/rate-limit'
-import { validateLiteLLMCaller } from '../lib/caller-validation'
+import {
+  validateLiteLLMCaller,
+  type CallerIdentity
+} from '../lib/caller-validation'
+import {
+  clearLiteLLMUserKeyCache,
+  liteLLMUserCredentialKeyInput,
+  requireLiteLLMUserKeyConfiguration,
+  resolveLiteLLMUserKey,
+  type LiteLLMUserKey
+} from '../lib/litellm-user-keys'
 
 const liteLLMModelsCatalogEntrySchema = z
   .object({
@@ -60,7 +70,7 @@ const liteLLMModelInfoSchema = z.object({
 
 const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
   400: 'Invalid request',
-  401: 'Authentication failed. The configured LiteLLM virtual key may be invalid.',
+  401: 'Authentication failed. The LiteLLM user virtual key may be invalid.',
   403: 'Access denied. Check the configured LiteLLM virtual key permissions.',
   422: 'Unprocessable request',
   500: 'Upstream service error',
@@ -88,9 +98,9 @@ const normalizeLiteLLMBaseUrl = (
 }
 
 // No code-level fallback: a deployment without LITELLM_BASE_URL is "not
-// configured" (503), exactly like a missing LITELLM_API_KEY. A fork that
-// forgets the var must not be silently pointed at someone else's LiteLLM and
-// get a confusing upstream 401 — the default lives in wrangler.jsonc, not
+// configured" (503), exactly like missing key-management configuration. A fork
+// that forgets the var must not be silently pointed at someone else's LiteLLM
+// and get a confusing upstream 401 — the default lives in wrangler.jsonc, not
 // here (issue #179).
 const configuredLiteLLMBaseUrl = (env: Bindings): string | undefined =>
   normalizeLiteLLMBaseUrl(env.LITELLM_BASE_URL)
@@ -141,8 +151,8 @@ const litellmListUrl = (baseUrl: string): string =>
 const litellmModelInfoUrl = (baseUrl: string): string =>
   appendPath(baseUrl, '/model/info')
 
-const litellmHeaders = (env: Bindings): Record<string, string> => ({
-  authorization: `Bearer ${env.LITELLM_API_KEY?.trim() ?? ''}`
+const litellmHeaders = (apiKey: string): Record<string, string> => ({
+  authorization: `Bearer ${apiKey}`
 })
 
 const textValue = (value: unknown): string | undefined =>
@@ -187,21 +197,14 @@ const safeUpstreamError = (rawText: string, fallback: string): string => {
 const liteLLMCacheScope = (baseUrl: string): string =>
   encodeURIComponent(baseUrl)
 
-const liteLLMSharedCredentialKeyInput = (
-  env: Bindings,
-  baseUrl: string
-): string => `litellm:${env.LITELLM_API_KEY ?? ''}:${baseUrl}`
-
 // Exported so /health reports `degraded` under EXACTLY the rule the models
 // routes 503 on — including base-URL validity (https, no credentials/query/
-// fragment), not just presence.
+// fragment) and per-user key-management configuration, not just presence.
 export const requireLiteLLMConfiguration = (
   env: Bindings
 ): string | undefined => {
-  const apiKey = env.LITELLM_API_KEY?.trim()
-  return apiKey && configuredLiteLLMBaseUrl(env)
-    ? undefined
-    : 'LiteLLM is not configured.'
+  if (!configuredLiteLLMBaseUrl(env)) return 'LiteLLM is not configured.'
+  return requireLiteLLMUserKeyConfiguration(env)
 }
 
 // `/v1/models` carries no `mode`, so when `/model/info` is unavailable the
@@ -223,7 +226,8 @@ const looksLikeEmbeddingModel = (id: string): boolean => {
  */
 const fetchLiteLLMModelModes = async (
   env: Bindings,
-  baseUrl: string
+  baseUrl: string,
+  apiKey: string
 ): Promise<Map<string, string>> => {
   const modes = new Map<string, string>()
   const response = await fetchWithTimeout(
@@ -238,7 +242,7 @@ const fetchLiteLLMModelModes = async (
           'mode enrichment is best-effort: older LiteLLM deployments or restricted virtual keys may not serve /model/info; the catalogue falls back to the embedding name heuristic (issue #179)'
       }
     },
-    { headers: litellmHeaders(env) },
+    { headers: litellmHeaders(apiKey) },
     10_000
   ).catch(() => undefined)
   if (!response?.ok) return modes
@@ -323,6 +327,7 @@ const trackRequestedProvider = (
 type PreflightErrorResponse =
   | TypedResponse<{ error: string }, 400, 'json'>
   | TypedResponse<{ error: string }, 401, 'json'>
+  | TypedResponse<{ error: string }, 403, 'json'>
   | TypedResponse<{ error: string }, 503, 'json'>
 
 type LiteLLMPreflightResult<S> =
@@ -331,6 +336,8 @@ type LiteLLMPreflightResult<S> =
       resolvedBaseUrl: string
       credentialKey: CredentialKey
       telemetryProvider: string
+      identity: CallerIdentity
+      userKey?: LiteLLMUserKey
     }
   | { ok: false; response: S | PreflightErrorResponse }
 
@@ -338,40 +345,42 @@ interface LiteLLMPreflightArgs<S> {
   requestedBaseUrl: string | null | undefined
   area: 'models.chat' | 'models.list'
   requestedProvider: ModelProviderId | undefined
+  requireUserKey?: boolean
   /**
-   * Caller-agnostic short-circuit, evaluated AFTER base-URL + credential
-   * resolution but BEFORE the GitHub caller-validation probe. Return a response
-   * to answer immediately (a still-open backoff window for chat; a fresh
-   * catalogue cache hit or open window for list), or `undefined` to proceed to
-   * validation. See the ordering rationale on {@link preflightLiteLLM}. Its
+   * User-scoped short-circuit, evaluated AFTER GitHub caller validation and
+   * per-user credential-key resolution but BEFORE provisioning the LiteLLM
+   * virtual key. Return a response to answer immediately (a still-open user
+   * backoff window for chat; a fresh catalogue cache hit or open window for
+   * list), or `undefined` to proceed. Its
    * return type is preserved (generic `S`) so each route's typed `c.json(...)`
    * responses survive the round trip through this helper.
    */
   shortCircuit?: (ctx: {
     resolvedBaseUrl: string
     credentialKey: CredentialKey
+    identity: CallerIdentity
   }) => Promise<S | undefined>
 }
 
 /**
  * Shared pre-flight for both LiteLLM-backed model routes: the auth-presence
  * check, provider telemetry, configuration guard, base-URL resolution +
- * allowlist, and the per-credential backoff key.
+ * allowlist, GitHub identity validation, and the per-user backoff key.
  *
- * It also OWNS — in one place — the single ordering decision both routes must
- * agree on: caller validation runs LAST, after the optional caller-agnostic
- * `shortCircuit`. The GitHub `/user` probe is the only pre-flight round trip
- * that depends on the caller's identity, so running it after the short-circuit
- * means a request answerable from shared state never pays it: a 429 cooldown
- * window (chat) or a catalogue cache hit / open window (list) — responses
- * identical for every caller — short-circuit before any GitHub round trip
- * (issue #177). Trade-off: an unauthenticated caller can observe backoff/cache
- * state via the response status, but that leaks only the shared deployment's
- * cooldown, never anything about a user — an accepted, low-risk leak.
+ * Identity now runs before any model-route short-circuit because cache/backoff
+ * state and LiteLLM virtual keys are user-scoped. That removes the older
+ * deployment-wide "cache before GitHub" optimization, but the validation cache
+ * keeps repeated ReAct calls cheap while preserving per-user access control.
  */
 const preflightLiteLLM = async <S = never>(
   c: Context<{ Bindings: Bindings }>,
-  { requestedBaseUrl, area, requestedProvider, shortCircuit }: LiteLLMPreflightArgs<S>
+  {
+    requestedBaseUrl,
+    area,
+    requestedProvider,
+    requireUserKey = false,
+    shortCircuit
+  }: LiteLLMPreflightArgs<S>
 ): Promise<LiteLLMPreflightResult<S>> => {
   const authorization =
     c.req.header('authorization') ?? c.req.header('Authorization')
@@ -412,20 +421,8 @@ const preflightLiteLLM = async <S = never>(
   }
   const resolvedBaseUrl = litellmBaseUrl.baseUrl
 
-  // Scope the backoff to the upstream credential/quota bucket (issue #146): the
-  // shared edge-managed key plus base URL, so one caller's 429 backs off all
-  // callers of the same LiteLLM deployment.
-  const credentialKey = await deriveCredentialKey(
-    liteLLMSharedCredentialKeyInput(c.env, resolvedBaseUrl)
-  )
-
-  if (shortCircuit) {
-    const early = await shortCircuit({ resolvedBaseUrl, credentialKey })
-    if (early !== undefined) return { ok: false, response: early }
-  }
-
-  const callerValidation = await validateLiteLLMCaller(authorization)
-  if (callerValidation === 'invalid') {
+  const callerValidation = await validateLiteLLMCaller(authorization, c.env)
+  if (callerValidation.status === 'invalid') {
     return {
       ok: false,
       response: c.json(
@@ -434,7 +431,13 @@ const preflightLiteLLM = async <S = never>(
       )
     }
   }
-  if (callerValidation === 'unavailable') {
+  if (callerValidation.status === 'forbidden') {
+    return {
+      ok: false,
+      response: c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
+    }
+  }
+  if (callerValidation.status === 'unavailable') {
     return {
       ok: false,
       response: c.json(
@@ -446,7 +449,41 @@ const preflightLiteLLM = async <S = never>(
     }
   }
 
-  return { ok: true, resolvedBaseUrl, credentialKey, telemetryProvider }
+  const identity = callerValidation.identity
+  // Scope the backoff to the authenticated user and LiteLLM deployment. One
+  // user's exhausted virtual key must not short-circuit another user's quota.
+  const credentialKey = await deriveCredentialKey(
+    liteLLMUserCredentialKeyInput(identity, resolvedBaseUrl)
+  )
+
+  if (shortCircuit) {
+    const early = await shortCircuit({ resolvedBaseUrl, credentialKey, identity })
+    if (early !== undefined) return { ok: false, response: early }
+  }
+
+  const userKey = requireUserKey
+    ? await resolveLiteLLMUserKey(c.env, resolvedBaseUrl, identity)
+    : undefined
+  if (requireUserKey && !userKey) {
+    return {
+      ok: false,
+      response: c.json(
+        edgeErrorResponseSchema.parse({
+          error: 'LiteLLM user key provisioning is temporarily unavailable.'
+        }),
+        503
+      )
+    }
+  }
+
+  return {
+    ok: true,
+    resolvedBaseUrl,
+    credentialKey,
+    telemetryProvider,
+    identity,
+    ...(userKey ? { userKey } : {})
+  }
 }
 
 export const registerModelRoutes = (
@@ -456,15 +493,15 @@ export const registerModelRoutes = (
     const body = c.req.valid('json')
     const useStream = body.stream === true
 
-    // Chat is NOT cacheable, so the only caller-agnostic short-circuit is a
-    // still-open upstream rate-limit window: answer it with a 429 (durable
-    // across isolates) instead of re-hammering the provider (TINYTINKERER-EDGE-4)
-    // — and, per the #177 ordering owned by preflightLiteLLM, before paying the
-    // GitHub caller-validation round trip just to be told to back off.
+    // Chat is NOT cacheable, so after identity validation resolves the user's
+    // backoff key, a still-open upstream rate-limit window answers with a 429
+    // (durable across isolates) instead of re-hammering the provider
+    // (TINYTINKERER-EDGE-4).
     const preflight = await preflightLiteLLM(c, {
       requestedBaseUrl: body.litellmBaseUrl,
       area: 'models.chat',
       requestedProvider: body.provider,
+      requireUserKey: true,
       shortCircuit: async ({ credentialKey }) => {
         const backoffMs = await getActiveBackoffMs(Date.now(), credentialKey)
         if (backoffMs > 0) {
@@ -475,7 +512,16 @@ export const registerModelRoutes = (
       }
     })
     if (!preflight.ok) return preflight.response
-    const { resolvedBaseUrl, credentialKey, telemetryProvider } = preflight
+    const { resolvedBaseUrl, credentialKey, telemetryProvider, userKey } =
+      preflight
+    if (!userKey) {
+      return c.json(
+        edgeErrorResponseSchema.parse({
+          error: 'LiteLLM user key provisioning is temporarily unavailable.'
+        }),
+        503
+      )
+    }
     const model = body.model ?? DEFAULT_LITELLM_MODEL
 
     const response = await fetchWithTimeout(
@@ -510,7 +556,7 @@ export const registerModelRoutes = (
       {
         method: 'POST',
         headers: {
-          ...litellmHeaders(c.env),
+          ...litellmHeaders(userKey.apiKey),
           'content-type': 'application/json'
         },
         body: JSON.stringify({
@@ -565,6 +611,10 @@ export const registerModelRoutes = (
           if (value !== null) c.header(header, value)
         }
         return c.json(rateLimitBody, 429)
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        clearLiteLLMUserKeyCache(credentialKey)
       }
 
       if (response.status === 503) {
@@ -623,13 +673,12 @@ export const registerModelRoutes = (
   app.openapi(modelsListRoute, async (c) => {
     const query = c.req.valid('query')
 
-    // The catalogue is cacheable AND identical for every caller, so two
-    // caller-agnostic short-circuits run before the GitHub caller-validation
-    // probe (the #177 ordering owned by preflightLiteLLM): a fresh cache hit,
-    // then a still-open backoff window. Previously validation ran first, so
-    // every catalogue request paid the GitHub round trip just to serve a
-    // response identical for all callers. `cached` is hoisted because the
-    // post-fetch 429 handler reuses it to break the cascade.
+    // The catalogue is cacheable, but access control and backoff are user-
+    // scoped: preflight validates GitHub first, then this short-circuit can
+    // serve a fresh shared catalogue or honor the user's still-open backoff
+    // window before provisioning/fetching a LiteLLM virtual key. `cached` is
+    // hoisted because the post-fetch 429 handler reuses it to break the
+    // cascade.
     let cached: Awaited<ReturnType<typeof readCachedModels>> | undefined
     const preflight = await preflightLiteLLM(c, {
       requestedBaseUrl: query.litellmBaseUrl,
@@ -675,9 +724,20 @@ export const registerModelRoutes = (
       }
     })
     if (!preflight.ok) return preflight.response
-    const { resolvedBaseUrl, credentialKey, telemetryProvider } = preflight
+    const { resolvedBaseUrl, credentialKey, telemetryProvider, identity } =
+      preflight
     const listUrl = litellmListUrl(resolvedBaseUrl)
     const cacheScope = liteLLMCacheScope(resolvedBaseUrl)
+
+    const userKey = await resolveLiteLLMUserKey(c.env, resolvedBaseUrl, identity)
+    if (!userKey) {
+      return c.json(
+        edgeErrorResponseSchema.parse({
+          error: 'LiteLLM user key provisioning is temporarily unavailable.'
+        }),
+        503
+      )
+    }
 
     const response = await fetchWithTimeout(
       {
@@ -702,7 +762,7 @@ export const registerModelRoutes = (
         }
       },
       {
-        headers: litellmHeaders(c.env)
+        headers: litellmHeaders(userKey.apiKey)
       },
       10_000
     )
@@ -758,6 +818,9 @@ export const registerModelRoutes = (
       const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
         ? (response.status as 400 | 401 | 403 | 422 | 500 | 503 | 504)
         : 502
+      if (response.status === 401 || response.status === 403) {
+        clearLiteLLMUserKeyCache(credentialKey)
+      }
       return c.json(
         edgeErrorResponseSchema.parse({ error: safeError }),
         statusCode
@@ -769,7 +832,11 @@ export const registerModelRoutes = (
 
     // Enrich with /model/info modes (best-effort) so embedding models are
     // dropped by their declared mode, not just by name (issue #179).
-    const modes = await fetchLiteLLMModelModes(c.env, resolvedBaseUrl)
+    const modes = await fetchLiteLLMModelModes(
+      c.env,
+      resolvedBaseUrl,
+      userKey.apiKey
+    )
     const models = toLiteLLMModels(await response.json(), modes)
 
     // Populate the colo-wide cache so the next request (in any isolate) skips

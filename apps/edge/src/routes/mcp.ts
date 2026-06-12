@@ -140,14 +140,17 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
     // present-but-unverified Authorization header must not be enough to drive
     // it (otherwise the edge is an open SSRF proxy). Validate the caller's
     // GitHub identity before connecting, mirroring the models routes.
-    const callerValidation = await validateLiteLLMCaller(authorization)
-    if (callerValidation === 'invalid') {
+    const callerValidation = await validateLiteLLMCaller(authorization, c.env)
+    if (callerValidation.status === 'invalid') {
       return c.json(
         edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
         401
       )
     }
-    if (callerValidation === 'unavailable') {
+    if (callerValidation.status === 'forbidden') {
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
+    }
+    if (callerValidation.status === 'unavailable') {
       return c.json(
         edgeErrorResponseSchema.parse({
           error: 'Caller validation is temporarily unavailable.'
@@ -219,14 +222,17 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
     // Validate the caller's GitHub identity before making any outbound MCP
     // request: a present-but-unverified Authorization header must not turn the
     // edge into an open SSRF proxy (mirrors the models routes).
-    const callerValidation = await validateLiteLLMCaller(authorization)
-    if (callerValidation === 'invalid') {
+    const callerValidation = await validateLiteLLMCaller(authorization, c.env)
+    if (callerValidation.status === 'invalid') {
       return c.json(
         edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
         401
       )
     }
-    if (callerValidation === 'unavailable') {
+    if (callerValidation.status === 'forbidden') {
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
+    }
+    if (callerValidation.status === 'unavailable') {
       return c.json(
         edgeErrorResponseSchema.parse({
           error: 'Caller validation is temporarily unavailable.'
