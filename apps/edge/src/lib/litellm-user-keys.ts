@@ -57,14 +57,34 @@ const cacheStore = (): Cache | undefined =>
 
 const provisionedUntilByScope = new Map<string, number>()
 
-export const clearLiteLLMUserKeyCache = (credentialKey?: CredentialKey): void => {
-  if (credentialKey) {
-    for (const scope of provisionedUntilByScope.keys()) {
-      if (scope.startsWith(`${credentialKey}:`)) provisionedUntilByScope.delete(scope)
+export const clearLiteLLMUserKeyCache = async (
+  credentialKey?: CredentialKey
+): Promise<void> => {
+  // Drop BOTH layers. Clearing only the in-memory mirror is a no-op for
+  // recovery: readProvisionedMarker falls back to the durable Workers Cache
+  // entry and re-populates the mirror, so a key invalidated upstream (deleted,
+  // or LITELLM_USER_KEY_SECRET rotated) would keep short-circuiting past
+  // re-provisioning until the durable marker's TTL elapses. The credential key
+  // is a colon-free hash, so the scope splits on the first ':' into
+  // credentialKey + fingerprint — exactly the inputs the durable cache key
+  // needs.
+  const store = cacheStore()
+  const deletions: Promise<unknown>[] = []
+  for (const scope of [...provisionedUntilByScope.keys()]) {
+    const separator = scope.indexOf(':')
+    const scopeCredential = scope.slice(0, separator)
+    if (credentialKey && scopeCredential !== credentialKey) continue
+    provisionedUntilByScope.delete(scope)
+    if (store) {
+      const fingerprint = scope.slice(separator + 1)
+      deletions.push(
+        store
+          .delete(provisionedCacheKey(scopeCredential, fingerprint))
+          .catch(() => undefined)
+      )
     }
-    return
   }
-  provisionedUntilByScope.clear()
+  await Promise.all(deletions)
 }
 
 const provisionedCacheKey = (
@@ -87,7 +107,9 @@ const readProvisionedMarker = async (
   const store = cacheStore()
   if (!store) return false
   try {
-    const hit = await store.match(provisionedCacheKey(credentialKey, fingerprint))
+    const hit = await store.match(
+      provisionedCacheKey(credentialKey, fingerprint)
+    )
     if (!hit) return false
     const untilMs = Number(hit.headers.get(PROVISIONED_UNTIL_HEADER) ?? '0')
     if (untilMs <= nowMs) return false
@@ -123,7 +145,10 @@ const writeProvisionedMarker = async (
   }
 }
 
-const toPositiveNumber = (raw: string | undefined, fallback: number): number => {
+const toPositiveNumber = (
+  raw: string | undefined,
+  fallback: number
+): number => {
   if (raw === undefined || raw.trim() === '') return fallback
   const value = Number(raw)
   return Number.isFinite(value) && value > 0 ? value : fallback
@@ -185,9 +210,18 @@ const bytesToHex = (bytes: Uint8Array): string => {
   return hex
 }
 
+// The derived key value must depend on EXACTLY the same inputs as the LiteLLM
+// identity it is stored under (key_alias / user_id = `...-github-<id>`), i.e.
+// the GitHub id alone — not the base URL. The reconcile path can only look the
+// key up by alias (/v2/key/info never returns the secret value), so it trusts
+// "alias exists ⇒ its value equals our derived key". Mixing the base URL into
+// the HMAC but not the alias broke that invariant: two allowed base URLs that
+// resolve to the same LiteLLM backend would share one alias yet derive two key
+// values, and the second would send a bearer token that does not exist in
+// LiteLLM (a silent, unrecoverable 401). Per-deployment isolation already comes
+// from the per-deployment LITELLM_USER_KEY_SECRET.
 const deriveUserApiKey = async (
   env: Bindings,
-  baseUrl: string,
   identity: CallerIdentity
 ): Promise<string> => {
   const secret = env.LITELLM_USER_KEY_SECRET?.trim()
@@ -203,7 +237,7 @@ const deriveUserApiKey = async (
   const signature = await crypto.subtle.sign(
     'HMAC',
     cryptoKey,
-    new TextEncoder().encode(`tinytinkerer-litellm-user-key:v1:${baseUrl}:${identity.id}`)
+    new TextEncoder().encode(`tinytinkerer-litellm-user-key:v1:${identity.id}`)
   )
   return `sk-tt-${bytesToHex(new Uint8Array(signature)).slice(0, 48)}`
 }
@@ -266,19 +300,36 @@ const readKeyInfoByAlias = async (
   return parsed.data.info.find((entry) => entry.key_alias === keyAlias)
 }
 
+// Reconcile only on a CONCRETE differing value. We set every field at generate
+// (and again at update) time, but LiteLLM does not necessarily echo them back
+// verbatim on /v2/key/info — e.g. it may report budget_duration as null while
+// tracking budget_reset_at, or rewrite an empty `models` to its own
+// "all models" sentinel. Treating a null/absent field as "drifted" would fire a
+// redundant /key/update on every cache-miss forever; treating it as "matches"
+// still catches real operator-driven config changes, which surface as a
+// concrete value that differs.
 const keyNeedsUpdate = (
   info: KeyInfo,
   expected: ExpectedKeyConfig
 ): boolean => {
-  const models = [...(info.models ?? [])].sort()
-  return (
-    info.user_id !== expected.userId ||
-    info.max_budget !== expected.maxBudget ||
-    info.budget_duration !== expected.budgetDuration ||
-    info.rpm_limit !== expected.rpmLimit ||
-    info.tpm_limit !== expected.tpmLimit ||
-    !arraysEqual(models, expected.models)
+  if (info.user_id != null && info.user_id !== expected.userId) return true
+  if (info.max_budget != null && info.max_budget !== expected.maxBudget)
+    return true
+  if (
+    info.budget_duration != null &&
+    info.budget_duration !== expected.budgetDuration
   )
+    return true
+  if (info.rpm_limit != null && info.rpm_limit !== expected.rpmLimit)
+    return true
+  if (info.tpm_limit != null && info.tpm_limit !== expected.tpmLimit)
+    return true
+  if (
+    info.models != null &&
+    !arraysEqual([...info.models].sort(), expected.models)
+  )
+    return true
+  return false
 }
 
 const updateKey = async (
@@ -379,7 +430,7 @@ export const resolveLiteLLMUserKey = async (
 
   const expected = expectedConfig(env, identity)
   const resolved = await Promise.all([
-    deriveUserApiKey(env, baseUrl, identity),
+    deriveUserApiKey(env, identity),
     deriveCredentialKey(liteLLMUserCredentialKeyInput(identity, baseUrl))
   ]).catch(() => undefined)
   if (!resolved) return undefined

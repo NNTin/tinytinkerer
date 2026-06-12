@@ -434,7 +434,10 @@ const preflightLiteLLM = async <S = never>(
   if (callerValidation.status === 'forbidden') {
     return {
       ok: false,
-      response: c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
+      response: c.json(
+        edgeErrorResponseSchema.parse({ error: 'Forbidden' }),
+        403
+      )
     }
   }
   if (callerValidation.status === 'unavailable') {
@@ -457,7 +460,11 @@ const preflightLiteLLM = async <S = never>(
   )
 
   if (shortCircuit) {
-    const early = await shortCircuit({ resolvedBaseUrl, credentialKey, identity })
+    const early = await shortCircuit({
+      resolvedBaseUrl,
+      credentialKey,
+      identity
+    })
     if (early !== undefined) return { ok: false, response: early }
   }
 
@@ -614,7 +621,7 @@ export const registerModelRoutes = (
       }
 
       if (response.status === 401 || response.status === 403) {
-        clearLiteLLMUserKeyCache(credentialKey)
+        await clearLiteLLMUserKeyCache(credentialKey)
       }
 
       if (response.status === 503) {
@@ -729,7 +736,11 @@ export const registerModelRoutes = (
     const listUrl = litellmListUrl(resolvedBaseUrl)
     const cacheScope = liteLLMCacheScope(resolvedBaseUrl)
 
-    const userKey = await resolveLiteLLMUserKey(c.env, resolvedBaseUrl, identity)
+    const userKey = await resolveLiteLLMUserKey(
+      c.env,
+      resolvedBaseUrl,
+      identity
+    )
     if (!userKey) {
       return c.json(
         edgeErrorResponseSchema.parse({
@@ -819,7 +830,7 @@ export const registerModelRoutes = (
         ? (response.status as 400 | 401 | 403 | 422 | 500 | 503 | 504)
         : 502
       if (response.status === 401 || response.status === 403) {
-        clearLiteLLMUserKeyCache(credentialKey)
+        await clearLiteLLMUserKeyCache(credentialKey)
       }
       return c.json(
         edgeErrorResponseSchema.parse({ error: safeError }),
