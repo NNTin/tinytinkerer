@@ -13,6 +13,7 @@ import {
 import app from './index.js'
 import { cacheKeyForScope } from './lib/models-cache.js'
 import { clearCallerValidationCache } from './lib/caller-validation-cache.js'
+import { clearInboundRateLimits } from './lib/inbound-rate-limit.js'
 import { clearModelsBackoff } from './lib/rate-limit.js'
 import { makeCacheMock } from './test/cache-mock.js'
 
@@ -78,6 +79,9 @@ describe('edge routes', () => {
     // Likewise the caller-validation cache: a token validated in one test must
     // not skip the GitHub probe in the next.
     clearCallerValidationCache()
+    // And the inbound rate-limit windows, so repeated search calls across tests
+    // never trip the per-credential budget.
+    clearInboundRateLimits()
     // Drop any telemetry sink a test registered so captures don't leak across.
     setCaptureExceptionSink(null)
     setCaptureMessageSink(null)

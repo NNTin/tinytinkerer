@@ -1,9 +1,13 @@
 import { OpenAPIHono } from '@hono/zod-openapi'
 import * as Sentry from '@sentry/cloudflare'
-import { edgeErrorResponseSchema } from '@tinytinkerer/contracts'
+import {
+  EDGE_ROUTE_PATHS,
+  edgeErrorResponseSchema
+} from '@tinytinkerer/contracts'
 import { scrubEvent } from '@tinytinkerer/sentry-telemetry'
 import type { Bindings } from './lib/bindings'
 import { corsMiddleware } from './lib/cors'
+import { inboundRateLimit } from './lib/inbound-rate-limit'
 import './lib/sentry'
 import { telemetryMiddleware } from './lib/telemetry'
 import { registerAuthRoutes } from './routes/auth'
@@ -28,6 +32,16 @@ const app = new OpenAPIHono<{ Bindings: Bindings }>({
 
 app.use('*', corsMiddleware)
 app.use('*', telemetryMiddleware)
+
+// Inbound per-caller throttling, ahead of the route handlers (and their request
+// validation) so even malformed floods are rejected cheaply. The auth exchange
+// is unauthenticated and the search/MCP proxies spend shared server-side
+// resources per request; the models routes are covered by the upstream backoff
+// window in lib/rate-limit.ts instead.
+app.use(EDGE_ROUTE_PATHS.authGithubExchange, inboundRateLimit('auth'))
+app.use(EDGE_ROUTE_PATHS.search, inboundRateLimit('search'))
+app.use(EDGE_ROUTE_PATHS.mcpDiscover, inboundRateLimit('mcp'))
+app.use(EDGE_ROUTE_PATHS.mcpCall, inboundRateLimit('mcp'))
 
 registerHealthRoute(app)
 registerAuthRoutes(app)

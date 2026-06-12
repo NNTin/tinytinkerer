@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { edgeErrorResponseSchema, mcpCallResponseSchema, mcpDiscoveryResultSchema } from '@tinytinkerer/contracts'
 import app from '../index.js'
 import { clearCallerValidationCache } from '../lib/caller-validation-cache.js'
+import { clearInboundRateLimits } from '../lib/inbound-rate-limit.js'
 
 const AUTH = { authorization: 'Bearer test-token' }
 const CT = { 'content-type': 'application/json' }
@@ -33,14 +34,19 @@ const stubCallerValidation = (status = 200) =>
     })
   )
 
-const post = (path: string, body: unknown, headers: Record<string, string> = HEADERS) =>
+const post = (
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = HEADERS,
+  env: Record<string, string> = {}
+) =>
   app.fetch(
     new Request(`http://localhost${path}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body)
     }),
-    {}
+    env
   )
 
 // --- MCP SDK mock ---
@@ -92,6 +98,9 @@ afterEach(() => {
   vi.unstubAllGlobals()
   // A caller validated in one test must not skip the GitHub probe in the next.
   clearCallerValidationCache()
+  // The inbound rate-limit windows are module-level too; one test's requests
+  // must not eat into the next test's budget.
+  clearInboundRateLimits()
 })
 
 describe('POST /api/mcp/discover', () => {
@@ -185,6 +194,68 @@ describe('POST /api/mcp/discover', () => {
     const res = await post('/api/mcp/discover', { url: 'https://fcn.example.com/mcp' })
     expect([200, 502]).toContain(res.status)
     expect(res.status).not.toBe(400)
+  })
+
+  // MCP_ALLOWED_HOSTS closes the DNS-rebinding gap documented above: when the
+  // binding is set, ONLY the listed hosts pass — a public-looking hostname that
+  // would slip past the blocklist is rejected unless explicitly trusted.
+  describe('MCP_ALLOWED_HOSTS allowlist', () => {
+    const ALLOWLIST_ENV = { MCP_ALLOWED_HOSTS: 'mcp.example.com' }
+
+    it('allows a listed host', async () => {
+      const res = await post('/api/mcp/discover', { url: 'https://mcp.example.com/mcp' }, HEADERS, ALLOWLIST_ENV)
+      expect(res.status).toBe(200)
+      mcpDiscoveryResultSchema.parse(await res.json())
+    })
+
+    it('rejects an unlisted host that the blocklist alone would pass', async () => {
+      const res = await post('/api/mcp/discover', { url: 'https://attacker.example.com/mcp' }, HEADERS, ALLOWLIST_ENV)
+      expect(res.status).toBe(400)
+      const body = edgeErrorResponseSchema.parse(await res.json())
+      expect(body.error).toMatch(/invalid|disallowed/i)
+      expect(mockConnect).not.toHaveBeenCalled()
+    })
+
+    it('rejects unlisted localhost too — a configured allowlist is authoritative', async () => {
+      const res = await post('/api/mcp/discover', { url: 'http://localhost/mcp' }, HEADERS, ALLOWLIST_ENV)
+      expect(res.status).toBe(400)
+    })
+
+    it('matches hosts case-insensitively and ignores whitespace around entries', async () => {
+      const env = { MCP_ALLOWED_HOSTS: ' MCP.Example.com , other.example.org ' }
+      const allowed = await post('/api/mcp/discover', { url: 'https://mcp.example.com/mcp' }, HEADERS, env)
+      expect(allowed.status).toBe(200)
+      const rejected = await post('/api/mcp/discover', { url: 'https://elsewhere.example.com/mcp' }, HEADERS, env)
+      expect(rejected.status).toBe(400)
+    })
+
+    it('preserves blocklist behaviour when the binding is empty', async () => {
+      const env = { MCP_ALLOWED_HOSTS: '' }
+      const publicHost = await post('/api/mcp/discover', { url: 'https://mcp.example.com/mcp' }, HEADERS, env)
+      expect(publicHost.status).toBe(200)
+      const privateIp = await post('/api/mcp/discover', { url: 'https://10.0.0.1/mcp' }, HEADERS, env)
+      expect(privateIp.status).toBe(400)
+    })
+
+    it('applies the allowlist to the call route as well', async () => {
+      const rejected = await post(
+        '/api/mcp/call',
+        { url: 'https://attacker.example.com/mcp', toolName: 'get_weather', arguments: {} },
+        HEADERS,
+        ALLOWLIST_ENV
+      )
+      expect(rejected.status).toBe(400)
+      expect(mockConnect).not.toHaveBeenCalled()
+
+      const allowed = await post(
+        '/api/mcp/call',
+        { url: 'https://mcp.example.com/mcp', toolName: 'get_weather', arguments: {} },
+        HEADERS,
+        ALLOWLIST_ENV
+      )
+      expect(allowed.status).toBe(200)
+      mcpCallResponseSchema.parse(await allowed.json())
+    })
   })
 
   it('allows http to localhost', async () => {

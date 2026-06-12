@@ -17,6 +17,9 @@ import { mcpCallRoute, mcpDiscoverRoute } from '../openapi/routes'
 // resolution). True protection requires either a pre-flight DNS lookup +
 // connect-time IP check (unavailable in Cloudflare Workers without a
 // third-party DNS-over-HTTPS call) or Cloudflare's built-in SSRF guardrails.
+// Deployments that need rebinding-proof behaviour should set MCP_ALLOWED_HOSTS
+// (see parseMcpAllowedHosts below), which replaces this blocklist with a strict
+// host allowlist.
 const METADATA_HOSTNAMES = new Set([
   'metadata.google.internal', // GCP
   'instance-data', // GCP alternate
@@ -57,7 +60,21 @@ const isPrivateHostname = (hostname: string): boolean => {
   return false
 }
 
-const validateMcpUrl = (raw: string): boolean => {
+/**
+ * Parse the MCP_ALLOWED_HOSTS binding: comma-separated hostnames (no scheme,
+ * no port), case-insensitive. An unset/empty binding yields an empty set,
+ * which {@link validateMcpUrl} treats as "allowlist not configured" — the
+ * static private-address blocklist applies instead.
+ */
+export const parseMcpAllowedHosts = (raw: string | undefined): Set<string> =>
+  new Set(
+    (raw ?? '')
+      .split(',')
+      .map((host) => host.trim().toLowerCase().replace(/^\[|\]$/g, ''))
+      .filter(Boolean)
+  )
+
+const validateMcpUrl = (raw: string, allowedHosts: Set<string>): boolean => {
   let url: URL
   try {
     url = new URL(raw)
@@ -70,11 +87,24 @@ const validateMcpUrl = (raw: string): boolean => {
   const hostname = url.hostname.replace(/^\[|\]$/g, '')
 
   // http is allowed only for localhost/127.0.0.1 (local dev)
-  if (url.protocol === 'http:') {
-    return hostname === 'localhost' || hostname === '127.0.0.1'
+  if (
+    url.protocol === 'http:' &&
+    hostname !== 'localhost' &&
+    hostname !== '127.0.0.1'
+  ) {
+    return false
   }
 
-  // https: block private/internal IP literals
+  // A configured allowlist is authoritative: ONLY listed hosts pass (including
+  // localhost — list it explicitly if local dev must work under an allowlist).
+  // Unlike the blocklist below, this is not bypassable via DNS rebinding: the
+  // operator names the trusted hosts instead of us guessing which resolve
+  // privately.
+  if (allowedHosts.size > 0) return allowedHosts.has(hostname)
+
+  if (url.protocol === 'http:') return true
+
+  // https with no allowlist configured: block private/internal IP literals
   if (isPrivateHostname(hostname)) return false
 
   return true
@@ -128,7 +158,7 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
 
     const { url, bearerToken } = c.req.valid('json')
 
-    if (!validateMcpUrl(url)) {
+    if (!validateMcpUrl(url, parseMcpAllowedHosts(c.env.MCP_ALLOWED_HOSTS))) {
       return c.json(
         edgeErrorResponseSchema.parse({
           error: 'Invalid or disallowed MCP server URL'
@@ -212,7 +242,7 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
       arguments: toolArgs
     } = c.req.valid('json')
 
-    if (!validateMcpUrl(url)) {
+    if (!validateMcpUrl(url, parseMcpAllowedHosts(c.env.MCP_ALLOWED_HOSTS))) {
       return c.json(
         edgeErrorResponseSchema.parse({
           error: 'Invalid or disallowed MCP server URL'

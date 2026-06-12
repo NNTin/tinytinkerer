@@ -55,4 +55,15 @@
   // fallback, and a deployment without it serves 503 "LiteLLM is not configured."
   // — forks must point the var at their own LiteLLM deployment.
   // Optional secret: SENTRY_DSN. SENTRY_RELEASE is set at deploy time from the git SHA.
+  //
+  // Optional vars (sensible code-level defaults apply when unset):
+  // - MCP_ALLOWED_HOSTS: comma-separated hostnames the MCP proxy may connect to
+  //   (e.g. "mcp.example.com,localhost"). Unset/empty keeps the built-in
+  //   private-address blocklist (which DNS rebinding can bypass — see
+  //   src/routes/mcp.ts); when set, ONLY the listed hosts are reachable.
+  // - RATE_LIMIT_WINDOW_SECONDS: inbound rate-limit window (default 60).
+  // - RATE_LIMIT_AUTH_MAX / RATE_LIMIT_SEARCH_MAX / RATE_LIMIT_MCP_MAX: max
+  //   requests per caller per window for the OAuth exchange (default 10),
+  //   search (default 30), and MCP (default 60) routes; "0" disables that
+  //   scope's limit. See src/lib/inbound-rate-limit.ts.
 }

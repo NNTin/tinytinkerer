@@ -9,6 +9,20 @@ export type Bindings = {
   LITELLM_API_KEY?: string
   LITELLM_BASE_URL?: string
   LITELLM_ALLOWED_BASE_URLS?: string
+  /**
+   * Comma-separated hostnames the MCP proxy may connect to. Unset/empty keeps
+   * the built-in private-address blocklist; when set, ONLY listed hosts pass
+   * (see routes/mcp.ts).
+   */
+  MCP_ALLOWED_HOSTS?: string
+  /** Inbound rate-limit window in seconds (default 60). See lib/inbound-rate-limit.ts. */
+  RATE_LIMIT_WINDOW_SECONDS?: string
+  /** Max OAuth code exchanges per caller per window (default 10; '0' disables). */
+  RATE_LIMIT_AUTH_MAX?: string
+  /** Max search requests per caller per window (default 30; '0' disables). */
+  RATE_LIMIT_SEARCH_MAX?: string
+  /** Max MCP discover/call requests per caller per window (default 60; '0' disables). */
+  RATE_LIMIT_MCP_MAX?: string
   /** Sentry DSN for edge error reporting (secret; telemetry no-ops when absent). */
   SENTRY_DSN?: string
   /** Release identifier (build hash) for Sentry events. */
