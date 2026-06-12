@@ -8,7 +8,9 @@ import { SHARED_CREDENTIAL_KEY } from './rate-limit.js'
 import { makeCacheMock } from '../test/cache-mock.js'
 
 const CREDENTIAL_KEY = 'a'.repeat(32)
+const OTHER_CREDENTIAL_KEY = 'b'.repeat(32)
 const IDENTITY = { id: '12345', login: 'nntin' }
+const OTHER_IDENTITY = { id: '67890', login: 'other-user' }
 
 describe('caller-validation-cache', () => {
   afterEach(() => {
@@ -51,6 +53,59 @@ describe('caller-validation-cache', () => {
     await expect(readCachedCallerValidation('b'.repeat(32))).resolves.toBe(
       undefined
     )
+  })
+
+  // The whole point of caching identity is per-user budgets: a validation cached
+  // under one credential must NEVER be served for another. A regression here
+  // would let one GitHub user borrow another's minted LiteLLM key + budget.
+  it('keeps each credential’s identity isolated (in-memory mirror)', async () => {
+    await writeCachedCallerValidation(CREDENTIAL_KEY, IDENTITY)
+    await writeCachedCallerValidation(OTHER_CREDENTIAL_KEY, OTHER_IDENTITY)
+
+    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toEqual(
+      IDENTITY
+    )
+    await expect(
+      readCachedCallerValidation(OTHER_CREDENTIAL_KEY)
+    ).resolves.toEqual(OTHER_IDENTITY)
+  })
+
+  it('keeps each credential’s identity isolated across the durable cache (fresh isolate)', async () => {
+    const { cache } = makeCacheMock()
+    vi.stubGlobal('caches', { default: cache })
+
+    await writeCachedCallerValidation(CREDENTIAL_KEY, IDENTITY)
+    await writeCachedCallerValidation(OTHER_CREDENTIAL_KEY, OTHER_IDENTITY)
+    // Drop the in-memory mirror so both reads come from the durable layer.
+    clearCallerValidationCache()
+
+    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toEqual(
+      IDENTITY
+    )
+    await expect(
+      readCachedCallerValidation(OTHER_CREDENTIAL_KEY)
+    ).resolves.toEqual(OTHER_IDENTITY)
+  })
+
+  // A durable entry that survived a schema change (or was written by an older
+  // build) may lack id/login. Serving a partial identity would resolve a
+  // `github-undefined` LiteLLM key, so it must be treated as a miss and re-probed.
+  it('treats a durable entry missing id/login as a miss', async () => {
+    const { store, cache } = makeCacheMock()
+    vi.stubGlobal('caches', { default: cache })
+
+    // Hand-craft a malformed durable entry with a valid (future) until-stamp.
+    const untilMs = Date.now() + 5 * 60_000
+    store.set(
+      'https://caller-validation-cache.tiny.nntin.xyz/github/' + CREDENTIAL_KEY,
+      new Response(JSON.stringify({ login: 'nntin' }), {
+        headers: { 'x-caller-validated-until': String(untilMs) }
+      })
+    )
+
+    await expect(
+      readCachedCallerValidation(CREDENTIAL_KEY)
+    ).resolves.toBeUndefined()
   })
 
   it('reads a durable Cache-API entry on an in-memory miss (fresh isolate)', async () => {

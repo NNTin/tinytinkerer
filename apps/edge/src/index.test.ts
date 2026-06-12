@@ -1437,6 +1437,346 @@ describe('edge routes', () => {
     expect(keyManagementCalls()).toBeGreaterThan(afterFirst)
   })
 
+  // Per-user budgets hinge on each GitHub user spending through their OWN minted
+  // LiteLLM key. If two users shared a derived key they would share a budget —
+  // the feature would be pointless — so the proxied bearer MUST differ per user.
+  it('mints a distinct per-user LiteLLM key for each GitHub user', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = toRequestUrl(input)
+      if (url === GITHUB_USER_URL) {
+        const authorization =
+          new Headers(init?.headers).get('authorization') ?? ''
+        const secondUser = authorization.includes('second-token')
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: secondUser ? 67890 : 12345,
+              login: secondUser ? 'other-user' : 'nntin'
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        )
+      }
+      if (isLiteLLMKeyManagementUrl(url)) {
+        return Promise.resolve(litellmKeyManagementOk(input, init))
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      )
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const chatRequest = (token: string) =>
+      app.fetch(
+        new Request('http://localhost/api/models/chat', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            provider: 'litellm',
+            model: 'openai/gpt-4.1-mini',
+            stream: false,
+            messages: [{ role: 'user', content: 'hello' }]
+          })
+        }),
+        LITELLM_ENV
+      )
+
+    await chatRequest('first-token')
+    await chatRequest('second-token')
+
+    const chatBearers = upstreamCalls(fetchSpy)
+      .filter(([input]) => toRequestUrl(input).endsWith('/v1/chat/completions'))
+      .map(([, init]) => new Headers(init?.headers).get('authorization'))
+    expect(chatBearers).toHaveLength(2)
+    expect(chatBearers[0]).toMatch(/^Bearer sk-tt-/)
+    expect(chatBearers[1]).toMatch(/^Bearer sk-tt-/)
+    // Different GitHub identities → different minted keys → different budgets.
+    expect(chatBearers[0]).not.toBe(chatBearers[1])
+
+    // The provisioning calls carry per-user identity, not a shared one.
+    const generatedUserIds = fetchSpy.mock.calls
+      .filter(([input]) => new URL(toRequestUrl(input)).pathname === '/key/generate')
+      .map(([, init]) => {
+        const raw = typeof init?.body === 'string' ? init.body : '{}'
+        return (JSON.parse(raw) as { user_id?: string }).user_id
+      })
+    expect(new Set(generatedUserIds)).toEqual(
+      new Set(['github-12345', 'github-67890'])
+    )
+  })
+
+  it('returns 503 on chat when per-user key minting fails (no key to fall back to)', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      const url = toRequestUrl(input)
+      if (url === GITHUB_USER_URL) return Promise.resolve(githubUserOk())
+      if (new URL(url).pathname === '/v2/key/info') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ info: [] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        )
+      }
+      if (new URL(url).pathname === '/key/generate') {
+        // Management key lacks permission to mint: provisioning cannot recover.
+        return Promise.resolve(new Response('forbidden', { status: 403 }))
+      }
+      // The data-plane chat endpoint must never be reached without a key.
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer github-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          model: 'openai/gpt-4.1-mini',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      LITELLM_ENV
+    )
+
+    expect(response.status).toBe(503)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'LiteLLM user key provisioning is temporarily unavailable.'
+    })
+    // No chat completion was attempted without a provisioned key.
+    expect(upstreamCalls(fetchSpy)).toHaveLength(0)
+  })
+
+  it('returns 503 on models/list when per-user key minting fails', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      const url = toRequestUrl(input)
+      if (url === GITHUB_USER_URL) return Promise.resolve(githubUserOk())
+      if (new URL(url).pathname === '/v2/key/info') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ info: [] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        )
+      }
+      if (new URL(url).pathname === '/key/generate') {
+        return Promise.resolve(new Response('forbidden', { status: 403 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/list?provider=litellm', {
+        headers: { authorization: 'Bearer github-token' }
+      }),
+      LITELLM_ENV
+    )
+
+    expect(response.status).toBe(503)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'LiteLLM user key provisioning is temporarily unavailable.'
+    })
+    expect(upstreamCalls(fetchSpy)).toHaveLength(0)
+  })
+
+  // Budget exhaustion is an upstream 400 ("budget exceeded"), NOT a 401/403, so
+  // it must be surfaced to the user verbatim AND must not invalidate the minted
+  // key — re-provisioning a perfectly valid, merely-out-of-budget key would be
+  // pointless churn that resets nothing.
+  it('surfaces a LiteLLM budget-exhaustion 400 without re-provisioning the user key', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = toRequestUrl(input)
+      if (url === GITHUB_USER_URL) return Promise.resolve(githubUserOk())
+      if (isLiteLLMKeyManagementUrl(url)) {
+        return Promise.resolve(litellmKeyManagementOk(input, init))
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: {
+              message:
+                'ExceededBudget: Crossed spend within budget. Budget: 1.0, Spend: 1.2'
+            }
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } }
+        )
+      )
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const chatRequest = () =>
+      app.fetch(
+        new Request('http://localhost/api/models/chat', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer github-token'
+          },
+          body: JSON.stringify({
+            provider: 'litellm',
+            model: 'openai/gpt-4.1-mini',
+            stream: false,
+            messages: [{ role: 'user', content: 'hello' }]
+          })
+        }),
+        LITELLM_ENV
+      )
+
+    const generateCalls = () =>
+      fetchSpy.mock.calls.filter(
+        ([input]) => new URL(toRequestUrl(input)).pathname === '/key/generate'
+      ).length
+
+    const first = await chatRequest()
+    expect(first.status).toBe(400)
+    expect(edgeErrorResponseSchema.parse(await first.json())).toEqual({
+      error: 'ExceededBudget: Crossed spend within budget. Budget: 1.0, Spend: 1.2'
+    })
+    expect(generateCalls()).toBe(1)
+
+    // A second call still reuses the provisioned key (the budget 400 did not
+    // clear the key cache); no second mint.
+    const second = await chatRequest()
+    expect(second.status).toBe(400)
+    expect(generateCalls()).toBe(1)
+  })
+
+  // GITHUB_ALLOWED_USERS gates which validated GitHub identities may spend
+  // server-side resources. A forbidden caller must be rejected with a 403 BEFORE
+  // any key is minted or any upstream resource is touched — on every gated route.
+  it('returns 403 for a caller outside GITHUB_ALLOWED_USERS before minting a key or proxying chat', async () => {
+    const fetchSpy = withCallerValidation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer github-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          model: 'openai/gpt-4.1-mini',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      // The validated identity is id 12345 / login nntin; neither is allowed.
+      { ...LITELLM_ENV, GITHUB_ALLOWED_USERS: 'someone-else,99999' }
+    )
+
+    expect(response.status).toBe(403)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'Forbidden'
+    })
+    // Only the GitHub probe ran — no key minting, no chat completion.
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(0)
+    const keyManagementCalls = fetchSpy.mock.calls.filter(([input]) =>
+      isLiteLLMKeyManagementUrl(toRequestUrl(input))
+    )
+    expect(keyManagementCalls).toHaveLength(0)
+  })
+
+  it('returns 403 on models/list for a caller outside GITHUB_ALLOWED_USERS', async () => {
+    const fetchSpy = withCallerValidation(() =>
+      Promise.resolve(new Response('{}', { status: 200 }))
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/list?provider=litellm', {
+        headers: { authorization: 'Bearer github-token' }
+      }),
+      { ...LITELLM_ENV, GITHUB_ALLOWED_USERS: 'someone-else' }
+    )
+
+    expect(response.status).toBe(403)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'Forbidden'
+    })
+    expect(upstreamCalls(fetchSpy)).toHaveLength(0)
+  })
+
+  it('admits a caller listed in GITHUB_ALLOWED_USERS by login', async () => {
+    const fetchSpy = withCallerValidation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer github-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          model: 'openai/gpt-4.1-mini',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      // The validated login `nntin` is on the allowlist (case-insensitive).
+      { ...LITELLM_ENV, GITHUB_ALLOWED_USERS: 'NNTin' }
+    )
+
+    expect(response.status).toBe(200)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(1)
+  })
+
+  it('returns 403 for a forbidden caller before spending the shared Tavily key', async () => {
+    const fetchSpy = withCallerValidation((input) => {
+      // The search proxy must never run for a forbidden caller.
+      expect(toRequestUrl(input)).not.toContain('tavily')
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/search', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer github-token'
+        },
+        body: JSON.stringify({ query: 'latest ai news' })
+      }),
+      { TAVILY_API_KEY: 'tavily-shared-key', GITHUB_ALLOWED_USERS: 'someone-else' }
+    )
+
+    expect(response.status).toBe(403)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'Forbidden'
+    })
+    expect(upstreamCalls(fetchSpy)).toHaveLength(0)
+  })
+
   it('serves the last-known list when upstream is rate limited, breaking the 429 cascade (TINYTINKERER-FRONTEND-5)', async () => {
     const { store, cache } = makeCacheMock()
     // Seed a previously-cached catalogue old enough to be past the fresh window.
