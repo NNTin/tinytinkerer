@@ -9,6 +9,7 @@ import {
   type ModelProviderId
 } from '@tinytinkerer/contracts'
 import { z } from 'zod'
+import type { Context, TypedResponse } from 'hono'
 import { captureTelemetryMessage } from '@tinytinkerer/sentry-telemetry'
 import type { Bindings } from '../lib/bindings'
 import { applyCorsHeaders } from '../lib/cors'
@@ -25,7 +26,8 @@ import {
   getActiveBackoffMs,
   rateLimitResponseFromMs,
   recordBackoff,
-  toRateLimitResponse
+  toRateLimitResponse,
+  type CredentialKey
 } from '../lib/rate-limit'
 import { validateLiteLLMCaller } from '../lib/caller-validation'
 
@@ -316,81 +318,167 @@ const trackRequestedProvider = (
   return ABSENT_PROVIDER
 }
 
-export const registerModelRoutes = (
-  app: OpenAPIHono<{ Bindings: Bindings }>
-) => {
-  app.openapi(modelsChatRoute, async (c) => {
-    const body = c.req.valid('json')
-    const authorization =
-      c.req.header('authorization') ?? c.req.header('Authorization')
+// The fixed set of error responses preflight itself can emit, all declared on
+// both model routes. Kept as discrete per-status members so each stays
+// assignable to the routes' generated typed-response unions (a single
+// union-status TypedResponse would not be).
+type PreflightErrorResponse =
+  | TypedResponse<{ error: string }, 400, 'json'>
+  | TypedResponse<{ error: string }, 401, 'json'>
+  | TypedResponse<{ error: string }, 503, 'json'>
 
-    if (!authorization) {
-      return c.json(
+type LiteLLMPreflightResult<S> =
+  | {
+      ok: true
+      resolvedBaseUrl: string
+      credentialKey: CredentialKey
+      telemetryProvider: string
+    }
+  | { ok: false; response: S | PreflightErrorResponse }
+
+interface LiteLLMPreflightArgs<S> {
+  requestedBaseUrl: string | null | undefined
+  area: 'models.chat' | 'models.list'
+  requestedProvider: ModelProviderId | undefined
+  /**
+   * Caller-agnostic short-circuit, evaluated AFTER base-URL + credential
+   * resolution but BEFORE the GitHub caller-validation probe. Return a response
+   * to answer immediately (a still-open backoff window for chat; a fresh
+   * catalogue cache hit or open window for list), or `undefined` to proceed to
+   * validation. See the ordering rationale on {@link preflightLiteLLM}. Its
+   * return type is preserved (generic `S`) so each route's typed `c.json(...)`
+   * responses survive the round trip through this helper.
+   */
+  shortCircuit?: (ctx: {
+    resolvedBaseUrl: string
+    credentialKey: CredentialKey
+  }) => Promise<S | undefined>
+}
+
+/**
+ * Shared pre-flight for both LiteLLM-backed model routes: the auth-presence
+ * check, provider telemetry, configuration guard, base-URL resolution +
+ * allowlist, and the per-credential backoff key.
+ *
+ * It also OWNS — in one place — the single ordering decision both routes must
+ * agree on: caller validation runs LAST, after the optional caller-agnostic
+ * `shortCircuit`. The GitHub `/user` probe is the only pre-flight round trip
+ * that depends on the caller's identity, so running it after the short-circuit
+ * means a request answerable from shared state never pays it: a 429 cooldown
+ * window (chat) or a catalogue cache hit / open window (list) — responses
+ * identical for every caller — short-circuit before any GitHub round trip
+ * (issue #177). Trade-off: an unauthenticated caller can observe backoff/cache
+ * state via the response status, but that leaks only the shared deployment's
+ * cooldown, never anything about a user — an accepted, low-risk leak.
+ */
+const preflightLiteLLM = async <S = never>(
+  c: Context<{ Bindings: Bindings }>,
+  { requestedBaseUrl, area, requestedProvider, shortCircuit }: LiteLLMPreflightArgs<S>
+): Promise<LiteLLMPreflightResult<S>> => {
+  const authorization =
+    c.req.header('authorization') ?? c.req.header('Authorization')
+  if (!authorization) {
+    return {
+      ok: false,
+      response: c.json(
         edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
         401
       )
     }
+  }
 
-    const useStream = body.stream === true
-    const telemetryProvider = trackRequestedProvider(
-      'models.chat',
-      body.provider
-    )
-    // Configuration first: a deployment without a key or base URL is a 503
-    // "not configured", not a 400 about the (absent) default base URL.
-    const configurationError = requireLiteLLMConfiguration(c.env)
-    if (configurationError) {
-      return c.json(
+  const telemetryProvider = trackRequestedProvider(area, requestedProvider)
+
+  // Configuration first: a deployment without a key or base URL is a 503 "not
+  // configured", not a 400 about the (absent) default base URL.
+  const configurationError = requireLiteLLMConfiguration(c.env)
+  if (configurationError) {
+    return {
+      ok: false,
+      response: c.json(
         edgeErrorResponseSchema.parse({ error: configurationError }),
         503
       )
     }
-    const litellmBaseUrl = resolveLiteLLMBaseUrl(c.env, body.litellmBaseUrl)
-    if (!litellmBaseUrl.ok) {
-      return c.json(
+  }
+
+  const litellmBaseUrl = resolveLiteLLMBaseUrl(c.env, requestedBaseUrl)
+  if (!litellmBaseUrl.ok) {
+    return {
+      ok: false,
+      response: c.json(
         edgeErrorResponseSchema.parse({ error: litellmBaseUrl.error }),
         400
       )
     }
-    const resolvedBaseUrl = litellmBaseUrl.baseUrl
-    const model = body.model ?? DEFAULT_LITELLM_MODEL
+  }
+  const resolvedBaseUrl = litellmBaseUrl.baseUrl
 
-    // Scope the backoff to the upstream credential/quota bucket: the shared
-    // edge-managed key (plus base URL) so one caller's 429 correctly backs off
-    // all callers of the same LiteLLM deployment.
-    const credentialKey = await deriveCredentialKey(
-      liteLLMSharedCredentialKeyInput(c.env, resolvedBaseUrl)
-    )
+  // Scope the backoff to the upstream credential/quota bucket (issue #146): the
+  // shared edge-managed key plus base URL, so one caller's 429 backs off all
+  // callers of the same LiteLLM deployment.
+  const credentialKey = await deriveCredentialKey(
+    liteLLMSharedCredentialKeyInput(c.env, resolvedBaseUrl)
+  )
 
-    // Respect a still-open upstream rate-limit window (durable across isolates):
-    // short-circuit with a 429 instead of re-hammering the upstream provider
-    // (TINYTINKERER-EDGE-4). This runs BEFORE the caller-validation probe — the
-    // window has no auth dependency, and while it is open every request would
-    // otherwise pay the GitHub round trip just to be answered with a 429
-    // (issue #177). Trade-off: an unauthenticated caller can observe backoff
-    // state via 429-vs-401 — that leaks only the shared deployment's cooldown,
-    // not anything about a user, so it is an accepted, low-risk leak.
-    const backoffMs = await getActiveBackoffMs(Date.now(), credentialKey)
-    if (backoffMs > 0) {
-      c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
-      return c.json(rateLimitResponseFromMs(backoffMs), 429)
-    }
+  if (shortCircuit) {
+    const early = await shortCircuit({ resolvedBaseUrl, credentialKey })
+    if (early !== undefined) return { ok: false, response: early }
+  }
 
-    const callerValidation = await validateLiteLLMCaller(authorization)
-    if (callerValidation === 'invalid') {
-      return c.json(
+  const callerValidation = await validateLiteLLMCaller(authorization)
+  if (callerValidation === 'invalid') {
+    return {
+      ok: false,
+      response: c.json(
         edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
         401
       )
     }
-    if (callerValidation === 'unavailable') {
-      return c.json(
+  }
+  if (callerValidation === 'unavailable') {
+    return {
+      ok: false,
+      response: c.json(
         edgeErrorResponseSchema.parse({
           error: 'LiteLLM caller validation is temporarily unavailable.'
         }),
         503
       )
     }
+  }
+
+  return { ok: true, resolvedBaseUrl, credentialKey, telemetryProvider }
+}
+
+export const registerModelRoutes = (
+  app: OpenAPIHono<{ Bindings: Bindings }>
+) => {
+  app.openapi(modelsChatRoute, async (c) => {
+    const body = c.req.valid('json')
+    const useStream = body.stream === true
+
+    // Chat is NOT cacheable, so the only caller-agnostic short-circuit is a
+    // still-open upstream rate-limit window: answer it with a 429 (durable
+    // across isolates) instead of re-hammering the provider (TINYTINKERER-EDGE-4)
+    // — and, per the #177 ordering owned by preflightLiteLLM, before paying the
+    // GitHub caller-validation round trip just to be told to back off.
+    const preflight = await preflightLiteLLM(c, {
+      requestedBaseUrl: body.litellmBaseUrl,
+      area: 'models.chat',
+      requestedProvider: body.provider,
+      shortCircuit: async ({ credentialKey }) => {
+        const backoffMs = await getActiveBackoffMs(Date.now(), credentialKey)
+        if (backoffMs > 0) {
+          c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
+          return c.json(rateLimitResponseFromMs(backoffMs), 429)
+        }
+        return undefined
+      }
+    })
+    if (!preflight.ok) return preflight.response
+    const { resolvedBaseUrl, credentialKey, telemetryProvider } = preflight
+    const model = body.model ?? DEFAULT_LITELLM_MODEL
 
     const response = await fetchWithTimeout(
       {
@@ -535,92 +623,63 @@ export const registerModelRoutes = (
   })
 
   app.openapi(modelsListRoute, async (c) => {
-    const authorization =
-      c.req.header('authorization') ?? c.req.header('Authorization')
-
-    if (!authorization) {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
-        401
-      )
-    }
-
     const query = c.req.valid('query')
-    const telemetryProvider = trackRequestedProvider(
-      'models.list',
-      query.provider
-    )
-    // Configuration first: a deployment without a key or base URL is a 503
-    // "not configured", not a 400 about the (absent) default base URL.
-    const configurationError = requireLiteLLMConfiguration(c.env)
-    if (configurationError) {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: configurationError }),
-        503
-      )
-    }
-    const litellmBaseUrl = resolveLiteLLMBaseUrl(c.env, query.litellmBaseUrl)
-    if (!litellmBaseUrl.ok) {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: litellmBaseUrl.error }),
-        400
-      )
-    }
-    const callerValidation = await validateLiteLLMCaller(authorization)
-    if (callerValidation === 'invalid') {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
-        401
-      )
-    }
-    if (callerValidation === 'unavailable') {
-      return c.json(
-        edgeErrorResponseSchema.parse({
-          error: 'LiteLLM caller validation is temporarily unavailable.'
-        }),
-        503
-      )
-    }
-    const resolvedBaseUrl = litellmBaseUrl.baseUrl
+
+    // The catalogue is cacheable AND identical for every caller, so two
+    // caller-agnostic short-circuits run before the GitHub caller-validation
+    // probe (the #177 ordering owned by preflightLiteLLM): a fresh cache hit,
+    // then a still-open backoff window. Previously validation ran first, so
+    // every catalogue request paid the GitHub round trip just to serve a
+    // response identical for all callers. `cached` is hoisted because the
+    // post-fetch 429 handler reuses it to break the cascade.
+    let cached: Awaited<ReturnType<typeof readCachedModels>> | undefined
+    const preflight = await preflightLiteLLM(c, {
+      requestedBaseUrl: query.litellmBaseUrl,
+      area: 'models.list',
+      requestedProvider: query.provider,
+      shortCircuit: async ({ resolvedBaseUrl, credentialKey }) => {
+        // The catalogue rarely changes and is identical for every caller. Serve
+        // a fresh cached copy without touching upstream — this is what actually
+        // stops us re-probing the upstream provider on every request and
+        // tripping its rate limit (TINYTINKERER-EDGE-4 / FRONTEND-5). The
+        // reactive backoff below is only a secondary guard; the per-isolate
+        // version shipped in PR #100 reset on every fresh Cloudflare isolate,
+        // which is why the 429s regressed.
+        cached = await readCachedModels(
+          Date.now(),
+          liteLLMCacheScope(resolvedBaseUrl)
+        )
+        if (cached && isFresh(cached.ageMs)) {
+          return c.json({ models: cached.models }, 200)
+        }
+
+        // Honor a still-open rate-limit window shared with the chat route for
+        // this credential (durable across isolates). Prefer the last-known
+        // catalogue over cascading anything.
+        const backoffMs = await getActiveBackoffMs(Date.now(), credentialKey)
+        if (backoffMs > 0) {
+          if (cached) return c.json({ models: cached.models }, 200)
+          // No cached catalogue yet but a window is open: emit the SAME single
+          // cooldown signal as the cold-cache-miss path below — a graceful 503 +
+          // Retry-After — instead of leaking the raw upstream 429. The browser
+          // is not itself rate limited; one status keeps the frontend contract
+          // for this cacheable catalogue simple: serve last-known and retry
+          // later (TINYTINKERER-FRONTEND-C / FRONTEND-D).
+          c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
+          return c.json(
+            edgeErrorResponseSchema.parse({
+              error: UPSTREAM_ERROR_MESSAGES[503]
+            }),
+            503
+          )
+        }
+        return undefined
+      }
+    })
+    if (!preflight.ok) return preflight.response
+    const { resolvedBaseUrl, credentialKey, telemetryProvider } = preflight
     const listUrl = litellmListUrl(resolvedBaseUrl)
     const cacheScope = liteLLMCacheScope(resolvedBaseUrl)
-
-    // Scope the backoff to the upstream credential/quota bucket (issue #146):
-    // the shared edge-managed key plus base URL, so one caller's 429 backs off
-    // all callers of the same LiteLLM deployment.
-    const credentialKey = await deriveCredentialKey(
-      liteLLMSharedCredentialKeyInput(c.env, resolvedBaseUrl)
-    )
-
-    // The catalogue rarely changes and is identical for every caller. Serve a
-    // fresh cached copy without touching upstream — this is what actually stops
-    // us re-probing the upstream provider on every request and tripping its rate limit
-    // (TINYTINKERER-EDGE-4 / FRONTEND-5). The reactive backoff below is only a
-    // secondary guard; the per-isolate version shipped in PR #100 reset on every
-    // fresh Cloudflare isolate, which is why the 429s regressed.
-    const cached = await readCachedModels(Date.now(), cacheScope)
-    if (cached && isFresh(cached.ageMs)) {
-      return c.json({ models: cached.models }, 200)
-    }
-
-    // Honor a still-open rate-limit window shared with the chat route for this
-    // credential (durable across isolates). Prefer the last-known catalogue over
-    // cascading anything.
-    const backoffMs = await getActiveBackoffMs(Date.now(), credentialKey)
-    if (backoffMs > 0) {
-      if (cached) return c.json({ models: cached.models }, 200)
-      // No cached catalogue yet but a window is open: emit the SAME single
-      // cooldown signal as the cold-cache-miss path below — a graceful 503 +
-      // Retry-After — instead of leaking the raw upstream 429. The browser is not
-      // itself rate limited; one status keeps the frontend contract for this
-      // cacheable catalogue simple: serve last-known and retry later
-      // (TINYTINKERER-FRONTEND-C / FRONTEND-D).
-      c.header('Retry-After', String(Math.ceil(backoffMs / 1000)))
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: UPSTREAM_ERROR_MESSAGES[503] }),
-        503
-      )
-    }
 
     const response = await fetchWithTimeout(
       {
