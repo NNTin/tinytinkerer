@@ -20,7 +20,12 @@ import {
 import { SYSTEM_STYLE_PROMPT } from './system-prompt'
 import { createRateLimitError } from './rate-limit'
 import { RateLimitQuota } from './quota-tracker'
-import { createEdgeFetch } from './edge-fetch'
+import {
+  createEdgeFetch,
+  createModelsChatFetch,
+  modelsChatRequestBody,
+  type ModelsChatFetch
+} from './edge-fetch'
 import { getTelemetryHeaders } from '../telemetry/telemetry'
 import {
   fetchWithTelemetry,
@@ -71,14 +76,12 @@ export class LiteLLMProvider implements ModelProvider {
 
   constructor(private readonly options: LiteLLMProviderOptions) {}
 
-  private getLiteLLMBaseUrl(): string | undefined {
-    const baseUrl = this.options.getLiteLLMBaseUrl?.()?.trim()
-    return baseUrl || undefined
-  }
-
-  private modelRequestExtras(): { litellmBaseUrl?: string } {
-    const litellmBaseUrl = this.getLiteLLMBaseUrl()
-    return litellmBaseUrl ? { litellmBaseUrl } : {}
+  // Models/chat calls bound to this runtime's deployment: the LiteLLM base
+  // URL (when the user explicitly configured one) is baked in here so the
+  // planner/decider signatures never carry it.
+  private modelsChatFetch(token: string): ModelsChatFetch {
+    const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
+    return createModelsChatFetch(edgeFetch, this.options.getLiteLLMBaseUrl)
   }
 
   // Wait out any active rate-limit/quota backoff before issuing an edge model
@@ -101,16 +104,14 @@ export class LiteLLMProvider implements ModelProvider {
     // to the heuristic planner.
     if (token && allDescriptors.length > 0) {
       try {
-        const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
         const model = this.options.getModel?.() ?? DEFAULT_MODEL
         return await llmPlan(
           prompt,
           history,
           allDescriptors,
           model,
-          edgeFetch,
-          options?.signal,
-          this.getLiteLLMBaseUrl()
+          this.modelsChatFetch(token),
+          options?.signal
         )
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') throw error
@@ -147,7 +148,6 @@ export class LiteLLMProvider implements ModelProvider {
 
     if (token) {
       await this.applyQuotaThrottle(context)
-      const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
       const model = this.options.getModel?.() ?? DEFAULT_MODEL
       const tools = this.options.allToolDescriptors ?? []
       try {
@@ -155,9 +155,8 @@ export class LiteLLMProvider implements ModelProvider {
           context,
           tools,
           model,
-          edgeFetch,
-          options?.signal,
-          this.getLiteLLMBaseUrl()
+          this.modelsChatFetch(token),
+          options?.signal
         )
       } catch (error) {
         if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
@@ -178,7 +177,6 @@ export class LiteLLMProvider implements ModelProvider {
 
     if (token) {
       await this.applyQuotaThrottle(context)
-      const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
       const model = this.options.getModel?.() ?? DEFAULT_MODEL
       const tools = this.options.allToolDescriptors ?? []
       try {
@@ -186,9 +184,8 @@ export class LiteLLMProvider implements ModelProvider {
           context,
           tools,
           model,
-          edgeFetch,
-          options?.signal,
-          this.getLiteLLMBaseUrl()
+          this.modelsChatFetch(token),
+          options?.signal
         )
       } catch (error) {
         if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
@@ -246,17 +243,17 @@ export class LiteLLMProvider implements ModelProvider {
           authorization: `Bearer ${token}`,
           ...getTelemetryHeaders()
         },
-        body: JSON.stringify({
-          provider: 'litellm',
-          ...this.modelRequestExtras(),
-          stream: true,
-          model: selectedModel,
-          messages: [
-            { role: 'system', content: SYSTEM_STYLE_PROMPT },
-            ...context.history,
-            { role: 'user', content: userContent }
-          ]
-        })
+        body: JSON.stringify(
+          modelsChatRequestBody(this.options.getLiteLLMBaseUrl?.(), {
+            model: selectedModel,
+            stream: true,
+            messages: [
+              { role: 'system', content: SYSTEM_STYLE_PROMPT },
+              ...context.history,
+              { role: 'user', content: userContent }
+            ]
+          })
+        )
       }
 
       if (options?.signal) {

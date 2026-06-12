@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { DEFAULT_LITELLM_BASE_URL, FALLBACK_MODELS } from '@tinytinkerer/app-core'
+import { FALLBACK_MODELS, LITELLM_DEPLOYMENT_DEFAULT } from '@tinytinkerer/app-core'
 import {
   EDGE_ROUTE_PATHS,
   modelsListResponseSchema,
@@ -73,7 +73,7 @@ export const fetchModels = async (
   // only this deliberate user action bypasses the read.
   {
     force = false,
-    litellmBaseUrl = DEFAULT_LITELLM_BASE_URL
+    litellmBaseUrl = LITELLM_DEPLOYMENT_DEFAULT
   }: { force?: boolean; litellmBaseUrl?: string } = {}
 ): Promise<FetchModelsResult> => {
   const tokenHash = await hashToken(token)
@@ -101,7 +101,11 @@ export const fetchModels = async (
     return { models, fromFallback: true }
   }
 
-  const params = new URLSearchParams({ provider: 'litellm', litellmBaseUrl })
+  // An unset base URL (the deployment-default sentinel) is omitted from the
+  // request so the edge resolves its own configured LITELLM_BASE_URL — the
+  // client must never assert a concrete default (issue #179).
+  const params = new URLSearchParams({ provider: 'litellm' })
+  if (litellmBaseUrl) params.set('litellmBaseUrl', litellmBaseUrl)
   const url = `${edgeBaseUrl}${EDGE_ROUTE_PATHS.modelsList}?${params.toString()}`
   const metadata: RequestTelemetryMetadata = {
     area: 'models.list',

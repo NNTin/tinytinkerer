@@ -9,7 +9,7 @@ import {
   streamDecision
 } from '../src/runtime/react-decider.js'
 import type { PlannerToolDescriptor } from '../src/runtime/mcp-planner.js'
-import type { EdgeFetch } from '../src/runtime/edge-fetch.js'
+import type { ModelsChatFetch } from '../src/runtime/edge-fetch.js'
 
 const descriptor: PlannerToolDescriptor = {
   id: 'web-search',
@@ -28,7 +28,7 @@ const baseContext = (
   ...overrides
 })
 
-const makeEdgeFetch = (responseBody: unknown, status = 200): EdgeFetch =>
+const makeEdgeFetch = (responseBody: unknown, status = 200): ModelsChatFetch =>
   vi.fn().mockResolvedValue(
     new Response(JSON.stringify(responseBody), {
       status,
@@ -59,15 +59,14 @@ describe('decideNextAction', () => {
     )
 
     expect(edgeFetch).toHaveBeenCalledOnce()
-    const [path, body] = (edgeFetch as ReturnType<typeof vi.fn>).mock
-      .calls[0] as [
-      string,
-      { model: string; messages: Array<{ role: string; content: string }> }
+    const [init] = (edgeFetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      { model: string; stream: boolean; messages: Array<{ role: string; content: string }> }
     ]
-    expect(path).toBe('/api/models/chat')
-    const systemMsg = body.messages.find((m) => m.role === 'system')
+    expect(init.model).toBe('openai/gpt-4.1-mini')
+    expect(init.stream).toBe(false)
+    const systemMsg = init.messages.find((m) => m.role === 'system')
     expect(systemMsg?.content).toContain('web-search')
-    const userMsg = body.messages.find((m) => m.role === 'user')
+    const userMsg = init.messages.find((m) => m.role === 'user')
     expect(userMsg?.content).toContain('Observations so far')
   })
 
@@ -328,7 +327,7 @@ describe('decideNextAction', () => {
   })
 })
 
-const makeSseEdgeFetch = (lines: string[], status = 200): EdgeFetch =>
+const makeSseEdgeFetch = (lines: string[], status = 200): ModelsChatFetch =>
   vi.fn().mockResolvedValue(
     new Response(lines.join('\n'), {
       status,
@@ -392,7 +391,7 @@ describe('streamDecision', () => {
   })
 
   it('parses the final SSE data line even without a trailing newline', async () => {
-    const edgeFetch: EdgeFetch = vi.fn().mockResolvedValue(
+    const edgeFetch: ModelsChatFetch = vi.fn().mockResolvedValue(
       new Response(
         'data: {"choices":[{"delta":{"content":"{\\"kind\\":\\"final\\"}"}}]}',
         {
@@ -448,7 +447,7 @@ describe('streamDecision', () => {
   })
 
   it('throws when the streaming response has no body', async () => {
-    const edgeFetch: EdgeFetch = vi.fn().mockResolvedValue(
+    const edgeFetch: ModelsChatFetch = vi.fn().mockResolvedValue(
       new Response(null, {
         status: 200,
         headers: { 'content-type': 'text/event-stream' }

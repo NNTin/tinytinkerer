@@ -5,7 +5,7 @@ import type {
   ServiceStatus
 } from '@tinytinkerer/contracts'
 import { BrandSettingsFooter } from '@tinytinkerer/brand-assets'
-import { DEFAULT_LITELLM_BASE_URL } from '@tinytinkerer/app-core'
+import { LITELLM_DEPLOYMENT_DEFAULT } from '@tinytinkerer/app-core'
 import { MarkdownDocument } from './markdown-document'
 import { useSettingsSurfaceController } from './surfaces'
 import { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
@@ -270,7 +270,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
                   void handleSaveLiteLLMBaseUrl()
                 }
               }}
-              placeholder={DEFAULT_LITELLM_BASE_URL}
+              placeholder="Deployment default"
               className="flex-1 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
             />
             <button
@@ -284,13 +284,13 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
           {litellmBaseUrlError ? (
             <p className="text-xs text-rose-600">{litellmBaseUrlError}</p>
           ) : null}
-          {litellmBaseUrl !== DEFAULT_LITELLM_BASE_URL ? (
+          {litellmBaseUrl !== LITELLM_DEPLOYMENT_DEFAULT ? (
             <button
               type="button"
-              onClick={() => void setLiteLLMBaseUrl(DEFAULT_LITELLM_BASE_URL)}
+              onClick={() => void setLiteLLMBaseUrl(null)}
               className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:bg-stone-50"
             >
-              Reset to default
+              Reset to deployment default
             </button>
           ) : null}
       </div>

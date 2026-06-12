@@ -11,7 +11,11 @@ vi.mock('../src/telemetry/telemetry.js', async () => {
   }
 })
 
-import { createEdgeFetch } from '../src/runtime/edge-fetch.js'
+import {
+  createEdgeFetch,
+  createModelsChatFetch,
+  modelsChatRequestBody
+} from '../src/runtime/edge-fetch.js'
 
 const sink = vi.fn<CaptureExceptionSink>()
 
@@ -97,5 +101,95 @@ describe('createEdgeFetch', () => {
       request_area: 'react.decide',
       failure_kind: 'network_error'
     })
+  })
+})
+
+describe('modelsChatRequestBody', () => {
+  const init = {
+    model: 'openai/gpt-5',
+    stream: false,
+    messages: [{ role: 'user' as const, content: 'hi' }]
+  }
+
+  it('omits litellmBaseUrl for the deployment-default sentinel so the edge resolves its own URL (issue #179)', () => {
+    expect(modelsChatRequestBody(undefined, init)).toEqual({
+      provider: 'litellm',
+      ...init
+    })
+    expect(modelsChatRequestBody('', init)).not.toHaveProperty('litellmBaseUrl')
+    expect(modelsChatRequestBody('   ', init)).not.toHaveProperty('litellmBaseUrl')
+  })
+
+  it('includes an explicitly configured litellmBaseUrl', () => {
+    expect(modelsChatRequestBody('https://litellm.example.com/', init)).toEqual({
+      provider: 'litellm',
+      litellmBaseUrl: 'https://litellm.example.com/',
+      ...init
+    })
+  })
+})
+
+describe('createModelsChatFetch', () => {
+  it('posts the prelude-built body to /api/models/chat with model/stream telemetry', async () => {
+    let capturedUrl = ''
+    let capturedBody: string | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, requestInit?: RequestInit) => {
+        capturedUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url
+        capturedBody = requestInit?.body as string | undefined
+        return Promise.resolve(new Response('{}', { status: 200 }))
+      })
+    )
+
+    const edgeFetch = createEdgeFetch('http://example.com', () => 'token')
+    const modelsChat = createModelsChatFetch(
+      edgeFetch,
+      () => 'https://litellm.example.com/'
+    )
+
+    await modelsChat(
+      {
+        model: 'openai/gpt-5',
+        stream: true,
+        messages: [{ role: 'user', content: 'hi' }]
+      },
+      { area: 'react.decide' }
+    )
+
+    expect(capturedUrl).toBe('http://example.com/api/models/chat')
+    expect(JSON.parse(capturedBody ?? '{}')).toMatchObject({
+      provider: 'litellm',
+      litellmBaseUrl: 'https://litellm.example.com/',
+      model: 'openai/gpt-5',
+      stream: true
+    })
+  })
+
+  it('omits litellmBaseUrl when no getter is wired (deployment default)', async () => {
+    let capturedBody: string | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input: RequestInfo | URL, requestInit?: RequestInit) => {
+        capturedBody = requestInit?.body as string | undefined
+        return Promise.resolve(new Response('{}', { status: 200 }))
+      })
+    )
+
+    const edgeFetch = createEdgeFetch('http://example.com', () => 'token')
+    const modelsChat = createModelsChatFetch(edgeFetch)
+
+    await modelsChat({
+      model: 'openai/gpt-5',
+      stream: false,
+      messages: [{ role: 'user', content: 'hi' }]
+    })
+
+    expect(JSON.parse(capturedBody ?? '{}')).not.toHaveProperty('litellmBaseUrl')
   })
 })

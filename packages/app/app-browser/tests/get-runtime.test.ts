@@ -11,7 +11,8 @@ const mockSettings = {
   searchEnabled: true,
   selectedModel: 'openai/gpt-4.1-mini',
   agentType: 'plan-execute' as const,
-  litellmBaseUrl: 'https://litellm.labs.lair.nntin.xyz/'
+  // Empty = the deployment-default sentinel: request bodies omit litellmBaseUrl.
+  litellmBaseUrl: ''
 }
 
 const mockAuth = {
@@ -57,7 +58,7 @@ const toRequestUrl = (input: RequestInfo | URL): string => {
 beforeEach(() => {
   mockSettings.searchEnabled = true
   mockSettings.selectedModel = DEFAULT_MODEL
-  mockSettings.litellmBaseUrl = 'https://litellm.labs.lair.nntin.xyz/'
+  mockSettings.litellmBaseUrl = ''
   mockAuth.token = null
   mockStatus.hydrated = true
   mockStatus.status.search.state = 'ready'
@@ -262,6 +263,45 @@ describe('createBrowserRuntimeFactory', () => {
       model: 'openai/gpt-5',
       litellmBaseUrl: 'https://litellm.example.com/'
     })
+    vi.unstubAllGlobals()
+  })
+
+  it('omits litellmBaseUrl from the request body when no base URL is configured (issue #179)', async () => {
+    let capturedBody: string | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        capturedBody = init?.body as string | undefined
+        const sseBody = [
+          'data: {"choices":[{"delta":{"content":"ok"}}]}',
+          '',
+          'data: [DONE]',
+          ''
+        ].join('\n')
+        return Promise.resolve(
+          new Response(sseBody, {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' }
+          })
+        )
+      })
+    )
+
+    mockSettings.selectedModel = 'openai/gpt-5'
+    mockSettings.litellmBaseUrl = ''
+    mockAuth.token = 'github-token'
+
+    const runtime = createRuntime()
+    const events: unknown[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    // The deployment-default sentinel must leave the field off the wire so
+    // the edge resolves its own configured LITELLM_BASE_URL.
+    const body = JSON.parse(capturedBody ?? '{}') as Record<string, unknown>
+    expect(body).toMatchObject({ provider: 'litellm', model: 'openai/gpt-5' })
+    expect(body).not.toHaveProperty('litellmBaseUrl')
     vi.unstubAllGlobals()
   })
 

@@ -287,14 +287,13 @@ export const telemetryHeadersSchema = z.object({
 
 export type TelemetryHeaders = z.infer<typeof telemetryHeadersSchema>
 
-// Shared LiteLLM defaults. The edge and the frontends deploy on different
-// cadences, so each hardcoding its own copy risks silent drift — this is the
-// single definition (issue #179). The edge itself has no code-level base-URL
-// fallback (its LITELLM_BASE_URL comes from wrangler config and a missing
-// value is a 503 "not configured"); the frontend uses these to pre-fill
-// Settings, scope caches, and pick a model when none is selected.
+// Shared LiteLLM default model. There is deliberately NO default base URL
+// constant: the deployment default lives only in the edge's wrangler config
+// (a missing LITELLM_BASE_URL is a 503 "not configured"), and clients signal
+// "use the deployment default" by omitting `litellmBaseUrl` from requests. A
+// code-level URL here would silently point forks at someone else's LiteLLM —
+// or trip their edge allowlist with a 400 "not allowed" on every request.
 export const DEFAULT_LITELLM_MODEL = 'openai/gpt-5'
-export const DEFAULT_LITELLM_BASE_URL = 'https://litellm.labs.lair.nntin.xyz/'
 
 export const EDGE_ROUTE_PATHS = {
   health: '/health',

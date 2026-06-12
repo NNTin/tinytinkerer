@@ -1,3 +1,4 @@
+import { EDGE_ROUTE_PATHS, type ChatMessage } from '@tinytinkerer/contracts'
 import { getTelemetryHeaders } from '../telemetry/telemetry'
 import { fetchWithTelemetry, type RequestTelemetryMetadata } from '../telemetry/request-telemetry'
 
@@ -51,3 +52,55 @@ export const createEdgeFetch = (
     }
     return fetchWithTelemetry(metadata, init)
   }
+
+export type ModelsChatInit = {
+  model: string
+  stream: boolean
+  messages: ChatMessage[]
+}
+
+export type ModelsChatFetchOptions = {
+  signal?: AbortSignal
+  area?: string
+}
+
+/**
+ * A models/chat call bound to the runtime's LiteLLM deployment. Planners and
+ * deciders consume this instead of a raw {@link EdgeFetch} so the deployment
+ * base URL never appears in their signatures.
+ */
+export type ModelsChatFetch = (
+  init: ModelsChatInit,
+  options?: ModelsChatFetchOptions
+) => Promise<Response>
+
+// The single definition of the models/chat request body. `litellmBaseUrl` is
+// included only when the user explicitly configured one — when absent the
+// edge resolves its own configured deployment default (issue #179).
+export const modelsChatRequestBody = (
+  litellmBaseUrl: string | null | undefined,
+  init: ModelsChatInit
+): Record<string, unknown> => {
+  const baseUrl = litellmBaseUrl?.trim()
+  return {
+    provider: 'litellm',
+    ...(baseUrl ? { litellmBaseUrl: baseUrl } : {}),
+    ...init
+  }
+}
+
+export const createModelsChatFetch = (
+  edgeFetch: EdgeFetch,
+  getLiteLLMBaseUrl?: () => string | null | undefined
+): ModelsChatFetch =>
+  (init, options) =>
+    edgeFetch(
+      EDGE_ROUTE_PATHS.modelsChat,
+      modelsChatRequestBody(getLiteLLMBaseUrl?.(), init),
+      {
+        model: init.model,
+        stream: init.stream,
+        ...(options?.area ? { area: options.area } : {}),
+        ...(options?.signal ? { signal: options.signal } : {})
+      }
+    )
