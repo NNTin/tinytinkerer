@@ -9,7 +9,8 @@ const mockState = vi.hoisted(
     settings: { litellmBaseUrl: string }
   } => ({
     auth: { token: null },
-    settings: { litellmBaseUrl: 'https://litellm.labs.lair.nntin.xyz/' }
+    // Empty = the deployment-default sentinel: requests omit litellmBaseUrl.
+    settings: { litellmBaseUrl: '' }
   })
 )
 
@@ -39,7 +40,7 @@ import { clearModelsCache, useModels } from '../src/models.js'
 describe('useModels', () => {
   beforeEach(() => {
     mockState.auth.token = null
-    mockState.settings.litellmBaseUrl = 'https://litellm.labs.lair.nntin.xyz/'
+    mockState.settings.litellmBaseUrl = ''
     clearModelsCache()
   })
 
@@ -70,7 +71,7 @@ describe('useModels', () => {
     )
   })
 
-  it('refreshes against the edge with the litellm provider and base URL', async () => {
+  it('refreshes against the edge with the litellm provider, omitting the base URL when unset', async () => {
     mockState.auth.token = 'gh-token'
     const models = [
       {
@@ -106,8 +107,39 @@ describe('useModels', () => {
     expect(result.current.refreshError).toBeNull()
     expect(result.current.models).toEqual(models)
     expect(capturedUrl).toContain('provider=litellm')
+    // No explicit base URL configured: the request must omit the param so the
+    // edge resolves its own configured deployment default (issue #179).
+    expect(capturedUrl).not.toContain('litellmBaseUrl')
+  })
+
+  it('sends the base URL when the user explicitly configured one', async () => {
+    mockState.auth.token = 'gh-token'
+    mockState.settings.litellmBaseUrl = 'https://litellm.example.com/'
+    let capturedUrl = ''
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      capturedUrl =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url
+      return Promise.resolve(
+        new Response(JSON.stringify({ models: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const { result } = renderHook(() => useModels())
+
+    await act(async () => {
+      await result.current.refreshModels()
+    })
+
     expect(capturedUrl).toContain(
-      'litellmBaseUrl=https%3A%2F%2Flitellm.labs.lair.nntin.xyz%2F'
+      'litellmBaseUrl=https%3A%2F%2Flitellm.example.com%2F'
     )
   })
 

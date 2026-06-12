@@ -11,13 +11,13 @@ import {
   buildConversationHistory,
   buildTurns,
   canSendPrompt,
-  DEFAULT_LITELLM_BASE_URL,
   DEFAULT_MODEL,
   DEFAULT_MODEL_PROVIDER,
   defaultChatState,
   defaultSettingsState,
   inferPlan,
   initializeChatState,
+  LITELLM_DEPLOYMENT_DEFAULT,
   loadCooldown,
   loadSettingsState,
   normalizeLiteLLMBaseUrl,
@@ -81,8 +81,10 @@ describe('app-core helpers', () => {
     expect(normalizeLiteLLMBaseUrl('https://litellm.example.com')).toBe(
       'https://litellm.example.com/'
     )
+    // An invalid value normalizes to the deployment-default sentinel, never
+    // to a concrete URL — the client must not assert a default (issue #179).
     expect(normalizeLiteLLMBaseUrl('http://litellm.example.com')).toBe(
-      DEFAULT_LITELLM_BASE_URL
+      LITELLM_DEPLOYMENT_DEFAULT
     )
   })
 
@@ -91,10 +93,11 @@ describe('app-core helpers', () => {
       ok: true,
       url: 'https://litellm.example.com/'
     })
-    // Empty means "use the default".
+    // Empty means "use the deployment default" — kept as the sentinel so
+    // requests omit the field and the edge resolves its configured URL.
     expect(validateLiteLLMBaseUrl('')).toEqual({
       ok: true,
-      url: DEFAULT_LITELLM_BASE_URL
+      url: LITELLM_DEPLOYMENT_DEFAULT
     })
     expect(validateLiteLLMBaseUrl('not a url').ok).toBe(false)
     expect(validateLiteLLMBaseUrl('http://litellm.example.com').ok).toBe(false)
@@ -103,9 +106,9 @@ describe('app-core helpers', () => {
     expect(validateLiteLLMBaseUrl('https://user:pw@litellm.example.com').ok).toBe(false)
     expect(validateLiteLLMBaseUrl('https://litellm.example.com/?key=1').ok).toBe(false)
     expect(validateLiteLLMBaseUrl('https://litellm.example.com/#frag').ok).toBe(false)
-    // …and the load-path normalizer maps those rejects to the default.
+    // …and the load-path normalizer maps those rejects to the sentinel.
     expect(normalizeLiteLLMBaseUrl('https://litellm.example.com/?key=1')).toBe(
-      DEFAULT_LITELLM_BASE_URL
+      LITELLM_DEPLOYMENT_DEFAULT
     )
   })
 
@@ -761,6 +764,12 @@ describe('rate-limit cooldown', () => {
 
     expect(result?.cooldownUntil).toBe(future)
     expect(rateLimitCooldownKey()).toBe('rate_limit_cooldown_until:litellm')
+    // The deployment-default sentinel (empty string) scopes to the same key
+    // as "no base URL": an unset Settings value and an omitted argument must
+    // share one cooldown bucket.
+    expect(rateLimitCooldownKey(LITELLM_DEPLOYMENT_DEFAULT)).toBe(
+      'rate_limit_cooldown_until:litellm'
+    )
     expect(await loadCooldown(prefs)).toBe(future)
   })
 
@@ -798,12 +807,13 @@ describe('rate-limit cooldown', () => {
 
   it('initializeChatState loads the stored cooldown and ignores legacy provider-scoped keys', async () => {
     const future = new Date(Date.now() + 60_000).toISOString()
-    const baseUrl = 'https://litellm.labs.lair.nntin.xyz/'
+    const baseUrl = 'https://litellm.example.com/'
     const prefs = makePreferences({
       [rateLimitCooldownKey(baseUrl)]: future,
-      // Values written by the removed GitHub Models/OpenRouter providers (and
-      // by builds that used an unscoped litellm key) are simply orphaned; they
-      // self-expire without migration.
+      // The unscoped litellm key now belongs to the deployment-default scope;
+      // with an explicit base URL it is simply a different bucket. Values
+      // written by the removed GitHub Models/OpenRouter providers are
+      // orphaned and self-expire without migration.
       'rate_limit_cooldown_until:litellm': future,
       'rate_limit_cooldown_until:github': future,
       'rate_limit_cooldown_until:openrouter': future

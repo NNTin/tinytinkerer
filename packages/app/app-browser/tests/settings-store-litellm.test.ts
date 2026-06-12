@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { PreferencesStore } from '@tinytinkerer/app-core'
-import { DEFAULT_LITELLM_BASE_URL } from '@tinytinkerer/app-core'
+import { LITELLM_DEPLOYMENT_DEFAULT } from '@tinytinkerer/app-core'
 import { createSettingsStore } from '../src/stores/settings-store.js'
 import type { BrowserShell } from '../src/shell.js'
 
@@ -48,7 +48,7 @@ describe('settings-store setLiteLLMBaseUrl', () => {
     expect(store.getState().litellmBaseUrlError).toBe(
       'The base URL must start with https://.'
     )
-    expect(store.getState().litellmBaseUrl).toBe(DEFAULT_LITELLM_BASE_URL)
+    expect(store.getState().litellmBaseUrl).toBe(LITELLM_DEPLOYMENT_DEFAULT)
     expect(preferences.store.has('settings_litellm_base_url')).toBe(false)
   })
 

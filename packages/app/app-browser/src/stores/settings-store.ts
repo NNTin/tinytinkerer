@@ -4,7 +4,7 @@ import type {
   McpServerConfig,
   PluginActivationState
 } from '@tinytinkerer/contracts'
-import { DEFAULT_MODEL, DEFAULT_LITELLM_BASE_URL } from '@tinytinkerer/app-core'
+import { DEFAULT_MODEL, LITELLM_DEPLOYMENT_DEFAULT } from '@tinytinkerer/app-core'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { BrowserShell } from '../shell'
 import { loadCoreModule } from '../core-module'
@@ -87,7 +87,7 @@ const defaultSettingsState = (): Omit<
 > => ({
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
-  litellmBaseUrl: DEFAULT_LITELLM_BASE_URL,
+  litellmBaseUrl: LITELLM_DEPLOYMENT_DEFAULT,
   litellmBaseUrlError: null,
   agentType: DEFAULT_AGENT_TYPE,
   searchEnabled: true,

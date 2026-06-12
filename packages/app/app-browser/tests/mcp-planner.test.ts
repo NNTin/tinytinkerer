@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { llmPlan, type PlannerToolDescriptor } from '../src/runtime/mcp-planner.js'
 import { LiteLLMProvider } from '../src/runtime/litellm-provider.js'
-import type { EdgeFetch } from '../src/runtime/edge-fetch.js'
+import type { ModelsChatFetch } from '../src/runtime/edge-fetch.js'
 
 const descriptor: PlannerToolDescriptor = {
   id: 'mcp:server-1:get_weather',
@@ -18,7 +18,7 @@ const validPlan = {
   ]
 }
 
-const makeEdgeFetch = (responseBody: unknown, status = 200): EdgeFetch =>
+const makeModelsChat = (responseBody: unknown, status = 200): ModelsChatFetch =>
   vi.fn().mockResolvedValue(
     new Response(JSON.stringify(responseBody), {
       status,
@@ -31,26 +31,25 @@ afterEach(() => {
 })
 
 describe('llmPlan', () => {
-  it('calls /api/models/chat with tool descriptors in the system message', async () => {
-    const edgeFetch = makeEdgeFetch({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
+  it('requests a plan with tool descriptors in the system message', async () => {
+    const modelsChat = makeModelsChat({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
 
-    await llmPlan('What is the weather?', [], [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
+    await llmPlan('What is the weather?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat)
 
-    expect(edgeFetch).toHaveBeenCalledOnce()
-    const [path, body] = (edgeFetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, { provider: string; model: string; messages: Array<{ role: string; content: string }> }]
-    expect(path).toBe('/api/models/chat')
-    expect(body.provider).toBe('litellm')
-    expect(body.model).toBe('openai/gpt-4.1-mini')
+    expect(modelsChat).toHaveBeenCalledOnce()
+    const [init] = (modelsChat as ReturnType<typeof vi.fn>).mock.calls[0] as [{ model: string; stream: boolean; messages: Array<{ role: string; content: string }> }]
+    expect(init.model).toBe('openai/gpt-4.1-mini')
+    expect(init.stream).toBe(false)
 
-    const systemMsg = body.messages.find((m) => m.role === 'system')
+    const systemMsg = init.messages.find((m) => m.role === 'system')
     expect(systemMsg?.content).toContain('mcp:server-1:get_weather')
     expect(systemMsg?.content).toContain('Get current weather')
   })
 
   it('returns the parsed ExecutionPlan on a successful response', async () => {
-    const edgeFetch = makeEdgeFetch({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
+    const modelsChat = makeModelsChat({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
 
-    const plan = await llmPlan('What is the weather?', [], [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
+    const plan = await llmPlan('What is the weather?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat)
 
     expect(plan.complexity).toBe('medium')
     expect(plan.steps).toHaveLength(3)
@@ -60,32 +59,32 @@ describe('llmPlan', () => {
 
   it('strips markdown code fences before parsing JSON', async () => {
     const fenced = '```json\n' + JSON.stringify(validPlan) + '\n```'
-    const edgeFetch = makeEdgeFetch({ choices: [{ message: { content: fenced } }] })
+    const modelsChat = makeModelsChat({ choices: [{ message: { content: fenced } }] })
 
-    const plan = await llmPlan('What is the weather?', [], [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
+    const plan = await llmPlan('What is the weather?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat)
 
     expect(plan.complexity).toBe('medium')
   })
 
   it('throws when the model returns malformed JSON', async () => {
-    const edgeFetch = makeEdgeFetch({ choices: [{ message: { content: 'not valid json' } }] })
+    const modelsChat = makeModelsChat({ choices: [{ message: { content: 'not valid json' } }] })
 
     await expect(
-      llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
+      llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat)
     ).rejects.toThrow()
   })
 
   it('throws when the response is not ok', async () => {
-    const edgeFetch = makeEdgeFetch({ error: 'Service Unavailable' }, 503)
+    const modelsChat = makeModelsChat({ error: 'Service Unavailable' }, 503)
 
     await expect(
-      llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
+      llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat)
     ).rejects.toThrow('Planning request failed (503)')
   })
 
   it('throws a typed rate limit error when the planner is rate limited', async () => {
     const retryAt = new Date(Date.now() + 120_000).toISOString()
-    const edgeFetch = makeEdgeFetch(
+    const modelsChat = makeModelsChat(
       {
         code: 'rate_limited',
         error: 'planner limited',
@@ -96,7 +95,7 @@ describe('llmPlan', () => {
     )
 
     await expect(
-      llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
+      llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat)
     ).rejects.toMatchObject({
       name: 'RateLimitError',
       retryAfterMs: 120_000,
@@ -104,35 +103,33 @@ describe('llmPlan', () => {
     })
   })
 
-  it('forwards the abort signal to edgeFetch', async () => {
-    const edgeFetch = makeEdgeFetch({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
+  it('forwards the abort signal to the models/chat call', async () => {
+    const modelsChat = makeModelsChat({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
     const controller = new AbortController()
 
-    await llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', edgeFetch, controller.signal)
+    await llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat, controller.signal)
 
-    const [, , options] = (edgeFetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
-      string,
+    const [, options] = (modelsChat as ReturnType<typeof vi.fn>).mock.calls[0] as [
       unknown,
-      { signal?: AbortSignal; area?: string; stream?: boolean } | undefined
+      { signal?: AbortSignal; area?: string } | undefined
     ]
     expect(options?.signal).toBe(controller.signal)
     expect(options?.area).toBe('planning.chat')
-    expect(options?.stream).toBe(false)
   })
 
   it('includes conversation history before the user prompt', async () => {
-    const edgeFetch = makeEdgeFetch({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
+    const modelsChat = makeModelsChat({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
     const history = [
       { role: 'user' as const, content: 'hello' },
       { role: 'assistant' as const, content: 'hi there' }
     ]
 
-    await llmPlan('follow-up question', history, [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
+    await llmPlan('follow-up question', history, [descriptor], 'openai/gpt-4.1-mini', modelsChat)
 
-    const [, body] = (edgeFetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, { messages: Array<{ role: string; content: string }> }]
-    const roles = body.messages.map((m) => m.role)
+    const [init] = (modelsChat as ReturnType<typeof vi.fn>).mock.calls[0] as [{ messages: Array<{ role: string; content: string }> }]
+    const roles = init.messages.map((m) => m.role)
     expect(roles).toEqual(['system', 'user', 'assistant', 'user'])
-    expect(body.messages[3]?.content).toBe('follow-up question')
+    expect(init.messages[3]?.content).toBe('follow-up question')
   })
 })
 

@@ -1,6 +1,6 @@
 import {
   DEFAULT_MODEL,
-  DEFAULT_LITELLM_BASE_URL,
+  LITELLM_DEPLOYMENT_DEFAULT,
   normalizeLiteLLMBaseUrl,
   normalizeSelectedModel
 } from './models'
@@ -80,7 +80,7 @@ const parseAgentType = (value: string | undefined): AgentType => {
 export const defaultSettingsState = (): SettingsState => ({
   hydrated: false,
   selectedModel: DEFAULT_MODEL,
-  litellmBaseUrl: DEFAULT_LITELLM_BASE_URL,
+  litellmBaseUrl: LITELLM_DEPLOYMENT_DEFAULT,
   agentType: DEFAULT_AGENT_TYPE,
   searchEnabled: true,
   webSpeechEnabled: false,

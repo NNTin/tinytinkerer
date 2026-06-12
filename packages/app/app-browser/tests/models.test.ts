@@ -160,10 +160,13 @@ describe('fetchModels', () => {
       )
     vi.stubGlobal('fetch', fetchSpy)
 
+    // No litellmBaseUrl option: the deployment-default sentinel. The request
+    // must omit the param entirely so the edge resolves its own configured
+    // URL, and the cache entry must be scoped separately from explicit URLs
+    // (issue #179).
     const defaultResult = await fetchModels(
       'https://api.example.com',
-      'github-token',
-      { litellmBaseUrl: 'https://litellm.labs.lair.nntin.xyz/' }
+      'github-token'
     )
     const customResult = await fetchModels(
       'https://api.example.com',
@@ -175,12 +178,18 @@ describe('fetchModels', () => {
     expect(customResult).toEqual({ models: customModels, fromFallback: false })
     expect(fetchSpy).toHaveBeenCalledTimes(2)
     expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('provider=litellm')
-    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain(
-      'litellmBaseUrl=https%3A%2F%2Flitellm.labs.lair.nntin.xyz%2F'
-    )
+    expect(String(fetchSpy.mock.calls[0]?.[0])).not.toContain('litellmBaseUrl')
     expect(String(fetchSpy.mock.calls[1]?.[0])).toContain(
       'litellmBaseUrl=https%3A%2F%2Flitellm.example.com%2F'
     )
+
+    // Both entries are cached under their own scope: repeating each call
+    // serves from cache without another network request.
+    await fetchModels('https://api.example.com', 'github-token')
+    await fetchModels('https://api.example.com', 'github-token', {
+      litellmBaseUrl: 'https://litellm.example.com/'
+    })
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
 
   it.each([429, 503])(

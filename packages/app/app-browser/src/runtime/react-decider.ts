@@ -4,12 +4,11 @@ import {
 } from '../telemetry/request-telemetry'
 import type { DecisionChunk, ExecutionContext } from '@tinytinkerer/app-core'
 import {
-  EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
   reactDecisionSchema,
   type ReActDecision
 } from '@tinytinkerer/contracts'
-import type { EdgeFetch } from './edge-fetch'
+import type { ModelsChatFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createRateLimitError } from './rate-limit'
 import { parseSseStream, splitInlineThink } from './sse-utils'
@@ -133,9 +132,8 @@ export const decideNextAction = async (
   context: ExecutionContext,
   tools: PlannerToolDescriptor[],
   model: string,
-  edgeFetch: EdgeFetch,
-  signal?: AbortSignal,
-  litellmBaseUrl?: string
+  modelsChat: ModelsChatFetch,
+  signal?: AbortSignal
 ): Promise<ReActDecision> => {
   const systemPrompt = buildDecisionSystemPrompt(tools)
 
@@ -145,19 +143,10 @@ export const decideNextAction = async (
     { role: 'user' as const, content: buildObservations(context) }
   ]
 
-  const response = await edgeFetch(
-    EDGE_ROUTE_PATHS.modelsChat,
-    {
-      provider: 'litellm',
-      ...(litellmBaseUrl ? { litellmBaseUrl } : {}),
-      model,
-      stream: false,
-      messages
-    },
+  const response = await modelsChat(
+    { model, stream: false, messages },
     {
       area: 'react.decide',
-      model,
-      stream: false,
       ...(signal ? { signal } : {})
     }
   )
@@ -199,9 +188,8 @@ export async function* streamDecision(
   context: ExecutionContext,
   tools: PlannerToolDescriptor[],
   model: string,
-  edgeFetch: EdgeFetch,
-  signal?: AbortSignal,
-  litellmBaseUrl?: string
+  modelsChat: ModelsChatFetch,
+  signal?: AbortSignal
 ): AsyncGenerator<DecisionChunk> {
   const systemPrompt = buildDecisionSystemPrompt(tools)
 
@@ -211,19 +199,10 @@ export async function* streamDecision(
     { role: 'user' as const, content: buildObservations(context) }
   ]
 
-  const response = await edgeFetch(
-    EDGE_ROUTE_PATHS.modelsChat,
-    {
-      provider: 'litellm',
-      ...(litellmBaseUrl ? { litellmBaseUrl } : {}),
-      model,
-      stream: true,
-      messages
-    },
+  const response = await modelsChat(
+    { model, stream: true, messages },
     {
       area: 'react.decide',
-      model,
-      stream: true,
       ...(signal ? { signal } : {})
     }
   )
