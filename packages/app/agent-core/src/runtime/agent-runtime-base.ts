@@ -574,7 +574,7 @@ export abstract class AgentRuntimeBase {
           session.replace(
             cancelled
               ? 'Retry cancelled.'
-              : 'GitHub Models is rate limited. This request was cancelled because the cooldown is longer than five minutes.'
+              : 'The model service is rate limited. This request was cancelled because the cooldown is longer than five minutes.'
           )
         )
         return

@@ -11,7 +11,6 @@ import {
 } from '@tinytinkerer/app-core'
 import {
   EDGE_ROUTE_PATHS,
-  edgeErrorResponseSchema,
   modelsChatResponseSchema,
   type ExecutionPlan,
   type PlanStep,
@@ -21,17 +20,16 @@ import { SYSTEM_STYLE_PROMPT } from './system-prompt'
 import { createRateLimitError } from './rate-limit'
 import { RateLimitQuota } from './quota-tracker'
 import {
+  createEdgeError,
   createEdgeFetch,
   createModelsChatFetch,
-  modelsChatRequestBody,
   type ModelsChatFetch
 } from './edge-fetch'
-import { getTelemetryHeaders } from '../telemetry/telemetry'
 import {
-  fetchWithTelemetry,
   ModelJsonError,
   parseJsonWithTelemetry,
   parseWithTelemetry,
+  type AcceptedOutcome,
   type RequestTelemetryMetadata
 } from '../telemetry/request-telemetry'
 import { llmPlan, type PlannerToolDescriptor } from './mcp-planner'
@@ -59,14 +57,20 @@ type LiteLLMProviderOptions = {
   allToolDescriptors?: PlannerToolDescriptor[]
 }
 
-const createEdgeError = async (response: Response, fallback: string): Promise<Error> => {
-  const parsed = await response
-    .clone()
-    .json()
-    .then((value) => edgeErrorResponseSchema.safeParse(value))
-    .catch(() => undefined)
-
-  return new Error(parsed?.success ? parsed.data.error : fallback)
+// SYNTHESIZE is the *second* models.chat call site, alongside the DECIDE path
+// (streamDecision/decideNextAction → react-decider). A fix applied only to
+// DECIDE leaves this one firing the identical 429, so both must accept the same
+// outcomes. AbortError = the user cancelling an in-flight stream. A 429 is the
+// unavoidable call that OPENS each LiteLLM backoff window — the edge already
+// short-circuits /api/models/chat while a window is open
+// (apps/edge/.../rate-limit.ts), and the runtime turns the 429 into a
+// RateLimitError → cooldown banner, so it is handled, not a captured error
+// (TINYTINKERER-FRONTEND-B).
+const SYNTHESIZE_ACCEPT: AcceptedOutcome = {
+  kinds: ['abort'],
+  status: [429],
+  reason:
+    'AbortError = user cancels an in-flight stream; 429 = the call that opens the durable backoff window; cooldown UX handles it (FRONTEND-B).'
 }
 
 export class LiteLLMProvider implements ModelProvider {
@@ -236,54 +240,26 @@ export class LiteLLMProvider implements ModelProvider {
         .join('')
 
       const selectedModel = this.options.getModel?.() ?? DEFAULT_MODEL
-      const requestInit: RequestInit = {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${token}`,
-          ...getTelemetryHeaders()
+      // Route through the shared models/chat fetch so request shape, auth, and
+      // telemetry accept-rules live in one place (createEdgeFetch). The
+      // SYNTHESIZE_ACCEPT rule travels with the call so its 429-window-opener is
+      // triaged identically to DECIDE (TINYTINKERER-FRONTEND-B).
+      const response = await this.modelsChatFetch(token)(
+        {
+          model: selectedModel,
+          stream: true,
+          messages: [
+            { role: 'system', content: SYSTEM_STYLE_PROMPT },
+            ...context.history,
+            { role: 'user', content: userContent }
+          ]
         },
-        body: JSON.stringify(
-          modelsChatRequestBody(this.options.getLiteLLMBaseUrl?.(), {
-            model: selectedModel,
-            stream: true,
-            messages: [
-              { role: 'system', content: SYSTEM_STYLE_PROMPT },
-              ...context.history,
-              { role: 'user', content: userContent }
-            ]
-          })
-        )
-      }
-
-      if (options?.signal) {
-        requestInit.signal = options.signal
-      }
-
-      const metadata: RequestTelemetryMetadata = {
-        area: 'models.chat',
-        origin: 'edge',
-        method: 'POST',
-        url: `${this.options.baseUrl}${EDGE_ROUTE_PATHS.modelsChat}`,
-        model: selectedModel,
-        stream: true,
-        // SYNTHESIZE is the *second* models.chat call site, alongside the DECIDE
-        // path (streamDecision/decideNextAction → edge-fetch.ts). A fix applied
-        // only to DECIDE leaves this one firing the identical 429, so both must
-        // accept the same outcomes. AbortError = the user cancelling an in-flight
-        // stream. A 429 is the unavoidable call that OPENS each LiteLLM
-        // backoff window — the edge already short-circuits /api/models/chat while a
-        // window is open (apps/edge/.../rate-limit.ts), and the runtime turns the
-        // 429 into a RateLimitError → cooldown banner, so it is handled, not a
-        // captured error (TINYTINKERER-FRONTEND-B).
-        accept: {
-          kinds: ['abort'],
-          status: [429],
-          reason:
-            'AbortError = user cancels an in-flight stream; 429 = the call that opens the durable backoff window; cooldown UX handles it (FRONTEND-B).'
+        {
+          area: 'models.chat',
+          accept: SYNTHESIZE_ACCEPT,
+          ...(options?.signal ? { signal: options.signal } : {})
         }
-      }
-      const response = await fetchWithTelemetry(metadata, requestInit)
+      )
 
       this.quota.updateFromHeaders(response.headers)
 
@@ -305,6 +281,18 @@ export class LiteLLMProvider implements ModelProvider {
         return
       }
 
+      // Defensive non-streamed fallback (synthesize always requests stream:true).
+      // Rebuild the metadata the parse helpers need — mirrors react-decider,
+      // which likewise reconstructs it after going through the shared fetch.
+      const metadata: RequestTelemetryMetadata = {
+        area: 'models.chat',
+        origin: 'edge',
+        method: 'POST',
+        url: `${this.options.baseUrl}${EDGE_ROUTE_PATHS.modelsChat}`,
+        model: selectedModel,
+        stream: true,
+        accept: SYNTHESIZE_ACCEPT
+      }
       const rawJson = await parseJsonWithTelemetry<Record<string, unknown>>(metadata, response)
       const reasoning = extractReasoning(
         (rawJson['choices'] as Array<Record<string, unknown>> | undefined)?.[0]?.['message']
