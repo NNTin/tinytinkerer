@@ -32,7 +32,7 @@ export const createRateLimitError = async (response: Response): Promise<RateLimi
     ? parsed.retryAt
     : new Date(Date.now() + retryAfterMs).toISOString()
 
-  return new RateLimitError(parsed?.error ?? (rawText || 'GitHub Models is rate limited'), {
+  return new RateLimitError(parsed?.error ?? (rawText || 'The model service is rate limited'), {
     retryAfterMs,
     retryAt
   })

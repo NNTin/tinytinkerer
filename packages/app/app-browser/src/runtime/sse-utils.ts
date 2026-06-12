@@ -43,7 +43,7 @@ const partialTagSuffixLength = (text: string, tag: string): number => {
   return 0
 }
 
-// Some reasoning models (e.g. DeepSeek-R1 via GitHub Models) stream their
+// Some reasoning models (e.g. DeepSeek-R1 via LiteLLM) stream their
 // chain-of-thought inline in the content wrapped in <think>…</think> rather than
 // in a separate reasoning_content delta. Re-route those regions to the reasoning
 // channel so they render in the activity panel instead of the final answer.

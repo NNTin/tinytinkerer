@@ -4,27 +4,13 @@ import {
 } from '../telemetry/request-telemetry'
 import type { DecisionChunk, ExecutionContext } from '@tinytinkerer/app-core'
 import {
-  edgeErrorResponseSchema,
   reactDecisionSchema,
   type ReActDecision
 } from '@tinytinkerer/contracts'
-import type { ModelsChatFetch } from './edge-fetch'
+import { createEdgeError, type ModelsChatFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createRateLimitError } from './rate-limit'
 import { parseSseStream, splitInlineThink } from './sse-utils'
-
-const createEdgeError = async (
-  response: Response,
-  fallback: string
-): Promise<Error> => {
-  const parsed = await response
-    .clone()
-    .json()
-    .then((value) => edgeErrorResponseSchema.safeParse(value))
-    .catch(() => undefined)
-
-  return new Error(parsed?.success ? parsed.data.error : fallback)
-}
 
 const buildDecisionSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
   const toolDocs = tools
