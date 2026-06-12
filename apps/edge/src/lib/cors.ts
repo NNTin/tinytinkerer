@@ -80,7 +80,7 @@ export const resolveAllowedOrigin = (
 }
 
 // Generated from the OpenAPI source so the exposed set never drifts from the
-// GitHub Models rate-limit headers the proxy actually forwards (plus retry-after).
+// LiteLLM rate-limit headers the proxy actually forwards (plus retry-after).
 const EXPOSED_HEADERS = [...EDGE_EXPOSED_HEADERS].join(', ')
 
 export const applyCorsHeaders = (

@@ -9,12 +9,24 @@ export { parseRetryAfterMs }
 const DEFAULT_RATE_LIMIT_RETRY_AFTER_MS = 60_000
 const RATE_LIMIT_ERROR = 'LiteLLM rate limit reached'
 
+// Cap the upstream-body preview we log so a verbose (or sensitive) 429 body is
+// never written to the logs verbatim — a truncated, whitespace-collapsed
+// summary is enough to recognise the upstream error class (security LOW-2).
+const RATE_LIMIT_BODY_LOG_MAX = 200
+
 export const toRateLimitResponse = (
   rawText: string,
   retryAfter: string | null
 ): RateLimitPayload => {
   if (rawText) {
-    console.error('[rate-limit] upstream 429 body', rawText)
+    const summary = rawText.replace(/\s+/g, ' ').trim()
+    console.error('[rate-limit] upstream 429 body', {
+      length: rawText.length,
+      preview:
+        summary.length > RATE_LIMIT_BODY_LOG_MAX
+          ? `${summary.slice(0, RATE_LIMIT_BODY_LOG_MAX - 1)}…`
+          : summary
+    })
   }
   const retryAfterMs = parseRetryAfterMs(retryAfter) ?? DEFAULT_RATE_LIMIT_RETRY_AFTER_MS
   const retryAt = new Date(Date.now() + retryAfterMs).toISOString()

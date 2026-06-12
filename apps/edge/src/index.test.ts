@@ -613,6 +613,44 @@ describe('edge routes', () => {
     expect(upstreamCalls(fetchSpy)).toHaveLength(2)
   })
 
+  // A fresh catalogue is identical for every caller, so the list route serves it
+  // before — and WITHOUT — the GitHub caller-validation probe, mirroring the
+  // chat route's backoff-before-probe ordering (issue #177). Pinned with a token
+  // GitHub would reject: the cache hit must still answer 200 and never probe.
+  it('serves a fresh cached models list before (and without) the GitHub caller-validation probe (issue #177)', async () => {
+    const { store, cache } = makeCacheMock()
+    store.set(
+      cacheKeyForScope(DEFAULT_LITELLM_SCOPE),
+      new Response(JSON.stringify([{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]), {
+        headers: { 'x-models-cached-at': String(Date.now()) }
+      })
+    )
+    vi.stubGlobal('caches', { default: cache })
+    // Any GitHub probe here would reject the caller (401); reaching it at all
+    // would be the bug. The catalogue fetch must never run either.
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      if (toRequestUrl(input) === GITHUB_USER_URL) {
+        return Promise.resolve(new Response('bad credentials', { status: 401 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/list?provider=litellm', {
+        headers: { authorization: 'Bearer would-be-rejected' }
+      }),
+      LITELLM_ENV
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      models: [{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]
+    })
+    expect(githubProbeCalls(fetchSpy)).toHaveLength(0)
+    expect(upstreamCalls(fetchSpy)).toHaveLength(0)
+  })
+
   it('scopes the models-list cache per LiteLLM base URL', async () => {
     const { cache } = makeCacheMock()
     vi.stubGlobal('caches', { default: cache })
