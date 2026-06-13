@@ -342,7 +342,7 @@ export type TelemetryHeaders = z.infer<typeof telemetryHeadersSchema>
 // "use the deployment default" by omitting `litellmBaseUrl` from requests. A
 // code-level URL here would silently point forks at someone else's LiteLLM —
 // or trip their edge allowlist with a 400 "not allowed" on every request.
-export const DEFAULT_LITELLM_MODEL = 'openai/gpt-5'
+export const DEFAULT_LITELLM_MODEL = 'chatgpt/gpt-5.4'
 
 export const EDGE_ROUTE_PATHS = {
   health: '/health',

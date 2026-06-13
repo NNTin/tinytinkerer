@@ -158,9 +158,9 @@ IDs verbatim in its picker, and prefixed names (`openai/…`, `anthropic/…`,
 
 ```yaml
 model_list:
-  - model_name: openai/gpt-5
+  - model_name: chatgpt/gpt-5.4
     litellm_params:
-      model: openai/gpt-5
+      model: gpt-4o
       api_key: os.environ/OPENAI_API_KEY
   - model_name: openai/gpt-4.1-mini
     litellm_params:
@@ -191,7 +191,7 @@ Notes:
 - **Disable telemetry** (`telemetry: false`) to keep conversation content private
   and maintain user privacy (see [PRIVACY.md](PRIVACY.md)).
 - When a chat request arrives without an explicit model, the edge defaults to
-  `openai/gpt-5`. Either expose a model under that name or change
+  `chatgpt/gpt-5.4`. Either expose a model under that name or change
   `DEFAULT_LITELLM_MODEL` in `packages/shared/contracts/src/edge.ts`.
 - Embedding models can stay in the list; the edge filters them out of the chat
   picker via `/model/info` modes (or a name heuristic when that endpoint is
@@ -343,7 +343,7 @@ LITELLM_USER_RPM_LIMIT=10
 LITELLM_USER_TPM_LIMIT=100000
 
 # Optional: scope generated keys to specific models
-# LITELLM_USER_MODELS=openai/gpt-5,openai/gpt-4.1-mini,github/gpt-5
+# LITELLM_USER_MODELS=chatgpt/gpt-5.4,openai/gpt-4.1-mini,github/gpt-5
 
 # Optional: restrict access to specific GitHub users
 # GITHUB_ALLOWED_USERS=12345,user-login
@@ -380,7 +380,7 @@ URL not on the list are rejected with `400 LiteLLM base URL is not allowed`.
      -H "Authorization: Bearer $LITELLM_USER_API_KEY" \
      -H "Content-Type: application/json" \
      -d '{
-       "model": "openai/gpt-5",
+       "model": "chatgpt/gpt-5.4",
        "messages": [{"role": "user", "content": "ping"}]
      }'
    ```
