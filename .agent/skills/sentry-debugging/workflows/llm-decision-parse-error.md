@@ -56,6 +56,39 @@ Settled `TINYTINKERER-FRONTEND-J` (truncated/malformed decision JSON —
   as env noise (contrast: a `development`/localhost crash *is* noise; see
   `triage-by-environment.md`).
 
+## Planner parse failures create TWO Sentry issues — treat them as one incident
+
+A **planner** (`planning.chat`, `mcp-planner.ts`) parse failure creates **two
+separate Sentry issues** from the same request, because the inner error and the
+outer `ModelJsonError` are each captured by a different handler:
+
+1. **Inner `SyntaxError`** — `parseWithTelemetry` (`model-json.ts:192`) captures
+   the raw parse exception inline and re-throws it. This is captured immediately
+   with `failure_kind: parse_error` and `handled: yes`. Stacktrace bottoms out in
+   `model-json.ts:76` (`parseRobustModelJson`) or `model-json.ts:78`
+   (`JSON5.parse`).
+2. **Outer `ModelJsonError`** — the `catch` at `model-json.ts:200` wraps the
+   `SyntaxError` and re-throws a `ModelJsonError`. The planner re-throws it (no
+   safe prose fallback), and it propagates up through `github-models-provider.ts`
+   → `hybrid-runtime.ts` → `chat.ts` → `chat-store.ts`, where the top-level
+   handler captures it as a second, separate Sentry issue with title
+   `ModelJsonError: Planning response body was not valid JSON`.
+
+**Identification**: both issues share the same `trace_id`, near-identical
+timestamps (within ~10 ms), the same user, and the same `request_area`. When you
+see a `ModelJsonError: Planning response body was not valid JSON` issue, look for a
+sibling `SyntaxError` (no JSON value, or JSON5 parse error) with the same trace —
+they are **one incident**, not two.
+
+**Contrast with the ReAct decider**: `react.decide` creates only **one** Sentry
+issue (the inner `SyntaxError` from `parseWithTelemetry`). `parseDecisionOrFinal`
+catches the outer `ModelJsonError` and recovers to `{ kind: 'final' }` — the
+`ModelJsonError` never escapes to the chat-store handler, so no second issue is
+created.
+
+**Triage action**: resolve them **together** with the same reason; they are not
+two bugs, they are one failure viewed through two capture points.
+
 ## Two parses live at these call sites — keep them distinct
 A model call has **two** parse steps; harden only the right one:
 1. **Envelope parse** — `parseJsonWithTelemetry` of the edge's OpenAI-shaped
