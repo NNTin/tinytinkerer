@@ -70,7 +70,7 @@ const liteLLMModelInfoSchema = z.object({
 const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
   400: 'Invalid request',
   401: 'Authentication failed. The LiteLLM user virtual key may be invalid.',
-  403: 'Access denied. Check the configured LiteLLM virtual key permissions.',
+  403: 'Access denied. The per-user LiteLLM virtual key may lack permission for the requested model.',
   422: 'Unprocessable request',
   500: 'Upstream service error',
   503: 'Upstream service unavailable',

@@ -190,10 +190,12 @@ enough:
 openssl rand -hex 32
 ```
 
-The edge derives deterministic per-user key values from this secret, the
-LiteLLM base URL, and the GitHub numeric id. LiteLLM stores spend against those
-virtual keys, so budget/rate enforcement and per-user spend visibility live in
-LiteLLM.
+The edge derives deterministic per-user key values from this secret and the
+GitHub numeric id (the same inputs as the key's `user_id`/`key_alias`, so the
+alias and its value never disagree). The base URL is deliberately not part of
+the derivation; per-deployment isolation comes from giving each deployment its
+own `LITELLM_USER_KEY_SECRET`. LiteLLM stores spend against those virtual keys,
+so budget/rate enforcement and per-user spend visibility live in LiteLLM.
 
 ### Legacy shared-key safety net
 
@@ -203,9 +205,6 @@ still exists while you roll this change out, set hard limits on it in LiteLLM
 stale Worker cannot spend without a server-side cap. This dashboard/database
 state is not represented in this repo, so record and verify it during incident
 response, restores, and LiteLLM migrations.
-
-The hosted legacy key `tinytinkerer-edge-20260606213400` is currently capped at
-`max_budget=5`, `budget_duration=30d`, `rpm_limit=30`, and `tpm_limit=300000`.
 
 ## 3. Point tinytinkerer at your instance
 
