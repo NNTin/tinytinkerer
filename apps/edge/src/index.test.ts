@@ -547,7 +547,7 @@ describe('edge routes', () => {
       throw new Error('Expected LiteLLM request body to be a JSON string')
     }
     expect((JSON.parse(upstreamBody) as { model: string }).model).toBe(
-      'openai/gpt-5'
+      'chatgpt/gpt-5.4'
     )
   })
 
