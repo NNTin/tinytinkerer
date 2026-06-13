@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { captureTelemetryMessage } from '@tinytinkerer/sentry-telemetry'
 import type { Bindings } from './bindings'
 import type { CallerIdentity } from './caller-validation'
 import { fetchWithTimeout } from './fetch'
@@ -413,13 +414,27 @@ const updateKey = async (
   return response?.ok === true
 }
 
+// Generate has three distinct outcomes that the caller must NOT collapse:
+//   'created'      — LiteLLM accepted the request and echoed back OUR
+//                    deterministic key value; the alias's value provably matches.
+//   'value-mismatch' — LiteLLM accepted the request but minted a DIFFERENT key
+//                    value (it ignored the supplied `key`). Our derived bearer
+//                    will never authenticate, and the alias is now taken so
+//                    regenerate can't recover — the route would otherwise hand
+//                    LiteLLM a non-existent bearer and 401 silently forever. This
+//                    is a hard, surfaced failure, NOT a recoverable race.
+//   'unconfirmed'  — non-ok (e.g. a 400 duplicate-alias race) or an unparseable
+//                    body; the caller re-reads by alias to recover from a
+//                    concurrent first-time provision.
+type GenerateKeyOutcome = 'created' | 'value-mismatch' | 'unconfirmed'
+
 const generateKey = async (
   env: Bindings,
   baseUrl: string,
   apiKey: string,
   expected: ExpectedKeyConfig,
   identity: CallerIdentity
-): Promise<boolean> => {
+): Promise<GenerateKeyOutcome> => {
   const response = await fetchWithTimeout(
     {
       area: 'litellm.key.generate',
@@ -456,11 +471,12 @@ const generateKey = async (
     10_000
   ).catch(() => undefined)
 
-  if (!response?.ok) return false
+  if (!response?.ok) return 'unconfirmed'
   const parsed = generateKeyResponseSchema.safeParse(
     await response.json().catch(() => undefined)
   )
-  return parsed.success && parsed.data.key === apiKey
+  if (!parsed.success) return 'unconfirmed'
+  return parsed.data.key === apiKey ? 'created' : 'value-mismatch'
 }
 
 export const resolveLiteLLMUserKey = async (
@@ -507,7 +523,31 @@ export const resolveLiteLLMUserKey = async (
     }
   }
 
-  if (!(await generateKey(env, baseUrl, apiKey, expected, identity))) {
+  const generated = await generateKey(env, baseUrl, apiKey, expected, identity)
+  if (generated === 'value-mismatch') {
+    // LiteLLM did not honour our deterministic key value. Re-reading by alias
+    // here would find the just-created key and wrongly trust "alias exists ⇒
+    // value matches", so the route would hand LiteLLM a bearer it never stored
+    // and 401 on every call until the marker expires. Fail hard and SURFACE it
+    // so the misconfiguration is visible instead of a silent auth loop. The key
+    // VALUE is never logged — only the user/alias it was provisioned for.
+    captureTelemetryMessage(
+      'LiteLLM /key/generate returned a key value that does not match the deterministic per-user key; provisioning aborted',
+      {
+        level: 'error',
+        tags: {
+          request_area: 'litellm.key.generate',
+          request_origin: 'litellm',
+          failure_kind: 'key_value_mismatch',
+          github_id: identity.id,
+          key_alias: expected.keyAlias
+        },
+        fingerprint: ['litellm-user-key-value-mismatch']
+      }
+    )
+    return undefined
+  }
+  if (generated === 'unconfirmed') {
     const raced = await readKeyInfoByAlias(env, baseUrl, expected.keyAlias)
     if (!raced) return undefined
     if (keyNeedsUpdate(raced, expected)) {

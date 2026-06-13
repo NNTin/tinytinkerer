@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  setCaptureMessageSink,
+  type CaptureMessageSink
+} from '@tinytinkerer/sentry-telemetry'
+import {
   clearLiteLLMUserKeyCache,
-  liteLLMUserCredentialKeyInput,
+  deriveLiteLLMUserCredentialKey,
   requireLiteLLMUserKeyConfiguration,
   resolveLiteLLMUserKey
 } from './litellm-user-keys.js'
@@ -30,13 +34,19 @@ const jsonResponse = (body: unknown, status = 200): Response =>
     headers: { 'content-type': 'application/json' }
   })
 
+// The per-user key alias is namespaced by a non-reversible digest of
+// LITELLM_USER_KEY_SECRET (`tinytinkerer-<digest>-github-<id>`), so tests must
+// not hardcode it.
+const ALIAS_PATTERN = /^tinytinkerer-[0-9a-f]{12}-github-12345$/
+
 /**
  * Key-management fetch stub. `keyInfoForAttempt` lets a test return a different
  * `/v2/key/info` body per call (used by the generate-race path, which re-reads
- * by alias after a duplicate-alias 400).
+ * by alias after a duplicate-alias 400). It receives the alias the route asked
+ * for so an "existing key" response can echo the real (namespaced) alias.
  */
 const keyManagementStub = (options: {
-  keyInfoForAttempt?: (attempt: number) => Response
+  keyInfoForAttempt?: (attempt: number, requestedAlias: string) => Response
   generate?: (body: { key?: string }) => Response
   update?: () => Response
 }) => {
@@ -45,8 +55,12 @@ const keyManagementStub = (options: {
     const path = new URL(toRequestUrl(input)).pathname
     if (path === '/v2/key/info') {
       infoAttempt += 1
+      const rawBody = typeof init?.body === 'string' ? init.body : '{}'
+      const requestedAlias =
+        (JSON.parse(rawBody) as { key_aliases?: string[] }).key_aliases?.[0] ??
+        ''
       return Promise.resolve(
-        options.keyInfoForAttempt?.(infoAttempt) ??
+        options.keyInfoForAttempt?.(infoAttempt, requestedAlias) ??
           jsonResponse({ info: [] })
       )
     }
@@ -81,7 +95,7 @@ describe('litellm-user-keys', () => {
     void clearLiteLLMUserKeyCache()
   })
 
-  it('reports configuration gaps and the credential-key input shape', () => {
+  it('reports configuration gaps', () => {
     expect(requireLiteLLMUserKeyConfiguration({})).toBe(
       'LiteLLM user key provisioning is not configured.'
     )
@@ -91,16 +105,43 @@ describe('litellm-user-keys', () => {
       })
     ).toBe('LiteLLM user key provisioning is not configured.')
     expect(requireLiteLLMUserKeyConfiguration(CONFIGURED_ENV)).toBeUndefined()
+  })
 
-    // The credential-key input must fold in the base URL AND the GitHub id so
-    // one user's backoff/key scope can never collide with another's or with the
-    // same user on a different LiteLLM deployment.
-    expect(liteLLMUserCredentialKeyInput(IDENTITY, BASE_URL)).toBe(
-      `litellm-user:${BASE_URL}:github-12345`
+  it('derives a stable credential key that is distinct per user, base URL, and secret', async () => {
+    const a = await deriveLiteLLMUserCredentialKey(
+      CONFIGURED_ENV,
+      IDENTITY,
+      BASE_URL
     )
+    // Stable for the same inputs (backoff/marker scopes must survive isolates).
     expect(
-      liteLLMUserCredentialKeyInput(OTHER_IDENTITY, BASE_URL)
-    ).not.toBe(liteLLMUserCredentialKeyInput(IDENTITY, BASE_URL))
+      await deriveLiteLLMUserCredentialKey(CONFIGURED_ENV, IDENTITY, BASE_URL)
+    ).toBe(a)
+    // Distinct per GitHub user — one user's backoff/key scope cannot collide.
+    expect(
+      await deriveLiteLLMUserCredentialKey(
+        CONFIGURED_ENV,
+        OTHER_IDENTITY,
+        BASE_URL
+      )
+    ).not.toBe(a)
+    // Distinct per LiteLLM deployment base URL (issue #146).
+    expect(
+      await deriveLiteLLMUserCredentialKey(
+        CONFIGURED_ENV,
+        IDENTITY,
+        'https://other.litellm.nntin.xyz'
+      )
+    ).not.toBe(a)
+    // Distinct per key-minting secret — two deployments on one backend with
+    // different secrets must not share a provisioning marker.
+    expect(
+      await deriveLiteLLMUserCredentialKey(
+        { ...CONFIGURED_ENV, LITELLM_USER_KEY_SECRET: 'a-different-secret' },
+        IDENTITY,
+        BASE_URL
+      )
+    ).not.toBe(a)
   })
 
   it('returns undefined without touching the network when provisioning is unconfigured', async () => {
@@ -130,13 +171,13 @@ describe('litellm-user-keys', () => {
 
     expect(key?.apiKey).toMatch(/^sk-tt-/)
     expect(key?.userId).toBe('github-12345')
-    expect(key?.keyAlias).toBe('tinytinkerer-github-12345')
+    expect(key?.keyAlias).toMatch(ALIAS_PATTERN)
 
     // The minted key carries the per-user budget — this is the whole feature.
     const body = generateBody(fetchSpy)
     expect(body['key']).toBe(key?.apiKey)
     expect(body['user_id']).toBe('github-12345')
-    expect(body['key_alias']).toBe('tinytinkerer-github-12345')
+    expect(body['key_alias']).toBe(key?.keyAlias)
     expect(body['max_budget']).toBe(5)
     expect(body['budget_duration']).toBe('7d')
     expect(body['rpm_limit']).toBe(20)
@@ -199,11 +240,11 @@ describe('litellm-user-keys', () => {
 
   it('reconciles an existing key whose budget has drifted from the configured value', async () => {
     const fetchSpy = keyManagementStub({
-      keyInfoForAttempt: () =>
+      keyInfoForAttempt: (_attempt, requestedAlias) =>
         jsonResponse({
           info: [
             {
-              key_alias: 'tinytinkerer-github-12345',
+              key_alias: requestedAlias,
               user_id: 'github-12345',
               // Operator changed the budget upstream: a concrete differing value
               // must trigger a /key/update, not silently keep the stale budget.
@@ -232,13 +273,13 @@ describe('litellm-user-keys', () => {
     const fetchSpy = keyManagementStub({
       // First /v2/key/info: nothing yet (cold). Second (after the racing 400):
       // the concurrent request already created the alias.
-      keyInfoForAttempt: (attempt) =>
+      keyInfoForAttempt: (attempt, requestedAlias) =>
         attempt === 1
           ? jsonResponse({ info: [] })
           : jsonResponse({
               info: [
                 {
-                  key_alias: 'tinytinkerer-github-12345',
+                  key_alias: requestedAlias,
                   user_id: 'github-12345',
                   max_budget: 1,
                   budget_duration: '30d',
@@ -257,7 +298,65 @@ describe('litellm-user-keys', () => {
     // The race is recoverable: the edge re-reads the alias and serves the key
     // rather than surfacing a provisioning failure.
     expect(key?.apiKey).toMatch(/^sk-tt-/)
-    expect(key?.keyAlias).toBe('tinytinkerer-github-12345')
+    expect(key?.keyAlias).toMatch(ALIAS_PATTERN)
+  })
+
+  // Regression for the flagged Low-severity issue: if LiteLLM accepts the
+  // generate but mints a DIFFERENT key value than the deterministic one we
+  // supplied, our derived bearer can never authenticate. The edge must NOT
+  // re-read the now-existing alias and trust it (that would hand LiteLLM a
+  // non-existent bearer and 401 forever); it must fail hard AND surface it.
+  it('fails hard and reports telemetry when generate echoes a different key value', async () => {
+    const messageSink = vi.fn<CaptureMessageSink>()
+    setCaptureMessageSink(messageSink)
+
+    let aliasReReads = 0
+    const fetchSpy = keyManagementStub({
+      // Cold on the first read; after the mismatched generate the alias DOES
+      // exist upstream (with LiteLLM's own value). The old code re-read this,
+      // trusted "alias exists ⇒ value matches", and returned our derived key —
+      // a bearer LiteLLM never stored. The fix must never reach this re-read.
+      keyInfoForAttempt: (attempt, requestedAlias) => {
+        if (attempt === 1) return jsonResponse({ info: [] })
+        aliasReReads += 1
+        return jsonResponse({
+          info: [
+            {
+              key_alias: requestedAlias,
+              user_id: 'github-12345',
+              max_budget: 1,
+              budget_duration: '30d',
+              rpm_limit: 10,
+              tpm_limit: 100000
+            }
+          ]
+        })
+      },
+      // 200 OK, but LiteLLM ignored our `key` and assigned its own value.
+      generate: () => jsonResponse({ key: 'sk-litellm-assigned-something-else' })
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await expect(
+      resolveLiteLLMUserKey(CONFIGURED_ENV, BASE_URL, IDENTITY)
+    ).resolves.toBeUndefined()
+
+    // It must NOT fall through to the recoverable re-read-by-alias path.
+    expect(aliasReReads).toBe(0)
+
+    const mismatchReport = messageSink.mock.calls.find(
+      ([, options]) => options.tags?.['failure_kind'] === 'key_value_mismatch'
+    )
+    expect(mismatchReport).toBeDefined()
+    expect(mismatchReport?.[1].level).toBe('error')
+    expect(mismatchReport?.[1].tags?.['github_id']).toBe('12345')
+    expect(mismatchReport?.[1].tags?.['key_alias']).toMatch(ALIAS_PATTERN)
+    // The key value itself must never be in telemetry.
+    expect(JSON.stringify(mismatchReport)).not.toContain(
+      'sk-litellm-assigned-something-else'
+    )
+
+    setCaptureMessageSink(null)
   })
 
   it('returns undefined when minting fails and no key exists to fall back to', async () => {
