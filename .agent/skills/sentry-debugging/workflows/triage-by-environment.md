@@ -11,20 +11,27 @@ below is the part that bites.
 
 ## The environment map (the asymmetry that bites)
 
-| Tier | Frontend env tag | Edge env tag |
-|---|---|---|
-| Production (`main`) | `production` | `production` |
-| Develop (`develop`) | `develop` | `develop` |
-| **PR preview** (pull requests) | `pr-preview` | **`develop`** ← reuses the develop edge |
-| Local dev (localhost) | `development` | (local wrangler; not in the shared prod projects) |
+| Tier | Frontend env tag | Edge env tag | Production? |
+|---|---|---|---|
+| Production (`main`) | `production` | `production` | **YES** |
+| Develop (`develop`) | `develop` | `develop` | **YES** — develop IS a live production tier |
+| **PR preview** (pull requests) | `pr-preview` | **`develop`** ← reuses the develop edge | No (PR-specific) |
+| Local dev (localhost) | `development` | (local wrangler; not in the shared prod projects) | No (noise) |
+
+**Both `production` and `develop` are live production tiers** — they serve real
+users, not just the developer. A bug that only appears in `develop` is a real
+production bug and should be treated with the same urgency as `production`. The
+`pr-preview` and `development` environments are the non-production tiers.
 
 - **Frontend = 4 environments** (`production`, `develop`, `pr-preview`,
   `development`). **Edge = 2** (`production`, `develop`) — each worker tags events
   by *which worker served them*, and there is no separate preview worker.
 - **PR-preview traffic hits the DEVELOP edge.** So a bug triggered from a PR
   preview shows as `pr-preview` on the frontend but `develop` on the edge. When
-  you see an edge `develop` error, it may have originated from a PR preview, not
-  the develop branch — don't assume.
+  you see an edge `develop` error, it may have originated from a PR preview (not
+  the develop branch) — correlate via the release SHA to tell them apart (the
+  develop deployment has the HEAD SHA of `develop`; PR-preview traffic carries the
+  PR's merge commit SHA).
 - **`development` = localhost** (default when `VITE_SENTRY_ENVIRONMENT` is unset;
   url `http://localhost:3111/...`, often `HeadlessChrome` from E2E). This is pure
   noise. As of session/tin-41 the frontend no longer initializes Sentry for
@@ -51,15 +58,19 @@ below is the part that bites.
    value — an issue can mix tiers):
    ```
    search_issue_events({ organizationSlug, regionUrl, issueId: "<ID>",
-                         query: "!environment:development", statsPeriod: "30d" })
+                         query: "!environment:development !environment:pr-preview",
+                         statsPeriod: "30d" })
    ```
-   - **Zero non-`development` events** → localhost/E2E noise. Resolve with a reason
-     naming the environment evidence (env tag, `http://localhost` url, HeadlessChrome,
-     a `release` SHA that isn't a deployed release). Don't chase a root cause.
-   - **Has `production` events** → real production bug. This is the priority;
-     triage per `triage-issues.md` (handled fork, accept-or-fix).
-   - **Only `develop` / `pr-preview`** → lower priority than production, but still
-     real signal. A `develop` *edge* issue may be PR-preview traffic — see step 4.
+   - **Zero non-`development` / non-`pr-preview` events** → noise. Resolve with a
+     reason naming the environment evidence (env tag, `http://localhost` url,
+     HeadlessChrome, a `release` SHA that isn't a deployed release). Don't chase
+     a root cause.
+   - **Has `production` or `develop` events** → **real production bug**. Both
+     `production` and `develop` are live tiers — treat them with equal urgency.
+     Triage per `triage-issues.md` (handled fork, accept-or-fix).
+   - **Only `pr-preview`** → real signal (a PR-specific regression), but lower
+     priority than a live-tier issue. A `pr-preview` frontend event's sibling
+     edge event is tagged `develop` — see step 4 to correlate via release SHA.
 
 4. **Correlate cross-tier / cross-project via the release SHA.** The release stays
    the **7-char git SHA** across all environments and both projects (source maps

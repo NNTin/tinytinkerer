@@ -189,12 +189,15 @@ export const parseModelJsonWithTelemetry = <T>(
     // parseRobustModelJson tolerates sloppy-but-complete model output (prose
     // wrapping, single quotes, trailing commas) but never repairs a truncated
     // value — so genuine incompleteness still surfaces as a parse_error.
+    // Pass `stripped` as rawInput so Sentry captures what the model returned,
+    // making parse_error events self-diagnosable without breadcrumbs or replays.
     parsed = parseWithTelemetry<unknown>(
       metadata,
       'parse_error',
       messages.parseError,
       () => parseRobustModelJson(stripped),
-      response
+      response,
+      stripped
     )
   } catch (error) {
     throw new ModelJsonError('parse_error', messages.parseError, { cause: error })

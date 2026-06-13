@@ -7,6 +7,33 @@ export type RequestTelemetryKind =
   | 'parse_error'
   | 'schema_error'
 
+const MAX_RESPONSE_BODY_LENGTH = 1_000
+const MAX_RAW_INPUT_LENGTH = 1_000
+
+// Redact credential patterns before including a response body in Sentry context.
+// LiteLLM error messages sometimes echo back the bearer key that was presented
+// (e.g. "Received Key=sk-…"), so scrub sk-* and Bearer tokens defensively.
+const scrubResponseBody = (body: string): string =>
+  body
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+    .replace(/\bsk-[A-Za-z0-9._-]{6,}/g, 'sk-[redacted]')
+
+const RATE_LIMIT_RESPONSE_HEADERS = [
+  'retry-after',
+  'x-ratelimit-limit-requests',
+  'x-ratelimit-remaining-requests',
+  'x-ratelimit-reset-requests'
+] as const
+
+const extractRateLimitHeaders = (response: Response): Record<string, string> => {
+  const result: Record<string, string> = {}
+  for (const header of RATE_LIMIT_RESPONSE_HEADERS) {
+    const value = response.headers.get(header)
+    if (value !== null) result[header] = value
+  }
+  return result
+}
+
 export type AcceptedOutcome = {
   /** HTTP status codes that are an expected, non-actionable outcome for this call. */
   status?: readonly number[]
@@ -47,6 +74,19 @@ type RequestTelemetryIssue = {
   level?: 'warning' | 'error'
   response?: Response
   error?: unknown
+  /**
+   * Already-read (and scrubbed) response body. Pass this when the caller has
+   * already consumed `response.body` — `captureRequestIssue` cannot clone and
+   * re-read it at that point. In `fetchWithTelemetry` the clone is done
+   * automatically; manual callers that read the body first should pass it here.
+   */
+  responseBody?: string
+  /**
+   * Raw text being parsed, for `parse_error` / `schema_error` events. Included
+   * in the `failure` context (truncated) so future agents can see what the model
+   * or upstream returned without needing to fetch breadcrumbs or replays.
+   */
+  rawInput?: string
 }
 
 const CAPTURED_REQUEST_ERROR = Symbol('capturedRequestError')
@@ -128,6 +168,7 @@ const buildRequestTags = (
   response?: Response
 ): Record<string, string | number | boolean | undefined> => {
   const model = sanitizeModelForTelemetry(metadata.model)
+  const { host, path } = sanitizeRequestLocation(metadata.url)
   return {
     request_area: metadata.area,
     request_origin: metadata.origin,
@@ -136,6 +177,10 @@ const buildRequestTags = (
     failure_kind: kind,
     stream: metadata.stream ?? false,
     model,
+    // Promote path and host to searchable Sentry tags (they are also in the
+    // `request` context but tags are filterable across issues).
+    path,
+    ...(host ? { host } : {}),
     // `request_provider` is what the client asked for; `provider_missing` flags
     // a request that omitted the provider field (sentinel `'absent'`) and was
     // silently defaulted. Only emitted where the metadata opts in (model routes).
@@ -171,7 +216,9 @@ const buildRequestFingerprint = (
 const buildRequestContexts = (
   metadata: RequestTelemetryMetadata,
   kind: RequestTelemetryKind,
-  response?: Response
+  response?: Response,
+  responseBody?: string,
+  rawInput?: string
 ): Record<string, Record<string, unknown>> => {
   const model = sanitizeModelForTelemetry(metadata.model)
   return {
@@ -190,13 +237,26 @@ const buildRequestContexts = (
         : {})
     },
     failure: {
-      kind
+      kind,
+      // Raw text that failed to parse — lets future agents see what the model
+      // or upstream actually returned without needing breadcrumbs or replays.
+      ...(rawInput !== undefined
+        ? { raw_input: rawInput.slice(0, MAX_RAW_INPUT_LENGTH) }
+        : {})
     },
     ...(response
       ? {
           response: {
             status: response.status,
-            statusText: response.statusText
+            statusText: response.statusText,
+            // Upstream error body (scrubbed, truncated) — avoids having to
+            // fetch breadcrumbs or the raw response to see WHY a request failed.
+            ...(responseBody !== undefined
+              ? { body: responseBody.slice(0, MAX_RESPONSE_BODY_LENGTH) }
+              : {}),
+            // Rate-limit headers on any response that carries them (not just
+            // 429s — some upstreams return Retry-After on 503 too).
+            ...extractRateLimitHeaders(response)
           }
         }
       : {})
@@ -239,7 +299,13 @@ export const captureRequestIssue = (
   captureTelemetryException(error, {
     level: issue.level ?? toLevel(issue.kind, issue.response),
     tags: buildRequestTags(metadata, issue.kind, issue.response),
-    contexts: buildRequestContexts(metadata, issue.kind, issue.response),
+    contexts: buildRequestContexts(
+      metadata,
+      issue.kind,
+      issue.response,
+      issue.responseBody,
+      issue.rawInput
+    ),
     fingerprint: buildRequestFingerprint(metadata, issue.kind, issue.response)
   })
 }
@@ -253,10 +319,18 @@ export const fetchWithTelemetry = async (
     const response = await fetch(metadata.url, init)
     if (!response.ok) {
       const location = sanitizeRequestLocation(metadata.url)
+      // Clone before reading so the caller can still consume the original body.
+      // Error responses are typically short JSON; the clone's body is read once
+      // and discarded. On failure (e.g. the body is a locked stream) we capture
+      // without body rather than surfacing a secondary error.
+      const bodyText = await response.clone().text().catch(() => undefined)
+      const scrubbedBody =
+        bodyText !== undefined ? scrubResponseBody(bodyText) : undefined
       captureRequestIssue(metadata, {
         kind: 'http_error',
         message: `${metadata.method} ${location.path} failed (${response.status})`,
-        response
+        response,
+        ...(scrubbedBody !== undefined ? { responseBody: scrubbedBody } : {})
       })
     }
     return response
@@ -306,7 +380,13 @@ export const parseWithTelemetry = <T>(
   kind: Extract<RequestTelemetryKind, 'parse_error' | 'schema_error'>,
   message: string,
   parse: () => T,
-  response?: Response
+  response?: Response,
+  /**
+   * Raw text being parsed. When provided, included in the `failure.raw_input`
+   * context (truncated to {@link MAX_RAW_INPUT_LENGTH}) so future agents can
+   * see what the model or upstream actually returned without needing replays.
+   */
+  rawInput?: string
 ): T => {
   try {
     return parse()
@@ -316,7 +396,8 @@ export const parseWithTelemetry = <T>(
       kind,
       message,
       error: normalizedError,
-      ...(response ? { response } : {})
+      ...(response ? { response } : {}),
+      ...(rawInput !== undefined ? { rawInput } : {})
     })
     throw error
   }

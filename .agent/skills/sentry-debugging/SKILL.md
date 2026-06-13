@@ -55,9 +55,10 @@ The MCP gives you ~27 tools across three groups: **inspect** issues & events, re
 ## Segment by environment FIRST (multi-environment setup)
 The two projects do **not** share the same environment set, and one user action can be tagged differently per tier — so **always check the `environment` tag distribution before investigating an issue**. Full SOP: `workflows/triage-by-environment.md`.
 - **Frontend = 4 envs** (`production`, `develop`, `pr-preview`, `development`). **Edge = 2** (`production`, `develop`) — each worker tags by which worker served the request; there is no preview worker.
-- **PR-preview frontend traffic hits the DEVELOP edge** → its edge events are tagged `develop`, NOT `pr-preview`. An edge `develop` error may actually be PR-preview traffic.
+- **Both `production` AND `develop` are live production tiers.** A bug that only appears in `develop` is a real production bug — treat it with the same urgency as `production`. Only `pr-preview` (PR-specific) and `development` (localhost) are non-production.
+- **PR-preview frontend traffic hits the DEVELOP edge** → its edge events are tagged `develop`, NOT `pr-preview`. To distinguish a develop-branch error from PR-preview traffic on the edge, correlate via the release SHA (the develop deployment has the HEAD SHA of `develop`; PR previews carry the PR's merge commit SHA).
 - **`development` = localhost** (url `http://localhost:3111/...`, often `HeadlessChrome` E2E, a `release` SHA that isn't a deployed release) = pure noise. The frontend no longer inits Sentry for `development` (`packages/app/app-browser/src/telemetry/telemetry.ts` `ensureSentry` gate) — fresh `development` events mean that gate regressed.
-- **Production errors are the priority.** Quick check: `search_issue_events(query: "!environment:development")` — zero results ⇒ localhost noise (resolve with the env evidence, don't chase root cause); has `production` ⇒ real prod bug.
+- **Real-production check:** `search_issue_events(query: "!environment:development !environment:pr-preview")` — zero results ⇒ noise only (resolve with the env evidence, don't chase root cause); has `production` or `develop` ⇒ real production bug.
 - **Cross-tier / cross-project correlation key is the 7-char git SHA release**, not the trace id (a trace often doesn't span both projects). Same SHA is deployed to develop and production intentionally (shared source maps).
 
 ## Triage philosophy (how to decide, not just how to click)

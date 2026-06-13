@@ -31,14 +31,17 @@ Read the **Triage philosophy** in `../SKILL.md` before deciding statuses.
    ```
    get_issue_tag_values({ organizationSlug, regionUrl, issueId: "<ID>", tagKey: "environment" })
    search_issue_events({ organizationSlug, regionUrl, issueId: "<ID>",
-                         query: "!environment:development", statsPeriod: "30d" })
+                         query: "!environment:development !environment:pr-preview",
+                         statsPeriod: "30d" })
    ```
-   Zero non-`development` events ⇒ localhost/E2E **noise** — resolve with the env
-   evidence (env tag, `http://localhost` url, HeadlessChrome, a non-deployed
-   `release` SHA), don't chase a root cause. Has `production` ⇒ real prod bug
-   (priority). Edge `develop` may be PR-preview traffic (it reuses the develop
+   Zero `production`/`develop` events ⇒ `pr-preview` or localhost/E2E **noise** —
+   resolve with the env evidence (env tag, `http://localhost` url, HeadlessChrome,
+   a non-deployed `release` SHA), don't chase a root cause. Has `production` **or
+   `develop`** ⇒ real production bug (equal priority — both are live tiers). Edge
+   `develop` events may originate from PR-preview traffic (it reuses the develop
    edge); the frontend tags it `pr-preview` — correlate via the shared 7-char SHA
-   release. Remember the asymmetry: **frontend has 4 envs, edge has 2.**
+   release to tell them apart. Remember the asymmetry: **frontend has 4 envs, edge
+   has 2.**
 
 4. **For each issue, get details and read the `handled` tag.**
    ```

@@ -51,10 +51,10 @@ Settled `TINYTINKERER-FRONTEND-J` (truncated/malformed decision JSON —
 - `request_area` is a model-output parse site (`react.decide`; future planner /
   synthesize areas behave the same), and the stacktrace bottoms out in
   `JSON.parse` or a zod `.parse` wrapped by `parseWithTelemetry`.
-- Often `pr-preview`/`develop` only at first (a dev exercising a PR) — but it is a
-  real robustness gap that **will** reach production, so fix it, don't dismiss it
-  as env noise (contrast: a `development`/localhost crash *is* noise; see
-  `triage-by-environment.md`).
+- `develop` is a **live production tier** — a `develop`-only parse error is a real
+  production bug, not pre-production noise. A `pr-preview`-only error is
+  PR-specific and lower priority but still real signal. Only `development`
+  (localhost) is noise (see `triage-by-environment.md`).
 
 ## Planner parse failures create TWO Sentry issues — treat them as one incident
 
