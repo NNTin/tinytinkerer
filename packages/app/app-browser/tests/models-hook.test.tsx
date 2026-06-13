@@ -54,7 +54,7 @@ describe('useModels', () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
 
-    const { result } = renderHook(() => useModels('openai/gpt-5'))
+    const { result } = renderHook(() => useModels(FALLBACK_MODELS[0]?.id))
 
     expect(result.current.models).toEqual([...FALLBACK_MODELS])
     expect(fetchSpy).not.toHaveBeenCalled()
