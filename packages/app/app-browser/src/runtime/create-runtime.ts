@@ -1,8 +1,8 @@
 import {
   createChatRuntime,
+  isPluginEnabled,
   isRuntimeTimeoutError,
   PluginRegistry,
-  resolveActivePluginIds,
   type AgentHookContribution,
   type PluginEdgeFetch,
   type PluginHost,
@@ -30,12 +30,11 @@ import {
 } from '../telemetry/request-telemetry'
 import { requestPermission } from '../permission-service'
 
-// Stable id of the web-search plugin (packages/plugins/plugin-web-search). Kept
-// as a local copy because app-browser must never statically import a concrete
-// plugin package — plugins are discovered dynamically. The web-search plugin is
-// gated by the host's existing `searchEnabled` readiness machinery (not the
-// generic plugin-activation toggles), so this layer activates it explicitly.
-const WEB_SEARCH_PLUGIN_ID = 'web-search'
+// The planner's stable id for the web-search tool (also the web-search plugin's
+// id). app-browser never imports the plugin — this literal only lets the runtime
+// tell its planner whether a web-search tool ended up registered, matching the
+// id already hard-coded in app-core's inferPlan.
+const WEB_SEARCH_TOOL_ID = 'web-search'
 
 export type BrowserPluginRuntime = {
   registry: PluginRegistry
@@ -70,7 +69,6 @@ export const createPluginRuntime = (
 
 export const createRuntime = (options: {
   baseUrl: string
-  searchEnabled: boolean
   getToken: () => string | null | undefined
   getModel: () => string | null | undefined
   getLiteLLMBaseUrl?: () => string | null | undefined
@@ -151,20 +149,17 @@ export const createRuntime = (options: {
   // telemetry; it no-ops unless telemetry consent is granted. An `info` report is
   // routed to `captureTelemetryMessage` so it surfaces as an informational
   // message (not an error issue); `warning`/`error` go through the exception path.
-  const activePluginIds = resolveActivePluginIds(options.pluginActivation ?? {})
-  // Web search is a discovered plugin but is gated by the host's `searchEnabled`
-  // readiness state (default-on, plus service availability) rather than the
-  // generic plugin-activation toggles — preserving today's behavior. Activate it
-  // explicitly here so its tool + planner descriptor are contributed when search
-  // is enabled and the web-search plugin was discovered.
-  if (options.searchEnabled) {
-    activePluginIds.add(WEB_SEARCH_PLUGIN_ID)
-  }
   const pluginRuntime =
     options.pluginRuntime ?? createPluginRuntime(options.pluginModules ?? [])
-  const activePluginModules = [...pluginRuntime.modulesById.values()].filter(
-    (mod) => activePluginIds.has(mod.manifest.id)
+  // A plugin is active when the user's stored choice says so, or — with no stored
+  // choice — when its manifest opts in via `defaultEnabled` (e.g. web search ships
+  // on). Resolving against the discovered manifests keeps this fully generic: no
+  // plugin id is special-cased here, and an undiscovered plugin is simply absent.
+  const activation = options.pluginActivation ?? {}
+  const activePluginModules = [...pluginRuntime.modulesById.values()].filter((mod) =>
+    isPluginEnabled(activation, mod.manifest)
   )
+  const activePluginIds = new Set(activePluginModules.map((mod) => mod.manifest.id))
   if (activePluginIds.size > 0 || pluginRuntime.registry.list().length > 0) {
     const pluginHost: PluginHost = {
       capture: (report) => {
@@ -269,6 +264,10 @@ export const createRuntime = (options: {
     },
     tools,
     hooks,
-    searchEnabled: options.searchEnabled
+    // The planner should only propose a web-search step when a web-search tool is
+    // actually available. Derive it from the registered tools rather than a
+    // separate setting, so activating/deactivating the web-search plugin is the
+    // single source of truth.
+    searchEnabled: registeredToolIds.has(WEB_SEARCH_TOOL_ID)
   })
 }

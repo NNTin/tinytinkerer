@@ -14,23 +14,23 @@ import {
   type SearchResponse
 } from '@tinytinkerer/contracts'
 
-// Stable id used as the activation key and the contributed tool id. The host
-// gates this plugin through its existing "search" readiness machinery, so the id
-// must stay 'web-search' for planning, the LiteLLM planner descriptor, and the
-// turn activity panel to keep recognising the tool.
+// Stable id used as the activation key and the contributed tool id. It must stay
+// 'web-search' for planning, the LiteLLM planner descriptor, and the turn
+// activity panel to keep recognising the tool.
 export const WEB_SEARCH_PLUGIN_ID = 'web-search'
 
 // UI + planner metadata for the host. The shape is the generic PluginManifest
 // contract from agent-core; this plugin ships its own copy and tool descriptor.
 // The descriptor mirrors the SearchRequest schema so the planner can name the
-// tool without instantiating the plugin.
+// tool without instantiating the plugin. `defaultEnabled` keeps web search on
+// out-of-the-box; it appears in the generic plugin activation list like any
+// other plugin and the user can turn it off there.
 export const webSearchPluginManifest: PluginManifest = {
   id: WEB_SEARCH_PLUGIN_ID,
   label: 'Web search (Tavily)',
-  description:
-    'Let the assistant search the web for up-to-date information through Tavily. ' +
-    'Enabled by default; the host surfaces its own readiness state and toggle.',
+  description: 'Allow the agent to search the web for up-to-date information.',
   capabilities: ['tools'],
+  defaultEnabled: true,
   toolDescriptors: [
     {
       id: WEB_SEARCH_PLUGIN_ID,

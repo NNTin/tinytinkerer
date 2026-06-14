@@ -82,6 +82,10 @@ describe('webSearchPlugin', () => {
     ])
   })
 
+  it('ships enabled by default via the manifest', () => {
+    expect(webSearchPluginManifest.defaultEnabled).toBe(true)
+  })
+
   it('satisfies the PluginModule contract for dynamic discovery', () => {
     expect(isPluginModule(webSearchModule)).toBe(true)
     expect(webSearchModule.manifest.id).toBe(WEB_SEARCH_PLUGIN_ID)

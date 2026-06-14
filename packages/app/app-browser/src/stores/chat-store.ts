@@ -66,7 +66,6 @@ export const createChatStore = (options: {
         shell: options.shell,
         authStore: options.authStore,
         settingsStore: options.settingsStore,
-        statusStore: options.statusStore,
         pluginModules
       })
     })()

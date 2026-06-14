@@ -151,6 +151,11 @@ export type PluginManifest = {
   description: string
   capabilities?: Array<'tools' | 'hooks'>
   toolDescriptors?: PluginToolDescriptor[]
+  // Default activation when the user has no stored preference. Plugins are
+  // off by default (`undefined`/`false`); a plugin that should ship enabled
+  // out-of-the-box (e.g. web search) sets this to `true`. An explicit user
+  // choice in settings always wins over this default.
+  defaultEnabled?: boolean
 }
 
 // The shape every plugin package's entry module must export for dynamic

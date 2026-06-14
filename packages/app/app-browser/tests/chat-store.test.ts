@@ -60,7 +60,6 @@ const makeSettingsStore = (
   initial: { litellmBaseUrl?: string } = {}
 ): SettingsStore =>
   createStore(() => ({
-    searchEnabled: true,
     selectedModel: 'gpt-4o',
     litellmBaseUrl: 'https://litellm-a.example.com',
     ...initial
@@ -192,7 +191,7 @@ describe('createChatStore', () => {
       statusStore: makeStatusStore(),
     })
 
-    settingsStore.setState({ searchEnabled: false })
+    settingsStore.setState({ webSpeechEnabled: false })
 
     // Give the (unwanted) async reload a chance to fire before asserting.
     await new Promise((resolve) => setTimeout(resolve, 0))

@@ -21,7 +21,6 @@ type SettingsActions = {
   setSelectedModel: (model: string) => Promise<void>
   setLiteLLMBaseUrl: (baseUrl: string | null) => Promise<void>
   setAgentType: (agentType: AgentType) => Promise<void>
-  setSearchEnabled: (enabled: boolean) => Promise<void>
   setWebSpeechEnabled: (enabled: boolean) => Promise<void>
   setShowReasoningActivity: (show: boolean) => Promise<void>
   setShowCodeBlockFullscreenButton: (show: boolean) => Promise<void>
@@ -79,15 +78,6 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       const { persistAgentType } = await loadCoreModule()
       const normalized = await persistAgentType(shell.preferences, agentType)
       set({ agentType: normalized })
-    },
-    setSearchEnabled: async (enabled) => {
-      const { persistBooleanPreference } = await loadCoreModule()
-      await persistBooleanPreference(
-        shell.preferences,
-        SETTINGS_KEYS.searchEnabled,
-        enabled
-      )
-      set({ searchEnabled: enabled })
     },
     setWebSpeechEnabled: async (enabled) => {
       const { persistBooleanPreference } = await loadCoreModule()

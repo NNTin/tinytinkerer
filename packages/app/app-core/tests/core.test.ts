@@ -26,6 +26,7 @@ import {
   persistLiteLLMBaseUrl,
   persistSelectedModel,
   rateLimitCooldownKey,
+  isPluginEnabled,
   resolveActivePluginIds,
   SETTINGS_KEYS,
   validateLiteLLMBaseUrl
@@ -473,6 +474,17 @@ describe('app-core helpers', () => {
     expect(
       resolveActivePluginIds({ 'send-feedback': true, other: false })
     ).toEqual(new Set(['send-feedback']))
+  })
+
+  it('isPluginEnabled honors stored choice, then manifest default', () => {
+    // No stored entry: the manifest default decides.
+    expect(isPluginEnabled({}, { id: 'web-search', defaultEnabled: true })).toBe(true)
+    expect(isPluginEnabled({}, { id: 'feedback' })).toBe(false)
+    // An explicit user choice always wins over the default.
+    expect(
+      isPluginEnabled({ 'web-search': false }, { id: 'web-search', defaultEnabled: true })
+    ).toBe(false)
+    expect(isPluginEnabled({ feedback: true }, { id: 'feedback' })).toBe(true)
   })
 
   it('defaults reasoning & activity to false when no preference is stored', async () => {

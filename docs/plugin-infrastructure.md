@@ -84,6 +84,7 @@ type PluginManifest = {
   label: string                       // Settings toggle copy
   description: string
   toolDescriptors?: PluginToolDescriptor[]   // planner descriptors for the plugin's tools
+  defaultEnabled?: boolean            // ships on out-of-the-box when true (e.g. web search)
 }
 
 type PluginModule = {
@@ -187,14 +188,14 @@ the host side of the capability. `createTools(host)` returns no tool when `host.
 (a headless host), exactly mirroring how the permissions plugin tolerates a missing
 `requestPermission`.
 
-**Activation is different from the other plugins.** Web search predates the generic plugin toggles
-and keeps its own behavior: it is gated by the host's **search-readiness** state — `searchEnabled`
-(a dedicated setting, **on by default**) AND the search service being `ready`. `create-runtime.ts`
-activates the `web-search` plugin id when that gate is open rather than reading
-`pluginActivation`. In the Settings Modal it is presented at the top of the **Plugins** section
-through its own `SearchSection` (search-readiness status + the default-on toggle), not the generic
-plugin-activation list — so the web-search manifest is filtered out of that list in `surfaces.tsx`
-to avoid a second, conflicting control.
+**Activation is generic, just default-on.** Web search is a normal discovered plugin: it appears in
+the generic plugin-activation list and is toggled through `pluginActivation` like every other
+plugin. Its manifest sets `defaultEnabled: true`, so it ships enabled out-of-the-box; an explicit
+user choice (on or off) always wins over that default. There is no dedicated search setting,
+readiness gate, or special-cased plugin id in the host — `create-runtime.ts` activates plugins
+purely via `isPluginEnabled(activation, manifest)`. The runtime's planner flag is then derived from
+whether a `web-search` tool actually got registered, so toggling the plugin is the single source of
+truth for whether the planner proposes a search step.
 
 ## Activation state flow
 
@@ -208,13 +209,16 @@ Settings Modal toggle (app-browser/browser-settings-modal.tsx)
   next chat run:
   chat-store: loadPluginModules()  (dynamic discovery, see below)
     → get-runtime creates a persistent PluginRegistry for the loaded modules
-    → create-runtime: resolveActivePluginIds() filters modules → PluginRegistry.collectTools()
+    → create-runtime: isPluginEnabled(activation, manifest) filters modules → PluginRegistry.collectTools()
     → agent-core ToolRegistry  (only active plugins' tools)
 ```
 
 - **State shape:** `PluginActivationState = Record<pluginId, boolean>` in `contracts`.
-- **Default:** `{}` — every plugin is **off by default** (opt-in, like MCP servers and
-  telemetry).
+- **Default:** `{}` — a plugin with no stored entry falls back to its manifest's
+  `defaultEnabled` (off unless the plugin opts in, like MCP servers and telemetry; web search
+  opts in). An explicit stored `true`/`false` always wins. `resolveActivePluginIds` returns only
+  the explicitly-enabled ids; `isPluginEnabled(activation, manifest)` is the default-aware check
+  used by `create-runtime.ts` and the settings toggles.
 - **Persistence key:** `settings_plugins_activation`.
 - **Planner exposure:** for each active plugin, `create-runtime.ts` adds its
   `manifest.toolDescriptors` to the planner tool descriptors, so the model can name and invoke

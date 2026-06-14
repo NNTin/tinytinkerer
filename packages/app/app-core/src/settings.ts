@@ -22,7 +22,6 @@ export const SETTINGS_KEYS = {
   selectedModel: 'settings_selected_model',
   litellmBaseUrl: 'settings_litellm_base_url',
   agentType: 'settings_agent_type',
-  searchEnabled: 'settings_search_enabled',
   webSpeechEnabled: 'settings_web_speech_enabled',
   showReasoningActivity: 'settings_show_reasoning_activity',
   showCodeBlockFullscreenButton: 'settings_show_code_block_fullscreen_button',
@@ -37,7 +36,6 @@ export type SettingsState = {
   selectedModel: string
   litellmBaseUrl: string
   agentType: AgentType
-  searchEnabled: boolean
   webSpeechEnabled: boolean
   showReasoningActivity: boolean
   showCodeBlockFullscreenButton: boolean
@@ -63,7 +61,6 @@ export const defaultSettingsState = (): SettingsState => ({
   selectedModel: DEFAULT_MODEL,
   litellmBaseUrl: LITELLM_DEPLOYMENT_DEFAULT,
   agentType: DEFAULT_AGENT_TYPE,
-  searchEnabled: true,
   webSpeechEnabled: false,
   showReasoningActivity: false,
   showCodeBlockFullscreenButton: true,
@@ -78,7 +75,6 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     selectedModel,
     litellmBaseUrl,
     agentType,
-    searchEnabled,
     webSpeechEnabled,
     showReasoningActivity,
     showCodeBlockFullscreenButton,
@@ -90,7 +86,6 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     preferences.get(SETTINGS_KEYS.selectedModel),
     preferences.get(SETTINGS_KEYS.litellmBaseUrl),
     preferences.get(SETTINGS_KEYS.agentType),
-    preferences.get(SETTINGS_KEYS.searchEnabled),
     preferences.get(SETTINGS_KEYS.webSpeechEnabled),
     preferences.get(SETTINGS_KEYS.showReasoningActivity),
     preferences.get(SETTINGS_KEYS.showCodeBlockFullscreenButton),
@@ -105,7 +100,6 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     selectedModel: normalizeSelectedModel(selectedModel),
     litellmBaseUrl: normalizeLiteLLMBaseUrl(litellmBaseUrl),
     agentType: parseAgentType(agentType),
-    searchEnabled: parseBool(searchEnabled, true),
     webSpeechEnabled: parseBool(webSpeechEnabled, false),
     showReasoningActivity: parseBool(showReasoningActivity, false),
     showCodeBlockFullscreenButton: parseBool(showCodeBlockFullscreenButton, true),
@@ -134,8 +128,9 @@ export const persistPluginActivation = async (
   await preferences.set(SETTINGS_KEYS.pluginActivation, JSON.stringify(activation))
 }
 
-// Headless helper: the set of plugin ids the user has switched on. A plugin with
-// no stored entry (or an explicit `false`) is treated as inactive.
+// Headless helper: the set of plugin ids the user has explicitly switched on.
+// Ignores manifest defaults — callers that need default-on plugins should use
+// `isPluginEnabled` against the discovered manifests instead.
 export const resolveActivePluginIds = (
   activation: PluginActivationState
 ): Set<string> =>
@@ -144,6 +139,15 @@ export const resolveActivePluginIds = (
       .filter(([, enabled]) => enabled)
       .map(([id]) => id)
   )
+
+// Whether a plugin is active: an explicit user choice (stored `true`/`false`)
+// always wins; with no stored entry the plugin's own `defaultEnabled` decides
+// (defaulting to off). Takes a minimal manifest shape so app-core stays free of
+// the agent-core PluginManifest import.
+export const isPluginEnabled = (
+  activation: PluginActivationState,
+  manifest: { id: string; defaultEnabled?: boolean }
+): boolean => (activation[manifest.id] ?? manifest.defaultEnabled) ?? false
 
 const parseMcpServers = (raw: string | undefined): McpServerConfig[] => {
   if (!raw) return []

@@ -134,13 +134,12 @@ describe('plugin runtime contributions', () => {
 
     const runtime = createRuntime({
       baseUrl: 'http://edge.local',
-      searchEnabled: true,
       getToken: () => 'token',
       getModel: () => 'openai/gpt-4.1-mini',
-      pluginActivation: { colliding: true },
+      pluginActivation: { 'web-search': true, colliding: true },
       // The web-search plugin (discovered first) owns the 'web-search' tool id; a
       // second plugin claiming the same id must not override its planner
-      // descriptor. searchEnabled activates the web-search plugin.
+      // descriptor.
       pluginModules: [
         pluginModule({
           manifestId: 'web-search',
@@ -172,7 +171,6 @@ describe('plugin runtime contributions', () => {
     ])
     const baseOptions = {
       baseUrl: 'http://edge.local',
-      searchEnabled: false,
       getToken: () => null,
       getModel: () => 'openai/gpt-4.1-mini',
       pluginRuntime
@@ -207,7 +205,6 @@ describe('plugin runtime contributions', () => {
 
     const runtime = createRuntime({
       baseUrl: 'http://edge.local',
-      searchEnabled: false,
       getToken: () => 'token',
       getModel: () => 'openai/gpt-4.1-mini',
       pluginActivation: { observer: true },

@@ -37,12 +37,6 @@ import {
   parseWithTelemetry
 } from './telemetry/request-telemetry'
 
-// Stable id of the web-search plugin (packages/plugins/plugin-web-search). Kept
-// as a local copy because app-browser must never statically import a concrete
-// plugin package. The web-search plugin is controlled through the dedicated
-// Search section, so it is excluded from the generic plugin-activation list.
-const SEARCH_PLUGIN_ID = 'web-search'
-
 export type ChatSurfaceController = {
   isBooting: boolean
   initializeError: string | null
@@ -211,15 +205,12 @@ export type SettingsSurfaceController = {
   setLiteLLMBaseUrl: (baseUrl: string | null) => Promise<void>
   agentType: AgentType
   setAgentType: (agentType: AgentType) => Promise<void>
-  searchEnabled: boolean
-  setSearchEnabled: (enabled: boolean) => Promise<void>
   webSpeechEnabled: boolean
   setWebSpeechEnabled: (enabled: boolean) => Promise<void>
   showReasoningActivity: boolean
   setShowReasoningActivity: (show: boolean) => Promise<void>
   showCodeBlockFullscreenButton: boolean
   setShowCodeBlockFullscreenButton: (show: boolean) => Promise<void>
-  searchUnavailable: boolean
   mcpServers: McpServerConfig[]
   mcpDiscovery: Record<string, McpDiscoveryResult>
   addMcpServer: (
@@ -254,15 +245,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     let cancelled = false
     void loadPluginModules().then((modules) => {
       if (!cancelled) {
-        // Web search ships as a plugin but the host owns its activation through the
-        // dedicated Search section (readiness + default-on toggle), so it is hidden
-        // from the generic plugin-activation list to avoid a second, conflicting
-        // control.
-        setAvailablePlugins(
-          modules
-            .map((mod) => mod.manifest)
-            .filter((manifest) => manifest.id !== SEARCH_PLUGIN_ID)
-        )
+        setAvailablePlugins(modules.map((mod) => mod.manifest))
       }
     })
     return () => {
@@ -286,8 +269,6 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   )
   const agentType = useSettingsStore((state) => state.agentType)
   const setAgentType = useSettingsStore((state) => state.setAgentType)
-  const searchEnabled = useSettingsStore((state) => state.searchEnabled)
-  const setSearchEnabled = useSettingsStore((state) => state.setSearchEnabled)
   const webSpeechEnabled = useSettingsStore((state) => state.webSpeechEnabled)
   const setWebSpeechEnabled = useSettingsStore(
     (state) => state.setWebSpeechEnabled
@@ -408,15 +389,12 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     setLiteLLMBaseUrl,
     agentType,
     setAgentType,
-    searchEnabled,
-    setSearchEnabled,
     webSpeechEnabled,
     setWebSpeechEnabled,
     showReasoningActivity,
     setShowReasoningActivity,
     showCodeBlockFullscreenButton,
     setShowCodeBlockFullscreenButton,
-    searchUnavailable: effectiveStatus.search.state !== 'ready',
     mcpServers,
     mcpDiscovery,
     addMcpServer,

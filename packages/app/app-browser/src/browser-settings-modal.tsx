@@ -5,7 +5,7 @@ import type {
   ServiceStatus
 } from '@tinytinkerer/contracts'
 import { BrandSettingsFooter } from '@tinytinkerer/brand-assets'
-import { LITELLM_DEPLOYMENT_DEFAULT } from '@tinytinkerer/app-core'
+import { isPluginEnabled, LITELLM_DEPLOYMENT_DEFAULT } from '@tinytinkerer/app-core'
 import { MarkdownDocument } from './markdown-document'
 import { useSettingsSurfaceController } from './surfaces'
 import { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
@@ -356,28 +356,6 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
   )
 }
 
-const SearchSection = ({ status }: { status: ServiceStatus }) => {
-  const { searchEnabled, setSearchEnabled, searchUnavailable } =
-    useSettingsSurfaceController()
-
-  return (
-    <div className="space-y-3">
-      <SectionStatus label="Search" status={status} />
-      <ToggleRow
-        label="Enable web search"
-        description={
-          searchUnavailable
-            ? 'Web search is unavailable right now. The runtime will skip search until the service recovers.'
-            : 'Allow the agent to search the web for up-to-date information.'
-        }
-        checked={searchEnabled}
-        disabled={searchUnavailable}
-        onChange={(next) => void setSearchEnabled(next)}
-      />
-    </div>
-  )
-}
-
 type McpServerFormState = {
   name: string
   url: string
@@ -658,7 +636,7 @@ const PluginsSection = () => {
           key={plugin.id}
           label={plugin.label}
           description={plugin.description}
-          checked={pluginActivation[plugin.id] ?? false}
+          checked={isPluginEnabled(pluginActivation, plugin)}
           onChange={(next) => void setPluginEnabled(plugin.id, next)}
         />
       ))}
@@ -821,13 +799,7 @@ export const BrowserSettingsModal = ({
           <hr className="border-[var(--border)]" />
 
           <SettingsSection title="Plugins">
-            <div className="space-y-5">
-              {/* Web search ships as a plugin (plugin-web-search) but keeps its own
-                  readiness state + default-on toggle, so it is presented here at the
-                  top of Plugins rather than in the generic activation list. */}
-              <SearchSection status={effectiveStatus.search} />
-              <PluginsSection />
-            </div>
+            <PluginsSection />
           </SettingsSection>
 
           <hr className="border-[var(--border)]" />

@@ -1,32 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatEvent } from '@tinytinkerer/contracts'
+import type { ChatEvent, PluginActivationState } from '@tinytinkerer/contracts'
 import { DEFAULT_MODEL, type PluginModule } from '@tinytinkerer/app-core'
 import type { BrowserShell } from '../src/shell.js'
 import type { AuthStore } from '../src/stores/auth-store.js'
 import type { SettingsStore } from '../src/stores/settings-store.js'
-import type { StatusStore } from '../src/stores/status-store.js'
 import { createBrowserRuntimeFactory } from '../src/runtime/get-runtime.js'
 import { loadPluginModules } from '../src/plugins/registry.js'
 
 const mockSettings = {
-  searchEnabled: true,
   selectedModel: 'openai/gpt-4.1-mini',
   agentType: 'plan-execute' as const,
   // Empty = the deployment-default sentinel: request bodies omit litellmBaseUrl.
-  litellmBaseUrl: ''
+  litellmBaseUrl: '',
+  // Web search is a default-on plugin; an empty activation map leaves it enabled.
+  pluginActivation: {} as PluginActivationState
 }
 
 const mockAuth = {
   token: null as string | null
-}
-
-const mockStatus = {
-  hydrated: true,
-  status: {
-    auth: { state: 'ready', detail: 'ok' },
-    models: { state: 'ready', detail: 'ok' },
-    search: { state: 'ready', detail: 'ok' }
-  }
 }
 
 const createAuthStoreStub = (): AuthStore =>
@@ -38,11 +29,6 @@ const createSettingsStoreStub = (): SettingsStore =>
   ({
     getState: () => mockSettings
   }) as SettingsStore
-
-const createStatusStoreStub = (): StatusStore =>
-  ({
-    getState: () => mockStatus
-  }) as StatusStore
 
 const toRequestUrl = (input: RequestInfo | URL): string => {
   if (typeof input === 'string') {
@@ -58,23 +44,20 @@ const toRequestUrl = (input: RequestInfo | URL): string => {
 
 // Web search ships as a discovered plugin (packages/plugins/plugin-web-search).
 // Load the real workspace plugin modules so the factory can contribute the
-// web-search tool exactly as production does — the host gates it via searchEnabled.
+// web-search tool exactly as production does — it is a default-on plugin.
 let pluginModules: PluginModule[] = []
 
 beforeEach(async () => {
-  mockSettings.searchEnabled = true
   mockSettings.selectedModel = DEFAULT_MODEL
   mockSettings.litellmBaseUrl = ''
+  mockSettings.pluginActivation = {}
   mockAuth.token = null
-  mockStatus.hydrated = true
-  mockStatus.status.search.state = 'ready'
-  mockStatus.status.search.detail = 'ok'
   pluginModules = await loadPluginModules()
 })
 
 describe('createBrowserRuntimeFactory', () => {
   // createRuntime is defined here so each test body calls it after beforeEach resets the mocks.
-  // searchEnabled is read at .create() time, so runtime construction must happen inside the test.
+  // settings are read at .create() time, so runtime construction must happen inside the test.
   const createRuntime = () =>
     createBrowserRuntimeFactory({
       shell: {
@@ -87,11 +70,10 @@ describe('createBrowserRuntimeFactory', () => {
       } as BrowserShell,
       authStore: createAuthStoreStub(),
       settingsStore: createSettingsStoreStub(),
-      statusStore: createStatusStoreStub(),
       pluginModules
     }).create()
 
-  it('emits web-search tool events when searchEnabled is true', async () => {
+  it('emits web-search tool events when the web-search plugin is enabled (default)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
@@ -120,19 +102,8 @@ describe('createBrowserRuntimeFactory', () => {
     vi.unstubAllGlobals()
   })
 
-  it('does not emit tool events when searchEnabled is false', async () => {
-    mockSettings.searchEnabled = false
-    const runtime = createRuntime()
-    const events: ChatEvent[] = []
-    for await (const event of runtime.run('latest news about React')) {
-      events.push(event)
-    }
-
-    expect(events.some((event) => event.type === 'agent.tool.started')).toBe(false)
-  })
-
-  it('does not emit tool events when the service is not ready', async () => {
-    mockStatus.status.search.state = 'degraded'
+  it('does not emit tool events when the web-search plugin is disabled', async () => {
+    mockSettings.pluginActivation = { 'web-search': false }
     const runtime = createRuntime()
     const events: ChatEvent[] = []
     for await (const event of runtime.run('latest news about React')) {
@@ -310,8 +281,8 @@ describe('createBrowserRuntimeFactory', () => {
     vi.unstubAllGlobals()
   })
 
-  it('suppresses search planning and tool events when searchEnabled is false', async () => {
-    mockSettings.searchEnabled = false
+  it('suppresses search planning and tool events when the web-search plugin is disabled', async () => {
+    mockSettings.pluginActivation = { 'web-search': false }
 
     const runtime = createRuntime()
     const events: ChatEvent[] = []
@@ -319,21 +290,8 @@ describe('createBrowserRuntimeFactory', () => {
       events.push(event)
     }
 
-    // With search disabled no web-search tool is registered, so the inferred
-    // plan has no search step and no tool runs.
-    expect(events.some((event) => event.type === 'agent.run.started')).toBe(true)
-    expect(events.some((event) => event.type === 'agent.tool.started')).toBe(false)
-  })
-
-  it('suppresses search planning when the service is unavailable', async () => {
-    mockStatus.status.search.state = 'offline'
-
-    const runtime = createRuntime()
-    const events: ChatEvent[] = []
-    for await (const event of runtime.run('latest news about React')) {
-      events.push(event)
-    }
-
+    // With the web-search plugin off no web-search tool is registered, so the
+    // inferred plan has no search step and no tool runs.
     expect(events.some((event) => event.type === 'agent.run.started')).toBe(true)
     expect(events.some((event) => event.type === 'agent.tool.started')).toBe(false)
   })
