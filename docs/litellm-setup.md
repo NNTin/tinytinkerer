@@ -2,39 +2,70 @@
 
 tinytinkerer has exactly one model provider: a [LiteLLM proxy](https://docs.litellm.ai/docs/simple_proxy).
 The edge Worker forwards every chat completion and model-list request to the
-LiteLLM instance configured by its deployment. It identifies the caller through
-GitHub, provisions a LiteLLM virtual key for that GitHub account with per-user
-budgets and rate limits, and sends upstream requests with that user's key. There
-is no code-level fallback — a deployment without a configured LiteLLM instance
-and key-management credentials serves `503 LiteLLM is not configured.` and
-`/health` reports `models.state: degraded`.
+LiteLLM instance configured by its deployment.
+
+**GitHub Sign In is optional.** Unauthenticated users get access to a shared
+anonymous LiteLLM virtual key with shared rate limits (good for public/demo
+deployments). GitHub-authenticated users get per-user keys with per-user budgets
+and rate limits (good for controlling individual spend).
+
+The edge validates the caller and provisions the appropriate LiteLLM key:
+- **Unauthenticated**: Uses a shared anonymous key (all unauthenticated users share one key + budget)
+- **GitHub-authenticated**: Uses a per-user key scoped to their GitHub account
+
+There is no code-level fallback — a deployment without a configured LiteLLM
+instance and key-management credentials serves `503 LiteLLM is not configured.`
+and `/health` reports `models.state: degraded`.
 
 This guide explains how to host your own LiteLLM instance and point a
 tinytinkerer deployment at it. For the rest of the hosted setup (Vercel,
 Cloudflare, GitHub OAuth) see [vercel-deployment.md](vercel-deployment.md).
 
+## Two User Types: Anonymous and Authenticated
+
+### Anonymous users
+- **No GitHub account required** — uses the app without signing in
+- **Shared virtual key** — all anonymous users share one LiteLLM key + budget
+- **Rate limits** — shared across all anonymous users (defaults: 3 RPM, $0.10/30d)
+- **Use case** — public demos, testing, casual use
+
+### Authenticated users
+- **GitHub Sign In** — optional upgrade from anonymous
+- **Per-user virtual key** — each GitHub account gets its own key + budget
+- **Rate limits** — per GitHub account (defaults: 10 RPM, $1/30d)
+- **Use case** — trusted users, personal projects, production use
+
+Both paths use the same [LiteLLM virtual key](https://docs.litellm.ai/docs/proxy/virtual_keys)
+system, provisioned via the same management endpoints. The edge derives keys
+deterministically from GitHub ID (for authenticated users) or the string "anonymous"
+(for unauthenticated users).
+
 ## Architecture Overview
 
 ```mermaid
 graph LR
-    U["👤 User<br/>(Browser)"]
-    F["🖥️ Frontend/App<br/>knows: GitHub Token"]
-    E["⚙️ Edge Worker<br/>knows:<br/>• LITELLM_KEY_MANAGEMENT_API_KEY<br/>• LITELLM_USER_KEY_SECRET<br/>• per-user derived keys"]
-    L["🔐 LiteLLM Proxy<br/>knows:<br/>• LITELLM_MASTER_KEY<br/>• virtual keys in DB<br/>• per-user budgets"]
+    AU["👤 Anonymous User<br/>(no sign-in)"]
+    GU["👤 GitHub User<br/>(signed in)"]
+    F["🖥️ Frontend/App<br/>knows: GitHub Token<br/>(if signed in)"]
+    E["⚙️ Edge Worker<br/>knows:<br/>• LITELLM_KEY_MANAGEMENT_API_KEY<br/>• LITELLM_USER_KEY_SECRET<br/>• per-user & anonymous keys"]
+    L["🔐 LiteLLM Proxy<br/>knows:<br/>• LITELLM_MASTER_KEY<br/>• virtual keys in DB<br/>• per-user + anonymous budgets"]
     GH["📦 GitHub Models<br/>knows: GITHUB_MODELS_TOKEN"]
     CG["🤖 ChatGPT<br/>knows: OAuth tokens"]
     
-    U -->|sends chat requests| F
-    F -->|POST /api/chat<br/>sends GitHub token| E
+    AU -->|sends chat requests<br/>no auth| F
+    GU -->|sends chat requests<br/>with GitHub token| F
+    F -->|POST /api/chat<br/>sends GitHub token<br/>(if present)| E
     E -->|POST /v2/key/info<br/>Bearer: management key| L
     E -->|POST /key/generate<br/>Bearer: management key| L
-    E -->|POST /v1/chat/completions<br/>Bearer: derived user key| L
-    E -->|GET /v1/models<br/>Bearer: derived user key| L
+    E -->|POST /v1/chat/completions<br/>Bearer: derived key<br/>(anonymous or per-user)| L
+    E -->|GET /v1/models<br/>Bearer: derived key| L
     L -->|query models by alias| GH
     L -->|query models by alias| CG
-    F -->|streams responses| U
+    F -->|streams responses| AU
+    F -->|streams responses| GU
     
-    style U fill:#e1f5ff
+    style AU fill:#e1f5ff
+    style GU fill:#b3e5fc
     style F fill:#f3e5f5
     style E fill:#fff3e0
     style L fill:#fce4ec
@@ -43,10 +74,11 @@ graph LR
 ```
 
 **Key security properties:**
-- **User** only knows their GitHub token (never sees LiteLLM keys)
-- **Frontend** never touches LiteLLM keys; it only relays the user's GitHub token to the edge
-- **Edge** knows the management key (for provisioning) and derives user-specific keys deterministically
-- **LiteLLM Proxy** stores and enforces budgets, rate limits, and per-user model scopes
+- **User (authenticated)** knows their GitHub token (never sees LiteLLM keys)
+- **User (anonymous)** has no token; edge creates an anonymous key on first request
+- **Frontend** never touches LiteLLM keys; it only relays the user's GitHub token (if any) to the edge
+- **Edge** knows the management key (for provisioning) and derives keys deterministically
+- **LiteLLM Proxy** stores and enforces budgets, rate limits, and model scopes (per-user or anonymous)
 - **Backend providers** (GitHub Models, ChatGPT) never interact with tinytinkerer directly; all traffic flows through LiteLLM
 
 ## How tinytinkerer talks to LiteLLM
@@ -69,6 +101,35 @@ virtual keys:
 | `POST /key/generate` | Create the per-user key on first use | yes |
 | `POST /key/update` | Reconcile budget/rate/model settings when Worker vars change | yes |
 
+## Rate Limit Glossary
+
+Before configuring the deployment, understand these LiteLLM rate limit terms:
+
+- **RPM (Requests Per Minute)** — maximum number of API requests (chat completions,
+  model lists, etc.) a single key can make in 60 seconds. When exceeded, requests
+  get a `429 Too Many Requests` response with a `Retry-After` header.
+  - Per-user default: `10` (each GitHub user can make 10 requests/minute)
+  - Anonymous default: `3` (all anonymous users share 3 requests/minute)
+
+- **TPM (Tokens Per Minute)** — maximum number of tokens (input + output) a single
+  key can process in 60 seconds. Large models or long conversations count more
+  tokens. When exceeded, requests get a `429` response.
+  - Per-user default: `100000` (each GitHub user can process 100k tokens/minute)
+  - Anonymous default: `20000` (all anonymous users share 20k tokens/minute)
+
+- **Max Budget** — hard spending cap in USD for a key during a budget period. When
+  exceeded, further requests are rejected until the budget resets.
+  - Per-user default: `$1` per 30 days
+  - Anonymous default: `$0.10` per 30 days
+
+- **Budget Duration** — time window after which the max budget counter resets.
+  Always use duration notation: `30d` (days), `7d`, `1h`, `24h`, etc.
+  - Both default to: `30d` (resets every 30 days)
+
+Higher RPM/TPM limits = faster responses but higher cost. Anonymous users get
+conservative defaults suitable for public demos; adjust per-user limits for
+production use.
+
 Configuration lives in these Worker values:
 
 - `LITELLM_BASE_URL` (var) — the instance the edge calls by default.
@@ -81,8 +142,10 @@ Configuration lives in these Worker values:
 - `LITELLM_USER_KEY_SECRET` (secret) — a high-entropy secret used to derive
   stable LiteLLM virtual key values for each GitHub account. Rotating it makes
   the edge provision new per-user keys.
+
+**Per-user (authenticated) rate limits and budgets:**
 - `LITELLM_USER_MAX_BUDGET_USD` (var, default `1`) — hard budget for each
-  generated user key.
+  generated user key (per budget period).
 - `LITELLM_USER_BUDGET_DURATION` (var, default `30d`) — budget reset duration.
 - `LITELLM_USER_RPM_LIMIT` (var, default `10`) — request-per-minute limit for
   each generated user key.
@@ -90,20 +153,43 @@ Configuration lives in these Worker values:
   each generated user key.
 - `LITELLM_USER_MODELS` (var, optional) — comma-separated LiteLLM model aliases
   assigned to generated user keys. Empty means all configured models.
+
+**Anonymous (unauthenticated) rate limits and budgets:**
+- `LITELLM_ANONYMOUS_MAX_BUDGET_USD` (var, default `0.10`) — shared budget for all
+  anonymous users (per budget period). This is a single shared bucket, not per-user.
+- `LITELLM_ANONYMOUS_BUDGET_DURATION` (var, default `30d`) — budget reset duration.
+- `LITELLM_ANONYMOUS_RPM_LIMIT` (var, default `3`) — shared request-per-minute limit
+  for all anonymous users. This is a single shared limit, not per-user.
+- `LITELLM_ANONYMOUS_TPM_LIMIT` (var, default `20000`) — shared token-per-minute limit
+  for all anonymous users. This is a single shared limit, not per-user.
+
+Anonymous users use the same model list as authenticated users
+(`LITELLM_USER_MODELS` or all models if empty).
+
+**Optional access controls:**
 - `GITHUB_ALLOWED_USERS` (var, optional) — comma-separated GitHub numeric ids or
   logins allowed to use model/search/MCP routes. Empty allows any valid GitHub
-  token.
+  token. This does not affect anonymous users (they are always allowed).
 
 The edge validates the base URL strictly: it must be `https://`, with no
 username/password, query string, or fragment. A plain-HTTP or otherwise
 malformed URL is treated as "not configured".
 
-Chat requests are enforced by LiteLLM per GitHub account. The edge verifies the
-caller with GitHub's `/user` API, reads the returned `id` and `login`, and then
-uses or provisions a key alias like `tinytinkerer-github-<id>` with
-`user_id=github-<id>`. See [PRIVACY.md](PRIVACY.md) for the full data-flow
-description, and keep those statements true for your own instance (notably:
-LiteLLM vendor telemetry disabled, no logging of conversation content).
+**Chat requests from authenticated users** are enforced by LiteLLM per GitHub
+account. The edge verifies the caller with GitHub's `/user` API, reads the
+returned `id` and `login`, and then uses or provisions a key alias like
+`tinytinkerer-<namespace>-github-<id>` with `user_id=github-<id>`.
+
+**Chat requests from unauthenticated users** (no Authorization header) use a
+shared anonymous key. The edge provisions it as `tinytinkerer-<namespace>-anonymous`
+with `user_id=anonymous` on first request.
+
+Both key types use the same provisioning endpoints and the same HMAC derivation
+logic (derived from `LITELLM_USER_KEY_SECRET`).
+
+See [PRIVACY.md](PRIVACY.md) for the full data-flow description, and keep those
+statements true for your own instance (notably: LiteLLM vendor telemetry disabled,
+no logging of conversation content).
 
 ## 1. Host a LiteLLM instance
 
@@ -264,24 +350,30 @@ new per-user keys on next sign-in, potentially forking user spend history. If
 you must rotate it, clear the browser cache (Settings → Refresh) and set hard
 limits on the old key in LiteLLM as a safety net.
 
-### Per-user budgets
+### Virtual key provisioning
 
-Starting from this version, the edge automatically creates and manages per-user
-virtual keys with configurable budgets and rate limits. Each GitHub user gets
-their own scoped key with:
+The edge automatically creates and manages two types of LiteLLM virtual keys:
 
-- **Max budget** (`LITELLM_USER_MAX_BUDGET_USD`, default `1`) — spend cap per
-  budget period
-- **Budget duration** (`LITELLM_USER_BUDGET_DURATION`, default `30d`) — when the
-  budget resets
-- **RPM limit** (`LITELLM_USER_RPM_LIMIT`, default `10`) — requests per minute
-- **TPM limit** (`LITELLM_USER_TPM_LIMIT`, default `100000`) — tokens per minute
-- **Model scope** (`LITELLM_USER_MODELS`, optional) — comma-separated allowed
-  model aliases; empty means all configured models
+**Per-user keys (authenticated):** Each GitHub user gets their own scoped key.
+- Deterministically derived from `LITELLM_USER_KEY_SECRET` + GitHub ID
+- Persists across sessions (same GitHub ID always gets the same key)
+- Budget and limits apply per GitHub account
+- Model scope applies per GitHub account
 
-If a previous deployment used a shared key, that key and its associated spend
-history remain in LiteLLM. The new per-user keys will coexist. If you want to
-retire the old key:
+**Anonymous key (unauthenticated):** All unauthenticated users share one key.
+- Deterministically derived from `LITELLM_USER_KEY_SECRET` + "anonymous"
+- Created on first unauthenticated request
+- Budget and limits are shared across all anonymous users
+- Model scope applies to all anonymous users
+
+Both keys are created via the same management endpoints (`/v2/key/info`,
+`/key/generate`, `/key/update`) using the `LITELLM_KEY_MANAGEMENT_API_KEY`.
+
+### Migration from shared keys (legacy)
+
+If a previous deployment used a single shared key for all users, that key and its
+associated spend history remain in LiteLLM. The new per-user and anonymous keys
+will coexist. If you want to retire the old shared key:
 
 1. Update its `max_budget` in LiteLLM to `0` (prevents new requests)
 2. Keep its spend history for auditing
@@ -336,16 +428,23 @@ LITELLM_USER_KEY_SECRET=<32-byte hex from openssl rand -hex 32>
 LITELLM_BASE_URL=https://litellm.example.com/
 LITELLM_ALLOWED_BASE_URLS=https://litellm.example.com/
 
-# Per-user budgets and rate limits
+# Per-user (authenticated) budgets and rate limits
 LITELLM_USER_MAX_BUDGET_USD=1
 LITELLM_USER_BUDGET_DURATION=30d
 LITELLM_USER_RPM_LIMIT=10
 LITELLM_USER_TPM_LIMIT=100000
 
-# Optional: scope generated keys to specific models
+# Anonymous (unauthenticated) budgets and rate limits
+# Shared across all unauthenticated users
+LITELLM_ANONYMOUS_MAX_BUDGET_USD=0.10
+LITELLM_ANONYMOUS_BUDGET_DURATION=30d
+LITELLM_ANONYMOUS_RPM_LIMIT=3
+LITELLM_ANONYMOUS_TPM_LIMIT=20000
+
+# Optional: scope generated keys to specific models (applies to both user and anonymous)
 # LITELLM_USER_MODELS=chatgpt/gpt-5.4,openai/gpt-4.1-mini,github/gpt-5
 
-# Optional: restrict access to specific GitHub users
+# Optional: restrict access to specific GitHub users (anonymous users always allowed)
 # GITHUB_ALLOWED_USERS=12345,user-login
 ```
 
@@ -424,7 +523,9 @@ minutes of staleness in the browser.
 | `400 LiteLLM base URL is not allowed` | A Settings override points at a URL not in `LITELLM_ALLOWED_BASE_URLS` | Review Settings → LiteLLM base URL and compare to Worker `vars` |
 | `401 Authentication failed.` | User's virtual key was deleted, or doesn't exist in the LiteLLM instance | Sign in again to trigger re-provisioning; check LiteLLM dashboard for the user's key (`tinytinkerer-<hash>-github-<id>`) |
 | `403 Access denied.` | User key exists but model scope or `GITHUB_ALLOWED_USERS` doesn't match | Check the key's `models` array in LiteLLM; verify user GitHub ID/login against `GITHUB_ALLOWED_USERS` |
-| `429` rate limit in app | User hit their per-key RPM/TPM limit, or upstream provider rate-limited | Check the user's key spend/usage in LiteLLM dashboard; adjust `LITELLM_USER_RPM_LIMIT` or `LITELLM_USER_TPM_LIMIT` if needed |
-| Models missing from picker | `LITELLM_USER_MODELS` out of sync, proxy not restarted, or edge cache stale | Restart LiteLLM, wait 5 minutes for edge cache to expire, or manually refresh in Settings |
+| `429` rate limit in app | User or anonymous key hit their RPM/TPM limit, or upstream provider rate-limited | Check the key's spend/usage in LiteLLM dashboard (look for `tinytinkerer-...-github-<id>` for user keys, `tinytinkerer-...-anonymous` for anonymous). Adjust limits if needed: `LITELLM_USER_RPM_LIMIT` / `LITELLM_USER_TPM_LIMIT` for users, `LITELLM_ANONYMOUS_RPM_LIMIT` / `LITELLM_ANONYMOUS_TPM_LIMIT` for anonymous |
+| Anonymous user sees "LiteLLM user key provisioning is temporarily unavailable" | Anonymous key provisioning failed; same root causes as per-user key failures | Test the management key manually; verify routes `/v2/key/info`, `/key/generate`, `/key/update` are exposed; check LiteLLM logs for the "anonymous" key |
+| Unauthenticated user can't access models | Anonymous key not created, or `LITELLM_ANONYMOUS_*` vars misconfigured | Verify `LITELLM_ANONYMOUS_MAX_BUDGET_USD`, `LITELLM_ANONYMOUS_RPM_LIMIT`, `LITELLM_ANONYMOUS_TPM_LIMIT` are set; check LiteLLM dashboard for key `tinytinkerer-<hash>-anonymous` |
+| Models missing from picker | `LITELLM_USER_MODELS` out of sync, proxy not restarted, or edge cache stale | Restart LiteLLM, wait 5 minutes for edge cache to expire, or manually refresh in Settings. Note: same model list applies to both authenticated users and anonymous users |
 | User key doesn't exist after sign-in | Management key lacks permission, key-management endpoints unreachable, or derivation secret changed | Check management key logs in LiteLLM; verify routes are exposed in Traefik/reverse-proxy; do not rotate `LITELLM_USER_KEY_SECRET` without clearing browser cache |
-| Budget exceeded (`402` or similar) | User hit their `LITELLM_USER_MAX_BUDGET_USD` cap for the period | Check key spend in LiteLLM dashboard; wait for budget reset (duration: `LITELLM_USER_BUDGET_DURATION`, default `30d`) or increase the budget limit |
+| Budget exceeded (`402` or similar) | User hit their `LITELLM_USER_MAX_BUDGET_USD` cap for the period, or anonymous users hit `LITELLM_ANONYMOUS_MAX_BUDGET_USD` | Check key spend in LiteLLM dashboard; wait for budget reset (duration: `LITELLM_USER_BUDGET_DURATION` or `LITELLM_ANONYMOUS_BUDGET_DURATION`, default `30d`) or increase the budget limit |
