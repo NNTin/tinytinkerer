@@ -1,9 +1,15 @@
 import type { Tool } from '../tools/registry'
 import {
   PluginCaptureError,
+  type AgentHookContribution,
   type AgentPlugin,
   type PluginHost
 } from './types'
+
+export type PluginContributions = {
+  tools: Tool<unknown, unknown>[]
+  hooks: AgentHookContribution[]
+}
 
 // Registry of optional plugins. Activation gating lives here: `collectTools`
 // returns tools only for the plugin ids the host marks active, and wraps each
@@ -23,13 +29,28 @@ export class PluginRegistry {
 
   // Build the tool set for the active plugins, wrapping execute so structured
   // PluginCaptureError reports reach the host sink. Activation/deactivation
-  // lifecycle is driven by the change in `activeIds` between calls; every plugin
-  // hook is best-effort (never awaited, failures swallowed) so a misbehaving
-  // plugin can never break runtime construction.
+  // lifecycle is driven by the change in `activeIds` between calls; every
+  // activate/deactivate callback is best-effort (never awaited, failures
+  // swallowed) so a misbehaving plugin can never break runtime construction.
   collectTools(
     activeIds: ReadonlySet<string>,
     host: PluginHost
   ): Tool<unknown, unknown>[] {
+    return this.collect(activeIds, host, false).tools
+  }
+
+  collectContributions(
+    activeIds: ReadonlySet<string>,
+    host: PluginHost
+  ): PluginContributions {
+    return this.collect(activeIds, host, true)
+  }
+
+  private collect(
+    activeIds: ReadonlySet<string>,
+    host: PluginHost,
+    includeHooks: boolean
+  ): PluginContributions {
     // Deactivate plugins that were active on a previous call but no longer are.
     for (const id of [...this.activated]) {
       if (!activeIds.has(id)) {
@@ -39,6 +60,7 @@ export class PluginRegistry {
     }
 
     const tools: Tool<unknown, unknown>[] = []
+    const hooks: AgentHookContribution[] = []
 
     for (const plugin of this.plugins.values()) {
       if (!activeIds.has(plugin.id)) {
@@ -62,9 +84,20 @@ export class PluginRegistry {
       for (const tool of pluginTools) {
         tools.push(wrapToolCapture(tool, host))
       }
+
+      if (includeHooks) {
+        // Hook construction follows the same optional-plugin rule as tools:
+        // failures skip that plugin's hook contributions without breaking
+        // runtime construction or other active plugins.
+        try {
+          hooks.push(...(plugin.createHooks?.(host) ?? []))
+        } catch {
+          // Optional plugin hook construction failed — ignored.
+        }
+      }
     }
 
-    return tools
+    return { tools, hooks }
   }
 }
 

@@ -4,6 +4,7 @@ import { PluginRegistry } from '../src/plugins/registry'
 import {
   isPluginModule,
   PluginCaptureError,
+  type AgentHookContribution,
   type AgentPlugin,
   type PluginHost
 } from '../src/plugins/types'
@@ -129,6 +130,46 @@ describe('PluginRegistry', () => {
     expect(tools.map((t) => t.id)).toEqual(['good:tool'])
   })
 
+  it('collects hooks only for active plugins', () => {
+    const host: PluginHost = { capture: vi.fn() }
+    const hook: AgentHookContribution = {
+      event: 'chat.event',
+      handler: vi.fn()
+    }
+    const registry = new PluginRegistry()
+    registry.register(plugin('a', [], { createHooks: () => [hook] }))
+    registry.register(plugin('b', [], { createHooks: () => [hook] }))
+
+    const contributions = registry.collectContributions(new Set(['a']), host)
+
+    expect(contributions.tools).toEqual([])
+    expect(contributions.hooks).toEqual([hook])
+  })
+
+  it('does not let a throwing createHooks break contribution collection', () => {
+    const host: PluginHost = { capture: vi.fn() }
+    const hook: AgentHookContribution = {
+      event: 'chat.event',
+      handler: vi.fn()
+    }
+    const registry = new PluginRegistry()
+    registry.register(
+      plugin('bad', [], {
+        createHooks: () => {
+          throw new Error('hook construction failed')
+        }
+      })
+    )
+    registry.register(plugin('good', [], { createHooks: () => [hook] }))
+
+    const contributions = registry.collectContributions(
+      new Set(['bad', 'good']),
+      host
+    )
+
+    expect(contributions.hooks).toEqual([hook])
+  })
+
   it('rethrows the original tool error even when the capture sink throws', async () => {
     const host: PluginHost = {
       capture: () => {
@@ -193,5 +234,14 @@ describe('isPluginModule', () => {
     ]
   ])('rejects %s', (_label, value) => {
     expect(isPluginModule(value)).toBe(false)
+  })
+
+  it('accepts a manifest carrying capability metadata', () => {
+    expect(
+      isPluginModule({
+        ...validModule,
+        manifest: { ...validModule.manifest, capabilities: ['hooks'] }
+      })
+    ).toBe(true)
   })
 })

@@ -18,6 +18,7 @@ export const feedbackPluginManifest: PluginManifest = {
   label: 'Feedback (send_feedback tool)',
   description:
     "Report a bug or suggest an improvement through the assistant — it can also flag its own limitations as ideas. Unlike other plugins this tool helps me rather than you directly, so the assistant may perform slightly worse while it's on. Leaving it on is a small way to support the project — think of it as buying me a coffee. Off by default.",
+  capabilities: ['tools'],
   toolDescriptors: [
     {
       id: 'send_feedback',

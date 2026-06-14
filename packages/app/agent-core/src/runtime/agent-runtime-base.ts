@@ -10,6 +10,8 @@ import type {
   ProviderCallOptions
 } from '../types'
 import { RuntimeTimeoutError } from '../errors/timeout-error'
+import { runToolBeforeExecuteHooks } from '../plugins/hooks'
+import type { AgentHookContribution } from '../plugins/types'
 import { ToolRegistry } from '../tools/registry'
 import { MAX_AUTO_RETRY_AFTER_MS, withTimeout } from './utils'
 
@@ -44,6 +46,8 @@ export type AgentRuntimeOptions = {
   searchEnabled?: boolean
   createAssistantContentSession?: CreateAssistantContentSession
   reportError?: RuntimeErrorReporter
+  hooks?: readonly AgentHookContribution[]
+  hookTimeoutMs?: number
 }
 
 export type RunOptions = {
@@ -94,6 +98,8 @@ export abstract class AgentRuntimeBase {
   protected readonly searchEnabled: boolean
   protected readonly createAssistantContentSession: CreateAssistantContentSession
   protected readonly reportError: RuntimeErrorReporter
+  protected readonly hooks: readonly AgentHookContribution[]
+  protected readonly hookTimeoutMs: number
 
   constructor(
     protected readonly provider: ModelProvider,
@@ -115,6 +121,8 @@ export abstract class AgentRuntimeBase {
     this.createAssistantContentSession =
       options.createAssistantContentSession ?? createPlainTextAssistantContentSession
     this.reportError = options.reportError ?? (() => {})
+    this.hooks = options.hooks ?? []
+    this.hookTimeoutMs = options.hookTimeoutMs ?? 60_000
   }
 
   abstract run(prompt: string, options?: RunOptions): AsyncGenerator<ChatEvent>
@@ -179,6 +187,22 @@ export abstract class AgentRuntimeBase {
 
     if (this.maxToolCallsPerStep < 1) {
       const error = 'Tool calls disabled by runtime policy'
+      yield createEvent('agent.tool.failed', { stepId, toolId, error })
+      return { ok: false, error }
+    }
+
+    const gate = await runToolBeforeExecuteHooks(
+      this.hooks,
+      {
+        stepId,
+        ...(parentStepId ? { parentStepId } : {}),
+        toolId,
+        input
+      },
+      this.hookTimeoutMs
+    )
+    if (!gate.allow) {
+      const error = `Tool execution blocked: ${gate.reason}`
       yield createEvent('agent.tool.failed', { stepId, toolId, error })
       return { ok: false, error }
     }

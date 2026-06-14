@@ -1,3 +1,4 @@
+import type { ChatEvent } from '@tinytinkerer/contracts'
 import type { Tool } from '../tools/registry'
 
 // A structured report a plugin asks the host to capture out-of-band (e.g. to
@@ -27,6 +28,36 @@ export interface PluginHost {
   capture: PluginCaptureSink
 }
 
+export type ChatEventHookContext = {
+  event: ChatEvent
+}
+
+export type ToolExecutionContext = {
+  stepId: string
+  parentStepId?: string
+  toolId: string
+  input: Record<string, unknown>
+}
+
+export type ToolGateResult =
+  | { allow: true }
+  | { allow: false; reason: string }
+
+// Hook contributions are intentionally split into observer hooks and explicit
+// gates. Observers can react to runtime events but cannot change execution;
+// gates are awaited by the runtime and may block the operation they guard.
+export type AgentHookContribution =
+  | {
+      event: 'chat.event'
+      handler: (context: ChatEventHookContext) => void | Promise<void>
+    }
+  | {
+      event: 'tool.beforeExecute'
+      handler: (
+        context: ToolExecutionContext
+      ) => ToolGateResult | Promise<ToolGateResult>
+    }
+
 // Typed error a plugin tool may throw to (a) report a structured payload to the
 // host capture sink and (b) still surface a failure to the agent runtime. The
 // registry recognises this type, routes `report` to `host.capture`, and rethrows
@@ -47,6 +78,7 @@ export class PluginCaptureError extends Error {
 export interface AgentPlugin {
   id: string
   createTools?(host: PluginHost): Tool<unknown, unknown>[]
+  createHooks?(host: PluginHost): AgentHookContribution[]
   activate?(host: PluginHost): void | Promise<void>
   deactivate?(): void | Promise<void>
 }
@@ -68,6 +100,7 @@ export type PluginManifest = {
   id: string
   label: string
   description: string
+  capabilities?: Array<'tools' | 'hooks'>
   toolDescriptors?: PluginToolDescriptor[]
 }
 

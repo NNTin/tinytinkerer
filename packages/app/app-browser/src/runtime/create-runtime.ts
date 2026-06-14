@@ -3,6 +3,7 @@ import {
   isRuntimeTimeoutError,
   PluginRegistry,
   resolveActivePluginIds,
+  type AgentHookContribution,
   type PluginHost,
   type PluginModule,
   type Tool
@@ -76,6 +77,7 @@ export const createRuntime = (options: {
   const edgeFetch = createEdgeFetch(options.baseUrl, options.getToken)
 
   const tools: Tool<unknown, unknown>[] = []
+  const hooks: AgentHookContribution[] = []
   const allToolDescriptors: PlannerToolDescriptor[] = []
   const registeredToolIds = new Set<string>()
 
@@ -151,7 +153,12 @@ export const createRuntime = (options: {
       }
     }
     const addedPluginToolIds = new Set<string>()
-    for (const tool of pluginRuntime.registry.collectTools(activePluginIds, pluginHost)) {
+    const contributions = pluginRuntime.registry.collectContributions(
+      activePluginIds,
+      pluginHost
+    )
+    hooks.push(...contributions.hooks)
+    for (const tool of contributions.tools) {
       if (addTool(tool)) {
         addedPluginToolIds.add(tool.id)
       }
@@ -216,6 +223,7 @@ export const createRuntime = (options: {
       }
     },
     tools,
+    hooks,
     searchEnabled: options.searchEnabled
   })
 }

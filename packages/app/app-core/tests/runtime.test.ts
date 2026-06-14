@@ -135,4 +135,108 @@ describe('createChatRuntime', () => {
       payload: { source: 'retried' }
     })
   })
+
+  it('notifies chat.event hooks for emitted runtime events', async () => {
+    const observed: ChatEvent['type'][] = []
+    const provider: ModelProvider = {
+      plan() {
+        return Promise.resolve({ complexity: 'low', steps: [] })
+      },
+      execute() {
+        return Promise.resolve('')
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: await Promise.resolve('done') }
+      }
+    }
+
+    const events = await collectEvents(
+      createChatRuntime({
+        provider,
+        hooks: [
+          {
+            event: 'chat.event',
+            handler: ({ event }) => {
+              observed.push(event.type)
+            }
+          }
+        ]
+      })
+    )
+
+    expect(observed).toEqual(events.map((event) => event.type))
+  })
+
+  it('blocks tool execution when a before-tool hook denies it', async () => {
+    let toolExecutions = 0
+    const provider: ModelProvider = {
+      plan() {
+        return Promise.resolve({
+          complexity: 'medium',
+          steps: [
+            {
+              id: 'search',
+              summary: 'Search for context',
+              toolCall: {
+                toolId: 'web-search',
+                input: { query: 'latest news', maxResults: 5 }
+              }
+            }
+          ]
+        })
+      },
+      execute() {
+        return Promise.resolve('continued after denial')
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: await Promise.resolve('done') }
+      }
+    }
+
+    const events = await collectEvents(
+      createChatRuntime({
+        provider,
+        tools: [
+          {
+            id: 'web-search',
+            description: 'Search the web',
+            schema: searchRequestSchema,
+            execute() {
+              toolExecutions += 1
+              return Promise.resolve({ results: [] })
+            }
+          }
+        ],
+        hooks: [
+          {
+            event: 'tool.beforeExecute',
+            handler: ({ toolId }) =>
+              Promise.resolve({
+                allow: false,
+                reason: `Permission denied for ${toolId}`
+              })
+          }
+        ]
+      })
+    )
+
+    const startedIndex = events.findIndex(
+      (event) => event.type === 'agent.tool.started'
+    )
+    const failedIndex = events.findIndex(
+      (event) => event.type === 'agent.tool.failed'
+    )
+    const failed = events[failedIndex]
+
+    expect(toolExecutions).toBe(0)
+    expect(startedIndex).toBeGreaterThanOrEqual(0)
+    expect(failedIndex).toBeGreaterThan(startedIndex)
+    expect(failed).toMatchObject({
+      type: 'agent.tool.failed',
+      payload: {
+        toolId: 'web-search',
+        error: 'Tool execution blocked: Permission denied for web-search'
+      }
+    })
+  })
 })

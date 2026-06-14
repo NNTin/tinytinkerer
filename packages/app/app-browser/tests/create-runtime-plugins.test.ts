@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import type { PluginModule, Tool } from '@tinytinkerer/app-core'
+import type {
+  AgentHookContribution,
+  PluginModule,
+  Tool
+} from '@tinytinkerer/app-core'
 import {
   createPluginRuntime,
   createRuntime
@@ -38,6 +42,22 @@ const pluginModule = (options: {
     createTools: () => [testTool(options.toolId)],
     ...(options.activate ? { activate: options.activate } : {}),
     ...(options.deactivate ? { deactivate: options.deactivate } : {})
+  })
+})
+
+const hookPluginModule = (
+  id: string,
+  hook: AgentHookContribution
+): PluginModule => ({
+  manifest: {
+    id,
+    label: id,
+    description: 'hook plugin',
+    capabilities: ['hooks']
+  },
+  createPlugin: () => ({
+    id,
+    createHooks: () => [hook]
   })
 })
 
@@ -161,5 +181,41 @@ describe('plugin runtime contributions', () => {
 
     expect(activate).toHaveBeenCalledTimes(1)
     expect(deactivate).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes active plugin hooks into the browser runtime', async () => {
+    const observed: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' }
+          })
+        )
+      )
+    )
+
+    const runtime = createRuntime({
+      baseUrl: 'http://edge.local',
+      searchEnabled: false,
+      getToken: () => 'token',
+      getModel: () => 'openai/gpt-4.1-mini',
+      pluginActivation: { observer: true },
+      pluginModules: [
+        hookPluginModule('observer', {
+          event: 'chat.event',
+          handler: ({ event }) => {
+            observed.push(event.type)
+          }
+        })
+      ]
+    })
+
+    await runRuntime(runtime)
+
+    expect(observed).toContain('assistant.done')
+    vi.unstubAllGlobals()
   })
 })

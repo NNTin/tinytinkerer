@@ -3,10 +3,12 @@ import {
   RateLimitError as AgentRateLimitError,
   HybridRuntime,
   ReActRuntime,
+  runChatEventHooks,
   ToolRegistry
 } from '@tinytinkerer/agent-core'
 import type {
   AgentRuntimeBase,
+  AgentHookContribution,
   CreateAssistantContentSession,
   DecisionChunk,
   ExecutionContext as AgentExecutionContext,
@@ -31,12 +33,16 @@ export { RuntimeTimeoutError, isRuntimeTimeoutError } from '@tinytinkerer/agent-
 export { PluginRegistry, isPluginModule } from '@tinytinkerer/agent-core'
 export type {
   AgentPlugin,
+  ChatEventHookContext,
   PluginHost,
   PluginReport,
   PluginCaptureSink,
   PluginManifest,
   PluginModule,
-  PluginToolDescriptor
+  PluginToolDescriptor,
+  AgentHookContribution,
+  ToolExecutionContext,
+  ToolGateResult
 } from '@tinytinkerer/agent-core'
 
 export type ConversationMessage = {
@@ -93,6 +99,8 @@ export const createChatRuntime = (options: {
   searchEnabled?: boolean
   createAssistantContentSession?: CreateAssistantContentSession
   reportError?: RuntimeErrorReporter
+  hooks?: readonly AgentHookContribution[]
+  hookTimeoutMs?: number
 }): ChatRuntime => {
   const registry = new ToolRegistry()
   for (const tool of options.tools ?? []) {
@@ -113,7 +121,9 @@ export const createChatRuntime = (options: {
     ...(options.createAssistantContentSession
       ? { createAssistantContentSession: options.createAssistantContentSession }
       : {}),
-    ...(options.reportError ? { reportError: options.reportError } : {})
+    ...(options.reportError ? { reportError: options.reportError } : {}),
+    ...(options.hooks ? { hooks: options.hooks } : {}),
+    ...(options.hookTimeoutMs !== undefined ? { hookTimeoutMs: options.hookTimeoutMs } : {})
   }
 
   const adaptedProvider = createProviderAdapter(options.provider)
@@ -130,7 +140,19 @@ export const createChatRuntime = (options: {
     }
   })()
 
-  return runtime
+  if (!options.hooks || options.hooks.length === 0) {
+    return runtime
+  }
+
+  const hooks = options.hooks
+  return {
+    async *run(prompt, runOptions) {
+      for await (const event of runtime.run(prompt, runOptions)) {
+        await runChatEventHooks(hooks, { event })
+        yield event
+      }
+    }
+  }
 }
 
 // The app-core and agent-core layers each define their own RateLimitError;
