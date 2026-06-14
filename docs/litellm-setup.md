@@ -54,7 +54,7 @@ graph LR
     
     AU -->|sends chat requests<br/>no auth| F
     GU -->|sends chat requests<br/>with GitHub token| F
-    F -->|POST /api/chat<br/>sends GitHub token<br/>(if present)| E
+    F -->|"POST /api/chat<br/>sends GitHub token<br/>(if present)"| E
     E -->|POST /v2/key/info<br/>Bearer: management key| L
     E -->|POST /key/generate<br/>Bearer: management key| L
     E -->|POST /v1/chat/completions<br/>Bearer: derived key<br/>(anonymous or per-user)| L
