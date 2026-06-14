@@ -1,6 +1,7 @@
 import {
   AssistantContent,
   LazyBrowserSettingsModal,
+  PermissionModal,
   TINYTINKERER_BRAND_ASSET_URLS,
   useChatComposer,
   useChatSurfaceController,
@@ -389,6 +390,8 @@ const WidgetSurface = ({
           <LazyBrowserSettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
         </Suspense>
       ) : null}
+
+      <PermissionModal />
     </div>
   )
 }

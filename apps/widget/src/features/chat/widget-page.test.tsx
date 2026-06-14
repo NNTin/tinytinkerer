@@ -119,6 +119,7 @@ vi.mock('@tinytinkerer/app-browser', async () => {
         </button>
       </div>
     ) : null,
+  PermissionModal: () => null,
   TINYTINKERER_BRAND_ASSET_URLS: {
     icon192: '/brand/icon-192.png'
   },

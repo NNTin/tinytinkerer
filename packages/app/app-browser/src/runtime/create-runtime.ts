@@ -24,6 +24,7 @@ import {
   captureTelemetryMessage,
   fingerprintMessage
 } from '../telemetry/telemetry'
+import { requestPermission } from '../permission-service'
 
 export type BrowserPluginRuntime = {
   registry: PluginRegistry
@@ -150,7 +151,12 @@ export const createRuntime = (options: {
         } else {
           captureTelemetryException(report.message, captureOptions)
         }
-      }
+      },
+      // Human-in-the-loop gate: a permission-gating plugin (e.g. plugin-permissions)
+      // calls this to ask the user before a tool runs. It enqueues a request on the
+      // shared permission store; the mounted <PermissionModal /> resolves it with the
+      // user's Allow/Deny choice. The browser can prompt, so it always provides this.
+      requestPermission
     }
     const addedPluginToolIds = new Set<string>()
     const contributions = pluginRuntime.registry.collectContributions(

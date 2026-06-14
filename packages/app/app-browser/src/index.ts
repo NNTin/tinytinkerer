@@ -33,6 +33,13 @@ export { AssistantContent } from './assistant-content'
 export { BrowserCallbackPage } from './browser-callback-page'
 export { BrowserSettingsModal, McpServerList } from './browser-settings-modal'
 export { LazyBrowserSettingsModal } from './lazy-browser-settings-modal'
+export { PermissionModal } from './permission-modal'
+export {
+  requestPermission,
+  usePermissionStore,
+  resetPermissionStore
+} from './permission-service'
+export type { PendingPermission } from './permission-service'
 export { TelemetryConsentGate } from './telemetry/consent-gate'
 export { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
 export { PrivacyPolicyUpdateGate } from './telemetry/privacy-update-gate'

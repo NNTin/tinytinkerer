@@ -1,6 +1,7 @@
 import {
   AssistantContent,
   LazyBrowserSettingsModal,
+  PermissionModal,
   TurnActivityPanel,
   useChatComposer,
   useChatSurfaceController
@@ -250,6 +251,8 @@ export const ChatPage = () => {
           <LazyBrowserSettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
         </Suspense>
       ) : null}
+
+      <PermissionModal />
     </div>
   )
 }

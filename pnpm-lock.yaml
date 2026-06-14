@@ -778,6 +778,12 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/plugins/plugin-permissions:
+    dependencies:
+      '@tinytinkerer/agent-core':
+        specifier: workspace:*
+        version: link:../../app/agent-core
+
   packages/shared/contracts:
     dependencies:
       zod:

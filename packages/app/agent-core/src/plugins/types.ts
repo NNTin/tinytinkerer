@@ -21,11 +21,33 @@ export type PluginReport = {
 // the telemetry sink, a host that registers nothing simply drops reports.
 export type PluginCaptureSink = (report: PluginReport) => void
 
+// A request for human-in-the-loop permission before a tool runs. Mirrors the
+// runtime's ToolExecutionContext so a gating plugin can forward the tool it is
+// about to guard (id, input, and the step linkage) verbatim to the host.
+export type PermissionRequest = {
+  toolId: string
+  input: Record<string, unknown>
+  stepId: string
+  parentStepId?: string
+}
+
+// Optional service a host registers so a gating plugin can ask a human to allow
+// or deny a tool before it runs. Resolves to a ToolGateResult. Only hosts that
+// can actually prompt (e.g. the browser, via a modal) provide this; a headless
+// host omits it and a gating plugin must default to allow when it is absent
+// (it has no way to ask, so it cannot block).
+export type PermissionRequestService = (
+  request: PermissionRequest
+) => Promise<ToolGateResult>
+
 // Host services handed to plugins at activation / tool-construction time. Kept
 // minimal and product-agnostic so plugin packages never reach into a specific
 // runtime or browser API.
 export interface PluginHost {
   capture: PluginCaptureSink
+  // Optional: present only on hosts that can prompt a human. See
+  // PermissionRequestService — plugins must tolerate its absence.
+  requestPermission?: PermissionRequestService
 }
 
 export type ChatEventHookContext = {
