@@ -53,6 +53,9 @@ flowchart LR
 
     %%subgraph PluginInfrastructure["Plugin Infrastructure"]
     %%  pluginfeedback["@tinytinkerer/plugin-feedback<br/>send_feedback plugin"]
+    %%  plugineventlogger["@tinytinkerer/plugin-event-logger<br/>chat.event observer hook plugin"]
+    %%  pluginpermissions["@tinytinkerer/plugin-permissions<br/>tool.beforeExecute gate plugin"]
+    %%  pluginwebsearch["@tinytinkerer/plugin-web-search<br/>web-search (Tavily) tool plugin"]
     %%end
 
     contracts["@tinytinkerer/contracts<br/>canonical schemas + types"]
@@ -65,6 +68,9 @@ flowchart LR
 
     subgraph PluginInfrastructure["Plugin Infrastructure"]
       pluginfeedback["@tinytinkerer/plugin-feedback<br/>send_feedback plugin"]
+      plugineventlogger["@tinytinkerer/plugin-event-logger<br/>chat.event observer hook plugin"]
+      pluginpermissions["@tinytinkerer/plugin-permissions<br/>tool.beforeExecute gate plugin"]
+      pluginwebsearch["@tinytinkerer/plugin-web-search<br/>web-search (Tavily) tool plugin"]
     end
 
     subgraph ContentPlatform["Content Platform"]
@@ -102,6 +108,7 @@ flowchart LR
   appbrowser --> ContentPlatform
   appbrowser --> appcore
   appbrowser -. "discovers dynamically<br/>(import.meta.glob, no static dep)" .-> PluginInfrastructure
+  appbrowser -. "injects host edge capability<br/>(PluginHost.edgeFetch)" .-> pluginwebsearch
   appbrowser --> sentrytelemetry
 
   PluginInfrastructure --> agent
@@ -157,7 +164,7 @@ flowchart LR
   class ui,legendUi uiPrimitives;
   class contentcore,contentmarkdown,contentreact,contentmermaid,contentwireframe,contentimage,contentcode,contentcallout,contentlinkcard,contenttable,legendFeature sharedFeature;
   class contracts,legendContracts contractsLayer;
-  class agent,appcore,sentrytelemetry,pluginfeedback,legendCore coreLayer;
+  class agent,appcore,sentrytelemetry,pluginfeedback,plugineventlogger,pluginpermissions,pluginwebsearch,legendCore coreLayer;
   class brand,legendBrand brandLayer;
 ```
 
@@ -240,7 +247,7 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 | `apps/edge` | stateless backend boundary | HTTP endpoints, upstream normalization, transport concerns | browser APIs, UI logic |
 | `packages/contracts` | foundational shared schemas and types | Zod schemas, inferred types, canonical content model, DTOs | runtime orchestration, UI code |
 | `packages/agent-core` | product-agnostic runtime abstractions | provider/tool abstractions, runtime mechanics, the plugin contract + registry | browser code, app-specific behavior |
-| `packages/plugins/*` | optional plugin packages | one plugin's tools + UI manifest over the agent-core plugin contract | browser APIs, telemetry SDKs, app-specific UI |
+| `packages/plugins/*` | optional plugin packages | one plugin's tools and/or hooks + UI manifest over the agent-core plugin contract (e.g. `plugin-feedback`, `plugin-event-logger`, `plugin-permissions`, `plugin-web-search`) | browser APIs, telemetry SDKs, app-specific UI |
 | `packages/app-core` | headless product behavior | chat/auth/settings orchestration, projections, ports | React, browser APIs, fetch, storage adapters |
 | `packages/app-browser` | shared browser composition boundary | browser adapters, shell bootstrap config, OAuth helpers, shell-facing hooks and components, shared browser styles | app-specific layout, app-owned screens |
 | `packages/brand-assets` | shared brand metadata | favicon, icon, manifest, and theme definitions | DOM mutation, app bootstrapping |
@@ -263,8 +270,8 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 - `ui` must stay primitive-only.
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
 - `agent-core` may depend only on `contracts` and agent-core-local modules.
-- `plugin-feedback` (and future `packages/plugins/*` packages) may depend only on `agent-core`, `contracts`, and plugin-local modules, and must stay product-agnostic (no browser APIs, React, or telemetry imports). Each exports the `PluginModule` contract (`manifest` + `createPlugin`) so the host can discover it dynamically.
-- `app-browser` discovers plugins dynamically (no static plugin dependency), wiring their capture sink to telemetry and surfacing their activation toggles from the discovered manifests.
+- `packages/plugins/*` packages (`plugin-feedback`, `plugin-event-logger`, `plugin-permissions`, `plugin-web-search`, and future ones) may depend only on `agent-core`, `contracts`, and plugin-local modules, and must stay product-agnostic (no browser APIs, React, or telemetry imports). Each exports the `PluginModule` contract (`manifest` + `createPlugin`) so the host can discover it dynamically. A plugin that needs a host-only capability (telemetry capture, a human-in-the-loop permission prompt, or an edge request) receives it as an injected function on `PluginHost` rather than importing it — see [plugin-infrastructure.md](./plugin-infrastructure.md).
+- `app-browser` discovers plugins dynamically (no static plugin dependency), wiring the `PluginHost` capabilities (the capture sink to telemetry, the permission prompt to the confirmation modal, and the edge capability to its `edgeFetch`) and surfacing their activation toggles from the discovered manifests. `plugin-web-search` is gated by the host's existing search-readiness state (enabled by default) instead of the generic plugin-activation toggles, so it is not listed in the generic plugins settings section.
 - `edge` may depend only on `contracts`, `sentry-telemetry`, and edge-local modules.
 - `host` must not declare workspace dependencies on other apps. It composes the built or dev-served apps by path, not by module import.
 

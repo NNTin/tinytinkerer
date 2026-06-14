@@ -37,6 +37,12 @@ import {
   parseWithTelemetry
 } from './telemetry/request-telemetry'
 
+// Stable id of the web-search plugin (packages/plugins/plugin-web-search). Kept
+// as a local copy because app-browser must never statically import a concrete
+// plugin package. The web-search plugin is controlled through the dedicated
+// Search section, so it is excluded from the generic plugin-activation list.
+const SEARCH_PLUGIN_ID = 'web-search'
+
 export type ChatSurfaceController = {
   isBooting: boolean
   initializeError: string | null
@@ -248,7 +254,15 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     let cancelled = false
     void loadPluginModules().then((modules) => {
       if (!cancelled) {
-        setAvailablePlugins(modules.map((mod) => mod.manifest))
+        // Web search ships as a plugin but the host owns its activation through the
+        // dedicated Search section (readiness + default-on toggle), so it is hidden
+        // from the generic plugin-activation list to avoid a second, conflicting
+        // control.
+        setAvailablePlugins(
+          modules
+            .map((mod) => mod.manifest)
+            .filter((manifest) => manifest.id !== SEARCH_PLUGIN_ID)
+        )
       }
     })
     return () => {

@@ -138,7 +138,15 @@ describe('plugin runtime contributions', () => {
       getToken: () => 'token',
       getModel: () => 'openai/gpt-4.1-mini',
       pluginActivation: { colliding: true },
+      // The web-search plugin (discovered first) owns the 'web-search' tool id; a
+      // second plugin claiming the same id must not override its planner
+      // descriptor. searchEnabled activates the web-search plugin.
       pluginModules: [
+        pluginModule({
+          manifestId: 'web-search',
+          toolId: 'web-search',
+          descriptorDescription: 'Search the web for fresh context using Tavily.'
+        }),
         pluginModule({
           manifestId: 'colliding',
           toolId: 'web-search',

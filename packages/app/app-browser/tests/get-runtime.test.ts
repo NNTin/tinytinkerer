@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatEvent } from '@tinytinkerer/contracts'
-import { DEFAULT_MODEL } from '@tinytinkerer/app-core'
+import { DEFAULT_MODEL, type PluginModule } from '@tinytinkerer/app-core'
 import type { BrowserShell } from '../src/shell.js'
 import type { AuthStore } from '../src/stores/auth-store.js'
 import type { SettingsStore } from '../src/stores/settings-store.js'
 import type { StatusStore } from '../src/stores/status-store.js'
 import { createBrowserRuntimeFactory } from '../src/runtime/get-runtime.js'
+import { loadPluginModules } from '../src/plugins/registry.js'
 
 const mockSettings = {
   searchEnabled: true,
@@ -55,7 +56,12 @@ const toRequestUrl = (input: RequestInfo | URL): string => {
   return input.url
 }
 
-beforeEach(() => {
+// Web search ships as a discovered plugin (packages/plugins/plugin-web-search).
+// Load the real workspace plugin modules so the factory can contribute the
+// web-search tool exactly as production does — the host gates it via searchEnabled.
+let pluginModules: PluginModule[] = []
+
+beforeEach(async () => {
   mockSettings.searchEnabled = true
   mockSettings.selectedModel = DEFAULT_MODEL
   mockSettings.litellmBaseUrl = ''
@@ -63,6 +69,7 @@ beforeEach(() => {
   mockStatus.hydrated = true
   mockStatus.status.search.state = 'ready'
   mockStatus.status.search.detail = 'ok'
+  pluginModules = await loadPluginModules()
 })
 
 describe('createBrowserRuntimeFactory', () => {
@@ -80,7 +87,8 @@ describe('createBrowserRuntimeFactory', () => {
       } as BrowserShell,
       authStore: createAuthStoreStub(),
       settingsStore: createSettingsStoreStub(),
-      statusStore: createStatusStoreStub()
+      statusStore: createStatusStoreStub(),
+      pluginModules
     }).create()
 
   it('emits web-search tool events when searchEnabled is true', async () => {

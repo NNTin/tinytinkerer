@@ -4,6 +4,7 @@ import {
   PluginRegistry,
   resolveActivePluginIds,
   type AgentHookContribution,
+  type PluginEdgeFetch,
   type PluginHost,
   type PluginModule,
   type Tool
@@ -17,14 +18,24 @@ import type {
 import { LiteLLMProvider } from './litellm-provider'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch } from './edge-fetch'
-import { createWebSearchTool } from './web-search-tool'
 import { createMcpTool } from './mcp-tool'
 import {
   captureTelemetryException,
   captureTelemetryMessage,
   fingerprintMessage
 } from '../telemetry/telemetry'
+import {
+  parseJsonWithTelemetry,
+  type RequestTelemetryMetadata
+} from '../telemetry/request-telemetry'
 import { requestPermission } from '../permission-service'
+
+// Stable id of the web-search plugin (packages/plugins/plugin-web-search). Kept
+// as a local copy because app-browser must never statically import a concrete
+// plugin package — plugins are discovered dynamically. The web-search plugin is
+// gated by the host's existing `searchEnabled` readiness machinery (not the
+// generic plugin-activation toggles), so this layer activates it explicitly.
+const WEB_SEARCH_PLUGIN_ID = 'web-search'
 
 export type BrowserPluginRuntime = {
   registry: PluginRegistry
@@ -100,15 +111,24 @@ export const createRuntime = (options: {
     }
   }
 
-  if (options.searchEnabled) {
-    addToolWithDescriptor(createWebSearchTool(edgeFetch), {
-      id: 'web-search',
-      description: 'Search the web for fresh context using Tavily.',
-      inputSchema: {
-        query: { type: 'string', description: 'Search query (2–500 chars)' },
-        maxResults: { type: 'number', description: 'Max results (1–10, optional)' }
-      }
-    })
+  // Edge capability handed to plugins that must reach the edge backend (e.g. the
+  // web-search plugin). Built from the runtime's existing edgeFetch so request
+  // telemetry is preserved; response-parse telemetry (parse_error) stays here on
+  // the host side via parseJsonWithTelemetry, keeping the plugin product-agnostic.
+  const pluginEdgeFetch: PluginEdgeFetch = async (path, body, edgeOptions) => {
+    const area = edgeOptions?.area
+    const response = await edgeFetch(path, body, area ? { area } : undefined)
+    const metadata: RequestTelemetryMetadata = {
+      area: area ?? path,
+      origin: 'edge',
+      method: 'POST',
+      url: response.url
+    }
+    return {
+      ok: response.ok,
+      status: response.status,
+      json: () => parseJsonWithTelemetry<unknown>(metadata, response)
+    }
   }
 
   for (const server of options.mcpServers ?? []) {
@@ -132,6 +152,14 @@ export const createRuntime = (options: {
   // routed to `captureTelemetryMessage` so it surfaces as an informational
   // message (not an error issue); `warning`/`error` go through the exception path.
   const activePluginIds = resolveActivePluginIds(options.pluginActivation ?? {})
+  // Web search is a discovered plugin but is gated by the host's `searchEnabled`
+  // readiness state (default-on, plus service availability) rather than the
+  // generic plugin-activation toggles — preserving today's behavior. Activate it
+  // explicitly here so its tool + planner descriptor are contributed when search
+  // is enabled and the web-search plugin was discovered.
+  if (options.searchEnabled) {
+    activePluginIds.add(WEB_SEARCH_PLUGIN_ID)
+  }
   const pluginRuntime =
     options.pluginRuntime ?? createPluginRuntime(options.pluginModules ?? [])
   const activePluginModules = [...pluginRuntime.modulesById.values()].filter(
@@ -156,7 +184,11 @@ export const createRuntime = (options: {
       // calls this to ask the user before a tool runs. It enqueues a request on the
       // shared permission store; the mounted <PermissionModal /> resolves it with the
       // user's Allow/Deny choice. The browser can prompt, so it always provides this.
-      requestPermission
+      requestPermission,
+      // Edge capability: a plugin tool that must reach the edge (web search) builds
+      // against this. The browser always has an edge backend, so it always provides
+      // it; request telemetry rides along inside the wrapped edgeFetch.
+      edgeFetch: pluginEdgeFetch
     }
     const addedPluginToolIds = new Set<string>()
     const contributions = pluginRuntime.registry.collectContributions(
@@ -169,9 +201,16 @@ export const createRuntime = (options: {
         addedPluginToolIds.add(tool.id)
       }
     }
+    // Surface one planner descriptor per contributed plugin tool. A tool id can
+    // only register once (addTool dedupes), so if two active plugins claim the
+    // same id, only the winner's descriptor is exposed: the first module in
+    // discovery order to claim a registered id wins, and the loser's descriptor
+    // is dropped rather than duplicated.
+    const describedToolIds = new Set<string>()
     for (const mod of activePluginModules) {
       for (const descriptor of mod.manifest.toolDescriptors ?? []) {
-        if (addedPluginToolIds.has(descriptor.id)) {
+        if (addedPluginToolIds.has(descriptor.id) && !describedToolIds.has(descriptor.id)) {
+          describedToolIds.add(descriptor.id)
           allToolDescriptors.push(descriptor)
         }
       }

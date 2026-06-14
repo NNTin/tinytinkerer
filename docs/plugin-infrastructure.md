@@ -6,8 +6,11 @@ package under `packages/plugins/*`, and is **discovered dynamically** by the hos
 never imports a concrete plugin by name. Plugins are activated/deactivated per-user in the
 Settings Modal and gated by that activation state when a chat run builds its runtime.
 
-The first plugin is the **Feedback** plugin (`send_feedback`). It has no backend: submitted
-feedback is routed into Sentry telemetry instead of a real service.
+The repo currently ships four plugins under `packages/plugins/*`: **Feedback**
+(`send_feedback`), **Event logger** (a `chat.event` observer hook), **Permissions** (a
+`tool.beforeExecute` gate), and **Web search** (the Tavily `web-search` tool). A plugin contributes
+tools and/or hooks, and may use a host-injected capability (telemetry capture, a permission prompt,
+or an edge request) without importing the host.
 
 > **Decoupling:** `app-browser` has **no static dependency** on any concrete plugin — not in its
 > `package.json`, not as an import. It depends only on the `PluginModule` contract in
@@ -33,15 +36,30 @@ See also:
 interface AgentPlugin {
   id: string
   createTools?(host: PluginHost): Tool<unknown, unknown>[]
+  createHooks?(host: PluginHost): AgentHookContribution[]   // chat.event observers / tool.beforeExecute gates
   activate?(host: PluginHost): void | Promise<void>
   deactivate?(): void | Promise<void>
 }
 
 interface PluginHost {
-  capture: PluginCaptureSink   // injected by the host; forwards reports out-of-band
+  capture: PluginCaptureSink              // always present; forwards reports out-of-band (telemetry)
+  requestPermission?: PermissionRequestService   // optional; only hosts that can prompt a human
+  edgeFetch?: PluginEdgeFetch             // optional; only hosts with an edge backend
 }
 
 type PluginCaptureSink = (report: PluginReport) => void
+
+// Optional host capabilities. agent-core owns only the *function types*; the host
+// implements them. A plugin that needs one must tolerate its absence (a headless
+// host omits the optional ones), exactly like the capture sink.
+type PermissionRequestService = (request: PermissionRequest) => Promise<ToolGateResult>
+
+type PluginEdgeResponse = { ok: boolean; status: number; json(): Promise<unknown> }
+type PluginEdgeFetch = (
+  path: string,
+  body: unknown,
+  options?: { area?: string }
+) => Promise<PluginEdgeResponse>
 
 type PluginReport = {
   pluginId: string
@@ -136,6 +154,45 @@ Feedback is not an error condition, so its report is **`info`-level**: the host 
 informational Sentry *message* (via `captureMessage`), not an error issue with a synthetic stack
 trace. It is then surfaced to the runtime as a graceful tool failure. There is intentionally no
 backend.
+
+## The Web search plugin (`@tinytinkerer/plugin-web-search`)
+
+The Tavily web-search tool ships as its own plugin package at
+`packages/plugins/plugin-web-search`, depending only on `agent-core` and `contracts`. It exports
+the `PluginModule` surface — `manifest` (a `PluginManifest` whose single `toolDescriptor` keeps the
+stable id `web-search`) and `createPlugin` — plus `webSearchPlugin()`, `webSearchPluginManifest`,
+and `WEB_SEARCH_PLUGIN_ID` for direct/test use.
+
+Its single `web-search` tool POSTs a `SearchRequest` (`{ query, maxResults? }`, validated by
+`searchRequestSchema` from `contracts`) to the edge `/api/search` route and parses the
+`SearchResponse`. The tool needs the edge, but a plugin package must stay product-agnostic — it
+cannot import `app-browser`, its `edgeFetch`, or the telemetry SDK. So it builds against the
+injected **`PluginHost.edgeFetch`** capability instead:
+
+```
+web-search tool.execute(input)
+        │  host.edgeFetch('/api/search', input, { area: 'search' })   ← injected capability
+        ▼
+app-browser pluginEdgeFetch  ──▶ edgeFetch (request telemetry preserved)
+        │  returns { ok, status, json() }   ← json() = parseJsonWithTelemetry (parse telemetry stays host-side)
+        ▼
+web-search tool  ──▶ searchResponseSchema.parse(...)  (schema validation = plugin/contracts concern)
+```
+
+`agent-core` owns only the `PluginEdgeFetch` *type*; `app-browser`'s `create-runtime.ts` implements
+it from the runtime's existing `edgeFetch`, so **request** telemetry (`http_error`, `network`,
+`abort`, the 429 cooldown triage) rides along unchanged, and **response-parse** telemetry stays on
+the host side of the capability. `createTools(host)` returns no tool when `host.edgeFetch` is absent
+(a headless host), exactly mirroring how the permissions plugin tolerates a missing
+`requestPermission`.
+
+**Activation is different from the other plugins.** Web search predates the generic plugin toggles
+and keeps its own behavior: it is gated by the host's **search-readiness** state — `searchEnabled`
+(a dedicated setting, **on by default**) AND the search service being `ready`. `create-runtime.ts`
+activates the `web-search` plugin id when that gate is open rather than reading
+`pluginActivation`, and the Settings UI controls it through the dedicated **Search** section
+(`SearchSection`), not the generic plugins list. To avoid a second, conflicting control, the
+web-search manifest is filtered out of the generic plugin-activation list in `surfaces.tsx`.
 
 ## Activation state flow
 
@@ -235,8 +292,9 @@ rather than an error issue. See [sentry-telemetry.md](./sentry-telemetry.md) and
   telemetry imports). Enforced generically by `scripts/check-boundaries.mjs`.
 - `@tinytinkerer/app-browser` **must not** import a concrete plugin package, statically or via a
   literal dynamic import — plugins are discovered through `import.meta.glob`. The boundary check
-  rejects any `@tinytinkerer/plugin-*` import from `app-browser`. It wires the capture sink to
-  telemetry and surfaces the Settings toggles from the discovered manifests.
+  rejects any `@tinytinkerer/plugin-*` import from `app-browser`. It implements the `PluginHost`
+  capabilities (the capture sink → telemetry, the permission prompt → the confirmation modal, and
+  `edgeFetch` → its own edge layer) and surfaces the Settings toggles from the discovered manifests.
 
 ## Adding a new plugin
 

@@ -44,7 +44,9 @@ export type {
   ToolExecutionContext,
   ToolGateResult,
   PermissionRequest,
-  PermissionRequestService
+  PermissionRequestService,
+  PluginEdgeFetch,
+  PluginEdgeResponse
 } from '@tinytinkerer/agent-core'
 
 export type ConversationMessage = {

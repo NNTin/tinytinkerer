@@ -40,6 +40,29 @@ export type PermissionRequestService = (
   request: PermissionRequest
 ) => Promise<ToolGateResult>
 
+// The minimal, product-agnostic view of an edge response a plugin tool reads.
+// The host owns the underlying request (and its request telemetry); `json()`
+// reads the body and the host applies any intrinsic response-parse telemetry.
+// Kept structurally tiny so a plugin never touches a real `Response` or any
+// browser API — agent-core stays a leaf.
+export type PluginEdgeResponse = {
+  ok: boolean
+  status: number
+  json(): Promise<unknown>
+}
+
+// An injected capability that performs an edge POST on the host's behalf and
+// returns the minimal PluginEdgeResponse above. The host implements it from its
+// own edge/fetch layer (so request telemetry is preserved); only hosts that have
+// an edge backend provide it, so a plugin tool that needs it must tolerate its
+// absence (contribute no tool when it is missing). Mirrors how `capture` and
+// `requestPermission` are injected — agent-core only owns the function type.
+export type PluginEdgeFetch = (
+  path: string,
+  body: unknown,
+  options?: { area?: string }
+) => Promise<PluginEdgeResponse>
+
 // Host services handed to plugins at activation / tool-construction time. Kept
 // minimal and product-agnostic so plugin packages never reach into a specific
 // runtime or browser API.
@@ -48,6 +71,10 @@ export interface PluginHost {
   // Optional: present only on hosts that can prompt a human. See
   // PermissionRequestService — plugins must tolerate its absence.
   requestPermission?: PermissionRequestService
+  // Optional: present only on hosts with an edge backend. A tool that needs to
+  // reach the edge (e.g. web search) builds against this and must tolerate its
+  // absence. See PluginEdgeFetch.
+  edgeFetch?: PluginEdgeFetch
 }
 
 export type ChatEventHookContext = {
