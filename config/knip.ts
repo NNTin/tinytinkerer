@@ -71,11 +71,6 @@ const config: KnipConfig = {
     'packages/plugins/plugin-feedback': {
       // Declared for the plugin's schema work; no runtime import yet.
       ignoreDependencies: ['zod']
-    },
-    'packages/plugins/plugin-web-search': {
-      // Declared for parity with the plugin scaffold; the tool reuses the search
-      // schemas from contracts and does not import zod directly yet.
-      ignoreDependencies: ['zod']
     }
   }
 }

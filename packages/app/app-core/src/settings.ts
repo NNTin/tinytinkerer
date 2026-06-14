@@ -128,18 +128,6 @@ export const persistPluginActivation = async (
   await preferences.set(SETTINGS_KEYS.pluginActivation, JSON.stringify(activation))
 }
 
-// Headless helper: the set of plugin ids the user has explicitly switched on.
-// Ignores manifest defaults — callers that need default-on plugins should use
-// `isPluginEnabled` against the discovered manifests instead.
-export const resolveActivePluginIds = (
-  activation: PluginActivationState
-): Set<string> =>
-  new Set(
-    Object.entries(activation)
-      .filter(([, enabled]) => enabled)
-      .map(([id]) => id)
-  )
-
 // Whether a plugin is active: an explicit user choice (stored `true`/`false`)
 // always wins; with no stored entry the plugin's own `defaultEnabled` decides
 // (defaulting to off). Takes a minimal manifest shape so app-core stays free of

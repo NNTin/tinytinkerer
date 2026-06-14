@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as webSearchModule from '../src/index'
 import {
   WEB_SEARCH_PLUGIN_ID,
+  WebSearchSchemaError,
   webSearchPlugin,
   webSearchPluginManifest
 } from '../src/index'
@@ -65,6 +66,47 @@ describe('webSearchPlugin', () => {
     const [tool] = webSearchPlugin().createTools?.(hostWithEdge(edgeFetch)) ?? []
 
     await expect(tool!.execute({ query: 'react news' })).rejects.toThrow('Search failed (500)')
+  })
+
+  it('throws WebSearchSchemaError carrying a capture report on a schema mismatch', async () => {
+    // 2xx body that does not match SearchResponse (results must be an array).
+    const edgeFetch = vi.fn(() =>
+      Promise.resolve(edgeResponse(true, 200, { query: 'react news', results: 'nope' }))
+    )
+    const [tool] = webSearchPlugin().createTools?.(hostWithEdge(edgeFetch)) ?? []
+
+    const error = await tool!.execute({ query: 'react news' }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(WebSearchSchemaError)
+    expect((error as WebSearchSchemaError).report).toMatchObject({
+      pluginId: WEB_SEARCH_PLUGIN_ID,
+      kind: 'schema_error',
+      level: 'error',
+      message: 'Search response did not match schema'
+    })
+    // Telemetry carries only validation issue paths/codes, never the payload.
+    expect((error as WebSearchSchemaError).report.contexts?.search?.issues).toBeDefined()
+  })
+
+  it('routes a schema mismatch to the host capture sink via the registry, then rethrows', async () => {
+    const capture = vi.fn()
+    const edgeFetch = vi.fn(() =>
+      Promise.resolve(edgeResponse(true, 200, { query: 'q', results: 'nope' }))
+    )
+    const registry = new PluginRegistry()
+    registry.register(webSearchPlugin())
+    const [tool] = registry.collectTools(new Set([WEB_SEARCH_PLUGIN_ID]), {
+      capture,
+      edgeFetch
+    })
+
+    await expect(tool!.execute({ query: 'q' })).rejects.toBeInstanceOf(WebSearchSchemaError)
+    expect(capture).toHaveBeenCalledTimes(1)
+    expect(capture.mock.calls[0]![0]).toMatchObject({
+      pluginId: WEB_SEARCH_PLUGIN_ID,
+      kind: 'schema_error',
+      level: 'error'
+    })
   })
 
   it('builds the tool through the registry against the host edge capability', () => {

@@ -1,4 +1,5 @@
 import {
+  PluginCaptureError,
   type AgentPlugin,
   type PluginHost,
   type PluginManifest,
@@ -43,6 +44,32 @@ export const webSearchPluginManifest: PluginManifest = {
   ]
 }
 
+// Thrown when the edge returns a 2xx body that does not match the canonical
+// SearchResponse schema. This is the plugin's own validation failure (distinct
+// from a transport/HTTP error, which the host already captures as request
+// telemetry), so it carries a PluginReport: the registry routes that to the host
+// capture sink (Sentry in the browser) and rethrows, so the runtime still sees a
+// tool failure. Boundary-safe — it uses only agent-core's PluginCaptureError, no
+// telemetry SDK. `level: 'error'` makes it a captured exception, restoring the
+// schema-error signal the in-app tool emitted before web search became a plugin.
+export class WebSearchSchemaError extends PluginCaptureError {
+  constructor(issues: string[]) {
+    super(
+      {
+        pluginId: WEB_SEARCH_PLUGIN_ID,
+        kind: 'schema_error',
+        level: 'error',
+        message: 'Search response did not match schema',
+        // Only the validation issue paths/codes — never the response payload, so
+        // no fetched content leaks into telemetry.
+        contexts: { search: { issues } }
+      },
+      'Search response did not match schema'
+    )
+    this.name = 'WebSearchSchemaError'
+  }
+}
+
 // Builds the web-search tool against the host's edge capability. The host owns
 // the underlying request (and its request telemetry); this tool only shapes the
 // request/response against the canonical contracts schemas. It stays
@@ -63,6 +90,9 @@ const createWebSearchTool = (
     const response = await edgeFetch(EDGE_ROUTE_PATHS.search, input, { area: 'search' })
 
     if (!response.ok) {
+      // Transport/HTTP failures are already captured as request telemetry by the
+      // host edge layer (http_error), so surface a clean message without
+      // double-capturing here.
       const payload = await response
         .json()
         .then((value) => edgeErrorResponseSchema.safeParse(value))
@@ -72,7 +102,15 @@ const createWebSearchTool = (
     }
 
     const payload = await response.json()
-    return searchResponseSchema.parse(payload)
+    const parsed = searchResponseSchema.safeParse(payload)
+    if (!parsed.success) {
+      throw new WebSearchSchemaError(
+        parsed.error.issues.map(
+          (issue) => `${issue.path.join('.') || '(root)'}: ${issue.code}`
+        )
+      )
+    }
+    return parsed.data
   }
 })
 

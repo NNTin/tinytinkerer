@@ -45,8 +45,7 @@ const startEdgeStub = async () =>
         res.end(
           JSON.stringify({
             auth: { state: 'ready', detail: 'GitHub auth available' },
-            models: { state: 'ready', detail: 'Models ready' },
-            search: { state: 'ready', detail: 'Search ready' }
+            models: { state: 'ready', detail: 'Models ready' }
           })
         )
         return
@@ -255,8 +254,7 @@ describe('host server', () => {
     expect(response.status).toBe(200)
     expect(body).toMatchObject({
       auth: { state: 'ready' },
-      models: { state: 'ready' },
-      search: { state: 'ready' }
+      models: { state: 'ready' }
     })
   }, 30_000)
 

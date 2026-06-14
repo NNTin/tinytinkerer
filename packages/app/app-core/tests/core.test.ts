@@ -27,7 +27,6 @@ import {
   persistSelectedModel,
   rateLimitCooldownKey,
   isPluginEnabled,
-  resolveActivePluginIds,
   SETTINGS_KEYS,
   validateLiteLLMBaseUrl
 } from '../src/index.js'
@@ -468,12 +467,6 @@ describe('app-core helpers', () => {
     })
 
     expect(state.pluginActivation).toEqual({})
-  })
-
-  it('resolveActivePluginIds returns only enabled plugin ids', () => {
-    expect(
-      resolveActivePluginIds({ 'send-feedback': true, other: false })
-    ).toEqual(new Set(['send-feedback']))
   })
 
   it('isPluginEnabled honors stored choice, then manifest default', () => {
