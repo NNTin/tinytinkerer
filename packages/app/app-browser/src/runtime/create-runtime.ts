@@ -19,6 +19,7 @@ import { LiteLLMProvider } from './litellm-provider'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch } from './edge-fetch'
 import { createMcpTool } from './mcp-tool'
+import { createSandboxExecutor } from '../sandbox-executor'
 import {
   captureTelemetryException,
   captureTelemetryMessage,
@@ -129,6 +130,13 @@ export const createRuntime = (options: {
     }
   }
 
+  // Sandbox capability handed to plugins that must run arbitrary code (e.g. the
+  // code-exec plugin). The browser implements isolation via an ephemeral,
+  // opaque-origin iframe + Worker with a strict CSP; the plugin stays
+  // product-agnostic and only describes what to run. Constructed once per runtime
+  // so its concurrency limit spans all runs in this runtime.
+  const sandboxExecutor = createSandboxExecutor()
+
   for (const server of options.mcpServers ?? []) {
     if (!server.enabled) continue
     const disc = options.mcpDiscovery?.[server.id]
@@ -183,7 +191,12 @@ export const createRuntime = (options: {
       // Edge capability: a plugin tool that must reach the edge (web search) builds
       // against this. The browser always has an edge backend, so it always provides
       // it; request telemetry rides along inside the wrapped edgeFetch.
-      edgeFetch: pluginEdgeFetch
+      edgeFetch: pluginEdgeFetch,
+      // Sandbox capability: a plugin tool that must run arbitrary code (code-exec)
+      // builds against this. The browser can isolate code in an opaque-origin
+      // iframe + Worker, so it always provides it; a host that cannot isolate omits
+      // it and the plugin contributes no tool.
+      executeSandboxedCode: sandboxExecutor
     }
     const addedPluginToolIds = new Set<string>()
     const contributions = pluginRuntime.registry.collectContributions(

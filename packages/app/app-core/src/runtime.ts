@@ -46,7 +46,10 @@ export type {
   PermissionRequest,
   PermissionRequestService,
   PluginEdgeFetch,
-  PluginEdgeResponse
+  PluginEdgeResponse,
+  SandboxExecutionRequest,
+  SandboxExecutionResult,
+  SandboxCodeExecutor
 } from '@tinytinkerer/agent-core'
 
 export type ConversationMessage = {

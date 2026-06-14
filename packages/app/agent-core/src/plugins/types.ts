@@ -63,6 +63,40 @@ export type PluginEdgeFetch = (
   options?: { area?: string }
 ) => Promise<PluginEdgeResponse>
 
+// A request to run arbitrary code in an isolated sandbox. Product-agnostic: the
+// plugin only describes *what* to run (the source and an optional structured
+// input), never *how*. The host owns the isolation boundary entirely. `timeoutMs`
+// is a hint the host clamps to its own ceiling — a plugin may ask for a smaller
+// budget but cannot exceed the host's limit.
+export type SandboxExecutionRequest = {
+  code: string
+  input?: Record<string, unknown>
+  timeoutMs?: number
+}
+
+// The outcome of a sandboxed run. A run that the host successfully isolated and
+// completed reports `ok: true` with the script's `result` and any captured
+// console output in `logs`. A run that threw, hit a host limit, or timed out
+// reports `ok: false` with `error`/`timedOut` set — this is a *normal* outcome,
+// not a host failure, so the plugin returns it to the agent rather than throwing.
+export type SandboxExecutionResult = {
+  ok: boolean
+  result?: unknown
+  logs: string[]
+  timedOut: boolean
+  error?: string
+}
+
+// An injected capability that runs code in an isolated browser sandbox (an
+// ephemeral, opaque-origin iframe + Worker with an in-document CSP and a strict
+// postMessage boundary) on the host's behalf. Only hosts that can actually
+// provide that isolation register it; a plugin tool that needs it must tolerate
+// its absence (contribute no tool when missing). Mirrors how `edgeFetch` is
+// injected — agent-core only owns the function type, never the implementation.
+export type SandboxCodeExecutor = (
+  request: SandboxExecutionRequest
+) => Promise<SandboxExecutionResult>
+
 // Host services handed to plugins at activation / tool-construction time. Kept
 // minimal and product-agnostic so plugin packages never reach into a specific
 // runtime or browser API.
@@ -75,6 +109,11 @@ export interface PluginHost {
   // reach the edge (e.g. web search) builds against this and must tolerate its
   // absence. See PluginEdgeFetch.
   edgeFetch?: PluginEdgeFetch
+  // Optional: present only on hosts that can run an isolated browser sandbox
+  // (iframe + Worker, opaque origin, CSP). A tool that needs it (e.g. code
+  // execution) builds against this and must tolerate its absence (contribute no
+  // tool when missing). See SandboxCodeExecutor.
+  executeSandboxedCode?: SandboxCodeExecutor
 }
 
 export type ChatEventHookContext = {

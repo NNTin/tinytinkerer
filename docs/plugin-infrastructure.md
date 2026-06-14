@@ -197,6 +197,73 @@ purely via `isPluginEnabled(activation, manifest)`. The runtime's planner flag i
 whether a `web-search` tool actually got registered, so toggling the plugin is the single source of
 truth for whether the planner proposes a search step.
 
+## The Code execution plugin (`@tinytinkerer/plugin-code-exec`)
+
+The code-execution tool ships as its own plugin package at
+`packages/plugins/plugin-code-exec`, depending only on `agent-core`. It exports the `PluginModule`
+surface — `manifest` (a `PluginManifest` whose single `toolDescriptor` keeps the stable tool id
+`run_javascript`) and `createPlugin` — plus `codeExecPlugin()`, `codeExecPluginManifest`,
+`codeExecInputSchema`, `CodeExecHostError`, and `CODE_EXEC_PLUGIN_ID` for direct/test use. Its
+manifest sets **no** `defaultEnabled`, so it ships **off** — the user opts in via Settings.
+
+Running arbitrary code is the one capability a plugin must **never** implement itself. A plugin's
+`execute()` runs in the browser app runtime, so `eval`/`new Function`/an embedded interpreter there
+would inherit **app-origin** access — `localStorage`, IndexedDB, cookies, the auth-bearing
+`fetch`, the current URL, the parent DOM, and any in-memory service reachable by closure. So the
+plugin stays product-agnostic and only describes *what* to run; the host owns the isolation
+boundary entirely, behind a new injected **`PluginHost.executeSandboxedCode`** capability:
+
+```
+run_javascript tool.execute({ code, input? })
+        │  host.executeSandboxedCode({ code, input?, timeoutMs? })   ← injected capability
+        ▼
+app-browser createSandboxExecutor()  (packages/app/app-browser/src/sandbox-executor.ts)
+        │  fresh hidden iframe per run, killed after completion / timeout
+        ▼
+   { ok, result?, logs, timedOut, error? }   ← untrusted; coerced by normalizeResult, never HTML
+```
+
+`agent-core` owns only the `SandboxCodeExecutor` / `SandboxExecutionRequest` /
+`SandboxExecutionResult` *types*; `app-browser` implements the executor. `createTools(host)` returns
+no tool when `host.executeSandboxedCode` is absent (a headless host), exactly mirroring how the
+web-search plugin tolerates a missing `edgeFetch`. A normal failed run — a thrown user error or a
+timeout — comes back as a resolved `{ ok: false, … }` and is returned to the agent so the model can
+react to its own bad code; only an *unexpected* executor failure is thrown as a capturable
+`CodeExecHostError` (a `PluginCaptureError`, so the registry routes it to `host.capture`).
+
+**The browser isolation boundary** (`sandbox-executor.ts`). Per run, the host:
+
+- creates a **fresh hidden iframe** with `sandbox="allow-scripts"` only — **never**
+  `allow-same-origin`, so the iframe runs at an **opaque origin** and cannot read the parent DOM,
+  storage, cookies, or the app URL — plus `referrerPolicy="no-referrer"` (no current-site leak).
+- injects a **static** bootstrap document via `srcdoc` (the user's code never appears in the HTML;
+  it arrives at runtime via `postMessage`, so nothing the agent supplies is parsed as HTML). The
+  document carries an in-document CSP that blocks all network/resource loads — `default-src 'none';
+  connect-src 'none'; img-src 'none'; …; worker-src blob:; script-src 'unsafe-inline'` (no
+  `'unsafe-eval'`).
+- runs the user code inside a **Worker** the iframe builds from a `blob:` URL, with the code
+  embedded as an async function body (so no `eval`/`new Function`). The worker runs on its own
+  thread, so blocking code (e.g. `while(true)`) cannot stop the timeout from terminating it.
+- enforces resource controls: **10 s** timeout (worker terminated; the embedder also has a hard
+  backstop that destroys the iframe), **4 MB** captured-output cap, **1 MB** code cap (in the
+  plugin's zod schema), and **≤ 3** concurrent sandboxes; the iframe is **destroyed after every
+  run** (success, error, or timeout).
+- enforces a **strict message boundary**: the embedder accepts a reply only from that iframe's
+  exact `contentWindow` and only with the matching `nonce`, then coerces the untrusted payload
+  (`normalizeResult`) — `result` is opaque data callers never render as HTML, logs are filtered to
+  strings and capped.
+
+**Human gate.** Execution is *encouraged* to have explicit user approval but it is not mandatory.
+Because `run_javascript` is an ordinary tool, enabling the **Permissions plugin** alongside it makes
+every run pause for an Allow/Deny prompt through the existing `tool.beforeExecute` gate — no bespoke
+modal. Off by default, it is one toggle the user controls.
+
+**Residual risk.** Browser sandboxing is not a VM. This design does not protect against browser
+engine vulnerabilities, CPU/memory denial-of-service before the timeout fires, fingerprinting via
+allowed browser APIs, or timing side channels. A server/container/WASM isolate is out of scope; for
+browser-only execution the opaque-origin iframe + CSP + Worker + strict messaging is the minimum
+defensible design.
+
 ## Activation state flow
 
 Activation is stored and orchestrated headlessly, then surfaced in the browser:
@@ -299,8 +366,9 @@ rather than an error issue. See [sentry-telemetry.md](./sentry-telemetry.md) and
 - `@tinytinkerer/app-browser` **must not** import a concrete plugin package, statically or via a
   literal dynamic import — plugins are discovered through `import.meta.glob`. The boundary check
   rejects any `@tinytinkerer/plugin-*` import from `app-browser`. It implements the `PluginHost`
-  capabilities (the capture sink → telemetry, the permission prompt → the confirmation modal, and
-  `edgeFetch` → its own edge layer) and surfaces the Settings toggles from the discovered manifests.
+  capabilities (the capture sink → telemetry, the permission prompt → the confirmation modal,
+  `edgeFetch` → its own edge layer, and `executeSandboxedCode` → its opaque-origin iframe + Worker
+  sandbox) and surfaces the Settings toggles from the discovered manifests.
 
 ## Adding a new plugin
 

@@ -1,0 +1,111 @@
+import {
+  isPluginModule,
+  PluginCaptureError,
+  type PluginHost,
+  type SandboxExecutionResult
+} from '@tinytinkerer/agent-core'
+import { describe, expect, it, vi } from 'vitest'
+import * as codeExecModule from '../src/index'
+import {
+  CODE_EXEC_PLUGIN_ID,
+  CodeExecHostError,
+  codeExecInputSchema,
+  codeExecPlugin,
+  codeExecPluginManifest
+} from '../src/index'
+
+const okResult: SandboxExecutionResult = {
+  ok: true,
+  result: 4,
+  logs: ['hello'],
+  timedOut: false
+}
+
+const hostWithSandbox = (
+  executeSandboxedCode: NonNullable<PluginHost['executeSandboxedCode']>
+): PluginHost => ({ capture: vi.fn(), executeSandboxedCode })
+
+describe('codeExecPlugin', () => {
+  it('is a valid, discoverable plugin module that is off by default', () => {
+    expect(isPluginModule(codeExecModule)).toBe(true)
+    expect(codeExecPluginManifest.id).toBe(CODE_EXEC_PLUGIN_ID)
+    expect(codeExecPlugin().id).toBe(codeExecPluginManifest.id)
+    // No defaultEnabled → the host treats it as off until the user opts in.
+    expect(codeExecPluginManifest.defaultEnabled).toBeFalsy()
+  })
+
+  it('exposes a run_javascript tool when the host can run a sandbox', () => {
+    const tools = codeExecPlugin().createTools?.(hostWithSandbox(vi.fn())) ?? []
+    expect(tools.map((t) => t.id)).toEqual(['run_javascript'])
+  })
+
+  it('contributes no tool when the host cannot run a sandbox', () => {
+    const host: PluginHost = { capture: vi.fn() }
+    const tools = codeExecPlugin().createTools?.(host) ?? []
+    expect(tools).toEqual([])
+  })
+
+  it('forwards code and input to the host executor and returns its result verbatim', async () => {
+    const executeSandboxedCode = vi.fn(() => Promise.resolve(okResult))
+    const [tool] = codeExecPlugin().createTools?.(hostWithSandbox(executeSandboxedCode)) ?? []
+
+    const result = await tool!.execute({ code: 'return 2 + 2', input: { a: 1 } })
+
+    expect(executeSandboxedCode).toHaveBeenCalledWith({ code: 'return 2 + 2', input: { a: 1 } })
+    expect(result).toEqual(okResult)
+  })
+
+  it('omits input when none is supplied', async () => {
+    const executeSandboxedCode = vi.fn(() => Promise.resolve(okResult))
+    const [tool] = codeExecPlugin().createTools?.(hostWithSandbox(executeSandboxedCode)) ?? []
+
+    await tool!.execute({ code: 'return 1' })
+
+    expect(executeSandboxedCode).toHaveBeenCalledWith({ code: 'return 1' })
+  })
+
+  it('returns a failed run (timeout / thrown user error) to the agent rather than throwing', async () => {
+    const failed: SandboxExecutionResult = {
+      ok: false,
+      logs: [],
+      timedOut: true,
+      error: 'execution timed out'
+    }
+    const [tool] = codeExecPlugin().createTools?.(hostWithSandbox(() => Promise.resolve(failed))) ?? []
+
+    await expect(tool!.execute({ code: 'while(true){}' })).resolves.toEqual(failed)
+  })
+
+  it('throws a capturable CodeExecHostError when the executor itself fails', async () => {
+    const executeSandboxedCode = vi.fn(() => Promise.reject(new Error('boom')))
+    const [tool] = codeExecPlugin().createTools?.(hostWithSandbox(executeSandboxedCode)) ?? []
+
+    const error = await tool!.execute({ code: 'return 1' }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(CodeExecHostError)
+    expect(error).toBeInstanceOf(PluginCaptureError)
+    // The report never carries the user code or output.
+    expect((error as CodeExecHostError).report).toMatchObject({
+      pluginId: CODE_EXEC_PLUGIN_ID,
+      kind: 'host_error',
+      level: 'error'
+    })
+    expect(JSON.stringify((error as CodeExecHostError).report)).not.toContain('return 1')
+  })
+})
+
+describe('codeExecInputSchema', () => {
+  it('rejects empty code', () => {
+    expect(codeExecInputSchema.safeParse({ code: '' }).success).toBe(false)
+  })
+
+  it('rejects code larger than the 1 MB cap', () => {
+    const tooBig = 'a'.repeat(1_000_001)
+    expect(codeExecInputSchema.safeParse({ code: tooBig }).success).toBe(false)
+  })
+
+  it('accepts code with an optional structured input', () => {
+    const parsed = codeExecInputSchema.safeParse({ code: 'return input.x', input: { x: 1 } })
+    expect(parsed.success).toBe(true)
+  })
+})
