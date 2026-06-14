@@ -191,9 +191,10 @@ the host side of the capability. `createTools(host)` returns no tool when `host.
 and keeps its own behavior: it is gated by the host's **search-readiness** state — `searchEnabled`
 (a dedicated setting, **on by default**) AND the search service being `ready`. `create-runtime.ts`
 activates the `web-search` plugin id when that gate is open rather than reading
-`pluginActivation`, and the Settings UI controls it through the dedicated **Search** section
-(`SearchSection`), not the generic plugins list. To avoid a second, conflicting control, the
-web-search manifest is filtered out of the generic plugin-activation list in `surfaces.tsx`.
+`pluginActivation`. In the Settings Modal it is presented at the top of the **Plugins** section
+through its own `SearchSection` (search-readiness status + the default-on toggle), not the generic
+plugin-activation list — so the web-search manifest is filtered out of that list in `surfaces.tsx`
+to avoid a second, conflicting control.
 
 ## Activation state flow
 

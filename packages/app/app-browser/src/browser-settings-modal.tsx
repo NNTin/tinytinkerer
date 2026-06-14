@@ -808,12 +808,6 @@ export const BrowserSettingsModal = ({
 
           <hr className="border-[var(--border)]" />
 
-          <SettingsSection title="Search">
-            <SearchSection status={effectiveStatus.search} />
-          </SettingsSection>
-
-          <hr className="border-[var(--border)]" />
-
           <SettingsSection title="Interface">
             <InterfaceSection />
           </SettingsSection>
@@ -827,7 +821,13 @@ export const BrowserSettingsModal = ({
           <hr className="border-[var(--border)]" />
 
           <SettingsSection title="Plugins">
-            <PluginsSection />
+            <div className="space-y-5">
+              {/* Web search ships as a plugin (plugin-web-search) but keeps its own
+                  readiness state + default-on toggle, so it is presented here at the
+                  top of Plugins rather than in the generic activation list. */}
+              <SearchSection status={effectiveStatus.search} />
+              <PluginsSection />
+            </div>
           </SettingsSection>
 
           <hr className="border-[var(--border)]" />
