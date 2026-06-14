@@ -64,7 +64,7 @@ export type { ChatComposer } from './surfaces'
 export { fetchStatus, startStatusPolling } from './status'
 export type { BrowserShell } from './shell'
 export { createBrowserShell } from './shell'
-export { isSearchReady, OFFLINE_SYSTEM_STATUS } from './stores/status-store'
+export { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 export {
   DEFAULT_MODEL,
   FALLBACK_MODELS,

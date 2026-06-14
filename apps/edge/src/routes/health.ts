@@ -26,12 +26,6 @@ export const registerHealthRoute = (
         detail: litellmConfigured
           ? 'Model proxy ready'
           : (litellmConfigurationError ?? 'LiteLLM is not configured')
-      },
-      search: {
-        state: c.env.TAVILY_API_KEY ? 'ready' : 'degraded',
-        detail: c.env.TAVILY_API_KEY
-          ? 'Tavily proxy ready'
-          : 'Web search unavailable until Tavily is configured'
       }
     }
 

@@ -42,17 +42,11 @@ const mockChatState = vi.hoisted(() => ({
 const mockSettingsState = vi.hoisted(() => ({
   effectiveStatus: {
     auth: { state: 'ready', detail: 'GitHub auth available' },
-    models: { state: 'ready', detail: 'Models ready' },
-    search: {
-      state: 'degraded',
-      detail: 'Search temporarily unavailable'
-    }
+    models: { state: 'ready', detail: 'Models ready' }
   },
   selectedModel: 'openai/gpt-4.1-mini',
-  searchEnabled: true,
   webSpeechEnabled: false,
   setSelectedModel: vi.fn(),
-  setSearchEnabled: vi.fn(),
   setWebSpeechEnabled: vi.fn(),
   setShowReasoningActivity: vi.fn(),
   setShowCodeBlockFullscreenButton: vi.fn(),
@@ -156,8 +150,6 @@ vi.mock('@tinytinkerer/app-browser', async () => {
     refreshModels: vi.fn(),
     selectedModel: mockSettingsState.selectedModel,
     setSelectedModel: mockSettingsState.setSelectedModel,
-    searchEnabled: mockSettingsState.searchEnabled,
-    setSearchEnabled: mockSettingsState.setSearchEnabled,
     webSpeechEnabled: mockSettingsState.webSpeechEnabled,
     setWebSpeechEnabled: mockSettingsState.setWebSpeechEnabled,
     showReasoningActivity: mockSettingsState.showReasoningActivity,
@@ -166,8 +158,6 @@ vi.mock('@tinytinkerer/app-browser', async () => {
       mockSettingsState.showCodeBlockFullscreenButton,
     setShowCodeBlockFullscreenButton:
       mockSettingsState.setShowCodeBlockFullscreenButton,
-    searchUnavailable:
-      mockSettingsState.effectiveStatus.search.state !== 'ready',
     mcpServers: [],
     mcpDiscovery: {},
     addMcpServer: vi.fn(),
@@ -195,11 +185,7 @@ beforeEach(() => {
   mockChatState.isRunning = false
   mockChatState.isCoolingDown = false
   mockChatState.submitPrompt.mockReturnValue(true)
-  mockSettingsState.searchEnabled = true
   mockSettingsState.webSpeechEnabled = false
-  mockSettingsState.effectiveStatus.search.state = 'degraded'
-  mockSettingsState.effectiveStatus.search.detail =
-    'Search temporarily unavailable'
   mockSpeechState.visible = false
   mockSpeechState.available = false
   mockSpeechState.listening = false
@@ -221,7 +207,6 @@ describe('WidgetPage', () => {
     ).toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).toBeNull()
     expect(screen.queryByText('MCP Servers')).toBeNull()
-    expect(screen.queryByText('Search temporarily unavailable')).toBeNull()
     expect(screen.queryByText('Embedded Workspace')).toBeNull()
     expect(screen.queryByText('tinytinkerer widget')).toBeNull()
     expect(screen.queryByRole('button', { name: /voice input/i })).toBeNull()

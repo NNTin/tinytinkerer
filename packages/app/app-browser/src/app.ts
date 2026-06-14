@@ -56,8 +56,7 @@ export const createBrowserApp = (config: BrowserShellConfig): BrowserApp => {
   const chat = createChatStore({
     shell,
     authStore: auth,
-    settingsStore: settings,
-    statusStore: status
+    settingsStore: settings
   })
 
   const app: BrowserApp = {

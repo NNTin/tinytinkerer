@@ -33,8 +33,7 @@ const mockAuthState = vi.hoisted(() => ({
 const mockStatusState = vi.hoisted(() => ({
   status: {
     auth: { state: 'ready', detail: 'GitHub auth available' },
-    models: { state: 'degraded', detail: 'Model responses are slower than usual' },
-    search: { state: 'offline', detail: 'Search temporarily unavailable', error: 'Upstream timeout' }
+    models: { state: 'degraded', detail: 'Model responses are slower than usual' }
   },
   refresh: vi.fn()
 }))
@@ -120,18 +119,6 @@ vi.mock('@tinytinkerer/app-browser', async () => {
           <p>Models status</p>
           <p>{mockStatusState.status.models.detail}</p>
         </section>
-        <section role="region" aria-label="Search">
-          <p>Search status</p>
-          <p>{mockStatusState.status.search.detail}</p>
-          {mockStatusState.status.search.error ? <p>{mockStatusState.status.search.error}</p> : null}
-          <label>
-            Enable web search
-            <input type="checkbox" disabled={mockStatusState.status.search.state !== 'ready'} />
-          </label>
-          {mockStatusState.status.search.state !== 'ready' ? (
-            <p>Web search is unavailable right now. The runtime will skip search until the service recovers.</p>
-          ) : null}
-        </section>
         <section role="region" aria-label="Interface">
           <p>Interface</p>
         </section>
@@ -211,8 +198,7 @@ beforeEach(() => {
   mockSpeechState.stop.mockClear()
   mockStatusState.status = {
     auth: { state: 'ready', detail: 'GitHub auth available' },
-    models: { state: 'degraded', detail: 'Model responses are slower than usual' },
-    search: { state: 'offline', detail: 'Search temporarily unavailable', error: 'Upstream timeout' }
+    models: { state: 'degraded', detail: 'Model responses are slower than usual' }
   }
   mockTurns.length = 0
 })
@@ -358,23 +344,19 @@ describe('ChatPage settings modal', () => {
     expect(await screen.findByRole('dialog', { name: 'Settings' })).not.toBeNull()
   })
 
-  it('shows auth, models, search, and interface sections with relocated status details', async () => {
+  it('shows auth, models, and interface sections with relocated status details', async () => {
     renderChatPage()
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Settings' })
     expect(within(dialog).getByRole('region', { name: 'Auth' })).not.toBeNull()
     expect(within(dialog).getByRole('region', { name: 'Models' })).not.toBeNull()
-    expect(within(dialog).getByRole('region', { name: 'Search' })).not.toBeNull()
     expect(within(dialog).getByRole('region', { name: 'Interface' })).not.toBeNull()
 
     expect(await within(dialog).findByText('Auth status')).not.toBeNull()
     expect(await within(dialog).findByText('GitHub auth available')).not.toBeNull()
     expect(await within(dialog).findByText('Models status')).not.toBeNull()
     expect(await within(dialog).findByText('Model responses are slower than usual')).not.toBeNull()
-    expect(await within(dialog).findByText('Search status')).not.toBeNull()
-    expect(await within(dialog).findByText('Search temporarily unavailable')).not.toBeNull()
-    expect(await within(dialog).findByText('Upstream timeout')).not.toBeNull()
   })
 
   it('shows auth controls in the real modal', async () => {
@@ -394,15 +376,6 @@ describe('ChatPage settings modal', () => {
     expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
   })
 
-  it('disables search controls when the service is unavailable', async () => {
-    renderChatPage()
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-
-    const dialog = await screen.findByRole('dialog', { name: 'Settings' })
-    const checkbox = within(dialog).getByRole('checkbox', { name: /enable web search/i })
-    expect(checkbox).toBeDisabled()
-    expect(within(dialog).getByText(/runtime will skip search until the service recovers/i)).toBeInTheDocument()
-  })
 })
 
 describe('ChatPage turns', () => {

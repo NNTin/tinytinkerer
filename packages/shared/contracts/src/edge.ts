@@ -24,8 +24,7 @@ export type ServiceStatus = z.infer<typeof serviceStatusSchema>
 export const systemStatusSchema = z
   .object({
     auth: serviceStatusSchema,
-    models: serviceStatusSchema,
-    search: serviceStatusSchema
+    models: serviceStatusSchema
   })
   .meta({ id: 'SystemStatus' })
 

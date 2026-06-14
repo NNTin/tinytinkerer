@@ -12,13 +12,11 @@ type MockChatEvent = {
 const mockSettingsState = vi.hoisted(() => ({
   hydrated: true,
   selectedModel: 'openai/gpt-4.1-mini',
-  searchEnabled: true,
   webSpeechEnabled: false,
   showReasoningActivity: true,
   showCodeBlockFullscreenButton: true,
   initialize: vi.fn(),
   setSelectedModel: vi.fn(),
-  setSearchEnabled: vi.fn(),
   setWebSpeechEnabled: vi.fn(),
   setShowReasoningActivity: vi.fn(),
   setShowCodeBlockFullscreenButton: vi.fn()
@@ -159,7 +157,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockSettingsState.hydrated = true
   mockSettingsState.selectedModel = 'openai/gpt-4.1-mini'
-  mockSettingsState.searchEnabled = true
   mockSettingsState.webSpeechEnabled = false
   mockSettingsState.showReasoningActivity = true
   mockAuthState.token = null

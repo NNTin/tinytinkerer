@@ -5,7 +5,6 @@ import type { BrowserShell } from '../shell'
 import { loadCoreModule } from '../core-module'
 import type { AuthStore } from './auth-store'
 import type { SettingsStore } from './settings-store'
-import type { StatusStore } from './status-store'
 
 export type ChatState = {
   hydrated: boolean
@@ -26,7 +25,6 @@ export const createChatStore = (options: {
   shell: BrowserShell
   authStore: AuthStore
   settingsStore: SettingsStore
-  statusStore: StatusStore
 }): ChatStore => {
   let activeRunController: AbortController | undefined
   let initializePromise: Promise<void> | null = null

@@ -67,8 +67,7 @@ describe('contracts', () => {
     expect(
       systemStatusSchema.parse({
         auth: { state: 'ready', detail: 'ok' },
-        models: { state: 'degraded', detail: 'slow' },
-        search: { state: 'offline', detail: 'down' }
+        models: { state: 'degraded', detail: 'slow' }
       }).models.state
     ).toBe('degraded')
 

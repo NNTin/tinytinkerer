@@ -48,16 +48,14 @@ const toSystemStatus = (value: unknown): SystemStatus => {
   const record = value as Record<string, unknown>
   if (
     !isServiceStatus(record.auth) ||
-    !isServiceStatus(record.models) ||
-    !isServiceStatus(record.search)
+    !isServiceStatus(record.models)
   ) {
     throw new Error('Edge status response was malformed')
   }
 
   return {
     auth: record.auth,
-    models: record.models,
-    search: record.search
+    models: record.models
   }
 }
 

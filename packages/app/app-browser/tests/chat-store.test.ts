@@ -3,7 +3,6 @@ import { createStore } from 'zustand/vanilla'
 import type { BrowserShell } from '../src/shell.js'
 import type { AuthStore } from '../src/stores/auth-store.js'
 import type { SettingsStore } from '../src/stores/settings-store.js'
-import type { StatusStore } from '../src/stores/status-store.js'
 
 const mockExecuteChatPrompt = vi.hoisted(() => vi.fn())
 const mockCanSendPrompt = vi.hoisted(() => vi.fn(() => true))
@@ -64,7 +63,6 @@ const makeSettingsStore = (
     litellmBaseUrl: 'https://litellm-a.example.com',
     ...initial
   })) as unknown as SettingsStore
-const makeStatusStore = (): StatusStore => ({ getState: vi.fn(() => ({ hydrated: true, status: { auth: { state: 'ready', detail: '' }, models: { state: 'ready', detail: '' }, search: { state: 'ready', detail: '' } } })) }) as unknown as StatusStore
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -79,7 +77,6 @@ describe('createChatStore', () => {
       shell: makeShell(),
       authStore: makeAuthStore(),
       settingsStore: makeSettingsStore(),
-      statusStore: makeStatusStore(),
     })
 
     store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: false })
@@ -101,7 +98,6 @@ describe('createChatStore', () => {
       shell: makeShell(),
       authStore: makeAuthStore(),
       settingsStore: makeSettingsStore(),
-      statusStore: makeStatusStore(),
     })
 
     store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: false })
@@ -120,7 +116,6 @@ describe('createChatStore', () => {
       shell: makeShell(),
       authStore: makeAuthStore(),
       settingsStore: makeSettingsStore(),
-      statusStore: makeStatusStore(),
     })
 
     store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: true })
@@ -139,7 +134,6 @@ describe('createChatStore', () => {
       shell: makeShell(),
       authStore: makeAuthStore(),
       settingsStore: makeSettingsStore({ litellmBaseUrl: 'https://litellm-b.example.com' }),
-      statusStore: makeStatusStore(),
     })
 
     store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: false })
@@ -168,7 +162,6 @@ describe('createChatStore', () => {
       shell,
       authStore: makeAuthStore(),
       settingsStore,
-      statusStore: makeStatusStore(),
     })
 
     // Switching to a deployment with an active cooldown must surface it.
@@ -188,7 +181,6 @@ describe('createChatStore', () => {
       shell,
       authStore: makeAuthStore(),
       settingsStore,
-      statusStore: makeStatusStore(),
     })
 
     settingsStore.setState({ webSpeechEnabled: false })

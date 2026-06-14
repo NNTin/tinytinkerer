@@ -31,15 +31,11 @@
           },
           "models": {
             "$ref": "#/components/schemas/ServiceStatus"
-          },
-          "search": {
-            "$ref": "#/components/schemas/ServiceStatus"
           }
         },
         "required": [
           "auth",
-          "models",
-          "search"
+          "models"
         ]
       },
       "ServiceStatus": {

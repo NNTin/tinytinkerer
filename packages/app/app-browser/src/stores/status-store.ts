@@ -5,8 +5,7 @@ import { fetchStatus as fetchSharedStatus } from '../status'
 
 export const OFFLINE_SYSTEM_STATUS: SystemStatus = {
   auth: { state: 'offline', detail: 'Unavailable' },
-  models: { state: 'offline', detail: 'Unavailable' },
-  search: { state: 'offline', detail: 'Unavailable' }
+  models: { state: 'offline', detail: 'Unavailable' }
 }
 
 export type StatusState = {
@@ -20,13 +19,9 @@ const toOfflineStatus = (error: unknown): SystemStatus => {
   const message = error instanceof Error && error.message ? error.message : 'Unable to reach edge status endpoint'
   return {
     auth: { state: 'offline', detail: 'Unavailable', error: message },
-    models: { state: 'offline', detail: 'Unavailable', error: message },
-    search: { state: 'offline', detail: 'Unavailable', error: message }
+    models: { state: 'offline', detail: 'Unavailable', error: message }
   }
 }
-
-export const isSearchReady = (state: Pick<StatusState, 'hydrated' | 'status'>): boolean =>
-  state.hydrated && state.status.search.state === 'ready'
 
 export type StatusStore = StoreApi<StatusState>
 
