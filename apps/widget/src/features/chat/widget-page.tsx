@@ -2,9 +2,9 @@ import {
   AssistantContent,
   LazyBrowserSettingsModal,
   TINYTINKERER_BRAND_ASSET_URLS,
+  useChatComposer,
   useChatSurfaceController,
-  useSettingsSurfaceController,
-  useWebSpeechInput
+  useSettingsSurfaceController
 } from '@tinytinkerer/app-browser'
 import {
   Button,
@@ -225,22 +225,13 @@ const WidgetSurface = ({
   const {
     token
   } = useSettingsSurfaceController()
-  const [prompt, setPrompt] = useState('')
+  const { prompt, setPrompt, speech, handleSubmit } = useChatComposer(submitPrompt)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
-  const speech = useWebSpeechInput({ prompt, setPrompt })
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
   }, [events])
-
-  const handleSubmit = async () => {
-    speech.stop()
-    const didSend = await submitPrompt(prompt)
-    if (didSend) {
-      setPrompt('')
-    }
-  }
 
   if (isBooting || initializeError) {
     return <WidgetChatLoading {...(initializeError ? { error: initializeError } : {})} />
@@ -298,7 +289,7 @@ const WidgetSurface = ({
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
-                if (!isCoolingDown) void handleSubmit()
+                if (!isCoolingDown) handleSubmit()
               }
             }}
             placeholder="Ask something current, compare options, or continue the thread."
@@ -372,7 +363,7 @@ const WidgetSurface = ({
                 size="sm"
                 aria-label={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
                 title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
-                onClick={() => void handleSubmit()}
+                onClick={() => handleSubmit()}
                 disabled={isRunning || isCoolingDown || !prompt.trim()}
                 className="h-8 min-w-8 px-2"
               >

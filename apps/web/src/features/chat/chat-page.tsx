@@ -2,8 +2,8 @@ import {
   AssistantContent,
   LazyBrowserSettingsModal,
   TurnActivityPanel,
-  useChatSurfaceController,
-  useWebSpeechInput
+  useChatComposer,
+  useChatSurfaceController
 } from '@tinytinkerer/app-browser'
 import {
   Button,
@@ -43,9 +43,8 @@ export const ChatPage = () => {
     resetConversation,
     cancelRetry
   } = useChatSurfaceController()
-  const [prompt, setPrompt] = useState('')
+  const { prompt, setPrompt, speech, handleSubmit } = useChatComposer(submitPrompt)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const speech = useWebSpeechInput({ prompt, setPrompt })
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const conversationEndRef = useRef<HTMLDivElement>(null)
@@ -63,19 +62,10 @@ export const ChatPage = () => {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [events])
 
-  const handlePromptSubmit = () => {
-    speech.stop()
-    void submitPrompt(prompt).then((didSend) => {
-      if (didSend) {
-        setPrompt('')
-      }
-    })
-  }
-
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
-      handlePromptSubmit()
+      handleSubmit()
     }
   }
 
@@ -141,7 +131,7 @@ export const ChatPage = () => {
           className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3 shadow-sm"
           onSubmit={(event) => {
             event.preventDefault()
-            handlePromptSubmit()
+            handleSubmit()
           }}
         >
           <textarea

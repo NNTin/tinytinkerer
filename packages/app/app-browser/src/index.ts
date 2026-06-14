@@ -48,10 +48,12 @@ export {
 export { useWebSpeechInput } from './web-speech'
 export { resolveBrowserShellBootstrapConfig } from './config'
 export {
+  useChatComposer,
   useChatSurfaceController,
   useGitHubOAuthCallbackController,
   useSettingsSurfaceController
 } from './surfaces'
+export type { ChatComposer } from './surfaces'
 export { fetchStatus, startStatusPolling } from './status'
 export type { BrowserShell } from './shell'
 export { createBrowserShell } from './shell'

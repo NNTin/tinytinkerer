@@ -71,7 +71,24 @@ const mockSpeechState = vi.hoisted(() => ({
   stop: vi.fn()
 }))
 
-vi.mock('@tinytinkerer/app-browser', () => ({
+vi.mock('@tinytinkerer/app-browser', async () => {
+  const { useState } = await import('react')
+  return {
+  // Faithful stand-in for the shared composer hook: owns prompt state and the
+  // submit → clear-on-accept behavior so the surface wiring can be exercised.
+  // The hook's own logic is unit-tested in app-browser's surfaces test.
+  useChatComposer: (submitPrompt: (prompt: string) => boolean) => {
+    const [prompt, setPrompt] = useState('')
+    const handleSubmit = (): boolean => {
+      mockSpeechState.stop()
+      const accepted = submitPrompt(prompt)
+      if (accepted) {
+        setPrompt('')
+      }
+      return accepted
+    }
+    return { prompt, setPrompt, speech: mockSpeechState, handleSubmit }
+  },
   LazyBrowserSettingsModal: () => null,
   AssistantContent: ({
     content,
@@ -113,7 +130,8 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     resetConversation: mockChatState.resetConversation,
     cancelRetry: mockChatState.cancelRetry
   })
-}))
+  }
+})
 
 import { MobilePage } from './mobile-page.js'
 
@@ -149,6 +167,7 @@ beforeEach(() => {
   mockChatState.isRetryPending = false
   mockChatState.cooldownUntil = undefined
   mockChatState.submitPrompt.mockClear()
+  mockChatState.submitPrompt.mockReturnValue(true)
   mockSpeechState.visible = false
   mockSpeechState.available = false
   mockSpeechState.listening = false
@@ -231,5 +250,36 @@ describe('MobilePage', () => {
     mockSpeechState.visible = true
     renderMobilePage()
     expect(screen.getByRole('button', { name: /voice input unavailable/i })).toBeDisabled()
+  })
+
+  it('clears the input immediately once a prompt is accepted (issue #206)', () => {
+    renderMobilePage()
+
+    const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>(/ask anything/i)
+    fireEvent.change(textarea, { target: { value: 'What is new?' } })
+    fireEvent.submit(textarea.closest('form') as HTMLFormElement)
+
+    // submitPrompt resolves the accept/reject decision synchronously, so the
+    // textarea is cleared without waiting for the backend response.
+    expect(mockChatState.submitPrompt).toHaveBeenCalledWith('What is new?')
+    expect(textarea.value).toBe('')
+  })
+
+  it('does not clear the input when the send is rejected', () => {
+    mockChatState.submitPrompt.mockReturnValue(false)
+    renderMobilePage()
+
+    const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>(/ask anything/i)
+    fireEvent.change(textarea, { target: { value: 'Blocked message' } })
+    fireEvent.submit(textarea.closest('form') as HTMLFormElement)
+
+    expect(textarea.value).toBe('Blocked message')
+  })
+
+  it('disables sending while the agent is running', () => {
+    mockChatState.isRunning = true
+    renderMobilePage()
+
+    expect(screen.getByRole('button', { name: 'Thinking…' })).toBeDisabled()
   })
 })

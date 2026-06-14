@@ -9,8 +9,16 @@ import {
   type PluginActivationState,
   type SystemStatus
 } from '@tinytinkerer/contracts'
-import { useEffect, useEffectEvent, useMemo, useState } from 'react'
+import {
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction
+} from 'react'
 import { loadPluginModules } from './plugins/registry'
+import { useWebSpeechInput } from './web-speech'
 import {
   useAuthStore,
   useBrowserApp,
@@ -42,7 +50,10 @@ export type ChatSurfaceController = {
   cooldownRemainingMs: number
   isCoolingDown: boolean
   submitLabel: string
-  submitPrompt: (prompt: string) => Promise<boolean>
+  // Returns the accept/reject decision synchronously so callers can clear the
+  // input the moment a prompt is accepted, without waiting for the backend
+  // response. The send itself runs in the background (issue #206).
+  submitPrompt: (prompt: string) => boolean
   resetConversation: () => Promise<void>
   cancelRetry: () => void
 }
@@ -103,13 +114,17 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
       ? 'Thinking…'
       : 'Send'
 
-  const submitPrompt = async (prompt: string): Promise<boolean> => {
+  const submitPrompt = (prompt: string): boolean => {
     const trimmed = prompt.trim()
     if (!trimmed || isCoolingDown || isRunning) {
       return false
     }
 
-    await sendPrompt(trimmed)
+    // Kick off the send without awaiting the backend response so the caller can
+    // clear the input immediately (issue #206). Errors continue to surface the
+    // same way they did before — sendPrompt manages run state and emits
+    // telemetry/events internally, so we deliberately do not await or catch here.
+    void sendPrompt(trimmed)
     return true
   }
 
@@ -130,6 +145,44 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     resetConversation,
     cancelRetry
   }
+}
+
+export type ChatComposer = {
+  prompt: string
+  setPrompt: Dispatch<SetStateAction<string>>
+  speech: ReturnType<typeof useWebSpeechInput>
+  /**
+   * Validates the current prompt and, when accepted, kicks off the send and
+   * clears the input immediately — so the user can keep typing the next message
+   * while the agent is still working (issue #206). Sending stays blocked while
+   * the agent is running or cooling down (enforced by submitPrompt). Returns
+   * whether the prompt was accepted.
+   */
+  handleSubmit: () => boolean
+}
+
+/**
+ * Owns the prompt input state and the single source of truth for the
+ * submit → clear-on-accept behavior shared by every chat surface (web, mobile,
+ * widget). Surfaces consume this hook and only wire up their own UI; they must
+ * not re-implement the validate-then-clear logic.
+ */
+export const useChatComposer = (
+  submitPrompt: ChatSurfaceController['submitPrompt']
+): ChatComposer => {
+  const [prompt, setPrompt] = useState('')
+  const speech = useWebSpeechInput({ prompt, setPrompt })
+
+  const handleSubmit = (): boolean => {
+    speech.stop()
+    const accepted = submitPrompt(prompt)
+    if (accepted) {
+      setPrompt('')
+    }
+    return accepted
+  }
+
+  return { prompt, setPrompt, speech, handleSubmit }
 }
 
 export type SettingsSurfaceController = {

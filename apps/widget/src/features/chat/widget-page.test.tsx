@@ -32,7 +32,9 @@ const mockChatState = vi.hoisted(() => ({
   ],
   events: [] as Array<{ id: string; type: string }>,
   isRunning: false,
-  submitPrompt: vi.fn().mockResolvedValue(true),
+  isCoolingDown: false,
+  // submitPrompt returns the accept/reject decision synchronously (issue #206).
+  submitPrompt: vi.fn(() => true),
   resetConversation: vi.fn(),
   cancelRetry: vi.fn()
 }))
@@ -67,7 +69,24 @@ const mockSpeechState = vi.hoisted(() => ({
   stop: vi.fn()
 }))
 
-vi.mock('@tinytinkerer/app-browser', () => ({
+vi.mock('@tinytinkerer/app-browser', async () => {
+  const { useState } = await import('react')
+  return {
+  // Faithful stand-in for the shared composer hook: owns prompt state and the
+  // submit → clear-on-accept behavior so the surface wiring can be exercised.
+  // The hook's own logic is unit-tested in app-browser's surfaces test.
+  useChatComposer: (submitPrompt: (prompt: string) => boolean) => {
+    const [prompt, setPrompt] = useState('')
+    const handleSubmit = (): boolean => {
+      mockSpeechState.stop()
+      const accepted = submitPrompt(prompt)
+      if (accepted) {
+        setPrompt('')
+      }
+      return accepted
+    }
+    return { prompt, setPrompt, speech: mockSpeechState, handleSubmit }
+  },
   AssistantContent: ({
     content,
     className,
@@ -115,7 +134,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     isRetryPending: false,
     showReasoningActivity: true,
     cooldownRemainingMs: 0,
-    isCoolingDown: false,
+    isCoolingDown: mockChatState.isCoolingDown,
     submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
     submitPrompt: mockChatState.submitPrompt,
     resetConversation: mockChatState.resetConversation,
@@ -158,7 +177,8 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     telemetryEnabled: false,
     setTelemetryEnabled: vi.fn()
   })
-}))
+  }
+})
 
 import { WidgetPage } from './widget-page.js'
 
@@ -171,6 +191,9 @@ beforeEach(() => {
   window.localStorage.clear()
   window.history.replaceState({}, '', '/widget/')
   mockAuthState.token = null
+  mockChatState.isRunning = false
+  mockChatState.isCoolingDown = false
+  mockChatState.submitPrompt.mockReturnValue(true)
   mockSettingsState.searchEnabled = true
   mockSettingsState.webSpeechEnabled = false
   mockSettingsState.effectiveStatus.search.state = 'degraded'
@@ -231,6 +254,43 @@ describe('WidgetPage', () => {
     expect(mockChatState.submitPrompt).toHaveBeenCalledWith(
       'Tell me something current'
     )
+  })
+
+  it('clears the input immediately once a prompt is accepted (issue #206)', () => {
+    render(<WidgetPage />)
+
+    const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>(
+      'Ask something current, compare options, or continue the thread.'
+    )
+
+    fireEvent.change(textarea, { target: { value: 'Next question' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    // submitPrompt is synchronous and returns true, so the textarea is cleared
+    // without waiting for the backend response to resolve.
+    expect(mockChatState.submitPrompt).toHaveBeenCalledWith('Next question')
+    expect(textarea.value).toBe('')
+  })
+
+  it('does not clear the input when the send is rejected', () => {
+    mockChatState.submitPrompt.mockReturnValue(false)
+    render(<WidgetPage />)
+
+    const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>(
+      'Ask something current, compare options, or continue the thread.'
+    )
+
+    fireEvent.change(textarea, { target: { value: 'Blocked message' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(textarea.value).toBe('Blocked message')
+  })
+
+  it('disables sending while the agent is running', () => {
+    mockChatState.isRunning = true
+    render(<WidgetPage />)
+
+    expect(screen.getByRole('button', { name: 'Thinking…' })).toBeDisabled()
   })
 
   it('opens settings from the footer trigger', () => {

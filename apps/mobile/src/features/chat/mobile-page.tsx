@@ -2,8 +2,8 @@ import {
   AssistantContent,
   LazyBrowserSettingsModal,
   TurnActivityPanel,
-  useChatSurfaceController,
-  useWebSpeechInput
+  useChatComposer,
+  useChatSurfaceController
 } from '@tinytinkerer/app-browser'
 import {
   Button,
@@ -39,16 +39,15 @@ export const MobilePage = () => {
     showReasoningActivity,
     submitLabel,
     isCoolingDown,
-    submitPrompt: submitPromptController,
+    submitPrompt,
     resetConversation,
     cancelRetry
   } = useChatSurfaceController()
-  const [prompt, setPrompt] = useState('')
+  const { prompt, setPrompt, speech, handleSubmit } = useChatComposer(submitPrompt)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const conversationEndRef = useRef<HTMLDivElement>(null)
   const { canInstall, showIosHint, promptToInstall } = useInstallPrompt()
-  const speech = useWebSpeechInput({ prompt, setPrompt })
 
   useEffect(() => {
     const element = textareaRef.current
@@ -63,15 +62,6 @@ export const MobilePage = () => {
   useEffect(() => {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [events])
-
-  const handlePromptSubmit = () => {
-    speech.stop()
-    void submitPromptController(prompt).then((didSend) => {
-      if (didSend) {
-        setPrompt('')
-      }
-    })
-  }
 
   if (isBooting || initializeError) {
     return <MobileChatLoading {...(initializeError ? { error: initializeError } : {})} />
@@ -155,7 +145,7 @@ export const MobilePage = () => {
           className="px-1 py-1"
           onSubmit={(event) => {
             event.preventDefault()
-            handlePromptSubmit()
+            handleSubmit()
           }}
         >
           <textarea
@@ -165,7 +155,7 @@ export const MobilePage = () => {
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
-                handlePromptSubmit()
+                handleSubmit()
               }
             }}
             placeholder="Ask anything…"
