@@ -100,6 +100,20 @@ describe('contracts', () => {
     ).toBe('rate_limited')
   })
 
+  // The request-side `provider` field was removed (LiteLLM is the sole
+  // provider). Older clients may still send it, so the schema must keep
+  // silently stripping unknown keys rather than rejecting them — guard against
+  // an accidental switch to `.strict()` that would break those clients.
+  it('silently strips a legacy provider field from chat requests', () => {
+    const parsed = modelsChatRequestSchema.parse({
+      provider: 'litellm',
+      model: 'openai/gpt-4.1-mini',
+      messages: [{ role: 'user', content: 'hi' }]
+    })
+    expect(parsed).not.toHaveProperty('provider')
+    expect(parsed.model).toBe('openai/gpt-4.1-mini')
+  })
+
   it('parses models list response', () => {
     expect(
       modelsListResponseSchema.parse({
