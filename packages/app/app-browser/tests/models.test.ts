@@ -177,7 +177,7 @@ describe('fetchModels', () => {
     expect(defaultResult).toEqual({ models: defaultModels, fromFallback: false })
     expect(customResult).toEqual({ models: customModels, fromFallback: false })
     expect(fetchSpy).toHaveBeenCalledTimes(2)
-    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('provider=litellm')
+    expect(String(fetchSpy.mock.calls[0]?.[0])).not.toContain('provider')
     expect(String(fetchSpy.mock.calls[0]?.[0])).not.toContain('litellmBaseUrl')
     expect(String(fetchSpy.mock.calls[1]?.[0])).toContain(
       'litellmBaseUrl=https%3A%2F%2Flitellm.example.com%2F'

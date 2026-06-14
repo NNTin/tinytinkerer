@@ -95,7 +95,7 @@ describe('useModels', () => {
     expect(fetchSpy).toHaveBeenCalled()
   })
 
-  it('refreshes against the edge with the litellm provider, omitting the base URL when unset', async () => {
+  it('refreshes against the edge, omitting the base URL when unset', async () => {
     mockState.auth.token = 'gh-token'
     const models = [
       {
@@ -130,7 +130,7 @@ describe('useModels', () => {
 
     expect(result.current.refreshError).toBeNull()
     expect(result.current.models).toEqual(models)
-    expect(capturedUrl).toContain('provider=litellm')
+    expect(capturedUrl).not.toContain('provider')
     // No explicit base URL configured: the request must omit the param so the
     // edge resolves its own configured deployment default (issue #179).
     expect(capturedUrl).not.toContain('litellmBaseUrl')

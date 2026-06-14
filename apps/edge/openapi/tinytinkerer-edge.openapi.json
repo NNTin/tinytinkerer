@@ -341,9 +341,6 @@
       "ModelsChatRequest": {
         "type": "object",
         "properties": {
-          "provider": {
-            "$ref": "#/components/schemas/ModelProviderId"
-          },
           "model": {
             "type": "string"
           },
@@ -716,14 +713,6 @@
       "get": {
         "summary": "List models through the edge proxy",
         "parameters": [
-          {
-            "schema": {
-              "$ref": "#/components/schemas/ModelProviderId"
-            },
-            "required": false,
-            "name": "provider",
-            "in": "query"
-          },
           {
             "schema": {
               "type": "string",

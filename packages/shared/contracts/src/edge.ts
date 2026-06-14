@@ -69,9 +69,8 @@ export const chatMessageSchema = z
 export type ChatMessage = z.infer<typeof chatMessageSchema>
 
 // LiteLLM is the sole provider — it proxies the upstream LLM providers itself.
-// The enum (and the optional `provider` request field) is kept so the wire
-// shape stays extensible; legacy 'github'/'openrouter' values now fail
-// validation.
+// The single-value enum tags each model entry with its provider; it is not a
+// request input (clients no longer send a provider field).
 export const modelProviderIdSchema = z
   .enum(['litellm'])
   .meta({ id: 'ModelProviderId' })
@@ -135,7 +134,6 @@ export const validateLiteLLMBaseUrlPolicy = (
 
 export const modelsChatRequestSchema = z
   .object({
-    provider: modelProviderIdSchema.optional(),
     model: z.string().optional(),
     litellmBaseUrl: z.string().url().optional(),
     stream: z.boolean().optional(),

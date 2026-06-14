@@ -206,19 +206,17 @@ describe('createBrowserRuntimeFactory', () => {
     expect(capturedAuthorization).toBe('Bearer rotated-token')
     expect(
       JSON.parse(capturedBody ?? '{}') as {
-        provider: string
         model: string
         litellmBaseUrl: string
       }
     ).toMatchObject({
-      provider: 'litellm',
       model: 'anthropic/claude-3.5-sonnet',
       litellmBaseUrl: 'https://litellm.example.com/'
     })
     vi.unstubAllGlobals()
   })
 
-  it('forwards the LiteLLM provider, model, GitHub token, and base URL', async () => {
+  it('forwards the model, GitHub token, and base URL', async () => {
     let capturedBody: string | undefined
     let capturedAuthorization: string | null = null
     vi.stubGlobal(
@@ -254,12 +252,10 @@ describe('createBrowserRuntimeFactory', () => {
     expect(capturedAuthorization).toBe('Bearer github-token')
     expect(
       JSON.parse(capturedBody ?? '{}') as {
-        provider: string
         model: string
         litellmBaseUrl: string
       }
     ).toMatchObject({
-      provider: 'litellm',
       model: 'openai/gpt-5',
       litellmBaseUrl: 'https://litellm.example.com/'
     })
@@ -300,7 +296,8 @@ describe('createBrowserRuntimeFactory', () => {
     // The deployment-default sentinel must leave the field off the wire so
     // the edge resolves its own configured LITELLM_BASE_URL.
     const body = JSON.parse(capturedBody ?? '{}') as Record<string, unknown>
-    expect(body).toMatchObject({ provider: 'litellm', model: 'openai/gpt-5' })
+    expect(body).toMatchObject({ model: 'openai/gpt-5' })
+    expect(body).not.toHaveProperty('provider')
     expect(body).not.toHaveProperty('litellmBaseUrl')
     vi.unstubAllGlobals()
   })

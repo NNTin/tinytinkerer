@@ -53,15 +53,6 @@ export type RequestTelemetryMetadata = {
   model?: string | null
   stream?: boolean
   /**
-   * The provider the *client requested* (distinct from `origin`, which is the
-   * provider we resolved to). Pass the sentinel `'absent'` when the request
-   * omitted the provider field so a silent default is surfaced rather than
-   * dropped — the model routes set this so captured failures carry
-   * `request_provider` / `provider_missing` tags. Leave unset on call sites
-   * where the provider concept does not apply (e.g. Tavily search).
-   */
-  provider?: string
-  /**
    * Outcomes triaged as normal & unavoidable for this call site — never captured.
    * Add only after triaging the Sentry issue; see .agent/skills/sentry-debugging.
    */
@@ -180,16 +171,7 @@ const buildRequestTags = (
     // Promote path and host to searchable Sentry tags (they are also in the
     // `request` context but tags are filterable across issues).
     path,
-    ...(host ? { host } : {}),
-    // `request_provider` is what the client asked for; `provider_missing` flags
-    // a request that omitted the provider field (sentinel `'absent'`) and was
-    // silently defaulted. Only emitted where the metadata opts in (model routes).
-    ...(metadata.provider !== undefined
-      ? {
-          request_provider: metadata.provider,
-          provider_missing: metadata.provider === 'absent'
-        }
-      : {})
+    ...(host ? { host } : {})
   }
 }
 
@@ -228,13 +210,7 @@ const buildRequestContexts = (
       method: metadata.method,
       ...sanitizeRequestLocation(metadata.url),
       stream: metadata.stream ?? false,
-      ...(model ? { model } : {}),
-      ...(metadata.provider !== undefined
-        ? {
-            provider: metadata.provider,
-            provider_missing: metadata.provider === 'absent'
-          }
-        : {})
+      ...(model ? { model } : {})
     },
     failure: {
       kind,

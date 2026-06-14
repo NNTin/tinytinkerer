@@ -6,12 +6,10 @@ import {
   modelEntrySchema,
   modelsChatResponseSchema,
   type ModelEntry,
-  type ModelProviderId,
   validateLiteLLMBaseUrlPolicy
 } from '@tinytinkerer/contracts'
 import { z } from 'zod'
 import type { Context, TypedResponse } from 'hono'
-import { captureTelemetryMessage } from '@tinytinkerer/sentry-telemetry'
 import type { Bindings } from '../lib/bindings'
 import { applyCorsHeaders } from '../lib/cors'
 import { modelsChatRoute, modelsListRoute } from '../openapi/routes'
@@ -299,39 +297,6 @@ const toLiteLLMModels = (
   })
 }
 
-// Sentinel recorded on telemetry when the client omitted the provider field, so
-// a misbehaving client is surfaced rather than dropped.
-const ABSENT_PROVIDER = 'absent'
-
-// A request without an explicit provider is silently served by LiteLLM (the
-// sole provider). That hides a misbehaving client, so surface it as a Sentry
-// message tagged with the area and the provider we fell back to. Returns the
-// value to stamp on request telemetry: the requested provider id, or the
-// ABSENT sentinel.
-const trackRequestedProvider = (
-  area: 'models.chat' | 'models.list',
-  requested: ModelProviderId | undefined
-): string => {
-  if (requested !== undefined) return requested
-  captureTelemetryMessage(
-    `${area} request omitted the provider field; defaulting to litellm`,
-    {
-      level: 'warning',
-      tags: {
-        request_area: area,
-        request_provider: ABSENT_PROVIDER,
-        provider_missing: true,
-        resolved_provider: 'litellm'
-      },
-      contexts: {
-        request: { area, provider_missing: true, resolved_provider: 'litellm' }
-      },
-      fingerprint: ['models-provider-missing', area]
-    }
-  )
-  return ABSENT_PROVIDER
-}
-
 // The fixed set of error responses preflight itself can emit, all declared on
 // both model routes. Kept as discrete per-status members so each stays
 // assignable to the routes' generated typed-response unions (a single
@@ -347,7 +312,6 @@ type LiteLLMPreflightResult<S> =
       ok: true
       resolvedBaseUrl: string
       credentialKey: CredentialKey
-      telemetryProvider: string
       identity: CallerIdentity
       isAnonymous: boolean
       userKey?: LiteLLMUserKey
@@ -356,8 +320,6 @@ type LiteLLMPreflightResult<S> =
 
 interface LiteLLMPreflightArgs<S> {
   requestedBaseUrl: string | null | undefined
-  area: 'models.chat' | 'models.list'
-  requestedProvider: ModelProviderId | undefined
   requireUserKey?: boolean
   /**
    * User-scoped short-circuit, evaluated AFTER GitHub caller validation and
@@ -377,8 +339,8 @@ interface LiteLLMPreflightArgs<S> {
 
 /**
  * Shared pre-flight for both LiteLLM-backed model routes: the auth-presence
- * check, provider telemetry, configuration guard, base-URL resolution +
- * allowlist, GitHub identity validation, and the per-user backoff key.
+ * check, configuration guard, base-URL resolution + allowlist, GitHub identity
+ * validation, and the per-user backoff key.
  *
  * Identity now runs before any model-route short-circuit because cache/backoff
  * state and LiteLLM virtual keys are user-scoped. That removes the older
@@ -389,8 +351,6 @@ const preflightLiteLLM = async <S = never>(
   c: Context<{ Bindings: Bindings }>,
   {
     requestedBaseUrl,
-    area,
-    requestedProvider,
     requireUserKey = false,
     shortCircuit
   }: LiteLLMPreflightArgs<S>
@@ -398,8 +358,6 @@ const preflightLiteLLM = async <S = never>(
   const authorization =
     c.req.header('authorization') ?? c.req.header('Authorization')
   const isAnonymous = !authorization
-
-  const telemetryProvider = trackRequestedProvider(area, requestedProvider)
 
   // Configuration first: a deployment without a key or base URL is a 503 "not
   // configured", not a 400 about the (absent) default base URL.
@@ -507,7 +465,6 @@ const preflightLiteLLM = async <S = never>(
     ok: true,
     resolvedBaseUrl,
     credentialKey,
-    telemetryProvider,
     identity,
     isAnonymous,
     ...(userKey ? { userKey } : {})
@@ -527,8 +484,6 @@ export const registerModelRoutes = (
     // (TINYTINKERER-EDGE-4).
     const preflight = await preflightLiteLLM(c, {
       requestedBaseUrl: body.litellmBaseUrl,
-      area: 'models.chat',
-      requestedProvider: body.provider,
       requireUserKey: true,
       shortCircuit: async ({ credentialKey }) => {
         const backoffMs = await getActiveBackoffMs(Date.now(), credentialKey)
@@ -540,8 +495,7 @@ export const registerModelRoutes = (
       }
     })
     if (!preflight.ok) return preflight.response
-    const { resolvedBaseUrl, credentialKey, telemetryProvider, userKey } =
-      preflight
+    const { resolvedBaseUrl, credentialKey, userKey } = preflight
     if (!userKey) {
       return c.json(
         edgeErrorResponseSchema.parse({
@@ -559,7 +513,6 @@ export const registerModelRoutes = (
         method: 'POST',
         url: litellmChatUrl(resolvedBaseUrl),
         model,
-        provider: telemetryProvider,
         stream: useStream,
         // Chat completions are NOT cacheable, so after we durably honour the
         // upstream rate-limit window (above) the residual 429 — the first call
@@ -710,8 +663,6 @@ export const registerModelRoutes = (
     let cached: Awaited<ReturnType<typeof readCachedModels>> | undefined
     const preflight = await preflightLiteLLM(c, {
       requestedBaseUrl: query.litellmBaseUrl,
-      area: 'models.list',
-      requestedProvider: query.provider,
       shortCircuit: async ({ resolvedBaseUrl, credentialKey }) => {
         // The catalogue rarely changes and is identical for every caller. Serve
         // a fresh cached copy without touching upstream — this is what actually
@@ -752,8 +703,7 @@ export const registerModelRoutes = (
       }
     })
     if (!preflight.ok) return preflight.response
-    const { resolvedBaseUrl, credentialKey, telemetryProvider, identity, isAnonymous } =
-      preflight
+    const { resolvedBaseUrl, credentialKey, identity, isAnonymous } = preflight
     const listUrl = litellmListUrl(resolvedBaseUrl)
     const cacheScope = liteLLMCacheScope(resolvedBaseUrl)
 
@@ -775,7 +725,6 @@ export const registerModelRoutes = (
         origin: 'litellm',
         method: 'GET',
         url: listUrl,
-        provider: telemetryProvider,
         // models.list IS cacheable, so the catalogue cache + durable backoff above
         // are the real fix — we only reach this upstream fetch on a cache miss with
         // no active backoff window. A 429 here is therefore the cold-cache-miss

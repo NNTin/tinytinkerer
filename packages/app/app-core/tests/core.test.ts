@@ -507,49 +507,7 @@ describe('app-core helpers', () => {
     expect(state.webSpeechEnabled).toBe(true)
   })
 
-  it('migrates the legacy per-provider model map and clears the orphaned OpenRouter key', async () => {
-    const writes: Array<{ key: string; value: string }> = []
-    const state = await loadSettingsState({
-      get: (key) =>
-        Promise.resolve(
-          key === 'settings_selected_models_by_provider'
-            ? JSON.stringify({
-                github: 'openai/gpt-5',
-                openrouter: 'anthropic/claude-3.5-sonnet',
-                litellm: 'openai/gpt-4.1-mini'
-              })
-            : key === 'settings_openrouter_api_key'
-              ? 'sk-or-v1-test'
-              : key === SETTINGS_KEYS.litellmBaseUrl
-                ? 'https://litellm.example.com'
-                : undefined
-        ),
-      set: (key, value) => {
-        writes.push({ key, value })
-        return Promise.resolve()
-      }
-    })
-
-    expect(state.selectedModel).toBe('openai/gpt-4.1-mini')
-    expect(state.litellmBaseUrl).toBe('https://litellm.example.com/')
-    // The migrated pick is written forward; legacy keys are emptied so a stale
-    // map entry can never override later model changes and the orphaned
-    // OpenRouter credential does not linger in storage.
-    expect(writes).toContainEqual({
-      key: SETTINGS_KEYS.selectedModel,
-      value: 'openai/gpt-4.1-mini'
-    })
-    expect(writes).toContainEqual({
-      key: 'settings_selected_models_by_provider',
-      value: ''
-    })
-    expect(writes).toContainEqual({
-      key: 'settings_openrouter_api_key',
-      value: ''
-    })
-  })
-
-  it('keeps the stored selected model when no legacy per-provider map exists', async () => {
+  it('reads the stored selected model', async () => {
     const state = await loadSettingsState({
       get: (key) =>
         Promise.resolve(
@@ -595,16 +553,13 @@ describe('app-core helpers', () => {
     expect(state.showReasoningActivity).toBe(true)
   })
 
-  it('migrates reasoning & activity from either legacy toggle when the new key is unset', async () => {
+  it('defaults showReasoningActivity to false when no preference is stored', async () => {
     const state = await loadSettingsState({
-      get: (key) =>
-        Promise.resolve(
-          key === 'settings_show_tool_activity' ? 'true' : undefined
-        ),
+      get: () => Promise.resolve(undefined),
       set: () => Promise.resolve()
     })
 
-    expect(state.showReasoningActivity).toBe(true)
+    expect(state.showReasoningActivity).toBe(false)
   })
 
   it('defaults showCodeBlockFullscreenButton to true when no preference is stored', async () => {

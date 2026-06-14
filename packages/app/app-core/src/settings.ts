@@ -32,19 +32,6 @@ export const SETTINGS_KEYS = {
   pluginActivation: 'settings_plugins_activation'
 } as const
 
-// Superseded settings, read once at load for back-compat migration:
-// - showThinkingTimeline/showToolActivity merged into `showReasoningActivity`.
-// - selectedModelsByProvider held per-provider model picks from the multi-provider
-//   era (GitHub Models/OpenRouter); only the litellm entry is migrated forward.
-// - openRouterApiKey is a credential from the removed OpenRouter provider; it is
-//   cleared from storage on load rather than left behind.
-const LEGACY_SETTINGS_KEYS = {
-  showThinkingTimeline: 'settings_show_thinking_timeline',
-  showToolActivity: 'settings_show_tool_activity',
-  selectedModelsByProvider: 'settings_selected_models_by_provider',
-  openRouterApiKey: 'settings_openrouter_api_key'
-} as const
-
 export type SettingsState = {
   hydrated: boolean
   selectedModel: string
@@ -64,12 +51,6 @@ const parseBool = (value: string | undefined, fallback: boolean): boolean => {
   if (value === 'true') return true
   if (value === 'false') return false
   return fallback
-}
-
-const parseBoolOptional = (value: string | undefined): boolean | undefined => {
-  if (value === 'true') return true
-  if (value === 'false') return false
-  return undefined
 }
 
 const parseAgentType = (value: string | undefined): AgentType => {
@@ -95,15 +76,11 @@ export const defaultSettingsState = (): SettingsState => ({
 export const loadSettingsState = async (preferences: PreferencesStore): Promise<SettingsState> => {
   const [
     selectedModel,
-    legacyModelsByProviderRaw,
-    legacyOpenRouterApiKey,
     litellmBaseUrl,
     agentType,
     searchEnabled,
     webSpeechEnabled,
     showReasoningActivity,
-    legacyThinkingTimeline,
-    legacyToolActivity,
     showCodeBlockFullscreenButton,
     mcpServersRaw,
     mcpDiscoveryRaw,
@@ -111,15 +88,11 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     pluginActivationRaw
   ] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
-    preferences.get(LEGACY_SETTINGS_KEYS.selectedModelsByProvider),
-    preferences.get(LEGACY_SETTINGS_KEYS.openRouterApiKey),
     preferences.get(SETTINGS_KEYS.litellmBaseUrl),
     preferences.get(SETTINGS_KEYS.agentType),
     preferences.get(SETTINGS_KEYS.searchEnabled),
     preferences.get(SETTINGS_KEYS.webSpeechEnabled),
     preferences.get(SETTINGS_KEYS.showReasoningActivity),
-    preferences.get(LEGACY_SETTINGS_KEYS.showThinkingTimeline),
-    preferences.get(LEGACY_SETTINGS_KEYS.showToolActivity),
     preferences.get(SETTINGS_KEYS.showCodeBlockFullscreenButton),
     preferences.get(SETTINGS_KEYS.mcpServers),
     preferences.get(SETTINGS_KEYS.mcpDiscovery),
@@ -127,52 +100,19 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     preferences.get(SETTINGS_KEYS.pluginActivation)
   ])
 
-  // When the merged key is unset, migrate: enabled if either legacy toggle was on.
-  const reasoningActivity =
-    parseBoolOptional(showReasoningActivity) ??
-    (parseBool(legacyThinkingTimeline, false) || parseBool(legacyToolActivity, false))
-
-  // Migrate the litellm pick out of the legacy per-provider map, then clear the
-  // map so a stale entry can never override later model changes (which write
-  // only `settings_selected_model`).
-  let migratedSelectedModel = normalizeSelectedModel(selectedModel)
-  const legacyLitellmModel = parseLegacyLitellmModel(legacyModelsByProviderRaw)
-  if (legacyLitellmModel) {
-    migratedSelectedModel = legacyLitellmModel
-    await preferences.set(SETTINGS_KEYS.selectedModel, migratedSelectedModel)
-    await preferences.set(LEGACY_SETTINGS_KEYS.selectedModelsByProvider, '')
-  }
-  if (legacyOpenRouterApiKey?.trim()) {
-    await preferences.set(LEGACY_SETTINGS_KEYS.openRouterApiKey, '')
-  }
-
   return {
     hydrated: true,
-    selectedModel: migratedSelectedModel,
+    selectedModel: normalizeSelectedModel(selectedModel),
     litellmBaseUrl: normalizeLiteLLMBaseUrl(litellmBaseUrl),
     agentType: parseAgentType(agentType),
     searchEnabled: parseBool(searchEnabled, true),
     webSpeechEnabled: parseBool(webSpeechEnabled, false),
-    showReasoningActivity: reasoningActivity,
+    showReasoningActivity: parseBool(showReasoningActivity, false),
     showCodeBlockFullscreenButton: parseBool(showCodeBlockFullscreenButton, true),
     mcpServers: parseMcpServers(mcpServersRaw),
     mcpDiscovery: parseMcpDiscovery(mcpDiscoveryRaw),
     telemetryEnabled: parseBool(telemetryEnabled, false),
     pluginActivation: parsePluginActivation(pluginActivationRaw)
-  }
-}
-
-const parseLegacyLitellmModel = (raw: string | undefined): string | undefined => {
-  if (!raw) return undefined
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      return undefined
-    }
-    const value = (parsed as Record<string, unknown>).litellm
-    return typeof value === 'string' && value.trim() ? value.trim() : undefined
-  } catch {
-    return undefined
   }
 }
 

@@ -7,8 +7,7 @@ import {
 import {
   setCaptureExceptionSink,
   setCaptureMessageSink,
-  type CaptureExceptionSink,
-  type CaptureMessageSink
+  type CaptureExceptionSink
 } from '@tinytinkerer/sentry-telemetry'
 import app from './index.js'
 import { cacheKeyForScope } from './lib/models-cache.js'
@@ -316,33 +315,6 @@ describe('edge routes', () => {
     expect(body['retryAfterMs']).toBe(120_000)
   })
 
-  it('rejects the removed github/openrouter providers with a validation error', async () => {
-    const fetchSpy = vi.fn()
-    vi.stubGlobal('fetch', fetchSpy)
-
-    for (const provider of ['github', 'openrouter']) {
-      const response = await app.fetch(
-        new Request('http://localhost/api/models/chat', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            authorization: 'Bearer test-token'
-          },
-          body: JSON.stringify({
-            provider,
-            model: 'openai/gpt-4.1-mini',
-            stream: false,
-            messages: [{ role: 'user', content: 'hello' }]
-          })
-        }),
-        LITELLM_ENV
-      )
-
-      expect(response.status).toBe(400)
-    }
-    expect(fetchSpy).not.toHaveBeenCalled()
-  })
-
   // A missing LITELLM_BASE_URL is "not configured"; missing per-user key
   // provisioning secrets are a distinct deployment error.
   it.each([
@@ -577,52 +549,6 @@ describe('edge routes', () => {
     expect((JSON.parse(upstreamBody) as { model: string }).model).toBe(
       'chatgpt/gpt-5.4'
     )
-  })
-
-  it('surfaces a missing provider field as a telemetry message instead of silently defaulting to litellm', async () => {
-    const messageSink = vi.fn<CaptureMessageSink>()
-    setCaptureMessageSink(messageSink)
-    const fetchSpy = withCallerValidation(() =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
-          { status: 200, headers: { 'content-type': 'application/json' } }
-        )
-      )
-    )
-    vi.stubGlobal('fetch', fetchSpy)
-
-    const response = await app.fetch(
-      new Request('http://localhost/api/models/chat', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: 'Bearer test-token'
-        },
-        // No `provider` field → the route serves LiteLLM (the sole provider),
-        // which would otherwise hide a misbehaving client.
-        body: JSON.stringify({
-          model: 'openai/gpt-4.1-mini',
-          stream: false,
-          messages: [{ role: 'user', content: 'hello' }]
-        })
-      }),
-      LITELLM_ENV
-    )
-
-    // The request still succeeds (litellm default), but the omission is reported.
-    expect(response.status).toBe(200)
-    const missingProviderReport = messageSink.mock.calls.find(
-      ([, options]) =>
-        options.tags?.['request_area'] === 'models.chat' &&
-        options.tags?.['provider_missing'] === true
-    )
-    expect(missingProviderReport).toBeDefined()
-    expect(missingProviderReport?.[1].tags?.['request_provider']).toBe('absent')
-    expect(missingProviderReport?.[1].tags?.['resolved_provider']).toBe(
-      'litellm'
-    )
-    expect(missingProviderReport?.[1].level).toBe('warning')
   })
 
   it('serves a graceful 503 (not a 502, not a raw 429) on a cold-cache-miss models/list rate limit, and does not capture the window-opener (TINYTINKERER-EDGE-5)', async () => {

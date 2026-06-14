@@ -112,17 +112,13 @@ describe('modelsChatRequestBody', () => {
   }
 
   it('omits litellmBaseUrl for the deployment-default sentinel so the edge resolves its own URL (issue #179)', () => {
-    expect(modelsChatRequestBody(undefined, init)).toEqual({
-      provider: 'litellm',
-      ...init
-    })
+    expect(modelsChatRequestBody(undefined, init)).toEqual({ ...init })
     expect(modelsChatRequestBody('', init)).not.toHaveProperty('litellmBaseUrl')
     expect(modelsChatRequestBody('   ', init)).not.toHaveProperty('litellmBaseUrl')
   })
 
   it('includes an explicitly configured litellmBaseUrl', () => {
     expect(modelsChatRequestBody('https://litellm.example.com/', init)).toEqual({
-      provider: 'litellm',
       litellmBaseUrl: 'https://litellm.example.com/',
       ...init
     })
@@ -164,7 +160,6 @@ describe('createModelsChatFetch', () => {
 
     expect(capturedUrl).toBe('http://example.com/api/models/chat')
     expect(JSON.parse(capturedBody ?? '{}')).toMatchObject({
-      provider: 'litellm',
       litellmBaseUrl: 'https://litellm.example.com/',
       model: 'openai/gpt-5',
       stream: true

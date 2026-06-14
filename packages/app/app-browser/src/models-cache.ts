@@ -109,9 +109,10 @@ export const fetchModels = async (
   // An unset base URL (the deployment-default sentinel) is omitted from the
   // request so the edge resolves its own configured LITELLM_BASE_URL — the
   // client must never assert a concrete default (issue #179).
-  const params = new URLSearchParams({ provider: 'litellm' })
+  const params = new URLSearchParams()
   if (litellmBaseUrl) params.set('litellmBaseUrl', litellmBaseUrl)
-  const url = `${edgeBaseUrl}${EDGE_ROUTE_PATHS.modelsList}?${params.toString()}`
+  const query = params.toString()
+  const url = `${edgeBaseUrl}${EDGE_ROUTE_PATHS.modelsList}${query ? `?${query}` : ''}`
   const metadata: RequestTelemetryMetadata = {
     area: 'models.list',
     origin: 'edge',

@@ -114,7 +114,6 @@ export const modelsChatRequestBody = (
 ): Record<string, unknown> => {
   const baseUrl = litellmBaseUrl?.trim()
   return {
-    provider: 'litellm',
     ...(baseUrl ? { litellmBaseUrl: baseUrl } : {}),
     ...init
   }
