@@ -406,7 +406,7 @@ describe('edge routes', () => {
   // with the anonymous LiteLLM key, and may fail if key provisioning is
   // unavailable (503 instead of 401).
   it('allows anonymous access to the models routes', async () => {
-    const fetchSpy = vi.fn((url: string) => {
+    const fetchSpy = vi.fn((url: string, init?: RequestInit) => {
       if (url.includes('/v2/key/info')) {
         return new Response(JSON.stringify({ info: [] }), {
           status: 200,
@@ -414,7 +414,12 @@ describe('edge routes', () => {
         })
       }
       if (url.includes('/key/generate')) {
-        return new Response(JSON.stringify({ key: 'sk-tt-' + 'a'.repeat(48) }), {
+        // Echo back the deterministic key from the request body so the
+        // value-match check in generateKey passes and provisioning succeeds.
+        const body = JSON.parse((init?.body as string) ?? '{}') as {
+          key?: string
+        }
+        return new Response(JSON.stringify({ key: body.key ?? '' }), {
           status: 200,
           headers: { 'content-type': 'application/json' }
         })
