@@ -9,7 +9,9 @@ import type {
 // contract: a plugin may ask for a smaller timeout but can never exceed these.
 const HARD_TIMEOUT_MS = 10_000
 const MAX_CONCURRENT = 3
-const MAX_OUTPUT_BYTES = 4_000_000
+// Total captured console output budget, measured in UTF-16 code units (~chars),
+// enforced BOTH inside the worker and again host-side on the untrusted reply.
+const MAX_OUTPUT_CHARS = 4_000_000
 // Defence-in-depth caps applied to whatever the (untrusted) sandbox sends back.
 const MAX_LOG_LINES = 10_000
 
@@ -46,9 +48,13 @@ const SANDBOX_SRCDOC = `<!doctype html>
 
   function buildWorkerSource(code) {
     return [
-      'var __logs = []; var __bytes = 0; var __CAP = ' + ${MAX_OUTPUT_BYTES} + ';',
-      'function __push(line){ if (__bytes >= __CAP) return; __bytes += line.length;',
-      '  __logs.push(__bytes >= __CAP ? (line + " …[output truncated]") : line); }',
+      'var __logs = []; var __used = 0; var __capped = false; var __CAP = ' + ${MAX_OUTPUT_CHARS} + ';',
+      'function __push(line){',
+      '  if (__capped) return;',
+      '  var room = __CAP - __used;',
+      '  if (line.length >= room) { __logs.push(line.slice(0, room) + " …[output truncated]"); __used = __CAP; __capped = true; return; }',
+      '  __used += line.length; __logs.push(line);',
+      '}',
       'function __fmt(args){ return Array.prototype.map.call(args, function (a) {',
       '  try { return typeof a === "string" ? a : JSON.stringify(a); }',
       '  catch (e) { return String(a); } }).join(" "); }',
@@ -139,12 +145,23 @@ const SANDBOX_SRCDOC = `<!doctype html>
 // Coerce the untrusted message from the sandbox into the contract shape. The
 // sandbox content is adversarial by assumption, so we never trust types: `result`
 // passes through as opaque data (never rendered as HTML by callers), and logs are
-// filtered and capped here as a backstop to the in-worker cap.
+// filtered, line-capped, AND total-size-capped here — a real host-side budget that
+// does not depend on the (untrusted) worker honoring its own in-worker cap.
 export const normalizeResult = (data: Record<string, unknown>): SandboxExecutionResult => {
   const rawLogs = Array.isArray(data.logs) ? data.logs : []
-  const logs = rawLogs
-    .filter((line): line is string => typeof line === 'string')
-    .slice(0, MAX_LOG_LINES)
+  const logs: string[] = []
+  let used = 0
+  for (const line of rawLogs) {
+    if (typeof line !== 'string') continue
+    if (logs.length >= MAX_LOG_LINES || used >= MAX_OUTPUT_CHARS) break
+    const room = MAX_OUTPUT_CHARS - used
+    if (line.length > room) {
+      logs.push(`${line.slice(0, room)} …[output truncated]`)
+      break
+    }
+    logs.push(line)
+    used += line.length
+  }
 
   const result: SandboxExecutionResult = {
     ok: data.ok === true,
@@ -253,7 +270,18 @@ export const createSandboxExecutor = (): SandboxCodeExecutor => {
         )
       }
 
-      document.body.appendChild(iframe)
+      // Guard the only synchronously-throwing step (e.g. no document.body): on
+      // failure settle immediately via finish() so the concurrency slot is freed
+      // rather than held until the backstop fires (or leaked entirely).
+      try {
+        document.body.appendChild(iframe)
+      } catch (error) {
+        finish(
+          unavailable(
+            `sandbox setup failed: ${error instanceof Error ? error.message : 'unknown error'}`
+          )
+        )
+      }
     })
   }
 }

@@ -245,9 +245,10 @@ react to its own bad code; only an *unexpected* executor failure is thrown as a 
   embedded as an async function body (so no `eval`/`new Function`). The worker runs on its own
   thread, so blocking code (e.g. `while(true)`) cannot stop the timeout from terminating it.
 - enforces resource controls: **10 s** timeout (worker terminated; the embedder also has a hard
-  backstop that destroys the iframe), **4 MB** captured-output cap, **1 MB** code cap (in the
-  plugin's zod schema), and **≤ 3** concurrent sandboxes; the iframe is **destroyed after every
-  run** (success, error, or timeout).
+  backstop that destroys the iframe), **~4 M-char** captured-output cap enforced **both** inside the
+  worker **and** again host-side on the untrusted reply (so it never depends on the worker honoring
+  its own cap), **1 MB** code cap (in the plugin's zod schema), and **≤ 3** concurrent sandboxes;
+  the iframe is **destroyed after every run** (success, error, or timeout).
 - enforces a **strict message boundary**: the embedder accepts a reply only from that iframe's
   exact `contentWindow` and only with the matching `nonce`, then coerces the untrusted payload
   (`normalizeResult`) — `result` is opaque data callers never render as HTML, logs are filtered to
