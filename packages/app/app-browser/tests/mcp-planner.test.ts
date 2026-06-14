@@ -247,7 +247,7 @@ describe('LiteLLMProvider.plan — LLM branch', () => {
   })
 
   it('attempts LLM planning even without a token (uses anonymous key)', async () => {
-    const fetchMock = vi.fn()
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
     vi.stubGlobal('fetch', fetchMock)
 
     const provider = new LiteLLMProvider({

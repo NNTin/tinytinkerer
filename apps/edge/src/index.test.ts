@@ -419,7 +419,13 @@ describe('edge routes', () => {
           headers: { 'content-type': 'application/json' }
         })
       }
-      throw new Error(`Unexpected fetch: ${url}`)
+      // Return a controlled 503 for all other URLs (chat completions, models
+      // list, etc.) so the test verifies the auth path without being brittle
+      // about which upstream endpoints are hit or their order.
+      return new Response(JSON.stringify({ error: 'upstream unavailable' }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' }
+      })
     })
     vi.stubGlobal('fetch', fetchSpy)
 
@@ -435,18 +441,22 @@ describe('edge routes', () => {
       }),
       LITELLM_ENV
     )
-    // Anonymous users are now allowed; they fail on the LiteLLM fetch (the mock
-    // doesn't handle chat completions), not on auth.
-    expect(chatResponse.status).not.toBe(401)
+    // Anonymous users are allowed — the request reaches LiteLLM (not rejected
+    // at auth). The mock returns 503 from the upstream chat endpoint, which the
+    // edge surfaces as 503 with a structured error body.
+    expect(chatResponse.status).toBe(503)
+    const chatBody = (await chatResponse.json()) as { error: string }
+    expect(chatBody.error).toBe('Upstream service unavailable')
 
     const listResponse = await app.fetch(
       new Request('http://localhost/api/models/list?provider=litellm'),
       LITELLM_ENV
     )
-    // Anonymous users are now allowed; they succeed if key provisioning works.
-    expect(listResponse.status).not.toBe(401)
-    // The fetch spy should have been called for key provisioning.
-    expect(fetchSpy).toHaveBeenCalled()
+    // Same: anonymous access reaches LiteLLM. Assert on the response shape
+    // rather than fetchSpy call count to avoid order-dependence on the models cache.
+    expect(listResponse.status).toBe(503)
+    const listBody = (await listResponse.json()) as { error: string }
+    expect(listBody.error).toBe('Upstream service unavailable')
   })
 
   // Mirror of the chat-route unconfigured cases above: the list route runs the

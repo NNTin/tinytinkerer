@@ -89,7 +89,9 @@ describe('useModels', () => {
     expect(result.current.refreshError).toBeNull()
     // includeSelectedModel prepends the selected model if it's not already in the list,
     // so we expect both the selected model 'openai/gpt-5' and the fetched 'openai/gpt-5.4'.
-    expect(result.current.models.map((m) => m.id)).toContain('openai/gpt-5.4')
+    const modelIds = result.current.models.map((m) => m.id)
+    expect(modelIds).toContain('openai/gpt-5')
+    expect(modelIds).toContain('openai/gpt-5.4')
     expect(fetchSpy).toHaveBeenCalled()
   })
 

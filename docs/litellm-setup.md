@@ -187,9 +187,11 @@ with `user_id=anonymous` on first request.
 Both key types use the same provisioning endpoints and the same HMAC derivation
 logic (derived from `LITELLM_USER_KEY_SECRET`).
 
-See [PRIVACY.md](PRIVACY.md) for the full data-flow description, and keep those
-statements true for your own instance (notably: LiteLLM vendor telemetry disabled,
-no logging of conversation content).
+See [PRIVACY.md](PRIVACY.md) for the authenticated (per-user key) data-flow
+description. The anonymous path shares the same properties — no GitHub token is
+sent to LiteLLM, no conversation content is logged — but uses a shared virtual
+key rather than a per-user one. Keep those statements true for your own instance
+(notably: LiteLLM vendor telemetry disabled, no logging of conversation content).
 
 ## 1. Host a LiteLLM instance
 
