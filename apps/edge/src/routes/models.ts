@@ -540,7 +540,7 @@ export const registerModelRoutes = (
       }
     })
     if (!preflight.ok) return preflight.response
-    const { resolvedBaseUrl, credentialKey, telemetryProvider, isAnonymous: _isAnonymous, userKey } =
+    const { resolvedBaseUrl, credentialKey, telemetryProvider, userKey } =
       preflight
     if (!userKey) {
       return c.json(

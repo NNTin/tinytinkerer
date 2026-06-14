@@ -57,7 +57,7 @@ graph LR
     F -->|"POST /api/chat<br/>sends GitHub token<br/>(if present)"| E
     E -->|POST /v2/key/info<br/>Bearer: management key| L
     E -->|POST /key/generate<br/>Bearer: management key| L
-    E -->|POST /v1/chat/completions<br/>Bearer: derived key<br/>(anonymous or per-user)| L
+    E -->|"POST /v1/chat/completions<br/>Bearer: derived key<br/>(anonymous or per-user)"| L
     E -->|GET /v1/models<br/>Bearer: derived key| L
     L -->|query models by alias| GH
     L -->|query models by alias| CG
