@@ -55,8 +55,9 @@ export const fallbackModels = (): ModelEntry[] => [...FALLBACK_MODELS]
 /** Reset the in-memory models cache. Test-only — the cache is module-level. */
 export const clearModelsCache = (): void => modelsCache.clear()
 
-const hashToken = async (token: string): Promise<string> => {
-  const data = new TextEncoder().encode(token)
+const hashToken = async (token: string | null | undefined): Promise<string> => {
+  const value = token ?? 'anonymous'
+  const data = new TextEncoder().encode(value)
   const hash = await crypto.subtle.digest('SHA-256', data)
   return Array.from(new Uint8Array(hash))
     .map((b) => b.toString(16).padStart(2, '0'))
@@ -65,7 +66,7 @@ const hashToken = async (token: string): Promise<string> => {
 
 export const fetchModels = async (
   edgeBaseUrl: string,
-  token: string,
+  token: string | null | undefined,
   // An explicit user-triggered refresh (the Settings → Models refresh button)
   // must re-probe the edge, so it sets `force` to skip the fresh-cache read
   // below. Without this, the button is a silent no-op: it is the ONLY caller of
@@ -137,7 +138,10 @@ export const fetchModels = async (
 
   try {
     const response = await fetchWithTelemetry(metadata, {
-      headers: { authorization: `Bearer ${token}`, ...getTelemetryHeaders() }
+      headers: {
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...getTelemetryHeaders()
+      }
     })
 
     if (!response.ok) return fallback()

@@ -9,7 +9,13 @@ const DEFAULT_USER_MAX_BUDGET_USD = 1
 const DEFAULT_USER_BUDGET_DURATION = '30d'
 const DEFAULT_USER_RPM_LIMIT = 10
 const DEFAULT_USER_TPM_LIMIT = 100_000
+const DEFAULT_ANONYMOUS_MAX_BUDGET_USD = 0.1
+const DEFAULT_ANONYMOUS_BUDGET_DURATION = '30d'
+const DEFAULT_ANONYMOUS_RPM_LIMIT = 3
+const DEFAULT_ANONYMOUS_TPM_LIMIT = 20_000
 const PROVISIONED_TTL_MS = 10 * 60_000
+
+export const ANONYMOUS_IDENTITY: CallerIdentity = { id: 'anonymous', login: 'anonymous' }
 
 const keyInfoResponseSchema = z.object({
   info: z.array(
@@ -206,6 +212,47 @@ const expectedConfig = (
   }
 }
 
+const expectedAnonymousConfig = (
+  env: Bindings,
+  namespace: string
+): ExpectedKeyConfig => {
+  const models = configuredModels(env).sort()
+  const maxBudget = toPositiveNumber(
+    env.LITELLM_ANONYMOUS_MAX_BUDGET_USD,
+    DEFAULT_ANONYMOUS_MAX_BUDGET_USD
+  )
+  const budgetDuration =
+    env.LITELLM_ANONYMOUS_BUDGET_DURATION?.trim() || DEFAULT_ANONYMOUS_BUDGET_DURATION
+  const rpmLimit = toPositiveNumber(
+    env.LITELLM_ANONYMOUS_RPM_LIMIT,
+    DEFAULT_ANONYMOUS_RPM_LIMIT
+  )
+  const tpmLimit = toPositiveNumber(
+    env.LITELLM_ANONYMOUS_TPM_LIMIT,
+    DEFAULT_ANONYMOUS_TPM_LIMIT
+  )
+  const userId = 'anonymous'
+  const keyAlias = `tinytinkerer-${namespace}-anonymous`
+  const fingerprint = JSON.stringify({
+    maxBudget,
+    budgetDuration,
+    rpmLimit,
+    tpmLimit,
+    models
+  })
+
+  return {
+    keyAlias,
+    userId,
+    maxBudget,
+    budgetDuration,
+    rpmLimit,
+    tpmLimit,
+    models,
+    fingerprint
+  }
+}
+
 const bytesToHex = (bytes: Uint8Array): string => {
   let hex = ''
   for (const byte of bytes) hex += byte.toString(16).padStart(2, '0')
@@ -287,6 +334,19 @@ export const deriveLiteLLMUserCredentialKey = async (
     : 'unconfigured'
   return deriveCredentialKey(
     `litellm-user:${namespace}:${baseUrl}:github-${identity.id}`
+  )
+}
+
+export const deriveAnonymousCredentialKey = async (
+  env: Bindings,
+  baseUrl: string
+): Promise<CredentialKey> => {
+  const secret = env.LITELLM_USER_KEY_SECRET?.trim()
+  const namespace = secret
+    ? await deploymentKeyNamespace(secret)
+    : 'unconfigured'
+  return deriveCredentialKey(
+    `litellm-anonymous:${namespace}:${baseUrl}`
   )
 }
 
@@ -552,6 +612,84 @@ export const resolveLiteLLMUserKey = async (
     if (!raced) return undefined
     if (keyNeedsUpdate(raced, expected)) {
       const updated = await updateKey(env, baseUrl, apiKey, expected, identity)
+      if (!updated) return undefined
+    }
+  }
+
+  await writeProvisionedMarker(credentialKey, expected.fingerprint)
+  return {
+    apiKey,
+    keyAlias: expected.keyAlias,
+    userId: expected.userId,
+    credentialKey
+  }
+}
+
+export const resolveAnonymousLiteLLMKey = async (
+  env: Bindings,
+  baseUrl: string
+): Promise<LiteLLMUserKey | undefined> => {
+  if (!managementConfigured(env)) return undefined
+
+  const secret = env.LITELLM_USER_KEY_SECRET?.trim()
+  if (!secret) return undefined
+  const namespace = await deploymentKeyNamespace(secret).catch(() => undefined)
+  if (!namespace) return undefined
+
+  const expected = expectedAnonymousConfig(env, namespace)
+  const resolved = await Promise.all([
+    deriveUserApiKey(env, ANONYMOUS_IDENTITY),
+    deriveAnonymousCredentialKey(env, baseUrl)
+  ]).catch(() => undefined)
+  if (!resolved) return undefined
+  const [apiKey, credentialKey] = resolved
+
+  if (await readProvisionedMarker(credentialKey, expected.fingerprint)) {
+    return {
+      apiKey,
+      keyAlias: expected.keyAlias,
+      userId: expected.userId,
+      credentialKey
+    }
+  }
+
+  const existing = await readKeyInfoByAlias(env, baseUrl, expected.keyAlias)
+  if (existing) {
+    if (keyNeedsUpdate(existing, expected)) {
+      const updated = await updateKey(env, baseUrl, apiKey, expected, ANONYMOUS_IDENTITY)
+      if (!updated) return undefined
+    }
+    await writeProvisionedMarker(credentialKey, expected.fingerprint)
+    return {
+      apiKey,
+      keyAlias: expected.keyAlias,
+      userId: expected.userId,
+      credentialKey
+    }
+  }
+
+  const generated = await generateKey(env, baseUrl, apiKey, expected, ANONYMOUS_IDENTITY)
+  if (generated === 'value-mismatch') {
+    captureTelemetryMessage(
+      'LiteLLM /key/generate returned a key value that does not match the deterministic anonymous key; provisioning aborted',
+      {
+        level: 'error',
+        tags: {
+          request_area: 'litellm.key.generate',
+          request_origin: 'litellm',
+          failure_kind: 'key_value_mismatch',
+          key_alias: expected.keyAlias
+        },
+        fingerprint: ['litellm-anonymous-key-value-mismatch']
+      }
+    )
+    return undefined
+  }
+  if (generated === 'unconfirmed') {
+    const raced = await readKeyInfoByAlias(env, baseUrl, expected.keyAlias)
+    if (!raced) return undefined
+    if (keyNeedsUpdate(raced, expected)) {
+      const updated = await updateKey(env, baseUrl, apiKey, expected, ANONYMOUS_IDENTITY)
       if (!updated) return undefined
     }
   }

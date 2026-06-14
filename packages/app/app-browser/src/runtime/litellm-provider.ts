@@ -83,7 +83,7 @@ export class LiteLLMProvider implements ModelProvider {
   // Models/chat calls bound to this runtime's deployment: the LiteLLM base
   // URL (when the user explicitly configured one) is baked in here so the
   // planner/decider signatures never carry it.
-  private modelsChatFetch(token: string): ModelsChatFetch {
+  private modelsChatFetch(token?: string | null): ModelsChatFetch {
     const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
     return createModelsChatFetch(edgeFetch, this.options.getLiteLLMBaseUrl)
   }
@@ -102,11 +102,10 @@ export class LiteLLMProvider implements ModelProvider {
     const token = this.options.getToken?.()
     const allDescriptors = this.options.allToolDescriptors ?? []
 
-    // Use the model-authored planner whenever there is a token and at least one
-    // tool for it to reason about — web-search alone qualifies, not just MCP
-    // tools. With no tools the LLM has nothing to plan around, so fall through
-    // to the heuristic planner.
-    if (token && allDescriptors.length > 0) {
+    // Use the model-authored planner whenever there is at least one tool for it
+    // to reason about — web-search alone qualifies, not just MCP tools. With no
+    // tools the LLM has nothing to plan around, so fall through to the heuristic planner.
+    if (allDescriptors.length > 0) {
       try {
         const model = this.options.getModel?.() ?? DEFAULT_MODEL
         return await llmPlan(
@@ -149,28 +148,21 @@ export class LiteLLMProvider implements ModelProvider {
     options?: ProviderCallOptions
   ): Promise<ReActDecision> {
     const token = this.options.getToken?.()
-
-    if (token) {
-      await this.applyQuotaThrottle(context)
-      const model = this.options.getModel?.() ?? DEFAULT_MODEL
-      const tools = this.options.allToolDescriptors ?? []
-      try {
-        return await llmDecideNextAction(
-          context,
-          tools,
-          model,
-          this.modelsChatFetch(token),
-          options?.signal
-        )
-      } catch (error) {
-        if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
-        throw error
-      }
+    await this.applyQuotaThrottle(context)
+    const model = this.options.getModel?.() ?? DEFAULT_MODEL
+    const tools = this.options.allToolDescriptors ?? []
+    try {
+      return await llmDecideNextAction(
+        context,
+        tools,
+        model,
+        this.modelsChatFetch(token),
+        options?.signal
+      )
+    } catch (error) {
+      if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
+      throw error
     }
-
-    // Without a token there is no model to consult, so finish immediately and
-    // let synthesize() produce the local fallback answer.
-    return { kind: 'final' }
   }
 
   async *streamDecision(
@@ -178,28 +170,21 @@ export class LiteLLMProvider implements ModelProvider {
     options?: ProviderCallOptions
   ): AsyncIterable<DecisionChunk> {
     const token = this.options.getToken?.()
-
-    if (token) {
-      await this.applyQuotaThrottle(context)
-      const model = this.options.getModel?.() ?? DEFAULT_MODEL
-      const tools = this.options.allToolDescriptors ?? []
-      try {
-        yield* llmStreamDecision(
-          context,
-          tools,
-          model,
-          this.modelsChatFetch(token),
-          options?.signal
-        )
-      } catch (error) {
-        if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
-        throw error
-      }
-      return
+    await this.applyQuotaThrottle(context)
+    const model = this.options.getModel?.() ?? DEFAULT_MODEL
+    const tools = this.options.allToolDescriptors ?? []
+    try {
+      yield* llmStreamDecision(
+        context,
+        tools,
+        model,
+        this.modelsChatFetch(token),
+        options?.signal
+      )
+    } catch (error) {
+      if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
+      throw error
     }
-
-    // Local fallback: no model to stream, so finish immediately.
-    yield { kind: 'decision', decision: { kind: 'final' } }
   }
 
   async *synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk> {
@@ -217,111 +202,95 @@ export class LiteLLMProvider implements ModelProvider {
 
   private async *synthesizeInner(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk> {
     const token = this.options.getToken?.()
-
-    if (token) {
-      const estimatedTokens = estimateTokens(context)
-      const throttle = this.quota.checkThrottle(estimatedTokens)
-      if (throttle.shouldThrottle) {
-        // Sleep inline for all throttle durations — keeps prevention inside the provider
-        // and avoids misusing the upstream recovery loop.
-        await new Promise<void>((resolve) => setTimeout(resolve, throttle.waitMs))
-      }
-
-      const toolSection = Object.entries(context.toolResults)
-        .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-        .join('\n')
-
-      const userContent = [
-        context.prompt,
-        context.notes.filter(Boolean).length > 0 && `\nResearch notes:\n${context.notes.join('\n')}`,
-        toolSection && `\nTool results:\n${toolSection}`
-      ]
-        .filter(Boolean)
-        .join('')
-
-      const selectedModel = this.options.getModel?.() ?? DEFAULT_MODEL
-      // Route through the shared models/chat fetch so request shape, auth, and
-      // telemetry accept-rules live in one place (createEdgeFetch). The
-      // SYNTHESIZE_ACCEPT rule travels with the call so its 429-window-opener is
-      // triaged identically to DECIDE (TINYTINKERER-FRONTEND-B).
-      const response = await this.modelsChatFetch(token)(
-        {
-          model: selectedModel,
-          stream: true,
-          messages: [
-            { role: 'system', content: SYSTEM_STYLE_PROMPT },
-            ...context.history,
-            { role: 'user', content: userContent }
-          ]
-        },
-        {
-          area: 'models.chat',
-          accept: SYNTHESIZE_ACCEPT,
-          ...(options?.signal ? { signal: options.signal } : {})
-        }
-      )
-
-      this.quota.updateFromHeaders(response.headers)
-
-      if (response.status === 429) {
-        const err = await createRateLimitError(response)
-        this.quota.recordRateLimit(err.retryAfterMs)
-        throw err
-      }
-
-      if (!response.ok) {
-        throw await createEdgeError(response, `Models request failed (${response.status})`)
-      }
-
-      // 200 OK — server accepted the request; clear any heuristic backoff.
-      this.quota.clearHeuristicBackoff()
-
-      if (response.body) {
-        yield* parseSseStream(response.body, options?.signal)
-        return
-      }
-
-      // Defensive non-streamed fallback (synthesize always requests stream:true).
-      // Rebuild the metadata the parse helpers need — mirrors react-decider,
-      // which likewise reconstructs it after going through the shared fetch.
-      const metadata: RequestTelemetryMetadata = {
-        area: 'models.chat',
-        origin: 'edge',
-        method: 'POST',
-        url: `${this.options.baseUrl}${EDGE_ROUTE_PATHS.modelsChat}`,
-        model: selectedModel,
-        stream: true,
-        accept: SYNTHESIZE_ACCEPT
-      }
-      const rawJson = await parseJsonWithTelemetry<Record<string, unknown>>(metadata, response)
-      const reasoning = extractReasoning(
-        (rawJson['choices'] as Array<Record<string, unknown>> | undefined)?.[0]?.['message']
-      )
-      if (reasoning) {
-        yield { kind: 'reasoning', text: reasoning }
-      }
-      const parsed = parseWithTelemetry(
-        metadata,
-        'schema_error',
-        'Models response did not match schema',
-        () => modelsChatResponseSchema.parse(rawJson),
-        response
-      )
-      const text = parsed.choices?.[0]?.message?.content ?? ''
-      yield { kind: 'content', text }
-      return
+    const estimatedTokens = estimateTokens(context)
+    const throttle = this.quota.checkThrottle(estimatedTokens)
+    if (throttle.shouldThrottle) {
+      // Sleep inline for all throttle durations — keeps prevention inside the provider
+      // and avoids misusing the upstream recovery loop.
+      await new Promise<void>((resolve) => setTimeout(resolve, throttle.waitMs))
     }
 
-    const collected = Object.entries(context.toolResults)
+    const toolSection = Object.entries(context.toolResults)
       .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
       .join('\n')
 
-    const draft = collected
-      ? `I worked through the plan and used tools where needed.\n\n${collected}`
-      : 'Sign in with GitHub to get AI responses. Without a token the runtime runs in local fallback mode.'
+    const userContent = [
+      context.prompt,
+      context.notes.filter(Boolean).length > 0 && `\nResearch notes:\n${context.notes.join('\n')}`,
+      toolSection && `\nTool results:\n${toolSection}`
+    ]
+      .filter(Boolean)
+      .join('')
 
-    for (const chunk of draft.split(' ')) {
-      yield { kind: 'content', text: `${chunk} ` }
+    const selectedModel = this.options.getModel?.() ?? DEFAULT_MODEL
+    // Route through the shared models/chat fetch so request shape, auth, and
+    // telemetry accept-rules live in one place (createEdgeFetch). The
+    // SYNTHESIZE_ACCEPT rule travels with the call so its 429-window-opener is
+    // triaged identically to DECIDE (TINYTINKERER-FRONTEND-B).
+    const response = await this.modelsChatFetch(token)(
+      {
+        model: selectedModel,
+        stream: true,
+        messages: [
+          { role: 'system', content: SYSTEM_STYLE_PROMPT },
+          ...context.history,
+          { role: 'user', content: userContent }
+        ]
+      },
+      {
+        area: 'models.chat',
+        accept: SYNTHESIZE_ACCEPT,
+        ...(options?.signal ? { signal: options.signal } : {})
+      }
+    )
+
+    this.quota.updateFromHeaders(response.headers)
+
+    if (response.status === 429) {
+      const err = await createRateLimitError(response)
+      this.quota.recordRateLimit(err.retryAfterMs)
+      throw err
     }
+
+    if (!response.ok) {
+      throw await createEdgeError(response, `Models request failed (${response.status})`)
+    }
+
+    // 200 OK — server accepted the request; clear any heuristic backoff.
+    this.quota.clearHeuristicBackoff()
+
+    if (response.body) {
+      yield* parseSseStream(response.body, options?.signal)
+      return
+    }
+
+    // Defensive non-streamed fallback (synthesize always requests stream:true).
+    // Rebuild the metadata the parse helpers need — mirrors react-decider,
+    // which likewise reconstructs it after going through the shared fetch.
+    const metadata: RequestTelemetryMetadata = {
+      area: 'models.chat',
+      origin: 'edge',
+      method: 'POST',
+      url: `${this.options.baseUrl}${EDGE_ROUTE_PATHS.modelsChat}`,
+      model: selectedModel,
+      stream: true,
+      accept: SYNTHESIZE_ACCEPT
+    }
+    const rawJson = await parseJsonWithTelemetry<Record<string, unknown>>(metadata, response)
+    const reasoning = extractReasoning(
+      (rawJson['choices'] as Array<Record<string, unknown>> | undefined)?.[0]?.['message']
+    )
+    if (reasoning) {
+      yield { kind: 'reasoning', text: reasoning }
+    }
+    const parsed = parseWithTelemetry(
+      metadata,
+      'schema_error',
+      'Models response did not match schema',
+      () => modelsChatResponseSchema.parse(rawJson),
+      response
+    )
+    const text = parsed.choices?.[0]?.message?.content ?? ''
+    yield { kind: 'content', text }
   }
 }

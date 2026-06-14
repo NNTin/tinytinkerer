@@ -34,9 +34,12 @@ import {
   type CallerIdentity
 } from '../lib/caller-validation'
 import {
+  ANONYMOUS_IDENTITY,
   clearLiteLLMUserKeyCache,
+  deriveAnonymousCredentialKey,
   deriveLiteLLMUserCredentialKey,
   requireLiteLLMUserKeyConfiguration,
+  resolveAnonymousLiteLLMKey,
   resolveLiteLLMUserKey,
   type LiteLLMUserKey
 } from '../lib/litellm-user-keys'
@@ -346,6 +349,7 @@ type LiteLLMPreflightResult<S> =
       credentialKey: CredentialKey
       telemetryProvider: string
       identity: CallerIdentity
+      isAnonymous: boolean
       userKey?: LiteLLMUserKey
     }
   | { ok: false; response: S | PreflightErrorResponse }
@@ -393,15 +397,7 @@ const preflightLiteLLM = async <S = never>(
 ): Promise<LiteLLMPreflightResult<S>> => {
   const authorization =
     c.req.header('authorization') ?? c.req.header('Authorization')
-  if (!authorization) {
-    return {
-      ok: false,
-      response: c.json(
-        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
-        401
-      )
-    }
-  }
+  const isAnonymous = !authorization
 
   const telemetryProvider = trackRequestedProvider(area, requestedProvider)
 
@@ -430,48 +426,56 @@ const preflightLiteLLM = async <S = never>(
   }
   const resolvedBaseUrl = litellmBaseUrl.baseUrl
 
-  const callerValidation = await validateLiteLLMCaller(authorization, c.env)
-  if (callerValidation.status === 'invalid') {
-    return {
-      ok: false,
-      response: c.json(
-        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
-        401
-      )
-    }
-  }
-  if (callerValidation.status === 'forbidden') {
-    return {
-      ok: false,
-      response: c.json(
-        edgeErrorResponseSchema.parse({ error: 'Forbidden' }),
-        403
-      )
-    }
-  }
-  if (callerValidation.status === 'unavailable') {
-    return {
-      ok: false,
-      response: c.json(
-        edgeErrorResponseSchema.parse({
-          error: 'LiteLLM caller validation is temporarily unavailable.'
-        }),
-        503
-      )
-    }
-  }
+  let identity: CallerIdentity
+  let credentialKey: CredentialKey
 
-  const identity = callerValidation.identity
-  // Scope the backoff to the authenticated user, LiteLLM deployment, AND the
-  // per-deployment key namespace. One user's exhausted virtual key must not
-  // short-circuit another user's quota, and two deployments sharing a backend
-  // must not share each other's provisioning marker (see
-  // deriveLiteLLMUserCredentialKey).
-  const credentialKey = await deriveLiteLLMUserCredentialKey(
-    c.env,
-    identity,
-    resolvedBaseUrl
-  )
+  if (isAnonymous) {
+    identity = ANONYMOUS_IDENTITY
+    credentialKey = await deriveAnonymousCredentialKey(c.env, resolvedBaseUrl)
+  } else {
+    const callerValidation = await validateLiteLLMCaller(authorization, c.env)
+    if (callerValidation.status === 'invalid') {
+      return {
+        ok: false,
+        response: c.json(
+          edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
+          401
+        )
+      }
+    }
+    if (callerValidation.status === 'forbidden') {
+      return {
+        ok: false,
+        response: c.json(
+          edgeErrorResponseSchema.parse({ error: 'Forbidden' }),
+          403
+        )
+      }
+    }
+    if (callerValidation.status === 'unavailable') {
+      return {
+        ok: false,
+        response: c.json(
+          edgeErrorResponseSchema.parse({
+            error: 'LiteLLM caller validation is temporarily unavailable.'
+          }),
+          503
+        )
+      }
+    }
+
+    identity = callerValidation.identity
+    // Scope the backoff to the authenticated user, LiteLLM deployment, AND the
+    // per-deployment key namespace. One user's exhausted virtual key must not
+    // short-circuit another user's quota, and two deployments sharing a backend
+    // must not share each other's provisioning marker (see
+    // deriveLiteLLMUserCredentialKey).
+    credentialKey = await deriveLiteLLMUserCredentialKey(
+      c.env,
+      identity,
+      resolvedBaseUrl
+    )
+  }
 
   if (shortCircuit) {
     const early = await shortCircuit({
@@ -483,7 +487,9 @@ const preflightLiteLLM = async <S = never>(
   }
 
   const userKey = requireUserKey
-    ? await resolveLiteLLMUserKey(c.env, resolvedBaseUrl, identity)
+    ? isAnonymous
+      ? await resolveAnonymousLiteLLMKey(c.env, resolvedBaseUrl)
+      : await resolveLiteLLMUserKey(c.env, resolvedBaseUrl, identity)
     : undefined
   if (requireUserKey && !userKey) {
     return {
@@ -503,6 +509,7 @@ const preflightLiteLLM = async <S = never>(
     credentialKey,
     telemetryProvider,
     identity,
+    isAnonymous,
     ...(userKey ? { userKey } : {})
   }
 }
@@ -533,7 +540,7 @@ export const registerModelRoutes = (
       }
     })
     if (!preflight.ok) return preflight.response
-    const { resolvedBaseUrl, credentialKey, telemetryProvider, userKey } =
+    const { resolvedBaseUrl, credentialKey, telemetryProvider, isAnonymous, userKey } =
       preflight
     if (!userKey) {
       return c.json(
@@ -745,16 +752,14 @@ export const registerModelRoutes = (
       }
     })
     if (!preflight.ok) return preflight.response
-    const { resolvedBaseUrl, credentialKey, telemetryProvider, identity } =
+    const { resolvedBaseUrl, credentialKey, telemetryProvider, identity, isAnonymous } =
       preflight
     const listUrl = litellmListUrl(resolvedBaseUrl)
     const cacheScope = liteLLMCacheScope(resolvedBaseUrl)
 
-    const userKey = await resolveLiteLLMUserKey(
-      c.env,
-      resolvedBaseUrl,
-      identity
-    )
+    const userKey = isAnonymous
+      ? await resolveAnonymousLiteLLMKey(c.env, resolvedBaseUrl)
+      : await resolveLiteLLMUserKey(c.env, resolvedBaseUrl, identity)
     if (!userKey) {
       return c.json(
         edgeErrorResponseSchema.parse({

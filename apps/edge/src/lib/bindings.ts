@@ -24,6 +24,14 @@ export type Bindings = {
   LITELLM_USER_TPM_LIMIT?: string
   /** Comma-separated model aliases assigned to generated per-user keys. Empty means all configured models. */
   LITELLM_USER_MODELS?: string
+  /** Anonymous (unauthenticated) user LiteLLM virtual-key budget in USD (default 0.10). */
+  LITELLM_ANONYMOUS_MAX_BUDGET_USD?: string
+  /** Anonymous user LiteLLM budget reset duration (default 30d). */
+  LITELLM_ANONYMOUS_BUDGET_DURATION?: string
+  /** Anonymous user LiteLLM request-per-minute limit (default 3). */
+  LITELLM_ANONYMOUS_RPM_LIMIT?: string
+  /** Anonymous user LiteLLM token-per-minute limit (default 20000). */
+  LITELLM_ANONYMOUS_TPM_LIMIT?: string
   /**
    * Comma-separated hostnames the MCP proxy may connect to. Unset/empty keeps
    * the built-in private-address blocklist; when set, ONLY listed hosts pass

@@ -246,7 +246,7 @@ describe('LiteLLMProvider.plan — LLM branch', () => {
     expect(plan.complexity).toBe('low')
   })
 
-  it('falls back to inferPlan when no token is available', async () => {
+  it('attempts LLM planning even without a token (uses anonymous key)', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
@@ -258,7 +258,10 @@ describe('LiteLLMProvider.plan — LLM branch', () => {
 
     const plan = await provider.plan('what is the weather?', [])
 
-    expect(fetchMock).not.toHaveBeenCalled()
+    // Without a token, the fetch will be called (with no Authorization header),
+    // and the edge will use the anonymous key. The mock fetch rejects, so the
+    // provider falls back to inferPlan for transport failures.
+    expect(fetchMock).toHaveBeenCalled()
     expect(plan.steps.map((s) => s.id)).toContain('compose')
   })
 })

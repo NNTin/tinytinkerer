@@ -60,16 +60,37 @@ describe('useModels', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('asks the user to sign in when refreshing without a token', async () => {
+  it('allows unauthenticated users to refresh models (via anonymous key)', async () => {
+    const models = [
+      {
+        provider: 'litellm',
+        id: 'openai/gpt-5.4',
+        label: 'openai/gpt-5.4',
+        kind: 'chat'
+      }
+    ]
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ models }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
     const { result } = renderHook(() => useModels('openai/gpt-5'))
 
     await act(async () => {
       await result.current.refreshModels()
     })
 
-    expect(result.current.refreshError).toBe(
-      'Sign in with GitHub to refresh models.'
-    )
+    // Anonymous users are now allowed to refresh; no sign-in message.
+    expect(result.current.refreshError).toBeNull()
+    // includeSelectedModel prepends the selected model if it's not already in the list,
+    // so we expect both the selected model 'openai/gpt-5' and the fetched 'openai/gpt-5.4'.
+    expect(result.current.models.map((m) => m.id)).toContain('openai/gpt-5.4')
+    expect(fetchSpy).toHaveBeenCalled()
   })
 
   it('refreshes against the edge with the litellm provider, omitting the base URL when unset', async () => {

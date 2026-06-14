@@ -43,13 +43,6 @@ export const useModels = (selectedModel?: string): ModelsState => {
   }, [litellmBaseUrl])
 
   const refreshModels = useCallback(async (): Promise<ModelEntry[]> => {
-    if (!token) {
-      const nextModels = fallbackModels()
-      setModels(nextModels)
-      setRefreshError('Sign in with GitHub to refresh models.')
-      return includeSelectedModel(nextModels, selectedModel)
-    }
-
     setIsRefreshing(true)
     setRefreshError(null)
     try {

@@ -402,10 +402,25 @@ describe('edge routes', () => {
   )
 
   // Both models routes duplicate the same guard sequence; pin the missing-
-  // Authorization 401 on each so a refactor that unifies them cannot drop it
-  // from either route.
-  it('returns 401 when the models routes are called without authorization', async () => {
-    const fetchSpy = vi.fn()
+  // Anonymous users (no authorization) should be allowed. They get provisioned
+  // with the anonymous LiteLLM key, and may fail if key provisioning is
+  // unavailable (503 instead of 401).
+  it('allows anonymous access to the models routes', async () => {
+    const fetchSpy = vi.fn(async (url: string) => {
+      if (url.includes('/v2/key/info')) {
+        return new Response(JSON.stringify({ info: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
+      if (url.includes('/key/generate')) {
+        return new Response(JSON.stringify({ key: 'sk-tt-' + 'a'.repeat(48) }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    })
     vi.stubGlobal('fetch', fetchSpy)
 
     const chatResponse = await app.fetch(
@@ -420,20 +435,18 @@ describe('edge routes', () => {
       }),
       LITELLM_ENV
     )
-    expect(chatResponse.status).toBe(401)
-    expect(edgeErrorResponseSchema.parse(await chatResponse.json())).toEqual({
-      error: 'Unauthorized'
-    })
+    // Anonymous users are now allowed; they fail on the LiteLLM fetch (the mock
+    // doesn't handle chat completions), not on auth.
+    expect(chatResponse.status).not.toBe(401)
 
     const listResponse = await app.fetch(
       new Request('http://localhost/api/models/list?provider=litellm'),
       LITELLM_ENV
     )
-    expect(listResponse.status).toBe(401)
-    expect(edgeErrorResponseSchema.parse(await listResponse.json())).toEqual({
-      error: 'Unauthorized'
-    })
-    expect(fetchSpy).not.toHaveBeenCalled()
+    // Anonymous users are now allowed; they succeed if key provisioning works.
+    expect(listResponse.status).not.toBe(401)
+    // The fetch spy should have been called for key provisioning.
+    expect(fetchSpy).toHaveBeenCalled()
   })
 
   // Mirror of the chat-route unconfigured cases above: the list route runs the
