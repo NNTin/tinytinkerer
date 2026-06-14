@@ -49,9 +49,10 @@ interface PluginHost {
 
 type PluginCaptureSink = (report: PluginReport) => void
 
-// Optional host capabilities. agent-core owns only the *function types*; the host
-// implements them. A plugin that needs one must tolerate its absence (a headless
-// host omits the optional ones), exactly like the capture sink.
+// Optional host capabilities. Unlike `capture` (always present), these are
+// supplied only by hosts that can back them — the browser provides both; a
+// headless host omits them. agent-core owns only the *function types*; the host
+// implements them. A plugin that needs one must tolerate its absence.
 type PermissionRequestService = (request: PermissionRequest) => Promise<ToolGateResult>
 
 type PluginEdgeResponse = { ok: boolean; status: number; json(): Promise<unknown> }
