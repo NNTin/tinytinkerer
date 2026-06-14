@@ -122,16 +122,25 @@ const logChatEvent = ({ event }: ChatEventHookContext): void => {
   // making the one-line summary a reliable breadcrumb.
   console.info(summarizeEvent(event))
 
-  // The verbose detail goes into a collapsed group (`console.debug` lines) so it
-  // is available on demand without flooding the console. `groupCollapsed`/`groupEnd`
-  // are part of the standard Console API and degrade gracefully if absent.
+  // The verbose detail goes into a collapsed group so it is available on demand
+  // without flooding the console. `groupCollapsed`/`groupEnd` are part of the
+  // standard Console API and degrade gracefully if absent.
+  //
+  // NOTE: we use `console.log` (not `console.debug`) for the detail lines. In
+  // Chrome/Edge devtools `console.debug` maps to the "Verbose" log level, which
+  // is HIDDEN unless the user explicitly enables it in the level filter — so the
+  // group bodies would appear empty by default. `console.log` is visible out of
+  // the box, which is what a developer expects from a logger plugin.
   console.groupCollapsed(`${summarizeEvent(event)} (details)`)
-  console.debug('plugin', EVENT_LOGGER_PLUGIN_ID)
-  console.debug('type', event.type)
-  console.debug('id', event.id)
-  console.debug('event timestamp', event.timestamp)
-  console.debug('observed at', new Date().toISOString())
-  console.debug('payload', event.payload)
+  console.log('plugin', EVENT_LOGGER_PLUGIN_ID)
+  console.log('type', event.type)
+  console.log('id', event.id)
+  console.log('event timestamp', event.timestamp)
+  console.log('observed at', new Date().toISOString())
+  console.log('payload', event.payload)
+  // Also log the whole event as one object so devtools renders an expandable,
+  // copyable tree of every field at once.
+  console.log('event', event)
   console.groupEnd()
 }
 

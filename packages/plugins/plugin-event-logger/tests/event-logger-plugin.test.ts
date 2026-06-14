@@ -24,13 +24,13 @@ const sampleEvent: ChatEvent = {
 
 describe('eventLoggerPlugin', () => {
   let info: ReturnType<typeof vi.spyOn>
-  let debug: ReturnType<typeof vi.spyOn>
+  let log: ReturnType<typeof vi.spyOn>
   let groupCollapsed: ReturnType<typeof vi.spyOn>
   let groupEnd: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
     info = vi.spyOn(console, 'info').mockImplementation(() => {})
-    debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    log = vi.spyOn(console, 'log').mockImplementation(() => {})
     groupCollapsed = vi
       .spyOn(console, 'groupCollapsed')
       .mockImplementation(() => {})
@@ -70,12 +70,14 @@ describe('eventLoggerPlugin', () => {
     expect(groupCollapsed).toHaveBeenCalledTimes(1)
     expect(groupEnd).toHaveBeenCalledTimes(1)
 
-    // The full payload and timestamp are emitted via console.debug.
-    const debugArgs = debug.mock.calls as unknown[][]
-    expect(debugArgs).toContainEqual(['plugin', EVENT_LOGGER_PLUGIN_ID])
-    expect(debugArgs).toContainEqual(['type', 'user.message'])
-    expect(debugArgs).toContainEqual(['event timestamp', sampleEvent.timestamp])
-    expect(debugArgs).toContainEqual(['payload', sampleEvent.payload])
+    // The full payload and timestamp are emitted via console.log (NOT
+    // console.debug, which devtools hides at the default "Verbose" filter).
+    const logArgs = log.mock.calls as unknown[][]
+    expect(logArgs).toContainEqual(['plugin', EVENT_LOGGER_PLUGIN_ID])
+    expect(logArgs).toContainEqual(['type', 'user.message'])
+    expect(logArgs).toContainEqual(['event timestamp', sampleEvent.timestamp])
+    expect(logArgs).toContainEqual(['payload', sampleEvent.payload])
+    expect(logArgs).toContainEqual(['event', sampleEvent])
   })
 
   it('logs when driven through the runtime runChatEventHooks helper', async () => {
