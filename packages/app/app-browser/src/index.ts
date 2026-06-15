@@ -54,6 +54,11 @@ export {
 } from './hooks'
 export { useWebSpeechInput } from './web-speech'
 export { resolveBrowserShellBootstrapConfig } from './config'
+export { createBrowserShellRoot } from './create-browser-shell-root'
+export type {
+  BrowserShellBootScreenProps,
+  CreateBrowserShellRootOptions
+} from './create-browser-shell-root'
 export {
   useChatComposer,
   useChatSurfaceController,

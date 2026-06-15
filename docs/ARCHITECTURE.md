@@ -302,6 +302,7 @@ All three browser shells consume the same browser-facing shared layer.
 
 `@tinytinkerer/app-browser` currently owns:
 
+- the shared shell entrypoint `createBrowserShellRoot({ router, BootScreen })` — config resolution, the provider/Suspense/gate tree, the bootstrap hook, PWA registration, and `createRoot().render()`
 - browser app creation and provider wiring
 - shell bootstrap config resolution
 - OAuth start and callback helpers
@@ -310,6 +311,14 @@ All three browser shells consume the same browser-facing shared layer.
 - shared browser stylesheet
 - `AssistantContent` for structured assistant content DTOs
 
+Every shell's `main.tsx` is identical except for the two values it passes to
+`createBrowserShellRoot`: its `router` (content) and its `BootScreen` (visual),
+plus its own CSS imports. There are no per-shell branches in the bootstrap — no
+shell id, no `configSource` flag, no `onInit`/`beforeRender` hook. PWA
+registration always runs and no-ops where the build emitted no service worker
+(only mobile ships one today; web and widget configure `vite-plugin-pwa` with
+`disable: true`).
+
 The apps still own:
 
 - routes
@@ -317,6 +326,20 @@ The apps still own:
 - shell layout
 - app-local copy
 - shell-specific affordances such as install UX, widget window controls, and root-page embedding
+
+### Shell embedding contract
+
+The shared bootstrap resolves config uniformly for every shell from one
+shell-agnostic window key layered over env and defaults:
+
+```ts
+const injected = window.__TINYTINKERER_SHELL_CONFIG__ ?? {}
+```
+
+The key is empty for web and mobile and populated by widget embedders (the host
+compositor and any external embedding page). It supersedes the former
+widget-only `window.__TINYTINKERER_WIDGET_CONFIG__` global — embedders must set
+`window.__TINYTINKERER_SHELL_CONFIG__` before the shell entry script runs.
 
 This means TinyTinkerer has two different kinds of sharing:
 

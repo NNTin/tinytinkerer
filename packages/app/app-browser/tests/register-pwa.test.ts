@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type OnRegisteredSW = (
@@ -40,7 +41,7 @@ describe('registerPwa', () => {
   })
 
   it('registers the service worker immediately', async () => {
-    const { registerPwa } = await import('./register-pwa.js')
+    const { registerPwa } = await import('../src/register-pwa.js')
     registerPwa()
 
     expect(registerSW).toHaveBeenCalledTimes(1)
@@ -48,7 +49,7 @@ describe('registerPwa', () => {
   })
 
   it('checks for an update when the app returns to the foreground', async () => {
-    const { registerPwa } = await import('./register-pwa.js')
+    const { registerPwa } = await import('../src/register-pwa.js')
     registerPwa()
 
     const options = registerSW.mock.calls[0]?.[0] as RegisterSWOptions
@@ -65,7 +66,7 @@ describe('registerPwa', () => {
   })
 
   it('does not check for an update while offline', async () => {
-    const { registerPwa } = await import('./register-pwa.js')
+    const { registerPwa } = await import('../src/register-pwa.js')
     registerPwa()
 
     const options = registerSW.mock.calls[0]?.[0] as RegisterSWOptions
@@ -82,7 +83,7 @@ describe('registerPwa', () => {
   })
 
   it('does not check for an update on the interval while backgrounded', async () => {
-    const { registerPwa } = await import('./register-pwa.js')
+    const { registerPwa } = await import('../src/register-pwa.js')
     registerPwa()
 
     const options = registerSW.mock.calls[0]?.[0] as RegisterSWOptions
@@ -103,7 +104,7 @@ describe('registerPwa', () => {
     setServiceWorker(undefined)
     delete (navigator as { serviceWorker?: unknown }).serviceWorker
 
-    const { registerPwa } = await import('./register-pwa.js')
+    const { registerPwa } = await import('../src/register-pwa.js')
     registerPwa()
 
     expect(registerSW).not.toHaveBeenCalled()

@@ -1,3 +1,4 @@
+/// <reference types="vite-plugin-pwa/client" />
 import { registerSW } from 'virtual:pwa-register'
 
 // How often a long-foregrounded session re-checks for a new service worker.
@@ -12,6 +13,12 @@ const UPDATE_INTERVAL_MS = 60 * 60 * 1000
  * navigation (the user just foregrounds it), so the browser never re-fetches
  * `sw.js` on its own and keeps serving the stale precached build. We trigger the
  * check ourselves on foreground and on an hourly interval.
+ *
+ * Uniform across all shells: where the build emitted no service worker (web and
+ * widget configure `vite-plugin-pwa` with `disable: true`), `registerSW`
+ * resolves to a no-op and this function does nothing observable. Only mobile
+ * ships a service worker today; whether a shell is installable is a per-app vite
+ * config choice, not a code-level branch.
  *
  * No-op in environments without service worker support.
  */
