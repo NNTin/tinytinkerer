@@ -104,8 +104,13 @@ describe('codeExecInputSchema', () => {
     expect(codeExecInputSchema.safeParse({ code: tooBig }).success).toBe(false)
   })
 
-  it('accepts code with an optional structured input', () => {
+  it('accepts code with an optional object input', () => {
     const parsed = codeExecInputSchema.safeParse({ code: 'return input.x', input: { x: 1 } })
+    expect(parsed.success).toBe(true)
+  })
+
+  it('accepts a top-level array as input', () => {
+    const parsed = codeExecInputSchema.safeParse({ code: 'return input.length', input: [1, 2, 3] })
     expect(parsed.success).toBe(true)
   })
 })

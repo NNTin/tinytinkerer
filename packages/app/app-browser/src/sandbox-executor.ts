@@ -101,7 +101,7 @@ const SANDBOX_SRCDOC = `<!doctype html>
       url = URL.createObjectURL(blob);
       worker = new Worker(url);
     } catch (e) {
-      finish({ ok: false, error: 'worker creation failed: ' + String((e && e.message) || e), logs: [], timedOut: false });
+      finish({ ok: false, error: 'sandbox worker could not be created: ' + String((e && e.message) || e), logs: [], timedOut: false });
       return;
     }
 
@@ -116,7 +116,11 @@ const SANDBOX_SRCDOC = `<!doctype html>
       });
     };
     worker.onerror = function (ev) {
-      finish({ ok: false, error: (ev && ev.message) ? String(ev.message) : 'worker error', logs: [], timedOut: false });
+      // The worker script embeds the user code as a function body, so a syntax
+      // error there fails the whole worker and lands here (not the construct catch
+      // above). Surface it as a code error rather than a cryptic 'worker error'.
+      var msg = (ev && ev.message) ? String(ev.message) : '';
+      finish({ ok: false, error: msg ? ('code error: ' + msg) : 'code failed to load or run (possible syntax error)', logs: [], timedOut: false });
     };
 
     // The worker runs on its own thread, so user code that blocks (e.g. while(true))
@@ -202,10 +206,7 @@ export const createSandboxExecutor = (): SandboxCodeExecutor => {
 
     active += 1
 
-    const nonce =
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `sbx-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const nonce = crypto.randomUUID()
     const budget = Math.min(
       typeof request.timeoutMs === 'number' && request.timeoutMs > 0
         ? request.timeoutMs

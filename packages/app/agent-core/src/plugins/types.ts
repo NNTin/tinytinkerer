@@ -70,7 +70,10 @@ export type PluginEdgeFetch = (
 // budget but cannot exceed the host's limit.
 export type SandboxExecutionRequest = {
   code: string
-  input?: Record<string, unknown>
+  // Optional structured input passed into the sandbox. Any JSON-shaped value is
+  // allowed — an object or a top-level array — so the host clones it to the
+  // sandbox unchanged.
+  input?: Record<string, unknown> | unknown[]
   timeoutMs?: number
 }
 

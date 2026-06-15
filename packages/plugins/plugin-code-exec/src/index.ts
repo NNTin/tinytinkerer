@@ -21,14 +21,15 @@ export const CODE_EXEC_PLUGIN_ID = 'code-exec'
 const MAX_CODE_BYTES = 1_000_000
 
 // Input contract for the run_javascript tool. `code` is the JavaScript source to
-// run; `input` is an optional structured value injected into the sandbox as a
-// readonly `input` binding. Product-agnostic — no browser types leak here.
+// run; `input` is an optional structured value (a JSON object or a top-level
+// array) injected into the sandbox as a readonly `input` binding.
+// Product-agnostic — no browser types leak here.
 export const codeExecInputSchema = z.object({
   code: z
     .string()
     .min(1, 'code must not be empty')
     .max(MAX_CODE_BYTES, `code must be at most ${MAX_CODE_BYTES} bytes`),
-  input: z.record(z.string(), z.unknown()).optional()
+  input: z.union([z.record(z.string(), z.unknown()), z.array(z.unknown())]).optional()
 })
 
 export type CodeExecInput = z.infer<typeof codeExecInputSchema>
@@ -65,7 +66,8 @@ export const codeExecPluginManifest: PluginManifest = {
         input: {
           type: 'object',
           description:
-            'Optional JSON object made available to the code as a readonly `input` binding.'
+            'Optional JSON value (object or array) made available to the code as a readonly ' +
+            '`input` binding.'
         }
       }
     }
