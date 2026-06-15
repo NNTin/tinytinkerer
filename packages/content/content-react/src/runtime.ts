@@ -4,7 +4,7 @@ import type {
 } from '@tinytinkerer/content-core'
 import { reportContentRenderError } from './error-reporter'
 
-export type NodeRendererPluginRequirements = {
+type NodeRendererPluginRequirements = {
   readonly lazy?: boolean
   readonly clientOnly?: boolean
   readonly needsDom?: boolean
@@ -21,7 +21,7 @@ export type RenderContext<TResult> = {
   readonly isStreaming?: boolean
 }
 
-export type RenderNodeOptions = {
+type RenderNodeOptions = {
   readonly isStreaming?: boolean
 }
 
@@ -65,15 +65,15 @@ export type RuntimeResolution<TResult> =
       readonly ok: false
     } & RuntimeFailureContext<TResult>)
 
-export type RuntimeFallback<TResult> = (failure: RuntimeFailureContext<TResult>) => TResult
+type RuntimeFallback<TResult> = (failure: RuntimeFailureContext<TResult>) => TResult
 
-export type RuntimeWrapContext<TResult> = {
+type RuntimeWrapContext<TResult> = {
   readonly node: ContentNode
   readonly plugin: AnyNodeRendererPlugin<TResult>
   readonly fallback: (reason?: RuntimeFailureReason, error?: unknown) => TResult
 }
 
-export type RuntimeWrap<TResult> = (
+type RuntimeWrap<TResult> = (
   result: TResult,
   ctx: RuntimeWrapContext<TResult>
 ) => TResult

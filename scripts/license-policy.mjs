@@ -11,7 +11,7 @@
  * gate, rather than silently passing. That includes pnpm's "Unknown" sentinel for
  * dependencies that ship no license metadata.
  */
-export const LICENSE_POLICY = {
+const LICENSE_POLICY = {
   allow: [
     '0BSD',
     'MIT',

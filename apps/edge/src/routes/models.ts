@@ -204,6 +204,78 @@ const safeUpstreamError = (rawText: string, fallback: string): string => {
     : message
 }
 
+// Parse a JSON string without throwing, returning a discriminated result so the
+// "parse failed" signal is explicit in the type (a parsed JSON value can itself
+// be any `unknown`, including null, so a bare sentinel could not be narrowed). A
+// malformed-but-200 upstream body resolves to `{ ok: false }` and flows into the
+// same typed-502 handling the error paths use, instead of surfacing as an
+// unhandled framework 500.
+type JsonParseResult = { ok: true; value: unknown } | { ok: false }
+
+const safeJsonParse = (raw: string): JsonParseResult => {
+  try {
+    return { ok: true, value: JSON.parse(raw) }
+  } catch {
+    return { ok: false }
+  }
+}
+
+// Typed 502 for a success-status upstream body that could not be parsed or
+// validated — a truncated stream, an HTML error page from a proxy in front of
+// LiteLLM, or a shape LiteLLM never promised. Mirrors the 502 the error paths
+// already use for "upstream misbehaved" so the success path fails the same way.
+const upstreamMalformedResponse = (
+  c: Context<{ Bindings: Bindings }>
+): TypedResponse<{ error: string }, 502, 'json'> =>
+  c.json(
+    edgeErrorResponseSchema.parse({
+      error: 'Upstream returned a malformed response'
+    }),
+    502
+  )
+
+// Shared tail for a NON-429 upstream failure on both model routes: clear the
+// per-user key cache on an auth failure (a 401/403 means the virtual key is
+// invalid and must be re-provisioned), then map the status to the route's typed
+// error response — the known upstream statuses pass through, anything else
+// becomes a 502. Two route-specific behaviours are opt-in so each route keeps its
+// exact current contract:
+//   - `rawText`: the chat route surfaces the verbatim (secret-redacted) upstream
+//     message for client errors (400/422); the list route never does.
+//   - `passthroughRetryAfter`: the chat route echoes the upstream Retry-After on
+//     a 503; the list route does not (its only Retry-After is on its 429 path).
+// The 429 path itself differs fundamentally between the non-cacheable chat route
+// (returns a 429) and the cacheable list route (serves last-known / a 503), so it
+// stays inline in each route — only this shared tail is extracted.
+const respondUpstreamError = async (
+  c: Context<{ Bindings: Bindings }>,
+  response: Response,
+  credentialKey: CredentialKey,
+  options: { rawText?: string; passthroughRetryAfter?: boolean } = {}
+) => {
+  if (response.status === 401 || response.status === 403) {
+    await clearLiteLLMUserKeyCache(credentialKey)
+  }
+
+  if (options.passthroughRetryAfter && response.status === 503) {
+    const retryAfter = response.headers.get('retry-after')
+    if (retryAfter) c.header('Retry-After', retryAfter)
+  }
+
+  const fallbackError =
+    UPSTREAM_ERROR_MESSAGES[response.status] ??
+    `Upstream error ${response.status}`
+  const safeError =
+    options.rawText !== undefined &&
+    (response.status === 400 || response.status === 422)
+      ? safeUpstreamError(options.rawText, fallbackError)
+      : fallbackError
+  const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
+    ? (response.status as 400 | 401 | 403 | 422 | 500 | 503 | 504)
+    : 502
+  return c.json(edgeErrorResponseSchema.parse({ error: safeError }), statusCode)
+}
+
 const liteLLMCacheScope = (baseUrl: string): string =>
   encodeURIComponent(baseUrl)
 
@@ -594,29 +666,12 @@ export const registerModelRoutes = (
         return c.json(rateLimitBody, 429)
       }
 
-      if (response.status === 401 || response.status === 403) {
-        await clearLiteLLMUserKeyCache(credentialKey)
-      }
-
-      if (response.status === 503) {
-        const retryAfter = response.headers.get('retry-after')
-        if (retryAfter) c.header('Retry-After', retryAfter)
-      }
-
-      const fallbackError =
-        UPSTREAM_ERROR_MESSAGES[response.status] ??
-        `Upstream error ${response.status}`
-      const safeError =
-        response.status === 400 || response.status === 422
-          ? safeUpstreamError(rawText, fallbackError)
-          : fallbackError
-      const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
-        ? (response.status as 400 | 401 | 403 | 422 | 500 | 503 | 504)
-        : 502
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: safeError }),
-        statusCode
-      )
+      // Chat surfaces the verbatim (secret-redacted) upstream message for client
+      // errors and echoes the upstream Retry-After on a 503.
+      return respondUpstreamError(c, response, credentialKey, {
+        rawText,
+        passthroughRetryAfter: true
+      })
     }
 
     // Upstream accepted the request — clear any backoff window.
@@ -648,7 +703,14 @@ export const registerModelRoutes = (
     }
 
     const rawText = await response.text()
-    return c.json(modelsChatResponseSchema.parse(JSON.parse(rawText)), 200)
+    // Guard the success-path parse exactly like the error paths: a 200 with a
+    // truncated/HTML/unexpected body must surface as a typed 502, not an
+    // unhandled JSON.parse/schema throw → generic 500.
+    const json = safeJsonParse(rawText)
+    if (!json.ok) return upstreamMalformedResponse(c)
+    const parsed = modelsChatResponseSchema.safeParse(json.value)
+    if (!parsed.success) return upstreamMalformedResponse(c)
+    return c.json(parsed.data, 200)
   })
 
   app.openapi(modelsListRoute, async (c) => {
@@ -791,19 +853,10 @@ export const registerModelRoutes = (
         )
       }
 
-      const safeError =
-        UPSTREAM_ERROR_MESSAGES[response.status] ??
-        `Upstream error ${response.status}`
-      const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
-        ? (response.status as 400 | 401 | 403 | 422 | 500 | 503 | 504)
-        : 502
-      if (response.status === 401 || response.status === 403) {
-        await clearLiteLLMUserKeyCache(credentialKey)
-      }
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: safeError }),
-        statusCode
-      )
+      // List always uses the generic status-mapped message (never the verbatim
+      // upstream body) and does not echo a 503 Retry-After (its only Retry-After
+      // is on the 429 cooldown path above).
+      return respondUpstreamError(c, response, credentialKey)
     }
 
     // Upstream succeeded — clear any backoff window.
@@ -816,7 +869,15 @@ export const registerModelRoutes = (
       resolvedBaseUrl,
       userKey.apiKey
     )
-    const models = toLiteLLMModels(await response.json(), modes)
+    // Guard the raw body read: a 200 with a non-JSON body (e.g. an HTML error
+    // page from a proxy in front of LiteLLM) must surface as a typed 502 rather
+    // than an unhandled response.json() throw. toLiteLLMModels stays lenient
+    // about shape (it safeParses and drops unknown entries); this only catches a
+    // body that is not JSON at all.
+    const rawCatalogue = await response.text()
+    const parsedCatalogue = safeJsonParse(rawCatalogue)
+    if (!parsedCatalogue.ok) return upstreamMalformedResponse(c)
+    const models = toLiteLLMModels(parsedCatalogue.value, modes)
 
     // Populate the colo-wide cache so the next request (in any isolate) skips
     // the upstream fetch for the freshness window.

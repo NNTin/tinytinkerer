@@ -52,7 +52,11 @@ describe('codeExecPlugin', () => {
 
     const result = await tool!.execute({ code: 'return 2 + 2', input: { a: 1 } })
 
-    expect(executeSandboxedCode).toHaveBeenCalledWith({ code: 'return 2 + 2', input: { a: 1 } })
+    expect(executeSandboxedCode).toHaveBeenCalledWith({
+      code: 'return 2 + 2',
+      input: { a: 1 },
+      timeoutMs: 8_000
+    })
     expect(result).toEqual(okResult)
   })
 
@@ -62,7 +66,27 @@ describe('codeExecPlugin', () => {
 
     await tool!.execute({ code: 'return 1' })
 
-    expect(executeSandboxedCode).toHaveBeenCalledWith({ code: 'return 1' })
+    expect(executeSandboxedCode).toHaveBeenCalledWith({ code: 'return 1', timeoutMs: 8_000 })
+  })
+
+  it('requests a sandbox budget below the runtime tool timeout so a graceful timedOut result wins the race', async () => {
+    // The runtime wraps every tool call in `withTimeout(..., toolTimeoutMs)`
+    // (10s in agent-runtime-base). The sandbox must time out first and resolve a
+    // `{ timedOut: true }` result the model can react to, instead of the runtime
+    // aborting the whole tool with a generic error. Pin the requested budget so a
+    // future tweak that closes the gap fails here. See finding 1.1.
+    const RUNTIME_TOOL_TIMEOUT_MS = 10_000
+    let requested = Infinity
+    const executeSandboxedCode = (request: { timeoutMs?: number }) => {
+      requested = request.timeoutMs ?? Infinity
+      return Promise.resolve(okResult)
+    }
+    const [tool] = codeExecPlugin().createTools?.(hostWithSandbox(executeSandboxedCode)) ?? []
+
+    await tool!.execute({ code: 'return 1' })
+
+    // Leave headroom for sandbox iframe load + the host backstop (budget + 500).
+    expect(requested).toBeLessThan(RUNTIME_TOOL_TIMEOUT_MS - 1_000)
   })
 
   it('returns a failed run (timeout / thrown user error) to the agent rather than throwing', async () => {

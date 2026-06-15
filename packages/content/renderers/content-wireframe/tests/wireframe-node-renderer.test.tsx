@@ -62,15 +62,26 @@ describe('WireframeNodeRenderer', () => {
     expect(container.querySelector('[data-tt-wireframe]')).not.toBeNull()
   })
 
-  it('renders HTML content in a sandboxed iframe by default', () => {
+  it('renders HTML content in a hardened sandboxed iframe by default', () => {
     const { container } = render(
       <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
     )
 
     const iframe = container.querySelector('iframe')
     expect(iframe).not.toBeNull()
-    expect(iframe?.getAttribute('srcdoc')).toBe(HELLO_WORLD_HTML)
-    expect(iframe?.getAttribute('sandbox')).not.toBeNull()
+    // Sandbox is empty: no allow-scripts (no JS egress) and no allow-same-origin
+    // (opaque origin, no app DOM/storage access). referrerPolicy avoids leaking
+    // the app URL to any (CSP-blocked) request.
+    expect(iframe?.getAttribute('sandbox')).toBe('')
+    expect(iframe?.getAttribute('referrerpolicy')).toBe('no-referrer')
+
+    // The wireframe HTML is wrapped in a document whose CSP blocks network egress
+    // while still allowing inline styles and data: images for the mockup.
+    const srcdoc = iframe?.getAttribute('srcdoc') ?? ''
+    expect(srcdoc).toContain(HELLO_WORLD_HTML)
+    expect(srcdoc).toContain(
+      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'; navigate-to 'none'">`
+    )
   })
 
   it('does not leak wireframe HTML into the parent document', () => {

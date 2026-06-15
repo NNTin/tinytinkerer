@@ -10,7 +10,7 @@ import {
   type RequestTelemetryMetadata
 } from '../telemetry/request-telemetry'
 
-export type EdgeFetchOptions = {
+type EdgeFetchOptions = {
   signal?: AbortSignal
   area?: string
   model?: string
@@ -89,7 +89,7 @@ export type ModelsChatInit = {
   messages: ChatMessage[]
 }
 
-export type ModelsChatFetchOptions = {
+type ModelsChatFetchOptions = {
   signal?: AbortSignal
   area?: string
   accept?: AcceptedOutcome

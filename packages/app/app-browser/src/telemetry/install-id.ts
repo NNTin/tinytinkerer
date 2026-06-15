@@ -1,6 +1,6 @@
 import type { PreferencesStore } from '@tinytinkerer/app-core'
 
-export const INSTALL_ID_KEY = 'telemetry_install_id'
+const INSTALL_ID_KEY = 'telemetry_install_id'
 
 /**
  * Returns the persisted pseudonymous install ID, generating and storing a new

@@ -23,7 +23,7 @@ import {
 
 export type { ModelEntry }
 
-export type FetchModelsResult = {
+type FetchModelsResult = {
   models: ModelEntry[]
   /**
    * True when the list is the fallback (last-known or built-in) catalogue

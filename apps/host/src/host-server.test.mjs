@@ -58,7 +58,12 @@ const startEdgeStub = async () =>
     server.once('error', (error) => {
       reject(error instanceof Error ? error : new Error(String(error)))
     })
-    server.listen(0, 'localhost', () => {
+    // Bind to the IPv4 loopback explicitly (not 'localhost'). The vite proxy
+    // below dials 127.0.0.1, so binding the stub to whatever 'localhost' resolves
+    // to (often ::1 on dual-stack hosts) caused a deterministic
+    // ECONNREFUSED 127.0.0.1 mismatch. Pinning both ends to the same family makes
+    // the test independent of the host's resolver ordering.
+    server.listen(0, '127.0.0.1', () => {
       activeClosers.add(() => closeServer(server))
       resolve(server)
     })
@@ -94,7 +99,7 @@ const createTempHostRoot = async (backendPort) => {
         'export default {',
         `  base: '${app.mountPath}',`,
         app.proxyHealth
-          ? `  server: { proxy: { '/health': { target: 'http://localhost:${backendPort}', changeOrigin: true } } }`
+          ? `  server: { proxy: { '/health': { target: 'http://127.0.0.1:${backendPort}', changeOrigin: true } } }`
           : '  server: {}',
         '}',
         ''

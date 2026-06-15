@@ -170,84 +170,99 @@ const configuredModels = (env: Bindings): string[] =>
 const arraysEqual = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((value, index) => value === b[index])
 
+// The two key tiers this module provisions. They differ ONLY in: which env vars
+// supply the budget/rate limits (and their defaults), and how the LiteLLM
+// identity (user_id / key_alias) is derived. Everything else — the
+// read-marker → read-by-alias → update/generate → write-marker state machine — is
+// identical, so it lives in one resolveLiteLLMKey (below) parameterized by tier.
+type KeyTier = 'user' | 'anonymous'
+
+// Budget/rate limits for a tier, read from the tier's own env vars with the
+// tier's defaults. Kept as one switch so a new limit is added in a single place
+// for both tiers.
+const tierLimits = (
+  env: Bindings,
+  tier: KeyTier
+): Pick<
+  ExpectedKeyConfig,
+  'maxBudget' | 'budgetDuration' | 'rpmLimit' | 'tpmLimit'
+> =>
+  tier === 'anonymous'
+    ? {
+        maxBudget: toPositiveNumber(
+          env.LITELLM_ANONYMOUS_MAX_BUDGET_USD,
+          DEFAULT_ANONYMOUS_MAX_BUDGET_USD
+        ),
+        budgetDuration:
+          env.LITELLM_ANONYMOUS_BUDGET_DURATION?.trim() ||
+          DEFAULT_ANONYMOUS_BUDGET_DURATION,
+        rpmLimit: toPositiveNumber(
+          env.LITELLM_ANONYMOUS_RPM_LIMIT,
+          DEFAULT_ANONYMOUS_RPM_LIMIT
+        ),
+        tpmLimit: toPositiveNumber(
+          env.LITELLM_ANONYMOUS_TPM_LIMIT,
+          DEFAULT_ANONYMOUS_TPM_LIMIT
+        )
+      }
+    : {
+        maxBudget: toPositiveNumber(
+          env.LITELLM_USER_MAX_BUDGET_USD,
+          DEFAULT_USER_MAX_BUDGET_USD
+        ),
+        budgetDuration:
+          env.LITELLM_USER_BUDGET_DURATION?.trim() || DEFAULT_USER_BUDGET_DURATION,
+        rpmLimit: toPositiveNumber(
+          env.LITELLM_USER_RPM_LIMIT,
+          DEFAULT_USER_RPM_LIMIT
+        ),
+        tpmLimit: toPositiveNumber(
+          env.LITELLM_USER_TPM_LIMIT,
+          DEFAULT_USER_TPM_LIMIT
+        )
+      }
+
+// The LiteLLM user_id and key_alias for a tier. The anonymous tier uses a fixed
+// identity regardless of the (ANONYMOUS_IDENTITY) caller; the user tier keys off
+// the GitHub id. The alias carries the per-deployment namespace (see
+// deploymentKeyNamespace).
+const tierIdentity = (
+  tier: KeyTier,
+  identity: CallerIdentity,
+  namespace: string
+): Pick<ExpectedKeyConfig, 'userId' | 'keyAlias'> =>
+  tier === 'anonymous'
+    ? { userId: 'anonymous', keyAlias: `tinytinkerer-${namespace}-anonymous` }
+    : {
+        userId: `github-${identity.id}`,
+        keyAlias: `tinytinkerer-${namespace}-github-${identity.id}`
+      }
+
 const expectedConfig = (
   env: Bindings,
   identity: CallerIdentity,
-  namespace: string
+  namespace: string,
+  tier: KeyTier
 ): ExpectedKeyConfig => {
   const models = configuredModels(env).sort()
-  const maxBudget = toPositiveNumber(
-    env.LITELLM_USER_MAX_BUDGET_USD,
-    DEFAULT_USER_MAX_BUDGET_USD
-  )
-  const budgetDuration =
-    env.LITELLM_USER_BUDGET_DURATION?.trim() || DEFAULT_USER_BUDGET_DURATION
-  const rpmLimit = toPositiveNumber(
-    env.LITELLM_USER_RPM_LIMIT,
-    DEFAULT_USER_RPM_LIMIT
-  )
-  const tpmLimit = toPositiveNumber(
-    env.LITELLM_USER_TPM_LIMIT,
-    DEFAULT_USER_TPM_LIMIT
-  )
-  const userId = `github-${identity.id}`
-  const keyAlias = `tinytinkerer-${namespace}-github-${identity.id}`
+  const limits = tierLimits(env, tier)
+  const { userId, keyAlias } = tierIdentity(tier, identity, namespace)
+  // Field order here is load-bearing: the fingerprint is the durable provisioning
+  // marker's scope, so it must stay byte-identical to the previous per-tier code
+  // (maxBudget, budgetDuration, rpmLimit, tpmLimit, models) or live markers would
+  // silently invalidate.
   const fingerprint = JSON.stringify({
-    maxBudget,
-    budgetDuration,
-    rpmLimit,
-    tpmLimit,
+    maxBudget: limits.maxBudget,
+    budgetDuration: limits.budgetDuration,
+    rpmLimit: limits.rpmLimit,
+    tpmLimit: limits.tpmLimit,
     models
   })
 
   return {
     keyAlias,
     userId,
-    maxBudget,
-    budgetDuration,
-    rpmLimit,
-    tpmLimit,
-    models,
-    fingerprint
-  }
-}
-
-const expectedAnonymousConfig = (
-  env: Bindings,
-  namespace: string
-): ExpectedKeyConfig => {
-  const models = configuredModels(env).sort()
-  const maxBudget = toPositiveNumber(
-    env.LITELLM_ANONYMOUS_MAX_BUDGET_USD,
-    DEFAULT_ANONYMOUS_MAX_BUDGET_USD
-  )
-  const budgetDuration =
-    env.LITELLM_ANONYMOUS_BUDGET_DURATION?.trim() || DEFAULT_ANONYMOUS_BUDGET_DURATION
-  const rpmLimit = toPositiveNumber(
-    env.LITELLM_ANONYMOUS_RPM_LIMIT,
-    DEFAULT_ANONYMOUS_RPM_LIMIT
-  )
-  const tpmLimit = toPositiveNumber(
-    env.LITELLM_ANONYMOUS_TPM_LIMIT,
-    DEFAULT_ANONYMOUS_TPM_LIMIT
-  )
-  const userId = 'anonymous'
-  const keyAlias = `tinytinkerer-${namespace}-anonymous`
-  const fingerprint = JSON.stringify({
-    maxBudget,
-    budgetDuration,
-    rpmLimit,
-    tpmLimit,
-    models
-  })
-
-  return {
-    keyAlias,
-    userId,
-    maxBudget,
-    budgetDuration,
-    rpmLimit,
-    tpmLimit,
+    ...limits,
     models,
     fingerprint
   }
@@ -539,10 +554,50 @@ const generateKey = async (
   return parsed.data.key === apiKey ? 'created' : 'value-mismatch'
 }
 
-export const resolveLiteLLMUserKey = async (
+// Surfaces a key-value mismatch (LiteLLM minted a different value than our
+// deterministic key) to telemetry. The wording, the github_id tag, and the
+// fingerprint differ by tier; the key VALUE is never logged — only the
+// user/alias it was provisioned for.
+const reportKeyValueMismatch = (
+  tier: KeyTier,
+  identity: CallerIdentity,
+  keyAlias: string
+): void => {
+  const isUser = tier === 'user'
+  captureTelemetryMessage(
+    isUser
+      ? 'LiteLLM /key/generate returned a key value that does not match the deterministic per-user key; provisioning aborted'
+      : 'LiteLLM /key/generate returned a key value that does not match the deterministic anonymous key; provisioning aborted',
+    {
+      level: 'error',
+      tags: {
+        request_area: 'litellm.key.generate',
+        request_origin: 'litellm',
+        failure_kind: 'key_value_mismatch',
+        ...(isUser ? { github_id: identity.id } : {}),
+        key_alias: keyAlias
+      },
+      fingerprint: [
+        isUser
+          ? 'litellm-user-key-value-mismatch'
+          : 'litellm-anonymous-key-value-mismatch'
+      ]
+    }
+  )
+}
+
+// The shared provisioning state machine for both key tiers: short-circuit on the
+// durable provisioning marker, else read the key by alias (reconciling config
+// drift via /key/update), else generate it — re-reading by alias to recover from
+// a concurrent first-time provision, and failing hard on a value mismatch. The
+// ONLY per-tier inputs are the expected config (env vars / identity) and the
+// credential key derivation; everything else is identical, so the two former
+// near-duplicate functions are now thin wrappers around this.
+const resolveLiteLLMKey = async (
   env: Bindings,
   baseUrl: string,
-  identity: CallerIdentity
+  identity: CallerIdentity,
+  tier: KeyTier
 ): Promise<LiteLLMUserKey | undefined> => {
   if (!managementConfigured(env)) return undefined
 
@@ -551,21 +606,25 @@ export const resolveLiteLLMUserKey = async (
   const namespace = await deploymentKeyNamespace(secret).catch(() => undefined)
   if (!namespace) return undefined
 
-  const expected = expectedConfig(env, identity, namespace)
+  const expected = expectedConfig(env, identity, namespace, tier)
   const resolved = await Promise.all([
     deriveUserApiKey(env, identity),
-    deriveLiteLLMUserCredentialKey(env, identity, baseUrl)
+    tier === 'anonymous'
+      ? deriveAnonymousCredentialKey(env, baseUrl)
+      : deriveLiteLLMUserCredentialKey(env, identity, baseUrl)
   ]).catch(() => undefined)
   if (!resolved) return undefined
   const [apiKey, credentialKey] = resolved
 
+  const result: LiteLLMUserKey = {
+    apiKey,
+    keyAlias: expected.keyAlias,
+    userId: expected.userId,
+    credentialKey
+  }
+
   if (await readProvisionedMarker(credentialKey, expected.fingerprint)) {
-    return {
-      apiKey,
-      keyAlias: expected.keyAlias,
-      userId: expected.userId,
-      credentialKey
-    }
+    return result
   }
 
   const existing = await readKeyInfoByAlias(env, baseUrl, expected.keyAlias)
@@ -575,12 +634,7 @@ export const resolveLiteLLMUserKey = async (
       if (!updated) return undefined
     }
     await writeProvisionedMarker(credentialKey, expected.fingerprint)
-    return {
-      apiKey,
-      keyAlias: expected.keyAlias,
-      userId: expected.userId,
-      credentialKey
-    }
+    return result
   }
 
   const generated = await generateKey(env, baseUrl, apiKey, expected, identity)
@@ -589,22 +643,8 @@ export const resolveLiteLLMUserKey = async (
     // here would find the just-created key and wrongly trust "alias exists ⇒
     // value matches", so the route would hand LiteLLM a bearer it never stored
     // and 401 on every call until the marker expires. Fail hard and SURFACE it
-    // so the misconfiguration is visible instead of a silent auth loop. The key
-    // VALUE is never logged — only the user/alias it was provisioned for.
-    captureTelemetryMessage(
-      'LiteLLM /key/generate returned a key value that does not match the deterministic per-user key; provisioning aborted',
-      {
-        level: 'error',
-        tags: {
-          request_area: 'litellm.key.generate',
-          request_origin: 'litellm',
-          failure_kind: 'key_value_mismatch',
-          github_id: identity.id,
-          key_alias: expected.keyAlias
-        },
-        fingerprint: ['litellm-user-key-value-mismatch']
-      }
-    )
+    // so the misconfiguration is visible instead of a silent auth loop.
+    reportKeyValueMismatch(tier, identity, expected.keyAlias)
     return undefined
   }
   if (generated === 'unconfirmed') {
@@ -617,88 +657,18 @@ export const resolveLiteLLMUserKey = async (
   }
 
   await writeProvisionedMarker(credentialKey, expected.fingerprint)
-  return {
-    apiKey,
-    keyAlias: expected.keyAlias,
-    userId: expected.userId,
-    credentialKey
-  }
+  return result
 }
 
-export const resolveAnonymousLiteLLMKey = async (
+export const resolveLiteLLMUserKey = (
+  env: Bindings,
+  baseUrl: string,
+  identity: CallerIdentity
+): Promise<LiteLLMUserKey | undefined> =>
+  resolveLiteLLMKey(env, baseUrl, identity, 'user')
+
+export const resolveAnonymousLiteLLMKey = (
   env: Bindings,
   baseUrl: string
-): Promise<LiteLLMUserKey | undefined> => {
-  if (!managementConfigured(env)) return undefined
-
-  const secret = env.LITELLM_USER_KEY_SECRET?.trim()
-  if (!secret) return undefined
-  const namespace = await deploymentKeyNamespace(secret).catch(() => undefined)
-  if (!namespace) return undefined
-
-  const expected = expectedAnonymousConfig(env, namespace)
-  const resolved = await Promise.all([
-    deriveUserApiKey(env, ANONYMOUS_IDENTITY),
-    deriveAnonymousCredentialKey(env, baseUrl)
-  ]).catch(() => undefined)
-  if (!resolved) return undefined
-  const [apiKey, credentialKey] = resolved
-
-  if (await readProvisionedMarker(credentialKey, expected.fingerprint)) {
-    return {
-      apiKey,
-      keyAlias: expected.keyAlias,
-      userId: expected.userId,
-      credentialKey
-    }
-  }
-
-  const existing = await readKeyInfoByAlias(env, baseUrl, expected.keyAlias)
-  if (existing) {
-    if (keyNeedsUpdate(existing, expected)) {
-      const updated = await updateKey(env, baseUrl, apiKey, expected, ANONYMOUS_IDENTITY)
-      if (!updated) return undefined
-    }
-    await writeProvisionedMarker(credentialKey, expected.fingerprint)
-    return {
-      apiKey,
-      keyAlias: expected.keyAlias,
-      userId: expected.userId,
-      credentialKey
-    }
-  }
-
-  const generated = await generateKey(env, baseUrl, apiKey, expected, ANONYMOUS_IDENTITY)
-  if (generated === 'value-mismatch') {
-    captureTelemetryMessage(
-      'LiteLLM /key/generate returned a key value that does not match the deterministic anonymous key; provisioning aborted',
-      {
-        level: 'error',
-        tags: {
-          request_area: 'litellm.key.generate',
-          request_origin: 'litellm',
-          failure_kind: 'key_value_mismatch',
-          key_alias: expected.keyAlias
-        },
-        fingerprint: ['litellm-anonymous-key-value-mismatch']
-      }
-    )
-    return undefined
-  }
-  if (generated === 'unconfirmed') {
-    const raced = await readKeyInfoByAlias(env, baseUrl, expected.keyAlias)
-    if (!raced) return undefined
-    if (keyNeedsUpdate(raced, expected)) {
-      const updated = await updateKey(env, baseUrl, apiKey, expected, ANONYMOUS_IDENTITY)
-      if (!updated) return undefined
-    }
-  }
-
-  await writeProvisionedMarker(credentialKey, expected.fingerprint)
-  return {
-    apiKey,
-    keyAlias: expected.keyAlias,
-    userId: expected.userId,
-    credentialKey
-  }
-}
+): Promise<LiteLLMUserKey | undefined> =>
+  resolveLiteLLMKey(env, baseUrl, ANONYMOUS_IDENTITY, 'anonymous')

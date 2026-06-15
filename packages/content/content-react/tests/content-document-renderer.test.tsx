@@ -15,7 +15,6 @@ import {
   REACT_SSR_EXECUTION_POLICY,
   setContentRenderErrorReporter,
   type ContentRenderErrorInfo,
-  TableNodeView,
   tableToMarkdown
 } from '../src/index.js'
 
@@ -489,35 +488,7 @@ describe('PreviewCodeFrame', () => {
   })
 })
 
-describe('TableNodeView', () => {
-  it('renders semantic table markup from a TableNode', () => {
-    const { container } = render(
-      <TableNodeView
-        node={{
-          type: 'table',
-          align: ['left', 'right', 'center'],
-          header: [
-            [{ type: 'text', value: 'Name' }],
-            [{ type: 'text', value: 'Role' }],
-            [{ type: 'text', value: 'Score' }]
-          ],
-          rows: [
-            [
-              [{ type: 'text', value: 'Ada' }],
-              [{ type: 'text', value: 'Admin' }],
-              [{ type: 'text', value: '3' }]
-            ]
-          ]
-        }}
-      />
-    )
-
-    expect(screen.getByRole('table')).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveAttribute('align', 'left')
-    expect(screen.getByRole('columnheader', { name: 'Role' })).toHaveAttribute('align', 'right')
-    expect(container.querySelector('td[align="center"]')?.textContent).toBe('3')
-  })
-
+describe('tableToMarkdown', () => {
   it('serializes aligned tables back to markdown', () => {
     expect(
       tableToMarkdown({

@@ -921,6 +921,53 @@ describe('edge routes', () => {
     expect(body.model).toBe('openai/gpt-5')
   })
 
+  it('returns 502 when a 200 chat completion body is not valid JSON', async () => {
+    // A success status with a malformed body (truncated stream, an HTML error
+    // page from a proxy in front of LiteLLM) must surface as a typed 502 — the
+    // same "upstream misbehaved" status the error paths use — not an unhandled
+    // JSON.parse throw → generic 500 (finding 1.2).
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = toRequestUrl(input)
+        if (url === GITHUB_USER_URL) {
+          return Promise.resolve(githubUserOk())
+        }
+        if (isLiteLLMKeyManagementUrl(url)) {
+          return Promise.resolve(litellmKeyManagementOk(input, init))
+        }
+        return Promise.resolve(
+          new Response('<html><body>502 Bad Gateway</body></html>', {
+            status: 200,
+            headers: { 'content-type': 'text/html' }
+          })
+        )
+      })
+    )
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer github-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          model: 'openai/gpt-4.1-mini',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      LITELLM_ENV
+    )
+
+    expect(response.status).toBe(502)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'Upstream returned a malformed response'
+    })
+  })
+
   it('rejects unallowlisted LiteLLM base URLs before validating or proxying', async () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)

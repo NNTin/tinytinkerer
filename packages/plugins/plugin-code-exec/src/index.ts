@@ -22,6 +22,16 @@ export const CODE_EXEC_PLUGIN_ID = 'code-exec'
 // enforces the runtime caps (timeout, output size, concurrency) independently.
 const MAX_CODE_BYTES = 1_000_000
 
+// Sandbox execution budget requested by this tool. Deliberately BELOW the
+// runtime's per-tool timeout (`toolTimeoutMs`, 10s in agent-runtime-base) so the
+// sandbox's own timer fires first and resolves a graceful
+// `{ ok: false, timedOut: true }` result the model can react to — instead of the
+// runtime's generic `withTimeout` aborting the tool with "Tool run_javascript
+// timed out" and discarding the timedOut signal. The host clamps this to its own
+// HARD_TIMEOUT_MS ceiling, so requesting less only ever tightens the budget.
+// Invariant: SANDBOX_TIMEOUT_MS + sandbox load/backstop slack < runtime toolTimeoutMs.
+const SANDBOX_TIMEOUT_MS = 8_000
+
 // Input contract for the run_javascript tool. `code` is the JavaScript source to
 // run; `input` is an optional structured value (a JSON object or a top-level
 // array) injected into the sandbox as a readonly `input` binding.
@@ -171,6 +181,7 @@ const createCodeExecTool = (
     try {
       return await executeSandboxedCode({
         code: input.code,
+        timeoutMs: SANDBOX_TIMEOUT_MS,
         ...(input.input ? { input: input.input } : {})
       })
     } catch (error) {

@@ -80,4 +80,45 @@ describe('PluginHost.requestPermission', () => {
 
     expect(result).toEqual({ allow: true })
   })
+
+  it('denies a human gate with a clear, user-facing reason when it times out', async () => {
+    // A human gate whose prompt is never answered (e.g. no modal mounted) must
+    // fail closed with an explanation the user understands — not the internal
+    // "hook timed out" string. The human budget is the 4th argument.
+    const neverAnswered: AgentHookContribution = {
+      event: 'tool.beforeExecute',
+      awaitsHumanInput: true,
+      handler: () => new Promise<ToolGateResult>(() => {})
+    }
+
+    const result = await runToolBeforeExecuteHooks(
+      [neverAnswered],
+      context,
+      60_000,
+      5
+    )
+
+    expect(result).toEqual({
+      allow: false,
+      reason: 'Timed out waiting for your approval.'
+    })
+  })
+
+  it('applies the longer human budget to a human gate, not the machine timeout', async () => {
+    // With a tiny machine timeout but a generous human budget, a human gate that
+    // resolves shortly after the machine timeout still succeeds — proving the
+    // gate is held to humanInputTimeoutMs, not the machine timeoutMs.
+    const slowApproval: AgentHookContribution = {
+      event: 'tool.beforeExecute',
+      awaitsHumanInput: true,
+      handler: () =>
+        new Promise<ToolGateResult>((resolve) =>
+          setTimeout(() => resolve({ allow: true }), 20)
+        )
+    }
+
+    const result = await runToolBeforeExecuteHooks([slowApproval], context, 1, 1000)
+
+    expect(result).toEqual({ allow: true })
+  })
 })

@@ -123,7 +123,10 @@ describe('AssistantContent', () => {
 
     const iframe = document.querySelector('iframe')
     expect(iframe).not.toBeNull()
-    expect(iframe?.getAttribute('srcdoc')).toBe(HELLO_WORLD_HTML)
+    // The wireframe HTML is rendered inside a hardened, network-egress-blocked
+    // document (see content-wireframe): the raw HTML is wrapped, not used verbatim.
+    expect(iframe?.getAttribute('srcdoc')).toContain(HELLO_WORLD_HTML)
+    expect(iframe?.getAttribute('sandbox')).toBe('')
   })
 
   it('renders mermaid first then wireframe without passing wireframe HTML to mermaid', async () => {

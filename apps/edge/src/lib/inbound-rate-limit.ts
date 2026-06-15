@@ -29,10 +29,10 @@ import { deriveCredentialKey, SHARED_CREDENTIAL_KEY } from './rate-limit'
 
 export type InboundRateLimitScope = 'auth' | 'search' | 'mcp'
 
-export const DEFAULT_INBOUND_WINDOW_SECONDS = 60
+const DEFAULT_INBOUND_WINDOW_SECONDS = 60
 
 /** Max requests per window per caller. Auth is stricter: it is unauthenticated. */
-export const DEFAULT_INBOUND_LIMITS: Record<InboundRateLimitScope, number> = {
+const DEFAULT_INBOUND_LIMITS: Record<InboundRateLimitScope, number> = {
   auth: 10,
   search: 30,
   mcp: 60
