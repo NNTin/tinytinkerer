@@ -13,9 +13,27 @@ auditLevel: moderate
 # (NPM_CONFIG_REGISTRY); this repo only uses esbuild under Node via tsx and
 # wrangler, so the exploit path is not reachable. Remove this entry once
 # esbuild@0.28.1 clears the age gate (~2026-06-18) and esbuild is upgraded.
+#
+# The four entries below are all DEV/BUILD-only transitive advisories — none
+# reaches the deployed Cloudflare Worker or the static Pages bundle — and the
+# patched versions are blocked by the 7-day age gate above (bumping needs a human
+# per the directive at the top of this file), so they are suppressed with a clear
+# rationale rather than upgraded. Re-check once the patches clear the age gate.
+#   - GHSA-96hv-2xvq-fx4p (ws, DoS): apps/edge>wrangler>miniflare>ws — the local
+#     dev edge runtime only; never bundled into the deployed Worker.
+#   - GHSA-fx2h-pf6j-xcff (vite, server.fs.deny bypass): apps/host>vite — Windows
+#     only and a dev-server issue; the host compositor runs only in local dev.
+#   - GHSA-v6wh-96g9-6wx3 (launch-editor via vite, NTLMv2 disclosure): Windows
+#     only, dev-server editor-open path; not used in CI or production.
+#   - GHSA-h67p-54hq-rp68 (js-yaml, quadratic DoS): commitlint>cosmiconfig>js-yaml
+#     — runs only on developer commits against trusted local config, not at runtime.
 auditConfig:
   ignoreGhsas:
     - GHSA-gv7w-rqvm-qjhr
+    - GHSA-96hv-2xvq-fx4p
+    - GHSA-fx2h-pf6j-xcff
+    - GHSA-v6wh-96g9-6wx3
+    - GHSA-h67p-54hq-rp68
 onlyBuiltDependencies:
   - '@sentry/cli'
   - esbuild
