@@ -21,7 +21,12 @@ const collectInstalledPackages = () => {
   const output = execFileSync('pnpm', ['list', '-r', '--depth', 'Infinity', '--json'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
-    maxBuffer: 50 * 1024 * 1024
+    // `pnpm list -r --depth Infinity` re-expands every shared subtree once per
+    // workspace project, so the JSON dump scales with (packages × projects) and
+    // is hundreds of MB even though the store is deduped. Size it generously so
+    // adding a heavy dev dependency (e.g. vite-plugin-pwa across shells) doesn't
+    // silently overflow the buffer and abort the supply-chain check.
+    maxBuffer: 512 * 1024 * 1024
   })
   const projects = JSON.parse(output)
   const packages = new Map()
