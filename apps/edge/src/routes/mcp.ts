@@ -66,7 +66,7 @@ const isPrivateHostname = (hostname: string): boolean => {
  * which {@link validateMcpUrl} treats as "allowlist not configured" — the
  * static private-address blocklist applies instead.
  */
-export const parseMcpAllowedHosts = (raw: string | undefined): Set<string> =>
+const parseMcpAllowedHosts = (raw: string | undefined): Set<string> =>
   new Set(
     (raw ?? '')
       .split(',')

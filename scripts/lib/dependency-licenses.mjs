@@ -11,7 +11,7 @@ import { execFileSync } from 'node:child_process'
  * this is for fixing bad metadata, NOT for waiving the policy: an unrecognized
  * license still fails the gate unless it is corrected to a real SPDX id here.
  */
-export const LICENSE_OVERRIDES = {
+const LICENSE_OVERRIDES = {
   // khroma@2.1.0 ships no `license` field in its package.json, so pnpm reports it
   // as Unknown. Its repository declares MIT.
   // https://github.com/fabiospampinato/khroma#readme

@@ -1,11 +1,9 @@
 import { parseRetryAfterMs, rateLimitPayloadSchema } from '@tinytinkerer/contracts'
 import { RateLimitError } from '@tinytinkerer/app-core'
 
-export { parseRetryAfterMs }
-
 const DEFAULT_RATE_LIMIT_RETRY_AFTER_MS = 60_000
 
-export const getRetryAfterMs = (value: string | null | undefined): number =>
+const getRetryAfterMs = (value: string | null | undefined): number =>
   parseRetryAfterMs(value) ?? DEFAULT_RATE_LIMIT_RETRY_AFTER_MS
 
 const isValidRetryAt = (value: string | undefined): value is string =>

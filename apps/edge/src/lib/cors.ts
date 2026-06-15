@@ -58,7 +58,7 @@ const getConfiguredOrigins = (env: Bindings): string[] => {
   return env.ALLOWED_ORIGIN ? [env.ALLOWED_ORIGIN] : []
 }
 
-export const resolveAllowedOrigin = (
+const resolveAllowedOrigin = (
   env: Bindings,
   requestOrigin: string | null
 ): string | null => {

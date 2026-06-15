@@ -32,7 +32,6 @@ const config: KnipConfig = {
     '@vitejs/plugin-react',
     // Ambient @types/* packages consumed implicitly by the TS compiler.
     '@types/react-dom',
-    '@types/dompurify',
     // CLI-only dev tooling without a static import.
     '@testing-library/user-event',
     'eslint-config-prettier'
@@ -42,6 +41,10 @@ const config: KnipConfig = {
     types: 'warn',
     nsExports: 'warn',
     nsTypes: 'warn',
+    // Each plugin intentionally exports its `createPlugin`/`manifest` twice: once
+    // under the generic names the PluginModule contract requires for dynamic
+    // discovery, and once under descriptive aliases the tests import. These are
+    // deliberate, not drift, so duplicates stay a warning rather than failing CI.
     duplicates: 'warn',
     enumMembers: 'warn'
   },

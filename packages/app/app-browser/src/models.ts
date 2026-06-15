@@ -6,7 +6,6 @@ import {
   fallbackModels,
   fetchModels,
   includeSelectedModel,
-  type FetchModelsResult,
   type ModelEntry
 } from './models-cache'
 
@@ -15,7 +14,7 @@ import {
 // that consumes it. Re-export the transport symbols so importers and tests keep
 // a single, stable `./models` entry point.
 export { clearModelsCache, fetchModels }
-export type { FetchModelsResult, ModelEntry }
+export type { ModelEntry }
 
 export type ModelsState = {
   models: ModelEntry[]
