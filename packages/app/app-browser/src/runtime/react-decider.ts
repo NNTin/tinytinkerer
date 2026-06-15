@@ -62,6 +62,64 @@ type DecisionRequestMetadata = {
   stream: boolean
 }
 
+// Shared request shape for both decision variants: build the system prompt +
+// history + observations message list, POST it to /api/models/chat, and map the
+// two non-success outcomes the runtime cares about — a 429 (surfaced as a
+// RateLimitError so the cooldown/retry path handles it, not a generic run-ending
+// failure) and any other non-ok status (a generic edge error). The only
+// difference between the two callers is `stream` and what they do with the
+// returned response body.
+const requestDecision = async (
+  context: ExecutionContext,
+  tools: PlannerToolDescriptor[],
+  model: string,
+  modelsChat: ModelsChatFetch,
+  stream: boolean,
+  signal?: AbortSignal
+): Promise<Response> => {
+  const messages = [
+    { role: 'system' as const, content: buildDecisionSystemPrompt(tools) },
+    ...context.history.map((m) => ({ role: m.role, content: m.content })),
+    { role: 'user' as const, content: buildObservations(context) }
+  ]
+
+  const response = await modelsChat(
+    { model, stream, messages },
+    {
+      area: 'react.decide',
+      ...(signal ? { signal } : {})
+    }
+  )
+
+  // A 429 must go through the runtime's cooldown/retry path, so surface it as a
+  // RateLimitError rather than a generic failure that ends the run.
+  if (response.status === 429) {
+    throw await createRateLimitError(response)
+  }
+
+  if (!response.ok) {
+    throw await createEdgeError(
+      response,
+      `ReAct decision request failed (${response.status})`
+    )
+  }
+
+  return response
+}
+
+const decisionMetadata = (
+  response: Response,
+  model: string,
+  stream: boolean
+): DecisionRequestMetadata => ({
+  area: 'react.decide',
+  origin: 'edge',
+  method: 'POST',
+  url: response.url,
+  model,
+  stream
+})
+
 // Turn the model's answer text into a ReActDecision, recovering from the model's
 // inherent non-compliance without ever crashing the run. A streaming model will
 // sometimes emit prose ("I now have enough information…"), an empty answer, or
@@ -121,43 +179,16 @@ export const decideNextAction = async (
   modelsChat: ModelsChatFetch,
   signal?: AbortSignal
 ): Promise<ReActDecision> => {
-  const systemPrompt = buildDecisionSystemPrompt(tools)
-
-  const messages = [
-    { role: 'system' as const, content: systemPrompt },
-    ...context.history.map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user' as const, content: buildObservations(context) }
-  ]
-
-  const response = await modelsChat(
-    { model, stream: false, messages },
-    {
-      area: 'react.decide',
-      ...(signal ? { signal } : {})
-    }
+  const response = await requestDecision(
+    context,
+    tools,
+    model,
+    modelsChat,
+    false,
+    signal
   )
 
-  // A 429 must go through the runtime's cooldown/retry path, so surface it as a
-  // RateLimitError rather than a generic failure that ends the run.
-  if (response.status === 429) {
-    throw await createRateLimitError(response)
-  }
-
-  if (!response.ok) {
-    throw await createEdgeError(
-      response,
-      `ReAct decision request failed (${response.status})`
-    )
-  }
-
-  const metadata: DecisionRequestMetadata = {
-    area: 'react.decide',
-    origin: 'edge',
-    method: 'POST',
-    url: response.url,
-    model,
-    stream: false
-  }
+  const metadata = decisionMetadata(response, model, false)
   const data = await parseJsonWithTelemetry<{
     choices?: Array<{ message?: { content?: string | null } }>
   }>(metadata, response)
@@ -177,34 +208,14 @@ export async function* streamDecision(
   modelsChat: ModelsChatFetch,
   signal?: AbortSignal
 ): AsyncGenerator<DecisionChunk> {
-  const systemPrompt = buildDecisionSystemPrompt(tools)
-
-  const messages = [
-    { role: 'system' as const, content: systemPrompt },
-    ...context.history.map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user' as const, content: buildObservations(context) }
-  ]
-
-  const response = await modelsChat(
-    { model, stream: true, messages },
-    {
-      area: 'react.decide',
-      ...(signal ? { signal } : {})
-    }
+  const response = await requestDecision(
+    context,
+    tools,
+    model,
+    modelsChat,
+    true,
+    signal
   )
-
-  // A 429 must go through the runtime's cooldown/retry path, so surface it as a
-  // RateLimitError rather than a generic failure that ends the run.
-  if (response.status === 429) {
-    throw await createRateLimitError(response)
-  }
-
-  if (!response.ok) {
-    throw await createEdgeError(
-      response,
-      `ReAct decision request failed (${response.status})`
-    )
-  }
 
   let thought = ''
   let jsonBuffer = ''
@@ -224,14 +235,7 @@ export async function* streamDecision(
     }
   }
 
-  const metadata: DecisionRequestMetadata = {
-    area: 'react.decide',
-    origin: 'edge',
-    method: 'POST',
-    url: response.url,
-    model,
-    stream: true
-  }
+  const metadata = decisionMetadata(response, model, true)
   const decision = parseDecisionOrFinal(metadata, jsonBuffer, response)
   yield { kind: 'decision', decision }
 }

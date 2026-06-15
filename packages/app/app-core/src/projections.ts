@@ -67,6 +67,32 @@ const setNoticeIfHigherSeverity = (turn: Turn, candidate: TurnNotice): void => {
   }
 }
 
+// Attach a notice (error / system / rate-limit) to the in-flight turn if there is
+// one — keeping only the highest-severity notice — otherwise push a notice-only
+// turn so a notice emitted with no pending assistant turn still surfaces. Shared
+// by the error, system, and rate-limit event branches, which differ only in the
+// notice they build.
+const attachOrCreateNoticeTurn = (
+  turns: Turn[],
+  pendingTurn: Turn | undefined,
+  eventId: string,
+  notice: TurnNotice
+): void => {
+  if (pendingTurn) {
+    setNoticeIfHigherSeverity(pendingTurn, notice)
+    return
+  }
+  turns.push({
+    id: eventId,
+    userText: '',
+    assistantSource: '',
+    assistantContent: null,
+    isStreaming: false,
+    activity: emptyActivity(),
+    notice
+  })
+}
+
 const isContentDocument = (value: unknown): value is ContentDocument =>
   value !== null &&
   typeof value === 'object' &&
@@ -295,58 +321,23 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
         })
       }
     } else if (event.type === 'error') {
-      const notice: TurnNotice = { kind: 'error', message: event.payload.message, level: 'error' }
-      if (pendingTurn) {
-        setNoticeIfHigherSeverity(pendingTurn, notice)
-      } else {
-        turns.push({
-          id: event.id,
-          userText: '',
-          assistantSource: '',
-          assistantContent: null,
-          isStreaming: false,
-          activity: emptyActivity(),
-          notice
-        })
-      }
+      attachOrCreateNoticeTurn(turns, pendingTurn, event.id, {
+        kind: 'error',
+        message: event.payload.message,
+        level: 'error'
+      })
     } else if (event.type === 'system') {
-      const notice: TurnNotice = {
+      attachOrCreateNoticeTurn(turns, pendingTurn, event.id, {
         kind: 'system',
         message: event.payload.message,
         level: event.payload.level
-      }
-      if (pendingTurn) {
-        setNoticeIfHigherSeverity(pendingTurn, notice)
-      } else {
-        turns.push({
-          id: event.id,
-          userText: '',
-          assistantSource: '',
-          assistantContent: null,
-          isStreaming: false,
-          activity: emptyActivity(),
-          notice
-        })
-      }
+      })
     } else if (event.type === 'rate.limit.waiting' || event.type === 'rate.limit.cancelled') {
-      const notice: TurnNotice = {
+      attachOrCreateNoticeTurn(turns, pendingTurn, event.id, {
         kind: 'rate-limit',
         message: event.payload.message,
         level: 'warning'
-      }
-      if (pendingTurn) {
-        setNoticeIfHigherSeverity(pendingTurn, notice)
-      } else {
-        turns.push({
-          id: event.id,
-          userText: '',
-          assistantSource: '',
-          assistantContent: null,
-          isStreaming: false,
-          activity: emptyActivity(),
-          notice
-        })
-      }
+      })
     } else if (pendingTurn) {
       applyActivityEvent(pendingTurn.activity, event)
     }
