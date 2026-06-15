@@ -1,5 +1,7 @@
 import {
   PluginCaptureError,
+  type ActivitySummarizer,
+  type ActivityView,
   type AgentPlugin,
   type PluginHost,
   type PluginManifest,
@@ -34,9 +36,65 @@ export const codeExecInputSchema = z.object({
 
 export type CodeExecInput = z.infer<typeof codeExecInputSchema>
 
+// Longest single value the summary will inline before truncating. Keeps a large
+// result or error from flooding the activity panel — the full result is delivered
+// to the model and rendered separately, so this preview only needs to be a hint.
+const MAX_SUMMARY_VALUE = 120
+
+// Renders an arbitrary sandbox value as a short, plain-text preview. The host
+// renders ActivityView values as text (never HTML), so this only needs to be a
+// safe, bounded string. Non-serializable values fall back to String().
+const previewValue = (value: unknown): string => {
+  let text: string
+  if (typeof value === 'string') {
+    text = value
+  } else {
+    try {
+      text = JSON.stringify(value) ?? String(value)
+    } catch {
+      text = String(value)
+    }
+  }
+  return text.length > MAX_SUMMARY_VALUE ? `${text.slice(0, MAX_SUMMARY_VALUE)}…` : text
+}
+
+// Code-execution presentation owned by the plugin, not the host. Maps the
+// SandboxExecutionResult (`{ ok, result, logs, timedOut, error? }`) to the host's
+// product-agnostic ActivityView. A normal run is `ok` (green); a timeout is `warn`
+// (the run was cut short, not a hard failure); a thrown error is `error`. Pure and
+// React-free (enforced by scripts/check-boundaries.mjs) — the host renders the
+// returned values as plain text. Fixes the misleading "(no output)" the host's old
+// MCP-shaped fallback showed for a successful run (issue #219, surfaced by #216).
+export const summarizeCodeExecActivity: ActivitySummarizer = (output): ActivityView => {
+  const value = (output ?? {}) as Partial<SandboxExecutionResult>
+  const logs = Array.isArray(value.logs) ? value.logs : []
+  const timedOut = value.timedOut === true
+  const ok = value.ok === true
+
+  const sections: ActivityView['sections'] = []
+  if (value.result !== undefined) {
+    sections.push({ label: 'Result', value: previewValue(value.result) })
+  }
+  sections.push({ label: 'Logs', value: `${logs.length} line${logs.length === 1 ? '' : 's'}` })
+  if (timedOut) {
+    sections.push({ label: 'Timed out', value: 'Execution exceeded the time limit' })
+  }
+  if (typeof value.error === 'string' && value.error.length > 0) {
+    sections.push({ label: 'Error', value: previewValue(value.error) })
+  }
+
+  return {
+    title: 'Ran JavaScript',
+    status: timedOut ? 'warn' : ok ? 'ok' : 'error',
+    sections
+  }
+}
+
 // UI + planner metadata for the host. The shape is the generic PluginManifest
 // contract from agent-core; this plugin ships its own copy and tool descriptor.
 // No `defaultEnabled`, so it is OFF by default — the user opts in via Settings.
+// `summarizeActivity` carries the plugin's own activity-panel presentation (see
+// summarizeCodeExecActivity).
 export const codeExecPluginManifest: PluginManifest = {
   id: CODE_EXEC_PLUGIN_ID,
   label: 'Code execution (run_javascript tool)',
@@ -69,7 +127,8 @@ export const codeExecPluginManifest: PluginManifest = {
             'Optional JSON value (object or array) made available to the code as a readonly ' +
             '`input` binding.'
         }
-      }
+      },
+      summarizeActivity: summarizeCodeExecActivity
     }
   ]
 }

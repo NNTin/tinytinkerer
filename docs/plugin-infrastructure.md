@@ -77,7 +77,21 @@ class PluginCaptureError extends Error {
 // Host-agnostic discovery contract. A plugin package's entry module exports a
 // `manifest` and a `createPlugin` factory; the host loads it dynamically and
 // validates it with `isPluginModule` before trusting it.
-type PluginToolDescriptor = { id: string; description: string; inputSchema: Record<string, unknown> }
+// A pure, React-free view-model a tool's owner produces from its raw output so the
+// host can render a consistent activity summary without any per-tool branching.
+type ActivityView = {
+  title: string                                  // collapsed-summary heading
+  status?: 'ok' | 'error' | 'warn'               // drives the row's status styling
+  sections: { label: string; value: string }[]   // label/value rows shown on expand
+}
+type ActivitySummarizer = (output: unknown) => ActivityView
+
+type PluginToolDescriptor = {
+  id: string
+  description: string
+  inputSchema: Record<string, unknown>
+  summarizeActivity?: ActivitySummarizer   // owns this tool's turn-activity presentation
+}
 
 type PluginManifest = {
   id: string
@@ -163,7 +177,10 @@ The Tavily web-search tool ships as its own plugin package at
 `packages/plugins/plugin-web-search`, depending only on `agent-core` and `contracts`. It exports
 the `PluginModule` surface — `manifest` (a `PluginManifest` whose single `toolDescriptor` keeps the
 stable id `web-search`) and `createPlugin` — plus `webSearchPlugin()`, `webSearchPluginManifest`,
-and `WEB_SEARCH_PLUGIN_ID` for direct/test use.
+and `WEB_SEARCH_PLUGIN_ID` for direct/test use. The plugin also owns its turn-activity
+presentation: `summarizeWebSearchActivity` (wired onto the descriptor's `summarizeActivity`) maps
+the Tavily `{ query, results }` output to an `ActivityView` (title `Web search`, a `Results` count,
+and a `Query` section), so the host no longer special-cases the `web-search` tool id.
 
 Its single `web-search` tool POSTs a `SearchRequest` (`{ query, maxResults? }`, validated by
 `searchRequestSchema` from `contracts`) to the edge `/api/search` route and parses the
@@ -204,7 +221,12 @@ The code-execution tool ships as its own plugin package at
 surface — `manifest` (a `PluginManifest` whose single `toolDescriptor` keeps the stable tool id
 `run_javascript`) and `createPlugin` — plus `codeExecPlugin()`, `codeExecPluginManifest`,
 `codeExecInputSchema`, `CodeExecHostError`, and `CODE_EXEC_PLUGIN_ID` for direct/test use. Its
-manifest sets **no** `defaultEnabled`, so it ships **off** — the user opts in via Settings.
+manifest sets **no** `defaultEnabled`, so it ships **off** — the user opts in via Settings. It owns
+its turn-activity presentation too: `summarizeCodeExecActivity` (wired onto the descriptor's
+`summarizeActivity`) maps the `{ ok, result, logs, timedOut, error }` outcome to an `ActivityView`
+(title `Ran JavaScript`; `ok`/`warn`/`error` status; `Result`/`Logs`/`Timed out`/`Error` sections),
+replacing the misleading `(no output)` the host's old MCP-shaped fallback showed for a successful
+run.
 
 Running arbitrary code is the one capability a plugin must **never** implement itself. A plugin's
 `execute()` runs in the browser app runtime, so `eval`/`new Function`/an embedded interpreter there
@@ -291,6 +313,16 @@ Settings Modal toggle (app-browser/browser-settings-modal.tsx)
 - **Planner exposure:** for each active plugin, `create-runtime.ts` adds its
   `manifest.toolDescriptors` to the planner tool descriptors, so the model can name and invoke
   them (e.g. `send_feedback`). Descriptors travel with the plugin — the host hard-codes none.
+- **Activity presentation:** a tool's owner may attach an `ActivitySummarizer` to its
+  `PluginToolDescriptor.summarizeActivity` — a pure, React-free `(output) => ActivityView` mapper
+  keyed by tool id. The host's turn-activity panel (`turn-activity-panel.tsx`) carries **zero**
+  per-tool branches: it builds a `Map<toolId, ActivitySummarizer>` from the discovered manifests
+  (`surfaces.tsx`), resolves one per completed tool, and feeds the result to a single generic
+  renderer (`title` + status styling collapsed, `sections` as label/value rows on expand). Tools
+  without a summarizer get a neutral default (title = tool label; `(no output)` only when output
+  is genuinely empty). MCP tools are summarized by the MCP tool layer (`runtime/mcp-tool.ts`,
+  `summarizeMcpActivity` keyed by the `mcp:*` id pattern), not the panel. Output is untrusted:
+  the host renders every `ActivityView` value as text, never HTML.
 
 ## Dynamic discovery (`app-browser`)
 

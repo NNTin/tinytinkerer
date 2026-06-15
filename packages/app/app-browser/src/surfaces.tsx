@@ -1,4 +1,9 @@
-import { buildTurns, type PluginManifest, type Turn } from '@tinytinkerer/app-core'
+import {
+  buildTurns,
+  type ActivitySummarizer,
+  type PluginManifest,
+  type Turn
+} from '@tinytinkerer/app-core'
 import {
   EDGE_ROUTE_PATHS,
   mcpDiscoveryResultSchema,
@@ -18,6 +23,8 @@ import {
   type SetStateAction
 } from 'react'
 import { loadPluginModules } from './plugins/registry'
+import { isMcpToolId, summarizeMcpActivity } from './runtime/mcp-tool'
+import { toolLabel, type ResolveActivitySummarizer } from './turn-activity-panel'
 import { useWebSpeechInput } from './web-speech'
 import {
   useAuthStore,
@@ -44,6 +51,10 @@ export type ChatSurfaceController = {
   token: string | null
   turns: Turn[]
   serverNameById: Map<string, string>
+  // Resolves a tool's owner-provided activity summarizer by id for the turn
+  // activity panel. Plugin summarizers come from dynamically-discovered manifests;
+  // MCP tools are summarized by the MCP layer keyed by the `mcp:*` id pattern.
+  resolveActivitySummarizer: ResolveActivitySummarizer
   isRunning: boolean
   isRetryPending: boolean
   showReasoningActivity: boolean
@@ -108,6 +119,52 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     [mcpServers]
   )
 
+  // Plugin-contributed activity summarizers, keyed by tool id. Discovered from the
+  // same dynamic plugin manifests the host already reads (see ./plugins/registry),
+  // so the panel stays free of any static dependency on a concrete plugin package.
+  const [pluginSummarizers, setPluginSummarizers] = useState<
+    Map<string, ActivitySummarizer>
+  >(() => new Map())
+  useEffect(() => {
+    let cancelled = false
+    void loadPluginModules().then((modules) => {
+      if (cancelled) {
+        return
+      }
+      const map = new Map<string, ActivitySummarizer>()
+      for (const mod of modules) {
+        for (const descriptor of mod.manifest.toolDescriptors ?? []) {
+          if (descriptor.summarizeActivity) {
+            map.set(descriptor.id, descriptor.summarizeActivity)
+          }
+        }
+      }
+      setPluginSummarizers(map)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Resolve a tool's summarizer by id: a plugin descriptor's wins by exact id; an
+  // `mcp:*` id falls back to the MCP layer's summarizer, bound here to the host's
+  // resolved `[server] tool` label (which needs serverNameById). Everything else
+  // gets no summarizer and the panel renders its neutral default.
+  const resolveActivitySummarizer = useMemo<ResolveActivitySummarizer>(
+    () => (toolId) => {
+      const pluginSummarizer = pluginSummarizers.get(toolId)
+      if (pluginSummarizer) {
+        return pluginSummarizer
+      }
+      if (isMcpToolId(toolId)) {
+        const title = toolLabel(toolId, serverNameById)
+        return (output) => summarizeMcpActivity(title, output)
+      }
+      return undefined
+    },
+    [pluginSummarizers, serverNameById]
+  )
+
   const submitLabel = isCoolingDown
     ? formatCooldown(cooldownRemainingMs)
     : isRunning
@@ -135,6 +192,7 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     token,
     turns,
     serverNameById,
+    resolveActivitySummarizer,
     isRunning,
     isRetryPending,
     showReasoningActivity,

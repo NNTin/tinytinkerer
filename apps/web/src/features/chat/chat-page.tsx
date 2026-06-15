@@ -35,6 +35,7 @@ export const ChatPage = () => {
     token,
     turns,
     serverNameById,
+    resolveActivitySummarizer,
     isRunning,
     isRetryPending,
     showReasoningActivity,
@@ -103,6 +104,7 @@ export const ChatPage = () => {
                       activity={turn.activity}
                       isLive={isRunning && index === turns.length - 1}
                       serverNameById={serverNameById}
+                      resolveSummarizer={resolveActivitySummarizer}
                     />
                   ) : null}
 

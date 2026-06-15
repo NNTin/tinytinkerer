@@ -77,6 +77,7 @@ export type {
   TurnActivityItem
 } from '@tinytinkerer/app-core'
 export { TurnActivityPanel, toolLabel } from './turn-activity-panel'
+export type { ResolveActivitySummarizer } from './turn-activity-panel'
 export type {
   ChatEvent,
   McpDiscoveryResult,

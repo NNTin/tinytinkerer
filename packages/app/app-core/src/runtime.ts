@@ -40,6 +40,8 @@ export type {
   PluginManifest,
   PluginModule,
   PluginToolDescriptor,
+  ActivityView,
+  ActivitySummarizer,
   AgentHookContribution,
   ToolExecutionContext,
   ToolGateResult,

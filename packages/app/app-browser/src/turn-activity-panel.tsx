@@ -1,5 +1,15 @@
-import type { TurnActivity, TurnActivityItem } from '@tinytinkerer/app-core'
+import type {
+  ActivitySummarizer,
+  ActivityView,
+  TurnActivity,
+  TurnActivityItem
+} from '@tinytinkerer/app-core'
 import { useEffect, useState } from 'react'
+
+// Resolves the activity summarizer a tool's owner provides, keyed by tool id, or
+// `undefined` for tools that ship none (the host then uses a neutral default).
+// The host builds this so the panel itself carries zero tool-specific knowledge.
+export type ResolveActivitySummarizer = (toolId: string) => ActivitySummarizer | undefined
 
 // Mirrors @tinytinkerer/ui ThinkingDots without taking a UI-package dependency
 // here (app-browser stays free of the UI lib, like the local ToggleRow). The
@@ -12,8 +22,11 @@ const ThinkingDots = () => (
   </span>
 )
 
+// Neutral, tool-agnostic label. Formats the MCP `mcp:<server>:<tool>` id using the
+// user's server-name map (host-owned settings data, not tool-output knowledge);
+// every other tool id is shown verbatim. Used for the started/failed rows and as
+// the fallback heading for a completed tool whose owner provides no summarizer.
 export const toolLabel = (toolId: string, serverNameById: Map<string, string>): string => {
-  if (toolId === 'web-search') return 'Web search'
   const mcpMatch = toolId.match(/^mcp:([^:]+):(.+)$/)
   if (mcpMatch) {
     const [, serverId, toolName] = mcpMatch
@@ -25,12 +38,79 @@ export const toolLabel = (toolId: string, serverNameById: Map<string, string>): 
 
 type ToolItem = Extract<TurnActivityItem, { kind: 'tool' }>
 
+// True when a completed tool produced nothing worth summarizing: no output, an
+// empty object, or an empty string. Only then does the neutral default show
+// "(no output)" — a successful run with real output never does.
+const isEmptyOutput = (output: unknown): boolean =>
+  output == null ||
+  (typeof output === 'string' && output.length === 0) ||
+  (typeof output === 'object' && !Array.isArray(output) && Object.keys(output).length === 0)
+
+// The host's neutral default for a completed tool whose owner ships no summarizer.
+// It cannot assume any output shape, so it only names the tool and, when there is
+// genuinely no output, says so; otherwise it leaves the dropdown body empty (the
+// real result is delivered to the model and rendered separately).
+const neutralView = (label: string, output: unknown): ActivityView => ({
+  title: label,
+  sections: isEmptyOutput(output) ? [{ label: '', value: '(no output)' }] : []
+})
+
+const statusStyles: Record<'ok' | 'error' | 'warn', { border: string; summary: string; body: string }> = {
+  ok: {
+    border: 'border-stone-200/70 bg-white/60',
+    summary: 'text-stone-600',
+    body: 'border-stone-100 text-[var(--muted)]'
+  },
+  error: {
+    border: 'border-rose-200 bg-rose-50/70',
+    summary: 'text-rose-700',
+    body: 'border-rose-100 text-rose-700'
+  },
+  warn: {
+    border: 'border-amber-200 bg-amber-50/70',
+    summary: 'text-amber-800',
+    body: 'border-amber-100 text-amber-800'
+  }
+}
+
+// One generic renderer for every completed tool. It is driven entirely by the
+// resolved ActivityView and never branches on a tool id — each tool's owner (a
+// plugin, or the MCP layer) decides title/status/sections. Values are rendered as
+// plain text; tool output is untrusted and never injected as HTML.
+const ActivityViewEntry = ({ view }: { view: ActivityView }) => {
+  const styles = statusStyles[view.status ?? 'ok']
+  return (
+    <details className={`group rounded-md border text-xs ${styles.border}`}>
+      <summary
+        className={`flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 hover:bg-stone-50/80 ${styles.summary}`}
+      >
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-stone-100 text-[9px] font-bold text-stone-400 transition-transform group-open:rotate-90">
+          ▶
+        </span>
+        <span>{view.title}</span>
+      </summary>
+      <div className={`space-y-0.5 border-t px-3 py-1.5 ${styles.body}`}>
+        {view.sections.map((section, index) => (
+          <div key={`${section.label}-${index}`}>
+            {section.label ? (
+              <span className="text-[var(--muted)]">{section.label}: </span>
+            ) : null}
+            <span className="text-stone-600">{section.value}</span>
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 const ToolEntry = ({
   item,
-  serverNameById
+  serverNameById,
+  resolveSummarizer
 }: {
   item: ToolItem
   serverNameById: Map<string, string>
+  resolveSummarizer: ResolveActivitySummarizer
 }) => {
   const label = toolLabel(item.toolId, serverNameById)
 
@@ -51,52 +131,9 @@ const ToolEntry = ({
     )
   }
 
-  if (item.toolId === 'web-search') {
-    const output = (item.output ?? {}) as { query?: string; results?: unknown[] }
-    const resultCount = Array.isArray(output.results) ? output.results.length : 0
-    return (
-      <details className="group rounded-md border border-stone-200/70 bg-white/60 text-xs">
-        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 text-stone-600 hover:bg-stone-50/80">
-          <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-stone-100 text-[9px] font-bold text-stone-400 transition-transform group-open:rotate-90">
-            ▶
-          </span>
-          <span>
-            Web search —{' '}
-            <span className="text-[var(--muted)]">
-              {resultCount} result{resultCount !== 1 ? 's' : ''}
-            </span>
-          </span>
-        </summary>
-        <div className="border-t border-stone-100 px-3 py-1.5 text-[var(--muted)]">
-          Query: <span className="text-stone-600">{output.query ?? 'unknown'}</span>
-        </div>
-      </details>
-    )
-  }
-
-  const mcpOutput = item.output as { text?: string; isError?: boolean } | undefined
-  const isMcpError = mcpOutput?.isError === true
-  const summaryText = mcpOutput?.text ? mcpOutput.text.slice(0, 120) : '(no output)'
-  const summary = isMcpError ? `Error: ${summaryText}` : summaryText
-  return (
-    <details
-      className={`group rounded-md border text-xs ${isMcpError ? 'border-rose-200 bg-rose-50/70' : 'border-stone-200/70 bg-white/60'}`}
-    >
-      <summary
-        className={`flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 hover:bg-stone-50/80 ${isMcpError ? 'text-rose-700' : 'text-stone-600'}`}
-      >
-        <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-stone-100 text-[9px] font-bold text-stone-400 transition-transform group-open:rotate-90">
-          ▶
-        </span>
-        <span>{label}</span>
-      </summary>
-      <div
-        className={`border-t px-3 py-1.5 ${isMcpError ? 'border-rose-100 text-rose-700' : 'border-stone-100 text-[var(--muted)]'}`}
-      >
-        {summary}
-      </div>
-    </details>
-  )
+  const summarizer = resolveSummarizer(item.toolId)
+  const view = summarizer ? summarizer(item.output) : neutralView(label, item.output)
+  return <ActivityViewEntry view={view} />
 }
 
 // Maps each step's own id to its parent id, learned only from "started" step
@@ -144,11 +181,15 @@ const itemDepth = (
 export const TurnActivityPanel = ({
   activity,
   isLive,
-  serverNameById
+  serverNameById,
+  resolveSummarizer = () => undefined
 }: {
   activity: TurnActivity
   isLive: boolean
   serverNameById: Map<string, string>
+  // Resolves a tool's owner-provided activity summarizer by id. Defaults to "no
+  // summarizer" so callers (and tests) that don't wire it get the neutral default.
+  resolveSummarizer?: ResolveActivitySummarizer
 }) => {
   const [open, setOpen] = useState(isLive)
 
@@ -219,7 +260,11 @@ export const TurnActivityPanel = ({
                     </span>
                     <div className="min-w-0 flex-1">
                       {item.kind === 'tool' ? (
-                        <ToolEntry item={item} serverNameById={serverNameById} />
+                        <ToolEntry
+                          item={item}
+                          serverNameById={serverNameById}
+                          resolveSummarizer={resolveSummarizer}
+                        />
                       ) : (
                         <span
                           className={

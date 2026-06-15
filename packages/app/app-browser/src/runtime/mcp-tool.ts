@@ -1,4 +1,4 @@
-import type { Tool } from '@tinytinkerer/app-core'
+import type { ActivityView, Tool } from '@tinytinkerer/app-core'
 import {
   EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
@@ -10,6 +10,28 @@ import {
 import { z } from 'zod'
 import type { EdgeFetch } from './edge-fetch'
 import { parseJsonWithTelemetry, parseWithTelemetry } from '../telemetry/request-telemetry'
+
+// A contributed tool id of the form `mcp:<serverId>:<toolName>`. The MCP layer —
+// not the activity panel — owns recognizing and summarizing its own output, so
+// this pattern lives here next to the tool wiring.
+const MCP_TOOL_ID_PATTERN = /^mcp:([^:]+):(.+)$/
+
+export const isMcpToolId = (toolId: string): boolean => MCP_TOOL_ID_PATTERN.test(toolId)
+
+// Maps an MCP tool's `{ text, isError }` output to the host's product-agnostic
+// ActivityView. The `title` is host-resolved (the `[server] tool` label needs the
+// user's server-name map, which lives outside this output) and threaded in by the
+// resolver, so this stays a pure output→view mapper keyed by the `mcp:*` pattern.
+// Tool output is untrusted; the host renders these values as text, never HTML.
+export const summarizeMcpActivity = (title: string, output: unknown): ActivityView => {
+  const value = (output ?? {}) as { text?: unknown; isError?: unknown }
+  const text = typeof value.text === 'string' ? value.text : ''
+  const isError = value.isError === true
+  const sections: ActivityView['sections'] = text
+    ? [{ label: isError ? 'Error' : 'Output', value: text }]
+    : []
+  return { title, status: isError ? 'error' : 'ok', sections }
+}
 
 export const createMcpTool = (
   server: McpServerConfig,

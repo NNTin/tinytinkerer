@@ -11,7 +11,8 @@ import {
   CodeExecHostError,
   codeExecInputSchema,
   codeExecPlugin,
-  codeExecPluginManifest
+  codeExecPluginManifest,
+  summarizeCodeExecActivity
 } from '../src/index'
 
 const okResult: SandboxExecutionResult = {
@@ -91,6 +92,80 @@ describe('codeExecPlugin', () => {
       level: 'error'
     })
     expect(JSON.stringify((error as CodeExecHostError).report)).not.toContain('return 1')
+  })
+})
+
+describe('summarizeCodeExecActivity', () => {
+  it('is wired onto the run_javascript tool descriptor', () => {
+    const descriptor = codeExecPluginManifest.toolDescriptors?.find(
+      (d) => d.id === 'run_javascript'
+    )
+    expect(descriptor?.summarizeActivity).toBe(summarizeCodeExecActivity)
+  })
+
+  it('summarizes a successful run as ok with a Result and Logs section', () => {
+    const view = summarizeCodeExecActivity({
+      ok: true,
+      result: 314061,
+      logs: [],
+      timedOut: false
+    })
+    expect(view).toEqual({
+      title: 'Ran JavaScript',
+      status: 'ok',
+      sections: [
+        { label: 'Result', value: '314061' },
+        { label: 'Logs', value: '0 lines' }
+      ]
+    })
+  })
+
+  it('pluralizes the log count and omits Result when there is none', () => {
+    const view = summarizeCodeExecActivity({ ok: true, logs: ['a', 'b'], timedOut: false })
+    expect(view.status).toBe('ok')
+    expect(view.sections).toEqual([{ label: 'Logs', value: '2 lines' }])
+  })
+
+  it('marks a timeout as warn with a Timed out section', () => {
+    const view = summarizeCodeExecActivity({ ok: false, logs: [], timedOut: true })
+    expect(view.status).toBe('warn')
+    expect(view.sections).toContainEqual({
+      label: 'Timed out',
+      value: 'Execution exceeded the time limit'
+    })
+  })
+
+  it('marks a thrown error as error with an Error section', () => {
+    const view = summarizeCodeExecActivity({
+      ok: false,
+      logs: [],
+      timedOut: false,
+      error: 'ReferenceError: x is not defined'
+    })
+    expect(view.status).toBe('error')
+    expect(view.sections).toContainEqual({
+      label: 'Error',
+      value: 'ReferenceError: x is not defined'
+    })
+  })
+
+  it('truncates a large result preview', () => {
+    const view = summarizeCodeExecActivity({
+      ok: true,
+      result: '1'.repeat(500),
+      logs: [],
+      timedOut: false
+    })
+    const result = view.sections.find((s) => s.label === 'Result')
+    expect(result?.value.endsWith('…')).toBe(true)
+    expect(result?.value.length).toBe(121)
+  })
+
+  it('tolerates malformed output without throwing', () => {
+    const view = summarizeCodeExecActivity(undefined)
+    expect(view.title).toBe('Ran JavaScript')
+    expect(view.status).toBe('error')
+    expect(view.sections).toEqual([{ label: 'Logs', value: '0 lines' }])
   })
 })
 

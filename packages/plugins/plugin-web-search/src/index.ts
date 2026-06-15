@@ -1,5 +1,7 @@
 import {
   PluginCaptureError,
+  type ActivitySummarizer,
+  type ActivityView,
   type AgentPlugin,
   type PluginHost,
   type PluginManifest,
@@ -20,12 +22,31 @@ import {
 // activity panel to keep recognising the tool.
 export const WEB_SEARCH_PLUGIN_ID = 'web-search'
 
+// Web-search presentation owned by the plugin, not the host. Maps the Tavily-shaped
+// SearchResponse output (`{ query, results }`) to the host's product-agnostic
+// ActivityView so the turn-activity panel can render it without knowing this plugin
+// exists. Pure and React-free (enforced by scripts/check-boundaries.mjs): the host
+// renders the returned `value`s as plain text. The short label 'Web search' lives
+// here too (it is the view title), so the host no longer special-cases the tool id.
+export const summarizeWebSearchActivity: ActivitySummarizer = (output): ActivityView => {
+  const value = (output ?? {}) as { query?: unknown; results?: unknown }
+  const resultCount = Array.isArray(value.results) ? value.results.length : 0
+  const sections: ActivityView['sections'] = [
+    { label: 'Results', value: String(resultCount) }
+  ]
+  if (typeof value.query === 'string' && value.query.length > 0) {
+    sections.push({ label: 'Query', value: value.query })
+  }
+  return { title: 'Web search', sections }
+}
+
 // UI + planner metadata for the host. The shape is the generic PluginManifest
 // contract from agent-core; this plugin ships its own copy and tool descriptor.
 // The descriptor mirrors the SearchRequest schema so the planner can name the
 // tool without instantiating the plugin. `defaultEnabled` keeps web search on
 // out-of-the-box; it appears in the generic plugin activation list like any
-// other plugin and the user can turn it off there.
+// other plugin and the user can turn it off there. `summarizeActivity` carries
+// the plugin's own activity-panel presentation (see summarizeWebSearchActivity).
 export const webSearchPluginManifest: PluginManifest = {
   id: WEB_SEARCH_PLUGIN_ID,
   label: 'Web search (Tavily)',
@@ -39,7 +60,8 @@ export const webSearchPluginManifest: PluginManifest = {
       inputSchema: {
         query: { type: 'string', description: 'Search query (2–500 chars)' },
         maxResults: { type: 'number', description: 'Max results (1–10, optional)' }
-      }
+      },
+      summarizeActivity: summarizeWebSearchActivity
     }
   ]
 }

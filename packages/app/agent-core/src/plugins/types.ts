@@ -174,6 +174,25 @@ export interface AgentPlugin {
   deactivate?(): void | Promise<void>
 }
 
+// A product-agnostic, React-free view-model a tool's owner produces from its raw
+// output so the host can render a consistent activity summary without knowing any
+// specific tool's shape. `title` (plus optional status styling) shows in the
+// collapsed summary; `sections` render as label/value rows when expanded. The
+// host renders every value as plain text — never HTML — because tool output is
+// untrusted. Lives in the contract layer so plugins ship data, never a component.
+export type ActivityView = {
+  title: string
+  status?: 'ok' | 'error' | 'warn'
+  sections: { label: string; value: string }[]
+}
+
+// A pure function a tool's owner exposes to map its raw output to an ActivityView.
+// Must stay product-agnostic: no React/DOM/window — it only transforms data
+// (enforced by scripts/check-boundaries.mjs for plugin packages). The host
+// resolves one per tool id and feeds the result into its single generic activity
+// renderer; tools without one fall back to the host's neutral default.
+export type ActivitySummarizer = (output: unknown) => ActivityView
+
 // Planner-facing description of a tool a plugin contributes. Lets a host name the
 // tool to its planner/model without instantiating the plugin. Structurally
 // matches the host's own planner descriptor shape (id / description / schema).
@@ -181,6 +200,11 @@ export type PluginToolDescriptor = {
   id: string
   description: string
   inputSchema: Record<string, unknown>
+  // Optional pure mapper from this tool's raw output to an ActivityView the host
+  // renders in the turn-activity panel. Keyed by tool id (this descriptor's `id`),
+  // so the tool's owner — not the host — decides how its activity is summarized.
+  // Product-agnostic (no React/DOM). Omit it and the host uses a neutral default.
+  summarizeActivity?: ActivitySummarizer
 }
 
 // Host-agnostic metadata about a plugin: the copy a host surfaces in its settings

@@ -10,6 +10,7 @@ import * as webSearchModule from '../src/index'
 import {
   WEB_SEARCH_PLUGIN_ID,
   WebSearchSchemaError,
+  summarizeWebSearchActivity,
   webSearchPlugin,
   webSearchPluginManifest
 } from '../src/index'
@@ -122,6 +123,46 @@ describe('webSearchPlugin', () => {
     expect(webSearchPluginManifest.toolDescriptors?.map((d) => d.id)).toEqual([
       WEB_SEARCH_PLUGIN_ID
     ])
+  })
+
+  it('ships its activity summarizer on the tool descriptor (host renders, plugin owns presentation)', () => {
+    const descriptor = webSearchPluginManifest.toolDescriptors?.[0]
+    expect(descriptor?.summarizeActivity).toBe(summarizeWebSearchActivity)
+  })
+
+  describe('summarizeWebSearchActivity', () => {
+    it('titles the view and reports the result count and query', () => {
+      const view = summarizeWebSearchActivity({
+        query: 'react news',
+        results: [{}, {}, {}]
+      })
+      expect(view).toEqual({
+        title: 'Web search',
+        sections: [
+          { label: 'Results', value: '3' },
+          { label: 'Query', value: 'react news' }
+        ]
+      })
+    })
+
+    it('reports zero results and omits the query section when absent', () => {
+      const view = summarizeWebSearchActivity({ results: [] })
+      expect(view).toEqual({
+        title: 'Web search',
+        sections: [{ label: 'Results', value: '0' }]
+      })
+    })
+
+    it('tolerates malformed output without throwing', () => {
+      expect(summarizeWebSearchActivity(undefined)).toEqual({
+        title: 'Web search',
+        sections: [{ label: 'Results', value: '0' }]
+      })
+      expect(summarizeWebSearchActivity({ results: 'nope', query: 5 })).toEqual({
+        title: 'Web search',
+        sections: [{ label: 'Results', value: '0' }]
+      })
+    })
   })
 
   it('ships enabled by default via the manifest', () => {
