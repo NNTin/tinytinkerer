@@ -9,11 +9,19 @@ import {
 // Content-Security-Policy enforced inside the wireframe preview document. The
 // HTML is LLM-authored (semi-trusted), so even though the iframe runs at an
 // opaque origin with no scripts (see WIREFRAME_SANDBOX), this blocks the
-// remaining network-egress vectors a mockup never needs: remote stylesheets,
+// resource-load egress vectors a mockup never needs: remote stylesheets,
 // tracking pixels, web fonts, and beacons. Inline <style>/style="" is allowed so
 // mockups still look right; images/fonts are limited to inline data: URIs.
+// `form-action 'none'` blocks form-submission egress, `base-uri 'none'` stops a
+// <base> from redirecting relative URLs, and `navigate-to 'none'` is a
+// best-effort block on navigations (Chromium-only; the directive was dropped from
+// the CSP spec, so browsers without it ignore it). Residual vector: a document
+// without `navigate-to` support can still navigate ITSELF via an <a href> click or
+// a <meta http-equiv="refresh">, which is a GET to the URL the author hard-coded.
+// That is bounded — no scripts run and the origin is opaque with no referrer, so
+// nothing dynamic can be exfiltrated — but it is not fully preventable by CSP here.
 const WIREFRAME_CSP =
-  "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
+  "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'; navigate-to 'none'"
 
 // Sandbox flags for the preview iframe. Deliberately EMPTY (no allow-scripts, no
 // allow-same-origin): a layout mockup needs no JS, and dropping scripts is the

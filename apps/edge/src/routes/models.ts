@@ -204,14 +204,19 @@ const safeUpstreamError = (rawText: string, fallback: string): string => {
     : message
 }
 
-// Parse a JSON string without throwing. Returns undefined on any parse error so a
-// malformed-but-200 upstream body flows into the same typed-502 handling the
-// error paths use, instead of surfacing as an unhandled framework 500.
-const safeJsonParse = (raw: string): unknown => {
+// Parse a JSON string without throwing, returning a discriminated result so the
+// "parse failed" signal is explicit in the type (a parsed JSON value can itself
+// be any `unknown`, including null, so a bare sentinel could not be narrowed). A
+// malformed-but-200 upstream body resolves to `{ ok: false }` and flows into the
+// same typed-502 handling the error paths use, instead of surfacing as an
+// unhandled framework 500.
+type JsonParseResult = { ok: true; value: unknown } | { ok: false }
+
+const safeJsonParse = (raw: string): JsonParseResult => {
   try {
-    return JSON.parse(raw)
+    return { ok: true, value: JSON.parse(raw) }
   } catch {
-    return undefined
+    return { ok: false }
   }
 }
 
@@ -701,7 +706,9 @@ export const registerModelRoutes = (
     // Guard the success-path parse exactly like the error paths: a 200 with a
     // truncated/HTML/unexpected body must surface as a typed 502, not an
     // unhandled JSON.parse/schema throw → generic 500.
-    const parsed = modelsChatResponseSchema.safeParse(safeJsonParse(rawText))
+    const json = safeJsonParse(rawText)
+    if (!json.ok) return upstreamMalformedResponse(c)
+    const parsed = modelsChatResponseSchema.safeParse(json.value)
     if (!parsed.success) return upstreamMalformedResponse(c)
     return c.json(parsed.data, 200)
   })
@@ -869,8 +876,8 @@ export const registerModelRoutes = (
     // body that is not JSON at all.
     const rawCatalogue = await response.text()
     const parsedCatalogue = safeJsonParse(rawCatalogue)
-    if (parsedCatalogue === undefined) return upstreamMalformedResponse(c)
-    const models = toLiteLLMModels(parsedCatalogue, modes)
+    if (!parsedCatalogue.ok) return upstreamMalformedResponse(c)
+    const models = toLiteLLMModels(parsedCatalogue.value, modes)
 
     // Populate the colo-wide cache so the next request (in any isolate) skips
     // the upstream fetch for the freshness window.

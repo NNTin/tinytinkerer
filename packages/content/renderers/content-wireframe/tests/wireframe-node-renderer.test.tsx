@@ -80,7 +80,7 @@ describe('WireframeNodeRenderer', () => {
     const srcdoc = iframe?.getAttribute('srcdoc') ?? ''
     expect(srcdoc).toContain(HELLO_WORLD_HTML)
     expect(srcdoc).toContain(
-      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:">`
+      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'; navigate-to 'none'">`
     )
   })
 
