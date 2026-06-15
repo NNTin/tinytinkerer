@@ -7,6 +7,7 @@ import {
   clearLiteLLMUserKeyCache,
   deriveLiteLLMUserCredentialKey,
   requireLiteLLMUserKeyConfiguration,
+  resolveAnonymousLiteLLMKey,
   resolveLiteLLMUserKey
 } from './litellm-user-keys.js'
 import type { Bindings } from './bindings.js'
@@ -38,6 +39,9 @@ const jsonResponse = (body: unknown, status = 200): Response =>
 // LITELLM_USER_KEY_SECRET (`tinytinkerer-<digest>-github-<id>`), so tests must
 // not hardcode it.
 const ALIAS_PATTERN = /^tinytinkerer-[0-9a-f]{12}-github-12345$/
+// The anonymous tier uses a fixed identity (no GitHub id) under the same
+// per-deployment namespace.
+const ANONYMOUS_ALIAS_PATTERN = /^tinytinkerer-[0-9a-f]{12}-anonymous$/
 
 /**
  * Key-management fetch stub. `keyInfoForAttempt` lets a test return a different
@@ -352,6 +356,81 @@ describe('litellm-user-keys', () => {
     expect(mismatchReport?.[1].tags?.['github_id']).toBe('12345')
     expect(mismatchReport?.[1].tags?.['key_alias']).toMatch(ALIAS_PATTERN)
     // The key value itself must never be in telemetry.
+    expect(JSON.stringify(mismatchReport)).not.toContain(
+      'sk-litellm-assigned-something-else'
+    )
+
+    setCaptureMessageSink(null)
+  })
+
+  it('mints an anonymous key with the anonymous tier budget defaults and fixed identity', async () => {
+    const fetchSpy = keyManagementStub({})
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const key = await resolveAnonymousLiteLLMKey(CONFIGURED_ENV, BASE_URL)
+
+    expect(key?.apiKey).toMatch(/^sk-tt-/)
+    expect(key?.userId).toBe('anonymous')
+    expect(key?.keyAlias).toMatch(ANONYMOUS_ALIAS_PATTERN)
+
+    // The anonymous tier reads its OWN env vars / defaults (tighter than user).
+    const body = generateBody(fetchSpy)
+    expect(body['user_id']).toBe('anonymous')
+    expect(body['max_budget']).toBe(0.1)
+    expect(body['budget_duration']).toBe('30d')
+    expect(body['rpm_limit']).toBe(3)
+    expect(body['tpm_limit']).toBe(20000)
+  })
+
+  // Anonymous counterpart of the user value-mismatch regression: the same
+  // fail-hard behaviour, but the telemetry carries the anonymous wording/
+  // fingerprint and NO github_id tag.
+  it('fails hard and reports anonymous telemetry when generate echoes a different key value', async () => {
+    const messageSink = vi.fn<CaptureMessageSink>()
+    setCaptureMessageSink(messageSink)
+
+    let aliasReReads = 0
+    const fetchSpy = keyManagementStub({
+      keyInfoForAttempt: (attempt, requestedAlias) => {
+        if (attempt === 1) return jsonResponse({ info: [] })
+        aliasReReads += 1
+        return jsonResponse({
+          info: [
+            {
+              key_alias: requestedAlias,
+              user_id: 'anonymous',
+              max_budget: 0.1,
+              budget_duration: '30d',
+              rpm_limit: 3,
+              tpm_limit: 20000
+            }
+          ]
+        })
+      },
+      generate: () => jsonResponse({ key: 'sk-litellm-assigned-something-else' })
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await expect(
+      resolveAnonymousLiteLLMKey(CONFIGURED_ENV, BASE_URL)
+    ).resolves.toBeUndefined()
+
+    // It must NOT fall through to the recoverable re-read-by-alias path.
+    expect(aliasReReads).toBe(0)
+
+    const mismatchReport = messageSink.mock.calls.find(
+      ([, options]) => options.tags?.['failure_kind'] === 'key_value_mismatch'
+    )
+    expect(mismatchReport).toBeDefined()
+    expect(mismatchReport?.[1].level).toBe('error')
+    // Anonymous has no GitHub id, so the tag must be absent.
+    expect(mismatchReport?.[1].tags?.['github_id']).toBeUndefined()
+    expect(mismatchReport?.[1].tags?.['key_alias']).toMatch(
+      ANONYMOUS_ALIAS_PATTERN
+    )
+    expect(mismatchReport?.[1].fingerprint).toEqual([
+      'litellm-anonymous-key-value-mismatch'
+    ])
     expect(JSON.stringify(mismatchReport)).not.toContain(
       'sk-litellm-assigned-something-else'
     )
