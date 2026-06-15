@@ -7,7 +7,7 @@ GitHub Flavored Markdown (headings, lists, task lists, blockquotes, bold, italic
 
 Fenced code blocks render as syntax-highlighted source by default. Some languages get specialized treatment:
 - \`\`\`mermaid — diagrams (flowcharts, sequence, class, etc.)
-- \`\`\`wireframe — live HTML preview in a sandboxed iframe; emit a full self-contained HTML document
+- \`\`\`wireframe — HTML/CSS preview in a sandboxed iframe; emit a full self-contained HTML document using only HTML and CSS (inline styles or a \`<style>\` block, and \`data:\` images). JavaScript does not run and external resources (scripts, remote images, fonts, stylesheets) are blocked, so the mockup must render without them
 - \`\`\`diff — colored unified-diff view with +/- line highlighting
 - \`\`\`json — syntax-highlighted with a Format/Compact toggle
 - \`\`\`yaml, \`\`\`http, \`\`\`sql, \`\`\`bash — language-specific syntax highlighting
