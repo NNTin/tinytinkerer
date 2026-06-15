@@ -483,23 +483,6 @@ export const PreviewCodeFrame = ({
   )
 }
 
-export const TableNodeView = ({ node }: { node: TableNode }) => {
-  const { copied, copy } = useCopyButtonState(tableToMarkdown(node))
-
-  return (
-    <div className="relative overflow-x-auto">
-      <button
-        type="button"
-        onClick={copy}
-        className="absolute top-1 right-1 text-[11px] font-medium text-stone-400 hover:text-stone-600 transition-colors px-1.5 py-0.5 rounded hover:bg-stone-100"
-      >
-        {copied ? 'Copied!' : 'Copy'}
-      </button>
-      <TableMarkup node={node} />
-    </div>
-  )
-}
-
 export const CodeBlockFallback = ({
   code,
   language
@@ -677,31 +660,3 @@ export const tableToMarkdown = (node: TableNode): string => {
   )
   return [header, separator, ...rows].join('\n')
 }
-
-const TableMarkup = ({ node }: { node: TableNode }) => (
-  <table>
-    <thead>
-      <tr>
-        {node.header.map((cell, index) => (
-          <th key={`header-${index}-${cell.map((item) => item.id ?? item.type).join('-')}`} align={node.align[index] ?? undefined}>
-            {renderInline(cell)}
-          </th>
-        ))}
-      </tr>
-    </thead>
-    <tbody>
-      {node.rows.map((row, rowIndex) => (
-        <tr key={`row-${rowIndex}-${row.map((cell) => cell.map((item) => item.id ?? item.type).join('-')).join('|')}`}>
-          {row.map((cell, cellIndex) => (
-            <td
-              key={`cell-${rowIndex}-${cellIndex}-${cell.map((item) => item.id ?? item.type).join('-')}`}
-              align={node.align[cellIndex] ?? undefined}
-            >
-              {renderInline(cell)}
-            </td>
-          ))}
-        </tr>
-      ))}
-    </tbody>
-  </table>
-)
