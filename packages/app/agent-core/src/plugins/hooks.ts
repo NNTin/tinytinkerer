@@ -22,21 +22,40 @@ export const runChatEventHooks = async (
   }
 }
 
+// Message a human-in-the-loop gate (`awaitsHumanInput`) surfaces when its budget
+// elapses. Unlike the internal "hook timed out" string, this is user-facing: it
+// becomes the runtime's "Tool execution blocked: …" reason shown in the UI, so it
+// must read as an explanation to the person who was asked to approve the tool.
+const HUMAN_GATE_TIMEOUT_MESSAGE = 'Timed out waiting for your approval.'
+
 export const runToolBeforeExecuteHooks = async (
   hooks: readonly AgentHookContribution[],
   context: ToolExecutionContext,
-  timeoutMs: number
+  timeoutMs: number,
+  // Budget for gates that declare `awaitsHumanInput`. A human needs far longer
+  // than a machine hook to read and approve a tool, so these get a separate,
+  // much larger timeout. It is still bounded (not unbounded) because it doubles
+  // as the fail-safe backstop for a host that never renders an approval UI — see
+  // app-browser's permission-service. Defaults to the machine timeout when the
+  // caller supplies none.
+  humanInputTimeoutMs: number = timeoutMs
 ): Promise<ToolGateResult> => {
   for (const hook of hooks) {
     if (hook.event !== 'tool.beforeExecute') {
       continue
     }
 
+    const awaitsHumanInput = hook.awaitsHumanInput === true
+    const budget = awaitsHumanInput ? humanInputTimeoutMs : timeoutMs
+    const timeoutMessage = awaitsHumanInput
+      ? HUMAN_GATE_TIMEOUT_MESSAGE
+      : 'tool.beforeExecute hook timed out'
+
     try {
       const result = await withTimeout(
         Promise.resolve(hook.handler(context)),
-        timeoutMs,
-        'tool.beforeExecute hook timed out'
+        budget,
+        timeoutMessage
       )
       if (!result.allow) {
         return {

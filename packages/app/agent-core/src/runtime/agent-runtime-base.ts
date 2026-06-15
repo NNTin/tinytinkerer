@@ -48,6 +48,15 @@ export type AgentRuntimeOptions = {
   reportError?: RuntimeErrorReporter
   hooks?: readonly AgentHookContribution[]
   hookTimeoutMs?: number
+  /**
+   * Budget for gates that block on a human decision (those flagged
+   * `awaitsHumanInput`, e.g. the Permissions plugin's allow/deny prompt). A
+   * person needs far longer than a machine hook to read and approve a tool, so
+   * the generic `hookTimeoutMs` (60s) is too short and surfaces a confusing
+   * internal "hook timed out" reason. This larger budget governs human gates;
+   * it stays bounded so it still backstops a host that never renders the prompt.
+   */
+  humanHookTimeoutMs?: number
 }
 
 export type RunOptions = {
@@ -78,6 +87,31 @@ type DecisionLoopControl =
   | { kind: 'decision'; decision: ReActDecision }
   | { kind: 'stop'; reason: 'too_long' | 'cancelled' }
 
+// Upper bound on a tool-result note. Tool output is arbitrary and can be large
+// (a full web-search result set, a code-exec payload, an MCP response). The note
+// is pushed into `context.notes`, which is fed back into every subsequent model
+// call, so serializing output verbatim bloats the upstream prompt (cost,
+// latency, possible context overflow) and grows browser memory per turn. The
+// full output still lives in `context.toolResults`; the note only needs to be a
+// hint. A few KB keeps short outputs intact while capping pathological ones.
+const MAX_NOTE_CHARS = 2_000
+
+// Serializes a tool output into a short note, bounding its length. Non-
+// serializable values fall back to String(); the result is truncated with an
+// explicit marker so a downstream reader can tell it was clipped.
+const serializeToolNote = (toolId: string, output: unknown): string => {
+  let serialized: string
+  try {
+    serialized = JSON.stringify(output) ?? String(output)
+  } catch {
+    serialized = String(output)
+  }
+  if (serialized.length > MAX_NOTE_CHARS) {
+    serialized = `${serialized.slice(0, MAX_NOTE_CHARS)}… [truncated]`
+  }
+  return `${toolId}: ${serialized}`
+}
+
 export const createStepId = (): string => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID()
@@ -100,6 +134,7 @@ export abstract class AgentRuntimeBase {
   protected readonly reportError: RuntimeErrorReporter
   protected readonly hooks: readonly AgentHookContribution[]
   protected readonly hookTimeoutMs: number
+  protected readonly humanHookTimeoutMs: number
 
   constructor(
     protected readonly provider: ModelProvider,
@@ -123,6 +158,10 @@ export abstract class AgentRuntimeBase {
     this.reportError = options.reportError ?? (() => {})
     this.hooks = options.hooks ?? []
     this.hookTimeoutMs = options.hookTimeoutMs ?? 60_000
+    // 5 minutes: generous enough for a human to read a tool (e.g. run_javascript
+    // source) and decide, while still bounding the wait so a host that never
+    // renders the prompt fails closed rather than hanging the run forever.
+    this.humanHookTimeoutMs = options.humanHookTimeoutMs ?? 300_000
   }
 
   abstract run(prompt: string, options?: RunOptions): AsyncGenerator<ChatEvent>
@@ -199,7 +238,8 @@ export abstract class AgentRuntimeBase {
         toolId,
         input
       },
-      this.hookTimeoutMs
+      this.hookTimeoutMs,
+      this.humanHookTimeoutMs
     )
     if (!gate.allow) {
       const error = `Tool execution blocked: ${gate.reason}`
@@ -457,7 +497,7 @@ export abstract class AgentRuntimeBase {
       })
 
       if (outcome.ok) {
-        note = `${decision.toolId}: ${JSON.stringify(outcome.output)}`
+        note = serializeToolNote(decision.toolId, outcome.output)
         const existing = context.toolResults[decision.toolId]
         const nextResults = Array.isArray(existing)
           ? [...(existing as unknown[]), outcome.output]

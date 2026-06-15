@@ -147,6 +147,11 @@ export type AgentHookContribution =
       handler: (
         context: ToolExecutionContext
       ) => ToolGateResult | Promise<ToolGateResult>
+      // Set by gates that block on a human decision (e.g. an allow/deny prompt).
+      // The runtime gives these a separate, much larger timeout than a machine
+      // hook and surfaces a clear, user-facing reason if that budget elapses —
+      // see runToolBeforeExecuteHooks and AgentRuntimeOptions.humanHookTimeoutMs.
+      awaitsHumanInput?: boolean
     }
 
 // Typed error a plugin tool may throw to (a) report a structured payload to the

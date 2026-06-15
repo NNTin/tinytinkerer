@@ -39,6 +39,11 @@ const denyReason = (toolId: string, hostReason?: string): string => {
 // to the host's permission service and maps the outcome to a ToolGateResult.
 const createPermissionGate = (host: PluginHost): AgentHookContribution => ({
   event: 'tool.beforeExecute',
+  // This gate blocks on a human clicking Allow/Deny, so the runtime gives it a
+  // much larger budget than a machine hook and surfaces a clear, user-facing
+  // reason ("Timed out waiting for your approval.") instead of the internal
+  // "hook timed out" string if the prompt is never answered.
+  awaitsHumanInput: true,
   handler: async (context: ToolExecutionContext): Promise<ToolGateResult> => {
     // A host with no permission service cannot prompt a human (e.g. a headless
     // host running tests). It has no way to ask, so it must not block: default
