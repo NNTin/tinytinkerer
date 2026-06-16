@@ -1,10 +1,15 @@
 # Plugin Infrastructure
 
 TinyTinkerer supports optional **plugins** that contribute tools to the agent runtime. A plugin
-implements the product-agnostic contract from `@tinytinkerer/agent-core`, lives as its own
+implements the product-agnostic contract from `@tinytinkerer/contracts`, lives as its own
 package under `packages/plugins/*`, and is **discovered dynamically** by the host — the host
 never imports a concrete plugin by name. Plugins are activated/deactivated per-user in the
 Settings Modal and gated by that activation state when a chat run builds its runtime.
+
+The plugin contract (the plugin SDK) and the `Tool` interface live in `contracts`, the leaf
+package, so a plugin package depends **only** on `contracts`. `agent-core` owns the plugin
+*runtime* (the `PluginRegistry`, the hook runners, and the `ToolRegistry`) and re-exports the
+contract so its public surface is unchanged for existing consumers (`app-core`, `app-browser`).
 
 The repo currently ships four plugins under `packages/plugins/*`: **Feedback**
 (`send_feedback`), **Event logger** (a `chat.event` observer hook), **Permissions** (a
@@ -14,7 +19,7 @@ or an edge request) without importing the host.
 
 > **Decoupling:** `app-browser` has **no static dependency** on any concrete plugin — not in its
 > `package.json`, not as an import. It depends only on the `PluginModule` contract in
-> `agent-core`. A plugin package can be added or removed from `packages/plugins/*` and the project
+> `contracts`. A plugin package can be added or removed from `packages/plugins/*` and the project
 > still type-checks and builds; the plugin's tools simply appear or disappear. See
 > [Dynamic discovery](#dynamic-discovery-app-browser).
 
@@ -27,10 +32,12 @@ See also:
 
 ---
 
-## The plugin contract (`agent-core`)
+## The plugin contract (`contracts`)
 
-`packages/app/agent-core/src/plugins/` owns the product-agnostic contract. It imports only
-`contracts`, so it carries no browser, telemetry, or app dependency.
+`packages/shared/contracts/src/plugins.ts` owns the product-agnostic plugin contract (the plugin
+SDK) and the pure `Tool` interface. Being the leaf package it imports only `zod` (and its own
+local modules), so a plugin built against it carries no browser, telemetry, or app dependency.
+`agent-core` re-exports this contract (and `Tool`) so its public surface is unchanged.
 
 ```ts
 interface AgentPlugin {
@@ -51,7 +58,7 @@ type PluginCaptureSink = (report: PluginReport) => void
 
 // Optional host capabilities. Unlike `capture` (always present), these are
 // supplied only by hosts that can back them — the browser provides both; a
-// headless host omits them. agent-core owns only the *function types*; the host
+// headless host omits them. contracts owns only the *function types*; the host
 // implements them. A plugin that needs one must tolerate its absence.
 type PermissionRequestService = (request: PermissionRequest) => Promise<ToolGateResult>
 
@@ -116,7 +123,7 @@ browser host performs the final validation after instantiating the plugin: `crea
 must match `manifest.id`, and duplicate plugin ids are ignored after the first valid plugin.
 
 `PluginHost.capture` is an **inversion-of-control sink**, exactly like the telemetry
-`setCaptureExceptionSink` in `@tinytinkerer/sentry-telemetry`: `agent-core` defines the *type*,
+`setCaptureExceptionSink` in `@tinytinkerer/sentry-telemetry`: `contracts` defines the *type*,
 and the host (the browser) supplies the implementation that forwards to Sentry.
 
 ## The registry & activation gating (`agent-core`)
@@ -144,8 +151,8 @@ registry.collectTools(activeIds: ReadonlySet<string>, host: PluginHost): Tool[]
 
 ## The Feedback plugin (`@tinytinkerer/plugin-feedback`)
 
-A dedicated package at `packages/plugins/plugin-feedback`, depending only on `agent-core` and
-`contracts`. To be discoverable it exports the `PluginModule` surface — `manifest` (a
+A dedicated package at `packages/plugins/plugin-feedback`, depending only on `contracts`. To be
+discoverable it exports the `PluginModule` surface — `manifest` (a
 `PluginManifest` with the Settings copy and the `send_feedback` planner descriptor) and
 `createPlugin` — plus `FeedbackPendingError`, `feedbackPluginManifest`, `feedbackPlugin()`, and
 `SEND_FEEDBACK_PLUGIN_ID` for direct/test use.
@@ -174,7 +181,7 @@ backend.
 ## The Web search plugin (`@tinytinkerer/plugin-web-search`)
 
 The Tavily web-search tool ships as its own plugin package at
-`packages/plugins/plugin-web-search`, depending only on `agent-core` and `contracts`. It exports
+`packages/plugins/plugin-web-search`, depending only on `contracts`. It exports
 the `PluginModule` surface — `manifest` (a `PluginManifest` whose single `toolDescriptor` keeps the
 stable id `web-search`) and `createPlugin` — plus `webSearchPlugin()`, `webSearchPluginManifest`,
 and `WEB_SEARCH_PLUGIN_ID` for direct/test use. The plugin also owns its turn-activity
@@ -198,7 +205,7 @@ app-browser pluginEdgeFetch  ──▶ edgeFetch (request telemetry preserved)
 web-search tool  ──▶ searchResponseSchema.parse(...)  (schema validation = plugin/contracts concern)
 ```
 
-`agent-core` owns only the `PluginEdgeFetch` *type*; `app-browser`'s `create-runtime.ts` implements
+`contracts` owns only the `PluginEdgeFetch` *type*; `app-browser`'s `create-runtime.ts` implements
 it from the runtime's existing `edgeFetch`, so **request** telemetry (`http_error`, `network`,
 `abort`, the 429 cooldown triage) rides along unchanged, and **response-parse** telemetry stays on
 the host side of the capability. `createTools(host)` returns no tool when `host.edgeFetch` is absent
@@ -217,7 +224,7 @@ truth for whether the planner proposes a search step.
 ## The Code execution plugin (`@tinytinkerer/plugin-code-exec`)
 
 The code-execution tool ships as its own plugin package at
-`packages/plugins/plugin-code-exec`, depending only on `agent-core`. It exports the `PluginModule`
+`packages/plugins/plugin-code-exec`, depending only on `contracts`. It exports the `PluginModule`
 surface — `manifest` (a `PluginManifest` whose single `toolDescriptor` keeps the stable tool id
 `run_javascript`) and `createPlugin` — plus `codeExecPlugin()`, `codeExecPluginManifest`,
 `codeExecInputSchema`, `CodeExecHostError`, and `CODE_EXEC_PLUGIN_ID` for direct/test use. Its
@@ -245,7 +252,7 @@ app-browser createSandboxExecutor()  (packages/app/app-browser/src/sandbox-execu
    { ok, result?, logs, timedOut, error? }   ← untrusted; coerced by normalizeResult, never HTML
 ```
 
-`agent-core` owns only the `SandboxCodeExecutor` / `SandboxExecutionRequest` /
+`contracts` owns only the `SandboxCodeExecutor` / `SandboxExecutionRequest` /
 `SandboxExecutionResult` *types*; `app-browser` implements the executor. `createTools(host)` returns
 no tool when `host.executeSandboxedCode` is absent (a headless host), exactly mirroring how the
 web-search plugin tolerates a missing `edgeFetch`. A normal failed run — a thrown user error or a
@@ -392,10 +399,12 @@ rather than an error issue. See [sentry-telemetry.md](./sentry-telemetry.md) and
 
 ## Dependency rules
 
-- `@tinytinkerer/agent-core` still imports only `contracts` (the plugin layer adds no new edge).
-- Any `@tinytinkerer/plugin-*` package under `packages/plugins/*` may import only `agent-core`,
-  `contracts`, and local modules, and must stay product-agnostic (no browser APIs, React, or
-  telemetry imports). Enforced generically by `scripts/check-boundaries.mjs`.
+- `@tinytinkerer/agent-core` still imports only `contracts` (the plugin layer adds no new edge). It
+  owns the plugin *runtime* (registry + hooks + `ToolRegistry`) and re-exports the plugin contract
+  and `Tool` interface from `contracts`.
+- Any `@tinytinkerer/plugin-*` package under `packages/plugins/*` may import only `contracts` and
+  local modules, and must stay product-agnostic (no browser APIs, React, or telemetry imports).
+  Enforced generically by `scripts/check-boundaries.mjs`.
 - `@tinytinkerer/app-browser` **must not** import a concrete plugin package, statically or via a
   literal dynamic import — plugins are discovered through `import.meta.glob`. The boundary check
   rejects any `@tinytinkerer/plugin-*` import from `app-browser`. It implements the `PluginHost`
@@ -407,7 +416,7 @@ rather than an error issue. See [sentry-telemetry.md](./sentry-telemetry.md) and
 
 Because discovery is dynamic, adding a plugin touches **no host code**:
 
-1. Create `packages/plugins/plugin-<name>` depending on `agent-core` + `contracts`.
+1. Create `packages/plugins/plugin-<name>` depending on `contracts`.
 2. From its `src/index.ts`, export the `PluginModule` surface: a `manifest`
    (`{ id, label, description, toolDescriptors? }`) and a `createPlugin()` returning an
    `AgentPlugin` (with `createTools`).

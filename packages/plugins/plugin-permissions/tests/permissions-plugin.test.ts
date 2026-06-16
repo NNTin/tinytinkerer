@@ -1,12 +1,11 @@
 import {
   isPluginModule,
-  runToolBeforeExecuteHooks,
   type AgentHookContribution,
   type PermissionRequest,
   type PluginHost,
   type ToolExecutionContext,
   type ToolGateResult
-} from '@tinytinkerer/agent-core'
+} from '@tinytinkerer/contracts'
 import { describe, expect, it, vi } from 'vitest'
 import * as permissionsModule from '../src/index'
 import {
@@ -99,21 +98,6 @@ describe('permissionsPlugin', () => {
     const result = await gate.handler(toolContext())
 
     expect(result).toEqual({ allow: true })
-  })
-
-  it('blocks a tool through runToolBeforeExecuteHooks on denial', async () => {
-    const host: PluginHost = {
-      capture: vi.fn(),
-      requestPermission: () => Promise.resolve({ allow: false, reason: 'no' })
-    }
-    const hooks = permissionsPlugin().createHooks?.(host) ?? []
-
-    const gate = await runToolBeforeExecuteHooks(hooks, toolContext(), 1000)
-
-    expect(gate).toEqual({
-      allow: false,
-      reason: 'Permission denied for tool "web-search": no'
-    })
   })
 
   it('manifest id matches the plugin id and advertises only hooks', () => {

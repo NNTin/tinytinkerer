@@ -1,10 +1,9 @@
 import {
+  EDGE_ROUTE_PATHS,
   isPluginModule,
-  PluginRegistry,
   type PluginEdgeResponse,
   type PluginHost
-} from '@tinytinkerer/agent-core'
-import { EDGE_ROUTE_PATHS } from '@tinytinkerer/contracts'
+} from '@tinytinkerer/contracts'
 import { describe, expect, it, vi } from 'vitest'
 import * as webSearchModule from '../src/index'
 import {
@@ -87,34 +86,6 @@ describe('webSearchPlugin', () => {
     })
     // Telemetry carries only validation issue paths/codes, never the payload.
     expect((error as WebSearchSchemaError).report.contexts?.search?.issues).toBeDefined()
-  })
-
-  it('routes a schema mismatch to the host capture sink via the registry, then rethrows', async () => {
-    const capture = vi.fn()
-    const edgeFetch = vi.fn(() =>
-      Promise.resolve(edgeResponse(true, 200, { query: 'q', results: 'nope' }))
-    )
-    const registry = new PluginRegistry()
-    registry.register(webSearchPlugin())
-    const [tool] = registry.collectTools(new Set([WEB_SEARCH_PLUGIN_ID]), {
-      capture,
-      edgeFetch
-    })
-
-    await expect(tool!.execute({ query: 'q' })).rejects.toBeInstanceOf(WebSearchSchemaError)
-    expect(capture).toHaveBeenCalledTimes(1)
-    expect(capture.mock.calls[0]![0]).toMatchObject({
-      pluginId: WEB_SEARCH_PLUGIN_ID,
-      kind: 'schema_error',
-      level: 'error'
-    })
-  })
-
-  it('builds the tool through the registry against the host edge capability', () => {
-    const registry = new PluginRegistry()
-    registry.register(webSearchPlugin())
-    const tools = registry.collectTools(new Set([WEB_SEARCH_PLUGIN_ID]), hostWithEdge(vi.fn()))
-    expect(tools.map((t) => t.id)).toEqual([WEB_SEARCH_PLUGIN_ID])
   })
 
   it('manifest id matches the plugin id and exposes a web-search descriptor', () => {

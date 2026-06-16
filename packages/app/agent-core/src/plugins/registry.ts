@@ -1,10 +1,10 @@
-import type { Tool } from '../tools/registry'
 import {
   PluginCaptureError,
   type AgentHookContribution,
   type AgentPlugin,
-  type PluginHost
-} from './types'
+  type PluginHost,
+  type Tool
+} from '@tinytinkerer/contracts'
 
 export type PluginContributions = {
   tools: Tool<unknown, unknown>[]

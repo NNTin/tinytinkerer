@@ -111,7 +111,6 @@ flowchart LR
   appbrowser -. "injects host edge capability<br/>(PluginHost.edgeFetch)" .-> pluginwebsearch
   appbrowser --> sentrytelemetry
 
-  PluginInfrastructure --> agent
   PluginInfrastructure --> contracts
 
   contentreact --> contentcore
@@ -245,9 +244,9 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 | `apps/widget` | embeddable browser shell | host integration, compact layout, widget window UX | copied shared runtime logic, direct lower-layer imports |
 | `apps/mobile` | mobile browser shell | PWA shell, install affordances, narrow-screen layout | copied shared runtime logic, direct lower-layer imports |
 | `apps/edge` | stateless backend boundary | HTTP endpoints, upstream normalization, transport concerns | browser APIs, UI logic |
-| `packages/contracts` | foundational shared schemas and types | Zod schemas, inferred types, canonical content model, DTOs | runtime orchestration, UI code |
-| `packages/agent-core` | product-agnostic runtime abstractions | provider/tool abstractions, runtime mechanics, the plugin contract + registry | browser code, app-specific behavior |
-| `packages/plugins/*` | optional plugin packages | one plugin's tools and/or hooks + UI manifest over the agent-core plugin contract (e.g. `plugin-feedback`, `plugin-event-logger`, `plugin-permissions`, `plugin-web-search`) | browser APIs, telemetry SDKs, app-specific UI |
+| `packages/contracts` | foundational shared schemas and types | Zod schemas, inferred types, canonical content model, DTOs, the plugin SDK (plugin contract + `Tool` interface) | runtime orchestration, UI code |
+| `packages/agent-core` | product-agnostic runtime abstractions | provider/tool abstractions, runtime mechanics, the plugin runtime (registry + hooks) and tool registry — re-exports the plugin contract + `Tool` interface from contracts | browser code, app-specific behavior |
+| `packages/plugins/*` | optional plugin packages | one plugin's tools and/or hooks + UI manifest over the contracts plugin contract (e.g. `plugin-feedback`, `plugin-event-logger`, `plugin-permissions`, `plugin-web-search`) | browser APIs, telemetry SDKs, app-specific UI |
 | `packages/app-core` | headless product behavior | chat/auth/settings orchestration, projections, ports | React, browser APIs, fetch, storage adapters |
 | `packages/app-browser` | shared browser composition boundary | browser adapters, shell bootstrap config, OAuth helpers, shell-facing hooks and components, shared browser styles | app-specific layout, app-owned screens |
 | `packages/brand-assets` | shared brand metadata | favicon, icon, manifest, and theme definitions | DOM mutation, app bootstrapping |
@@ -270,7 +269,7 @@ Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and ass
 - `ui` must stay primitive-only.
 - `app-core` may depend only on `agent-core`, `contracts`, and app-core-local modules.
 - `agent-core` may depend only on `contracts` and agent-core-local modules.
-- `packages/plugins/*` packages (`plugin-feedback`, `plugin-event-logger`, `plugin-permissions`, `plugin-web-search`, and future ones) may depend only on `agent-core`, `contracts`, and plugin-local modules, and must stay product-agnostic (no browser APIs, React, or telemetry imports). Each exports the `PluginModule` contract (`manifest` + `createPlugin`) so the host can discover it dynamically. A plugin that needs a host-only capability (telemetry capture, a human-in-the-loop permission prompt, or an edge request) receives it as an injected function on `PluginHost` rather than importing it — see [plugin-infrastructure.md](./plugin-infrastructure.md).
+- `packages/plugins/*` packages (`plugin-feedback`, `plugin-event-logger`, `plugin-permissions`, `plugin-web-search`, and future ones) may depend only on `contracts` and plugin-local modules, and must stay product-agnostic (no browser APIs, React, or telemetry imports). The plugin contract (the plugin SDK) and the `Tool` interface live in `contracts`, so a plugin depends only on the leaf; `agent-core` keeps the plugin *runtime* (registry + hooks) and re-exports the contract. Each exports the `PluginModule` contract (`manifest` + `createPlugin`) so the host can discover it dynamically. A plugin that needs a host-only capability (telemetry capture, a human-in-the-loop permission prompt, or an edge request) receives it as an injected function on `PluginHost` rather than importing it — see [plugin-infrastructure.md](./plugin-infrastructure.md).
 - `app-browser` discovers plugins dynamically (no static plugin dependency), wiring the `PluginHost` capabilities (the capture sink to telemetry, the permission prompt to the confirmation modal, and the edge capability to its `edgeFetch`) and surfacing their activation toggles from the discovered manifests. Every plugin — including `plugin-web-search` — is activated uniformly through the generic plugin-activation list; a plugin whose manifest sets `defaultEnabled: true` (web search) ships on out-of-the-box, and an explicit user toggle always wins.
 - `edge` may depend only on `contracts`, `sentry-telemetry`, and edge-local modules.
 - `host` must not declare workspace dependencies on other apps. It composes the built or dev-served apps by path, not by module import.

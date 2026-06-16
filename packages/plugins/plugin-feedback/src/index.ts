@@ -1,18 +1,19 @@
 import {
+  feedbackInputSchema,
   PluginCaptureError,
   type AgentPlugin,
+  type FeedbackInput,
   type PluginManifest,
   type PluginModule,
   type Tool
-} from '@tinytinkerer/agent-core'
-import { feedbackInputSchema, type FeedbackInput } from '@tinytinkerer/contracts'
+} from '@tinytinkerer/contracts'
 
 // Stable id used as the activation key and capture tag. Must match the manifest
 // id surfaced in the Settings Modal.
 export const SEND_FEEDBACK_PLUGIN_ID = 'send-feedback'
 
 // UI + planner metadata for the host. The shape is the generic PluginManifest
-// contract from agent-core; this plugin ships its own copy and tool descriptors.
+// contract from contracts; this plugin ships its own copy and tool descriptors.
 export const feedbackPluginManifest: PluginManifest = {
   id: SEND_FEEDBACK_PLUGIN_ID,
   label: 'Feedback (send_feedback tool)',

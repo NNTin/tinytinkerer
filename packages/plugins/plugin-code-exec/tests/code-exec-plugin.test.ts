@@ -3,7 +3,7 @@ import {
   PluginCaptureError,
   type PluginHost,
   type SandboxExecutionResult
-} from '@tinytinkerer/agent-core'
+} from '@tinytinkerer/contracts'
 import { describe, expect, it, vi } from 'vitest'
 import * as codeExecModule from '../src/index'
 import {

@@ -335,12 +335,11 @@ function validateBoundary(sourcePkg, target, filePath) {
   if (isPluginPackage(sourcePkg)) {
     const allowed = new Set([
       sourcePkg.name,
-      '@tinytinkerer/agent-core',
       '@tinytinkerer/contracts'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: plugin packages may import only agent-core, contracts, and plugin-local modules (${targetPkg.name})`
+        `${sourceLabel}: plugin packages may import only contracts and plugin-local modules (${targetPkg.name})`
       )
     }
   }

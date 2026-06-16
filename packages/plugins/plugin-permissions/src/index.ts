@@ -6,7 +6,7 @@ import {
   type PluginModule,
   type ToolExecutionContext,
   type ToolGateResult
-} from '@tinytinkerer/agent-core'
+} from '@tinytinkerer/contracts'
 
 // Stable id used as the activation key. Must match the manifest id surfaced in
 // the Settings Modal.

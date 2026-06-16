@@ -1,20 +1,18 @@
 import {
+  EDGE_ROUTE_PATHS,
+  edgeErrorResponseSchema,
   PluginCaptureError,
+  searchRequestSchema,
+  searchResponseSchema,
   type ActivitySummarizer,
   type ActivityView,
   type AgentPlugin,
   type PluginHost,
   type PluginManifest,
   type PluginModule,
-  type Tool
-} from '@tinytinkerer/agent-core'
-import {
-  EDGE_ROUTE_PATHS,
-  edgeErrorResponseSchema,
-  searchRequestSchema,
-  searchResponseSchema,
   type SearchRequest,
-  type SearchResponse
+  type SearchResponse,
+  type Tool
 } from '@tinytinkerer/contracts'
 
 // Stable id used as the activation key and the contributed tool id. It must stay
@@ -41,7 +39,7 @@ export const summarizeWebSearchActivity: ActivitySummarizer = (output): Activity
 }
 
 // UI + planner metadata for the host. The shape is the generic PluginManifest
-// contract from agent-core; this plugin ships its own copy and tool descriptor.
+// contract from contracts; this plugin ships its own copy and tool descriptor.
 // The descriptor mirrors the SearchRequest schema so the planner can name the
 // tool without instantiating the plugin. `defaultEnabled` keeps web search on
 // out-of-the-box; it appears in the generic plugin activation list like any
@@ -71,7 +69,7 @@ export const webSearchPluginManifest: PluginManifest = {
 // from a transport/HTTP error, which the host already captures as request
 // telemetry), so it carries a PluginReport: the registry routes that to the host
 // capture sink (Sentry in the browser) and rethrows, so the runtime still sees a
-// tool failure. Boundary-safe — it uses only agent-core's PluginCaptureError, no
+// tool failure. Boundary-safe — it uses only contracts' PluginCaptureError, no
 // telemetry SDK. `level: 'error'` makes it a captured exception, restoring the
 // schema-error signal the in-app tool emitted before web search became a plugin.
 export class WebSearchSchemaError extends PluginCaptureError {

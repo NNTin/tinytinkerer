@@ -9,7 +9,7 @@ import {
   type SandboxCodeExecutor,
   type SandboxExecutionResult,
   type Tool
-} from '@tinytinkerer/agent-core'
+} from '@tinytinkerer/contracts'
 import { z } from 'zod'
 
 // Stable id used as the activation key and the contributed tool id. Must match
@@ -101,7 +101,7 @@ export const summarizeCodeExecActivity: ActivitySummarizer = (output): ActivityV
 }
 
 // UI + planner metadata for the host. The shape is the generic PluginManifest
-// contract from agent-core; this plugin ships its own copy and tool descriptor.
+// contract from contracts; this plugin ships its own copy and tool descriptor.
 // No `defaultEnabled`, so it is OFF by default — the user opts in via Settings.
 // `summarizeActivity` carries the plugin's own activity-panel presentation (see
 // summarizeCodeExecActivity).
@@ -149,7 +149,7 @@ export const codeExecPluginManifest: PluginManifest = {
 // resolved SandboxExecutionResult and is returned to the agent so the model can
 // react to its own bad code. This carries a PluginReport so the registry routes it
 // to the host capture sink (Sentry in the browser) and rethrows. Boundary-safe —
-// uses only agent-core's PluginCaptureError, no telemetry SDK.
+// uses only contracts' PluginCaptureError, no telemetry SDK.
 export class CodeExecHostError extends PluginCaptureError {
   constructor(message: string) {
     super(

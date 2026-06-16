@@ -774,27 +774,21 @@ importers:
 
   packages/plugins/plugin-code-exec:
     dependencies:
-      '@tinytinkerer/agent-core':
+      '@tinytinkerer/contracts':
         specifier: workspace:*
-        version: link:../../app/agent-core
+        version: link:../../shared/contracts
       zod:
         specifier: 4.4.3
         version: 4.4.3
 
   packages/plugins/plugin-event-logger:
     dependencies:
-      '@tinytinkerer/agent-core':
-        specifier: workspace:*
-        version: link:../../app/agent-core
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../../shared/contracts
 
   packages/plugins/plugin-feedback:
     dependencies:
-      '@tinytinkerer/agent-core':
-        specifier: workspace:*
-        version: link:../../app/agent-core
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../../shared/contracts
@@ -804,15 +798,12 @@ importers:
 
   packages/plugins/plugin-permissions:
     dependencies:
-      '@tinytinkerer/agent-core':
+      '@tinytinkerer/contracts':
         specifier: workspace:*
-        version: link:../../app/agent-core
+        version: link:../../shared/contracts
 
   packages/plugins/plugin-web-search:
     dependencies:
-      '@tinytinkerer/agent-core':
-        specifier: workspace:*
-        version: link:../../app/agent-core
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../../shared/contracts

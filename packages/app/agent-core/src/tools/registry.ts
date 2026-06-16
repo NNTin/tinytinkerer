@@ -1,11 +1,11 @@
-import { z, type ZodSchema } from 'zod'
+import { z } from 'zod'
+import type { Tool } from '@tinytinkerer/contracts'
 
-export interface Tool<Input, Output> {
-  id: string
-  description: string
-  schema: ZodSchema<Input>
-  execute(input: Input): Promise<Output>
-}
+// The pure Tool interface moved to @tinytinkerer/contracts (the leaf) so plugin
+// packages can build tools depending only on contracts. Re-exported here so
+// agent-core's public surface is unchanged; the runtime ToolRegistry below
+// (validation + dispatch) stays in agent-core.
+export type { Tool } from '@tinytinkerer/contracts'
 
 export class ToolRegistry {
   private readonly tools = new Map<string, Tool<unknown, unknown>>()

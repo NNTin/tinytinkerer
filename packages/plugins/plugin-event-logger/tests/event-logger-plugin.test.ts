@@ -1,10 +1,8 @@
 import {
   isPluginModule,
-  runChatEventHooks,
-  type AgentHookContribution,
+  type ChatEvent,
   type PluginHost
-} from '@tinytinkerer/agent-core'
-import type { ChatEvent } from '@tinytinkerer/contracts'
+} from '@tinytinkerer/contracts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as eventLoggerModule from '../src/index'
 import {
@@ -78,17 +76,6 @@ describe('eventLoggerPlugin', () => {
     expect(logArgs).toContainEqual(['event timestamp', sampleEvent.timestamp])
     expect(logArgs).toContainEqual(['payload', sampleEvent.payload])
     expect(logArgs).toContainEqual(['event', sampleEvent])
-  })
-
-  it('logs when driven through the runtime runChatEventHooks helper', async () => {
-    const host: PluginHost = { capture: vi.fn() }
-    const hooks = (eventLoggerPlugin().createHooks?.(host) ??
-      []) as readonly AgentHookContribution[]
-
-    await runChatEventHooks(hooks, { event: sampleEvent })
-
-    expect(info).toHaveBeenCalledTimes(1)
-    expect(info.mock.calls[0]![0]).toContain('user.message')
   })
 
   it('manifest id matches the plugin id and advertises the hooks capability', () => {

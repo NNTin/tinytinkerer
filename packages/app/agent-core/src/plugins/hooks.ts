@@ -3,7 +3,7 @@ import type {
   ChatEventHookContext,
   ToolExecutionContext,
   ToolGateResult
-} from './types'
+} from '@tinytinkerer/contracts'
 
 export const runChatEventHooks = async (
   hooks: readonly AgentHookContribution[],

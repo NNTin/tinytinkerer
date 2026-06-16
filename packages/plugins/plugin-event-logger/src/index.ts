@@ -34,7 +34,7 @@
 //
 // A plugin can contribute two kinds of hook, distinguished by the `event` field
 // of each `AgentHookContribution` (see `AgentHookContribution` in
-// `packages/app/agent-core/src/plugins/types.ts`):
+// `packages/shared/contracts/src/plugins.ts`):
 //
 //   1. OBSERVER hooks  — `{ event: 'chat.event', handler }`
 //        Fire-and-forget reactions to runtime events. The runtime awaits the
@@ -68,19 +68,18 @@
 //     activation key (which plugins the user toggled on) and as a capture tag.
 //
 // Keep this file dependency-light and host-agnostic: import only from
-// `@tinytinkerer/agent-core` (the contract) and `@tinytinkerer/contracts` (the
-// event shape). Never reach into a concrete runtime or a browser-only global
-// beyond the standard `console`.
+// `@tinytinkerer/contracts` (the plugin contract + the event shape). Never reach
+// into a concrete runtime or a browser-only global beyond the standard `console`.
 // =============================================================================
 
 import type {
   AgentHookContribution,
   AgentPlugin,
+  ChatEvent,
   ChatEventHookContext,
   PluginManifest,
   PluginModule
-} from '@tinytinkerer/agent-core'
-import type { ChatEvent } from '@tinytinkerer/contracts'
+} from '@tinytinkerer/contracts'
 
 // Stable id used as the activation key (which plugins the user enabled) and as
 // the manifest id surfaced in the Settings modal. Keep it short and kebab-case.
@@ -172,7 +171,7 @@ export const createPlugin: PluginModule['createPlugin'] = eventLoggerPlugin
 //   1. Copy this directory to `packages/plugins/plugin-<your-name>/`.
 //   2. In package.json, rename `@tinytinkerer/plugin-event-logger` to
 //      `@tinytinkerer/plugin-<your-name>` (keep `private`, `type: module`, the
-//      same `exports`/`scripts`, and the agent-core + contracts deps). If your
+//      same `exports`/`scripts`, and the contracts dep). If your
 //      hook validates input you may add `zod`; an observer like this needs none.
 //   3. Change `EVENT_LOGGER_PLUGIN_ID`, the manifest `label`/`description`, and
 //      the handler body. Keep the plugin `id` equal to the manifest `id`.
