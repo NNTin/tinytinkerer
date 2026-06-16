@@ -16,7 +16,7 @@
     "@sentry/cloudflare": "10.55.0",
     "@tinytinkerer/contracts": "workspace:*",
     "@tinytinkerer/sentry-telemetry": "workspace:*",
-    "hono": "4.12.23",
+    "hono": "4.12.25",
     "zod": "4.4.3"
   },
   "devDependencies": {
