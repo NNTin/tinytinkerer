@@ -154,6 +154,54 @@ export type SandboxCodeExecutor = (
   request: SandboxExecutionRequest
 ) => Promise<SandboxExecutionResult>
 
+// A narrow query against the host page's live DOM. Product-agnostic: the plugin
+// only describes WHAT to read; the host owns DOM access, capping, and redaction.
+// An omitted `selector` asks for page meta plus a shallow outline of the body's
+// child elements so a caller can orient before drilling in. `include` selects
+// which per-node fields to serialize; `maxNodes`/`maxChars` are hints the host
+// clamps to its own ceilings (a caller may ask for less but never more).
+export type DomQuery = {
+  selector?: string
+  include?: Array<'html' | 'text' | 'attributes' | 'rect'>
+  maxNodes?: number
+  maxChars?: number
+}
+
+// One matched element, serialized to plain data. `html`/`text` are capped to the
+// query's `maxChars` (host ceiling applies); `rect` reports layout box + a
+// visibility heuristic. The host redacts form-field values before returning, so
+// nothing the user typed but has not sent leaks through `html`/`attributes`.
+export type DomNodeResult = {
+  tag: string
+  id?: string
+  classes?: string[]
+  html?: string
+  text?: string
+  attributes?: Record<string, string>
+  rect?: { x: number; y: number; width: number; height: number; visible: boolean }
+  truncated?: boolean
+}
+
+// The outcome of a DOM read. `matchedCount` is the total elements the selector
+// matched (may exceed `nodes.length` when capped); `truncated` is set when the
+// host dropped matches or shortened any node payload to stay within budget.
+export type DomReadResult = {
+  url: string
+  title: string
+  viewport: { width: number; height: number }
+  matchedCount: number
+  nodes: DomNodeResult[]
+  truncated: boolean
+}
+
+// An injected capability that reads the host page's live DOM via a narrow query
+// on the plugin's behalf. Only hosts with a DOM (the browser) register it; a tool
+// that needs it must tolerate its absence (contribute no tool when missing).
+// Mirrors how `executeSandboxedCode` is injected — the contract owns only the
+// function type, never the implementation, and the host enforces all caps and
+// redaction so the plugin stays product-agnostic.
+export type DomReader = (query: DomQuery) => Promise<DomReadResult>
+
 // Host services handed to plugins at activation / tool-construction time. Kept
 // minimal and product-agnostic so plugin packages never reach into a specific
 // runtime or browser API.
@@ -171,6 +219,11 @@ export interface PluginHost {
   // execution) builds against this and must tolerate its absence (contribute no
   // tool when missing). See SandboxCodeExecutor.
   executeSandboxedCode?: SandboxCodeExecutor
+  // Optional: present only on hosts with a live DOM (the browser). A tool that
+  // reads the current page (e.g. the browser-state plugin) builds against this
+  // and must tolerate its absence (contribute no tool when missing). See
+  // DomReader.
+  readDom?: DomReader
 }
 
 export type ChatEventHookContext = {

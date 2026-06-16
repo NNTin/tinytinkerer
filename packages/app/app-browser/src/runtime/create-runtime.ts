@@ -20,6 +20,7 @@ import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch } from './edge-fetch'
 import { createMcpTool } from './mcp-tool'
 import { createSandboxExecutor } from '../sandbox-executor'
+import { createDomReader } from '../dom-reader'
 import {
   captureTelemetryException,
   captureTelemetryMessage,
@@ -137,6 +138,12 @@ export const createRuntime = (options: {
   // so its concurrency limit spans all runs in this runtime.
   const sandboxExecutor = createSandboxExecutor()
 
+  // DOM-read capability handed to plugins that must read the current page (e.g.
+  // the browser-state plugin). The browser implements it against this shell's own
+  // document, capping and redacting form-field values host-side; the plugin stays
+  // product-agnostic and only describes what to read.
+  const domReader = createDomReader()
+
   for (const server of options.mcpServers ?? []) {
     if (!server.enabled) continue
     const disc = options.mcpDiscovery?.[server.id]
@@ -196,7 +203,12 @@ export const createRuntime = (options: {
       // builds against this. The browser can isolate code in an opaque-origin
       // iframe + Worker, so it always provides it; a host that cannot isolate omits
       // it and the plugin contributes no tool.
-      executeSandboxedCode: sandboxExecutor
+      executeSandboxedCode: sandboxExecutor,
+      // DOM-read capability: a plugin tool that must read the current page
+      // (browser-state) builds against this. The browser always has a document,
+      // so it always provides it; a headless host omits it and the plugin
+      // contributes no tool.
+      readDom: domReader
     }
     const addedPluginToolIds = new Set<string>()
     const contributions = pluginRuntime.registry.collectContributions(

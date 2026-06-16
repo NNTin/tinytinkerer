@@ -51,7 +51,11 @@ export type {
   PluginEdgeResponse,
   SandboxExecutionRequest,
   SandboxExecutionResult,
-  SandboxCodeExecutor
+  SandboxCodeExecutor,
+  DomQuery,
+  DomNodeResult,
+  DomReadResult,
+  DomReader
 } from '@tinytinkerer/agent-core'
 
 export type ConversationMessage = {

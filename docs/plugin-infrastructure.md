@@ -11,11 +11,12 @@ package, so a plugin package depends **only** on `contracts`. `agent-core` owns 
 *runtime* (the `PluginRegistry`, the hook runners, and the `ToolRegistry`) and re-exports the
 contract so its public surface is unchanged for existing consumers (`app-core`, `app-browser`).
 
-The repo currently ships four plugins under `packages/plugins/*`: **Feedback**
+The repo currently ships six plugins under `packages/plugins/*`: **Feedback**
 (`send_feedback`), **Event logger** (a `chat.event` observer hook), **Permissions** (a
-`tool.beforeExecute` gate), and **Web search** (the Tavily `web-search` tool). A plugin contributes
-tools and/or hooks, and may use a host-injected capability (telemetry capture, a permission prompt,
-or an edge request) without importing the host.
+`tool.beforeExecute` gate), **Web search** (the Tavily `web-search` tool), **Code execution**
+(the `run_javascript` sandbox tool), and **Browser state** (the `read_dom` page-reading tool). A
+plugin contributes tools and/or hooks, and may use a host-injected capability (telemetry capture, a
+permission prompt, an edge request, a code sandbox, or a DOM read) without importing the host.
 
 > **Decoupling:** `app-browser` has **no static dependency** on any concrete plugin — not in its
 > `package.json`, not as an import. It depends only on the `PluginModule` contract in
@@ -294,6 +295,62 @@ allowed browser APIs, or timing side channels. A server/container/WASM isolate i
 browser-only execution the opaque-origin iframe + CSP + Worker + strict messaging is the minimum
 defensible design.
 
+## The Browser state plugin (`@tinytinkerer/plugin-browser-state`)
+
+The browser-state tool ships as its own plugin package at `packages/plugins/plugin-browser-state`,
+depending only on `contracts`. It exports the `PluginModule` surface — `manifest` (a
+`PluginManifest` whose single `toolDescriptor` keeps the stable tool id `read_dom`) and
+`createPlugin` — plus `browserStatePlugin()`, `browserStatePluginManifest`, `readDomInputSchema`,
+`BrowserStateHostError`, and `BROWSER_STATE_PLUGIN_ID` for direct/test use. Its manifest sets **no**
+`defaultEnabled`, so it ships **off** — the user opts in via Settings. It owns its turn-activity
+presentation: `summarizeReadDomActivity` (wired onto the descriptor's `summarizeActivity`) maps the
+`{ url, matchedCount, nodes, truncated }` result to an `ActivityView` (title `Read page DOM`,
+`Matched`/`Returned`/`URL` sections, `ok` when something matched and `warn` when nothing did).
+
+The tool makes the assistant **aware of the page the user is looking at** so it can answer questions
+about what is on screen and debug rendering (e.g. a Mermaid diagram that is not showing). It reads
+the page through narrow CSS-selector queries — never a full-page dump, which would pollute the
+model's context window. An omitted `selector` returns page meta plus a shallow outline of the body's
+top-level elements so the agent can orient and drill in; a selector returns matched elements with
+the requested `include` fields (`html`/`text`/`attributes`/`rect`). The agent can chain a returned
+`html` string into the `run_javascript` tool (the code-exec plugin) for heavier parsing — the two
+plugins are independent, the conjunction is emergent agent behaviour driven by the tool descriptions,
+not wired in code.
+
+Reading the live DOM is the one capability a plugin must **never** implement itself — a plugin's
+`execute()` runs in the browser app runtime, so touching `document` there would inherit app-origin
+access and trip the product-agnostic boundary check. So the plugin stays product-agnostic and only
+describes *what* to read; the host owns DOM access entirely, behind an injected
+**`PluginHost.readDom`** capability:
+
+```
+read_dom tool.execute({ selector?, include?, maxNodes?, maxChars? })
+        │  host.readDom(query)   ← injected capability
+        ▼
+app-browser createDomReader()  (packages/app/app-browser/src/dom-reader.ts)
+        │  reads THIS shell's own document; caps node count + payload size; redacts form values
+        ▼
+   { url, title, viewport, matchedCount, nodes, truncated }   ← form-field values stripped host-side
+```
+
+`contracts` owns only the `DomReader` / `DomQuery` / `DomReadResult` / `DomNodeResult` *types*;
+`app-browser`'s `create-runtime.ts` implements the capability from `createDomReader()`.
+`createTools(host)` returns no tool when `host.readDom` is absent (a headless host), exactly
+mirroring how the web-search plugin tolerates a missing `edgeFetch` and the code-exec plugin a
+missing `executeSandboxedCode`. A bad selector comes back as a resolved `{ matchedCount: 0 }` result
+the agent can correct, not a throw; only an *unexpected* host failure is thrown as a capturable
+`BrowserStateHostError` (a `PluginCaptureError`, so the registry routes it to `host.capture` — its
+report carries **no** page content).
+
+**Host-side caps + redaction** (`dom-reader.ts`). The host reads only the current shell's own
+`document` (never a sandboxed or cross-origin iframe), clamps `maxNodes` (default 25, hard cap 100)
+and per-field `maxChars` (default 4000, hard cap 20000) regardless of what the tool requests, and
+**redacts form-field values before returning**: it serializes a detached clone with the
+`value`/`checked` attributes stripped from every input/textarea/select, textarea default text
+blanked, and password inputs fully redacted — so text the user typed but has not sent is never
+shipped to the model. Because `read_dom` sends first-party page content to the model provider when
+invoked, it is disclosed in `PRIVACY.md` (see the "Browser state plugin (read_dom)" section).
+
 ## Activation state flow
 
 Activation is stored and orchestrated headlessly, then surfaced in the browser:
@@ -409,8 +466,9 @@ rather than an error issue. See [sentry-telemetry.md](./sentry-telemetry.md) and
   literal dynamic import — plugins are discovered through `import.meta.glob`. The boundary check
   rejects any `@tinytinkerer/plugin-*` import from `app-browser`. It implements the `PluginHost`
   capabilities (the capture sink → telemetry, the permission prompt → the confirmation modal,
-  `edgeFetch` → its own edge layer, and `executeSandboxedCode` → its opaque-origin iframe + Worker
-  sandbox) and surfaces the Settings toggles from the discovered manifests.
+  `edgeFetch` → its own edge layer, `executeSandboxedCode` → its opaque-origin iframe + Worker
+  sandbox, and `readDom` → its current-page DOM reader with host-side caps + redaction) and surfaces
+  the Settings toggles from the discovered manifests.
 
 ## Adding a new plugin
 

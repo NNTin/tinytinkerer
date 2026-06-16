@@ -81,6 +81,27 @@ maintainer a coffee — and it saves development time by sending feedback straig
 
 If the plugin is disabled, or telemetry is disabled, no feedback is sent anywhere.
 
+## Browser state plugin (read_dom)
+
+TinyTinkerer ships an optional **Browser state** plugin that exposes a `read_dom` tool to the
+assistant. It is a plugin, off by default, and you enable it in Settings → Plugins.
+
+When it is enabled, the assistant can read the page you are currently viewing so it can answer
+questions about what is on screen and debug rendering issues. It reads the page through narrow
+CSS-selector queries (never the whole page at once), and whatever it reads is sent to the model
+provider as part of that chat turn — the same path your conversation already takes (see "Chat
+content and the model proxy (LiteLLM)" above). Two things are worth calling out: the tool can
+surface content that is on the page but that you have **not yet sent** as a message (for example,
+text in an input box), and enabling it adds the `read_dom` tool to every chat, which spends a small
+amount of extra context on each request.
+
+To limit what is exposed, the host **redacts form-field values before returning** them: the
+`value`/`checked` of inputs, the default text of text areas, and password fields are stripped, so
+text you have typed but not sent is not included. The tool reads only the current page and never
+reaches into a sandboxed or cross-origin frame.
+
+If the plugin is disabled, the `read_dom` tool is not available and no page content is read.
+
 ## Why we collect it
 
 To detect, reproduce, and fix crashes and errors, and to improve reliability and security.
