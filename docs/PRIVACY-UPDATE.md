@@ -8,8 +8,8 @@ viewing â€” through narrow CSS-selector queries, never the whole page at once â€
 questions about what is on screen and debug rendering issues. Whatever it reads is sent to the
 model provider as part of that chat turn, the same path your conversation already takes. The tool
 can surface content that is on the page but that you have not yet sent as a message, and the host
-redacts form-field values (inputs, text areas, and password fields) before returning, so text you
-have typed but not sent is not included.
+redacts editable content (inputs, text areas, password values, drop-down selections, and rich-text
+editors) before returning, so text you have typed but not sent is not included.
 
 If the plugin is disabled, the `read_dom` tool is not available and no page content is read. See
 the new "Browser state plugin (read_dom)" section of the privacy policy for details.

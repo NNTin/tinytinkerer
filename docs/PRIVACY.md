@@ -95,10 +95,12 @@ surface content that is on the page but that you have **not yet sent** as a mess
 text in an input box), and enabling it adds the `read_dom` tool to every chat, which spends a small
 amount of extra context on each request.
 
-To limit what is exposed, the host **redacts form-field values before returning** them: the
-`value`/`checked` of inputs, the default text of text areas, and password fields are stripped, so
-text you have typed but not sent is not included. The tool reads only the current page and never
-reaches into a sandboxed or cross-origin frame.
+To limit what is exposed, the host **redacts editable content before returning** it: the
+`value`/`checked` of inputs, the default text of text areas, password values, a drop-down's
+currently-selected value, and the text inside rich-text / `contenteditable` editors are all stripped,
+so text you have typed but not sent is not included. It also removes inline event handlers and any
+`<iframe srcdoc>` from the returned markup. The tool reads only the current page and never reaches
+into a sandboxed or cross-origin frame.
 
 If the plugin is disabled, the `read_dom` tool is not available and no page content is read.
 

@@ -287,6 +287,125 @@ describe('createDomReader — region (position-ordered)', () => {
     expect(result.nodes).toHaveLength(2)
     expect(result.truncated).toBe(true)
   })
+
+  it('restricts region candidates to a custom selector', async () => {
+    document.body.innerHTML =
+      '<button id="b">Btn</button><span class="keep" id="s1">A</span><span class="keep" id="s2">B</span>'
+    rects.set(document.getElementById('b')!, { top: 100, width: 30, height: 10 })
+    rects.set(document.getElementById('s1')!, { top: 200, width: 10, height: 10 })
+    rects.set(document.getElementById('s2')!, { top: 150, width: 10, height: 10 })
+    const read = createDomReader()
+
+    const result = await read({ region: 'bottom', selector: '.keep' })
+
+    // The button is excluded by the selector; only the two .keep spans, bottom-first.
+    expect(result.nodes.map((n) => n.id)).toEqual(['s1', 's2'])
+  })
+
+  it('returns an empty result for an invalid selector in region mode', async () => {
+    document.body.innerHTML = '<div></div>'
+    const read = createDomReader()
+
+    const result = await read({ region: 'bottom', selector: ':::not-valid' })
+
+    expect(result.matchedCount).toBe(0)
+    expect(result.nodes).toEqual([])
+    expect(result.truncated).toBe(false)
+  })
+})
+
+describe('createDomReader — redaction & hardening', () => {
+  it('treats an explicit depth of 0 as a flat outline (no children)', async () => {
+    document.body.innerHTML = '<div id="root"><main><p>x</p></main></div>'
+    const read = createDomReader()
+
+    const result = await read({ depth: 0 })
+
+    const root = result.nodes[0]
+    expect(root?.id).toBe('root')
+    expect(root?.childCount).toBe(1)
+    expect(root?.children).toBeUndefined()
+  })
+
+  it('removes a <select>\'s selected state but keeps its option labels', async () => {
+    document.body.innerHTML =
+      '<select id="s"><option value="a">Alpha</option><option value="b" selected>Beta</option></select>'
+    const read = createDomReader()
+
+    const result = await read({ selector: '#s', include: ['html'] })
+    const html = result.nodes[0]?.html ?? ''
+
+    expect(html).not.toContain('selected')
+    expect(html).toContain('Alpha')
+    expect(html).toContain('Beta')
+  })
+
+  it('redacts contenteditable text in html and text modes', async () => {
+    document.body.innerHTML = '<div id="editor" contenteditable="true">my unsent draft</div>'
+    const read = createDomReader()
+
+    const result = await read({ selector: '#editor', include: ['html', 'text'] })
+
+    expect(result.nodes[0]?.text).not.toContain('my unsent draft')
+    expect(result.nodes[0]?.html).not.toContain('my unsent draft')
+    expect(result.nodes[0]?.text).toContain('[redacted]')
+  })
+
+  it('does not preview contenteditable text in the outline', async () => {
+    document.body.innerHTML = '<div id="root"><div contenteditable="true">draft text</div></div>'
+    const read = createDomReader()
+
+    const result = await read({})
+
+    const editor = result.nodes[0]?.children?.find((c) => c.tag === 'div')
+    expect(editor?.text).toBeUndefined()
+  })
+
+  it('redacts a password input nested inside a depth-expanded subtree', async () => {
+    document.body.innerHTML =
+      '<form id="f"><fieldset><input type="password" value="hunter2"></fieldset></form>'
+    const read = createDomReader()
+
+    const result = await read({ selector: '#f', depth: 3, include: ['html'] })
+
+    expect(JSON.stringify(result.nodes[0])).not.toContain('hunter2')
+  })
+
+  it('strips inline event handlers and iframe srcdoc from serialized output', async () => {
+    document.body.innerHTML =
+      '<div id="d" onclick="steal()"><iframe srcdoc="<p>secret</p>"></iframe></div>'
+    const read = createDomReader()
+
+    const result = await read({ selector: '#d', include: ['html', 'attributes'] })
+    const html = result.nodes[0]?.html ?? ''
+
+    expect(html).not.toContain('onclick')
+    expect(html).not.toContain('srcdoc')
+    expect(html).not.toContain('secret')
+    expect(result.nodes[0]?.attributes?.onclick).toBeUndefined()
+  })
+
+  it('caps attribute values at maxChars', async () => {
+    document.body.innerHTML = `<div id="d" data-x="${'y'.repeat(100)}"></div>`
+    const read = createDomReader()
+
+    const result = await read({ selector: '#d', include: ['attributes'], maxChars: 10 })
+    const value = result.nodes[0]?.attributes?.['data-x'] ?? ''
+
+    expect(value.startsWith('yyyyyyyyyy ')).toBe(true)
+    expect(value).toContain('[truncated]')
+  })
+
+  it('flags truncation when the outline node budget is exhausted', async () => {
+    // 25 blocks × 25 spans = 650 nodes > the 400-node tree budget.
+    const block = `<div>${'<span></span>'.repeat(25)}</div>`
+    document.body.innerHTML = `<div id="root">${block.repeat(25)}</div>`
+    const read = createDomReader()
+
+    const result = await read({ depth: 5 })
+
+    expect(result.truncated).toBe(true)
+  })
 })
 
 describe('directText', () => {

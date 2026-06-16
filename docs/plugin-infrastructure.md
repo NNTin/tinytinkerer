@@ -362,13 +362,15 @@ report carries **no** page content).
 `document` (never a sandboxed or cross-origin iframe), clamps `maxNodes` (default 25, hard cap 100)
 and per-field `maxChars` (default 4000, hard cap 20000) regardless of what the tool requests, and
 bounds the outline/subtree tree independently — `depth` clamped to ≤ 8, ≤ 25 children expanded per
-node, and a global ≤ 400-node budget — so a deep tree can never produce an unbounded payload. It
-**redacts form-field values before returning**: it serializes a detached clone with the
-`value`/`checked` attributes stripped from every input/textarea/select, textarea default text
-blanked, and password inputs fully redacted — so text the user typed but has not sent is never
-shipped to the model (the outline likewise never previews a form field's text). Because `read_dom`
-sends first-party page content to the model provider when invoked, it is disclosed in `PRIVACY.md`
-(see the "Browser state plugin (read_dom)" section).
+node, and a global ≤ 400-node budget — so a deep tree can never produce an unbounded payload, and a
+single node serializes at most 60 attributes. It **redacts editable content before returning**: it
+serializes a detached clone with the `value`/`checked` attributes stripped from every
+input/textarea/select, textarea default text blanked, password inputs redacted, a `<select>`'s
+`selected` state removed, and `contenteditable` regions blanked — plus inline `on*` event handlers
+and `<iframe srcdoc>` stripped for minimal exposure — so text the user typed but has not sent is
+never shipped to the model (the outline likewise never previews a form field's or editor's text).
+Because `read_dom` sends first-party page content to the model provider when invoked, it is disclosed
+in `PRIVACY.md` (see the "Browser state plugin (read_dom)" section).
 
 ## Activation state flow
 
