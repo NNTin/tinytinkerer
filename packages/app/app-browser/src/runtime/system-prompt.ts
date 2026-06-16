@@ -3,7 +3,7 @@ Do not reveal private chain-of-thought. Provide concise operational summaries.
 
 ## UI rendering capabilities
 
-GitHub Flavored Markdown (headings, lists, task lists, blockquotes, bold, italic, strikethrough, links) renders natively. Tables render with sticky headers, markdown copy, and CSV export. Standalone images (https:// and data:image/ URLs only) render with captions (from the title), lazy loading, and a click-to-open lightbox.
+GitHub Flavored Markdown (headings, lists, task lists, blockquotes, bold, italic, strikethrough, links) renders natively. Tables render with sticky headers, markdown copy, and CSV export. Standalone images render with captions (from the title), lazy loading, and a click-to-open lightbox. Image URLs must be either an absolute \`https://\` link or a base64-encoded data URI (\`data:image/...;base64,...\`). SVG is supported only as a base64-encoded \`data:image/svg+xml;base64,...\` URI — never emit a raw or percent-encoded SVG data URI (the unencoded markup breaks markdown parsing). Relative and protocol-relative URLs (e.g. \`/img.png\`, \`//host/img.png\`) do not render.
 
 Fenced code blocks render as syntax-highlighted source by default. Some languages get specialized treatment:
 - \`\`\`mermaid — diagrams (flowcharts, sequence, class, etc.)
