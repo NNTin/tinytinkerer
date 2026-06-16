@@ -78,6 +78,17 @@ describe('browserStatePlugin', () => {
     expect(readDom).toHaveBeenCalledWith({})
   })
 
+  it('forwards depth and region to the host reader', async () => {
+    const readDom = vi.fn(() => Promise.resolve(okResult))
+    const [tool] = browserStatePlugin().createTools?.(hostWithDom(readDom)) ?? []
+
+    await tool!.execute({ region: 'bottom' })
+    expect(readDom).toHaveBeenCalledWith({ region: 'bottom' })
+
+    await tool!.execute({ selector: '#root', depth: 2 })
+    expect(readDom).toHaveBeenCalledWith({ selector: '#root', depth: 2 })
+  })
+
   it('throws a capturable BrowserStateHostError when the reader itself fails', async () => {
     const readDom = vi.fn(() => Promise.reject(new Error('boom')))
     const [tool] = browserStatePlugin().createTools?.(hostWithDom(readDom)) ?? []
@@ -159,5 +170,17 @@ describe('readDomInputSchema', () => {
       maxNodes: 10
     })
     expect(parsed.success).toBe(true)
+  })
+
+  it('accepts region and depth', () => {
+    expect(readDomInputSchema.safeParse({ region: 'bottom' }).success).toBe(true)
+    expect(readDomInputSchema.safeParse({ region: 'top', depth: 0 }).success).toBe(true)
+    expect(readDomInputSchema.safeParse({ selector: '#root', depth: 4 }).success).toBe(true)
+  })
+
+  it('rejects an unknown region and an out-of-range depth', () => {
+    expect(readDomInputSchema.safeParse({ region: 'middle' }).success).toBe(false)
+    expect(readDomInputSchema.safeParse({ depth: 9 }).success).toBe(false)
+    expect(readDomInputSchema.safeParse({ depth: -1 }).success).toBe(false)
   })
 })

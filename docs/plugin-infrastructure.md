@@ -309,28 +309,44 @@ presentation: `summarizeReadDomActivity` (wired onto the descriptor's `summarize
 
 The tool makes the assistant **aware of the page the user is looking at** so it can answer questions
 about what is on screen and debug rendering (e.g. a Mermaid diagram that is not showing). It reads
-the page through narrow CSS-selector queries — never a full-page dump, which would pollute the
-model's context window. An omitted `selector` returns page meta plus a shallow outline of the body's
-top-level elements so the agent can orient and drill in; a selector returns matched elements with
-the requested `include` fields (`html`/`text`/`attributes`/`rect`). The agent can chain a returned
-`html` string into the `run_javascript` tool (the code-exec plugin) for heavier parsing — the two
-plugins are independent, the conjunction is emergent agent behaviour driven by the tool descriptions,
-not wired in code.
+the page through narrow queries — never a full-page dump, which would pollute the model's context
+window — and resolves to one of **three modes** (so the agent can both find content and reason about
+where it sits):
+
+- **Outline (no `selector`)** → page meta plus a depth-limited **structural tree** of the page
+  (`tag`/`id`/`classes`/`childCount` + a short direct-text preview, nested to `depth`, default 4).
+  Crucially this is **recursive**: a client-rendered SPA mounts its whole UI under one
+  `<div id="root">`, so a shallow body-children listing only ever shows `div#root`. The recursive
+  outline reveals that subtree in a single call, letting the agent pick a precise selector or the
+  right region.
+- **Region (`region: 'top' | 'bottom'`)** → the rendered "content" elements (those with a layout box
+  and either their own text or an interactive tag) ordered by their **absolute vertical position** on
+  the page (bottom = furthest down first). This answers "what's at the bottom/top of the page"
+  directly, instead of the document-order, first-N slicing that always favoured the top.
+- **Selector** → the matched elements with the requested `include` fields
+  (`html`/`text`/`attributes`/`rect`); `depth` additionally nests each match's descendants as
+  `children` so the agent can pull a bounded subtree of a container.
+
+The agent can chain a returned `html` string into the `run_javascript` tool (the code-exec plugin)
+for heavier parsing — the two plugins are independent, the conjunction is emergent agent behaviour
+driven by the tool descriptions, not wired in code. Note `run_javascript` is sandboxed and **cannot
+read the page itself**, so all DOM data must originate from `read_dom`.
 
 Reading the live DOM is the one capability a plugin must **never** implement itself — a plugin's
-`execute()` runs in the browser app runtime, so touching `document` there would inherit app-origin
+`execute()` runs in the browser app runtime, so touching the page there would inherit app-origin
 access and trip the product-agnostic boundary check. So the plugin stays product-agnostic and only
 describes *what* to read; the host owns DOM access entirely, behind an injected
 **`PluginHost.readDom`** capability:
 
 ```
-read_dom tool.execute({ selector?, include?, maxNodes?, maxChars? })
+read_dom tool.execute({ selector?, region?, depth?, include?, maxNodes?, maxChars? })
         │  host.readDom(query)   ← injected capability
         ▼
 app-browser createDomReader()  (packages/app/app-browser/src/dom-reader.ts)
-        │  reads THIS shell's own document; caps node count + payload size; redacts form values
+        │  outline | region | selector; reads THIS shell's own document;
+        │  caps node count / tree depth+breadth / payload size; redacts form values
         ▼
-   { url, title, viewport, matchedCount, nodes, truncated }   ← form-field values stripped host-side
+   { url, title, viewport, matchedCount, nodes, truncated }   ← nodes may nest `children`; form values stripped
 ```
 
 `contracts` owns only the `DomReader` / `DomQuery` / `DomReadResult` / `DomNodeResult` *types*;
@@ -345,11 +361,14 @@ report carries **no** page content).
 **Host-side caps + redaction** (`dom-reader.ts`). The host reads only the current shell's own
 `document` (never a sandboxed or cross-origin iframe), clamps `maxNodes` (default 25, hard cap 100)
 and per-field `maxChars` (default 4000, hard cap 20000) regardless of what the tool requests, and
+bounds the outline/subtree tree independently — `depth` clamped to ≤ 8, ≤ 25 children expanded per
+node, and a global ≤ 400-node budget — so a deep tree can never produce an unbounded payload. It
 **redacts form-field values before returning**: it serializes a detached clone with the
 `value`/`checked` attributes stripped from every input/textarea/select, textarea default text
 blanked, and password inputs fully redacted — so text the user typed but has not sent is never
-shipped to the model. Because `read_dom` sends first-party page content to the model provider when
-invoked, it is disclosed in `PRIVACY.md` (see the "Browser state plugin (read_dom)" section).
+shipped to the model (the outline likewise never previews a form field's text). Because `read_dom`
+sends first-party page content to the model provider when invoked, it is disclosed in `PRIVACY.md`
+(see the "Browser state plugin (read_dom)" section).
 
 ## Activation state flow
 

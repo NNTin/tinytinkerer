@@ -23,13 +23,20 @@ export const BROWSER_STATE_PLUGIN_ID = 'browser-state'
 const MAX_NODES = 100
 const MAX_CHARS = 20_000
 
-// Input contract for the read_dom tool. All fields are optional: an omitted
-// `selector` asks the host for page meta plus a shallow outline of the page's
-// top-level elements, so the agent can orient before drilling in with a precise
-// selector. Product-agnostic — no browser types leak here.
+// Largest subtree depth the tool will request. The host clamps this to its own
+// ceiling independently.
+const MAX_DEPTH = 8
+
+// Input contract for the read_dom tool. All fields are optional and resolve to one
+// of three modes: `region` (elements ordered by where they sit on the page), an
+// omitted `selector` (a structural outline of the page tree), or a `selector`
+// (matched elements, optionally with their descendants nested via `depth`).
+// Product-agnostic — no browser types leak here.
 export const readDomInputSchema = z.object({
   selector: z.string().min(1).max(2_000).optional(),
   include: z.array(z.enum(['html', 'text', 'attributes', 'rect'])).optional(),
+  depth: z.number().int().min(0).max(MAX_DEPTH).optional(),
+  region: z.enum(['top', 'bottom']).optional(),
   maxNodes: z.number().int().positive().max(MAX_NODES).optional(),
   maxChars: z.number().int().positive().max(MAX_CHARS).optional()
 })
@@ -80,36 +87,54 @@ export const browserStatePluginManifest: PluginManifest = {
   description:
     'Let the assistant read the page you are currently viewing so it can answer ' +
     'questions about what is on screen and debug rendering issues (e.g. a diagram ' +
-    'that is not showing). It reads the page through narrow CSS-selector queries — ' +
-    'never the whole page at once — and the host redacts form-field values, so text ' +
-    'you have typed but not sent is not included. Off by default.',
+    'that is not showing). It reads the page through narrow queries — never the whole ' +
+    'page at once — and the host redacts form-field values, so text you have typed but ' +
+    'not sent is not included. Off by default.',
   capabilities: ['tools'],
   toolDescriptors: [
     {
       id: 'read_dom',
       description:
-        'Read the current page via a CSS selector and get back matched elements as ' +
-        'plain data (tag, id, classes, and optionally html/text/attributes/layout box). ' +
-        'Omit the selector to get page meta plus a shallow outline of the top-level ' +
-        'elements, then drill in with a precise selector. Use include:["html"] to ' +
-        'inspect rendered markup such as an SVG when debugging why something is not ' +
-        'showing. For heavy parsing of the returned html, pass it to run_javascript.',
+        'Read the current page. Three ways to call it: (1) with no selector, get page ' +
+        'meta plus a STRUCTURAL OUTLINE of the page tree (tag/id/classes/childCount + a ' +
+        'short text preview, nested to `depth`) — most apps mount their whole UI under a ' +
+        'single <div id="root">, so the outline is how you discover that subtree and pick ' +
+        'a selector; (2) with `region`:"bottom" or "top", get the rendered elements ordered ' +
+        'by where they sit on the page (use this for "what is at the bottom/top of the page"); ' +
+        '(3) with a CSS `selector`, get the matched elements as plain data (tag, id, classes, ' +
+        'and optionally html/text/attributes/layout box), and set `depth` to also nest their ' +
+        'descendants. Use include:["html"] to inspect rendered markup such as an SVG when ' +
+        'debugging why something is not showing. To parse a returned html string further, pass ' +
+        'it as the `input` to run_javascript — note run_javascript is sandboxed and CANNOT read ' +
+        'the page itself, so all DOM data must come from this tool first.',
       inputSchema: {
         selector: {
           type: 'string',
           description:
-            'CSS selector to match elements on the current page. Omit it to get page ' +
-            'meta plus a shallow outline of the top-level elements.'
+            'CSS selector to match elements. Omit it for a structural outline of the page ' +
+            'tree (or combine it with `region` to order just the matched elements).'
+        },
+        region: {
+          type: 'string',
+          description:
+            'Either "bottom" or "top": return rendered elements ordered by their vertical ' +
+            'position on the page. Best for "what is at the bottom/top of the page" questions.'
+        },
+        depth: {
+          type: 'number',
+          description:
+            'How many levels of descendants to include (0–8). For an outline it sets how deep ' +
+            'the tree goes (default 4); for a selector it nests each match\'s children (default 0).'
         },
         include: {
           type: 'array',
           description:
-            'Which per-node fields to return: any of "html", "text", "attributes", ' +
-            '"rect". Defaults to ["text","attributes","rect"]; add "html" to inspect markup.'
+            'Which per-node fields to return for selector/region queries: any of "html", "text", ' +
+            '"attributes", "rect". Defaults to ["text","attributes","rect"]; add "html" for markup.'
         },
         maxNodes: {
           type: 'number',
-          description: 'Max number of matched elements to return (1–100, default 25).'
+          description: 'Max number of elements to return (1–100, default 25).'
         },
         maxChars: {
           type: 'number',
@@ -159,6 +184,12 @@ const createReadDomTool = (readDom: DomReader): Tool<ReadDomInput, DomReadResult
     }
     if (input.include !== undefined) {
       query.include = input.include
+    }
+    if (input.depth !== undefined) {
+      query.depth = input.depth
+    }
+    if (input.region !== undefined) {
+      query.region = input.region
     }
     if (input.maxNodes !== undefined) {
       query.maxNodes = input.maxNodes

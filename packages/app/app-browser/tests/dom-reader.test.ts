@@ -6,8 +6,8 @@
 // graceful invalid-selector path, and form-field redaction — is fully covered
 // here. getBoundingClientRect is zeroed under jsdom, so `rect` shape (not real
 // geometry) is what these tests assert.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createDomReader, redactFormValues } from '../src/dom-reader'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
+import { createDomReader, directText, redactFormValues } from '../src/dom-reader'
 
 beforeEach(() => {
   document.title = 'Test Page'
@@ -149,5 +149,150 @@ describe('form-field redaction', () => {
     expect(clone.getAttribute('value')).toBeNull()
     // The live node keeps its attribute — only the returned copy is redacted.
     expect(original.getAttribute('value')).toBe('keep')
+  })
+})
+
+describe('createDomReader — recursive outline reveals the SPA subtree', () => {
+  it('descends into #root and reports structure with childCount and text previews', async () => {
+    document.body.innerHTML =
+      '<div id="root"><header>Top bar</header><main><p>hi</p></main><footer>© 2026</footer></div>'
+    const read = createDomReader()
+
+    const result = await read({})
+
+    // The body has one child (#root); the outline shows its subtree, not just #root.
+    expect(result.matchedCount).toBe(1)
+    const root = result.nodes[0]
+    expect(root?.tag).toBe('div')
+    expect(root?.id).toBe('root')
+    expect(root?.childCount).toBe(3)
+    expect(root?.children?.map((c) => c.tag)).toEqual(['header', 'main', 'footer'])
+
+    const header = root?.children?.find((c) => c.tag === 'header')
+    expect(header?.text).toBe('Top bar')
+
+    const main = root?.children?.find((c) => c.tag === 'main')
+    expect(main?.childCount).toBe(1)
+    expect(main?.children?.[0]?.tag).toBe('p')
+    expect(main?.children?.[0]?.text).toBe('hi')
+
+    const footer = root?.children?.find((c) => c.tag === 'footer')
+    expect(footer?.text).toBe('© 2026')
+  })
+
+  it('stops at the requested outline depth, leaving childCount as the drill-in signal', async () => {
+    document.body.innerHTML = '<div id="root"><main><p>deep</p></main></div>'
+    const read = createDomReader()
+
+    const result = await read({ depth: 1 })
+
+    const root = result.nodes[0]
+    const main = root?.children?.find((c) => c.tag === 'main')
+    // depth 1 expanded #root's children but not main's — childCount still flags them.
+    expect(main?.childCount).toBe(1)
+    expect(main?.children).toBeUndefined()
+  })
+
+  it('does not preview a textarea default value in the outline', async () => {
+    document.body.innerHTML = '<div id="root"><textarea>secret draft</textarea></div>'
+    const read = createDomReader()
+
+    const result = await read({})
+
+    const textarea = result.nodes[0]?.children?.find((c) => c.tag === 'textarea')
+    expect(textarea?.text).toBeUndefined()
+  })
+})
+
+describe('createDomReader — subtree depth on a selector', () => {
+  it('returns a flat node by default but nests descendants when depth is set', async () => {
+    document.body.innerHTML = '<section id="s"><h2>Title</h2><p>Body</p></section>'
+    const read = createDomReader()
+
+    const flat = await read({ selector: '#s' })
+    expect(flat.nodes[0]?.children).toBeUndefined()
+    expect(flat.nodes[0]?.childCount).toBe(2)
+
+    const nested = await read({ selector: '#s', depth: 1, include: ['text'] })
+    const node = nested.nodes[0]
+    expect(node?.children?.map((c) => c.tag)).toEqual(['h2', 'p'])
+    expect(node?.children?.[1]?.text).toBe('Body')
+  })
+})
+
+describe('createDomReader — region (position-ordered)', () => {
+  let rects: Map<Element, { top: number; width: number; height: number }>
+  let spy: MockInstance
+
+  beforeEach(() => {
+    rects = new Map()
+    spy = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: Element) {
+        const r = rects.get(this) ?? { top: 0, width: 0, height: 0 }
+        return {
+          x: 0,
+          y: r.top,
+          top: r.top,
+          left: 0,
+          right: r.width,
+          bottom: r.top + r.height,
+          width: r.width,
+          height: r.height,
+          toJSON: () => ({})
+        }
+      })
+  })
+
+  afterEach(() => {
+    spy.mockRestore()
+  })
+
+  const placeBottomBar = () => {
+    document.body.innerHTML =
+      '<div id="root"><button id="send">Send</button><a id="priv">Privacy</a><span id="ver">v0.1.0</span></div>'
+    rects.set(document.getElementById('send')!, { top: 1902, width: 60, height: 20 })
+    rects.set(document.getElementById('priv')!, { top: 1920, width: 50, height: 16 })
+    rects.set(document.getElementById('ver')!, { top: 1928, width: 40, height: 12 })
+  }
+
+  it('orders rendered content elements from the bottom of the page up', async () => {
+    placeBottomBar()
+    const read = createDomReader()
+
+    const result = await read({ region: 'bottom' })
+
+    // #root has a zero box → skipped; the three content elements come back bottom-first.
+    expect(result.nodes.map((n) => n.id)).toEqual(['ver', 'priv', 'send'])
+    expect(result.nodes[0]?.text).toBe('v0.1.0')
+    expect(result.nodes[0]?.rect?.y).toBe(1928)
+  })
+
+  it('orders from the top down for region "top"', async () => {
+    placeBottomBar()
+    const read = createDomReader()
+
+    const result = await read({ region: 'top' })
+
+    expect(result.nodes.map((n) => n.id)).toEqual(['send', 'priv', 'ver'])
+  })
+
+  it('caps region results to maxNodes and flags truncation', async () => {
+    placeBottomBar()
+    const read = createDomReader()
+
+    const result = await read({ region: 'bottom', maxNodes: 2 })
+
+    expect(result.matchedCount).toBe(3)
+    expect(result.nodes).toHaveLength(2)
+    expect(result.truncated).toBe(true)
+  })
+})
+
+describe('directText', () => {
+  it('returns only the element\'s own immediate text, collapsed', () => {
+    document.body.innerHTML = '<div>  hello   <span>world</span>  there </div>'
+    const div = document.querySelector('div')!
+    expect(directText(div)).toBe('hello there')
   })
 })

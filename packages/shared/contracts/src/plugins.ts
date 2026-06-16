@@ -156,21 +156,37 @@ export type SandboxCodeExecutor = (
 
 // A narrow query against the host page's live DOM. Product-agnostic: the plugin
 // only describes WHAT to read; the host owns DOM access, capping, and redaction.
-// An omitted `selector` asks for page meta plus a shallow outline of the body's
-// child elements so a caller can orient before drilling in. `include` selects
-// which per-node fields to serialize; `maxNodes`/`maxChars` are hints the host
-// clamps to its own ceilings (a caller may ask for less but never more).
+// `include` selects which per-node fields to serialize; `maxNodes`/`maxChars` are
+// hints the host clamps to its own ceilings (a caller may ask for less but never
+// more). The query resolves to one of three modes:
+//   - `region: 'top' | 'bottom'` → visible elements ordered by vertical position
+//     on the page (bottom = furthest down first), so "what's at the bottom" works
+//     without guessing a selector. Combine with `selector` to restrict candidates.
+//   - no `selector` (and no `region`) → page meta plus a depth-limited STRUCTURAL
+//     OUTLINE of the page tree (tag/id/classes/childCount + a short text preview),
+//     so a caller can see the real subtree (e.g. under a SPA's `#root`) in one
+//     call and then drill in. `depth` sets how many levels deep the outline goes.
+//   - `selector` → the matched elements; `depth` (default 0 = flat) additionally
+//     nests each match's descendants as `children`.
 export type DomQuery = {
   selector?: string
   include?: Array<'html' | 'text' | 'attributes' | 'rect'>
+  // Descendant levels to nest under each returned node (and the outline depth when
+  // no selector is given). 0 = flat. The host clamps it to its own ceiling.
+  depth?: number
+  // Position-aware mode: order rendered elements by where they sit on the page.
+  region?: 'top' | 'bottom'
   maxNodes?: number
   maxChars?: number
 }
 
 // One matched element, serialized to plain data. `html`/`text` are capped to the
 // query's `maxChars` (host ceiling applies); `rect` reports layout box + a
-// visibility heuristic. The host redacts form-field values before returning, so
-// nothing the user typed but has not sent leaks through `html`/`attributes`.
+// visibility heuristic. `childCount` is the element's element-child count (so a
+// caller knows a subtree exists even when `children` is omitted or capped);
+// `children` carries nested descendants when `depth`/outline mode requests them.
+// The host redacts form-field values before returning, so nothing the user typed
+// but has not sent leaks through `html`/`attributes`.
 export type DomNodeResult = {
   tag: string
   id?: string
@@ -179,6 +195,8 @@ export type DomNodeResult = {
   text?: string
   attributes?: Record<string, string>
   rect?: { x: number; y: number; width: number; height: number; visible: boolean }
+  childCount?: number
+  children?: DomNodeResult[]
   truncated?: boolean
 }
 
