@@ -537,4 +537,38 @@ describe('createDomReader — full sanitized snapshot (the run_javascript `dom` 
     expect(onSnapshot).toHaveBeenCalledTimes(1)
     expect(lastSnapshot(onSnapshot).tag).toBe('body')
   })
+
+  it('bounds recursion depth so a deeply-nested page never crashes read_dom', async () => {
+    // A chain far deeper than MAX_SNAPSHOT_DEPTH (256) but well under the node
+    // budget — the case node-count caps cannot catch. Without the depth bound the
+    // recursive walk stack-overflows and fails the whole read; the cap must instead
+    // stop descending, mark the tree truncated, and keep read_dom succeeding.
+    const depth = 600
+    document.body.innerHTML = `${'<div>'.repeat(depth)}leaf${'</div>'.repeat(depth)}`
+    const onSnapshot = vi.fn()
+    const read = createDomReader(onSnapshot)
+
+    const result = await read({ selector: 'div', maxNodes: 1 })
+
+    expect(result.matchedCount).toBeGreaterThan(0) // read_dom itself still succeeded
+    const snap = lastSnapshot(onSnapshot)
+    expect(snap.tag).toBe('body')
+    expect(snap.truncated).toBe(true) // depth cut propagated to the root
+  })
+
+  it('surfaces non-form attributes (data-*/href) verbatim, matching read_dom', async () => {
+    // Pin intentional behavior: only form-field values are redacted; data-*/href on
+    // ordinary elements pass through exactly as read_dom would surface them. (The
+    // sandbox has no network, so this data cannot be exfiltrated.)
+    document.body.innerHTML =
+      '<a id="lnk" href="/p?token=abc123" data-role="nav">Home</a>'
+    const onSnapshot = vi.fn()
+    const read = createDomReader(onSnapshot)
+
+    await read({})
+
+    const link = lastSnapshot(onSnapshot).children?.find((c) => c.id === 'lnk')
+    expect(link?.attributes?.href).toBe('/p?token=abc123')
+    expect(link?.attributes?.['data-role']).toBe('nav')
+  })
 })

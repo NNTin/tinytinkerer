@@ -26,12 +26,17 @@ const TREE_NODE_BUDGET = 400
 const TEXT_PREVIEW_CHARS = 80
 
 // Guardrails for the full DOM snapshot (the shared variable handed to the code-exec
-// sandbox). Unlike a read_dom query, the snapshot is the whole sanitized body tree
-// with no depth limit, so these are its only size bounds: at most MAX_SNAPSHOT_NODES
-// nodes total, and each text/attribute value capped at MAX_SNAPSHOT_FIELD_CHARS.
-// Both are generous (a real app page is well under them) but finite, so a
-// pathological document can never produce an unbounded payload across the boundary.
+// sandbox). Unlike a read_dom query, the snapshot is the whole sanitized body tree,
+// so these are its only size bounds: at most MAX_SNAPSHOT_NODES nodes total, at most
+// MAX_SNAPSHOT_DEPTH levels deep, and each text/attribute value capped at
+// MAX_SNAPSHOT_FIELD_CHARS. All are generous (a real app page is well under them) but
+// finite, so a pathological document can never produce an unbounded payload — or
+// (via the depth cap on the recursive walk) overflow the stack — across the boundary.
 const MAX_SNAPSHOT_NODES = 20_000
+// Well above any real DOM nesting (apps rarely exceed ~50) yet far below the JS call
+// stack limit, so the recursive walk can't overflow on a deeply-nested/adversarial
+// page. Node count alone does NOT bound depth: a single deep chain is few nodes.
+const MAX_SNAPSHOT_DEPTH = 256
 const MAX_SNAPSHOT_FIELD_CHARS = 50_000
 
 // Elements whose text/markup is never page content the agent computes over, and
@@ -203,11 +208,16 @@ export type DomSnapshotNode = {
 }
 
 // Serializes one node of an already-redacted clone into a snapshot node, recursing
-// over its children under the shared node `budget`. Reads only attributes + direct
-// text from the detached clone (never the live page or the live `.value`), so the
-// snapshot exposes only what read_dom's redaction already permits. Script/style/etc.
-// are emitted as opaque structural nodes so inline code/JSON/markup never leaks.
-const buildSnapshotNode = (element: Element, budget: { remaining: number }): DomSnapshotNode => {
+// over its children under the shared node `budget` and a per-call `depth` left.
+// Reads only attributes + direct text from the detached clone (never the live page or
+// the live `.value`), so the snapshot exposes only what read_dom's redaction already
+// permits. Script/style/etc. are emitted as opaque structural nodes so inline
+// code/JSON/markup never leaks.
+const buildSnapshotNode = (
+  element: Element,
+  budget: { remaining: number },
+  depth: number
+): DomSnapshotNode => {
   const node: DomSnapshotNode = { tag: element.tagName.toLowerCase() }
   if (element.id) {
     node.id = element.id
@@ -238,22 +248,28 @@ const buildSnapshotNode = (element: Element, budget: { remaining: number }): Dom
 
   const childElements = Array.from(element.children)
   if (childElements.length > 0) {
-    const children: DomSnapshotNode[] = []
-    for (const child of childElements) {
-      if (budget.remaining <= 0) {
-        truncated = true
-        break
+    if (depth <= 0) {
+      // Depth cap reached: stop descending (keeps the recursive walk from
+      // overflowing the stack on a deeply-nested page) and flag the cut.
+      truncated = true
+    } else {
+      const children: DomSnapshotNode[] = []
+      for (const child of childElements) {
+        if (budget.remaining <= 0) {
+          truncated = true
+          break
+        }
+        budget.remaining -= 1
+        const built = buildSnapshotNode(child, budget, depth - 1)
+        children.push(built)
+        // Propagate a descendant's truncation up so the root carries the signal.
+        if (built.truncated) {
+          truncated = true
+        }
       }
-      budget.remaining -= 1
-      const built = buildSnapshotNode(child, budget)
-      children.push(built)
-      // Propagate a descendant's truncation up so the root carries the signal.
-      if (built.truncated) {
-        truncated = true
+      if (children.length > 0) {
+        node.children = children
       }
-    }
-    if (children.length > 0) {
-      node.children = children
     }
   }
   if (truncated) {
@@ -266,15 +282,21 @@ const buildSnapshotNode = (element: Element, budget: { remaining: number }): Dom
 // own root — the document <head>, with its inline scripts/meta/link tokens, is never
 // included). Deep-redacts the body once via the same redactClone path read_dom uses,
 // then walks the detached clone into plain JSON nodes. Returns null when there is no
-// document/body (headless host). This is the shared variable the sandbox reads as
-// `dom`.
+// document/body (headless host) or if the walk fails for any reason — a snapshot is
+// best-effort and must never break the read_dom call it rides along with. This is the
+// shared variable the sandbox reads as `dom`.
 const buildDomSnapshot = (): DomSnapshotNode | null => {
   if (typeof document === 'undefined' || !document.body) {
     return null
   }
-  const redacted = redactClone(document.body, true)
-  const budget = { remaining: MAX_SNAPSHOT_NODES }
-  return buildSnapshotNode(redacted, budget)
+  try {
+    const redacted = redactClone(document.body, true)
+    // Seed one below the cap so the root counts toward MAX_SNAPSHOT_NODES too.
+    const budget = { remaining: MAX_SNAPSHOT_NODES - 1 }
+    return buildSnapshotNode(redacted, budget, MAX_SNAPSHOT_DEPTH)
+  } catch {
+    return null
+  }
 }
 
 // A rendered element that carries its own content — has a layout box and either
