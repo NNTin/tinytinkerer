@@ -8,6 +8,11 @@ if printf '%s\n' "$STAGED" | grep -qE '^\.agent/README\.md$|^\.agent/skills/[^/]
   git add .agent/skills/*/SKILL.md
 fi
 
+# Format (Prettier) and lint-fix (ESLint) the staged files, then re-stage the
+# fixes. Runs after the skill-readme sync so any freshly staged SKILL.md is
+# formatted too, and before the path/secret scans so they see the final content.
+pnpm exec lint-staged --config config/lint-staged.config.mjs || exit 1
+
 MATCHES=$(
   git grep --cached -nE '(/home/|/Users/|C:\\Users\\)' -- . ':(exclude).husky/pre-commit' 2>/dev/null || true
 )
