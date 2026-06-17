@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  getStaleWorkerdPids,
-  isRepoWorkerdProcess,
-  parseProcessList
-} from './wrangler-dev.mjs'
+import { getStaleWorkerdPids, isRepoWorkerdProcess, parseProcessList } from './wrangler-dev.mjs'
 
 const rootDir = '/workspace/tinytinkerer'
 const repoWorkerdCommand = `${rootDir}/node_modules/.pnpm/@cloudflare+workerd-linux-64@0.0.0/node_modules/@cloudflare/workerd-linux-64/bin/workerd serve --binary --experimental --socket-addr=entry=0.0.0.0:8787 --control-fd=3 -`

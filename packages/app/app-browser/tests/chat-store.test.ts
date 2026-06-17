@@ -13,12 +13,12 @@ vi.mock('@tinytinkerer/app-core', async (importOriginal) => {
   return {
     ...original,
     executeChatPrompt: mockExecuteChatPrompt,
-    canSendPrompt: mockCanSendPrompt,
+    canSendPrompt: mockCanSendPrompt
   }
 })
 
 vi.mock('../src/runtime/get-runtime.js', () => ({
-  createBrowserRuntimeFactory: mockCreateBrowserRuntimeFactory,
+  createBrowserRuntimeFactory: mockCreateBrowserRuntimeFactory
 }))
 
 const { createChatStore } = await import('../src/stores/chat-store.js')
@@ -37,27 +37,26 @@ const makeShell = (): BrowserShell =>
       getLatestConversation: vi.fn(),
       loadConversationEvents: vi.fn(),
       appendEvent: vi.fn(),
-      clearConversationEvents: vi.fn(),
+      clearConversationEvents: vi.fn()
     },
     preferences: {
       get: vi.fn(),
-      set: vi.fn(),
+      set: vi.fn()
     },
     authTokens: {
       getStoredToken: vi.fn(),
       setStoredToken: vi.fn(),
       clearStoredToken: vi.fn(),
-      getHostToken: vi.fn(),
+      getHostToken: vi.fn()
     },
     statusGateway: {}
   }) as unknown as BrowserShell
 
-const makeAuthStore = (): AuthStore => ({ getState: vi.fn(() => ({ token: 'tok' })) }) as unknown as AuthStore
+const makeAuthStore = (): AuthStore =>
+  ({ getState: vi.fn(() => ({ token: 'tok' })) }) as unknown as AuthStore
 // A real zustand store so chat-store's subscribe()/getState() work and tests can
 // simulate a base-URL switch via setState.
-const makeSettingsStore = (
-  initial: { litellmBaseUrl?: string } = {}
-): SettingsStore =>
+const makeSettingsStore = (initial: { litellmBaseUrl?: string } = {}): SettingsStore =>
   createStore(() => ({
     selectedModel: 'gpt-4o',
     litellmBaseUrl: 'https://litellm-a.example.com',
@@ -76,10 +75,15 @@ describe('createChatStore', () => {
     const store = createChatStore({
       shell: makeShell(),
       authStore: makeAuthStore(),
-      settingsStore: makeSettingsStore(),
+      settingsStore: makeSettingsStore()
     })
 
-    store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: false })
+    store.setState({
+      hydrated: true,
+      conversationId: 'conv-1',
+      isRunning: false,
+      isRetryPending: false
+    })
 
     await store.getState().sendPrompt('hello')
 
@@ -88,19 +92,31 @@ describe('createChatStore', () => {
   })
 
   it('sets isRetryPending to false in finally even when onRateLimitState set it to true during the run', async () => {
-    mockExecuteChatPrompt.mockImplementation((options: { onRateLimitState: (s: { cooldownUntil: string | undefined; isRetryPending: boolean }) => void }) => {
-      // Simulate a rate-limit event mid-run that sets isRetryPending: true
-      options.onRateLimitState({ cooldownUntil: undefined, isRetryPending: true })
-      return Promise.resolve()
-    })
+    mockExecuteChatPrompt.mockImplementation(
+      (options: {
+        onRateLimitState: (s: {
+          cooldownUntil: string | undefined
+          isRetryPending: boolean
+        }) => void
+      }) => {
+        // Simulate a rate-limit event mid-run that sets isRetryPending: true
+        options.onRateLimitState({ cooldownUntil: undefined, isRetryPending: true })
+        return Promise.resolve()
+      }
+    )
 
     const store = createChatStore({
       shell: makeShell(),
       authStore: makeAuthStore(),
-      settingsStore: makeSettingsStore(),
+      settingsStore: makeSettingsStore()
     })
 
-    store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: false })
+    store.setState({
+      hydrated: true,
+      conversationId: 'conv-1',
+      isRunning: false,
+      isRetryPending: false
+    })
 
     await store.getState().sendPrompt('hello')
 
@@ -115,10 +131,15 @@ describe('createChatStore', () => {
     const store = createChatStore({
       shell: makeShell(),
       authStore: makeAuthStore(),
-      settingsStore: makeSettingsStore(),
+      settingsStore: makeSettingsStore()
     })
 
-    store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: true })
+    store.setState({
+      hydrated: true,
+      conversationId: 'conv-1',
+      isRunning: false,
+      isRetryPending: true
+    })
 
     // sendPrompt propagates errors but the finally block still runs
     await expect(store.getState().sendPrompt('hello')).rejects.toThrow('unexpected')
@@ -133,10 +154,15 @@ describe('createChatStore', () => {
     const store = createChatStore({
       shell: makeShell(),
       authStore: makeAuthStore(),
-      settingsStore: makeSettingsStore({ litellmBaseUrl: 'https://litellm-b.example.com' }),
+      settingsStore: makeSettingsStore({ litellmBaseUrl: 'https://litellm-b.example.com' })
     })
 
-    store.setState({ hydrated: true, conversationId: 'conv-1', isRunning: false, isRetryPending: false })
+    store.setState({
+      hydrated: true,
+      conversationId: 'conv-1',
+      isRunning: false,
+      isRetryPending: false
+    })
 
     await store.getState().sendPrompt('hello')
 
@@ -154,14 +180,14 @@ describe('createChatStore', () => {
           key === rateLimitCooldownKey('https://litellm-b.example.com') ? future : undefined
         )
       ),
-      set: vi.fn(() => Promise.resolve()),
+      set: vi.fn(() => Promise.resolve())
     }
 
     const settingsStore = makeSettingsStore({ litellmBaseUrl: 'https://litellm-a.example.com' })
     const store = createChatStore({
       shell,
       authStore: makeAuthStore(),
-      settingsStore,
+      settingsStore
     })
 
     // Switching to a deployment with an active cooldown must surface it.
@@ -180,7 +206,7 @@ describe('createChatStore', () => {
     createChatStore({
       shell,
       authStore: makeAuthStore(),
-      settingsStore,
+      settingsStore
     })
 
     settingsStore.setState({ webSpeechEnabled: false })

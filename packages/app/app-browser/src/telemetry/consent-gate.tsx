@@ -60,7 +60,10 @@ export const TelemetryConsentGate = () => {
     <>
       {promptVisible ? (
         <div className="fixed inset-0 z-[60]">
-          <div className="settings-overlay absolute inset-0 bg-stone-900/30 backdrop-blur-sm" data-state="open" />
+          <div
+            className="settings-overlay absolute inset-0 bg-stone-900/30 backdrop-blur-sm"
+            data-state="open"
+          />
           <div
             role="dialog"
             aria-modal="true"

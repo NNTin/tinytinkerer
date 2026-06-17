@@ -127,7 +127,7 @@ export const codeExecPluginManifest: PluginManifest = {
         'cannot read the live page, BUT it receives the full sanitized page DOM from the most ' +
         'recent read_dom call as a readonly `dom` binding: a structured node tree rooted at ' +
         '<body> — { tag, id?, classes?, text?, attributes?, children? }, where `text` is the ' +
-        'node\'s OWN direct text (concatenate `children` for a subtree\'s text). It is null if ' +
+        "node's OWN direct text (concatenate `children` for a subtree's text). It is null if " +
         'read_dom has not run, and script/style content is omitted. Walk `dom` to ' +
         'count/search/extract across the whole page — read_dom gives only a narrow, truncated ' +
         'view, so heavy DOM work belongs here. ' +

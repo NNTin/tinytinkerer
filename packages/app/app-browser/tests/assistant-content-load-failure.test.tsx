@@ -35,7 +35,9 @@ describe('AssistantContent lazy plugin load failures', () => {
 
   it('reports loadFailed when the code-block plugin chunk fails to load, then renders the fallback', async () => {
     render(
-      <AssistantContent content={parseMarkdownContent(['```js', 'const x = 1', '```'].join('\n'))} />
+      <AssistantContent
+        content={parseMarkdownContent(['```js', 'const x = 1', '```'].join('\n'))}
+      />
     )
 
     await waitFor(() => {

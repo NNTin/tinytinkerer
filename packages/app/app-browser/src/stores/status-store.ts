@@ -16,7 +16,8 @@ export type StatusState = {
 }
 
 const toOfflineStatus = (error: unknown): SystemStatus => {
-  const message = error instanceof Error && error.message ? error.message : 'Unable to reach edge status endpoint'
+  const message =
+    error instanceof Error && error.message ? error.message : 'Unable to reach edge status endpoint'
   return {
     auth: { state: 'offline', detail: 'Unavailable', error: message },
     models: { state: 'offline', detail: 'Unavailable', error: message }

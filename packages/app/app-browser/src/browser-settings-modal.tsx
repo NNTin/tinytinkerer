@@ -1,9 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type {
-  AgentType,
-  McpServerConfig,
-  ServiceStatus
-} from '@tinytinkerer/contracts'
+import type { AgentType, McpServerConfig, ServiceStatus } from '@tinytinkerer/contracts'
 import { BrandSettingsFooter } from '@tinytinkerer/brand-assets'
 import { isPluginEnabled, LITELLM_DEPLOYMENT_DEFAULT } from '@tinytinkerer/app-core'
 import { MarkdownDocument } from './markdown-document'
@@ -11,31 +7,19 @@ import { useSettingsSurfaceController } from './surfaces'
 import { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
 
 const GitHubMark = () => (
-  <svg
-    viewBox="0 0 16 16"
-    fill="currentColor"
-    className="h-4 w-4"
-    aria-hidden="true"
-  >
+  <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4" aria-hidden="true">
     <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
   </svg>
 )
 
 const RotateIcon = ({ className }: { className?: string }) => (
-  <svg
-    viewBox="0 0 512 512"
-    fill="currentColor"
-    className={className}
-    aria-hidden="true"
-  >
+  <svg viewBox="0 0 512 512" fill="currentColor" className={className} aria-hidden="true">
     <path d="M48.5 224H40c-13.3 0-24-10.7-24-24V72c0-9.7 5.8-18.5 14.8-22.2s19.3-1.7 26.2 5.2l41.6 41.6c87.6-86.5 228.7-86.2 315.8 1 87.5 87.5 87.5 229.3 0 316.8s-229.3 87.5-316.8 0c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0c62.5 62.5 163.8 62.5 226.3 0s62.5-163.8 0-226.3c-62.2-62.2-162.7-62.5-225.3-1L185 183c6.9 6.9 8.9 17.2 5.2 26.2S177.7 224 168 224H48.5z" />
   </svg>
 )
 
 const SectionHeading = ({ children }: { children: ReactNode }) => (
-  <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
-    {children}
-  </h3>
+  <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">{children}</h3>
 )
 
 const statusClasses: Record<ServiceStatus['state'], string> = {
@@ -50,29 +34,15 @@ const statusDotClasses: Record<ServiceStatus['state'], string> = {
   offline: 'bg-rose-500'
 }
 
-const SettingsSection = ({
-  title,
-  children
-}: {
-  title: string
-  children: ReactNode
-}) => (
+const SettingsSection = ({ title, children }: { title: string; children: ReactNode }) => (
   <section role="region" aria-label={title}>
     <SectionHeading>{title}</SectionHeading>
     <div className="mt-3">{children}</div>
   </section>
 )
 
-const SectionStatus = ({
-  label,
-  status
-}: {
-  label: string
-  status: ServiceStatus
-}) => (
-  <div
-    className={`rounded-lg border px-3 py-2 text-xs ${statusClasses[status.state]}`}
-  >
+const SectionStatus = ({ label, status }: { label: string; status: ServiceStatus }) => (
+  <div className={`rounded-lg border px-3 py-2 text-xs ${statusClasses[status.state]}`}>
     <div className="flex items-center gap-2">
       <span
         className={`h-2 w-2 rounded-full ${statusDotClasses[status.state]}`}
@@ -105,9 +75,7 @@ const ToggleRow = ({
     <span className="min-w-0">
       <span className="block text-sm text-stone-800">{label}</span>
       {description ? (
-        <span className="mt-0.5 block text-xs text-[var(--muted)]">
-          {description}
-        </span>
+        <span className="mt-0.5 block text-xs text-[var(--muted)]">{description}</span>
       ) : null}
     </span>
     <span className="relative mt-0.5 inline-flex shrink-0 items-center">
@@ -146,9 +114,7 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
                 {user ? (user.name ?? user.login) : 'Signed in'}
               </p>
               {user ? (
-                <p className="truncate text-xs text-[var(--muted)]">
-                  @{user.login}
-                </p>
+                <p className="truncate text-xs text-[var(--muted)]">@{user.login}</p>
               ) : (
                 <p className="mt-0.5 text-xs text-[var(--muted)]">
                   GitHub token is stored locally in your browser.
@@ -171,9 +137,7 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
   return (
     <div className="space-y-3">
       <SectionStatus label="Auth" status={status} />
-      <p className="text-xs text-[var(--muted)]">
-        Sign in with GitHub to enable AI responses.
-      </p>
+      <p className="text-xs text-[var(--muted)]">Sign in with GitHub to enable AI responses.</p>
 
       {canStartGitHubOAuth ? (
         <button
@@ -230,12 +194,9 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
     setAgentType
   } = useSettingsSurfaceController()
 
-  const activeAgent = AGENT_TYPE_OPTIONS.find(
-    (option) => option.id === agentType
-  )
+  const activeAgent = AGENT_TYPE_OPTIONS.find((option) => option.id === agentType)
   const canRefresh = Boolean(token) && !isRefreshingModels
-  const [litellmBaseUrlValue, setLiteLLMBaseUrlValue] =
-    useState(litellmBaseUrl)
+  const [litellmBaseUrlValue, setLiteLLMBaseUrlValue] = useState(litellmBaseUrl)
 
   useEffect(() => {
     setLiteLLMBaseUrlValue(litellmBaseUrl)
@@ -251,48 +212,45 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
       {/* LiteLLM uses the edge-managed virtual key; custom base URLs must be
           allowlisted by the edge service (LITELLM_ALLOWED_BASE_URLS). */}
       <div className="space-y-2 rounded-lg border border-stone-200 bg-white p-3">
-          <label
-            htmlFor="litellm-base-url"
-            className="block text-xs text-stone-700"
+        <label htmlFor="litellm-base-url" className="block text-xs text-stone-700">
+          Base URL
+        </label>
+        <div className="flex gap-2">
+          <input
+            id="litellm-base-url"
+            type="url"
+            autoComplete="off"
+            aria-label="LiteLLM base URL"
+            value={litellmBaseUrlValue}
+            onChange={(event) => setLiteLLMBaseUrlValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                void handleSaveLiteLLMBaseUrl()
+              }
+            }}
+            placeholder="Deployment default"
+            className="flex-1 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+          />
+          <button
+            type="button"
+            onClick={() => void handleSaveLiteLLMBaseUrl()}
+            className="inline-flex items-center rounded-md border border-stone-800 bg-stone-900 px-3 py-1.5 text-xs text-white transition-colors hover:bg-stone-700"
           >
-            Base URL
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="litellm-base-url"
-              type="url"
-              autoComplete="off"
-              aria-label="LiteLLM base URL"
-              value={litellmBaseUrlValue}
-              onChange={(event) => setLiteLLMBaseUrlValue(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  void handleSaveLiteLLMBaseUrl()
-                }
-              }}
-              placeholder="Deployment default"
-              className="flex-1 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
-            />
-            <button
-              type="button"
-              onClick={() => void handleSaveLiteLLMBaseUrl()}
-              className="inline-flex items-center rounded-md border border-stone-800 bg-stone-900 px-3 py-1.5 text-xs text-white transition-colors hover:bg-stone-700"
-            >
-              Save
-            </button>
-          </div>
-          {litellmBaseUrlError ? (
-            <p className="text-xs text-rose-600">{litellmBaseUrlError}</p>
-          ) : null}
-          {litellmBaseUrl !== LITELLM_DEPLOYMENT_DEFAULT ? (
-            <button
-              type="button"
-              onClick={() => void setLiteLLMBaseUrl(null)}
-              className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:bg-stone-50"
-            >
-              Reset to deployment default
-            </button>
-          ) : null}
+            Save
+          </button>
+        </div>
+        {litellmBaseUrlError ? (
+          <p className="text-xs text-rose-600">{litellmBaseUrlError}</p>
+        ) : null}
+        {litellmBaseUrl !== LITELLM_DEPLOYMENT_DEFAULT ? (
+          <button
+            type="button"
+            onClick={() => void setLiteLLMBaseUrl(null)}
+            className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:bg-stone-50"
+          >
+            Reset to deployment default
+          </button>
+        ) : null}
       </div>
 
       <div className="flex items-center justify-between gap-3">
@@ -307,9 +265,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
           onClick={() => void refreshModels()}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-stone-200 bg-white text-stone-500 transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <RotateIcon
-            className={`h-3.5 w-3.5 ${isRefreshingModels ? 'animate-spin' : ''}`}
-          />
+          <RotateIcon className={`h-3.5 w-3.5 ${isRefreshingModels ? 'animate-spin' : ''}`} />
         </button>
       </div>
       <select
@@ -327,14 +283,9 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
       <p className="text-xs text-[var(--muted)]">
         Uses LiteLLM model discovery through the edge proxy.
       </p>
-      {modelsRefreshError ? (
-        <p className="text-xs text-rose-600">{modelsRefreshError}</p>
-      ) : null}
+      {modelsRefreshError ? <p className="text-xs text-rose-600">{modelsRefreshError}</p> : null}
 
-      <label
-        htmlFor="agent-type-select"
-        className="block pt-2 text-sm text-stone-800"
-      >
+      <label htmlFor="agent-type-select" className="block pt-2 text-sm text-stone-800">
         Agent strategy
       </label>
       <select
@@ -378,17 +329,12 @@ const McpServerCard = ({
   onSave
 }: {
   server: McpServerConfig
-  discovery:
-    | ReturnType<typeof useSettingsSurfaceController>['mcpDiscovery'][string]
-    | undefined
+  discovery: ReturnType<typeof useSettingsSurfaceController>['mcpDiscovery'][string] | undefined
   isSyncing: boolean
   onToggle: (enabled: boolean) => void
   onRefresh: () => void
   onRemove: () => void
-  onSave: (
-    patch: Partial<Omit<McpServerConfig, 'id'>>,
-    triggerRefresh: boolean
-  ) => void
+  onSave: (patch: Partial<Omit<McpServerConfig, 'id'>>, triggerRefresh: boolean) => void
 }) => {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<McpServerFormState>({
@@ -429,9 +375,7 @@ const McpServerCard = ({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium text-stone-800">{server.name}</p>
-          <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
-            {server.url}
-          </p>
+          <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{server.url}</p>
           <p className={`mt-0.5 text-xs ${badgeClass}`}>{syncBadge}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -483,9 +427,7 @@ const McpServerCard = ({
           <input
             type="password"
             value={form.bearerToken}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, bearerToken: e.target.value }))
-            }
+            onChange={(e) => setForm((f) => ({ ...f, bearerToken: e.target.value }))}
             placeholder="Bearer token (optional)"
             className="w-full rounded border border-stone-300 px-2 py-1 text-xs outline-none focus:border-amber-400"
           />
@@ -567,27 +509,21 @@ export const McpServerList = () => {
         <div className="space-y-1.5 rounded-lg border border-amber-200 bg-amber-50 p-3">
           <input
             value={addForm.name}
-            onChange={(e) =>
-              setAddForm((f) => f && { ...f, name: e.target.value })
-            }
+            onChange={(e) => setAddForm((f) => f && { ...f, name: e.target.value })}
             placeholder="Name"
             autoFocus
             className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-400"
           />
           <input
             value={addForm.url}
-            onChange={(e) =>
-              setAddForm((f) => f && { ...f, url: e.target.value })
-            }
+            onChange={(e) => setAddForm((f) => f && { ...f, url: e.target.value })}
             placeholder="https://mcp.example.com/mcp"
             className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-400"
           />
           <input
             type="password"
             value={addForm.bearerToken}
-            onChange={(e) =>
-              setAddForm((f) => f && { ...f, bearerToken: e.target.value })
-            }
+            onChange={(e) => setAddForm((f) => f && { ...f, bearerToken: e.target.value })}
             placeholder="Bearer token (optional)"
             className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-400"
           />
@@ -641,13 +577,12 @@ const PluginsSection = () => {
         />
       ))}
       <p className="text-xs text-[var(--muted)]">
-        Each enabled plugin adds its tools to every chat, expanding what the
-        assistant can do.
+        Each enabled plugin adds its tools to every chat, expanding what the assistant can do.
       </p>
       {!telemetryEnabled ? (
         <p className="text-xs text-[var(--muted)]">
-          Some plugins (including Feedback) deliver data through telemetry. Enable
-          telemetry in the Privacy section for them to send anything.
+          Some plugins (including Feedback) deliver data through telemetry. Enable telemetry in the
+          Privacy section for them to send anything.
         </p>
       ) : null}
     </div>
@@ -681,12 +616,8 @@ const InterfaceSection = () => {
 }
 
 const PrivacySection = () => {
-  const {
-    telemetryEnabled,
-    setTelemetryEnabled,
-    webSpeechEnabled,
-    setWebSpeechEnabled
-  } = useSettingsSurfaceController()
+  const { telemetryEnabled, setTelemetryEnabled, webSpeechEnabled, setWebSpeechEnabled } =
+    useSettingsSurfaceController()
   const [policyOpen, setPolicyOpen] = useState(false)
 
   return (
@@ -704,9 +635,9 @@ const PrivacySection = () => {
         onChange={(next) => void setTelemetryEnabled(next)}
       />
       <p className="text-xs text-[var(--muted)]">
-        This application uses optional telemetry to improve reliability and
-        performance. Voice input uses the browser&apos;s Web Speech API, which
-        may run locally on the device or through a vendor cloud service.{' '}
+        This application uses optional telemetry to improve reliability and performance. Voice input
+        uses the browser&apos;s Web Speech API, which may run locally on the device or through a
+        vendor cloud service.{' '}
         <button
           type="button"
           onClick={() => setPolicyOpen(true)}
@@ -716,10 +647,7 @@ const PrivacySection = () => {
         </button>{' '}
         for details.
       </p>
-      <PrivacyPolicyDialog
-        open={policyOpen}
-        onClose={() => setPolicyOpen(false)}
-      />
+      <PrivacyPolicyDialog open={policyOpen} onClose={() => setPolicyOpen(false)} />
     </div>
   )
 }
@@ -811,9 +739,7 @@ export const BrowserSettingsModal = ({
           <hr className="border-[var(--border)]" />
 
           <BrandSettingsFooter
-            renderMarkdown={(markdown) => (
-              <MarkdownDocument markdown={markdown} />
-            )}
+            renderMarkdown={(markdown) => <MarkdownDocument markdown={markdown} />}
           />
         </div>
       </div>

@@ -51,9 +51,7 @@ const RESET_AT_HEADER = 'x-inbound-rate-reset-at'
 const cacheStore = (): Cache | undefined =>
   (globalThis as { caches?: { default?: Cache } }).caches?.default
 
-const readDurableWindow = async (
-  bucket: string
-): Promise<WindowState | undefined> => {
+const readDurableWindow = async (bucket: string): Promise<WindowState | undefined> => {
   const store = cacheStore()
   if (!store) return undefined
   try {
@@ -91,9 +89,7 @@ const writeDurableWindow = async (
   }
 }
 
-export type InboundRateLimitResult =
-  | { limited: false }
-  | { limited: true; retryAfterMs: number }
+export type InboundRateLimitResult = { limited: false } | { limited: true; retryAfterMs: number }
 
 /**
  * Count one request against the caller's fixed window and report whether it is
@@ -138,20 +134,14 @@ export const clearInboundRateLimits = (): void => {
 }
 
 /** A positive integer from a binding, the fallback otherwise. `'0'` is kept: it means "disabled". */
-const parseLimitBinding = (
-  raw: string | undefined,
-  fallback: number
-): number => {
+const parseLimitBinding = (raw: string | undefined, fallback: number): number => {
   if (raw === undefined || raw.trim() === '') return fallback
   const value = Number(raw)
   if (!Number.isInteger(value) || value < 0) return fallback
   return value
 }
 
-const LIMIT_BINDINGS: Record<
-  InboundRateLimitScope,
-  (env: Bindings) => string | undefined
-> = {
+const LIMIT_BINDINGS: Record<InboundRateLimitScope, (env: Bindings) => string | undefined> = {
   auth: (env) => env.RATE_LIMIT_AUTH_MAX,
   search: (env) => env.RATE_LIMIT_SEARCH_MAX,
   mcp: (env) => env.RATE_LIMIT_MCP_MAX
@@ -186,28 +176,22 @@ export const inboundRateLimit = (
     // they must not eat into the caller's budget.
     if (c.req.method === 'OPTIONS') return next()
 
-    const limit = parseLimitBinding(
-      LIMIT_BINDINGS[scope](c.env),
-      DEFAULT_INBOUND_LIMITS[scope]
-    )
+    const limit = parseLimitBinding(LIMIT_BINDINGS[scope](c.env), DEFAULT_INBOUND_LIMITS[scope])
     if (limit === 0) return next()
 
     const windowSeconds = parseLimitBinding(
       c.env.RATE_LIMIT_WINDOW_SECONDS,
       DEFAULT_INBOUND_WINDOW_SECONDS
     )
-    const windowMs =
-      (windowSeconds > 0 ? windowSeconds : DEFAULT_INBOUND_WINDOW_SECONDS) * 1000
+    const windowMs = (windowSeconds > 0 ? windowSeconds : DEFAULT_INBOUND_WINDOW_SECONDS) * 1000
 
     const callerKey = await deriveCallerKey(c.req)
     const result = await checkInboundRateLimit(scope, callerKey, limit, windowMs)
     if (result.limited) {
       const retryAfterSeconds = Math.max(1, Math.ceil(result.retryAfterMs / 1000))
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Too many requests' }),
-        429,
-        { 'retry-after': String(retryAfterSeconds) }
-      )
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Too many requests' }), 429, {
+        'retry-after': String(retryAfterSeconds)
+      })
     }
     await next()
   }

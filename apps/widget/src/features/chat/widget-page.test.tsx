@@ -66,108 +66,102 @@ const mockSpeechState = vi.hoisted(() => ({
 vi.mock('@tinytinkerer/app-browser', async () => {
   const { useState } = await import('react')
   return {
-  // Faithful stand-in for the shared composer hook: owns prompt state and the
-  // submit → clear-on-accept behavior so the surface wiring can be exercised.
-  // The hook's own logic is unit-tested in app-browser's surfaces test.
-  useChatComposer: (submitPrompt: (prompt: string) => boolean) => {
-    const [prompt, setPrompt] = useState('')
-    const handleSubmit = (): boolean => {
-      mockSpeechState.stop()
-      const accepted = submitPrompt(prompt)
-      if (accepted) {
-        setPrompt('')
+    // Faithful stand-in for the shared composer hook: owns prompt state and the
+    // submit → clear-on-accept behavior so the surface wiring can be exercised.
+    // The hook's own logic is unit-tested in app-browser's surfaces test.
+    useChatComposer: (submitPrompt: (prompt: string) => boolean) => {
+      const [prompt, setPrompt] = useState('')
+      const handleSubmit = (): boolean => {
+        mockSpeechState.stop()
+        const accepted = submitPrompt(prompt)
+        if (accepted) {
+          setPrompt('')
+        }
+        return accepted
       }
-      return accepted
-    }
-    return { prompt, setPrompt, speech: mockSpeechState, handleSubmit }
-  },
-  AssistantContent: ({
-    content,
-    className,
-    turnId
-  }: {
-    content: { nodes: Array<{ children?: Array<{ value?: string }> }> }
-    className?: string
-    turnId?: string
-  }) => (
-    <div className={className} data-turn-id={turnId}>
-      {content.nodes[0]?.children?.[0]?.value}
-    </div>
-  ),
-  LazyBrowserSettingsModal: ({
-    open,
-    onOpenChange
-  }: {
-    open: boolean
-    onOpenChange: (open: boolean) => void
-  }) =>
-    open ? (
-      <div>
-        <span>Settings modal</span>
-        <button
-          type="button"
-          aria-label="Close settings"
-          onClick={() => onOpenChange(false)}
-        >
-          Close
-        </button>
+      return { prompt, setPrompt, speech: mockSpeechState, handleSubmit }
+    },
+    AssistantContent: ({
+      content,
+      className,
+      turnId
+    }: {
+      content: { nodes: Array<{ children?: Array<{ value?: string }> }> }
+      className?: string
+      turnId?: string
+    }) => (
+      <div className={className} data-turn-id={turnId}>
+        {content.nodes[0]?.children?.[0]?.value}
       </div>
-    ) : null,
-  PermissionModal: () => null,
-  TINYTINKERER_BRAND_ASSET_URLS: {
-    icon192: '/brand/icon-192.png'
-  },
-  useWebSpeechInput: () => mockSpeechState,
-  useChatSurfaceController: () => ({
-    isBooting: false,
-    events: mockChatState.events,
-    token: mockAuthState.token,
-    turns: mockChatState.turns,
-    timeline: [],
-    toolEvents: [],
-    isRunning: mockChatState.isRunning,
-    isRetryPending: false,
-    showReasoningActivity: true,
-    cooldownRemainingMs: 0,
-    isCoolingDown: mockChatState.isCoolingDown,
-    submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
-    submitPrompt: mockChatState.submitPrompt,
-    resetConversation: mockChatState.resetConversation,
-    cancelRetry: mockChatState.cancelRetry
-  }),
-  useSettingsSurfaceController: () => ({
-    effectiveStatus: mockSettingsState.effectiveStatus,
-    refreshStatus: vi.fn(),
-    token: mockAuthState.token,
-    clearToken: mockAuthState.clearToken,
-    setToken: mockAuthState.setToken,
-    canStartGitHubOAuth: true,
-    startGitHubOAuth: vi.fn(),
-    user: null,
-    models: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
-    isRefreshingModels: false,
-    modelsRefreshError: null,
-    refreshModels: vi.fn(),
-    selectedModel: mockSettingsState.selectedModel,
-    setSelectedModel: mockSettingsState.setSelectedModel,
-    webSpeechEnabled: mockSettingsState.webSpeechEnabled,
-    setWebSpeechEnabled: mockSettingsState.setWebSpeechEnabled,
-    showReasoningActivity: mockSettingsState.showReasoningActivity,
-    setShowReasoningActivity: mockSettingsState.setShowReasoningActivity,
-    showCodeBlockFullscreenButton:
-      mockSettingsState.showCodeBlockFullscreenButton,
-    setShowCodeBlockFullscreenButton:
-      mockSettingsState.setShowCodeBlockFullscreenButton,
-    mcpServers: [],
-    mcpDiscovery: {},
-    addMcpServer: vi.fn(),
-    updateMcpServer: vi.fn(),
-    removeMcpServer: vi.fn(),
-    setMcpServerEnabled: vi.fn(),
-    refreshMcpServer: vi.fn(),
-    telemetryEnabled: false,
-    setTelemetryEnabled: vi.fn()
-  })
+    ),
+    LazyBrowserSettingsModal: ({
+      open,
+      onOpenChange
+    }: {
+      open: boolean
+      onOpenChange: (open: boolean) => void
+    }) =>
+      open ? (
+        <div>
+          <span>Settings modal</span>
+          <button type="button" aria-label="Close settings" onClick={() => onOpenChange(false)}>
+            Close
+          </button>
+        </div>
+      ) : null,
+    PermissionModal: () => null,
+    TINYTINKERER_BRAND_ASSET_URLS: {
+      icon192: '/brand/icon-192.png'
+    },
+    useWebSpeechInput: () => mockSpeechState,
+    useChatSurfaceController: () => ({
+      isBooting: false,
+      events: mockChatState.events,
+      token: mockAuthState.token,
+      turns: mockChatState.turns,
+      timeline: [],
+      toolEvents: [],
+      isRunning: mockChatState.isRunning,
+      isRetryPending: false,
+      showReasoningActivity: true,
+      cooldownRemainingMs: 0,
+      isCoolingDown: mockChatState.isCoolingDown,
+      submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
+      submitPrompt: mockChatState.submitPrompt,
+      resetConversation: mockChatState.resetConversation,
+      cancelRetry: mockChatState.cancelRetry
+    }),
+    useSettingsSurfaceController: () => ({
+      effectiveStatus: mockSettingsState.effectiveStatus,
+      refreshStatus: vi.fn(),
+      token: mockAuthState.token,
+      clearToken: mockAuthState.clearToken,
+      setToken: mockAuthState.setToken,
+      canStartGitHubOAuth: true,
+      startGitHubOAuth: vi.fn(),
+      user: null,
+      models: [{ id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini' }],
+      isRefreshingModels: false,
+      modelsRefreshError: null,
+      refreshModels: vi.fn(),
+      selectedModel: mockSettingsState.selectedModel,
+      setSelectedModel: mockSettingsState.setSelectedModel,
+      webSpeechEnabled: mockSettingsState.webSpeechEnabled,
+      setWebSpeechEnabled: mockSettingsState.setWebSpeechEnabled,
+      showReasoningActivity: mockSettingsState.showReasoningActivity,
+      setShowReasoningActivity: mockSettingsState.setShowReasoningActivity,
+      showCodeBlockFullscreenButton: mockSettingsState.showCodeBlockFullscreenButton,
+      setShowCodeBlockFullscreenButton: mockSettingsState.setShowCodeBlockFullscreenButton,
+      mcpServers: [],
+      mcpDiscovery: {},
+      addMcpServer: vi.fn(),
+      updateMcpServer: vi.fn(),
+      removeMcpServer: vi.fn(),
+      setMcpServerEnabled: vi.fn(),
+      refreshMcpServer: vi.fn(),
+      telemetryEnabled: false,
+      setTelemetryEnabled: vi.fn()
+    })
   }
 })
 
@@ -199,12 +193,8 @@ describe('WidgetPage', () => {
     render(<WidgetPage />)
 
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'Sign in with GitHub' })
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'Minimize widget' })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign in with GitHub' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Minimize widget' })).toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).toBeNull()
     expect(screen.queryByText('MCP Servers')).toBeNull()
     expect(screen.queryByText('Embedded Workspace')).toBeNull()
@@ -215,9 +205,7 @@ describe('WidgetPage', () => {
   it('renders a turn notice and final assistant answer in the same card', () => {
     render(<WidgetPage />)
 
-    expect(
-      screen.getByText('Recovered after a short wait.')
-    ).toBeInTheDocument()
+    expect(screen.getByText('Recovered after a short wait.')).toBeInTheDocument()
     expect(screen.getByText('Hi there.')).toBeInTheDocument()
   })
 
@@ -237,9 +225,7 @@ describe('WidgetPage', () => {
       await Promise.resolve()
     })
 
-    expect(mockChatState.submitPrompt).toHaveBeenCalledWith(
-      'Tell me something current'
-    )
+    expect(mockChatState.submitPrompt).toHaveBeenCalledWith('Tell me something current')
   })
 
   it('clears the input immediately once a prompt is accepted (issue #206)', () => {
@@ -290,9 +276,7 @@ describe('WidgetPage', () => {
   it('renders a disabled voice button when Web Speech API is unavailable', () => {
     mockSpeechState.visible = true
     render(<WidgetPage />)
-    expect(
-      screen.getByRole('button', { name: /voice input unavailable/i })
-    ).toBeDisabled()
+    expect(screen.getByRole('button', { name: /voice input unavailable/i })).toBeDisabled()
   })
 
   it('collapses to a launcher and restores in standalone mode', () => {
@@ -300,15 +284,11 @@ describe('WidgetPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Minimize widget' }))
 
-    expect(
-      screen.getByRole('button', { name: 'Restore widget' })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Restore widget' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Restore widget' }))
 
-    expect(
-      screen.getByRole('button', { name: 'Minimize widget' })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Minimize widget' })).toBeInTheDocument()
   })
 
   it('shows the shared minimize control in host mode and posts the minimized state', () => {

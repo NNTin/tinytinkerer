@@ -64,9 +64,7 @@ const cacheStore = (): Cache | undefined =>
 
 const provisionedUntilByScope = new Map<string, number>()
 
-export const clearLiteLLMUserKeyCache = async (
-  credentialKey?: CredentialKey
-): Promise<void> => {
+export const clearLiteLLMUserKeyCache = async (credentialKey?: CredentialKey): Promise<void> => {
   // Drop BOTH layers. Clearing only the in-memory mirror is a no-op for
   // recovery: readProvisionedMarker falls back to the durable Workers Cache
   // entry and re-populates the mirror, so a key invalidated upstream (deleted,
@@ -85,19 +83,14 @@ export const clearLiteLLMUserKeyCache = async (
     if (store) {
       const fingerprint = scope.slice(separator + 1)
       deletions.push(
-        store
-          .delete(provisionedCacheKey(scopeCredential, fingerprint))
-          .catch(() => undefined)
+        store.delete(provisionedCacheKey(scopeCredential, fingerprint)).catch(() => undefined)
       )
     }
   }
   await Promise.all(deletions)
 }
 
-const provisionedCacheKey = (
-  credentialKey: CredentialKey,
-  fingerprint: string
-): string =>
+const provisionedCacheKey = (credentialKey: CredentialKey, fingerprint: string): string =>
   `https://litellm-user-key-cache.tiny.nntin.xyz/${credentialKey}/${fingerprint}`
 
 const PROVISIONED_UNTIL_HEADER = 'x-litellm-user-key-provisioned-until'
@@ -114,9 +107,7 @@ const readProvisionedMarker = async (
   const store = cacheStore()
   if (!store) return false
   try {
-    const hit = await store.match(
-      provisionedCacheKey(credentialKey, fingerprint)
-    )
+    const hit = await store.match(provisionedCacheKey(credentialKey, fingerprint))
     if (!hit) return false
     const untilMs = Number(hit.headers.get(PROVISIONED_UNTIL_HEADER) ?? '0')
     if (untilMs <= nowMs) return false
@@ -152,10 +143,7 @@ const writeProvisionedMarker = async (
   }
 }
 
-const toPositiveNumber = (
-  raw: string | undefined,
-  fallback: number
-): number => {
+const toPositiveNumber = (raw: string | undefined, fallback: number): number => {
   if (raw === undefined || raw.trim() === '') return fallback
   const value = Number(raw)
   return Number.isFinite(value) && value > 0 ? value : fallback
@@ -183,10 +171,7 @@ type KeyTier = 'user' | 'anonymous'
 const tierLimits = (
   env: Bindings,
   tier: KeyTier
-): Pick<
-  ExpectedKeyConfig,
-  'maxBudget' | 'budgetDuration' | 'rpmLimit' | 'tpmLimit'
-> =>
+): Pick<ExpectedKeyConfig, 'maxBudget' | 'budgetDuration' | 'rpmLimit' | 'tpmLimit'> =>
   tier === 'anonymous'
     ? {
         maxBudget: toPositiveNumber(
@@ -194,32 +179,15 @@ const tierLimits = (
           DEFAULT_ANONYMOUS_MAX_BUDGET_USD
         ),
         budgetDuration:
-          env.LITELLM_ANONYMOUS_BUDGET_DURATION?.trim() ||
-          DEFAULT_ANONYMOUS_BUDGET_DURATION,
-        rpmLimit: toPositiveNumber(
-          env.LITELLM_ANONYMOUS_RPM_LIMIT,
-          DEFAULT_ANONYMOUS_RPM_LIMIT
-        ),
-        tpmLimit: toPositiveNumber(
-          env.LITELLM_ANONYMOUS_TPM_LIMIT,
-          DEFAULT_ANONYMOUS_TPM_LIMIT
-        )
+          env.LITELLM_ANONYMOUS_BUDGET_DURATION?.trim() || DEFAULT_ANONYMOUS_BUDGET_DURATION,
+        rpmLimit: toPositiveNumber(env.LITELLM_ANONYMOUS_RPM_LIMIT, DEFAULT_ANONYMOUS_RPM_LIMIT),
+        tpmLimit: toPositiveNumber(env.LITELLM_ANONYMOUS_TPM_LIMIT, DEFAULT_ANONYMOUS_TPM_LIMIT)
       }
     : {
-        maxBudget: toPositiveNumber(
-          env.LITELLM_USER_MAX_BUDGET_USD,
-          DEFAULT_USER_MAX_BUDGET_USD
-        ),
-        budgetDuration:
-          env.LITELLM_USER_BUDGET_DURATION?.trim() || DEFAULT_USER_BUDGET_DURATION,
-        rpmLimit: toPositiveNumber(
-          env.LITELLM_USER_RPM_LIMIT,
-          DEFAULT_USER_RPM_LIMIT
-        ),
-        tpmLimit: toPositiveNumber(
-          env.LITELLM_USER_TPM_LIMIT,
-          DEFAULT_USER_TPM_LIMIT
-        )
+        maxBudget: toPositiveNumber(env.LITELLM_USER_MAX_BUDGET_USD, DEFAULT_USER_MAX_BUDGET_USD),
+        budgetDuration: env.LITELLM_USER_BUDGET_DURATION?.trim() || DEFAULT_USER_BUDGET_DURATION,
+        rpmLimit: toPositiveNumber(env.LITELLM_USER_RPM_LIMIT, DEFAULT_USER_RPM_LIMIT),
+        tpmLimit: toPositiveNumber(env.LITELLM_USER_TPM_LIMIT, DEFAULT_USER_TPM_LIMIT)
       }
 
 // The LiteLLM user_id and key_alias for a tier. The anonymous tier uses a fixed
@@ -308,10 +276,7 @@ const deploymentKeyNamespace = async (secret: string): Promise<string> => {
 // values, and the second would send a bearer token that does not exist in
 // LiteLLM (a silent, unrecoverable 401). Per-deployment isolation already comes
 // from the per-deployment LITELLM_USER_KEY_SECRET.
-const deriveUserApiKey = async (
-  env: Bindings,
-  identity: CallerIdentity
-): Promise<string> => {
+const deriveUserApiKey = async (env: Bindings, identity: CallerIdentity): Promise<string> => {
   const secret = env.LITELLM_USER_KEY_SECRET?.trim()
   if (!secret) throw new Error('Missing LITELLM_USER_KEY_SECRET')
 
@@ -344,12 +309,8 @@ export const deriveLiteLLMUserCredentialKey = async (
   baseUrl: string
 ): Promise<CredentialKey> => {
   const secret = env.LITELLM_USER_KEY_SECRET?.trim()
-  const namespace = secret
-    ? await deploymentKeyNamespace(secret)
-    : 'unconfigured'
-  return deriveCredentialKey(
-    `litellm-user:${namespace}:${baseUrl}:github-${identity.id}`
-  )
+  const namespace = secret ? await deploymentKeyNamespace(secret) : 'unconfigured'
+  return deriveCredentialKey(`litellm-user:${namespace}:${baseUrl}:github-${identity.id}`)
 }
 
 export const deriveAnonymousCredentialKey = async (
@@ -357,12 +318,8 @@ export const deriveAnonymousCredentialKey = async (
   baseUrl: string
 ): Promise<CredentialKey> => {
   const secret = env.LITELLM_USER_KEY_SECRET?.trim()
-  const namespace = secret
-    ? await deploymentKeyNamespace(secret)
-    : 'unconfigured'
-  return deriveCredentialKey(
-    `litellm-anonymous:${namespace}:${baseUrl}`
-  )
+  const namespace = secret ? await deploymentKeyNamespace(secret) : 'unconfigured'
+  return deriveCredentialKey(`litellm-anonymous:${namespace}:${baseUrl}`)
 }
 
 const managementHeaders = (env: Bindings): Record<string, string> => ({
@@ -378,12 +335,8 @@ const managementConfigured = (env: Bindings): boolean =>
   Boolean(env.LITELLM_KEY_MANAGEMENT_API_KEY?.trim()) &&
   Boolean(env.LITELLM_USER_KEY_SECRET?.trim())
 
-export const requireLiteLLMUserKeyConfiguration = (
-  env: Bindings
-): string | undefined =>
-  managementConfigured(env)
-    ? undefined
-    : 'LiteLLM user key provisioning is not configured.'
+export const requireLiteLLMUserKeyConfiguration = (env: Bindings): string | undefined =>
+  managementConfigured(env) ? undefined : 'LiteLLM user key provisioning is not configured.'
 
 const readKeyInfoByAlias = async (
   env: Bindings,
@@ -398,8 +351,7 @@ const readKeyInfoByAlias = async (
       url: appendPath(baseUrl, '/v2/key/info'),
       accept: {
         status: [404],
-        reason:
-          'A missing per-user LiteLLM key is expected before first-time provisioning.'
+        reason: 'A missing per-user LiteLLM key is expected before first-time provisioning.'
       }
     },
     {
@@ -411,9 +363,7 @@ const readKeyInfoByAlias = async (
   ).catch(() => undefined)
 
   if (!response?.ok) return undefined
-  const parsed = keyInfoResponseSchema.safeParse(
-    await response.json().catch(() => undefined)
-  )
+  const parsed = keyInfoResponseSchema.safeParse(await response.json().catch(() => undefined))
   if (!parsed.success) return undefined
   return parsed.data.info.find((entry) => entry.key_alias === keyAlias)
 }
@@ -426,27 +376,13 @@ const readKeyInfoByAlias = async (
 // redundant /key/update on every cache-miss forever; treating it as "matches"
 // still catches real operator-driven config changes, which surface as a
 // concrete value that differs.
-const keyNeedsUpdate = (
-  info: KeyInfo,
-  expected: ExpectedKeyConfig
-): boolean => {
+const keyNeedsUpdate = (info: KeyInfo, expected: ExpectedKeyConfig): boolean => {
   if (info.user_id != null && info.user_id !== expected.userId) return true
-  if (info.max_budget != null && info.max_budget !== expected.maxBudget)
-    return true
-  if (
-    info.budget_duration != null &&
-    info.budget_duration !== expected.budgetDuration
-  )
-    return true
-  if (info.rpm_limit != null && info.rpm_limit !== expected.rpmLimit)
-    return true
-  if (info.tpm_limit != null && info.tpm_limit !== expected.tpmLimit)
-    return true
-  if (
-    info.models != null &&
-    !arraysEqual([...info.models].sort(), expected.models)
-  )
-    return true
+  if (info.max_budget != null && info.max_budget !== expected.maxBudget) return true
+  if (info.budget_duration != null && info.budget_duration !== expected.budgetDuration) return true
+  if (info.rpm_limit != null && info.rpm_limit !== expected.rpmLimit) return true
+  if (info.tpm_limit != null && info.tpm_limit !== expected.tpmLimit) return true
+  if (info.models != null && !arraysEqual([...info.models].sort(), expected.models)) return true
   return false
 }
 
@@ -547,9 +483,7 @@ const generateKey = async (
   ).catch(() => undefined)
 
   if (!response?.ok) return 'unconfirmed'
-  const parsed = generateKeyResponseSchema.safeParse(
-    await response.json().catch(() => undefined)
-  )
+  const parsed = generateKeyResponseSchema.safeParse(await response.json().catch(() => undefined))
   if (!parsed.success) return 'unconfirmed'
   return parsed.data.key === apiKey ? 'created' : 'value-mismatch'
 }
@@ -578,9 +512,7 @@ const reportKeyValueMismatch = (
         key_alias: keyAlias
       },
       fingerprint: [
-        isUser
-          ? 'litellm-user-key-value-mismatch'
-          : 'litellm-anonymous-key-value-mismatch'
+        isUser ? 'litellm-user-key-value-mismatch' : 'litellm-anonymous-key-value-mismatch'
       ]
     }
   )
@@ -664,8 +596,7 @@ export const resolveLiteLLMUserKey = (
   env: Bindings,
   baseUrl: string,
   identity: CallerIdentity
-): Promise<LiteLLMUserKey | undefined> =>
-  resolveLiteLLMKey(env, baseUrl, identity, 'user')
+): Promise<LiteLLMUserKey | undefined> => resolveLiteLLMKey(env, baseUrl, identity, 'user')
 
 export const resolveAnonymousLiteLLMKey = (
   env: Bindings,

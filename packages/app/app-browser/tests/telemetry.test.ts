@@ -44,7 +44,12 @@ describe('telemetry environment gating', () => {
   it('does not initialize Sentry for the development (localhost) environment', async () => {
     const telemetry = await loadTelemetry()
     await telemetry.configureTelemetry(
-      { dsn: 'https://dsn@sentry.io/1', environment: 'development', appVersion: 'dev', buildHash: 'dev' },
+      {
+        dsn: 'https://dsn@sentry.io/1',
+        environment: 'development',
+        appVersion: 'dev',
+        buildHash: 'dev'
+      },
       preferences
     )
     await telemetry.setTelemetryConsent(true)
@@ -54,7 +59,12 @@ describe('telemetry environment gating', () => {
   it('initializes Sentry for the production environment when consent is granted', async () => {
     const telemetry = await loadTelemetry()
     await telemetry.configureTelemetry(
-      { dsn: 'https://dsn@sentry.io/1', environment: 'production', appVersion: '1.0.0', buildHash: 'abc1234' },
+      {
+        dsn: 'https://dsn@sentry.io/1',
+        environment: 'production',
+        appVersion: '1.0.0',
+        buildHash: 'abc1234'
+      },
       preferences
     )
     await telemetry.setTelemetryConsent(true)
@@ -67,7 +77,12 @@ describe('telemetry environment gating', () => {
     // Consent first, then configure — exercises the other ordering too.
     await telemetry.setTelemetryConsent(true)
     await telemetry.configureTelemetry(
-      { dsn: 'https://dsn@sentry.io/1', environment: 'development', appVersion: 'dev', buildHash: 'dev' },
+      {
+        dsn: 'https://dsn@sentry.io/1',
+        environment: 'development',
+        appVersion: 'dev',
+        buildHash: 'dev'
+      },
       preferences
     )
     expect(init).not.toHaveBeenCalled()
@@ -76,7 +91,12 @@ describe('telemetry environment gating', () => {
   it('aborts init when consent is revoked while the dynamic import is in flight', async () => {
     const telemetry = await loadTelemetry()
     await telemetry.configureTelemetry(
-      { dsn: 'https://dsn@sentry.io/1', environment: 'production', appVersion: '1.0.0', buildHash: 'abc1234' },
+      {
+        dsn: 'https://dsn@sentry.io/1',
+        environment: 'production',
+        appVersion: '1.0.0',
+        buildHash: 'abc1234'
+      },
       preferences
     )
     // Grant consent but do not await: the @sentry/react import is now in flight
@@ -98,7 +118,12 @@ describe('telemetry message capture', () => {
   const enableTelemetry = async () => {
     const telemetry = await loadTelemetry()
     await telemetry.configureTelemetry(
-      { dsn: 'https://dsn@sentry.io/1', environment: 'production', appVersion: '1.0.0', buildHash: 'abc1234' },
+      {
+        dsn: 'https://dsn@sentry.io/1',
+        environment: 'production',
+        appVersion: '1.0.0',
+        buildHash: 'abc1234'
+      },
       preferences
     )
     await telemetry.setTelemetryConsent(true)

@@ -14,11 +14,7 @@ import type { Bindings } from '../lib/bindings'
 import { applyCorsHeaders } from '../lib/cors'
 import { modelsChatRoute, modelsListRoute } from '../openapi/routes'
 import { fetchWithTimeout } from '../lib/fetch'
-import {
-  isFresh,
-  readCachedModels,
-  writeCachedModels
-} from '../lib/models-cache'
+import { isFresh, readCachedModels, writeCachedModels } from '../lib/models-cache'
 import {
   clearBackoff,
   getActiveBackoffMs,
@@ -27,10 +23,7 @@ import {
   toRateLimitResponse,
   type CredentialKey
 } from '../lib/rate-limit'
-import {
-  validateLiteLLMCaller,
-  type CallerIdentity
-} from '../lib/caller-validation'
+import { validateLiteLLMCaller, type CallerIdentity } from '../lib/caller-validation'
 import {
   ANONYMOUS_IDENTITY,
   clearLiteLLMUserKeyCache,
@@ -57,10 +50,7 @@ const liteLLMModelsCatalogSchema = z.object({
 const liteLLMModelInfoEntrySchema = z
   .object({
     model_name: z.string(),
-    model_info: z
-      .object({ mode: z.string().nullable().optional() })
-      .passthrough()
-      .optional()
+    model_info: z.object({ mode: z.string().nullable().optional() }).passthrough().optional()
   })
   .passthrough()
 
@@ -81,16 +71,11 @@ const UPSTREAM_ERROR_MESSAGES: Partial<Record<number, string>> = {
 const UPSTREAM_ERROR_STATUSES = new Set([400, 401, 403, 422, 500, 503, 504])
 const MAX_UPSTREAM_ERROR_MESSAGE_LENGTH = 500
 
-type LiteLLMBaseUrlResult =
-  | { ok: true; baseUrl: string }
-  | { ok: false; error: string }
+type LiteLLMBaseUrlResult = { ok: true; baseUrl: string } | { ok: false; error: string }
 
-const canonicalizeLiteLLMBaseUrl = (url: URL): string =>
-  url.href.replace(/\/+$/, '')
+const canonicalizeLiteLLMBaseUrl = (url: URL): string => url.href.replace(/\/+$/, '')
 
-const normalizeLiteLLMBaseUrl = (
-  value: string | null | undefined
-): string | undefined => {
+const normalizeLiteLLMBaseUrl = (value: string | null | undefined): string | undefined => {
   const result = validateLiteLLMBaseUrlPolicy(value, {
     canonicalize: canonicalizeLiteLLMBaseUrl
   })
@@ -142,14 +127,11 @@ const resolveLiteLLMBaseUrl = (
 const appendPath = (baseUrl: string, path: string): string =>
   `${baseUrl.replace(/\/+$/, '')}${path}`
 
-const litellmChatUrl = (baseUrl: string): string =>
-  appendPath(baseUrl, '/v1/chat/completions')
+const litellmChatUrl = (baseUrl: string): string => appendPath(baseUrl, '/v1/chat/completions')
 
-const litellmListUrl = (baseUrl: string): string =>
-  appendPath(baseUrl, '/v1/models')
+const litellmListUrl = (baseUrl: string): string => appendPath(baseUrl, '/v1/models')
 
-const litellmModelInfoUrl = (baseUrl: string): string =>
-  appendPath(baseUrl, '/model/info')
+const litellmModelInfoUrl = (baseUrl: string): string => appendPath(baseUrl, '/model/info')
 
 const litellmHeaders = (apiKey: string): Record<string, string> => ({
   authorization: `Bearer ${apiKey}`
@@ -169,14 +151,11 @@ const extractUpstreamErrorMessage = (rawText: string): string | undefined => {
       const nestedError = record.error
       if (typeof nestedError === 'object' && nestedError !== null) {
         const errorRecord = nestedError as Record<string, unknown>
-        const nestedMessage =
-          textValue(errorRecord.message) ?? textValue(errorRecord.detail)
+        const nestedMessage = textValue(errorRecord.message) ?? textValue(errorRecord.detail)
         if (nestedMessage) return nestedMessage
       }
       const message =
-        textValue(record.error) ??
-        textValue(record.message) ??
-        textValue(record.detail)
+        textValue(record.error) ?? textValue(record.message) ?? textValue(record.detail)
       if (message) return message
     }
   } catch {
@@ -263,11 +242,9 @@ const respondUpstreamError = async (
   }
 
   const fallbackError =
-    UPSTREAM_ERROR_MESSAGES[response.status] ??
-    `Upstream error ${response.status}`
+    UPSTREAM_ERROR_MESSAGES[response.status] ?? `Upstream error ${response.status}`
   const safeError =
-    options.rawText !== undefined &&
-    (response.status === 400 || response.status === 422)
+    options.rawText !== undefined && (response.status === 400 || response.status === 422)
       ? safeUpstreamError(options.rawText, fallbackError)
       : fallbackError
   const statusCode = UPSTREAM_ERROR_STATUSES.has(response.status)
@@ -276,15 +253,12 @@ const respondUpstreamError = async (
   return c.json(edgeErrorResponseSchema.parse({ error: safeError }), statusCode)
 }
 
-const liteLLMCacheScope = (baseUrl: string): string =>
-  encodeURIComponent(baseUrl)
+const liteLLMCacheScope = (baseUrl: string): string => encodeURIComponent(baseUrl)
 
 // Exported so /health reports `degraded` under EXACTLY the rule the models
 // routes 503 on — including base-URL validity (https, no credentials/query/
 // fragment) and per-user key-management configuration, not just presence.
-export const requireLiteLLMConfiguration = (
-  env: Bindings
-): string | undefined => {
+export const requireLiteLLMConfiguration = (env: Bindings): string | undefined => {
   if (!configuredLiteLLMBaseUrl(env)) return 'LiteLLM is not configured.'
   return requireLiteLLMUserKeyConfiguration(env)
 }
@@ -328,9 +302,7 @@ const fetchLiteLLMModelModes = async (
     10_000
   ).catch(() => undefined)
   if (!response?.ok) return modes
-  const parsed = liteLLMModelInfoSchema.safeParse(
-    await response.json().catch(() => undefined)
-  )
+  const parsed = liteLLMModelInfoSchema.safeParse(await response.json().catch(() => undefined))
   if (!parsed.success) return modes
   for (const entry of parsed.data.data) {
     const mode = entry.model_info?.mode
@@ -353,8 +325,7 @@ const toLiteLLMModels = (
     // Drop embedding models from the chat picker: trust the /model/info mode
     // when known, fall back to the name heuristic otherwise.
     const mode = modes.get(id)
-    const isEmbedding =
-      mode !== undefined ? mode === 'embedding' : looksLikeEmbeddingModel(id)
+    const isEmbedding = mode !== undefined ? mode === 'embedding' : looksLikeEmbeddingModel(id)
     if (isEmbedding) return []
     const publisher = id.includes('/') ? id.split('/')[0] : model.owned_by
     return [
@@ -421,14 +392,9 @@ interface LiteLLMPreflightArgs<S> {
  */
 const preflightLiteLLM = async <S = never>(
   c: Context<{ Bindings: Bindings }>,
-  {
-    requestedBaseUrl,
-    requireUserKey = false,
-    shortCircuit
-  }: LiteLLMPreflightArgs<S>
+  { requestedBaseUrl, requireUserKey = false, shortCircuit }: LiteLLMPreflightArgs<S>
 ): Promise<LiteLLMPreflightResult<S>> => {
-  const authorization =
-    c.req.header('authorization') ?? c.req.header('Authorization')
+  const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
   const isAnonymous = !authorization
 
   // Configuration first: a deployment without a key or base URL is a 503 "not
@@ -437,10 +403,7 @@ const preflightLiteLLM = async <S = never>(
   if (configurationError) {
     return {
       ok: false,
-      response: c.json(
-        edgeErrorResponseSchema.parse({ error: configurationError }),
-        503
-      )
+      response: c.json(edgeErrorResponseSchema.parse({ error: configurationError }), 503)
     }
   }
 
@@ -448,10 +411,7 @@ const preflightLiteLLM = async <S = never>(
   if (!litellmBaseUrl.ok) {
     return {
       ok: false,
-      response: c.json(
-        edgeErrorResponseSchema.parse({ error: litellmBaseUrl.error }),
-        400
-      )
+      response: c.json(edgeErrorResponseSchema.parse({ error: litellmBaseUrl.error }), 400)
     }
   }
   const resolvedBaseUrl = litellmBaseUrl.baseUrl
@@ -467,19 +427,13 @@ const preflightLiteLLM = async <S = never>(
     if (callerValidation.status === 'invalid') {
       return {
         ok: false,
-        response: c.json(
-          edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
-          401
-        )
+        response: c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
       }
     }
     if (callerValidation.status === 'forbidden') {
       return {
         ok: false,
-        response: c.json(
-          edgeErrorResponseSchema.parse({ error: 'Forbidden' }),
-          403
-        )
+        response: c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
       }
     }
     if (callerValidation.status === 'unavailable') {
@@ -500,11 +454,7 @@ const preflightLiteLLM = async <S = never>(
     // short-circuit another user's quota, and two deployments sharing a backend
     // must not share each other's provisioning marker (see
     // deriveLiteLLMUserCredentialKey).
-    credentialKey = await deriveLiteLLMUserCredentialKey(
-      c.env,
-      identity,
-      resolvedBaseUrl
-    )
+    credentialKey = await deriveLiteLLMUserCredentialKey(c.env, identity, resolvedBaseUrl)
   }
 
   if (shortCircuit) {
@@ -543,9 +493,7 @@ const preflightLiteLLM = async <S = never>(
   }
 }
 
-export const registerModelRoutes = (
-  app: OpenAPIHono<{ Bindings: Bindings }>
-) => {
+export const registerModelRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
   app.openapi(modelsChatRoute, async (c) => {
     const body = c.req.valid('json')
     const useStream = body.stream === true
@@ -634,15 +582,9 @@ export const registerModelRoutes = (
       console.error('[models/chat] upstream error', {
         status: response.status,
         'retry-after': response.headers.get('retry-after'),
-        'x-ratelimit-limit-requests': response.headers.get(
-          'x-ratelimit-limit-requests'
-        ),
-        'x-ratelimit-remaining-requests': response.headers.get(
-          'x-ratelimit-remaining-requests'
-        ),
-        'x-ratelimit-reset-requests': response.headers.get(
-          'x-ratelimit-reset-requests'
-        )
+        'x-ratelimit-limit-requests': response.headers.get('x-ratelimit-limit-requests'),
+        'x-ratelimit-remaining-requests': response.headers.get('x-ratelimit-remaining-requests'),
+        'x-ratelimit-reset-requests': response.headers.get('x-ratelimit-reset-requests')
       })
 
       if (response.status === 429) {
@@ -650,15 +592,8 @@ export const registerModelRoutes = (
         const rateLimitBody = toRateLimitResponse(rawText, retryAfter)
         // Remember the window (durably, colo-wide) so the next call backs off
         // instead of re-probing.
-        await recordBackoff(
-          rateLimitBody.retryAfterMs,
-          Date.now(),
-          credentialKey
-        )
-        c.header(
-          'Retry-After',
-          retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000))
-        )
+        await recordBackoff(rateLimitBody.retryAfterMs, Date.now(), credentialKey)
+        c.header('Retry-After', retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000)))
         for (const header of EDGE_RATE_LIMIT_HEADERS) {
           const value = response.headers.get(header)
           if (value !== null) c.header(header, value)
@@ -733,10 +668,7 @@ export const registerModelRoutes = (
         // reactive backoff below is only a secondary guard; the per-isolate
         // version shipped in PR #100 reset on every fresh Cloudflare isolate,
         // which is why the 429s regressed.
-        cached = await readCachedModels(
-          Date.now(),
-          liteLLMCacheScope(resolvedBaseUrl)
-        )
+        cached = await readCachedModels(Date.now(), liteLLMCacheScope(resolvedBaseUrl))
         if (cached && isFresh(cached.ageMs)) {
           return c.json({ models: cached.models }, 200)
         }
@@ -822,17 +754,10 @@ export const registerModelRoutes = (
       // (TINYTINKERER-FRONTEND-C / FRONTEND-D).
       if (response.status === 429) {
         const retryAfter = response.headers.get('retry-after')
-        const rateLimitBody = toRateLimitResponse(
-          await response.text(),
-          retryAfter
-        )
+        const rateLimitBody = toRateLimitResponse(await response.text(), retryAfter)
         // Remember the window durably (colo-wide) so the next request — in any
         // isolate — backs off instead of re-probing.
-        await recordBackoff(
-          rateLimitBody.retryAfterMs,
-          Date.now(),
-          credentialKey
-        )
+        await recordBackoff(rateLimitBody.retryAfterMs, Date.now(), credentialKey)
         // Prefer the last-known catalogue over cascading the upstream 429.
         if (cached) return c.json({ models: cached.models }, 200)
         // Cold-cache miss (fresh isolate, nothing cached yet): the catalogue is
@@ -841,10 +766,7 @@ export const registerModelRoutes = (
         // falls back to its built-in model list and retries later, and the durable
         // backoff already recorded above stops us re-probing the provider in the
         // meantime (TINYTINKERER-EDGE-5).
-        c.header(
-          'Retry-After',
-          retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000))
-        )
+        c.header('Retry-After', retryAfter ?? String(Math.ceil(rateLimitBody.retryAfterMs / 1000)))
         return c.json(
           edgeErrorResponseSchema.parse({
             error: UPSTREAM_ERROR_MESSAGES[503]
@@ -864,11 +786,7 @@ export const registerModelRoutes = (
 
     // Enrich with /model/info modes (best-effort) so embedding models are
     // dropped by their declared mode, not just by name (issue #179).
-    const modes = await fetchLiteLLMModelModes(
-      c.env,
-      resolvedBaseUrl,
-      userKey.apiKey
-    )
+    const modes = await fetchLiteLLMModelModes(c.env, resolvedBaseUrl, userKey.apiKey)
     // Guard the raw body read: a 200 with a non-JSON body (e.g. an HTML error
     // page from a proxy in front of LiteLLM) must surface as a typed 502 rather
     // than an unhandled response.json() throw. toLiteLLMModels stays lenient

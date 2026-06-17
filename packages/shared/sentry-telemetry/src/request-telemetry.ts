@@ -87,9 +87,7 @@ const stripUrlQuery = (value: string): string => {
   return queryIndex === -1 ? value : value.slice(0, queryIndex)
 }
 
-const sanitizeRequestLocation = (
-  value: string
-): { host?: string; path: string } => {
+const sanitizeRequestLocation = (value: string): { host?: string; path: string } => {
   const sanitized = stripUrlQuery(value)
   try {
     const url = new URL(sanitized)
@@ -111,10 +109,7 @@ const markCaptured = (error: Error): boolean => {
   return false
 }
 
-const toLevel = (
-  kind: RequestTelemetryKind,
-  response?: Response
-): 'warning' | 'error' => {
+const toLevel = (kind: RequestTelemetryKind, response?: Response): 'warning' | 'error' => {
   if (kind === 'abort') {
     return 'warning'
   }
@@ -216,9 +211,7 @@ const buildRequestContexts = (
       kind,
       // Raw text that failed to parse — lets future agents see what the model
       // or upstream actually returned without needing breadcrumbs or replays.
-      ...(rawInput !== undefined
-        ? { raw_input: rawInput.slice(0, MAX_RAW_INPUT_LENGTH) }
-        : {})
+      ...(rawInput !== undefined ? { raw_input: rawInput.slice(0, MAX_RAW_INPUT_LENGTH) } : {})
     },
     ...(response
       ? {
@@ -299,9 +292,11 @@ export const fetchWithTelemetry = async (
       // Error responses are typically short JSON; the clone's body is read once
       // and discarded. On failure (e.g. the body is a locked stream) we capture
       // without body rather than surfacing a secondary error.
-      const bodyText = await response.clone().text().catch(() => undefined)
-      const scrubbedBody =
-        bodyText !== undefined ? scrubResponseBody(bodyText) : undefined
+      const bodyText = await response
+        .clone()
+        .text()
+        .catch(() => undefined)
+      const scrubbedBody = bodyText !== undefined ? scrubResponseBody(bodyText) : undefined
       captureRequestIssue(metadata, {
         kind: 'http_error',
         message: `${metadata.method} ${location.path} failed (${response.status})`,

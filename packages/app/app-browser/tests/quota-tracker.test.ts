@@ -8,7 +8,7 @@ const makeHeaders = (overrides: Record<string, string> = {}): Headers => {
     'x-ratelimit-reset-requests': '0',
     'x-ratelimit-limit-tokens': '2000000',
     'x-ratelimit-remaining-tokens': '1999990',
-    'x-ratelimit-reset-tokens': '0',
+    'x-ratelimit-reset-tokens': '0'
   }
   return new Headers({ ...defaults, ...overrides })
 }
@@ -35,7 +35,7 @@ describe('RateLimitQuota', () => {
     quota.updateFromHeaders(
       makeHeaders({
         'x-ratelimit-remaining-requests': '0',
-        'x-ratelimit-reset-requests': '45',
+        'x-ratelimit-reset-requests': '45'
       }),
       nowMs
     )
@@ -53,7 +53,7 @@ describe('RateLimitQuota', () => {
     quota.updateFromHeaders(
       makeHeaders({
         'x-ratelimit-remaining-requests': '500',
-        'x-ratelimit-reset-requests': '30',
+        'x-ratelimit-reset-requests': '30'
       }),
       nowMs
     )
@@ -70,7 +70,7 @@ describe('RateLimitQuota', () => {
     quota.updateFromHeaders(
       makeHeaders({
         'x-ratelimit-remaining-tokens': '500',
-        'x-ratelimit-reset-tokens': '20',
+        'x-ratelimit-reset-tokens': '20'
       }),
       nowMs
     )
@@ -85,10 +85,7 @@ describe('RateLimitQuota', () => {
     const quota = new RateLimitQuota()
     const nowMs = Date.now()
     // 1500000 remaining = 75% of 2000000, well above the 5% soft-throttle threshold
-    quota.updateFromHeaders(
-      makeHeaders({ 'x-ratelimit-remaining-tokens': '1500000' }),
-      nowMs
-    )
+    quota.updateFromHeaders(makeHeaders({ 'x-ratelimit-remaining-tokens': '1500000' }), nowMs)
     const result = quota.checkThrottle(500, nowMs)
     expect(result.shouldThrottle).toBe(false)
   })
@@ -133,7 +130,7 @@ describe('RateLimitQuota', () => {
     quota.updateFromHeaders(
       makeHeaders({
         'x-ratelimit-remaining-requests': '0',
-        'x-ratelimit-reset-requests': '10',
+        'x-ratelimit-reset-requests': '10'
       }),
       pastMs
     )
@@ -150,7 +147,7 @@ describe('RateLimitQuota', () => {
     quota.updateFromHeaders(
       makeHeaders({
         'x-ratelimit-remaining-requests': '0',
-        'x-ratelimit-reset-requests': String(absoluteResetSec),
+        'x-ratelimit-reset-requests': String(absoluteResetSec)
       }),
       nowMs
     )

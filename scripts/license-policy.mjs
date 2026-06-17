@@ -12,15 +12,7 @@
  * dependencies that ship no license metadata.
  */
 const LICENSE_POLICY = {
-  allow: [
-    '0BSD',
-    'MIT',
-    'ISC',
-    'Apache-2.0',
-    'BSD',
-    'BSD-2-Clause',
-    'BSD-3-Clause'
-  ],
+  allow: ['0BSD', 'MIT', 'ISC', 'Apache-2.0', 'BSD', 'BSD-2-Clause', 'BSD-3-Clause'],
   warn: ['LGPL', 'MPL-2.0', 'Unlicense'],
   block: ['GPL', 'GPL-2.0', 'GPL-3.0', 'AGPL', 'AGPL-3.0']
 }
@@ -39,12 +31,9 @@ export { VERDICT }
 // Exact-match lookup built from LICENSE_POLICY so the lists above are the single
 // authoritative source for known SPDX ids.
 const EXACT_VERDICTS = new Map()
-for (const id of LICENSE_POLICY.allow)
-  EXACT_VERDICTS.set(id.toUpperCase(), VERDICT.ALLOW)
-for (const id of LICENSE_POLICY.warn)
-  EXACT_VERDICTS.set(id.toUpperCase(), VERDICT.WARN)
-for (const id of LICENSE_POLICY.block)
-  EXACT_VERDICTS.set(id.toUpperCase(), VERDICT.BLOCK)
+for (const id of LICENSE_POLICY.allow) EXACT_VERDICTS.set(id.toUpperCase(), VERDICT.ALLOW)
+for (const id of LICENSE_POLICY.warn) EXACT_VERDICTS.set(id.toUpperCase(), VERDICT.WARN)
+for (const id of LICENSE_POLICY.block) EXACT_VERDICTS.set(id.toUpperCase(), VERDICT.BLOCK)
 
 /**
  * Classify a single SPDX license token (no operators) against the policy.

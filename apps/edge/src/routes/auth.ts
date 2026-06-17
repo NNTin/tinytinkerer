@@ -12,9 +12,7 @@ const githubOAuthResponseSchema = z.object({
 
 const GITHUB_CODE_RE = /^[a-zA-Z0-9_-]{10,40}$/
 
-export const registerAuthRoutes = (
-  app: OpenAPIHono<{ Bindings: Bindings }>
-) => {
+export const registerAuthRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
   app.openapi(authExchangeRoute, async (c) => {
     const { code, redirectUri } = c.req.valid('json')
 
@@ -71,9 +69,6 @@ export const registerAuthRoutes = (
       )
     }
 
-    return c.json(
-      githubExchangeResponseSchema.parse({ accessToken: payload.access_token }),
-      200
-    )
+    return c.json(githubExchangeResponseSchema.parse({ accessToken: payload.access_token }), 200)
   })
 }

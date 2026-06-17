@@ -57,10 +57,7 @@ describe('ReActRuntime', () => {
   it('loops until a final decision then synthesizes from accumulated observations', async () => {
     let observed: string[] = []
     const provider = scriptedProvider(
-      [
-        { kind: 'action', toolId: 'web-search', input: { query: 'hello' } },
-        { kind: 'final' }
-      ],
+      [{ kind: 'action', toolId: 'web-search', input: { query: 'hello' } }, { kind: 'final' }],
       async function* () {
         yield { kind: 'content' as const, text: 'answer' }
       },
@@ -84,10 +81,7 @@ describe('ReActRuntime', () => {
 
   it('nests the tool run under the act step with its own stepId', async () => {
     const provider = scriptedProvider(
-      [
-        { kind: 'action', toolId: 'web-search', input: { query: 'hello' } },
-        { kind: 'final' }
-      ],
+      [{ kind: 'action', toolId: 'web-search', input: { query: 'hello' } }, { kind: 'final' }],
       async function* () {
         yield { kind: 'content' as const, text: 'answer' }
       }
@@ -377,7 +371,9 @@ describe('ReActRuntime', () => {
 
     expect(events.some((event) => event.type === 'agent.step.failed')).toBe(true)
     expect(
-      events.some((event) => event.type === 'error' && event.payload.message === 'ReAct decision timed out')
+      events.some(
+        (event) => event.type === 'error' && event.payload.message === 'ReAct decision timed out'
+      )
     ).toBe(true)
     expect(events.at(-1)?.type).toBe('assistant.done')
   })

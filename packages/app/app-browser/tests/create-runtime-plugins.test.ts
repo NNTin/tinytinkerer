@@ -1,14 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import type {
-  AgentHookContribution,
-  PluginModule,
-  Tool
-} from '@tinytinkerer/app-core'
-import {
-  createPluginRuntime,
-  createRuntime
-} from '../src/runtime/create-runtime.js'
+import type { AgentHookContribution, PluginModule, Tool } from '@tinytinkerer/app-core'
+import { createPluginRuntime, createRuntime } from '../src/runtime/create-runtime.js'
 
 const testTool = (id: string): Tool<unknown, unknown> => ({
   id,
@@ -45,10 +38,7 @@ const pluginModule = (options: {
   })
 })
 
-const hookPluginModule = (
-  id: string,
-  hook: AgentHookContribution
-): PluginModule => ({
+const hookPluginModule = (id: string, hook: AgentHookContribution): PluginModule => ({
   manifest: {
     id,
     label: id,

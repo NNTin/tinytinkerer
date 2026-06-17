@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  resolveWidgetViewMode,
-  resolveWidgetWindowMode
-} from './runtime-config'
+import { resolveWidgetViewMode, resolveWidgetWindowMode } from './runtime-config'
 
 describe('widget runtime config', () => {
   it('detects host rendering mode from the query string', () => {

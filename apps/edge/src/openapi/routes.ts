@@ -44,9 +44,7 @@ const retryAfterHeader = z.object({
 
 // All upstream rate-limit headers the proxy forwards on chat completions.
 const rateLimitForwardHeaders = z.object(
-  Object.fromEntries(
-    EDGE_RATE_LIMIT_HEADERS.map((name) => [name, z.string().optional()])
-  )
+  Object.fromEntries(EDGE_RATE_LIMIT_HEADERS.map((name) => [name, z.string().optional()]))
 )
 
 // Subset surfaced alongside a 429 (mirrors the request-scoped counters + Retry-After).

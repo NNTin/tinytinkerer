@@ -52,7 +52,7 @@ export class RateLimitQuota {
       this.requests = {
         limit: limitReq,
         remaining: remainingReq,
-        resetAt: resolveResetAt(resetReq, nowMs),
+        resetAt: resolveResetAt(resetReq, nowMs)
       }
     }
 
@@ -60,7 +60,7 @@ export class RateLimitQuota {
       this.tokens = {
         limit: limitTok,
         remaining: remainingTok,
-        resetAt: resolveResetAt(resetTok, nowMs),
+        resetAt: resolveResetAt(resetTok, nowMs)
       }
     }
   }
@@ -89,7 +89,7 @@ export class RateLimitQuota {
         return {
           shouldThrottle: true,
           waitMs: requests.resetAt - nowMs + jitter(),
-          reason: 'request_quota',
+          reason: 'request_quota'
         }
       }
       const threshold = Math.ceil(requests.limit * SOFT_THROTTLE_THRESHOLD)
@@ -104,7 +104,7 @@ export class RateLimitQuota {
         return {
           shouldThrottle: true,
           waitMs: tokens.resetAt - nowMs + jitter(),
-          reason: 'token_quota',
+          reason: 'token_quota'
         }
       }
       const threshold = Math.ceil(tokens.limit * SOFT_THROTTLE_THRESHOLD)

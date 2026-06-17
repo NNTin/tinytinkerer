@@ -104,7 +104,7 @@ export const browserStatePluginManifest: PluginManifest = {
         '(3) with a CSS `selector`, get the matched elements as plain data (tag, id, classes, ' +
         'and optionally html/text/attributes/layout box), and set `depth` to also nest their ' +
         'descendants. Use include:["html"] to inspect rendered markup such as an SVG when ' +
-        'debugging why something is not showing. This tool\'s own output is deliberately ' +
+        "debugging why something is not showing. This tool's own output is deliberately " +
         'narrow and truncated — use it for a quick look and to pick selectors. Separately, ' +
         'every call also snapshots the FULL sanitized page into a structured tree that the ' +
         'run_javascript tool receives automatically as its `dom` binding (no need to pass ' +
@@ -127,7 +127,7 @@ export const browserStatePluginManifest: PluginManifest = {
           type: 'number',
           description:
             'How many levels of descendants to include (0–8). For an outline it sets how deep ' +
-            'the tree goes (default 4); for a selector it nests each match\'s children (default 0).'
+            "the tree goes (default 4); for a selector it nests each match's children (default 0)."
         },
         include: {
           type: 'array',

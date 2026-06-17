@@ -79,7 +79,12 @@ const tableAlign = (align: TableAlignment) => (align === null ? undefined : alig
 
 const renderListItem = (node: ListItemNode) => (
   <li key={node.id} className="my-1">
-    <div className={joinClasses('min-w-0', typeof node.checked === 'boolean' ? 'flex items-start gap-2' : undefined)}>
+    <div
+      className={joinClasses(
+        'min-w-0',
+        typeof node.checked === 'boolean' ? 'flex items-start gap-2' : undefined
+      )}
+    >
       {typeof node.checked === 'boolean' ? (
         <span className="mt-0.5 inline-flex shrink-0">
           <input type="checkbox" defaultChecked={node.checked} disabled />

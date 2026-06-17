@@ -106,7 +106,9 @@ describe('auth helpers', () => {
 
     expect(topAssignSpy).toHaveBeenCalledTimes(1)
     expect(sessionStorage.getItem('tinytinkerer-test:oauth_state')).toBeTruthy()
-    expect(sessionStorage.getItem('tinytinkerer-test:oauth_return_url')).toBe('http://localhost:3111/')
+    expect(sessionStorage.getItem('tinytinkerer-test:oauth_return_url')).toBe(
+      'http://localhost:3111/'
+    )
   })
 
   it('completes the callback and persists the exchanged token', async () => {
@@ -136,9 +138,9 @@ describe('auth helpers', () => {
 
   it('rejects missing authorization codes', async () => {
     const app = createAuthApp()
-    await expect(
-      completeGitHubOAuthCallback(app, { code: null, state: 'state' })
-    ).rejects.toThrow('No authorization code received from GitHub.')
+    await expect(completeGitHubOAuthCallback(app, { code: null, state: 'state' })).rejects.toThrow(
+      'No authorization code received from GitHub.'
+    )
   })
 
   it('rejects invalid oauth state', async () => {
@@ -171,9 +173,9 @@ describe('auth helpers', () => {
       )
     )
 
-    await expect(
-      completeGitHubOAuthCallback(app, { code: 'abc123', state })
-    ).rejects.toThrow('OAuth is not configured')
+    await expect(completeGitHubOAuthCallback(app, { code: 'abc123', state })).rejects.toThrow(
+      'OAuth is not configured'
+    )
     vi.unstubAllGlobals()
   })
 

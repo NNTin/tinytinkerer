@@ -35,7 +35,11 @@ class MockRecognition implements RecognitionHandlers {
 }
 
 const setSpeechRecognition = (ctor: typeof MockRecognition | undefined): void => {
-  Object.defineProperty(window, 'SpeechRecognition', { value: ctor, configurable: true, writable: true })
+  Object.defineProperty(window, 'SpeechRecognition', {
+    value: ctor,
+    configurable: true,
+    writable: true
+  })
   Object.defineProperty(window, 'webkitSpeechRecognition', {
     value: undefined,
     configurable: true,

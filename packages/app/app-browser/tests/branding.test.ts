@@ -38,7 +38,8 @@ vi.mock('@tinytinkerer/brand-assets', () => ({
     manifest: {
       name: 'tinytinkerer',
       shortName: 'tinytinkerer',
-      description: 'TinyTinkerer app icons and branding metadata for web, widget, and future mobile shells.',
+      description:
+        'TinyTinkerer app icons and branding metadata for web, widget, and future mobile shells.',
       startUrl: '/',
       display: 'standalone',
       backgroundColor: '#fffaf5',
@@ -87,7 +88,8 @@ vi.mock('../src/stores/status-store.js', () => ({
 
 import { createBrowserApp, initializeBrowserApp } from '../src/index.js'
 
-const decodeDataUrlPayload = (value: string): string => decodeURIComponent(value.split(',')[1] ?? '')
+const decodeDataUrlPayload = (value: string): string =>
+  decodeURIComponent(value.split(',')[1] ?? '')
 
 describe('brand metadata', () => {
   beforeEach(() => {
@@ -100,12 +102,12 @@ describe('brand metadata', () => {
     await initializeBrowserApp(app, { manifestStartUrl: '/web/' })
 
     expect(document.head.querySelectorAll('link[rel="icon"]').length).toBe(4)
-    expect(document.head.querySelector('link[rel="icon"][type="image/x-icon"]')?.getAttribute('href')).toBe(
-      '/assets/favicon.ico'
-    )
-    expect(document.head.querySelector('link[rel="icon"][sizes="16x16"]')?.getAttribute('href')).toBe(
-      '/assets/favicon-16.png'
-    )
+    expect(
+      document.head.querySelector('link[rel="icon"][type="image/x-icon"]')?.getAttribute('href')
+    ).toBe('/assets/favicon.ico')
+    expect(
+      document.head.querySelector('link[rel="icon"][sizes="16x16"]')?.getAttribute('href')
+    ).toBe('/assets/favicon-16.png')
     expect(document.head.querySelector('link[rel="apple-touch-icon"]')).toBeTruthy()
     expect(document.head.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe(
       '#f6f2ec'
@@ -132,14 +134,19 @@ describe('brand metadata', () => {
   })
 
   it('preserves an existing external manifest link', async () => {
-    document.head.innerHTML = '<meta charset="UTF-8" /><link rel="manifest" href="/mobile/manifest.webmanifest" />'
+    document.head.innerHTML =
+      '<meta charset="UTF-8" /><link rel="manifest" href="/mobile/manifest.webmanifest" />'
 
     const app = createBrowserApp({})
     await initializeBrowserApp(app, {})
 
-    expect(document.head.querySelector('link[rel="manifest"]:not([data-tinytinkerer-brand])')?.getAttribute('href')).toBe(
-      '/mobile/manifest.webmanifest'
-    )
-    expect(document.head.querySelector('link[rel="manifest"][data-tinytinkerer-brand="manifest"]')).toBeNull()
+    expect(
+      document.head
+        .querySelector('link[rel="manifest"]:not([data-tinytinkerer-brand])')
+        ?.getAttribute('href')
+    ).toBe('/mobile/manifest.webmanifest')
+    expect(
+      document.head.querySelector('link[rel="manifest"][data-tinytinkerer-brand="manifest"]')
+    ).toBeNull()
   })
 })

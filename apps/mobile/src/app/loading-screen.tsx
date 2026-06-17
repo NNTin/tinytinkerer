@@ -25,7 +25,9 @@ const LoadingShell = ({ eyebrow, title, message, error }: LoadingScreenProps) =>
         </div>
       ) : (
         <div className="mt-5 rounded-[1.5rem] border border-stone-200 bg-white px-4 py-4">
-          <p className="text-xs text-[var(--muted)]">Loading shared browser state and preparing the mobile shell.</p>
+          <p className="text-xs text-[var(--muted)]">
+            Loading shared browser state and preparing the mobile shell.
+          </p>
         </div>
       )}
     </div>
@@ -63,7 +65,9 @@ export const MobilePanelLoading = () => (
     <div className="w-full max-w-screen-sm rounded-t-[2rem] border border-[var(--border)] bg-[var(--panel)] px-5 py-5 shadow-[0_-12px_40px_rgba(47,41,35,0.12)]">
       <p className="text-[11px] uppercase tracking-[0.24em] text-[var(--muted)]">Settings</p>
       <h2 className="mt-2 text-lg font-semibold text-stone-900">Loading controls</h2>
-      <p className="mt-2 text-sm text-[var(--muted)]">Bringing in account, model, and MCP settings.</p>
+      <p className="mt-2 text-sm text-[var(--muted)]">
+        Bringing in account, model, and MCP settings.
+      </p>
     </div>
   </div>
 )

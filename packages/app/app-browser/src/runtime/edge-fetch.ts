@@ -21,7 +21,11 @@ type EdgeFetchOptions = {
   accept?: AcceptedOutcome
 }
 
-export type EdgeFetch = (path: string, body: unknown, options?: EdgeFetchOptions) => Promise<Response>
+export type EdgeFetch = (
+  path: string,
+  body: unknown,
+  options?: EdgeFetchOptions
+) => Promise<Response>
 
 // Default expected-outcome triage shared by every edge model/agent call.
 // Individual call sites (e.g. the synthesizer) may override via
@@ -130,19 +134,13 @@ export const modelsChatRequestBody = (
   }
 }
 
-export const createModelsChatFetch = (
-  edgeFetch: EdgeFetch,
-  getLiteLLMBaseUrl?: () => string | null | undefined
-): ModelsChatFetch =>
+export const createModelsChatFetch =
+  (edgeFetch: EdgeFetch, getLiteLLMBaseUrl?: () => string | null | undefined): ModelsChatFetch =>
   (init, options) =>
-    edgeFetch(
-      EDGE_ROUTE_PATHS.modelsChat,
-      modelsChatRequestBody(getLiteLLMBaseUrl?.(), init),
-      {
-        model: init.model,
-        stream: init.stream,
-        ...(options?.area ? { area: options.area } : {}),
-        ...(options?.signal ? { signal: options.signal } : {}),
-        ...(options?.accept ? { accept: options.accept } : {})
-      }
-    )
+    edgeFetch(EDGE_ROUTE_PATHS.modelsChat, modelsChatRequestBody(getLiteLLMBaseUrl?.(), init), {
+      model: init.model,
+      stream: init.stream,
+      ...(options?.area ? { area: options.area } : {}),
+      ...(options?.signal ? { signal: options.signal } : {}),
+      ...(options?.accept ? { accept: options.accept } : {})
+    })

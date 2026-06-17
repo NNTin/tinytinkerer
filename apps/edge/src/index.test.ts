@@ -41,17 +41,10 @@ const githubUserOk = () =>
 
 const isLiteLLMKeyManagementUrl = (url: string): boolean => {
   const path = new URL(url).pathname
-  return (
-    path === '/v2/key/info' ||
-    path === '/key/generate' ||
-    path === '/key/update'
-  )
+  return path === '/v2/key/info' || path === '/key/generate' || path === '/key/update'
 }
 
-const litellmKeyManagementOk = (
-  input: RequestInfo | URL,
-  init?: RequestInit
-): Response => {
+const litellmKeyManagementOk = (input: RequestInfo | URL, init?: RequestInit): Response => {
   const path = new URL(toRequestUrl(input)).pathname
   if (path === '/v2/key/info') {
     return new Response(JSON.stringify({ key: [], info: [] }), {
@@ -92,9 +85,7 @@ const withCallerValidation = (
 const upstreamCalls = (
   fetchSpy: ReturnType<typeof vi.fn>
 ): Array<[RequestInfo | URL, RequestInit | undefined]> =>
-  (
-    fetchSpy.mock.calls as Array<[RequestInfo | URL, RequestInit | undefined]>
-  ).filter(([input]) => {
+  (fetchSpy.mock.calls as Array<[RequestInfo | URL, RequestInit | undefined]>).filter(([input]) => {
     const url = toRequestUrl(input)
     return url !== GITHUB_USER_URL && !isLiteLLMKeyManagementUrl(url)
   })
@@ -103,13 +94,11 @@ const upstreamCalls = (
 const githubProbeCalls = (
   fetchSpy: ReturnType<typeof vi.fn>
 ): Array<[RequestInfo | URL, RequestInit | undefined]> =>
-  (
-    fetchSpy.mock.calls as Array<[RequestInfo | URL, RequestInit | undefined]>
-  ).filter(([input]) => toRequestUrl(input) === GITHUB_USER_URL)
+  (fetchSpy.mock.calls as Array<[RequestInfo | URL, RequestInit | undefined]>).filter(
+    ([input]) => toRequestUrl(input) === GITHUB_USER_URL
+  )
 
-const DEFAULT_LITELLM_SCOPE = encodeURIComponent(
-  'https://litellm.labs.lair.nntin.xyz'
-)
+const DEFAULT_LITELLM_SCOPE = encodeURIComponent('https://litellm.labs.lair.nntin.xyz')
 
 describe('edge routes', () => {
   afterEach(() => {
@@ -164,8 +153,7 @@ describe('edge routes', () => {
     expect(response.status).toBe(503)
     const body = edgeErrorResponseSchema.parse(await response.json())
     expect(body).toEqual({
-      error:
-        'Web search is currently unavailable. Configure Tavily to enable live search.'
+      error: 'Web search is currently unavailable. Configure Tavily to enable live search.'
     })
   })
 
@@ -203,9 +191,7 @@ describe('edge routes', () => {
   it('returns 503 when search caller validation is unavailable', async () => {
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
       if (toRequestUrl(input) === GITHUB_USER_URL) {
-        return Promise.resolve(
-          new Response('github unavailable', { status: 503 })
-        )
+        return Promise.resolve(new Response('github unavailable', { status: 503 }))
       }
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
@@ -303,9 +289,7 @@ describe('edge routes', () => {
     expect(response.status).toBe(429)
     expect(response.headers.get('Retry-After')).toBe('120')
     const [chatCall] = upstreamCalls(fetchSpy)
-    expect(chatCall?.[0]).toBe(
-      'https://litellm.labs.lair.nntin.xyz/v1/chat/completions'
-    )
+    expect(chatCall?.[0]).toBe('https://litellm.labs.lair.nntin.xyz/v1/chat/completions')
     const headers = new Headers(chatCall?.[1]?.headers)
     expect(headers.get('authorization')).toMatch(/^Bearer sk-tt-/)
     const body = (await response.json()) as Record<string, unknown>
@@ -343,35 +327,32 @@ describe('edge routes', () => {
       },
       'LiteLLM user key provisioning is not configured.'
     ]
-  ])(
-    'returns 503 when LiteLLM is not configured (%s)',
-    async (_label, env, error) => {
-      const fetchSpy = vi.fn()
-      vi.stubGlobal('fetch', fetchSpy)
+  ])('returns 503 when LiteLLM is not configured (%s)', async (_label, env, error) => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
 
-      const response = await app.fetch(
-        new Request('http://localhost/api/models/chat', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            authorization: 'Bearer test-token'
-          },
-          body: JSON.stringify({
-            provider: 'litellm',
-            stream: false,
-            messages: [{ role: 'user', content: 'hello' }]
-          })
-        }),
-        env
-      )
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer test-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      env
+    )
 
-      expect(response.status).toBe(503)
-      expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
-        error
-      })
-      expect(fetchSpy).not.toHaveBeenCalled()
-    }
-  )
+    expect(response.status).toBe(503)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
 
   // Both models routes duplicate the same guard sequence; pin the missing-
   // Anonymous users (no authorization) should be allowed. They get provisioned
@@ -487,10 +468,7 @@ describe('edge routes', () => {
 
   it('health reports models degraded under the same rule the models routes 503 on, including base-URL validity', async () => {
     const healthStatus = async (env: Record<string, string>) => {
-      const response = await app.fetch(
-        new Request('http://localhost/health'),
-        env
-      )
+      const response = await app.fetch(new Request('http://localhost/health'), env)
       return systemStatusSchema.parse(await response.json()).models
     }
 
@@ -516,10 +494,10 @@ describe('edge routes', () => {
   it('applies the default model when the request omits one', async () => {
     const fetchSpy = withCallerValidation(() =>
       Promise.resolve(
-        new Response(
-          JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
-          { status: 200, headers: { 'content-type': 'application/json' } }
-        )
+        new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
       )
     )
     vi.stubGlobal('fetch', fetchSpy)
@@ -546,9 +524,7 @@ describe('edge routes', () => {
     if (typeof upstreamBody !== 'string') {
       throw new Error('Expected LiteLLM request body to be a JSON string')
     }
-    expect((JSON.parse(upstreamBody) as { model: string }).model).toBe(
-      'chatgpt/gpt-5.4'
-    )
+    expect((JSON.parse(upstreamBody) as { model: string }).model).toBe('chatgpt/gpt-5.4')
   })
 
   it('serves a graceful 503 (not a 502, not a raw 429) on a cold-cache-miss models/list rate limit, and does not capture the window-opener (TINYTINKERER-EDGE-5)', async () => {
@@ -638,12 +614,8 @@ describe('edge routes', () => {
     // A cache miss makes two upstream calls: the catalogue plus the
     // best-effort /model/info mode lookup (issue #179).
     expect(upstreamCalls(fetchSpy)).toHaveLength(2)
-    expect(upstreamCalls(fetchSpy)[0]?.[0]).toBe(
-      'https://litellm.labs.lair.nntin.xyz/v1/models'
-    )
-    expect(upstreamCalls(fetchSpy)[1]?.[0]).toBe(
-      'https://litellm.labs.lair.nntin.xyz/model/info'
-    )
+    expect(upstreamCalls(fetchSpy)[0]?.[0]).toBe('https://litellm.labs.lair.nntin.xyz/v1/models')
+    expect(upstreamCalls(fetchSpy)[1]?.[0]).toBe('https://litellm.labs.lair.nntin.xyz/model/info')
     const headers = new Headers(upstreamCalls(fetchSpy)[0]?.[1]?.headers)
     expect(headers.get('authorization')).toMatch(/^Bearer sk-tt-/)
 
@@ -661,12 +633,9 @@ describe('edge routes', () => {
     const { store, cache } = makeCacheMock()
     store.set(
       cacheKeyForScope(DEFAULT_LITELLM_SCOPE),
-      new Response(
-        JSON.stringify([{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]),
-        {
-          headers: { 'x-models-cached-at': String(Date.now()) }
-        }
-      )
+      new Response(JSON.stringify([{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]), {
+        headers: { 'x-models-cached-at': String(Date.now()) }
+      })
     )
     vi.stubGlobal('caches', { default: cache })
     // The cached catalogue exists, but the GitHub probe rejects the caller.
@@ -705,8 +674,7 @@ describe('edge routes', () => {
             data: [
               {
                 id:
-                  new URL(toRequestUrl(input)).hostname ===
-                  'litellm.example.com'
+                  new URL(toRequestUrl(input)).hostname === 'litellm.example.com'
                     ? 'custom/model'
                     : 'openai/gpt-5',
                 object: 'model'
@@ -733,19 +701,17 @@ describe('edge routes', () => {
       )
 
     const defaultList = await listRequest()
-    expect(
-      ((await defaultList.json()) as { models: Array<{ id: string }> })
-        .models[0]?.id
-    ).toBe('openai/gpt-5')
+    expect(((await defaultList.json()) as { models: Array<{ id: string }> }).models[0]?.id).toBe(
+      'openai/gpt-5'
+    )
 
     // A different allowlisted base URL is a separate catalogue: it must hit
     // upstream itself instead of being served the default deployment's cache.
     // Each cache miss is two upstream calls (catalogue + /model/info).
     const customList = await listRequest('https://litellm.example.com/')
-    expect(
-      ((await customList.json()) as { models: Array<{ id: string }> }).models[0]
-        ?.id
-    ).toBe('custom/model')
+    expect(((await customList.json()) as { models: Array<{ id: string }> }).models[0]?.id).toBe(
+      'custom/model'
+    )
     expect(upstreamCalls(fetchSpy)).toHaveLength(4)
   })
 
@@ -824,29 +790,23 @@ describe('edge routes', () => {
       ]
     })
     expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
-    expect(upstreamRequests[0]?.input).toBe(
-      'https://litellm.labs.lair.nntin.xyz/v1/models'
+    expect(upstreamRequests[0]?.input).toBe('https://litellm.labs.lair.nntin.xyz/v1/models')
+    expect(upstreamRequests[1]?.input).toBe('https://litellm.labs.lair.nntin.xyz/model/info')
+    expect(new Headers(githubProbeCalls(fetchSpy)[0]?.[1]?.headers).get('authorization')).toBe(
+      'Bearer github-token'
     )
-    expect(upstreamRequests[1]?.input).toBe(
-      'https://litellm.labs.lair.nntin.xyz/model/info'
-    )
-    expect(
-      new Headers(githubProbeCalls(fetchSpy)[0]?.[1]?.headers).get(
-        'authorization'
-      )
-    ).toBe('Bearer github-token')
     // api.github.com 403s without a User-Agent; the caller-validation probe must
     // send one or every LiteLLM request is wrongly rejected as an invalid caller
     // (TINYTINKERER-FRONTEND-N/P/Q/R).
-    expect(
-      new Headers(githubProbeCalls(fetchSpy)[0]?.[1]?.headers).get('user-agent')
-    ).toBe('tinytinkerer-edge')
-    expect(
-      new Headers(upstreamRequests[0]?.init?.headers).get('authorization')
-    ).toMatch(/^Bearer sk-tt-/)
-    expect(
-      new Headers(upstreamRequests[1]?.init?.headers).get('authorization')
-    ).toMatch(/^Bearer sk-tt-/)
+    expect(new Headers(githubProbeCalls(fetchSpy)[0]?.[1]?.headers).get('user-agent')).toBe(
+      'tinytinkerer-edge'
+    )
+    expect(new Headers(upstreamRequests[0]?.init?.headers).get('authorization')).toMatch(
+      /^Bearer sk-tt-/
+    )
+    expect(new Headers(upstreamRequests[1]?.init?.headers).get('authorization')).toMatch(
+      /^Bearer sk-tt-/
+    )
   })
 
   it('proxies LiteLLM chat completions with the selected allowlisted base URL', async () => {
@@ -902,9 +862,7 @@ describe('edge routes', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(upstreamRequests[0]?.input).toBe(
-      'https://litellm.example.com/v1/chat/completions'
-    )
+    expect(upstreamRequests[0]?.input).toBe('https://litellm.example.com/v1/chat/completions')
     const headers = new Headers(upstreamRequests[0]?.init?.headers)
     expect(headers.get('authorization')).toMatch(/^Bearer sk-tt-/)
     const upstreamBody = upstreamRequests[0]?.init?.body
@@ -1089,9 +1047,7 @@ describe('edge routes', () => {
   it('returns 503 when LiteLLM caller validation is unavailable', async () => {
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
       if (toRequestUrl(input) === GITHUB_USER_URL) {
-        return Promise.resolve(
-          new Response('github unavailable', { status: 503 })
-        )
+        return Promise.resolve(new Response('github unavailable', { status: 503 }))
       }
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
@@ -1149,9 +1105,7 @@ describe('edge routes', () => {
   it('returns 503 on chat when LiteLLM caller validation is unavailable', async () => {
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
       if (toRequestUrl(input) === GITHUB_USER_URL) {
-        return Promise.resolve(
-          new Response('github unavailable', { status: 503 })
-        )
+        return Promise.resolve(new Response('github unavailable', { status: 503 }))
       }
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
@@ -1184,10 +1138,10 @@ describe('edge routes', () => {
   it('caches a successful caller validation and skips the GitHub probe on subsequent calls (issue #177)', async () => {
     const fetchSpy = withCallerValidation(() =>
       Promise.resolve(
-        new Response(
-          JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
-          { status: 200, headers: { 'content-type': 'application/json' } }
-        )
+        new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
       )
     )
     vi.stubGlobal('fetch', fetchSpy)
@@ -1251,9 +1205,7 @@ describe('edge routes', () => {
   it('does not cache an unavailable caller validation — a GitHub outage is never sticky (issue #177)', async () => {
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
       if (toRequestUrl(input) === GITHUB_USER_URL) {
-        return Promise.resolve(
-          new Response('github unavailable', { status: 503 })
-        )
+        return Promise.resolve(new Response('github unavailable', { status: 503 }))
       }
       return Promise.resolve(new Response('{}', { status: 200 }))
     })
@@ -1320,8 +1272,7 @@ describe('edge routes', () => {
     const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = toRequestUrl(input)
       if (url === GITHUB_USER_URL) {
-        const authorization =
-          new Headers(init?.headers).get('authorization') ?? ''
+        const authorization = new Headers(init?.headers).get('authorization') ?? ''
         const secondUser = authorization.includes('second-token')
         return Promise.resolve(
           new Response(
@@ -1419,9 +1370,7 @@ describe('edge routes', () => {
       )
 
     const keyManagementCalls = () =>
-      fetchSpy.mock.calls.filter(([input]) =>
-        isLiteLLMKeyManagementUrl(toRequestUrl(input))
-      ).length
+      fetchSpy.mock.calls.filter(([input]) => isLiteLLMKeyManagementUrl(toRequestUrl(input))).length
 
     // First request provisions the key, then the upstream rejects it (401).
     const first = await chatRequest()
@@ -1445,8 +1394,7 @@ describe('edge routes', () => {
     const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = toRequestUrl(input)
       if (url === GITHUB_USER_URL) {
-        const authorization =
-          new Headers(init?.headers).get('authorization') ?? ''
+        const authorization = new Headers(init?.headers).get('authorization') ?? ''
         const secondUser = authorization.includes('second-token')
         return Promise.resolve(
           new Response(
@@ -1462,10 +1410,10 @@ describe('edge routes', () => {
         return Promise.resolve(litellmKeyManagementOk(input, init))
       }
       return Promise.resolve(
-        new Response(
-          JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
-          { status: 200, headers: { 'content-type': 'application/json' } }
-        )
+        new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
       )
     })
     vi.stubGlobal('fetch', fetchSpy)
@@ -1507,9 +1455,7 @@ describe('edge routes', () => {
         const raw = typeof init?.body === 'string' ? init.body : '{}'
         return (JSON.parse(raw) as { user_id?: string }).user_id
       })
-    expect(new Set(generatedUserIds)).toEqual(
-      new Set(['github-12345', 'github-67890'])
-    )
+    expect(new Set(generatedUserIds)).toEqual(new Set(['github-12345', 'github-67890']))
   })
 
   it('returns 503 on chat when per-user key minting fails (no key to fall back to)', async () => {
@@ -1606,8 +1552,7 @@ describe('edge routes', () => {
         new Response(
           JSON.stringify({
             error: {
-              message:
-                'ExceededBudget: Crossed spend within budget. Budget: 1.0, Spend: 1.2'
+              message: 'ExceededBudget: Crossed spend within budget. Budget: 1.0, Spend: 1.2'
             }
           }),
           { status: 400, headers: { 'content-type': 'application/json' } }
@@ -1659,10 +1604,10 @@ describe('edge routes', () => {
   it('returns 403 for a caller outside GITHUB_ALLOWED_USERS before minting a key or proxying chat', async () => {
     const fetchSpy = withCallerValidation(() =>
       Promise.resolve(
-        new Response(
-          JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
-          { status: 200, headers: { 'content-type': 'application/json' } }
-        )
+        new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
       )
     )
     vi.stubGlobal('fetch', fetchSpy)
@@ -1721,10 +1666,10 @@ describe('edge routes', () => {
   it('admits a caller listed in GITHUB_ALLOWED_USERS by login', async () => {
     const fetchSpy = withCallerValidation(() =>
       Promise.resolve(
-        new Response(
-          JSON.stringify({ choices: [{ message: { content: 'hi' } }] }),
-          { status: 200, headers: { 'content-type': 'application/json' } }
-        )
+        new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
       )
     )
     vi.stubGlobal('fetch', fetchSpy)
@@ -1783,12 +1728,9 @@ describe('edge routes', () => {
     // Seed a previously-cached catalogue old enough to be past the fresh window.
     store.set(
       cacheKeyForScope(DEFAULT_LITELLM_SCOPE),
-      new Response(
-        JSON.stringify([{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]),
-        {
-          headers: { 'x-models-cached-at': String(Date.now() - 10 * 60_000) }
-        }
-      )
+      new Response(JSON.stringify([{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]), {
+        headers: { 'x-models-cached-at': String(Date.now() - 10 * 60_000) }
+      })
     )
     vi.stubGlobal('caches', { default: cache })
     const fetchSpy = withCallerValidation(() =>
@@ -1823,12 +1765,9 @@ describe('edge routes', () => {
     // so every request takes the backoff-check path instead of the fresh-hit one.
     store.set(
       cacheKeyForScope(DEFAULT_LITELLM_SCOPE),
-      new Response(
-        JSON.stringify([{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]),
-        {
-          headers: { 'x-models-cached-at': String(Date.now() - 10 * 60_000) }
-        }
-      )
+      new Response(JSON.stringify([{ id: 'openai/gpt-4.1', label: 'GPT-4.1' }]), {
+        headers: { 'x-models-cached-at': String(Date.now() - 10 * 60_000) }
+      })
     )
     vi.stubGlobal('caches', { default: cache })
     const fetchSpy = withCallerValidation(() =>
@@ -2029,8 +1968,7 @@ describe('edge routes', () => {
     expect(response.status).toBe(401)
     const body = edgeErrorResponseSchema.parse(await response.json())
     expect(body).toEqual({
-      error:
-        'Authentication failed. The LiteLLM user virtual key may be invalid.'
+      error: 'Authentication failed. The LiteLLM user virtual key may be invalid.'
     })
     expect(sink).toHaveBeenCalledTimes(1)
     const [, options] = sink.mock.calls[0] ?? []
@@ -2068,16 +2006,13 @@ describe('edge routes', () => {
     const mapped = await listRequest()
     expect(mapped.status).toBe(401)
     expect(edgeErrorResponseSchema.parse(await mapped.json())).toEqual({
-      error:
-        'Authentication failed. The LiteLLM user virtual key may be invalid.'
+      error: 'Authentication failed. The LiteLLM user virtual key may be invalid.'
     })
 
     // An unmapped upstream status collapses to a 502 with a generic message.
     vi.stubGlobal(
       'fetch',
-      withCallerValidation(() =>
-        Promise.resolve(new Response('teapot', { status: 418 }))
-      )
+      withCallerValidation(() => Promise.resolve(new Response('teapot', { status: 418 })))
     )
     const unmapped = await listRequest()
     expect(unmapped.status).toBe(502)
@@ -2138,8 +2073,7 @@ describe('edge routes', () => {
 
     expect(response.status).toBe(400)
     expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
-      error:
-        "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."
+      error: "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."
     })
   })
 
@@ -2164,9 +2098,7 @@ describe('edge routes', () => {
     )
 
     systemStatusSchema.parse(await response.json())
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
-      'http://localhost:3111'
-    )
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3111')
     expect(response.headers.get('Vary')).toBe('Origin')
     expect(preflightResponse.status).toBe(204)
     expect(preflightResponse.headers.get('Access-Control-Allow-Origin')).toBe(
@@ -2194,8 +2126,7 @@ describe('edge routes', () => {
         headers: { origin: 'https://evil.example' }
       }),
       {
-        ALLOWED_ORIGINS:
-          'http://localhost:3111, https://*.tiny.preview.nntin.xyz'
+        ALLOWED_ORIGINS: 'http://localhost:3111, https://*.tiny.preview.nntin.xyz'
       }
     )
 
@@ -2247,9 +2178,7 @@ describe('edge routes', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
-      'http://localhost:3111'
-    )
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:3111')
     expect(response.headers.get('Vary')).toBe('Origin')
     await expect(response.text()).resolves.toContain('data: {"id":"stream"}')
   })

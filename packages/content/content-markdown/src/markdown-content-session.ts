@@ -12,9 +12,7 @@ export type MarkdownContentSession = {
   snapshot: () => MarkdownContentSnapshot
 }
 
-export const createMarkdownContentSession = (
-  initialSource = ''
-): MarkdownContentSession => {
+export const createMarkdownContentSession = (initialSource = ''): MarkdownContentSession => {
   let source = initialSource
   let document = parseMarkdownContent(source)
 

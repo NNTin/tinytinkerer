@@ -1,9 +1,6 @@
 import { OpenAPIHono } from '@hono/zod-openapi'
 import * as Sentry from '@sentry/cloudflare'
-import {
-  EDGE_ROUTE_PATHS,
-  edgeErrorResponseSchema
-} from '@tinytinkerer/contracts'
+import { EDGE_ROUTE_PATHS, edgeErrorResponseSchema } from '@tinytinkerer/contracts'
 import { scrubEvent } from '@tinytinkerer/sentry-telemetry'
 import type { Bindings } from './lib/bindings'
 import { corsMiddleware } from './lib/cors'
@@ -22,10 +19,7 @@ const app = new OpenAPIHono<{ Bindings: Bindings }>({
   // library's default validation-error payload.
   defaultHook: (result, c) => {
     if (!result.success) {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Invalid request' }),
-        400
-      )
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Invalid request' }), 400)
     }
   }
 })

@@ -66,10 +66,7 @@ export const runToolBeforeExecuteHooks = async (
     } catch (error) {
       return {
         allow: false,
-        reason:
-          error instanceof Error
-            ? error.message
-            : 'tool.beforeExecute hook failed'
+        reason: error instanceof Error ? error.message : 'tool.beforeExecute hook failed'
       }
     }
   }

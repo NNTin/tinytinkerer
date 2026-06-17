@@ -48,7 +48,9 @@ describe('WireframeNodeRenderer', () => {
 
   it('renders the wireframe chrome with the label', () => {
     render(
-      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
+      <WireframeNodeRenderer
+        node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }}
+      />
     )
 
     expect(screen.getByText('Wireframe')).toBeInTheDocument()
@@ -56,7 +58,9 @@ describe('WireframeNodeRenderer', () => {
 
   it('renders the wrapper element', () => {
     const { container } = render(
-      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
+      <WireframeNodeRenderer
+        node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }}
+      />
     )
 
     expect(container.querySelector('[data-tt-wireframe]')).not.toBeNull()
@@ -64,7 +68,9 @@ describe('WireframeNodeRenderer', () => {
 
   it('renders HTML content in a hardened sandboxed iframe by default', () => {
     const { container } = render(
-      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
+      <WireframeNodeRenderer
+        node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }}
+      />
     )
 
     const iframe = container.querySelector('iframe')
@@ -86,7 +92,9 @@ describe('WireframeNodeRenderer', () => {
 
   it('does not leak wireframe HTML into the parent document', () => {
     const { container } = render(
-      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
+      <WireframeNodeRenderer
+        node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }}
+      />
     )
 
     // The h1 from the wireframe HTML must not appear as a real DOM node in the parent
@@ -95,7 +103,9 @@ describe('WireframeNodeRenderer', () => {
 
   it('shows Preview and Code toggle buttons', () => {
     render(
-      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
+      <WireframeNodeRenderer
+        node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }}
+      />
     )
 
     expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
@@ -104,7 +114,9 @@ describe('WireframeNodeRenderer', () => {
 
   it('switches to code view and shows HTML source when Code is clicked', () => {
     const { container } = render(
-      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
+      <WireframeNodeRenderer
+        node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }}
+      />
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Code' }))
@@ -115,7 +127,9 @@ describe('WireframeNodeRenderer', () => {
 
   it('switches back to preview when Preview is clicked after Code', () => {
     const { container } = render(
-      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
+      <WireframeNodeRenderer
+        node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }}
+      />
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Code' }))
@@ -130,7 +144,9 @@ describe('WireframeNodeRenderer', () => {
     Object.assign(navigator, { clipboard: { writeText } })
 
     render(
-      <WireframeNodeRenderer node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }} />
+      <WireframeNodeRenderer
+        node={{ type: 'codeBlock', code: HELLO_WORLD_HTML, language: 'wireframe' }}
+      />
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }))

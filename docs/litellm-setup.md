@@ -10,6 +10,7 @@ deployments). GitHub-authenticated users get per-user keys with per-user budgets
 and rate limits (good for controlling individual spend).
 
 The edge validates the caller and provisions the appropriate LiteLLM key:
+
 - **Unauthenticated**: Uses a shared anonymous key (all unauthenticated users share one key + budget)
 - **GitHub-authenticated**: Uses a per-user key scoped to their GitHub account
 
@@ -24,12 +25,14 @@ Cloudflare, GitHub OAuth) see [vercel-deployment.md](vercel-deployment.md).
 ## Two User Types: Anonymous and Authenticated
 
 ### Anonymous users
+
 - **No GitHub account required** — uses the app without signing in
 - **Shared virtual key** — all anonymous users share one LiteLLM key + budget
 - **Rate limits** — shared across all anonymous users (defaults: 3 RPM, $0.10/30d)
 - **Use case** — public demos, testing, casual use
 
 ### Authenticated users
+
 - **GitHub Sign In** — optional upgrade from anonymous
 - **Per-user virtual key** — each GitHub account gets its own key + budget
 - **Rate limits** — per GitHub account (defaults: 10 RPM, $1/30d)
@@ -51,7 +54,7 @@ graph LR
     L["🔐 LiteLLM Proxy<br/>knows:<br/>• LITELLM_MASTER_KEY<br/>• virtual keys in DB<br/>• per-user + anonymous budgets"]
     GH["📦 GitHub Models<br/>knows: GITHUB_MODELS_TOKEN"]
     CG["🤖 ChatGPT<br/>knows: OAuth tokens"]
-    
+
     AU -->|sends chat requests<br/>no auth| F
     GU -->|sends chat requests<br/>with GitHub token| F
     F -->|"POST /api/chat<br/>sends GitHub token<br/>(if present)"| E
@@ -63,7 +66,7 @@ graph LR
     L -->|query models by alias| CG
     F -->|streams responses| AU
     F -->|streams responses| GU
-    
+
     style AU fill:#e1f5ff
     style GU fill:#b3e5fc
     style F fill:#f3e5f5
@@ -74,6 +77,7 @@ graph LR
 ```
 
 **Key security properties:**
+
 - **User (authenticated)** knows their GitHub token (never sees LiteLLM keys)
 - **User (anonymous)** has no token; edge creates an anonymous key on first request
 - **Frontend** never touches LiteLLM keys; it only relays the user's GitHub token (if any) to the edge
@@ -86,20 +90,20 @@ graph LR
 The edge (`apps/edge`) calls three OpenAI-compatible data-plane endpoints on the
 instance:
 
-| Endpoint | Used for | Required |
-|---|---|---|
-| `POST /v1/chat/completions` | Chat (streaming and non-streaming) | yes |
-| `GET /v1/models` | The model picker catalogue | yes |
-| `GET /model/info` | Best-effort `mode` lookup so embedding models are hidden from the chat picker | no — falls back to a name heuristic |
+| Endpoint                    | Used for                                                                      | Required                            |
+| --------------------------- | ----------------------------------------------------------------------------- | ----------------------------------- |
+| `POST /v1/chat/completions` | Chat (streaming and non-streaming)                                            | yes                                 |
+| `GET /v1/models`            | The model picker catalogue                                                    | yes                                 |
+| `GET /model/info`           | Best-effort `mode` lookup so embedding models are hidden from the chat picker | no — falls back to a name heuristic |
 
 It also calls LiteLLM key-management endpoints to create and maintain per-user
 virtual keys:
 
-| Endpoint | Used for | Required |
-|---|---|---|
-| `POST /v2/key/info` | Look up an existing per-user key by alias | yes |
-| `POST /key/generate` | Create the per-user key on first use | yes |
-| `POST /key/update` | Reconcile budget/rate/model settings when Worker vars change | yes |
+| Endpoint             | Used for                                                     | Required |
+| -------------------- | ------------------------------------------------------------ | -------- |
+| `POST /v2/key/info`  | Look up an existing per-user key by alias                    | yes      |
+| `POST /key/generate` | Create the per-user key on first use                         | yes      |
+| `POST /key/update`   | Reconcile budget/rate/model settings when Worker vars change | yes      |
 
 ## Rate Limit Glossary
 
@@ -144,6 +148,7 @@ Configuration lives in these Worker values:
   the edge provision new per-user keys.
 
 **Per-user (authenticated) rate limits and budgets:**
+
 - `LITELLM_USER_MAX_BUDGET_USD` (var, default `1`) — hard budget for each
   generated user key (per budget period).
 - `LITELLM_USER_BUDGET_DURATION` (var, default `30d`) — budget reset duration.
@@ -155,6 +160,7 @@ Configuration lives in these Worker values:
   assigned to generated user keys. Empty means all configured models.
 
 **Anonymous (unauthenticated) rate limits and budgets:**
+
 - `LITELLM_ANONYMOUS_MAX_BUDGET_USD` (var, default `0.10`) — shared budget for all
   anonymous users (per budget period). This is a single shared bucket, not per-user.
 - `LITELLM_ANONYMOUS_BUDGET_DURATION` (var, default `30d`) — budget reset duration.
@@ -167,6 +173,7 @@ Anonymous users use the same model list as authenticated users
 (`LITELLM_USER_MODELS` or all models if empty).
 
 **Optional access controls:**
+
 - `GITHUB_ALLOWED_USERS` (var, optional) — comma-separated GitHub numeric ids or
   logins allowed to use model/search/MCP routes. Empty allows any valid GitHub
   token. This does not affect anonymous users (they are always allowed).
@@ -207,15 +214,15 @@ Postgres database.
 services:
   litellm:
     image: docker.litellm.ai/berriai/litellm:main-stable
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    command: ['--config', '/app/config.yaml', '--port', '4000']
     ports:
-      - "4000:4000"
+      - '4000:4000'
     volumes:
       - ./config.yaml:/app/config.yaml:ro
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD}@litellm-db:5432/litellm
-      STORE_MODEL_IN_DB: "True"
+      STORE_MODEL_IN_DB: 'True'
       # Provider keys referenced from config.yaml:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
@@ -231,7 +238,7 @@ services:
     volumes:
       - litellm-db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -d litellm -U litellm"]
+      test: ['CMD-SHELL', 'pg_isready -d litellm -U litellm']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -320,6 +327,7 @@ curl -sS http://localhost:4000/user/new \
 The response contains the key value (`sk-…`). That becomes your Worker secret
 `LITELLM_KEY_MANAGEMENT_API_KEY`. The edge uses this key only for the
 key-management endpoints:
+
 - `POST /v2/key/info` — look up existing per-user keys by alias
 - `POST /key/generate` — create new per-user keys
 - `POST /key/update` — reconcile budget/rate/model changes
@@ -343,6 +351,7 @@ openssl rand -hex 32
 This becomes your Worker secret `LITELLM_USER_KEY_SECRET`. The edge uses it to
 derive stable, deterministic per-user LiteLLM virtual key values from the GitHub
 numeric user ID. Because the derivation is deterministic:
+
 - The edge can create a key once and reuse it across requests
 - Key aliases never disagree with their values (LiteLLM can verify identity)
 - Per-deployment isolation comes from giving each deployment its own secret
@@ -357,12 +366,14 @@ limits on the old key in LiteLLM as a safety net.
 The edge automatically creates and manages two types of LiteLLM virtual keys:
 
 **Per-user keys (authenticated):** Each GitHub user gets their own scoped key.
+
 - Deterministically derived from `LITELLM_USER_KEY_SECRET` + GitHub ID
 - Persists across sessions (same GitHub ID always gets the same key)
 - Budget and limits apply per GitHub account
 - Model scope applies per GitHub account
 
 **Anonymous key (unauthenticated):** All unauthenticated users share one key.
+
 - Deterministically derived from `LITELLM_USER_KEY_SECRET` + "anonymous"
 - Created on first unauthenticated request
 - Budget and limits are shared across all anonymous users
@@ -496,6 +507,7 @@ curl -sS https://api.your-domain.example/health
 ```
 
 Check the `models` field:
+
 - `models.state: "ready"` — all required configuration is present
 - `models.state: "degraded"` — `LITELLM_BASE_URL` is absent/invalid, or
   `LITELLM_KEY_MANAGEMENT_API_KEY` / `LITELLM_USER_KEY_SECRET` is missing
@@ -508,6 +520,7 @@ Check the `models` field:
 4. Send a test message and confirm the response streams back
 
 Note: Two caches sit between the frontend and the instance:
+
 - **Edge cache** — model list cached for 5 minutes per base URL
 - **Browser cache** — model list cached in memory (Settings → Refresh bypasses
   the browser cache only, not the edge cache)
@@ -517,17 +530,17 @@ minutes of staleness in the browser.
 
 ## Troubleshooting
 
-| Symptom | Likely cause | How to debug |
-|---|---|---|
-| `503 LiteLLM is not configured.` | `LITELLM_BASE_URL` unset / not `https://` / contains credentials, query, or fragment | Check Worker vars in the Vercel/Cloudflare dashboard; verify the URL format with `/health` endpoint |
-| `503 LiteLLM user key provisioning is not configured.` | `LITELLM_KEY_MANAGEMENT_API_KEY` or `LITELLM_USER_KEY_SECRET` missing or unset | Confirm both secrets are deployed via `wrangler secret list` or the Worker secrets dashboard |
-| `503 LiteLLM user key provisioning is temporarily unavailable.` | LiteLLM endpoint failed, management key is invalid, or reverse-proxy blocks `/v2/key/info`, `/key/generate`, `/key/update` | Test the management key manually: `curl -H "Authorization: Bearer $KEY" https://litellm.example.com/v2/key/info -d '{"key_aliases":[]}' -H 'Content-Type: application/json'` |
-| `400 LiteLLM base URL is not allowed` | A Settings override points at a URL not in `LITELLM_ALLOWED_BASE_URLS` | Review Settings → LiteLLM base URL and compare to Worker `vars` |
-| `401 Authentication failed.` | User's virtual key was deleted, or doesn't exist in the LiteLLM instance | Sign in again to trigger re-provisioning; check LiteLLM dashboard for the user's key (`tinytinkerer-<hash>-github-<id>`) |
-| `403 Access denied.` | User key exists but model scope or `GITHUB_ALLOWED_USERS` doesn't match | Check the key's `models` array in LiteLLM; verify user GitHub ID/login against `GITHUB_ALLOWED_USERS` |
-| `429` rate limit in app | User or anonymous key hit their RPM/TPM limit, or upstream provider rate-limited | Check the key's spend/usage in LiteLLM dashboard (look for `tinytinkerer-...-github-<id>` for user keys, `tinytinkerer-...-anonymous` for anonymous). Adjust limits if needed: `LITELLM_USER_RPM_LIMIT` / `LITELLM_USER_TPM_LIMIT` for users, `LITELLM_ANONYMOUS_RPM_LIMIT` / `LITELLM_ANONYMOUS_TPM_LIMIT` for anonymous |
-| Anonymous user sees "LiteLLM user key provisioning is temporarily unavailable" | Anonymous key provisioning failed; same root causes as per-user key failures | Test the management key manually; verify routes `/v2/key/info`, `/key/generate`, `/key/update` are exposed; check LiteLLM logs for the "anonymous" key |
-| Unauthenticated user can't access models | Anonymous key not created, or `LITELLM_ANONYMOUS_*` vars misconfigured | Verify `LITELLM_ANONYMOUS_MAX_BUDGET_USD`, `LITELLM_ANONYMOUS_RPM_LIMIT`, `LITELLM_ANONYMOUS_TPM_LIMIT` are set; check LiteLLM dashboard for key `tinytinkerer-<hash>-anonymous` |
-| Models missing from picker | `LITELLM_USER_MODELS` out of sync, proxy not restarted, or edge cache stale | Restart LiteLLM, wait 5 minutes for edge cache to expire, or manually refresh in Settings. Note: same model list applies to both authenticated users and anonymous users |
-| User key doesn't exist after sign-in | Management key lacks permission, key-management endpoints unreachable, or derivation secret changed | Check management key logs in LiteLLM; verify routes are exposed in Traefik/reverse-proxy; do not rotate `LITELLM_USER_KEY_SECRET` without clearing browser cache |
-| Budget exceeded (`402` or similar) | User hit their `LITELLM_USER_MAX_BUDGET_USD` cap for the period, or anonymous users hit `LITELLM_ANONYMOUS_MAX_BUDGET_USD` | Check key spend in LiteLLM dashboard; wait for budget reset (duration: `LITELLM_USER_BUDGET_DURATION` or `LITELLM_ANONYMOUS_BUDGET_DURATION`, default `30d`) or increase the budget limit |
+| Symptom                                                                        | Likely cause                                                                                                               | How to debug                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `503 LiteLLM is not configured.`                                               | `LITELLM_BASE_URL` unset / not `https://` / contains credentials, query, or fragment                                       | Check Worker vars in the Vercel/Cloudflare dashboard; verify the URL format with `/health` endpoint                                                                                                                                                                                                                       |
+| `503 LiteLLM user key provisioning is not configured.`                         | `LITELLM_KEY_MANAGEMENT_API_KEY` or `LITELLM_USER_KEY_SECRET` missing or unset                                             | Confirm both secrets are deployed via `wrangler secret list` or the Worker secrets dashboard                                                                                                                                                                                                                              |
+| `503 LiteLLM user key provisioning is temporarily unavailable.`                | LiteLLM endpoint failed, management key is invalid, or reverse-proxy blocks `/v2/key/info`, `/key/generate`, `/key/update` | Test the management key manually: `curl -H "Authorization: Bearer $KEY" https://litellm.example.com/v2/key/info -d '{"key_aliases":[]}' -H 'Content-Type: application/json'`                                                                                                                                              |
+| `400 LiteLLM base URL is not allowed`                                          | A Settings override points at a URL not in `LITELLM_ALLOWED_BASE_URLS`                                                     | Review Settings → LiteLLM base URL and compare to Worker `vars`                                                                                                                                                                                                                                                           |
+| `401 Authentication failed.`                                                   | User's virtual key was deleted, or doesn't exist in the LiteLLM instance                                                   | Sign in again to trigger re-provisioning; check LiteLLM dashboard for the user's key (`tinytinkerer-<hash>-github-<id>`)                                                                                                                                                                                                  |
+| `403 Access denied.`                                                           | User key exists but model scope or `GITHUB_ALLOWED_USERS` doesn't match                                                    | Check the key's `models` array in LiteLLM; verify user GitHub ID/login against `GITHUB_ALLOWED_USERS`                                                                                                                                                                                                                     |
+| `429` rate limit in app                                                        | User or anonymous key hit their RPM/TPM limit, or upstream provider rate-limited                                           | Check the key's spend/usage in LiteLLM dashboard (look for `tinytinkerer-...-github-<id>` for user keys, `tinytinkerer-...-anonymous` for anonymous). Adjust limits if needed: `LITELLM_USER_RPM_LIMIT` / `LITELLM_USER_TPM_LIMIT` for users, `LITELLM_ANONYMOUS_RPM_LIMIT` / `LITELLM_ANONYMOUS_TPM_LIMIT` for anonymous |
+| Anonymous user sees "LiteLLM user key provisioning is temporarily unavailable" | Anonymous key provisioning failed; same root causes as per-user key failures                                               | Test the management key manually; verify routes `/v2/key/info`, `/key/generate`, `/key/update` are exposed; check LiteLLM logs for the "anonymous" key                                                                                                                                                                    |
+| Unauthenticated user can't access models                                       | Anonymous key not created, or `LITELLM_ANONYMOUS_*` vars misconfigured                                                     | Verify `LITELLM_ANONYMOUS_MAX_BUDGET_USD`, `LITELLM_ANONYMOUS_RPM_LIMIT`, `LITELLM_ANONYMOUS_TPM_LIMIT` are set; check LiteLLM dashboard for key `tinytinkerer-<hash>-anonymous`                                                                                                                                          |
+| Models missing from picker                                                     | `LITELLM_USER_MODELS` out of sync, proxy not restarted, or edge cache stale                                                | Restart LiteLLM, wait 5 minutes for edge cache to expire, or manually refresh in Settings. Note: same model list applies to both authenticated users and anonymous users                                                                                                                                                  |
+| User key doesn't exist after sign-in                                           | Management key lacks permission, key-management endpoints unreachable, or derivation secret changed                        | Check management key logs in LiteLLM; verify routes are exposed in Traefik/reverse-proxy; do not rotate `LITELLM_USER_KEY_SECRET` without clearing browser cache                                                                                                                                                          |
+| Budget exceeded (`402` or similar)                                             | User hit their `LITELLM_USER_MAX_BUDGET_USD` cap for the period, or anonymous users hit `LITELLM_ANONYMOUS_MAX_BUDGET_USD` | Check key spend in LiteLLM dashboard; wait for budget reset (duration: `LITELLM_USER_BUDGET_DURATION` or `LITELLM_ANONYMOUS_BUDGET_DURATION`, default `30d`) or increase the budget limit                                                                                                                                 |

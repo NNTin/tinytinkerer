@@ -77,7 +77,9 @@ describe('fetchModels', () => {
 
   it('briefly caches the fallback so a rate-limit storm is not re-probed on every call (TINYTINKERER-FRONTEND-5)', async () => {
     const fetchSpy = vi.fn(() =>
-      Promise.resolve(new Response('rate limited', { status: 429, statusText: 'Too Many Requests' }))
+      Promise.resolve(
+        new Response('rate limited', { status: 429, statusText: 'Too Many Requests' })
+      )
     )
     vi.stubGlobal('fetch', fetchSpy)
 
@@ -164,15 +166,10 @@ describe('fetchModels', () => {
     // must omit the param entirely so the edge resolves its own configured
     // URL, and the cache entry must be scoped separately from explicit URLs
     // (issue #179).
-    const defaultResult = await fetchModels(
-      'https://api.example.com',
-      'github-token'
-    )
-    const customResult = await fetchModels(
-      'https://api.example.com',
-      'github-token',
-      { litellmBaseUrl: 'https://litellm.example.com/' }
-    )
+    const defaultResult = await fetchModels('https://api.example.com', 'github-token')
+    const customResult = await fetchModels('https://api.example.com', 'github-token', {
+      litellmBaseUrl: 'https://litellm.example.com/'
+    })
 
     expect(defaultResult).toEqual({ models: defaultModels, fromFallback: false })
     expect(customResult).toEqual({ models: customModels, fromFallback: false })

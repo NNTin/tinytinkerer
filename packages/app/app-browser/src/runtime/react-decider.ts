@@ -1,12 +1,6 @@
-import {
-  parseJsonWithTelemetry,
-  parseModelJsonWithTelemetry
-} from '../telemetry/request-telemetry'
+import { parseJsonWithTelemetry, parseModelJsonWithTelemetry } from '../telemetry/request-telemetry'
 import type { DecisionChunk, ExecutionContext } from '@tinytinkerer/app-core'
-import {
-  reactDecisionSchema,
-  type ReActDecision
-} from '@tinytinkerer/contracts'
+import { reactDecisionSchema, type ReActDecision } from '@tinytinkerer/contracts'
 import { createEdgeError, type ModelsChatFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createRateLimitError } from './rate-limit'
@@ -98,10 +92,7 @@ const requestDecision = async (
   }
 
   if (!response.ok) {
-    throw await createEdgeError(
-      response,
-      `ReAct decision request failed (${response.status})`
-    )
+    throw await createEdgeError(response, `ReAct decision request failed (${response.status})`)
   }
 
   return response
@@ -179,14 +170,7 @@ export const decideNextAction = async (
   modelsChat: ModelsChatFetch,
   signal?: AbortSignal
 ): Promise<ReActDecision> => {
-  const response = await requestDecision(
-    context,
-    tools,
-    model,
-    modelsChat,
-    false,
-    signal
-  )
+  const response = await requestDecision(context, tools, model, modelsChat, false, signal)
 
   const metadata = decisionMetadata(response, model, false)
   const data = await parseJsonWithTelemetry<{
@@ -208,14 +192,7 @@ export async function* streamDecision(
   modelsChat: ModelsChatFetch,
   signal?: AbortSignal
 ): AsyncGenerator<DecisionChunk> {
-  const response = await requestDecision(
-    context,
-    tools,
-    model,
-    modelsChat,
-    true,
-    signal
-  )
+  const response = await requestDecision(context, tools, model, modelsChat, true, signal)
 
   let thought = ''
   let jsonBuffer = ''
@@ -224,9 +201,7 @@ export async function* streamDecision(
     throw new Error('ReAct decision stream missing response body')
   }
 
-  for await (const chunk of splitInlineThink(
-    parseSseStream(response.body, signal)
-  )) {
+  for await (const chunk of splitInlineThink(parseSseStream(response.body, signal))) {
     if (chunk.kind === 'reasoning') {
       thought += chunk.text
       yield { kind: 'thought', text: thought }

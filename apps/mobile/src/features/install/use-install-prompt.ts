@@ -24,7 +24,10 @@ const isStandaloneDisplay = (): boolean => {
   }
 
   const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean }
-  return window.matchMedia('(display-mode: standalone)').matches || navigatorWithStandalone.standalone === true
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    navigatorWithStandalone.standalone === true
+  )
 }
 
 export const useInstallPrompt = () => {
@@ -42,7 +45,10 @@ export const useInstallPrompt = () => {
   }, [])
 
   const canInstall = deferredPrompt !== null
-  const showIosHint = useMemo(() => !canInstall && isIosDevice() && !isStandaloneDisplay(), [canInstall])
+  const showIosHint = useMemo(
+    () => !canInstall && isIosDevice() && !isStandaloneDisplay(),
+    [canInstall]
+  )
 
   const promptToInstall = async () => {
     if (!deferredPrompt) {

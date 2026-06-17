@@ -44,7 +44,7 @@ const estimateTokens = (context: ExecutionContext): number => {
     SYSTEM_STYLE_PROMPT,
     ...context.history.map((m) => m.content),
     context.prompt,
-    ...context.notes,
+    ...context.notes
   ].join('')
   return Math.ceil(allText.length / 4)
 }
@@ -98,7 +98,11 @@ export class LiteLLMProvider implements ModelProvider {
     }
   }
 
-  async plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan> {
+  async plan(
+    prompt: string,
+    history: ConversationMessage[],
+    options?: ProviderCallOptions
+  ): Promise<ExecutionPlan> {
     const token = this.options.getToken?.()
     const allDescriptors = this.options.allToolDescriptors ?? []
 
@@ -174,22 +178,21 @@ export class LiteLLMProvider implements ModelProvider {
     const model = this.options.getModel?.() ?? DEFAULT_MODEL
     const tools = this.options.allToolDescriptors ?? []
     try {
-      yield* llmStreamDecision(
-        context,
-        tools,
-        model,
-        this.modelsChatFetch(token),
-        options?.signal
-      )
+      yield* llmStreamDecision(context, tools, model, this.modelsChatFetch(token), options?.signal)
     } catch (error) {
       if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
       throw error
     }
   }
 
-  async *synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk> {
+  async *synthesize(
+    context: ExecutionContext,
+    options?: ProviderCallOptions
+  ): AsyncIterable<SynthesisChunk> {
     if (this.synthesizing) {
-      throw new Error('Assertion failed: synthesize called concurrently — canSendPrompt must gate this at the UI layer')
+      throw new Error(
+        'Assertion failed: synthesize called concurrently — canSendPrompt must gate this at the UI layer'
+      )
     }
     this.synthesizing = true
 
@@ -200,7 +203,10 @@ export class LiteLLMProvider implements ModelProvider {
     }
   }
 
-  private async *synthesizeInner(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk> {
+  private async *synthesizeInner(
+    context: ExecutionContext,
+    options?: ProviderCallOptions
+  ): AsyncIterable<SynthesisChunk> {
     const token = this.options.getToken?.()
     const estimatedTokens = estimateTokens(context)
     const throttle = this.quota.checkThrottle(estimatedTokens)

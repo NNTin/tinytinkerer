@@ -46,10 +46,7 @@ const toSystemStatus = (value: unknown): SystemStatus => {
   }
 
   const record = value as Record<string, unknown>
-  if (
-    !isServiceStatus(record.auth) ||
-    !isServiceStatus(record.models)
-  ) {
+  if (!isServiceStatus(record.auth) || !isServiceStatus(record.models)) {
     throw new Error('Edge status response was malformed')
   }
 
@@ -98,19 +95,15 @@ const createLazyPersistence = (
   storageNamespace: string,
   hostToken: string | null
 ): Pick<BrowserShell, 'conversations' | 'preferences' | 'authTokens'> => {
-  let persistencePromise:
-    | Promise<{
-        conversations: ConversationRepository
-        preferences: PreferencesStore
-        authTokens: AuthTokenStore
-      }>
-    | null = null
+  let persistencePromise: Promise<{
+    conversations: ConversationRepository
+    preferences: PreferencesStore
+    authTokens: AuthTokenStore
+  }> | null = null
 
   const loadPersistence = async () => {
     persistencePromise ??= import('./db')
-      .then(({ createBrowserPersistence }) =>
-        createBrowserPersistence(storageNamespace, hostToken)
-      )
+      .then(({ createBrowserPersistence }) => createBrowserPersistence(storageNamespace, hostToken))
       .catch((error) => {
         persistencePromise = null
         throw error

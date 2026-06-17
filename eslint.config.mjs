@@ -34,7 +34,9 @@ export default tseslint.config(
         'error',
         {
           types: {
-            AssistantContentDocument: { message: 'Use ContentDocument from @tinytinkerer/contracts.' },
+            AssistantContentDocument: {
+              message: 'Use ContentDocument from @tinytinkerer/contracts.'
+            },
             AssistantBlockNode: { message: 'Use BlockNode from @tinytinkerer/contracts.' },
             AssistantInlineNode: { message: 'Use InlineNode from @tinytinkerer/contracts.' },
             AssistantListItemNode: { message: 'Use ListItemNode from @tinytinkerer/contracts.' },
@@ -52,8 +54,7 @@ export default tseslint.config(
             'Optional properties already accept missing values under exactOptionalPropertyTypes. Drop `| undefined`. See docs/ARCHITECTURE.md#coding-conventions.'
         },
         {
-          selector:
-            'TSPropertySignature[optional=true] > TSTypeAnnotation > TSUndefinedKeyword',
+          selector: 'TSPropertySignature[optional=true] > TSTypeAnnotation > TSUndefinedKeyword',
           message:
             'Optional properties already accept missing values under exactOptionalPropertyTypes. Drop the explicit `undefined` type. See docs/ARCHITECTURE.md#coding-conventions.'
         }
@@ -84,10 +85,7 @@ export default tseslint.config(
   {
     // Tests legitimately exercise real or local servers (and stub/mock the
     // global fetch), so the fetchWithTelemetry restriction does not apply here.
-    files: [
-      '**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}',
-      '**/tests/**'
-    ],
+    files: ['**/*.test.{ts,tsx,mts,cts,js,jsx,mjs,cjs}', '**/tests/**'],
     rules: {
       'no-restricted-globals': 'off'
     }

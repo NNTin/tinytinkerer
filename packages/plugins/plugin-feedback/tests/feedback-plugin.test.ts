@@ -39,9 +39,9 @@ describe('feedbackPlugin', () => {
     const host: PluginHost = { capture: vi.fn() }
     const [tool] = feedbackPlugin().createTools?.(host) ?? []
 
-    const error = await tool!.execute({ message: 'A bug', category: 'bug' }).catch(
-      (e: unknown) => e
-    )
+    const error = await tool!
+      .execute({ message: 'A bug', category: 'bug' })
+      .catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(FeedbackPendingError)
     expect((error as FeedbackPendingError).report).toMatchObject({
@@ -68,9 +68,7 @@ describe('feedbackPlugin', () => {
   })
 
   it('exposes planner tool descriptors on the manifest', () => {
-    expect(feedbackPluginManifest.toolDescriptors?.map((d) => d.id)).toEqual([
-      'send_feedback'
-    ])
+    expect(feedbackPluginManifest.toolDescriptors?.map((d) => d.id)).toEqual(['send_feedback'])
   })
 
   it('satisfies the PluginModule contract for dynamic discovery', () => {

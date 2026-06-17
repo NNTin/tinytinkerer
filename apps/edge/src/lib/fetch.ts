@@ -1,7 +1,4 @@
-import {
-  fetchWithTelemetry,
-  type RequestTelemetryMetadata
-} from '@tinytinkerer/sentry-telemetry'
+import { fetchWithTelemetry, type RequestTelemetryMetadata } from '@tinytinkerer/sentry-telemetry'
 
 /**
  * Outbound fetch with a timeout, instrumented via the shared
@@ -17,8 +14,6 @@ export const fetchWithTimeout = (
 ): Promise<Response> => {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-  const signal = init.signal
-    ? AbortSignal.any([controller.signal, init.signal])
-    : controller.signal
+  const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal
   return fetchWithTelemetry(metadata, { ...init, signal }).finally(() => clearTimeout(timeoutId))
 }

@@ -36,13 +36,7 @@ const buildBlock = (readmeContent) => {
         'Remove it before syncing.'
     )
   }
-  return [
-    BEGIN_MARKER,
-    '',
-    readmeContent.trimEnd(),
-    '',
-    END_MARKER
-  ].join('\n')
+  return [BEGIN_MARKER, '', readmeContent.trimEnd(), '', END_MARKER].join('\n')
 }
 
 // Return the desired full content of a SKILL.md with the block inserted/updated.
@@ -75,9 +69,7 @@ const main = () => {
   try {
     readmeContent = readFileSync(readmePath, 'utf8')
   } catch {
-    throw new Error(
-      `Source not found: .agent/README.md (looked at ${readmePath})`
-    )
+    throw new Error(`Source not found: .agent/README.md (looked at ${readmePath})`)
   }
 
   const block = buildBlock(readmeContent)
@@ -118,9 +110,7 @@ const main = () => {
       process.exitCode = 1
       return
     }
-    console.log(
-      `All ${skillFiles.length} SKILL.md file(s) are in sync with .agent/README.md.`
-    )
+    console.log(`All ${skillFiles.length} SKILL.md file(s) are in sync with .agent/README.md.`)
     return
   }
 
@@ -129,9 +119,7 @@ const main = () => {
     return
   }
 
-  console.log(
-    `Synced .agent/README.md into ${updated.length} SKILL.md file(s):`
-  )
+  console.log(`Synced .agent/README.md into ${updated.length} SKILL.md file(s):`)
   for (const file of updated) {
     console.log(`  - ${file}`)
   }

@@ -356,7 +356,9 @@ describe('AgentRuntime', () => {
     const searchProvider: ModelProvider = {
       plan: (_prompt: string, _history: ConversationMessage[], options?: ProviderCallOptions) => {
         const searchEnabled = options?.searchEnabled
-        return Promise.resolve(inferPlan(_prompt, searchEnabled !== undefined ? { searchEnabled } : undefined))
+        return Promise.resolve(
+          inferPlan(_prompt, searchEnabled !== undefined ? { searchEnabled } : undefined)
+        )
       },
       async execute() {
         return 'ok'

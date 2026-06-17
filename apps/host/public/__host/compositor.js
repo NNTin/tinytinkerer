@@ -67,11 +67,7 @@ const getBox = (layout) => ({
 
 function clampLayout(layout) {
   const width = clamp(Math.round(layout.width), MIN_WIDTH, window.innerWidth - SAFE_MARGIN * 2)
-  const height = clamp(
-    Math.round(layout.height),
-    MIN_HEIGHT,
-    window.innerHeight - SAFE_MARGIN * 2
-  )
+  const height = clamp(Math.round(layout.height), MIN_HEIGHT, window.innerHeight - SAFE_MARGIN * 2)
 
   const draft = {
     x: Math.round(layout.x),
@@ -85,8 +81,16 @@ function clampLayout(layout) {
 
   return {
     ...draft,
-    x: clamp(draft.x, SAFE_MARGIN, Math.max(SAFE_MARGIN, window.innerWidth - box.width - SAFE_MARGIN)),
-    y: clamp(draft.y, SAFE_MARGIN, Math.max(SAFE_MARGIN, window.innerHeight - box.height - SAFE_MARGIN))
+    x: clamp(
+      draft.x,
+      SAFE_MARGIN,
+      Math.max(SAFE_MARGIN, window.innerWidth - box.width - SAFE_MARGIN)
+    ),
+    y: clamp(
+      draft.y,
+      SAFE_MARGIN,
+      Math.max(SAFE_MARGIN, window.innerHeight - box.height - SAFE_MARGIN)
+    )
   }
 }
 

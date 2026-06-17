@@ -5,13 +5,7 @@ import { fileURLToPath } from 'node:url'
 import process from 'node:process'
 
 // .agent/skills/browser-debugging/tools/ -> repo root
-const repoRoot = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..',
-  '..',
-  '..'
-)
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..')
 
 const parseArgs = (argv) => {
   const args = {
@@ -47,8 +41,7 @@ const log = (message) => console.log(`[browser-login] ${message}`)
 // to the local browser.
 const readToken = (tokenFile) => {
   const fromEnv =
-    process.env.TINYTINKERER_GITHUB_TOKEN?.trim() ||
-    process.env.GITHUB_MODELS_TOKEN?.trim()
+    process.env.TINYTINKERER_GITHUB_TOKEN?.trim() || process.env.GITHUB_MODELS_TOKEN?.trim()
   if (fromEnv) return fromEnv
 
   let contents
@@ -65,9 +58,7 @@ const readToken = (tokenFile) => {
   )
   const token = match?.[1]?.replace(/^['"]|['"]$/g, '')
   if (!token) {
-    fail(
-      `TINYTINKERER_GITHUB_TOKEN is empty in ${tokenFile} and not set in the environment`
-    )
+    fail(`TINYTINKERER_GITHUB_TOKEN is empty in ${tokenFile} and not set in the environment`)
   }
   return token
 }
@@ -104,9 +95,7 @@ const main = () => {
   if (abTry('open', url) === null) {
     abTry('close', '--all')
     if (abTry('open', url) === null) {
-      fail(
-        `could not open ${url} — is "pnpm dev" running? (frontend :3111, edge :8787)`
-      )
+      fail(`could not open ${url} — is "pnpm dev" running? (frontend :3111, edge :8787)`)
     }
   }
   abTry('wait', '--load', 'networkidle')
@@ -129,8 +118,7 @@ const main = () => {
   //    is shown only while signed out. The auth store rehydrates the persisted
   //    token asynchronously after load, so poll briefly for the button to clear
   //    before concluding we are signed out.
-  const signedOut = () =>
-    domHas('!!document.querySelector(\'[aria-label="Sign in with GitHub"]\')')
+  const signedOut = () => domHas('!!document.querySelector(\'[aria-label="Sign in with GitHub"]\')')
   for (let i = 0; i < 6 && signedOut(); i += 1) abTry('wait', '500')
   if (!signedOut()) {
     log('already signed in to GitHub — nothing to do')

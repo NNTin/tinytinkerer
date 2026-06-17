@@ -22,9 +22,7 @@ export const RATE_LIMIT_COOLDOWN_KEY_PREFIX = 'rate_limit_cooldown_until:litellm
 
 export const rateLimitCooldownKey = (cooldownScope?: string): string => {
   const scope = cooldownScope?.trim()
-  return scope
-    ? `${RATE_LIMIT_COOLDOWN_KEY_PREFIX}:${scope}`
-    : RATE_LIMIT_COOLDOWN_KEY_PREFIX
+  return scope ? `${RATE_LIMIT_COOLDOWN_KEY_PREFIX}:${scope}` : RATE_LIMIT_COOLDOWN_KEY_PREFIX
 }
 
 /**
@@ -75,10 +73,7 @@ export const initializeChatState = async (
   }
 }
 
-export const createPersistedEvent = (
-  conversationId: string,
-  event: ChatEvent
-): PersistedEvent => ({
+export const createPersistedEvent = (conversationId: string, event: ChatEvent): PersistedEvent => ({
   ...event,
   conversationId
 })
@@ -127,9 +122,7 @@ export const runPrompt = (
   history: { role: 'user' | 'assistant'; content: string }[],
   signal?: AbortSignal
 ): AsyncGenerator<ChatEvent> =>
-  runtimeFactory
-    .create()
-    .run(prompt, signal ? { signal, history } : { history })
+  runtimeFactory.create().run(prompt, signal ? { signal, history } : { history })
 
 export const executeChatPrompt = async (options: {
   conversationId: string
@@ -211,4 +204,5 @@ export const resetConversation = async (
 
 const getLatestConversationOrCreate = async (
   conversations: ConversationRepository
-): Promise<Conversation> => (await conversations.getLatestConversation()) ?? conversations.createConversation()
+): Promise<Conversation> =>
+  (await conversations.getLatestConversation()) ?? conversations.createConversation()

@@ -32,7 +32,8 @@ export default defineConfig({
       manifest: {
         name: 'tinytinkerer',
         short_name: 'tinytinkerer',
-        description: 'Mobile-first TinyTinkerer workspace optimized for quick installs and narrow screens.',
+        description:
+          'Mobile-first TinyTinkerer workspace optimized for quick installs and narrow screens.',
         start_url: './#/',
         scope: './',
         display: 'standalone',
@@ -126,10 +127,7 @@ export default defineConfig({
           ) {
             return 'sentry-vendor'
           }
-          if (
-            id.includes('node_modules/@codemirror/') ||
-            id.includes('node_modules/codemirror/')
-          ) {
+          if (id.includes('node_modules/@codemirror/') || id.includes('node_modules/codemirror/')) {
             return 'codemirror-vendor'
           }
         }

@@ -90,9 +90,7 @@ export type PermissionRequest = {
 // can actually prompt (e.g. the browser, via a modal) provide this; a headless
 // host omits it and a gating plugin must default to allow when it is absent
 // (it has no way to ask, so it cannot block).
-export type PermissionRequestService = (
-  request: PermissionRequest
-) => Promise<ToolGateResult>
+export type PermissionRequestService = (request: PermissionRequest) => Promise<ToolGateResult>
 
 // The minimal, product-agnostic view of an edge response a plugin tool reads.
 // The host owns the underlying request (and its request telemetry); `json()`
@@ -255,9 +253,7 @@ export type ToolExecutionContext = {
   input: Record<string, unknown>
 }
 
-export type ToolGateResult =
-  | { allow: true }
-  | { allow: false; reason: string }
+export type ToolGateResult = { allow: true } | { allow: false; reason: string }
 
 // Hook contributions are intentionally split into observer hooks and explicit
 // gates. Observers can react to runtime events but cannot change execution;
@@ -269,9 +265,7 @@ export type AgentHookContribution =
     }
   | {
       event: 'tool.beforeExecute'
-      handler: (
-        context: ToolExecutionContext
-      ) => ToolGateResult | Promise<ToolGateResult>
+      handler: (context: ToolExecutionContext) => ToolGateResult | Promise<ToolGateResult>
       // Set by gates that block on a human decision (e.g. an allow/deny prompt).
       // The runtime gives these a separate, much larger timeout than a machine
       // hook and surfaces a clear, user-facing reason if that budget elapses —
@@ -382,8 +376,6 @@ export const isPluginModule = (value: unknown): value is PluginModule => {
   }
   const m = manifest as { id?: unknown; label?: unknown; description?: unknown }
   return (
-    typeof m.id === 'string' &&
-    typeof m.label === 'string' &&
-    typeof m.description === 'string'
+    typeof m.id === 'string' && typeof m.label === 'string' && typeof m.description === 'string'
   )
 }

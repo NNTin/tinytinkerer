@@ -10,8 +10,10 @@ import {
   type RequestTelemetryMetadata
 } from './telemetry/request-telemetry'
 
-const oauthStateKey = (shell: BrowserShell): string => `${shell.config.storageNamespace}:oauth_state`
-const oauthReturnUrlKey = (shell: BrowserShell): string => `${shell.config.storageNamespace}:oauth_return_url`
+const oauthStateKey = (shell: BrowserShell): string =>
+  `${shell.config.storageNamespace}:oauth_state`
+const oauthReturnUrlKey = (shell: BrowserShell): string =>
+  `${shell.config.storageNamespace}:oauth_return_url`
 
 const generateState = (): string => {
   const bytes = new Uint8Array(16)
@@ -117,12 +119,13 @@ const exchangeCode = async (shell: BrowserShell, code: string): Promise<string> 
 
   if (!response.ok) {
     const payload = await tryParseJsonWithTelemetry<unknown>(metadata, response.clone())
-    const parsedPayload = payload === undefined
-      ? undefined
-      : githubExchangeResponseSchema.safeParse(payload)
+    const parsedPayload =
+      payload === undefined ? undefined : githubExchangeResponseSchema.safeParse(payload)
 
     throw new Error(
-      parsedPayload?.success ? (parsedPayload.data.error ?? 'OAuth exchange failed') : 'OAuth exchange failed'
+      parsedPayload?.success
+        ? (parsedPayload.data.error ?? 'OAuth exchange failed')
+        : 'OAuth exchange failed'
     )
   }
 
@@ -144,9 +147,10 @@ const exchangeCode = async (shell: BrowserShell, code: string): Promise<string> 
 export const completeGitHubOAuthCallback = async (
   app: BrowserApp,
   options: {
-  code: string | null
-  state: string | null
-}): Promise<void> => {
+    code: string | null
+    state: string | null
+  }
+): Promise<void> => {
   if (!options.code) {
     throw new Error('No authorization code received from GitHub.')
   }

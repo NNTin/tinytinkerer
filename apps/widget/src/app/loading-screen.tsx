@@ -3,7 +3,9 @@ import type { LoadingScreenProps } from '@tinytinkerer/app-browser'
 const LoadingPanel = ({ eyebrow, title, message, error }: LoadingScreenProps) => (
   <div className="flex min-h-screen items-center justify-center px-4 py-6">
     <div className="w-full max-w-md rounded-[2rem] border border-[var(--widget-border)] bg-[var(--widget-panel)] p-5 shadow-[0_24px_70px_rgba(36,33,24,0.14)]">
-      <p className="text-[11px] uppercase tracking-[0.26em] text-[var(--widget-muted)]">{eyebrow}</p>
+      <p className="text-[11px] uppercase tracking-[0.26em] text-[var(--widget-muted)]">
+        {eyebrow}
+      </p>
       <h1 className="mt-2 text-xl font-semibold text-[var(--widget-text)]">{title}</h1>
       <p className="mt-2 text-sm leading-6 text-[var(--widget-muted)]">{message}</p>
       {error ? (
@@ -21,7 +23,9 @@ const LoadingPanel = ({ eyebrow, title, message, error }: LoadingScreenProps) =>
       ) : (
         <div className="mt-5 flex items-center gap-3 rounded-[1.5rem] border border-[var(--widget-border)] bg-white px-4 py-3">
           <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500" />
-          <span className="text-xs text-[var(--widget-muted)]">Preparing the widget shell and local state.</span>
+          <span className="text-xs text-[var(--widget-muted)]">
+            Preparing the widget shell and local state.
+          </span>
         </div>
       )}
     </div>

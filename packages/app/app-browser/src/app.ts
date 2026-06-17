@@ -38,7 +38,9 @@ export type BrowserApp = {
 const BrowserAppContext = createContext<BrowserApp | undefined>(undefined)
 
 const browserAppError = (): Error =>
-  new Error('Browser app has not been created. Call createBrowserApp() and mount <AppBrowserProvider>.')
+  new Error(
+    'Browser app has not been created. Call createBrowserApp() and mount <AppBrowserProvider>.'
+  )
 
 const requireBrowserApp = (app: BrowserApp | undefined): BrowserApp => {
   if (!app) {

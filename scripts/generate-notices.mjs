@@ -9,8 +9,7 @@ const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // workflow); it is intentionally not committed (see .gitignore).
 const markdownPath = join(
   rootDir,
-  process.env.NOTICES_OUTPUT ??
-    join('dist', 'compliance', 'THIRD_PARTY_NOTICES.md')
+  process.env.NOTICES_OUTPUT ?? join('dist', 'compliance', 'THIRD_PARTY_NOTICES.md')
 )
 
 // The same content is embedded in a generated module so the app can show it in

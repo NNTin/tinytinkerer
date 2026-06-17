@@ -13,7 +13,11 @@ const validPlan = {
   complexity: 'medium',
   steps: [
     { id: 'understand', summary: 'Parse the request' },
-    { id: 'mcp:server-1:get_weather', summary: 'Get weather data', toolCall: { toolId: 'mcp:server-1:get_weather', input: { location: 'Berlin' } } },
+    {
+      id: 'mcp:server-1:get_weather',
+      summary: 'Get weather data',
+      toolCall: { toolId: 'mcp:server-1:get_weather', input: { location: 'Berlin' } }
+    },
     { id: 'compose', summary: 'Write the answer' }
   ]
 }
@@ -32,12 +36,16 @@ afterEach(() => {
 
 describe('llmPlan', () => {
   it('requests a plan with tool descriptors in the system message', async () => {
-    const modelsChat = makeModelsChat({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
+    const modelsChat = makeModelsChat({
+      choices: [{ message: { content: JSON.stringify(validPlan) } }]
+    })
 
     await llmPlan('What is the weather?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat)
 
     expect(modelsChat).toHaveBeenCalledOnce()
-    const [init] = (modelsChat as ReturnType<typeof vi.fn>).mock.calls[0] as [{ model: string; stream: boolean; messages: Array<{ role: string; content: string }> }]
+    const [init] = (modelsChat as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      { model: string; stream: boolean; messages: Array<{ role: string; content: string }> }
+    ]
     expect(init.model).toBe('openai/gpt-4.1-mini')
     expect(init.stream).toBe(false)
 
@@ -47,9 +55,17 @@ describe('llmPlan', () => {
   })
 
   it('returns the parsed ExecutionPlan on a successful response', async () => {
-    const modelsChat = makeModelsChat({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
+    const modelsChat = makeModelsChat({
+      choices: [{ message: { content: JSON.stringify(validPlan) } }]
+    })
 
-    const plan = await llmPlan('What is the weather?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat)
+    const plan = await llmPlan(
+      'What is the weather?',
+      [],
+      [descriptor],
+      'openai/gpt-4.1-mini',
+      modelsChat
+    )
 
     expect(plan.complexity).toBe('medium')
     expect(plan.steps).toHaveLength(3)
@@ -61,7 +77,13 @@ describe('llmPlan', () => {
     const fenced = '```json\n' + JSON.stringify(validPlan) + '\n```'
     const modelsChat = makeModelsChat({ choices: [{ message: { content: fenced } }] })
 
-    const plan = await llmPlan('What is the weather?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat)
+    const plan = await llmPlan(
+      'What is the weather?',
+      [],
+      [descriptor],
+      'openai/gpt-4.1-mini',
+      modelsChat
+    )
 
     expect(plan.complexity).toBe('medium')
   })
@@ -104,7 +126,9 @@ describe('llmPlan', () => {
   })
 
   it('forwards the abort signal to the models/chat call', async () => {
-    const modelsChat = makeModelsChat({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
+    const modelsChat = makeModelsChat({
+      choices: [{ message: { content: JSON.stringify(validPlan) } }]
+    })
     const controller = new AbortController()
 
     await llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat, controller.signal)
@@ -118,7 +142,9 @@ describe('llmPlan', () => {
   })
 
   it('includes conversation history before the user prompt', async () => {
-    const modelsChat = makeModelsChat({ choices: [{ message: { content: JSON.stringify(validPlan) } }] })
+    const modelsChat = makeModelsChat({
+      choices: [{ message: { content: JSON.stringify(validPlan) } }]
+    })
     const history = [
       { role: 'user' as const, content: 'hello' },
       { role: 'assistant' as const, content: 'hi there' }
@@ -126,7 +152,9 @@ describe('llmPlan', () => {
 
     await llmPlan('follow-up question', history, [descriptor], 'openai/gpt-4.1-mini', modelsChat)
 
-    const [init] = (modelsChat as ReturnType<typeof vi.fn>).mock.calls[0] as [{ messages: Array<{ role: string; content: string }> }]
+    const [init] = (modelsChat as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      { messages: Array<{ role: string; content: string }> }
+    ]
     const roles = init.messages.map((m) => m.role)
     expect(roles).toEqual(['system', 'user', 'assistant', 'user'])
     expect(init.messages[3]?.content).toBe('follow-up question')
@@ -137,12 +165,17 @@ describe('LiteLLMProvider.plan — LLM branch', () => {
   it('calls llmPlan when a token is present and MCP tools are in allToolDescriptors', async () => {
     const planJson = JSON.stringify({
       complexity: 'low',
-      steps: [{ id: 'understand', summary: 'ok' }, { id: 'compose', summary: 'ok' }]
+      steps: [
+        { id: 'understand', summary: 'ok' },
+        { id: 'compose', summary: 'ok' }
+      ]
     })
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ choices: [{ message: { content: planJson } }] }), { status: 200 })
+        new Response(JSON.stringify({ choices: [{ message: { content: planJson } }] }), {
+          status: 200
+        })
       )
     )
 
@@ -162,10 +195,7 @@ describe('LiteLLMProvider.plan — LLM branch', () => {
   })
 
   it('falls back to inferPlan when llmPlan throws a non-abort error', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockRejectedValue(new Error('Network error'))
-    )
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')))
 
     const provider = new LiteLLMProvider({
       baseUrl: 'http://edge.local',
@@ -186,12 +216,14 @@ describe('LiteLLMProvider.plan — LLM branch', () => {
     // NOT silently fall back to the heuristic inferPlan.
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ choices: [{ message: { content: 'I cannot plan this.' } }] }),
-          { status: 200 }
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ choices: [{ message: { content: 'I cannot plan this.' } }] }),
+            { status: 200 }
+          )
         )
-      )
     )
 
     const provider = new LiteLLMProvider({
@@ -208,10 +240,7 @@ describe('LiteLLMProvider.plan — LLM branch', () => {
 
   it('re-throws AbortError instead of falling back to inferPlan', async () => {
     const abortError = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockRejectedValue(abortError)
-    )
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError))
 
     const provider = new LiteLLMProvider({
       baseUrl: 'http://edge.local',
@@ -219,16 +248,23 @@ describe('LiteLLMProvider.plan — LLM branch', () => {
       allToolDescriptors: [descriptor]
     })
 
-    await expect(provider.plan('what is the weather?', [])).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(provider.plan('what is the weather?', [])).rejects.toMatchObject({
+      name: 'AbortError'
+    })
   })
 
   it('calls llmPlan when a token is present and web-search is the only available tool', async () => {
     const planJson = JSON.stringify({
       complexity: 'low',
-      steps: [{ id: 'understand', summary: 'ok' }, { id: 'compose', summary: 'ok' }]
+      steps: [
+        { id: 'understand', summary: 'ok' },
+        { id: 'compose', summary: 'ok' }
+      ]
     })
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ choices: [{ message: { content: planJson } }] }), { status: 200 })
+      new Response(JSON.stringify({ choices: [{ message: { content: planJson } }] }), {
+        status: 200
+      })
     )
     vi.stubGlobal('fetch', fetchMock)
 

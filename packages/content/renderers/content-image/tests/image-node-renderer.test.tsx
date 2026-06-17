@@ -66,9 +66,7 @@ describe('ImageNodeRenderer', () => {
 
   it('omits the figcaption when there is no caption text', () => {
     const { container } = render(
-      <ImageNodeRenderer
-        node={{ type: 'image', url: 'https://example.com/cat.png', alt: '' }}
-      />
+      <ImageNodeRenderer node={{ type: 'image', url: 'https://example.com/cat.png', alt: '' }} />
     )
 
     expect(container.querySelector('figcaption')).toBeNull()

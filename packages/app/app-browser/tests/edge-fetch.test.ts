@@ -36,7 +36,10 @@ describe('createEdgeFetch', () => {
     const abortError = Object.assign(new Error('signal is aborted without reason'), {
       name: 'AbortError'
     })
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(abortError)))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(abortError))
+    )
 
     const edgeFetch = createEdgeFetch('http://example.com', () => 'token')
 
@@ -89,7 +92,10 @@ describe('createEdgeFetch', () => {
 
   it('still captures a genuine network error on the same call site', async () => {
     const networkError = new TypeError('Failed to fetch')
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(networkError)))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(networkError))
+    )
 
     const edgeFetch = createEdgeFetch('http://example.com', () => 'token')
 
@@ -153,21 +159,14 @@ describe('createModelsChatFetch', () => {
       'fetch',
       vi.fn((input: RequestInfo | URL, requestInit?: RequestInit) => {
         capturedUrl =
-          typeof input === 'string'
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
         capturedBody = requestInit?.body as string | undefined
         return Promise.resolve(new Response('{}', { status: 200 }))
       })
     )
 
     const edgeFetch = createEdgeFetch('http://example.com', () => 'token')
-    const modelsChat = createModelsChatFetch(
-      edgeFetch,
-      () => 'https://litellm.example.com/'
-    )
+    const modelsChat = createModelsChatFetch(edgeFetch, () => 'https://litellm.example.com/')
 
     await modelsChat(
       {

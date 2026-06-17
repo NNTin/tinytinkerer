@@ -43,19 +43,22 @@ type MockActivity = {
 
 const emptyActivity = (): MockActivity => ({ reasoningText: '', items: [] })
 
-const mockTurns = vi.hoisted(() => [] as Array<{
-  id: string
-  userText: string
-  assistantSource: string
-  assistantContent: { nodes: unknown[] } | null
-  isStreaming: boolean
-  activity: MockActivity
-  notice?: {
-    kind: 'system' | 'error' | 'rate-limit'
-    message: string
-    level?: 'info' | 'warning' | 'error'
-  }
-}>)
+const mockTurns = vi.hoisted(
+  () =>
+    [] as Array<{
+      id: string
+      userText: string
+      assistantSource: string
+      assistantContent: { nodes: unknown[] } | null
+      isStreaming: boolean
+      activity: MockActivity
+      notice?: {
+        kind: 'system' | 'error' | 'rate-limit'
+        message: string
+        level?: 'info' | 'warning' | 'error'
+      }
+    }>
+)
 
 const mockChatState = vi.hoisted(() => ({
   events: [] as MockChatEvent[],
@@ -79,90 +82,88 @@ const mockSpeechState = vi.hoisted(() => ({
 vi.mock('@tinytinkerer/app-browser', async () => {
   const { useState } = await import('react')
   return {
-  // Faithful stand-in for the shared composer hook: owns prompt state and the
-  // submit → clear-on-accept behavior so the surface wiring can be exercised.
-  // The hook's own logic is unit-tested in app-browser's surfaces test.
-  useChatComposer: (submitPrompt: (prompt: string) => boolean) => {
-    const [prompt, setPrompt] = useState('')
-    const handleSubmit = (): boolean => {
-      mockSpeechState.stop()
-      const accepted = submitPrompt(prompt)
-      if (accepted) {
-        setPrompt('')
+    // Faithful stand-in for the shared composer hook: owns prompt state and the
+    // submit → clear-on-accept behavior so the surface wiring can be exercised.
+    // The hook's own logic is unit-tested in app-browser's surfaces test.
+    useChatComposer: (submitPrompt: (prompt: string) => boolean) => {
+      const [prompt, setPrompt] = useState('')
+      const handleSubmit = (): boolean => {
+        mockSpeechState.stop()
+        const accepted = submitPrompt(prompt)
+        if (accepted) {
+          setPrompt('')
+        }
+        return accepted
       }
-      return accepted
-    }
-    return { prompt, setPrompt, speech: mockSpeechState, handleSubmit }
-  },
-  LazyBrowserSettingsModal: ({
-    open,
-    onOpenChange
-  }: {
-    open: boolean
-    onOpenChange: (open: boolean) => void
-  }) =>
-    open ? (
-      <div role="dialog" aria-label="Settings">
-        <button type="button" aria-label="Close settings" onClick={() => onOpenChange(false)}>
-          Close
-        </button>
-        <section role="region" aria-label="Auth">
-          <p>Auth status</p>
-          <p>{mockStatusState.status.auth.detail}</p>
-          {mockAuthState.token ? null : (
-            <button type="button">Sign in with GitHub</button>
-          )}
-        </section>
-        <section role="region" aria-label="Models">
-          <p>Models status</p>
-          <p>{mockStatusState.status.models.detail}</p>
-        </section>
-        <section role="region" aria-label="Interface">
-          <p>Interface</p>
-        </section>
+      return { prompt, setPrompt, speech: mockSpeechState, handleSubmit }
+    },
+    LazyBrowserSettingsModal: ({
+      open,
+      onOpenChange
+    }: {
+      open: boolean
+      onOpenChange: (open: boolean) => void
+    }) =>
+      open ? (
+        <div role="dialog" aria-label="Settings">
+          <button type="button" aria-label="Close settings" onClick={() => onOpenChange(false)}>
+            Close
+          </button>
+          <section role="region" aria-label="Auth">
+            <p>Auth status</p>
+            <p>{mockStatusState.status.auth.detail}</p>
+            {mockAuthState.token ? null : <button type="button">Sign in with GitHub</button>}
+          </section>
+          <section role="region" aria-label="Models">
+            <p>Models status</p>
+            <p>{mockStatusState.status.models.detail}</p>
+          </section>
+          <section role="region" aria-label="Interface">
+            <p>Interface</p>
+          </section>
+        </div>
+      ) : null,
+    PermissionModal: () => null,
+    AssistantContent: ({
+      content,
+      className,
+      turnId
+    }: {
+      content: { nodes: Array<{ children?: Array<{ value?: string }> }> }
+      className?: string
+      turnId?: string
+    }) => (
+      <div className={className} data-turn-id={turnId}>
+        {content.nodes[0]?.children?.[0]?.value}
       </div>
-    ) : null,
-  PermissionModal: () => null,
-  AssistantContent: ({
-    content,
-    className,
-    turnId
-  }: {
-    content: { nodes: Array<{ children?: Array<{ value?: string }> }> }
-    className?: string
-    turnId?: string
-  }) => (
-    <div className={className} data-turn-id={turnId}>
-      {content.nodes[0]?.children?.[0]?.value}
-    </div>
-  ),
-  TurnActivityPanel: ({ activity, isLive }: { activity: MockActivity; isLive: boolean }) => (
-    <section aria-label="Reasoning and activity">
-      <h3>Reasoning &amp; activity{isLive ? ' (live)' : ''}</h3>
-      {activity.reasoningText ? <p>{activity.reasoningText}</p> : null}
-      {activity.items.map((item) => (
-        <span key={item.id}>{item.label ?? item.toolId}</span>
-      ))}
-    </section>
-  ),
-  useWebSpeechInput: () => mockSpeechState,
-  useSettingsStore: () => [],
-  useChatSurfaceController: () => ({
-    isBooting: false,
-    events: mockChatState.events,
-    token: mockAuthState.token,
-    turns: mockTurns,
-    serverNameById: new Map<string, string>(),
-    isRunning: mockChatState.isRunning,
-    isRetryPending: mockChatState.isRetryPending,
-    showReasoningActivity: mockSettingsState.showReasoningActivity,
-    cooldownRemainingMs: 0,
-    isCoolingDown: false,
-    submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
-    submitPrompt: mockChatState.submitPrompt,
-    resetConversation: mockChatState.resetConversation,
-    cancelRetry: mockChatState.cancelRetry
-  })
+    ),
+    TurnActivityPanel: ({ activity, isLive }: { activity: MockActivity; isLive: boolean }) => (
+      <section aria-label="Reasoning and activity">
+        <h3>Reasoning &amp; activity{isLive ? ' (live)' : ''}</h3>
+        {activity.reasoningText ? <p>{activity.reasoningText}</p> : null}
+        {activity.items.map((item) => (
+          <span key={item.id}>{item.label ?? item.toolId}</span>
+        ))}
+      </section>
+    ),
+    useWebSpeechInput: () => mockSpeechState,
+    useSettingsStore: () => [],
+    useChatSurfaceController: () => ({
+      isBooting: false,
+      events: mockChatState.events,
+      token: mockAuthState.token,
+      turns: mockTurns,
+      serverNameById: new Map<string, string>(),
+      isRunning: mockChatState.isRunning,
+      isRetryPending: mockChatState.isRetryPending,
+      showReasoningActivity: mockSettingsState.showReasoningActivity,
+      cooldownRemainingMs: 0,
+      isCoolingDown: false,
+      submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
+      submitPrompt: mockChatState.submitPrompt,
+      resetConversation: mockChatState.resetConversation,
+      cancelRetry: mockChatState.cancelRetry
+    })
   }
 })
 
@@ -362,7 +363,9 @@ describe('ChatPage settings modal', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Settings' })
     const authRegion = within(dialog).getByRole('region', { name: 'Auth' })
-    expect(await within(authRegion).findByRole('button', { name: /sign in with github/i })).not.toBeNull()
+    expect(
+      await within(authRegion).findByRole('button', { name: /sign in with github/i })
+    ).not.toBeNull()
   })
 
   it('closes the modal when the close button is clicked', async () => {
@@ -372,7 +375,6 @@ describe('ChatPage settings modal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close settings' }))
     expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
   })
-
 })
 
 describe('ChatPage turns', () => {

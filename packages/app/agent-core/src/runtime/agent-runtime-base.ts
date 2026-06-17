@@ -150,8 +150,7 @@ export abstract class AgentRuntimeBase {
     // streamed token, full non-streaming decision, or the planner (FRONTEND-S).
     // 90s gives gpt-5-class models room to first token while staying under the
     // edge's 120s upstream backstop, so the frontend stays the authority.
-    this.firstChunkTimeoutMs =
-      options.firstChunkTimeoutMs ?? Math.max(this.stepTimeoutMs, 90_000)
+    this.firstChunkTimeoutMs = options.firstChunkTimeoutMs ?? Math.max(this.stepTimeoutMs, 90_000)
     this.searchEnabled = options.searchEnabled ?? true
     this.createAssistantContentSession =
       options.createAssistantContentSession ?? createPlainTextAssistantContentSession
@@ -200,7 +199,9 @@ export abstract class AgentRuntimeBase {
     yield createEvent('error', { message })
     yield createEvent(
       'assistant.done',
-      (await this.createAssistantContentSession()).replace('I hit an execution issue. Please try again.')
+      (await this.createAssistantContentSession()).replace(
+        'I hit an execution issue. Please try again.'
+      )
     )
   }
 
@@ -273,7 +274,10 @@ export abstract class AgentRuntimeBase {
   ): AsyncGenerator<ChatEvent, DecisionLoopControl> {
     while (true) {
       try {
-        return { kind: 'decision', decision: yield* this.attemptDecision(context, callOptions, parentStepId) }
+        return {
+          kind: 'decision',
+          decision: yield* this.attemptDecision(context, callOptions, parentStepId)
+        }
       } catch (error) {
         if (!isRateLimitError(error)) {
           throw error
@@ -417,7 +421,8 @@ export abstract class AgentRuntimeBase {
       'ReAct decision timed out'
     )
     const thoughtTitle =
-      decision.reasoning ?? (decision.kind === 'final' ? 'Finalizing answer' : 'Deciding next action')
+      decision.reasoning ??
+      (decision.kind === 'final' ? 'Finalizing answer' : 'Deciding next action')
     yield createEvent('agent.step.started', {
       stepId: thoughtStepId,
       ...parentField,
@@ -467,7 +472,10 @@ export abstract class AgentRuntimeBase {
           iterations,
           reachedFinal: false,
           note,
-          exitReason: control.reason === 'cancelled' && options.signal?.aborted ? 'aborted' : 'decision_stopped'
+          exitReason:
+            control.reason === 'cancelled' && options.signal?.aborted
+              ? 'aborted'
+              : 'decision_stopped'
         }
       }
 
@@ -527,7 +535,10 @@ export abstract class AgentRuntimeBase {
   protected async *awaitRateLimitRetry(
     error: RateLimitError,
     signal: AbortSignal | undefined
-  ): AsyncGenerator<ChatEvent, { retry: true } | { retry: false; reason: 'too_long' | 'cancelled' }> {
+  ): AsyncGenerator<
+    ChatEvent,
+    { retry: true } | { retry: false; reason: 'too_long' | 'cancelled' }
+  > {
     const autoRetry = error.retryAfterMs <= MAX_AUTO_RETRY_AFTER_MS
 
     if (!autoRetry) {

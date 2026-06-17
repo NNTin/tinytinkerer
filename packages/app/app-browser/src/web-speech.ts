@@ -70,7 +70,10 @@ const MICROPHONE_DENIED_MESSAGE =
   'Microphone access was denied. Allow it in your browser settings to use voice input.'
 
 const describeMicrophoneError = (error: unknown): string => {
-  if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) {
+  if (
+    error instanceof DOMException &&
+    (error.name === 'NotAllowedError' || error.name === 'SecurityError')
+  ) {
     return MICROPHONE_DENIED_MESSAGE
   }
   if (error instanceof DOMException && error.name === 'NotFoundError') {
@@ -188,7 +191,12 @@ export const useWebSpeechInput = ({
       }
 
       finalTranscriptRef.current = nextFinalTranscript
-      setPrompt(appendTranscript(promptBaseRef.current, appendTranscript(nextFinalTranscript, interimTranscript)))
+      setPrompt(
+        appendTranscript(
+          promptBaseRef.current,
+          appendTranscript(nextFinalTranscript, interimTranscript)
+        )
+      )
     }
     recognition.onerror = (event) => {
       const message = describeRecognitionError(event.error)

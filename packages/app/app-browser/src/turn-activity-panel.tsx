@@ -55,7 +55,10 @@ const neutralView = (label: string, output: unknown): ActivityView => ({
   sections: isEmptyOutput(output) ? [{ label: '', value: '(no output)' }] : []
 })
 
-const statusStyles: Record<'ok' | 'error' | 'warn', { border: string; summary: string; body: string }> = {
+const statusStyles: Record<
+  'ok' | 'error' | 'warn',
+  { border: string; summary: string; body: string }
+> = {
   ok: {
     border: 'border-stone-200/70 bg-white/60',
     summary: 'text-stone-600',
@@ -92,9 +95,7 @@ const ActivityViewEntry = ({ view }: { view: ActivityView }) => {
       <div className={`space-y-0.5 border-t px-3 py-1.5 ${styles.body}`}>
         {view.sections.map((section, index) => (
           <div key={`${section.label}-${index}`}>
-            {section.label ? (
-              <span className="text-[var(--muted)]">{section.label}: </span>
-            ) : null}
+            {section.label ? <span className="text-[var(--muted)]">{section.label}: </span> : null}
             <span className="text-stone-600">{section.value}</span>
           </div>
         ))}

@@ -80,7 +80,9 @@ export const ChatPage = () => {
       <main className="flex flex-1 flex-col gap-3 overflow-hidden px-4 py-4 md:px-8">
         {/* Conversation */}
         <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm">
-          <h2 className="shrink-0 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Conversation</h2>
+          <h2 className="shrink-0 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+            Conversation
+          </h2>
           <div className="mt-3 flex-1 overflow-y-auto space-y-4">
             {turns.length === 0 ? (
               <p className="text-sm text-[var(--muted)]">Start a conversation below.</p>
@@ -88,7 +90,9 @@ export const ChatPage = () => {
               turns.map((turn, index) => (
                 <div key={turn.id} className="space-y-2">
                   {turn.userText ? (
-                    <p className="rounded-lg bg-amber-100/70 px-3 py-2 text-sm text-stone-800">{turn.userText}</p>
+                    <p className="rounded-lg bg-amber-100/70 px-3 py-2 text-sm text-stone-800">
+                      {turn.userText}
+                    </p>
                   ) : null}
 
                   {turn.notice ? (
@@ -224,7 +228,9 @@ export const ChatPage = () => {
               {/* Send */}
               <Button
                 type="submit"
-                aria-label={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
+                aria-label={
+                  isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'
+                }
                 title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
                 disabled={isRunning || isCoolingDown || !prompt.trim()}
                 className="h-9 min-w-9 px-2"

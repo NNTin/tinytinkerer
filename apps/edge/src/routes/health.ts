@@ -4,9 +4,7 @@ import type { Bindings } from '../lib/bindings'
 import { healthRoute } from '../openapi/routes'
 import { requireLiteLLMConfiguration } from './models'
 
-export const registerHealthRoute = (
-  app: OpenAPIHono<{ Bindings: Bindings }>
-) => {
+export const registerHealthRoute = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
   app.openapi(healthRoute, (c) => {
     // The same check the models routes 503 on: key present AND base URL
     // present and valid (there is no code-level base-URL fallback). Sharing

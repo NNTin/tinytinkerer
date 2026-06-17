@@ -21,8 +21,7 @@ export const createBrowserRuntimeFactory = (options: {
         baseUrl: options.shell.config.edgeBaseUrl,
         getToken: () => options.authStore.getState().token,
         getModel: () => options.settingsStore.getState().selectedModel,
-        getLiteLLMBaseUrl: () =>
-          options.settingsStore.getState().litellmBaseUrl,
+        getLiteLLMBaseUrl: () => options.settingsStore.getState().litellmBaseUrl,
         agentType: settings.agentType,
         mcpServers: settings.mcpServers,
         mcpDiscovery: settings.mcpDiscovery,

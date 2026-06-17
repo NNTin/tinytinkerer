@@ -62,7 +62,9 @@ describe('MermaidNodeRenderer', () => {
     await mermaidPlugin.load?.()
 
     const { container } = render(
-      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+      <MermaidNodeRenderer
+        node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }}
+      />
     )
 
     await waitFor(() => {
@@ -80,17 +82,16 @@ describe('MermaidNodeRenderer', () => {
     await mermaidPlugin.load?.()
 
     const { container } = render(
-      <MermaidNodeRenderer node={{ type: 'codeBlock', code: FLOWCHART_CODE, language: 'mermaid' }} />
+      <MermaidNodeRenderer
+        node={{ type: 'codeBlock', code: FLOWCHART_CODE, language: 'mermaid' }}
+      />
     )
 
     await waitFor(() => {
       expect(screen.getByLabelText('Mermaid diagram')).toBeInTheDocument()
     })
 
-    expect(mockRender).toHaveBeenCalledWith(
-      expect.stringContaining('tt-mermaid'),
-      FLOWCHART_CODE
-    )
+    expect(mockRender).toHaveBeenCalledWith(expect.stringContaining('tt-mermaid'), FLOWCHART_CODE)
     expect(container.querySelector('svg')).not.toBeNull()
   })
 
@@ -99,7 +100,9 @@ describe('MermaidNodeRenderer', () => {
     await mermaidPlugin.load?.()
 
     const { container } = render(
-      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+      <MermaidNodeRenderer
+        node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }}
+      />
     )
 
     await waitFor(() => {
@@ -132,7 +135,9 @@ describe('MermaidNodeRenderer', () => {
     mockRender.mockResolvedValue({ svg: '<svg />' })
 
     render(
-      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+      <MermaidNodeRenderer
+        node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }}
+      />
     )
 
     expect(screen.getByText('Mermaid')).toBeInTheDocument()
@@ -143,7 +148,9 @@ describe('MermaidNodeRenderer', () => {
     await mermaidPlugin.load?.()
 
     render(
-      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+      <MermaidNodeRenderer
+        node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }}
+      />
     )
 
     await waitFor(() => {
@@ -156,7 +163,9 @@ describe('MermaidNodeRenderer', () => {
     mockRender.mockRejectedValue(new Error('render failed'))
     await mermaidPlugin.load?.()
 
-    render(<MermaidNodeRenderer node={{ type: 'codeBlock', code: 'bad syntax', language: 'mermaid' }} />)
+    render(
+      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'bad syntax', language: 'mermaid' }} />
+    )
 
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'Preview' })).toBeNull()
@@ -169,7 +178,9 @@ describe('MermaidNodeRenderer', () => {
     await mermaidPlugin.load?.()
 
     const { container } = render(
-      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+      <MermaidNodeRenderer
+        node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }}
+      />
     )
 
     await waitFor(() => expect(container.querySelector('svg')).not.toBeNull())
@@ -217,7 +228,9 @@ describe('MermaidNodeRenderer', () => {
     mockRender.mockResolvedValue({ svg: '<svg><text>Diagram</text></svg>' })
 
     render(
-      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+      <MermaidNodeRenderer
+        node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }}
+      />
     )
 
     await waitFor(() => expect(mockRender).toHaveBeenCalledTimes(1))
@@ -232,7 +245,9 @@ describe('MermaidNodeRenderer', () => {
     await mermaidPlugin.load?.()
 
     render(
-      <MermaidNodeRenderer node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }} />
+      <MermaidNodeRenderer
+        node={{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }}
+      />
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }))

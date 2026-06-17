@@ -11,10 +11,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { buildOpenApiDocument } from '../apps/edge/src/openapi/document'
 
-const OUTPUT_PATH = new URL(
-  '../apps/edge/openapi/tinytinkerer-edge.openapi.json',
-  import.meta.url
-)
+const OUTPUT_PATH = new URL('../apps/edge/openapi/tinytinkerer-edge.openapi.json', import.meta.url)
 
 const checkMode = process.argv.includes('--check')
 

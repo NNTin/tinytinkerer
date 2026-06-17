@@ -51,7 +51,10 @@ const collectInstalledPackages = () => {
   return [...packages.values()]
 }
 
-const reviewed = new Set([...getConfigArray('onlyBuiltDependencies'), ...getConfigArray('ignoredBuiltDependencies')])
+const reviewed = new Set([
+  ...getConfigArray('onlyBuiltDependencies'),
+  ...getConfigArray('ignoredBuiltDependencies')
+])
 const found = []
 
 for (const pkg of collectInstalledPackages()) {
@@ -69,10 +72,14 @@ const unreviewed = found.filter((pkg) => !reviewed.has(pkg.name))
 
 if (unreviewed.length > 0) {
   console.error('Unreviewed dependency install lifecycle scripts found:')
-  for (const pkg of unreviewed.sort((a, b) => `${a.name}@${a.version}`.localeCompare(`${b.name}@${b.version}`))) {
+  for (const pkg of unreviewed.sort((a, b) =>
+    `${a.name}@${a.version}`.localeCompare(`${b.name}@${b.version}`)
+  )) {
     console.error(`  - ${pkg.name}@${pkg.version}: ${pkg.scripts.join(', ')}`)
   }
-  console.error('\nReview each package, then add its package name to onlyBuiltDependencies (approved to run) or ignoredBuiltDependencies (blocked) in pnpm-workspace.yaml.')
+  console.error(
+    '\nReview each package, then add its package name to onlyBuiltDependencies (approved to run) or ignoredBuiltDependencies (blocked) in pnpm-workspace.yaml.'
+  )
   process.exit(1)
 }
 

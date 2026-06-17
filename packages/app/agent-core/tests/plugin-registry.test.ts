@@ -10,7 +10,10 @@ import {
 } from '../src/plugins/types'
 import { ToolRegistry, type Tool } from '../src/tools/registry'
 
-const echoTool = (id: string, execute: Tool<unknown, unknown>['execute']): Tool<unknown, unknown> => ({
+const echoTool = (
+  id: string,
+  execute: Tool<unknown, unknown>['execute']
+): Tool<unknown, unknown> => ({
   id,
   description: 'test',
   schema: z.object({}).passthrough(),
@@ -162,10 +165,7 @@ describe('PluginRegistry', () => {
     )
     registry.register(plugin('good', [], { createHooks: () => [hook] }))
 
-    const contributions = registry.collectContributions(
-      new Set(['bad', 'good']),
-      host
-    )
+    const contributions = registry.collectContributions(new Set(['bad', 'good']), host)
 
     expect(contributions.hooks).toEqual([hook])
   })

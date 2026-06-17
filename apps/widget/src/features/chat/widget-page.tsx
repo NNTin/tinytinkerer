@@ -44,7 +44,8 @@ type WidgetLayout = {
   minimized: boolean
 }
 
-const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max)
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max)
 
 const clampLayout = (layout: WidgetLayout): WidgetLayout => {
   const width = clamp(
@@ -205,11 +206,7 @@ const WidgetWindow = ({
   </div>
 )
 
-const WidgetSurface = ({
-  framed = true
-}: {
-  framed?: boolean
-}) => {
+const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
   const {
     isBooting,
     initializeError,
@@ -223,9 +220,7 @@ const WidgetSurface = ({
     resetConversation,
     cancelRetry
   } = useChatSurfaceController()
-  const {
-    token
-  } = useSettingsSurfaceController()
+  const { token } = useSettingsSurfaceController()
   const { prompt, setPrompt, speech, handleSubmit } = useChatComposer(submitPrompt)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
@@ -251,7 +246,8 @@ const WidgetSurface = ({
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
           {turns.length === 0 ? (
             <p className="text-[13px] leading-5 text-[var(--widget-muted)]">
-              Start a compact session. The widget reuses the shared runtime without copying the web shell.
+              Start a compact session. The widget reuses the shared runtime without copying the web
+              shell.
             </p>
           ) : (
             <div className="space-y-2.5">
@@ -362,7 +358,9 @@ const WidgetSurface = ({
               ) : null}
               <Button
                 size="sm"
-                aria-label={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
+                aria-label={
+                  isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'
+                }
                 title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
                 onClick={() => handleSubmit()}
                 disabled={isRunning || isCoolingDown || !prompt.trim()}
@@ -403,8 +401,10 @@ export const WidgetPage = () => {
     () => resolveWidgetWindowMode(window.location.search) === 'minimized'
   )
   const [isDragging, setIsDragging] = useState(false)
-  const dragRef = useRef<{ startX: number, startY: number, startLayout: WidgetLayout } | null>(null)
-  const resizeRef = useRef<{ startX: number, startY: number, startLayout: WidgetLayout } | null>(null)
+  const dragRef = useRef<{ startX: number; startY: number; startLayout: WidgetLayout } | null>(null)
+  const resizeRef = useRef<{ startX: number; startY: number; startLayout: WidgetLayout } | null>(
+    null
+  )
 
   const isStandalone = viewMode === 'standalone'
   const isMinimized = isStandalone ? layout.minimized : hostMinimized
@@ -458,7 +458,13 @@ export const WidgetPage = () => {
     postDragEvent('start', event.clientX, event.clientY, event.screenX, event.screenY)
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      postDragEvent('move', moveEvent.clientX, moveEvent.clientY, moveEvent.screenX, moveEvent.screenY)
+      postDragEvent(
+        'move',
+        moveEvent.clientX,
+        moveEvent.clientY,
+        moveEvent.screenX,
+        moveEvent.screenY
+      )
     }
 
     const handlePointerEnd = (endEvent: PointerEvent) => {

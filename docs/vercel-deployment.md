@@ -24,17 +24,17 @@ The current codebase expects a **GitHub OAuth App**, not a GitHub App installati
 There are three deployment tiers. Each frontend talks directly to a Cloudflare
 edge origin through `VITE_EDGE_URL`:
 
-| Tier | Branch / trigger | Frontend (Vercel) | Edge (Cloudflare) | Frontend Sentry env |
-|---|---|---|---|---|
-| Production | `main` | `https://tiny.nntin.xyz` | `https://api.tiny.nntin.xyz` | `production` |
-| Develop | `develop` | `https://dev.tiny.nntin.xyz` | `https://api.dev.tiny.nntin.xyz` | `develop` |
-| PR preview | pull requests | `https://pr-<number>-<branch>.tiny.preview.nntin.xyz` | reuses the **develop** edge | `pr-preview` |
-| Local dev | — | `http://localhost:3111` | `http://localhost:8787` | `development` |
+| Tier       | Branch / trigger | Frontend (Vercel)                                     | Edge (Cloudflare)                | Frontend Sentry env |
+| ---------- | ---------------- | ----------------------------------------------------- | -------------------------------- | ------------------- |
+| Production | `main`           | `https://tiny.nntin.xyz`                              | `https://api.tiny.nntin.xyz`     | `production`        |
+| Develop    | `develop`        | `https://dev.tiny.nntin.xyz`                          | `https://api.dev.tiny.nntin.xyz` | `develop`           |
+| PR preview | pull requests    | `https://pr-<number>-<branch>.tiny.preview.nntin.xyz` | reuses the **develop** edge      | `pr-preview`        |
+| Local dev  | —                | `http://localhost:3111`                               | `http://localhost:8787`          | `development`       |
 
 Key points:
 
-- Only `main` is the true Vercel *production* deployment. `develop` is a Vercel
-  *preview* build aliased to a stable subdomain.
+- Only `main` is the true Vercel _production_ deployment. `develop` is a Vercel
+  _preview_ build aliased to a stable subdomain.
 - **PR previews reuse the develop edge** (`api.dev.tiny.nntin.xyz`), not
   production. This lets a PR ship an experimental edge change to `develop`
   without risking production stability.
@@ -122,10 +122,10 @@ Do not commit `.vercel/`.
 `VITE_EDGE_URL` is **scope-specific** — this is what routes develop and PR
 previews to the develop edge while production stays on the production edge:
 
-| Variable | Production scope | Preview scope |
-|---|---|---|
-| `VITE_EDGE_URL` | `https://api.tiny.nntin.xyz` | `https://api.dev.tiny.nntin.xyz` |
-| `VITE_GITHUB_CLIENT_ID` | `<oauth-client-id>` | `<oauth-client-id>` |
+| Variable                | Production scope             | Preview scope                    |
+| ----------------------- | ---------------------------- | -------------------------------- |
+| `VITE_EDGE_URL`         | `https://api.tiny.nntin.xyz` | `https://api.dev.tiny.nntin.xyz` |
+| `VITE_GITHUB_CLIENT_ID` | `<oauth-client-id>`          | `<oauth-client-id>`              |
 
 `VITE_SENTRY_ENVIRONMENT` is **not** set in Vercel — it is passed per-job by the
 deploy workflow (`production` / `develop` / `pr-preview`) so the same Preview

@@ -148,10 +148,7 @@ export const createChatStore = (options: {
       return
     }
     void loadCoreModule().then(async ({ loadCooldown }) => {
-      const cooldownUntil = await loadCooldown(
-        options.shell.preferences,
-        state.litellmBaseUrl
-      )
+      const cooldownUntil = await loadCooldown(options.shell.preferences, state.litellmBaseUrl)
       store.setState({ cooldownUntil })
     })
   })

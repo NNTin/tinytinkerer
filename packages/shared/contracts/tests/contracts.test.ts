@@ -71,9 +71,7 @@ describe('contracts', () => {
       }).models.state
     ).toBe('degraded')
 
-    expect(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }).error).toBe(
-      'Unauthorized'
-    )
+    expect(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }).error).toBe('Unauthorized')
   })
 
   it('parses model and rate-limit payloads', () => {
@@ -135,9 +133,7 @@ describe('contracts', () => {
       }).models
     ).toHaveLength(2)
 
-    expect(modelsListResponseSchema.parse({ models: [] }).models).toHaveLength(
-      0
-    )
+    expect(modelsListResponseSchema.parse({ models: [] }).models).toHaveLength(0)
   })
 
   it('rejects the removed github/openrouter provider ids', () => {
@@ -147,17 +143,16 @@ describe('contracts', () => {
   })
 
   it('validates the shared LiteLLM base URL policy', () => {
-    const accepted = validateLiteLLMBaseUrlPolicy(
-      'https://litellm.example.com'
-    )
+    const accepted = validateLiteLLMBaseUrlPolicy('https://litellm.example.com')
     expect(accepted).toMatchObject({
       ok: true,
       canonicalUrl: 'https://litellm.example.com/'
     })
 
-    expect(
-      validateLiteLLMBaseUrlPolicy('http://litellm.example.com')
-    ).toEqual({ ok: false, reason: 'non-https' })
+    expect(validateLiteLLMBaseUrlPolicy('http://litellm.example.com')).toEqual({
+      ok: false,
+      reason: 'non-https'
+    })
 
     for (const value of [
       'https://user:pw@litellm.example.com',

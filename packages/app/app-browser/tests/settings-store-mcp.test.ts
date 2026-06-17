@@ -219,9 +219,7 @@ describe('settings-store MCP actions', () => {
     })
 
     it('merges with existing discovery entries instead of replacing them', async () => {
-      mockRandomUUID
-        .mockReturnValueOnce('id-a')
-        .mockReturnValueOnce('id-b')
+      mockRandomUUID.mockReturnValueOnce('id-a').mockReturnValueOnce('id-b')
       const store = createSettingsStore(makeShell(preferences))
       const a = await store.getState().addMcpServer(baseServer)
       const b = await store.getState().addMcpServer({ ...baseServer, name: 'B' })

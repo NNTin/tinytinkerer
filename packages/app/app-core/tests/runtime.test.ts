@@ -3,7 +3,9 @@ import type { ChatEvent } from '@tinytinkerer/contracts'
 import { searchRequestSchema } from '@tinytinkerer/contracts'
 import { createChatRuntime, RateLimitError, type ModelProvider } from '../src/index.js'
 
-const collectEvents = async (runtime: ReturnType<typeof createChatRuntime>): Promise<ChatEvent[]> => {
+const collectEvents = async (
+  runtime: ReturnType<typeof createChatRuntime>
+): Promise<ChatEvent[]> => {
   const events: ChatEvent[] = []
   for await (const event of runtime.run('latest news')) {
     events.push(event)
@@ -83,7 +85,10 @@ describe('createChatRuntime', () => {
     expect(events.find((event) => event.type === 'agent.run.started')).toMatchObject({
       payload: { agentType: 'react' }
     })
-    expect(events.at(-1)).toMatchObject({ type: 'assistant.done', payload: { source: 'react answer' } })
+    expect(events.at(-1)).toMatchObject({
+      type: 'assistant.done',
+      payload: { source: 'react answer' }
+    })
   })
 
   it('defaults to the Plan-then-Execute runtime', async () => {
@@ -220,12 +225,8 @@ describe('createChatRuntime', () => {
       })
     )
 
-    const startedIndex = events.findIndex(
-      (event) => event.type === 'agent.tool.started'
-    )
-    const failedIndex = events.findIndex(
-      (event) => event.type === 'agent.tool.failed'
-    )
+    const startedIndex = events.findIndex((event) => event.type === 'agent.tool.started')
+    const failedIndex = events.findIndex((event) => event.type === 'agent.tool.failed')
     const failed = events[failedIndex]
 
     expect(toolExecutions).toBe(0)

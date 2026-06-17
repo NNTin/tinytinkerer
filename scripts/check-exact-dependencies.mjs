@@ -23,7 +23,9 @@ for (const file of packageJsonFiles) {
       if (typeof specifier !== 'string') continue
       if (specifier.startsWith('workspace:')) continue
       if (!EXACT_VERSION_RE.test(specifier)) {
-        violations.push(`${file}: ${section}.${name} must be exact, got ${JSON.stringify(specifier)}`)
+        violations.push(
+          `${file}: ${section}.${name} must be exact, got ${JSON.stringify(specifier)}`
+        )
       }
     }
   }
@@ -32,8 +34,12 @@ for (const file of packageJsonFiles) {
 if (violations.length > 0) {
   console.error('Non-exact direct dependency specifiers found:')
   for (const violation of violations) console.error(`  - ${violation}`)
-  console.error('\nRun `pnpm pin:dependencies` after updating dependencies, then commit the package.json changes.')
+  console.error(
+    '\nRun `pnpm pin:dependencies` after updating dependencies, then commit the package.json changes.'
+  )
   process.exit(1)
 }
 
-console.log(`All direct dependencies/devDependencies are exact in ${packageJsonFiles.length} package.json file(s).`)
+console.log(
+  `All direct dependencies/devDependencies are exact in ${packageJsonFiles.length} package.json file(s).`
+)

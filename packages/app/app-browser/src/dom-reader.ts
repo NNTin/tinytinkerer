@@ -1,9 +1,4 @@
-import type {
-  DomNodeResult,
-  DomQuery,
-  DomReader,
-  DomReadResult
-} from '@tinytinkerer/app-core'
+import type { DomNodeResult, DomQuery, DomReader, DomReadResult } from '@tinytinkerer/app-core'
 
 // Resource ceilings the host enforces regardless of what a plugin requests.
 // These are the browser-side guardrails behind the product-agnostic DomReader
@@ -450,7 +445,11 @@ const buildOutlineNode = (
   return node
 }
 
-const pageMeta = (): { url: string; title: string; viewport: { width: number; height: number } } => ({
+const pageMeta = (): {
+  url: string
+  title: string
+  viewport: { width: number; height: number }
+} => ({
   url: typeof location !== 'undefined' ? location.href : '',
   title: document.title,
   viewport: { width: window.innerWidth, height: window.innerHeight }

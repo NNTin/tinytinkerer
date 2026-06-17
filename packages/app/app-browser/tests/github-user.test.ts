@@ -27,7 +27,10 @@ describe('fetchGitHubUser', () => {
   })
 
   it('invokes onUnauthorized so the caller can drop a rejected token on a 401', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('', { status: 401 }))))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('', { status: 401 })))
+    )
     const onUnauthorized = vi.fn()
 
     const result = await fetchGitHubUser('expired-token', onUnauthorized)
@@ -71,7 +74,10 @@ describe('fetchGitHubUser', () => {
 
   it('does not capture a transient network failure (TINYTINKERER-FRONTEND-7)', async () => {
     const networkError = new TypeError('Failed to fetch')
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(networkError)))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(networkError))
+    )
 
     const result = await fetchGitHubUser('valid-token')
 
@@ -86,7 +92,11 @@ describe('fetchGitHubUser', () => {
       vi.fn(() =>
         Promise.resolve(
           new Response(
-            JSON.stringify({ login: 'octocat', name: 'The Octocat', avatar_url: 'https://x/y.png' }),
+            JSON.stringify({
+              login: 'octocat',
+              name: 'The Octocat',
+              avatar_url: 'https://x/y.png'
+            }),
             { status: 200, headers: { 'content-type': 'application/json' } }
           )
         )

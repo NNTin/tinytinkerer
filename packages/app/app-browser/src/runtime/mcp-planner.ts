@@ -1,9 +1,6 @@
 import { parseJsonWithTelemetry, parseModelJsonWithTelemetry } from '../telemetry/request-telemetry'
 import type { ConversationMessage } from '@tinytinkerer/app-core'
-import {
-  executionPlanSchema,
-  type ExecutionPlan
-} from '@tinytinkerer/contracts'
+import { executionPlanSchema, type ExecutionPlan } from '@tinytinkerer/contracts'
 import type { ModelsChatFetch } from './edge-fetch'
 import { createRateLimitError } from './rate-limit'
 

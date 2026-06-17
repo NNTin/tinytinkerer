@@ -5,6 +5,7 @@ TinyTinkerer supports per-user [Model Context Protocol](https://modelcontextprot
 Only V1 scope is implemented: tool calling over Streamable HTTP. Resources, prompts, remote OAuth, SSE fallback, and stdio servers are out of scope.
 
 See also:
+
 - [ARCHITECTURE.md](./ARCHITECTURE.md)
 - [packages-concept.md](./packages-concept.md)
 
@@ -121,9 +122,9 @@ Stored in IndexedDB under the preference key `settings_mcp_servers` as a JSON ar
 
 ```ts
 type McpServerConfig = {
-  id: string           // crypto.randomUUID() assigned on add
+  id: string // crypto.randomUUID() assigned on add
   name: string
-  url: string          // must be https:// or http://localhost / 127.0.0.1
+  url: string // must be https:// or http://localhost / 127.0.0.1
   bearerToken?: string // forwarded to the remote server, never logged
   enabled: boolean
 }
@@ -138,14 +139,14 @@ type McpDiscoveryResult = {
   serverId: string
   serverName: string
   tools: McpToolMeta[]
-  syncedAt: string      // ISO timestamp
-  error?: string        // set when last sync failed; server contributes no tools
+  syncedAt: string // ISO timestamp
+  error?: string // set when last sync failed; server contributes no tools
 }
 
 type McpToolMeta = {
   toolName: string
   description: string
-  inputSchema: Record<string, unknown>  // raw JSON Schema from the MCP server
+  inputSchema: Record<string, unknown> // raw JSON Schema from the MCP server
 }
 ```
 
@@ -180,7 +181,11 @@ The edge connects to the MCP server, calls `listTools`, and returns:
     {
       "toolName": "get_current_weather",
       "description": "Returns current weather for a location.",
-      "inputSchema": { "type": "object", "properties": { "location": { "type": "string" } }, "required": ["location"] }
+      "inputSchema": {
+        "type": "object",
+        "properties": { "location": { "type": "string" } },
+        "required": ["location"]
+      }
     }
   ],
   "syncedAt": "2025-05-28T10:00:00.000Z"
@@ -216,12 +221,12 @@ Suppose you have a Streamable HTTP MCP server at `https://mcp.example.com/weathe
 3. Fill in:
    - **Name**: My Weather Server
    - **URL**: `https://mcp.example.com/weather`
-   - **Bearer token**: *(your API key, if required)*
+   - **Bearer token**: _(your API key, if required)_
 4. Click **Add** — discovery runs automatically. The card shows `1 tool` once it completes.
 
 ### What the assistant can now do
 
-Ask: *"What's the weather in Berlin right now?"*
+Ask: _"What's the weather in Berlin right now?"_
 
 The LLM planner sees the `get_current_weather` tool descriptor and generates a plan like:
 
@@ -263,6 +268,7 @@ Web search results keep their existing richer format; MCP results show the tool 
 Any server that implements the [MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports) is compatible. The edge uses the official `@modelcontextprotocol/sdk` `Client` + `StreamableHTTPClientTransport`.
 
 Minimal requirements:
+
 - Respond to the `initialize` request (MCP handshake)
 - Respond to `tools/list` with a list of tool definitions including `name`, `description`, and `inputSchema`
 - Respond to `tools/call` with a `content` array of `{ type: "text", text: "..." }` items
@@ -273,12 +279,12 @@ The server does not need to support resources, prompts, or sampling for V1 compa
 
 ## Limitations (V1)
 
-| Out of scope | Reason |
-|---|---|
-| MCP Resources | V1 targets tool calling only |
-| MCP Prompts | V1 targets tool calling only |
-| Remote OAuth for MCP servers | Users manage tokens manually via Bearer token field |
-| SSE fallback transport | Streamable HTTP is the standard remote transport |
-| stdio servers | Browser-to-local-process communication is not feasible without a local proxy |
-| Multiple tool calls per step | The agent runtime is capped at one tool call per step by default |
-| Streaming tool results | MCP call results are collected in full before being returned |
+| Out of scope                 | Reason                                                                       |
+| ---------------------------- | ---------------------------------------------------------------------------- |
+| MCP Resources                | V1 targets tool calling only                                                 |
+| MCP Prompts                  | V1 targets tool calling only                                                 |
+| Remote OAuth for MCP servers | Users manage tokens manually via Bearer token field                          |
+| SSE fallback transport       | Streamable HTTP is the standard remote transport                             |
+| stdio servers                | Browser-to-local-process communication is not feasible without a local proxy |
+| Multiple tool calls per step | The agent runtime is capped at one tool call per step by default             |
+| Streaming tool results       | MCP call results are collected in full before being returned                 |

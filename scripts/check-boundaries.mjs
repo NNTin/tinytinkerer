@@ -42,18 +42,9 @@ const workspaceByName = new Map(workspacePackages.map((pkg) => [pkg.name, pkg]))
 const errors = []
 const graph = new Map(workspacePackages.map((pkg) => [pkg.name, new Set()]))
 const sourceRules = new Map([
-  [
-    '@tinytinkerer/app-core',
-    PRODUCT_AGNOSTIC_SOURCE_RULES
-  ],
-  [
-    '@tinytinkerer/agent-core',
-    PRODUCT_AGNOSTIC_SOURCE_RULES
-  ],
-  [
-    '@tinytinkerer/content-core',
-    PRODUCT_AGNOSTIC_SOURCE_RULES
-  ]
+  ['@tinytinkerer/app-core', PRODUCT_AGNOSTIC_SOURCE_RULES],
+  ['@tinytinkerer/agent-core', PRODUCT_AGNOSTIC_SOURCE_RULES],
+  ['@tinytinkerer/content-core', PRODUCT_AGNOSTIC_SOURCE_RULES]
 ])
 
 for (const pkg of workspacePackages) {
@@ -253,11 +244,15 @@ function validateBoundary(sourcePkg, target, filePath) {
   const targetPkg = target.pkg
 
   if (target.isSubpathImport && targetPkg.name !== sourcePkg.name) {
-    errors.push(`${sourceLabel}: workspace package subpath imports are forbidden (${target.specifier})`)
+    errors.push(
+      `${sourceLabel}: workspace package subpath imports are forbidden (${target.specifier})`
+    )
   }
 
   if (sourcePkg.kind === 'app' && targetPkg.kind === 'app' && sourcePkg.name !== targetPkg.name) {
-    errors.push(`${sourceLabel}: app-to-app imports are forbidden (${sourcePkg.name} -> ${targetPkg.name})`)
+    errors.push(
+      `${sourceLabel}: app-to-app imports are forbidden (${sourcePkg.name} -> ${targetPkg.name})`
+    )
   }
 
   if (
@@ -279,21 +274,27 @@ function validateBoundary(sourcePkg, target, filePath) {
       '@tinytinkerer/sentry-telemetry'
     ])
     if (!allowed.has(targetPkg.name)) {
-      errors.push(`${sourceLabel}: edge may import only contracts, sentry-telemetry, and edge-local modules (${targetPkg.name})`)
+      errors.push(
+        `${sourceLabel}: edge may import only contracts, sentry-telemetry, and edge-local modules (${targetPkg.name})`
+      )
     }
   }
 
   if (sourcePkg.name === '@tinytinkerer/sentry-telemetry') {
     const allowed = new Set(['@tinytinkerer/sentry-telemetry'])
     if (!allowed.has(targetPkg.name)) {
-      errors.push(`${sourceLabel}: sentry-telemetry is a leaf (it may import only @sentry/core and sentry-telemetry-local modules) (${targetPkg.name})`)
+      errors.push(
+        `${sourceLabel}: sentry-telemetry is a leaf (it may import only @sentry/core and sentry-telemetry-local modules) (${targetPkg.name})`
+      )
     }
   }
 
   if (sourcePkg.name === '@tinytinkerer/agent-core') {
     const allowed = new Set(['@tinytinkerer/agent-core', '@tinytinkerer/contracts'])
     if (!allowed.has(targetPkg.name)) {
-      errors.push(`${sourceLabel}: agent-core may import only contracts and agent-core-local modules (${targetPkg.name})`)
+      errors.push(
+        `${sourceLabel}: agent-core may import only contracts and agent-core-local modules (${targetPkg.name})`
+      )
     }
   }
 
@@ -304,7 +305,9 @@ function validateBoundary(sourcePkg, target, filePath) {
       '@tinytinkerer/contracts'
     ])
     if (!allowed.has(targetPkg.name)) {
-      errors.push(`${sourceLabel}: app-core may import only agent-core, contracts, and app-core-local modules (${targetPkg.name})`)
+      errors.push(
+        `${sourceLabel}: app-core may import only agent-core, contracts, and app-core-local modules (${targetPkg.name})`
+      )
     }
   }
 
@@ -333,10 +336,7 @@ function validateBoundary(sourcePkg, target, filePath) {
   }
 
   if (isPluginPackage(sourcePkg)) {
-    const allowed = new Set([
-      sourcePkg.name,
-      '@tinytinkerer/contracts'
-    ])
+    const allowed = new Set([sourcePkg.name, '@tinytinkerer/contracts'])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
         `${sourceLabel}: plugin packages may import only contracts and plugin-local modules (${targetPkg.name})`
@@ -345,10 +345,7 @@ function validateBoundary(sourcePkg, target, filePath) {
   }
 
   if (sourcePkg.name === '@tinytinkerer/brand-assets') {
-    const allowed = new Set([
-      '@tinytinkerer/brand-assets',
-      '@tinytinkerer/contracts'
-    ])
+    const allowed = new Set(['@tinytinkerer/brand-assets', '@tinytinkerer/contracts'])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
         `${sourceLabel}: brand-assets may import only contracts and brand-assets-local modules (${targetPkg.name})`
@@ -363,20 +360,16 @@ function validateBoundary(sourcePkg, target, filePath) {
   }
 
   if (sourcePkg.name === '@tinytinkerer/content-core') {
-    const allowed = new Set([
-      '@tinytinkerer/contracts',
-      '@tinytinkerer/content-core'
-    ])
+    const allowed = new Set(['@tinytinkerer/contracts', '@tinytinkerer/content-core'])
     if (!allowed.has(targetPkg.name)) {
-      errors.push(`${sourceLabel}: content-core may import only contracts and local modules (${targetPkg.name})`)
+      errors.push(
+        `${sourceLabel}: content-core may import only contracts and local modules (${targetPkg.name})`
+      )
     }
   }
 
   if (sourcePkg.name === '@tinytinkerer/content-markdown') {
-    const allowed = new Set([
-      '@tinytinkerer/content-core',
-      '@tinytinkerer/content-markdown'
-    ])
+    const allowed = new Set(['@tinytinkerer/content-core', '@tinytinkerer/content-markdown'])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
         `${sourceLabel}: content-markdown may import only content-core and local modules (${targetPkg.name})`
@@ -398,10 +391,7 @@ function validateBoundary(sourcePkg, target, filePath) {
   }
 
   if (SPECIALIZED_CONTENT_PACKAGES.has(sourcePkg.name)) {
-    const allowed = new Set([
-      sourcePkg.name,
-      '@tinytinkerer/content-react'
-    ])
+    const allowed = new Set([sourcePkg.name, '@tinytinkerer/content-react'])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
         `${sourceLabel}: specialized content packages may import only content-react and local modules (${targetPkg.name})`
@@ -410,9 +400,7 @@ function validateBoundary(sourcePkg, target, filePath) {
   }
 
   if (sourcePkg.name === '@tinytinkerer/contracts') {
-    const allowed = new Set([
-      '@tinytinkerer/contracts'
-    ])
+    const allowed = new Set(['@tinytinkerer/contracts'])
     if (!allowed.has(targetPkg.name)) {
       errors.push(`${sourceLabel}: contracts may import only local modules (${targetPkg.name})`)
     }
@@ -421,7 +409,8 @@ function validateBoundary(sourcePkg, target, filePath) {
 
 function validateSourceConstraints(pkg, filePath, source) {
   const sourceLabel = relative(rootDir, filePath)
-  const rules = sourceRules.get(pkg.name) ?? (isPluginPackage(pkg) ? PRODUCT_AGNOSTIC_SOURCE_RULES : undefined)
+  const rules =
+    sourceRules.get(pkg.name) ?? (isPluginPackage(pkg) ? PRODUCT_AGNOSTIC_SOURCE_RULES : undefined)
 
   for (const rule of rules ?? []) {
     if (rule.pattern.test(source)) {
@@ -431,10 +420,7 @@ function validateSourceConstraints(pkg, filePath, source) {
 }
 
 function isBrowserAppDependencyAllowed(targetPkg) {
-  return (
-    targetPkg.name === '@tinytinkerer/app-browser' ||
-    targetPkg.name === '@tinytinkerer/ui'
-  )
+  return targetPkg.name === '@tinytinkerer/app-browser' || targetPkg.name === '@tinytinkerer/ui'
 }
 
 function isPluginPackage(pkg) {

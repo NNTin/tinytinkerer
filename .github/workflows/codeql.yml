@@ -8,13 +8,13 @@
 #
 # Supported 'language' keywords: 'actions', 'c-cpp', 'csharp', 'go',
 # 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'rust', 'swift'.
-name: "CodeQL Advanced"
+name: 'CodeQL Advanced'
 
 on:
   push:
-    branches: [ "develop" ]
+    branches: ['develop']
   pull_request:
-    branches: [ "develop" ]
+    branches: ['develop']
   schedule:
     - cron: '37 15 * * 4'
 
@@ -45,54 +45,54 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - language: actions
-          build-mode: none
-        - language: javascript-typescript
-          build-mode: none
+          - language: actions
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v5
+      - name: Checkout repository
+        uses: actions/checkout@v5
 
-    # Install workspace dependencies so CodeQL can resolve types across the
-    # pnpm monorepo. Only needed for the JS/TS extractor.
-    - name: Set up pnpm
-      if: matrix.language == 'javascript-typescript'
-      uses: pnpm/action-setup@v6
-      with:
-        version: 10.16.1
+      # Install workspace dependencies so CodeQL can resolve types across the
+      # pnpm monorepo. Only needed for the JS/TS extractor.
+      - name: Set up pnpm
+        if: matrix.language == 'javascript-typescript'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.16.1
 
-    - name: Set up Node.js
-      if: matrix.language == 'javascript-typescript'
-      uses: actions/setup-node@v5
-      with:
-        node-version: '22'
-        cache: pnpm
+      - name: Set up Node.js
+        if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: pnpm
 
-    # The repo's `setup:workspace` script is the secure install: a frozen,
-    # scriptless install followed by an explicit rebuild of only the allowlisted
-    # native binaries (onlyBuiltDependencies). See .agent/skills/pnpm-workspace.
-    - name: Install dependencies
-      if: matrix.language == 'javascript-typescript'
-      run: pnpm setup:workspace
+      # The repo's `setup:workspace` script is the secure install: a frozen,
+      # scriptless install followed by an explicit rebuild of only the allowlisted
+      # native binaries (onlyBuiltDependencies). See .agent/skills/pnpm-workspace.
+      - name: Install dependencies
+        if: matrix.language == 'javascript-typescript'
+        run: pnpm setup:workspace
 
-    # Build the workspace before extraction. CodeQL produces the most accurate
-    # results when analyzing a built project (generated/compiled sources are
-    # present and types resolve across packages).
-    - name: Build
-      if: matrix.language == 'javascript-typescript'
-      run: pnpm build
+      # Build the workspace before extraction. CodeQL produces the most accurate
+      # results when analyzing a built project (generated/compiled sources are
+      # present and types resolve across packages).
+      - name: Build
+        if: matrix.language == 'javascript-typescript'
+        run: pnpm build
 
-    # Initializes the CodeQL tools for scanning.
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v4
-      with:
-        languages: ${{ matrix.language }}
-        build-mode: ${{ matrix.build-mode }}
-        # To enable extra query packs, prefix with "+" to combine with the
-        # defaults, e.g. `queries: +security-extended,security-and-quality`.
+      # Initializes the CodeQL tools for scanning.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # To enable extra query packs, prefix with "+" to combine with the
+          # defaults, e.g. `queries: +security-extended,security-and-quality`.
 
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v4
-      with:
-        category: "/language:${{matrix.language}}"
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:${{matrix.language}}'

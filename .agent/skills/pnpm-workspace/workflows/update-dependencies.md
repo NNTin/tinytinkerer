@@ -7,6 +7,7 @@ pnpm dependency:status
 ```
 
 Verify `pnpm-workspace.yaml` still has:
+
 - `minimumReleaseAge: 10080` and no `minimumReleaseAgeExclude`.
 - `saveExact: true`.
 - `auditLevel: moderate`.
@@ -23,6 +24,7 @@ pnpm install --lockfile-only
 ```
 
 Rules:
+
 - Direct `dependencies` and `devDependencies`: exact resolved versions only.
 - `peerDependencies`: keep compatibility ranges.
 - Workspace links: keep `workspace:*`.
@@ -35,6 +37,7 @@ pnpm check:install-scripts
 ```
 
 For every dependency with `preinstall`, `install`, or `postinstall`, review the package and then add only the package name to:
+
 - `onlyBuiltDependencies` if an explicit, reviewed bootstrap/rebuild step may run it, or
 - `ignoredBuiltDependencies` if installs must block it.
 

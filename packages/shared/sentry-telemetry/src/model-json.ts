@@ -80,7 +80,10 @@ export const parseRobustModelJson = (text: string): unknown => {
 
 // Strip an optional ```json … ``` fence the model sometimes wraps its answer in.
 export const stripModelJsonFences = (text: string): string =>
-  text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+  text
+    .trim()
+    .replace(/^```(?:json)?\n?/, '')
+    .replace(/\n?```$/, '')
 
 // True when `text` contains at least one JSON object/array opener (`{` or `[`).
 // Mirrors the start-detection in `extractBalancedJson`: when this is false the
@@ -90,8 +93,7 @@ export const stripModelJsonFences = (text: string): string =>
 // finish ("I now have enough information…") apart from a real defect. A bare
 // JSON primitive without braces (e.g. `42`) is rare from a model asked for an
 // object and is treated as no-decision prose here.
-export const containsJsonValue = (text: string): boolean =>
-  text.includes('{') || text.includes('[')
+export const containsJsonValue = (text: string): boolean => text.includes('{') || text.includes('[')
 
 // Raised by `parseModelJsonWithTelemetry` when the model's free-form output
 // cannot be turned into the expected structured value. `kind` distinguishes:

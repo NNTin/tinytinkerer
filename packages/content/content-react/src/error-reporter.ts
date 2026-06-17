@@ -17,10 +17,7 @@ export type ContentRenderErrorInfo = {
   reason?: string
 }
 
-export type ContentRenderErrorReporter = (
-  error: Error,
-  info: ContentRenderErrorInfo
-) => void
+export type ContentRenderErrorReporter = (error: Error, info: ContentRenderErrorInfo) => void
 
 let renderErrorReporter: ContentRenderErrorReporter | null = null
 

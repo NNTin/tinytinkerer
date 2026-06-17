@@ -12,7 +12,13 @@ const activity = (items: TurnActivity['items']): TurnActivity => ({ items, reaso
 describe('TurnActivityPanel hierarchy rendering', () => {
   it('indents nested steps and tools with connector markers', () => {
     const a = activity([
-      { kind: 'label', id: 'l-plan', label: 'Created 1-step plan', stepId: 'plan', stepKind: 'plan' },
+      {
+        kind: 'label',
+        id: 'l-plan',
+        label: 'Created 1-step plan',
+        stepId: 'plan',
+        stepKind: 'plan'
+      },
       {
         kind: 'label',
         id: 'l-s1',
@@ -47,7 +53,13 @@ describe('TurnActivityPanel hierarchy rendering', () => {
 
   it('renders a streamed think step thought', () => {
     const a = activity([
-      { kind: 'label', id: 'l-th', label: 'Let me search the docs', stepId: 'th1', stepKind: 'think' }
+      {
+        kind: 'label',
+        id: 'l-th',
+        label: 'Let me search the docs',
+        stepId: 'th1',
+        stepKind: 'think'
+      }
     ])
 
     render(<TurnActivityPanel activity={a} isLive serverNameById={new Map()} />)
@@ -58,9 +70,7 @@ describe('TurnActivityPanel hierarchy rendering', () => {
 
 describe('TurnActivityPanel generic ActivityView rendering', () => {
   const completedTool = (toolId: string, output: unknown): TurnActivity =>
-    activity([
-      { kind: 'tool', id: 't-1', toolId, stepId: 'tool-1', status: 'completed', output }
-    ])
+    activity([{ kind: 'tool', id: 't-1', toolId, stepId: 'tool-1', status: 'completed', output }])
 
   it('renders the resolved summarizer view: title heading and section rows', () => {
     const view: ActivityView = {

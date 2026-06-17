@@ -96,10 +96,9 @@ describe('code-block edit persistence', () => {
       })
     })
 
-    await waitFor(
-      () => expect(window.localStorage.getItem(key('turn-C', 'node-3'))).toBeNull(),
-      { timeout: 1000 }
-    )
+    await waitFor(() => expect(window.localStorage.getItem(key('turn-C', 'node-3'))).toBeNull(), {
+      timeout: 1000
+    })
   })
 
   it('does not hydrate or write while isStreaming is true', async () => {
@@ -128,7 +127,9 @@ describe('code-block edit persistence', () => {
   it('keeps the editor read-only and upstream-driven while streaming', async () => {
     const { container, rerender } = render(
       <ContentDocumentContent
-        document={doc([{ id: 'node-stream', type: 'codeBlock', code: 'partial', language: 'json' }])}
+        document={doc([
+          { id: 'node-stream', type: 'codeBlock', code: 'partial', language: 'json' }
+        ])}
         plugins={[codePlugin]}
         isStreaming
       />
@@ -143,7 +144,9 @@ describe('code-block edit persistence', () => {
     // The next assistant chunk arrives — it must replace the doc, not be masked.
     rerender(
       <ContentDocumentContent
-        document={doc([{ id: 'node-stream', type: 'codeBlock', code: 'partial more', language: 'json' }])}
+        document={doc([
+          { id: 'node-stream', type: 'codeBlock', code: 'partial more', language: 'json' }
+        ])}
         plugins={[codePlugin]}
         isStreaming
       />
@@ -153,7 +156,9 @@ describe('code-block edit persistence', () => {
     // Final chunk arrives and streaming ends.
     rerender(
       <ContentDocumentContent
-        document={doc([{ id: 'node-stream', type: 'codeBlock', code: 'partial more final', language: 'json' }])}
+        document={doc([
+          { id: 'node-stream', type: 'codeBlock', code: 'partial more final', language: 'json' }
+        ])}
         plugins={[codePlugin]}
       />
     )

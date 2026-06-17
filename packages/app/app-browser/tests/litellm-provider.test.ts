@@ -81,16 +81,16 @@ describe('LiteLLMProvider', () => {
       vi.fn(() =>
         Promise.resolve(
           new Response(
-          JSON.stringify({
-            code: 'rate_limited',
-            error: 'rate limited',
-            retryAfterMs: 120_000,
-            retryAt
-          }),
-          {
-            status: 429,
-            headers: { 'retry-after': '120' }
-          }
+            JSON.stringify({
+              code: 'rate_limited',
+              error: 'rate limited',
+              retryAfterMs: 120_000,
+              retryAt
+            }),
+            {
+              status: 429,
+              headers: { 'retry-after': '120' }
+            }
           )
         )
       )
@@ -156,12 +156,9 @@ describe('LiteLLMProvider', () => {
     const fetchSpy = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
       void _input
       void init
-      const body = [
-        'data: {"choices":[{"delta":{"content":"ok"}}]}',
-        '',
-        'data: [DONE]',
-        ''
-      ].join('\n')
+      const body = ['data: {"choices":[{"delta":{"content":"ok"}}]}', '', 'data: [DONE]', ''].join(
+        '\n'
+      )
       return Promise.resolve(
         new Response(body, {
           status: 200,

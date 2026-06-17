@@ -8,15 +8,9 @@ import {
 } from '@tinytinkerer/contracts'
 import { describe, expect, it, vi } from 'vitest'
 import * as permissionsModule from '../src/index'
-import {
-  PERMISSIONS_PLUGIN_ID,
-  permissionsPlugin,
-  permissionsPluginManifest
-} from '../src/index'
+import { PERMISSIONS_PLUGIN_ID, permissionsPlugin, permissionsPluginManifest } from '../src/index'
 
-const toolContext = (
-  overrides: Partial<ToolExecutionContext> = {}
-): ToolExecutionContext => ({
+const toolContext = (overrides: Partial<ToolExecutionContext> = {}): ToolExecutionContext => ({
   stepId: 'step-1',
   toolId: 'web-search',
   input: { query: 'cats' },

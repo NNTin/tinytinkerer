@@ -134,10 +134,7 @@ export const reactDecisionSchema = z.discriminatedUnion('kind', [
 ])
 export type ReActDecision = z.infer<typeof reactDecisionSchema>
 
-const eventBaseSchema = <
-  TType extends EventType,
-  TPayload extends z.ZodTypeAny
->(
+const eventBaseSchema = <TType extends EventType, TPayload extends z.ZodTypeAny>(
   type: TType,
   payload: TPayload
 ) =>
@@ -255,10 +252,7 @@ export const assistantDoneEventSchema = eventBaseSchema(
     content: contentDocumentSchema
   })
 )
-export const errorEventSchema = eventBaseSchema(
-  'error',
-  z.object({ message: z.string() })
-)
+export const errorEventSchema = eventBaseSchema('error', z.object({ message: z.string() }))
 export const systemEventSchema = eventBaseSchema(
   'system',
   z.object({
@@ -291,27 +285,17 @@ export const chatEventSchema = z.discriminatedUnion('type', [
 
 export type UserMessageEvent = z.infer<typeof userMessageEventSchema>
 export type AgentRunStartedEvent = z.infer<typeof agentRunStartedEventSchema>
-export type AgentRunCompletedEvent = z.infer<
-  typeof agentRunCompletedEventSchema
->
+export type AgentRunCompletedEvent = z.infer<typeof agentRunCompletedEventSchema>
 export type AgentStepStartedEvent = z.infer<typeof agentStepStartedEventSchema>
 export type AgentStepDeltaEvent = z.infer<typeof agentStepDeltaEventSchema>
-export type AgentStepCompletedEvent = z.infer<
-  typeof agentStepCompletedEventSchema
->
+export type AgentStepCompletedEvent = z.infer<typeof agentStepCompletedEventSchema>
 export type AgentStepFailedEvent = z.infer<typeof agentStepFailedEventSchema>
 export type AgentToolStartedEvent = z.infer<typeof agentToolStartedEventSchema>
-export type AgentToolCompletedEvent = z.infer<
-  typeof agentToolCompletedEventSchema
->
+export type AgentToolCompletedEvent = z.infer<typeof agentToolCompletedEventSchema>
 export type AgentToolFailedEvent = z.infer<typeof agentToolFailedEventSchema>
 export type RateLimitWaitingEvent = z.infer<typeof rateLimitWaitingEventSchema>
-export type RateLimitRecoveredEvent = z.infer<
-  typeof rateLimitRecoveredEventSchema
->
-export type RateLimitCancelledEvent = z.infer<
-  typeof rateLimitCancelledEventSchema
->
+export type RateLimitRecoveredEvent = z.infer<typeof rateLimitRecoveredEventSchema>
+export type RateLimitCancelledEvent = z.infer<typeof rateLimitCancelledEventSchema>
 export type ReasoningChunkEvent = z.infer<typeof reasoningChunkEventSchema>
 export type ReasoningDoneEvent = z.infer<typeof reasoningDoneEventSchema>
 export type AssistantChunkEvent = z.infer<typeof assistantChunkEventSchema>
@@ -320,11 +304,7 @@ export type ErrorEvent = z.infer<typeof errorEventSchema>
 export type SystemEvent = z.infer<typeof systemEventSchema>
 export type ChatEvent = z.infer<typeof chatEventSchema>
 
-export const brandLinkRelSchema = z.enum([
-  'icon',
-  'apple-touch-icon',
-  'mask-icon'
-])
+export const brandLinkRelSchema = z.enum(['icon', 'apple-touch-icon', 'mask-icon'])
 export type BrandLinkRel = z.infer<typeof brandLinkRelSchema>
 
 export const brandLinkAssetSchema = z.object({
@@ -343,14 +323,8 @@ export const brandThemeMetadataSchema = z.object({
 })
 export type BrandThemeMetadata = z.infer<typeof brandThemeMetadataSchema>
 
-export const brandManifestIconPurposeSchema = z.enum([
-  'any',
-  'maskable',
-  'monochrome'
-])
-export type BrandManifestIconPurpose = z.infer<
-  typeof brandManifestIconPurposeSchema
->
+export const brandManifestIconPurposeSchema = z.enum(['any', 'maskable', 'monochrome'])
+export type BrandManifestIconPurpose = z.infer<typeof brandManifestIconPurposeSchema>
 
 export const brandManifestIconSchema = z.object({
   src: z.string().min(1),

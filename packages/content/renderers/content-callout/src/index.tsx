@@ -106,10 +106,7 @@ function CalloutIcon({ path }: { path: string }) {
   )
 }
 
-const stripFirstTextNode = (
-  paragraph: ParagraphNode,
-  replacement: string
-): ParagraphNode => {
+const stripFirstTextNode = (paragraph: ParagraphNode, replacement: string): ParagraphNode => {
   const [first, ...rest] = paragraph.children
   if (!first) {
     return paragraph

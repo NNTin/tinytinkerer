@@ -128,7 +128,7 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlock
             // foreignObject is an HTML integration point in SVG; without this,
             // DOMPurify rejects all HTML children (div, span, p) inside it, stripping
             // node labels from flowchart and class diagrams entirely.
-            HTML_INTEGRATION_POINTS: { 'annotation-xml': true, 'foreignobject': true }
+            HTML_INTEGRATION_POINTS: { 'annotation-xml': true, foreignobject: true }
           })
           setSvg(sanitized)
           setFailed(false)
@@ -149,14 +149,20 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlock
   return (
     <PreviewCodeFrame
       headerStart={
-        <span className="text-[11px] font-medium uppercase tracking-wide text-stone-500">Mermaid</span>
+        <span className="text-[11px] font-medium uppercase tracking-wide text-stone-500">
+          Mermaid
+        </span>
       }
       code={node.code}
       codeLanguage="mermaid"
       showPreview={!failed}
       preview={
         svg ? (
-          <div aria-label="Mermaid diagram" className="bg-white p-4" dangerouslySetInnerHTML={{ __html: svg }} />
+          <div
+            aria-label="Mermaid diagram"
+            className="bg-white p-4"
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
         ) : (
           <CodeBlockFallback code={node.code} language="mermaid" />
         )

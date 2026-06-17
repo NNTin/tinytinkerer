@@ -29,7 +29,7 @@ curl -sf -o /dev/null http://localhost:3111 && curl -sf http://localhost:8787/he
   `pnpm rebuild sharp esbuild workerd` (pnpm ignores those build scripts by
   default). The `start-dev.sh` tool does this for you.
 - **`Address already in use ... 0.0.0.0:8787`** → a stale/orphaned `workerd`
-  (often from *another* worktree's dev run, re-parented to PID 1) still holds the
+  (often from _another_ worktree's dev run, re-parented to PID 1) still holds the
   edge port. Find and kill it: `lsof -ti:8787` then `kill -9 <pid>`. `pnpm dev`
   brings up host+edge together, so an occupied :8787 takes the whole run down.
 - **`Could not resolve "@hono/zod-openapi"`** → deps are stale; `pnpm install`.
@@ -45,10 +45,11 @@ node .agent/skills/browser-debugging/tools/browser-login.mjs
 This opens `http://localhost:3111/web/` (the web shell — **not** `/`, which is an iframe host), clicks **Accept** on the telemetry/privacy notice if it appears, and pastes the PAT into Settings → Auth. The token comes from the `TINYTINKERER_GITHUB_TOKEN` environment variable (exported in `~/.bashrc`), falling back to `.env.github` when it is unset.
 
 > **Token gotcha (non-interactive shells):** `~/.bashrc` is only sourced by
-> *interactive* shells, so a tool-invoked bash often has `TINYTINKERER_GITHUB_TOKEN`
-> unset, and `.env.github` is per-worktree (it may live only in a *different*
+> _interactive_ shells, so a tool-invoked bash often has `TINYTINKERER_GITHUB_TOKEN`
+> unset, and `.env.github` is per-worktree (it may live only in a _different_
 > checkout). If login can't find the token, either `source ~/.bashrc` first, or
 > hand it through inline for one command, e.g.:
+>
 > ```
 > export TINYTINKERER_GITHUB_TOKEN="$(grep -oP 'export (TINYTINKERER_GITHUB_TOKEN|GITHUB_MODELS_TOKEN)=\K.*' ~/.bashrc | tr -d '\"')"
 > node .agent/skills/browser-debugging/tools/browser-login.mjs
@@ -77,7 +78,7 @@ Find elements without snapshotting: `agent-browser find role button click --name
 ### agent-browser command quirks (this CLI version)
 
 - **`find` needs an ACTION.** `find role button --name X` errors with
-  *"Unknown subaction: --name"*. Put the action before the flags:
+  _"Unknown subaction: --name"_. Put the action before the flags:
   `find role button click --name "Refresh models"`.
 - **`network` has no `--filter` / `clear`.** Valid subactions are `route`,
   `unroute`, `requests`, `request`, `har`. Filter by piping:

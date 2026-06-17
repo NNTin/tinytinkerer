@@ -11,11 +11,11 @@ stale in tinytinkerer, or "it worked yesterday" reports.
 
 The drift report classifies most "stale models" complaints immediately:
 
-| Drift line | Fix |
-| --- | --- |
+| Drift line                  | Fix                                                                                                              |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | in config.yaml but not live | `cd ~/git/lair.nntin.xyz/projects/nntin-labs && docker compose restart litellm` (config is read at startup only) |
-| live but not in virtual key | `tools/sync-virtual-key.sh` (dry-run, review, `--apply`) |
-| in virtual key but not live | stale scope — same sync, or restore the model via `add-or-remove-model.md` |
+| live but not in virtual key | `tools/sync-virtual-key.sh` (dry-run, review, `--apply`)                                                         |
+| in virtual key but not live | stale scope — same sync, or restore the model via `add-or-remove-model.md`                                       |
 
 ## 2. Pull recent service logs
 
@@ -31,7 +31,7 @@ docker logs litellm --since 30m
   (fix `cb31ad0`, `apps/edge/src/routes/models.ts`). Distinct from a bad virtual
   key: that 401 comes from LiteLLM itself and shows in `docker logs litellm`.
 - **400 with `The '<model>' model is not supported when using Codex with a
-  ChatGPT account.`** — the alias is listed but not callable by the stored
+ChatGPT account.`** — the alias is listed but not callable by the stored
   ChatGPT account. Confirm with `tools/smoke-test-models.sh <model>`, then
   retire the alias via `add-or-remove-model.md` (removal path). Never keep an
   unsupported `chatgpt/*` alias as a fallback.

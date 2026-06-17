@@ -28,7 +28,11 @@ const buildReplanPrompt = (prompt: string, context: ExecutionContext): string =>
     sections.push('', 'Observations so far:', ...observations)
   }
   if (toolResults.length > 0) {
-    sections.push('', 'Tool results:', ...toolResults.map(([key, value]) => `${key}: ${JSON.stringify(value)}`))
+    sections.push(
+      '',
+      'Tool results:',
+      ...toolResults.map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+    )
   }
   return sections.join('\n')
 }
@@ -153,9 +157,7 @@ export class HybridRuntime extends AgentRuntimeBase {
         yield createEvent('agent.step.failed', {
           stepId: stepEventId,
           error:
-            sub.exitReason === 'aborted'
-              ? 'Step cancelled'
-              : 'Step interrupted before completion'
+            sub.exitReason === 'aborted' ? 'Step cancelled' : 'Step interrupted before completion'
         })
         break
       }

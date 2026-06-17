@@ -51,7 +51,9 @@ describe('linkCardPlugin', () => {
   })
 
   it('matches paragraphs whose only child is a bare URL text node', () => {
-    expect(matchesLinkCard(paragraph([{ type: 'text', value: '  https://example.com  ' }]))).toBe(true)
+    expect(matchesLinkCard(paragraph([{ type: 'text', value: '  https://example.com  ' }]))).toBe(
+      true
+    )
   })
 
   it('does not match paragraphs with multiple children', () => {
@@ -99,7 +101,9 @@ describe('linkCardPlugin', () => {
   it('falls back to hostname + path as the title for bare URLs', () => {
     render(
       <ContentDocumentContent
-        document={documentWith(paragraph([{ type: 'text', value: 'https://example.com/docs/api' }]))}
+        document={documentWith(
+          paragraph([{ type: 'text', value: 'https://example.com/docs/api' }])
+        )}
         plugins={[linkCardPlugin]}
       />
     )

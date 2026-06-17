@@ -116,21 +116,9 @@ describe('per-user LiteLLM key — deployment isolation', () => {
   })
 
   it('derives disjoint backoff/marker scopes per deployment secret', async () => {
-    const keyA = await deriveLiteLLMUserCredentialKey(
-      envFor('secret-A'),
-      IDENTITY,
-      BASE_URL
-    )
-    const keyA2 = await deriveLiteLLMUserCredentialKey(
-      envFor('secret-A'),
-      IDENTITY,
-      BASE_URL
-    )
-    const keyB = await deriveLiteLLMUserCredentialKey(
-      envFor('secret-B'),
-      IDENTITY,
-      BASE_URL
-    )
+    const keyA = await deriveLiteLLMUserCredentialKey(envFor('secret-A'), IDENTITY, BASE_URL)
+    const keyA2 = await deriveLiteLLMUserCredentialKey(envFor('secret-A'), IDENTITY, BASE_URL)
+    const keyB = await deriveLiteLLMUserCredentialKey(envFor('secret-B'), IDENTITY, BASE_URL)
     expect(keyA).toBe(keyA2)
     expect(keyA).not.toBe(keyB)
   })

@@ -16,18 +16,12 @@ import {
 // it is generated from stay consistent with it.
 const spec = JSON.parse(
   readFileSync(
-    new URL(
-      '../../../../apps/edge/openapi/tinytinkerer-edge.openapi.json',
-      import.meta.url
-    ),
+    new URL('../../../../apps/edge/openapi/tinytinkerer-edge.openapi.json', import.meta.url),
     'utf8'
   )
 ) as {
   security: unknown
-  paths: Record<
-    string,
-    Record<string, { security?: unknown; responses: Record<string, unknown> }>
-  >
+  paths: Record<string, Record<string, { security?: unknown; responses: Record<string, unknown> }>>
 }
 
 const ROUTE_METHOD: Record<string, string> = {
@@ -42,9 +36,7 @@ const ROUTE_METHOD: Record<string, string> = {
 
 describe('edge openapi spec', () => {
   it('documents every edge route with its method', () => {
-    expect(Object.keys(spec.paths).sort()).toEqual(
-      Object.keys(ROUTE_METHOD).sort()
-    )
+    expect(Object.keys(spec.paths).sort()).toEqual(Object.keys(ROUTE_METHOD).sort())
 
     for (const [path, method] of Object.entries(ROUTE_METHOD)) {
       expect(spec.paths[path]?.[method], `${path} ${method}`).toBeDefined()
@@ -67,19 +59,16 @@ describe('edge openapi spec', () => {
       content: Record<string, unknown>
       headers: Record<string, unknown>
     }
-    expect(Object.keys(ok.content).sort()).toEqual([
-      'application/json',
-      'text/event-stream'
-    ])
+    expect(Object.keys(ok.content).sort()).toEqual(['application/json', 'text/event-stream'])
     for (const header of EDGE_RATE_LIMIT_HEADERS) {
       expect(ok.headers[header], header).toBeDefined()
     }
   })
 
   it('exposes Retry-After on rate-limited chat responses', () => {
-    const rateLimited = spec.paths['/api/models/chat']?.post?.responses?.[
-      '429'
-    ] as { headers: Record<string, unknown> }
+    const rateLimited = spec.paths['/api/models/chat']?.post?.responses?.['429'] as {
+      headers: Record<string, unknown>
+    }
     expect(rateLimited).toBeDefined()
     expect(rateLimited.headers?.['Retry-After']).toBeDefined()
   })
@@ -87,9 +76,7 @@ describe('edge openapi spec', () => {
 
 describe('generated edge contracts', () => {
   it('exposes route-path constants matching the spec', () => {
-    expect(new Set(Object.values(EDGE_ROUTE_PATHS))).toEqual(
-      new Set(Object.keys(spec.paths))
-    )
+    expect(new Set(Object.values(EDGE_ROUTE_PATHS))).toEqual(new Set(Object.keys(spec.paths)))
     expect(EDGE_ROUTE_PATHS.modelsChat).toBe('/api/models/chat')
   })
 
@@ -110,13 +97,10 @@ describe('generated edge contracts', () => {
       installId: 'X-Install-ID',
       githubId: 'X-GitHub-ID'
     })
-    expect(
-      telemetryHeadersSchema.safeParse({ appVersion: 'v1', buildHash: 'abc' })
-        .success
-    ).toBe(true)
-    expect(
-      telemetryHeadersSchema.safeParse({ appVersion: 'x'.repeat(129) }).success
-    ).toBe(false)
+    expect(telemetryHeadersSchema.safeParse({ appVersion: 'v1', buildHash: 'abc' }).success).toBe(
+      true
+    )
+    expect(telemetryHeadersSchema.safeParse({ appVersion: 'x'.repeat(129) }).success).toBe(false)
     expect(EDGE_RATE_LIMIT_HEADERS).toHaveLength(6)
   })
 })

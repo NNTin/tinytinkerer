@@ -77,11 +77,24 @@ export type ProviderCallOptions = {
 }
 
 export interface ModelProvider {
-  plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan>
+  plan(
+    prompt: string,
+    history: ConversationMessage[],
+    options?: ProviderCallOptions
+  ): Promise<ExecutionPlan>
   execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
-  synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk>
-  decideNextAction?(context: ExecutionContext, options?: ProviderCallOptions): Promise<ReActDecision>
-  streamDecision?(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<DecisionChunk>
+  synthesize(
+    context: ExecutionContext,
+    options?: ProviderCallOptions
+  ): AsyncIterable<SynthesisChunk>
+  decideNextAction?(
+    context: ExecutionContext,
+    options?: ProviderCallOptions
+  ): Promise<ReActDecision>
+  streamDecision?(
+    context: ExecutionContext,
+    options?: ProviderCallOptions
+  ): AsyncIterable<DecisionChunk>
 }
 
 export type Tool<Input, Output> = AgentTool<Input, Output>
@@ -98,7 +111,8 @@ export class RateLimitError extends Error {
   }
 }
 
-export const isRateLimitError = (error: unknown): error is RateLimitError => error instanceof RateLimitError
+export const isRateLimitError = (error: unknown): error is RateLimitError =>
+  error instanceof RateLimitError
 
 export const createChatRuntime = (options: {
   provider: ModelProvider
@@ -189,7 +203,11 @@ const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => (
       throw toAgentError(error)
     }
   },
-  async execute(step: PlanStep, context: AgentExecutionContext, options?: AgentProviderCallOptions) {
+  async execute(
+    step: PlanStep,
+    context: AgentExecutionContext,
+    options?: AgentProviderCallOptions
+  ) {
     try {
       return await provider.execute(step, toExecutionContext(context), options)
     } catch (error) {

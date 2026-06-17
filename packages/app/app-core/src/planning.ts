@@ -2,10 +2,7 @@ import type { ExecutionPlan, PlanStep } from '@tinytinkerer/contracts'
 
 const SEARCH_KEYWORDS = /latest|news|search|web|compare|today|research/i
 
-export const inferPlan = (
-  prompt: string,
-  options?: { searchEnabled?: boolean }
-): ExecutionPlan => {
+export const inferPlan = (prompt: string, options?: { searchEnabled?: boolean }): ExecutionPlan => {
   const needsSearch = options?.searchEnabled !== false && SEARCH_KEYWORDS.test(prompt)
   const steps: PlanStep[] = [{ id: 'understand', summary: 'Understand request constraints' }]
 
