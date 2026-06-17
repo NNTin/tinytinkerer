@@ -425,10 +425,7 @@ describe('createDomReader — full sanitized snapshot (the run_javascript `dom` 
   const lastSnapshot = (fn: ReturnType<typeof vi.fn>): DomSnapshotNode =>
     fn.mock.calls.at(-1)?.[0] as DomSnapshotNode
 
-  const findBody = (snap: DomSnapshotNode): DomSnapshotNode | undefined =>
-    snap.children?.find((c) => c.tag === 'body')
-
-  it('writes a structured snapshot rooted at <html> on every read, whatever the query mode', async () => {
+  it('writes a structured snapshot rooted at <body> on every read, whatever the query mode', async () => {
     document.body.innerHTML = '<main id="app"><h1>Title</h1><p class="lead">Body text</p></main>'
     const onSnapshot = vi.fn()
     const read = createDomReader(onSnapshot)
@@ -439,8 +436,8 @@ describe('createDomReader — full sanitized snapshot (the run_javascript `dom` 
     expect(onSnapshot).toHaveBeenCalledTimes(3)
 
     const snap = lastSnapshot(onSnapshot)
-    expect(snap.tag).toBe('html')
-    const app = findBody(snap)?.children?.find((c) => c.id === 'app')
+    expect(snap.tag).toBe('body')
+    const app = snap.children?.find((c) => c.id === 'app')
     expect(app?.tag).toBe('main')
     expect(app?.children?.map((c) => c.tag)).toEqual(['h1', 'p'])
     const lead = app?.children?.find((c) => c.classes?.includes('lead'))
@@ -459,7 +456,7 @@ describe('createDomReader — full sanitized snapshot (the run_javascript `dom` 
     const result = await read({ selector: 'p', maxNodes: 2, maxChars: 5 })
     expect(result.nodes).toHaveLength(2)
 
-    const section = findBody(lastSnapshot(onSnapshot))?.children?.find((c) => c.tag === 'section')
+    const section = lastSnapshot(onSnapshot).children?.find((c) => c.tag === 'section')
     expect(section?.children).toHaveLength(31) // all 30 + the long one, none dropped
     expect(section?.children?.find((c) => c.id === 'long')?.text).toBe(longText) // untruncated
   })
@@ -483,5 +480,61 @@ describe('createDomReader — full sanitized snapshot (the run_javascript `dom` 
     expect(json).not.toContain('onclick')
     expect(json).not.toContain('srcdoc')
     expect(json).toContain('[redacted]') // password surfaces only the marker
+  })
+
+  it('excludes the document <head> and the contents of body script/style nodes', async () => {
+    document.head.innerHTML =
+      '<meta name="csrf-token" content="HEAD_META_SECRET">' +
+      '<script>var headVar = "HEAD_SCRIPT_SECRET"</script>'
+    document.body.innerHTML =
+      '<div id="app">visible</div>' +
+      '<script id="data" type="application/json">{"session":"BODY_SCRIPT_SECRET"}</script>' +
+      '<style>.x{color:BODY_STYLE_SECRET}</style>'
+    const onSnapshot = vi.fn()
+    const read = createDomReader(onSnapshot)
+
+    try {
+      await read({})
+
+      const snap = lastSnapshot(onSnapshot)
+      expect(snap.tag).toBe('body') // rooted at body, so <head> is wholly excluded
+      const json = JSON.stringify(snap)
+      expect(json).not.toContain('HEAD_META_SECRET')
+      expect(json).not.toContain('HEAD_SCRIPT_SECRET')
+      // body script/style appear as opaque structural nodes — no inner text/attributes.
+      expect(json).not.toContain('BODY_SCRIPT_SECRET')
+      expect(json).not.toContain('BODY_STYLE_SECRET')
+      const dataScript = snap.children?.find((c) => c.id === 'data')
+      expect(dataScript?.tag).toBe('script')
+      expect(dataScript?.text).toBeUndefined()
+      expect(dataScript?.attributes).toBeUndefined()
+    } finally {
+      document.head.innerHTML = ''
+    }
+  })
+
+  it('caps an oversized attribute value in the snapshot', async () => {
+    const big = 'y'.repeat(60_000) // beyond MAX_SNAPSHOT_FIELD_CHARS (50k)
+    document.body.innerHTML = `<div id="d" data-blob="${big}"></div>`
+    const onSnapshot = vi.fn()
+    const read = createDomReader(onSnapshot)
+
+    await read({})
+
+    const value = lastSnapshot(onSnapshot).children?.find((c) => c.id === 'd')?.attributes?.['data-blob'] ?? ''
+    expect(value).toContain('[truncated]')
+    expect(value.length).toBeLessThan(60_000)
+  })
+
+  it('skips building the snapshot entirely when capture is gated off', async () => {
+    document.body.innerHTML = '<div>x</div>'
+    const offSnapshot = vi.fn()
+    await createDomReader(offSnapshot, () => false)({})
+    expect(offSnapshot).not.toHaveBeenCalled()
+
+    const onSnapshot = vi.fn()
+    await createDomReader(onSnapshot, () => true)({})
+    expect(onSnapshot).toHaveBeenCalledTimes(1)
+    expect(lastSnapshot(onSnapshot).tag).toBe('body')
   })
 })

@@ -38,6 +38,12 @@ import { requestPermission } from '../permission-service'
 // id already hard-coded in app-core's inferPlan.
 const WEB_SEARCH_TOOL_ID = 'web-search'
 
+// The code-exec plugin's tool id. Like WEB_SEARCH_TOOL_ID, app-browser never imports
+// the plugin — this literal only lets the runtime tell whether run_javascript ended
+// up registered, so read_dom only builds the (whole-body) DOM snapshot when a
+// sandbox consumer is actually present.
+const RUN_JAVASCRIPT_TOOL_ID = 'run_javascript'
+
 export type BrowserPluginRuntime = {
   registry: PluginRegistry
   modulesById: ReadonlyMap<string, PluginModule>
@@ -135,8 +141,11 @@ export const createRuntime = (options: {
   // read, and run_javascript reads it as its `dom` binding. This host-side holder is
   // the channel that lets the agent read a cheap narrow view with read_dom and then
   // compute/extract over the complete page in the sandbox (which cannot read the
-  // page itself). Scoped to this runtime, like the two capabilities below.
+  // page itself). Scoped to this runtime, like the two capabilities below. Capture is
+  // gated on run_javascript being registered (set after the plugin block below), so a
+  // read_dom with no sandbox consumer never pays for the whole-body deep clone.
   let domSnapshot: DomSnapshotNode | null = null
+  let captureDomSnapshot = false
 
   // Sandbox capability handed to plugins that must run arbitrary code (e.g. the
   // code-exec plugin). The browser implements isolation via an ephemeral,
@@ -151,9 +160,12 @@ export const createRuntime = (options: {
   // document, capping and redacting form-field values host-side; the plugin stays
   // product-agnostic and only describes what to read. Each read also captures the
   // full sanitized page into the shared snapshot above for the sandbox to use.
-  const domReader = createDomReader((snapshot) => {
-    domSnapshot = snapshot
-  })
+  const domReader = createDomReader(
+    (snapshot) => {
+      domSnapshot = snapshot
+    },
+    () => captureDomSnapshot
+  )
 
   for (const server of options.mcpServers ?? []) {
     if (!server.enabled) continue
@@ -247,6 +259,11 @@ export const createRuntime = (options: {
       }
     }
   }
+
+  // Enable DOM-snapshot capture only when run_javascript actually registered, so a
+  // read_dom never builds the whole-body clone (nor exposes it) when no sandbox can
+  // consume it. Derived from the registered tools, mirroring `searchEnabled` below.
+  captureDomSnapshot = registeredToolIds.has(RUN_JAVASCRIPT_TOOL_ID)
 
   return createChatRuntime({
     ...(options.agentType ? { agentType: options.agentType } : {}),

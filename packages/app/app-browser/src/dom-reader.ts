@@ -25,12 +25,21 @@ const TREE_CHILD_CAP = 25
 const TREE_NODE_BUDGET = 400
 const TEXT_PREVIEW_CHARS = 80
 
-// Total-node guardrail for the full DOM snapshot (the shared variable handed to
-// the code-exec sandbox). Unlike a read_dom query, the snapshot is intentionally
-// the WHOLE sanitized tree — no depth limit and no per-field char cap — so this is
-// the only bound on its size. Generous (a real app page is well under this), but
-// finite so a pathological document can't produce an unbounded payload.
+// Guardrails for the full DOM snapshot (the shared variable handed to the code-exec
+// sandbox). Unlike a read_dom query, the snapshot is the whole sanitized body tree
+// with no depth limit, so these are its only size bounds: at most MAX_SNAPSHOT_NODES
+// nodes total, and each text/attribute value capped at MAX_SNAPSHOT_FIELD_CHARS.
+// Both are generous (a real app page is well under them) but finite, so a
+// pathological document can never produce an unbounded payload across the boundary.
 const MAX_SNAPSHOT_NODES = 20_000
+const MAX_SNAPSHOT_FIELD_CHARS = 50_000
+
+// Elements whose text/markup is never page content the agent computes over, and
+// which routinely embed app config or secrets (inline JS, JSON data islands such as
+// Next.js' #__NEXT_DATA__, CSS, escaped markup). The snapshot emits them as opaque
+// structural nodes — tag/id/classes only, never their text, attributes, or
+// children — so nothing inside them crosses into the sandbox.
+const SNAPSHOT_OPAQUE_TAGS = new Set(['script', 'style', 'noscript', 'template'])
 
 const TEXT_NODE = 3
 const INTERACTIVE_TAGS = new Set(['a', 'button', 'input', 'select', 'textarea'])
@@ -176,9 +185,11 @@ const readAttributes = (redacted: Element, maxChars: number): Record<string, str
 }
 
 // One node of the full sanitized DOM snapshot — the shared structure handed to the
-// code-exec sandbox as its readonly `dom` binding. Mirrors DomNodeResult's shape
-// (minus rect/childCount), but it is built from a fully-redacted clone of the WHOLE
-// document and is untruncated except for the MAX_SNAPSHOT_NODES guardrail. Host-
+// code-exec sandbox as its `dom` binding. Mirrors DomNodeResult's shape (minus
+// rect/childCount), built from a fully-redacted clone of the page <body> subtree.
+// `text` is the node's OWN direct text (not its subtree's — descendants come from
+// `children`), per-field-capped, and `truncated` flags any node where the field
+// cap, the per-node child budget, OR a descendant's truncation applied. Host-
 // internal: passed to the sandbox as opaque JSON, it never crosses the plugin
 // contract.
 export type DomSnapshotNode = {
@@ -194,8 +205,8 @@ export type DomSnapshotNode = {
 // Serializes one node of an already-redacted clone into a snapshot node, recursing
 // over its children under the shared node `budget`. Reads only attributes + direct
 // text from the detached clone (never the live page or the live `.value`), so the
-// snapshot exposes exactly what read_dom's redaction already permits — no per-field
-// char cap (this is the deliberate "full" view).
+// snapshot exposes only what read_dom's redaction already permits. Script/style/etc.
+// are emitted as opaque structural nodes so inline code/JSON/markup never leaks.
 const buildSnapshotNode = (element: Element, budget: { remaining: number }): DomSnapshotNode => {
   const node: DomSnapshotNode = { tag: element.tagName.toLowerCase() }
   if (element.id) {
@@ -205,20 +216,27 @@ const buildSnapshotNode = (element: Element, budget: { remaining: number }): Dom
   if (classes) {
     node.classes = classes
   }
+
+  // Opaque elements contribute structure only — never their text, attributes, or
+  // children — so inline script/style/JSON-island content can't reach the sandbox.
+  if (SNAPSHOT_OPAQUE_TAGS.has(node.tag)) {
+    return node
+  }
+
+  let truncated = false
+
   // Direct text only — descendants' text comes from `children`, so content is never
   // duplicated up every ancestor.
-  const text = directText(element)
+  const { value: text, truncated: textCut } = cap(directText(element), MAX_SNAPSHOT_FIELD_CHARS)
   if (text) {
     node.text = text
+    truncated = truncated || textCut
   }
   if (element.attributes.length > 0) {
-    // MAX_SAFE_INTEGER disables readAttributes' per-value cap; the snapshot is full
-    // (the MAX_ATTRS count guard still applies, mirroring read_dom).
-    node.attributes = readAttributes(element, Number.MAX_SAFE_INTEGER)
+    node.attributes = readAttributes(element, MAX_SNAPSHOT_FIELD_CHARS)
   }
 
   const childElements = Array.from(element.children)
-  let truncated = false
   if (childElements.length > 0) {
     const children: DomSnapshotNode[] = []
     for (const child of childElements) {
@@ -227,7 +245,12 @@ const buildSnapshotNode = (element: Element, budget: { remaining: number }): Dom
         break
       }
       budget.remaining -= 1
-      children.push(buildSnapshotNode(child, budget))
+      const built = buildSnapshotNode(child, budget)
+      children.push(built)
+      // Propagate a descendant's truncation up so the root carries the signal.
+      if (built.truncated) {
+        truncated = true
+      }
     }
     if (children.length > 0) {
       node.children = children
@@ -239,15 +262,17 @@ const buildSnapshotNode = (element: Element, budget: { remaining: number }): Dom
   return node
 }
 
-// Builds the full sanitized DOM snapshot: deep-redacts the whole document once via
-// the same redactClone path read_dom uses, then walks the detached clone into plain
-// JSON nodes. Returns null when there is no document (headless host). This is the
-// shared variable the code-exec sandbox reads as `dom`.
+// Builds the full sanitized DOM snapshot from the page <body> (matching read_dom's
+// own root — the document <head>, with its inline scripts/meta/link tokens, is never
+// included). Deep-redacts the body once via the same redactClone path read_dom uses,
+// then walks the detached clone into plain JSON nodes. Returns null when there is no
+// document/body (headless host). This is the shared variable the sandbox reads as
+// `dom`.
 const buildDomSnapshot = (): DomSnapshotNode | null => {
-  if (typeof document === 'undefined' || !document.documentElement) {
+  if (typeof document === 'undefined' || !document.body) {
     return null
   }
-  const redacted = redactClone(document.documentElement, true)
+  const redacted = redactClone(document.body, true)
   const budget = { remaining: MAX_SNAPSHOT_NODES }
   return buildSnapshotNode(redacted, budget)
 }
@@ -434,11 +459,22 @@ export const createDomReader = (
   // read so a later run_javascript can read the whole page as its `dom` binding.
   // The host wires this to a shared holder the sandbox executor reads (see
   // create-runtime). Absent on hosts that don't share with a sandbox.
-  onSnapshot?: (snapshot: DomSnapshotNode | null) => void
+  onSnapshot?: (snapshot: DomSnapshotNode | null) => void,
+  // Optional gate: when provided and false, the (whole-body deep-clone) snapshot is
+  // not built at all. The host uses this to skip the work entirely when no sandbox
+  // consumer (run_javascript) is active, so a plain read_dom never pays for it.
+  shouldCapture?: () => boolean
 ): DomReader => {
   return (query: DomQuery): Promise<DomReadResult> => {
+    // Only build/emit the snapshot when something will consume it (and the build is
+    // possible). Defaults to on when no gate is supplied, so direct callers/tests
+    // that pass only a sink still capture.
+    const capture = onSnapshot !== undefined && (shouldCapture?.() ?? true)
+
     if (typeof document === 'undefined') {
-      onSnapshot?.(null)
+      if (capture) {
+        onSnapshot(null)
+      }
       return Promise.resolve(unavailable)
     }
 
@@ -446,7 +482,9 @@ export const createDomReader = (
     // regardless of which mode the query resolves to, so the variable always
     // reflects the page the agent just looked at. The returned (narrow, truncated)
     // DomReadResult is unaffected.
-    onSnapshot?.(buildDomSnapshot())
+    if (capture) {
+      onSnapshot(buildDomSnapshot())
+    }
 
     const maxNodes = clamp(query.maxNodes, DEFAULT_MAX_NODES, HARD_MAX_NODES)
     const maxChars = clamp(query.maxChars, DEFAULT_MAX_CHARS, HARD_MAX_CHARS)

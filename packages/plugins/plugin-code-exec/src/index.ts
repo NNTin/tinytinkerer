@@ -125,10 +125,12 @@ export const codeExecPluginManifest: PluginManifest = {
         'Use it for calculations, parsing, and data transforms where running code is more ' +
         'reliable than reasoning by hand. The sandbox has no network or storage access and ' +
         'cannot read the live page, BUT it receives the full sanitized page DOM from the most ' +
-        'recent read_dom call as a readonly `dom` binding: a structured node tree ' +
-        '{ tag, id?, classes?, text?, attributes?, children? } (null if read_dom has not run). ' +
-        'Walk `dom` to count/search/extract across the whole page — read_dom gives only a ' +
-        'narrow, truncated view, so heavy DOM work belongs here. ' +
+        'recent read_dom call as a readonly `dom` binding: a structured node tree rooted at ' +
+        '<body> — { tag, id?, classes?, text?, attributes?, children? }, where `text` is the ' +
+        'node\'s OWN direct text (concatenate `children` for a subtree\'s text). It is null if ' +
+        'read_dom has not run, and script/style content is omitted. Walk `dom` to ' +
+        'count/search/extract across the whole page — read_dom gives only a narrow, truncated ' +
+        'view, so heavy DOM work belongs here. ' +
         'End your code with a `return` (it runs inside an async function) or rely on console.log.',
       inputSchema: {
         code: {
