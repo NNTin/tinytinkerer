@@ -20,7 +20,7 @@ import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch } from './edge-fetch'
 import { createMcpTool } from './mcp-tool'
 import { createSandboxExecutor } from '../sandbox-executor'
-import { createDomReader } from '../dom-reader'
+import { createDomReader, type DomSnapshotNode } from '../dom-reader'
 import {
   captureTelemetryException,
   captureTelemetryMessage,
@@ -131,18 +131,29 @@ export const createRuntime = (options: {
     }
   }
 
+  // Shared full sanitized DOM snapshot: read_dom writes the whole page here on every
+  // read, and run_javascript reads it as its `dom` binding. This host-side holder is
+  // the channel that lets the agent read a cheap narrow view with read_dom and then
+  // compute/extract over the complete page in the sandbox (which cannot read the
+  // page itself). Scoped to this runtime, like the two capabilities below.
+  let domSnapshot: DomSnapshotNode | null = null
+
   // Sandbox capability handed to plugins that must run arbitrary code (e.g. the
   // code-exec plugin). The browser implements isolation via an ephemeral,
   // opaque-origin iframe + Worker with a strict CSP; the plugin stays
   // product-agnostic and only describes what to run. Constructed once per runtime
-  // so its concurrency limit spans all runs in this runtime.
-  const sandboxExecutor = createSandboxExecutor()
+  // so its concurrency limit spans all runs in this runtime. It reads the shared
+  // snapshot so sandboxed code receives the last-read page as `dom`.
+  const sandboxExecutor = createSandboxExecutor(() => domSnapshot)
 
   // DOM-read capability handed to plugins that must read the current page (e.g.
   // the browser-state plugin). The browser implements it against this shell's own
   // document, capping and redacting form-field values host-side; the plugin stays
-  // product-agnostic and only describes what to read.
-  const domReader = createDomReader()
+  // product-agnostic and only describes what to read. Each read also captures the
+  // full sanitized page into the shared snapshot above for the sandbox to use.
+  const domReader = createDomReader((snapshot) => {
+    domSnapshot = snapshot
+  })
 
   for (const server of options.mcpServers ?? []) {
     if (!server.enabled) continue

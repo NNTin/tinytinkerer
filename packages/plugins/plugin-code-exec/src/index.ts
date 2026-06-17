@@ -112,8 +112,10 @@ export const codeExecPluginManifest: PluginManifest = {
     'Let the assistant run JavaScript in an isolated browser sandbox (an ephemeral, ' +
     'opaque-origin iframe + Worker with a strict content-security policy). The code ' +
     'cannot read the app, your storage, cookies, or the network, and it cannot reach ' +
-    'this page. Useful for calculations and data transforms. Off by default. Enable ' +
-    'the Permissions plugin too if you want to approve each run before it executes.',
+    'this page. If the Browser state plugin is on, it can read the same already-redacted ' +
+    'page snapshot that read_dom produces. Useful for calculations and data transforms. ' +
+    'Off by default. Enable the Permissions plugin too if you want to approve each run ' +
+    'before it executes.',
   capabilities: ['tools'],
   toolDescriptors: [
     {
@@ -121,15 +123,21 @@ export const codeExecPluginManifest: PluginManifest = {
       description:
         'Run JavaScript in an isolated sandbox and get back its result plus console output. ' +
         'Use it for calculations, parsing, and data transforms where running code is more ' +
-        'reliable than reasoning by hand. The sandbox has no network, DOM, or storage access. ' +
+        'reliable than reasoning by hand. The sandbox has no network or storage access and ' +
+        'cannot read the live page, BUT it receives the full sanitized page DOM from the most ' +
+        'recent read_dom call as a readonly `dom` binding: a structured node tree ' +
+        '{ tag, id?, classes?, text?, attributes?, children? } (null if read_dom has not run). ' +
+        'Walk `dom` to count/search/extract across the whole page — read_dom gives only a ' +
+        'narrow, truncated view, so heavy DOM work belongs here. ' +
         'End your code with a `return` (it runs inside an async function) or rely on console.log.',
       inputSchema: {
         code: {
           type: 'string',
           description:
             'JavaScript source to run. It executes inside an async function body, so use ' +
-            '`return <value>` to produce a result and `await` for promises. No DOM, network, ' +
-            'or storage is available.'
+            '`return <value>` to produce a result and `await` for promises. No network or ' +
+            'storage; the live page is not readable, but the full sanitized DOM from the last ' +
+            'read_dom call is available as the readonly `dom` binding.'
         },
         input: {
           type: 'object',
@@ -175,7 +183,9 @@ const createCodeExecTool = (
   executeSandboxedCode: SandboxCodeExecutor
 ): Tool<CodeExecInput, SandboxExecutionResult> => ({
   id: 'run_javascript',
-  description: 'Run JavaScript in an isolated sandbox and return its result and console output.',
+  description:
+    'Run JavaScript in an isolated sandbox and return its result and console output. The ' +
+    'full sanitized page DOM from the last read_dom call is available as the `dom` binding.',
   schema: codeExecInputSchema,
   async execute(input) {
     try {

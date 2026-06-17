@@ -3,6 +3,7 @@ import type {
   SandboxExecutionRequest,
   SandboxExecutionResult
 } from '@tinytinkerer/app-core'
+import type { DomSnapshotNode } from './dom-reader'
 
 // Resource ceilings the host enforces regardless of what a plugin requests. These
 // are the browser-side guardrails behind the product-agnostic SandboxCodeExecutor
@@ -63,12 +64,13 @@ const SANDBOX_SRCDOC = `<!doctype html>
       '  __c[m] = function () { __push(__fmt(arguments)); }; });',
       'self.onmessage = function (e) {',
       '  var input = e && e.data ? e.data.input : undefined;',
+      '  var dom = e && e.data ? e.data.dom : undefined;',
       '  (async function () {',
-      '    var __run = async function (input) {',
+      '    var __run = async function (input, dom) {',
       code,
       '\\n    };',
       '    try {',
-      '      var __result = await __run(input);',
+      '      var __result = await __run(input, dom);',
       '      var __safe;',
       '      try { __safe = JSON.parse(JSON.stringify(__result === undefined ? null : __result)); }',
       '      catch (err) { __safe = String(__result); }',
@@ -81,7 +83,7 @@ const SANDBOX_SRCDOC = `<!doctype html>
     ].join('\\n');
   }
 
-  function run(nonce, code, input, budget) {
+  function run(nonce, code, input, dom, budget) {
     var url = null;
     var worker = null;
     var done = false;
@@ -129,7 +131,7 @@ const SANDBOX_SRCDOC = `<!doctype html>
       finish({ ok: false, error: 'execution timed out', logs: [], timedOut: true });
     }, budget);
 
-    try { worker.postMessage({ input: input }); }
+    try { worker.postMessage({ input: input, dom: dom }); }
     catch (e) { finish({ ok: false, error: 'failed to start: ' + String((e && e.message) || e), logs: [], timedOut: false }); }
   }
 
@@ -139,7 +141,7 @@ const SANDBOX_SRCDOC = `<!doctype html>
     var data = event.data || {};
     if (typeof data.nonce !== 'string' || typeof data.code !== 'string') return;
     var budget = typeof data.timeoutMs === 'number' ? data.timeoutMs : ${HARD_TIMEOUT_MS};
-    run(data.nonce, data.code, data.input, budget);
+    run(data.nonce, data.code, data.input, data.dom, budget);
   });
 })();
 </script>
@@ -193,7 +195,13 @@ const unavailable = (error: string): SandboxExecutionResult => ({
 // referrerPolicy="no-referrer"), runs the code in a Worker inside it, and tears
 // the iframe down after completion, error, or timeout. State is limited to a
 // concurrency counter shared across calls.
-export const createSandboxExecutor = (): SandboxCodeExecutor => {
+export const createSandboxExecutor = (
+  // Optional reader for the full sanitized DOM snapshot captured by the most recent
+  // read_dom call. When present, the snapshot is injected into the worker as a
+  // readonly `dom` binding so code can compute over the whole page (which the
+  // sandbox itself cannot read). Absent → `dom` is null. See create-runtime.
+  getDomSnapshot?: () => DomSnapshotNode | null
+): SandboxCodeExecutor => {
   let active = 0
 
   return (request: SandboxExecutionRequest): Promise<SandboxExecutionResult> => {
@@ -259,12 +267,14 @@ export const createSandboxExecutor = (): SandboxCodeExecutor => {
       iframe.onload = (): void => {
         // The bootstrap registered its listener before load fired. Send the code;
         // targetOrigin '*' is safe — the payload carries no app secrets, only the
-        // code/input the sandbox is meant to run.
+        // code/input the sandbox is meant to run plus the already-redacted DOM
+        // snapshot (the same data read_dom is allowed to surface).
         iframe.contentWindow?.postMessage(
           {
             nonce,
             code: request.code,
             input: request.input ?? null,
+            dom: getDomSnapshot ? getDomSnapshot() ?? null : null,
             timeoutMs: budget
           },
           '*'

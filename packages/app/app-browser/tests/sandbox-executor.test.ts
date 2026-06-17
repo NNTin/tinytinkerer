@@ -78,7 +78,13 @@ class FakeWorker {
 }
 
 // The setup message the executor posts into the iframe on load.
-type SandboxPost = { nonce: string; code: string; input: unknown; timeoutMs: number }
+type SandboxPost = {
+  nonce: string
+  code: string
+  input: unknown
+  dom: unknown
+  timeoutMs: number
+}
 
 const makePostMessage = () => vi.fn<(message: SandboxPost, targetOrigin: string) => void>()
 
@@ -133,6 +139,9 @@ describe('createSandboxExecutor', () => {
 
   const postedTimeout = (frame: CapturedFrame): number =>
     frame.win.postMessage.mock.calls[0]![0].timeoutMs
+
+  const postedDom = (frame: CapturedFrame): unknown =>
+    frame.win.postMessage.mock.calls[0]![0].dom
 
   it('resolves with the normalized result of a message matching source + nonce + type', async () => {
     const execute = createSandboxExecutor()
@@ -225,6 +234,26 @@ describe('createSandboxExecutor', () => {
     void execute({ code: '3', timeoutMs: -5 })
     fireLoadAndGetNonce(captured[2]!)
     expect(postedTimeout(captured[2]!)).toBe(10_000)
+  })
+
+  it('injects the shared DOM snapshot into the iframe as `dom`', () => {
+    const snapshot = { tag: 'html', children: [{ tag: 'body', text: 'hi' }] }
+    const execute = createSandboxExecutor(() => snapshot)
+
+    void execute({ code: 'return dom.tag' })
+    fireLoadAndGetNonce(captured[0]!)
+
+    expect(postedDom(captured[0]!)).toEqual(snapshot)
+  })
+
+  it('posts `dom: null` when no snapshot getter is wired or it returns null', () => {
+    void createSandboxExecutor()({ code: 'return dom' })
+    fireLoadAndGetNonce(captured[0]!)
+    expect(postedDom(captured[0]!)).toBeNull()
+
+    void createSandboxExecutor(() => null)({ code: 'return dom' })
+    fireLoadAndGetNonce(captured[1]!)
+    expect(postedDom(captured[1]!)).toBeNull()
   })
 
   it('fails closed when the host has no DOM/Worker to isolate code', async () => {

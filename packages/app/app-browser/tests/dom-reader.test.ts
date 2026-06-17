@@ -7,7 +7,12 @@
 // here. getBoundingClientRect is zeroed under jsdom, so `rect` shape (not real
 // geometry) is what these tests assert.
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
-import { createDomReader, directText, redactFormValues } from '../src/dom-reader'
+import {
+  createDomReader,
+  directText,
+  redactFormValues,
+  type DomSnapshotNode
+} from '../src/dom-reader'
 
 beforeEach(() => {
   document.title = 'Test Page'
@@ -413,5 +418,70 @@ describe('directText', () => {
     document.body.innerHTML = '<div>  hello   <span>world</span>  there </div>'
     const div = document.querySelector('div')!
     expect(directText(div)).toBe('hello there')
+  })
+})
+
+describe('createDomReader — full sanitized snapshot (the run_javascript `dom` binding)', () => {
+  const lastSnapshot = (fn: ReturnType<typeof vi.fn>): DomSnapshotNode =>
+    fn.mock.calls.at(-1)?.[0] as DomSnapshotNode
+
+  const findBody = (snap: DomSnapshotNode): DomSnapshotNode | undefined =>
+    snap.children?.find((c) => c.tag === 'body')
+
+  it('writes a structured snapshot rooted at <html> on every read, whatever the query mode', async () => {
+    document.body.innerHTML = '<main id="app"><h1>Title</h1><p class="lead">Body text</p></main>'
+    const onSnapshot = vi.fn()
+    const read = createDomReader(onSnapshot)
+
+    await read({}) // outline
+    await read({ selector: '#app' }) // selector
+    await read({ region: 'top' }) // region
+    expect(onSnapshot).toHaveBeenCalledTimes(3)
+
+    const snap = lastSnapshot(onSnapshot)
+    expect(snap.tag).toBe('html')
+    const app = findBody(snap)?.children?.find((c) => c.id === 'app')
+    expect(app?.tag).toBe('main')
+    expect(app?.children?.map((c) => c.tag)).toEqual(['h1', 'p'])
+    const lead = app?.children?.find((c) => c.classes?.includes('lead'))
+    expect(lead?.text).toBe('Body text')
+  })
+
+  it('is the FULL page — not subject to read_dom\'s node/char caps', async () => {
+    const longText = 'a'.repeat(60)
+    document.body.innerHTML =
+      `<section>${Array.from({ length: 30 }, (_, i) => `<p>${i}</p>`).join('')}` +
+      `<p id="long">${longText}</p></section>`
+    const onSnapshot = vi.fn()
+    const read = createDomReader(onSnapshot)
+
+    // The returned (narrow) result is capped hard; the snapshot must not be.
+    const result = await read({ selector: 'p', maxNodes: 2, maxChars: 5 })
+    expect(result.nodes).toHaveLength(2)
+
+    const section = findBody(lastSnapshot(onSnapshot))?.children?.find((c) => c.tag === 'section')
+    expect(section?.children).toHaveLength(31) // all 30 + the long one, none dropped
+    expect(section?.children?.find((c) => c.id === 'long')?.text).toBe(longText) // untruncated
+  })
+
+  it('applies the same redaction as read_dom (password, textarea, contenteditable, handlers, srcdoc)', async () => {
+    document.body.innerHTML =
+      '<form onclick="steal()"><input type="password" value="hunter2">' +
+      '<textarea>draft note</textarea>' +
+      '<div contenteditable="true">unsent draft</div>' +
+      '<iframe srcdoc="<p>secret</p>"></iframe></form>'
+    const onSnapshot = vi.fn()
+    const read = createDomReader(onSnapshot)
+
+    await read({})
+
+    const json = JSON.stringify(lastSnapshot(onSnapshot))
+    expect(json).not.toContain('hunter2')
+    expect(json).not.toContain('draft note')
+    expect(json).not.toContain('unsent draft')
+    expect(json).not.toContain('secret')
+    expect(json).not.toContain('onclick')
+    expect(json).not.toContain('srcdoc')
+    expect(json).toContain('[redacted]') // password surfaces only the marker
   })
 })

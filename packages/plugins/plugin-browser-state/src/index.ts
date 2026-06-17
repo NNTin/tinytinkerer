@@ -104,9 +104,12 @@ export const browserStatePluginManifest: PluginManifest = {
         '(3) with a CSS `selector`, get the matched elements as plain data (tag, id, classes, ' +
         'and optionally html/text/attributes/layout box), and set `depth` to also nest their ' +
         'descendants. Use include:["html"] to inspect rendered markup such as an SVG when ' +
-        'debugging why something is not showing. To parse a returned html string further, pass ' +
-        'it as the `input` to run_javascript — note run_javascript is sandboxed and CANNOT read ' +
-        'the page itself, so all DOM data must come from this tool first.',
+        'debugging why something is not showing. This tool\'s own output is deliberately ' +
+        'narrow and truncated — use it for a quick look and to pick selectors. Separately, ' +
+        'every call also snapshots the FULL sanitized page into a structured tree that the ' +
+        'run_javascript tool receives automatically as its `dom` binding (no need to pass ' +
+        'anything), so to count, search, or extract across the whole page, read_dom once and ' +
+        'then do the heavy work in run_javascript.',
       inputSchema: {
         selector: {
           type: 'string',
@@ -173,7 +176,9 @@ export class BrowserStateHostError extends PluginCaptureError {
 // SDK, no app-browser imports.
 const createReadDomTool = (readDom: DomReader): Tool<ReadDomInput, DomReadResult> => ({
   id: 'read_dom',
-  description: 'Read the current page via a CSS selector and return matched elements as plain data.',
+  description:
+    'Read the current page (narrow, truncated output); also snapshots the full sanitized ' +
+    'page into the `dom` binding that run_javascript can compute over.',
   schema: readDomInputSchema,
   async execute(input) {
     // Build the query without explicit `undefined` properties so it satisfies the
