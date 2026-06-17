@@ -1,6 +1,7 @@
 name: Code Quality
 
 # Static code-health gates that complement lint/typecheck/test:
+#   - prettier → fails when any source file is not formatted (`pnpm format:check`)
 #   - jscpd  → fails when copy/paste duplication exceeds the configured threshold
 #   - knip   → fails on unused files and dependencies (unused exports are warnings)
 # Both are baselined against the current codebase (see config/jscpd.json and
@@ -21,7 +22,7 @@ concurrency:
 
 jobs:
   code-quality:
-    name: jscpd & knip
+    name: format, jscpd & knip
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -38,6 +39,11 @@ jobs:
       # Secure install: scriptless, then rebuild only the allowlisted native
       # binaries (sharp is needed by the brand-asset generation knip runs).
       - run: pnpm setup:workspace
+
+      # Fails when any non-ignored file is not Prettier-formatted. Runs first as
+      # a cheap fail-fast gate (no generated artifacts required).
+      - name: Format check (prettier)
+        run: pnpm format:check
 
       # Validates the release PR body parser (scripts/release-pr-body.mjs) so
       # changes to reference parsing / rendering are caught before release time.

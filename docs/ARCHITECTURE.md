@@ -189,7 +189,7 @@ Diagram convention: when a package consumes the content platform through its pub
 
 ## Coding Conventions
 
-These conventions are load-bearing. Several of them are enforced by `pnpm -r lint` and `pnpm -r typecheck` in CI — see the **Enforcement** subsection.
+These conventions are load-bearing. Several of them are enforced by `pnpm -r lint`, `pnpm -r typecheck`, and `pnpm format:check` in CI — see the **Enforcement** subsection.
 
 ### TypeScript strictness
 
@@ -236,6 +236,15 @@ Structural array fields on AST node types are `readonly`:
 - `ContentDocument.nodes`, `*.children`, `TableNode.align / header / rows`, `ChoicePromptNode.choices`, `TableCell`.
 
 Consumers may still build fresh `T[]` arrays via `.map()` / `.flatMap()` and assign them to readonly fields — TS allows the narrowing direction. Object fields themselves stay mutable so parsers can do `item.checked = …` style post-init assignment. Helpers that walk these arrays must accept `readonly T[]` in their parameter types (`serializeInlineNodes`, `normalizeInlineNodes`, `renderInline`, `inlineNodesToText`).
+
+### Enforcement
+
+These conventions are gated in CI, not left to reviewers:
+
+- **Type contracts** (TypeScript strictness, optional properties, the `| undefined` and recursive-schema rules) are enforced by `pnpm -r typecheck` and by ESLint rules in `eslint.config.mjs` (run via `pnpm -r lint`). ESLint owns **code-quality** rules only — the `no-restricted-*` rules, `no-floating-promises`, the `exactOptionalPropertyTypes` syntax checks, etc.
+- **Formatting** is owned entirely by **Prettier**, not ESLint. The single root config is `prettier.config.mjs` (`singleQuote`, no semicolons, `trailingComma: 'none'`, `printWidth: 100` — chosen to reproduce the existing hand-written style with minimal churn). `.prettierignore` keeps Prettier off generated/vendored files (lockfile, build outputs, `**/*.generated.ts`, the generated OpenAPI document, compliance artifacts).
+- The two never fight: `eslint-config-prettier` is the **last** entry in `eslint.config.mjs`, disabling every ESLint rule that would conflict with Prettier. Add formatting opinions to `prettier.config.mjs`; add correctness/quality rules to `eslint.config.mjs`.
+- CI runs `pnpm format:check` (`prettier --check .`) in the **Code Quality** workflow alongside `pnpm -r lint` and `pnpm -r typecheck`; an unformatted file fails the build. Run `pnpm format` locally to fix.
 
 ## Layers
 

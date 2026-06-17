@@ -7,11 +7,6 @@
   "engines": {
     "node": "22.x"
   },
-  "prettier": {
-    "semi": false,
-    "singleQuote": true,
-    "trailingComma": "none"
-  },
   "scripts": {
     "generate:brand-assets": "node ./scripts/generate-brand-assets.mjs",
     "generate:privacy-policy": "node ./scripts/generate-privacy-policy.mjs",
@@ -35,6 +30,7 @@
     "test": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && turbo run test && pnpm compliance:test",
     "typecheck": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && turbo run typecheck",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "prepare": "husky",
     "pin:dependencies": "node ./scripts/pin-direct-dependencies.mjs",
     "check:exact-dependencies": "node ./scripts/check-exact-dependencies.mjs",
