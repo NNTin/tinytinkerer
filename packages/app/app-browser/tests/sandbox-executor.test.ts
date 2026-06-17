@@ -69,15 +69,25 @@ describe('normalizeResult', () => {
     expect(normalizeResult({ ok: true, result: null, logs: [], timedOut: false }).result).toBeNull()
   })
 
-  it('bounds an oversized result at the source so it cannot bloat the next message (FRONTEND-14/15)', () => {
+  it('replaces an oversized result with a structured, actionable truncation signal (FRONTEND-14/15)', () => {
     // A run_javascript that returns the full `dom` tree can be hundreds of KB.
     const huge = { blob: 'x'.repeat(200_000) }
-    const result = normalizeResult({ ok: true, result: huge, logs: [], timedOut: false }).result
-    expect(typeof result).toBe('string')
-    expect((result as string).endsWith('…[result truncated]')).toBe(true)
-    expect((result as string).length).toBeLessThan(200_000)
+    const result = normalizeResult({ ok: true, result: huge, logs: [], timedOut: false }).result as {
+      truncated: boolean
+      chars: number
+      limit: number
+      hint: string
+      preview: string
+    }
+    expect(result.truncated).toBe(true)
+    expect(result.chars).toBeGreaterThan(200_000)
+    expect(result.limit).toBe(32_000)
+    expect(result.hint).toMatch(/smaller|aggregated/i) // tells the model how to recover
+    expect(result.preview.length).toBeLessThan(2_100) // a bounded preview of the shape
+    // The signal itself is small enough to never re-trip the message clamp.
+    expect(JSON.stringify(result).length).toBeLessThan(32_000)
 
-    // A normal-sized result is returned unchanged (object, not stringified).
+    // A normal-sized result is returned unchanged (object, not wrapped).
     const small = { count: 3 }
     expect(normalizeResult({ ok: true, result: small, logs: [], timedOut: false }).result).toEqual(
       small

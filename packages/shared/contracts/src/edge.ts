@@ -77,21 +77,27 @@ export const chatMessageSchema = z
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>
 
-const CHAT_CONTENT_TRUNCATION_MARKER = '… [truncated]'
-
-// Clamp one message's content to MAX_CHAT_MESSAGE_CONTENT_CHARS, appending a marker
-// when it had to cut. An oversized message (usually a large tool result folded into
-// the prompt) then degrades gracefully instead of failing edge request validation
-// with 400 "Invalid request" and aborting the run (TINYTINKERER-FRONTEND-14/15).
-// The cut keeps the head, so when tool results are appended last they are trimmed
-// before the request/prompt. The clamped length is exactly the ceiling.
-export const clampChatMessageContent = (content: string): string =>
-  content.length > MAX_CHAT_MESSAGE_CONTENT_CHARS
-    ? `${content.slice(
-        0,
-        MAX_CHAT_MESSAGE_CONTENT_CHARS - CHAT_CONTENT_TRUNCATION_MARKER.length
-      )}${CHAT_CONTENT_TRUNCATION_MARKER}`
-    : content
+// Clamp one message's content to MAX_CHAT_MESSAGE_CONTENT_CHARS when it would
+// otherwise fail edge request validation with 400 "Invalid request" and abort the
+// run (TINYTINKERER-FRONTEND-14/15). The cut keeps the head, so when tool results
+// are appended last they are trimmed before the prompt. Rather than a bare marker,
+// the appended notice is self-describing and ACTIONABLE — it states the original
+// size and the limit and tells the model how to recover (ask for a smaller or
+// aggregated result) — so the model can see the data is incomplete and adapt
+// instead of silently reasoning over truncated content. The clamped length is
+// exactly the ceiling.
+export const clampChatMessageContent = (content: string): string => {
+  if (content.length <= MAX_CHAT_MESSAGE_CONTENT_CHARS) {
+    return content
+  }
+  const notice =
+    `\n\n…[truncated to the model's ${MAX_CHAT_MESSAGE_CONTENT_CHARS}-char per-message ` +
+    `limit, from ${content.length} chars; the tail was dropped — if you need the ` +
+    `dropped part, re-run the tool asking for a smaller or aggregated result ` +
+    `(e.g. counts, a filtered subset, or specific fields)]`
+  const kept = Math.max(0, MAX_CHAT_MESSAGE_CONTENT_CHARS - notice.length)
+  return `${content.slice(0, kept)}${notice}`
+}
 
 // LiteLLM is the sole provider — it proxies the upstream LLM providers itself.
 // The single-value enum tags each model entry with its provider; it is not a

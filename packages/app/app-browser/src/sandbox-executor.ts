@@ -156,6 +156,20 @@ const SANDBOX_SRCDOC = `<!doctype html>
 // re-serialized every turn. The chat-request layer clamps the final wire payload
 // too (modelsChatRequestBody), so this is defense-in-depth (TINYTINKERER-FRONTEND-14/15).
 const MAX_RESULT_CHARS = MAX_CHAT_MESSAGE_CONTENT_CHARS
+// How much of the original (serialized) result to keep as a preview alongside the
+// truncation signal, so the model still sees the result's shape.
+const RESULT_PREVIEW_CHARS = 2_000
+
+// Structured truncation signal returned in place of an oversized result, so the
+// model sees an explicit, ACTIONABLE marker (not a silently-cut blob) and can
+// narrow its output and re-run instead of reasoning over incomplete data.
+type TruncatedResult = {
+  truncated: true
+  chars: number
+  limit: number
+  hint: string
+  preview: string
+}
 
 const boundResult = (value: unknown): unknown => {
   let serialized: string | undefined
@@ -164,9 +178,20 @@ const boundResult = (value: unknown): unknown => {
   } catch {
     return value
   }
-  return typeof serialized === 'string' && serialized.length > MAX_RESULT_CHARS
-    ? `${serialized.slice(0, MAX_RESULT_CHARS)} …[result truncated]`
-    : value
+  if (typeof serialized !== 'string' || serialized.length <= MAX_RESULT_CHARS) {
+    return value
+  }
+  const signal: TruncatedResult = {
+    truncated: true,
+    chars: serialized.length,
+    limit: MAX_RESULT_CHARS,
+    hint:
+      'The run_javascript result was too large and was dropped. Return a smaller ' +
+      'or aggregated value instead of the whole DOM/dataset — e.g. counts, a ' +
+      'filtered subset, or just the specific fields you need.',
+    preview: `${serialized.slice(0, RESULT_PREVIEW_CHARS)}…`
+  }
+  return signal
 }
 
 // Coerce the untrusted message from the sandbox into the contract shape. The

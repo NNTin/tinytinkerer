@@ -139,7 +139,9 @@ describe('modelsChatRequestBody', () => {
     expect(body.messages[0]!.content).toBe('ok') // small content untouched
     const clamped = body.messages[1]!.content
     expect(clamped.length).toBe(MAX_CHAT_MESSAGE_CONTENT_CHARS)
-    expect(clamped.endsWith('… [truncated]')).toBe(true)
+    // The appended notice is self-describing and actionable, not a bare marker.
+    expect(clamped).toMatch(/truncated to the model's \d+-char per-message limit/)
+    expect(clamped).toMatch(/smaller or aggregated result/)
   })
 })
 
