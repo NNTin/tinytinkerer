@@ -17,6 +17,13 @@ const config: KnipConfig = {
   commitlint: {
     config: ['config/commitlint.config.cjs']
   },
+  // The lint-staged config also lives in config/ (outside the plugin's default
+  // detection) and is wired into the Husky pre-commit hook via an explicit
+  // --config flag, so point the plugin at it to keep the file recognized as a
+  // config entry and trace lint-staged as a used dependency.
+  'lint-staged': {
+    config: ['config/lint-staged.config.mjs']
+  },
   ignore: [
     // Agent skill tools are invoked by external tooling, not imported by the app.
     '.agent/**',
