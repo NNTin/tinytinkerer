@@ -1,0 +1,30 @@
+# Prettier must not touch generated or vendored files. Source stays formatted;
+# anything produced by a generator/build is owned by that tool, not Prettier.
+# (Prettier already ignores node_modules by default.)
+
+# Dependency lockfile — owned by pnpm.
+pnpm-lock.yaml
+
+# Build outputs and caches.
+dist
+build
+coverage
+.turbo
+.vercel
+.wrangler
+
+# Generated source modules and directories (scripts/*generate*).
+# Examples: *.license.generated.ts, *.privacy-policy.generated.ts,
+# *.third-party-notices.generated.ts, packages/brand/brand-assets/assets/generated/.
+**/generated/
+**/*.generated.ts
+
+# Generated OpenAPI document — emitted by scripts/generate-edge-openapi.ts and
+# verified byte-for-byte by `pnpm check:edge-openapi`; reformatting it would
+# break that check.
+apps/edge/openapi/tinytinkerer-edge.openapi.json
+
+# Compliance artifacts (SBOM, third-party NOTICES) — derived from the dependency
+# tree by scripts/generate-sbom.mjs / generate-notices.mjs into dist/compliance/
+# (already covered by `dist` above; listed so the location stays documented).
+dist/compliance/

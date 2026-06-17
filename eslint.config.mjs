@@ -1,6 +1,7 @@
 import js from '@eslint/js'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
+import prettier from 'eslint-config-prettier'
 
 export default tseslint.config(
   {
@@ -90,5 +91,9 @@ export default tseslint.config(
     rules: {
       'no-restricted-globals': 'off'
     }
-  }
+  },
+  // Must be LAST: turns off any ESLint rules that would conflict with Prettier
+  // so the two never fight. ESLint owns code-quality rules; Prettier owns
+  // formatting. See docs/ARCHITECTURE.md#enforcement.
+  prettier
 )
