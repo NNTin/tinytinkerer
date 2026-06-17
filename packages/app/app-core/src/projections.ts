@@ -12,7 +12,14 @@ export type TurnNotice = {
 // `stepKind` lets the renderer style steps (e.g. 'think') distinctly.
 export type TurnActivityItem =
   | { kind: 'reasoning'; id: string; text: string }
-  | { kind: 'label'; id: string; label: string; stepId?: string; parentId?: string; stepKind?: AgentStepKind }
+  | {
+      kind: 'label'
+      id: string
+      label: string
+      stepId?: string
+      parentId?: string
+      stepKind?: AgentStepKind
+    }
   | {
       kind: 'tool'
       id: string
@@ -94,9 +101,7 @@ const attachOrCreateNoticeTurn = (
 }
 
 const isContentDocument = (value: unknown): value is ContentDocument =>
-  value !== null &&
-  typeof value === 'object' &&
-  Array.isArray((value as { nodes?: unknown }).nodes)
+  value !== null && typeof value === 'object' && Array.isArray((value as { nodes?: unknown }).nodes)
 
 // Defensive coercion: persisted assistant events from earlier schemas may carry
 // a raw markdown string as `payload.content` (see the v2 db.ts migration). The
@@ -248,7 +253,8 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
     case 'reasoning.done': {
       activity.reasoningText = event.payload.text
       const existing = activity.items.find(
-        (item): item is Extract<TurnActivityItem, { kind: 'reasoning' }> => item.kind === 'reasoning'
+        (item): item is Extract<TurnActivityItem, { kind: 'reasoning' }> =>
+          item.kind === 'reasoning'
       )
       if (existing) {
         existing.text = event.payload.text

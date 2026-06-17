@@ -3,7 +3,7 @@ import {
   PreviewCodeFrame,
   type CodeBlockNode,
   type ContentNodeRendererProps,
-  type ReactNodeRendererPlugin,
+  type ReactNodeRendererPlugin
 } from '@tinytinkerer/content-react'
 
 // Content-Security-Policy enforced inside the wireframe preview document. The
@@ -49,7 +49,9 @@ export const WireframeNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlo
           <span className="h-2.5 w-2.5 rounded-full bg-stone-300" />
           <span className="h-2.5 w-2.5 rounded-full bg-stone-300" />
           <span className="h-2.5 w-2.5 rounded-full bg-stone-300" />
-          <span className="ml-2 text-[11px] font-medium uppercase tracking-wide text-stone-500">Wireframe</span>
+          <span className="ml-2 text-[11px] font-medium uppercase tracking-wide text-stone-500">
+            Wireframe
+          </span>
         </div>
       }
       code={node.code}

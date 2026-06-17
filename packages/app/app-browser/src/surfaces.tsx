@@ -26,23 +26,14 @@ import { loadPluginModules } from './plugins/registry'
 import { isMcpToolId, summarizeMcpActivity } from './runtime/mcp-tool'
 import { toolLabel, type ResolveActivitySummarizer } from './turn-activity-panel'
 import { useWebSpeechInput } from './web-speech'
-import {
-  useAuthStore,
-  useBrowserApp,
-  useChatStore,
-  useSettingsStore,
-  useStatusStore
-} from './app'
+import { useAuthStore, useBrowserApp, useChatStore, useSettingsStore, useStatusStore } from './app'
 import { formatCooldown, useChatCooldown, useGitHubOAuth } from './hooks'
 import { useGitHubUser } from './github-user'
 import { useModels, type ModelEntry } from './models'
 import { startStatusPolling } from './status'
 import { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 import { createEdgeFetch } from './runtime/edge-fetch'
-import {
-  parseJsonWithTelemetry,
-  parseWithTelemetry
-} from './telemetry/request-telemetry'
+import { parseJsonWithTelemetry, parseWithTelemetry } from './telemetry/request-telemetry'
 
 export type ChatSurfaceController = {
   isBooting: boolean
@@ -81,9 +72,7 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const cancelRetry = useChatStore((state) => state.cancelRetry)
   const refreshStatus = useStatusStore((state) => state.refresh)
   const token = useAuthStore((state) => state.token)
-  const showReasoningActivity = useSettingsStore(
-    (state) => state.showReasoningActivity
-  )
+  const showReasoningActivity = useSettingsStore((state) => state.showReasoningActivity)
   const mcpServers = useSettingsStore((state) => state.mcpServers)
   const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
 
@@ -122,9 +111,9 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   // Plugin-contributed activity summarizers, keyed by tool id. Discovered from the
   // same dynamic plugin manifests the host already reads (see ./plugins/registry),
   // so the panel stays free of any static dependency on a concrete plugin package.
-  const [pluginSummarizers, setPluginSummarizers] = useState<
-    Map<string, ActivitySummarizer>
-  >(() => new Map())
+  const [pluginSummarizers, setPluginSummarizers] = useState<Map<string, ActivitySummarizer>>(
+    () => new Map()
+  )
   useEffect(() => {
     let cancelled = false
     void loadPluginModules().then((modules) => {
@@ -271,13 +260,8 @@ export type SettingsSurfaceController = {
   setShowCodeBlockFullscreenButton: (show: boolean) => Promise<void>
   mcpServers: McpServerConfig[]
   mcpDiscovery: Record<string, McpDiscoveryResult>
-  addMcpServer: (
-    server: Omit<McpServerConfig, 'id'>
-  ) => Promise<McpServerConfig>
-  updateMcpServer: (
-    id: string,
-    patch: Partial<Omit<McpServerConfig, 'id'>>
-  ) => Promise<void>
+  addMcpServer: (server: Omit<McpServerConfig, 'id'>) => Promise<McpServerConfig>
+  updateMcpServer: (id: string, patch: Partial<Omit<McpServerConfig, 'id'>>) => Promise<void>
   removeMcpServer: (id: string) => Promise<void>
   setMcpServerEnabled: (id: string, enabled: boolean) => Promise<void>
   refreshMcpServer: (server: McpServerConfig) => Promise<void>
@@ -319,24 +303,14 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   } = useModels(selectedModel)
   const setSelectedModel = useSettingsStore((state) => state.setSelectedModel)
   const litellmBaseUrl = useSettingsStore((state) => state.litellmBaseUrl)
-  const litellmBaseUrlError = useSettingsStore(
-    (state) => state.litellmBaseUrlError
-  )
-  const setLiteLLMBaseUrl = useSettingsStore(
-    (state) => state.setLiteLLMBaseUrl
-  )
+  const litellmBaseUrlError = useSettingsStore((state) => state.litellmBaseUrlError)
+  const setLiteLLMBaseUrl = useSettingsStore((state) => state.setLiteLLMBaseUrl)
   const agentType = useSettingsStore((state) => state.agentType)
   const setAgentType = useSettingsStore((state) => state.setAgentType)
   const webSpeechEnabled = useSettingsStore((state) => state.webSpeechEnabled)
-  const setWebSpeechEnabled = useSettingsStore(
-    (state) => state.setWebSpeechEnabled
-  )
-  const showReasoningActivity = useSettingsStore(
-    (state) => state.showReasoningActivity
-  )
-  const setShowReasoningActivity = useSettingsStore(
-    (state) => state.setShowReasoningActivity
-  )
+  const setWebSpeechEnabled = useSettingsStore((state) => state.setWebSpeechEnabled)
+  const showReasoningActivity = useSettingsStore((state) => state.showReasoningActivity)
+  const setShowReasoningActivity = useSettingsStore((state) => state.setShowReasoningActivity)
   const showCodeBlockFullscreenButton = useSettingsStore(
     (state) => state.showCodeBlockFullscreenButton
   )
@@ -348,15 +322,11 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const addMcpServer = useSettingsStore((state) => state.addMcpServer)
   const updateMcpServer = useSettingsStore((state) => state.updateMcpServer)
   const removeMcpServer = useSettingsStore((state) => state.removeMcpServer)
-  const setMcpServerEnabled = useSettingsStore(
-    (state) => state.setMcpServerEnabled
-  )
+  const setMcpServerEnabled = useSettingsStore((state) => state.setMcpServerEnabled)
   const setMcpDiscovery = useSettingsStore((state) => state.setMcpDiscovery)
   const clearMcpDiscovery = useSettingsStore((state) => state.clearMcpDiscovery)
   const telemetryEnabled = useSettingsStore((state) => state.telemetryEnabled)
-  const setTelemetryEnabled = useSettingsStore(
-    (state) => state.setTelemetryEnabled
-  )
+  const setTelemetryEnabled = useSettingsStore((state) => state.setTelemetryEnabled)
   const pluginActivation = useSettingsStore((state) => state.pluginActivation)
   const setPluginEnabled = useSettingsStore((state) => state.setPluginEnabled)
   const { shell } = useBrowserApp()
@@ -386,8 +356,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
             },
             res.clone()
           ).catch(() => undefined)) ?? {}
-        const errMsg =
-          (errBody as { error?: string }).error ?? `HTTP ${res.status}`
+        const errMsg = (errBody as { error?: string }).error ?? `HTTP ${res.status}`
         await setMcpDiscovery({
           serverId: server.id,
           serverName: server.name,
@@ -472,11 +441,8 @@ export const useGitHubOAuthCallbackController = (
   onCompleteWithoutReturnUrl: () => void
 ): { error: string | null } => {
   const [error, setError] = useState<string | null>(null)
-  const { completeGitHubOAuthCallback, consumeGitHubOAuthReturnUrl } =
-    useGitHubOAuth()
-  const handleCompleteWithoutReturnUrl = useEffectEvent(
-    onCompleteWithoutReturnUrl
-  )
+  const { completeGitHubOAuthCallback, consumeGitHubOAuthReturnUrl } = useGitHubOAuth()
+  const handleCompleteWithoutReturnUrl = useEffectEvent(onCompleteWithoutReturnUrl)
 
   useEffect(() => {
     let isDisposed = false
@@ -514,11 +480,7 @@ export const useGitHubOAuthCallbackController = (
     return () => {
       isDisposed = true
     }
-  }, [
-    completeGitHubOAuthCallback,
-    consumeGitHubOAuthReturnUrl,
-    handleCompleteWithoutReturnUrl
-  ])
+  }, [completeGitHubOAuthCallback, consumeGitHubOAuthReturnUrl, handleCompleteWithoutReturnUrl])
 
   return { error }
 }

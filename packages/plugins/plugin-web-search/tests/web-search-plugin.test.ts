@@ -21,9 +21,10 @@ const edgeResponse = (ok: boolean, status: number, body: unknown): PluginEdgeRes
   json: () => Promise.resolve(body)
 })
 
-const hostWithEdge = (
-  edgeFetch: NonNullable<PluginHost['edgeFetch']>
-): PluginHost => ({ capture: vi.fn(), edgeFetch })
+const hostWithEdge = (edgeFetch: NonNullable<PluginHost['edgeFetch']>): PluginHost => ({
+  capture: vi.fn(),
+  edgeFetch
+})
 
 describe('webSearchPlugin', () => {
   it('exposes a web-search tool when the host provides an edge capability', () => {
@@ -46,9 +47,13 @@ describe('webSearchPlugin', () => {
 
     const result = await tool!.execute({ query: 'react news' })
 
-    expect(edgeFetch).toHaveBeenCalledWith(EDGE_ROUTE_PATHS.search, { query: 'react news' }, {
-      area: 'search'
-    })
+    expect(edgeFetch).toHaveBeenCalledWith(
+      EDGE_ROUTE_PATHS.search,
+      { query: 'react news' },
+      {
+        area: 'search'
+      }
+    )
     expect(result).toEqual({ query: 'react news', results: [] })
   })
 

@@ -48,7 +48,7 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://localhost:8787', changeOrigin: true },
       '/auth/github/exchange': { target: 'http://localhost:8787', changeOrigin: true },
-      '/health': { target: 'http://localhost:8787', changeOrigin: true },
+      '/health': { target: 'http://localhost:8787', changeOrigin: true }
     }
   },
   build: {
@@ -56,7 +56,11 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id: string) {
-          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router')) {
+          if (
+            id.includes('node_modules/react/') ||
+            id.includes('node_modules/react-dom/') ||
+            id.includes('node_modules/react-router')
+          ) {
             return 'react-vendor'
           }
           if (id.includes('node_modules/zod/')) {
@@ -73,7 +77,10 @@ export default defineConfig({
           ) {
             return 'app-core'
           }
-          if (id.includes('node_modules/@sentry/') || id.includes('node_modules/@sentry-internal/')) {
+          if (
+            id.includes('node_modules/@sentry/') ||
+            id.includes('node_modules/@sentry-internal/')
+          ) {
             return 'sentry-vendor'
           }
           if (id.includes('node_modules/@codemirror/') || id.includes('node_modules/codemirror/')) {

@@ -10,7 +10,9 @@ import { PRIVACY_POLICY_VERSION } from '../src/telemetry/privacy-policy.generate
 
 const ACK_KEY = 'privacy_policy_acknowledged_version'
 
-const makeApp = (seed: Record<string, string> = {}): { app: BrowserApp; store: Map<string, string> } => {
+const makeApp = (
+  seed: Record<string, string> = {}
+): { app: BrowserApp; store: Map<string, string> } => {
   const store = new Map<string, string>(Object.entries(seed))
   const app = {
     shell: {

@@ -1,13 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  setCaptureExceptionSink,
-  type CaptureExceptionSink
-} from '@tinytinkerer/sentry-telemetry'
+import { setCaptureExceptionSink, type CaptureExceptionSink } from '@tinytinkerer/sentry-telemetry'
 import { isRateLimitError, type ExecutionContext } from '@tinytinkerer/app-core'
-import {
-  decideNextAction,
-  streamDecision
-} from '../src/runtime/react-decider.js'
+import { decideNextAction, streamDecision } from '../src/runtime/react-decider.js'
 import type { PlannerToolDescriptor } from '../src/runtime/mcp-planner.js'
 import type { ModelsChatFetch } from '../src/runtime/edge-fetch.js'
 
@@ -17,9 +11,7 @@ const descriptor: PlannerToolDescriptor = {
   inputSchema: { query: { type: 'string' } }
 }
 
-const baseContext = (
-  overrides?: Partial<ExecutionContext>
-): ExecutionContext => ({
+const baseContext = (overrides?: Partial<ExecutionContext>): ExecutionContext => ({
   prompt: 'What is the weather in Berlin?',
   history: [],
   plan: { complexity: 'low', steps: [] },
@@ -153,9 +145,7 @@ describe('decideNextAction', () => {
 
   it('falls back to a final decision when the model answers in prose instead of JSON', async () => {
     const edgeFetch = makeEdgeFetch({
-      choices: [
-        { message: { content: 'I now have enough information to answer.' } }
-      ]
+      choices: [{ message: { content: 'I now have enough information to answer.' } }]
     })
 
     const decision = await decideNextAction(
@@ -197,12 +187,7 @@ describe('decideNextAction', () => {
       ]
     })
 
-    const decision = await decideNextAction(
-      baseContext(),
-      [descriptor],
-      'm',
-      edgeFetch
-    )
+    const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
 
     expect(decision.kind).toBe('action')
     if (decision.kind !== 'action') {
@@ -216,12 +201,7 @@ describe('decideNextAction', () => {
       choices: [{ message: { content: "{'kind':'final'}" } }]
     })
 
-    const decision = await decideNextAction(
-      baseContext(),
-      [descriptor],
-      'm',
-      edgeFetch
-    )
+    const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
 
     expect(decision.kind).toBe('final')
   })
@@ -231,12 +211,7 @@ describe('decideNextAction', () => {
       choices: [{ message: { content: '{"kind":"final",}' } }]
     })
 
-    const decision = await decideNextAction(
-      baseContext(),
-      [descriptor],
-      'm',
-      edgeFetch
-    )
+    const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
 
     expect(decision.kind).toBe('final')
   })
@@ -246,19 +221,13 @@ describe('decideNextAction', () => {
       choices: [
         {
           message: {
-            content:
-              '{"kind":"action","toolId":"web-search","input":{"query":"Ber'
+            content: '{"kind":"action","toolId":"web-search","input":{"query":"Ber'
           }
         }
       ]
     })
 
-    const decision = await decideNextAction(
-      baseContext(),
-      [descriptor],
-      'm',
-      edgeFetch
-    )
+    const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
 
     // The truncated action must NOT be auto-completed into a runnable action with
     // a fabricated argument; we degrade to final instead.
@@ -269,31 +238,20 @@ describe('decideNextAction', () => {
     const edgeFetch = makeEdgeFetch({ error: 'Service Unavailable' }, 503)
 
     await expect(
-      decideNextAction(
-        baseContext(),
-        [descriptor],
-        'openai/gpt-4.1-mini',
-        edgeFetch
-      )
+      decideNextAction(baseContext(), [descriptor], 'openai/gpt-4.1-mini', edgeFetch)
     ).rejects.toThrow('Service Unavailable')
   })
 
   it('throws the edge error body when the decision request is rejected upstream', async () => {
     const edgeFetch = makeEdgeFetch(
       {
-        error:
-          "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."
+        error: "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."
       },
       400
     )
 
     await expect(
-      decideNextAction(
-        baseContext(),
-        [descriptor],
-        'chatgpt/gpt-5.3-codex',
-        edgeFetch
-      )
+      decideNextAction(baseContext(), [descriptor], 'chatgpt/gpt-5.3-codex', edgeFetch)
     ).rejects.toThrow(
       "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."
     )
@@ -356,13 +314,9 @@ describe('streamDecision', () => {
     }
 
     const thoughts = chunks.filter((chunk) => chunk.kind === 'thought')
-    expect(thoughts.at(-1)?.kind === 'thought' && thoughts.at(-1)?.text).toBe(
-      'Let me think'
-    )
+    expect(thoughts.at(-1)?.kind === 'thought' && thoughts.at(-1)?.text).toBe('Let me think')
     const decision = chunks.find((chunk) => chunk.kind === 'decision')
-    expect(decision?.kind === 'decision' && decision.decision.kind).toBe(
-      'final'
-    )
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
   })
 
   it('strips fences from the streamed JSON content', async () => {
@@ -375,72 +329,47 @@ describe('streamDecision', () => {
     ])
 
     const chunks = []
-    for await (const chunk of streamDecision(
-      baseContext(),
-      [descriptor],
-      'm',
-      edgeFetch
-    )) {
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
       chunks.push(chunk)
     }
 
     const decision = chunks.find((chunk) => chunk.kind === 'decision')
-    expect(decision?.kind === 'decision' && decision.decision.kind).toBe(
-      'final'
-    )
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
   })
 
   it('parses the final SSE data line even without a trailing newline', async () => {
     const edgeFetch: ModelsChatFetch = vi.fn().mockResolvedValue(
-      new Response(
-        'data: {"choices":[{"delta":{"content":"{\\"kind\\":\\"final\\"}"}}]}',
-        {
-          status: 200,
-          headers: { 'content-type': 'text/event-stream' }
-        }
-      )
+      new Response('data: {"choices":[{"delta":{"content":"{\\"kind\\":\\"final\\"}"}}]}', {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
     )
 
     const chunks = []
-    for await (const chunk of streamDecision(
-      baseContext(),
-      [descriptor],
-      'm',
-      edgeFetch
-    )) {
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
       chunks.push(chunk)
     }
 
     const decision = chunks.find((chunk) => chunk.kind === 'decision')
-    expect(decision?.kind === 'decision' && decision.decision.kind).toBe(
-      'final'
-    )
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
   })
 
   it('throws when the streaming response is not ok', async () => {
     const edgeFetch = makeSseEdgeFetch(['data: [DONE]'], 503)
 
     const iterator = streamDecision(baseContext(), [descriptor], 'm', edgeFetch)
-    await expect(iterator.next()).rejects.toThrow(
-      'ReAct decision request failed (503)'
-    )
+    await expect(iterator.next()).rejects.toThrow('ReAct decision request failed (503)')
   })
 
   it('throws the edge error body when a streaming decision request is rejected upstream', async () => {
     const edgeFetch = makeEdgeFetch(
       {
-        error:
-          "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."
+        error: "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."
       },
       400
     )
 
-    const iterator = streamDecision(
-      baseContext(),
-      [descriptor],
-      'chatgpt/gpt-5.3-codex',
-      edgeFetch
-    )
+    const iterator = streamDecision(baseContext(), [descriptor], 'chatgpt/gpt-5.3-codex', edgeFetch)
     await expect(iterator.next()).rejects.toThrow(
       "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."
     )
@@ -455,9 +384,7 @@ describe('streamDecision', () => {
     )
 
     const iterator = streamDecision(baseContext(), [descriptor], 'm', edgeFetch)
-    await expect(iterator.next()).rejects.toThrow(
-      'ReAct decision stream missing response body'
-    )
+    await expect(iterator.next()).rejects.toThrow('ReAct decision stream missing response body')
   })
 
   it('falls back to a final decision when the stream ends without decision JSON', async () => {
@@ -468,24 +395,13 @@ describe('streamDecision', () => {
     ])
 
     const chunks = []
-    for await (const chunk of streamDecision(
-      baseContext(),
-      [descriptor],
-      'm',
-      edgeFetch
-    )) {
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
       chunks.push(chunk)
     }
 
-    expect(
-      chunks.some(
-        (chunk) => chunk.kind === 'thought' && chunk.text === 'thinking'
-      )
-    ).toBe(true)
+    expect(chunks.some((chunk) => chunk.kind === 'thought' && chunk.text === 'thinking')).toBe(true)
     const decision = chunks.find((chunk) => chunk.kind === 'decision')
-    expect(decision?.kind === 'decision' && decision.decision.kind).toBe(
-      'final'
-    )
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
   })
 
   it('falls back to a final decision when the model streams prose instead of JSON', async () => {
@@ -497,19 +413,12 @@ describe('streamDecision', () => {
     ])
 
     const chunks = []
-    for await (const chunk of streamDecision(
-      baseContext(),
-      [descriptor],
-      'm',
-      edgeFetch
-    )) {
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
       chunks.push(chunk)
     }
 
     const decision = chunks.find((chunk) => chunk.kind === 'decision')
-    expect(decision?.kind === 'decision' && decision.decision.kind).toBe(
-      'final'
-    )
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
   })
 
   it('falls back to a final decision when the streamed JSON is truncated', async () => {
@@ -520,19 +429,12 @@ describe('streamDecision', () => {
     ])
 
     const chunks = []
-    for await (const chunk of streamDecision(
-      baseContext(),
-      [descriptor],
-      'm',
-      edgeFetch
-    )) {
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
       chunks.push(chunk)
     }
 
     const decision = chunks.find((chunk) => chunk.kind === 'decision')
-    expect(decision?.kind === 'decision' && decision.decision.kind).toBe(
-      'final'
-    )
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
   })
 
   it('throws a RateLimitError on 429 so the runtime can wait and retry', async () => {
@@ -583,25 +485,15 @@ describe('streamDecision keeps non-conforming output visible (recover but stay l
     ])
 
     const chunks = []
-    for await (const chunk of streamDecision(
-      baseContext(),
-      [descriptor],
-      'm',
-      edgeFetch
-    )) {
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
       chunks.push(chunk)
     }
 
     const decision = chunks.find((chunk) => chunk.kind === 'decision')
-    expect(decision?.kind === 'decision' && decision.decision.kind).toBe(
-      'final'
-    )
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
 
     expect(sink).toHaveBeenCalledTimes(1)
-    const [, options] = sink.mock.calls[0] as [
-      Error,
-      { tags?: Record<string, unknown> }
-    ]
+    const [, options] = sink.mock.calls[0] as [Error, { tags?: Record<string, unknown> }]
     expect(options.tags?.failure_kind).toBe('parse_error')
     expect(options.tags?.request_area).toBe('react.decide')
   })
@@ -619,35 +511,21 @@ describe('streamDecision keeps non-conforming output visible (recover but stay l
     ])
 
     const chunks = []
-    for await (const chunk of streamDecision(
-      baseContext(),
-      [descriptor],
-      'm',
-      edgeFetch
-    )) {
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
       chunks.push(chunk)
     }
 
     const decision = chunks.find((chunk) => chunk.kind === 'decision')
-    expect(decision?.kind === 'decision' && decision.decision.kind).toBe(
-      'final'
-    )
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('final')
     expect(sink).not.toHaveBeenCalled()
   })
 
   it('does NOT capture a prose finish on the non-streaming decideNextAction path either', async () => {
     const edgeFetch = makeEdgeFetch({
-      choices: [
-        { message: { content: 'I now have enough information to answer.' } }
-      ]
+      choices: [{ message: { content: 'I now have enough information to answer.' } }]
     })
 
-    const decision = await decideNextAction(
-      baseContext(),
-      [descriptor],
-      'm',
-      edgeFetch
-    )
+    const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
 
     expect(decision.kind).toBe('final')
     expect(sink).not.toHaveBeenCalled()

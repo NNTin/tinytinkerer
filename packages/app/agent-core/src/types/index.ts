@@ -27,9 +27,7 @@ export type ProviderCallOptions = {
 // final answer; `reasoning` chunks carry the model's raw chain-of-thought when
 // the underlying model emits it (otherwise none are produced and consumers fall
 // back to the structured activity timeline).
-export type SynthesisChunk =
-  | { kind: 'content'; text: string }
-  | { kind: 'reasoning'; text: string }
+export type SynthesisChunk = { kind: 'content'; text: string } | { kind: 'reasoning'; text: string }
 
 // A chunk of a streamed ReAct decision: `thought` carries the model's reasoning
 // as it streams (full accumulated text), and `decision` is the final structured
@@ -39,20 +37,33 @@ export type DecisionChunk =
   | { kind: 'decision'; decision: ReActDecision }
 
 export interface ModelProvider {
-  plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions): Promise<ExecutionPlan>
+  plan(
+    prompt: string,
+    history: ConversationMessage[],
+    options?: ProviderCallOptions
+  ): Promise<ExecutionPlan>
   execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
-  synthesize(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<SynthesisChunk>
+  synthesize(
+    context: ExecutionContext,
+    options?: ProviderCallOptions
+  ): AsyncIterable<SynthesisChunk>
   // Decide the next ReAct action (a single tool call) or to finish, given the
   // observations accumulated so far in `context`. Required by the ReAct and
   // Hybrid runtimes; optional so Plan-then-Execute-only providers (and existing
   // test mocks) need not implement it. The runtimes that need it guard at run
   // start and surface a clear error when it is absent.
-  decideNextAction?(context: ExecutionContext, options?: ProviderCallOptions): Promise<ReActDecision>
+  decideNextAction?(
+    context: ExecutionContext,
+    options?: ProviderCallOptions
+  ): Promise<ReActDecision>
   // Streaming variant of decideNextAction: yields the model's reasoning as it
   // streams, then the final decision. When present, the ReAct/Hybrid runtimes
   // prefer it so per-step thoughts render live; otherwise they fall back to
   // decideNextAction.
-  streamDecision?(context: ExecutionContext, options?: ProviderCallOptions): AsyncIterable<DecisionChunk>
+  streamDecision?(
+    context: ExecutionContext,
+    options?: ProviderCallOptions
+  ): AsyncIterable<DecisionChunk>
 }
 
 export type AssistantContentSnapshot = {

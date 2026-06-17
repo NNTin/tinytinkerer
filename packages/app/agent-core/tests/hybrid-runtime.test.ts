@@ -117,10 +117,14 @@ describe('HybridRuntime', () => {
     expect(planStepStart).toBeDefined()
     const planStepId = planStepStart?.payload.stepId
     expect(
-      events.some((event) => event.type === 'agent.step.failed' && event.payload.stepId === planStepId)
+      events.some(
+        (event) => event.type === 'agent.step.failed' && event.payload.stepId === planStepId
+      )
     ).toBe(true)
     expect(
-      events.some((event) => event.type === 'agent.step.completed' && event.payload.stepId === planStepId)
+      events.some(
+        (event) => event.type === 'agent.step.completed' && event.payload.stepId === planStepId
+      )
     ).toBe(false)
 
     // The revised plan has no steps, so no step completes: the run summary
@@ -188,10 +192,14 @@ describe('HybridRuntime', () => {
       )
     ).toBe(true)
     expect(
-      events.some((event) => event.type === 'agent.step.failed' && event.payload.stepId === planStepId)
+      events.some(
+        (event) => event.type === 'agent.step.failed' && event.payload.stepId === planStepId
+      )
     ).toBe(true)
     expect(
-      events.some((event) => event.type === 'agent.step.completed' && event.payload.stepId === planStepId)
+      events.some(
+        (event) => event.type === 'agent.step.completed' && event.payload.stepId === planStepId
+      )
     ).toBe(false)
     expect(
       events.some((event) => event.type === 'agent.step.started' && event.payload.kind === 'replan')

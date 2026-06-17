@@ -78,9 +78,16 @@ export const MobilePage = () => {
               <div className="rounded-2xl bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 On iPhone or iPad, use Share {'>'} Add to Home Screen to install this app.
               </div>
-            ) : <div />}
+            ) : (
+              <div />
+            )}
             {canInstall ? (
-              <Button type="button" size="sm" className="rounded-full" onClick={() => void promptToInstall()}>
+              <Button
+                type="button"
+                size="sm"
+                className="rounded-full"
+                onClick={() => void promptToInstall()}
+              >
                 <ArrowDownTrayIcon className="mr-1 h-4 w-4" />
                 Install app
               </Button>
@@ -90,7 +97,9 @@ export const MobilePage = () => {
 
         <section className="flex min-h-0 flex-1 flex-col px-1 py-1">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Conversation</h2>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+              Conversation
+            </h2>
             <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] text-[var(--muted)]">
               {turns.length} turn{turns.length === 1 ? '' : 's'}
             </span>
@@ -99,17 +108,22 @@ export const MobilePage = () => {
           <div className="mt-3 flex-1 space-y-4 overflow-y-auto pr-1">
             {turns.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-300 bg-white/70 px-4 py-5 text-sm text-[var(--muted)]">
-                Ask a question to start. Replies, auth, settings, and runtime behavior all come from the shared browser core.
+                Ask a question to start. Replies, auth, settings, and runtime behavior all come from
+                the shared browser core.
               </div>
             ) : (
               turns.map((turn, index) => (
                 <div key={turn.id} className="space-y-2">
                   {turn.userText ? (
-                    <p className="rounded-2xl bg-amber-100/80 px-3 py-2.5 text-sm text-stone-900">{turn.userText}</p>
+                    <p className="rounded-2xl bg-amber-100/80 px-3 py-2.5 text-sm text-stone-900">
+                      {turn.userText}
+                    </p>
                   ) : null}
 
                   {turn.notice ? (
-                    <div className={`rounded-2xl border px-3 py-2 text-sm ${noticeStyle[turn.notice.level ?? 'info']}`}>
+                    <div
+                      className={`rounded-2xl border px-3 py-2 text-sm ${noticeStyle[turn.notice.level ?? 'info']}`}
+                    >
                       {turn.notice.message}
                     </div>
                   ) : null}
@@ -230,14 +244,21 @@ export const MobilePage = () => {
               ) : null}
 
               {isRetryPending && isCoolingDown ? (
-                <Button type="button" variant="secondary" onClick={cancelRetry} className="rounded-full">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={cancelRetry}
+                  className="rounded-full"
+                >
                   Cancel retry
                 </Button>
               ) : null}
 
               <Button
                 type="submit"
-                aria-label={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
+                aria-label={
+                  isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'
+                }
                 title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
                 disabled={isRunning || isCoolingDown || !prompt.trim()}
                 className="h-10 min-w-10 rounded-full px-2"

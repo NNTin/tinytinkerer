@@ -90,19 +90,27 @@ describe('parseModelJsonWithTelemetry', () => {
   })
 
   it('returns the validated value for fenced, prose-wrapped content', () => {
-    const value = parseModelJsonWithTelemetry(metadata, '```json\n{"ok":true}\n```', okSchema, messages)
+    const value = parseModelJsonWithTelemetry(
+      metadata,
+      '```json\n{"ok":true}\n```',
+      okSchema,
+      messages
+    )
     expect(value).toEqual({ ok: true })
     expect(sink).not.toHaveBeenCalled()
   })
 
   it('throws a parse_error ModelJsonError and captures it for unparseable content', () => {
-    expect(() => parseModelJsonWithTelemetry(metadata, 'I cannot help.', okSchema, messages)).toThrow(
-      ModelJsonError
-    )
+    expect(() =>
+      parseModelJsonWithTelemetry(metadata, 'I cannot help.', okSchema, messages)
+    ).toThrow(ModelJsonError)
 
     expect(sink).toHaveBeenCalledTimes(1)
     const [, options] = sink.mock.calls[0] ?? []
-    expect(options?.tags).toMatchObject({ failure_kind: 'parse_error', request_area: 'react.decide' })
+    expect(options?.tags).toMatchObject({
+      failure_kind: 'parse_error',
+      request_area: 'react.decide'
+    })
   })
 
   it('throws a schema_error ModelJsonError when JSON is valid but the wrong shape', () => {
@@ -121,11 +129,11 @@ describe('parseModelJsonWithTelemetry', () => {
   })
 
   it('stays loud on a TRUNCATED value: captures parse_error and never fabricates', () => {
-    expect(() =>
-      parseModelJsonWithTelemetry(metadata, '{"ok":tr', okSchema, messages)
-    ).toThrow(ModelJsonError)
+    expect(() => parseModelJsonWithTelemetry(metadata, '{"ok":tr', okSchema, messages)).toThrow(
+      ModelJsonError
+    )
     expect(sink).toHaveBeenCalledTimes(1)
-    expect((sink.mock.calls[0]?.[1])?.tags).toMatchObject({ failure_kind: 'parse_error' })
+    expect(sink.mock.calls[0]?.[1]?.tags).toMatchObject({ failure_kind: 'parse_error' })
   })
 
   it('preserves the underlying error as `cause`', () => {
@@ -146,9 +154,16 @@ describe('parseModelJsonWithTelemetry', () => {
     it('surfaces pure prose as a no_json ModelJsonError WITHOUT capturing', () => {
       let caught: unknown
       try {
-        parseModelJsonWithTelemetry(metadata, 'I now have enough information.', okSchema, messages, undefined, {
-          silentWhenNoJson: true
-        })
+        parseModelJsonWithTelemetry(
+          metadata,
+          'I now have enough information.',
+          okSchema,
+          messages,
+          undefined,
+          {
+            silentWhenNoJson: true
+          }
+        )
       } catch (error) {
         caught = error
       }

@@ -56,14 +56,11 @@ export const useModels = (selectedModel?: string): ModelsState => {
       // without this the refresh button spins and stops with no feedback when
       // the edge is down (issue #179). Soft message: the list shown is usable.
       if (result.fromFallback) {
-        setRefreshError(
-          "Couldn't refresh models — showing the last-known list."
-        )
+        setRefreshError("Couldn't refresh models — showing the last-known list.")
       }
       return includeSelectedModel(result.models, selectedModel)
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unable to refresh models.'
+      const message = error instanceof Error ? error.message : 'Unable to refresh models.'
       setRefreshError(message)
       return includeSelectedModel(models, selectedModel)
     } finally {

@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import {
-  loadPluginModules,
-  resetPluginModuleCache
-} from '../src/plugins/registry.js'
+import { loadPluginModules, resetPluginModuleCache } from '../src/plugins/registry.js'
 
 describe('loadPluginModules', () => {
   beforeEach(() => {

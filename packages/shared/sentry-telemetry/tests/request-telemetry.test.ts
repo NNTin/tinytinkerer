@@ -31,9 +31,7 @@ describe('request telemetry', () => {
   it('captures handled non-ok responses', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() =>
-        Promise.resolve(new Response('{}', { status: 502, statusText: 'Bad Gateway' }))
-      )
+      vi.fn(() => Promise.resolve(new Response('{}', { status: 502, statusText: 'Bad Gateway' })))
     )
 
     const response = await fetchWithTelemetry(metadata, {})
@@ -56,9 +54,7 @@ describe('request telemetry', () => {
   it('adds sanitized model metadata and fingerprints model failures separately', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() =>
-        Promise.resolve(new Response('{}', { status: 502, statusText: 'Bad Gateway' }))
-      )
+      vi.fn(() => Promise.resolve(new Response('{}', { status: 502, statusText: 'Bad Gateway' })))
     )
 
     await fetchWithTelemetry({ ...metadata, area: 'models.chat', model: 'openai/gpt-5' }, {})
@@ -90,7 +86,9 @@ describe('request telemetry', () => {
   it('fingerprints by area + kind + status so endpoints/statuses do not conflate', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() => Promise.resolve(new Response('{}', { status: 429, statusText: 'Too Many Requests' })))
+      vi.fn(() =>
+        Promise.resolve(new Response('{}', { status: 429, statusText: 'Too Many Requests' }))
+      )
     )
 
     await fetchWithTelemetry({ ...metadata, area: 'models.list' }, {})
@@ -108,7 +106,10 @@ describe('request telemetry', () => {
     const abortError = Object.assign(new Error('The operation was aborted.'), {
       name: 'AbortError'
     })
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(abortError)))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(abortError))
+    )
 
     await expect(fetchWithTelemetry(metadata, {})).rejects.toBe(abortError)
 
@@ -128,7 +129,10 @@ describe('request telemetry', () => {
     )
 
     const response = await fetchWithTelemetry(
-      { ...metadata, accept: { status: [404], reason: '404 is an expected existence-check miss.' } },
+      {
+        ...metadata,
+        accept: { status: [404], reason: '404 is an expected existence-check miss.' }
+      },
       {}
     )
 
@@ -140,7 +144,10 @@ describe('request telemetry', () => {
     const abortError = Object.assign(new Error('The operation was aborted.'), {
       name: 'AbortError'
     })
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(abortError)))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(abortError))
+    )
 
     await expect(
       fetchWithTelemetry(
@@ -154,7 +161,10 @@ describe('request telemetry', () => {
 
   it('skips capture for an accepted network_error kind', async () => {
     const networkError = new TypeError('Failed to fetch')
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(networkError)))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(networkError))
+    )
 
     await expect(
       fetchWithTelemetry(
@@ -172,13 +182,14 @@ describe('request telemetry', () => {
   it('still captures outcomes outside the accept list', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() =>
-        Promise.resolve(new Response('{}', { status: 502, statusText: 'Bad Gateway' }))
-      )
+      vi.fn(() => Promise.resolve(new Response('{}', { status: 502, statusText: 'Bad Gateway' })))
     )
 
     const response = await fetchWithTelemetry(
-      { ...metadata, accept: { status: [404], reason: '404 is an expected existence-check miss.' } },
+      {
+        ...metadata,
+        accept: { status: [404], reason: '404 is an expected existence-check miss.' }
+      },
       {}
     )
 
@@ -203,14 +214,9 @@ describe('request telemetry', () => {
 
   it('captures schema validation failures', () => {
     expect(() =>
-      parseWithTelemetry(
-        metadata,
-        'schema_error',
-        'Response schema mismatch',
-        () => {
-          throw new Error('schema mismatch')
-        }
-      )
+      parseWithTelemetry(metadata, 'schema_error', 'Response schema mismatch', () => {
+        throw new Error('schema mismatch')
+      })
     ).toThrow('schema mismatch')
 
     expect(sink).toHaveBeenCalledTimes(1)

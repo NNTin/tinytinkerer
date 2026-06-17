@@ -93,10 +93,7 @@ const CreditsBody = () => (
   <div className="flex flex-col gap-4">
     <ul className="flex flex-col gap-3">
       {TINYTINKERER_CREDITS.map((credit) => (
-        <li
-          key={credit.name}
-          className="text-sm leading-relaxed text-stone-700"
-        >
+        <li key={credit.name} className="text-sm leading-relaxed text-stone-700">
           {credit.href ? (
             <a
               href={credit.href}
@@ -113,9 +110,7 @@ const CreditsBody = () => (
         </li>
       ))}
     </ul>
-    <p className="text-xs italic leading-relaxed text-stone-500">
-      {TINYTINKERER_CREDITS_NOTE}
-    </p>
+    <p className="text-xs italic leading-relaxed text-stone-500">{TINYTINKERER_CREDITS_NOTE}</p>
   </div>
 )
 
@@ -149,10 +144,7 @@ const AboutDialogs = ({
 
   return (
     <SettingsDialog title={TINYTINKERER_LICENSE.title} onClose={onClose}>
-      <MarkdownBody
-        markdown={LICENSE_TEXT}
-        {...(renderMarkdown ? { renderMarkdown } : {})}
-      />
+      <MarkdownBody markdown={LICENSE_TEXT} {...(renderMarkdown ? { renderMarkdown } : {})} />
     </SettingsDialog>
   )
 }

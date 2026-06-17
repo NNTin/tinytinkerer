@@ -1,10 +1,7 @@
 import { fetchWithTimeout } from './fetch'
 import type { Bindings } from './bindings'
 import { deriveCredentialKey } from './rate-limit'
-import {
-  readCachedCallerValidation,
-  writeCachedCallerValidation
-} from './caller-validation-cache'
+import { readCachedCallerValidation, writeCachedCallerValidation } from './caller-validation-cache'
 
 export type CallerIdentity = {
   id: string
@@ -24,12 +21,8 @@ export type CallerValidationResult =
 // mis-read as an invalid caller -> a spurious 401 (TINYTINKERER-FRONTEND-N/P/Q/R).
 const GITHUB_API_USER_AGENT = 'tinytinkerer-edge'
 
-const parseGitHubIdentity = async (
-  response: Response
-): Promise<CallerIdentity | undefined> => {
-  const raw = (await response.json().catch(() => undefined)) as
-    | Record<string, unknown>
-    | undefined
+const parseGitHubIdentity = async (response: Response): Promise<CallerIdentity | undefined> => {
+  const raw = (await response.json().catch(() => undefined)) as Record<string, unknown> | undefined
   const rawId = raw?.id
   const login = typeof raw?.login === 'string' ? raw.login.trim() : ''
   const id =

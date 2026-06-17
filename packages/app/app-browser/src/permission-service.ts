@@ -34,9 +34,7 @@ const removeFromQueue = (id: string): void => {
 // is mounted the promise never settles here; the runtime's hook timeout is the
 // backstop (it denies the tool), so a host that forgets to render the modal fails
 // safe rather than hanging forever.
-export const requestPermission = (
-  request: PermissionRequest
-): Promise<ToolGateResult> =>
+export const requestPermission = (request: PermissionRequest): Promise<ToolGateResult> =>
   new Promise<ToolGateResult>((resolve) => {
     const id = `perm-${(counter += 1)}`
     const entry: PendingPermission = {
@@ -50,9 +48,8 @@ export const requestPermission = (
     permissionStore.setState((state) => ({ queue: [...state.queue, entry] }))
   })
 
-export const usePermissionStore = <T>(
-  selector: (state: PermissionState) => T
-): T => useStore(permissionStore, selector)
+export const usePermissionStore = <T>(selector: (state: PermissionState) => T): T =>
+  useStore(permissionStore, selector)
 
 // Test seam: settle every pending request as denied and clear the queue so a
 // test never leaks an unresolved permission promise between cases.

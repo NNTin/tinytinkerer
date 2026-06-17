@@ -3,12 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TableNode } from '@tinytinkerer/content-react'
-import {
-  createTablePlugin,
-  TableNodeRenderer,
-  tableToCsv,
-  tablePlugin
-} from '../src/index.js'
+import { createTablePlugin, TableNodeRenderer, tableToCsv, tablePlugin } from '../src/index.js'
 
 afterEach(() => {
   cleanup()
@@ -142,15 +137,9 @@ describe('tableToCsv', () => {
       tableToCsv({
         type: 'table',
         align: [null, null],
-        header: [
-          [{ type: 'text', value: 'a' }],
-          [{ type: 'text', value: 'b' }]
-        ],
+        header: [[{ type: 'text', value: 'a' }], [{ type: 'text', value: 'b' }]],
         rows: [
-          [
-            [{ type: 'text', value: 'hello, world' }],
-            [{ type: 'text', value: 'a "quoted" value' }]
-          ]
+          [[{ type: 'text', value: 'hello, world' }], [{ type: 'text', value: 'a "quoted" value' }]]
         ]
       })
     ).toBe(['a,b', '"hello, world","a ""quoted"" value"'].join('\n'))
@@ -191,9 +180,7 @@ describe('tableToCsv', () => {
           [{ type: 'text', value: 'role' }],
           [{ type: 'text', value: 'score' }]
         ],
-        rows: [
-          [[{ type: 'text', value: 'Ada' }], [{ type: 'text', value: 'Admin' }]]
-        ]
+        rows: [[[{ type: 'text', value: 'Ada' }], [{ type: 'text', value: 'Admin' }]]]
       })
     ).toBe(['name,role,score', 'Ada,Admin,'].join('\n'))
   })

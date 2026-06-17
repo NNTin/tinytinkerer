@@ -7,7 +7,9 @@ import { AssistantContent } from '../src/assistant-content.js'
 import { resetMermaidState } from '@tinytinkerer/content-mermaid'
 
 const mockInitialize = vi.hoisted(() => vi.fn())
-const mockRender = vi.hoisted(() => vi.fn(() => Promise.resolve({ svg: '<svg><text>Diagram</text></svg>' })))
+const mockRender = vi.hoisted(() =>
+  vi.fn(() => Promise.resolve({ svg: '<svg><text>Diagram</text></svg>' }))
+)
 const mermaidWindow = window as unknown as Window & {
   mermaid?: {
     initialize: (...args: unknown[]) => void
@@ -68,15 +70,17 @@ describe('AssistantContent', () => {
   it('renders markdown, tables, and images through app-browser composition', () => {
     render(
       <AssistantContent
-        content={assistantContent([
-          '# Heading',
-          '',
-          '| Name | Role |',
-          '| --- | --- |',
-          '| Ada | Admin |',
-          '',
-          '![Diagram](https://example.com/diagram.png)'
-        ].join('\n'))}
+        content={assistantContent(
+          [
+            '# Heading',
+            '',
+            '| Name | Role |',
+            '| --- | --- |',
+            '| Ada | Admin |',
+            '',
+            '![Diagram](https://example.com/diagram.png)'
+          ].join('\n')
+        )}
       />
     )
 
@@ -87,7 +91,11 @@ describe('AssistantContent', () => {
 
   it('propagates shell styling hooks', () => {
     const { container } = render(
-      <AssistantContent content={assistantContent('streaming...')} className="prose-assistant" isStreaming />
+      <AssistantContent
+        content={assistantContent('streaming...')}
+        className="prose-assistant"
+        isStreaming
+      />
     )
 
     expect(container.firstChild).toHaveClass('tt-markdown')
@@ -99,22 +107,23 @@ describe('AssistantContent', () => {
     mockRender.mockResolvedValue({ svg: '<svg><text>Diagram</text></svg>' })
 
     render(
-      <AssistantContent content={assistantContent(['```mermaid', FLOWCHART_CODE, '```'].join('\n'))} />
+      <AssistantContent
+        content={assistantContent(['```mermaid', FLOWCHART_CODE, '```'].join('\n'))}
+      />
     )
 
     await waitFor(() => {
       expect(document.querySelector('svg')).not.toBeNull()
     })
 
-    expect(mockRender).toHaveBeenCalledWith(
-      expect.stringContaining('tt-mermaid'),
-      FLOWCHART_CODE
-    )
+    expect(mockRender).toHaveBeenCalledWith(expect.stringContaining('tt-mermaid'), FLOWCHART_CODE)
   })
 
   it('renders wireframe fences through the specialized renderer', async () => {
     render(
-      <AssistantContent content={assistantContent(['```wireframe', HELLO_WORLD_HTML, '```'].join('\n'))} />
+      <AssistantContent
+        content={assistantContent(['```wireframe', HELLO_WORLD_HTML, '```'].join('\n'))}
+      />
     )
 
     await waitFor(() => {
@@ -134,15 +143,11 @@ describe('AssistantContent', () => {
 
     render(
       <AssistantContent
-        content={assistantContent([
-          '```mermaid',
-          FLOWCHART_CODE,
-          '```',
-          '',
-          '```wireframe',
-          HELLO_WORLD_HTML,
-          '```'
-        ].join('\n'))}
+        content={assistantContent(
+          ['```mermaid', FLOWCHART_CODE, '```', '', '```wireframe', HELLO_WORLD_HTML, '```'].join(
+            '\n'
+          )
+        )}
       />
     )
 
@@ -164,15 +169,11 @@ describe('AssistantContent', () => {
 
     render(
       <AssistantContent
-        content={assistantContent([
-          '```wireframe',
-          HELLO_WORLD_HTML,
-          '```',
-          '',
-          '```mermaid',
-          FLOWCHART_CODE,
-          '```'
-        ].join('\n'))}
+        content={assistantContent(
+          ['```wireframe', HELLO_WORLD_HTML, '```', '', '```mermaid', FLOWCHART_CODE, '```'].join(
+            '\n'
+          )
+        )}
       />
     )
 
@@ -181,10 +182,7 @@ describe('AssistantContent', () => {
       expect(document.querySelector('svg')).not.toBeNull()
     })
 
-    expect(mockRender).toHaveBeenCalledWith(
-      expect.stringContaining('tt-mermaid'),
-      FLOWCHART_CODE
-    )
+    expect(mockRender).toHaveBeenCalledWith(expect.stringContaining('tt-mermaid'), FLOWCHART_CODE)
   })
 
   it('preserves DOM order for mixed node types', async () => {
@@ -192,18 +190,20 @@ describe('AssistantContent', () => {
 
     const { container } = render(
       <AssistantContent
-        content={assistantContent([
-          '# Title',
-          '',
-          '```mermaid',
-          'graph TD',
-          'A-->B',
-          '```',
-          '',
-          'Some text',
-          '',
-          '![img](https://example.com/img.png)'
-        ].join('\n'))}
+        content={assistantContent(
+          [
+            '# Title',
+            '',
+            '```mermaid',
+            'graph TD',
+            'A-->B',
+            '```',
+            '',
+            'Some text',
+            '',
+            '![img](https://example.com/img.png)'
+          ].join('\n')
+        )}
       />
     )
 

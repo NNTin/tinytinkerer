@@ -54,10 +54,7 @@ export const scrubBreadcrumb = <T extends Breadcrumb>(breadcrumb: T): T | null =
   ) {
     return null
   }
-  if (
-    (breadcrumb.category === 'fetch' || breadcrumb.category === 'xhr') &&
-    breadcrumb.data
-  ) {
+  if ((breadcrumb.category === 'fetch' || breadcrumb.category === 'xhr') && breadcrumb.data) {
     breadcrumb.data.url = stripUrlQuery(breadcrumb.data.url)
   }
   return breadcrumb

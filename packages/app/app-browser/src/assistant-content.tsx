@@ -8,7 +8,14 @@ import {
   type RenderContext,
   type ReactNodeRendererPlugin
 } from '@tinytinkerer/content-react'
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type ReactNode
+} from 'react'
 import { calloutPlugin } from '@tinytinkerer/content-callout'
 import { imagePlugin } from '@tinytinkerer/content-image'
 import { linkCardPlugin } from '@tinytinkerer/content-link-card'
@@ -33,10 +40,7 @@ const createLazyCodeBlockPlugin = (options: {
   let pluginPromise: Promise<ReactNodeRendererPlugin<'codeBlock'>> | null = null
 
   const renderFallback = (node: CodeBlockNode): ReactNode => (
-    <CodeBlockFallback
-      code={node.code}
-      {...(node.language ? { language: node.language } : {})}
-    />
+    <CodeBlockFallback code={node.code} {...(node.language ? { language: node.language } : {})} />
   )
 
   const ensurePlugin = async (): Promise<ReactNodeRendererPlugin<'codeBlock'>> => {
@@ -113,12 +117,9 @@ const createLazyCodeBlockPlugin = (options: {
     priority: options.priority,
     requirements: options.requirements,
     matches: options.matches,
-    render: (node, ctx) =>
-      <LazyCodeBlockRenderer node={node} ctx={ctx} />,
+    render: (node, ctx) => <LazyCodeBlockRenderer node={node} ctx={ctx} />,
     fallback: (node, failure) =>
-      plugin?.fallback
-        ? plugin.fallback(node, failure)
-        : renderFallback(node)
+      plugin?.fallback ? plugin.fallback(node, failure) : renderFallback(node)
   }
 }
 
@@ -143,7 +144,8 @@ const wireframePlugin = createLazyCodeBlockPlugin({
   priority: 40,
   requirements: { clientOnly: true, needsDom: true },
   matches: (node) => node.language === 'wireframe',
-  loadPlugin: () => import('@tinytinkerer/content-wireframe').then((module) => module.wireframePlugin)
+  loadPlugin: () =>
+    import('@tinytinkerer/content-wireframe').then((module) => module.wireframePlugin)
 })
 
 const assistantPlugins = [

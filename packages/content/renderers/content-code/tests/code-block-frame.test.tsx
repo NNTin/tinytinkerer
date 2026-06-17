@@ -113,10 +113,7 @@ describe('fullscreen behavior', () => {
   it('shows the Edited locally indicator with tooltip and resets via the Reset button', async () => {
     const sourceNode = { id: 'n7', type: 'codeBlock' as const, code: 'src', language: 'json' }
     const { container } = render(
-      <ContentDocumentContent
-        document={doc([sourceNode])}
-        plugins={[codePlugin]}
-      />
+      <ContentDocumentContent document={doc([sourceNode])} plugins={[codePlugin]} />
     )
 
     await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull())

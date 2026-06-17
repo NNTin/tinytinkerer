@@ -56,9 +56,7 @@ const assistantContent = (source: string): ContentDocument => ({
 
 describe('app-core helpers', () => {
   it('infers search plans', () => {
-    expect(
-      inferPlan('latest ai news').steps.some((step) => step.id === 'search')
-    ).toBe(true)
+    expect(inferPlan('latest ai news').steps.some((step) => step.id === 'search')).toBe(true)
   })
 
   it('falls back to the default model for null/empty values', () => {
@@ -83,9 +81,7 @@ describe('app-core helpers', () => {
     )
     // An invalid value normalizes to the deployment-default sentinel, never
     // to a concrete URL — the client must not assert a default (issue #179).
-    expect(normalizeLiteLLMBaseUrl('http://litellm.example.com')).toBe(
-      LITELLM_DEPLOYMENT_DEFAULT
-    )
+    expect(normalizeLiteLLMBaseUrl('http://litellm.example.com')).toBe(LITELLM_DEPLOYMENT_DEFAULT)
   })
 
   it('validates the base URL with the same rules as the edge instead of silently stripping', () => {
@@ -148,8 +144,7 @@ describe('app-core helpers', () => {
 
     const turns = buildTurns(events)
     expect(turns).toHaveLength(1)
-    const labels =
-      turns[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    const labels = turns[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
     expect(labels).toHaveLength(2)
   })
 
@@ -179,9 +174,7 @@ describe('app-core helpers', () => {
       toolId: 'web-search',
       status: 'completed'
     })
-    expect(
-      activity?.items.filter((item) => item.kind === 'reasoning')
-    ).toHaveLength(1)
+    expect(activity?.items.filter((item) => item.kind === 'reasoning')).toHaveLength(1)
   })
 
   it('captures step hierarchy (stepId, parentId, kind) for nested agent steps', () => {
@@ -213,9 +206,7 @@ describe('app-core helpers', () => {
     ]
 
     const items = buildTurns(events)[0]?.activity.items ?? []
-    expect(
-      items.find((item) => item.kind === 'label' && item.stepId === 's1')
-    ).toMatchObject({
+    expect(items.find((item) => item.kind === 'label' && item.stepId === 's1')).toMatchObject({
       parentId: 'plan',
       stepKind: 'plan-step'
     })
@@ -247,9 +238,7 @@ describe('app-core helpers', () => {
     ]
 
     const labels =
-      buildTurns(events)[0]?.activity.items.filter(
-        (item) => item.kind === 'label'
-      ) ?? []
+      buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
     expect(labels).toHaveLength(1)
     expect(labels[0]).toMatchObject({
       label: 'Let me search the docs',
@@ -273,14 +262,10 @@ describe('app-core helpers', () => {
     ]
 
     const labels =
-      buildTurns(events)[0]?.activity.items.filter(
-        (item) => item.kind === 'label'
-      ) ?? []
+      buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
     expect(labels).toHaveLength(2)
     expect(
-      labels.some(
-        (item) => item.kind === 'label' && item.label.startsWith('web-search')
-      )
+      labels.some((item) => item.kind === 'label' && item.label.startsWith('web-search'))
     ).toBe(true)
   })
 
@@ -382,9 +367,7 @@ describe('app-core helpers', () => {
   })
 
   it('drops expired cooldowns', () => {
-    expect(
-      activeCooldown(new Date(Date.now() - 1_000).toISOString())
-    ).toBeUndefined()
+    expect(activeCooldown(new Date(Date.now() - 1_000).toISOString())).toBeUndefined()
   })
 
   it('does not attach activity to a turn without a preceding user.message', () => {
@@ -407,9 +390,7 @@ describe('app-core helpers', () => {
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
     const labels =
-      buildTurns(events)[0]?.activity.items.filter(
-        (item) => item.kind === 'label'
-      ) ?? []
+      buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
     expect(labels).toHaveLength(0)
   })
 
@@ -423,9 +404,7 @@ describe('app-core helpers', () => {
     const state = await loadSettingsState({
       get: (key) =>
         key === 'settings_mcp_servers'
-          ? Promise.resolve(
-              JSON.stringify([validServer, { id: 'broken', enabled: 'yes' }])
-            )
+          ? Promise.resolve(JSON.stringify([validServer, { id: 'broken', enabled: 'yes' }]))
           : Promise.resolve(undefined),
       set: () => Promise.resolve()
     })
@@ -460,9 +439,7 @@ describe('app-core helpers', () => {
   it('ignores malformed plugin activation JSON', async () => {
     const state = await loadSettingsState({
       get: (key) =>
-        Promise.resolve(
-          key === SETTINGS_KEYS.pluginActivation ? '{ not json' : undefined
-        ),
+        Promise.resolve(key === SETTINGS_KEYS.pluginActivation ? '{ not json' : undefined),
       set: () => Promise.resolve()
     })
 
@@ -502,10 +479,7 @@ describe('app-core helpers', () => {
 
   it('hydrates Web Speech API voice input from the stored preference key', async () => {
     const state = await loadSettingsState({
-      get: (key) =>
-        Promise.resolve(
-          key === SETTINGS_KEYS.webSpeechEnabled ? 'true' : undefined
-        ),
+      get: (key) => Promise.resolve(key === SETTINGS_KEYS.webSpeechEnabled ? 'true' : undefined),
       set: () => Promise.resolve()
     })
 
@@ -515,9 +489,7 @@ describe('app-core helpers', () => {
   it('reads the stored selected model', async () => {
     const state = await loadSettingsState({
       get: (key) =>
-        Promise.resolve(
-          key === SETTINGS_KEYS.selectedModel ? 'openai/gpt-4o' : undefined
-        ),
+        Promise.resolve(key === SETTINGS_KEYS.selectedModel ? 'openai/gpt-4o' : undefined),
       set: () => Promise.resolve()
     })
 
@@ -549,9 +521,7 @@ describe('app-core helpers', () => {
   it('hydrates reasoning & activity from the stored preference key', async () => {
     const state = await loadSettingsState({
       get: (key) =>
-        Promise.resolve(
-          key === SETTINGS_KEYS.showReasoningActivity ? 'true' : undefined
-        ),
+        Promise.resolve(key === SETTINGS_KEYS.showReasoningActivity ? 'true' : undefined),
       set: () => Promise.resolve()
     })
 
@@ -580,11 +550,7 @@ describe('app-core helpers', () => {
   it('hydrates showCodeBlockFullscreenButton from the stored preference key', async () => {
     const state = await loadSettingsState({
       get: (key) =>
-        Promise.resolve(
-          key === SETTINGS_KEYS.showCodeBlockFullscreenButton
-            ? 'false'
-            : undefined
-        ),
+        Promise.resolve(key === SETTINGS_KEYS.showCodeBlockFullscreenButton ? 'false' : undefined),
       set: () => Promise.resolve()
     })
 
@@ -605,18 +571,14 @@ describe('app-core helpers', () => {
       false
     )
 
-    expect(writes).toEqual([
-      { key: 'settings_show_code_block_fullscreen_button', value: 'false' }
-    ])
+    expect(writes).toEqual([{ key: 'settings_show_code_block_fullscreen_button', value: 'false' }])
   })
 
   it('drops malformed persisted MCP discovery entries during settings hydration', async () => {
     const validDiscovery: McpDiscoveryResult = {
       serverId: 'server-1',
       serverName: 'Weather Server',
-      tools: [
-        { toolName: 'get_weather', description: 'Get weather', inputSchema: {} }
-      ],
+      tools: [{ toolName: 'get_weather', description: 'Get weather', inputSchema: {} }],
       syncedAt: new Date().toISOString()
     }
     const state = await loadSettingsState({
@@ -642,9 +604,7 @@ describe('app-core helpers', () => {
 
   describe('canSendPrompt', () => {
     it('returns false when conversationId is absent', () => {
-      expect(
-        canSendPrompt({ ...defaultChatState(), conversationId: undefined })
-      ).toBe(false)
+      expect(canSendPrompt({ ...defaultChatState(), conversationId: undefined })).toBe(false)
     })
 
     it('returns false when isRunning is true', () => {
@@ -680,9 +640,7 @@ describe('app-core helpers', () => {
     })
 
     it('returns true when all conditions are clear', () => {
-      expect(
-        canSendPrompt({ ...defaultChatState(), conversationId: 'id' })
-      ).toBe(true)
+      expect(canSendPrompt({ ...defaultChatState(), conversationId: 'id' })).toBe(true)
     })
   })
 })
@@ -757,10 +715,7 @@ describe('rate-limit cooldown', () => {
       [rateLimitCooldownKey()]: future
     })
 
-    await applyRateLimitEvent(
-      event('rate.limit.recovered', { retryAt: future }),
-      prefs
-    )
+    await applyRateLimitEvent(event('rate.limit.recovered', { retryAt: future }), prefs)
 
     expect(await loadCooldown(prefs)).toBeUndefined()
   })

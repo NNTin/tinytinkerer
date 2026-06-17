@@ -231,22 +231,22 @@ describe('createDomReader — region (position-ordered)', () => {
 
   beforeEach(() => {
     rects = new Map()
-    spy = vi
-      .spyOn(Element.prototype, 'getBoundingClientRect')
-      .mockImplementation(function (this: Element) {
-        const r = rects.get(this) ?? { top: 0, width: 0, height: 0 }
-        return {
-          x: 0,
-          y: r.top,
-          top: r.top,
-          left: 0,
-          right: r.width,
-          bottom: r.top + r.height,
-          width: r.width,
-          height: r.height,
-          toJSON: () => ({})
-        }
-      })
+    spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element
+    ) {
+      const r = rects.get(this) ?? { top: 0, width: 0, height: 0 }
+      return {
+        x: 0,
+        y: r.top,
+        top: r.top,
+        left: 0,
+        right: r.width,
+        bottom: r.top + r.height,
+        width: r.width,
+        height: r.height,
+        toJSON: () => ({})
+      }
+    })
   })
 
   afterEach(() => {
@@ -332,7 +332,7 @@ describe('createDomReader — redaction & hardening', () => {
     expect(root?.children).toBeUndefined()
   })
 
-  it('removes a <select>\'s selected state but keeps its option labels', async () => {
+  it("removes a <select>'s selected state but keeps its option labels", async () => {
     document.body.innerHTML =
       '<select id="s"><option value="a">Alpha</option><option value="b" selected>Beta</option></select>'
     const read = createDomReader()
@@ -414,7 +414,7 @@ describe('createDomReader — redaction & hardening', () => {
 })
 
 describe('directText', () => {
-  it('returns only the element\'s own immediate text, collapsed', () => {
+  it("returns only the element's own immediate text, collapsed", () => {
     document.body.innerHTML = '<div>  hello   <span>world</span>  there </div>'
     const div = document.querySelector('div')!
     expect(directText(div)).toBe('hello there')
@@ -444,7 +444,7 @@ describe('createDomReader — full sanitized snapshot (the run_javascript `dom` 
     expect(lead?.text).toBe('Body text')
   })
 
-  it('is the FULL page — not subject to read_dom\'s node/char caps', async () => {
+  it("is the FULL page — not subject to read_dom's node/char caps", async () => {
     const longText = 'a'.repeat(60)
     document.body.innerHTML =
       `<section>${Array.from({ length: 30 }, (_, i) => `<p>${i}</p>`).join('')}` +
@@ -521,7 +521,8 @@ describe('createDomReader — full sanitized snapshot (the run_javascript `dom` 
 
     await read({})
 
-    const value = lastSnapshot(onSnapshot).children?.find((c) => c.id === 'd')?.attributes?.['data-blob'] ?? ''
+    const value =
+      lastSnapshot(onSnapshot).children?.find((c) => c.id === 'd')?.attributes?.['data-blob'] ?? ''
     expect(value).toContain('[truncated]')
     expect(value.length).toBeLessThan(60_000)
   })
@@ -560,8 +561,7 @@ describe('createDomReader — full sanitized snapshot (the run_javascript `dom` 
     // Pin intentional behavior: only form-field values are redacted; data-*/href on
     // ordinary elements pass through exactly as read_dom would surface them. (The
     // sandbox has no network, so this data cannot be exfiltrated.)
-    document.body.innerHTML =
-      '<a id="lnk" href="/p?token=abc123" data-role="nav">Home</a>'
+    document.body.innerHTML = '<a id="lnk" href="/p?token=abc123" data-role="nav">Home</a>'
     const onSnapshot = vi.fn()
     const read = createDomReader(onSnapshot)
 

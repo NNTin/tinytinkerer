@@ -1,15 +1,7 @@
-import {
-  isPluginModule,
-  type ChatEvent,
-  type PluginHost
-} from '@tinytinkerer/contracts'
+import { isPluginModule, type ChatEvent, type PluginHost } from '@tinytinkerer/contracts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as eventLoggerModule from '../src/index'
-import {
-  EVENT_LOGGER_PLUGIN_ID,
-  eventLoggerPlugin,
-  eventLoggerPluginManifest
-} from '../src/index'
+import { EVENT_LOGGER_PLUGIN_ID, eventLoggerPlugin, eventLoggerPluginManifest } from '../src/index'
 
 // A representative chat event. Every ChatEvent shares { id, timestamp, type,
 // payload } (see eventBaseSchema in @tinytinkerer/contracts).
@@ -29,9 +21,7 @@ describe('eventLoggerPlugin', () => {
   beforeEach(() => {
     info = vi.spyOn(console, 'info').mockImplementation(() => {})
     log = vi.spyOn(console, 'log').mockImplementation(() => {})
-    groupCollapsed = vi
-      .spyOn(console, 'groupCollapsed')
-      .mockImplementation(() => {})
+    groupCollapsed = vi.spyOn(console, 'groupCollapsed').mockImplementation(() => {})
     groupEnd = vi.spyOn(console, 'groupEnd').mockImplementation(() => {})
   })
 

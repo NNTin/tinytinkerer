@@ -123,14 +123,34 @@ const canFallbackToParse = (error) => {
 
 const parseBlock = (block) => {
   const jsdomModuleUrl = pathToFileURL(
-    join(process.cwd(), 'packages', 'content', 'renderers', 'content-mermaid', 'node_modules', 'jsdom', 'lib', 'api.js')
+    join(
+      process.cwd(),
+      'packages',
+      'content',
+      'renderers',
+      'content-mermaid',
+      'node_modules',
+      'jsdom',
+      'lib',
+      'api.js'
+    )
   ).href
   const mermaidModuleUrl = pathToFileURL(
-    join(process.cwd(), 'packages', 'content', 'renderers', 'content-mermaid', 'node_modules', 'mermaid', 'dist', 'mermaid.core.mjs')
+    join(
+      process.cwd(),
+      'packages',
+      'content',
+      'renderers',
+      'content-mermaid',
+      'node_modules',
+      'mermaid',
+      'dist',
+      'mermaid.core.mjs'
+    )
   ).href
   const parserScript = [
-    "const jsdomModuleUrl = process.argv[1]",
-    "const mermaidModuleUrl = process.argv[2]",
+    'const jsdomModuleUrl = process.argv[1]',
+    'const mermaidModuleUrl = process.argv[2]',
     "const input = Buffer.from(process.argv[3] ?? '', 'base64').toString('utf8')",
     'const { JSDOM } = await import(jsdomModuleUrl)',
     "const { window } = new JSDOM('<!doctype html><html><body></body></html>')",
@@ -140,7 +160,7 @@ const parseBlock = (block) => {
     'globalThis.Element = window.Element',
     'globalThis.HTMLElement = window.HTMLElement',
     'globalThis.SVGElement = window.SVGElement',
-    "const { default: mermaid } = await import(mermaidModuleUrl)",
+    'const { default: mermaid } = await import(mermaidModuleUrl)',
     "mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' })",
     'await mermaid.parse(input)'
   ].join('; ')
@@ -174,7 +194,10 @@ const resolveChromeExecutablePath = () => {
     process.env.HOME,
     ...listAncestorDirs(process.cwd())
   ]
-    .filter((value, index, array) => typeof value === 'string' && value.length > 0 && array.indexOf(value) === index)
+    .filter(
+      (value, index, array) =>
+        typeof value === 'string' && value.length > 0 && array.indexOf(value) === index
+    )
     .flatMap((baseDir) => [
       join(baseDir, '.cache', 'puppeteer', 'chrome'),
       join(baseDir, '.cache', 'puppeteer', 'chrome-headless-shell')
@@ -264,7 +287,9 @@ const main = () => {
     rmSync(tempDir, { recursive: true, force: true })
   }
 
-  console.log(`Validated ${blocks.length} Mermaid diagram(s) across ${markdownFiles.length} Markdown file(s).`)
+  console.log(
+    `Validated ${blocks.length} Mermaid diagram(s) across ${markdownFiles.length} Markdown file(s).`
+  )
 }
 
 try {

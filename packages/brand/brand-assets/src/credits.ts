@@ -58,8 +58,7 @@ export const TINYTINKERER_CREDITS: readonly BrandCredit[] = [
   },
   {
     name: 'Cloudflare',
-    thanks:
-      'Thanks for powering the backend infrastructure and domain services.',
+    thanks: 'Thanks for powering the backend infrastructure and domain services.',
     href: 'https://www.cloudflare.com/'
   },
   {

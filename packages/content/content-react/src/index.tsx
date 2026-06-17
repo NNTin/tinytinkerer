@@ -317,13 +317,7 @@ const ParagraphNodeView = ({ node }: ContentNodeRendererProps<ParagraphNode>) =>
   <p>{renderInline(node.children)}</p>
 )
 
-const ListItemNodeView = ({
-  node,
-  ctx
-}: {
-  node: ListItemNode
-  ctx: RenderContext<ReactNode>
-}) => (
+const ListItemNodeView = ({ node, ctx }: { node: ListItemNode; ctx: RenderContext<ReactNode> }) => (
   <li>
     {typeof node.checked === 'boolean' ? (
       <input type="checkbox" defaultChecked={node.checked} disabled />
@@ -334,13 +328,7 @@ const ListItemNodeView = ({
   </li>
 )
 
-const ListNodeView = ({
-  node,
-  ctx
-}: {
-  node: ListNode
-  ctx: RenderContext<ReactNode>
-}) => {
+const ListNodeView = ({ node, ctx }: { node: ListNode; ctx: RenderContext<ReactNode> }) => {
   const items = node.children.map((item) => (
     <ListItemNodeView key={item.id} node={item} ctx={ctx} />
   ))
@@ -474,30 +462,20 @@ export const PreviewCodeFrame = ({
       {activeView === 'preview'
         ? preview
         : (codeView ?? (
-            <CodeBlockFallback
-              code={code}
-              {...(codeLanguage ? { language: codeLanguage } : {})}
-            />
+            <CodeBlockFallback code={code} {...(codeLanguage ? { language: codeLanguage } : {})} />
           ))}
     </div>
   )
 }
 
-export const CodeBlockFallback = ({
-  code,
-  language
-}: {
-  code: string
-  language?: string
-}) => <CodeBlockNodeView node={{ type: 'codeBlock', code, ...(language ? { language } : {}) }} />
+export const CodeBlockFallback = ({ code, language }: { code: string; language?: string }) => (
+  <CodeBlockNodeView node={{ type: 'codeBlock', code, ...(language ? { language } : {}) }} />
+)
 
 const genericNodeFallback = (node: ContentNode): ReactNode => {
   if (node.type === 'codeBlock') {
     return (
-      <CodeBlockFallback
-        code={node.code}
-        {...(node.language ? { language: node.language } : {})}
-      />
+      <CodeBlockFallback code={node.code} {...(node.language ? { language: node.language } : {})} />
     )
   }
   return <CodeBlockFallback code={JSON.stringify(node, null, 2)} language="json" />
@@ -547,7 +525,11 @@ export const createReactContentRuntime = (
       const lazyFallback = <>{ctx.fallback()}</>
       return (
         <Suspense fallback={lazyFallback}>
-          <RendererBoundary fallback={lazyFallback} nodeType={ctx.node.type} pluginId={ctx.plugin.id}>
+          <RendererBoundary
+            fallback={lazyFallback}
+            nodeType={ctx.node.type}
+            pluginId={ctx.plugin.id}
+          >
             <PreparedNodeBoundary runtime={runtime} node={ctx.node}>
               {children}
             </PreparedNodeBoundary>
@@ -572,9 +554,7 @@ export const ContentDocumentContent = ({
 }: ContentDocumentContentProps) => {
   const normalizedDocument = useMemo(() => assignNodeIds(document), [document])
   const runtime = useMemo(() => {
-    const built = createReactContentRuntime(
-      executionPolicy ? { executionPolicy } : undefined
-    )
+    const built = createReactContentRuntime(executionPolicy ? { executionPolicy } : undefined)
     if (plugins) {
       for (const plugin of plugins) {
         built.register(plugin)
@@ -583,10 +563,7 @@ export const ContentDocumentContent = ({
     return built
   }, [executionPolicy, plugins])
 
-  const contextValue = useMemo<ContentRenderOptions>(
-    () => renderOptions ?? {},
-    [renderOptions]
-  )
+  const contextValue = useMemo<ContentRenderOptions>(() => renderOptions ?? {}, [renderOptions])
 
   return (
     <ContentRenderOptionsContext.Provider value={contextValue}>
@@ -621,11 +598,7 @@ export const ContentDocumentRenderer = ({
     <div
       data-tt-markdown=""
       data-streaming={isStreaming ? 'true' : undefined}
-      className={cn(
-        MARKDOWN_ROOT_CLASS,
-        className,
-        isStreaming && MARKDOWN_STREAMING_CLASS
-      )}
+      className={cn(MARKDOWN_ROOT_CLASS, className, isStreaming && MARKDOWN_STREAMING_CLASS)}
     >
       {document.nodes.map((node) => (
         <Fragment key={node.id}>{activeRuntime.renderNode(node, { isStreaming })}</Fragment>
@@ -655,8 +628,9 @@ export const tableToMarkdown = (node: TableNode): string => {
   const width = node.header.length
   const header = `| ${node.header.map(tableCellToMarkdown).join(' | ')} |`
   const separator = `| ${Array.from({ length: width }, (_, index) => alignToMarkdown(node.align[index] ?? null)).join(' | ')} |`
-  const rows = node.rows.map((row) =>
-    `| ${Array.from({ length: width }, (_, index) => tableCellToMarkdown(row[index] ?? [])).join(' | ')} |`
+  const rows = node.rows.map(
+    (row) =>
+      `| ${Array.from({ length: width }, (_, index) => tableCellToMarkdown(row[index] ?? [])).join(' | ')} |`
   )
   return [header, separator, ...rows].join('\n')
 }

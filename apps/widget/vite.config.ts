@@ -79,10 +79,7 @@ export default defineConfig({
           ) {
             return 'sentry-vendor'
           }
-          if (
-            id.includes('node_modules/@codemirror/') ||
-            id.includes('node_modules/codemirror/')
-          ) {
+          if (id.includes('node_modules/@codemirror/') || id.includes('node_modules/codemirror/')) {
             return 'codemirror-vendor'
           }
         }

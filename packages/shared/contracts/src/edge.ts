@@ -102,9 +102,7 @@ export const clampChatMessageContent = (content: string): string => {
 // LiteLLM is the sole provider — it proxies the upstream LLM providers itself.
 // The single-value enum tags each model entry with its provider; it is not a
 // request input (clients no longer send a provider field).
-export const modelProviderIdSchema = z
-  .enum(['litellm'])
-  .meta({ id: 'ModelProviderId' })
+export const modelProviderIdSchema = z.enum(['litellm']).meta({ id: 'ModelProviderId' })
 
 export type ModelProviderId = z.infer<typeof modelProviderIdSchema>
 
@@ -127,9 +125,7 @@ const includesLiteLLMBaseUrl = (
   allowedBaseUrls: ReadonlySet<string> | readonly string[],
   baseUrl: string
 ): boolean =>
-  'has' in allowedBaseUrls
-    ? allowedBaseUrls.has(baseUrl)
-    : allowedBaseUrls.includes(baseUrl)
+  'has' in allowedBaseUrls ? allowedBaseUrls.has(baseUrl) : allowedBaseUrls.includes(baseUrl)
 
 export const validateLiteLLMBaseUrlPolicy = (
   value: string | null | undefined,
@@ -153,10 +149,7 @@ export const validateLiteLLMBaseUrlPolicy = (
   }
 
   const canonicalUrl = options.canonicalize?.(url) ?? url.href
-  if (
-    options.allowedBaseUrls &&
-    !includesLiteLLMBaseUrl(options.allowedBaseUrls, canonicalUrl)
-  ) {
+  if (options.allowedBaseUrls && !includesLiteLLMBaseUrl(options.allowedBaseUrls, canonicalUrl)) {
     return { ok: false, reason: 'not-allowed' }
   }
 
@@ -203,9 +196,7 @@ export const modelsChatResponseSchema = z
 
 export type ModelsChatResponse = z.infer<typeof modelsChatResponseSchema>
 
-export const modelKindSchema = z
-  .enum(['chat', 'embedding'])
-  .meta({ id: 'ModelKind' })
+export const modelKindSchema = z.enum(['chat', 'embedding']).meta({ id: 'ModelKind' })
 
 export type ModelKind = z.infer<typeof modelKindSchema>
 
@@ -279,9 +270,7 @@ export const githubExchangeResponseSchema = z
   })
   .meta({ id: 'GitHubExchangeResponse' })
 
-export type GitHubExchangeResponse = z.infer<
-  typeof githubExchangeResponseSchema
->
+export type GitHubExchangeResponse = z.infer<typeof githubExchangeResponseSchema>
 
 export const mcpServerConfigSchema = z
   .object({
@@ -383,8 +372,7 @@ export const EDGE_ROUTE_PATHS = {
   mcpCall: '/api/mcp/call'
 } as const
 
-export type EdgeRoutePath =
-  (typeof EDGE_ROUTE_PATHS)[keyof typeof EDGE_ROUTE_PATHS]
+export type EdgeRoutePath = (typeof EDGE_ROUTE_PATHS)[keyof typeof EDGE_ROUTE_PATHS]
 
 export const EDGE_HEADER_NAMES = {
   appVersion: 'X-App-Version',
@@ -407,7 +395,4 @@ export const EDGE_RATE_LIMIT_HEADERS = [
   'x-ratelimit-reset-tokens'
 ] as const
 
-export const EDGE_EXPOSED_HEADERS = [
-  ...EDGE_RATE_LIMIT_HEADERS,
-  'retry-after'
-] as const
+export const EDGE_EXPOSED_HEADERS = [...EDGE_RATE_LIMIT_HEADERS, 'retry-after'] as const

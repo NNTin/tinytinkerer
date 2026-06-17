@@ -8,7 +8,7 @@ Settings Modal and gated by that activation state when a chat run builds its run
 
 The plugin contract (the plugin SDK) and the `Tool` interface live in `contracts`, the leaf
 package, so a plugin package depends **only** on `contracts`. `agent-core` owns the plugin
-*runtime* (the `PluginRegistry`, the hook runners, and the `ToolRegistry`) and re-exports the
+_runtime_ (the `PluginRegistry`, the hook runners, and the `ToolRegistry`) and re-exports the
 contract so its public surface is unchanged for existing consumers (`app-core`, `app-browser`).
 
 The repo currently ships six plugins under `packages/plugins/*`: **Feedback**
@@ -25,6 +25,7 @@ permission prompt, an edge request, a code sandbox, or a DOM read) without impor
 > [Dynamic discovery](#dynamic-discovery-app-browser).
 
 See also:
+
 - [ARCHITECTURE.md](./ARCHITECTURE.md)
 - [packages-concept.md](./packages-concept.md)
 - [sentry-telemetry.md](./sentry-telemetry.md)
@@ -44,15 +45,15 @@ local modules), so a plugin built against it carries no browser, telemetry, or a
 interface AgentPlugin {
   id: string
   createTools?(host: PluginHost): Tool<unknown, unknown>[]
-  createHooks?(host: PluginHost): AgentHookContribution[]   // chat.event observers / tool.beforeExecute gates
+  createHooks?(host: PluginHost): AgentHookContribution[] // chat.event observers / tool.beforeExecute gates
   activate?(host: PluginHost): void | Promise<void>
   deactivate?(): void | Promise<void>
 }
 
 interface PluginHost {
-  capture: PluginCaptureSink              // always present; forwards reports out-of-band (telemetry)
-  requestPermission?: PermissionRequestService   // optional; only hosts that can prompt a human
-  edgeFetch?: PluginEdgeFetch             // optional; only hosts with an edge backend
+  capture: PluginCaptureSink // always present; forwards reports out-of-band (telemetry)
+  requestPermission?: PermissionRequestService // optional; only hosts that can prompt a human
+  edgeFetch?: PluginEdgeFetch // optional; only hosts with an edge backend
 }
 
 type PluginCaptureSink = (report: PluginReport) => void
@@ -74,12 +75,12 @@ type PluginReport = {
   pluginId: string
   kind: string
   message: string
-  level?: 'info' | 'warning' | 'error'   // 'info' is captured as a message, not an error issue
+  level?: 'info' | 'warning' | 'error' // 'info' is captured as a message, not an error issue
   contexts?: Record<string, Record<string, unknown>>
 }
 
 class PluginCaptureError extends Error {
-  readonly report: PluginReport   // routed to host.capture by the registry
+  readonly report: PluginReport // routed to host.capture by the registry
 }
 
 // Host-agnostic discovery contract. A plugin package's entry module exports a
@@ -88,9 +89,9 @@ class PluginCaptureError extends Error {
 // A pure, React-free view-model a tool's owner produces from its raw output so the
 // host can render a consistent activity summary without any per-tool branching.
 type ActivityView = {
-  title: string                                  // collapsed-summary heading
-  status?: 'ok' | 'error' | 'warn'               // drives the row's status styling
-  sections: { label: string; value: string }[]   // label/value rows shown on expand
+  title: string // collapsed-summary heading
+  status?: 'ok' | 'error' | 'warn' // drives the row's status styling
+  sections: { label: string; value: string }[] // label/value rows shown on expand
 }
 type ActivitySummarizer = (output: unknown) => ActivityView
 
@@ -98,15 +99,15 @@ type PluginToolDescriptor = {
   id: string
   description: string
   inputSchema: Record<string, unknown>
-  summarizeActivity?: ActivitySummarizer   // owns this tool's turn-activity presentation
+  summarizeActivity?: ActivitySummarizer // owns this tool's turn-activity presentation
 }
 
 type PluginManifest = {
   id: string
-  label: string                       // Settings toggle copy
+  label: string // Settings toggle copy
   description: string
-  toolDescriptors?: PluginToolDescriptor[]   // planner descriptors for the plugin's tools
-  defaultEnabled?: boolean            // ships on out-of-the-box when true (e.g. web search)
+  toolDescriptors?: PluginToolDescriptor[] // planner descriptors for the plugin's tools
+  defaultEnabled?: boolean // ships on out-of-the-box when true (e.g. web search)
 }
 
 type PluginModule = {
@@ -114,7 +115,7 @@ type PluginModule = {
   createPlugin: () => AgentPlugin
 }
 
-function isPluginModule(value: unknown): value is PluginModule  // runtime guard
+function isPluginModule(value: unknown): value is PluginModule // runtime guard
 ```
 
 `PluginManifest`/`PluginModule` live in the **contract layer**, not inside any concrete plugin,
@@ -124,7 +125,7 @@ browser host performs the final validation after instantiating the plugin: `crea
 must match `manifest.id`, and duplicate plugin ids are ignored after the first valid plugin.
 
 `PluginHost.capture` is an **inversion-of-control sink**, exactly like the telemetry
-`setCaptureExceptionSink` in `@tinytinkerer/sentry-telemetry`: `contracts` defines the *type*,
+`setCaptureExceptionSink` in `@tinytinkerer/sentry-telemetry`: `contracts` defines the _type_,
 and the host (the browser) supplies the implementation that forwards to Sentry.
 
 ## The registry & activation gating (`agent-core`)
@@ -175,7 +176,7 @@ AgentRuntimeBase.runToolCall  ──▶ agent.tool.failed ("send_feedback: not i
 ```
 
 Feedback is not an error condition, so its report is **`info`-level**: the host captures it as an
-informational Sentry *message* (via `captureMessage`), not an error issue with a synthetic stack
+informational Sentry _message_ (via `captureMessage`), not an error issue with a synthetic stack
 trace. It is then surfaced to the runtime as a graceful tool failure. There is intentionally no
 backend.
 
@@ -206,7 +207,7 @@ app-browser pluginEdgeFetch  ──▶ edgeFetch (request telemetry preserved)
 web-search tool  ──▶ searchResponseSchema.parse(...)  (schema validation = plugin/contracts concern)
 ```
 
-`contracts` owns only the `PluginEdgeFetch` *type*; `app-browser`'s `create-runtime.ts` implements
+`contracts` owns only the `PluginEdgeFetch` _type_; `app-browser`'s `create-runtime.ts` implements
 it from the runtime's existing `edgeFetch`, so **request** telemetry (`http_error`, `network`,
 `abort`, the 429 cooldown triage) rides along unchanged, and **response-parse** telemetry stays on
 the host side of the capability. `createTools(host)` returns no tool when `host.edgeFetch` is absent
@@ -240,7 +241,7 @@ Running arbitrary code is the one capability a plugin must **never** implement i
 `execute()` runs in the browser app runtime, so `eval`/`new Function`/an embedded interpreter there
 would inherit **app-origin** access — `localStorage`, IndexedDB, cookies, the auth-bearing
 `fetch`, the current URL, the parent DOM, and any in-memory service reachable by closure. So the
-plugin stays product-agnostic and only describes *what* to run; the host owns the isolation
+plugin stays product-agnostic and only describes _what_ to run; the host owns the isolation
 boundary entirely, behind a new injected **`PluginHost.executeSandboxedCode`** capability:
 
 ```
@@ -254,11 +255,11 @@ app-browser createSandboxExecutor()  (packages/app/app-browser/src/sandbox-execu
 ```
 
 `contracts` owns only the `SandboxCodeExecutor` / `SandboxExecutionRequest` /
-`SandboxExecutionResult` *types*; `app-browser` implements the executor. `createTools(host)` returns
+`SandboxExecutionResult` _types_; `app-browser` implements the executor. `createTools(host)` returns
 no tool when `host.executeSandboxedCode` is absent (a headless host), exactly mirroring how the
 web-search plugin tolerates a missing `edgeFetch`. A normal failed run — a thrown user error or a
 timeout — comes back as a resolved `{ ok: false, … }` and is returned to the agent so the model can
-react to its own bad code; only an *unexpected* executor failure is thrown as a capturable
+react to its own bad code; only an _unexpected_ executor failure is thrown as a capturable
 `CodeExecHostError` (a `PluginCaptureError`, so the registry routes it to `host.capture`).
 
 **The browser isolation boundary** (`sandbox-executor.ts`). Per run, the host:
@@ -269,7 +270,7 @@ react to its own bad code; only an *unexpected* executor failure is thrown as a 
 - injects a **static** bootstrap document via `srcdoc` (the user's code never appears in the HTML;
   it arrives at runtime via `postMessage`, so nothing the agent supplies is parsed as HTML). The
   document carries an in-document CSP that blocks all network/resource loads — `default-src 'none';
-  connect-src 'none'; img-src 'none'; …; worker-src blob:; script-src 'unsafe-inline'` (no
+connect-src 'none'; img-src 'none'; …; worker-src blob:; script-src 'unsafe-inline'` (no
   `'unsafe-eval'`).
 - runs the user code inside a **Worker** the iframe builds from a `blob:` URL, with the code
   embedded as an async function body (so no `eval`/`new Function`). The worker runs on its own
@@ -284,7 +285,7 @@ react to its own bad code; only an *unexpected* executor failure is thrown as a 
   (`normalizeResult`) — `result` is opaque data callers never render as HTML, logs are filtered to
   strings and capped.
 
-**Human gate.** Execution is *encouraged* to have explicit user approval but it is not mandatory.
+**Human gate.** Execution is _encouraged_ to have explicit user approval but it is not mandatory.
 Because `run_javascript` is an ordinary tool, enabling the **Permissions plugin** alongside it makes
 every run pause for an Allow/Deny prompt through the existing `tool.beforeExecute` gate — no bespoke
 modal. Off by default, it is one toggle the user controls.
@@ -335,7 +336,7 @@ read the page itself**, so all DOM data must originate from `read_dom`.
 Reading the live DOM is the one capability a plugin must **never** implement itself — a plugin's
 `execute()` runs in the browser app runtime, so touching the page there would inherit app-origin
 access and trip the product-agnostic boundary check. So the plugin stays product-agnostic and only
-describes *what* to read; the host owns DOM access entirely, behind an injected
+describes _what_ to read; the host owns DOM access entirely, behind an injected
 **`PluginHost.readDom`** capability:
 
 ```
@@ -349,12 +350,12 @@ app-browser createDomReader()  (packages/app/app-browser/src/dom-reader.ts)
    { url, title, viewport, matchedCount, nodes, truncated }   ← nodes may nest `children`; form values stripped
 ```
 
-`contracts` owns only the `DomReader` / `DomQuery` / `DomReadResult` / `DomNodeResult` *types*;
+`contracts` owns only the `DomReader` / `DomQuery` / `DomReadResult` / `DomNodeResult` _types_;
 `app-browser`'s `create-runtime.ts` implements the capability from `createDomReader()`.
 `createTools(host)` returns no tool when `host.readDom` is absent (a headless host), exactly
 mirroring how the web-search plugin tolerates a missing `edgeFetch` and the code-exec plugin a
 missing `executeSandboxedCode`. A bad selector comes back as a resolved `{ matchedCount: 0 }` result
-the agent can correct, not a throw; only an *unexpected* host failure is thrown as a capturable
+the agent can correct, not a throw; only an _unexpected_ host failure is thrown as a capturable
 `BrowserStateHostError` (a `PluginCaptureError`, so the registry routes it to `host.capture` — its
 report carries **no** page content).
 
@@ -422,8 +423,10 @@ export const loadPluginModules = async (): Promise<PluginModule[]> => {
   for (const load of Object.values(pluginModuleLoaders)) {
     try {
       const mod = await load()
-      if (isPluginModule(mod)) modules.push(mod)   // tolerate-missing / tolerate-malformed
-    } catch { /* optional plugin failed to load — skip */ }
+      if (isPluginModule(mod)) modules.push(mod) // tolerate-missing / tolerate-malformed
+    } catch {
+      /* optional plugin failed to load — skip */
+    }
   }
   return modules
 }
@@ -436,7 +439,7 @@ Why `import.meta.glob` rather than a static or literal dynamic `import('@tinytin
   builds still succeed — the glob simply matches nothing. (Verified by removing the package.)
 - **Bundles when present.** Vite resolves the glob at build time and emits each matched plugin as
   its own lazy chunk, so the feature works in the production browser bundle. A literal
-  `import('<bare specifier>')` would force the package to exist at build; a *variable* bare
+  `import('<bare specifier>')` would force the package to exist at build; a _variable_ bare
   specifier would not bundle at all. The glob is the only mechanism that satisfies both.
 - **True drop-in.** Any package placed under `packages/plugins/*` that exports a valid
   `PluginModule` is discovered automatically. Nothing about a specific plugin is hard-coded in
@@ -444,8 +447,9 @@ Why `import.meta.glob` rather than a static or literal dynamic `import('@tinytin
 
 `loadPluginModules()` is consumed in two places, both via the loaded `PluginModule[]`:
 `chat-store` awaits it once and passes the modules to `createBrowserRuntimeFactory` (runtime tools
-+ descriptors, with lifecycle preserved across prompts), and the Settings controller
-(`surfaces.tsx`) loads the manifests for the toggles.
+
+- descriptors, with lifecycle preserved across prompts), and the Settings controller
+  (`surfaces.tsx`) loads the manifests for the toggles.
 
 ## Routing into Sentry (`app-browser`)
 
@@ -461,9 +465,9 @@ capture: (report) => {
     fingerprint: ['plugin', report.pluginId, report.kind]
   }
   if (report.level === 'info') {
-    captureTelemetryMessage(report.message, options)   // → Sentry captureMessage (info message)
+    captureTelemetryMessage(report.message, options) // → Sentry captureMessage (info message)
   } else {
-    captureTelemetryException(report.message, options)  // → Sentry captureException (error issue)
+    captureTelemetryException(report.message, options) // → Sentry captureException (error issue)
   }
 }
 ```
@@ -478,7 +482,7 @@ rather than an error issue. See [sentry-telemetry.md](./sentry-telemetry.md) and
 ## Dependency rules
 
 - `@tinytinkerer/agent-core` still imports only `contracts` (the plugin layer adds no new edge). It
-  owns the plugin *runtime* (registry + hooks + `ToolRegistry`) and re-exports the plugin contract
+  owns the plugin _runtime_ (registry + hooks + `ToolRegistry`) and re-exports the plugin contract
   and `Tool` interface from `contracts`.
 - Any `@tinytinkerer/plugin-*` package under `packages/plugins/*` may import only `contracts` and
   local modules, and must stay product-agnostic (no browser APIs, React, or telemetry imports).

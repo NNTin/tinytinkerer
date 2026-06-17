@@ -54,11 +54,8 @@ const djb2 = (input: string): number => {
 
 export const hashContent = (input: string): string => djb2(input).toString(16)
 
-export const computeNodeId = (
-  type: string,
-  contentDigest: string,
-  occurrence: number
-): NodeId => `${type}-${hashContent(contentDigest)}-${occurrence}`
+export const computeNodeId = (type: string, contentDigest: string, occurrence: number): NodeId =>
+  `${type}-${hashContent(contentDigest)}-${occurrence}`
 
 const serializeInlineNode = (node: InlineNode): string => {
   switch (node.type) {
@@ -81,7 +78,8 @@ const serializeInlineNode = (node: InlineNode): string => {
   }
 }
 
-const serializeInlineNodes = (nodes: readonly InlineNode[]): string => nodes.map(serializeInlineNode).join('\n')
+const serializeInlineNodes = (nodes: readonly InlineNode[]): string =>
+  nodes.map(serializeInlineNode).join('\n')
 const serializeTableCell = (cell: TableCell): string => serializeInlineNodes(cell)
 
 const serializeListItem = (node: ListItemNode): string =>
@@ -133,10 +131,7 @@ const withAssignedId = <T extends { type: string; id?: NodeId }>(
   }
 }
 
-const normalizeInlineNode = (
-  node: InlineNode,
-  counts: Map<string, number>
-): InlineNode => {
+const normalizeInlineNode = (node: InlineNode, counts: Map<string, number>): InlineNode => {
   switch (node.type) {
     case 'emphasis': {
       const children = node.children.map((child) => normalizeInlineNode(child, counts))
@@ -180,15 +175,10 @@ const normalizeInlineNodes = (
   counts: Map<string, number>
 ): InlineNode[] => nodes.map((node) => normalizeInlineNode(node, counts))
 
-const normalizeTableCell = (
-  cell: TableCell,
-  counts: Map<string, number>
-): TableCell => normalizeInlineNodes(cell, counts)
+const normalizeTableCell = (cell: TableCell, counts: Map<string, number>): TableCell =>
+  normalizeInlineNodes(cell, counts)
 
-const normalizeListItem = (
-  node: ListItemNode,
-  counts: Map<string, number>
-): ListItemNode => {
+const normalizeListItem = (node: ListItemNode, counts: Map<string, number>): ListItemNode => {
   const children = node.children.map((child) => normalizeBlockNode(child, counts))
   const normalized = {
     ...node,
@@ -197,10 +187,7 @@ const normalizeListItem = (
   return withAssignedId(normalized, counts, serializeListItem(normalized))
 }
 
-const normalizeBlockNode = (
-  node: BlockNode,
-  counts: Map<string, number>
-): BlockNode => {
+const normalizeBlockNode = (node: BlockNode, counts: Map<string, number>): BlockNode => {
   switch (node.type) {
     case 'heading': {
       const children = normalizeInlineNodes(node.children, counts)

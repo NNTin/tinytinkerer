@@ -15,11 +15,9 @@ const mockState = vi.hoisted(
 )
 
 vi.mock('../src/app.js', () => ({
-  useAuthStore: <T,>(selector: (state: typeof mockState.auth) => T): T =>
-    selector(mockState.auth),
-  useSettingsStore: <T,>(
-    selector: (state: typeof mockState.settings) => T
-  ): T => selector(mockState.settings)
+  useAuthStore: <T,>(selector: (state: typeof mockState.auth) => T): T => selector(mockState.auth),
+  useSettingsStore: <T,>(selector: (state: typeof mockState.settings) => T): T =>
+    selector(mockState.settings)
 }))
 
 vi.mock('../src/hooks.js', () => ({
@@ -27,9 +25,9 @@ vi.mock('../src/hooks.js', () => ({
 }))
 
 vi.mock('../src/telemetry/telemetry.js', async () => {
-  const actual = await vi.importActual<
-    typeof import('../src/telemetry/telemetry.js')
-  >('../src/telemetry/telemetry.js')
+  const actual = await vi.importActual<typeof import('../src/telemetry/telemetry.js')>(
+    '../src/telemetry/telemetry.js'
+  )
   return {
     ...actual,
     getTelemetryHeaders: () => ({})
@@ -108,11 +106,7 @@ describe('useModels', () => {
     let capturedUrl = ''
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
       capturedUrl =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.href
-            : input.url
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       return Promise.resolve(
         new Response(JSON.stringify({ models }), {
           status: 200,
@@ -142,11 +136,7 @@ describe('useModels', () => {
     let capturedUrl = ''
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
       capturedUrl =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.href
-            : input.url
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       return Promise.resolve(
         new Response(JSON.stringify({ models: [] }), {
           status: 200,
@@ -162,9 +152,7 @@ describe('useModels', () => {
       await result.current.refreshModels()
     })
 
-    expect(capturedUrl).toContain(
-      'litellmBaseUrl=https%3A%2F%2Flitellm.example.com%2F'
-    )
+    expect(capturedUrl).toContain('litellmBaseUrl=https%3A%2F%2Flitellm.example.com%2F')
   })
 
   it('surfaces a soft message instead of silently serving the fallback when the refresh fails (issue #179)', async () => {

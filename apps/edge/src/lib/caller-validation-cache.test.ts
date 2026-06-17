@@ -22,15 +22,11 @@ describe('caller-validation-cache', () => {
   // it would validate every caller off one token, so both directions must be
   // dead ends.
   it('never serves a validation for the shared credential key', async () => {
-    await expect(
-      readCachedCallerValidation(SHARED_CREDENTIAL_KEY)
-    ).resolves.toBeUndefined()
+    await expect(readCachedCallerValidation(SHARED_CREDENTIAL_KEY)).resolves.toBeUndefined()
 
     await writeCachedCallerValidation(SHARED_CREDENTIAL_KEY, IDENTITY)
 
-    await expect(
-      readCachedCallerValidation(SHARED_CREDENTIAL_KEY)
-    ).resolves.toBeUndefined()
+    await expect(readCachedCallerValidation(SHARED_CREDENTIAL_KEY)).resolves.toBeUndefined()
   })
 
   it('does not touch the durable cache when writing the shared credential key', async () => {
@@ -47,12 +43,8 @@ describe('caller-validation-cache', () => {
   it('serves a written validation within the TTL and rejects unknown credentials', async () => {
     await writeCachedCallerValidation(CREDENTIAL_KEY, IDENTITY)
 
-    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toEqual(
-      IDENTITY
-    )
-    await expect(readCachedCallerValidation('b'.repeat(32))).resolves.toBe(
-      undefined
-    )
+    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toEqual(IDENTITY)
+    await expect(readCachedCallerValidation('b'.repeat(32))).resolves.toBe(undefined)
   })
 
   // The whole point of caching identity is per-user budgets: a validation cached
@@ -62,12 +54,8 @@ describe('caller-validation-cache', () => {
     await writeCachedCallerValidation(CREDENTIAL_KEY, IDENTITY)
     await writeCachedCallerValidation(OTHER_CREDENTIAL_KEY, OTHER_IDENTITY)
 
-    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toEqual(
-      IDENTITY
-    )
-    await expect(
-      readCachedCallerValidation(OTHER_CREDENTIAL_KEY)
-    ).resolves.toEqual(OTHER_IDENTITY)
+    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toEqual(IDENTITY)
+    await expect(readCachedCallerValidation(OTHER_CREDENTIAL_KEY)).resolves.toEqual(OTHER_IDENTITY)
   })
 
   it('keeps each credential’s identity isolated across the durable cache (fresh isolate)', async () => {
@@ -79,12 +67,8 @@ describe('caller-validation-cache', () => {
     // Drop the in-memory mirror so both reads come from the durable layer.
     clearCallerValidationCache()
 
-    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toEqual(
-      IDENTITY
-    )
-    await expect(
-      readCachedCallerValidation(OTHER_CREDENTIAL_KEY)
-    ).resolves.toEqual(OTHER_IDENTITY)
+    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toEqual(IDENTITY)
+    await expect(readCachedCallerValidation(OTHER_CREDENTIAL_KEY)).resolves.toEqual(OTHER_IDENTITY)
   })
 
   // A durable entry that survived a schema change (or was written by an older
@@ -103,9 +87,7 @@ describe('caller-validation-cache', () => {
       })
     )
 
-    await expect(
-      readCachedCallerValidation(CREDENTIAL_KEY)
-    ).resolves.toBeUndefined()
+    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toBeUndefined()
   })
 
   it('reads a durable Cache-API entry on an in-memory miss (fresh isolate)', async () => {
@@ -117,9 +99,7 @@ describe('caller-validation-cache', () => {
     // colo-wide entry survives.
     clearCallerValidationCache()
 
-    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toEqual(
-      IDENTITY
-    )
+    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toEqual(IDENTITY)
   })
 
   it('treats an expired durable entry as a miss', async () => {
@@ -140,8 +120,6 @@ describe('caller-validation-cache', () => {
     await writeCachedCallerValidation(CREDENTIAL_KEY, IDENTITY)
     clearCallerValidationCache()
 
-    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toBe(
-      undefined
-    )
+    await expect(readCachedCallerValidation(CREDENTIAL_KEY)).resolves.toBe(undefined)
   })
 })

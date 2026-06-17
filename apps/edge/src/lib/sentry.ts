@@ -5,10 +5,7 @@ import {
   type TelemetryCaptureOptions
 } from '@tinytinkerer/sentry-telemetry'
 
-const applyScope = (
-  scope: Sentry.Scope,
-  options: TelemetryCaptureOptions
-): void => {
+const applyScope = (scope: Sentry.Scope, options: TelemetryCaptureOptions): void => {
   if (options.level) {
     scope.setLevel(options.level)
   }
@@ -44,10 +41,7 @@ const dispatchToSentry = (error: Error, options: TelemetryCaptureOptions): void 
 // field and was silently defaulted) surface as Sentry *messages* at their given
 // level rather than synthetic error issues. Without this the shared
 // `captureTelemetryMessage` no-ops on the edge.
-const dispatchMessageToSentry = (
-  message: string,
-  options: TelemetryCaptureOptions
-): void => {
+const dispatchMessageToSentry = (message: string, options: TelemetryCaptureOptions): void => {
   Sentry.withScope((scope) => {
     applyScope(scope, options)
     Sentry.captureMessage(message, options.level ?? 'info')

@@ -34,11 +34,7 @@ export { BrowserCallbackPage } from './browser-callback-page'
 export { BrowserSettingsModal, McpServerList } from './browser-settings-modal'
 export { LazyBrowserSettingsModal } from './lazy-browser-settings-modal'
 export { PermissionModal } from './permission-modal'
-export {
-  requestPermission,
-  usePermissionStore,
-  resetPermissionStore
-} from './permission-service'
+export { requestPermission, usePermissionStore, resetPermissionStore } from './permission-service'
 export type { PendingPermission } from './permission-service'
 export { TelemetryConsentGate } from './telemetry/consent-gate'
 export { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
@@ -46,12 +42,7 @@ export { PrivacyPolicyUpdateGate } from './telemetry/privacy-update-gate'
 export { LazyPrivacyPolicyUpdateGate } from './telemetry/lazy-privacy-update-gate'
 export { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
 export { bootstrapBrowserShell } from './initialize'
-export {
-  formatCooldown,
-  useBrowserShellConfig,
-  useChatCooldown,
-  useGitHubOAuth
-} from './hooks'
+export { formatCooldown, useBrowserShellConfig, useChatCooldown, useGitHubOAuth } from './hooks'
 export { useWebSpeechInput } from './web-speech'
 export { resolveBrowserShellBootstrapConfig } from './config'
 export { createBrowserShellRoot } from './create-browser-shell-root'
@@ -76,11 +67,7 @@ export {
   buildTurns,
   normalizeSelectedModel
 } from '@tinytinkerer/app-core'
-export type {
-  Turn,
-  TurnActivity,
-  TurnActivityItem
-} from '@tinytinkerer/app-core'
+export type { Turn, TurnActivity, TurnActivityItem } from '@tinytinkerer/app-core'
 export { TurnActivityPanel, toolLabel } from './turn-activity-panel'
 export type { ResolveActivitySummarizer } from './turn-activity-panel'
 export type {

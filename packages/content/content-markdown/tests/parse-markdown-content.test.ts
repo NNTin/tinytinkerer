@@ -62,7 +62,11 @@ const stripInline = (node: InlineNode): InlineNode => {
     case 'codeInline':
       return { type: 'codeInline', value: node.value }
     case 'link': {
-      const next: InlineNode = { type: 'link', url: node.url, children: node.children.map(stripInline) }
+      const next: InlineNode = {
+        type: 'link',
+        url: node.url,
+        children: node.children.map(stripInline)
+      }
       if (node.title) next.title = node.title
       return next
     }
@@ -93,7 +97,9 @@ describe('parseMarkdownContent', () => {
   it('promotes fenced mermaid and wireframe blocks while preserving order', () => {
     expect(
       stripIds(
-        parseMarkdownContent(['Intro', '', '```mermaid', 'graph TD', 'A-->B', '```', '', 'After'].join('\n'))
+        parseMarkdownContent(
+          ['Intro', '', '```mermaid', 'graph TD', 'A-->B', '```', '', 'After'].join('\n')
+        )
       )
     ).toEqual({
       nodes: [
@@ -109,29 +115,25 @@ describe('parseMarkdownContent', () => {
   })
 
   it('promotes normal fenced code to codeBlock nodes', () => {
-    expect(stripIds(parseMarkdownContent(['```ts', 'const answer = 42', '```'].join('\n')))).toEqual({
+    expect(
+      stripIds(parseMarkdownContent(['```ts', 'const answer = 42', '```'].join('\n')))
+    ).toEqual({
       nodes: [{ type: 'codeBlock', code: 'const answer = 42', language: 'ts' }]
     })
   })
 
   it('promotes tables into table nodes', () => {
     expect(
-      stripIds(parseMarkdownContent(['| Name | Role |', '| --- | --- |', '| Ada | Admin |'].join('\n')))
+      stripIds(
+        parseMarkdownContent(['| Name | Role |', '| --- | --- |', '| Ada | Admin |'].join('\n'))
+      )
     ).toEqual({
       nodes: [
         {
           type: 'table',
           align: [null, null],
-          header: [
-            [{ type: 'text', value: 'Name' }],
-            [{ type: 'text', value: 'Role' }]
-          ],
-          rows: [
-            [
-              [{ type: 'text', value: 'Ada' }],
-              [{ type: 'text', value: 'Admin' }]
-            ]
-          ]
+          header: [[{ type: 'text', value: 'Name' }], [{ type: 'text', value: 'Role' }]],
+          rows: [[[{ type: 'text', value: 'Ada' }], [{ type: 'text', value: 'Admin' }]]]
         }
       ]
     })
@@ -148,7 +150,9 @@ describe('parseMarkdownContent', () => {
       ]
     })
 
-    expect(stripIds(parseMarkdownContent('Inline ![icon](https://example.com/icon.png) image'))).toEqual({
+    expect(
+      stripIds(parseMarkdownContent('Inline ![icon](https://example.com/icon.png) image'))
+    ).toEqual({
       nodes: [
         {
           type: 'paragraph',
@@ -176,15 +180,11 @@ describe('parseMarkdownContent', () => {
           children: [
             {
               type: 'listItem',
-              children: [
-                { type: 'paragraph', children: [{ type: 'text', value: 'one' }] }
-              ]
+              children: [{ type: 'paragraph', children: [{ type: 'text', value: 'one' }] }]
             },
             {
               type: 'listItem',
-              children: [
-                { type: 'paragraph', children: [{ type: 'text', value: 'two' }] }
-              ]
+              children: [{ type: 'paragraph', children: [{ type: 'text', value: 'two' }] }]
             }
           ]
         }

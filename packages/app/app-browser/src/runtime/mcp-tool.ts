@@ -42,12 +42,16 @@ export const createMcpTool = (
   description: `[${server.name}] ${toolMeta.description}`,
   schema: z.record(z.string(), z.unknown()),
   async execute(input) {
-    const response = await edgeFetch(EDGE_ROUTE_PATHS.mcpCall, {
-      url: server.url,
-      bearerToken: server.bearerToken,
-      toolName: toolMeta.toolName,
-      arguments: input
-    }, { area: 'mcp.call' })
+    const response = await edgeFetch(
+      EDGE_ROUTE_PATHS.mcpCall,
+      {
+        url: server.url,
+        bearerToken: server.bearerToken,
+        toolName: toolMeta.toolName,
+        arguments: input
+      },
+      { area: 'mcp.call' }
+    )
     const metadata = {
       area: 'mcp.call' as const,
       origin: 'edge' as const,

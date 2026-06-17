@@ -1,9 +1,5 @@
 import type { MiddlewareHandler } from 'hono'
-import {
-  EDGE_EXPOSED_HEADERS,
-  EDGE_HEADER_NAMES,
-  TELEMETRY_HEADERS
-} from '@tinytinkerer/contracts'
+import { EDGE_EXPOSED_HEADERS, EDGE_HEADER_NAMES, TELEMETRY_HEADERS } from '@tinytinkerer/contracts'
 import type { Bindings } from './bindings'
 
 // Derived from the shared contract so adding a telemetry header automatically
@@ -58,10 +54,7 @@ const getConfiguredOrigins = (env: Bindings): string[] => {
   return env.ALLOWED_ORIGIN ? [env.ALLOWED_ORIGIN] : []
 }
 
-const resolveAllowedOrigin = (
-  env: Bindings,
-  requestOrigin: string | null
-): string | null => {
+const resolveAllowedOrigin = (env: Bindings, requestOrigin: string | null): string | null => {
   const configuredOrigins = getConfiguredOrigins(env)
 
   if (configuredOrigins.length === 0) {

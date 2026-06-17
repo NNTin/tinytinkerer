@@ -16,9 +16,12 @@ import { createSandboxExecutor, normalizeResult } from '../src/sandbox-executor'
 
 describe('normalizeResult', () => {
   it('coerces a well-formed success message into the contract shape', () => {
-    expect(
-      normalizeResult({ ok: true, result: 42, logs: ['a', 'b'], timedOut: false })
-    ).toEqual({ ok: true, result: 42, logs: ['a', 'b'], timedOut: false })
+    expect(normalizeResult({ ok: true, result: 42, logs: ['a', 'b'], timedOut: false })).toEqual({
+      ok: true,
+      result: 42,
+      logs: ['a', 'b'],
+      timedOut: false
+    })
   })
 
   it('treats anything but ok===true as a failure and coerces timedOut', () => {
@@ -72,7 +75,8 @@ describe('normalizeResult', () => {
   it('replaces an oversized result with a structured, actionable truncation signal (FRONTEND-14/15)', () => {
     // A run_javascript that returns the full `dom` tree can be hundreds of KB.
     const huge = { blob: 'x'.repeat(200_000) }
-    const result = normalizeResult({ ok: true, result: huge, logs: [], timedOut: false }).result as {
+    const result = normalizeResult({ ok: true, result: huge, logs: [], timedOut: false })
+      .result as {
       truncated: boolean
       chars: number
       limit: number
@@ -165,8 +169,7 @@ describe('createSandboxExecutor', () => {
   const postedTimeout = (frame: CapturedFrame): number =>
     frame.win.postMessage.mock.calls[0]![0].timeoutMs
 
-  const postedDom = (frame: CapturedFrame): unknown =>
-    frame.win.postMessage.mock.calls[0]![0].dom
+  const postedDom = (frame: CapturedFrame): unknown => frame.win.postMessage.mock.calls[0]![0].dom
 
   it('resolves with the normalized result of a message matching source + nonce + type', async () => {
     const execute = createSandboxExecutor()
@@ -196,13 +199,37 @@ describe('createSandboxExecutor', () => {
     const nonce = fireLoadAndGetNonce(frame)
 
     // Wrong source (a different window-like object).
-    dispatchMessage({}, { nonce, type: 'result', ok: true, result: 'evil', logs: [], timedOut: false })
+    dispatchMessage(
+      {},
+      { nonce, type: 'result', ok: true, result: 'evil', logs: [], timedOut: false }
+    )
     // Right source, wrong nonce.
-    dispatchMessage(frame.win, { nonce: 'bogus', type: 'result', ok: true, result: 'evil', logs: [], timedOut: false })
+    dispatchMessage(frame.win, {
+      nonce: 'bogus',
+      type: 'result',
+      ok: true,
+      result: 'evil',
+      logs: [],
+      timedOut: false
+    })
     // Right source + nonce, wrong type.
-    dispatchMessage(frame.win, { nonce, type: 'nope', ok: true, result: 'evil', logs: [], timedOut: false })
+    dispatchMessage(frame.win, {
+      nonce,
+      type: 'nope',
+      ok: true,
+      result: 'evil',
+      logs: [],
+      timedOut: false
+    })
     // Finally a legitimate reply.
-    dispatchMessage(frame.win, { nonce, type: 'result', ok: true, result: 'good', logs: [], timedOut: false })
+    dispatchMessage(frame.win, {
+      nonce,
+      type: 'result',
+      ok: true,
+      result: 'good',
+      logs: [],
+      timedOut: false
+    })
 
     // If any forged message had been accepted it would have resolved 'evil' first.
     await expect(promise).resolves.toMatchObject({ result: 'good' })
@@ -215,8 +242,22 @@ describe('createSandboxExecutor', () => {
     const removeSpy = vi.spyOn(frame.iframe, 'remove')
     const nonce = fireLoadAndGetNonce(frame)
 
-    dispatchMessage(frame.win, { nonce, type: 'result', ok: true, result: 1, logs: [], timedOut: false })
-    dispatchMessage(frame.win, { nonce, type: 'result', ok: true, result: 2, logs: [], timedOut: false })
+    dispatchMessage(frame.win, {
+      nonce,
+      type: 'result',
+      ok: true,
+      result: 1,
+      logs: [],
+      timedOut: false
+    })
+    dispatchMessage(frame.win, {
+      nonce,
+      type: 'result',
+      ok: true,
+      result: 2,
+      logs: [],
+      timedOut: false
+    })
 
     await expect(promise).resolves.toMatchObject({ result: 1 })
     expect(removeSpy).toHaveBeenCalledTimes(1)
@@ -238,7 +279,13 @@ describe('createSandboxExecutor', () => {
     // Settle the first run; its slot should free up.
     const frame1 = captured[0]!
     const nonce1 = fireLoadAndGetNonce(frame1)
-    dispatchMessage(frame1.win, { nonce: nonce1, type: 'result', ok: true, logs: [], timedOut: false })
+    dispatchMessage(frame1.win, {
+      nonce: nonce1,
+      type: 'result',
+      ok: true,
+      logs: [],
+      timedOut: false
+    })
     await p1
 
     void execute({ code: '5' })

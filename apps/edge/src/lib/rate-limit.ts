@@ -40,9 +40,7 @@ export const toRateLimitResponse = (
 }
 
 /** Build a rate-limit payload directly from a known remaining delay (ms). */
-export const rateLimitResponseFromMs = (
-  retryAfterMs: number
-): RateLimitPayload =>
+export const rateLimitResponseFromMs = (retryAfterMs: number): RateLimitPayload =>
   rateLimitPayloadSchema.parse({
     code: 'rate_limited',
     error: RATE_LIMIT_ERROR,
@@ -130,9 +128,7 @@ export const recordModelsBackoff = (
 }
 
 /** Clear the in-memory backoff after a confirmed successful upstream response. */
-export const clearModelsBackoff = (
-  credentialKey?: CredentialKey
-): void => {
+export const clearModelsBackoff = (credentialKey?: CredentialKey): void => {
   if (credentialKey) {
     backoffUntilMsByScope.delete(credentialKey)
     return
@@ -157,9 +153,7 @@ const BACKOFF_UNTIL_HEADER = 'x-models-backoff-until'
 const cacheStore = (): Cache | undefined =>
   (globalThis as { caches?: { default?: Cache } }).caches?.default
 
-const readDurableBackoffUntilMs = async (
-  credentialKey: CredentialKey
-): Promise<number> => {
+const readDurableBackoffUntilMs = async (credentialKey: CredentialKey): Promise<number> => {
   const store = cacheStore()
   if (!store) return 0
   try {

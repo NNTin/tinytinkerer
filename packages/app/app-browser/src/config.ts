@@ -107,7 +107,9 @@ export const resolveBrowserShellBootstrapConfig = (
     buildHash: options.buildHash ?? DEFAULT_CONFIG.buildHash,
     ...(options.sentryDsn ? { sentryDsn: options.sentryDsn } : {}),
     ...(options.sentryEnvironment ? { sentryEnvironment: options.sentryEnvironment } : {}),
-    ...(options.manifestStartUrl !== undefined ? { manifestStartUrl: options.manifestStartUrl } : {}),
+    ...(options.manifestStartUrl !== undefined
+      ? { manifestStartUrl: options.manifestStartUrl }
+      : {}),
     ...(options.githubClientId ? { githubClientId: options.githubClientId } : {}),
     ...(githubRedirectUri ? { githubRedirectUri } : {})
   }

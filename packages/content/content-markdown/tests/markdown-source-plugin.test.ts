@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { createMarkdownContentSession, markdownSourcePlugin, parseMarkdownContent } from '../src/index.js'
+import {
+  createMarkdownContentSession,
+  markdownSourcePlugin,
+  parseMarkdownContent
+} from '../src/index.js'
 
 describe('markdownSourcePlugin', () => {
   it('describes markdown as the default content source plugin', () => {

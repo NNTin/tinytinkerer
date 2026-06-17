@@ -32,7 +32,7 @@ import {
   type ParagraphNode,
   type TableAlignment,
   type TableNode,
-  type ThematicBreakNode,
+  type ThematicBreakNode
 } from '@tinytinkerer/content-core'
 import { unified } from 'unified'
 
@@ -108,7 +108,8 @@ const inlineFromMdast = (node: PhrasingContent): InlineNode => {
   }
 }
 
-const inlineNodesFromTableCell = (cell: TableCell): InlineNode[] => cell.children.map(inlineFromMdast)
+const inlineNodesFromTableCell = (cell: TableCell): InlineNode[] =>
+  cell.children.map(inlineFromMdast)
 const inlineCellDigest = (cell: InlineNode[]): string => JSON.stringify(cell)
 
 const fromHeading = (node: Heading, ids: IdAllocator): HeadingNode => ({
@@ -126,10 +127,7 @@ const fromStandaloneImage = (node: Image, ids: IdAllocator): ImageNode => ({
   ...(node.title ? { title: node.title } : {})
 })
 
-const fromParagraph = (
-  node: Paragraph,
-  ids: IdAllocator
-): ParagraphNode | ImageNode => {
+const fromParagraph = (node: Paragraph, ids: IdAllocator): ParagraphNode | ImageNode => {
   if (node.children.length === 1 && node.children[0]?.type === 'image') {
     return fromStandaloneImage(node.children[0], ids)
   }
@@ -182,10 +180,7 @@ const fromThematicBreak = (_: ThematicBreak, ids: IdAllocator): ThematicBreakNod
   id: ids.allocate('thematicBreak', '')
 })
 
-const fromCode = (
-  node: Code,
-  ids: IdAllocator
-): CodeBlockNode => {
+const fromCode = (node: Code, ids: IdAllocator): CodeBlockNode => {
   const block: CodeBlockNode = {
     type: 'codeBlock',
     id: ids.allocate('codeBlock', `${node.lang ?? ''}\u0000${node.value}`),
@@ -220,7 +215,9 @@ const fallbackParagraphFromUnsupported = (
   node: RootContent | BlockContent,
   ids: IdAllocator
 ): ParagraphNode | null => {
-  const value = ('value' in node && typeof node.value === 'string' ? node.value : toString(node)).trim()
+  const value = (
+    'value' in node && typeof node.value === 'string' ? node.value : toString(node)
+  ).trim()
   if (!value) {
     return null
   }

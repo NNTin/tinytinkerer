@@ -56,7 +56,8 @@ export const TINYTINKERER_BRAND: BrandDefinition = {
   manifest: {
     name: 'tinytinkerer',
     shortName: 'tinytinkerer',
-    description: 'TinyTinkerer app icons and branding metadata for web, widget, and future mobile shells.',
+    description:
+      'TinyTinkerer app icons and branding metadata for web, widget, and future mobile shells.',
     startUrl: '/',
     display: 'standalone',
     backgroundColor: '#fffaf5',

@@ -36,8 +36,7 @@ for (const section of SECTIONS) {
   for (const type of section.types) TYPE_TO_SECTION.set(type, section.title)
 }
 
-const CONVENTIONAL_RE =
-  /^(?<type>\w+)(?<scope>\([^)]*\))?(?<bang>!)?:\s*(?<desc>.+)$/
+const CONVENTIONAL_RE = /^(?<type>\w+)(?<scope>\([^)]*\))?(?<bang>!)?:\s*(?<desc>.+)$/
 
 // Closing keywords + the trailing list of refs they apply to. The captured
 // group (clause[1]) is the refs portion; we use its position to decide which
@@ -81,8 +80,7 @@ export function classifyConventional(text) {
   const type = match?.groups?.type?.toLowerCase()
   const desc = match?.groups?.desc ?? text
   const bang = Boolean(match?.groups?.bang)
-  const section =
-    (type && TYPE_TO_SECTION.get(type)) || TYPE_TO_SECTION.get('__other__')
+  const section = (type && TYPE_TO_SECTION.get(type)) || TYPE_TO_SECTION.get('__other__')
   return { section, desc, type: type ?? null, bang }
 }
 
@@ -112,8 +110,7 @@ function referenceLabel(repoFullName, number, currentRepo) {
 const referenceUrl = (repoFullName, number, type) =>
   `https://github.com/${repoFullName}/${type === 'pull' ? 'pull' : 'issues'}/${number}`
 
-const commitUrl = (repoFullName, sha) =>
-  `https://github.com/${repoFullName}/commit/${sha}`
+const commitUrl = (repoFullName, sha) => `https://github.com/${repoFullName}/commit/${sha}`
 
 /**
  * Extract every GitHub issue/PR reference from a blob of text.
@@ -134,8 +131,7 @@ export function extractReferences(text, { repoFullName }) {
     const refsStart = clause.index + clause[0].indexOf(refs)
     closingRanges.push([refsStart, refsStart + refs.length])
   }
-  const inClosingClause = (start) =>
-    closingRanges.some(([from, to]) => start >= from && start < to)
+  const inClosingClause = (start) => closingRanges.some(([from, to]) => start >= from && start < to)
 
   const results = []
   for (const match of text.matchAll(REFERENCE_RE)) {
@@ -159,10 +155,7 @@ export function extractReferences(text, { repoFullName }) {
     } else if (g.shortRepoNum) {
       const slug = g.shortRepo.toLowerCase()
       // Skip a documentation placeholder unless it happens to be this very repo.
-      if (
-        PLACEHOLDER_REPO_SLUGS.has(slug) &&
-        slug !== repoFullName.toLowerCase()
-      ) {
+      if (PLACEHOLDER_REPO_SLUGS.has(slug) && slug !== repoFullName.toLowerCase()) {
         continue
       }
       repo = g.shortRepo
@@ -248,8 +241,7 @@ export async function buildReleaseBody(context, options = {}) {
         refs.set(key, entry)
       }
       // Explicit types (issue/pull) win over ambiguous; closing implies issue.
-      if (entry.type === 'ambiguous' && ref.type !== 'ambiguous')
-        entry.type = ref.type
+      if (entry.type === 'ambiguous' && ref.type !== 'ambiguous') entry.type = ref.type
       if (ref.closing) {
         entry.closing = true
         if (entry.type === 'ambiguous') entry.type = 'issue'
@@ -274,9 +266,7 @@ export async function buildReleaseBody(context, options = {}) {
 
   // Index every PR and commit, recording per-item reference keys for the change
   // lines, and the merged-PR numbers so we never list them as "mentioned".
-  const mergedPrNumbers = new Set(
-    mergedPrs.map((pr) => keyOf(repoFullName, pr.number))
-  )
+  const mergedPrNumbers = new Set(mergedPrs.map((pr) => keyOf(repoFullName, pr.number)))
   const sortedMergedPrs = [...mergedPrs].sort((a, b) => a.number - b.number)
 
   for (const pr of sortedMergedPrs) {
@@ -425,9 +415,7 @@ export async function buildReleaseBody(context, options = {}) {
   for (const pr of sortedMergedPrs) {
     const firstCommit = pr.commits?.[0]
     const sha = firstCommit?.sha
-    const shaLink = sha
-      ? `[\`${sha.slice(0, 7)}\`](${commitUrl(repoFullName, sha)})`
-      : '`unknown`'
+    const shaLink = sha ? `[\`${sha.slice(0, 7)}\`](${commitUrl(repoFullName, sha)})` : '`unknown`'
     const { desc } = classifyConventional(pr.title)
     const prLink = `[#${pr.number}](${referenceUrl(repoFullName, pr.number, 'pull')})`
     const suffix = issueSuffixForRefs(pr._refs)
@@ -500,10 +488,7 @@ export async function buildReleaseBody(context, options = {}) {
   renderGroup('Mentioned Issues', mentionedIssues)
   if (sortedMergedPrs.length > 0) {
     const links = sortedMergedPrs
-      .map(
-        (pr) =>
-          `[#${pr.number}](${referenceUrl(repoFullName, pr.number, 'pull')})`
-      )
+      .map((pr) => `[#${pr.number}](${referenceUrl(repoFullName, pr.number, 'pull')})`)
       .join(', ')
     relatedRows.push(`**Merged Pull Requests:** ${links}`)
   }
@@ -514,10 +499,7 @@ export async function buildReleaseBody(context, options = {}) {
       .join(', ')
     relatedRows.push(`**Unresolved GitHub References:** ${links}`)
   }
-  lines.push(
-    relatedRows.length ? relatedRows.join('\n\n') : '_None detected._',
-    ''
-  )
+  lines.push(relatedRows.length ? relatedRows.join('\n\n') : '_None detected._', '')
 
   lines.push('### 📦 Dependency Changes', '')
   if (dependencyFiles.length > 0) {
@@ -526,9 +508,7 @@ export async function buildReleaseBody(context, options = {}) {
       lines.push(`- \`${filename}\``)
     }
     if (dependencyFiles.length > 20) {
-      lines.push(
-        `- _${dependencyFiles.length - 20} more dependency files omitted._`
-      )
+      lines.push(`- _${dependencyFiles.length - 20} more dependency files omitted._`)
     }
     lines.push('')
   } else {
@@ -572,9 +552,7 @@ export async function buildReleaseBody(context, options = {}) {
   if (auditEntries.length > 0) {
     lines.push('<details>', '<summary>🔎 Reference sources</summary>', '')
     for (const entry of auditEntries) {
-      const sources = [...entry.sources.values()].map((s) =>
-        renderSource(s, repoFullName)
-      )
+      const sources = [...entry.sources.values()].map((s) => renderSource(s, repoFullName))
       lines.push(`- ${issueLinkByKey(entry.key)}: ${sources.join(', ')}`)
     }
     lines.push('', '</details>', '')
@@ -598,13 +576,8 @@ export async function buildReleaseBody(context, options = {}) {
       const bTotal = (b.additions ?? 0) + (b.deletions ?? 0)
       return bTotal - aTotal || a.name.localeCompare(b.name)
     })
-    .map(
-      (c) =>
-        `- ${formatContributor(c.name)}: +${c.additions ?? 0} / −${c.deletions ?? 0}`
-    )
-  lines.push(
-    contributorLines.length ? contributorLines.join('\n') : '_None detected._'
-  )
+    .map((c) => `- ${formatContributor(c.name)}: +${c.additions ?? 0} / −${c.deletions ?? 0}`)
+  lines.push(contributorLines.length ? contributorLines.join('\n') : '_None detected._')
 
   const body = lines.join('\n')
   const title = `chore(release): merge ${head} (${developSha}) into ${base} (${mainSha})`

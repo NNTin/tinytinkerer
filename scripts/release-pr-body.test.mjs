@@ -72,10 +72,9 @@ test('ignores generic placeholder repo slugs (doc examples) in shorthand', () =>
   // Commit/PR prose that documents the ref syntax — e.g. a body listing
   // "shorthand owner/repo#132" — must not register as a real cross-repo
   // reference and then surface as a perpetual unresolved warning.
-  const found = extractReferences(
-    'supports owner/repo#132, org/repo#7 and user/repo#9 shorthand',
-    { repoFullName: 'NNTin/tinytinkerer' }
-  )
+  const found = extractReferences('supports owner/repo#132, org/repo#7 and user/repo#9 shorthand', {
+    repoFullName: 'NNTin/tinytinkerer'
+  })
   assert.deepEqual(found, [])
 })
 
@@ -119,10 +118,7 @@ test('detectBreakingChange flags ! in the subject', () => {
 
 test('detectBreakingChange flags a BREAKING CHANGE footer in the body', () => {
   assert.equal(
-    detectBreakingChange(
-      'feat: new flow',
-      'body text\n\nBREAKING CHANGE: removes old flow'
-    ),
+    detectBreakingChange('feat: new flow', 'body text\n\nBREAKING CHANGE: removes old flow'),
     true
   )
 })
@@ -169,9 +165,7 @@ test('renders canonical PR/issue/commit markdown links', async () => {
       ],
       commitEntries: [{ sha, subject: 'feat: add widget', prNumber: 10 }],
       contributors: [{ name: 'octocat', additions: 5, deletions: 1 }],
-      changedFiles: [
-        { filename: 'apps/web/index.ts', additions: 5, deletions: 1 }
-      ]
+      changedFiles: [{ filename: 'apps/web/index.ts', additions: 5, deletions: 1 }]
     },
     { resolveReference: async () => 'issue' }
   )
@@ -180,9 +174,7 @@ test('renders canonical PR/issue/commit markdown links', async () => {
   assert.match(body, /\[#1\]\(https:\/\/github\.com\/owner\/repo\/issues\/1\)/)
   assert.match(
     body,
-    new RegExp(
-      `\\[\`${sha.slice(0, 7)}\`\\]\\(https://github\\.com/owner/repo/commit/${sha}\\)`
-    )
+    new RegExp(`\\[\`${sha.slice(0, 7)}\`\\]\\(https://github\\.com/owner/repo/commit/${sha}\\)`)
   )
   // change line separates closing semantics
   assert.match(body, /closes \[#1\]/)
@@ -330,16 +322,11 @@ test('deduplicates audit sources for a reference seen in multiple places', async
     { resolveReference: async () => 'issue' }
   )
 
-  const auditLine = body
-    .split('\n')
-    .find((l) => l.startsWith('- [#1]') && l.includes('merged PR'))
+  const auditLine = body.split('\n').find((l) => l.startsWith('- [#1]') && l.includes('merged PR'))
   assert.ok(auditLine, 'audit line for #1 exists')
   // pr-title and pr-body are distinct sources; the title is referenced once
   // even though `#1` appears in title text — dedup keys are per (kind, source).
-  assert.equal(
-    (auditLine.match(/merged PR \[#20\]\([^)]+\) title/g) ?? []).length,
-    1
-  )
+  assert.equal((auditLine.match(/merged PR \[#20\]\([^)]+\) title/g) ?? []).length, 1)
   assert.match(auditLine, /merged PR \[#20\]\([^)]+\) body/)
   assert.match(auditLine, /commit \[`fffffff`\]\([^)]+\) subject/)
 })

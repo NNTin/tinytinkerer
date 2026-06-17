@@ -56,9 +56,7 @@ const edgeProxyPrefixes = ['/api', '/auth/github/exchange']
  * @returns {error is NodeJS.ErrnoException}
  */
 const isPortInUseError = (error) =>
-  error instanceof Error &&
-  'code' in error &&
-  error.code === 'EADDRINUSE'
+  error instanceof Error && 'code' in error && error.code === 'EADDRINUSE'
 
 /**
  * @param {HostAppDefinition} app
@@ -194,7 +192,9 @@ const readHostStaticAsset = async (publicDir, pathname) => {
 
   try {
     const body = await readFile(assetPath)
-    const contentType = /** @type {Record<string, string>} */ (staticContentTypes)[extname(assetPath)] ?? 'application/octet-stream'
+    const contentType =
+      /** @type {Record<string, string>} */ (staticContentTypes)[extname(assetPath)] ??
+      'application/octet-stream'
     return { body, contentType }
   } catch (error) {
     if (error instanceof Error && 'code' in error) {
@@ -222,11 +222,7 @@ const createRequestHandler = (apps, publicDir) => (req, res) => {
       res.statusCode = 301
       res.setHeader(
         'Location',
-        pathname === '/mobile'
-          ? '/mobile/'
-          : pathname === '/widget'
-            ? '/widget/'
-            : '/web/'
+        pathname === '/mobile' ? '/mobile/' : pathname === '/widget' ? '/widget/' : '/web/'
       )
       res.end()
       return
@@ -295,10 +291,9 @@ const startListening = async (server, { host, port, preferredPort }) => {
     await listen(server, host, targetPort)
   } catch (error) {
     if (isPortInUseError(error)) {
-      throw new Error(
-        `Port ${targetPort} is already in use on ${host}. Free the port and retry.`,
-        { cause: error }
-      )
+      throw new Error(`Port ${targetPort} is already in use on ${host}. Free the port and retry.`, {
+        cause: error
+      })
     }
 
     throw error
@@ -330,10 +325,9 @@ export const createHostServer = async ({
     await probePort(host, targetPort)
   } catch (error) {
     if (isPortInUseError(error)) {
-      throw new Error(
-        `Port ${targetPort} is already in use on ${host}. Free the port and retry.`,
-        { cause: error }
-      )
+      throw new Error(`Port ${targetPort} is already in use on ${host}. Free the port and retry.`, {
+        cause: error
+      })
     }
     throw error
   }
@@ -413,10 +407,7 @@ export const createHostServer = async ({
  * @param {{ host?: string, preferredPort?: number }} [options]
  * @returns {Promise<void>}
  */
-export const runHostServer = async ({
-  host = 'localhost',
-  preferredPort = 3111
-} = {}) => {
+export const runHostServer = async ({ host = 'localhost', preferredPort = 3111 } = {}) => {
   const hostServer = await createHostServer({ host, preferredPort })
 
   console.log(`@tinytinkerer/host listening at ${hostServer.url}`)

@@ -321,7 +321,7 @@ export const createSandboxExecutor = (
             nonce,
             code: request.code,
             input: request.input ?? null,
-            dom: getDomSnapshot ? getDomSnapshot() ?? null : null,
+            dom: getDomSnapshot ? (getDomSnapshot() ?? null) : null,
             timeoutMs: budget
           },
           '*'

@@ -1,8 +1,4 @@
-import type {
-  AgentType,
-  McpDiscoveryResult,
-  McpServerConfig
-} from '@tinytinkerer/contracts'
+import type { AgentType, McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contracts'
 import {
   SETTINGS_KEYS,
   defaultSettingsState,
@@ -24,13 +20,8 @@ type SettingsActions = {
   setWebSpeechEnabled: (enabled: boolean) => Promise<void>
   setShowReasoningActivity: (show: boolean) => Promise<void>
   setShowCodeBlockFullscreenButton: (show: boolean) => Promise<void>
-  addMcpServer: (
-    server: Omit<McpServerConfig, 'id'>
-  ) => Promise<McpServerConfig>
-  updateMcpServer: (
-    id: string,
-    patch: Partial<Omit<McpServerConfig, 'id'>>
-  ) => Promise<void>
+  addMcpServer: (server: Omit<McpServerConfig, 'id'>) => Promise<McpServerConfig>
+  updateMcpServer: (id: string, patch: Partial<Omit<McpServerConfig, 'id'>>) => Promise<void>
   removeMcpServer: (id: string) => Promise<void>
   setMcpServerEnabled: (id: string, enabled: boolean) => Promise<void>
   setMcpDiscovery: (result: McpDiscoveryResult) => Promise<void>
@@ -61,8 +52,7 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       set({ selectedModel: normalizedModel })
     },
     setLiteLLMBaseUrl: async (baseUrl) => {
-      const { persistLiteLLMBaseUrl, validateLiteLLMBaseUrl } =
-        await loadCoreModule()
+      const { persistLiteLLMBaseUrl, validateLiteLLMBaseUrl } = await loadCoreModule()
       // Reject invalid input with an inline message instead of silently
       // persisting the default — the input used to visibly jump after Save
       // with no explanation (issue #179).
@@ -81,20 +71,12 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
     },
     setWebSpeechEnabled: async (enabled) => {
       const { persistBooleanPreference } = await loadCoreModule()
-      await persistBooleanPreference(
-        shell.preferences,
-        SETTINGS_KEYS.webSpeechEnabled,
-        enabled
-      )
+      await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.webSpeechEnabled, enabled)
       set({ webSpeechEnabled: enabled })
     },
     setShowReasoningActivity: async (show) => {
       const { persistBooleanPreference } = await loadCoreModule()
-      await persistBooleanPreference(
-        shell.preferences,
-        SETTINGS_KEYS.showReasoningActivity,
-        show
-      )
+      await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.showReasoningActivity, show)
       set({ showReasoningActivity: show })
     },
     setShowCodeBlockFullscreenButton: async (show) => {
@@ -117,9 +99,7 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
     updateMcpServer: async (id, patch) => {
       const { persistMcpDiscovery, persistMcpServers } = await loadCoreModule()
       const current = get()
-      const nextServers = current.mcpServers.map((s) =>
-        s.id === id ? { ...s, ...patch } : s
-      )
+      const nextServers = current.mcpServers.map((s) => (s.id === id ? { ...s, ...patch } : s))
       await persistMcpServers(shell.preferences, nextServers)
       const urlOrTokenChanged = 'url' in patch || 'bearerToken' in patch
       if (urlOrTokenChanged) {
@@ -145,9 +125,7 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
     },
     setMcpServerEnabled: async (id, enabled) => {
       const { persistMcpServers } = await loadCoreModule()
-      const nextServers = get().mcpServers.map((s) =>
-        s.id === id ? { ...s, enabled } : s
-      )
+      const nextServers = get().mcpServers.map((s) => (s.id === id ? { ...s, enabled } : s))
       await persistMcpServers(shell.preferences, nextServers)
       set({ mcpServers: nextServers })
     },
@@ -166,11 +144,7 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
     },
     setTelemetryEnabled: async (enabled) => {
       const { persistBooleanPreference } = await loadCoreModule()
-      await persistBooleanPreference(
-        shell.preferences,
-        SETTINGS_KEYS.telemetryEnabled,
-        enabled
-      )
+      await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.telemetryEnabled, enabled)
       set({ telemetryEnabled: enabled })
       await setTelemetryConsent(enabled)
     },

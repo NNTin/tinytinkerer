@@ -1,18 +1,9 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor
-} from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PermissionModal } from '../src/permission-modal.js'
-import {
-  requestPermission,
-  resetPermissionStore
-} from '../src/permission-service.js'
+import { requestPermission, resetPermissionStore } from '../src/permission-service.js'
 
 afterEach(() => {
   resetPermissionStore()
@@ -43,9 +34,7 @@ describe('PermissionModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
 
     await expect(decision).resolves.toEqual({ allow: true })
-    await waitFor(() =>
-      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
-    )
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
   })
 
   it('resolves deny with a reason when Deny is clicked', async () => {
@@ -58,9 +47,7 @@ describe('PermissionModal', () => {
 
     const result = await decision
     expect(result.allow).toBe(false)
-    expect((result as { allow: false; reason: string }).reason).toBe(
-      'Denied by user'
-    )
+    expect((result as { allow: false; reason: string }).reason).toBe('Denied by user')
   })
 
   it('denies when the overlay is clicked', async () => {
@@ -88,9 +75,7 @@ describe('PermissionModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
     await expect(first).resolves.toEqual({ allow: true })
 
-    await waitFor(() =>
-      expect(screen.getByRole('alertdialog')).toHaveTextContent('mcp:files:read')
-    )
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toHaveTextContent('mcp:files:read'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Deny' }))
     const secondResult = await second

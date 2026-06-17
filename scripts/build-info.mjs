@@ -20,7 +20,10 @@ const readBuildHash = () => {
     return fromEnv.slice(0, 7)
   }
   try {
-    return execSync('git rev-parse --short HEAD', { cwd: rootDir, stdio: ['ignore', 'pipe', 'ignore'] })
+    return execSync('git rev-parse --short HEAD', {
+      cwd: rootDir,
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
       .toString()
       .trim()
   } catch {

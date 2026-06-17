@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  setCaptureMessageSink,
-  type CaptureMessageSink
-} from '@tinytinkerer/sentry-telemetry'
+import { setCaptureMessageSink, type CaptureMessageSink } from '@tinytinkerer/sentry-telemetry'
 import {
   clearLiteLLMUserKeyCache,
   deriveLiteLLMUserCredentialKey,
@@ -61,19 +58,15 @@ const keyManagementStub = (options: {
       infoAttempt += 1
       const rawBody = typeof init?.body === 'string' ? init.body : '{}'
       const requestedAlias =
-        (JSON.parse(rawBody) as { key_aliases?: string[] }).key_aliases?.[0] ??
-        ''
+        (JSON.parse(rawBody) as { key_aliases?: string[] }).key_aliases?.[0] ?? ''
       return Promise.resolve(
-        options.keyInfoForAttempt?.(infoAttempt, requestedAlias) ??
-          jsonResponse({ info: [] })
+        options.keyInfoForAttempt?.(infoAttempt, requestedAlias) ?? jsonResponse({ info: [] })
       )
     }
     if (path === '/key/generate') {
       const rawBody = typeof init?.body === 'string' ? init.body : '{}'
       const body = JSON.parse(rawBody) as { key?: string }
-      return Promise.resolve(
-        options.generate?.(body) ?? jsonResponse({ key: body.key })
-      )
+      return Promise.resolve(options.generate?.(body) ?? jsonResponse({ key: body.key }))
     }
     if (path === '/key/update') {
       return Promise.resolve(options.update?.() ?? jsonResponse({ updated: true }))
@@ -83,9 +76,9 @@ const keyManagementStub = (options: {
 }
 
 const generateBody = (fetchSpy: ReturnType<typeof vi.fn>): Record<string, unknown> => {
-  const call = (
-    fetchSpy.mock.calls as Array<[RequestInfo | URL, RequestInit | undefined]>
-  ).find(([input]) => new URL(toRequestUrl(input)).pathname === '/key/generate')
+  const call = (fetchSpy.mock.calls as Array<[RequestInfo | URL, RequestInit | undefined]>).find(
+    ([input]) => new URL(toRequestUrl(input)).pathname === '/key/generate'
+  )
   if (!call) throw new Error('expected a /key/generate call')
   const rawBody = call[1]?.body
   if (typeof rawBody !== 'string') throw new Error('expected a JSON body')
@@ -112,23 +105,13 @@ describe('litellm-user-keys', () => {
   })
 
   it('derives a stable credential key that is distinct per user, base URL, and secret', async () => {
-    const a = await deriveLiteLLMUserCredentialKey(
-      CONFIGURED_ENV,
-      IDENTITY,
-      BASE_URL
-    )
+    const a = await deriveLiteLLMUserCredentialKey(CONFIGURED_ENV, IDENTITY, BASE_URL)
     // Stable for the same inputs (backoff/marker scopes must survive isolates).
-    expect(
-      await deriveLiteLLMUserCredentialKey(CONFIGURED_ENV, IDENTITY, BASE_URL)
-    ).toBe(a)
+    expect(await deriveLiteLLMUserCredentialKey(CONFIGURED_ENV, IDENTITY, BASE_URL)).toBe(a)
     // Distinct per GitHub user — one user's backoff/key scope cannot collide.
-    expect(
-      await deriveLiteLLMUserCredentialKey(
-        CONFIGURED_ENV,
-        OTHER_IDENTITY,
-        BASE_URL
-      )
-    ).not.toBe(a)
+    expect(await deriveLiteLLMUserCredentialKey(CONFIGURED_ENV, OTHER_IDENTITY, BASE_URL)).not.toBe(
+      a
+    )
     // Distinct per LiteLLM deployment base URL (issue #146).
     expect(
       await deriveLiteLLMUserCredentialKey(
@@ -152,9 +135,7 @@ describe('litellm-user-keys', () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
 
-    await expect(
-      resolveLiteLLMUserKey({}, BASE_URL, IDENTITY)
-    ).resolves.toBeUndefined()
+    await expect(resolveLiteLLMUserKey({}, BASE_URL, IDENTITY)).resolves.toBeUndefined()
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
@@ -208,11 +189,7 @@ describe('litellm-user-keys', () => {
     vi.stubGlobal('fetch', fetchSpy)
 
     const first = await resolveLiteLLMUserKey(CONFIGURED_ENV, BASE_URL, IDENTITY)
-    const second = await resolveLiteLLMUserKey(
-      CONFIGURED_ENV,
-      BASE_URL,
-      OTHER_IDENTITY
-    )
+    const second = await resolveLiteLLMUserKey(CONFIGURED_ENV, BASE_URL, OTHER_IDENTITY)
 
     expect(first?.apiKey).toBeDefined()
     expect(second?.apiKey).toBeDefined()
@@ -233,11 +210,7 @@ describe('litellm-user-keys', () => {
 
     // Second resolve for the same user + base URL + config fingerprint must be
     // served from the provisioned marker — no further /v2/key/info, /key/generate.
-    const second = await resolveLiteLLMUserKey(
-      CONFIGURED_ENV,
-      BASE_URL,
-      IDENTITY
-    )
+    const second = await resolveLiteLLMUserKey(CONFIGURED_ENV, BASE_URL, IDENTITY)
     expect(second?.apiKey).toBe(first?.apiKey)
     expect(fetchSpy.mock.calls.length).toBe(callsAfterFirst)
   })
@@ -341,9 +314,7 @@ describe('litellm-user-keys', () => {
     })
     vi.stubGlobal('fetch', fetchSpy)
 
-    await expect(
-      resolveLiteLLMUserKey(CONFIGURED_ENV, BASE_URL, IDENTITY)
-    ).resolves.toBeUndefined()
+    await expect(resolveLiteLLMUserKey(CONFIGURED_ENV, BASE_URL, IDENTITY)).resolves.toBeUndefined()
 
     // It must NOT fall through to the recoverable re-read-by-alias path.
     expect(aliasReReads).toBe(0)
@@ -356,9 +327,7 @@ describe('litellm-user-keys', () => {
     expect(mismatchReport?.[1].tags?.['github_id']).toBe('12345')
     expect(mismatchReport?.[1].tags?.['key_alias']).toMatch(ALIAS_PATTERN)
     // The key value itself must never be in telemetry.
-    expect(JSON.stringify(mismatchReport)).not.toContain(
-      'sk-litellm-assigned-something-else'
-    )
+    expect(JSON.stringify(mismatchReport)).not.toContain('sk-litellm-assigned-something-else')
 
     setCaptureMessageSink(null)
   })
@@ -411,9 +380,7 @@ describe('litellm-user-keys', () => {
     })
     vi.stubGlobal('fetch', fetchSpy)
 
-    await expect(
-      resolveAnonymousLiteLLMKey(CONFIGURED_ENV, BASE_URL)
-    ).resolves.toBeUndefined()
+    await expect(resolveAnonymousLiteLLMKey(CONFIGURED_ENV, BASE_URL)).resolves.toBeUndefined()
 
     // It must NOT fall through to the recoverable re-read-by-alias path.
     expect(aliasReReads).toBe(0)
@@ -425,15 +392,9 @@ describe('litellm-user-keys', () => {
     expect(mismatchReport?.[1].level).toBe('error')
     // Anonymous has no GitHub id, so the tag must be absent.
     expect(mismatchReport?.[1].tags?.['github_id']).toBeUndefined()
-    expect(mismatchReport?.[1].tags?.['key_alias']).toMatch(
-      ANONYMOUS_ALIAS_PATTERN
-    )
-    expect(mismatchReport?.[1].fingerprint).toEqual([
-      'litellm-anonymous-key-value-mismatch'
-    ])
-    expect(JSON.stringify(mismatchReport)).not.toContain(
-      'sk-litellm-assigned-something-else'
-    )
+    expect(mismatchReport?.[1].tags?.['key_alias']).toMatch(ANONYMOUS_ALIAS_PATTERN)
+    expect(mismatchReport?.[1].fingerprint).toEqual(['litellm-anonymous-key-value-mismatch'])
+    expect(JSON.stringify(mismatchReport)).not.toContain('sk-litellm-assigned-something-else')
 
     setCaptureMessageSink(null)
   })
@@ -447,9 +408,7 @@ describe('litellm-user-keys', () => {
     })
     vi.stubGlobal('fetch', fetchSpy)
 
-    await expect(
-      resolveLiteLLMUserKey(CONFIGURED_ENV, BASE_URL, IDENTITY)
-    ).resolves.toBeUndefined()
+    await expect(resolveLiteLLMUserKey(CONFIGURED_ENV, BASE_URL, IDENTITY)).resolves.toBeUndefined()
   })
 
   it('clearLiteLLMUserKeyCache drops the durable marker so the next resolve re-provisions', async () => {

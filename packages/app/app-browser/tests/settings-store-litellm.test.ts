@@ -45,9 +45,7 @@ describe('settings-store setLiteLLMBaseUrl', () => {
 
     // The input must not silently jump back to the default after Save — the
     // user gets the validation message instead (issue #179).
-    expect(store.getState().litellmBaseUrlError).toBe(
-      'The base URL must start with https://.'
-    )
+    expect(store.getState().litellmBaseUrlError).toBe('The base URL must start with https://.')
     expect(store.getState().litellmBaseUrl).toBe(LITELLM_DEPLOYMENT_DEFAULT)
     expect(preferences.store.has('settings_litellm_base_url')).toBe(false)
   })
@@ -56,16 +54,12 @@ describe('settings-store setLiteLLMBaseUrl', () => {
     const store = createSettingsStore(makeShell(preferences))
 
     await store.getState().setLiteLLMBaseUrl('not a url')
-    expect(store.getState().litellmBaseUrlError).toBe(
-      'Enter a valid https:// URL.'
-    )
+    expect(store.getState().litellmBaseUrlError).toBe('Enter a valid https:// URL.')
 
     await store.getState().setLiteLLMBaseUrl('https://litellm.example.com/')
 
     expect(store.getState().litellmBaseUrlError).toBeNull()
     expect(store.getState().litellmBaseUrl).toBe('https://litellm.example.com/')
-    expect(preferences.store.get('settings_litellm_base_url')).toBe(
-      'https://litellm.example.com/'
-    )
+    expect(preferences.store.get('settings_litellm_base_url')).toBe('https://litellm.example.com/')
   })
 })

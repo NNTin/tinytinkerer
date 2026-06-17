@@ -217,12 +217,12 @@ The canonical content document shape lives in `@tinytinkerer/contracts`. The con
 
 ```ts
 type BlockNode =
-  | HeadingNode        // { type: 'heading', id?, level, children: readonly InlineNode[] }
-  | ParagraphNode      // { type: 'paragraph', id?, children: readonly InlineNode[] }
-  | ListNode           // { type: 'list', id?, ordered, start?, children: readonly ListItemNode[] }
-  | BlockquoteNode     // { type: 'blockquote', id?, children: readonly BlockNode[] }
-  | ThematicBreakNode  // { type: 'thematicBreak', id? }
-  | CodeBlockNode      // { type: 'codeBlock', id?, code, language? }
+  | HeadingNode // { type: 'heading', id?, level, children: readonly InlineNode[] }
+  | ParagraphNode // { type: 'paragraph', id?, children: readonly InlineNode[] }
+  | ListNode // { type: 'list', id?, ordered, start?, children: readonly ListItemNode[] }
+  | BlockquoteNode // { type: 'blockquote', id?, children: readonly BlockNode[] }
+  | ThematicBreakNode // { type: 'thematicBreak', id? }
+  | CodeBlockNode // { type: 'codeBlock', id?, code, language? }
   | ChoicePromptNode
   | TableNode
   | ImageNode

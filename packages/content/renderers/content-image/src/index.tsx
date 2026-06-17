@@ -64,10 +64,7 @@ export const ImageNodeRenderer = ({ node }: ContentNodeRendererProps<ImageNode>)
   }, [open, handleClose])
 
   return (
-    <figure
-      data-tt-image=""
-      className="my-3 flex max-w-full flex-col items-center gap-1"
-    >
+    <figure data-tt-image="" className="my-3 flex max-w-full flex-col items-center gap-1">
       <button
         type="button"
         onClick={handleOpen}
@@ -83,9 +80,7 @@ export const ImageNodeRenderer = ({ node }: ContentNodeRendererProps<ImageNode>)
           className="block max-h-[420px] max-w-full object-contain"
         />
       </button>
-      {caption ? (
-        <figcaption className="text-[12px] text-stone-500">{caption}</figcaption>
-      ) : null}
+      {caption ? <figcaption className="text-[12px] text-stone-500">{caption}</figcaption> : null}
       {open ? (
         <div
           role="dialog"

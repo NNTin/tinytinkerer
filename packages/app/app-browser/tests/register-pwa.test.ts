@@ -1,10 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-type OnRegisteredSW = (
-  swUrl: string,
-  registration?: ServiceWorkerRegistration
-) => void
+type OnRegisteredSW = (swUrl: string, registration?: ServiceWorkerRegistration) => void
 type RegisterSWOptions = { immediate?: boolean; onRegisteredSW?: OnRegisteredSW }
 
 const registerSW = vi.fn()

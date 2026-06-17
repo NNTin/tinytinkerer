@@ -39,18 +39,12 @@ const normalizeSearchResults = (results: TavilyResultItem[]): SearchResult[] =>
     })
     .filter((value): value is SearchResult => Boolean(value))
 
-export const registerSearchRoutes = (
-  app: OpenAPIHono<{ Bindings: Bindings }>
-) => {
+export const registerSearchRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
   app.openapi(searchRoute, async (c) => {
-    const authorization =
-      c.req.header('authorization') ?? c.req.header('Authorization')
+    const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
 
     if (!authorization) {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
-        401
-      )
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
     }
 
     const input = c.req.valid('json')
@@ -58,8 +52,7 @@ export const registerSearchRoutes = (
     if (!c.env.TAVILY_API_KEY) {
       return c.json(
         edgeErrorResponseSchema.parse({
-          error:
-            'Web search is currently unavailable. Configure Tavily to enable live search.'
+          error: 'Web search is currently unavailable. Configure Tavily to enable live search.'
         }),
         503
       )
@@ -70,10 +63,7 @@ export const registerSearchRoutes = (
     // Authorization header is not enough (mirrors the models routes).
     const callerValidation = await validateLiteLLMCaller(authorization, c.env)
     if (callerValidation.status === 'invalid') {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
-        401
-      )
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
     }
     if (callerValidation.status === 'forbidden') {
       return c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
@@ -111,10 +101,7 @@ export const registerSearchRoutes = (
     )
 
     if (!response.ok) {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Web search request failed.' }),
-        502
-      )
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Web search request failed.' }), 502)
     }
 
     const parsed = tavilyResponseSchema.safeParse(await response.json())

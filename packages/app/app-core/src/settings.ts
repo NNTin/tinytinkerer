@@ -135,7 +135,7 @@ export const persistPluginActivation = async (
 export const isPluginEnabled = (
   activation: PluginActivationState,
   manifest: { id: string; defaultEnabled?: boolean }
-): boolean => (activation[manifest.id] ?? manifest.defaultEnabled) ?? false
+): boolean => activation[manifest.id] ?? manifest.defaultEnabled ?? false
 
 const parseMcpServers = (raw: string | undefined): McpServerConfig[] => {
   if (!raw) return []

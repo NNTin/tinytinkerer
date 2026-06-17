@@ -70,7 +70,12 @@ const parseMcpAllowedHosts = (raw: string | undefined): Set<string> =>
   new Set(
     (raw ?? '')
       .split(',')
-      .map((host) => host.trim().toLowerCase().replace(/^\[|\]$/g, ''))
+      .map((host) =>
+        host
+          .trim()
+          .toLowerCase()
+          .replace(/^\[|\]$/g, '')
+      )
       .filter(Boolean)
   )
 
@@ -87,11 +92,7 @@ const validateMcpUrl = (raw: string, allowedHosts: Set<string>): boolean => {
   const hostname = url.hostname.replace(/^\[|\]$/g, '')
 
   // http is allowed only for localhost/127.0.0.1 (local dev)
-  if (
-    url.protocol === 'http:' &&
-    hostname !== 'localhost' &&
-    hostname !== '127.0.0.1'
-  ) {
+  if (url.protocol === 'http:' && hostname !== 'localhost' && hostname !== '127.0.0.1') {
     return false
   }
 
@@ -110,15 +111,10 @@ const validateMcpUrl = (raw: string, allowedHosts: Set<string>): boolean => {
   return true
 }
 
-const toMcpHeaders = (
-  bearerToken: string | undefined
-): Record<string, string> =>
+const toMcpHeaders = (bearerToken: string | undefined): Record<string, string> =>
   bearerToken ? { authorization: `Bearer ${bearerToken}` } : {}
 
-const makeTransport = (
-  url: string,
-  bearerToken: string | undefined
-): Transport => {
+const makeTransport = (url: string, bearerToken: string | undefined): Transport => {
   const transport = new StreamableHTTPClientTransport(new URL(url), {
     requestInit: { headers: toMcpHeaders(bearerToken) }
   })
@@ -127,13 +123,9 @@ const makeTransport = (
 
 export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
   app.openapi(mcpDiscoverRoute, async (c) => {
-    const authorization =
-      c.req.header('authorization') ?? c.req.header('Authorization')
+    const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
     if (!authorization) {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
-        401
-      )
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
     }
 
     // The MCP proxy makes an outbound request on the caller's behalf, so a
@@ -142,10 +134,7 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
     // GitHub identity before connecting, mirroring the models routes.
     const callerValidation = await validateLiteLLMCaller(authorization, c.env)
     if (callerValidation.status === 'invalid') {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
-        401
-      )
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
     }
     if (callerValidation.status === 'forbidden') {
       return c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
@@ -200,23 +189,16 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
       // internal hostnames, IPs, or connection detail. Log it server-side and
       // return a generic message (security review LOW-1).
       console.error('[mcp/discover] connection error', error)
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'MCP discovery failed' }),
-        502
-      )
+      return c.json(edgeErrorResponseSchema.parse({ error: 'MCP discovery failed' }), 502)
     } finally {
       await client.close().catch(() => undefined)
     }
   })
 
   app.openapi(mcpCallRoute, async (c) => {
-    const authorization =
-      c.req.header('authorization') ?? c.req.header('Authorization')
+    const authorization = c.req.header('authorization') ?? c.req.header('Authorization')
     if (!authorization) {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
-        401
-      )
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
     }
 
     // Validate the caller's GitHub identity before making any outbound MCP
@@ -224,10 +206,7 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
     // edge into an open SSRF proxy (mirrors the models routes).
     const callerValidation = await validateLiteLLMCaller(authorization, c.env)
     if (callerValidation.status === 'invalid') {
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'Unauthorized' }),
-        401
-      )
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
     }
     if (callerValidation.status === 'forbidden') {
       return c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
@@ -241,12 +220,7 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
       )
     }
 
-    const {
-      url,
-      bearerToken,
-      toolName,
-      arguments: toolArgs
-    } = c.req.valid('json')
+    const { url, bearerToken, toolName, arguments: toolArgs } = c.req.valid('json')
 
     if (!validateMcpUrl(url, parseMcpAllowedHosts(c.env.MCP_ALLOWED_HOSTS))) {
       return c.json(
@@ -271,9 +245,7 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
       })
 
       const isError = callResult.isError === true
-      const contentItems = Array.isArray(callResult.content)
-        ? callResult.content
-        : []
+      const contentItems = Array.isArray(callResult.content) ? callResult.content : []
       const text = contentItems
         .filter((item): item is { type: 'text'; text: string } => {
           const candidate = item as Record<string, unknown>
@@ -295,10 +267,7 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
     } catch (error) {
       // Generic message only — see the discover handler (security review LOW-1).
       console.error('[mcp/call] connection error', error)
-      return c.json(
-        edgeErrorResponseSchema.parse({ error: 'MCP call failed' }),
-        502
-      )
+      return c.json(edgeErrorResponseSchema.parse({ error: 'MCP call failed' }), 502)
     } finally {
       await client.close().catch(() => undefined)
     }

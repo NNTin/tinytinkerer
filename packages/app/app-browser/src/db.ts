@@ -62,11 +62,7 @@ class TinyTinkererDb extends Dexie {
                 ? payload.kind
                 : 'assistant'
           const rawContent =
-            payload.content ??
-            payload.text ??
-            payload.delta ??
-            payload.message ??
-            ''
+            payload.content ?? payload.text ?? payload.delta ?? payload.message ?? ''
           // The renderer requires a ContentDocument shape ({ nodes: [...] }).
           // Legacy v1 events stored the assistant text directly as a string;
           // wrap it in a minimal paragraph so the document is at least valid.

@@ -5,7 +5,7 @@ Goal: given a frontend `5xx` (or other edge-origin) failure that carries a `trac
 
 - **Our edge crashed** — an unhandled error in the edge route (`handled: no`, surfaced by Hono's
   error handler). → fix the edge bug.
-- **Edge status-mapping / passthrough bug** — the edge returned the status *deliberately* but
+- **Edge status-mapping / passthrough bug** — the edge returned the status _deliberately_ but
   wrongly (e.g. it mapped an upstream `429` to a `502`). → fix the edge route's mapping.
 - **Transient upstream** — the upstream (GitHub Models, Tavily, …) genuinely failed and the edge
   reported it faithfully. → usually accept or leave; not our bug.
@@ -20,6 +20,7 @@ branch of `triage-issues.md` step 5.
    `trace.trace_id`).
 
 2. **Enumerate every error in that trace, across both projects.**
+
    ```
    search_events({
      organizationSlug: "nntin-labs", regionUrl: "https://de.sentry.io",
@@ -29,13 +30,14 @@ branch of `triage-issues.md` step 5.
      sort: "-timestamp"
    })
    ```
+
    > Gotcha: `get_sentry_resource(resourceType: 'trace', ...)` can fail with a transient Sentry API
    > error. `search_events` with `query: "trace:<id>"` is the reliable way to list the trace's
    > errors — use it as the primary tool here.
    >
    > Bigger gotcha: **the trace often does NOT span both projects.** Trace context isn't propagated
    > across the frontend→edge boundary here, so a frontend failure and the edge failure it triggered
-   > usually carry **different `trace_id`s** — a `trace:<id>` search returns only *one* project's error.
+   > usually carry **different `trace_id`s** — a `trace:<id>` search returns only _one_ project's error.
    > When that happens, don't conclude "the edge didn't error"; fall through to step 4 and correlate by
    > **`request_area` + `http_status` + timestamp** instead (see the cross-project note there).
 
@@ -44,7 +46,7 @@ branch of `triage-issues.md` step 5.
      (`get_sentry_resource`) for the stacktrace and fix the edge bug.
    - **No** `tinytinkerer-edge` error in the trace at all ⇒ **either** the edge did not crash (it
      returned the status on purpose — an **edge status-mapping bug** or a faithfully-reported
-     **transient upstream**), **or** the edge *did* error but in a **separate trace** (propagation gap,
+     **transient upstream**), **or** the edge _did_ error but in a **separate trace** (propagation gap,
      see step 2). Disambiguate with step 4 before concluding: an edge error matching the frontend's
      `request_area` + `http_status` at the same second means the edge was involved despite the
      different `trace_id`. Read the edge route (`apps/edge/src/routes/…`, see `sourceRoot` in
@@ -58,10 +60,11 @@ branch of `triage-issues.md` step 5.
 
    **Cross-project correlation when the trace doesn't span both projects (the common case).** Trace
    propagation across frontend→edge is absent (step 2), so match the two projects' errors by their
-   **shared tags + timestamp** instead of a shared `trace_id`. Two errors are the *same cascade* when
+   **shared tags + timestamp** instead of a shared `trace_id`. Two errors are the _same cascade_ when
    they share **`request_area`** and **`http_status`** and fired within ~1–2s of each other — one in
    `tinytinkerer-frontend` (`request_origin: edge`, the symptom) and one in `tinytinkerer-edge`
    (`request_origin: <third-party>`, the source). Enumerate each project's recent matching errors:
+
    ```
    search_events({ organizationSlug, regionUrl, dataset: "errors",
      query: "request_area:models.list http_status:429",
@@ -70,33 +73,34 @@ branch of `triage-issues.md` step 5.
    ```
 
    ### Recognising an upstream-429 cascade (third-party rate limit → edge → frontend)
+
    Signature (`EDGE-4` / `FRONTEND-5`, same `models.list` 429s at `21:28:47`, **different** trace_ids):
    - **frontend** `http_error` `http_status:429`, `request_area:models.list`, `request_origin:edge`
      (browser → our edge `GET /api/models/list`) — the **symptom**.
    - **edge** `http_error` `http_status:429`, same `request_area`, `request_origin:github`, request
      `host: models.github.ai` (`GET /v1/models`) — the **source**: a third-party (GitHub Models)
      rate limit the edge captured and propagated downstream.
-   This is **not** an edge crash and **not** a status-mapping bug — the edge faithfully forwarded a
+     This is **not** an edge crash and **not** a status-mapping bug — the edge faithfully forwarded a
    429. How you fix it depends on **whether the upstream is cacheable** (the 429 taxonomy):
    - **`models.list` → `GET /v1/models` (cacheable catalogue):** identical for every caller, changes
-     rarely → **fix, not accept** the *upstream* 429: durable, cross-request caching + Retry-After /
+     rarely → **fix, not accept** the _upstream_ 429: durable, cross-request caching + Retry-After /
      serve-last-known at the edge call site (`apps/edge/src/routes/models.ts` + `lib/models-cache.ts`).
      During cooldown the edge emits a single designed signal downstream — a graceful `503 + Retry-After`
      (prefer serving last-known) rather than leaking the raw upstream 429 — so the browser contract is
      one status. **Then harden the other side of the hop (cross-boundary relocation):** the FRONTEND
      caller of `/api/models/list` (`app-browser/src/models.ts`) must mirror the edge — cache its
-     own last-known list and `accept: { status: [429, 503] }` for *that one area*, because that edge
+     own last-known list and `accept: { status: [429, 503] }` for _that one area_, because that edge
      503/429 is a by-design cooldown for a cacheable resource, not a server-down bug. Skip it and the
      issue just relocates edge→frontend (`FRONTEND-C`/`FRONTEND-D`); this is the one legitimate
      self-emitted-5xx accept (see `accept-error.md`).
    - **`models.chat` → `POST /inference/chat/completions` (non-cacheable completions):** the response
-     is unique per prompt, so there is nothing to cache. The 429 cascades the *same* way (frontend
+     is unique per prompt, so there is nothing to cache. The 429 cascades the _same_ way (frontend
      `react.decide` `request_origin:edge` 429 ⇐ edge `models.chat` `request_origin:github` 429 against
-     `models.github.ai`, seconds apart, different trace_ids), but the fix differs: **durable
+     `models.github.ai`, seconds apart, different trace*ids), but the fix differs: **durable
      Retry-After backoff** (short-circuit while the window is open) **+ a graceful client cooldown**
      (the frontend turns the 429 into a `RateLimitError` → cooldown banner) **+ `accept` the residual
      429** (the unavoidable window-opener — backoff can't suppress it) at the edge `models.chat` fetch
-     **and every frontend chat call site**: the DECIDE path (`runtime/edge-fetch.ts`) *and* the
+     **and every frontend chat call site**: the DECIDE path (`runtime/edge-fetch.ts`) \_and* the
      SYNTHESIZE path (`runtime/litellm-provider.ts` `synthesizeInner`, a separate inline
      metadata). Missing the SYNTHESIZE site is what kept `FRONTEND-B` firing. This is the
      `FRONTEND-9` / `FRONTEND-B` / `EDGE-4`-chat cascade.
@@ -108,18 +112,18 @@ branch of `triage-issues.md` step 5.
    before reapplying anything.
 
    > Inspecting an event: `get_sentry_resource` already returns the **most-relevant frame and the full
-   > stacktrace inline** — no extra call. When the tags + stacktrace don't explain *why* a request
+   > stacktrace inline** — no extra call. When the tags + stacktrace don't explain _why_ a request
    > fired (e.g. a refetch loop), pull `get_sentry_resource(resourceType: 'breadcrumbs', ...)` for the
    > preceding fetch/navigation/console sequence.
 
 5. **Verify the release before deciding fix-vs-stale.** Check the offending events' `release` tag
    against the current prod release (`triage-issues.md` step 2). Task framing can be wrong — in the
-   `FRONTEND-5` session, `EDGE-2`/`EDGE-3` were on *older* releases than stated and were stale, not
+   `FRONTEND-5` session, `EDGE-2`/`EDGE-3` were on _older_ releases than stated and were stale, not
    live bugs.
 
 ## Notes
 
-- This only tells you *where* the status came from; the accept-or-fix decision still follows
+- This only tells you _where_ the status came from; the accept-or-fix decision still follows
   `../SKILL.md`. A confirmed edge crash or status-mapping bug is **fix the call site**; a faithfully
   reported, normal upstream outcome may be **accept**.
 - Remember `accept` can't silence an edge `handled: no` crash — see `accept-error.md`

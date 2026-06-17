@@ -21,9 +21,7 @@ const formatInput = (input: Record<string, unknown>): string => {
 // markup. Dismissing the dialog (overlay click or Escape) denies, the safe
 // default for a permission prompt.
 export const PermissionModal = () => {
-  const pending = usePermissionStore(
-    (state): PendingPermission | undefined => state.queue[0]
-  )
+  const pending = usePermissionStore((state): PendingPermission | undefined => state.queue[0])
 
   useEffect(() => {
     if (!pending) {
@@ -61,12 +59,9 @@ export const PermissionModal = () => {
         className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-xl outline-none"
       >
         <div className="border-b border-[var(--border)] px-6 py-4">
-          <h2 className="text-base font-semibold text-stone-900">
-            Allow this tool to run?
-          </h2>
+          <h2 className="text-base font-semibold text-stone-900">Allow this tool to run?</h2>
           <p className="mt-1 text-xs text-[var(--muted)]">
-            The assistant wants to run a tool. Review it and choose whether to
-            allow it.
+            The assistant wants to run a tool. Review it and choose whether to allow it.
           </p>
         </div>
 
@@ -75,9 +70,7 @@ export const PermissionModal = () => {
             <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
               Tool
             </p>
-            <p className="mt-1 break-all font-mono text-sm text-stone-800">
-              {request.toolId}
-            </p>
+            <p className="mt-1 break-all font-mono text-sm text-stone-800">{request.toolId}</p>
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">

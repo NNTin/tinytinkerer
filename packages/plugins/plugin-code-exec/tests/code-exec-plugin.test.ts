@@ -96,7 +96,8 @@ describe('codeExecPlugin', () => {
       timedOut: true,
       error: 'execution timed out'
     }
-    const [tool] = codeExecPlugin().createTools?.(hostWithSandbox(() => Promise.resolve(failed))) ?? []
+    const [tool] =
+      codeExecPlugin().createTools?.(hostWithSandbox(() => Promise.resolve(failed))) ?? []
 
     await expect(tool!.execute({ code: 'while(true){}' })).resolves.toEqual(failed)
   })

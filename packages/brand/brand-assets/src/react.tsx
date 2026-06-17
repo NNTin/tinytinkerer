@@ -1,5 +1,12 @@
 import { Suspense, lazy, useState, type ComponentType, type ReactNode } from 'react'
-import { FaGithub, FaHeart, FaInstagram, FaLinkedinIn, FaListUl, FaScaleBalanced } from 'react-icons/fa6'
+import {
+  FaGithub,
+  FaHeart,
+  FaInstagram,
+  FaLinkedinIn,
+  FaListUl,
+  FaScaleBalanced
+} from 'react-icons/fa6'
 import { TINYTINKERER_LICENSE, TINYTINKERER_SOCIALS, type BrandSocial } from './brand-links'
 import { TINYTINKERER_CREDITS_TITLE } from './credits'
 import type { AboutDialogKind } from './settings-dialogs'

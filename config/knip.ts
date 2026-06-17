@@ -66,10 +66,7 @@ const config: KnipConfig = {
       ]
     },
     'apps/mobile': {
-      ignoreDependencies: [
-        '@radix-ui/react-collapsible',
-        '@radix-ui/react-dialog'
-      ]
+      ignoreDependencies: ['@radix-ui/react-collapsible', '@radix-ui/react-dialog']
     },
     'packages/plugins/plugin-feedback': {
       // Declared for the plugin's schema work; no runtime import yet.

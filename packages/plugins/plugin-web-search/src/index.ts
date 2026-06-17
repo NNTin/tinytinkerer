@@ -29,9 +29,7 @@ export const WEB_SEARCH_PLUGIN_ID = 'web-search'
 export const summarizeWebSearchActivity: ActivitySummarizer = (output): ActivityView => {
   const value = (output ?? {}) as { query?: unknown; results?: unknown }
   const resultCount = Array.isArray(value.results) ? value.results.length : 0
-  const sections: ActivityView['sections'] = [
-    { label: 'Results', value: String(resultCount) }
-  ]
+  const sections: ActivityView['sections'] = [{ label: 'Results', value: String(resultCount) }]
   if (typeof value.query === 'string' && value.query.length > 0) {
     sections.push({ label: 'Query', value: value.query })
   }
@@ -125,9 +123,7 @@ const createWebSearchTool = (
     const parsed = searchResponseSchema.safeParse(payload)
     if (!parsed.success) {
       throw new WebSearchSchemaError(
-        parsed.error.issues.map(
-          (issue) => `${issue.path.join('.') || '(root)'}: ${issue.code}`
-        )
+        parsed.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.code}`)
       )
     }
     return parsed.data

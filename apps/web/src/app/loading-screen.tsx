@@ -26,7 +26,9 @@ const LoadingCard = ({ eyebrow, title, message, error }: LoadingScreenProps) => 
       ) : (
         <div className="mt-5 flex items-center gap-3">
           <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500" />
-          <span className="text-xs text-[var(--muted)]">Preparing the browser shell and local settings.</span>
+          <span className="text-xs text-[var(--muted)]">
+            Preparing the browser shell and local settings.
+          </span>
         </div>
       )}
     </div>
@@ -64,7 +66,9 @@ export const WebPanelLoading = () => (
     <div className="w-full max-w-md rounded-[1.75rem] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-[0_24px_80px_rgba(47,41,35,0.12)]">
       <p className="text-[11px] uppercase tracking-[0.24em] text-[var(--muted)]">Settings</p>
       <h2 className="mt-2 text-lg font-semibold text-[var(--text)]">Loading controls</h2>
-      <p className="mt-2 text-sm text-[var(--muted)]">Pulling in account, model, and MCP configuration UI.</p>
+      <p className="mt-2 text-sm text-[var(--muted)]">
+        Pulling in account, model, and MCP configuration UI.
+      </p>
     </div>
   </div>
 )

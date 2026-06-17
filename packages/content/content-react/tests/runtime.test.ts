@@ -196,9 +196,9 @@ describe('createContentRuntime', () => {
     await expect(
       runtime.prepareNode({ type: 'codeBlock', code: 'graph', language: 'mermaid' })
     ).rejects.toThrow('first attempt')
-    expect(
-      runtime.renderNode({ type: 'codeBlock', code: 'graph', language: 'mermaid' })
-    ).toBe('fallback:loadFailed')
+    expect(runtime.renderNode({ type: 'codeBlock', code: 'graph', language: 'mermaid' })).toBe(
+      'fallback:loadFailed'
+    )
     await expect(
       runtime.prepareNode({ type: 'codeBlock', code: 'graph', language: 'mermaid' })
     ).resolves.toBeUndefined()

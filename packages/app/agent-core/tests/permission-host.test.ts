@@ -38,11 +38,7 @@ describe('PluginHost.requestPermission', () => {
       .mockResolvedValue({ allow: true })
     const host: PluginHost = { capture: vi.fn(), requestPermission }
 
-    const result = await runToolBeforeExecuteHooks(
-      [permissionGate(host)],
-      context,
-      1000
-    )
+    const result = await runToolBeforeExecuteHooks([permissionGate(host)], context, 1000)
 
     expect(result).toEqual({ allow: true })
     expect(requestPermission).toHaveBeenCalledWith({
@@ -56,15 +52,10 @@ describe('PluginHost.requestPermission', () => {
   it('lets a gate deny a tool, carrying the reason to the runtime', async () => {
     const host: PluginHost = {
       capture: vi.fn(),
-      requestPermission: () =>
-        Promise.resolve({ allow: false, reason: 'Denied by user' })
+      requestPermission: () => Promise.resolve({ allow: false, reason: 'Denied by user' })
     }
 
-    const result = await runToolBeforeExecuteHooks(
-      [permissionGate(host)],
-      context,
-      1000
-    )
+    const result = await runToolBeforeExecuteHooks([permissionGate(host)], context, 1000)
 
     expect(result).toEqual({ allow: false, reason: 'Denied by user' })
   })
@@ -72,11 +63,7 @@ describe('PluginHost.requestPermission', () => {
   it('allows when the host omits the optional permission service', async () => {
     const host: PluginHost = { capture: vi.fn() }
 
-    const result = await runToolBeforeExecuteHooks(
-      [permissionGate(host)],
-      context,
-      1000
-    )
+    const result = await runToolBeforeExecuteHooks([permissionGate(host)], context, 1000)
 
     expect(result).toEqual({ allow: true })
   })
@@ -91,12 +78,7 @@ describe('PluginHost.requestPermission', () => {
       handler: () => new Promise<ToolGateResult>(() => {})
     }
 
-    const result = await runToolBeforeExecuteHooks(
-      [neverAnswered],
-      context,
-      60_000,
-      5
-    )
+    const result = await runToolBeforeExecuteHooks([neverAnswered], context, 60_000, 5)
 
     expect(result).toEqual({
       allow: false,
@@ -112,9 +94,7 @@ describe('PluginHost.requestPermission', () => {
       event: 'tool.beforeExecute',
       awaitsHumanInput: true,
       handler: () =>
-        new Promise<ToolGateResult>((resolve) =>
-          setTimeout(() => resolve({ allow: true }), 20)
-        )
+        new Promise<ToolGateResult>((resolve) => setTimeout(() => resolve({ allow: true }), 20))
     }
 
     const result = await runToolBeforeExecuteHooks([slowApproval], context, 1, 1000)

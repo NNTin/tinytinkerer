@@ -32,17 +32,11 @@ export class PluginRegistry {
   // lifecycle is driven by the change in `activeIds` between calls; every
   // activate/deactivate callback is best-effort (never awaited, failures
   // swallowed) so a misbehaving plugin can never break runtime construction.
-  collectTools(
-    activeIds: ReadonlySet<string>,
-    host: PluginHost
-  ): Tool<unknown, unknown>[] {
+  collectTools(activeIds: ReadonlySet<string>, host: PluginHost): Tool<unknown, unknown>[] {
     return this.collect(activeIds, host, false).tools
   }
 
-  collectContributions(
-    activeIds: ReadonlySet<string>,
-    host: PluginHost
-  ): PluginContributions {
+  collectContributions(activeIds: ReadonlySet<string>, host: PluginHost): PluginContributions {
     return this.collect(activeIds, host, true)
   }
 

@@ -8,9 +8,7 @@ import { isPluginModule, type PluginModule } from '@tinytinkerer/app-core'
 // Loading is best-effort and tolerates missing/broken plugins — a module that
 // fails to import, or does not satisfy the PluginModule contract, is skipped so
 // an optional plugin can never break runtime or settings construction.
-const pluginModuleLoaders = import.meta.glob<unknown>(
-  '../../../../plugins/*/src/index.ts'
-)
+const pluginModuleLoaders = import.meta.glob<unknown>('../../../../plugins/*/src/index.ts')
 
 let cache: Promise<PluginModule[]> | undefined
 

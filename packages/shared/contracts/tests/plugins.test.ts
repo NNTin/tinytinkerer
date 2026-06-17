@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  feedbackInputSchema,
-  pluginActivationStateSchema
-} from '../src/index.js'
+import { feedbackInputSchema, pluginActivationStateSchema } from '../src/index.js'
 
 describe('feedbackInputSchema', () => {
   it('accepts a bug report and an idea', () => {
@@ -39,14 +36,13 @@ describe('feedbackInputSchema', () => {
 
 describe('pluginActivationStateSchema', () => {
   it('parses a map of plugin ids to booleans', () => {
-    expect(
-      pluginActivationStateSchema.parse({ 'send-feedback': true, other: false })
-    ).toEqual({ 'send-feedback': true, other: false })
+    expect(pluginActivationStateSchema.parse({ 'send-feedback': true, other: false })).toEqual({
+      'send-feedback': true,
+      other: false
+    })
   })
 
   it('rejects non-boolean values', () => {
-    expect(
-      pluginActivationStateSchema.safeParse({ 'send-feedback': 'yes' }).success
-    ).toBe(false)
+    expect(pluginActivationStateSchema.safeParse({ 'send-feedback': 'yes' }).success).toBe(false)
   })
 })

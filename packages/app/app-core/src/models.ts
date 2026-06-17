@@ -27,13 +27,10 @@ export const FALLBACK_MODELS: readonly ModelEntry[] = [
   }
 ]
 
-export const normalizeSelectedModel = (
-  value: string | null | undefined
-): string => (value && value.trim() ? value : DEFAULT_MODEL)
+export const normalizeSelectedModel = (value: string | null | undefined): string =>
+  value && value.trim() ? value : DEFAULT_MODEL
 
-export type LiteLLMBaseUrlValidation =
-  | { ok: true; url: string }
-  | { ok: false; error: string }
+export type LiteLLMBaseUrlValidation = { ok: true; url: string } | { ok: false; error: string }
 
 /**
  * Validate a user-entered LiteLLM base URL with the shared contracts
@@ -64,8 +61,7 @@ export const validateLiteLLMBaseUrl = (
       case 'forbidden-url-parts':
         return {
           ok: false,
-          error:
-            'The base URL must not include credentials, a query string, or a fragment.'
+          error: 'The base URL must not include credentials, a query string, or a fragment.'
         }
       case 'not-allowed':
       case 'invalid-url':
@@ -79,9 +75,7 @@ export const validateLiteLLMBaseUrl = (
 // Load-path normalization for stored preferences: an invalid stored value
 // falls back to the deployment default rather than surfacing an error (the
 // user already saw the validation message when they tried to save it).
-export const normalizeLiteLLMBaseUrl = (
-  value: string | null | undefined
-): string => {
+export const normalizeLiteLLMBaseUrl = (value: string | null | undefined): string => {
   const result = validateLiteLLMBaseUrl(value)
   return result.ok ? result.url : LITELLM_DEPLOYMENT_DEFAULT
 }

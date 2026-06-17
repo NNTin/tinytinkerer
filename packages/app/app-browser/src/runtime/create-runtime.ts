@@ -187,8 +187,7 @@ export const createRuntime = (options: {
   // telemetry; it no-ops unless telemetry consent is granted. An `info` report is
   // routed to `captureTelemetryMessage` so it surfaces as an informational
   // message (not an error issue); `warning`/`error` go through the exception path.
-  const pluginRuntime =
-    options.pluginRuntime ?? createPluginRuntime(options.pluginModules ?? [])
+  const pluginRuntime = options.pluginRuntime ?? createPluginRuntime(options.pluginModules ?? [])
   // A plugin is active when the user's stored choice says so, or — with no stored
   // choice — when its manifest opts in via `defaultEnabled` (e.g. web search ships
   // on). Resolving against the discovered manifests keeps this fully generic: no
@@ -234,10 +233,7 @@ export const createRuntime = (options: {
       readDom: domReader
     }
     const addedPluginToolIds = new Set<string>()
-    const contributions = pluginRuntime.registry.collectContributions(
-      activePluginIds,
-      pluginHost
-    )
+    const contributions = pluginRuntime.registry.collectContributions(activePluginIds, pluginHost)
     hooks.push(...contributions.hooks)
     for (const tool of contributions.tools) {
       if (addTool(tool)) {
@@ -271,9 +267,7 @@ export const createRuntime = (options: {
       baseUrl: options.baseUrl,
       getToken: options.getToken,
       getModel: options.getModel,
-      ...(options.getLiteLLMBaseUrl
-        ? { getLiteLLMBaseUrl: options.getLiteLLMBaseUrl }
-        : {}),
+      ...(options.getLiteLLMBaseUrl ? { getLiteLLMBaseUrl: options.getLiteLLMBaseUrl } : {}),
       allToolDescriptors
     }),
     // Terminal runtime failures (e.g. a ReAct decision timeout, a provider/edge

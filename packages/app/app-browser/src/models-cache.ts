@@ -192,8 +192,7 @@ export const includeSelectedModel = (
   selectedModel: string | null | undefined
 ): ModelEntry[] => {
   const normalized = selectedModel?.trim()
-  if (!normalized || models.some((model) => model.id === normalized))
-    return models
+  if (!normalized || models.some((model) => model.id === normalized)) return models
   return [
     {
       provider: DEFAULT_MODEL_PROVIDER,

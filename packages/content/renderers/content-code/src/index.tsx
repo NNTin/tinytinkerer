@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type RefObject
-} from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import {
   useContentRenderOptions,
   useCopyButtonState,
@@ -106,12 +100,7 @@ type UseEditorArgs = {
   editable: boolean
 }
 
-const useCodeMirrorEditor = ({
-  value,
-  onChange,
-  language,
-  editable
-}: UseEditorArgs): EditorRef => {
+const useCodeMirrorEditor = ({ value, onChange, language, editable }: UseEditorArgs): EditorRef => {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   const langCompartmentRef = useRef<Compartment | null>(null)
@@ -153,7 +142,10 @@ const useCodeMirrorEditor = ({
         }),
         EditorView.theme({
           '&': { backgroundColor: '#ffffff' },
-          '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '12px' }
+          '.cm-scroller': {
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: '12px'
+          }
         })
       ]
     })
@@ -473,7 +465,10 @@ const FullscreenCodeEditor = ({
             </button>
           </div>
         </div>
-        <div ref={editorRef} className="tt-code-editor tt-code-editor--fullscreen flex-1 overflow-auto" />
+        <div
+          ref={editorRef}
+          className="tt-code-editor tt-code-editor--fullscreen flex-1 overflow-auto"
+        />
       </div>
     </div>
   )

@@ -1,7 +1,4 @@
-import type {
-  ContentNode,
-  ContentNodeByType
-} from '@tinytinkerer/content-core'
+import type { ContentNode, ContentNodeByType } from '@tinytinkerer/content-core'
 import { reportContentRenderError } from './error-reporter'
 
 type NodeRendererPluginRequirements = {
@@ -73,10 +70,7 @@ type RuntimeWrapContext<TResult> = {
   readonly fallback: (reason?: RuntimeFailureReason, error?: unknown) => TResult
 }
 
-type RuntimeWrap<TResult> = (
-  result: TResult,
-  ctx: RuntimeWrapContext<TResult>
-) => TResult
+type RuntimeWrap<TResult> = (result: TResult, ctx: RuntimeWrapContext<TResult>) => TResult
 
 export type CreateContentRuntimeOptions<TResult> = {
   readonly fallback: RuntimeFallback<TResult>
@@ -136,18 +130,16 @@ export const createContentRuntime = <TResult>(
 
   const getPluginsForNodeType = (
     nodeType: ContentNode['type']
-  ): readonly AnyNodeRendererPlugin<TResult>[] => getRegisteredPlugins(nodeType).map((entry) => entry.plugin)
+  ): readonly AnyNodeRendererPlugin<TResult>[] =>
+    getRegisteredPlugins(nodeType).map((entry) => entry.plugin)
 
-  const matchesNode = (
-    plugin: AnyNodeRendererPlugin<TResult>,
-    node: ContentNode
-  ): boolean => {
+  const matchesNode = (plugin: AnyNodeRendererPlugin<TResult>, node: ContentNode): boolean => {
     if (!plugin.matches) {
       return true
     }
-    return (
-      plugin.matches as (candidate: ContentNodeByType[typeof plugin.nodeType]) => boolean
-    )(node)
+    return (plugin.matches as (candidate: ContentNodeByType[typeof plugin.nodeType]) => boolean)(
+      node
+    )
   }
 
   const policyAllows = (plugin: AnyNodeRendererPlugin<TResult>): boolean => {

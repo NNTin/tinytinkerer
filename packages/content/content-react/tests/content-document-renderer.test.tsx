@@ -83,7 +83,9 @@ describe('ContentDocumentRenderer', () => {
   it('falls back when a specialized renderer is missing', () => {
     render(
       <ContentDocumentRenderer
-        document={withIds({ nodes: [{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }] })}
+        document={withIds({
+          nodes: [{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }]
+        })}
       />
     )
 
@@ -105,7 +107,9 @@ describe('ContentDocumentRenderer', () => {
     render(
       <ContentDocumentRenderer
         runtime={runtime}
-        document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
+        document={withIds({
+          nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }]
+        })}
       />
     )
 
@@ -142,7 +146,9 @@ describe('ContentDocumentRenderer', () => {
       render(
         <ContentDocumentRenderer
           runtime={runtime}
-          document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
+          document={withIds({
+            nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }]
+          })}
         />
       )
 
@@ -179,7 +185,9 @@ describe('ContentDocumentRenderer', () => {
       render(
         <ContentDocumentRenderer
           runtime={runtime}
-          document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
+          document={withIds({
+            nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }]
+          })}
         />
       )
 
@@ -218,7 +226,9 @@ describe('ContentDocumentRenderer', () => {
       render(
         <ContentDocumentRenderer
           runtime={runtime}
-          document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
+          document={withIds({
+            nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }]
+          })}
         />
       )
 
@@ -250,7 +260,9 @@ describe('ContentDocumentRenderer', () => {
       render(
         <ContentDocumentRenderer
           runtime={runtime}
-          document={withIds({ nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }] })}
+          document={withIds({
+            nodes: [{ type: 'codeBlock', code: '[Button]', language: 'wireframe' }]
+          })}
         />
       )
 
@@ -401,7 +413,9 @@ describe('ContentDocumentRenderer', () => {
     render(
       <ContentDocumentRenderer
         runtime={runtime}
-        document={withIds({ nodes: [{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }] })}
+        document={withIds({
+          nodes: [{ type: 'codeBlock', code: 'graph TD\nA-->B', language: 'mermaid' }]
+        })}
       />
     )
 
@@ -426,7 +440,9 @@ describe('ContentDocumentRenderer', () => {
     render(
       <ContentDocumentRenderer
         runtime={runtime}
-        document={withIds({ nodes: [{ type: 'codeBlock', code: '<html />', language: 'wireframe' }] })}
+        document={withIds({
+          nodes: [{ type: 'codeBlock', code: '<html />', language: 'wireframe' }]
+        })}
       />
     )
 

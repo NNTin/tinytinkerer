@@ -95,7 +95,9 @@ beforeAll(async () => {
     })
     const output = Array.isArray(result) ? result[0] : result
     const allEntries = (output as { output: Array<OutputChunk | OutputAsset> }).output
-    chunks = allEntries.filter((entry): entry is OutputChunk => entry.type === 'chunk' && typeof entry.code === 'string')
+    chunks = allEntries.filter(
+      (entry): entry is OutputChunk => entry.type === 'chunk' && typeof entry.code === 'string'
+    )
     assets = allEntries.filter((entry): entry is OutputAsset => entry.type === 'asset')
   } finally {
     process.env.NODE_ENV = previousNodeEnv

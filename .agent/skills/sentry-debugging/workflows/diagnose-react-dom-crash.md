@@ -24,13 +24,15 @@ root/portal container** — i.e. a top-level node — and the browser reports it
 
 ## Steps
 
-1. **Confirm there's no first-party frame.** If our code *does* appear (a component calling
+1. **Confirm there's no first-party frame.** If our code _does_ appear (a component calling
    `removeChild`/`appendChild`/`createPortal` on a node it doesn't own), that's the bug — fix it.
    Grep the source for direct DOM mutation:
+
    ```bash
    grep -rn "removeChild\|appendChild\|insertBefore\|replaceChild\|createPortal\|document\.body\|innerHTML" \
      --include=*.ts --include=*.tsx apps/ packages/ | grep -v node_modules | grep -v '\.test\.'
    ```
+
    Appends to `<head>` (e.g. injecting `<link>`/`<style>`) and setting `dataset`/attributes are **not**
    the cause — they don't touch the React tree. If nothing in our code removes a node React owns,
    the mutation is **external** → step 2.
@@ -43,8 +45,8 @@ root/portal container** — i.e. a top-level node — and the browser reports it
      English app) → the browser offered to translate.
    - `DOMException.code: 8` (`NotFoundError`) on `removeChild`, via `onerror`.
    - Reproduces for a single user, sporadically, only on real browsers (never in tests/CI).
-   Browser extensions that inject/rewrite DOM (ad blockers, Grammarly, password managers) cause the
-   same class; translation is the most common.
+     Browser extensions that inject/rewrite DOM (ad blockers, Grammarly, password managers) cause the
+     same class; translation is the most common.
 
 3. **Decide & fix:**
    - **External mutation (translation/extension)** → not a logic bug, but **don't `accept`/`ignore`**
@@ -55,6 +57,7 @@ root/portal container** — i.e. a top-level node — and the browser reports it
      <html lang="en" translate="no">
        ...
        <meta name="google" content="notranslate" />
+     </html>
      ```
      Translation engines honour `translate="no"` / the `notranslate` meta and skip the subtree, so
      they stop mutating React-owned DOM. (You generally don't want the live chat UI machine-translated
