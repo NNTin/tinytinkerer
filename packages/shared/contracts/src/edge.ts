@@ -58,14 +58,40 @@ export const searchResponseSchema = z
 
 export type SearchResponse = z.infer<typeof searchResponseSchema>
 
+// Per-message content ceiling the edge enforces on every chat request. Exceeding
+// it fails request validation, and the edge's OpenAPI defaultHook answers
+// 400 "Invalid request" — which the ReAct decider rethrows, ending the whole run.
+// Tool results are folded verbatim into the decide/synthesize prompt and can be
+// large (a run_javascript result that returns the full `dom` tree, a big MCP
+// response), so callers MUST clamp message content to this before sending (see
+// clampChatMessageContent + modelsChatRequestBody). Root cause of
+// TINYTINKERER-FRONTEND-14 / TINYTINKERER-FRONTEND-15.
+export const MAX_CHAT_MESSAGE_CONTENT_CHARS = 32_000
+
 export const chatMessageSchema = z
   .object({
     role: z.enum(['developer', 'system', 'user', 'assistant']),
-    content: z.string().max(32000)
+    content: z.string().max(MAX_CHAT_MESSAGE_CONTENT_CHARS)
   })
   .meta({ id: 'ChatMessage' })
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>
+
+const CHAT_CONTENT_TRUNCATION_MARKER = '… [truncated]'
+
+// Clamp one message's content to MAX_CHAT_MESSAGE_CONTENT_CHARS, appending a marker
+// when it had to cut. An oversized message (usually a large tool result folded into
+// the prompt) then degrades gracefully instead of failing edge request validation
+// with 400 "Invalid request" and aborting the run (TINYTINKERER-FRONTEND-14/15).
+// The cut keeps the head, so when tool results are appended last they are trimmed
+// before the request/prompt. The clamped length is exactly the ceiling.
+export const clampChatMessageContent = (content: string): string =>
+  content.length > MAX_CHAT_MESSAGE_CONTENT_CHARS
+    ? `${content.slice(
+        0,
+        MAX_CHAT_MESSAGE_CONTENT_CHARS - CHAT_CONTENT_TRUNCATION_MARKER.length
+      )}${CHAT_CONTENT_TRUNCATION_MARKER}`
+    : content
 
 // LiteLLM is the sole provider — it proxies the upstream LLM providers itself.
 // The single-value enum tags each model entry with its provider; it is not a

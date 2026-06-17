@@ -1,4 +1,5 @@
 import {
+  clampChatMessageContent,
   EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
   type ChatMessage
@@ -115,7 +116,17 @@ export const modelsChatRequestBody = (
   const baseUrl = litellmBaseUrl?.trim()
   return {
     ...(baseUrl ? { litellmBaseUrl: baseUrl } : {}),
-    ...init
+    ...init,
+    // Clamp every message to the edge's per-message ceiling here — the single
+    // place all chat requests (decide, synthesize, plan) are shaped — so an
+    // oversized observation (e.g. a run_javascript result that returned the full
+    // `dom` tree, or a large MCP response folded into the prompt) degrades
+    // gracefully instead of tripping the edge's request validation, which answers
+    // 400 "Invalid request" and ends the whole run (TINYTINKERER-FRONTEND-14/15).
+    messages: init.messages.map((message) => ({
+      ...message,
+      content: clampChatMessageContent(message.content)
+    }))
   }
 }
 

@@ -3,6 +3,7 @@ import type {
   SandboxExecutionRequest,
   SandboxExecutionResult
 } from '@tinytinkerer/app-core'
+import { MAX_CHAT_MESSAGE_CONTENT_CHARS } from '@tinytinkerer/contracts'
 import type { DomSnapshotNode } from './dom-reader'
 
 // Resource ceilings the host enforces regardless of what a plugin requests. These
@@ -148,11 +149,32 @@ const SANDBOX_SRCDOC = `<!doctype html>
 </body>
 </html>`
 
+// A run_javascript `result` is opaque and can be large — a script that returns the
+// full `dom` tree (up to ~20k nodes) serializes to hundreds of KB. That result is
+// folded verbatim into the next model message, so bound it at the source to the
+// per-message ceiling: it keeps the result from bloating context/memory and being
+// re-serialized every turn. The chat-request layer clamps the final wire payload
+// too (modelsChatRequestBody), so this is defense-in-depth (TINYTINKERER-FRONTEND-14/15).
+const MAX_RESULT_CHARS = MAX_CHAT_MESSAGE_CONTENT_CHARS
+
+const boundResult = (value: unknown): unknown => {
+  let serialized: string | undefined
+  try {
+    serialized = JSON.stringify(value)
+  } catch {
+    return value
+  }
+  return typeof serialized === 'string' && serialized.length > MAX_RESULT_CHARS
+    ? `${serialized.slice(0, MAX_RESULT_CHARS)} …[result truncated]`
+    : value
+}
+
 // Coerce the untrusted message from the sandbox into the contract shape. The
 // sandbox content is adversarial by assumption, so we never trust types: `result`
-// passes through as opaque data (never rendered as HTML by callers), and logs are
-// filtered, line-capped, AND total-size-capped here — a real host-side budget that
-// does not depend on the (untrusted) worker honoring its own in-worker cap.
+// passes through as opaque data (never rendered as HTML by callers) but is
+// size-bounded, and logs are filtered, line-capped, AND total-size-capped here — a
+// real host-side budget that does not depend on the (untrusted) worker honoring
+// its own in-worker cap.
 export const normalizeResult = (data: Record<string, unknown>): SandboxExecutionResult => {
   const rawLogs = Array.isArray(data.logs) ? data.logs : []
   const logs: string[] = []
@@ -175,7 +197,7 @@ export const normalizeResult = (data: Record<string, unknown>): SandboxExecution
     timedOut: data.timedOut === true
   }
   if ('result' in data) {
-    result.result = data.result
+    result.result = boundResult(data.result)
   }
   if (typeof data.error === 'string') {
     result.error = data.error

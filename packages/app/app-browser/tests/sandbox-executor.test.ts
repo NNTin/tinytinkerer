@@ -68,6 +68,21 @@ describe('normalizeResult', () => {
     expect('result' in normalizeResult({ ok: true, logs: [], timedOut: false })).toBe(false)
     expect(normalizeResult({ ok: true, result: null, logs: [], timedOut: false }).result).toBeNull()
   })
+
+  it('bounds an oversized result at the source so it cannot bloat the next message (FRONTEND-14/15)', () => {
+    // A run_javascript that returns the full `dom` tree can be hundreds of KB.
+    const huge = { blob: 'x'.repeat(200_000) }
+    const result = normalizeResult({ ok: true, result: huge, logs: [], timedOut: false }).result
+    expect(typeof result).toBe('string')
+    expect((result as string).endsWith('…[result truncated]')).toBe(true)
+    expect((result as string).length).toBeLessThan(200_000)
+
+    // A normal-sized result is returned unchanged (object, not stringified).
+    const small = { count: 3 }
+    expect(normalizeResult({ ok: true, result: small, logs: [], timedOut: false }).result).toEqual(
+      small
+    )
+  })
 })
 
 class FakeWorker {

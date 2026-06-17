@@ -11,6 +11,7 @@ vi.mock('../src/telemetry/telemetry.js', async () => {
   }
 })
 
+import { MAX_CHAT_MESSAGE_CONTENT_CHARS } from '@tinytinkerer/contracts'
 import {
   createEdgeFetch,
   createModelsChatFetch,
@@ -122,6 +123,23 @@ describe('modelsChatRequestBody', () => {
       litellmBaseUrl: 'https://litellm.example.com/',
       ...init
     })
+  })
+
+  it('clamps oversized message content to the edge ceiling so it cannot 400 (FRONTEND-14/15)', () => {
+    const huge = 'x'.repeat(MAX_CHAT_MESSAGE_CONTENT_CHARS + 5_000)
+    const body = modelsChatRequestBody(undefined, {
+      model: 'm',
+      stream: false,
+      messages: [
+        { role: 'system' as const, content: 'ok' },
+        { role: 'user' as const, content: huge }
+      ]
+    }) as { messages: { role: string; content: string }[] }
+
+    expect(body.messages[0]!.content).toBe('ok') // small content untouched
+    const clamped = body.messages[1]!.content
+    expect(clamped.length).toBe(MAX_CHAT_MESSAGE_CONTENT_CHARS)
+    expect(clamped.endsWith('… [truncated]')).toBe(true)
   })
 })
 
