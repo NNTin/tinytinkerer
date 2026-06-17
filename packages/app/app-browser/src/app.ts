@@ -24,6 +24,7 @@ import {
   setTelemetryConsent
 } from './telemetry/telemetry'
 import type { ContentRenderErrorInfo } from '@tinytinkerer/content-react'
+import { diagnostics } from './diagnostics'
 
 export type BrowserApp = {
   shell: BrowserShell
@@ -118,9 +119,15 @@ export const initializeBrowserApp = async (
       setContentRenderErrorReporter(reportContentRender)
     })
     .catch((error: unknown) => {
-      // Telemetry wiring must never break startup; surface the failure in dev
-      // and continue without the content-render sink.
-      console.error('Failed to wire content render telemetry', error)
+      // Telemetry wiring must never break startup; surface the failure in dev as
+      // a structured, code-named diagnostic (report-only, so the nostics strip
+      // transform removes it — and its reporters — from production builds) and
+      // continue without the content-render sink. In production the failure is
+      // silent here by design; Sentry remains the source of truth.
+      diagnostics.TT_CONTENT_RENDER_TELEMETRY_WIRING_FAILED({
+        module: '@tinytinkerer/content-react',
+        cause: error
+      })
     })
   await configureTelemetry(
     {

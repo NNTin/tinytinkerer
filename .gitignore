@@ -27,6 +27,11 @@ apps/mobile/dev-dist/
 # Agent Orchestrator runtime data
 .ao/
 
+# nostics dev-server diagnostics log (developer DX layer). Written by
+# @nostics/unplugin's dev-server collector under `vite serve`; never shipped.
+.nostics.log
+**/.nostics.log
+
 # Compliance artifacts — generated on demand by the Compliance workflow
 # (scripts/generate-sbom.mjs / generate-notices.mjs) into dist/compliance/.
 # Not versioned: they are derived from the dependency tree and shipped as CI

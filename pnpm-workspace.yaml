@@ -3,8 +3,29 @@ packages:
   - packages/*/*
   - packages/content/renderers/*
 
-# Strict one-week age gate. Do not add minimumReleaseAgeExclude; if a newer package is needed, stop and ask a human.
+# Strict one-week age gate. Do NOT add entries to minimumReleaseAgeExclude without
+# explicit human approval; if a newer package is needed, stop and ask a human. The
+# block below is the ONLY sanctioned exception and is time-boxed (see removal date).
 minimumReleaseAge: 10080
+# --- HUMAN-AUTHORIZED, TIME-LIMITED AGE-GATE EXCEPTION (granted 2026-06-17) ---
+# nostics + @nostics/unplugin are the developer-facing diagnostics DX layer. Every
+# published @nostics/unplugin version is younger than the 7-day gate (oldest 0.0.0
+# @ 2026-06-12) and its strip plugin is REQUIRED to keep the deployed bundle
+# unaffected, so the integration cannot proceed without these two packages. A human
+# authorized an exception for these EXACT pinned versions ONLY (both published
+# 2026-06-15, ~2 days old at grant time):
+#   - nostics@1.0.0
+#   - @nostics/unplugin@1.0.0
+# The exact versions are pinned in the consuming package.json files (saveExact);
+# this list only waives the age check for these two package names. Do NOT bump to
+# 1.1.x under this waiver.
+# REMOVAL CONDITION: both versions clear the 7-day gate ~2026-06-22. Once they do,
+# DELETE this minimumReleaseAgeExclude block entirely so the gate covers them
+# normally. This mirrors the dated esbuild GHSA suppression below: a narrow,
+# documented, time-boxed exception — not a general relaxation of the policy.
+minimumReleaseAgeExclude:
+  - nostics
+  - '@nostics/unplugin'
 saveExact: true
 auditLevel: moderate
 # Temporary suppression: GHSA-gv7w-rqvm-qjhr (esbuild) is only patched in

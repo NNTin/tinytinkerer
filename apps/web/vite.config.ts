@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
+import { nosticsStrip } from '@nostics/unplugin/strip-transform'
+import { nosticsCollector } from '@nostics/unplugin/dev-server-collector'
 import { getBuildInfo } from '../../scripts/build-info.mjs'
 
 const deployBase = process.env.TINYTINKERER_DEPLOY_BASE?.replace(/\/+$/, '')
@@ -13,7 +15,7 @@ const { appVersion, buildHash } = getBuildInfo()
 // (production CI). Local and PR-preview builds emit no maps and skip the plugin.
 const sentryEnabled = Boolean(process.env.SENTRY_AUTH_TOKEN)
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   base,
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
@@ -22,6 +24,17 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    // nostics strip transform (developer diagnostics DX layer). Runs in every
+    // build: it pure-annotates `defineDiagnostics()` and guards report-only
+    // diagnostic call sites with `process.env.NODE_ENV !== 'production'`, so the
+    // production `build:pages` bundle tree-shakes out report-only diagnostics and
+    // their dev reporters. Sentry + the edge error contract remain the prod
+    // source of truth — see packages/app/app-browser/src/diagnostics.ts.
+    nosticsStrip.vite(),
+    // Dev-server only: collects diagnostics forwarded from the browser by the
+    // dev reporter and appends them to `.nostics.log` for an agent to read.
+    // Never part of a production build.
+    ...(command === 'serve' ? [nosticsCollector.vite()] : []),
     // Provides the `virtual:pwa-register` module so the shared bootstrap's
     // `registerPwa()` call resolves uniformly across shells. `disable: true`
     // emits no service worker — registerSW resolves to a no-op — so web ships
@@ -90,4 +103,4 @@ export default defineConfig({
       }
     }
   }
-})
+}))
