@@ -146,12 +146,12 @@ the mock's captured (decoded) message text is the in-sandbox oracle — see §7.
 
 ## 5. Browser matrix — phased
 
-- **Phase 1: Chromium only.** Fastest path, matches the primary deployment target, smallest WSL2
-  install. Lands #217.
-- **Phase 2: add Firefox + WebKit.** The isolation guarantees are engine-sensitive (CSP-in-srcdoc,
-  opaque-origin, blob-worker behavior differ across Blink/Gecko/WebKit), so cross-engine coverage is
-  desirable — but deferred to keep the first landing small. Track it; the spec notes the guarantees
-  are engine-sensitive so it is not forgotten.
+- **Phase 1 (in scope, done): Chromium only.** Fastest path, matches the primary deployment target,
+  smallest WSL2 install. Lands #217.
+- **Phase 2 (out of scope here): Firefox + WebKit.** The isolation guarantees are engine-sensitive
+  (CSP-in-srcdoc, opaque-origin, blob-worker behavior differ across Blink/Gecko/WebKit), so
+  cross-engine coverage is desirable — but deferred to keep the first landing small. **Out of scope
+  for this suite and tracked by [#245](https://github.com/NNTin/tinytinkerer/issues/245).**
 
 ## 6. CI & supply-chain policy
 
@@ -263,7 +263,8 @@ mocked-LiteLLM full-flow specs.
 - [x] One spec per guarantee in §7, each with both oracles; **all seven pass in Chromium**.
 - [x] `e2e.yml` CI job with cached `playwright install`; supply-chain gates satisfied per §6; human
       authorization obtained (`playwright` → `ignoredBuiltDependencies`, `@playwright/test@1.60.0`).
-- [ ] (Phase 2, follow-up) Firefox + WebKit projects.
+- [ ] (Phase 2 — out of scope here, tracked by [#245](https://github.com/NNTin/tinytinkerer/issues/245))
+      Firefox + WebKit projects.
 
 ## 10. Resolved decisions (record)
 
@@ -273,12 +274,13 @@ mocked-LiteLLM full-flow specs.
    (§4)
 3. **Supply-chain** → `@playwright/test@1.60.0` (clears the 7-day gate, Apache-2.0); `playwright`
    added to `ignoredBuiltDependencies`; out-of-band browser download acknowledged. (§6)
-4. **Browser matrix** → **Chromium-only** first; Firefox + WebKit are a tracked Phase-2 follow-up.
-   (§5)
+4. **Browser matrix** → **Chromium-only** first; Firefox + WebKit are **out of scope** here and
+   tracked by [#245](https://github.com/NNTin/tinytinkerer/issues/245). (§5)
 
 ## References
 
 - Issue **#217** (parent #215), PR #216 (introduces the plugin + `createSandboxExecutor`).
+- Issue **#245** — cross-browser (Firefox + WebKit) sandbox-isolation coverage (Phase 2 follow-up).
 - `packages/app/app-browser/src/sandbox-executor.ts` — the isolation boundary under test.
 - `docs/plugin-infrastructure.md` — "The Code execution plugin" section + documented residual risk.
 - `apps/edge/src/routes/models.ts`, `packages/shared/contracts/src/edge.ts` — chat proxy + routes.
