@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import type { AgentHookContribution, PluginModule, Tool } from '@tinytinkerer/app-core'
+import type {
+  AgentHookContribution,
+  PluginEdgeFetch,
+  PluginModule,
+  Tool
+} from '@tinytinkerer/app-core'
 import { createPluginRuntime, createRuntime } from '../src/runtime/create-runtime.js'
 
 const testTool = (id: string): Tool<unknown, unknown> => ({
@@ -211,6 +216,80 @@ describe('plugin runtime contributions', () => {
     await runRuntime(runtime)
 
     expect(observed).toContain('assistant.done')
+    vi.unstubAllGlobals()
+  })
+
+  // TINYTINKERER-FRONTEND-11: web search is `defaultEnabled` and anonymous chat is
+  // allowed, but /api/search requires an authenticated caller. The host must NOT
+  // make that request (which would deterministically 401 and be captured) when no
+  // token is present — it short-circuits to a clean 401 with no network round-trip.
+  const captureHostEdgeFetch = (): {
+    module: PluginModule
+    getEdgeFetch: () => PluginEdgeFetch | undefined
+  } => {
+    let captured: PluginEdgeFetch | undefined
+    const module: PluginModule = {
+      manifest: { id: 'edge-probe', label: 'edge-probe', description: 'edge probe plugin' },
+      createPlugin: () => ({
+        id: 'edge-probe',
+        createTools: (host) => {
+          captured = host.edgeFetch
+          return []
+        }
+      })
+    }
+    return { module, getEdgeFetch: () => captured }
+  }
+
+  it('short-circuits an anonymous plugin edge call to 401 without a network request (TINYTINKERER-FRONTEND-11)', async () => {
+    const fetchSpy = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })))
+    vi.stubGlobal('fetch', fetchSpy)
+    const { module, getEdgeFetch } = captureHostEdgeFetch()
+
+    createRuntime({
+      baseUrl: 'http://edge.local',
+      getToken: () => null, // anonymous caller
+      getModel: () => 'openai/gpt-4.1-mini',
+      pluginActivation: { 'edge-probe': true },
+      pluginModules: [module]
+    })
+
+    const edgeFetch = getEdgeFetch()
+    expect(edgeFetch).toBeDefined()
+    const response = await edgeFetch!('/api/search', { query: 'x' }, { area: 'search' })
+
+    expect(response.ok).toBe(false)
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ error: 'Unauthorized' })
+    // The whole point of the fix: no request leaves the client, so no 401 is captured.
+    expect(fetchSpy).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('performs the plugin edge request when a token is present (real failures stay loud)', async () => {
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+    const { module, getEdgeFetch } = captureHostEdgeFetch()
+
+    createRuntime({
+      baseUrl: 'http://edge.local',
+      getToken: () => 'token',
+      getModel: () => 'openai/gpt-4.1-mini',
+      pluginActivation: { 'edge-probe': true },
+      pluginModules: [module]
+    })
+
+    await getEdgeFetch()!('/api/search', { query: 'x' }, { area: 'search' })
+    // Authenticated calls go to the edge as before, so a token-present 401/403
+    // (invalid/forbidden caller) still hits fetchWithTelemetry and stays captured.
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
     vi.unstubAllGlobals()
   })
 })

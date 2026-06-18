@@ -74,6 +74,12 @@ describe('createBrowserRuntimeFactory', () => {
     }).create()
 
   it('emits web-search tool events when the web-search plugin is enabled (default)', async () => {
+    // Web search hits /api/search, which requires an authenticated caller (it
+    // spends a funded Tavily credential). The host short-circuits the request for
+    // an anonymous user (TINYTINKERER-FRONTEND-11), so this happy-path test runs
+    // as a signed-in user; the anonymous-gate case is covered in
+    // create-runtime-plugins.test.ts.
+    mockAuth.token = 'test-token'
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {

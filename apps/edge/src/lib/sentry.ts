@@ -37,10 +37,11 @@ const dispatchToSentry = (error: Error, options: TelemetryCaptureOptions): void 
   })
 }
 
-// Message sink: non-error diagnostics (e.g. a request that omitted the provider
-// field and was silently defaulted) surface as Sentry *messages* at their given
-// level rather than synthetic error issues. Without this the shared
-// `captureTelemetryMessage` no-ops on the edge.
+// Message sink: non-error diagnostics (e.g. a LiteLLM key-value mismatch in
+// litellm-user-keys.ts) surface as Sentry *messages* at their given level rather
+// than synthetic error issues. Without this the shared `captureTelemetryMessage`
+// no-ops on the edge. (The old provider-missing default warning that this once
+// exemplified was retired with the LiteLLM-sole-provider migration in 6bae243.)
 const dispatchMessageToSentry = (message: string, options: TelemetryCaptureOptions): void => {
   Sentry.withScope((scope) => {
     applyScope(scope, options)

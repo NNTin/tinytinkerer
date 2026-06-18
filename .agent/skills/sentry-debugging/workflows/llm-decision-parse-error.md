@@ -163,6 +163,22 @@ catches rate-limit errors) and **kills the whole agent run**. So:
    the same file; fix BOTH or the issue relocates to the other path. A shared
    `parseDecisionOrFinal(metadata, jsonText, response)` helper keeps them identical.
 
+4. **Enrich the capture with the OFFENDING SHAPE so a `schema_error` is
+   self-diagnosable (`FRONTEND-12`).** A bare `ZodError` only says what we
+   _expected_ ("invalid*type, expected object, path []") — never what the model
+   actually produced, so you can't tell whether it returned an array, a string, or
+   an object missing a field. The `parse_error` path already passes the raw model
+   text as `rawInput` (→ `failure.raw_input` Sentry context, truncated to 1 KB);
+   the `schema_error` path historically omitted it. `parseModelJsonWithTelemetry`
+   now passes a compact `[<type>] <JSON.stringify(parsed)>` descriptor (the exact
+   parsed value that failed validation, type-tagged so the common wrong-top-level
+   mismatch is obvious even after truncation; falls back to the raw text if it
+   can't serialize) — see `describeOffendingShape` in `model-json.ts`. **This is
+   enrichment, not a fix:** a model-output `schema_error` stays loud and is \_not*
+   resolved unless you actually change the contract/prompt; the richer telemetry
+   just makes the next occurrence diagnosable (this is the "can't fix now → make
+   telemetry richer at the capture site" policy applied to a model-output defect).
+
 ## Prove it
 
 Add call-site tests, in `packages/app/app-browser/tests/react-decider.test.ts`,

@@ -123,6 +123,24 @@ export const createRuntime = (options: {
   // the host side via parseJsonWithTelemetry, keeping the plugin product-agnostic.
   const pluginEdgeFetch: PluginEdgeFetch = async (path, body, edgeOptions) => {
     const area = edgeOptions?.area
+    // Plugin edge routes (today: web search → /api/search) require an
+    // authenticated, identity-validated caller because they spend shared,
+    // server-funded credentials (Tavily). An anonymous caller sends no
+    // Authorization header, so the edge deterministically 401s — a preventable,
+    // by-design outcome that carries no diagnostic signal. The web-search tool is
+    // `defaultEnabled` and anonymous chat is allowed, so the model would otherwise
+    // pick web search and trip a captured 401 on every unauthenticated run
+    // (TINYTINKERER-FRONTEND-11). Short-circuit here WITHOUT a network round-trip or
+    // telemetry capture, surfacing a clean "Unauthorized" the tool turns into a
+    // graceful message for the model. A token that is *present but invalid/forbidden*
+    // still flows through edgeFetch below and stays loud (captured) — real signal.
+    if (!options.getToken()) {
+      return {
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ error: 'Unauthorized' })
+      }
+    }
     const response = await edgeFetch(path, body, area ? { area } : undefined)
     const metadata: RequestTelemetryMetadata = {
       area: area ?? path,
