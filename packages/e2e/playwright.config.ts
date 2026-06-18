@@ -22,8 +22,8 @@ const baseURL = `${origin}/web/`
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.e2e.ts',
-  // The sandbox's hard timeout is 10s; the teardown spec waits it out, so give
-  // each test headroom above that.
+  // The plugin requests an 8s sandbox deadline (the host caps at 10s); the teardown
+  // spec waits it out, so give each test headroom above that.
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
@@ -33,9 +33,7 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: {
     baseURL,
-    trace: 'on-first-retry',
-    // No app secrets exist in this suite, but keep storage clean between tests.
-    storageState: undefined
+    trace: 'on-first-retry'
   },
   projects: [
     // Phase 1: Chromium only (matches the primary deployment target, smallest
@@ -51,7 +49,10 @@ export default defineConfig({
   webServer: {
     command: `pnpm --filter @tinytinkerer/web exec vite preview --port ${port} --strictPort`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    // Reuse a running server only for the random-port local case. When a port is
+    // pinned (CI, or a deliberate local E2E_PORT), always start fresh so a stale
+    // server from an older `apps/web/dist` can't silently serve outdated code.
+    reuseExistingServer: !process.env.CI && !process.env.E2E_PORT,
     timeout: 120_000,
     stdout: 'pipe',
     stderr: 'pipe'

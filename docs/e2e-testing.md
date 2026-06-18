@@ -210,27 +210,36 @@ result must show) → the **external oracle** (what Playwright independently obs
 5. **No resource loads** — `new Image().src = sentinel`; media element → load error / no effect →
    route trap sees **zero** image/media requests.
 6. **Worker works** — benign `return 1 + 1` → `ok: true, result: 2` → (no external oracle needed).
-7. **Timeout/teardown** — `while (true) {}` → `timedOut: true` within the 10 s budget →
-   `page.locator('iframe[title="code execution sandbox"]').count()` ⇒ **0** after settle.
+7. **Timeout/teardown** — `while (true) {}` → `timedOut: true` within the **8 s** budget the plugin
+   requests (host caps at 10 s) → `page.locator('iframe[title="code execution sandbox"]').count()` ⇒
+   **0** after settle.
 
-> **As built:** each snippet `return`s a structured object; the runtime folds it into the next model
-> request, and the test asserts on the mock's **decoded** message text (the raw POST body escapes the
-> quotes, so decoding is required). Refinements found while implementing:
+> **As built:** each snippet `return`s a structured object; the runtime folds the
+> `SandboxExecutionResult` back into the next model request, and the test **parses that result out of
+> the captured request** (`mock.sandboxResult()`) and asserts on the typed object's fields — rather
+> than substring-matching the whole prompt transcript, which could collide with a tool description.
+> `runSnippetViaChat` also asserts **exactly one** action was issued (`actionCount === 1`), so a
+> phase mis-detection can't silently burn the iteration budget. Refinements found while implementing:
 >
-> - **Egress (1):** the in-sandbox oracle is async. `fetch`/sync-`XHR` reject/throw under
->   `connect-src 'none'`, but `WebSocket`/`EventSource` fail **asynchronously** (an `error`/`close`
->   event, never `open`) and `sendBeacon`/`EventSource` are simply **absent** from Worker scope — so
->   the snippet awaits each outcome and treats "never opened / unavailable" as blocked. The external
->   oracle watches `page.on('response')` (not `request`): Chromium still emits a `request` event for a
->   CSP-blocked attempt, so only a returned **response** would prove real egress; none occurs.
+> - **Egress (1) external oracle.** A Playwright route **fulfils any request to the sentinel host with
+>   `200` and records it** (`mock.sentinelHits()`). Under `connect-src 'none'` the request is blocked
+>   in the renderer and never reaches the route, so the list stays empty; a **leaking** sandbox's
+>   request is intercepted and recorded. This is what gives the oracle teeth — the sentinel host is
+>   `e2e-sandbox-sentinel.invalid` (RFC 6761 non-resolvable), so without the fulfilling route a leak
+>   would just fail DNS and look identical to a block (a tautology). Verified: an un-sandboxed `fetch`
+>   to the sentinel _is_ recorded.
+> - **Egress (1) in-sandbox oracle is async.** `fetch`/sync-`XHR` reject/throw under CSP (they exist
+>   in the Worker, so a `blocked:` here is real `connect-src` enforcement); `WebSocket`/`EventSource`
+>   fail **asynchronously** (an `error`/`close` event, never `open`) and `sendBeacon`/`EventSource`
+>   are simply **absent** from Worker scope — so the snippet awaits each outcome and treats "never
+>   opened / unavailable" as blocked. The external oracle above is the real CSP discriminator.
 > - **Opaque origin (3):** code runs in the Worker, where `document`/`localStorage`/`sessionStorage`/
->   `parent`/`top` are absent (unreachable) and `indexedDB.open()` fails at the opaque origin; the
->   Worker's own `location` is an opaque `blob:` URL, so the snippet asserts it never matches an
->   `http(s)` app origin. The security outcome (no storage/DOM/origin reach) is what #217 requires.
+>   `parent`/`top` are absent (engine-guaranteed, not opaque-origin-specific). The opaque-origin-
+>   _specific_ signals the test relies on are `indexedDB.open()` **failing** (a non-opaque worker
+>   could open it) and the Worker's `location` being an opaque `blob:` URL that never matches the
+>   `http(s)` app origin.
 > - **Referrer (4):** the Worker has no `document.referrer`; verified by `hasDocument === false`, with
->   the request-header level covered by the no-egress response oracle.
-> - The sentinel host is `e2e-sandbox-sentinel.invalid` (RFC 6761 non-resolvable), so nothing can
->   succeed even absent CSP.
+>   the request-header level covered by the egress oracle.
 
 ### Optional fast lane (harness page)
 

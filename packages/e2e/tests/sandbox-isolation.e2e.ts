@@ -12,24 +12,11 @@ import * as snippets from '../fixtures/snippets'
 // tool call so the REAL frontend agent auto-invokes `run_javascript` with an
 // adversarial snippet, in anonymous mode with no edge/network. Each guarantee uses
 // a DUAL ORACLE — the in-sandbox result the runtime folds back into the next
-// model request (mock.allText()) AND an independent Playwright observation
-// (no sentinel request reached the network / the sandbox iframe was torn down).
-// See docs/e2e-testing.md.
+// model request (parsed via `mock.sandboxResult()`) AND an independent Playwright
+// observation (a 200-fulfilling sentinel route that only fires on real egress, or
+// the sandbox iframe being torn down). See docs/e2e-testing.md.
 
 const SANDBOX_IFRAME = 'iframe[title="code execution sandbox"]'
-
-// Collect any *successful response* from the sentinel host — i.e. real egress.
-// Chromium still fires a `request` event for a CSP-blocked attempt (it registers
-// the request, then blocks it), so a request alone is not egress; only a returned
-// `response` means data actually left and came back. CSP / API-absence yields no
-// response, so this stays empty on success.
-const watchSentinelEgress = (page: Page): string[] => {
-  const responses: string[] = []
-  page.on('response', (response) => {
-    if (response.url().includes(snippets.SENTINEL_HOST)) responses.push(response.url())
-  })
-  return responses
-}
 
 const drive = async (page: Page, code: string): Promise<LiteLLMMock> => {
   const mock = await installLiteLLMMock(page, code)
@@ -39,89 +26,91 @@ const drive = async (page: Page, code: string): Promise<LiteLLMMock> => {
   return mock
 }
 
+// The structured object the adversarial snippet returned, surfaced from the parsed
+// SandboxExecutionResult the runtime folded back into the next model request.
+const snippetOutput = (mock: LiteLLMMock): Record<string, unknown> => {
+  const result = mock.sandboxResult()
+  expect(result, 'the sandbox result should be folded back into a model request').toBeDefined()
+  return (result?.result ?? {}) as Record<string, unknown>
+}
+
 test.describe('code-exec sandbox isolation (#217)', () => {
   test('1. no network egress (connect-src none blocks fetch/XHR/WebSocket/beacon/EventSource)', async ({
     page
   }) => {
-    const egress = watchSentinelEgress(page)
     const mock = await drive(page, snippets.NO_EGRESS)
-    const text = mock.allText()
+    const out = snippetOutput(mock)
 
-    // In-sandbox oracle: every vector was blocked or unavailable, none succeeded.
-    expect(text).toContain('"fetch":"blocked')
-    expect(text).toContain('"xhr":"blocked')
-    expect(text).toContain('"websocket":"blocked')
-    expect(text).toContain('"sendBeacon":"blocked')
-    expect(text).toContain('"eventSource":"blocked')
-    expect(text).not.toContain('NOT_BLOCKED')
+    // In-sandbox oracle: fetch and XHR exist in the Worker, so a `blocked:` here is
+    // real `connect-src 'none'` enforcement (not API absence).
+    expect(String(out.fetch), 'fetch must be CSP-blocked').toMatch(/^blocked:/)
+    expect(String(out.xhr), 'XHR must be CSP-blocked').toMatch(/^blocked:/)
+    // The rest are blocked or simply absent from Worker scope — either way no egress.
+    for (const vector of ['websocket', 'sendBeacon', 'eventSource']) {
+      expect(String(out[vector]), `${vector} must be blocked`).toMatch(/^blocked/)
+    }
 
-    // External oracle: no response ever came back from the sentinel.
-    expect(egress).toEqual([])
+    // External oracle: a leaking sandbox would have reached the 200-fulfilling
+    // sentinel route; under CSP the request never leaves the renderer.
+    expect(mock.sentinelHits()).toEqual([])
   })
 
   test('2. no eval / new Function (no unsafe-eval in CSP)', async ({ page }) => {
-    const mock = await drive(page, snippets.NO_EVAL)
-    const text = mock.allText()
+    const out = snippetOutput(await drive(page, snippets.NO_EVAL))
 
-    expect(text).toContain('"eval":"blocked')
-    expect(text).toContain('"newFunction":"blocked')
-    expect(text).not.toContain('NOT_BLOCKED')
+    expect(String(out.eval), 'eval must throw').toMatch(/^blocked:/)
+    expect(String(out.newFunction), 'new Function must throw').toMatch(/^blocked:/)
   })
 
   test('3. opaque origin (no parent/top DOM, storage, cookies, app URL)', async ({ page }) => {
-    const mock = await drive(page, snippets.OPAQUE_ORIGIN)
-    const text = mock.allText()
+    const out = snippetOutput(await drive(page, snippets.OPAQUE_ORIGIN))
 
-    // None of the storage/DOM surfaces are reachable, and indexedDB cannot open.
-    expect(text).toContain('"parent":"unreachable')
-    expect(text).toContain('"localStorage":"unreachable')
-    expect(text).toContain('"sessionStorage":"unreachable')
-    expect(text).toContain('"cookie":"unreachable')
-    expect(text).not.toContain('"indexedDB":"OPENED')
-    // The worker's location must never leak the embedding app's http(s) origin.
-    expect(text).toContain('"locationLeaksAppOrigin":false')
+    for (const surface of ['parent', 'top', 'localStorage', 'sessionStorage', 'cookie']) {
+      expect(String(out[surface]), `${surface} must be unreachable`).toMatch(/^(unreachable|threw)/)
+    }
+    // Opaque-origin-specific: indexedDB exists in a Worker but must not open at an
+    // opaque origin, and the Worker's own location must not be the app's origin.
+    expect(out.indexedDB, 'indexedDB must not open at an opaque origin').not.toBe('OPENED')
+    expect(out.locationLeaksAppOrigin, 'worker location must not leak the app origin').toBe(false)
   })
 
   test('4. no referrer leak (no-referrer; worker has no document.referrer)', async ({ page }) => {
-    const egress = watchSentinelEgress(page)
     const mock = await drive(page, snippets.NO_REFERRER)
-    const text = mock.allText()
+    const out = snippetOutput(mock)
 
     // In-sandbox: no document surface exists to read a referrer from.
-    expect(text).toContain('"hasDocument":false')
-    expect(text).toContain('"referrer":"no-document"')
-    // External: nothing successfully reached the network.
-    expect(egress).toEqual([])
+    expect(out.hasDocument).toBe(false)
+    expect(out.referrer).toBe('no-document')
+    // External: nothing successfully reached the network, so no Referer was sent.
+    expect(mock.sentinelHits()).toEqual([])
   })
 
   test('5. no resource loads (img-src/media-src none; importScripts blocked)', async ({ page }) => {
-    const egress = watchSentinelEgress(page)
     const mock = await drive(page, snippets.NO_RESOURCE_LOADS)
-    const text = mock.allText()
+    const out = snippetOutput(mock)
 
-    // Image is unavailable in the worker; importScripts of a remote URL is blocked.
-    expect(text).toMatch(/"image":"(unavailable|blocked)/)
-    expect(text).toMatch(/"importScripts":"(unavailable|blocked)/)
-    expect(text).not.toContain('NOT_BLOCKED')
-    expect(egress).toEqual([])
+    // Image is absent from Worker scope; importScripts of a remote URL is CSP-blocked.
+    expect(String(out.image)).toMatch(/^(unavailable|blocked)/)
+    expect(String(out.importScripts)).toMatch(/^(unavailable|blocked)/)
+    // External oracle catches a leak even if a vector swallowed its own error.
+    expect(mock.sentinelHits()).toEqual([])
   })
 
   test('6. worker creation works (worker-src blob: in the sandboxed iframe)', async ({ page }) => {
     const mock = await drive(page, snippets.WORKER_WORKS)
-    const text = mock.allText()
+    const out = snippetOutput(mock)
 
     // The benign computation ran and returned, proving the blob: Worker functions.
-    expect(text).toContain('"ok":true')
-    expect(text).toContain('"sum":2')
-    expect(text).toContain('"ran":true')
+    expect(mock.sandboxResult()?.ok, 'a benign run should succeed').toBe(true)
+    expect(out.sum).toBe(2)
+    expect(out.ran).toBe(true)
   })
 
   test('7. timeout terminates an infinite loop and the iframe is torn down', async ({ page }) => {
     const mock = await drive(page, snippets.INFINITE_LOOP)
-    const text = mock.allText()
 
-    // The 10s deadline fired and the run was reported as timed out.
-    expect(text).toContain('"timedOut":true')
+    // The deadline fired and the run was reported as timed out.
+    expect(mock.sandboxResult()?.timedOut, 'an infinite loop must time out').toBe(true)
     // No residual sandbox iframe remains in the page.
     await expect(page.locator(SANDBOX_IFRAME)).toHaveCount(0)
   })
