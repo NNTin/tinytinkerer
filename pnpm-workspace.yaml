@@ -2,6 +2,7 @@ packages:
   - apps/*
   - packages/*/*
   - packages/content/renderers/*
+  - packages/e2e
 
 # Strict one-week age gate. Do not add minimumReleaseAgeExclude; if a newer package is needed, stop and ask a human.
 minimumReleaseAge: 10080
@@ -55,4 +56,10 @@ onlyBuiltDependencies:
   - esbuild
   - sharp
   - workerd
-ignoredBuiltDependencies: []
+# Human-approved (2026-06-18): the `playwright` package ships a postinstall that
+# downloads browser binaries. We keep installs scriptless and fetch browsers
+# explicitly via `pnpm --filter @tinytinkerer/e2e e2e:install` (playwright install
+# --with-deps chromium) in CI and locally, so the lifecycle script is intentionally
+# blocked here rather than run at install time. See docs/e2e-testing.md (§6).
+ignoredBuiltDependencies:
+  - playwright

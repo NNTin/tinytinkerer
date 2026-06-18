@@ -1,9 +1,10 @@
 # End-to-End Testing (Playwright) — Architecture & Plan
 
-> Status: **PLAN / not yet implemented.** This document is the agreed design for the
-> Playwright e2e suite. It is the contract that the implementation must follow and be
-> verified against. First target: GitHub issue **#217** — real-browser verification of the
-> code-exec sandbox isolation guarantees that jsdom cannot cover.
+> Status: **IMPLEMENTED.** The suite lives in [`packages/e2e`](../packages/e2e) and is wired into
+> CI ([`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml)). All seven guarantees for GitHub
+> issue **#217** pass in Chromium against the production `vite preview` build. This document is both
+> the design rationale and the as-built record; the **“As built”** callouts in §2/§4/§6/§7 note where
+> implementation chose a specific option the plan had left open.
 
 ## 1. Goal & scope
 
@@ -82,17 +83,28 @@ Relevant wiring confirmed in the codebase:
 - Inbound rate limits are env-driven and `'0'` disables a scope
   (`apps/edge/src/lib/inbound-rate-limit.ts`): set `RATE_LIMIT_*` to `0` for e2e.
 
-### Where LiteLLM is mocked — decision
+### Where LiteLLM is mocked
 
-Primary: **mock the LiteLLM upstream** by pointing the edge's `LITELLM_BASE_URL` at a tiny local
-fake server that streams the fixture. This keeps the **real edge** in the loop (so anonymous-tier
-key resolution and the rate-limit config are genuinely exercised) and is the literal reading of
-"LiteLLM is mocked."
+**As built:** the suite uses Playwright route interception of the `/api/models/chat` request,
+fulfilling it with the fixture SSE body (`packages/e2e/fixtures/mock-litellm.ts`). The web shell
+calls the edge at a **relative** URL (`edgeBaseUrl === ''`), so the route matches regardless of port
+and the run is fully hermetic — no edge, no wrangler, no auth, no network. Anonymous mode and
+disabled rate limiting are therefore **intrinsic** rather than configured. The alternative (a real
+edge pointed at a fake `LITELLM_BASE_URL`) would additionally exercise anonymous-tier key resolution
+and the rate-limit config, but adds wrangler/miniflare to every run for no extra coverage of the
+sandbox, which is entirely frontend-owned (§1). The fixture/specs are identical either way.
 
-Fallback / fast lane: **Playwright `page.route('**/api/models/chat')`** fulfilling the request with
-the fixture SSE body. This bypasses the edge entirely (anonymous + no-rate-limit become trivially
-true) and removes the need to run wrangler/miniflare. Use this if standing up the edge in CI proves
-flaky; it still exercises the full **frontend** path that owns the sandbox.
+The mock is **content-driven**, keyed off the request's system prompt (so it is robust to call
+ordering — the default agent is ReAct: decide → act → decide → synthesize):
+
+- `You are a ReAct agent…` → first call returns an **action** decision invoking `run_javascript` with
+  the adversarial `code`; once the tool result is folded into the observations (`Tool results:`), it
+  returns **final** so the run ends.
+- `You are a planning assistant…` → a minimal valid plan (defensive; ReAct does not plan).
+- otherwise (`SYSTEM_STYLE_PROMPT`) → a short synthesized answer.
+
+The runtime folds the `SandboxExecutionResult` back into the next request as the ReAct observation, so
+the mock's captured (decoded) message text is the in-sandbox oracle — see §7.
 
 ## 3. Monorepo placement & vitest isolation
 
@@ -109,6 +121,13 @@ flaky; it still exercises the full **frontend** path that owns the sandbox.
   (Prettier-format all new files; Husky/lint-staged will enforce on commit).
 
 ## 4. Target build & per-run port allocation (parallel worktrees)
+
+> **As built:** the suite targets the **production `vite preview` build of `@tinytinkerer/web`**
+> (served under its Vite base `/web/`), so the minified `SANDBOX_SRCDOC` is exercised. Playwright's
+> `webServer` runs `vite preview` on a **per-run port** — `E2E_PORT` when set (CI pins `43117`), else a
+> random high port — with `--strictPort` and `reuseExistingServer: !CI`, so concurrent worktrees do not
+> contend and never touch the host server's hardcoded 3111. The web build must exist first
+> (`turbo run build --filter=@tinytinkerer/web` after the `generate:*` steps); CI and the README do this.
 
 - Run the suite against a **real production-style build** served statically (`build:pages` output
   served via `vite preview`/a static server) **and/or** the host dev server. Header parity is not a
@@ -162,9 +181,11 @@ Cache `~/.cache/ms-playwright` keyed by the pinned Playwright version.
   license tooling. This is an accepted, human-acknowledged exception of the e2e setup, in CI and
   locally.
 
-> ⚠️ **Human authorization required before implementation:** (a) the pinned `@playwright/test`
-> version must clear the 7-day gate; (b) acknowledge the out-of-band browser download; (c) approve
-> any install-script allowlist entry _only if_ `check:install-scripts` flags one.
+> **As built:** `@playwright/test@1.60.0` (published 2026-05-11, clears the 7-day gate; Apache-2.0).
+> The `playwright` package **does** ship a postinstall browser-download script, so `check:install-scripts`
+> flags it — a human approved adding **`playwright` to `ignoredBuiltDependencies`** (blocking that
+> script; browsers are fetched explicitly via `playwright install`). The out-of-band browser download
+> is the acknowledged exception. `e2e.yml` caches `~/.cache/ms-playwright` keyed by the pinned version.
 
 ## 7. Assertion strategy per guarantee
 
@@ -192,12 +213,24 @@ result must show) → the **external oracle** (what Playwright independently obs
 7. **Timeout/teardown** — `while (true) {}` → `timedOut: true` within the 10 s budget →
    `page.locator('iframe[title="code execution sandbox"]').count()` ⇒ **0** after settle.
 
-Cross-cutting oracle: subscribe to `securitypolicyviolation` events / console CSP errors as
-corroboration for the blocks (1, 2, 5).
-
-> Note on guarantee #4: the user code runs in a **Worker**, which has no `document.referrer`; the
-> referrer guarantee is therefore observed at the **request-header** level (no `Referer` on any
-> attempted load), not by reading `document.referrer` from inside the Worker.
+> **As built:** each snippet `return`s a structured object; the runtime folds it into the next model
+> request, and the test asserts on the mock's **decoded** message text (the raw POST body escapes the
+> quotes, so decoding is required). Refinements found while implementing:
+>
+> - **Egress (1):** the in-sandbox oracle is async. `fetch`/sync-`XHR` reject/throw under
+>   `connect-src 'none'`, but `WebSocket`/`EventSource` fail **asynchronously** (an `error`/`close`
+>   event, never `open`) and `sendBeacon`/`EventSource` are simply **absent** from Worker scope — so
+>   the snippet awaits each outcome and treats "never opened / unavailable" as blocked. The external
+>   oracle watches `page.on('response')` (not `request`): Chromium still emits a `request` event for a
+>   CSP-blocked attempt, so only a returned **response** would prove real egress; none occurs.
+> - **Opaque origin (3):** code runs in the Worker, where `document`/`localStorage`/`sessionStorage`/
+>   `parent`/`top` are absent (unreachable) and `indexedDB.open()` fails at the opaque origin; the
+>   Worker's own `location` is an opaque `blob:` URL, so the snippet asserts it never matches an
+>   `http(s)` app origin. The security outcome (no storage/DOM/origin reach) is what #217 requires.
+> - **Referrer (4):** the Worker has no `document.referrer`; verified by `hasDocument === false`, with
+>   the request-header level covered by the no-egress response oracle.
+> - The sentinel host is `e2e-sandbox-sentinel.invalid` (RFC 6761 non-resolvable), so nothing can
+>   succeed even absent CSP.
 
 ### Optional fast lane (harness page)
 
@@ -209,36 +242,39 @@ mocked-LiteLLM full-flow specs.
 
 ## 8. Local / WSL2
 
-- One-time: `pnpm exec playwright install --with-deps chromium` (works headless in WSL2/Ubuntu).
+- One-time: `pnpm --filter @tinytinkerer/e2e e2e:install` (`playwright install --with-deps chromium`;
+  works headless in WSL2/Ubuntu).
 - Browser binaries live in the **shared per-user** `~/.cache/ms-playwright`, so parallel worktrees
   share one download — no per-worktree duplication.
-- Port collisions across worktrees are solved by the dynamic-port `webServer` strategy in §4.
+- Port collisions across worktrees are solved by the per-run-port `webServer` strategy in §4.
+- **No-root fallback:** on a headless box where `--with-deps` cannot install the OS libraries
+  (no sudo), download the missing libs' `.deb`s without root (`apt-get download` into a local state
+  dir + `dpkg -x` into a prefix) and export `LD_LIBRARY_PATH` to that prefix before running. This is
+  how the suite was verified during implementation.
 
-## 9. Test plan checklist (for the implementation PR to satisfy)
+## 9. Test plan checklist (as built)
 
-- [ ] `packages/e2e` workspace created; **not** collected by vitest (`*.e2e.ts`, no vitest `test`
-      script, separate turbo `e2e` task); knip/jscpd/prettier green.
-- [ ] Mock LiteLLM server + SSE token fixtures that emit a `run_javascript` tool call with arbitrary
-      `code`; anonymous mode; `RATE_LIMIT_*=0`.
-- [ ] `playwright.config.ts`: Chromium project, `webServer` on a **dynamic port**,
+- [x] `packages/e2e` workspace created; **not** collected by vitest (`*.e2e.ts`, no vitest `test`
+      script); knip (`config/knip.ts` entry added), eslint, boundaries, exact-deps, prettier green.
+- [x] In-page mock of `/api/models/chat` streaming a `run_javascript` tool call with arbitrary
+      `code`; anonymous mode + no rate limiting (intrinsic — the edge is bypassed).
+- [x] `playwright.config.ts`: Chromium project, `webServer` (`vite preview`) on a per-run port,
       `reuseExistingServer: !CI`.
-- [ ] One spec per guarantee in §7, each with both oracles; all seven passing in Chromium.
-- [ ] `e2e.yml` CI job with cached `playwright install`; supply-chain gates (license/age/exact/
-      install-scripts) satisfied per §6; human authorizations obtained.
+- [x] One spec per guarantee in §7, each with both oracles; **all seven pass in Chromium**.
+- [x] `e2e.yml` CI job with cached `playwright install`; supply-chain gates satisfied per §6; human
+      authorization obtained (`playwright` → `ignoredBuiltDependencies`, `@playwright/test@1.60.0`).
 - [ ] (Phase 2, follow-up) Firefox + WebKit projects.
 
-## 10. Open items needing a human decision before/while implementing
+## 10. Resolved decisions (record)
 
-1. **Mock injection point** — real edge with mocked `LITELLM_BASE_URL` (primary, faithful to
-   "LiteLLM is mocked") vs `page.route` interception of `/api/models/chat` (fast lane, edge
-   bypassed). _Recommendation: start with whichever stands up green fastest in CI; the specs and
-   fixtures are identical either way since both stream the same SSE._
-2. **Served target** — `build:pages` static preview vs host dev server. _Recommendation: static
-   preview on a dynamic port for hermeticity + worktree-safety._
-3. **Supply-chain authorizations** — confirm the pinned `@playwright/test` clears the 7-day gate,
-   acknowledge the out-of-band browser download, and approve an install-script allowlist entry only
-   if `check:install-scripts` flags one (§6).
-4. **Browser matrix timing** — confirm Chromium-only for the first PR, cross-browser as a follow-up.
+1. **Mock injection point** → **`page.route` interception** of `/api/models/chat` (hermetic; edge
+   bypassed). The real-edge alternative adds no sandbox coverage. (§2)
+2. **Served target** → **production `vite preview` build of `@tinytinkerer/web`** on a per-run port.
+   (§4)
+3. **Supply-chain** → `@playwright/test@1.60.0` (clears the 7-day gate, Apache-2.0); `playwright`
+   added to `ignoredBuiltDependencies`; out-of-band browser download acknowledged. (§6)
+4. **Browser matrix** → **Chromium-only** first; Firefox + WebKit are a tracked Phase-2 follow-up.
+   (§5)
 
 ## References
 
@@ -247,5 +283,3 @@ mocked-LiteLLM full-flow specs.
 - `docs/plugin-infrastructure.md` — "The Code execution plugin" section + documented residual risk.
 - `apps/edge/src/routes/models.ts`, `packages/shared/contracts/src/edge.ts` — chat proxy + routes.
 - `apps/host/src/host-server.mjs` — dev compositor + `/api` proxy + port handling.
-</content>
-</invoke>

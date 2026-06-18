@@ -78,6 +78,14 @@ const config: KnipConfig = {
     'packages/plugins/plugin-feedback': {
       // Declared for the plugin's schema work; no runtime import yet.
       ignoreDependencies: ['zod']
+    },
+    'packages/e2e': {
+      // Playwright specs use the `*.e2e.ts` extension (kept distinct from vitest's
+      // globs), which knip's Playwright plugin does not match by default. Register
+      // the config + specs as entries so the suite, its fixtures, and
+      // @playwright/test are all traced as used.
+      entry: ['playwright.config.ts', 'tests/**/*.e2e.ts'],
+      project: ['**/*.ts']
     }
   }
 }
