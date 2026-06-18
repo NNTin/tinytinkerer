@@ -1,18 +1,18 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalEnv": [
-    "TINYTINKERER_SKIP_BRAND_ASSET_GENERATION",
-    "TINYTINKERER_DEPLOY_BASE",
-    "GIT_SHA",
-    "VITE_EDGE_URL",
-    "VITE_SENTRY_DSN",
-    "VITE_SENTRY_ENVIRONMENT",
-    "SENTRY_AUTH_TOKEN"
-  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "env": [
+        "TINYTINKERER_SKIP_BRAND_ASSET_GENERATION",
+        "TINYTINKERER_DEPLOY_BASE",
+        "GIT_SHA",
+        "VITE_EDGE_URL",
+        "VITE_SENTRY_DSN",
+        "VITE_SENTRY_ENVIRONMENT",
+        "SENTRY_AUTH_TOKEN"
+      ]
     },
     "@tinytinkerer/host#build": {
       "dependsOn": [
@@ -20,11 +20,29 @@
         "@tinytinkerer/widget#build",
         "@tinytinkerer/mobile#build"
       ],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "env": [
+        "TINYTINKERER_SKIP_BRAND_ASSET_GENERATION",
+        "TINYTINKERER_DEPLOY_BASE",
+        "GIT_SHA",
+        "VITE_EDGE_URL",
+        "VITE_SENTRY_DSN",
+        "VITE_SENTRY_ENVIRONMENT",
+        "SENTRY_AUTH_TOKEN"
+      ]
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "env": [
+        "TINYTINKERER_SKIP_BRAND_ASSET_GENERATION",
+        "TINYTINKERER_DEPLOY_BASE",
+        "GIT_SHA",
+        "VITE_EDGE_URL",
+        "VITE_SENTRY_DSN",
+        "VITE_SENTRY_ENVIRONMENT",
+        "SENTRY_AUTH_TOKEN"
+      ]
     },
     "lint": {},
     "test": {

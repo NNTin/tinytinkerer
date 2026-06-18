@@ -68,10 +68,13 @@ jobs:
       matrix:
         task:
           - name: Lint & Typecheck
+            key: lint-typecheck
             run: pnpm exec turbo run lint typecheck --concurrency=2
           - name: Test
+            key: test
             run: pnpm exec turbo run test --concurrency=1
           - name: Build
+            key: build
             run: pnpm exec turbo run build --concurrency=2
     steps:
       - uses: actions/checkout@v5
@@ -84,6 +87,19 @@ jobs:
         with:
           node-version: '22'
           cache: pnpm
+
+      # Persist Turborepo's local cache (.turbo) across runs so unchanged tasks
+      # hit cache instead of re-running. Scoped per workflow + matrix task; the
+      # SHA-suffixed key always writes a fresh entry while restore-keys seeds
+      # from the most recent prior run. turbo validates artifact hashes itself,
+      # so a stale restore degrades to a cache miss, never a wrong result.
+      - name: Cache Turborepo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ github.workflow }}-${{ matrix.task.key }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ github.workflow }}-${{ matrix.task.key }}-
 
       - run: pnpm setup:workspace
       - run: pnpm generate:brand-assets
