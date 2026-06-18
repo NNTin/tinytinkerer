@@ -21,7 +21,68 @@ const githubUserCache = new Map<string, GitHubUser>()
 // captured ~2 fresh 401s — that is the FRONTEND-4 regression (two events ~1s
 // apart per load). Remembering a rejected token lets later callers short-circuit
 // on validity, not just presence.
-const rejectedTokens = new Set<string>()
+//
+// FRONTEND-G regression: this in-memory set was reset on every page reload, and
+// on the widget surface `clearToken()` cannot remove the token because
+// `loadAuthState` prefers a host-injected token (app-core/auth.ts) — so a host
+// token GitHub had already expired/revoked was re-probed (and re-captured a 401)
+// on *every* reload. Fix: persist the known-bad marker durably so the dedup
+// survives a reload, the same way the edge moved a per-isolate backoff to the
+// durable Cache API. We persist a non-secret FNV-1a hash of the token, never the
+// credential itself, and degrade to in-memory only where storage is unavailable.
+const REJECTED_TOKENS_STORAGE_KEY = 'tt:github-user:rejected-token-hashes'
+
+// FNV-1a (32-bit): a fast, stable, *non-cryptographic* fingerprint. This is only
+// a "have we already seen GitHub reject this exact token?" marker, never a
+// security boundary — so a non-crypto hash is the right tool, and it lets us mark
+// a token known-bad without persisting a second copy of the raw credential.
+const hashToken = (token: string): string => {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < token.length; i++) {
+    hash ^= token.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16)
+}
+
+const readPersistedRejected = (): Set<string> => {
+  try {
+    const raw = globalThis.localStorage?.getItem(REJECTED_TOKENS_STORAGE_KEY)
+    if (!raw) {
+      return new Set()
+    }
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? new Set(parsed.filter((value): value is string => typeof value === 'string'))
+      : new Set()
+  } catch {
+    // Storage unavailable (node tests, sandboxed iframe, Safari ITP) or corrupt —
+    // fall back to in-memory dedup only.
+    return new Set()
+  }
+}
+
+// In-memory mirror so the dedup still works within a page session when storage is
+// unavailable; storage makes it durable *across* reloads.
+const rejectedTokenHashes = new Set<string>()
+
+const isTokenRejected = (token: string): boolean => {
+  const hash = hashToken(token)
+  return rejectedTokenHashes.has(hash) || readPersistedRejected().has(hash)
+}
+
+const rememberRejectedToken = (token: string): void => {
+  const hash = hashToken(token)
+  rejectedTokenHashes.add(hash)
+  const persisted = readPersistedRejected()
+  persisted.add(hash)
+  try {
+    globalThis.localStorage?.setItem(REJECTED_TOKENS_STORAGE_KEY, JSON.stringify([...persisted]))
+  } catch {
+    // Storage unavailable — the in-memory mirror still dedupes within this session.
+  }
+}
+
 // In-flight probes keyed by token, so concurrent callers share one request (and
 // thus one capture) instead of each firing their own.
 const inFlightProbes = new Map<string, Promise<GitHubUser | null>>()
@@ -43,9 +104,10 @@ export const fetchGitHubUser = async (
   }
 
   // Validity gate: a token we already saw GitHub reject is known-bad. Never
-  // re-probe it (that re-probe is what FRONTEND-4 kept capturing); re-signal the
-  // caller so it drops the token if it is somehow still holding it.
-  if (rejectedTokens.has(token)) {
+  // re-probe it (that re-probe is what FRONTEND-4 / FRONTEND-G kept capturing);
+  // re-signal the caller so it drops the token if it is somehow still holding it.
+  // This check is now durable across reloads (see rememberRejectedToken).
+  if (isTokenRejected(token)) {
     onUnauthorized?.()
     return null
   }
@@ -93,7 +155,7 @@ const probeGitHubUser = async (
       // so no later caller re-probes it, and signal the caller to drop it —
       // together these stop the repeated /user 401s in TINYTINKERER-FRONTEND-4.
       if (response.status === 401) {
-        rejectedTokens.add(token)
+        rememberRejectedToken(token)
         onUnauthorized?.()
       }
       return null

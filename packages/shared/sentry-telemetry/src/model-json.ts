@@ -211,9 +211,30 @@ export const parseModelJsonWithTelemetry = <T>(
       'schema_error',
       messages.schemaError,
       () => schema.parse(parsed),
-      response
+      response,
+      // Capture the offending model-output shape so a schema_error is
+      // self-diagnosable: the ZodError alone says what we *expected* but not what
+      // the model actually produced (e.g. an array or a string where an object
+      // was required — TINYTINKERER-FRONTEND-12). We serialize the *parsed* value
+      // (the exact shape that failed validation) and fall back to the raw stripped
+      // text if it can't be serialized.
+      describeOffendingShape(parsed, stripped)
     )
   } catch (error) {
     throw new ModelJsonError('schema_error', messages.schemaError, { cause: error })
+  }
+}
+
+// Render the value that failed schema validation as a compact, diagnosable string
+// for the `failure.raw_input` Sentry context. Leads with the runtime type (so a
+// wrong-top-level-type mismatch — the most common schema_error — is obvious even
+// after truncation) followed by the serialized value. Never throws: a value that
+// can't be JSON-serialized falls back to the raw model text.
+const describeOffendingShape = (parsed: unknown, fallbackRaw: string): string => {
+  const type = Array.isArray(parsed) ? 'array' : parsed === null ? 'null' : typeof parsed
+  try {
+    return `[${type}] ${JSON.stringify(parsed)}`
+  } catch {
+    return `[${type}] ${fallbackRaw}`
   }
 }

@@ -126,6 +126,23 @@ describe('parseModelJsonWithTelemetry', () => {
     expect(sink).toHaveBeenCalledTimes(1)
     const [, options] = sink.mock.calls[0] ?? []
     expect(options?.tags).toMatchObject({ failure_kind: 'schema_error' })
+    // Enrichment (TINYTINKERER-FRONTEND-12): the offending shape is captured so the
+    // event is self-diagnosable — type tag + the serialized value that failed.
+    expect(options?.contexts?.failure?.raw_input).toBe('[object] {"ok":false}')
+  })
+
+  it('captures the offending TOP-LEVEL TYPE for a non-object schema_error (TINYTINKERER-FRONTEND-12)', () => {
+    // The FRONTEND-12 signature: model returned valid JSON that was an array (or
+    // string/number) where an object was required. The ZodError alone only says
+    // "expected object"; the raw_input must reveal what was actually produced.
+    expect(() =>
+      parseModelJsonWithTelemetry(metadata, '["search", "weather in Berlin"]', okSchema, messages)
+    ).toThrow(ModelJsonError)
+
+    expect(sink).toHaveBeenCalledTimes(1)
+    const [, options] = sink.mock.calls[0] ?? []
+    expect(options?.tags).toMatchObject({ failure_kind: 'schema_error' })
+    expect(options?.contexts?.failure?.raw_input).toBe('[array] ["search","weather in Berlin"]')
   })
 
   it('stays loud on a TRUNCATED value: captures parse_error and never fabricates', () => {
