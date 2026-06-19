@@ -1,5 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
-import { installChatMock, dismissTelemetryDialog, GATE_SENTINEL } from '../fixtures/mock-litellm'
+import {
+  installChatMock,
+  dismissTelemetryDialog,
+  GATE_SENTINEL,
+  installStreamGate,
+  releaseStreamGate,
+  sendMessage
+} from '../fixtures/mock-litellm'
 
 // Real-browser verification of the Mermaid content renderer (GitHub issue #248).
 // The content-mermaid renderer turns a ```mermaid fenced block into an actual SVG
@@ -57,66 +64,6 @@ const dismissFirstLoad = async (page: Page): Promise<void> => {
     await settings.getByRole('button', { name: 'Close settings' }).click()
     await expect(settings).toBeHidden()
   }
-}
-
-// Page-side stream re-pacer. `route.fulfill` is atomic (the browser receives the
-// whole SSE body at once), so the frontend never lingers in a mid-stream state long
-// enough to observe. This wraps window.fetch IN THE PAGE: it takes the real edge SSE
-// response and, when it carries the gate marker, replays it as a controllable stream
-// — flush part 1 (the unclosed fence), wait for window.__ttGate.release(), then flush
-// the rest. It mocks nothing in the app or edge (the bytes come from the real worker);
-// it only paces byte delivery, exactly as a slow network would. Other (non-marked)
-// SSE responses — e.g. the ReAct decision — are replayed unchanged.
-const installStreamGate = async (page: Page): Promise<void> => {
-  await page.addInitScript(() => {
-    let releaseGate = (): void => {}
-    const gate = new Promise<void>((resolve) => {
-      releaseGate = resolve
-    })
-    ;(window as unknown as { __ttGate: { release: () => void } }).__ttGate = {
-      release: () => releaseGate()
-    }
-
-    const GATE_MARKER = '\n: tt-gate\n\n'
-    const originalFetch = window.fetch.bind(window)
-    window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const response = await originalFetch(input, init)
-      const contentType = response.headers.get('content-type') ?? ''
-      if (!contentType.includes('text/event-stream')) {
-        return response
-      }
-
-      const text = await response.text()
-      const markerIndex = text.indexOf(GATE_MARKER)
-      if (markerIndex === -1) {
-        // No gate in this stream (e.g. the ReAct decision) — replay it as-is.
-        return new Response(text, { status: response.status, headers: response.headers })
-      }
-
-      const head = `${text.slice(0, markerIndex)}\n`
-      const tail = text.slice(markerIndex + GATE_MARKER.length)
-      const encoder = new TextEncoder()
-      const stream = new ReadableStream<Uint8Array>({
-        async start(controller) {
-          controller.enqueue(encoder.encode(head))
-          await gate
-          controller.enqueue(encoder.encode(tail))
-          controller.close()
-        }
-      })
-      return new Response(stream, { status: response.status, headers: response.headers })
-    }
-  })
-}
-
-const releaseStreamGate = (page: Page): Promise<void> =>
-  page.evaluate(() => {
-    ;(window as unknown as { __ttGate: { release: () => void } }).__ttGate.release()
-  })
-
-const sendMessage = async (page: Page, prompt: string): Promise<void> => {
-  await page.getByPlaceholder('Ask anything').fill(prompt)
-  await page.getByRole('button', { name: 'Send' }).click()
 }
 
 test.describe('mermaid diagram rendering (#248)', () => {

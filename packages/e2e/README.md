@@ -30,22 +30,27 @@ no secrets and makes no real network calls.
   confirmation modal (allow / deny / Escape / negative); `mermaid.e2e.ts` verifies
   a streamed ` ```mermaid ` block renders a real `<svg>` (the actual mermaid library
   running — jsdom unit tests mock `mermaid.render`) and that an invalid block falls
-  back to a code block without crashing the turn.
+  back to a code block without crashing the turn; `markdown-renderers.e2e.ts` verifies
+  the remaining renderers jsdom cannot exercise — sticky table headers + CSV download,
+  the image lightbox, CodeMirror highlighting, the scriptless wireframe iframe,
+  callouts, and link cards — each streamed as deltas so incremental parsing is covered.
 
 ### Observing a mid-stream render
 
-`mermaid.e2e.ts` must assert that an **incomplete** (mid-stream, unclosed-fence)
-mermaid block renders no broken SVG, before the completed block renders one.
-Playwright's `route.fulfill` is atomic — the browser receives the whole SSE body at
-once — so the frontend never lingers in a partial state long enough to observe. To
-create a real, observable window the mock streams a `: tt-gate` SSE-comment marker
-(emitted by `sseStream` wherever a synthesis answer carries `GATE_SENTINEL`; the
-chat client's SSE parser ignores comment lines, so it is inert elsewhere), and the
-spec installs a page-side re-pacer that wraps `window.fetch`: it takes the **real**
-edge SSE response and replays it as a controllable stream — flush part 1 (the
-unclosed fence), wait for `window.__ttGate.release()`, then flush the rest. Nothing
-in the app or edge is mocked (the bytes come from the real worker); only byte
-delivery is paced, exactly as a slow network would.
+Some specs must assert a renderer's **mid-stream** state — e.g. that an incomplete
+(unclosed-fence) `mermaid` block renders no broken SVG before the completed block
+renders one, or that a half-streamed table stays graceful. Playwright's
+`route.fulfill` is atomic — the browser receives the whole SSE body at once — so the
+frontend never lingers in a partial state long enough to observe. To create a real,
+observable window the mock streams a `: tt-gate` SSE-comment marker (emitted by
+`sseStream` wherever a synthesis answer carries `GATE_SENTINEL`; the chat client's
+SSE parser ignores comment lines, so it is inert elsewhere), and `installStreamGate`
+(in `fixtures/mock-litellm.ts`) installs a page-side re-pacer that wraps
+`window.fetch`: it takes the **real** edge SSE response and replays it as a
+controllable stream — flush part 1, wait for `releaseStreamGate(page)`
+(`window.__ttGate.release()`), then flush the rest. Nothing in the app or edge is
+mocked (the bytes come from the real worker); only byte delivery is paced, exactly
+as a slow network would.
 
 ## Running locally
 
