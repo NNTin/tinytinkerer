@@ -27,7 +27,25 @@ no secrets and makes no real network calls.
   that jsdom cannot cover; `event-logger.e2e.ts` verifies the Event Logger plugin
   logs chat events to the console when enabled (and stays silent when disabled);
   `permissions.e2e.ts` verifies the Permissions plugin gates tools behind a
-  confirmation modal (allow / deny / Escape / negative).
+  confirmation modal (allow / deny / Escape / negative); `mermaid.e2e.ts` verifies
+  a streamed ` ```mermaid ` block renders a real `<svg>` (the actual mermaid library
+  running — jsdom unit tests mock `mermaid.render`) and that an invalid block falls
+  back to a code block without crashing the turn.
+
+### Observing a mid-stream render
+
+`mermaid.e2e.ts` must assert that an **incomplete** (mid-stream, unclosed-fence)
+mermaid block renders no broken SVG, before the completed block renders one.
+Playwright's `route.fulfill` is atomic — the browser receives the whole SSE body at
+once — so the frontend never lingers in a partial state long enough to observe. To
+create a real, observable window the mock streams a `: tt-gate` SSE-comment marker
+(emitted by `sseStream` wherever a synthesis answer carries `GATE_SENTINEL`; the
+chat client's SSE parser ignores comment lines, so it is inert elsewhere), and the
+spec installs a page-side re-pacer that wraps `window.fetch`: it takes the **real**
+edge SSE response and replays it as a controllable stream — flush part 1 (the
+unclosed fence), wait for `window.__ttGate.release()`, then flush the rest. Nothing
+in the app or edge is mocked (the bytes come from the real worker); only byte
+delivery is paced, exactly as a slow network would.
 
 ## Running locally
 
