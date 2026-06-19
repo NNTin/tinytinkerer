@@ -24,8 +24,11 @@ jobs:
     name: Playwright (sandbox isolation)
     runs-on: ubuntu-latest
     env:
-      # Pin the per-run port so the webServer URL is deterministic in CI.
+      # Pin the per-run ports so each shell's webServer URL is deterministic in CI.
+      # One origin per shell: web / widget / mobile.
       E2E_PORT: 43117
+      E2E_PORT_WIDGET: 43118
+      E2E_PORT_MOBILE: 43119
     steps:
       - uses: actions/checkout@v5
 
@@ -64,14 +67,18 @@ jobs:
       - name: Install Chromium (+ OS deps)
         run: pnpm --filter @tinytinkerer/e2e exec playwright install --with-deps chromium
 
-      # Build the web shell (generates brand/privacy/notices first) so `vite
-      # preview` can serve the production bundle the suite targets.
-      - name: Build web shell
+      # Build all three product shells (generates brand/privacy/notices first) so
+      # `vite preview` can serve each production bundle the suite targets — web,
+      # widget, and mobile, each on its own port/origin (chat-persistence #250).
+      - name: Build shells (web, widget, mobile)
         run: |
           pnpm generate:brand-assets
           pnpm generate:privacy-policy
           pnpm generate:notices
-          TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build --filter=@tinytinkerer/web
+          TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build \
+            --filter=@tinytinkerer/web \
+            --filter=@tinytinkerer/widget \
+            --filter=@tinytinkerer/mobile
 
       - name: Run Playwright e2e
         run: pnpm --filter @tinytinkerer/e2e e2e

@@ -1,22 +1,34 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// Per-run port. The package's `e2e` script sets E2E_PORT once before invoking
-// Playwright, and CI pins it explicitly. Do not generate a fallback here: this
-// config is evaluated by more than one Playwright process, so an in-config random
-// value can make the web server and test workers disagree on baseURL.
-const rawPort = process.env.E2E_PORT
-if (!rawPort) {
-  throw new Error('E2E_PORT must be set. Run through `pnpm --filter @tinytinkerer/e2e e2e`.')
+// Per-run ports — one per product shell. The package's `e2e` script sets all three
+// (E2E_PORT / E2E_PORT_WIDGET / E2E_PORT_MOBILE) once before invoking Playwright, and
+// CI pins them explicitly. Do not generate a fallback here: this config is evaluated
+// by more than one Playwright process, so an in-config random value can make the web
+// servers and test workers disagree on their base URLs.
+const requirePort = (name: string): number => {
+  const raw = process.env[name]
+  if (!raw) {
+    throw new Error(`${name} must be set. Run through \`pnpm --filter @tinytinkerer/e2e e2e\`.`)
+  }
+  const port = Number(raw)
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`${name} must be a valid TCP port, got ${raw}`)
+  }
+  return port
 }
-const port = Number(rawPort)
-if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-  throw new Error(`E2E_PORT must be a valid TCP port, got ${rawPort}`)
-}
-// The web shell is built with Vite base '/web/', so `vite preview` serves the app
-// under /web/. Tests navigate to baseURL ('…/web/'); the app's edge calls use
-// absolute paths (/api/...) which the in-page mock intercepts regardless of base.
-const origin = `http://localhost:${port}`
-const baseURL = `${origin}/web/`
+
+// Each shell is built with its own Vite base ('/web/', '/widget/', '/mobile/') and
+// served by `vite preview` on its own port — i.e. its own ORIGIN. Tests navigate to
+// the per-shell base URL; the app's edge calls use absolute paths (/api/...) which
+// the in-page mock intercepts regardless of origin or base. Because IndexedDB is
+// origin-scoped, the three shells' storage is ISOLATED despite sharing the default
+// `tinytinkerer` DB name (see tests/chat-persistence.e2e.ts).
+const webPort = requirePort('E2E_PORT')
+const widgetPort = requirePort('E2E_PORT_WIDGET')
+const mobilePort = requirePort('E2E_PORT_MOBILE')
+const baseURL = `http://localhost:${webPort}/web/`
+const widgetURL = `http://localhost:${widgetPort}/widget/`
+const mobileURL = `http://localhost:${mobilePort}/mobile/`
 
 // The app under test is the standalone web shell built for production (so the
 // minified SANDBOX_SRCDOC + worker bootstrap are exercised, not just the dev
@@ -48,19 +60,38 @@ export default defineConfig({
     // deferred to keep the first landing small. Tracked by issue #245.
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } }
   ],
-  // Serves the prebuilt apps/web/dist. The web app must be built first
-  // (`pnpm --filter @tinytinkerer/web build`, after the generate:* steps); CI and
-  // the README do this before invoking the suite. `vite preview` is fast since it
-  // only serves static files, so the 120s window is generous headroom.
-  webServer: {
-    command: `pnpm --filter @tinytinkerer/web exec vite preview --port ${port} --strictPort`,
-    url: baseURL,
-    // Reuse a running server only when the package wrapper generated the local
-    // random port. In CI, or when a caller pins E2E_PORT, always start fresh so
-    // stale output cannot be served silently.
-    reuseExistingServer: !process.env.CI && process.env.E2E_PORT_GENERATED === '1',
-    timeout: 120_000,
-    stdout: 'pipe',
-    stderr: 'pipe'
-  }
+  // Serves the prebuilt dist of all THREE shells, each from its own `vite preview`
+  // on its own port (its own origin). Every shell must be built first (the generate:*
+  // steps, then `turbo run build` for @tinytinkerer/web, @tinytinkerer/widget,
+  // @tinytinkerer/mobile); CI and the README do this before invoking the suite.
+  // `vite preview` is fast since it only serves static files, so the 120s window is
+  // generous headroom. reuseExistingServer is only enabled when the package wrapper
+  // generated the local random ports; in CI, or when a caller pins ports, always
+  // start fresh so stale output cannot be served silently.
+  webServer: [
+    {
+      command: `pnpm --filter @tinytinkerer/web exec vite preview --port ${webPort} --strictPort`,
+      url: baseURL,
+      reuseExistingServer: !process.env.CI && process.env.E2E_PORT_GENERATED === '1',
+      timeout: 120_000,
+      stdout: 'pipe',
+      stderr: 'pipe'
+    },
+    {
+      command: `pnpm --filter @tinytinkerer/widget exec vite preview --port ${widgetPort} --strictPort`,
+      url: widgetURL,
+      reuseExistingServer: !process.env.CI && process.env.E2E_PORT_GENERATED === '1',
+      timeout: 120_000,
+      stdout: 'pipe',
+      stderr: 'pipe'
+    },
+    {
+      command: `pnpm --filter @tinytinkerer/mobile exec vite preview --port ${mobilePort} --strictPort`,
+      url: mobileURL,
+      reuseExistingServer: !process.env.CI && process.env.E2E_PORT_GENERATED === '1',
+      timeout: 120_000,
+      stdout: 'pipe',
+      stderr: 'pipe'
+    }
+  ]
 })

@@ -6,9 +6,10 @@ worker**, end to end in a real browser.
 ## How it works
 
 The suite mocks **only LiteLLM** (the upstream model provider). Everything else is
-real: the production `vite preview` build of `@tinytinkerer/web`, and the actual edge
-Hono worker — driven in-process via `app.fetch`, so its routing, validation, CORS,
-anonymous-tier key provisioning, and the chat proxy are all covered.
+real: the production `vite preview` builds of the product shells (`@tinytinkerer/web`,
+`@tinytinkerer/widget`, `@tinytinkerer/mobile`), and the actual edge Hono worker —
+driven in-process via `app.fetch`, so its routing, validation, CORS, anonymous-tier
+key provisioning, and the chat proxy are all covered.
 
 Runs are **anonymous** (no GitHub auth) and **rate limiting is disabled** — neither
 auth nor rate limiting is under test. Because only LiteLLM is mocked, the suite needs
@@ -16,10 +17,13 @@ no secrets and makes no real network calls.
 
 ## Layout
 
-- `scripts/e2e.mjs` — chooses one per-run port (`E2E_PORT`, else a random high port)
-  before Playwright starts, so the web server and workers share the same base URL.
-- `playwright.config.ts` — Chromium project; `webServer` runs `vite preview` on that
-  per-run port so parallel git worktrees don't collide.
+- `scripts/e2e.mjs` — chooses the per-run ports before Playwright starts, so the
+  servers and workers share the same base URLs. One port per shell: `E2E_PORT` (web),
+  `E2E_PORT_WIDGET`, `E2E_PORT_MOBILE` (each derived as the previous `+1`/`+2` locally,
+  pinned explicitly in CI), so parallel git worktrees don't collide.
+- `playwright.config.ts` — Chromium project; `webServer` is an array running one
+  `vite preview` per shell (web on `/web/`, widget on `/widget/`, mobile on
+  `/mobile/`), each `--strictPort` on its own port — i.e. its own **origin**.
 - `fixtures/mock-litellm.ts` — pipes `/api/*` through the real edge worker and mocks
   the LiteLLM upstream it calls; plus the shared UI helpers.
 - `fixtures/snippets.ts` — adversarial inputs used by the current suite.
@@ -34,7 +38,24 @@ no secrets and makes no real network calls.
   back to a code block without crashing the turn; `markdown-renderers.e2e.ts` verifies
   the remaining renderers jsdom cannot exercise — sticky table headers + CSV download,
   the image lightbox, CodeMirror highlighting, the scriptless wireframe iframe,
-  callouts, and link cards — each streamed as deltas so incremental parsing is covered.
+  callouts, and link cards — each streamed as deltas so incremental parsing is covered;
+  `chat-persistence.e2e.ts` verifies a conversation persists to IndexedDB (Dexie) and
+  is restored on reload across all three shells (web/widget/mobile), and asserts the
+  origin-isolation behaviour described below.
+
+### Multi-shell topology and the shared IndexedDB namespace
+
+`chat-persistence.e2e.ts` drives all three product shells, so the harness serves each
+one from its own `vite preview` on its own port — meaning each shell is a distinct
+**origin** (`localhost:<webPort>`, `localhost:<widgetPort>`, `localhost:<mobilePort>`).
+That topology choice has a storage consequence worth calling out: all three shells
+default to the **same** Dexie database name (`storageNamespace` = `tinytinkerer`), but
+IndexedDB is **origin-scoped**, so serving them on different ports gives each its own,
+**isolated** database despite the shared name. The spec asserts this directly — a
+conversation created under `/web/` is _not_ visible from `/widget/`. (Had we instead
+served all three same-origin under different paths, they would **share** one database;
+we chose separate origins because three `vite preview` servers need no extra tooling.)
+Build all three shells before a run (see below); CI builds and pins all three ports.
 
 ### Observing a mid-stream render
 
@@ -61,13 +82,18 @@ One-time browser install (downloads to the shared `~/.cache/ms-playwright`):
 pnpm --filter @tinytinkerer/e2e e2e:install   # playwright install --with-deps chromium
 ```
 
-Build the web shell once (the suite serves its production bundle), then run:
+Build all three shells once (the suite serves their production bundles), then run:
 
 ```bash
 pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices
-TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build --filter=@tinytinkerer/web
+TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build \
+  --filter=@tinytinkerer/web --filter=@tinytinkerer/widget --filter=@tinytinkerer/mobile
 pnpm --filter @tinytinkerer/e2e e2e
 ```
+
+> Pin `E2E_PORT` (and optionally `E2E_PORT_WIDGET` / `E2E_PORT_MOBILE`) to fix the
+> per-shell ports; otherwise the wrapper picks a random base port and derives the
+> other two from it.
 
 > On a headless box without root (e.g. some WSL2 setups) where
 > `playwright install --with-deps` cannot install the OS libraries, download the
