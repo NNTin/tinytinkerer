@@ -25,7 +25,9 @@ no secrets and makes no real network calls.
 - `tests/*.e2e.ts` — the specs (`*.e2e.ts`, kept out of vitest's globs).
   `sandbox-isolation.e2e.ts` verifies the code-exec sandbox isolation guarantees
   that jsdom cannot cover; `event-logger.e2e.ts` verifies the Event Logger plugin
-  logs chat events to the console when enabled (and stays silent when disabled).
+  logs chat events to the console when enabled (and stays silent when disabled);
+  `permissions.e2e.ts` verifies the Permissions plugin gates tools behind a
+  confirmation modal (allow / deny / Escape / negative).
 
 ## Running locally
 
