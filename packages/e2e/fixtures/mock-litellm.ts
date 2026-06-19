@@ -192,6 +192,18 @@ const mockLiteLLM = (
 let activeUpstream: UpstreamState | null = null
 let fetchPatched = false
 
+const LITELLM_ORIGIN = new URL(LITELLM_BASE_URL).origin
+
+// Exact-origin match (not a substring/prefix check, which would also match a
+// hostname like `litellm.mock.evil.com`).
+const isLiteLLMUrl = (url: string): boolean => {
+  try {
+    return new URL(url).origin === LITELLM_ORIGIN
+  } catch {
+    return false
+  }
+}
+
 // Patch global fetch ONCE to intercept the edge's outbound LiteLLM calls. Anything
 // not bound for the (never-resolvable) mock host falls through to the real fetch.
 const installLiteLLMUpstream = (): void => {
@@ -200,7 +212,7 @@ const installLiteLLMUpstream = (): void => {
   const realFetch = globalThis.fetch
   globalThis.fetch = (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-    if (activeUpstream && url.startsWith(LITELLM_BASE_URL)) {
+    if (activeUpstream && isLiteLLMUrl(url)) {
       return Promise.resolve(mockLiteLLM(url, init, activeUpstream))
     }
     return realFetch(input, init)
