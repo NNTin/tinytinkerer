@@ -1,9 +1,43 @@
 # SOP: merge and push a ref
 
 Use this when a user asks you to merge a commit, branch, PR head, or remote ref
-and push the result.
+and push the result. This repo merges **locally** with `git merge` and publishes
+with `git push`. Never merge through `gh` (`gh pr merge`), never rebase, never
+squash.
 
-## 1. Establish the merge target and destination
+## 1. Ensure the husky hooks are installed
+
+The repo uses **husky v9**. The hook scripts live in `.husky/` (committed), but
+Git only runs them through the generated wrapper at `core.hooksPath`, which is
+`.husky/_`. That `.husky/_/` shim directory is **gitignored** and is regenerated
+by the `prepare` script (`husky`) during `pnpm install`.
+
+Why this matters: `.husky/prepare-commit-msg` rewrites a merge subject to
+`chore(merge): merge <MERGED_COMMIT> into <TARGET_COMMIT>`. If the shims are
+missing, the hook never fires and the merge lands with a raw `Merge branch ...`
+subject that does not match the repo's conventional-commit format.
+
+Check that the hooks are wired up **in the worktree you will commit in**
+(`core.hooksPath` is relative to that worktree — if you merge in a separate
+worktree, e.g. `develop` checked out elsewhere, the shims must exist there):
+
+```bash
+git config core.hooksPath          # expect: .husky/_
+ls .husky/_/prepare-commit-msg     # must exist
+```
+
+If `.husky/_/prepare-commit-msg` is missing, regenerate the shims:
+
+```bash
+pnpm install
+```
+
+Do **not** use `pnpm setup:workspace` for this — it runs `pnpm install
+--ignore-scripts`, which skips the `prepare`/husky step and does **not** install
+the hooks. (`pnpm exec husky` or `pnpm prepare` also regenerate the shims if a
+full install is undesirable.)
+
+## 2. Establish the merge target and destination
 
 From the repo root, capture the current state:
 
@@ -16,34 +50,31 @@ git log --oneline --decorate -5
 
 Confirm the target ref exists locally or remotely. If the user named a raw SHA,
 `git merge <sha>` is enough; if they named a PR or branch, fetch the remote ref
-first if needed.
-
-Before creating branches or PRs, check whether a PR already exists for the same
-target or source branch:
-
-```bash
-gh pr list --base <destination-branch> --state open --json number,title,headRefName,baseRefName,commits,statusCheckRollup
-gh pr view <known-pr-number> --json number,state,url,headRefName,baseRefName,commits,statusCheckRollup
-```
-
-If an existing PR contains the target commit or source branch, treat it as the
-canonical PR. Do not create a duplicate. If the final merge commit needs checks,
-update or reuse that existing PR branch whenever possible.
-
-Common trap: PR checks on the source head do not always satisfy protected-branch
-rules for the final merge commit. If the source PR already passed but the push
-rejects a new local merge commit, investigate the missing checks for that exact
-merge commit instead of opening a second PR with the same commits.
+first if needed (e.g. `git fetch origin <branch>`).
 
 If the worktree has unrelated dirty changes, do not overwrite or revert them.
 Continue only when the dirty changes are irrelevant to the merge, or stop and
 ask the user if they block a safe merge.
 
-## 2. Run the merge
+## 3. Run the merge
 
 ```bash
 git merge <target-ref>
 ```
+
+Plain `git merge` is exactly what this repo wants: it **fast-forwards** when the
+current branch is an ancestor of the target, and otherwise creates a **merge
+commit** (Git's default `--ff`). Do not pass `--rebase`, do not `git rebase`
+first, and do not squash.
+
+When a merge commit is created, Git invokes `prepare-commit-msg` with
+`COMMIT_SOURCE=merge` and the default `Merge branch '...'` subject, so the hook
+rewrites it for you. Let it — do not hand-write a conventional merge subject and
+do not pass `-m` to set one. `git merge -m "..."` still fires the hook with
+`COMMIT_SOURCE=merge`, **but** the hook only rewrites a subject that begins with
+`Merge ` — a custom `-m` subject does not match that pattern, so it is left as-is
+and never gets the conventional `chore(merge): ...` format. Rely on the default
+subject + the hook instead.
 
 If Git reports no conflicts, continue to verification. If Git reports conflicts,
 move deliberately:
@@ -72,7 +103,7 @@ git add <path>
 
 Use `git status --short` until no `UU` or other unmerged entries remain.
 
-## 3. Verify before committing
+## 4. Verify before committing
 
 Always run:
 
@@ -89,82 +120,66 @@ pnpm --filter <workspace-package> typecheck
 ```
 
 If a test fails because the local environment is stale, refresh dependencies
-with the repo's documented setup command and rerun the same verification. Do not
-hide real failures.
+with `pnpm install` and rerun the same verification. Do not hide real failures.
 
-## 4. Commit the merge
+## 5. Commit the merge
 
-Inspect what is staged:
+This step only applies when the merge created a merge commit and/or you resolved
+conflicts (a fast-forward leaves nothing to commit). Inspect what is staged:
 
 ```bash
 git diff --cached --stat
 git diff --cached --name-only
 ```
 
-Commit with Git's merge message unless hooks require a conventional merge
-message:
+Commit with Git's merge message and let the hook rewrite the subject:
 
 ```bash
 git commit --no-edit
 ```
 
-If the repository rejects the generated message, amend only the message into the
-repo's accepted merge format.
+Do not hand-edit the subject and do not pass `-m`. The `prepare-commit-msg` hook
+rewrites it to `chore(merge): merge <MERGED_COMMIT> into <TARGET_COMMIT>`. After
+committing, confirm the subject was rewritten:
 
-## 5. Push safely
+```bash
+git log -1 --pretty=%s
+```
 
-Push the current branch to its upstream or intended destination:
+If it still reads `Merge branch ...`, the hooks were not installed — go back to
+step 1, then `git commit --amend --no-edit` to let the hook run.
+
+## 6. Push
+
+Push the current branch to its intended destination:
 
 ```bash
 git push origin <current-branch>
 ```
 
-If the remote rejects the push because a protected branch is waiting for CodeQL
-or other required checks, investigate before creating anything:
+If a **protected branch rejects the push** (for example GH013, "Changes must be
+made through a pull request"), **report the rejection and stop.** Do not
+force-push, do not bypass repository rules, and do not fall back to `gh` or route
+the merge through a PR. Surface the exact error to the user and let them decide.
 
-1. Identify the rejected commit SHA from the push error.
-2. Compare it to the existing PR head SHA and status checks:
-   ```bash
-   gh pr checks <existing-pr-number>
-   gh api repos/<owner>/<repo>/commits/<rejected-sha>/check-runs --jq '.check_runs[] | [.name,.status,.conclusion] | @tsv'
-   ```
-3. If the existing PR checks are for the PR head but the rejection is for a new
-   local merge commit, the checks did not fail; they ran on the wrong commit for
-   the branch rule.
-4. Reuse the existing PR branch by pushing the exact merge commit to that branch,
-   if doing so will not overwrite unrelated work:
-   ```bash
-   git merge-base --is-ancestor <existing-pr-head-sha> HEAD
-   git push origin HEAD:<existing-pr-branch>
-   ```
-   Only do this when the ancestor check succeeds, making the update a
-   fast-forward. Otherwise ask the user before choosing a different branch.
-5. Wait for checks on the exact merge commit, then retry the direct push if the
-   rule allows the checked commit, or merge the existing PR.
-6. Confirm the protected branch now points at the merge commit.
+(Note: direct pushes to `develop` have been succeeding in this repo, so treat a
+rejection as the exception to surface — not the normal path.)
 
-Only create a new temporary branch/PR when no existing PR covers the target, or
-when updating the existing PR branch would overwrite unrelated work. Record why
-the existing PR could not be reused.
-
-Do not force-push or bypass repository rules.
-
-## 6. Confirm and report
+## 7. Confirm and report
 
 Finish with:
 
 ```bash
 git status --short --branch
 git rev-parse HEAD origin/<destination-branch>
+git log -1 --pretty=%s
 ```
-
-If temporary remote branches were deleted by GitHub after the PR merge, run
-`git fetch --prune origin` to clean stale remote-tracking refs.
 
 Report:
 
-- merge commit SHA
+- merge commit SHA (or "fast-forward, no merge commit")
+- the rewritten merge subject (`chore(merge): ...`)
 - branch pushed
 - files that had conflicts
 - verification commands and results
-- PR URL reused or created, if a protected-branch check path was needed
+- any protected-branch rejection, verbatim, if the push was blocked
