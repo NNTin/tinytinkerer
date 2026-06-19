@@ -150,7 +150,11 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
     // the run completes and synthesizes a plain answer without any action. A
     // completed tool result (folded into the next observation under "Tool
     // results:") is the deterministic signal to stop acting in 'tool' mode.
-    if (state.mode === 'no-tool' || lastUser.includes('Tool results:')) {
+    if (
+      state.mode === 'no-tool' ||
+      lastUser.includes('Tool results:') ||
+      lastUser.includes('Tool execution blocked:')
+    ) {
       content = FINAL_DECISION
     } else {
       state.actions += 1
@@ -350,6 +354,11 @@ export const enableCodeExecPlugin = (page: Page): Promise<void> =>
 // enabled via its Settings label (exactly `manifest.label`).
 export const enableEventLoggerPlugin = (page: Page): Promise<void> =>
   enablePlugin(page, 'Event Logger (developer console)')
+
+// The Permissions plugin (tool.beforeExecute gate that shows a confirmation
+// modal), enabled via its Settings label (exactly `manifest.label`).
+export const enablePermissionsPlugin = (page: Page): Promise<void> =>
+  enablePlugin(page, 'Permissions (ask before tools run)')
 
 // Sends a prompt and waits until the run has folded the sandbox result back into a
 // follow-up request (i.e. the tool actually executed in a real browser sandbox).
