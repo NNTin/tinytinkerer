@@ -217,7 +217,8 @@ jobs:
 
   deploy-production:
     name: Deploy Production
-    needs: [checks, ci]
+    # e2e gates the deploy (no test report — that is preview-only).
+    needs: [checks, ci, e2e]
     # Only `main` is the production deployment. `develop` pushes now also match
     # the push event, so the ref must be pinned here or develop would alias onto
     # the production domain.
@@ -269,7 +270,8 @@ jobs:
 
   deploy-develop:
     name: Deploy Develop
-    needs: [checks, ci]
+    # e2e gates the deploy (no test report — that is preview-only).
+    needs: [checks, ci, e2e]
     # The develop frontend is a Vercel *preview* build (only `main` is the true
     # production deployment) manually aliased to the stable dev subdomain. It
     # pulls the Preview env scope, so VITE_EDGE_URL points at the develop edge —
