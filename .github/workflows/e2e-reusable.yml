@@ -1,23 +1,19 @@
-name: E2E
+name: E2E (reusable)
 
 # Playwright end-to-end tests: real-browser verification of the code-exec sandbox
-# isolation guarantees that jsdom cannot cover (issue #217). Kept as its own job —
-# separate from `turbo run test` — so the browser download only runs here and never
-# on every unit-test run. Only LiteLLM is mocked (the real edge worker runs
-# in-process); the run is anonymous with rate limiting disabled, so the job needs no
-# secrets. See packages/e2e/README.md.
+# isolation guarantees that jsdom cannot cover (issue #217). Extracted into a
+# reusable workflow (issue #254) so both deploy pipelines can run the SAME job
+# without duplicating the (browser-cache + 3-shell-build + Playwright) setup:
+#   - deploy-pages.yml calls it on PRs (feeds the merged Allure preview report) and
+#     on main/develop pushes (gating), and
+#   - deploy-edge.yml calls it on its edge-path pushes (gating).
+# Only LiteLLM is mocked (the real edge worker runs in-process); the run is anonymous
+# with rate limiting disabled, so the job needs no secrets. See packages/e2e/README.md.
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: e2e-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   e2e:
@@ -82,6 +78,17 @@ jobs:
 
       - name: Run Playwright e2e
         run: pnpm --filter @tinytinkerer/e2e e2e
+
+      # Upload the Allure results even when the suite fails, so the PR preview report
+      # can still surface the failures (issue #254). A failed suite already fails the
+      # step/job above (red check); this just preserves the inputs.
+      - name: Upload Allure results (e2e)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: allure-results-e2e
+          path: packages/e2e/allure-results
+          if-no-files-found: warn
 
       - name: Upload report on failure
         if: failure()

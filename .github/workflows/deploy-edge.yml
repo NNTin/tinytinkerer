@@ -107,9 +107,17 @@ jobs:
       - run: pnpm generate:notices
       - run: TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 ${{ matrix.task.run }}
 
+  # Runs the same Playwright suite as deploy-pages via the shared reusable workflow
+  # (issue #254). deploy-edge is push-only, so this gates the edge deploy. The merged
+  # Allure preview report is a PR concern owned by deploy-pages, so no report is built
+  # here (the uploaded allure-results-e2e artifact is simply unused on edge pushes).
+  e2e:
+    name: E2E
+    uses: ./.github/workflows/e2e-reusable.yml
+
   deploy:
     name: Deploy Cloudflare Worker
-    needs: [checks, ci]
+    needs: [checks, ci, e2e]
     runs-on: ubuntu-latest
     env:
       # Job-level so the inject/upload steps can guard on it in `if:`.

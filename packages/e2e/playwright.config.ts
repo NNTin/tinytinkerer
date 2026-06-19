@@ -48,7 +48,13 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: process.env.CI ? [['github'], ['list']] : 'list',
+  // In CI the suite also emits Allure results so the PR deploy-preview report can
+  // merge them with the vitest results (issue #254). resultsDir is relative to this
+  // package, i.e. packages/e2e/allure-results — the reusable e2e workflow uploads it
+  // as an artifact. Locally the report is irrelevant, so keep the plain list reporter.
+  reporter: process.env.CI
+    ? [['github'], ['list'], ['allure-playwright', { resultsDir: 'allure-results' }]]
+    : 'list',
   use: {
     baseURL,
     trace: 'on-first-retry'

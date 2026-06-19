@@ -41,7 +41,13 @@ const config: KnipConfig = {
     '@types/react-dom',
     // CLI-only dev tooling without a static import.
     '@testing-library/user-event',
-    'eslint-config-prettier'
+    'eslint-config-prettier',
+    // Allure test report (issue #254). The vitest reporter is referenced only as a
+    // string passed via a turbo passthrough flag (`--reporter=allure-vitest/reporter`
+    // in `pnpm test:allure`), and the CLI is invoked as the `allure` bin — neither is
+    // statically imported, so knip cannot trace them.
+    'allure-vitest',
+    'allure-commandline'
   ],
   rules: {
     exports: 'warn',
@@ -85,7 +91,10 @@ const config: KnipConfig = {
       // the config + specs as entries so the suite, its fixtures, and
       // @playwright/test are all traced as used.
       entry: ['playwright.config.ts', 'tests/**/*.e2e.ts'],
-      project: ['**/*.ts']
+      project: ['**/*.ts'],
+      // The Allure Playwright reporter is named as a string in the reporter array
+      // (issue #254), not imported, so knip cannot trace it.
+      ignoreDependencies: ['allure-playwright']
     }
   }
 }

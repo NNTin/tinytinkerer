@@ -3,6 +3,13 @@ node_modules
 .turbo
 dist
 coverage
+# Allure test-report inputs/outputs (issue #254): per-package raw results from the
+# allure-vitest/allure-playwright reporters, the consolidated vitest results, and the
+# generated HTML report. All derived in CI for PR previews — never versioned.
+allure-results
+allure-results-vitest
+allure-report
+test-report
 **/generated/
 **/*.generated.ts
 # Exception: the edge contracts are generated from the OpenAPI source but the

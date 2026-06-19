@@ -107,6 +107,114 @@ jobs:
       - run: pnpm generate:notices
       - run: TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 ${{ matrix.task.run }}
 
+  # Playwright e2e via the shared reusable workflow (issue #254 retired the standalone
+  # e2e.yml). Runs on every trigger: on pushes it gates alongside the deploy jobs
+  # (preserving the old e2e.yml push coverage); on PRs it also feeds the merged Allure
+  # preview report. It uploads `allure-results-e2e` as an artifact.
+  e2e:
+    name: E2E
+    uses: ./.github/workflows/e2e-reusable.yml
+
+  # Emits Allure results for the WHOLE vitest suite (PR-only — the report is a preview
+  # concern). A single turbo passthrough appends the allure-vitest reporter to every
+  # package's `vitest run` (the reporter auto-injects its setup file per project, so no
+  # per-package config is needed); the results are then consolidated into one directory
+  # and uploaded. This is separate from the gating `ci` "Test" matrix, which provides
+  # the red check; here the steps tolerate test failures so the report still publishes.
+  vitest-allure:
+    name: Vitest (Allure results)
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.16.1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - run: pnpm setup:workspace
+
+      - name: Run vitest with Allure reporter
+        run: pnpm test:allure
+
+      # Consolidate every package's allure-results into one directory even if some
+      # tests failed above, so the merged report can surface the failures.
+      - name: Consolidate Allure results
+        if: ${{ !cancelled() }}
+        run: pnpm collect:allure-results allure-results-vitest
+
+      - name: Upload Allure results (vitest)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: allure-results-vitest
+          path: allure-results-vitest
+          if-no-files-found: error
+
+  # Merge the vitest + e2e Allure results into one static HTML report (PR-only).
+  # `needs` the test jobs but runs even when they fail (`!cancelled()`) so a failing
+  # suite still produces a browsable report — the red check comes from the test jobs.
+  report:
+    name: Merge Allure report
+    needs: [vitest-allure, e2e]
+    if: >
+      !cancelled() &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.16.1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      # allure-commandline is the Java-based Allure CLI. It vendors the Allure
+      # distribution inside its npm tarball (no install-time binary download), but
+      # the launcher runs `java`, so the report job needs a JRE on PATH.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # The CLI is invoked via `pnpm exec allure`; a scriptless install is enough
+      # (allure-commandline has no lifecycle scripts and ships a ready-to-run bin).
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Download vitest Allure results
+        uses: actions/download-artifact@v5
+        with:
+          name: allure-results-vitest
+          path: allure-results-vitest
+
+      - name: Download e2e Allure results
+        uses: actions/download-artifact@v5
+        with:
+          name: allure-results-e2e
+          path: allure-results-e2e
+
+      - name: Generate merged report
+        run: pnpm exec allure generate allure-results-vitest allure-results-e2e -o test-report --clean
+
+      - name: Upload report
+        uses: actions/upload-artifact@v5
+        with:
+          name: test-report
+          path: test-report
+          if-no-files-found: error
+
   deploy-production:
     name: Deploy Production
     needs: [checks, ci]
@@ -211,8 +319,13 @@ jobs:
 
   deploy-preview:
     name: Deploy Preview
-    needs: [checks, ci]
+    needs: [checks, ci, report]
+    # `!cancelled()` so the preview (and the embedded /test-report/) still publishes
+    # when tests fail — Allure is most useful exactly then, and the failing test jobs
+    # keep the PR's checks red. A broken BUILD still blocks the deploy via the
+    # `vercel build` step below, which re-runs `pnpm build`.
     if: >
+      !cancelled() &&
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
@@ -242,15 +355,30 @@ jobs:
       - name: Pull Vercel Environment
         run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
 
+      # Pull the merged Allure report so `pnpm build` (via build-pages.mjs, keyed off
+      # TINYTINKERER_TEST_REPORT_DIR) composes it into apps/host/dist/test-report and
+      # it ships at <preview>/test-report/. Best-effort: if the report job did not
+      # produce an artifact (e.g. e2e infra failure), build-pages skips /test-report/
+      # rather than failing the deploy.
+      - name: Download merged test report
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          name: test-report
+          path: test-report
+
       - name: Build Deployment Artifacts
         # PR previews report to Sentry under a single shared `pr-preview`
         # environment. Preview env vars (incl. VITE_EDGE_URL -> the develop edge)
         # come from the pulled Preview scope; the Sentry build inputs are passed
-        # here, matching the production build.
+        # here, matching the production build. TINYTINKERER_TEST_REPORT_DIR tells
+        # build-pages.mjs to compose the downloaded report into /test-report/ — set
+        # only here, so develop/production deploys never publish it.
         env:
           VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN_FRONTEND }}
           VITE_SENTRY_ENVIRONMENT: pr-preview
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          TINYTINKERER_TEST_REPORT_DIR: test-report
         run: vercel build --token="$VERCEL_TOKEN"
 
       - name: Deploy to Vercel
@@ -315,11 +443,17 @@ jobs:
               per_page: 100,
             })
 
+            const previewUrl = process.env.PREVIEW_URL
             const body = [
               marker,
               '## Vercel Preview',
               '',
-              `Preview: ${process.env.PREVIEW_URL}`,
+              `- Web: ${previewUrl}/web/`,
+              `- Mobile: ${previewUrl}/mobile/`,
+              `- Widget: ${previewUrl}/widget/`,
+              `- Test report: ${previewUrl}/test-report/`,
+              '',
+              `Preview: ${previewUrl}`,
               `Deployment: ${process.env.DEPLOYMENT_URL}`,
               `Domain: \`${process.env.PREVIEW_DOMAIN}\``,
               `Commit: \`${process.env.GITHUB_SHA}\``,
