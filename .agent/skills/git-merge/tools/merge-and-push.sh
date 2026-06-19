@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Merge a ref into the current branch and push it — the deterministic spine of
-# workflows/merge-and-push.md. Offloads the steps that are easy to get wrong:
-#   1. install husky hooks (pnpm install) so prepare-commit-msg rewrites the
-#      merge subject to `chore(merge): merge <X> into <Y>` instead of a raw
-#      `Merge branch ...`;
+# the git-merge skill (see ../SKILL.md). This script IS the procedure; offloads
+# the steps that are easy to get wrong:
+#   1. install husky hooks (pnpm install, NOT setup:workspace) so the
+#      prepare-commit-msg hook rewrites the merge subject to
+#      `chore(merge): merge <X> into <Y>` instead of a raw `Merge branch ...`;
 #   2. plain `git merge --no-edit <ref>` — fast-forward when possible, else a
 #      merge commit (Git's default --ff). Never rebases, never squashes, never
-#      passes a hand-written -m subject (which the hook would NOT rewrite).
+#      passes a hand-written -m subject: the hook only rewrites a subject that
+#      starts with `Merge `, so a custom -m subject would be left un-rewritten.
 #   3. `git push origin <branch>`.
 #
 # It is intentionally VERBOSE: every git/pnpm command is echoed before it runs so
@@ -170,8 +172,12 @@ else
 fi
 
 # --- 5. push (unless --no-push) ---------------------------------------------
+# If the merge touched code, verify before publishing: git diff --check and the
+# relevant package tests (pnpm --filter <pkg> test / typecheck). Use --no-push to
+# stop here and verify first.
 if [ "$push" -eq 0 ]; then
-  log "--no-push set: stopping before push. To push: git push origin $branch"
+  log "--no-push set: stopping before push. Verify (git diff --check + package"
+  log "tests) if the merge touched code, then: git push origin $branch"
   exit 0
 fi
 
