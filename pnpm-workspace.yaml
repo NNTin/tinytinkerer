@@ -60,6 +60,6 @@ onlyBuiltDependencies:
 # downloads browser binaries. We keep installs scriptless and fetch browsers
 # explicitly via `pnpm --filter @tinytinkerer/e2e e2e:install` (playwright install
 # --with-deps chromium) in CI and locally, so the lifecycle script is intentionally
-# blocked here rather than run at install time. See docs/e2e-testing.md (§6).
+# blocked here rather than run at install time. See packages/e2e/README.md.
 ignoredBuiltDependencies:
   - playwright

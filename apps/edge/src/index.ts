@@ -13,7 +13,10 @@ import { registerMcpRoutes } from './routes/mcp'
 import { registerModelRoutes } from './routes/models'
 import { registerSearchRoutes } from './routes/search'
 
-const app = new OpenAPIHono<{ Bindings: Bindings }>({
+// The bare Hono app, exported so it can be exercised in-process (e.g. the e2e
+// suite drives the real edge worker via `app.fetch`, mocking only the LiteLLM
+// upstream). The deployed entry is the Sentry-wrapped `default` export below.
+export const app = new OpenAPIHono<{ Bindings: Bindings }>({
   // Failed request validation returns the same { error } shape every other edge
   // error uses (and that the OpenAPI 4xx responses document), instead of the
   // library's default validation-error payload.

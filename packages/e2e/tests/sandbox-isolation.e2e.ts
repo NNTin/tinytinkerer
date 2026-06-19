@@ -8,13 +8,13 @@ import {
 import * as snippets from '../fixtures/snippets'
 
 // Real-browser verification of the code-exec sandbox isolation guarantees that
-// jsdom cannot cover (GitHub issue #217). LiteLLM is mocked: a fixture streams a
-// tool call so the REAL frontend agent auto-invokes `run_javascript` with an
-// adversarial snippet, in anonymous mode with no edge/network. Each guarantee uses
-// a DUAL ORACLE — the in-sandbox result the runtime folds back into the next
-// model request (parsed via `mock.sandboxResult()`) AND an independent Playwright
+// jsdom cannot cover (GitHub issue #217). Only LiteLLM is mocked: a fixture streams
+// a tool call (through the real edge worker) so the agent auto-invokes
+// `run_javascript` with an adversarial snippet, anonymously. Each guarantee uses a
+// DUAL ORACLE — the in-sandbox result the runtime folds back into the next model
+// request (parsed via `mock.sandboxResult()`) AND an independent Playwright
 // observation (a 200-fulfilling sentinel route that only fires on real egress, or
-// the sandbox iframe being torn down). See docs/e2e-testing.md.
+// the sandbox iframe being torn down). See packages/e2e/README.md.
 
 const SANDBOX_IFRAME = 'iframe[title="code execution sandbox"]'
 

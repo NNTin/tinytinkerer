@@ -1,31 +1,29 @@
 # `@tinytinkerer/e2e`
 
-Playwright end-to-end tests. The first (and currently only) suite is **real-browser
-verification of the code-exec sandbox isolation guarantees** that jsdom cannot cover
-(GitHub issue [#217](https://github.com/NNTin/tinytinkerer/issues/217)). See
-[`docs/e2e-testing.md`](../../docs/e2e-testing.md) for the full architecture.
+Playwright end-to-end tests that exercise the app together with the **real edge
+worker**, end to end in a real browser.
 
 ## How it works
 
-LiteLLM is **mocked in-page**: Playwright intercepts `/api/models/chat` and streams a
-fixture so the **real frontend agent runtime** auto-invokes the `run_javascript` tool
-with an adversarial snippet. The sandbox result the runtime folds back into the next
-model request is the test's in-sandbox oracle; an independent Playwright observation
-(no sentinel network response / the sandbox iframe torn down) is the external oracle.
+The suite mocks **only LiteLLM** (the upstream model provider). Everything else is
+real: the production `vite preview` build of `@tinytinkerer/web`, and the actual edge
+Hono worker — driven in-process via `app.fetch`, so its routing, validation, CORS,
+anonymous-tier key provisioning, and the chat proxy are all covered.
 
-Because the mock replaces the model, the suite is hermetic — no edge, no auth, no
-network, **anonymous mode** and **rate limiting** are intrinsic, and it needs no
-secrets. The app under test is the production `vite preview` build of `@tinytinkerer/web`.
+Runs are **anonymous** (no GitHub auth) and **rate limiting is disabled** — neither
+auth nor rate limiting is under test. Because only LiteLLM is mocked, the suite needs
+no secrets and makes no real network calls.
 
 ## Layout
 
 - `playwright.config.ts` — Chromium project; `webServer` runs `vite preview` on a
   per-run port (`E2E_PORT`, else a random high port) so parallel git worktrees don't
   collide.
-- `fixtures/mock-litellm.ts` — the content-driven `/api/models/chat` mock + UI helpers.
-- `fixtures/snippets.ts` — the adversarial snippets, one per guarantee.
-- `tests/sandbox-isolation.e2e.ts` — one test per guarantee (`*.e2e.ts`, kept out of
-  vitest's globs).
+- `fixtures/mock-litellm.ts` — pipes `/api/*` through the real edge worker and mocks
+  the LiteLLM upstream it calls; plus the shared UI helpers.
+- `fixtures/snippets.ts` — adversarial inputs used by the current suite.
+- `tests/*.e2e.ts` — the specs (`*.e2e.ts`, kept out of vitest's globs). The first
+  suite verifies the code-exec sandbox isolation guarantees that jsdom cannot cover.
 
 ## Running locally
 

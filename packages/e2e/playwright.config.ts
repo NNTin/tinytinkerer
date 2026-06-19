@@ -39,7 +39,7 @@ export default defineConfig({
     // Phase 1: Chromium only (matches the primary deployment target, smallest
     // WSL2/CI install). Firefox + WebKit are a tracked follow-up — the isolation
     // guarantees are engine-sensitive, so cross-engine coverage is desirable but
-    // deferred to keep the first landing small. See docs/e2e-testing.md (§5).
+    // deferred to keep the first landing small. Tracked by issue #245.
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } }
   ],
   // Serves the prebuilt apps/web/dist. The web app must be built first

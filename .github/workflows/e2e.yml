@@ -3,8 +3,9 @@ name: E2E
 # Playwright end-to-end tests: real-browser verification of the code-exec sandbox
 # isolation guarantees that jsdom cannot cover (issue #217). Kept as its own job —
 # separate from `turbo run test` — so the browser download only runs here and never
-# on every unit-test run. LiteLLM is mocked in-page (no edge, no auth, no network),
-# so the job needs no secrets. See docs/e2e-testing.md.
+# on every unit-test run. Only LiteLLM is mocked (the real edge worker runs
+# in-process); the run is anonymous with rate limiting disabled, so the job needs no
+# secrets. See packages/e2e/README.md.
 on:
   push:
     branches: [main, develop]
