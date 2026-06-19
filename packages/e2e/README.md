@@ -22,8 +22,10 @@ no secrets and makes no real network calls.
 - `fixtures/mock-litellm.ts` — pipes `/api/*` through the real edge worker and mocks
   the LiteLLM upstream it calls; plus the shared UI helpers.
 - `fixtures/snippets.ts` — adversarial inputs used by the current suite.
-- `tests/*.e2e.ts` — the specs (`*.e2e.ts`, kept out of vitest's globs). The first
-  suite verifies the code-exec sandbox isolation guarantees that jsdom cannot cover.
+- `tests/*.e2e.ts` — the specs (`*.e2e.ts`, kept out of vitest's globs).
+  `sandbox-isolation.e2e.ts` verifies the code-exec sandbox isolation guarantees
+  that jsdom cannot cover; `event-logger.e2e.ts` verifies the Event Logger plugin
+  logs chat events to the console when enabled (and stays silent when disabled).
 
 ## Running locally
 

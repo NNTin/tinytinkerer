@@ -113,11 +113,21 @@ const PLAN = JSON.stringify({
   ]
 })
 
-const SYNTHESIS_ANSWER = 'Done — the sandbox finished executing the requested snippet.'
+// The synthesized final answer. Exported so a spec can wait for it to render
+// (the DOM signal that a run actually completed) without duplicating the literal.
+export const SYNTHESIS_ANSWER = 'Done — the sandbox finished executing the requested snippet.'
+
+// How the mocked model resolves a ReAct decision:
+//   • 'tool'    — issue a single `run_javascript` action (the sandbox suite path).
+//   • 'no-tool' — finish immediately with no action, so a plain chat completes and
+//                 synthesizes WITHOUT needing the code-exec tool (for suites where
+//                 that tool stays disabled, e.g. the event-logger spec).
+type ChatMode = 'tool' | 'no-tool'
 
 // Per-run state, captured as the edge forwards chat requests to the LiteLLM mock.
 type UpstreamState = {
   code: string
+  mode: ChatMode
   bodies: string[]
   decoded: string[]
   actions: number
@@ -136,9 +146,11 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
 
   let content: string
   if (system.startsWith('You are a ReAct agent')) {
-    // A completed tool result is folded into the next observation under "Tool
-    // results:" — the deterministic signal to stop acting.
-    if (lastUser.includes('Tool results:')) {
+    // In 'no-tool' mode there is no tool to drive, so finish on the first decision:
+    // the run completes and synthesizes a plain answer without any action. A
+    // completed tool result (folded into the next observation under "Tool
+    // results:") is the deterministic signal to stop acting in 'tool' mode.
+    if (state.mode === 'no-tool' || lastUser.includes('Tool results:')) {
       content = FINAL_DECISION
     } else {
       state.actions += 1
@@ -237,9 +249,9 @@ const pipeToEdge = async (route: Route): Promise<void> => {
   await route.fulfill({ status: edgeResponse.status, headers: responseHeaders, body: payload })
 }
 
-export const installLiteLLMMock = async (page: Page, code: string): Promise<LiteLLMMock> => {
+const installMock = async (page: Page, code: string, mode: ChatMode): Promise<LiteLLMMock> => {
   installLiteLLMUpstream()
-  const state: UpstreamState = { code, bodies: [], decoded: [], actions: 0 }
+  const state: UpstreamState = { code, mode, bodies: [], decoded: [], actions: 0 }
   activeUpstream = state
   const sentinelHits: string[] = []
 
@@ -270,9 +282,20 @@ export const installLiteLLMMock = async (page: Page, code: string): Promise<Lite
   }
 }
 
+// The sandbox suite's mock: the model issues a single `run_javascript` action so a
+// real-browser sandbox run is driven (see installMock's 'tool' mode).
+export const installLiteLLMMock = (page: Page, code: string): Promise<LiteLLMMock> =>
+  installMock(page, code, 'tool')
+
+// A NO-TOOL chat mock: the ReAct decision finishes immediately, so a plain message
+// completes and synthesizes user.message + assistant.* events WITHOUT the code-exec
+// tool. Used by suites (e.g. event-logger) that keep that tool disabled.
+export const installChatMock = (page: Page): Promise<LiteLLMMock> =>
+  installMock(page, '', 'no-tool')
+
 // A telemetry-consent dialog auto-opens on first load and its overlay intercepts
 // clicks. Decline it (keeps the run clean; telemetry no-ops in dev anyway).
-const dismissTelemetryDialog = async (page: Page): Promise<void> => {
+export const dismissTelemetryDialog = async (page: Page): Promise<void> => {
   // The dialog appears after hydration (a beat after navigation), so wait for it
   // rather than racing the check.
   const decline = page.getByRole('button', { name: 'Continue without' })
@@ -283,11 +306,14 @@ const dismissTelemetryDialog = async (page: Page): Promise<void> => {
   }
 }
 
-// Opens Settings, enables the Code execution plugin (off by default), and closes
-// the modal. The toggle's <input> is visually hidden (sr-only) but its accessible
-// name comes from the wrapping <label> text, so we toggle via the label and read
-// state via isChecked() (which works on hidden inputs).
-export const enableCodeExecPlugin = async (page: Page): Promise<void> => {
+// Opens Settings, enables the plugin whose Settings label is `label` (plugins are
+// off by default), and closes the modal. The toggle's <input> is visually hidden
+// (sr-only) but its accessible name comes from the wrapping <label> text, so we
+// toggle via the label and read state via isChecked() (which works on hidden
+// inputs). The label is also a substring of the checkbox's accessible name (the
+// label text plus the plugin description share the wrapping <label>), so a single
+// string locates both the click target and the checkbox.
+export const enablePlugin = async (page: Page, label: string): Promise<void> => {
   await dismissTelemetryDialog(page)
   const settingsDialog = page.getByRole('dialog', { name: 'Settings' })
   // The settings modal can already be open on first load; only open it if not.
@@ -298,11 +324,11 @@ export const enableCodeExecPlugin = async (page: Page): Promise<void> => {
     await expect(settingsDialog).toBeVisible()
   }
 
-  const label = page.getByText('Code execution (run_javascript tool)')
-  await label.scrollIntoViewIfNeeded()
-  const checkbox = page.getByRole('checkbox', { name: /Code execution/ })
+  const labelText = page.getByText(label)
+  await labelText.scrollIntoViewIfNeeded()
+  const checkbox = page.getByRole('checkbox', { name: label })
   if (!(await checkbox.isChecked())) {
-    await label.click()
+    await labelText.click()
   }
   await expect(checkbox).toBeChecked()
 
@@ -315,6 +341,15 @@ export const enableCodeExecPlugin = async (page: Page): Promise<void> => {
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeHidden()
   await expect(page.getByRole('button', { name: 'Send' })).toBeVisible()
 }
+
+// The Code execution plugin (run_javascript tool), enabled via its Settings label.
+export const enableCodeExecPlugin = (page: Page): Promise<void> =>
+  enablePlugin(page, 'Code execution (run_javascript tool)')
+
+// The Event Logger plugin (its observer logs every chat event to the console),
+// enabled via its Settings label (exactly `manifest.label`).
+export const enableEventLoggerPlugin = (page: Page): Promise<void> =>
+  enablePlugin(page, 'Event Logger (developer console)')
 
 // Sends a prompt and waits until the run has folded the sandbox result back into a
 // follow-up request (i.e. the tool actually executed in a real browser sandbox).
