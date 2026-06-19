@@ -42,8 +42,8 @@ jobs:
       # binaries (sharp is needed by the brand-asset generation the web build runs).
       - run: pnpm setup:workspace
 
-      - name: E2E text fixture check
-        run: pnpm check:e2e-fixtures
+      - name: Tracked text file check
+        run: pnpm check:text-files
 
       # Cache the Playwright browser binaries, keyed by the pinned @playwright/test
       # version, so the ~110 MB Chromium download is fetched at most once per bump.
