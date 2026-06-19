@@ -41,17 +41,32 @@ do not fall back to `gh`.
 
 ## How
 
-1. Follow `workflows/merge-and-push.md`.
-2. Ensure the husky hooks are installed in the worktree you commit in (the
-   workflow's first step) so the merge subject gets rewritten correctly.
+1. For a straightforward merge, run `tools/merge-and-push.sh <target-ref>`: it
+   installs the husky hooks if needed, does the FF-else-merge-commit, and pushes
+   — verbosely, echoing each pnpm/git command. Follow `workflows/merge-and-push.md`
+   for the full reasoning and the manual steps.
+2. The tool stops (without clobbering anything) on a dirty worktree, an unknown
+   ref, a merge conflict, or a rejected push, printing the exact next steps. Pick
+   up from there by hand.
 3. Treat conflict resolution as judgment work: inspect both sides, preserve
-   intended behavior, and keep unrelated changes untouched.
+   intended behavior, and keep unrelated changes untouched. The tool never
+   auto-resolves conflicts.
 4. Report the merge commit, pushed branch, conflict files, and verification.
 
 ## Available tools
 
-No skill-local tool scripts are provided. Merge conflicts cannot be solved
-correctly by a generic script; use Git, repo tests, and semantic code review.
+- `tools/merge-and-push.sh <target-ref> [--no-push]` — ensures husky hooks are
+  installed (runs `pnpm install` when the `.husky/_` shims are missing), runs
+  `git merge --no-edit <target-ref>` (fast-forward when possible, else a merge
+  commit whose subject the hook rewrites), and pushes with `git push origin
+<branch>`. Verbose by design. Never rebases, squashes, force-pushes, or falls
+  back to `gh`. Refuses to run on a dirty worktree; on conflicts it leaves the
+  merge in progress and prints resolution steps; on a rejected push it reports
+  and stops. `--no-push` stops after the merge. Exit codes: 0 ok, 1 usage,
+  2 dirty worktree, 3 ref not found, 4 conflicts, 5 push rejected.
+
+Merge conflicts themselves cannot be solved by a generic script; the tool hands
+them back to you for semantic resolution with Git, repo tests, and code review.
 
 ## Constraints
 

@@ -5,6 +5,12 @@ and push the result. This repo merges **locally** with `git merge` and publishes
 with `git push`. Never merge through `gh` (`gh pr merge`), never rebase, never
 squash.
 
+**Fast path:** `bash .agent/skills/git-merge/tools/merge-and-push.sh <target-ref>`
+runs steps 1, 3, and 6 below deterministically and verbosely (hooks → merge →
+push). It stops with explicit next steps on a dirty worktree, unknown ref,
+conflict, or rejected push — at which point you resume by hand from the matching
+step. The rest of this SOP is the reasoning and the manual fallback.
+
 ## 1. Ensure the husky hooks are installed
 
 The repo uses **husky v9**. The hook scripts live in `.husky/` (committed), but
