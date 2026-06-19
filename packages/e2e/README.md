@@ -16,9 +16,10 @@ no secrets and makes no real network calls.
 
 ## Layout
 
-- `playwright.config.ts` — Chromium project; `webServer` runs `vite preview` on a
-  per-run port (`E2E_PORT`, else a random high port) so parallel git worktrees don't
-  collide.
+- `scripts/e2e.mjs` — chooses one per-run port (`E2E_PORT`, else a random high port)
+  before Playwright starts, so the web server and workers share the same base URL.
+- `playwright.config.ts` — Chromium project; `webServer` runs `vite preview` on that
+  per-run port so parallel git worktrees don't collide.
 - `fixtures/mock-litellm.ts` — pipes `/api/*` through the real edge worker and mocks
   the LiteLLM upstream it calls; plus the shared UI helpers.
 - `fixtures/snippets.ts` — adversarial inputs used by the current suite.

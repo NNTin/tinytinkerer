@@ -1,11 +1,17 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// Per-run port. Parallel git worktrees (a known WSL2 pain) must not collide on a
-// fixed port, and the host dev server hardcodes 3111 and throws EADDRINUSE when
-// taken. So each run picks a port: an explicit E2E_PORT wins (CI pins it), else a
-// random high port keeps concurrent worktrees apart. Vite is launched with
-// --strictPort on this exact port and Playwright polls the matching URL.
-const port = Number(process.env.E2E_PORT ?? 40000 + Math.floor(Math.random() * 20000))
+// Per-run port. The package's `e2e` script sets E2E_PORT once before invoking
+// Playwright, and CI pins it explicitly. Do not generate a fallback here: this
+// config is evaluated by more than one Playwright process, so an in-config random
+// value can make the web server and test workers disagree on baseURL.
+const rawPort = process.env.E2E_PORT
+if (!rawPort) {
+  throw new Error('E2E_PORT must be set. Run through `pnpm --filter @tinytinkerer/e2e e2e`.')
+}
+const port = Number(rawPort)
+if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+  throw new Error(`E2E_PORT must be a valid TCP port, got ${rawPort}`)
+}
 // The web shell is built with Vite base '/web/', so `vite preview` serves the app
 // under /web/. Tests navigate to baseURL ('…/web/'); the app's edge calls use
 // absolute paths (/api/...) which the in-page mock intercepts regardless of base.
@@ -49,10 +55,10 @@ export default defineConfig({
   webServer: {
     command: `pnpm --filter @tinytinkerer/web exec vite preview --port ${port} --strictPort`,
     url: baseURL,
-    // Reuse a running server only for the random-port local case. When a port is
-    // pinned (CI, or a deliberate local E2E_PORT), always start fresh so a stale
-    // server from an older `apps/web/dist` can't silently serve outdated code.
-    reuseExistingServer: !process.env.CI && !process.env.E2E_PORT,
+    // Reuse a running server only when the package wrapper generated the local
+    // random port. In CI, or when a caller pins E2E_PORT, always start fresh so
+    // stale output cannot be served silently.
+    reuseExistingServer: !process.env.CI && process.env.E2E_PORT_GENERATED === '1',
     timeout: 120_000,
     stdout: 'pipe',
     stderr: 'pipe'

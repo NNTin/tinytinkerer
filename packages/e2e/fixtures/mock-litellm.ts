@@ -61,6 +61,7 @@ export type LiteLLMMock = {
 
 type ChatMessage = { role: string; content: string }
 type LiteLLMRequestBody = { stream?: boolean; messages?: ChatMessage[]; key?: unknown }
+type UpstreamCall = { path: string; authorization: string | null }
 
 const OBSERVATION_PREFIX = 'run_javascript: '
 
@@ -152,6 +153,8 @@ type UpstreamState = {
   bodies: string[]
   decoded: string[]
   actions: number
+  provisionedKeys: Set<string>
+  upstreamCalls: UpstreamCall[]
 }
 
 // The CONTENT-DRIVEN model behaviour, keyed off the request's system prompt so it
@@ -208,19 +211,64 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
 // The mocked LiteLLM upstream: the only external service the edge talks to. Covers
 // the anonymous-tier key-management dance (/v2/key/info → /key/generate, which
 // echoes the edge's deterministic key value), the models catalogue, and chat.
+const unauthorizedResponse = (path: string, reason: string): Response =>
+  new Response(
+    JSON.stringify({ error: `Unauthorized LiteLLM mock request to ${path}: ${reason}` }),
+    {
+      status: 401,
+      headers: { 'content-type': 'application/json' }
+    }
+  )
+
+const badRequestResponse = (path: string, reason: string): Response =>
+  new Response(JSON.stringify({ error: `Bad LiteLLM mock request to ${path}: ${reason}` }), {
+    status: 400,
+    headers: { 'content-type': 'application/json' }
+  })
+
+const MANAGEMENT_AUTHORIZATION = `Bearer ${EDGE_ENV.LITELLM_KEY_MANAGEMENT_API_KEY}`
+const knownProvisionedKeys = new Set<string>()
+
 const mockLiteLLM = (
   url: string,
   init: RequestInit | undefined,
   state: UpstreamState
 ): Response => {
+  const path = new URL(url).pathname
+  const authorization = new Headers(init?.headers).get('authorization')
+  state.upstreamCalls.push({ path, authorization })
   const raw = typeof init?.body === 'string' ? init.body : ''
   const body = (raw ? JSON.parse(raw) : {}) as LiteLLMRequestBody
-  if (url.endsWith('/v2/key/info')) return jsonResponse({ info: [] })
-  if (url.endsWith('/key/generate')) return jsonResponse({ key: body.key })
-  if (url.endsWith('/key/update')) return jsonResponse({})
-  if (url.endsWith('/v1/models')) return jsonResponse({ data: [] })
-  if (url.endsWith('/model/info')) return jsonResponse({ data: [] })
-  if (url.endsWith('/v1/chat/completions')) return mockChatCompletion(body, state)
+  if (path === '/v2/key/info' || path === '/key/generate' || path === '/key/update') {
+    if (authorization !== MANAGEMENT_AUTHORIZATION) {
+      return unauthorizedResponse(path, 'expected the management API key')
+    }
+    if (path === '/v2/key/info') return jsonResponse({ info: [] })
+    if (path === '/key/generate') {
+      if (typeof body.key !== 'string' || body.key.trim().length === 0) {
+        return badRequestResponse(path, 'expected the edge to supply a deterministic key')
+      }
+      state.provisionedKeys.add(body.key)
+      knownProvisionedKeys.add(body.key)
+      return jsonResponse({ key: body.key })
+    }
+    if (typeof body.key === 'string' && body.key.trim().length > 0) {
+      state.provisionedKeys.add(body.key)
+      knownProvisionedKeys.add(body.key)
+    }
+    return jsonResponse({})
+  }
+
+  if (path === '/v1/models' || path === '/model/info' || path === '/v1/chat/completions') {
+    const key = authorization?.replace(/^Bearer\s+/i, '') ?? ''
+    if (!state.provisionedKeys.has(key)) {
+      return unauthorizedResponse(path, 'expected a provisioned per-run virtual key')
+    }
+    if (path === '/v1/models') return jsonResponse({ data: [] })
+    if (path === '/model/info') return jsonResponse({ data: [] })
+    return mockChatCompletion(body, state)
+  }
+
   return jsonResponse({})
 }
 
@@ -281,7 +329,16 @@ const installMock = async (
   answer: string
 ): Promise<LiteLLMMock> => {
   installLiteLLMUpstream()
-  const state: UpstreamState = { code, mode, answer, bodies: [], decoded: [], actions: 0 }
+  const state: UpstreamState = {
+    code,
+    mode,
+    answer,
+    bodies: [],
+    decoded: [],
+    actions: 0,
+    provisionedKeys: new Set(knownProvisionedKeys),
+    upstreamCalls: []
+  }
   activeUpstream = state
   const sentinelHits: string[] = []
 
@@ -329,7 +386,11 @@ export const installChatMock = (
 
 // A telemetry-consent dialog auto-opens on first load and its overlay intercepts
 // clicks. Decline it (keeps the run clean; telemetry no-ops in dev anyway).
+const telemetryHandledPages = new WeakSet<Page>()
+
 export const dismissTelemetryDialog = async (page: Page): Promise<void> => {
+  if (telemetryHandledPages.has(page)) return
+
   // The dialog appears after hydration (a beat after navigation), so wait for it
   // rather than racing the check.
   const decline = page.getByRole('button', { name: 'Continue without' })
@@ -338,6 +399,7 @@ export const dismissTelemetryDialog = async (page: Page): Promise<void> => {
     await decline.click()
     await expect(page.getByRole('dialog', { name: 'Telemetry' })).toBeHidden()
   }
+  telemetryHandledPages.add(page)
 }
 
 // Opens Settings, enables the plugin whose Settings label is `label` (plugins are
