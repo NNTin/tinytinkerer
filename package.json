@@ -21,6 +21,7 @@
     "compliance:test": "node --test scripts/license-policy.test.mjs",
     "release-pr:test": "node --test scripts/release-pr-body.test.mjs",
     "check:boundaries": "node ./scripts/check-boundaries.mjs",
+    "check:e2e-fixtures": "node ./scripts/check-e2e-text-fixtures.mjs",
     "check:mermaid": "node ./scripts/check-mermaid.mjs",
     "sync:skill-readme": "node ./scripts/sync-skill-readme.mjs",
     "check:skill-readme": "node ./scripts/sync-skill-readme.mjs --check",

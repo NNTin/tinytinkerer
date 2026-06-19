@@ -45,6 +45,13 @@ test.describe('permissions plugin tool gate (#247)', () => {
     const modal = page.getByRole('alertdialog', { name: MODAL_NAME })
     await expect(modal).toBeVisible({ timeout: 30_000 })
 
+    // While the prompt is waiting for human approval, the tool must not execute.
+    // Hold briefly to catch regressions where the modal appears but the gate does
+    // not actually block `run_javascript`.
+    await page.waitForTimeout(500)
+    await expect(modal).toBeVisible()
+    expect(mock.sandboxResult(), 'tool should not run before Allow is clicked').toBeUndefined()
+
     await modal.getByRole('button', { name: 'Allow' }).click()
     await expect(modal).toBeHidden()
 

@@ -217,15 +217,13 @@ test.describe('markdown renderers (#249)', () => {
     for (const lang of ['diff', 'json', 'yaml', 'sql', 'bash', 'http']) {
       const codeBlock = page.locator('[data-tt-code-block]', { hasText: lang })
       await expect(codeBlock.locator('.cm-editor')).toBeVisible({ timeout: 30_000 })
+      await expect
+        .poll(() => codeBlock.locator('.cm-line span').count(), {
+          timeout: 30_000,
+          message: `expected highlighted token spans in the ${lang} block`
+        })
+        .toBeGreaterThan(0)
     }
-    // Spot-check real highlighting on the JSON block (tokens as styled spans).
-    const jsonBlock = page.locator('[data-tt-code-block]', { hasText: 'json' })
-    await expect
-      .poll(() => jsonBlock.locator('.cm-line span').count(), {
-        timeout: 30_000,
-        message: 'expected highlighted token spans in the JSON block'
-      })
-      .toBeGreaterThan(0)
   })
 
   test('callouts: each blockquote kind renders a styled aside', async ({ page }) => {

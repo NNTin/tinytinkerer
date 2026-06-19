@@ -113,8 +113,10 @@ test.describe('mermaid diagram rendering (#248)', () => {
     await expect(page.getByText('End of message.')).toBeVisible({ timeout: 30_000 })
     // The invalid block degrades to a plain code block — no diagram SVG is mounted.
     await expect(page.locator(`${MERMAID_DIAGRAM} svg`)).toHaveCount(0)
-    // The mermaid source is still shown (as code), so the block fell back visibly
-    // rather than silently vanishing.
-    await expect(page.getByText('flowchart TD')).toBeVisible()
+    // The mermaid source is still shown in the code fallback, not as loose prose,
+    // so the invalid block fell back visibly rather than silently vanishing.
+    const fallback = page.locator('pre code.language-mermaid')
+    await expect(fallback).toBeVisible()
+    await expect(fallback).toContainText('flowchart TD')
   })
 })
