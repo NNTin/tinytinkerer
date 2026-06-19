@@ -1,0 +1,82 @@
+name: E2E
+
+# Playwright end-to-end tests: real-browser verification of the code-exec sandbox
+# isolation guarantees that jsdom cannot cover (issue #217). Kept as its own job —
+# separate from `turbo run test` — so the browser download only runs here and never
+# on every unit-test run. Only LiteLLM is mocked (the real edge worker runs
+# in-process); the run is anonymous with rate limiting disabled, so the job needs no
+# secrets. See packages/e2e/README.md.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Playwright (sandbox isolation)
+    runs-on: ubuntu-latest
+    env:
+      # Pin the per-run port so the webServer URL is deterministic in CI.
+      E2E_PORT: 43117
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.16.1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      # Secure install: scriptless, then rebuild only the allowlisted native
+      # binaries (sharp is needed by the brand-asset generation the web build runs).
+      - run: pnpm setup:workspace
+
+      # Cache the Playwright browser binaries, keyed by the pinned @playwright/test
+      # version, so the ~110 MB Chromium download is fetched at most once per bump.
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('./packages/e2e/package.json').devDependencies['@playwright/test']")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}
+
+      # The `playwright` package's postinstall is blocked by the supply-chain
+      # policy (ignoredBuiltDependencies), so fetch browsers explicitly here. On a
+      # cache hit, still install the OS libraries (not part of the cached path).
+      - name: Install Chromium (+ OS deps)
+        run: pnpm --filter @tinytinkerer/e2e exec playwright install --with-deps chromium
+
+      # Build the web shell (generates brand/privacy/notices first) so `vite
+      # preview` can serve the production bundle the suite targets.
+      - name: Build web shell
+        run: |
+          pnpm generate:brand-assets
+          pnpm generate:privacy-policy
+          pnpm generate:notices
+          TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build --filter=@tinytinkerer/web
+
+      - name: Run Playwright e2e
+        run: pnpm --filter @tinytinkerer/e2e e2e
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report
+          path: packages/e2e/playwright-report
+          if-no-files-found: ignore
