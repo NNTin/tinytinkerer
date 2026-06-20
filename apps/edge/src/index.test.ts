@@ -809,6 +809,83 @@ describe('edge routes', () => {
     )
   })
 
+  it('surfaces per-model context-window limits from /model/info onto the catalogue (issue #264)', async () => {
+    const fetchSpy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = toRequestUrl(input)
+      if (url === GITHUB_USER_URL) {
+        return Promise.resolve(githubUserOk())
+      }
+      if (isLiteLLMKeyManagementUrl(url)) {
+        return Promise.resolve(litellmKeyManagementOk(input, init))
+      }
+      if (url.endsWith('/model/info')) {
+        // max_input_tokens is the true input context window; max_tokens is the
+        // LEGACY fallback used only when input is absent (the second model).
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  model_name: 'openai/gpt-5',
+                  model_info: { mode: 'chat', max_input_tokens: 400_000, max_output_tokens: 16_000 }
+                },
+                {
+                  model_name: 'openai/legacy',
+                  model_info: { mode: 'chat', max_tokens: 8_192 }
+                }
+              ]
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        )
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            object: 'list',
+            data: [
+              { id: 'openai/gpt-5', object: 'model' },
+              { id: 'openai/legacy', object: 'model' }
+            ]
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      )
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/list?provider=litellm', {
+        headers: { authorization: 'Bearer github-token' }
+      }),
+      LITELLM_ENV
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      models: [
+        {
+          provider: 'litellm',
+          id: 'openai/gpt-5',
+          label: 'openai/gpt-5',
+          kind: 'chat',
+          publisher: 'openai',
+          limits: { max_input_tokens: 400_000, max_output_tokens: 16_000 }
+        },
+        {
+          provider: 'litellm',
+          id: 'openai/legacy',
+          label: 'openai/legacy',
+          kind: 'chat',
+          publisher: 'openai',
+          // Falls back to max_tokens for the input window when max_input_tokens
+          // is absent.
+          limits: { max_input_tokens: 8_192 }
+        }
+      ]
+    })
+  })
+
   it('proxies LiteLLM chat completions with the selected allowlisted base URL', async () => {
     const upstreamRequests: Array<{
       input: RequestInfo | URL

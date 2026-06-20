@@ -14,6 +14,9 @@ const DEFAULT_ANONYMOUS_BUDGET_DURATION = '30d'
 const DEFAULT_ANONYMOUS_RPM_LIMIT = 3
 const DEFAULT_ANONYMOUS_TPM_LIMIT = 20_000
 const PROVISIONED_TTL_MS = 10 * 60_000
+// Do not use LiteLLM's key_type: 'llm_api' shortcut here: that handler
+// overwrites allowed_routes to only llm_api_routes, which blocks /model/info.
+const EXPECTED_ALLOWED_ROUTES = ['llm_api_routes', 'info_routes'] as const
 
 export const ANONYMOUS_IDENTITY: CallerIdentity = { id: 'anonymous', login: 'anonymous' }
 
@@ -27,7 +30,8 @@ const keyInfoResponseSchema = z.object({
         budget_duration: z.string().nullable().optional(),
         rpm_limit: z.number().nullable().optional(),
         tpm_limit: z.number().nullable().optional(),
-        models: z.array(z.string()).nullable().optional()
+        models: z.array(z.string()).nullable().optional(),
+        allowed_routes: z.array(z.string()).nullable().optional()
       })
       .passthrough()
   )
@@ -54,6 +58,7 @@ type ExpectedKeyConfig = {
   rpmLimit: number
   tpmLimit: number
   models: string[]
+  allowedRoutes: string[]
   fingerprint: string
 }
 
@@ -213,18 +218,20 @@ const expectedConfig = (
   tier: KeyTier
 ): ExpectedKeyConfig => {
   const models = configuredModels(env).sort()
+  const allowedRoutes = [...EXPECTED_ALLOWED_ROUTES]
   const limits = tierLimits(env, tier)
   const { userId, keyAlias } = tierIdentity(tier, identity, namespace)
-  // Field order here is load-bearing: the fingerprint is the durable provisioning
-  // marker's scope, so it must stay byte-identical to the previous per-tier code
-  // (maxBudget, budgetDuration, rpmLimit, tpmLimit, models) or live markers would
-  // silently invalidate.
+  // Field order here is load-bearing: the fingerprint is the durable
+  // provisioning marker's scope. The original budget/model fields stay first;
+  // allowedRoutes is intentionally appended so deployments refresh keys that
+  // were minted before /model/info access was required for context gauges.
   const fingerprint = JSON.stringify({
     maxBudget: limits.maxBudget,
     budgetDuration: limits.budgetDuration,
     rpmLimit: limits.rpmLimit,
     tpmLimit: limits.tpmLimit,
-    models
+    models,
+    allowedRoutes
   })
 
   return {
@@ -232,6 +239,7 @@ const expectedConfig = (
     userId,
     ...limits,
     models,
+    allowedRoutes,
     fingerprint
   }
 }
@@ -383,6 +391,12 @@ const keyNeedsUpdate = (info: KeyInfo, expected: ExpectedKeyConfig): boolean => 
   if (info.rpm_limit != null && info.rpm_limit !== expected.rpmLimit) return true
   if (info.tpm_limit != null && info.tpm_limit !== expected.tpmLimit) return true
   if (info.models != null && !arraysEqual([...info.models].sort(), expected.models)) return true
+  if (
+    info.allowed_routes != null &&
+    !arraysEqual([...info.allowed_routes].sort(), [...expected.allowedRoutes].sort())
+  ) {
+    return true
+  }
   return false
 }
 
@@ -408,6 +422,7 @@ const updateKey = async (
         key_alias: expected.keyAlias,
         user_id: expected.userId,
         models: expected.models,
+        allowed_routes: expected.allowedRoutes,
         max_budget: expected.maxBudget,
         budget_duration: expected.budgetDuration,
         rpm_limit: expected.rpmLimit,
@@ -463,10 +478,10 @@ const generateKey = async (
       headers: managementHeaders(env),
       body: JSON.stringify({
         key: apiKey,
-        key_type: 'llm_api',
         key_alias: expected.keyAlias,
         user_id: expected.userId,
         models: expected.models,
+        allowed_routes: expected.allowedRoutes,
         spend: 0,
         max_budget: expected.maxBudget,
         budget_duration: expected.budgetDuration,

@@ -346,6 +346,62 @@ export type PermissionSummarizer = (
   input: Record<string, unknown>
 ) => PermissionView | Promise<PermissionView>
 
+// === Persistent status contribution (the 'status' capability) ====================
+// Unlike ActivityView/PermissionView — which are transient and keyed to a single
+// tool invocation — a status contribution is a PERSISTENT, always-visible host
+// surface (e.g. a context-usage gauge near the composer). It follows the same
+// "plugins ship data, never components" rule: the plugin exposes a pure mapper
+// that turns host-provided numbers into a React-free view-model the host's single
+// generic gauge renderer draws. No React/DOM in the plugin (enforced by
+// scripts/check-boundaries.mjs).
+
+// Threshold bucket for a gauge value, so the host can colour/announce it without
+// re-deriving the boundaries the plugin owns.
+export type GaugeThreshold = 'healthy' | 'warning' | 'critical'
+
+// The context-usage numbers a status plugin computes. Field names mirror the
+// LiteLLM-derived schema so the host can render any of them as a label/tooltip.
+export type ContextUsage = {
+  context_window: number
+  input_tokens_used: number
+  input_tokens_remaining: number
+  percent_context_used: number
+}
+
+// React-free view-model a status plugin produces for the host's generic gauge.
+// `value`/`min`/`max`/`unit` are the gauge geometry; `threshold` drives colour +
+// a non-colour signal; `context` carries the raw numbers for the label/ARIA.
+export type GaugeView = {
+  gauge_type: 'context_usage'
+  value: number
+  min: 0
+  max: 100
+  unit: 'percent'
+  threshold: GaugeThreshold
+  context: ContextUsage
+}
+
+// What the host feeds the status summarizer. Either field may be absent (model
+// limits not surfaced yet, or no usage observed) — the summarizer returns null to
+// hide the gauge in that case.
+export type StatusInput = {
+  contextWindow: number | null | undefined
+  inputTokensUsed: number | null | undefined
+}
+
+// Pure mapper a status plugin exposes: host numbers → GaugeView, or null to hide.
+// Product-agnostic (no React/DOM/window) — it only transforms data.
+export type StatusSummarizer = (input: StatusInput) => GaugeView | null
+
+// Manifest descriptor for a persistent status contribution, mirroring
+// PluginToolDescriptor. The host resolves `summarizeStatus` from the active
+// plugin's manifest and feeds its single generic gauge renderer.
+export type PluginStatusDescriptor = {
+  id: string
+  gaugeType: 'context_usage'
+  summarizeStatus: StatusSummarizer
+}
+
 // Planner-facing description of a tool a plugin contributes. Lets a host name the
 // tool to its planner/model without instantiating the plugin. Structurally
 // matches the host's own planner descriptor shape (id / description / schema).
@@ -374,8 +430,12 @@ export type PluginManifest = {
   id: string
   label: string
   description: string
-  capabilities?: Array<'tools' | 'hooks'>
+  capabilities?: Array<'tools' | 'hooks' | 'status'>
   toolDescriptors?: PluginToolDescriptor[]
+  // Persistent host-surface contribution (the 'status' capability). At most one
+  // per plugin: a pure mapper the host resolves to render its generic gauge. See
+  // PluginStatusDescriptor.
+  statusDescriptor?: PluginStatusDescriptor
   // Default activation when the user has no stored preference. Plugins are
   // off by default (`undefined`/`false`); a plugin that should ship enabled
   // out-of-the-box (e.g. web search) sets this to `true`. An explicit user

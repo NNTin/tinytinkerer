@@ -81,6 +81,7 @@ vi.mock('@tinytinkerer/app-browser', async () => {
       }
       return { prompt, setPrompt, speech: mockSpeechState, handleSubmit }
     },
+    ContextGaugeSlot: () => null,
     AssistantContent: ({
       content,
       className,

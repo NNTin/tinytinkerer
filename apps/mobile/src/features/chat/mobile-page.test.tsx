@@ -92,6 +92,7 @@ vi.mock('@tinytinkerer/app-browser', async () => {
     },
     LazyBrowserSettingsModal: () => null,
     PermissionModal: () => null,
+    ContextGaugeSlot: () => null,
     AssistantContent: ({
       content,
       className,

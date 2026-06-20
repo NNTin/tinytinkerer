@@ -49,7 +49,7 @@ const ANONYMOUS_ALIAS_PATTERN = /^tinytinkerer-[0-9a-f]{12}-anonymous$/
 const keyManagementStub = (options: {
   keyInfoForAttempt?: (attempt: number, requestedAlias: string) => Response
   generate?: (body: { key?: string }) => Response
-  update?: () => Response
+  update?: (body: Record<string, unknown>) => Response
 }) => {
   let infoAttempt = 0
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -69,21 +69,32 @@ const keyManagementStub = (options: {
       return Promise.resolve(options.generate?.(body) ?? jsonResponse({ key: body.key }))
     }
     if (path === '/key/update') {
-      return Promise.resolve(options.update?.() ?? jsonResponse({ updated: true }))
+      const rawBody = typeof init?.body === 'string' ? init.body : '{}'
+      const body = JSON.parse(rawBody) as Record<string, unknown>
+      return Promise.resolve(options.update?.(body) ?? jsonResponse({ updated: true }))
     }
     return Promise.resolve(new Response('unexpected', { status: 500 }))
   })
 }
 
-const generateBody = (fetchSpy: ReturnType<typeof vi.fn>): Record<string, unknown> => {
+const requestBodyForPath = (
+  fetchSpy: ReturnType<typeof vi.fn>,
+  path: string
+): Record<string, unknown> => {
   const call = (fetchSpy.mock.calls as Array<[RequestInfo | URL, RequestInit | undefined]>).find(
-    ([input]) => new URL(toRequestUrl(input)).pathname === '/key/generate'
+    ([input]) => new URL(toRequestUrl(input)).pathname === path
   )
-  if (!call) throw new Error('expected a /key/generate call')
+  if (!call) throw new Error(`expected a ${path} call`)
   const rawBody = call[1]?.body
   if (typeof rawBody !== 'string') throw new Error('expected a JSON body')
   return JSON.parse(rawBody) as Record<string, unknown>
 }
+
+const generateBody = (fetchSpy: ReturnType<typeof vi.fn>): Record<string, unknown> =>
+  requestBodyForPath(fetchSpy, '/key/generate')
+
+const updateBody = (fetchSpy: ReturnType<typeof vi.fn>): Record<string, unknown> =>
+  requestBodyForPath(fetchSpy, '/key/update')
 
 describe('litellm-user-keys', () => {
   afterEach(() => {
@@ -169,6 +180,8 @@ describe('litellm-user-keys', () => {
     expect(body['tpm_limit']).toBe(250000)
     expect(body['spend']).toBe(0)
     expect(body['models']).toEqual(['openai/gpt-4.1-mini', 'openai/gpt-5'])
+    expect(body['allowed_routes']).toEqual(['llm_api_routes', 'info_routes'])
+    expect(body['key_type']).toBeUndefined()
   })
 
   it('falls back to the documented budget defaults when no env overrides are set', async () => {
@@ -240,6 +253,36 @@ describe('litellm-user-keys', () => {
     )
     expect(updateCalled).toBe(true)
     // No generate when the alias already exists.
+    const generateCalled = fetchSpy.mock.calls.some(
+      ([input]) => new URL(toRequestUrl(input)).pathname === '/key/generate'
+    )
+    expect(generateCalled).toBe(false)
+  })
+
+  it('reconciles an existing key that cannot read model metadata', async () => {
+    const fetchSpy = keyManagementStub({
+      keyInfoForAttempt: (_attempt, requestedAlias) =>
+        jsonResponse({
+          info: [
+            {
+              key_alias: requestedAlias,
+              user_id: 'github-12345',
+              max_budget: 1,
+              budget_duration: '30d',
+              rpm_limit: 10,
+              tpm_limit: 100000,
+              allowed_routes: ['llm_api_routes']
+            }
+          ]
+        })
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const key = await resolveLiteLLMUserKey(CONFIGURED_ENV, BASE_URL, IDENTITY)
+
+    expect(key?.apiKey).toMatch(/^sk-tt-/)
+    const body = updateBody(fetchSpy)
+    expect(body['allowed_routes']).toEqual(['llm_api_routes', 'info_routes'])
     const generateCalled = fetchSpy.mock.calls.some(
       ([input]) => new URL(toRequestUrl(input)).pathname === '/key/generate'
     )
@@ -349,6 +392,8 @@ describe('litellm-user-keys', () => {
     expect(body['budget_duration']).toBe('30d')
     expect(body['rpm_limit']).toBe(3)
     expect(body['tpm_limit']).toBe(20000)
+    expect(body['allowed_routes']).toEqual(['llm_api_routes', 'info_routes'])
+    expect(body['key_type']).toBeUndefined()
   })
 
   // Anonymous counterpart of the user value-mismatch regression: the same

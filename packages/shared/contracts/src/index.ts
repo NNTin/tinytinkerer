@@ -71,6 +71,11 @@ export const eventTypeSchema = z.enum([
   'reasoning.done',
   'assistant.chunk',
   'assistant.done',
+  // Token usage reported by the model provider for the most recent model call
+  // (LiteLLM `usage` with `stream_options.include_usage`). Optional/best-effort:
+  // emitted only when the provider surfaces it, and consumed by the context-usage
+  // gauge plugin. Absence is normal and simply leaves the gauge hidden.
+  'agent.usage',
   'error',
   'system'
 ])
@@ -199,6 +204,18 @@ export const agentToolFailedEventSchema = eventBaseSchema(
   'agent.tool.failed',
   z.object({ stepId: z.string(), toolId: z.string(), error: z.string() })
 )
+// Token usage for the most recent model call. `promptTokens` is the input-side
+// token count the context-usage gauge compares against the model's context
+// window; completion/total are carried for completeness. Best-effort: emitted
+// only when the provider reports usage.
+export const agentUsageEventSchema = eventBaseSchema(
+  'agent.usage',
+  z.object({
+    promptTokens: z.number().int().nonnegative(),
+    completionTokens: z.number().int().nonnegative().optional(),
+    totalTokens: z.number().int().nonnegative().optional()
+  })
+)
 const rateLimitDetailFields = {
   retryAfterMs: z.number().nonnegative(),
   retryAt: z.string()
@@ -279,6 +296,7 @@ export const chatEventSchema = z.discriminatedUnion('type', [
   reasoningDoneEventSchema,
   assistantChunkEventSchema,
   assistantDoneEventSchema,
+  agentUsageEventSchema,
   errorEventSchema,
   systemEventSchema
 ])
@@ -300,6 +318,7 @@ export type ReasoningChunkEvent = z.infer<typeof reasoningChunkEventSchema>
 export type ReasoningDoneEvent = z.infer<typeof reasoningDoneEventSchema>
 export type AssistantChunkEvent = z.infer<typeof assistantChunkEventSchema>
 export type AssistantDoneEvent = z.infer<typeof assistantDoneEventSchema>
+export type AgentUsageEvent = z.infer<typeof agentUsageEventSchema>
 export type ErrorEvent = z.infer<typeof errorEventSchema>
 export type SystemEvent = z.infer<typeof systemEventSchema>
 export type ChatEvent = z.infer<typeof chatEventSchema>

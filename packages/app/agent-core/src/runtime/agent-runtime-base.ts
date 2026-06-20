@@ -601,6 +601,18 @@ export abstract class AgentRuntimeBase {
             })
             continue
           }
+          if (chunk.kind === 'usage') {
+            // Best-effort token usage for this model call; the context-usage
+            // gauge reads the latest one. Never affects the answer stream.
+            yield createEvent('agent.usage', {
+              promptTokens: chunk.promptTokens,
+              ...(chunk.completionTokens !== undefined
+                ? { completionTokens: chunk.completionTokens }
+                : {}),
+              ...(chunk.totalTokens !== undefined ? { totalTokens: chunk.totalTokens } : {})
+            })
+            continue
+          }
           yield createEvent('assistant.chunk', session.append(chunk.text))
         }
 

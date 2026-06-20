@@ -91,6 +91,11 @@ export const createEdgeFetch = (
 export type ModelsChatInit = {
   model: string
   stream: boolean
+  // Opt-in OpenAI-compatible streaming options. `include_usage` makes the
+  // provider append a terminal usage chunk (forwarded verbatim by the edge) so
+  // the context-usage gauge can read prompt-token counts. Spread into the request
+  // body by modelsChatRequestBody.
+  stream_options?: { include_usage?: boolean }
   messages: ChatMessage[]
 }
 

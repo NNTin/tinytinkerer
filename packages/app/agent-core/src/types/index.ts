@@ -27,7 +27,14 @@ export type ProviderCallOptions = {
 // final answer; `reasoning` chunks carry the model's raw chain-of-thought when
 // the underlying model emits it (otherwise none are produced and consumers fall
 // back to the structured activity timeline).
-export type SynthesisChunk = { kind: 'content'; text: string } | { kind: 'reasoning'; text: string }
+// `usage` chunks are best-effort and terminal: a provider that requests
+// `stream_options.include_usage` emits a single one carrying the call's token
+// counts after the content stream. Consumers that don't care ignore it (it has
+// no `text`); the runtime turns it into an `agent.usage` event.
+export type SynthesisChunk =
+  | { kind: 'content'; text: string }
+  | { kind: 'reasoning'; text: string }
+  | { kind: 'usage'; promptTokens: number; completionTokens?: number; totalTokens?: number }
 
 // A chunk of a streamed ReAct decision: `thought` carries the model's reasoning
 // as it streams (full accumulated text), and `decision` is the final structured

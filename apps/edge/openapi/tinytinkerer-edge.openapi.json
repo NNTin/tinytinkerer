@@ -347,6 +347,9 @@
           "stream": {
             "type": "boolean"
           },
+          "stream_options": {
+            "$ref": "#/components/schemas/StreamOptions"
+          },
           "messages": {
             "type": "array",
             "items": {
@@ -358,6 +361,14 @@
         "required": [
           "messages"
         ]
+      },
+      "StreamOptions": {
+        "type": "object",
+        "properties": {
+          "include_usage": {
+            "type": "boolean"
+          }
+        }
       },
       "ChatMessage": {
         "type": "object",
