@@ -60,11 +60,24 @@ export default defineConfig({
     trace: 'on-first-retry'
   },
   projects: [
-    // Phase 1: Chromium only (matches the primary deployment target, smallest
-    // WSL2/CI install). Firefox + WebKit are a tracked follow-up — the isolation
-    // guarantees are engine-sensitive, so cross-engine coverage is desirable but
-    // deferred to keep the first landing small. Tracked by issue #245.
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } }
+    // Chromium runs the whole suite (the primary deployment target). The
+    // sandbox-isolation guarantees are engine-sensitive (CSP-in-srcdoc,
+    // opaque-origin iframes, blob: Worker creation, how a CSP-blocked
+    // WebSocket/EventSource fails, indexedDB at an opaque origin, Worker-scope
+    // API absence), so they ALSO run on Gecko + WebKit (issue #245). The other
+    // specs stay Chromium-only — out of scope for #245 — by restricting the
+    // firefox/webkit projects to just the sandbox-isolation spec via testMatch.
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'firefox',
+      testMatch: '**/sandbox-isolation.e2e.ts',
+      use: { ...devices['Desktop Firefox'] }
+    },
+    {
+      name: 'webkit',
+      testMatch: '**/sandbox-isolation.e2e.ts',
+      use: { ...devices['Desktop Safari'] }
+    }
   ],
   // Serves the prebuilt dist of all THREE shells, each from its own `vite preview`
   // on its own port (its own origin). Every shell must be built first (the generate:*

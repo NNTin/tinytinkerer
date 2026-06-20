@@ -99,7 +99,9 @@ jobs:
           install: scriptless
 
       # Cache the Playwright browser binaries, keyed by the pinned @playwright/test
-      # version, so the ~110 MB Chromium download is fetched at most once per bump.
+      # version AND the browser set, so the downloads are fetched at most once per
+      # bump. The `-cfw` suffix (chromium+firefox+webkit) invalidates the old
+      # chromium-only cache when the engine set changes (issue #245).
       - name: Resolve Playwright version
         id: pw
         run: echo "version=$(node -p "require('./packages/e2e/package.json').devDependencies['@playwright/test']")" >> "$GITHUB_OUTPUT"
@@ -109,13 +111,16 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}
+          key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}-cfw
 
       # The `playwright` package's postinstall is blocked by the supply-chain
       # policy (ignoredBuiltDependencies), so fetch browsers explicitly here. On a
       # cache hit, still install the OS libraries (not part of the cached path).
-      - name: Install Chromium (+ OS deps)
-        run: pnpm --filter @tinytinkerer/e2e exec playwright install --with-deps chromium
+      # WebKit on Linux needs extra system libraries; `--with-deps` pulls them in.
+      # Every shard installs all three engines because Playwright's --shard splits
+      # tests across shards, so any shard may receive a firefox/webkit test.
+      - name: Install browsers (Chromium + Firefox + WebKit, + OS deps)
+        run: pnpm --filter @tinytinkerer/e2e exec playwright install --with-deps chromium firefox webkit
 
       # Restore the prebuilt shells into apps/<shell>/dist where `vite preview`
       # expects them (the artifact root is `apps/`).

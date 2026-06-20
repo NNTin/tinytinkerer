@@ -6,7 +6,7 @@
   "description": "Playwright end-to-end tests. Real-browser verification of the code-exec sandbox isolation guarantees (issue #217). Not part of the vitest unit-test run.",
   "scripts": {
     "e2e": "node ./scripts/e2e.mjs",
-    "e2e:install": "playwright install --with-deps chromium",
+    "e2e:install": "playwright install --with-deps chromium firefox webkit",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

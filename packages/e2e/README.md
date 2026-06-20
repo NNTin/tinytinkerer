@@ -21,9 +21,14 @@ no secrets and makes no real network calls.
   servers and workers share the same base URLs. One port per shell: `E2E_PORT` (web),
   `E2E_PORT_WIDGET`, `E2E_PORT_MOBILE` (each derived as the previous `+1`/`+2` locally,
   pinned explicitly in CI), so parallel git worktrees don't collide.
-- `playwright.config.ts` — Chromium project; `webServer` is an array running one
-  `vite preview` per shell (web on `/web/`, widget on `/widget/`, mobile on
-  `/mobile/`), each `--strictPort` on its own port — i.e. its own **origin**.
+- `playwright.config.ts` — three browser projects: `chromium`, `firefox`, `webkit`.
+  Chromium runs the whole suite; `firefox` + `webkit` are restricted (via per-project
+  `testMatch`) to **just** `sandbox-isolation.e2e.ts`, because the sandbox-isolation
+  guarantees are engine-sensitive (Blink / Gecko / WebKit) and cross-engine coverage
+  is the point of issue #245. Every other spec stays Chromium-only — out of scope for
+  #245. The `webServer` is an array running one `vite preview` per shell (web on
+  `/web/`, widget on `/widget/`, mobile on `/mobile/`), each `--strictPort` on its own
+  port — i.e. its own **origin** — shared by all three browser projects.
 - `fixtures/mock-litellm.ts` — pipes `/api/*` through the real edge worker and mocks
   the LiteLLM upstream it calls; plus the shared UI helpers.
 - `fixtures/snippets.ts` — adversarial inputs used by the current suite.
@@ -79,7 +84,13 @@ as a slow network would.
 One-time browser install (downloads to the shared `~/.cache/ms-playwright`):
 
 ```bash
-pnpm --filter @tinytinkerer/e2e e2e:install   # playwright install --with-deps chromium
+pnpm --filter @tinytinkerer/e2e e2e:install   # playwright install --with-deps chromium firefox webkit
+```
+
+This installs all three engines. To iterate on just one, target a project:
+
+```bash
+pnpm --filter @tinytinkerer/e2e e2e -- --project=firefox   # or chromium / webkit
 ```
 
 Build all three shells once (the suite serves their production bundles), then run:
@@ -99,3 +110,10 @@ pnpm --filter @tinytinkerer/e2e e2e
 > `playwright install --with-deps` cannot install the OS libraries, download the
 > Debian/Ubuntu `.deb`s for the missing libs without root (`apt-get download` +
 > `dpkg -x` into a prefix) and export `LD_LIBRARY_PATH` to that prefix before running.
+> Firefox needs few extra libs, but **WebKit pulls in many** (GTK / GStreamer / WebP /
+> ICU / libwoff, etc.).
+> Without root, install the browser binaries with `playwright install firefox webkit`
+> (no `--with-deps`), then let `playwright install-deps` report the exact package list.
+> `sudo` that where you have root, or fall back to the `.deb` prefix above.
+> Chromium-only iteration needs none of this: run
+> `pnpm --filter @tinytinkerer/e2e e2e -- --project=chromium`.
