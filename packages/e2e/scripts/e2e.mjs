@@ -14,8 +14,13 @@ const basePort = process.env.E2E_PORT ?? String(40000 + Math.floor(Math.random()
 const widgetPort = process.env.E2E_PORT_WIDGET ?? String(Number(basePort) + 1)
 const mobilePort = process.env.E2E_PORT_MOBILE ?? String(Number(basePort) + 2)
 
+// Forward extra args (e.g. `--shard=1/3` from CI) to `playwright test`. Strip any
+// bare `--` separator: pnpm can pass the `--` token through to the script, and
+// Playwright treats everything after a lone `--` as positional test-file filters,
+// which would swallow real flags ("No tests found").
 const executable = process.platform === 'win32' ? 'playwright.cmd' : 'playwright'
-const result = spawnSync(executable, ['test', ...process.argv.slice(2)], {
+const forwardedArgs = process.argv.slice(2).filter((arg) => arg !== '--')
+const result = spawnSync(executable, ['test', ...forwardedArgs], {
   stdio: 'inherit',
   env: {
     ...process.env,
