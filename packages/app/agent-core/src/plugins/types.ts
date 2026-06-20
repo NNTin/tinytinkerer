@@ -26,6 +26,9 @@ export type {
   AgentPlugin,
   ActivityView,
   ActivitySummarizer,
+  PermissionView,
+  PermissionViewSection,
+  PermissionSummarizer,
   PluginToolDescriptor,
   PluginManifest,
   PluginModule

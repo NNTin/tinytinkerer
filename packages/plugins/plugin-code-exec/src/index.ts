@@ -11,10 +11,12 @@ import {
   type Tool
 } from '@tinytinkerer/contracts'
 import { z } from 'zod'
+import { CODE_EXEC_PLUGIN_ID } from './plugin-id'
+import { summarizeCodeExecPermission } from './permission-view'
 
-// Stable id used as the activation key and the contributed tool id. Must match
-// the manifest id surfaced in the Settings Modal.
-export const CODE_EXEC_PLUGIN_ID = 'code-exec'
+// Re-exported so existing importers keep their path; the constant itself lives in
+// ./plugin-id to avoid an import cycle with ./permission-view.
+export { CODE_EXEC_PLUGIN_ID }
 
 // Upper bound on the source size this plugin will forward to the host. Caps the
 // input early (before it ever reaches the sandbox) so an oversized payload fails
@@ -148,7 +150,8 @@ export const codeExecPluginManifest: PluginManifest = {
             '`input` binding.'
         }
       },
-      summarizeActivity: summarizeCodeExecActivity
+      summarizeActivity: summarizeCodeExecActivity,
+      summarizePermission: summarizeCodeExecPermission
     }
   ]
 }

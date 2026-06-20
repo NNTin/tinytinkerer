@@ -317,6 +317,35 @@ export type ActivityView = {
 // renderer; tools without one fall back to the host's neutral default.
 export type ActivitySummarizer = (output: unknown) => ActivityView
 
+// A product-agnostic, React-free view-model a tool's owner produces from its raw
+// permission-request input so the host can render a readable confirmation prompt
+// without knowing any specific tool's shape. Each section is drawn by the host's
+// single generic permission renderer: a `code` section gets syntax highlighting in
+// the named language; a `json` section is shown as a serialized dump. Lives in the
+// contract layer so plugins ship data, never a component. Mirrors ActivityView.
+export type PermissionViewSection =
+  | { kind: 'code'; label: string; language: string; code: string }
+  | { kind: 'json'; label: string; value: unknown }
+
+export type PermissionView = {
+  sections: PermissionViewSection[]
+  // Optional structured report the host forwards to its capture sink (e.g. a
+  // formatter failure the owner wants surfaced with repro context). The owner
+  // produces data; the host performs the actual capture. Mirrors
+  // PluginCaptureError.report.
+  report?: PluginReport
+}
+
+// A mapper a tool's owner exposes to turn a permission request's raw input into a
+// PermissionView. May be async (e.g. it pretty-prints code with a lazily-loaded
+// formatter). Must stay product-agnostic: no React/DOM/window — it only transforms
+// data (enforced by scripts/check-boundaries.mjs for plugin packages). The host
+// resolves one per tool id; tools without one fall back to the host's default JSON
+// view of the raw input.
+export type PermissionSummarizer = (
+  input: Record<string, unknown>
+) => PermissionView | Promise<PermissionView>
+
 // Planner-facing description of a tool a plugin contributes. Lets a host name the
 // tool to its planner/model without instantiating the plugin. Structurally
 // matches the host's own planner descriptor shape (id / description / schema).
@@ -329,6 +358,12 @@ export type PluginToolDescriptor = {
   // so the tool's owner — not the host — decides how its activity is summarized.
   // Product-agnostic (no React/DOM). Omit it and the host uses a neutral default.
   summarizeActivity?: ActivitySummarizer
+  // Optional mapper from this tool's raw permission-request input to a PermissionView
+  // the host renders in the confirmation prompt. Keyed by tool id, so the tool's
+  // owner — not the host — decides how its input is presented (e.g. pretty-printing a
+  // code argument). Product-agnostic (no React/DOM); may be async. Omit it and the
+  // host shows a neutral JSON dump of the input.
+  summarizePermission?: PermissionSummarizer
 }
 
 // Host-agnostic metadata about a plugin: the copy a host surfaces in its settings

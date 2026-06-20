@@ -73,13 +73,14 @@ describe('PermissionModal', () => {
     })
 
     const dialog = await screen.findByRole('alertdialog')
+    // The plugin-code-exec summarizer is discovered dynamically (loadPluginModules)
+    // and pretty-prints asynchronously, so wait for the formatted, re-spaced source.
     // Rendered through CodeMirror (syntax highlighting), not the raw JSON <pre>.
-    await waitFor(() => expect(dialog.querySelector('.cm-editor')).toBeInTheDocument())
-    // The code label is shown and the JSON dump of `code` is not.
+    await waitFor(() => expect(dialog).toHaveTextContent('const a = 1'))
+    expect(dialog.querySelector('.cm-editor')).toBeInTheDocument()
+    // Once the code section is shown, the JSON dump of `code` is gone.
     expect(dialog).toHaveTextContent('Code')
     expect(dialog).not.toHaveTextContent('"code"')
-    // Formatting (async) re-spaces the minified source for display.
-    await waitFor(() => expect(dialog).toHaveTextContent('const a = 1'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
     // The executed payload is whatever the runtime already holds; the modal only

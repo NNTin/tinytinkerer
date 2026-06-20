@@ -354,9 +354,6 @@ importers:
       dexie:
         specifier: 4.4.3
         version: 4.4.3
-      prettier:
-        specifier: 3.8.3
-        version: 3.8.3
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -807,6 +804,9 @@ importers:
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../../shared/contracts
+      prettier:
+        specifier: 3.8.3
+        version: 3.8.3
       zod:
         specifier: 4.4.3
         version: 4.4.3
