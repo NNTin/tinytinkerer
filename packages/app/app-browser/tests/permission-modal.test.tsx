@@ -62,6 +62,31 @@ describe('PermissionModal', () => {
     expect(result.allow).toBe(false)
   })
 
+  it('pretty-prints run_javascript code in a CodeMirror view without touching the payload', async () => {
+    render(<PermissionModal />)
+
+    const minified = 'const a=1;const b=2;return {a,b};'
+    const decision = requestPermission({
+      toolId: 'run_javascript',
+      input: { code: minified },
+      stepId: 'step-js'
+    })
+
+    const dialog = await screen.findByRole('alertdialog')
+    // Rendered through CodeMirror (syntax highlighting), not the raw JSON <pre>.
+    await waitFor(() => expect(dialog.querySelector('.cm-editor')).toBeInTheDocument())
+    // The code label is shown and the JSON dump of `code` is not.
+    expect(dialog).toHaveTextContent('Code')
+    expect(dialog).not.toHaveTextContent('"code"')
+    // Formatting (async) re-spaces the minified source for display.
+    await waitFor(() => expect(dialog).toHaveTextContent('const a = 1'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
+    // The executed payload is whatever the runtime already holds; the modal only
+    // returns the decision. Allow resolves cleanly — the formatting is view-only.
+    await expect(decision).resolves.toEqual({ allow: true })
+  })
+
   it('processes a second pending request after the first is settled', async () => {
     render(<PermissionModal />)
 

@@ -190,6 +190,26 @@ const useCodeMirrorEditor = ({ value, onChange, language, editable }: UseEditorA
   return containerRef
 }
 
+// A bare, read-only CodeMirror surface for rendering code OUTSIDE the markdown
+// code-fence pipeline (e.g. a permission prompt that wants to show a tool's code
+// argument with syntax highlighting). It reuses the same `useCodeMirrorEditor`
+// hook as `CodeBlockFrame` — same theme and language resolution — but drops the
+// render-context hooks, copy button, persistence and fullscreen affordances that
+// only make sense for a chat message. The editor is non-editable, so `onChange`
+// is a no-op and `value` is purely display state.
+export type ReadOnlyCodeViewProps = {
+  value: string
+  language?: string
+  className?: string
+}
+
+const noop = (): void => {}
+
+export const ReadOnlyCodeView = ({ value, language, className }: ReadOnlyCodeViewProps) => {
+  const editorRef = useCodeMirrorEditor({ value, onChange: noop, language, editable: false })
+  return <div ref={editorRef} className={className ?? 'tt-code-editor'} />
+}
+
 const useBodyScrollLock = (active: boolean): void => {
   useEffect(() => {
     if (!active) return
