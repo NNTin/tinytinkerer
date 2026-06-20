@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { InspectorEntry, InspectorView, PluginModule } from '@tinytinkerer/contracts'
 
@@ -118,13 +118,16 @@ vi.mock('@tinytinkerer/content-code', () => ({
 }))
 
 import { ContextInspectorSlot, useContextInspector } from '../src/context-inspector.js'
+import { ContextInspectorPanel } from '../src/context-inspector-panel.js'
 import { renderHook } from '@testing-library/react'
 
-// Unmount between tests so an open panel from one test can't leak into the next.
 afterEach(() => {
   cleanup()
 })
 
+// The slot's visibility logic. The open→panel flow uses React.lazy and is covered
+// end-to-end by the e2e spec; the panel's content is asserted directly below to
+// avoid a Suspense boundary in the unit environment.
 describe('ContextInspectorSlot', () => {
   it('renders nothing when the inspector plugin is disabled', async () => {
     pluginActivation = {}
@@ -145,37 +148,60 @@ describe('ContextInspectorSlot', () => {
     expect(container.querySelector('[data-testid="context-inspector-toggle"]')).toBeNull()
   })
 
-  it('opens a panel showing the exact captured request and response', async () => {
+  it('shows the toggle once enabled and something has been captured', async () => {
     pluginActivation = { 'context-inspector': true }
     entries = [capturedEntry]
 
-    render(<ContextInspectorSlot />)
+    render(<ContextInspectorSlot icon={<span>RCPT</span>} />)
+    expect(await screen.findByTestId('context-inspector-toggle')).toBeTruthy()
+  })
+})
 
-    const toggle = await screen.findByTestId('context-inspector-toggle')
-    fireEvent.click(toggle)
+describe('ContextInspectorPanel', () => {
+  const noop = () => {}
 
-    const panel = await screen.findByTestId('context-inspector-panel')
+  it('shows the exact request, the paired response, and the real prompt-token count', () => {
+    render(
+      <ContextInspectorPanel
+        view={summarizeRequest(capturedEntry)}
+        requestCount={1}
+        selectedIndex={0}
+        onSelectIndex={noop}
+        contextWindow={100_000}
+        onClose={noop}
+      />
+    )
+
+    const panel = screen.getByTestId('context-inspector-panel')
     expect(panel.textContent).toContain('openai/gpt-5')
     expect(panel.textContent).toContain('SYSTEM PROMPT MARKER')
     expect(panel.textContent).toContain('USER MESSAGE MARKER')
     expect(panel.textContent).toContain('include_usage')
-    // The paired response is shown too.
-    const response = await screen.findByTestId('context-inspector-response')
-    expect(response.textContent).toContain('RESPONSE MARKER')
-    // The real per-request prompt-token count is surfaced (not an estimate).
+
+    expect(screen.getByTestId('context-inspector-response').textContent).toContain(
+      'RESPONSE MARKER'
+    )
+    // Real per-request usage is surfaced (not an estimate) when reported.
     expect(screen.getByTestId('context-inspector-tokens').textContent).toContain('8 prompt tokens')
   })
 
-  it('shows a rate-limited response that states no tokens were consumed', async () => {
-    pluginActivation = { 'context-inspector': true }
-    entries = [
-      { request: capturedEntry.request, response: { status: 'rate_limited', httpStatus: 429 } }
-    ]
+  it('shows a rate-limited response that states no tokens were consumed', () => {
+    const view = summarizeRequest({
+      request: capturedEntry.request,
+      response: { status: 'rate_limited', httpStatus: 429 }
+    })
+    render(
+      <ContextInspectorPanel
+        view={view}
+        requestCount={1}
+        selectedIndex={0}
+        onSelectIndex={noop}
+        contextWindow={100_000}
+        onClose={noop}
+      />
+    )
 
-    render(<ContextInspectorSlot />)
-    fireEvent.click(await screen.findByTestId('context-inspector-toggle'))
-
-    const response = await screen.findByTestId('context-inspector-response')
+    const response = screen.getByTestId('context-inspector-response')
     expect(response.textContent).toContain('Rate limited')
     expect(response.textContent).toMatch(/no tokens were consumed/i)
     // Falls back to the estimate since no usage was reported.
