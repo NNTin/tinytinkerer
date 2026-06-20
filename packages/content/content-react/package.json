@@ -23,7 +23,8 @@
   },
   "dependencies": {
     "@tinytinkerer/content-core": "workspace:*",
-    "@tinytinkerer/ui": "workspace:*"
+    "@tinytinkerer/ui": "workspace:*",
+    "dompurify": "3.4.11"
   },
   "peerDependencies": {
     "react": "^19.0.0"

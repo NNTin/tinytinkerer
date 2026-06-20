@@ -41,6 +41,47 @@ const MERMAID_VALID = [
   'That is the flow.'
 ].join('\n')
 
+// Three diagram TYPES in one answer (flowchart, sequence, class). Each renders into
+// its own diagram frame. The flowchart and class nodes carry text labels that
+// mermaid renders via `foreignObject` — those must survive DOMPurify sanitization
+// (issue #227, mermaid items 2 & 3).
+const MERMAID_MULTIPLE = [
+  'Three diagrams:',
+  '',
+  '```mermaid',
+  'flowchart TD',
+  '  A[Flow Start] --> B[Flow Finish]',
+  '```',
+  '',
+  '```mermaid',
+  'sequenceDiagram',
+  '  Alice->>Bob: Sequence Hello',
+  '  Bob-->>Alice: Sequence Reply',
+  '```',
+  '',
+  '```mermaid',
+  'classDiagram',
+  '  class ClassLabel {',
+  '    +field: number',
+  '    +method()',
+  '  }',
+  '```',
+  '',
+  'End of diagrams.'
+].join('\n')
+
+// A single valid flowchart used for the Preview/Code toggle spec (issue #227, item 4).
+const MERMAID_TOGGLE = [
+  'A toggleable diagram:',
+  '',
+  '```mermaid',
+  'flowchart LR',
+  '  Toggle[Toggle Node] --> Done[Done Node]',
+  '```',
+  '',
+  'End of toggle.'
+].join('\n')
+
 // A complete (closed-fence) but syntactically INVALID mermaid block. The renderer
 // must fall back to a plain code block (no SVG) rather than crashing the turn.
 const MERMAID_INVALID = [
@@ -98,6 +139,65 @@ test.describe('mermaid diagram rendering (#248)', () => {
     // Real SVG nodes from the mermaid library actually running — not an empty or
     // placeholder element (this is the coverage jsdom's mocked render cannot give).
     expect(await svg.locator('*').count()).toBeGreaterThan(0)
+  })
+
+  test('multiple types: flowchart, sequence, and class each render, with node labels preserved', async ({
+    page
+  }) => {
+    await installChatMock(page, MERMAID_MULTIPLE)
+    await page.goto('/web/')
+    await dismissFirstLoad(page)
+
+    await sendMessage(page, 'Draw three diagrams.')
+
+    await expect(page.getByText('End of diagrams.')).toBeVisible({ timeout: 30_000 })
+
+    // All three diagram types rendered a real SVG (one frame each).
+    const diagrams = page.locator(MERMAID_DIAGRAM)
+    await expect(diagrams).toHaveCount(3, { timeout: 30_000 })
+    for (let i = 0; i < 3; i += 1) {
+      await expect(diagrams.nth(i).locator('svg')).toBeVisible({ timeout: 30_000 })
+    }
+
+    // Node/label text rendered via foreignObject survives sanitization — DOMPurify
+    // must not strip the HTML children of foreignObject (issue #227, item 3).
+    // `exact` so a label does not also match a mermaid-generated <style> rule that
+    // references the same class name.
+    await expect(
+      page.locator(MERMAID_DIAGRAM).getByText('Flow Start', { exact: true })
+    ).toBeVisible()
+    await expect(
+      page.locator(MERMAID_DIAGRAM).getByText('Flow Finish', { exact: true })
+    ).toBeVisible()
+    await expect(
+      page.locator(MERMAID_DIAGRAM).getByText('Sequence Hello', { exact: true })
+    ).toBeVisible()
+    await expect(
+      page.locator(MERMAID_DIAGRAM).getByText('ClassLabel', { exact: true })
+    ).toBeVisible()
+  })
+
+  test('preview/code toggle: switching to Code shows the source, back to Preview shows the diagram', async ({
+    page
+  }) => {
+    await installChatMock(page, MERMAID_TOGGLE)
+    await page.goto('/web/')
+    await dismissFirstLoad(page)
+
+    await sendMessage(page, 'Draw a toggleable diagram.')
+
+    // The diagram renders first (Preview is the default view).
+    const diagram = page.locator(MERMAID_DIAGRAM)
+    await expect(diagram.locator('svg')).toBeVisible({ timeout: 30_000 })
+
+    // Switch to Code: the raw mermaid source shows and the diagram SVG is gone.
+    await page.getByRole('button', { name: 'Code' }).first().click()
+    await expect(page.locator('pre code.language-mermaid')).toContainText('flowchart LR')
+    await expect(diagram.locator('svg')).toHaveCount(0)
+
+    // Switch back to Preview: the diagram SVG returns.
+    await page.getByRole('button', { name: 'Preview' }).first().click()
+    await expect(diagram.locator('svg')).toBeVisible()
   })
 
   test('error fallback: an invalid mermaid block degrades to a code block without crashing', async ({

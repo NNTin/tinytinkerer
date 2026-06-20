@@ -1,9 +1,9 @@
-import DOMPurify from 'dompurify'
 import mermaidRuntimeUrl from 'mermaid/dist/mermaid.min.js?url'
 import { useEffect, useId, useState } from 'react'
 import {
   CodeBlockFallback,
   PreviewCodeFrame,
+  sanitizeSvgMarkup,
   type CodeBlockNode,
   type ContentNodeRendererProps,
   type ReactNodeRendererPlugin
@@ -122,14 +122,10 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlock
           if (cancelled) {
             return
           }
-          const sanitized = DOMPurify.sanitize(result.svg, {
-            USE_PROFILES: { svg: true, svgFilters: true },
-            ADD_TAGS: ['foreignObject', 'div', 'span', 'p', 'br'],
-            // foreignObject is an HTML integration point in SVG; without this,
-            // DOMPurify rejects all HTML children (div, span, p) inside it, stripping
-            // node labels from flowchart and class diagrams entirely.
-            HTML_INTEGRATION_POINTS: { 'annotation-xml': true, foreignobject: true }
-          })
+          // Reuse the shared, hardened SVG sanitization policy (see
+          // @tinytinkerer/content-react) so the mermaid and raw-inline-SVG render
+          // paths never fork their DOMPurify configuration.
+          const sanitized = sanitizeSvgMarkup(result.svg)
           setSvg(sanitized)
           setFailed(false)
         })

@@ -27,6 +27,21 @@ import {
 const PNG_DATA_URI =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 
+// The raw PNG bytes behind PNG_DATA_URI, used to fulfil the https/http <img> route
+// stubs with a real image so naturalWidth > 0 without touching the network.
+const PNG_BYTES = Buffer.from(PNG_DATA_URI.split(',')[1] ?? '', 'base64')
+
+// A 20x20 SVG square in each of the three SVG data-URI forms. Each carries explicit
+// dimensions so the <img> rows report a non-zero naturalWidth once loaded.
+const SVG_MARKUP =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="green"/></svg>'
+const SVG_BASE64_URI = `data:image/svg+xml;base64,${Buffer.from(SVG_MARKUP).toString('base64')}`
+const SVG_PERCENT_URI = `data:image/svg+xml,${encodeURIComponent(SVG_MARKUP)}`
+// The RAW form embeds an onload handler and a <script>; both must be stripped by the
+// shared DOMPurify pass before the inline SVG reaches the DOM.
+const SVG_RAW_URI =
+  'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" onload="window.__ttXss = 1"><script>window.__ttXss = 2</script><rect width="20" height="20" fill="green"/></svg>'
+
 // Clears the first-load dialogs so the composer is usable, without touching any
 // Settings toggle (these renderers need no plugin enabled).
 const dismissFirstLoad = async (page: Page): Promise<void> => {
@@ -114,6 +129,85 @@ test.describe('markdown renderers (#249)', () => {
     // Escape closes it.
     await page.keyboard.press('Escape')
     await expect(lightbox).toBeHidden()
+  })
+
+  test('images: src-format support matrix renders / drops each row per the docs', async ({
+    page
+  }) => {
+    // Each row of the documented support matrix as a standalone markdown image, with
+    // a unique alt so it can be located independently.
+    const answer = [
+      'Image formats:',
+      '',
+      `![https image](https://images.example.test/a.png)`,
+      '',
+      `![http image](http://images.example.test/b.png)`,
+      '',
+      `![png base64](${PNG_DATA_URI})`,
+      '',
+      `![svg base64](${SVG_BASE64_URI})`,
+      '',
+      `![svg percent](${SVG_PERCENT_URI})`,
+      '',
+      `![raw svg](${SVG_RAW_URI})`,
+      '',
+      `![relative image](/local/c.png)`,
+      '',
+      `![protocol relative](//images.example.test/d.png)`,
+      '',
+      `![other scheme](ftp://images.example.test/e.png)`,
+      '',
+      'End of formats.'
+    ].join('\n')
+
+    await installChatMock(page, answer)
+    // Offline stub for the absolute-URL rows: fulfil any http/https image request to
+    // the test host with real PNG bytes, so the <img> actually loads (naturalWidth > 0)
+    // without any real network access.
+    await page.route('**/images.example.test/**', (route) =>
+      route.fulfill({ contentType: 'image/png', body: PNG_BYTES })
+    )
+    await page.goto('/web/')
+    await dismissFirstLoad(page)
+
+    await sendMessage(page, 'Show me image formats.')
+
+    await expect(page.getByText('End of formats.')).toBeVisible({ timeout: 30_000 })
+
+    // ✅ rows that ride in an <img>: present AND actually loaded (naturalWidth > 0).
+    for (const alt of ['https image', 'http image', 'png base64', 'svg base64', 'svg percent']) {
+      const img = page.locator(`img[alt="${alt}"]`)
+      await expect(img).toBeVisible()
+      await expect
+        .poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth), {
+          timeout: 15_000,
+          message: `expected the "${alt}" image to load (naturalWidth > 0)`
+        })
+        .toBeGreaterThan(0)
+    }
+
+    // ✅ raw SVG row: rendered as sanitized INLINE <svg> (not an <img>), with the
+    // script/onload payload stripped.
+    const rawFigure = page.locator('figure[data-tt-image]', { hasText: 'raw svg' })
+    await expect(rawFigure).toBeVisible()
+    const inlineSvg = rawFigure.locator('[data-tt-inline-svg] svg')
+    await expect(inlineSvg).toBeVisible()
+    await expect(inlineSvg.locator('rect')).toHaveCount(1)
+    await expect(inlineSvg.locator('script')).toHaveCount(0)
+    expect(await inlineSvg.getAttribute('onload')).toBeNull()
+    // The strongest oracle: neither the onload handler nor the inline <script> ran.
+    expect(await page.evaluate(() => (window as unknown as { __ttXss?: number }).__ttXss)).toBe(
+      undefined
+    )
+
+    // ❌ rows: relative, protocol-relative, and other schemes drop to an empty src
+    // (React omits the attribute entirely for an empty string), so nothing loads.
+    for (const alt of ['relative image', 'protocol relative', 'other scheme']) {
+      const img = page.locator(`img[alt="${alt}"]`)
+      await expect(img).toBeVisible()
+      expect((await img.getAttribute('src')) ?? '').toBe('')
+      expect(await img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(0)
+    }
   })
 
   test('code blocks: CodeMirror highlighting and a working Copy control', async ({ page }) => {

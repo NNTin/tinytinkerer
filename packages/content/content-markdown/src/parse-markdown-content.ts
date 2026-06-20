@@ -60,6 +60,95 @@ const sanitizeImageUrl = (url: string): string => {
   return ''
 }
 
+// A raw (unencoded) SVG data URI inside markdown image syntax:
+// `![alt](data:image/svg+xml,<svg …></svg> "title")`. The destination contains
+// literal `<…>` markup and spaces, so CommonMark's image-destination parser ends it
+// at the first whitespace and NO image node is ever produced — the markup degrades
+// to loose text. We recognise this shape up front and swap the destination for a
+// sentinel data URI that parses cleanly (no spaces, no angle brackets), stashing the
+// original so it can be restored onto the image node after parsing. The renderer
+// then mounts the raw markup as sanitized inline SVG (it cannot ride in an `<img
+// src>`). The base64 (`;base64,`) and percent-encoded (`,%3Csvg…`) forms carry no
+// URL-breaking characters and already parse, so this only matches the raw form.
+const RAW_SVG_IMAGE =
+  /!\[([^\]]*)\]\(\s*(data:image\/svg\+xml,\s*<svg[\s\S]*?<\/svg>)\s*((?:"[^"]*"|'[^']*')?)\s*\)/gi
+const RAW_SVG_SENTINEL_PREFIX = 'data:image/svg+xml,tt-raw-svg-'
+
+type RawSvgExtraction = {
+  content: string
+  rawBySentinel: Map<string, string>
+}
+
+const extractRawSvgImages = (content: string): RawSvgExtraction => {
+  const rawBySentinel = new Map<string, string>()
+  let index = 0
+  const next = content.replace(
+    RAW_SVG_IMAGE,
+    (_match, alt: string, dataUri: string, title: string) => {
+      const sentinel = `${RAW_SVG_SENTINEL_PREFIX}${index++}`
+      rawBySentinel.set(sentinel, dataUri)
+      return `![${alt}](${sentinel}${title ? ` ${title}` : ''})`
+    }
+  )
+  return { content: next, rawBySentinel }
+}
+
+const restoreRawSvgInline = (node: InlineNode, rawBySentinel: Map<string, string>): void => {
+  if (node.type === 'imageInline') {
+    const raw = rawBySentinel.get(node.url)
+    if (raw) {
+      ;(node as { url: string }).url = raw
+    }
+    return
+  }
+  if ('children' in node) {
+    for (const child of node.children) {
+      restoreRawSvgInline(child, rawBySentinel)
+    }
+  }
+}
+
+const restoreRawSvgBlock = (node: BlockNode, rawBySentinel: Map<string, string>): void => {
+  switch (node.type) {
+    case 'image': {
+      const raw = rawBySentinel.get(node.url)
+      if (raw) {
+        ;(node as { url: string }).url = raw
+      }
+      return
+    }
+    case 'heading':
+    case 'paragraph':
+      for (const child of node.children) {
+        restoreRawSvgInline(child, rawBySentinel)
+      }
+      return
+    case 'list':
+      for (const item of node.children) {
+        for (const child of item.children) {
+          restoreRawSvgBlock(child, rawBySentinel)
+        }
+      }
+      return
+    case 'blockquote':
+      for (const child of node.children) {
+        restoreRawSvgBlock(child, rawBySentinel)
+      }
+      return
+    case 'table':
+      for (const row of [node.header, ...node.rows]) {
+        for (const cell of row) {
+          for (const child of cell) {
+            restoreRawSvgInline(child, rawBySentinel)
+          }
+        }
+      }
+      return
+    default:
+      return
+  }
+}
+
 const sanitizeLinkUrl = (url: string): string => {
   const trimmed = url.trim()
   if (!trimmed) return ''
@@ -250,7 +339,8 @@ const blockFromMdast = (node: RootContent | BlockContent, ids: IdAllocator): Blo
 }
 
 export const parseMarkdownContent = (content: string): ContentDocument => {
-  const root = parser.parse(content)
+  const { content: preprocessed, rawBySentinel } = extractRawSvgImages(content)
+  const root = parser.parse(preprocessed)
   const ids = createIdAllocator()
   const nodes: BlockNode[] = []
 
@@ -258,6 +348,14 @@ export const parseMarkdownContent = (content: string): ContentDocument => {
     const block = blockFromMdast(child, ids)
     if (block) {
       nodes.push(block)
+    }
+  }
+
+  // Restore the raw SVG markup the sentinel stood in for, so the image node carries
+  // `data:image/svg+xml,<svg …>` and the renderer can mount it as sanitized inline SVG.
+  if (rawBySentinel.size > 0) {
+    for (const node of nodes) {
+      restoreRawSvgBlock(node, rawBySentinel)
     }
   }
 

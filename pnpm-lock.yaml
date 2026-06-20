@@ -466,6 +466,9 @@ importers:
       '@tinytinkerer/ui':
         specifier: workspace:*
         version: link:../../shared/ui
+      dompurify:
+        specifier: 3.4.11
+        version: 3.4.11
     devDependencies:
       '@testing-library/jest-dom':
         specifier: 6.9.1
@@ -678,9 +681,6 @@ importers:
       '@tinytinkerer/content-react':
         specifier: workspace:*
         version: link:../../content-react
-      dompurify:
-        specifier: 3.4.11
-        version: 3.4.11
       mermaid:
         specifier: 11.15.0
         version: 11.15.0

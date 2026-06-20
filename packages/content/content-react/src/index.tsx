@@ -40,6 +40,8 @@ import {
   type ContentRenderErrorInfo,
   type ContentRenderErrorReporter
 } from './error-reporter'
+import { sanitizeSvgMarkup } from './sanitize-svg'
+import { isRawSvgDataUri, rawSvgMarkupFromDataUri } from './svg-data-uri'
 import { cn } from '@tinytinkerer/ui'
 
 // Re-export the render-error reporter surface so hosts wire telemetry through
@@ -54,6 +56,12 @@ export {
   type ContentRenderErrorInfo,
   type ContentRenderErrorReporter
 }
+
+// Shared SVG handling: the hardened DOMPurify policy plus the raw-SVG data-URI
+// detection both the mermaid and image renderers reuse, so neither forks the
+// sanitization policy nor the detection heuristic.
+export { sanitizeSvgMarkup } from './sanitize-svg'
+export { isRawSvgDataUri, rawSvgMarkupFromDataUri } from './svg-data-uri'
 
 export { assignNodeIds, computeNodeId, hashContent } from '@tinytinkerer/content-core'
 export type {
@@ -258,6 +266,26 @@ const PreparedNodeBoundary = ({
   return children
 }
 
+// Renders a raw SVG data URI's markup as sanitized inline SVG. Used wherever an
+// `<img src>` cannot carry the unencoded `<svg …>` markup (raw data URIs). The
+// markup is always run through the shared DOMPurify policy before it touches the DOM.
+export const InlineSvg = ({ markup, className }: { markup: string; className?: string }) => {
+  // DOMPurify only sanitizes when a DOM is present; in a non-DOM (SSR) runtime its
+  // sanitize() no-ops and would otherwise pass the markup through UNsanitized. Render
+  // nothing there — the inline path is not clientOnly, but the browser always
+  // re-renders with a real sanitizer, so the SVG appears once hydrated.
+  if (typeof document === 'undefined') {
+    return null
+  }
+  return (
+    <span
+      data-tt-inline-svg=""
+      {...(className ? { className } : {})}
+      dangerouslySetInnerHTML={{ __html: sanitizeSvgMarkup(markup) }}
+    />
+  )
+}
+
 export const renderInline = (nodes: readonly InlineNode[]): ReactNode =>
   nodes.map((node, index) => {
     const key = node.id ?? `${node.type}-${index}`
@@ -279,7 +307,11 @@ export const renderInline = (nodes: readonly InlineNode[]): ReactNode =>
           </a>
         )
       case 'imageInline':
-        return <img key={key} src={node.url} alt={node.alt} title={node.title} />
+        return isRawSvgDataUri(node.url) ? (
+          <InlineSvg key={key} markup={rawSvgMarkupFromDataUri(node.url)} />
+        ) : (
+          <img key={key} src={node.url} alt={node.alt} title={node.title} />
+        )
       case 'break':
         return <br key={key} />
     }

@@ -117,6 +117,67 @@ describe('ImageNodeRenderer', () => {
     expect(screen.getByRole('button', { name: 'Fit' })).toBeInTheDocument()
   })
 
+  it('renders a raw SVG data URI as sanitized inline SVG (not an <img>)', () => {
+    const { container } = render(
+      <ImageNodeRenderer
+        node={{
+          type: 'image',
+          url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>',
+          alt: 'A red square'
+        }}
+      />
+    )
+
+    // Inline SVG is mounted...
+    const svg = container.querySelector('svg')
+    expect(svg).not.toBeNull()
+    expect(container.querySelector('rect')).not.toBeNull()
+    // ...and NOT delegated to an <img src>.
+    expect(container.querySelector('img')).toBeNull()
+  })
+
+  it('neutralises a malicious raw SVG data URI (script + event handlers stripped)', () => {
+    const { container } = render(
+      <ImageNodeRenderer
+        node={{
+          type: 'image',
+          url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(2)</script><rect width="4" height="4" onclick="steal()"/></svg>',
+          alt: 'xss'
+        }}
+      />
+    )
+
+    // The SVG still renders, but the dangerous bits are gone.
+    expect(container.querySelector('svg')).not.toBeNull()
+    expect(container.querySelector('script')).toBeNull()
+    const html = container.innerHTML.toLowerCase()
+    expect(html).not.toContain('onload')
+    expect(html).not.toContain('onclick')
+    expect(html).not.toContain('alert(1)')
+    expect(html).not.toContain('alert(2)')
+    expect(html).not.toContain('steal()')
+  })
+
+  it('still uses an <img> for base64 and percent-encoded SVG data URIs', () => {
+    const { container, rerender } = render(
+      <ImageNodeRenderer
+        node={{
+          type: 'image',
+          url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+          alt: 'b64'
+        }}
+      />
+    )
+    expect(container.querySelector('img')).not.toBeNull()
+
+    rerender(
+      <ImageNodeRenderer
+        node={{ type: 'image', url: 'data:image/svg+xml,%3Csvg%3E%3C/svg%3E', alt: 'pct' }}
+      />
+    )
+    expect(container.querySelector('img')).not.toBeNull()
+  })
+
   it('exposes Open and Download links pointing at the source URL', () => {
     render(
       <ImageNodeRenderer

@@ -234,6 +234,68 @@ describe('parseMarkdownContent', () => {
     })
   })
 
+  it('drops relative and protocol-relative image URLs to empty src', () => {
+    expect(stripIds(parseMarkdownContent('![rel](/path/a.png)'))).toEqual({
+      nodes: [{ type: 'image', url: '', alt: 'rel' }]
+    })
+    expect(stripIds(parseMarkdownContent('![protorel](//host/a.png)'))).toEqual({
+      nodes: [{ type: 'image', url: '', alt: 'protorel' }]
+    })
+  })
+
+  it('preserves a raw SVG data URI as a standalone image node (survives parsing)', () => {
+    const raw =
+      'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>'
+    expect(stripIds(parseMarkdownContent(`![chart](${raw})`))).toEqual({
+      nodes: [{ type: 'image', url: raw, alt: 'chart' }]
+    })
+  })
+
+  it('preserves a raw SVG data URI with a title', () => {
+    const raw = 'data:image/svg+xml,<svg width="10" height="10"></svg>'
+    expect(stripIds(parseMarkdownContent(`![chart](${raw} "My Chart")`))).toEqual({
+      nodes: [{ type: 'image', url: raw, alt: 'chart', title: 'My Chart' }]
+    })
+  })
+
+  it('preserves an inline raw SVG data URI as an imageInline node', () => {
+    const raw = 'data:image/svg+xml,<svg width="4"></svg>'
+    expect(stripIds(parseMarkdownContent(`Look ![icon](${raw}) here`))).toEqual({
+      nodes: [
+        {
+          type: 'paragraph',
+          children: [
+            { type: 'text', value: 'Look ' },
+            { type: 'imageInline', url: raw, alt: 'icon' },
+            { type: 'text', value: ' here' }
+          ]
+        }
+      ]
+    })
+  })
+
+  it('keeps the raw markup (including a malicious payload) on the node for the renderer to sanitize', () => {
+    // Parsing only routes the raw SVG to the inline renderer; neutralising the
+    // payload (script/onload) is the renderer's DOMPurify pass, asserted there.
+    const raw = 'data:image/svg+xml,<svg onload="alert(1)"><script>alert(2)</script></svg>'
+    const [node] = parseMarkdownContent(`![x](${raw})`).nodes
+    expect(node?.type).toBe('image')
+    expect(node?.type === 'image' && node.url).toBe(raw)
+  })
+
+  it('leaves base64 and percent-encoded SVG data URIs untouched', () => {
+    expect(
+      stripIds(parseMarkdownContent('![b64](data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=)'))
+    ).toEqual({
+      nodes: [{ type: 'image', url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=', alt: 'b64' }]
+    })
+    expect(
+      stripIds(parseMarkdownContent('![pct](data:image/svg+xml,%3Csvg%3E%3C/svg%3E)'))
+    ).toEqual({
+      nodes: [{ type: 'image', url: 'data:image/svg+xml,%3Csvg%3E%3C/svg%3E', alt: 'pct' }]
+    })
+  })
+
   it('sanitizes unsafe link schemes', () => {
     expect(stripIds(parseMarkdownContent('[xss](javascript:alert(1))'))).toEqual({
       nodes: [
