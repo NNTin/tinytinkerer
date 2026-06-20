@@ -37,7 +37,7 @@ jobs:
 
       # Persist Turborepo's local cache across runs so an unchanged build hits cache.
       - name: Cache Turborepo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .turbo
           key: turbo-${{ github.workflow }}-e2e-shells-${{ github.sha }}
@@ -60,7 +60,7 @@ jobs:
       # Common ancestor of the three paths is `apps/`, so the artifact stores
       # `web/dist`, `widget/dist`, `mobile/dist`; the shards download it into `apps`.
       - name: Upload built shells
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: shells-dist
           path: |
@@ -106,7 +106,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: pw-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}
@@ -120,7 +120,7 @@ jobs:
       # Restore the prebuilt shells into apps/<shell>/dist where `vite preview`
       # expects them (the artifact root is `apps/`).
       - name: Download built shells
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           name: shells-dist
           path: apps
@@ -134,7 +134,7 @@ jobs:
       # files are UUID-named, so the report job merges all shards' results safely.
       - name: Upload Allure results (e2e shard ${{ matrix.shard }})
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: allure-results-e2e-${{ matrix.shard }}
           path: packages/e2e/allure-results
@@ -143,7 +143,7 @@ jobs:
 
       - name: Upload report on failure
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-report-${{ matrix.shard }}
           path: packages/e2e/playwright-report

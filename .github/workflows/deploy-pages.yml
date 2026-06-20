@@ -69,13 +69,13 @@ jobs:
       # allure-commandline is the Java-based Allure CLI. It vendors the Allure
       # distribution inside its npm tarball (no install-time binary download), but
       # the launcher runs `java`, so the report job needs a JRE on PATH.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Download vitest Allure results
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           name: allure-results-vitest
           path: allure-results-vitest
@@ -84,7 +84,7 @@ jobs:
       # dir (UUID-named files never collide). `pattern` tolerates zero matches, so a
       # fully-empty e2e run degrades to a vitest-only report rather than failing.
       - name: Download e2e Allure results
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           pattern: allure-results-e2e-*
           path: allure-results-e2e
@@ -94,7 +94,7 @@ jobs:
         run: pnpm exec allure generate allure-results-vitest allure-results-e2e -o test-report --clean
 
       - name: Upload report
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: test-report
           path: test-report
@@ -234,7 +234,7 @@ jobs:
       # rather than failing the deploy.
       - name: Download merged test report
         continue-on-error: true
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           name: test-report
           path: test-report

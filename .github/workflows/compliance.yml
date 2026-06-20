@@ -94,7 +94,7 @@ jobs:
       # Upload before enforcement so the artifacts are always available for review,
       # even when the license policy gate fails the run.
       - name: Upload compliance artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: compliance-artifacts
           path: |
