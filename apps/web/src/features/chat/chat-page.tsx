@@ -14,6 +14,7 @@ import {
   FaGear,
   FaGithub,
   FaMicrophone,
+  FaReceipt,
   FaRotateLeft,
   FaSpinner,
   ThinkingDots
@@ -199,7 +200,7 @@ export const ChatPage = () => {
 
               {/* Context inspector (developer): web app only. Hidden unless the
                   plugin is enabled and at least one request has been captured. */}
-              <ContextInspectorSlot />
+              <ContextInspectorSlot icon={<FaReceipt className="h-4 w-4" aria-hidden="true" />} />
             </div>
 
             {/* Right: microphone, send */}

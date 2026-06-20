@@ -148,6 +148,9 @@ export const createChatStore = (options: {
       const { resetConversation } = await loadCoreModule()
       const events = await resetConversation(options.shell.conversations, get().conversationId)
       set({ events })
+      // Drop any captured inspector requests too: they belong to the conversation
+      // that was just reset, so the developer panel must start empty as well.
+      options.inspectorStore?.getState().clear()
     }
   }))
 

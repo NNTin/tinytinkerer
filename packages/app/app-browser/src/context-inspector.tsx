@@ -5,7 +5,7 @@ import type {
   InspectorSummarizer,
   InspectorView
 } from '@tinytinkerer/contracts'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
 import { useChatStore, useInspectorStore, useSettingsStore } from './app'
 import { useModels } from './models'
@@ -112,8 +112,14 @@ const ContextInspectorPanel = ({
     }
   }
 
+  // The provider only reports real usage (`usage.prompt_tokens`) for the latest
+  // call, so the authoritative count applies ONLY when the latest request is in
+  // view. Stepping back to an earlier request shows that request's own estimate
+  // instead of the latest count — the token figure always reflects what is on
+  // screen, never a stale latest-turn number.
+  const isLatestRequest = selectedIndex === requestCount - 1
   const totalLabel =
-    promptTokens != null
+    isLatestRequest && promptTokens != null
       ? `${formatTokens(promptTokens)} prompt tokens${
           contextWindow != null ? ` / ${formatTokens(contextWindow)} context` : ''
         }`
@@ -245,7 +251,17 @@ const ContextInspectorPanel = ({
 // or renders nothing when no inspector plugin is enabled or nothing has been
 // captured yet. Drop it next to the composer (web app only). Mirrors
 // ContextGaugeSlot's "resolve view-model, render or hide" shape.
-export const ContextInspectorSlot = ({ className }: { className?: string }) => {
+//
+// `icon` lets the host supply a glyph (the web app passes its FaReceipt from the
+// UI package, which app-browser cannot import directly). When omitted the button
+// falls back to a plain "Context" text label so the slot still works standalone.
+export const ContextInspectorSlot = ({
+  className,
+  icon
+}: {
+  className?: string
+  icon?: ReactNode
+}) => {
   const { summarizer, requests, contextWindow, promptTokens } = useContextInspector()
   const [open, setOpen] = useState(false)
   // null = follow the latest request; a number pins a specific one in the stepper.
@@ -277,10 +293,12 @@ export const ContextInspectorSlot = ({ className }: { className?: string }) => {
         onClick={() => setOpen(true)}
         className={
           className ??
-          'inline-flex items-center gap-1 rounded-md border border-stone-200 bg-white px-2 py-1 text-xs text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50'
+          (icon
+            ? 'flex h-9 w-9 items-center justify-center rounded-md border border-stone-300 bg-white text-stone-600 transition-colors hover:border-stone-400 hover:bg-stone-50 hover:text-stone-800'
+            : 'inline-flex items-center gap-1 rounded-md border border-stone-200 bg-white px-2 py-1 text-xs text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50')
         }
       >
-        Context
+        {icon ?? 'Context'}
       </button>
       {open && view ? (
         <ContextInspectorPanel
