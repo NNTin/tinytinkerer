@@ -2,7 +2,8 @@ import {
   clampChatMessageContent,
   EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
-  type ChatMessage
+  type ChatMessage,
+  type InspectorRequestPayload
 } from '@tinytinkerer/contracts'
 import { getTelemetryHeaders } from '../telemetry/telemetry'
 import {
@@ -139,13 +140,50 @@ export const modelsChatRequestBody = (
   }
 }
 
+// Optional developer hook: invoked with the EXACT body about to be forwarded for
+// each model call, so the context-inspector plugin can show what was sent. It runs
+// only when the host injects it (i.e. only while the inspector plugin is enabled),
+// and it is the single chokepoint every chat request (plan / decide / synthesize)
+// passes through, so it captures the post-clamp payload the edge forwards verbatim.
+// Never throws into the request path — capture is best-effort and side-effect-free
+// for the model call.
+export type ForwardedRequestSink = (payload: InspectorRequestPayload) => void
+
 export const createModelsChatFetch =
-  (edgeFetch: EdgeFetch, getLiteLLMBaseUrl?: () => string | null | undefined): ModelsChatFetch =>
-  (init, options) =>
-    edgeFetch(EDGE_ROUTE_PATHS.modelsChat, modelsChatRequestBody(getLiteLLMBaseUrl?.(), init), {
+  (
+    edgeFetch: EdgeFetch,
+    getLiteLLMBaseUrl?: () => string | null | undefined,
+    onForwardRequest?: ForwardedRequestSink
+  ): ModelsChatFetch =>
+  (init, options) => {
+    const body = modelsChatRequestBody(getLiteLLMBaseUrl?.(), init)
+
+    if (onForwardRequest) {
+      try {
+        // Report the clamped messages (what actually leaves the client), not the
+        // pre-clamp `init`, so the inspector mirrors the forwarded payload exactly.
+        const messages = (body.messages as ChatMessage[]).map((message) => ({
+          role: message.role,
+          content: message.content
+        }))
+        onForwardRequest({
+          model: init.model,
+          stream: init.stream,
+          ...(init.stream_options ? { stream_options: init.stream_options } : {}),
+          messages,
+          ...(options?.area ? { area: options.area } : {}),
+          capturedAt: new Date().toISOString()
+        })
+      } catch {
+        // Capture must never break a chat request.
+      }
+    }
+
+    return edgeFetch(EDGE_ROUTE_PATHS.modelsChat, body, {
       model: init.model,
       stream: init.stream,
       ...(options?.area ? { area: options.area } : {}),
       ...(options?.signal ? { signal: options.signal } : {}),
       ...(options?.accept ? { accept: options.accept } : {})
     })
+  }

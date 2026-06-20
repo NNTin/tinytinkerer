@@ -402,6 +402,76 @@ export type PluginStatusDescriptor = {
   summarizeStatus: StatusSummarizer
 }
 
+// === Developer context-inspector contribution (the 'inspector' capability) =======
+// A developer debug surface (issue #270) that shows the EXACT chat request the
+// client forwards to the provider per model call — the messages array (system
+// prompt + history + tool observations), the model, and stream options. Like the
+// status gauge it follows "plugins ship data, never components": the plugin
+// exposes a pure mapper turning a host-captured request payload into a React-free
+// view-model the host renders (reusing its CodeMirror JSON view). No React/DOM in
+// the plugin (enforced by scripts/check-boundaries.mjs).
+
+// One message of a captured request. Product-agnostic (no edge import): `role`
+// and `content` mirror the forwarded chat message shape.
+export type InspectorRequestMessage = {
+  role: string
+  content: string
+}
+
+// The exact request the client forwarded to the provider for a single model call,
+// captured client-side ONLY when the inspector plugin is enabled. `area` marks
+// which phase issued it (planning.chat / react.decide / models.chat). This is the
+// post-clamp body that reaches the edge, so it equals what the edge forwards.
+export type InspectorRequestPayload = {
+  model: string
+  stream: boolean
+  stream_options?: { include_usage?: boolean }
+  messages: InspectorRequestMessage[]
+  area?: string
+  // ISO timestamp of when the request was captured, so the host can label and
+  // order multiple captures within a turn.
+  capturedAt: string
+}
+
+// One message row in the inspector view: the original role/content plus a rough
+// per-message token estimate and whether it is a system prompt (called out
+// distinctly by the host). The estimate is a char/4 heuristic — clearly an
+// approximation, not a tokenizer count.
+export type InspectorMessageView = {
+  index: number
+  role: string
+  isSystem: boolean
+  content: string
+  approxTokens: number
+}
+
+// React-free view-model the inspector plugin produces from a captured payload.
+// `rawJson` is the pretty-printed forwarded body for the host's JSON renderer and
+// copy-to-clipboard; `approxTotalTokens` sums the per-message heuristic estimates.
+export type InspectorView = {
+  model: string
+  stream: boolean
+  // Serialized `stream_options` for display (e.g. `{"include_usage":true}`).
+  streamOptions: string
+  area?: string
+  messageCount: number
+  approxTotalTokens: number
+  messages: InspectorMessageView[]
+  rawJson: string
+}
+
+// Pure mapper a context-inspector plugin exposes: a captured request payload →
+// InspectorView. Product-agnostic (no React/DOM/window) — it only transforms data.
+export type InspectorSummarizer = (payload: InspectorRequestPayload) => InspectorView
+
+// Manifest descriptor for the developer context-inspector contribution, mirroring
+// PluginStatusDescriptor. The host resolves `summarizeRequest` from the active
+// plugin's manifest and feeds its single generic inspector renderer.
+export type PluginInspectorDescriptor = {
+  id: string
+  summarizeRequest: InspectorSummarizer
+}
+
 // Planner-facing description of a tool a plugin contributes. Lets a host name the
 // tool to its planner/model without instantiating the plugin. Structurally
 // matches the host's own planner descriptor shape (id / description / schema).
@@ -430,12 +500,16 @@ export type PluginManifest = {
   id: string
   label: string
   description: string
-  capabilities?: Array<'tools' | 'hooks' | 'status'>
+  capabilities?: Array<'tools' | 'hooks' | 'status' | 'inspector'>
   toolDescriptors?: PluginToolDescriptor[]
   // Persistent host-surface contribution (the 'status' capability). At most one
   // per plugin: a pure mapper the host resolves to render its generic gauge. See
   // PluginStatusDescriptor.
   statusDescriptor?: PluginStatusDescriptor
+  // Developer context-inspector contribution (the 'inspector' capability). At most
+  // one per plugin: a pure mapper the host resolves to render its generic request
+  // inspector. See PluginInspectorDescriptor.
+  inspectorDescriptor?: PluginInspectorDescriptor
   // Default activation when the user has no stored preference. Plugins are
   // off by default (`undefined`/`false`); a plugin that should ship enabled
   // out-of-the-box (e.g. web search) sets this to `true`. An explicit user

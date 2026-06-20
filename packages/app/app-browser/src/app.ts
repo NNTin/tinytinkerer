@@ -18,6 +18,11 @@ import {
 } from './stores/settings-store'
 import { createStatusStore, type StatusState, type StatusStore } from './stores/status-store'
 import {
+  createInspectorStore,
+  type InspectorState,
+  type InspectorStore
+} from './stores/inspector-store'
+import {
   captureTelemetryException,
   configureTelemetry,
   fingerprintMessage,
@@ -32,6 +37,7 @@ export type BrowserApp = {
     chat: ChatStore
     settings: SettingsStore
     status: StatusStore
+    inspector: InspectorStore
   }
 }
 
@@ -55,10 +61,12 @@ export const createBrowserApp = (config: BrowserShellConfig): BrowserApp => {
   const auth = createAuthStore(shell)
   const settings = createSettingsStore(shell)
   const status = createStatusStore(shell)
+  const inspector = createInspectorStore()
   const chat = createChatStore({
     shell,
     authStore: auth,
-    settingsStore: settings
+    settingsStore: settings,
+    inspectorStore: inspector
   })
 
   const app: BrowserApp = {
@@ -67,7 +75,8 @@ export const createBrowserApp = (config: BrowserShellConfig): BrowserApp => {
       auth,
       chat,
       settings,
-      status
+      status,
+      inspector
     }
   }
 
@@ -163,5 +172,8 @@ export const useSettingsStore = <T>(selector: (state: SettingsState) => T): T =>
 
 export const useStatusStore = <T>(selector: (state: StatusState) => T): T =>
   useStore(useBrowserApp().stores.status, selector)
+
+export const useInspectorStore = <T>(selector: (state: InspectorState) => T): T =>
+  useStore(useBrowserApp().stores.inspector, selector)
 
 export const useOptionalBrowserApp = (): BrowserApp | undefined => useContext(BrowserAppContext)

@@ -59,6 +59,7 @@ export {
 export type { ChatComposer } from './surfaces'
 export { ContextGauge, ContextGaugeSlot, useContextGauge } from './context-gauge'
 export type { ContextGaugeProps } from './context-gauge'
+export { ContextInspectorSlot, useContextInspector } from './context-inspector'
 export { fetchStatus, startStatusPolling } from './status'
 export type { BrowserShell } from './shell'
 export { createBrowserShell } from './shell'

@@ -61,15 +61,20 @@ const ToggleRow = ({
   description,
   checked,
   disabled = false,
+  tooltip,
   onChange
 }: {
   label: string
   description?: string
   checked: boolean
   disabled?: boolean
+  // Hover text for the row. Used to explain why a disabled toggle cannot be
+  // changed (e.g. a web-only plugin on the widget/mobile shells).
+  tooltip?: string
   onChange: (next: boolean) => void
 }) => (
   <label
+    {...(tooltip ? { title: tooltip } : {})}
     className={`flex items-start justify-between gap-4 py-1 ${disabled ? 'opacity-60' : 'cursor-pointer'}`}
   >
     <span className="min-w-0">
@@ -557,7 +562,15 @@ export const McpServerList = () => {
   )
 }
 
-const PluginsSection = () => {
+// The context-inspector plugin renders a developer panel that only exists in the
+// web shell, so its toggle is disabled on the widget/mobile shells. The id is
+// hard-coded here (as the runtime hard-codes plugin/tool ids) so the settings UI
+// keeps no static dependency on the concrete plugin package.
+const CONTEXT_INSPECTOR_PLUGIN_ID = 'context-inspector'
+const INSPECTOR_WEB_ONLY_TOOLTIP =
+  'The context inspector is only available in the web app. Open it there to inspect the model context.'
+
+const PluginsSection = ({ inspectorPanelSupported }: { inspectorPanelSupported: boolean }) => {
   const { availablePlugins, pluginActivation, setPluginEnabled, telemetryEnabled } =
     useSettingsSurfaceController()
 
@@ -567,15 +580,21 @@ const PluginsSection = () => {
 
   return (
     <div className="space-y-3">
-      {availablePlugins.map((plugin) => (
-        <ToggleRow
-          key={plugin.id}
-          label={plugin.label}
-          description={plugin.description}
-          checked={isPluginEnabled(pluginActivation, plugin)}
-          onChange={(next) => void setPluginEnabled(plugin.id, next)}
-        />
-      ))}
+      {availablePlugins.map((plugin) => {
+        const inspectorDisabled =
+          plugin.id === CONTEXT_INSPECTOR_PLUGIN_ID && !inspectorPanelSupported
+        return (
+          <ToggleRow
+            key={plugin.id}
+            label={plugin.label}
+            description={plugin.description}
+            checked={isPluginEnabled(pluginActivation, plugin)}
+            disabled={inspectorDisabled}
+            {...(inspectorDisabled ? { tooltip: INSPECTOR_WEB_ONLY_TOOLTIP } : {})}
+            onChange={(next) => void setPluginEnabled(plugin.id, next)}
+          />
+        )
+      })}
       <p className="text-xs text-[var(--muted)]">
         Each enabled plugin adds its tools to every chat, expanding what the assistant can do.
       </p>
@@ -654,10 +673,16 @@ const PrivacySection = () => {
 
 export const BrowserSettingsModal = ({
   open,
-  onOpenChange
+  onOpenChange,
+  // Whether this shell hosts the developer context-inspector panel. Only the web
+  // shell passes `true`; the widget/mobile shells leave it `false`, which disables
+  // the inspector plugin's toggle (with an explanatory tooltip). Defaults to
+  // `false` so a new shell that forgets to opt in is safe.
+  inspectorPanelSupported = false
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  inspectorPanelSupported?: boolean
 }) => {
   const { effectiveStatus, refreshStatus } = useSettingsSurfaceController()
 
@@ -727,7 +752,7 @@ export const BrowserSettingsModal = ({
           <hr className="border-[var(--border)]" />
 
           <SettingsSection title="Plugins">
-            <PluginsSection />
+            <PluginsSection inspectorPanelSupported={inspectorPanelSupported} />
           </SettingsSection>
 
           <hr className="border-[var(--border)]" />

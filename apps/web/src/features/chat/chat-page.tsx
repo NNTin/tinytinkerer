@@ -1,6 +1,7 @@
 import {
   AssistantContent,
   ContextGaugeSlot,
+  ContextInspectorSlot,
   LazyBrowserSettingsModal,
   PermissionModal,
   TurnActivityPanel,
@@ -195,6 +196,10 @@ export const ChatPage = () => {
               {/* Context-usage gauge (hidden unless the plugin is enabled and the
                   model reports usage against a known context window) */}
               <ContextGaugeSlot className="text-stone-500" />
+
+              {/* Context inspector (developer): web app only. Hidden unless the
+                  plugin is enabled and at least one request has been captured. */}
+              <ContextInspectorSlot />
             </div>
 
             {/* Right: microphone, send */}
@@ -261,7 +266,11 @@ export const ChatPage = () => {
 
       {settingsOpen ? (
         <Suspense fallback={<WebPanelLoading />}>
-          <LazyBrowserSettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+          <LazyBrowserSettingsModal
+            open={settingsOpen}
+            onOpenChange={setSettingsOpen}
+            inspectorPanelSupported
+          />
         </Suspense>
       ) : null}
 

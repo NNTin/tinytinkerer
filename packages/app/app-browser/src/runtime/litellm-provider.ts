@@ -23,6 +23,7 @@ import {
   createEdgeError,
   createEdgeFetch,
   createModelsChatFetch,
+  type ForwardedRequestSink,
   type ModelsChatFetch
 } from './edge-fetch'
 import {
@@ -55,6 +56,11 @@ type LiteLLMProviderOptions = {
   getModel?: () => string | null | undefined
   getLiteLLMBaseUrl?: () => string | null | undefined
   allToolDescriptors?: PlannerToolDescriptor[]
+  // Optional developer capture hook (issue #270): when present, every forwarded
+  // chat request (plan / decide / synthesize) is reported to it for the
+  // context-inspector plugin. The host injects it ONLY while that plugin is
+  // enabled, so capture is off — and nothing is retained — otherwise.
+  onForwardRequest?: ForwardedRequestSink
 }
 
 // SYNTHESIZE is the *second* models.chat call site, alongside the DECIDE path
@@ -85,7 +91,11 @@ export class LiteLLMProvider implements ModelProvider {
   // planner/decider signatures never carry it.
   private modelsChatFetch(token?: string | null): ModelsChatFetch {
     const edgeFetch = createEdgeFetch(this.options.baseUrl, () => token)
-    return createModelsChatFetch(edgeFetch, this.options.getLiteLLMBaseUrl)
+    return createModelsChatFetch(
+      edgeFetch,
+      this.options.getLiteLLMBaseUrl,
+      this.options.onForwardRequest
+    )
   }
 
   // Wait out any active rate-limit/quota backoff before issuing an edge model

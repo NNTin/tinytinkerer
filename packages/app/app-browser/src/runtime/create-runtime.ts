@@ -11,6 +11,7 @@ import {
 } from '@tinytinkerer/app-core'
 import type {
   AgentType,
+  InspectorRequestPayload,
   McpDiscoveryResult,
   McpServerConfig,
   PluginActivationState
@@ -43,6 +44,12 @@ const WEB_SEARCH_TOOL_ID = 'web-search'
 // up registered, so read_dom only builds the (whole-body) DOM snapshot when a
 // sandbox consumer is actually present.
 const RUN_JAVASCRIPT_TOOL_ID = 'run_javascript'
+
+// The context-inspector plugin's id (issue #270). As with the tool ids above,
+// app-browser never imports the plugin — this literal only lets the runtime decide
+// whether to arm forwarded-request capture, so the heavy payload is captured (and
+// retained) ONLY while the inspector plugin is enabled.
+const CONTEXT_INSPECTOR_PLUGIN_ID = 'context-inspector'
 
 export type BrowserPluginRuntime = {
   registry: PluginRegistry
@@ -91,6 +98,10 @@ export const createRuntime = (options: {
   // outside individual chat runtime instances lets lifecycle hooks observe
   // activation changes across runs.
   pluginRuntime?: BrowserPluginRuntime
+  // Optional client-only capture sink for the context-inspector plugin (#270).
+  // Only wired into the provider when that plugin is enabled (see below), so a
+  // disabled inspector never captures or retains the forwarded payload.
+  captureForwardedRequest?: (payload: InspectorRequestPayload) => void
 }) => {
   const edgeFetch = createEdgeFetch(options.baseUrl, options.getToken)
 
@@ -286,7 +297,13 @@ export const createRuntime = (options: {
       getToken: options.getToken,
       getModel: options.getModel,
       ...(options.getLiteLLMBaseUrl ? { getLiteLLMBaseUrl: options.getLiteLLMBaseUrl } : {}),
-      allToolDescriptors
+      allToolDescriptors,
+      // Arm forwarded-request capture ONLY when the inspector plugin is enabled,
+      // so the full conversation payload is captured/retained solely for the
+      // developer inspector and stays entirely client-side otherwise (#270).
+      ...(options.captureForwardedRequest && activePluginIds.has(CONTEXT_INSPECTOR_PLUGIN_ID)
+        ? { onForwardRequest: options.captureForwardedRequest }
+        : {})
     }),
     // Terminal runtime failures (e.g. a ReAct decision timeout, a provider/edge
     // error, or a rate limit that escaped the cooldown path) are swallowed into

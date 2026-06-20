@@ -498,6 +498,11 @@ export const enablePermissionsPlugin = (page: Page): Promise<void> =>
 export const enableContextUsagePlugin = (page: Page): Promise<void> =>
   enablePlugin(page, 'Context usage gauge')
 
+// The Context inspector plugin (developer panel showing the exact forwarded
+// request), enabled via its Settings label (exactly `manifest.label`).
+export const enableContextInspectorPlugin = (page: Page): Promise<void> =>
+  enablePlugin(page, 'Context inspector (developer)')
+
 // Sends a prompt and waits until the run has folded the sandbox result back into a
 // follow-up request (i.e. the tool actually executed in a real browser sandbox).
 // Then asserts exactly one action was issued — a guard that the action→final phase

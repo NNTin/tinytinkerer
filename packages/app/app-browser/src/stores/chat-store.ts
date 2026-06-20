@@ -5,6 +5,7 @@ import type { BrowserShell } from '../shell'
 import { loadCoreModule } from '../core-module'
 import type { AuthStore } from './auth-store'
 import type { SettingsStore } from './settings-store'
+import type { InspectorStore } from './inspector-store'
 
 export type ChatState = {
   hydrated: boolean
@@ -25,6 +26,10 @@ export const createChatStore = (options: {
   shell: BrowserShell
   authStore: AuthStore
   settingsStore: SettingsStore
+  // Client-only sink for captured forwarded requests (issue #270). Passed down to
+  // the runtime factory, which arms capture only while the inspector plugin is on.
+  // Optional so tests can omit it; the app always provides it.
+  inspectorStore?: InspectorStore
 }): ChatStore => {
   let activeRunController: AbortController | undefined
   let initializePromise: Promise<void> | null = null
@@ -64,7 +69,15 @@ export const createChatStore = (options: {
         shell: options.shell,
         authStore: options.authStore,
         settingsStore: options.settingsStore,
-        pluginModules
+        pluginModules,
+        // The runtime arms this only while the inspector plugin is enabled, so a
+        // disabled inspector captures (and retains) nothing.
+        ...(options.inspectorStore
+          ? {
+              captureForwardedRequest: (payload) =>
+                options.inspectorStore?.getState().capture(payload)
+            }
+          : {})
       })
     })()
     return runtimeFactoryPromise
