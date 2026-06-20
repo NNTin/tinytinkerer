@@ -1,0 +1,38 @@
+name: Checks (reusable)
+
+# Repo-integrity gates that must pass before any deploy: Mermaid renders, import
+# boundaries, the generated edge OpenAPI, and the agent skill README sync. Extracted
+# into a reusable workflow so both deploy pipelines call the SAME job instead of
+# duplicating it (was copy-pasted into deploy-edge.yml and deploy-pages.yml).
+#
+# Supply-chain checks (exact dependencies, install scripts, audit) deliberately live
+# in compliance.yml as the single source — they are NOT duplicated here.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Mermaid, Boundaries & Skill README
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # These checks need no native binaries, so a scriptless install is enough.
+      - uses: ./.github/actions/setup-workspace
+        with:
+          install: scriptless
+
+      - name: Mermaid render check
+        run: pnpm check:mermaid
+
+      - name: Boundary check
+        run: pnpm check:boundaries
+
+      - name: Edge OpenAPI generation check
+        run: pnpm check:edge-openapi
+
+      - name: Skill README sync check
+        run: pnpm check:skill-readme

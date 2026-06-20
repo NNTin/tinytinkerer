@@ -7,6 +7,12 @@ name: Compliance
 # pushes to the long-lived branches.
 on:
   workflow_dispatch:
+  # Weekly run so `pnpm audit` catches newly-disclosed advisories against
+  # unchanged dependencies — the push/pull_request triggers below are path-filtered
+  # to dependency files, so without this a fresh CVE would go unnoticed until the
+  # next dependency change.
+  schedule:
+    - cron: '0 6 * * 1'
   push:
     branches: [main, develop]
     paths: &compliance-paths
@@ -60,17 +66,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/setup-workspace
         with:
-          version: 10.16.1
+          install: scriptless
 
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-
+      # Supply-chain gate — these checks live here as the single source (they were
+      # previously duplicated into the deploy `checks` jobs). Skill README sync lives
+      # in checks-reusable.yml (runs on every push/PR), so it is not repeated here.
       - name: Check exact dependency specifiers
         run: pnpm check:exact-dependencies
 
@@ -79,9 +81,6 @@ jobs:
 
       - name: Audit dependencies
         run: pnpm audit --audit-level=moderate
-
-      - name: Skill README sync check
-        run: pnpm check:skill-readme
 
       - name: Generate SBOM (CycloneDX)
         run: pnpm compliance:sbom

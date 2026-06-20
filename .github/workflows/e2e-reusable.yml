@@ -28,21 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v6
+      # Full install: the web build (run below to build the shells) needs the
+      # allowlisted native binaries, e.g. sharp for brand-asset generation.
+      - uses: ./.github/actions/setup-workspace
         with:
-          version: 10.16.1
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
-
-      # Secure install: scriptless, then rebuild only the allowlisted native
-      # binaries (sharp is needed by the brand-asset generation the web build runs).
-      - run: pnpm setup:workspace
-
-      - name: Tracked text file check
-        run: pnpm check:text-files
+          install: full
 
       # Cache the Playwright browser binaries, keyed by the pinned @playwright/test
       # version, so the ~110 MB Chromium download is fetched at most once per bump.

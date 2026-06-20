@@ -1,0 +1,76 @@
+name: CI (reusable)
+
+# Lint & Typecheck / Test / Build via a Turbo matrix, shared by both deploy
+# pipelines (was copy-pasted into deploy-edge.yml and deploy-pages.yml).
+#
+# The Test shard doubles as the source of the merged Allure preview report (issue
+# #254): it appends the allure-vitest reporter to the gating run, so vitest runs
+# ONCE — a failing test still reds the run (turbo exits non-zero), while the
+# results upload under `!cancelled()` so the report still builds. The artifact is
+# uploaded on every trigger (unused on pushes, like the e2e job's results); the
+# deploy-pages `report` job downloads it on PRs.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: ${{ matrix.task.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        task:
+          - name: Lint & Typecheck
+            key: lint-typecheck
+            run: pnpm exec turbo run lint typecheck --concurrency=2
+          - name: Test
+            key: test
+            # Turbo passthrough (`-- ...`) appends the Allure reporter to every
+            # package's `vitest run`; the reporter auto-injects its setup per
+            # project, so no per-package config is needed.
+            run: pnpm exec turbo run test --concurrency=1 -- --reporter=default --reporter=allure-vitest/reporter
+          - name: Build
+            key: build
+            run: pnpm exec turbo run build --concurrency=2
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-workspace
+        with:
+          install: full
+
+      # Persist Turborepo's local cache (.turbo) across runs so unchanged tasks
+      # hit cache instead of re-running. Scoped per workflow + matrix task; the
+      # SHA-suffixed key always writes a fresh entry while restore-keys seeds
+      # from the most recent prior run. turbo validates artifact hashes itself,
+      # so a stale restore degrades to a cache miss, never a wrong result.
+      - name: Cache Turborepo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ github.workflow }}-${{ matrix.task.key }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ github.workflow }}-${{ matrix.task.key }}-
+
+      - run: pnpm generate:brand-assets
+      - run: pnpm generate:privacy-policy
+      - run: pnpm generate:notices
+      - run: TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 ${{ matrix.task.run }}
+
+      # Consolidate every package's allure-results into one directory even when a
+      # test failed above (the failing shard already reds the run), so the merged
+      # report can still surface the failures.
+      - name: Consolidate Allure results
+        if: ${{ matrix.task.key == 'test' && !cancelled() }}
+        run: pnpm collect:allure-results allure-results-vitest
+
+      - name: Upload Allure results (vitest)
+        if: ${{ matrix.task.key == 'test' && !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: allure-results-vitest
+          path: allure-results-vitest
+          if-no-files-found: error

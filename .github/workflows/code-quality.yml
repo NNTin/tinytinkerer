@@ -27,18 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v6
+      # Full install: the brand-asset generation knip runs needs sharp (an
+      # allowlisted native binary).
+      - uses: ./.github/actions/setup-workspace
         with:
-          version: 10.16.1
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
-
-      # Secure install: scriptless, then rebuild only the allowlisted native
-      # binaries (sharp is needed by the brand-asset generation knip runs).
-      - run: pnpm setup:workspace
+          install: full
 
       # Fails when any non-ignored file is not Prettier-formatted. Runs first as
       # a cheap fail-fast gate (no generated artifacts required).

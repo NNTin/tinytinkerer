@@ -21,91 +21,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Repo-integrity gates (Mermaid, Boundaries, Edge OpenAPI, Skill README) shared
+  # with deploy-pages via the reusable workflow. Supply-chain checks live in
+  # compliance.yml (the single source), so they are not repeated here.
   checks:
-    name: Mermaid, Boundaries & Skill README
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v5
+    name: Checks
+    uses: ./.github/workflows/checks-reusable.yml
 
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 10.16.1
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Exact dependency specifier check
-        run: pnpm check:exact-dependencies
-
-      - name: Install lifecycle script review check
-        run: pnpm check:install-scripts
-
-      - name: Dependency audit
-        run: pnpm audit --audit-level=moderate
-
-      - name: Mermaid render check
-        run: pnpm check:mermaid
-
-      - name: Boundary check
-        run: pnpm check:boundaries
-
-      - name: Edge OpenAPI generation check
-        run: pnpm check:edge-openapi
-
-      - name: Skill README sync check
-        run: pnpm check:skill-readme
-
+  # Lint & Typecheck / Test / Build matrix, shared with deploy-pages.
   ci:
-    name: ${{ matrix.task.name }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        task:
-          - name: Lint & Typecheck
-            key: lint-typecheck
-            run: pnpm exec turbo run lint typecheck --concurrency=2
-          - name: Test
-            key: test
-            run: pnpm exec turbo run test --concurrency=1
-          - name: Build
-            key: build
-            run: pnpm exec turbo run build --concurrency=2
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 10.16.1
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
-
-      # Persist Turborepo's local cache (.turbo) across runs so unchanged tasks
-      # hit cache instead of re-running. Scoped per workflow + matrix task; the
-      # SHA-suffixed key always writes a fresh entry while restore-keys seeds
-      # from the most recent prior run. turbo validates artifact hashes itself,
-      # so a stale restore degrades to a cache miss, never a wrong result.
-      - name: Cache Turborepo
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: turbo-${{ github.workflow }}-${{ matrix.task.key }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ github.workflow }}-${{ matrix.task.key }}-
-
-      - run: pnpm setup:workspace
-      - run: pnpm generate:brand-assets
-      - run: pnpm generate:privacy-policy
-      - run: pnpm generate:notices
-      - run: TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 ${{ matrix.task.run }}
+    name: CI
+    uses: ./.github/workflows/ci-reusable.yml
 
   # Runs the same Playwright suite as deploy-pages via the shared reusable workflow
   # (issue #254). deploy-edge is push-only, so this gates the edge deploy. The merged
@@ -128,16 +54,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/setup-workspace
         with:
-          version: 10.16.1
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
-
-      - run: pnpm setup:workspace
+          install: full
 
       - name: Prepare Worker Secrets
         id: secrets-file

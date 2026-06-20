@@ -21,91 +21,19 @@ env:
   GIT_SHA: ${{ github.sha }}
 
 jobs:
+  # Repo-integrity gates (Mermaid, Boundaries, Edge OpenAPI, Skill README) shared
+  # with deploy-edge via the reusable workflow. Supply-chain checks live in
+  # compliance.yml (the single source), so they are not repeated here.
   checks:
-    name: Mermaid, Boundaries & Skill README
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v5
+    name: Checks
+    uses: ./.github/workflows/checks-reusable.yml
 
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 10.16.1
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Exact dependency specifier check
-        run: pnpm check:exact-dependencies
-
-      - name: Install lifecycle script review check
-        run: pnpm check:install-scripts
-
-      - name: Dependency audit
-        run: pnpm audit --audit-level=moderate
-
-      - name: Mermaid render check
-        run: pnpm check:mermaid
-
-      - name: Boundary check
-        run: pnpm check:boundaries
-
-      - name: Edge OpenAPI generation check
-        run: pnpm check:edge-openapi
-
-      - name: Skill README sync check
-        run: pnpm check:skill-readme
-
+  # Lint & Typecheck / Test / Build matrix, shared with deploy-edge. The Test shard
+  # also emits the vitest Allure results consumed by the `report` job below, so the
+  # suite runs once (no separate vitest-allure job).
   ci:
-    name: ${{ matrix.task.name }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        task:
-          - name: Lint & Typecheck
-            key: lint-typecheck
-            run: pnpm exec turbo run lint typecheck --concurrency=2
-          - name: Test
-            key: test
-            run: pnpm exec turbo run test --concurrency=1
-          - name: Build
-            key: build
-            run: pnpm exec turbo run build --concurrency=2
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 10.16.1
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
-
-      # Persist Turborepo's local cache (.turbo) across runs so unchanged tasks
-      # hit cache instead of re-running. Scoped per workflow + matrix task; the
-      # SHA-suffixed key always writes a fresh entry while restore-keys seeds
-      # from the most recent prior run. turbo validates artifact hashes itself,
-      # so a stale restore degrades to a cache miss, never a wrong result.
-      - name: Cache Turborepo
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: turbo-${{ github.workflow }}-${{ matrix.task.key }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ github.workflow }}-${{ matrix.task.key }}-
-
-      - run: pnpm setup:workspace
-      - run: pnpm generate:brand-assets
-      - run: pnpm generate:privacy-policy
-      - run: pnpm generate:notices
-      - run: TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 ${{ matrix.task.run }}
+    name: CI
+    uses: ./.github/workflows/ci-reusable.yml
 
   # Playwright e2e via the shared reusable workflow (issue #254 retired the standalone
   # e2e.yml). Runs on every trigger: on pushes it gates alongside the deploy jobs
@@ -115,55 +43,14 @@ jobs:
     name: E2E
     uses: ./.github/workflows/e2e-reusable.yml
 
-  # Emits Allure results for the WHOLE vitest suite (PR-only — the report is a preview
-  # concern). A single turbo passthrough appends the allure-vitest reporter to every
-  # package's `vitest run` (the reporter auto-injects its setup file per project, so no
-  # per-package config is needed); the results are then consolidated into one directory
-  # and uploaded. This is separate from the gating `ci` "Test" matrix, which provides
-  # the red check; here the steps tolerate test failures so the report still publishes.
-  vitest-allure:
-    name: Vitest (Allure results)
-    if: >
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 10.16.1
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
-
-      - run: pnpm setup:workspace
-
-      - name: Run vitest with Allure reporter
-        run: pnpm test:allure
-
-      # Consolidate every package's allure-results into one directory even if some
-      # tests failed above, so the merged report can surface the failures.
-      - name: Consolidate Allure results
-        if: ${{ !cancelled() }}
-        run: pnpm collect:allure-results allure-results-vitest
-
-      - name: Upload Allure results (vitest)
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v5
-        with:
-          name: allure-results-vitest
-          path: allure-results-vitest
-          if-no-files-found: error
-
   # Merge the vitest + e2e Allure results into one static HTML report (PR-only).
-  # `needs` the test jobs but runs even when they fail (`!cancelled()`) so a failing
-  # suite still produces a browsable report — the red check comes from the test jobs.
+  # The vitest results come from the `ci` Test shard (which runs the suite once for
+  # the gate and uploads its Allure results); the e2e results from the `e2e` job.
+  # `needs` both but runs even when they fail (`!cancelled()`) so a failing suite
+  # still produces a browsable report — the red check comes from the test jobs.
   report:
     name: Merge Allure report
-    needs: [vitest-allure, e2e]
+    needs: [ci, e2e]
     if: >
       !cancelled() &&
       github.event_name == 'pull_request' &&
@@ -172,14 +59,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v6
+      # The CLI is invoked via `pnpm exec allure`; a scriptless install is enough
+      # (allure-commandline has no lifecycle scripts and ships a ready-to-run bin).
+      - uses: ./.github/actions/setup-workspace
         with:
-          version: 10.16.1
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
+          install: scriptless
 
       # allure-commandline is the Java-based Allure CLI. It vendors the Allure
       # distribution inside its npm tarball (no install-time binary download), but
@@ -188,10 +72,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-
-      # The CLI is invoked via `pnpm exec allure`; a scriptless install is enough
-      # (allure-commandline has no lifecycle scripts and ships a ready-to-run bin).
-      - run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Download vitest Allure results
         uses: actions/download-artifact@v5
@@ -229,16 +109,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/setup-workspace
         with:
-          version: 10.16.1
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
-
-      - run: pnpm setup:workspace
+          install: full
 
       - name: Install Vercel CLI
         # Pinned: vercel@54.7.0 ships a broken @vercel/build-utils ESM interop
@@ -281,16 +154,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/setup-workspace
         with:
-          version: 10.16.1
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
-
-      - run: pnpm setup:workspace
+          install: full
 
       - name: Install Vercel CLI
         # Pinned: vercel@54.7.0 ships a broken @vercel/build-utils ESM interop
@@ -338,16 +204,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/setup-workspace
         with:
-          version: 10.16.1
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: pnpm
-
-      - run: pnpm setup:workspace
+          install: full
 
       - name: Install Vercel CLI
         # Pinned: vercel@54.7.0 ships a broken @vercel/build-utils ESM interop

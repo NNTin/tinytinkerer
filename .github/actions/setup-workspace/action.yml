@@ -1,0 +1,41 @@
+name: Set up workspace
+description: >
+  Set up pnpm + Node and install workspace dependencies. The repo must already be
+  checked out (a local composite action cannot run `actions/checkout` itself), so
+  callers run `actions/checkout` first, then `uses: ./.github/actions/setup-workspace`.
+
+inputs:
+  install:
+    description: >
+      Dependency install mode. `full` runs `pnpm setup:workspace` (scriptless install
+      plus the allowlisted native rebuild — sharp etc.); `scriptless` runs a frozen,
+      ignore-scripts install (for jobs that need no native binaries); `none` skips
+      the install entirely.
+    required: false
+    default: full
+  node-version:
+    description: Node.js version passed to actions/setup-node.
+    required: false
+    default: '22'
+
+runs:
+  using: composite
+  steps:
+    # pnpm version is read from the `packageManager` field in package.json, so it
+    # stays pinned in exactly one place.
+    - uses: pnpm/action-setup@v6
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+
+    # Secure full install: scriptless, then rebuild only the allowlisted native
+    # binaries (onlyBuiltDependencies). See .agent/skills/pnpm-workspace.
+    - if: ${{ inputs.install == 'full' }}
+      shell: bash
+      run: pnpm setup:workspace
+
+    - if: ${{ inputs.install == 'scriptless' }}
+      shell: bash
+      run: pnpm install --frozen-lockfile --ignore-scripts
