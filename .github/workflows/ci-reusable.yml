@@ -31,7 +31,15 @@ jobs:
             # Turbo passthrough (`-- ...`) appends the Allure reporter to every
             # package's `vitest run`; the reporter auto-injects its setup per
             # project, so no per-package config is needed.
-            run: pnpm exec turbo run test --concurrency=1 -- --reporter=default --reporter=allure-vitest/reporter
+            #
+            # `--force` re-runs the suite even on a cache hit. vitest's
+            # allure-results are no longer a cached turbo output (turbo.json), so a
+            # cache hit would otherwise skip the run and leave NO results to upload;
+            # forcing also guarantees fresh wall-clock timestamps, without which the
+            # merged Allure report's timeline would replay stale times from an older
+            # run (the e2e shards always run fresh, so cached vitest times put the
+            # two suites ~30 min apart and squash e2e into an invisible sliver).
+            run: pnpm exec turbo run test --force --concurrency=1 -- --reporter=default --reporter=allure-vitest/reporter
           - name: Build
             key: build
             run: pnpm exec turbo run build --concurrency=2
