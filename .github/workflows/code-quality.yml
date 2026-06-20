@@ -46,6 +46,12 @@ jobs:
       - name: Release PR body parser tests
         run: pnpm release-pr:test
 
+      # Validates the Allure Suites regrouping (scripts/regroup-allure-suites.mjs):
+      # the package→bucket path rules incl. the app/* and shared/* splits and the
+      # unmapped fallback, so changes are caught before the report job runs them.
+      - name: Allure Suites regroup tests
+        run: pnpm regroup:allure-suites:test
+
       - name: Duplicate code check (jscpd)
         run: pnpm jscpd
 

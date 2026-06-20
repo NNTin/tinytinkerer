@@ -102,6 +102,14 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: pnpm metadata:allure allure-results-vitest
 
+      # Regroup the Suites tab into a small fixed set of buckets BEFORE generating —
+      # both reporters bake the tree into the parentSuite/suite/subSuite labels at
+      # generate time, leaving a flat ~100-row top level (issue #260). This rewrites
+      # those labels in both result dirs (parentSuite=bucket, suite=package,
+      # subSuite=original group/browser); the browser/shard tags from #258 are kept.
+      - name: Regroup Allure Suites into frontend / backend / core / plugins / shared / e2e
+        run: pnpm regroup:allure-suites allure-results-vitest allure-results-e2e
+
       - name: Generate merged report
         run: pnpm exec allure generate allure-results-vitest allure-results-e2e -o test-report --clean
 
