@@ -7,10 +7,14 @@ import { dirname, join, relative, resolve } from 'node:path'
 // directory so the deploy-preview report job can upload it as one artifact and feed
 // it to `allure generate` alongside the e2e results (issue #254).
 //
-// Allure result/container/attachment files are UUID-named so they never collide;
-// the only fixed-name files (categories.json, environment.properties) are identical
-// across packages, so a last-writer-wins copy is fine. packages/e2e is skipped —
-// its Playwright results come from a separate job/artifact.
+// Allure result/container/attachment files are UUID-named so they never collide, so
+// copying every package's files into one dir is safe. The allure-vitest reporter does
+// NOT emit the fixed-name metadata files (categories.json, environment.properties,
+// executor.json) — those back the Environment/Categories/Executors Overview widgets
+// and are written separately by scripts/write-allure-metadata.mjs in the report job,
+// just before `allure generate` (issue #258). So this script never sees them and the
+// copy is concerned only with the UUID-named results. packages/e2e is skipped — its
+// Playwright results come from a separate job/artifact.
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const workspaceRoot = resolve(scriptDir, '..')

@@ -31,6 +31,7 @@
     "test": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && turbo run test && pnpm compliance:test",
     "test:allure": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 turbo run test -- --reporter=default --reporter=allure-vitest/reporter",
     "collect:allure-results": "node ./scripts/collect-allure-results.mjs",
+    "metadata:allure": "node ./scripts/write-allure-metadata.mjs",
     "typecheck": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && turbo run typecheck",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

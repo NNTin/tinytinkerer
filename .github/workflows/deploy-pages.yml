@@ -90,6 +90,18 @@ jobs:
           path: allure-results-e2e
           merge-multiple: true
 
+      # Write the Environment / Executors / Categories metadata files into the results
+      # dir BEFORE generating — those Overview widgets are populated only from these
+      # fixed-name files at generate time, and neither reporter emits them (issue #258).
+      # Written into allure-results-vitest only: `allure generate` reads the metadata
+      # from every input dir, so one copy is enough (and one executor.json avoids a
+      # duplicate Executors entry). GITHUB_SHA/SERVER_URL/REPOSITORY/RUN_ID/RUN_NUMBER
+      # are provided by the runner; PR_NUMBER is passed through explicitly.
+      - name: Write Allure metadata (environment / executors / categories)
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: pnpm metadata:allure allure-results-vitest
+
       - name: Generate merged report
         run: pnpm exec allure generate allure-results-vitest allure-results-e2e -o test-report --clean
 

@@ -89,6 +89,11 @@ jobs:
       E2E_PORT: 43117
       E2E_PORT_WIDGET: 43118
       E2E_PORT_MOBILE: 43119
+      # The merged report combines all shards by test, so the shard boundary is
+      # otherwise invisible. playwright.config.ts reads this to tag every test in this
+      # shard's process with `shard-<n>`, keeping the merged report filterable by shard
+      # (issue #258).
+      E2E_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v5
 

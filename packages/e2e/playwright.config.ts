@@ -1,5 +1,13 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// Structural shape of the Allure result/label objects the `beforeTestResultStop`
+// listener mutates. allure-playwright's reporter options are typed as `any` by
+// Playwright's `ReporterDescription` ([string, any]) and the precise types live in
+// the transitive `allure-js-commons` package (not a direct dependency), so we model
+// just the `labels` we read and append rather than import internal types.
+type AllureLabel = { name: string; value: string }
+type AllureTestResult = { labels: AllureLabel[] }
+
 // Per-run ports — one per product shell. The package's `e2e` script sets all three
 // (E2E_PORT / E2E_PORT_WIDGET / E2E_PORT_MOBILE) once before invoking Playwright, and
 // CI pins them explicitly. Do not generate a fallback here: this config is evaluated
@@ -52,8 +60,51 @@ export default defineConfig({
   // merge them with the vitest results (issue #254). resultsDir is relative to this
   // package, i.e. packages/e2e/allure-results — the reusable e2e workflow uploads it
   // as an artifact. Locally the report is irrelevant, so keep the plain list reporter.
+  //
+  // The `beforeTestResultStop` listener promotes two facts to search-bar tags so the
+  // MERGED report (which combines every shard's results by test, erasing the shard
+  // boundary) stays filterable (issue #258):
+  //   - browser — allure-playwright already records it as the `parentSuite` label
+  //     (the project name: chromium/firefox/webkit), so we mirror it to a `tag`;
+  //   - shard — not otherwise captured, since the merge folds all shards together.
+  //     The e2e workflow sets E2E_SHARD per matrix job; we read it here (the config
+  //     is re-evaluated in every Playwright process, so it sees that process's env)
+  //     and emit a `shard-<n>` tag. Folding the shard into executor.json instead was
+  //     rejected: executor.json is per-RUN, so it could not distinguish shards within
+  //     the one merged report — a per-test tag can.
   reporter: process.env.CI
-    ? [['github'], ['list'], ['allure-playwright', { resultsDir: 'allure-results' }]]
+    ? [
+        ['github'],
+        ['list'],
+        [
+          'allure-playwright',
+          {
+            resultsDir: 'allure-results',
+            listeners: [
+              {
+                beforeTestResultStop: (result: AllureTestResult) => {
+                  const tags = new Set(
+                    result.labels
+                      .filter((label) => label.name === 'tag')
+                      .map((label) => label.value)
+                  )
+                  const addTag = (value: string | undefined) => {
+                    if (value && !tags.has(value)) {
+                      tags.add(value)
+                      result.labels.push({ name: 'tag', value })
+                    }
+                  }
+                  addTag(result.labels.find((label) => label.name === 'parentSuite')?.value)
+                  const shard = process.env.E2E_SHARD?.trim()
+                  if (shard) {
+                    addTag(`shard-${shard}`)
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      ]
     : 'list',
   use: {
     baseURL,
