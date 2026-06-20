@@ -1,4 +1,9 @@
-import type { GaugeThreshold, GaugeView, StatusInput, StatusSummarizer } from '@tinytinkerer/contracts'
+import type {
+  GaugeThreshold,
+  GaugeView,
+  StatusInput,
+  StatusSummarizer
+} from '@tinytinkerer/contracts'
 
 // Colour/severity thresholds for percent of the context window used (issue #264):
 //   healthy  < 70%

@@ -22,7 +22,10 @@ const drain = async (stream: AsyncIterable<SynthesisChunk>): Promise<SynthesisCh
 describe('extractUsageChunk', () => {
   it('reads prompt/completion/total tokens from a usage block', () => {
     expect(
-      extractUsageChunk({ choices: [], usage: { prompt_tokens: 800, completion_tokens: 20, total_tokens: 820 } })
+      extractUsageChunk({
+        choices: [],
+        usage: { prompt_tokens: 800, completion_tokens: 20, total_tokens: 820 }
+      })
     ).toEqual({ kind: 'usage', promptTokens: 800, completionTokens: 20, totalTokens: 820 })
   })
 

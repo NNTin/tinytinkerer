@@ -1,5 +1,10 @@
 import { isPluginEnabled } from '@tinytinkerer/app-core'
-import type { ChatEvent, GaugeThreshold, GaugeView, StatusSummarizer } from '@tinytinkerer/contracts'
+import type {
+  ChatEvent,
+  GaugeThreshold,
+  GaugeView,
+  StatusSummarizer
+} from '@tinytinkerer/contracts'
 import { useEffect, useMemo, useState } from 'react'
 import { useChatStore, useSettingsStore } from './app'
 import { useModels } from './models'

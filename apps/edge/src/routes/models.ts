@@ -331,10 +331,12 @@ const fetchLiteLLMModelInfo = async (
   for (const entry of parsed.data.data) {
     const modelInfo = entry.model_info
     if (!modelInfo) continue
-    const mode = typeof modelInfo.mode === 'string' ? modelInfo.mode.trim().toLowerCase() : undefined
+    const mode =
+      typeof modelInfo.mode === 'string' ? modelInfo.mode.trim().toLowerCase() : undefined
     // Prefer max_input_tokens (the true input context window); fall back to the
     // LEGACY max_tokens only when input is absent.
-    const maxInputTokens = positiveInt(modelInfo.max_input_tokens) ?? positiveInt(modelInfo.max_tokens)
+    const maxInputTokens =
+      positiveInt(modelInfo.max_input_tokens) ?? positiveInt(modelInfo.max_tokens)
     const maxOutputTokens = positiveInt(modelInfo.max_output_tokens)
     const enrichment: LiteLLMModelInfo = {
       ...(mode ? { mode } : {}),
@@ -360,7 +362,8 @@ const toLiteLLMModels = (
     // Drop embedding models from the chat picker: trust the /model/info mode
     // when known, fall back to the name heuristic otherwise.
     const info = modelInfo.get(id)
-    const isEmbedding = info?.mode !== undefined ? info.mode === 'embedding' : looksLikeEmbeddingModel(id)
+    const isEmbedding =
+      info?.mode !== undefined ? info.mode === 'embedding' : looksLikeEmbeddingModel(id)
     if (isEmbedding) return []
     const publisher = id.includes('/') ? id.split('/')[0] : model.owned_by
     // Surface the context-window limits when known so the frontend gauge can
@@ -370,7 +373,9 @@ const toLiteLLMModels = (
       info?.maxInputTokens !== undefined || info?.maxOutputTokens !== undefined
         ? {
             ...(info.maxInputTokens !== undefined ? { max_input_tokens: info.maxInputTokens } : {}),
-            ...(info.maxOutputTokens !== undefined ? { max_output_tokens: info.maxOutputTokens } : {})
+            ...(info.maxOutputTokens !== undefined
+              ? { max_output_tokens: info.maxOutputTokens }
+              : {})
           }
         : undefined
     return [
