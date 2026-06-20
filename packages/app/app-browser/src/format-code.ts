@@ -17,7 +17,7 @@ export const formatJavaScriptForDisplay = async (code: string): Promise<string> 
     // produces an ESTree-shaped AST that this plugin knows how to print.
     import('prettier/plugins/estree')
   ])
-  return prettier.format(code, {
+  const formatted = await prettier.format(code, {
     parser: 'babel',
     plugins: [babelPlugin, estreePlugin],
     // Match the repo's own prettier.config.mjs so the displayed code reads like
@@ -27,4 +27,7 @@ export const formatJavaScriptForDisplay = async (code: string): Promise<string> 
     trailingComma: 'none',
     printWidth: 100
   })
+  // prettier always appends a trailing newline; drop it so the view has no empty
+  // final line.
+  return formatted.replace(/\n$/, '')
 }

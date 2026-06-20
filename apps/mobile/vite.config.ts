@@ -130,6 +130,13 @@ export default defineConfig({
           if (id.includes('node_modules/@codemirror/') || id.includes('node_modules/codemirror/')) {
             return 'codemirror-vendor'
           }
+          // prettier (standalone + its babel/estree plugins) is large and only
+          // pulled in lazily to pretty-print a tool's code argument in the
+          // permission prompt. Pin it to its own vendor chunk so it stays out of
+          // the per-route budget and is fetched on demand, not at startup.
+          if (id.includes('node_modules/prettier/')) {
+            return 'prettier-vendor'
+          }
         }
       }
     }

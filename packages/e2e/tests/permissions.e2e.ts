@@ -88,11 +88,12 @@ test.describe('permissions plugin tool gate (#247)', () => {
     const editor = modal.locator('.cm-editor')
     await expect(editor).toBeVisible()
 
-    // The single-line source is pretty-printed: prettier puts each statement on its
-    // own line, so the rendered view has several lines and re-spaced tokens. Polling
-    // covers the async format() that runs after mount.
-    await expect(modal.locator('.cm-editor .cm-line')).toHaveCount(4, { timeout: 10_000 })
-    await expect(editor).toContainText('const a = 1')
+    // The single-line source is pretty-printed: prettier re-spaces tokens
+    // (`const a=1` → `const a = 1`) and puts each statement on its own line. The
+    // text assertion auto-waits for the async format() that runs after mount, so
+    // once it passes the editor is settled and the line count is stable.
+    await expect(editor).toContainText('const a = 1', { timeout: 10_000 })
+    expect(await modal.locator('.cm-editor .cm-line').count()).toBe(4)
 
     // Allow, then assert the sandbox ran the ORIGINAL payload byte-for-byte: the
     // minified snippet returns { a, b, c, sum } — the formatting never reached the
