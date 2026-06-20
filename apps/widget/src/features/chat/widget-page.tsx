@@ -326,10 +326,10 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
               >
                 <FaRotateLeft className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
+              {/* Context-usage gauge (hidden unless the plugin is enabled and the
+                  model reports usage against a known context window) */}
+              <ContextGaugeSlot className="text-[var(--widget-muted)]" />
             </div>
-            {/* Center: context-usage gauge (hidden unless the plugin is enabled
-                and the model reports usage against a known context window) */}
-            <ContextGaugeSlot className="text-[var(--widget-muted)]" />
             {/* Right: microphone, send */}
             <div className="flex items-center gap-1.5">
               {speech.visible ? (

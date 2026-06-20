@@ -9,8 +9,9 @@ import type {
 //   healthy  < 70%
 //   warning  70%–90% (inclusive)
 //   critical > 90%
-// The host pairs each bucket with a non-colour signal (the numeric label + ARIA)
-// so the gauge never relies on colour alone.
+// The host pairs each bucket with non-colour signals — the arc length (magnitude)
+// and a shape-based alert badge at warning/critical, plus the ARIA text — so the
+// gauge never relies on colour alone.
 const HEALTHY_BELOW = 70
 const WARNING_AT_OR_BELOW = 90
 

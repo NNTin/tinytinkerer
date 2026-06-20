@@ -43,12 +43,13 @@ test.describe('context-usage gauge plugin (#264)', () => {
     await sendMessageAndAwaitReply(page)
 
     // The synthesize call reported usage against the known context window, so the
-    // gauge now renders. Colour is conveyed by the threshold AND the numeric label
-    // (never colour alone): assert both the data-threshold and the percent text.
+    // gauge now renders. The percent is no longer shown as visible text (it lives
+    // in the tooltip/accessible name); severity is conveyed without colour by the
+    // arc + a shape badge. Assert the data-threshold and the accessible name.
     const gauge = page.locator(GAUGE)
     await expect(gauge).toBeVisible()
     await expect(gauge).toHaveAttribute('data-threshold', 'warning')
-    await expect(gauge).toContainText(`${MOCK_CONTEXT_PERCENT}%`)
+    await expect(gauge).toHaveAttribute('aria-label', new RegExp(`${MOCK_CONTEXT_PERCENT}%`))
   })
 
   test('disabled (default): the gauge never appears', async ({ page }) => {

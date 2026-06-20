@@ -191,11 +191,11 @@ export const ChatPage = () => {
               >
                 <FaRotateLeft className="h-4 w-4" aria-hidden="true" />
               </button>
-            </div>
 
-            {/* Center: context-usage gauge (hidden unless the plugin is enabled
-                and the model reports usage against a known context window) */}
-            <ContextGaugeSlot className="text-stone-500" />
+              {/* Context-usage gauge (hidden unless the plugin is enabled and the
+                  model reports usage against a known context window) */}
+              <ContextGaugeSlot className="text-stone-500" />
+            </div>
 
             {/* Right: microphone, send */}
             <div className="flex items-center gap-2">

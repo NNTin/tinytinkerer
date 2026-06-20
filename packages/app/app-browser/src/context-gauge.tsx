@@ -97,16 +97,21 @@ const formatTokens = (value: number): string => value.toLocaleString('en-US')
 export type ContextGaugeProps = {
   view: GaugeView
   className?: string
-  // Diameter in px of the ring. Small by default so it sits unobtrusively near
-  // the composer.
+  // Diameter in px of the ring. Small by default (icon-sized) so it sits next to
+  // the composer buttons.
   size?: number
+  // The selected model's name, shown in the tooltip/accessible name. Optional:
+  // when omitted the tooltip simply drops the "Model:" segment.
+  modelLabel?: string
 }
 
-// A small SVG donut gauge. Colour encodes the threshold, but the threshold is
-// ALSO conveyed by the numeric percent label and the accessible name, so the
-// gauge never relies on colour alone (WCAG 1.4.1). Generic and product-agnostic:
-// it renders whatever GaugeView a status plugin produced.
-export const ContextGauge = ({ view, className, size = 36 }: ContextGaugeProps) => {
+// A small SVG donut gauge. Colour encodes the threshold severity, but it is NOT
+// the only visual cue: the arc length conveys magnitude without colour, and at
+// warning/critical a monochrome alert badge (outline → filled triangle) encodes
+// the severity by SHAPE, so the gauge never relies on colour alone (WCAG 1.4.1).
+// The accessible name carries the full text regardless. Generic and
+// product-agnostic: it renders whatever GaugeView a status plugin produced.
+export const ContextGauge = ({ view, className, size = 16, modelLabel }: ContextGaugeProps) => {
   const color = THRESHOLD_COLOR[view.threshold]
   const strokeWidth = Math.max(3, Math.round(size / 9))
   const radius = (size - strokeWidth) / 2
@@ -114,9 +119,17 @@ export const ContextGauge = ({ view, className, size = 36 }: ContextGaugeProps) 
   const dash = (view.value / 100) * circumference
   const center = size / 2
 
-  const accessibleName = `Context usage: ${view.value}% (${THRESHOLD_LABEL[view.threshold]}). ${formatTokens(
+  const modelSegment = modelLabel ? ` Model: ${modelLabel}.` : ''
+  const accessibleName = `Context usage: ${view.value}% (${THRESHOLD_LABEL[view.threshold]}).${modelSegment} ${formatTokens(
     view.context.input_tokens_used
-  )} of ${formatTokens(view.context.context_window)} tokens used.`
+  )} of ${formatTokens(view.context.context_window)} tokens used, ${formatTokens(
+    view.context.input_tokens_remaining
+  )} remaining.`
+
+  // Non-colour severity cue (WCAG 1.4.1): nothing at healthy, a small outline
+  // triangle at warning, a filled one at critical — distinguishable by shape
+  // alone. A badge size of ~half the ring keeps it legible at icon scale.
+  const badge = size * 0.5
 
   return (
     <span
@@ -130,7 +143,7 @@ export const ContextGauge = ({ view, className, size = 36 }: ContextGaugeProps) 
       title={accessibleName}
       data-testid="context-usage-gauge"
       data-threshold={view.threshold}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
     >
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
         <circle
@@ -154,15 +167,34 @@ export const ContextGauge = ({ view, className, size = 36 }: ContextGaugeProps) 
           transform={`rotate(-90 ${center} ${center})`}
         />
       </svg>
-      <span style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums', color }}>{view.value}%</span>
+      {view.threshold !== 'healthy' ? (
+        <svg
+          width={badge}
+          height={badge}
+          viewBox="0 0 10 10"
+          aria-hidden="true"
+          style={{ position: 'absolute', top: -badge * 0.25, right: -badge * 0.25 }}
+        >
+          <path
+            d="M5 0.5 L9.5 9 L0.5 9 Z"
+            fill={view.threshold === 'critical' ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinejoin="round"
+          />
+        </svg>
+      ) : null}
     </span>
   )
 }
 
 // Convenience wrapper: resolve the gauge view-model and render it, or render
 // nothing when the gauge should be hidden. Drop this anywhere in a chat surface.
+// The selected model id (its label by convention) is read here and threaded into
+// the tooltip — kept in the host, never in the plugin's host-agnostic view.
 export const ContextGaugeSlot = (props: Omit<ContextGaugeProps, 'view'>) => {
   const view = useContextGauge()
+  const selectedModel = useSettingsStore((state) => state.selectedModel)
   if (!view) return null
-  return <ContextGauge view={view} {...props} />
+  return <ContextGauge view={view} modelLabel={selectedModel} {...props} />
 }
