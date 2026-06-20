@@ -2,11 +2,17 @@ name: E2E (reusable)
 
 # Playwright end-to-end tests: real-browser verification of the code-exec sandbox
 # isolation guarantees that jsdom cannot cover (issue #217). Extracted into a
-# reusable workflow (issue #254) so both deploy pipelines can run the SAME job
-# without duplicating the (browser-cache + 3-shell-build + Playwright) setup:
+# reusable workflow (issue #254) so both deploy pipelines can run the SAME job:
 #   - deploy-pages.yml calls it on PRs (feeds the merged Allure preview report) and
 #     on main/develop pushes (gating), and
 #   - deploy-edge.yml calls it on its edge-path pushes (gating).
+#
+# The suite is sharded across a fixed matrix of parallel jobs so it does not become
+# the slowest gate as it grows. The three product shells are built ONCE in
+# `build-shells` and shared to every shard via the `shells-dist` artifact, so the
+# build is not repeated per shard. To add shards later, extend the `shard:` list —
+# the `--shard` denominator derives from `strategy.job-total` automatically.
+#
 # Only LiteLLM is mocked (the real edge worker runs in-process); the run is anonymous
 # with rate limiting disabled, so the job needs no secrets. See packages/e2e/README.md.
 on:
@@ -16,23 +22,81 @@ permissions:
   contents: read
 
 jobs:
-  e2e:
-    name: Playwright (sandbox isolation)
+  # Build the three product shells once and publish their dist for the shards to
+  # serve via `vite preview`. This is the only job that needs a full install (sharp
+  # for brand-asset generation during the build).
+  build-shells:
+    name: Build shells
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-workspace
+        with:
+          install: full
+
+      # Persist Turborepo's local cache across runs so an unchanged build hits cache.
+      - name: Cache Turborepo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ github.workflow }}-e2e-shells-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ github.workflow }}-e2e-shells-
+
+      # Build all three product shells (generates brand/privacy/notices first) so
+      # `vite preview` can serve each production bundle the suite targets — web,
+      # widget, and mobile, each on its own port/origin (chat-persistence #250).
+      - name: Build shells (web, widget, mobile)
+        run: |
+          pnpm generate:brand-assets
+          pnpm generate:privacy-policy
+          pnpm generate:notices
+          TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build \
+            --filter=@tinytinkerer/web \
+            --filter=@tinytinkerer/widget \
+            --filter=@tinytinkerer/mobile
+
+      # Common ancestor of the three paths is `apps/`, so the artifact stores
+      # `web/dist`, `widget/dist`, `mobile/dist`; the shards download it into `apps`.
+      - name: Upload built shells
+        uses: actions/upload-artifact@v5
+        with:
+          name: shells-dist
+          path: |
+            apps/web/dist
+            apps/widget/dist
+            apps/mobile/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  e2e:
+    name: Playwright (shard ${{ matrix.shard }})
+    needs: build-shells
+    runs-on: ubuntu-latest
+    strategy:
+      # Keep every shard's results for the merged report — one shard failing must
+      # not cancel the others.
+      fail-fast: false
+      matrix:
+        # Raise this list to add shards; the `--shard` denominator
+        # (strategy.job-total) tracks it automatically.
+        shard: [1, 2, 3]
     env:
       # Pin the per-run ports so each shell's webServer URL is deterministic in CI.
-      # One origin per shell: web / widget / mobile.
+      # One origin per shell: web / widget / mobile. Shards run on separate runners,
+      # so the fixed ports never collide across shards.
       E2E_PORT: 43117
       E2E_PORT_WIDGET: 43118
       E2E_PORT_MOBILE: 43119
     steps:
       - uses: actions/checkout@v5
 
-      # Full install: the web build (run below to build the shells) needs the
-      # allowlisted native binaries, e.g. sharp for brand-asset generation.
+      # Scriptless is enough: shards only serve the prebuilt static `dist` via
+      # `vite preview` and run Playwright — no native binaries needed.
       - uses: ./.github/actions/setup-workspace
         with:
-          install: full
+          install: scriptless
 
       # Cache the Playwright browser binaries, keyed by the pinned @playwright/test
       # version, so the ~110 MB Chromium download is fetched at most once per bump.
@@ -53,37 +117,35 @@ jobs:
       - name: Install Chromium (+ OS deps)
         run: pnpm --filter @tinytinkerer/e2e exec playwright install --with-deps chromium
 
-      # Build all three product shells (generates brand/privacy/notices first) so
-      # `vite preview` can serve each production bundle the suite targets — web,
-      # widget, and mobile, each on its own port/origin (chat-persistence #250).
-      - name: Build shells (web, widget, mobile)
-        run: |
-          pnpm generate:brand-assets
-          pnpm generate:privacy-policy
-          pnpm generate:notices
-          TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build \
-            --filter=@tinytinkerer/web \
-            --filter=@tinytinkerer/widget \
-            --filter=@tinytinkerer/mobile
+      # Restore the prebuilt shells into apps/<shell>/dist where `vite preview`
+      # expects them (the artifact root is `apps/`).
+      - name: Download built shells
+        uses: actions/download-artifact@v5
+        with:
+          name: shells-dist
+          path: apps
 
-      - name: Run Playwright e2e
-        run: pnpm --filter @tinytinkerer/e2e e2e
+      - name: Run Playwright e2e (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+        run: pnpm --filter @tinytinkerer/e2e e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
-      # Upload the Allure results even when the suite fails, so the PR preview report
-      # can still surface the failures (issue #254). A failed suite already fails the
-      # step/job above (red check); this just preserves the inputs.
-      - name: Upload Allure results (e2e)
+      # Upload this shard's Allure results even when the suite fails, so the PR
+      # preview report can still surface the failures (issue #254). A failed suite
+      # already reds the step/job above; this just preserves the inputs. Result
+      # files are UUID-named, so the report job merges all shards' results safely.
+      - name: Upload Allure results (e2e shard ${{ matrix.shard }})
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v5
         with:
-          name: allure-results-e2e
+          name: allure-results-e2e-${{ matrix.shard }}
           path: packages/e2e/allure-results
           if-no-files-found: warn
+          retention-days: 1
 
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@v5
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: packages/e2e/playwright-report
           if-no-files-found: ignore
+          retention-days: 1

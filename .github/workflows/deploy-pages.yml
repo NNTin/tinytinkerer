@@ -38,7 +38,8 @@ jobs:
   # Playwright e2e via the shared reusable workflow (issue #254 retired the standalone
   # e2e.yml). Runs on every trigger: on pushes it gates alongside the deploy jobs
   # (preserving the old e2e.yml push coverage); on PRs it also feeds the merged Allure
-  # preview report. It uploads `allure-results-e2e` as an artifact.
+  # preview report. The suite is sharded, so it uploads one `allure-results-e2e-<shard>`
+  # artifact per shard, which the report job below merges.
   e2e:
     name: E2E
     uses: ./.github/workflows/e2e-reusable.yml
@@ -79,11 +80,15 @@ jobs:
           name: allure-results-vitest
           path: allure-results-vitest
 
+      # The e2e suite is sharded, so merge every shard's Allure results into one
+      # dir (UUID-named files never collide). `pattern` tolerates zero matches, so a
+      # fully-empty e2e run degrades to a vitest-only report rather than failing.
       - name: Download e2e Allure results
         uses: actions/download-artifact@v5
         with:
-          name: allure-results-e2e
+          pattern: allure-results-e2e-*
           path: allure-results-e2e
+          merge-multiple: true
 
       - name: Generate merged report
         run: pnpm exec allure generate allure-results-vitest allure-results-e2e -o test-report --clean

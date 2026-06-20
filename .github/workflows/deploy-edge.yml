@@ -33,10 +33,10 @@ jobs:
     name: CI
     uses: ./.github/workflows/ci-reusable.yml
 
-  # Runs the same Playwright suite as deploy-pages via the shared reusable workflow
-  # (issue #254). deploy-edge is push-only, so this gates the edge deploy. The merged
-  # Allure preview report is a PR concern owned by deploy-pages, so no report is built
-  # here (the uploaded allure-results-e2e artifact is simply unused on edge pushes).
+  # Runs the same (sharded) Playwright suite as deploy-pages via the shared reusable
+  # workflow (issue #254). deploy-edge is push-only, so this gates the edge deploy. The
+  # merged Allure preview report is a PR concern owned by deploy-pages, so no report is
+  # built here (the uploaded allure-results-e2e-* artifacts are simply unused on edge pushes).
   e2e:
     name: E2E
     uses: ./.github/workflows/e2e-reusable.yml
