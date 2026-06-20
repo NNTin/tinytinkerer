@@ -140,7 +140,10 @@ jobs:
       - name: Deploy to Vercel
         id: deploy
         run: |
-          url="$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")"
+          # --archive=tgz uploads one tarball instead of thousands of individual
+          # files, staying under Vercel's free-plan per-file upload rate limit
+          # (api-upload-free) — the merged /test-report/ adds many small files.
+          url="$(vercel deploy --prebuilt --prod --archive=tgz --token="$VERCEL_TOKEN")"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: Alias Production Domain
@@ -184,7 +187,10 @@ jobs:
       - name: Deploy to Vercel
         id: deploy
         run: |
-          url="$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")"
+          # --archive=tgz uploads one tarball instead of thousands of individual
+          # files, staying under Vercel's free-plan per-file upload rate limit
+          # (api-upload-free) — the merged /test-report/ adds many small files.
+          url="$(vercel deploy --prebuilt --archive=tgz --token="$VERCEL_TOKEN")"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: Alias Develop Domain
@@ -250,7 +256,10 @@ jobs:
       - name: Deploy to Vercel
         id: deploy
         run: |
-          url="$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")"
+          # --archive=tgz uploads one tarball instead of thousands of individual
+          # files, staying under Vercel's free-plan per-file upload rate limit
+          # (api-upload-free) — the merged /test-report/ adds many small files.
+          url="$(vercel deploy --prebuilt --archive=tgz --token="$VERCEL_TOKEN")"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: Derive Preview Domain
