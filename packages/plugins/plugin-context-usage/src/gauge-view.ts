@@ -11,8 +11,8 @@ import type {
 //   critical > 90%
 // The host pairs each bucket with a non-colour signal (the numeric label + ARIA)
 // so the gauge never relies on colour alone.
-export const HEALTHY_BELOW = 70
-export const WARNING_AT_OR_BELOW = 90
+const HEALTHY_BELOW = 70
+const WARNING_AT_OR_BELOW = 90
 
 export const thresholdForPercent = (percent: number): GaugeThreshold => {
   if (percent < HEALTHY_BELOW) return 'healthy'
