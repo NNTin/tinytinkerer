@@ -70,27 +70,108 @@ const sanitizeImageUrl = (url: string): string => {
 // then mounts the raw markup as sanitized inline SVG (it cannot ride in an `<img
 // src>`). The base64 (`;base64,`) and percent-encoded (`,%3Csvg…`) forms carry no
 // URL-breaking characters and already parse, so this only matches the raw form.
-const RAW_SVG_IMAGE =
-  /!\[([^\]]*)\]\(\s*(data:image\/svg\+xml,\s*<svg[\s\S]*?<\/svg>)\s*((?:"[^"]*"|'[^']*')?)\s*\)/gi
+//
+// We deliberately avoid one all-in-one regex here: a pattern like
+// `!\[[^\]]*\]\(…<svg[\s\S]*?<\/svg>…\)` is polynomial-ReDoS-prone — the alt's `[^\]]*`
+// rescans from every `![`, and the lazy body rescans from every `<svg`, so adversarial
+// input (`![` ×n, or `![](data:image/svg+xml,<svg` ×n) is O(n²). Instead we ANCHOR on
+// the rare literal scheme with an all-literal regex (linear, no backtracking) and
+// validate the surrounding `![alt](… )` with plain index scans, so every character is
+// visited O(1) times overall.
+const RAW_SVG_SCHEME = /data:image\/svg\+xml,/gi
 const RAW_SVG_SENTINEL_PREFIX = 'data:image/svg+xml,tt-raw-svg-'
+const SVG_CLOSE = '</svg>'
 
 type RawSvgExtraction = {
   content: string
   rawBySentinel: Map<string, string>
 }
 
+const isInlineWhitespace = (ch: string | undefined): boolean =>
+  ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\f' || ch === '\v'
+
 const extractRawSvgImages = (content: string): RawSvgExtraction => {
   const rawBySentinel = new Map<string, string>()
-  let index = 0
-  const next = content.replace(
-    RAW_SVG_IMAGE,
-    (_match, alt: string, dataUri: string, title: string) => {
-      const sentinel = `${RAW_SVG_SENTINEL_PREFIX}${index++}`
-      rawBySentinel.set(sentinel, dataUri)
-      return `![${alt}](${sentinel}${title ? ` ${title}` : ''})`
+  // Cheap pre-gate: skip the whole pass unless a raw SVG scheme is present at all.
+  if (!content.includes('data:image/svg+xml,')) {
+    return { content, rawBySentinel }
+  }
+
+  let result = ''
+  let copiedUpTo = 0 // everything before this index is already flushed to `result`
+  let sentinelIndex = 0
+
+  // Monotonic cache for the forward `</svg>` search: `from` only ever increases across
+  // matches, so the first `</svg>` at-or-after an earlier `from` is still the first one
+  // for any later `from` that hasn't passed it. This keeps repeated lookups linear even
+  // when many `<svg` openings precede a single (or absent) close.
+  let cachedClose = -2 // -2 = not computed yet, -1 = none ahead
+  let cachedFrom = 0
+  const findSvgClose = (from: number): number => {
+    if (cachedClose === -1 && from >= cachedFrom) return -1
+    if (cachedClose >= from && cachedFrom <= from) return cachedClose
+    cachedFrom = from
+    cachedClose = content.indexOf(SVG_CLOSE, from)
+    return cachedClose
+  }
+
+  for (const match of content.matchAll(RAW_SVG_SCHEME)) {
+    const schemeStart = match.index
+    if (schemeStart < copiedUpTo) continue // inside an image we already consumed
+
+    // Raw form only: optional whitespace then `<svg` right after the comma.
+    let bodyStart = schemeStart + match[0].length
+    while (isInlineWhitespace(content[bodyStart])) bodyStart += 1
+    if (!content.startsWith('<svg', bodyStart)) continue
+
+    // The destination must open with `(` (optionally preceded by whitespace), and the
+    // alt must close with `]` just before it.
+    let i = schemeStart - 1
+    while (i >= copiedUpTo && isInlineWhitespace(content[i])) i -= 1
+    if (i < copiedUpTo || content[i] !== '(') continue
+    i -= 1
+    if (i < copiedUpTo || content[i] !== ']') continue
+    const altEnd = i
+
+    // Walk back to the matching `![` (markdown image alt contains no unescaped `]`).
+    let open = -1
+    for (let j = altEnd - 1; j >= copiedUpTo; j -= 1) {
+      const ch = content[j]
+      if (ch === ']') break
+      if (ch === '[' && j > 0 && content[j - 1] === '!') {
+        open = j - 1
+        break
+      }
     }
-  )
-  return { content: next, rawBySentinel }
+    if (open === -1) continue
+
+    // Find the SVG close, then the image close `)` (skipping an optional quoted title,
+    // which may itself contain a `)`).
+    const svgClose = findSvgClose(bodyStart)
+    if (svgClose === -1) break // no close anywhere ahead — nothing left to match
+    const dataUriEnd = svgClose + SVG_CLOSE.length
+    let k = dataUriEnd
+    while (isInlineWhitespace(content[k])) k += 1
+    const quote = content[k]
+    if (quote === '"' || quote === "'") {
+      const titleClose = content.indexOf(quote, k + 1)
+      if (titleClose === -1) continue
+      k = titleClose + 1
+      while (isInlineWhitespace(content[k])) k += 1
+    }
+    if (content[k] !== ')') continue
+
+    const alt = content.slice(open + 2, altEnd)
+    const title = content.slice(dataUriEnd, k).trim() // quoted title, or '' if none
+    const sentinel = `${RAW_SVG_SENTINEL_PREFIX}${sentinelIndex++}`
+    rawBySentinel.set(sentinel, content.slice(schemeStart, dataUriEnd))
+    result += content.slice(copiedUpTo, open)
+    result += `![${alt}](${sentinel}${title ? ` ${title}` : ''})`
+    copiedUpTo = k + 1
+  }
+
+  result += content.slice(copiedUpTo)
+  return { content: result, rawBySentinel }
 }
 
 const restoreRawSvgInline = (node: InlineNode, rawBySentinel: Map<string, string>): void => {

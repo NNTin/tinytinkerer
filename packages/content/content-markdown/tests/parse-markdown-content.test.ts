@@ -283,6 +283,37 @@ describe('parseMarkdownContent', () => {
     expect(node?.type === 'image' && node.url).toBe(raw)
   })
 
+  it('handles a raw SVG title that itself contains a closing parenthesis', () => {
+    const raw = 'data:image/svg+xml,<svg></svg>'
+    expect(stripIds(parseMarkdownContent(`![c](${raw} "a) b")`))).toEqual({
+      nodes: [{ type: 'image', url: raw, alt: 'c', title: 'a) b' }]
+    })
+  })
+
+  it('extracts multiple raw SVG images in one document independently', () => {
+    const a = 'data:image/svg+xml,<svg id="1"></svg>'
+    const b = 'data:image/svg+xml,<svg id="2"></svg>'
+    expect(stripIds(parseMarkdownContent(`![a](${a}) and ![b](${b})`))).toEqual({
+      nodes: [
+        {
+          type: 'paragraph',
+          children: [
+            { type: 'imageInline', url: a, alt: 'a' },
+            { type: 'text', value: ' and ' },
+            { type: 'imageInline', url: b, alt: 'b' }
+          ]
+        }
+      ]
+    })
+  })
+
+  it('does not produce a raw SVG image node when the </svg> close is missing', () => {
+    // An unterminated raw SVG (e.g. mid-stream) must not be treated as an image — it
+    // degrades to text exactly as before, rather than being misparsed.
+    const doc = parseMarkdownContent('![c](data:image/svg+xml,<svg width="10">) trailing')
+    expect(doc.nodes.every((n) => n.type !== 'image')).toBe(true)
+  })
+
   it('leaves base64 and percent-encoded SVG data URIs untouched', () => {
     expect(
       stripIds(parseMarkdownContent('![b64](data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=)'))
