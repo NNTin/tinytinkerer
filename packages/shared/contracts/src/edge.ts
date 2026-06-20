@@ -156,11 +156,25 @@ export const validateLiteLLMBaseUrlPolicy = (
   return { ok: true, url, canonicalUrl }
 }
 
+// Opt-in OpenAI-compatible streaming option. When `include_usage` is set the
+// provider appends a final SSE chunk carrying `usage` (prompt/completion tokens)
+// after the content stream. The edge forwards this verbatim so the client can
+// surface token usage (context-usage gauge); omitting it preserves the prior
+// behaviour exactly.
+export const streamOptionsSchema = z
+  .object({
+    include_usage: z.boolean().optional()
+  })
+  .meta({ id: 'StreamOptions' })
+
+export type StreamOptions = z.infer<typeof streamOptionsSchema>
+
 export const modelsChatRequestSchema = z
   .object({
     model: z.string().optional(),
     litellmBaseUrl: z.string().url().optional(),
     stream: z.boolean().optional(),
+    stream_options: streamOptionsSchema.optional(),
     messages: z.array(chatMessageSchema).max(100)
   })
   .meta({ id: 'ModelsChatRequest' })

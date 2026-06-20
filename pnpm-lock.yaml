@@ -811,6 +811,12 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/plugins/plugin-context-usage:
+    dependencies:
+      '@tinytinkerer/contracts':
+        specifier: workspace:*
+        version: link:../../shared/contracts
+
   packages/plugins/plugin-event-logger:
     dependencies:
       '@tinytinkerer/contracts':

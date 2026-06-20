@@ -14,6 +14,15 @@ import { app as edgeApp } from '../../../apps/edge/src/index'
 // global fetch patch (see installLiteLLMUpstream).
 const LITELLM_BASE_URL = 'https://litellm.mock'
 
+// The single chat model the mock catalogue advertises. Its id matches the app's
+// default selected model so the context-usage gauge can resolve its limits. The
+// context window + the prompt-token usage the stream reports are chosen so the
+// gauge lands deterministically in the WARNING band (8000/10000 = 80%).
+const MOCK_MODEL_ID = 'chatgpt/gpt-5.4'
+export const MOCK_CONTEXT_WINDOW = 10_000
+export const MOCK_PROMPT_TOKENS = 8_000
+export const MOCK_CONTEXT_PERCENT = Math.round((MOCK_PROMPT_TOKENS / MOCK_CONTEXT_WINDOW) * 100)
+
 // Edge bindings for the run: key-management configured so anonymous-tier key
 // provisioning actually executes, all origins allowed, and every inbound
 // rate-limit scope disabled (rate limiting is not under test).
@@ -60,7 +69,12 @@ export type LiteLLMMock = {
 }
 
 type ChatMessage = { role: string; content: string }
-type LiteLLMRequestBody = { stream?: boolean; messages?: ChatMessage[]; key?: unknown }
+type LiteLLMRequestBody = {
+  stream?: boolean
+  stream_options?: { include_usage?: boolean }
+  messages?: ChatMessage[]
+  key?: unknown
+}
 type UpstreamCall = { path: string; authorization: string | null }
 
 const OBSERVATION_PREFIX = 'run_javascript: '
@@ -100,7 +114,7 @@ const GATE_COMMENT = ': tt-gate'
 // streaming parser's cross-chunk buffering (`parseSseStream`) is exercised. A
 // GATE_SENTINEL in the content is dropped from the deltas and replaced by an SSE
 // comment marker — a re-pacing split point (see GATE_SENTINEL).
-const sseStream = (content: string): string => {
+const sseStream = (content: string, usage?: { prompt_tokens: number }): string => {
   const size = 24
   const segments = content.split(GATE_SENTINEL)
   let body = ''
@@ -110,6 +124,11 @@ const sseStream = (content: string): string => {
       body += `data: ${JSON.stringify({ choices: [{ delta: { content: segment.slice(i, i + size) } }] })}\n\n`
     }
   })
+  // Mirror LiteLLM's `stream_options.include_usage`: a terminal chunk with an
+  // empty `choices` array and a top-level `usage` block, before [DONE].
+  if (usage) {
+    body += `data: ${JSON.stringify({ choices: [], usage })}\n\n`
+  }
   return body + 'data: [DONE]\n\n'
 }
 
@@ -196,7 +215,12 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
   }
 
   if (body.stream === true) {
-    return new Response(sseStream(content), {
+    // Emit a usage chunk only when the client opted in (synthesize does, the
+    // ReAct decision calls do not) — the context-usage gauge reads it.
+    const usage = body.stream_options?.include_usage
+      ? { prompt_tokens: MOCK_PROMPT_TOKENS }
+      : undefined
+    return new Response(sseStream(content, usage), {
       status: 200,
       headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' }
     })
@@ -264,8 +288,25 @@ const mockLiteLLM = (
     if (!state.provisionedKeys.has(key)) {
       return unauthorizedResponse(path, 'expected a provisioned per-run virtual key')
     }
-    if (path === '/v1/models') return jsonResponse({ data: [] })
-    if (path === '/model/info') return jsonResponse({ data: [] })
+    if (path === '/v1/models') {
+      return jsonResponse({ data: [{ id: MOCK_MODEL_ID, object: 'model', owned_by: 'mock' }] })
+    }
+    if (path === '/model/info') {
+      // Mirror LiteLLM's /model/info shape: model_info carries the token limits
+      // the edge surfaces onto ModelEntry.limits for the gauge (issue #264).
+      return jsonResponse({
+        data: [
+          {
+            model_name: MOCK_MODEL_ID,
+            model_info: {
+              mode: 'chat',
+              max_input_tokens: MOCK_CONTEXT_WINDOW,
+              max_output_tokens: 4096
+            }
+          }
+        ]
+      })
+    }
     return mockChatCompletion(body, state)
   }
 
@@ -451,6 +492,11 @@ export const enableEventLoggerPlugin = (page: Page): Promise<void> =>
 // modal), enabled via its Settings label (exactly `manifest.label`).
 export const enablePermissionsPlugin = (page: Page): Promise<void> =>
   enablePlugin(page, 'Permissions (ask before tools run)')
+
+// The Context usage gauge plugin (persistent gauge near the composer), enabled
+// via its Settings label (exactly `manifest.label`).
+export const enableContextUsagePlugin = (page: Page): Promise<void> =>
+  enablePlugin(page, 'Context usage gauge')
 
 // Sends a prompt and waits until the run has folded the sandbox result back into a
 // follow-up request (i.e. the tool actually executed in a real browser sandbox).

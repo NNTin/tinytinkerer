@@ -237,6 +237,11 @@ export class LiteLLMProvider implements ModelProvider {
       {
         model: selectedModel,
         stream: true,
+        // Ask LiteLLM to append a final usage chunk (prompt/completion tokens)
+        // after the content stream so the context-usage gauge can show how full
+        // the window is. Best-effort: providers that ignore it simply yield no
+        // usage chunk and the gauge stays hidden.
+        stream_options: { include_usage: true },
         messages: [
           { role: 'system', content: SYSTEM_STYLE_PROMPT },
           ...context.history,
@@ -298,5 +303,19 @@ export class LiteLLMProvider implements ModelProvider {
     )
     const text = parsed.choices?.[0]?.message?.content ?? ''
     yield { kind: 'content', text }
+    // Non-streamed responses carry usage in the body; surface it too so the
+    // gauge works on the (defensive) non-stream path.
+    if (typeof parsed.usage?.prompt_tokens === 'number') {
+      yield {
+        kind: 'usage',
+        promptTokens: parsed.usage.prompt_tokens,
+        ...(typeof parsed.usage.completion_tokens === 'number'
+          ? { completionTokens: parsed.usage.completion_tokens }
+          : {}),
+        ...(typeof parsed.usage.total_tokens === 'number'
+          ? { totalTokens: parsed.usage.total_tokens }
+          : {})
+      }
+    }
   }
 }

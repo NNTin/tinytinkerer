@@ -50,7 +50,19 @@ const liteLLMModelsCatalogSchema = z.object({
 const liteLLMModelInfoEntrySchema = z
   .object({
     model_name: z.string(),
-    model_info: z.object({ mode: z.string().nullable().optional() }).passthrough().optional()
+    model_info: z
+      .object({
+        mode: z.string().nullable().optional(),
+        // Context-window limits LiteLLM merges from its model-cost map. Per
+        // model_prices_and_context_window.json: max_input_tokens is the input
+        // context window; max_tokens is a LEGACY field (output if known, else
+        // input) used only as a fallback. See issue #264.
+        max_input_tokens: z.number().nullable().optional(),
+        max_output_tokens: z.number().nullable().optional(),
+        max_tokens: z.number().nullable().optional()
+      })
+      .passthrough()
+      .optional()
   })
   .passthrough()
 
@@ -272,20 +284,32 @@ const looksLikeEmbeddingModel = (id: string): boolean => {
   return lower.includes('embedding') || /(^|[^a-z])embed($|[^a-z])/.test(lower)
 }
 
+// Best-effort per-model enrichment from `/model/info`: the chat/embedding `mode`
+// the OpenAI-compatible `/v1/models` omits, plus the context-window token limits
+// the context-usage gauge needs (issue #264).
+type LiteLLMModelInfo = {
+  mode?: string
+  maxInputTokens?: number
+  maxOutputTokens?: number
+}
+
+const positiveInt = (value: number | null | undefined): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
+
 /**
- * Best-effort `id -> mode` lookup from LiteLLM's `/model/info`, which exposes
- * `mode: chat|embedding|...` that the OpenAI-compatible `/v1/models` omits.
- * Returns an empty map on any failure (older LiteLLM deployments or
- * restricted virtual keys may not serve the endpoint) — the catalogue then
- * falls back to the name heuristic. Only runs on a catalogue cache miss, so
- * the extra upstream call is rare.
+ * Best-effort `id -> { mode, limits }` lookup from LiteLLM's `/model/info`, which
+ * exposes `mode: chat|embedding|...` and per-model token limits that the
+ * OpenAI-compatible `/v1/models` omits. Returns an empty map on any failure
+ * (older LiteLLM deployments or restricted virtual keys may not serve the
+ * endpoint) — the catalogue then falls back to the name heuristic and carries no
+ * limits. Only runs on a catalogue cache miss, so the extra upstream call is rare.
  */
-const fetchLiteLLMModelModes = async (
+const fetchLiteLLMModelInfo = async (
   env: Bindings,
   baseUrl: string,
   apiKey: string
-): Promise<Map<string, string>> => {
-  const modes = new Map<string, string>()
+): Promise<Map<string, LiteLLMModelInfo>> => {
+  const info = new Map<string, LiteLLMModelInfo>()
   const response = await fetchWithTimeout(
     {
       area: 'models.list.info',
@@ -295,27 +319,38 @@ const fetchLiteLLMModelModes = async (
       accept: {
         status: [400, 401, 403, 404, 429],
         reason:
-          'mode enrichment is best-effort: older LiteLLM deployments or restricted virtual keys may not serve /model/info; the catalogue falls back to the embedding name heuristic (issue #179)'
+          'mode/limits enrichment is best-effort: older LiteLLM deployments or restricted virtual keys may not serve /model/info; the catalogue falls back to the embedding name heuristic and omits limits (issues #179, #264)'
       }
     },
     { headers: litellmHeaders(apiKey) },
     10_000
   ).catch(() => undefined)
-  if (!response?.ok) return modes
+  if (!response?.ok) return info
   const parsed = liteLLMModelInfoSchema.safeParse(await response.json().catch(() => undefined))
-  if (!parsed.success) return modes
+  if (!parsed.success) return info
   for (const entry of parsed.data.data) {
-    const mode = entry.model_info?.mode
-    if (typeof mode === 'string' && mode.trim()) {
-      modes.set(entry.model_name.trim(), mode.trim().toLowerCase())
+    const modelInfo = entry.model_info
+    if (!modelInfo) continue
+    const mode = typeof modelInfo.mode === 'string' ? modelInfo.mode.trim().toLowerCase() : undefined
+    // Prefer max_input_tokens (the true input context window); fall back to the
+    // LEGACY max_tokens only when input is absent.
+    const maxInputTokens = positiveInt(modelInfo.max_input_tokens) ?? positiveInt(modelInfo.max_tokens)
+    const maxOutputTokens = positiveInt(modelInfo.max_output_tokens)
+    const enrichment: LiteLLMModelInfo = {
+      ...(mode ? { mode } : {}),
+      ...(maxInputTokens !== undefined ? { maxInputTokens } : {}),
+      ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {})
+    }
+    if (Object.keys(enrichment).length > 0) {
+      info.set(entry.model_name.trim(), enrichment)
     }
   }
-  return modes
+  return info
 }
 
 const toLiteLLMModels = (
   raw: unknown,
-  modes: ReadonlyMap<string, string> = new Map()
+  modelInfo: ReadonlyMap<string, LiteLLMModelInfo> = new Map()
 ): ModelEntry[] => {
   const parsed = liteLLMModelsCatalogSchema.safeParse(raw)
   const entries = parsed.success ? parsed.data.data : []
@@ -324,17 +359,28 @@ const toLiteLLMModels = (
     if (!id) return []
     // Drop embedding models from the chat picker: trust the /model/info mode
     // when known, fall back to the name heuristic otherwise.
-    const mode = modes.get(id)
-    const isEmbedding = mode !== undefined ? mode === 'embedding' : looksLikeEmbeddingModel(id)
+    const info = modelInfo.get(id)
+    const isEmbedding = info?.mode !== undefined ? info.mode === 'embedding' : looksLikeEmbeddingModel(id)
     if (isEmbedding) return []
     const publisher = id.includes('/') ? id.split('/')[0] : model.owned_by
+    // Surface the context-window limits when known so the frontend gauge can
+    // compute percent_context_used; omit `limits` entirely when unknown so the
+    // gauge stays hidden (issue #264).
+    const limits =
+      info?.maxInputTokens !== undefined || info?.maxOutputTokens !== undefined
+        ? {
+            ...(info.maxInputTokens !== undefined ? { max_input_tokens: info.maxInputTokens } : {}),
+            ...(info.maxOutputTokens !== undefined ? { max_output_tokens: info.maxOutputTokens } : {})
+          }
+        : undefined
     return [
       modelEntrySchema.parse({
         provider: 'litellm',
         id,
         label: id,
         kind: 'chat',
-        ...(publisher ? { publisher } : {})
+        ...(publisher ? { publisher } : {}),
+        ...(limits ? { limits } : {})
       })
     ]
   })
@@ -563,7 +609,11 @@ export const registerModelRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) =>
         body: JSON.stringify({
           model,
           messages: body.messages,
-          stream: useStream
+          stream: useStream,
+          // Forward the opt-in streaming usage flag so LiteLLM appends a final
+          // usage chunk (the client uses it for the context-usage gauge). Only
+          // sent when the client asked for it, preserving prior behaviour.
+          ...(body.stream_options ? { stream_options: body.stream_options } : {})
         }),
         // Stop hammering the upstream as soon as the client disconnects instead
         // of keeping a doomed request alive until the backstop timeout fires
@@ -784,9 +834,10 @@ export const registerModelRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) =>
     // Upstream succeeded — clear any backoff window.
     await clearBackoff(credentialKey)
 
-    // Enrich with /model/info modes (best-effort) so embedding models are
-    // dropped by their declared mode, not just by name (issue #179).
-    const modes = await fetchLiteLLMModelModes(c.env, resolvedBaseUrl, userKey.apiKey)
+    // Enrich with /model/info (best-effort) so embedding models are dropped by
+    // their declared mode (issue #179) and chat models carry their context-window
+    // limits for the usage gauge (issue #264).
+    const modelInfo = await fetchLiteLLMModelInfo(c.env, resolvedBaseUrl, userKey.apiKey)
     // Guard the raw body read: a 200 with a non-JSON body (e.g. an HTML error
     // page from a proxy in front of LiteLLM) must surface as a typed 502 rather
     // than an unhandled response.json() throw. toLiteLLMModels stays lenient
@@ -795,7 +846,7 @@ export const registerModelRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) =>
     const rawCatalogue = await response.text()
     const parsedCatalogue = safeJsonParse(rawCatalogue)
     if (!parsedCatalogue.ok) return upstreamMalformedResponse(c)
-    const models = toLiteLLMModels(parsedCatalogue.value, modes)
+    const models = toLiteLLMModels(parsedCatalogue.value, modelInfo)
 
     // Populate the colo-wide cache so the next request (in any isolate) skips
     // the upstream fetch for the freshness window.

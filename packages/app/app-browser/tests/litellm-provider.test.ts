@@ -33,7 +33,7 @@ const drain = async (
   for await (const chunk of stream) {
     if (chunk.kind === 'reasoning') {
       reasoning += chunk.text
-    } else {
+    } else if (chunk.kind === 'content') {
       content += chunk.text
     }
   }

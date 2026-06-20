@@ -205,9 +205,11 @@ export async function* streamDecision(
     if (chunk.kind === 'reasoning') {
       thought += chunk.text
       yield { kind: 'thought', text: thought }
-    } else {
+    } else if (chunk.kind === 'content') {
       jsonBuffer += chunk.text
     }
+    // A terminal `usage` chunk carries no text; the decision path ignores it
+    // (usage is surfaced from the synthesize stream).
   }
 
   const metadata = decisionMetadata(response, model, true)

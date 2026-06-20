@@ -80,7 +80,9 @@ export async function* splitInlineThink(
   }
 
   for await (const chunk of stream) {
-    if (chunk.kind === 'reasoning') {
+    // Only `content` is re-segmented for inline <think> tags; everything else
+    // (reasoning, the terminal usage chunk) passes through untouched.
+    if (chunk.kind !== 'content') {
       yield chunk
       continue
     }
@@ -88,6 +90,30 @@ export async function* splitInlineThink(
     yield* drain(false)
   }
   yield* drain(true)
+}
+
+// Extract the OpenAI-compatible `usage` block LiteLLM appends as a final SSE
+// chunk when `stream_options.include_usage` is set. That chunk carries an empty
+// `choices` array and a top-level `usage`, so it is parsed independently of the
+// content deltas. Absent/malformed usage yields nothing.
+export const extractUsageChunk = (json: Record<string, unknown>): SynthesisChunk | undefined => {
+  const usage = json['usage']
+  if (!usage || typeof usage !== 'object') {
+    return undefined
+  }
+  const record = usage as Record<string, unknown>
+  const promptTokens = record['prompt_tokens']
+  if (typeof promptTokens !== 'number' || !Number.isFinite(promptTokens)) {
+    return undefined
+  }
+  const completionTokens = record['completion_tokens']
+  const totalTokens = record['total_tokens']
+  return {
+    kind: 'usage',
+    promptTokens,
+    ...(typeof completionTokens === 'number' ? { completionTokens } : {}),
+    ...(typeof totalTokens === 'number' ? { totalTokens } : {})
+  }
 }
 
 export async function* parseSseStream(
@@ -115,12 +141,20 @@ export async function* parseSseStream(
 
     try {
       const json = JSON.parse(data) as Record<string, unknown>
-      const choices = json['choices']
-      if (!Array.isArray(choices)) {
-        return { chunks: [], done: false }
+      const chunks: SynthesisChunk[] = []
+
+      // The terminal usage chunk (include_usage) carries an empty `choices`
+      // array, so check usage before bailing on a missing/empty choices list.
+      const usageChunk = extractUsageChunk(json)
+      if (usageChunk) {
+        chunks.push(usageChunk)
       }
 
-      const chunks: SynthesisChunk[] = []
+      const choices = json['choices']
+      if (!Array.isArray(choices)) {
+        return { chunks, done: false }
+      }
+
       const delta = (choices[0] as Record<string, unknown> | undefined)?.['delta']
       const reasoning = extractReasoning(delta)
       if (reasoning) {

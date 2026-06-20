@@ -57,6 +57,8 @@ export {
   useSettingsSurfaceController
 } from './surfaces'
 export type { ChatComposer } from './surfaces'
+export { ContextGauge, ContextGaugeSlot, useContextGauge } from './context-gauge'
+export type { ContextGaugeProps } from './context-gauge'
 export { fetchStatus, startStatusPolling } from './status'
 export type { BrowserShell } from './shell'
 export { createBrowserShell } from './shell'
