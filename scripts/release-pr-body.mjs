@@ -73,6 +73,9 @@ const DEPENDENCY_FILE_RE =
   /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|apps\/[^/]+\/package\.json|packages\/.+\/package\.json|scripts\/(?:generate-sbom|generate-notices|enforce-licenses|license-policy|license-policy\.test)\.mjs|scripts\/lib\/dependency-licenses\.mjs|\.github\/workflows\/compliance\.yml)$/
 
 const BREAKING_FOOTER_RE = /^BREAKING[ -]CHANGE:/im
+const MARKDOWN_HEADER_RE = /^#{1,6}\s+\S.*$/gm
+
+export const GITHUB_BODY_MAX_LENGTH = 65536
 
 /** Classify a commit subject / PR title into a section + cleaned description. */
 export function classifyConventional(text) {
@@ -93,6 +96,53 @@ export function classifyConventional(text) {
 export function detectBreakingChange(subject, body = '') {
   const { bang } = classifyConventional(subject ?? '')
   return bang || BREAKING_FOOTER_RE.test(body ?? '')
+}
+
+/**
+ * Split a release PR body into GitHub-sized chunks. Splits are only allowed at
+ * Markdown ATX headings because headings are natural continuation boundaries in
+ * the generated release notes.
+ */
+export function splitReleaseBody(body, { maxLength = GITHUB_BODY_MAX_LENGTH } = {}) {
+  if (!Number.isSafeInteger(maxLength) || maxLength <= 0) {
+    throw new Error(`maxLength must be a positive integer; received ${maxLength}`)
+  }
+  if (body.length <= maxLength) return [body]
+
+  const allHeaderIndexes = [...body.matchAll(MARKDOWN_HEADER_RE)].map((match) => match.index)
+  const headerIndexes = allHeaderIndexes.filter((index) => index > 0)
+
+  if (allHeaderIndexes.length === 0) {
+    throw new Error(
+      `Release PR body is ${body.length} characters, which exceeds GitHub's ${maxLength}-character limit, and has no Markdown heading where it can be split.`
+    )
+  }
+
+  const blockStarts = [0, ...headerIndexes]
+  const blocks = blockStarts.map((start, index) => body.slice(start, blockStarts[index + 1]))
+  const chunks = []
+  let current = ''
+
+  for (const block of blocks) {
+    if (block.length > maxLength) {
+      const header = block.match(MARKDOWN_HEADER_RE)?.[0] ?? 'body preamble'
+      throw new Error(
+        `Release PR body section starting "${header.slice(0, 80)}" is ${block.length} characters, which exceeds GitHub's ${maxLength}-character limit. Add another Markdown header inside that section before splitting.`
+      )
+    }
+
+    if (!current) {
+      current = block
+    } else if (current.length + block.length <= maxLength) {
+      current += block
+    } else {
+      chunks.push(current)
+      current = block
+    }
+  }
+
+  if (current) chunks.push(current)
+  return chunks
 }
 
 const ownerRepoOf = (repoFullName) => {

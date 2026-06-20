@@ -19,9 +19,9 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  # `issues: read` lets us resolve ambiguous same-repo refs (bare `#132`) to an
-  # issue-vs-PR via issues.get when building the audit trail.
-  issues: read
+  # `issues: write` lets us resolve ambiguous same-repo refs (bare `#132`) via
+  # issues.get and manage overflow comments when the generated body is too long.
+  issues: write
 
 concurrency:
   group: release-pr
@@ -50,7 +50,102 @@ jobs:
             // Load the testable body builder (ESM helper) via a file URL.
             const { pathToFileURL } = require('node:url')
             const helperPath = `${process.env.GITHUB_WORKSPACE}/scripts/release-pr-body.mjs`
-            const { buildReleaseBody } = await import(pathToFileURL(helperPath).href)
+            const { buildReleaseBody, splitReleaseBody, GITHUB_BODY_MAX_LENGTH } = await import(pathToFileURL(helperPath).href)
+
+            const OVERFLOW_COMMENT_MARKER_RE = /^<!-- release-pr-overflow:(\d+) -->/
+            const overflowCommentMarker = (number) => `<!-- release-pr-overflow:${number} -->`
+            const overflowCommentBody = (number, content) => `${overflowCommentMarker(number)}\n${content}`
+
+            const splitBodyForGithub = (fullBody) => {
+              let maxContentLength = GITHUB_BODY_MAX_LENGTH
+              let chunks = splitReleaseBody(fullBody, { maxLength: maxContentLength })
+
+              for (let attempt = 0; chunks.length > 1 && attempt < 10; attempt += 1) {
+                const markerOverhead = Math.max(
+                  ...chunks.slice(1).map((_, index) => overflowCommentBody(index + 1, '').length),
+                )
+                const nextMaxContentLength = GITHUB_BODY_MAX_LENGTH - markerOverhead
+                if (nextMaxContentLength === maxContentLength) break
+                maxContentLength = nextMaxContentLength
+                chunks = splitReleaseBody(fullBody, { maxLength: maxContentLength })
+              }
+
+              for (const [index, chunk] of chunks.entries()) {
+                const apiBody = index === 0 ? chunk : overflowCommentBody(index, chunk)
+                if (apiBody.length > GITHUB_BODY_MAX_LENGTH) {
+                  throw new Error(
+                    `Release PR chunk ${index + 1} is ${apiBody.length} characters, which exceeds GitHub's ${GITHUB_BODY_MAX_LENGTH}-character limit.`,
+                  )
+                }
+              }
+
+              return chunks
+            }
+
+            const syncOverflowComments = async (issue_number, overflowChunks) => {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number,
+                per_page: 100,
+              })
+
+              const commentsByNumber = new Map()
+              const staleComments = []
+              for (const comment of comments) {
+                const match =
+                  comment.user?.type === 'Bot' ? comment.body?.match(OVERFLOW_COMMENT_MARKER_RE) : null
+                if (!match) continue
+
+                const number = Number(match[1])
+                if (!Number.isSafeInteger(number) || number < 1) {
+                  staleComments.push(comment)
+                  continue
+                }
+
+                const commentsForNumber = commentsByNumber.get(number) ?? []
+                commentsForNumber.push(comment)
+                commentsByNumber.set(number, commentsForNumber)
+              }
+
+              for (let index = 0; index < overflowChunks.length; index += 1) {
+                const number = index + 1
+                const body = overflowCommentBody(number, overflowChunks[index])
+                const commentsForNumber = commentsByNumber.get(number) ?? []
+                const existingComment = commentsForNumber.shift()
+
+                if (existingComment) {
+                  await github.rest.issues.updateComment({
+                    owner,
+                    repo,
+                    comment_id: existingComment.id,
+                    body,
+                  })
+                } else {
+                  await github.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number,
+                    body,
+                  })
+                }
+
+                staleComments.push(...commentsForNumber)
+                commentsByNumber.delete(number)
+              }
+
+              for (const commentsForNumber of commentsByNumber.values()) {
+                staleComments.push(...commentsForNumber)
+              }
+
+              for (const comment of staleComments) {
+                await github.rest.issues.deleteComment({
+                  owner,
+                  repo,
+                  comment_id: comment.id,
+                })
+              }
+            }
 
             // 1. Resolve SHAs and the set of commits develop is ahead by.
             const compare = await github.paginate(
@@ -210,6 +305,9 @@ jobs:
             )
 
             for (const warning of warnings) core.warning(warning)
+            const bodyChunks = splitBodyForGithub(body)
+            const prBody = bodyChunks[0]
+            const overflowChunks = bodyChunks.slice(1)
 
             // 5. Create or update the open develop → main PR.
             const existing = await github.rest.pulls.list({
@@ -222,7 +320,11 @@ jobs:
 
             if (existing.data.length > 0) {
               const pull_number = existing.data[0].number
-              await github.rest.pulls.update({ owner, repo, pull_number, title, body })
+              await github.rest.pulls.update({ owner, repo, pull_number, title, body: prBody })
+              await syncOverflowComments(pull_number, overflowChunks)
+              if (overflowChunks.length > 0) {
+                core.notice(`Updated ${overflowChunks.length} release PR overflow comment(s).`)
+              }
               core.notice(`Updated release PR #${pull_number}: ${existing.data[0].html_url}`)
             } else {
               const created = await github.rest.pulls.create({
@@ -231,7 +333,11 @@ jobs:
                 base: BASE,
                 head: HEAD,
                 title,
-                body,
+                body: prBody,
               })
+              await syncOverflowComments(created.data.number, overflowChunks)
+              if (overflowChunks.length > 0) {
+                core.notice(`Created ${overflowChunks.length} release PR overflow comment(s).`)
+              }
               core.notice(`Created release PR #${created.data.number}: ${created.data.html_url}`)
             }

@@ -4,7 +4,9 @@ import {
   buildReleaseBody,
   classifyConventional,
   detectBreakingChange,
-  extractReferences
+  extractReferences,
+  GITHUB_BODY_MAX_LENGTH,
+  splitReleaseBody
 } from './release-pr-body.mjs'
 
 const REPO = 'owner/repo'
@@ -125,6 +127,58 @@ test('detectBreakingChange flags a BREAKING CHANGE footer in the body', () => {
 
 test('detectBreakingChange is false for ordinary changes', () => {
   assert.equal(detectBreakingChange('fix: small bug', 'just a fix'), false)
+})
+
+// ── splitReleaseBody ───────────────────────────────────────────────────────
+
+test('splitReleaseBody returns short bodies unchanged', () => {
+  assert.equal(GITHUB_BODY_MAX_LENGTH, 65536)
+  assert.deepEqual(splitReleaseBody('short release notes', { maxLength: 100 }), [
+    'short release notes'
+  ])
+})
+
+test('splitReleaseBody splits oversized bodies only at Markdown headings', () => {
+  const body = [
+    '<!-- release-pr -->',
+    '',
+    '### First',
+    'a'.repeat(20),
+    '### Second',
+    'b'.repeat(20)
+  ].join('\n')
+
+  const chunks = splitReleaseBody(body, { maxLength: 55 })
+
+  assert.equal(chunks.length, 2)
+  assert.equal(chunks.join(''), body)
+  assert.ok(chunks.every((chunk) => chunk.length <= 55))
+  assert.match(chunks[1], /^### Second/)
+})
+
+test('splitReleaseBody ignores non-heading hash lines as split points', () => {
+  const body = ['intro', '#not-a-heading', '### Real Heading', 'x'.repeat(20)].join('\n')
+
+  const chunks = splitReleaseBody(body, { maxLength: 40 })
+
+  assert.equal(chunks.length, 2)
+  assert.equal(chunks.join(''), body)
+  assert.equal(chunks[0], 'intro\n#not-a-heading\n')
+  assert.match(chunks[1], /^### Real Heading/)
+})
+
+test('splitReleaseBody throws when an oversized body has no heading boundary', () => {
+  assert.throws(
+    () => splitReleaseBody('x'.repeat(20), { maxLength: 10 }),
+    /has no Markdown heading where it can be split/
+  )
+})
+
+test('splitReleaseBody throws when a single heading section is oversized', () => {
+  assert.throws(
+    () => splitReleaseBody(`### Huge\n${'x'.repeat(20)}`, { maxLength: 10 }),
+    /section starting "### Huge".*Add another Markdown header/
+  )
 })
 
 // ── buildReleaseBody integration ────────────────────────────────────────────
