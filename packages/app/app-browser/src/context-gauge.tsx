@@ -5,7 +5,7 @@ import type {
   GaugeView,
   StatusSummarizer
 } from '@tinytinkerer/contracts'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useChatStore, useSettingsStore } from './app'
 import { useModels } from './models'
 import { loadPluginModules } from './plugins/registry'
@@ -52,15 +52,25 @@ export const useContextGauge = (): GaugeView | null => {
 
   // Best-effort: when the gauge is active but the selected model carries no
   // limits (the chat surface starts from the built-in fallback list), pull the
-  // catalogue once so context_window becomes available. Deduped by the models
-  // cache, and harmless when limits are already present.
+  // catalogue ONCE per selected model so context_window becomes available.
+  //
+  // The single-attempt guard is essential, not just an optimization:
+  // `refreshModels` is a forced re-probe whose identity changes every time it
+  // updates `models` (see useModels), so an unguarded effect would re-fire on its
+  // own state update and hammer /api/models/list forever whenever the selected
+  // model never resolves a context window (e.g. a model absent from the catalogue
+  // for which includeSelectedModel synthesizes a bare, limit-less entry). The ref
+  // bounds us to one fetch per distinct model; if limits still don't arrive the
+  // gauge simply stays hidden.
   const selectedHasLimits =
     models.find((model) => model.id === selectedModel)?.limits?.max_input_tokens != null
+  const fetchedForModelRef = useRef<string | null>(null)
   useEffect(() => {
-    if (summarizer && !selectedHasLimits) {
-      void refreshModels()
-    }
-  }, [summarizer, selectedHasLimits, refreshModels])
+    if (!summarizer || selectedHasLimits) return
+    if (fetchedForModelRef.current === selectedModel) return
+    fetchedForModelRef.current = selectedModel
+    void refreshModels()
+  }, [summarizer, selectedHasLimits, selectedModel, refreshModels])
 
   return useMemo(() => {
     if (!summarizer) return null
