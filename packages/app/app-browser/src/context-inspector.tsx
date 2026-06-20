@@ -1,29 +1,15 @@
 import { isPluginEnabled } from '@tinytinkerer/app-core'
 import type {
-  ChatEvent,
-  InspectorRequestPayload,
+  InspectorEntry,
+  InspectorResponseView,
   InspectorSummarizer,
   InspectorView
 } from '@tinytinkerer/contracts'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
-import { useChatStore, useInspectorStore, useSettingsStore } from './app'
+import { useInspectorStore, useSettingsStore } from './app'
 import { useModels } from './models'
 import { loadPluginModules } from './plugins/registry'
-
-// Most recent provider-reported prompt-token count — the authoritative total the
-// inspector shows alongside its rough per-message estimate. Same "latest
-// agent.usage" semantics the context-usage gauge uses (#264); returns null until
-// the provider reports usage.
-const latestPromptTokens = (events: ChatEvent[]): number | null => {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index]
-    if (event?.type === 'agent.usage') {
-      return event.payload.promptTokens
-    }
-  }
-  return null
-}
 
 const formatTokens = (value: number): string => value.toLocaleString('en-US')
 
@@ -31,23 +17,20 @@ type ContextInspectorData = {
   // The active enabled inspector plugin's pure mapper, or null when no inspector
   // plugin is enabled (panel stays hidden).
   summarizer: InspectorSummarizer | null
-  // Captured forwarded requests, oldest → newest (ring-buffered host store).
-  requests: InspectorRequestPayload[]
+  // Captured request+response entries, oldest → newest (ring-buffered host store).
+  entries: InspectorEntry[]
   // The selected model's input context window, when known (#264 data).
   contextWindow: number | null
-  // The provider's latest reported prompt-token total, when observed.
-  promptTokens: number | null
 }
 
 // Resolve the active inspector plugin's mapper (first enabled plugin that
 // contributes an inspectorDescriptor wins) plus the host data the panel overlays.
-// Mirrors useContextGauge: the plugin owns the payload→view mapping; the host only
+// Mirrors useContextGauge: the plugin owns the entry→view mapping; the host only
 // supplies data and renders the result.
 export const useContextInspector = (): ContextInspectorData => {
-  const requests = useInspectorStore((state) => state.requests)
+  const entries = useInspectorStore((state) => state.entries)
   const pluginActivation = useSettingsStore((state) => state.pluginActivation)
   const selectedModel = useSettingsStore((state) => state.selectedModel)
-  const events = useChatStore((state) => state.events)
   const { models } = useModels(selectedModel)
 
   const [summarizer, setSummarizer] = useState<InspectorSummarizer | null>(null)
@@ -68,7 +51,7 @@ export const useContextInspector = (): ContextInspectorData => {
   const contextWindow =
     models.find((model) => model.id === selectedModel)?.limits?.max_input_tokens ?? null
 
-  return { summarizer, requests, contextWindow, promptTokens: latestPromptTokens(events) }
+  return { summarizer, entries, contextWindow }
 }
 
 const RoleBadge = ({ view }: { view: { role: string; isSystem: boolean } }) => (
@@ -81,13 +64,84 @@ const RoleBadge = ({ view }: { view: { role: string; isSystem: boolean } }) => (
   </span>
 )
 
+const formatUsage = (usage?: {
+  completionTokens?: number
+  totalTokens?: number
+}): string | null => {
+  if (!usage) return null
+  const parts: string[] = []
+  if (usage.completionTokens != null)
+    parts.push(`${formatTokens(usage.completionTokens)} completion`)
+  if (usage.totalTokens != null) parts.push(`${formatTokens(usage.totalTokens)} total`)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+// Renders the paired response outcome distinctly per status. A rate limit is
+// highlighted with the note that no tokens were consumed; an error shows the
+// status; an OK response shows the model's content and any completion/total usage.
+const ResponseSection = ({ response }: { response: InspectorResponseView }) => {
+  if (response.status === 'pending') {
+    return (
+      <p data-testid="context-inspector-response" className="text-xs italic text-[var(--muted)]">
+        {response.label}
+      </p>
+    )
+  }
+
+  if (response.status === 'rate_limited') {
+    return (
+      <div
+        data-testid="context-inspector-response"
+        className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+      >
+        <p className="font-medium">{response.label}</p>
+        <p className="mt-0.5">{response.note}</p>
+        {response.retryAfterMs != null ? (
+          <p className="mt-0.5 text-amber-700">
+            Retry after ≈ {Math.ceil(response.retryAfterMs / 1000)}s
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+
+  if (response.status === 'error') {
+    return (
+      <div
+        data-testid="context-inspector-response"
+        className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800"
+      >
+        <p className="font-medium">{response.label}</p>
+        {response.message ? <p className="mt-0.5 break-words">{response.message}</p> : null}
+      </div>
+    )
+  }
+
+  const usageLabel = formatUsage(response.usage)
+  return (
+    <div
+      data-testid="context-inspector-response"
+      className="rounded-lg border border-stone-200 bg-white"
+    >
+      <div className="flex items-center justify-between px-3 py-2 text-xs text-stone-500">
+        <span className="font-medium text-stone-600">{response.label}</span>
+        <span>
+          ≈ {formatTokens(response.approxResponseTokens)} tok{usageLabel ? ` · ${usageLabel}` : ''}
+        </span>
+      </div>
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-stone-100 px-3 py-2 text-xs text-stone-800">
+        {response.content || '(empty response)'}
+      </pre>
+    </div>
+  )
+}
+
 type ContextInspectorPanelProps = {
   view: InspectorView
   requestCount: number
   selectedIndex: number
   onSelectIndex: (index: number) => void
   contextWindow: number | null
-  promptTokens: number | null
   onClose: () => void
 }
 
@@ -97,7 +151,6 @@ const ContextInspectorPanel = ({
   selectedIndex,
   onSelectIndex,
   contextWindow,
-  promptTokens,
   onClose
 }: ContextInspectorPanelProps) => {
   const [copied, setCopied] = useState(false)
@@ -112,15 +165,14 @@ const ContextInspectorPanel = ({
     }
   }
 
-  // The provider only reports real usage (`usage.prompt_tokens`) for the latest
-  // call, so the authoritative count applies ONLY when the latest request is in
-  // view. Stepping back to an earlier request shows that request's own estimate
-  // instead of the latest count — the token figure always reflects what is on
-  // screen, never a stale latest-turn number.
-  const isLatestRequest = selectedIndex === requestCount - 1
+  // Prefer the provider's real prompt-token count for THIS request (paired at the
+  // chokepoint, so stepping through requests shows each one's own usage); fall back
+  // to the char/4 estimate when usage wasn't reported (e.g. a rate-limited call).
+  const realPromptTokens =
+    view.response.status === 'ok' ? view.response.usage?.promptTokens : undefined
   const totalLabel =
-    isLatestRequest && promptTokens != null
-      ? `${formatTokens(promptTokens)} prompt tokens${
+    realPromptTokens != null
+      ? `${formatTokens(realPromptTokens)} prompt tokens${
           contextWindow != null ? ` / ${formatTokens(contextWindow)} context` : ''
         }`
       : `≈ ${formatTokens(view.approxTotalTokens)} tokens (estimate)`
@@ -144,7 +196,7 @@ const ContextInspectorPanel = ({
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-stone-900">Context inspector</h2>
             <p className="truncate text-xs text-[var(--muted)]">
-              The exact request sent to the model — stays on this device.
+              The exact request and response — stays on this device.
             </p>
           </div>
           <button
@@ -201,8 +253,9 @@ const ContextInspectorPanel = ({
           </div>
         ) : null}
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <div className="space-y-2">
+            <span className="text-xs font-medium text-stone-600">Request</span>
             {view.messages.map((message) => (
               <details
                 key={message.index}
@@ -225,8 +278,13 @@ const ContextInspectorPanel = ({
           </div>
 
           <div className="space-y-1">
+            <span className="text-xs font-medium text-stone-600">Response</span>
+            <ResponseSection response={view.response} />
+          </div>
+
+          <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-stone-600">Raw payload</span>
+              <span className="text-xs font-medium text-stone-600">Raw request payload</span>
               <button
                 type="button"
                 onClick={() => void copyPayload()}
@@ -262,24 +320,24 @@ export const ContextInspectorSlot = ({
   className?: string
   icon?: ReactNode
 }) => {
-  const { summarizer, requests, contextWindow, promptTokens } = useContextInspector()
+  const { summarizer, entries, contextWindow } = useContextInspector()
   const [open, setOpen] = useState(false)
   // null = follow the latest request; a number pins a specific one in the stepper.
   const [pinnedIndex, setPinnedIndex] = useState<number | null>(null)
 
   const selectedIndex = useMemo(() => {
-    if (requests.length === 0) return 0
-    if (pinnedIndex == null) return requests.length - 1
-    return Math.min(Math.max(pinnedIndex, 0), requests.length - 1)
-  }, [pinnedIndex, requests.length])
+    if (entries.length === 0) return 0
+    if (pinnedIndex == null) return entries.length - 1
+    return Math.min(Math.max(pinnedIndex, 0), entries.length - 1)
+  }, [pinnedIndex, entries.length])
 
   const view = useMemo(() => {
     if (!summarizer) return null
-    const payload = requests[selectedIndex]
-    return payload ? summarizer(payload) : null
-  }, [summarizer, requests, selectedIndex])
+    const entry = entries[selectedIndex]
+    return entry ? summarizer(entry) : null
+  }, [summarizer, entries, selectedIndex])
 
-  if (!summarizer || requests.length === 0) {
+  if (!summarizer || entries.length === 0) {
     return null
   }
 
@@ -303,11 +361,10 @@ export const ContextInspectorSlot = ({
       {open && view ? (
         <ContextInspectorPanel
           view={view}
-          requestCount={requests.length}
+          requestCount={entries.length}
           selectedIndex={selectedIndex}
           onSelectIndex={setPinnedIndex}
           contextWindow={contextWindow}
-          promptTokens={promptTokens}
           onClose={() => setOpen(false)}
         />
       ) : null}

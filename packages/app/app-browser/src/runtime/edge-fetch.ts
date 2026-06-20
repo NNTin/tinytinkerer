@@ -2,10 +2,18 @@ import {
   clampChatMessageContent,
   EDGE_ROUTE_PATHS,
   edgeErrorResponseSchema,
+  parseRetryAfterMs,
   type ChatMessage,
-  type InspectorRequestPayload
+  type InspectorRequestPayload,
+  type InspectorResponse,
+  type InspectorUsage
 } from '@tinytinkerer/contracts'
+import type { SynthesisChunk } from '@tinytinkerer/app-core'
 import { getTelemetryHeaders } from '../telemetry/telemetry'
+import { extractUsageChunk, parseSseStream } from './sse-utils'
+
+// The terminal usage chunk variant the SSE parser / extractUsageChunk yield.
+type UsageChunk = Extract<SynthesisChunk, { kind: 'usage' }>
 import {
   fetchWithTelemetry,
   type AcceptedOutcome,
@@ -145,9 +153,111 @@ export const modelsChatRequestBody = (
 // only when the host injects it (i.e. only while the inspector plugin is enabled),
 // and it is the single chokepoint every chat request (plan / decide / synthesize)
 // passes through, so it captures the post-clamp payload the edge forwards verbatim.
-// Never throws into the request path — capture is best-effort and side-effect-free
-// for the model call.
-export type ForwardedRequestSink = (payload: InspectorRequestPayload) => void
+// It returns an updater the chokepoint calls once with the response outcome (or
+// nothing if the host does not want the response). Never throws into the request
+// path — capture is best-effort and side-effect-free for the model call.
+export type ForwardedRequestSink = (
+  payload: InspectorRequestPayload
+) => ((response: InspectorResponse) => void) | void
+
+// Cap on captured response content so a long answer can't balloon the in-memory
+// inspector buffer. The panel is a debug view, not a transcript store.
+const MAX_CAPTURED_RESPONSE_CHARS = 20_000
+
+const toUsage = (chunk: UsageChunk): InspectorUsage => ({
+  ...(chunk.promptTokens != null ? { promptTokens: chunk.promptTokens } : {}),
+  ...(chunk.completionTokens != null ? { completionTokens: chunk.completionTokens } : {}),
+  ...(chunk.totalTokens != null ? { totalTokens: chunk.totalTokens } : {})
+})
+
+// Read a successful response body (a tee'd clone, so the real consumer is
+// untouched) and report its content + usage. Handles both the SSE stream
+// (synthesize / streamed decide) and the non-streamed JSON body (decide / plan).
+const readResponseBody = async (
+  clone: Response,
+  httpStatus: number,
+  setResponse: (response: InspectorResponse) => void
+): Promise<void> => {
+  const contentType = clone.headers.get('content-type') ?? ''
+  try {
+    if (contentType.includes('text/event-stream') && clone.body) {
+      let content = ''
+      let usage: InspectorUsage | undefined
+      for await (const chunk of parseSseStream(clone.body, undefined)) {
+        if (chunk.kind === 'content') content += chunk.text
+        else if (chunk.kind === 'usage') usage = toUsage(chunk)
+      }
+      setResponse({
+        status: 'ok',
+        httpStatus,
+        content: content.slice(0, MAX_CAPTURED_RESPONSE_CHARS),
+        ...(usage ? { usage } : {})
+      })
+      return
+    }
+
+    const text = await clone.text()
+    try {
+      const json = JSON.parse(text) as Record<string, unknown>
+      const choices = json['choices']
+      const message = Array.isArray(choices)
+        ? ((choices[0] as Record<string, unknown> | undefined)?.['message'] as
+            | Record<string, unknown>
+            | undefined)
+        : undefined
+      const rawContent = message?.['content']
+      const content = typeof rawContent === 'string' ? rawContent : ''
+      const usageChunk = extractUsageChunk(json)
+      const usage = usageChunk && usageChunk.kind === 'usage' ? toUsage(usageChunk) : undefined
+      setResponse({
+        status: 'ok',
+        httpStatus,
+        content: content.slice(0, MAX_CAPTURED_RESPONSE_CHARS),
+        ...(usage ? { usage } : {})
+      })
+    } catch {
+      // Not JSON — keep the raw text (capped) so there is still something to show.
+      setResponse({ status: 'ok', httpStatus, content: text.slice(0, MAX_CAPTURED_RESPONSE_CHARS) })
+    }
+  } catch {
+    // A consumed/aborted body or read failure: record the success status with no
+    // content rather than leaving the entry stuck on `pending`.
+    setResponse({ status: 'ok', httpStatus, content: '' })
+  }
+}
+
+// Pair the response outcome with a captured request. A 429 is a rate limit
+// (rejected before the model ran — no tokens); any other non-OK status is an
+// error; an OK response has its body tee'd and read in the background. Runs only
+// for the side effect of updating the inspector; never affects the real consumer.
+const captureResponse = (
+  response: Response,
+  setResponse: (response: InspectorResponse) => void
+): void => {
+  if (response.status === 429) {
+    const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'))
+    setResponse({
+      status: 'rate_limited',
+      httpStatus: 429,
+      ...(retryAfterMs != null ? { retryAfterMs } : {})
+    })
+    return
+  }
+  if (!response.ok) {
+    setResponse({ status: 'error', httpStatus: response.status })
+    return
+  }
+  // Clone BEFORE the consumer reads the body. This runs in the chokepoint's own
+  // `.then` (registered before the caller's await), so the tee is in place first.
+  let clone: Response
+  try {
+    clone = response.clone()
+  } catch {
+    setResponse({ status: 'ok', httpStatus: response.status, content: '' })
+    return
+  }
+  void readResponseBody(clone, response.status, setResponse)
+}
 
 export const createModelsChatFetch =
   (
@@ -158,6 +268,7 @@ export const createModelsChatFetch =
   (init, options) => {
     const body = modelsChatRequestBody(getLiteLLMBaseUrl?.(), init)
 
+    let setResponse: ((response: InspectorResponse) => void) | void = undefined
     if (onForwardRequest) {
       try {
         // Report the clamped messages (what actually leaves the client), not the
@@ -166,7 +277,7 @@ export const createModelsChatFetch =
           role: message.role,
           content: message.content
         }))
-        onForwardRequest({
+        setResponse = onForwardRequest({
           model: init.model,
           stream: init.stream,
           ...(init.stream_options ? { stream_options: init.stream_options } : {}),
@@ -179,11 +290,29 @@ export const createModelsChatFetch =
       }
     }
 
-    return edgeFetch(EDGE_ROUTE_PATHS.modelsChat, body, {
+    const responsePromise = edgeFetch(EDGE_ROUTE_PATHS.modelsChat, body, {
       model: init.model,
       stream: init.stream,
       ...(options?.area ? { area: options.area } : {}),
       ...(options?.signal ? { signal: options.signal } : {}),
       ...(options?.accept ? { accept: options.accept } : {})
     })
+
+    if (setResponse) {
+      const update = setResponse
+      // Registered before the caller awaits the same promise, so the response is
+      // tee'd before its body is consumed. Best-effort: capture must not perturb
+      // the real request path, so failures fall back to an error outcome.
+      responsePromise.then(
+        (response) => captureResponse(response, update),
+        (error) =>
+          update({
+            status: 'error',
+            httpStatus: 0,
+            message: error instanceof Error ? error.message : 'Request failed'
+          })
+      )
+    }
+
+    return responsePromise
   }

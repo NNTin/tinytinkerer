@@ -11,14 +11,13 @@ import {
 } from '@tinytinkerer/app-core'
 import type {
   AgentType,
-  InspectorRequestPayload,
   McpDiscoveryResult,
   McpServerConfig,
   PluginActivationState
 } from '@tinytinkerer/contracts'
 import { LiteLLMProvider } from './litellm-provider'
 import type { PlannerToolDescriptor } from './mcp-planner'
-import { createEdgeFetch } from './edge-fetch'
+import { createEdgeFetch, type ForwardedRequestSink } from './edge-fetch'
 import { createMcpTool } from './mcp-tool'
 import { createSandboxExecutor } from '../sandbox-executor'
 import { createDomReader, type DomSnapshotNode } from '../dom-reader'
@@ -101,7 +100,7 @@ export const createRuntime = (options: {
   // Optional client-only capture sink for the context-inspector plugin (#270).
   // Only wired into the provider when that plugin is enabled (see below), so a
   // disabled inspector never captures or retains the forwarded payload.
-  captureForwardedRequest?: (payload: InspectorRequestPayload) => void
+  captureForwardedRequest?: ForwardedRequestSink
 }) => {
   const edgeFetch = createEdgeFetch(options.baseUrl, options.getToken)
 

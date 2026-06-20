@@ -11,11 +11,12 @@ vi.mock('../src/telemetry/telemetry.js', async () => {
   }
 })
 
-import { MAX_CHAT_MESSAGE_CONTENT_CHARS } from '@tinytinkerer/contracts'
+import { MAX_CHAT_MESSAGE_CONTENT_CHARS, type InspectorResponse } from '@tinytinkerer/contracts'
 import {
   createEdgeFetch,
   createModelsChatFetch,
-  modelsChatRequestBody
+  modelsChatRequestBody,
+  type ForwardedRequestSink
 } from '../src/runtime/edge-fetch.js'
 
 const sink = vi.fn<CaptureExceptionSink>()
@@ -205,5 +206,78 @@ describe('createModelsChatFetch', () => {
     })
 
     expect(JSON.parse(capturedBody ?? '{}')).not.toHaveProperty('litellmBaseUrl')
+  })
+})
+
+describe('createModelsChatFetch — inspector capture', () => {
+  // Drive a request through the chokepoint with an inspector sink wired, then wait
+  // for the (async, tee'd) response capture to settle and return it.
+  const captureFor = async (response: Response) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(response))
+    )
+    let captured: InspectorResponse | undefined
+    const sink: ForwardedRequestSink = () => (r) => {
+      captured = r
+    }
+    const edgeFetch = createEdgeFetch('http://example.com', () => 'token')
+    const modelsChat = createModelsChatFetch(edgeFetch, undefined, sink)
+    await modelsChat(
+      { model: 'openai/gpt-5', stream: true, messages: [{ role: 'user', content: 'hi' }] },
+      { area: 'models.chat' }
+    )
+    await vi.waitFor(() => expect(captured).toBeDefined())
+    return captured!
+  }
+
+  it('reports a 429 as rate_limited (no tokens consumed)', async () => {
+    const captured = await captureFor(
+      new Response('{"code":"rate_limited"}', {
+        status: 429,
+        headers: { 'retry-after': '5' }
+      })
+    )
+    expect(captured).toMatchObject({ status: 'rate_limited', httpStatus: 429, retryAfterMs: 5000 })
+  })
+
+  it('reports a non-stream JSON response with content and usage', async () => {
+    const captured = await captureFor(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'hello there' } }],
+          usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 }
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    )
+    expect(captured).toMatchObject({
+      status: 'ok',
+      httpStatus: 200,
+      content: 'hello there',
+      usage: { promptTokens: 5, completionTokens: 2, totalTokens: 7 }
+    })
+  })
+
+  it('accumulates an SSE response stream into content + usage', async () => {
+    const sse =
+      'data: {"choices":[{"delta":{"content":"Hel"}}]}\n' +
+      'data: {"choices":[{"delta":{"content":"lo"}}]}\n' +
+      'data: {"choices":[],"usage":{"prompt_tokens":9}}\n' +
+      'data: [DONE]\n'
+    const captured = await captureFor(
+      new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    )
+    expect(captured).toMatchObject({
+      status: 'ok',
+      httpStatus: 200,
+      content: 'Hello',
+      usage: { promptTokens: 9 }
+    })
+  })
+
+  it('reports a non-429 http error', async () => {
+    const captured = await captureFor(new Response('boom', { status: 500 }))
+    expect(captured).toMatchObject({ status: 'error', httpStatus: 500 })
   })
 })

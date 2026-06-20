@@ -1,24 +1,32 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
-import type { InspectorRequestPayload, InspectorView, PluginModule } from '@tinytinkerer/contracts'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { InspectorEntry, InspectorView, PluginModule } from '@tinytinkerer/contracts'
 
-// One captured request the inspector store hands back. The mocks below let each
-// test set whether the plugin is enabled and whether any request was captured.
-const capturedRequest: InspectorRequestPayload = {
-  model: 'openai/gpt-5',
-  stream: true,
-  stream_options: { include_usage: true },
-  messages: [
-    { role: 'system', content: 'SYSTEM PROMPT MARKER' },
-    { role: 'user', content: 'USER MESSAGE MARKER' }
-  ],
-  area: 'models.chat',
-  capturedAt: '2026-06-20T00:00:00.000Z'
+// One captured entry the inspector store hands back. The mocks below let each test
+// set whether the plugin is enabled and whether anything was captured.
+const capturedEntry: InspectorEntry = {
+  request: {
+    model: 'openai/gpt-5',
+    stream: true,
+    stream_options: { include_usage: true },
+    messages: [
+      { role: 'system', content: 'SYSTEM PROMPT MARKER' },
+      { role: 'user', content: 'USER MESSAGE MARKER' }
+    ],
+    area: 'models.chat',
+    capturedAt: '2026-06-20T00:00:00.000Z'
+  },
+  response: {
+    status: 'ok',
+    httpStatus: 200,
+    content: 'RESPONSE MARKER',
+    usage: { promptTokens: 8 }
+  }
 }
 
 let pluginActivation: Record<string, boolean> = {}
-let requests: InspectorRequestPayload[] = []
+let entries: InspectorEntry[] = []
 
 vi.mock('../src/models.js', () => ({
   useModels: () => ({
@@ -38,9 +46,8 @@ vi.mock('../src/models.js', () => ({
 }))
 
 vi.mock('../src/app.js', () => ({
-  useChatStore: (selector: (state: { events: unknown[] }) => unknown) => selector({ events: [] }),
-  useInspectorStore: (selector: (state: { requests: InspectorRequestPayload[] }) => unknown) =>
-    selector({ requests }),
+  useInspectorStore: (selector: (state: { entries: InspectorEntry[] }) => unknown) =>
+    selector({ entries }),
   useSettingsStore: (
     selector: (state: {
       selectedModel: string
@@ -51,22 +58,43 @@ vi.mock('../src/app.js', () => ({
 
 // A real mapper stands in for the plugin's summarizeRequest so the panel renders
 // realistic content without importing the concrete plugin package.
-const summarizeRequest = (payload: InspectorRequestPayload): InspectorView => ({
-  model: payload.model,
-  stream: payload.stream,
-  streamOptions: JSON.stringify(payload.stream_options ?? {}),
-  ...(payload.area ? { area: payload.area } : {}),
-  messageCount: payload.messages.length,
-  approxTotalTokens: 42,
-  messages: payload.messages.map((message, index) => ({
-    index,
-    role: message.role,
-    isSystem: message.role === 'system',
-    content: message.content,
-    approxTokens: 21
-  })),
-  rawJson: JSON.stringify({ model: payload.model, messages: payload.messages }, null, 2)
-})
+const summarizeRequest = (entry: InspectorEntry): InspectorView => {
+  const { request, response } = entry
+  return {
+    model: request.model,
+    stream: request.stream,
+    streamOptions: JSON.stringify(request.stream_options ?? {}),
+    ...(request.area ? { area: request.area } : {}),
+    messageCount: request.messages.length,
+    approxTotalTokens: 42,
+    messages: request.messages.map((message, index) => ({
+      index,
+      role: message.role,
+      isSystem: message.role === 'system',
+      content: message.content,
+      approxTokens: 21
+    })),
+    rawJson: JSON.stringify({ model: request.model, messages: request.messages }, null, 2),
+    response:
+      response.status === 'ok'
+        ? {
+            status: 'ok',
+            label: 'Response',
+            content: response.content,
+            ...(response.usage ? { usage: response.usage } : {}),
+            approxResponseTokens: Math.ceil(response.content.length / 4)
+          }
+        : response.status === 'rate_limited'
+          ? {
+              status: 'rate_limited',
+              label: `Rate limited (HTTP ${response.httpStatus})`,
+              note: 'Rate limited — no tokens were consumed.'
+            }
+          : response.status === 'error'
+            ? { status: 'error', label: `Error (HTTP ${response.httpStatus})` }
+            : { status: 'pending', label: 'Waiting for response…' }
+  }
+}
 
 const inspectorModule: PluginModule = {
   manifest: {
@@ -92,30 +120,34 @@ vi.mock('@tinytinkerer/content-code', () => ({
 import { ContextInspectorSlot, useContextInspector } from '../src/context-inspector.js'
 import { renderHook } from '@testing-library/react'
 
+// Unmount between tests so an open panel from one test can't leak into the next.
+afterEach(() => {
+  cleanup()
+})
+
 describe('ContextInspectorSlot', () => {
   it('renders nothing when the inspector plugin is disabled', async () => {
     pluginActivation = {}
-    requests = [capturedRequest]
+    entries = [capturedEntry]
 
     const { container } = render(<ContextInspectorSlot />)
-    // Give the async plugin resolution a tick; it must resolve to no summarizer.
     await waitFor(() => {
       expect(container.querySelector('[data-testid="context-inspector-toggle"]')).toBeNull()
     })
   })
 
-  it('renders nothing when enabled but no request has been captured', async () => {
+  it('renders nothing when enabled but nothing has been captured', async () => {
     pluginActivation = { 'context-inspector': true }
-    requests = []
+    entries = []
 
     const { container } = render(<ContextInspectorSlot />)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(container.querySelector('[data-testid="context-inspector-toggle"]')).toBeNull()
   })
 
-  it('shows the toggle and opens a panel with the exact captured context when enabled', async () => {
+  it('opens a panel showing the exact captured request and response', async () => {
     pluginActivation = { 'context-inspector': true }
-    requests = [capturedRequest]
+    entries = [capturedEntry]
 
     render(<ContextInspectorSlot />)
 
@@ -123,24 +155,42 @@ describe('ContextInspectorSlot', () => {
     fireEvent.click(toggle)
 
     const panel = await screen.findByTestId('context-inspector-panel')
-    expect(panel).toBeTruthy()
-    // The model and both messages (system + user) are shown.
     expect(panel.textContent).toContain('openai/gpt-5')
     expect(panel.textContent).toContain('SYSTEM PROMPT MARKER')
     expect(panel.textContent).toContain('USER MESSAGE MARKER')
-    // Stream options are surfaced distinctly.
     expect(panel.textContent).toContain('include_usage')
+    // The paired response is shown too.
+    const response = await screen.findByTestId('context-inspector-response')
+    expect(response.textContent).toContain('RESPONSE MARKER')
+    // The real per-request prompt-token count is surfaced (not an estimate).
+    expect(screen.getByTestId('context-inspector-tokens').textContent).toContain('8 prompt tokens')
+  })
+
+  it('shows a rate-limited response that states no tokens were consumed', async () => {
+    pluginActivation = { 'context-inspector': true }
+    entries = [
+      { request: capturedEntry.request, response: { status: 'rate_limited', httpStatus: 429 } }
+    ]
+
+    render(<ContextInspectorSlot />)
+    fireEvent.click(await screen.findByTestId('context-inspector-toggle'))
+
+    const response = await screen.findByTestId('context-inspector-response')
+    expect(response.textContent).toContain('Rate limited')
+    expect(response.textContent).toMatch(/no tokens were consumed/i)
+    // Falls back to the estimate since no usage was reported.
+    expect(screen.getByTestId('context-inspector-tokens').textContent).toContain('estimate')
   })
 })
 
 describe('useContextInspector', () => {
   it('exposes the model context window and resolves the active summarizer', async () => {
     pluginActivation = { 'context-inspector': true }
-    requests = [capturedRequest]
+    entries = [capturedEntry]
 
     const { result } = renderHook(() => useContextInspector())
     await waitFor(() => expect(result.current.summarizer).not.toBeNull())
     expect(result.current.contextWindow).toBe(100_000)
-    expect(result.current.requests).toHaveLength(1)
+    expect(result.current.entries).toHaveLength(1)
   })
 })

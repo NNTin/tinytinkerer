@@ -433,6 +433,32 @@ export type InspectorRequestPayload = {
   capturedAt: string
 }
 
+// Token usage reported by the provider for a single model call. All optional —
+// providers may report any subset, and rate-limited/error responses report none.
+export type InspectorUsage = {
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+}
+
+// The outcome of a captured request, paired with it client-side. `pending` is the
+// initial state before the response resolves; `rate_limited` is a 429 (rejected
+// before the model ran — no tokens consumed); `error` is any other non-OK status;
+// `ok` carries the model's response content and any reported usage. Captured only
+// while the inspector plugin is enabled and never leaves the client.
+export type InspectorResponse =
+  | { status: 'pending' }
+  | { status: 'rate_limited'; httpStatus: number; retryAfterMs?: number }
+  | { status: 'error'; httpStatus: number; message?: string }
+  | { status: 'ok'; httpStatus: number; content: string; usage?: InspectorUsage }
+
+// A captured request together with its response outcome — the unit the inspector
+// store retains and the plugin maps to a view.
+export type InspectorEntry = {
+  request: InspectorRequestPayload
+  response: InspectorResponse
+}
+
 // One message row in the inspector view: the original role/content plus a rough
 // per-message token estimate and whether it is a system prompt (called out
 // distinctly by the host). The estimate is a char/4 heuristic — clearly an
@@ -444,6 +470,22 @@ export type InspectorMessageView = {
   content: string
   approxTokens: number
 }
+
+// Display-ready view of a captured response the host renders beneath the request.
+// `label` is a short human status; `note` explains a non-obvious outcome (e.g. that
+// a rate-limited call consumed no tokens); `content`/`usage` are present only for an
+// `ok` response, with `approxResponseTokens` a char/4 estimate for the output.
+export type InspectorResponseView =
+  | { status: 'pending'; label: string }
+  | { status: 'rate_limited'; label: string; note: string; retryAfterMs?: number }
+  | { status: 'error'; label: string; message?: string }
+  | {
+      status: 'ok'
+      label: string
+      content: string
+      usage?: InspectorUsage
+      approxResponseTokens: number
+    }
 
 // React-free view-model the inspector plugin produces from a captured payload.
 // `rawJson` is the pretty-printed forwarded body for the host's JSON renderer and
@@ -458,11 +500,13 @@ export type InspectorView = {
   approxTotalTokens: number
   messages: InspectorMessageView[]
   rawJson: string
+  // The paired response outcome (pending until it resolves).
+  response: InspectorResponseView
 }
 
-// Pure mapper a context-inspector plugin exposes: a captured request payload →
-// InspectorView. Product-agnostic (no React/DOM/window) — it only transforms data.
-export type InspectorSummarizer = (payload: InspectorRequestPayload) => InspectorView
+// Pure mapper a context-inspector plugin exposes: a captured request+response
+// entry → InspectorView. Product-agnostic (no React/DOM/window) — only data.
+export type InspectorSummarizer = (entry: InspectorEntry) => InspectorView
 
 // Manifest descriptor for the developer context-inspector contribution, mirroring
 // PluginStatusDescriptor. The host resolves `summarizeRequest` from the active

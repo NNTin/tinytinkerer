@@ -1,9 +1,9 @@
 import type { ChatRuntimeFactory, PluginModule } from '@tinytinkerer/app-core'
-import type { InspectorRequestPayload } from '@tinytinkerer/contracts'
 import type { BrowserShell } from '../shell'
 import type { AuthStore } from '../stores/auth-store'
 import type { SettingsStore } from '../stores/settings-store'
 import { createPluginRuntime, createRuntime } from './create-runtime'
+import type { ForwardedRequestSink } from './edge-fetch'
 
 export const createBrowserRuntimeFactory = (options: {
   shell: BrowserShell
@@ -14,7 +14,7 @@ export const createBrowserRuntimeFactory = (options: {
   pluginModules?: PluginModule[]
   // Optional client-only capture sink for the context-inspector plugin (#270).
   // createRuntime only forwards it to the provider when that plugin is enabled.
-  captureForwardedRequest?: (payload: InspectorRequestPayload) => void
+  captureForwardedRequest?: ForwardedRequestSink
 }): ChatRuntimeFactory => {
   const pluginRuntime = createPluginRuntime(options.pluginModules ?? [])
 

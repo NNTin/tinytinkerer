@@ -71,11 +71,17 @@ export const createChatStore = (options: {
         settingsStore: options.settingsStore,
         pluginModules,
         // The runtime arms this only while the inspector plugin is enabled, so a
-        // disabled inspector captures (and retains) nothing.
+        // disabled inspector captures (and retains) nothing. Records the request as
+        // a pending entry and returns an updater the chokepoint calls with the
+        // paired response outcome.
         ...(options.inspectorStore
           ? {
-              captureForwardedRequest: (payload) =>
-                options.inspectorStore?.getState().capture(payload)
+              captureForwardedRequest: (request) => {
+                const store = options.inspectorStore
+                if (!store) return
+                const id = store.getState().capture(request)
+                return (response) => store.getState().setResponse(id, response)
+              }
             }
           : {})
       })

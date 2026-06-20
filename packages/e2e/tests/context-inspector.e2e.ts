@@ -22,6 +22,7 @@ import {
 
 const TOGGLE = '[data-testid="context-inspector-toggle"]'
 const PANEL = '[data-testid="context-inspector-panel"]'
+const RESPONSE = '[data-testid="context-inspector-response"]'
 
 const sendMessageAndAwaitReply = async (page: Page, prompt: string): Promise<void> => {
   await page.getByPlaceholder('Ask anything').fill(prompt)
@@ -70,6 +71,9 @@ test.describe('context-inspector plugin (#270)', () => {
     }
     // The system prompt is present and called out as a system message.
     expect(messages.some((m) => m.role === 'system')).toBe(true)
+
+    // The paired response is captured and shown too (the synthesized answer).
+    await expect(panel.locator(RESPONSE)).toContainText(SYNTHESIS_ANSWER)
   })
 
   test('disabled (default): the inspector never captures or appears', async ({ page }) => {

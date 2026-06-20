@@ -1,4 +1,9 @@
-import { isPluginModule, type InspectorRequestPayload } from '@tinytinkerer/contracts'
+import {
+  isPluginModule,
+  type InspectorEntry,
+  type InspectorRequestPayload,
+  type InspectorResponse
+} from '@tinytinkerer/contracts'
 import { describe, expect, it } from 'vitest'
 import * as contextInspectorModule from '../src/index'
 import {
@@ -21,9 +26,14 @@ const payload = (overrides: Partial<InspectorRequestPayload> = {}): InspectorReq
   ...overrides
 })
 
+const entry = (
+  response: InspectorResponse = { status: 'pending' },
+  overrides: Partial<InspectorRequestPayload> = {}
+): InspectorEntry => ({ request: payload(overrides), response })
+
 describe('summarizeRequest', () => {
   it('maps a payload to a view with per-message rows and an approx total', () => {
-    const view = summarizeRequest(payload())
+    const view = summarizeRequest(entry())
 
     expect(view).toMatchObject({
       model: 'openai/gpt-5',
@@ -44,7 +54,7 @@ describe('summarizeRequest', () => {
   })
 
   it('serializes the exact forwarded body as pretty JSON for the host renderer', () => {
-    const view = summarizeRequest(payload())
+    const view = summarizeRequest(entry())
     const parsed = JSON.parse(view.rawJson) as Record<string, unknown>
 
     expect(parsed).toEqual({
@@ -62,15 +72,54 @@ describe('summarizeRequest', () => {
 
   it('omits stream_options and area cleanly when absent', () => {
     const view = summarizeRequest({
-      model: 'openai/gpt-5',
-      stream: false,
-      messages: [{ role: 'user', content: 'hi' }],
-      capturedAt: '2026-06-20T00:00:00.000Z'
+      request: {
+        model: 'openai/gpt-5',
+        stream: false,
+        messages: [{ role: 'user', content: 'hi' }],
+        capturedAt: '2026-06-20T00:00:00.000Z'
+      },
+      response: { status: 'pending' }
     })
 
     expect(view.streamOptions).toBe('{}')
     expect(view.area).toBeUndefined()
     expect(view.rawJson).not.toContain('stream_options')
+  })
+})
+
+describe('summarizeRequest — response', () => {
+  it('maps an ok response to content + usage with an output estimate', () => {
+    const view = summarizeRequest(
+      entry({ status: 'ok', httpStatus: 200, content: 'Hello!', usage: { promptTokens: 12 } })
+    )
+
+    expect(view.response).toMatchObject({
+      status: 'ok',
+      label: 'Response',
+      content: 'Hello!',
+      usage: { promptTokens: 12 },
+      approxResponseTokens: Math.ceil('Hello!'.length / 4)
+    })
+  })
+
+  it('maps a 429 to a rate-limited view that states no tokens were consumed', () => {
+    const view = summarizeRequest(
+      entry({ status: 'rate_limited', httpStatus: 429, retryAfterMs: 5000 })
+    )
+
+    expect(view.response.status).toBe('rate_limited')
+    if (view.response.status === 'rate_limited') {
+      expect(view.response.label).toContain('429')
+      expect(view.response.note).toMatch(/no tokens were consumed/i)
+      expect(view.response.retryAfterMs).toBe(5000)
+    }
+  })
+
+  it('reports a pending response before it resolves', () => {
+    expect(summarizeRequest(entry()).response).toEqual({
+      status: 'pending',
+      label: 'Waiting for response…'
+    })
   })
 })
 

@@ -10,15 +10,29 @@ const payload = (n: number): InspectorRequestPayload => ({
 })
 
 describe('createInspectorStore', () => {
-  it('captures forwarded requests in order', () => {
+  it('captures requests as pending entries in order', () => {
     const store = createInspectorStore()
     store.getState().capture(payload(1))
     store.getState().capture(payload(2))
 
-    const { requests } = store.getState()
-    expect(requests).toHaveLength(2)
-    expect(requests[0]?.messages[0]?.content).toBe('message 1')
-    expect(requests[1]?.messages[0]?.content).toBe('message 2')
+    const { entries } = store.getState()
+    expect(entries).toHaveLength(2)
+    expect(entries[0]?.request.messages[0]?.content).toBe('message 1')
+    expect(entries[0]?.response).toEqual({ status: 'pending' })
+    expect(entries[1]?.request.messages[0]?.content).toBe('message 2')
+  })
+
+  it('attaches a response to the matching entry by id', () => {
+    const store = createInspectorStore()
+    const id0 = store.getState().capture(payload(0))
+    const id1 = store.getState().capture(payload(1))
+
+    store.getState().setResponse(id1, { status: 'ok', httpStatus: 200, content: 'hi' })
+    store.getState().setResponse(id0, { status: 'rate_limited', httpStatus: 429 })
+
+    const { entries } = store.getState()
+    expect(entries[0]?.response).toEqual({ status: 'rate_limited', httpStatus: 429 })
+    expect(entries[1]?.response).toEqual({ status: 'ok', httpStatus: 200, content: 'hi' })
   })
 
   it('rings the buffer at MAX_CAPTURED_REQUESTS, dropping the oldest', () => {
@@ -27,17 +41,19 @@ describe('createInspectorStore', () => {
       store.getState().capture(payload(n))
     }
 
-    const { requests } = store.getState()
-    expect(requests).toHaveLength(MAX_CAPTURED_REQUESTS)
+    const { entries } = store.getState()
+    expect(entries).toHaveLength(MAX_CAPTURED_REQUESTS)
     // Oldest five were dropped; the newest is last.
-    expect(requests[0]?.messages[0]?.content).toBe('message 5')
-    expect(requests.at(-1)?.messages[0]?.content).toBe(`message ${MAX_CAPTURED_REQUESTS + 4}`)
+    expect(entries[0]?.request.messages[0]?.content).toBe('message 5')
+    expect(entries.at(-1)?.request.messages[0]?.content).toBe(
+      `message ${MAX_CAPTURED_REQUESTS + 4}`
+    )
   })
 
   it('clear() empties the buffer', () => {
     const store = createInspectorStore()
     store.getState().capture(payload(1))
     store.getState().clear()
-    expect(store.getState().requests).toEqual([])
+    expect(store.getState().entries).toEqual([])
   })
 })
