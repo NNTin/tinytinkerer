@@ -1,8 +1,8 @@
-# SOP: general review — repo-wide (requires HITL)
+# SOP: general review — repo-wide
 
 A deliberate, token-heavy architecture-risk pass over the whole repo through the
-**predict-the-regret** lens (see `../SKILL.md`). It **emits a findings report and stops for a
-human** — it never edits code. Run it on purpose, not casually.
+**predict-the-regret** lens (see `../SKILL.md`). It surfaces **open points for the user** and
+stops — it never edits code. Run it on purpose, not casually.
 
 ## 1. Anchor on the written architecture
 
@@ -14,60 +14,28 @@ Read the docs the review judges against, in this order:
 4. Skim the other `docs/*-concept.md` / subsystem docs as the surface demands
    (`content-platform.md`, `sentry-telemetry.md`, `ui-ux-concept.md`, `mcp-integration.md`).
 
-The repo's own docs are your authority. A finding that contradicts a doc is strong; a finding
-that is only personal taste is weak — gate it accordingly (judgment → HITL).
+The repo's own docs are your authority. A finding that contradicts a doc is strong; one that is
+only personal taste is weak — say so.
 
-## 2. Get the objective coupling/SoC signal first
-
-```bash
-node .agent/skills/architecture-review/tools/findings.mjs boundaries
-```
-
-This runs `scripts/check-boundaries.mjs` (cross-package import rules, product-agnostic source
-rules, cycle detection). Every violation it reports is an **objective** `coupling`/`SoC`
-finding — `confidence: High`, `subjectivity: objective`. Record those before you start reading
-for the judgment-shaped risks; the deterministic signal is free and unarguable.
-
-## 3. Run the lens across the layers
+## 2. Run the lens across the layers
 
 Walk the monorepo map (apps → app-browser → app-core → agent-core → contracts; the content
 platform; plugins; edge; telemetry) and apply every question in the lens: hidden coupling,
-churn-prone interfaces, SoC violations, premature/missing abstractions, maintenance cost, break
-risk. **Do the failure analysis before proposing any fix.** Don't try to boil the ocean in one
-pass — prefer the load-bearing boundaries (the ones the docs call out as invariants).
+churn-prone interfaces, SoC drift, premature/missing abstractions, maintenance cost, break
+risk. **Do the failure analysis before proposing any direction.** Prefer the load-bearing
+boundaries (the ones the docs call out as invariants); don't try to boil the ocean in one pass.
 
-## 4. Write each risk as a structured finding
+**Aim above CI.** `pnpm lint` (incl. `scripts/check-boundaries.mjs`) and `pnpm typecheck`
+already fail the build on physical import-boundary and type-contract violations. Don't re-flag
+those — hunt the architectural risks they can't see (semantic coupling, abstractions, drift
+that's still legal today).
 
-One record per risk, with the fields from the gating contract:
+## 3. Present findings as open points and stop
 
-```
-{ area, category, severity, confidence, subjectivity, disposition, rationale, suggestedChange, references? }
-```
+Write up the risks as **open points for the user**, each with: area, the regret (why it bites
+at 6 months / 10× growth), the doc reference where one applies, and a suggested direction
+phrased as a recommendation — not a decision. Group by severity, lead with the load-bearing
+ones, and close with the one-line regret summary.
 
-Set `confidence`/`subjectivity` honestly and let the rule decide `disposition`: `auto` only for
-a non-directional category (`coupling`/`SoC`/`break-risk`) that is `High` + `objective`;
-everything else `HITL`. Cite `docs/...` anchors in `references` where one applies. **When in
-doubt, escalate.** Print the skeleton if useful:
-
-```bash
-node .agent/skills/architecture-review/tools/findings.mjs template
-```
-
-## 5. Validate the report
-
-Write the report to a file (e.g. `architecture-review.json` — do not commit it) and validate:
-
-```bash
-node .agent/skills/architecture-review/tools/findings.mjs validate architecture-review.json
-```
-
-Use `"mode": "general"`. A report the tool rejects is **not done** — fix the records (usually a
-mislabeled `auto`) and re-validate until it passes. The tool decides the auto/HITL split, not
-your prose.
-
-## 6. Stop for the human
-
-Present the validated report (the auto/HITL split + each finding's rationale). **Do not edit
-code.** Even findings the tool labeled `auto` are _not_ auto-applied in general review — `auto`
-here only classifies them; mode 1 always hands the triage to a human. Recommend an order
-(highest severity / objective defects first) and stop.
+**Do not edit code.** Architecture calls are the user's to make; this review informs them and
+hands them the decision.
