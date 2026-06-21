@@ -107,17 +107,50 @@ describe('webSearchPlugin', () => {
   })
 
   describe('summarizeWebSearchActivity', () => {
-    it('titles the view and reports the result count and query', () => {
-      const view = summarizeWebSearchActivity({
+    it('titles the view, reports the count and query, and renders each result', async () => {
+      const view = await summarizeWebSearchActivity({
         query: 'react news',
-        results: [{}, {}, {}]
-      })
-      expect(view).toEqual({
-        title: 'Web search',
-        sections: [
-          { kind: 'text', label: 'Results', value: '3' },
-          { kind: 'text', label: 'Query', value: 'react news' }
+        results: [
+          { title: 'React 19', url: 'https://react.dev/19', snippet: 'What is new' },
+          { title: 'Release notes', url: 'https://react.dev/notes', snippet: 'Changelog' }
         ]
+      })
+      expect(view.title).toBe('Web search')
+      expect(view.status).toBeUndefined()
+      expect(view.sections).toEqual([
+        { kind: 'text', label: 'Results', value: '2' },
+        { kind: 'text', label: 'Query', value: 'react news' },
+        { kind: 'text', label: '1. React 19', value: 'https://react.dev/19\nWhat is new' },
+        { kind: 'text', label: '2. Release notes', value: 'https://react.dev/notes\nChangelog' }
+      ])
+    })
+
+    it('bounds a long snippet so it cannot flood the panel', async () => {
+      const view = await summarizeWebSearchActivity({
+        query: 'q',
+        results: [{ title: 't', url: 'https://e.test', snippet: 'x'.repeat(500) }]
+      })
+      const result = view.sections.find((s) => s.kind === 'text' && s.label === '1. t')
+      const value = result && result.kind === 'text' ? result.value : ''
+      expect(value.startsWith('https://e.test\n')).toBe(true)
+      expect(value.endsWith('…')).toBe(true)
+      // url + newline + 300 snippet chars + ellipsis.
+      expect(value.length).toBe('https://e.test\n'.length + 301)
+    })
+
+    it('caps the number of rendered results with an overflow note', async () => {
+      const results = Array.from({ length: 11 }, (_, i) => ({
+        title: `t${i}`,
+        url: `https://e.test/${i}`,
+        snippet: `s${i}`
+      }))
+      const view = await summarizeWebSearchActivity({ query: 'q', results })
+      // 8 results rendered + Results + Query + the overflow note.
+      expect(view.sections.filter((s) => /^\d+\. /.test(s.label)).length).toBe(8)
+      expect(view.sections).toContainEqual({
+        kind: 'text',
+        label: '',
+        value: '… (3 more results)'
       })
     })
 
@@ -138,6 +171,11 @@ describe('webSearchPlugin', () => {
         title: 'Web search',
         sections: [{ kind: 'text', label: 'Results', value: '0' }]
       })
+    })
+
+    it('renders a result with missing fields without throwing', async () => {
+      const view = await summarizeWebSearchActivity({ query: 'q', results: [{}] })
+      expect(view.sections).toContainEqual({ kind: 'text', label: '1. (untitled)', value: '' })
     })
   })
 

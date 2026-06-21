@@ -100,12 +100,14 @@ const isEmptyOutput = (output: unknown): boolean =>
   (typeof output === 'object' && !Array.isArray(output) && Object.keys(output).length === 0)
 
 // The host's neutral default for a completed tool whose owner ships no summarizer.
-// It cannot assume any output shape, so it only names the tool and, when there is
-// genuinely no output, says so; otherwise it leaves the dropdown body empty (the
-// real result is delivered to the model and rendered separately).
+// It cannot assume any output shape, so it names the tool and either says there was
+// no output or — so a tool's result is never silently dropped from the timeline —
+// renders the raw output as a json section (the panel bounds the serialized size).
 const neutralView = (label: string, output: unknown): ActivityView => ({
   title: label,
-  sections: isEmptyOutput(output) ? [{ kind: 'text', label: '', value: '(no output)' }] : []
+  sections: isEmptyOutput(output)
+    ? [{ kind: 'text', label: '', value: '(no output)' }]
+    : [{ kind: 'json', label: 'Output', value: output }]
 })
 
 const statusStyles: Record<
@@ -176,14 +178,21 @@ const ActivitySectionEntry = ({ section }: { section: ActivityView['sections'][n
   )
 }
 
+// Longest serialized json a section will inline. A tool can return a large payload
+// (e.g. a raw-output fallback for an un-summarized tool); cap it so the panel DOM
+// stays bounded. The full result still reaches the model.
+const MAX_JSON_CHARS = 4_000
+
 // Serializes a json section value defensively so a non-serializable value (e.g. a
-// cyclic object) can never throw while rendering the panel.
+// cyclic object) can never throw while rendering the panel, and bounds its length.
 const safeJson = (value: unknown): string => {
+  let text: string
   try {
-    return JSON.stringify(value, null, 2) ?? String(value)
+    text = JSON.stringify(value, null, 2) ?? String(value)
   } catch {
     return '(value could not be displayed)'
   }
+  return text.length > MAX_JSON_CHARS ? `${text.slice(0, MAX_JSON_CHARS)}…` : text
 }
 
 // One generic renderer for every completed tool. It is driven entirely by the

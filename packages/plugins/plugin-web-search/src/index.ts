@@ -20,21 +20,62 @@ import {
 // activity panel to keep recognising the tool.
 export const WEB_SEARCH_PLUGIN_ID = 'web-search'
 
+// Most results the activity panel will render before collapsing the rest into a
+// "… (N more)" note, and the longest snippet it inlines per result. The full result
+// set still reaches the model — the panel only needs a readable preview, so these
+// bounds keep a chatty response from flooding the timeline.
+const MAX_RENDERED_RESULTS = 8
+const MAX_SNIPPET_CHARS = 300
+
+const truncate = (value: string, max: number): string =>
+  value.length > max ? `${value.slice(0, max)}…` : value
+
+// One Tavily result rendered as a readable text section: the title is the label and
+// the URL + snippet are the value. The panel renders text with `whitespace-pre-wrap`,
+// so the URL and snippet read on their own lines.
+const resultSection = (
+  result: { title?: unknown; url?: unknown; snippet?: unknown },
+  index: number
+): ActivityView['sections'][number] => {
+  const title =
+    typeof result.title === 'string' && result.title.length > 0 ? result.title : '(untitled)'
+  const url = typeof result.url === 'string' ? result.url : ''
+  const snippet =
+    typeof result.snippet === 'string' ? truncate(result.snippet, MAX_SNIPPET_CHARS) : ''
+  const value = [url, snippet].filter((part) => part.length > 0).join('\n')
+  return { kind: 'text', label: `${index + 1}. ${title}`, value }
+}
+
 // Web-search presentation owned by the plugin, not the host. Maps the Tavily-shaped
 // SearchResponse output (`{ query, results }`) to the host's product-agnostic
 // ActivityView so the turn-activity panel can render it without knowing this plugin
 // exists. Pure and React-free (enforced by scripts/check-boundaries.mjs): the host
 // renders the returned `value`s as plain text. The short label 'Web search' lives
 // here too (it is the view title), so the host no longer special-cases the tool id.
+// The actual results (title/url/snippet) are surfaced so the timeline shows the
+// information the model received, not just a count.
 export const summarizeWebSearchActivity: ActivitySummarizer = (output): ActivityView => {
   const value = (output ?? {}) as { query?: unknown; results?: unknown }
-  const resultCount = Array.isArray(value.results) ? value.results.length : 0
+  const results = Array.isArray(value.results) ? value.results : []
   const sections: ActivityView['sections'] = [
-    { kind: 'text', label: 'Results', value: String(resultCount) }
+    { kind: 'text', label: 'Results', value: String(results.length) }
   ]
   if (typeof value.query === 'string' && value.query.length > 0) {
     sections.push({ kind: 'text', label: 'Query', value: value.query })
   }
+
+  for (const [index, result] of results.slice(0, MAX_RENDERED_RESULTS).entries()) {
+    sections.push(resultSection(result as Record<string, unknown>, index))
+  }
+  const overflow = results.length - MAX_RENDERED_RESULTS
+  if (overflow > 0) {
+    sections.push({
+      kind: 'text',
+      label: '',
+      value: `… (${overflow} more result${overflow === 1 ? '' : 's'})`
+    })
+  }
+
   return { title: 'Web search', sections }
 }
 

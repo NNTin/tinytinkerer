@@ -250,8 +250,8 @@ describe('TurnActivityPanel generic ActivityView rendering', () => {
     expect(screen.getByText('(no output)')).toBeInTheDocument()
   })
 
-  it('neutral default: does not show "(no output)" when output is non-empty', () => {
-    render(
+  it('neutral default: renders the raw output as a json section for non-empty output', () => {
+    const { container } = render(
       <TurnActivityPanel
         activity={completedTool('mystery-tool', { some: 'data' })}
         isLive
@@ -260,6 +260,11 @@ describe('TurnActivityPanel generic ActivityView rendering', () => {
     )
 
     expect(screen.getByText('mystery-tool')).toBeInTheDocument()
+    // An un-summarized tool no longer hides its output: it is shown as a json dump
+    // so the result is never silently dropped from the timeline.
     expect(screen.queryByText('(no output)')).not.toBeInTheDocument()
+    expect(screen.getByText('Output:')).toBeInTheDocument()
+    const pre = container.querySelector('pre')
+    expect(pre?.textContent).toContain('"some": "data"')
   })
 })
