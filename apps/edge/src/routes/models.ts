@@ -618,7 +618,13 @@ export const registerModelRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) =>
           // Forward the opt-in streaming usage flag so LiteLLM appends a final
           // usage chunk (the client uses it for the context-usage gauge). Only
           // sent when the client asked for it, preserving prior behaviour.
-          ...(body.stream_options ? { stream_options: body.stream_options } : {})
+          ...(body.stream_options ? { stream_options: body.stream_options } : {}),
+          // Native tool calling (issue #276): forward the advertised tools and the
+          // tool-use policy so the model can emit native tool_calls and the
+          // replayed tool_calls/tool messages stay valid. Only sent when present,
+          // so a plain chat request is unchanged.
+          ...(body.tools ? { tools: body.tools } : {}),
+          ...(body.tool_choice ? { tool_choice: body.tool_choice } : {})
         }),
         // Stop hammering the upstream as soon as the client disconnects instead
         // of keeping a doomed request alive until the backstop timeout fires

@@ -68,11 +68,76 @@ export type SearchResponse = z.infer<typeof searchResponseSchema>
 // TINYTINKERER-FRONTEND-14 / TINYTINKERER-FRONTEND-15.
 export const MAX_CHAT_MESSAGE_CONTENT_CHARS = 32_000
 
-export const chatMessageSchema = z
+// A single native OpenAI-compatible tool call emitted by the model on an
+// assistant message (and replayed verbatim in subsequent requests so the model
+// sees its own tool I/O as structured turns instead of prose). `arguments` is a
+// JSON-encoded string per the OpenAI wire format — NOT a parsed object — so a
+// caller must JSON.parse it before use. `id` is echoed back on the matching
+// `role: 'tool'` result message via `tool_call_id`.
+export const chatToolCallSchema = z
   .object({
-    role: z.enum(['developer', 'system', 'user', 'assistant']),
-    content: z.string().max(MAX_CHAT_MESSAGE_CONTENT_CHARS)
+    id: z.string(),
+    type: z.literal('function'),
+    function: z.object({
+      name: z.string(),
+      arguments: z.string()
+    })
   })
+  .meta({ id: 'ChatToolCall' })
+
+export type ChatToolCall = z.infer<typeof chatToolCallSchema>
+
+// A tool the model is allowed to call this turn, advertised in the request
+// `tools` array (OpenAI `function` shape). `parameters` is the tool's JSON Schema
+// for its arguments. Native tool calling replaces the prior "describe the tools
+// in the system prompt + parse a JSON decision" protocol (issue #276).
+export const chatToolDefinitionSchema = z
+  .object({
+    type: z.literal('function'),
+    function: z.object({
+      name: z.string(),
+      description: z.string().optional(),
+      parameters: z.record(z.string(), z.unknown()).optional()
+    })
+  })
+  .meta({ id: 'ChatToolDefinition' })
+
+export type ChatToolDefinition = z.infer<typeof chatToolDefinitionSchema>
+
+// Native tool-call message shape (issue #276). A chat message is one of three
+// disjoint variants — modelled as a refined union rather than a single loose
+// object so an invalid message (an assistant turn with neither content nor
+// tool_calls, a tool result missing its tool_call_id) cannot be constructed:
+//   - a plain text turn (system / developer / user, or a plain assistant answer),
+//   - an assistant turn that ISSUES tool calls (content optional, tool_calls set),
+//   - a `tool` result turn keyed back to the call by `tool_call_id`.
+const textChatMessageSchema = z.object({
+  role: z.enum(['developer', 'system', 'user']),
+  content: z.string().max(MAX_CHAT_MESSAGE_CONTENT_CHARS)
+})
+
+const assistantChatMessageSchema = z
+  .object({
+    role: z.literal('assistant'),
+    // Null/omitted when the assistant turn only carries tool_calls.
+    content: z.string().max(MAX_CHAT_MESSAGE_CONTENT_CHARS).nullish(),
+    tool_calls: z.array(chatToolCallSchema).optional()
+  })
+  .refine(
+    (message) =>
+      (typeof message.content === 'string' && message.content.length > 0) ||
+      (message.tool_calls !== undefined && message.tool_calls.length > 0),
+    { message: 'An assistant message must carry content or at least one tool_call' }
+  )
+
+const toolChatMessageSchema = z.object({
+  role: z.literal('tool'),
+  tool_call_id: z.string(),
+  content: z.string().max(MAX_CHAT_MESSAGE_CONTENT_CHARS)
+})
+
+export const chatMessageSchema = z
+  .union([textChatMessageSchema, assistantChatMessageSchema, toolChatMessageSchema])
   .meta({ id: 'ChatMessage' })
 
 export type ChatMessage = z.infer<typeof chatMessageSchema>
@@ -169,13 +234,28 @@ export const streamOptionsSchema = z
 
 export type StreamOptions = z.infer<typeof streamOptionsSchema>
 
+// How the model may use the advertised tools this turn. `auto` (the decide path)
+// lets the model choose to call a tool or answer; `none` (the synthesis path)
+// forbids tool calls so the model composes the final answer — while still
+// advertising the tools, which keeps the replayed tool_calls/tool messages valid
+// for strict providers. Mirrors the OpenAI `tool_choice` enum (object forms are
+// intentionally out of scope).
+export const toolChoiceSchema = z.enum(['none', 'auto', 'required']).meta({ id: 'ToolChoice' })
+
+export type ToolChoice = z.infer<typeof toolChoiceSchema>
+
 export const modelsChatRequestSchema = z
   .object({
     model: z.string().optional(),
     litellmBaseUrl: z.string().url().optional(),
     stream: z.boolean().optional(),
     stream_options: streamOptionsSchema.optional(),
-    messages: z.array(chatMessageSchema).max(100)
+    messages: z.array(chatMessageSchema).max(100),
+    // Native tool calling (issue #276): the tools the model may call this turn
+    // and the policy governing whether it must/may/can't. Both optional so a
+    // plain chat request (no tools) is unchanged.
+    tools: z.array(chatToolDefinitionSchema).optional(),
+    tool_choice: toolChoiceSchema.optional()
   })
   .meta({ id: 'ModelsChatRequest' })
 
@@ -186,7 +266,11 @@ export const modelsChatChoiceSchema = z
     message: z
       .object({
         role: z.string().optional(),
-        content: z.string().nullable().optional()
+        content: z.string().nullable().optional(),
+        // Native tool calling: a non-streaming decision response carries the
+        // model's chosen tool calls here (issue #276). Absent when the model
+        // answered with content instead of calling a tool.
+        tool_calls: z.array(chatToolCallSchema).optional()
       })
       .optional(),
     finish_reason: z.string().optional()

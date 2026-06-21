@@ -68,32 +68,45 @@ export type LiteLLMMock = {
   sentinelHits: () => string[]
 }
 
-type ChatMessage = { role: string; content: string }
+type ToolCall = {
+  id: string
+  type: 'function'
+  function: { name: string; arguments: string }
+}
+type ChatMessage = {
+  role: string
+  // Native tool calling (issue #276): an assistant tool-call turn carries
+  // `content: null` + `tool_calls`; a `tool` result turn carries `tool_call_id`.
+  content?: string | null
+  tool_calls?: ToolCall[]
+  tool_call_id?: string
+}
 type LiteLLMRequestBody = {
   stream?: boolean
   stream_options?: { include_usage?: boolean }
   messages?: ChatMessage[]
+  tools?: unknown[]
+  tool_choice?: unknown
   key?: unknown
 }
 type UpstreamCall = { path: string; authorization: string | null }
 
-const OBSERVATION_PREFIX = 'run_javascript: '
-
-// Parse the SandboxExecutionResult the runtime embedded in an observation. The
-// "Tool results:" section is last in the message, so the tail after the final
-// `run_javascript: ` is the result JSON (array-wrapped in the ReAct observation).
-const parseSandboxResult = (text: string): SandboxResult | undefined => {
-  const idx = text.lastIndexOf(OBSERVATION_PREFIX)
-  if (idx === -1) return undefined
-  const tail = text.slice(idx + OBSERVATION_PREFIX.length).trim()
-  try {
-    const parsed: unknown = JSON.parse(tail)
-    const result: unknown = Array.isArray(parsed) ? (parsed as unknown[])[0] : parsed
-    if (result && typeof result === 'object' && 'timedOut' in result) {
-      return result as SandboxResult
+// Parse the SandboxExecutionResult the runtime fed back as a native `tool` result
+// message (issue #276): each executed tool call produces a `role: 'tool'` turn
+// whose `content` is the JSON-encoded tool output. Scan a forwarded request body
+// for such a message carrying a sandbox result.
+const parseSandboxResultFromBody = (body: LiteLLMRequestBody): SandboxResult | undefined => {
+  const messages = Array.isArray(body.messages) ? body.messages : []
+  for (const message of messages) {
+    if (message.role !== 'tool' || typeof message.content !== 'string') continue
+    try {
+      const parsed: unknown = JSON.parse(message.content)
+      if (parsed && typeof parsed === 'object' && 'timedOut' in parsed) {
+        return parsed as SandboxResult
+      }
+    } catch {
+      /* a non-sandbox tool result (e.g. an "Error: …" blocked-tool message) */
     }
-  } catch {
-    /* not a complete JSON tail */
   }
   return undefined
 }
@@ -132,16 +145,61 @@ const sseStream = (content: string, usage?: { prompt_tokens: number }): string =
   return body + 'data: [DONE]\n\n'
 }
 
+// A single reasoning (chain-of-thought) SSE delta. With native tool calling the
+// model's decision rationale is its streamed `reasoning_content` (issue #276), not
+// a structured `reasoning` field — the ReAct timeline renders it as the think
+// step's text.
+const sseReasoningDelta = (text: string): string =>
+  `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: text } }] })}\n\n`
+
+// Stream a single native tool call as OpenAI-style SSE deltas (issue #276): an
+// optional reasoning delta first (the chain-of-thought), then the tool call whose
+// id + name arrive in the first delta and whose arguments are split across two
+// more so the client's cross-delta tool-call accumulation is exercised.
+const sseToolCallStream = (toolCall: ToolCall, reasoning?: string): string => {
+  const index = 0
+  const mid = Math.ceil(toolCall.function.arguments.length / 2)
+  const deltas = [
+    {
+      tool_calls: [
+        {
+          index,
+          id: toolCall.id,
+          type: 'function',
+          function: { name: toolCall.function.name, arguments: '' }
+        }
+      ]
+    },
+    { tool_calls: [{ index, function: { arguments: toolCall.function.arguments.slice(0, mid) } }] },
+    { tool_calls: [{ index, function: { arguments: toolCall.function.arguments.slice(mid) } }] }
+  ]
+  let body = reasoning ? sseReasoningDelta(reasoning) : ''
+  for (const delta of deltas) {
+    body += `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
+  }
+  return body + 'data: [DONE]\n\n'
+}
+
 const jsonResponse = (value: unknown): Response =>
   new Response(JSON.stringify(value), {
     status: 200,
     headers: { 'content-type': 'application/json' }
   })
 
-const FINAL_DECISION = JSON.stringify({
-  kind: 'final',
-  reasoning: 'The sandbox returned its result; ready to answer.'
+// The single run_javascript tool call the mock issues in 'tool' mode (issue
+// #276): native tool_calls now, not a hand-rolled JSON decision. The arguments
+// are built per request from the snippet under test.
+const runJavascriptToolCall = (code: string): ToolCall => ({
+  id: 'call_run_javascript_1',
+  type: 'function',
+  function: { name: 'run_javascript', arguments: JSON.stringify({ code }) }
 })
+
+// The chain-of-thought the mock streams as `reasoning_content` for the ACTION and
+// FINAL decisions. Exported so the ReAct-timeline spec asserts the SAME text the
+// model "reasoned", keeping the fixture the single source of truth (issue #276).
+export const REACT_ACTION_REASONING = 'Run the snippet in the sandbox to gather the observation.'
+export const REACT_FINAL_REASONING = 'The sandbox returned its result; ready to answer.'
 
 const PLAN = JSON.stringify({
   complexity: 'low',
@@ -170,7 +228,6 @@ type UpstreamState = {
   // spec can stream e.g. a ```mermaid block instead of the default sentence).
   answer: string
   bodies: string[]
-  decoded: string[]
   actions: number
   provisionedKeys: Set<string>
   upstreamCalls: UpstreamCall[]
@@ -180,39 +237,65 @@ type UpstreamState = {
 // is robust to call ordering (the default agent is ReAct: decide → act → decide →
 // synthesize). The edge forwards `messages` verbatim, so the same detection that
 // drove the old in-page mock now drives the mocked LiteLLM upstream.
+const streamHeaders = { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' }
+
 const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Response => {
   state.bodies.push(JSON.stringify(body))
   const messages = Array.isArray(body.messages) ? body.messages : []
-  state.decoded.push(messages.map((m) => m.content).join('\n'))
   const system = messages.find((m) => m.role === 'system')?.content ?? ''
-  const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
 
-  let content: string
   if (system.startsWith('You are a ReAct agent')) {
-    // In 'no-tool' mode there is no tool to drive, so finish on the first decision:
-    // the run completes and synthesizes a plain answer without any action. A
-    // completed tool result (folded into the next observation under "Tool
-    // results:") is the deterministic signal to stop acting in 'tool' mode.
-    if (
-      state.mode === 'no-tool' ||
-      lastUser.includes('Tool results:') ||
-      lastUser.includes('Tool execution blocked:')
-    ) {
-      content = FINAL_DECISION
-    } else {
-      state.actions += 1
-      content = JSON.stringify({
-        kind: 'action',
-        reasoning: 'Run the snippet in the sandbox to gather the observation.',
-        toolId: 'run_javascript',
-        input: { code: state.code }
+    // Native tool calling (issue #276): the model now emits a real tool_call to
+    // act, and answers with content to finish. In 'no-tool' mode there is no tool
+    // to drive, so finish on the first decision. The deterministic signal to stop
+    // acting in 'tool' mode is a `tool` result turn already present in the request
+    // (covers both a completed sandbox run and a blocked/failed tool, each of
+    // which the runtime replays as a `role: 'tool'` message).
+    const hasToolResult = messages.some((m) => m.role === 'tool')
+    if (state.mode === 'no-tool' || hasToolResult) {
+      // Finish: stream the chain-of-thought then answer with content (no
+      // tool_calls). streamDecision treats the absence of a tool call as `final`.
+      const finalText = 'I have the tool results I need; composing the answer.'
+      if (body.stream === true) {
+        const stream = sseReasoningDelta(REACT_FINAL_REASONING) + sseStream(finalText)
+        return new Response(stream, { status: 200, headers: streamHeaders })
+      }
+      return jsonResponse({
+        id: 'mock-completion',
+        object: 'chat.completion',
+        choices: [
+          { index: 0, message: { role: 'assistant', content: finalText }, finish_reason: 'stop' }
+        ]
       })
     }
-  } else if (system.startsWith('You are a planning assistant')) {
-    content = PLAN
-  } else {
-    content = state.answer
+
+    // Act: stream the chain-of-thought then issue a single native run_javascript
+    // tool call.
+    state.actions += 1
+    const toolCall = runJavascriptToolCall(state.code)
+    if (body.stream === true) {
+      return new Response(sseToolCallStream(toolCall, REACT_ACTION_REASONING), {
+        status: 200,
+        headers: streamHeaders
+      })
+    }
+    return jsonResponse({
+      id: 'mock-completion',
+      object: 'chat.completion',
+      choices: [
+        {
+          index: 0,
+          message: { role: 'assistant', content: null, tool_calls: [toolCall] },
+          finish_reason: 'tool_calls'
+        }
+      ]
+    })
   }
+
+  // Planner (plan-execute / hybrid): still a structured JSON ExecutionPlan — the
+  // planner runs before any tool I/O, so it is untouched by the native tool-call
+  // switch. Synthesis (any other system prompt): stream the final answer.
+  const content = system.startsWith('You are a planning assistant') ? PLAN : state.answer
 
   if (body.stream === true) {
     // Emit a usage chunk only when the client opted in (synthesize does, the
@@ -220,10 +303,7 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
     const usage = body.stream_options?.include_usage
       ? { prompt_tokens: MOCK_PROMPT_TOKENS }
       : undefined
-    return new Response(sseStream(content, usage), {
-      status: 200,
-      headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' }
-    })
+    return new Response(sseStream(content, usage), { status: 200, headers: streamHeaders })
   }
   return jsonResponse({
     id: 'mock-completion',
@@ -375,7 +455,6 @@ const installMock = async (
     mode,
     answer,
     bodies: [],
-    decoded: [],
     actions: 0,
     provisionedKeys: new Set(knownProvisionedKeys),
     upstreamCalls: []
@@ -399,9 +478,15 @@ const installMock = async (
   return {
     requestBodies: () => state.bodies,
     sandboxResult: () => {
-      for (let i = state.decoded.length - 1; i >= 0; i -= 1) {
-        const result = parseSandboxResult(state.decoded[i] ?? '')
-        if (result) return result
+      for (let i = state.bodies.length - 1; i >= 0; i -= 1) {
+        const raw = state.bodies[i]
+        if (!raw) continue
+        try {
+          const result = parseSandboxResultFromBody(JSON.parse(raw) as LiteLLMRequestBody)
+          if (result) return result
+        } catch {
+          /* a non-JSON body never carries a tool result */
+        }
       }
       return undefined
     },

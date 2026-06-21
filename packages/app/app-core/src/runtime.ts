@@ -16,12 +16,18 @@ import type {
   ProviderCallOptions as AgentProviderCallOptions,
   RuntimeErrorReporter,
   SynthesisChunk,
-  Tool as AgentTool
+  Tool as AgentTool,
+  ToolInvocation as AgentToolInvocation
 } from '@tinytinkerer/agent-core'
 import type { AgentType, ExecutionPlan, PlanStep, ReActDecision } from '@tinytinkerer/contracts'
 import type { ChatRuntime } from './ports'
 
-export type { DecisionChunk, RuntimeErrorReporter, SynthesisChunk } from '@tinytinkerer/agent-core'
+export type {
+  DecisionChunk,
+  RuntimeErrorReporter,
+  SynthesisChunk,
+  ToolCallChunk
+} from '@tinytinkerer/agent-core'
 
 // Surface the runtime timeout error + guard through the app-core boundary so the
 // host (app-browser) can classify a terminal timeout as a Sentry warning rather
@@ -74,12 +80,18 @@ export type ConversationMessage = {
   content: string
 }
 
+// Re-exported through the app-core boundary so the host (app-browser) builds
+// native tool-call messages from the structured record, mirroring how the other
+// runtime types are surfaced here. See agent-core's ToolInvocation.
+export type ToolInvocation = AgentToolInvocation
+
 export type ExecutionContext = {
   prompt: string
   history: ConversationMessage[]
   plan: ExecutionPlan
   notes: string[]
   toolResults: Record<string, unknown>
+  toolInvocations: ToolInvocation[]
 }
 
 export type ProviderCallOptions = {
@@ -260,5 +272,6 @@ const toExecutionContext = (context: AgentExecutionContext): ExecutionContext =>
   history: context.history,
   plan: context.plan,
   notes: context.notes,
-  toolResults: context.toolResults
+  toolResults: context.toolResults,
+  toolInvocations: context.toolInvocations
 })

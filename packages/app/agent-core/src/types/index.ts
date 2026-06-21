@@ -10,12 +10,29 @@ export type ConversationMessage = {
   content: string
 }
 
+// One executed tool call recorded in run order — the structured source the
+// provider turns into native OpenAI `assistant.tool_calls` + `tool` result
+// messages when it feeds the model its own tool I/O (issue #276). This replaces
+// the prior approach of flattening tool output into prose `notes`/`toolResults`
+// inside the request. `callId` is the tool_call id echoed on both the assistant
+// tool_call and its matching tool result; `toolId` is the runtime tool id (e.g.
+// `mcp:srv:tool`), mapped to a wire-safe function name at assembly time.
+export type ToolInvocation = {
+  callId: string
+  toolId: string
+  input: Record<string, unknown>
+  outcome: { ok: true; output: unknown } | { ok: false; error: string }
+}
+
 export type ExecutionContext = {
   prompt: string
   history: ConversationMessage[]
   plan: ExecutionPlan
   notes: string[]
   toolResults: Record<string, unknown>
+  // Ordered record of every tool call executed this run (issue #276). Drives the
+  // native tool-call message assembly in the decide + synthesize paths.
+  toolInvocations: ToolInvocation[]
 }
 
 export type ProviderCallOptions = {
@@ -30,10 +47,24 @@ export type ProviderCallOptions = {
 // `stream_options.include_usage` emits a single one carrying the call's token
 // counts after the content stream. Consumers that don't care ignore it (it has
 // no `text`); the runtime turns it into an `agent.usage` event.
+// `tool_call` chunks carry a streamed native tool-call delta (issue #276): the
+// decide path accumulates them by `index` into the chosen tool call, while the
+// synthesis path (which advertises `tool_choice: 'none'`) never sees any and
+// ignores the variant. `id`/`name`/`argumentsDelta` each arrive across one or
+// more deltas, so accumulators must append rather than overwrite.
+export type ToolCallChunk = {
+  kind: 'tool_call'
+  index: number
+  id?: string
+  name?: string
+  argumentsDelta?: string
+}
+
 export type SynthesisChunk =
   | { kind: 'content'; text: string }
   | { kind: 'reasoning'; text: string }
   | { kind: 'usage'; promptTokens: number; completionTokens?: number; totalTokens?: number }
+  | ToolCallChunk
 
 // A chunk of a streamed ReAct decision: `thought` carries the model's reasoning
 // as it streams (full accumulated text), and `decision` is the final structured

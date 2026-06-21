@@ -168,7 +168,8 @@ export abstract class AgentRuntimeBase {
       history,
       plan: { complexity: 'low', steps: [] },
       notes: [],
-      toolResults: {}
+      toolResults: {},
+      toolInvocations: []
     }
   }
 
@@ -517,6 +518,16 @@ export abstract class AgentRuntimeBase {
         input: decision.input
       })
 
+      // Record the call in run order as the structured source for native
+      // tool-call message assembly (issue #276). `toolStepId` is the tool_call
+      // id echoed on both the assistant tool_call and its tool result message.
+      context.toolInvocations.push({
+        callId: toolStepId,
+        toolId: decision.toolId,
+        input: decision.input,
+        outcome
+      })
+
       if (outcome.ok) {
         note = serializeToolNote(decision.toolId, outcome.output)
         const existing = context.toolResults[decision.toolId]
@@ -624,6 +635,12 @@ export abstract class AgentRuntimeBase {
                 : {}),
               ...(chunk.totalTokens !== undefined ? { totalTokens: chunk.totalTokens } : {})
             })
+            continue
+          }
+          if (chunk.kind === 'tool_call') {
+            // Synthesis advertises `tool_choice: 'none'`, so the model should not
+            // emit tool calls here; ignore any defensively rather than appending
+            // them to the answer (issue #276).
             continue
           }
           yield createEvent('assistant.chunk', session.append(chunk.text))

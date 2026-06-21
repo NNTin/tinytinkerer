@@ -1,51 +1,42 @@
-import { parseJsonWithTelemetry, parseModelJsonWithTelemetry } from '../telemetry/request-telemetry'
-import type { DecisionChunk, ExecutionContext } from '@tinytinkerer/app-core'
-import { reactDecisionSchema, type ReActDecision } from '@tinytinkerer/contracts'
+import { parseJsonWithTelemetry } from '../telemetry/request-telemetry'
+import type { DecisionChunk, ExecutionContext, ToolCallChunk } from '@tinytinkerer/app-core'
+import type { ChatMessage, ChatToolCall, ReActDecision } from '@tinytinkerer/contracts'
 import { createEdgeError, type ModelsChatFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createRateLimitError } from './rate-limit'
 import { parseSseStream, splitInlineThink } from './sse-utils'
+import {
+  buildToolNameMap,
+  parseToolCallArguments,
+  toolInvocationsToMessages,
+  type ToolNameMap
+} from './tool-calling'
 
-const buildDecisionSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
-  const toolDocs = tools
-    .map(
-      (t) =>
-        `Tool: ${t.id}\nDescription: ${t.description}\nInput schema: ${JSON.stringify(t.inputSchema, null, 2)}`
-    )
-    .join('\n\n')
-
-  return `You are a ReAct agent. You solve the user's request by reasoning and acting one step at a time.
-Given the user's request and the observations gathered so far, decide the SINGLE next action to take, or decide that you now have enough information to answer.
-
-Available tools:
-${toolDocs}
-
-Return ONLY a JSON object (no markdown, no explanation) matching one of these shapes:
-- To take an action: { "kind": "action", "reasoning": "<why this action>", "toolId": "<tool_id>", "input": { ...args } }
-- To finish: { "kind": "final", "reasoning": "<why you can answer now>" }
+// Native tool calling (issue #276): the decider advertises the available tools
+// and lets the model answer with native `tool_calls` (take an action) or plain
+// content (it is ready to finish). The tool catalogue is no longer described in
+// the system prompt and the model no longer emits a hand-rolled JSON decision —
+// that brittle prose protocol (and its truncation-recovery parsing) is retired.
+const buildDecisionSystemPrompt = (): string =>
+  `You are a ReAct agent. You solve the user's request by reasoning and acting one step at a time.
+Given the user's request and the tool results gathered so far, either call the SINGLE most useful tool to make progress, or — once you have enough information — answer directly without calling any tool.
 
 Rules:
 - Think through your decision step by step first; your thinking is shown to the user as it streams.
-- After thinking, your final message must be ONLY the JSON object — no markdown, no commentary.
-- Choose "action" only when a tool is genuinely needed to make progress.
-- Choose "final" as soon as the gathered observations are sufficient to answer.
-- Use exact tool IDs from the list above; arguments must match the tool's input schema.`
-}
+- Call a tool only when one is genuinely needed to make progress.
+- Call at most one tool per step.
+- When the gathered tool results are sufficient, stop calling tools and respond with a short confirmation; the final answer is composed separately.`
 
-const buildObservations = (context: ExecutionContext): string => {
-  const toolSection = Object.entries(context.toolResults)
-    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-    .join('\n')
-
-  return [
-    `Request: ${context.prompt}`,
-    context.notes.filter(Boolean).length > 0 &&
-      `\nObservations so far:\n${context.notes.join('\n')}`,
-    toolSection && `\nTool results:\n${toolSection}`
-  ]
-    .filter(Boolean)
-    .join('')
-}
+// Assemble the request messages shared by both decision variants. The accumulated
+// tool I/O is replayed as native assistant `tool_calls` + `tool` result turns
+// (issue #276) — identical in shape to the synthesis path — instead of prose
+// notes glued onto the user message.
+const buildMessages = (context: ExecutionContext, names: ToolNameMap): ChatMessage[] => [
+  { role: 'system', content: buildDecisionSystemPrompt() },
+  ...context.history.map((message) => ({ role: message.role, content: message.content })),
+  { role: 'user' as const, content: context.prompt },
+  ...toolInvocationsToMessages(context.toolInvocations, names.toWire)
+]
 
 type DecisionRequestMetadata = {
   area: 'react.decide'
@@ -56,29 +47,29 @@ type DecisionRequestMetadata = {
   stream: boolean
 }
 
-// Shared request shape for both decision variants: build the system prompt +
-// history + observations message list, POST it to /api/models/chat, and map the
-// two non-success outcomes the runtime cares about — a 429 (surfaced as a
-// RateLimitError so the cooldown/retry path handles it, not a generic run-ending
-// failure) and any other non-ok status (a generic edge error). The only
-// difference between the two callers is `stream` and what they do with the
-// returned response body.
+// Shared request shape for both decision variants: advertise the tools, send the
+// system + history + native tool-call messages, POST to /api/models/chat, and map
+// the two non-success outcomes the runtime cares about — a 429 (surfaced as a
+// RateLimitError so the cooldown/retry path handles it) and any other non-ok
+// status (a generic edge error). The only difference between callers is `stream`.
 const requestDecision = async (
   context: ExecutionContext,
-  tools: PlannerToolDescriptor[],
+  names: ToolNameMap,
   model: string,
   modelsChat: ModelsChatFetch,
   stream: boolean,
   signal?: AbortSignal
 ): Promise<Response> => {
-  const messages = [
-    { role: 'system' as const, content: buildDecisionSystemPrompt(tools) },
-    ...context.history.map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user' as const, content: buildObservations(context) }
-  ]
-
   const response = await modelsChat(
-    { model, stream, messages },
+    {
+      model,
+      stream,
+      messages: buildMessages(context, names),
+      tools: names.definitions,
+      // `auto`: the model decides whether to call a tool or answer. Synthesis
+      // uses `none` to force a final answer (see litellm-provider).
+      tool_choice: 'auto'
+    },
     {
       area: 'react.decide',
       ...(signal ? { signal } : {})
@@ -111,58 +102,45 @@ const decisionMetadata = (
   stream
 })
 
-// Turn the model's answer text into a ReActDecision, recovering from the model's
-// inherent non-compliance without ever crashing the run. A streaming model will
-// sometimes emit prose ("I now have enough information…"), an empty answer, or
-// truncated/malformed JSON when the stream is cut short. We must not let that
-// crash the whole run: the parse error otherwise propagates through nextDecision
-// (which only retries rate limits) and kills the run, so an unusable decision
-// falls back to `final` and the loop synthesizes an answer — mirroring the
-// runtime's existing `decision ?? { kind: 'final' }` fallback.
-//
-// Distinguish two flavours of "no decision JSON" (they are NOT the same defect):
-//   - PURE PROSE (no `{`/`[` at all) — the model simply *finished in prose*. That
-//     is the correct, expected `final` outcome, not a bug, so we pass
-//     `silentWhenNoJson` to recover WITHOUT capturing telemetry (it was generating
-//     recurring noise that auto-regressed TINYTINKERER-FRONTEND-K every time the
-//     model answered in prose).
-//   - TRUNCATED / MALFORMED JSON or a WRONG SHAPE — a JSON value was present but
-//     cut off mid-action or did not validate. That means we ABANDONED the tool
-//     action the model was emitting and answered from incomplete results — a real
-//     defect. We do NOT `accept`/suppress it: it is still captured (stays loud) so
-//     we can investigate why the stream truncates / the model misconforms.
-// We recover for the user in both cases, but only stay loud for the lossy one.
-// (TINYTINKERER-FRONTEND-J / -K.)
-const parseDecisionOrFinal = (
-  metadata: DecisionRequestMetadata,
-  jsonText: string,
-  response: Response
-): ReActDecision => {
-  try {
-    // The shared helper strips ```json fences, parses robustly (tolerating
-    // sloppy-but-complete output, never repairing a truncated value), and
-    // validates the schema. With `silentWhenNoJson` a pure-prose finish is a
-    // benign no_json (not captured); truncation/schema failures stay loud.
-    return parseModelJsonWithTelemetry(
-      metadata,
-      jsonText,
-      reactDecisionSchema,
-      {
-        parseError: 'ReAct decision body was not valid JSON',
-        schemaError: 'ReAct decision did not match the decision schema'
-      },
-      response,
-      { silentWhenNoJson: true }
-    )
-  } catch {
-    return { kind: 'final' }
-  }
+// Turn a chosen native tool call into a ReActDecision. The model addresses tools
+// by their advertised (wire-safe) function name, so map it back to the real tool
+// id; the arguments arrive as a JSON string, parsed into the action input. A tool
+// call whose arguments are not valid JSON is treated as empty input rather than
+// crashing the run — the tool's own schema validation is the real gate.
+const toActionDecision = (toolCall: ChatToolCall, names: ToolNameMap): ReActDecision => ({
+  kind: 'action',
+  toolId: names.toToolId(toolCall.function.name),
+  input: parseToolCallArguments(toolCall.function.arguments)
+})
+
+// Accumulator for streamed native tool-call fragments (issue #276). OpenAI streams
+// each call's `id`/`name` once and its `arguments` across several deltas keyed by
+// `index`; collect them in arrival order so the first complete call drives the
+// action decision (the runtime executes one tool per step).
+type ToolCallAccumulator = { id: string; name: string; arguments: string }
+
+const applyToolCallChunk = (
+  accumulators: Map<number, ToolCallAccumulator>,
+  chunk: ToolCallChunk
+): void => {
+  const existing = accumulators.get(chunk.index) ?? { id: '', name: '', arguments: '' }
+  accumulators.set(chunk.index, {
+    id: chunk.id ?? existing.id,
+    name: chunk.name ?? existing.name,
+    arguments: existing.arguments + (chunk.argumentsDelta ?? '')
+  })
 }
 
-// Asks the model for the next ReAct decision (one action, or finish) given the
-// observations accumulated in `context`. Mirrors the planner's edge call shape:
-// a non-streaming /api/models/chat request whose JSON body is validated against
-// `reactDecisionSchema`.
+const accumulatorToToolCall = (accumulator: ToolCallAccumulator): ChatToolCall => ({
+  id: accumulator.id,
+  type: 'function',
+  function: { name: accumulator.name, arguments: accumulator.arguments }
+})
+
+// Asks the model for the next ReAct decision (call a tool, or finish) given the
+// tool results accumulated in `context`. Non-streaming variant: reads the chosen
+// tool call from `choices[0].message.tool_calls`; absent tool calls means the
+// model answered with content, i.e. it is ready to finish.
 export const decideNextAction = async (
   context: ExecutionContext,
   tools: PlannerToolDescriptor[],
@@ -170,21 +148,23 @@ export const decideNextAction = async (
   modelsChat: ModelsChatFetch,
   signal?: AbortSignal
 ): Promise<ReActDecision> => {
-  const response = await requestDecision(context, tools, model, modelsChat, false, signal)
+  const names = buildToolNameMap(tools)
+  const response = await requestDecision(context, names, model, modelsChat, false, signal)
 
   const metadata = decisionMetadata(response, model, false)
   const data = await parseJsonWithTelemetry<{
-    choices?: Array<{ message?: { content?: string | null } }>
+    choices?: Array<{ message?: { tool_calls?: ChatToolCall[] } }>
   }>(metadata, response)
-  const text = data.choices?.[0]?.message?.content ?? ''
+  const toolCall = data.choices?.[0]?.message?.tool_calls?.[0]
 
-  return parseDecisionOrFinal(metadata, text, response)
+  return toolCall ? toActionDecision(toolCall, names) : { kind: 'final' }
 }
 
 // Streaming variant of decideNextAction. Requests a streamed completion and
 // splits it into the model's reasoning (yielded as growing `thought` chunks so
-// the UI can render the step live) and the answer content (accumulated and
-// parsed as the structured decision once the stream ends).
+// the UI can render the step live) and the native tool-call fragments (assembled
+// across deltas). At end-of-stream the first complete tool call becomes the
+// action decision; if the model emitted no tool call it is ready to finish.
 export async function* streamDecision(
   context: ExecutionContext,
   tools: PlannerToolDescriptor[],
@@ -192,10 +172,11 @@ export async function* streamDecision(
   modelsChat: ModelsChatFetch,
   signal?: AbortSignal
 ): AsyncGenerator<DecisionChunk> {
-  const response = await requestDecision(context, tools, model, modelsChat, true, signal)
+  const names = buildToolNameMap(tools)
+  const response = await requestDecision(context, names, model, modelsChat, true, signal)
 
   let thought = ''
-  let jsonBuffer = ''
+  const toolCalls = new Map<number, ToolCallAccumulator>()
 
   if (!response.body) {
     throw new Error('ReAct decision stream missing response body')
@@ -205,14 +186,21 @@ export async function* streamDecision(
     if (chunk.kind === 'reasoning') {
       thought += chunk.text
       yield { kind: 'thought', text: thought }
-    } else if (chunk.kind === 'content') {
-      jsonBuffer += chunk.text
+    } else if (chunk.kind === 'tool_call') {
+      applyToolCallChunk(toolCalls, chunk)
     }
-    // A terminal `usage` chunk carries no text; the decision path ignores it
-    // (usage is surfaced from the synthesize stream).
+    // `content` (the model's prose when it finishes) and the terminal `usage`
+    // chunk carry no decision signal here; the final answer is composed by the
+    // separate synthesize call.
   }
 
-  const metadata = decisionMetadata(response, model, true)
-  const decision = parseDecisionOrFinal(metadata, jsonBuffer, response)
+  const firstCall = [...toolCalls.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, value]) => value)
+    .find((value) => value.name.length > 0)
+
+  const decision: ReActDecision = firstCall
+    ? toActionDecision(accumulatorToToolCall(firstCall), names)
+    : { kind: 'final' }
   yield { kind: 'decision', decision }
 }

@@ -60,7 +60,16 @@ export class AgentRuntime extends AgentRuntimeBase {
 
         if (step.toolCall) {
           const toolStepId = createStepId()
-          const outcome = yield* this.executeToolStep(toolStepId, stepEventId, step.toolCall)
+          const toolCall = step.toolCall
+          const outcome = yield* this.executeToolStep(toolStepId, stepEventId, toolCall)
+          // Record the call in run order for native tool-call message assembly
+          // (issue #276), mirroring the ReAct loop.
+          context.toolInvocations.push({
+            callId: toolStepId,
+            toolId: toolCall.toolId,
+            input: toolCall.input,
+            outcome
+          })
           if (outcome.ok) {
             context.toolResults[step.id] = outcome.output
           } else {

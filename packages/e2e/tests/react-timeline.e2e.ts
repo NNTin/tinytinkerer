@@ -5,6 +5,8 @@ import {
   enableReasoningActivity,
   dismissTelemetryDialog,
   runSnippetViaChat,
+  REACT_ACTION_REASONING,
+  REACT_FINAL_REASONING,
   SYNTHESIS_ANSWER
 } from '../fixtures/mock-litellm'
 
@@ -16,12 +18,13 @@ import {
 //
 // Only LiteLLM is mocked; the run is anonymous through the real edge worker. The
 // mock drives a real sandbox run: the model issues one `run_javascript` ACTION
-// (reasoning: "Run the snippet…") then, once the observation is folded back, a
-// FINAL decision (reasoning: "The sandbox returned its result; ready to answer.").
-// Both reasonings come straight from fixtures/mock-litellm.ts. See e2e/README.md.
+// then, once the observation is folded back, a FINAL decision. With native tool
+// calling (issue #276) each decision's rationale is the model's streamed
+// chain-of-thought (`reasoning_content`); both texts come straight from
+// fixtures/mock-litellm.ts. See e2e/README.md.
 
-const ACTION_REASONING = 'Run the snippet in the sandbox to gather the observation.'
-const FINAL_REASONING = 'The sandbox returned its result; ready to answer.'
+const ACTION_REASONING = REACT_ACTION_REASONING
+const FINAL_REASONING = REACT_FINAL_REASONING
 const SNIPPET = 'return 1 + 1'
 
 // The per-turn panel auto-collapses when the run finishes; expand it so the

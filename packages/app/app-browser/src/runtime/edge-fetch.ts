@@ -4,9 +4,11 @@ import {
   edgeErrorResponseSchema,
   parseRetryAfterMs,
   type ChatMessage,
+  type ChatToolDefinition,
   type InspectorRequestPayload,
   type InspectorResponse,
-  type InspectorUsage
+  type InspectorUsage,
+  type ToolChoice
 } from '@tinytinkerer/contracts'
 import type { SynthesisChunk } from '@tinytinkerer/app-core'
 import { captureTelemetryException, getTelemetryHeaders } from '../telemetry/telemetry'
@@ -106,6 +108,10 @@ export type ModelsChatInit = {
   // body by modelsChatRequestBody.
   stream_options?: { include_usage?: boolean }
   messages: ChatMessage[]
+  // Native tool calling (issue #276): the tools advertised to the model and the
+  // policy for using them. Forwarded verbatim by the edge when present.
+  tools?: ChatToolDefinition[]
+  tool_choice?: ToolChoice
 }
 
 type ModelsChatFetchOptions = {
@@ -141,10 +147,14 @@ export const modelsChatRequestBody = (
     // `dom` tree, or a large MCP response folded into the prompt) degrades
     // gracefully instead of tripping the edge's request validation, which answers
     // 400 "Invalid request" and ends the whole run (TINYTINKERER-FRONTEND-14/15).
-    messages: init.messages.map((message) => ({
-      ...message,
-      content: clampChatMessageContent(message.content)
-    }))
+    // Clamp string content only: an assistant tool-call turn carries `content:
+    // null` (its payload is the `tool_calls`), so leave non-string content as-is
+    // and preserve the tool_calls / tool_call_id fields via the spread (#276).
+    messages: init.messages.map((message) =>
+      typeof message.content === 'string'
+        ? { ...message, content: clampChatMessageContent(message.content) }
+        : message
+    )
   }
 }
 
@@ -347,7 +357,15 @@ export const createModelsChatFetch =
         // pre-clamp `init`, so the inspector mirrors the forwarded payload exactly.
         const messages = (body.messages as ChatMessage[]).map((message) => ({
           role: message.role,
-          content: message.content
+          // The inspector view is text-only; an assistant tool-call turn has
+          // `content: null`, so surface its tool_calls JSON instead so the panel
+          // still shows what was sent (issue #276).
+          content:
+            typeof message.content === 'string'
+              ? message.content
+              : 'tool_calls' in message && message.tool_calls
+                ? JSON.stringify(message.tool_calls)
+                : ''
         }))
         setResponse = onForwardRequest({
           model: init.model,

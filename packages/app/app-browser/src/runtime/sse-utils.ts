@@ -1,4 +1,4 @@
-import type { SynthesisChunk } from '@tinytinkerer/app-core'
+import type { SynthesisChunk, ToolCallChunk } from '@tinytinkerer/app-core'
 
 // Shared Server-Sent-Events / inline-think parsing used by both the chat
 // synthesizer (litellm-provider) and the ReAct decision streamer
@@ -116,6 +116,47 @@ export const extractUsageChunk = (json: Record<string, unknown>): SynthesisChunk
   }
 }
 
+// Pull native tool-call deltas off a streamed `choices[0].delta` (issue #276).
+// OpenAI streams each tool call as `{ index, id?, type?, function: { name?,
+// arguments? } }`, with `id`/`name` present on the first fragment and
+// `arguments` accumulating across fragments. Anything missing/malformed yields
+// nothing, mirroring the tolerant content/reasoning extraction above.
+const extractToolCallChunks = (delta: unknown): ToolCallChunk[] => {
+  if (!delta || typeof delta !== 'object') {
+    return []
+  }
+  const toolCalls = (delta as Record<string, unknown>)['tool_calls']
+  if (!Array.isArray(toolCalls)) {
+    return []
+  }
+  const chunks: ToolCallChunk[] = []
+  for (const entry of toolCalls) {
+    if (!entry || typeof entry !== 'object') {
+      continue
+    }
+    const record = entry as Record<string, unknown>
+    const index = record['index']
+    if (typeof index !== 'number') {
+      continue
+    }
+    const fn = record['function'] as Record<string, unknown> | undefined
+    const rawId = record['id']
+    const id = typeof rawId === 'string' ? rawId : undefined
+    const rawName = fn?.['name']
+    const name = typeof rawName === 'string' ? rawName : undefined
+    const rawArguments = fn?.['arguments']
+    const argumentsDelta = typeof rawArguments === 'string' ? rawArguments : undefined
+    chunks.push({
+      kind: 'tool_call',
+      index,
+      ...(id !== undefined ? { id } : {}),
+      ...(name !== undefined ? { name } : {}),
+      ...(argumentsDelta !== undefined ? { argumentsDelta } : {})
+    })
+  }
+  return chunks
+}
+
 export async function* parseSseStream(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal | undefined
@@ -163,6 +204,13 @@ export async function* parseSseStream(
       const content = (delta as Record<string, unknown> | undefined)?.['content']
       if (typeof content === 'string' && content) {
         chunks.push({ kind: 'content', text: content })
+      }
+      // Native tool calling (issue #276): the model streams its chosen tool calls
+      // as `delta.tool_calls` fragments keyed by `index` — `id`/`name` arrive
+      // once, `arguments` across several deltas. Surface each fragment as a
+      // `tool_call` chunk; the decide path accumulates them by index.
+      for (const toolCallChunk of extractToolCallChunks(delta)) {
+        chunks.push(toolCallChunk)
       }
       return { chunks, done: false }
     } catch {

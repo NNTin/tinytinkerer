@@ -45,7 +45,8 @@ const context: ExecutionContext = {
   history: [],
   plan: { complexity: 'low', steps: [] },
   notes: [],
-  toolResults: {}
+  toolResults: {},
+  toolInvocations: []
 }
 
 const collect = async (stream: AsyncIterable<SynthesisChunk>): Promise<string> => {
@@ -195,7 +196,10 @@ describe('LiteLLMProvider', () => {
 
     const provider = new LiteLLMProvider({
       baseUrl: 'http://example.com',
-      getToken: () => 'token'
+      getToken: () => 'token',
+      allToolDescriptors: [
+        { id: 'search', description: 'Search stored data', inputSchema: { type: 'object' } }
+      ]
     })
 
     const output = await collect(
@@ -206,8 +210,14 @@ describe('LiteLLMProvider', () => {
           { role: 'user', content: 'hello, my name is Tin' },
           { role: 'assistant', content: 'Hello Tin! How can I assist you today?' }
         ],
-        notes: ['understand: user is asking about stored name'],
-        toolResults: { search: { result: 'Tin' } }
+        toolInvocations: [
+          {
+            callId: 'call_search_1',
+            toolId: 'search',
+            input: { query: 'name' },
+            outcome: { ok: true, output: { result: 'Tin' } }
+          }
+        ]
       })
     )
 
@@ -225,22 +235,35 @@ describe('LiteLLMProvider', () => {
     }
 
     const requestBody = JSON.parse(init.body) as {
-      messages: Array<{ role: string; content: string }>
+      messages: Array<{ role: string; content: string | null; tool_call_id?: string }>
+      tool_choice?: string
     }
 
+    // Native tool calling (issue #276): the tool I/O is replayed as an assistant
+    // tool_calls turn + a tool result turn — NOT folded into the user prompt as
+    // "Research notes:/Tool results:" prose. Synthesis forbids new tool calls.
+    expect(requestBody.tool_choice).toBe('none')
     expect(requestBody.messages).toEqual([
       expect.objectContaining({ role: 'system' }),
       { role: 'user', content: 'hello, my name is Tin' },
       { role: 'assistant', content: 'Hello Tin! How can I assist you today?' },
-      {
-        role: 'user',
-        content: [
-          'Do you know my name?',
-          '\nResearch notes:\nunderstand: user is asking about stored name',
-          '\nTool results:\nsearch: {"result":"Tin"}'
-        ].join('')
-      }
+      { role: 'user', content: 'Do you know my name?' },
+      expect.objectContaining({
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          expect.objectContaining({
+            id: 'call_search_1',
+            type: 'function',
+            function: { name: 'search', arguments: JSON.stringify({ query: 'name' }) }
+          })
+        ]
+      }),
+      { role: 'tool', tool_call_id: 'call_search_1', content: JSON.stringify({ result: 'Tin' }) }
     ])
+    const serialized = JSON.stringify(requestBody.messages)
+    expect(serialized).not.toContain('Research notes')
+    expect(serialized).not.toContain('Tool results:')
 
     vi.unstubAllGlobals()
   })

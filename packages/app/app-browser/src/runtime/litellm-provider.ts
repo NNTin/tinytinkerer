@@ -34,6 +34,7 @@ import {
   type RequestTelemetryMetadata
 } from '../telemetry/request-telemetry'
 import { llmPlan, type PlannerToolDescriptor } from './mcp-planner'
+import { buildToolNameMap, toolInvocationsToMessages } from './tool-calling'
 import {
   decideNextAction as llmDecideNextAction,
   streamDecision as llmStreamDecision
@@ -41,11 +42,20 @@ import {
 import { extractReasoning, parseSseStream, splitInlineThink } from './sse-utils'
 
 const estimateTokens = (context: ExecutionContext): number => {
+  // Heuristic only (throttle sizing): include the tool I/O now carried as native
+  // tool-call turns (issue #276) so the estimate tracks what is actually sent.
+  const toolText = context.toolInvocations.map((invocation) =>
+    JSON.stringify(invocation.input).concat(
+      invocation.outcome.ok
+        ? JSON.stringify(invocation.outcome.output ?? '')
+        : invocation.outcome.error
+    )
+  )
   const allText = [
     SYSTEM_STYLE_PROMPT,
     ...context.history.map((m) => m.content),
     context.prompt,
-    ...context.notes
+    ...toolText
   ].join('')
   return Math.ceil(allText.length / 4)
 }
@@ -229,17 +239,14 @@ export class LiteLLMProvider implements ModelProvider {
       await new Promise<void>((resolve) => setTimeout(resolve, throttle.waitMs))
     }
 
-    const toolSection = Object.entries(context.toolResults)
-      .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-      .join('\n')
-
-    const userContent = [
-      context.prompt,
-      context.notes.filter(Boolean).length > 0 && `\nResearch notes:\n${context.notes.join('\n')}`,
-      toolSection && `\nTool results:\n${toolSection}`
-    ]
-      .filter(Boolean)
-      .join('')
+    // Native tool calling (issue #276): feed the model its own tool I/O as native
+    // assistant `tool_calls` + `tool` result turns — the SAME message shape the
+    // decide path uses — instead of the old "Research notes:/Tool results:" prose
+    // glued onto the user message. The tools are advertised (so the replayed
+    // tool_calls/tool turns stay valid for strict providers) but `tool_choice:
+    // 'none'` forbids new calls, forcing the model to compose the final answer.
+    const names = buildToolNameMap(this.options.allToolDescriptors ?? [])
+    const toolMessages = toolInvocationsToMessages(context.toolInvocations, names.toWire)
 
     const selectedModel = this.options.getModel?.() ?? DEFAULT_MODEL
     // Route through the shared models/chat fetch so request shape, auth, and
@@ -258,8 +265,14 @@ export class LiteLLMProvider implements ModelProvider {
         messages: [
           { role: 'system', content: SYSTEM_STYLE_PROMPT },
           ...context.history,
-          { role: 'user', content: userContent }
-        ]
+          { role: 'user', content: context.prompt },
+          ...toolMessages
+        ],
+        // Advertise the tools so the replayed tool_calls/tool messages remain
+        // valid, but forbid new calls during synthesis (issue #276).
+        ...(names.definitions.length > 0
+          ? { tools: names.definitions, tool_choice: 'none' as const }
+          : {})
       },
       {
         area: 'models.chat',
