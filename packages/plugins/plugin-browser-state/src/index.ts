@@ -61,14 +61,18 @@ export const summarizeReadDomActivity: ActivitySummarizer = (output): ActivityVi
   const returned = Array.isArray(value.nodes) ? value.nodes.length : 0
 
   const sections: ActivityView['sections'] = [
-    { label: 'Matched', value: String(matchedCount) },
-    { label: 'Returned', value: String(returned) }
+    { kind: 'text', label: 'Matched', value: String(matchedCount) },
+    { kind: 'text', label: 'Returned', value: String(returned) }
   ]
   if (typeof value.url === 'string' && value.url.length > 0) {
-    sections.push({ label: 'URL', value: previewValue(value.url) })
+    sections.push({ kind: 'text', label: 'URL', value: previewValue(value.url) })
   }
   if (value.truncated === true) {
-    sections.push({ label: 'Truncated', value: 'Some matches or content were omitted' })
+    sections.push({
+      kind: 'text',
+      label: 'Truncated',
+      value: 'Some matches or content were omitted'
+    })
   }
 
   return {

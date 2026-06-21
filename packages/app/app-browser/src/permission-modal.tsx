@@ -3,13 +3,12 @@ import {
   type PermissionRequest,
   type PermissionSummarizer,
   type PermissionView,
-  type PermissionViewSection,
-  type PluginReport
+  type PermissionViewSection
 } from '@tinytinkerer/app-core'
 import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
 import { usePermissionStore, type PendingPermission } from './permission-service'
 import { loadPluginModules } from './plugins/registry'
-import { captureTelemetryException, captureTelemetryMessage } from './telemetry/telemetry'
+import { forwardPluginReport } from './telemetry/plugin-report'
 
 // Reason recorded when the user dismisses the prompt (overlay click / Escape /
 // Deny) rather than allowing the tool. The plugin wraps this into the runtime's
@@ -23,23 +22,6 @@ const formatJson = (value: unknown): string => {
     // Inputs are normally plain JSON, but guard against a non-serializable value
     // (e.g. a cyclic object) so rendering the prompt can never throw.
     return '(value could not be displayed)'
-  }
-}
-
-// Forwards a tool owner's PermissionView report to telemetry. Mirrors the plugin
-// capture sink wired in runtime/create-runtime.ts so a report raised while
-// rendering the prompt is grouped/levelled identically to one raised at runtime.
-const forwardReport = (report: PluginReport): void => {
-  const options = {
-    level: report.level ?? 'warning',
-    tags: { plugin: report.pluginId, plugin_kind: report.kind },
-    ...(report.contexts ? { contexts: report.contexts } : {}),
-    fingerprint: ['plugin', report.pluginId, report.kind]
-  }
-  if (report.level === 'info') {
-    captureTelemetryMessage(report.message, options)
-  } else {
-    captureTelemetryException(report.message, options)
   }
 }
 
@@ -101,7 +83,7 @@ const PermissionInputView = ({
         }
         setView(resolved)
         if (resolved.report) {
-          forwardReport(resolved.report)
+          forwardPluginReport(resolved.report)
         }
       })
       .catch(() => {

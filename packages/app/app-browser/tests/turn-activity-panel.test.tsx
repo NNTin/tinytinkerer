@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ActivityView, TurnActivity } from '@tinytinkerer/app-core'
 import { TurnActivityPanel } from '../src/turn-activity-panel.js'
@@ -143,13 +143,13 @@ describe('TurnActivityPanel generic ActivityView rendering', () => {
       title: 'Ran JavaScript',
       status: 'ok',
       sections: [
-        { label: 'Result', value: '314061' },
-        { label: 'Logs', value: '0 lines' }
+        { kind: 'text', label: 'Result', value: '314061' },
+        { kind: 'text', label: 'Logs', value: 'hello\nworld' }
       ]
     }
     const resolveSummarizer = () => () => view
 
-    render(
+    const { container } = render(
       <TurnActivityPanel
         activity={completedTool('run_javascript', { ok: true })}
         isLive
@@ -162,13 +162,66 @@ describe('TurnActivityPanel generic ActivityView rendering', () => {
     expect(screen.getByText('Result:')).toBeInTheDocument()
     expect(screen.getByText('314061')).toBeInTheDocument()
     expect(screen.getByText('Logs:')).toBeInTheDocument()
-    expect(screen.getByText('0 lines')).toBeInTheDocument()
+    // Multi-line log output is rendered verbatim with newlines preserved (the value
+    // lives in a pre-wrap span so a chatty run reads line-by-line).
+    const logValue = screen.getByText('Logs:').parentElement?.querySelector('.whitespace-pre-wrap')
+    expect(logValue?.textContent).toBe('hello\nworld')
+    // The ok/warn/error outcome carries an explicit non-colour cue (glyph + word),
+    // not only the status border colour (WCAG 1.4.1).
+    const cue = container.querySelector('[data-activity-status="ok"]')
+    expect(cue).toBeInTheDocument()
+    expect(cue).toHaveTextContent('OK')
   })
 
-  it('renders untrusted section values as text, never as HTML', () => {
+  it('shows a Timed out outcome cue for a warn status', () => {
+    const view: ActivityView = {
+      title: 'Ran JavaScript',
+      status: 'warn',
+      sections: [{ kind: 'text', label: 'Timed out', value: 'Execution exceeded the time limit' }]
+    }
+    const { container } = render(
+      <TurnActivityPanel
+        activity={completedTool('run_javascript', { ok: false })}
+        isLive
+        serverNameById={new Map()}
+        resolveSummarizer={() => () => view}
+      />
+    )
+    const cue = container.querySelector('[data-activity-status="warn"]')
+    expect(cue).toBeInTheDocument()
+    expect(cue).toHaveTextContent('Warning')
+    expect(screen.getByText('Execution exceeded the time limit')).toBeInTheDocument()
+  })
+
+  it('renders a code section through a read-only CodeMirror view, resolving async summarizers', async () => {
+    const view: ActivityView = {
+      title: 'Ran JavaScript',
+      status: 'ok',
+      sections: [
+        { kind: 'code', label: 'Code', language: 'javascript', code: 'const answer = 42' },
+        { kind: 'text', label: 'Logs', value: '(none)' }
+      ]
+    }
+    // An async summarizer mirrors the real code-exec one (it lazy-loads a formatter).
+    const resolveSummarizer = () => () => Promise.resolve(view)
+
+    const { container } = render(
+      <TurnActivityPanel
+        activity={completedTool('run_javascript', { ok: true })}
+        isLive
+        serverNameById={new Map()}
+        resolveSummarizer={resolveSummarizer}
+      />
+    )
+
+    await waitFor(() => expect(container.querySelector('.cm-editor')).toBeInTheDocument())
+    expect(container).toHaveTextContent('const answer = 42')
+  })
+
+  it('renders untrusted text section values as text, never as HTML', () => {
     const view: ActivityView = {
       title: 'Tool',
-      sections: [{ label: 'Output', value: '<img src=x onerror=alert(1)>' }]
+      sections: [{ kind: 'text', label: 'Output', value: '<img src=x onerror=alert(1)>' }]
     }
     render(
       <TurnActivityPanel

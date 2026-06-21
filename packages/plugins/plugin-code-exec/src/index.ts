@@ -2,6 +2,7 @@ import {
   PluginCaptureError,
   type ActivitySummarizer,
   type ActivityView,
+  type ActivityViewSection,
   type AgentPlugin,
   type PluginHost,
   type PluginManifest,
@@ -12,6 +13,7 @@ import {
 } from '@tinytinkerer/contracts'
 import { z } from 'zod'
 import { CODE_EXEC_PLUGIN_ID } from './plugin-id'
+import { formatFailureReport, formatJavaScript, otherInputFieldsSection } from './format-code'
 import { summarizeCodeExecPermission } from './permission-view'
 
 // Re-exported so existing importers keep their path; the constant itself lives in
@@ -53,9 +55,16 @@ export type CodeExecInput = z.infer<typeof codeExecInputSchema>
 // to the model and rendered separately, so this preview only needs to be a hint.
 const MAX_SUMMARY_VALUE = 120
 
+// Bounds on the console output shown in the Logs section. A chatty run can emit
+// thousands of lines; the panel only needs a hint, so cap both the line count and
+// the total characters and mark when the view was clipped. The full logs still
+// reach the model via the tool result.
+const MAX_LOG_LINES = 20
+const MAX_LOG_CHARS = 2_000
+
 // Renders an arbitrary sandbox value as a short, plain-text preview. The host
-// renders ActivityView values as text (never HTML), so this only needs to be a
-// safe, bounded string. Non-serializable values fall back to String().
+// renders ActivityView text values as text (never HTML), so this only needs to be
+// a safe, bounded string. Non-serializable values fall back to String().
 const previewValue = (value: unknown): string => {
   let text: string
   if (typeof value === 'string') {
@@ -70,35 +79,91 @@ const previewValue = (value: unknown): string => {
   return text.length > MAX_SUMMARY_VALUE ? `${text.slice(0, MAX_SUMMARY_VALUE)}…` : text
 }
 
-// Code-execution presentation owned by the plugin, not the host. Maps the
-// SandboxExecutionResult (`{ ok, result, logs, timedOut, error? }`) to the host's
-// product-agnostic ActivityView. A normal run is `ok` (green); a timeout is `warn`
-// (the run was cut short, not a hard failure); a thrown error is `error`. Pure and
-// React-free (enforced by scripts/check-boundaries.mjs) — the host renders the
-// returned values as plain text. Fixes the misleading "(no output)" the host's old
-// MCP-shaped fallback showed for a successful run (issue #219, surfaced by #216).
-export const summarizeCodeExecActivity: ActivitySummarizer = (output): ActivityView => {
+// Joins the captured console lines into a single bounded, multi-line string for the
+// Logs section, appending an explicit marker when lines or characters were dropped
+// so a reader can tell the view was clipped.
+const previewLogs = (logs: unknown[]): string => {
+  const lines = logs.map((line) => (typeof line === 'string' ? line : previewValue(line)))
+  const droppedLines = lines.length - MAX_LOG_LINES
+  let shown = (droppedLines > 0 ? lines.slice(0, MAX_LOG_LINES) : lines).join('\n')
+  let suffix =
+    droppedLines > 0 ? `\n… (${droppedLines} more line${droppedLines === 1 ? '' : 's'})` : ''
+  if (shown.length > MAX_LOG_CHARS) {
+    shown = `${shown.slice(0, MAX_LOG_CHARS)}…`
+    suffix = suffix || '\n… (truncated)'
+  }
+  return `${shown}${suffix}`
+}
+
+// Builds the read-only `code` section for the call's `input.code`, pretty-printed
+// with the shared formatter (so it matches the permission prompt). Fails open to
+// the raw source plus a format-failure report rather than dropping the section, so
+// the panel always shows what ran. Returns nothing when there is no string `code`
+// (e.g. a malformed/legacy event) so the rest of the view still renders.
+const codeSection = async (
+  input: Record<string, unknown> | undefined
+): Promise<{ section?: ActivityViewSection; report?: ActivityView['report'] }> => {
+  const code = input?.code
+  if (typeof code !== 'string' || code.length === 0) {
+    return {}
+  }
+  try {
+    const formatted = await formatJavaScript(code)
+    return { section: { kind: 'code', label: 'Code', language: 'javascript', code: formatted } }
+  } catch (error) {
+    return {
+      section: { kind: 'code', label: 'Code', language: 'javascript', code },
+      report: formatFailureReport(code, error)
+    }
+  }
+}
+
+// Code-execution presentation owned by the plugin, not the host. Maps the call's
+// raw input (the JS source) plus its SandboxExecutionResult
+// (`{ ok, result, logs, timedOut, error? }`) to the host's product-agnostic
+// ActivityView. A normal run is `ok` (green); a timeout is `warn` (the run was cut
+// short, not a hard failure); a thrown error is `error`. The host pairs the status
+// with a non-colour glyph+word cue, so `ok`/`timedOut`/error read without relying on
+// colour. Async (it lazy-loads the shared pretty-printer) and React-free (enforced
+// by scripts/check-boundaries.mjs) — the host renders text/json values as plain text
+// and the `code` section read-only. Fixes the misleading "(no output)" the host's
+// old MCP-shaped fallback showed for a successful run (issue #219, surfaced by #216).
+export const summarizeCodeExecActivity: ActivitySummarizer = async (
+  output,
+  input
+): Promise<ActivityView> => {
   const value = (output ?? {}) as Partial<SandboxExecutionResult>
   const logs = Array.isArray(value.logs) ? value.logs : []
   const timedOut = value.timedOut === true
   const ok = value.ok === true
 
-  const sections: ActivityView['sections'] = []
-  if (value.result !== undefined) {
-    sections.push({ label: 'Result', value: previewValue(value.result) })
+  const { section: code, report } = await codeSection(input)
+
+  const sections: ActivityViewSection[] = []
+  if (code) {
+    sections.push(code)
   }
-  sections.push({ label: 'Logs', value: `${logs.length} line${logs.length === 1 ? '' : 's'}` })
+  sections.push(...otherInputFieldsSection(input ?? {}))
+  if (value.result !== undefined) {
+    sections.push({ kind: 'text', label: 'Result', value: previewValue(value.result) })
+  }
+  sections.push({
+    kind: 'text',
+    label: 'Logs',
+    value: logs.length > 0 ? previewLogs(logs) : '(none)'
+  })
   if (timedOut) {
-    sections.push({ label: 'Timed out', value: 'Execution exceeded the time limit' })
+    sections.push({ kind: 'text', label: 'Timed out', value: 'Execution exceeded the time limit' })
   }
   if (typeof value.error === 'string' && value.error.length > 0) {
-    sections.push({ label: 'Error', value: previewValue(value.error) })
+    sections.push({ kind: 'text', label: 'Error', value: previewValue(value.error) })
   }
 
   return {
     title: 'Ran JavaScript',
     status: timedOut ? 'warn' : ok ? 'ok' : 'error',
-    sections
+    sections,
+    ...(report ? { report } : {})
   }
 }
 

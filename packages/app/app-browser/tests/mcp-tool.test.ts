@@ -20,14 +20,14 @@ describe('summarizeMcpActivity', () => {
     expect(view).toEqual({
       title: '[Docs] search',
       status: 'ok',
-      sections: [{ label: 'Output', value: 'found 3 files' }]
+      sections: [{ kind: 'text', label: 'Output', value: 'found 3 files' }]
     })
   })
 
   it('maps an error result to an error view with an Error section', () => {
     const view = summarizeMcpActivity('[Docs] search', { text: 'boom', isError: true })
     expect(view.status).toBe('error')
-    expect(view.sections).toEqual([{ label: 'Error', value: 'boom' }])
+    expect(view.sections).toEqual([{ kind: 'text', label: 'Error', value: 'boom' }])
   })
 
   it('emits no sections when there is no text (never assumes a shape)', () => {

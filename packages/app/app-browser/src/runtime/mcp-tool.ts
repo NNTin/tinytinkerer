@@ -28,7 +28,7 @@ export const summarizeMcpActivity = (title: string, output: unknown): ActivityVi
   const text = typeof value.text === 'string' ? value.text : ''
   const isError = value.isError === true
   const sections: ActivityView['sections'] = text
-    ? [{ label: isError ? 'Error' : 'Output', value: text }]
+    ? [{ kind: 'text', label: isError ? 'Error' : 'Output', value: text }]
     : []
   return { title, status: isError ? 'error' : 'ok', sections }
 }

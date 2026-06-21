@@ -298,24 +298,46 @@ export interface AgentPlugin {
   deactivate?(): void | Promise<void>
 }
 
+// One section of an ActivityView. Mirrors PermissionViewSection so the host can
+// drive both surfaces with the same generic renderer: a `text` section is a plain
+// label/value row (the default, untrusted output rendered as text — never HTML); a
+// `code` section is shown read-only with syntax highlighting in the named language;
+// a `json` section is shown as a serialized dump. Lives in the contract layer so
+// plugins ship data, never a component.
+export type ActivityViewSection =
+  | { kind: 'text'; label: string; value: string }
+  | { kind: 'code'; label: string; language: string; code: string }
+  | { kind: 'json'; label: string; value: unknown }
+
 // A product-agnostic, React-free view-model a tool's owner produces from its raw
 // output so the host can render a consistent activity summary without knowing any
 // specific tool's shape. `title` (plus optional status styling) shows in the
-// collapsed summary; `sections` render as label/value rows when expanded. The
-// host renders every value as plain text — never HTML — because tool output is
-// untrusted. Lives in the contract layer so plugins ship data, never a component.
+// collapsed summary; `sections` render when expanded. The host renders text/json
+// values as plain text — never HTML — because tool output is untrusted. Lives in
+// the contract layer so plugins ship data, never a component.
 export type ActivityView = {
   title: string
   status?: 'ok' | 'error' | 'warn'
-  sections: { label: string; value: string }[]
+  sections: ActivityViewSection[]
+  // Optional structured report the host forwards to its capture sink (e.g. a
+  // formatter failure the owner wants surfaced with repro context). The owner
+  // produces data; the host performs the actual capture. Mirrors
+  // PermissionView.report.
+  report?: PluginReport
 }
 
-// A pure function a tool's owner exposes to map its raw output to an ActivityView.
+// A pure function a tool's owner exposes to map its raw output (and, optionally,
+// the call's raw input) to an ActivityView. It mirrors PermissionSummarizer: it
+// receives the input so it can present the call's arguments (e.g. the JS source as
+// a formatted `code` section), and it may be async so it can lazy-load a formatter.
 // Must stay product-agnostic: no React/DOM/window — it only transforms data
-// (enforced by scripts/check-boundaries.mjs for plugin packages). The host
-// resolves one per tool id and feeds the result into its single generic activity
-// renderer; tools without one fall back to the host's neutral default.
-export type ActivitySummarizer = (output: unknown) => ActivityView
+// (enforced by scripts/check-boundaries.mjs for plugin packages). The host resolves
+// one per tool id and feeds the result into its single generic activity renderer;
+// tools without one fall back to the host's neutral default.
+export type ActivitySummarizer = (
+  output: unknown,
+  input?: Record<string, unknown>
+) => ActivityView | Promise<ActivityView>
 
 // A product-agnostic, React-free view-model a tool's owner produces from its raw
 // permission-request input so the host can render a readable confirmation prompt

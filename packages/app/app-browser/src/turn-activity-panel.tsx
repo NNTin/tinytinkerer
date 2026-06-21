@@ -5,7 +5,9 @@ import type {
   TurnActivityItem
 } from '@tinytinkerer/app-core'
 import type { ReActDecisionKind } from '@tinytinkerer/contracts'
-import { useEffect, useState } from 'react'
+import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
+import { useEffect, useMemo, useState } from 'react'
+import { forwardPluginReport } from './telemetry/plugin-report'
 
 // Resolves the activity summarizer a tool's owner provides, keyed by tool id, or
 // `undefined` for tools that ship none (the host then uses a neutral default).
@@ -103,34 +105,91 @@ const isEmptyOutput = (output: unknown): boolean =>
 // real result is delivered to the model and rendered separately).
 const neutralView = (label: string, output: unknown): ActivityView => ({
   title: label,
-  sections: isEmptyOutput(output) ? [{ label: '', value: '(no output)' }] : []
+  sections: isEmptyOutput(output) ? [{ kind: 'text', label: '', value: '(no output)' }] : []
 })
 
 const statusStyles: Record<
   'ok' | 'error' | 'warn',
-  { border: string; summary: string; body: string }
+  { border: string; summary: string; body: string; badge: string; icon: string; label: string }
 > = {
   ok: {
     border: 'border-stone-200/70 bg-white/60',
     summary: 'text-stone-600',
-    body: 'border-stone-100 text-[var(--muted)]'
+    body: 'border-stone-100 text-[var(--muted)]',
+    // The non-colour cue: a glyph + spelled-out word so the outcome never relies on
+    // colour alone (WCAG 1.4.1, mirroring the gauge and the ReAct decision badge).
+    badge: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+    icon: '✓',
+    label: 'OK'
   },
   error: {
     border: 'border-rose-200 bg-rose-50/70',
     summary: 'text-rose-700',
-    body: 'border-rose-100 text-rose-700'
+    body: 'border-rose-100 text-rose-700',
+    badge: 'border-rose-300 bg-rose-50 text-rose-700',
+    icon: '✕',
+    label: 'Error'
   },
   warn: {
     border: 'border-amber-200 bg-amber-50/70',
     summary: 'text-amber-800',
-    body: 'border-amber-100 text-amber-800'
+    body: 'border-amber-100 text-amber-800',
+    badge: 'border-amber-300 bg-amber-50 text-amber-800',
+    icon: '⚠',
+    label: 'Warning'
+  }
+}
+
+// Renders one ActivityView section. `text` is a label/value row (untrusted output,
+// shown as plain text — never HTML — with newlines preserved so multi-line values
+// like console logs read correctly); `code` is a read-only, syntax-highlighted
+// CodeMirror block (the same renderer the permission modal uses); `json` is a
+// serialized dump. Mirrors the permission modal's section renderer.
+const ActivitySectionEntry = ({ section }: { section: ActivityView['sections'][number] }) => {
+  if (section.kind === 'code') {
+    return (
+      <div>
+        {section.label ? <span className="text-[var(--muted)]">{section.label}</span> : null}
+        <ReadOnlyCodeView
+          value={section.code}
+          language={section.language}
+          className="tt-code-editor mt-1 max-h-72 overflow-auto rounded-md border border-stone-200"
+        />
+      </div>
+    )
+  }
+  if (section.kind === 'json') {
+    return (
+      <div>
+        {section.label ? <span className="text-[var(--muted)]">{section.label}: </span> : null}
+        <pre className="mt-1 overflow-x-auto rounded-md border border-stone-200 bg-stone-50 p-2 text-stone-700">
+          {safeJson(section.value)}
+        </pre>
+      </div>
+    )
+  }
+  return (
+    <div>
+      {section.label ? <span className="text-[var(--muted)]">{section.label}: </span> : null}
+      <span className="whitespace-pre-wrap text-stone-600">{section.value}</span>
+    </div>
+  )
+}
+
+// Serializes a json section value defensively so a non-serializable value (e.g. a
+// cyclic object) can never throw while rendering the panel.
+const safeJson = (value: unknown): string => {
+  try {
+    return JSON.stringify(value, null, 2) ?? String(value)
+  } catch {
+    return '(value could not be displayed)'
   }
 }
 
 // One generic renderer for every completed tool. It is driven entirely by the
 // resolved ActivityView and never branches on a tool id — each tool's owner (a
-// plugin, or the MCP layer) decides title/status/sections. Values are rendered as
-// plain text; tool output is untrusted and never injected as HTML.
+// plugin, or the MCP layer) decides title/status/sections. text/json values are
+// rendered as plain text; tool output is untrusted and never injected as HTML.
 const ActivityViewEntry = ({ view }: { view: ActivityView }) => {
   const styles = statusStyles[view.status ?? 'ok']
   return (
@@ -141,18 +200,84 @@ const ActivityViewEntry = ({ view }: { view: ActivityView }) => {
         <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-stone-100 text-[9px] font-bold text-stone-400 transition-transform group-open:rotate-90">
           ▶
         </span>
-        <span>{view.title}</span>
+        <span className="flex-1">{view.title}</span>
+        <span
+          data-activity-status={view.status ?? 'ok'}
+          className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${styles.badge}`}
+        >
+          <span aria-hidden>{styles.icon}</span>
+          {styles.label}
+        </span>
       </summary>
-      <div className={`space-y-0.5 border-t px-3 py-1.5 ${styles.body}`}>
+      <div className={`space-y-1 border-t px-3 py-1.5 ${styles.body}`}>
         {view.sections.map((section, index) => (
-          <div key={`${section.label}-${index}`}>
-            {section.label ? <span className="text-[var(--muted)]">{section.label}: </span> : null}
-            <span className="text-stone-600">{section.value}</span>
-          </div>
+          <ActivitySectionEntry
+            key={`${section.kind}-${section.label}-${index}`}
+            section={section}
+          />
         ))}
       </div>
     </details>
   )
+}
+
+// Resolves a completed tool's ActivityView. A summarizer may be async (e.g. the
+// code-exec one lazy-loads a formatter to pretty-print the call's source), so the
+// view is resolved in an effect — mirroring the permission modal's
+// PermissionInputView. A synchronous summarizer (MCP, the neutral default) resolves
+// on first render with no flicker; an async one shows the title-only frame until it
+// settles, and a summarizer's `report` is forwarded to telemetry once.
+const CompletedToolEntry = ({
+  item,
+  label,
+  resolveSummarizer
+}: {
+  item: ToolItem
+  label: string
+  resolveSummarizer: ResolveActivitySummarizer
+}) => {
+  const produced = useMemo(() => {
+    const summarizer = resolveSummarizer(item.toolId)
+    return summarizer ? summarizer(item.output, item.input) : neutralView(label, item.output)
+  }, [resolveSummarizer, item.toolId, item.output, item.input, label])
+
+  const [view, setView] = useState<ActivityView | null>(() =>
+    produced instanceof Promise ? null : produced
+  )
+
+  useEffect(() => {
+    if (!(produced instanceof Promise)) {
+      setView(produced)
+      if (produced.report) {
+        forwardPluginReport(produced.report)
+      }
+      return
+    }
+    let cancelled = false
+    setView(null)
+    void produced
+      .then((resolved) => {
+        if (cancelled) {
+          return
+        }
+        setView(resolved)
+        if (resolved.report) {
+          forwardPluginReport(resolved.report)
+        }
+      })
+      .catch(() => {
+        // A summarizer is expected to fail open; if one rejects anyway, fall back to
+        // the neutral default rather than leaving the row stuck on its frame.
+        if (!cancelled) {
+          setView(neutralView(label, item.output))
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [produced, label, item.output])
+
+  return <ActivityViewEntry view={view ?? { title: label, sections: [] }} />
 }
 
 const ToolEntry = ({
@@ -183,9 +308,7 @@ const ToolEntry = ({
     )
   }
 
-  const summarizer = resolveSummarizer(item.toolId)
-  const view = summarizer ? summarizer(item.output) : neutralView(label, item.output)
-  return <ActivityViewEntry view={view} />
+  return <CompletedToolEntry item={item} label={label} resolveSummarizer={resolveSummarizer} />
 }
 
 // Maps each step's own id to its parent id, learned only from "started" step

@@ -315,26 +315,52 @@ describe('app-core helpers', () => {
     ).toBeUndefined()
   })
 
-  it('appends a separate observation label for a non-think step completion', () => {
+  it('drops the redundant tool-result summary of an act step (issue #277)', () => {
+    // An act step wraps a tool call; its completion summary is the serialized tool
+    // result, which the nested tool item already renders via its ActivityView. So
+    // only the "Using …" started label should remain — not a duplicate result line.
     const events: ChatEvent[] = [
       event('user.message', { text: 'hi' }),
       event('agent.step.started', {
         stepId: 'a1',
         kind: 'act',
-        title: 'Using web-search'
+        title: 'Using run_javascript'
       }),
       event('agent.step.completed', {
         stepId: 'a1',
-        summary: 'web-search: {"r":1}'
+        summary: 'run_javascript: {"ok":true,"logs":[],"timedOut":false,"result":1}'
       }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
 
     const labels =
       buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
-    expect(labels).toHaveLength(2)
+    expect(labels).toHaveLength(1)
+    expect(labels[0]).toMatchObject({ label: 'Using run_javascript', stepKind: 'act' })
     expect(
-      labels.some((item) => item.kind === 'label' && item.label.startsWith('web-search'))
+      labels.some((item) => item.kind === 'label' && item.label.startsWith('run_javascript:'))
+    ).toBe(false)
+  })
+
+  it('keeps the observation note of a non-act step completion', () => {
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hi' }),
+      event('agent.step.started', {
+        stepId: 'o1',
+        kind: 'observe',
+        title: 'Observing'
+      }),
+      event('agent.step.completed', {
+        stepId: 'o1',
+        summary: 'Noted the page has 3 headings'
+      }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ]
+
+    const labels =
+      buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    expect(
+      labels.some((item) => item.kind === 'label' && item.label === 'Noted the page has 3 headings')
     ).toBe(true)
   })
 

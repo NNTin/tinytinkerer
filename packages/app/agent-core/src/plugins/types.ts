@@ -25,6 +25,7 @@ export type {
   AgentHookContribution,
   AgentPlugin,
   ActivityView,
+  ActivityViewSection,
   ActivitySummarizer,
   PermissionView,
   PermissionViewSection,

@@ -115,8 +115,8 @@ describe('webSearchPlugin', () => {
       expect(view).toEqual({
         title: 'Web search',
         sections: [
-          { label: 'Results', value: '3' },
-          { label: 'Query', value: 'react news' }
+          { kind: 'text', label: 'Results', value: '3' },
+          { kind: 'text', label: 'Query', value: 'react news' }
         ]
       })
     })
@@ -125,18 +125,18 @@ describe('webSearchPlugin', () => {
       const view = summarizeWebSearchActivity({ results: [] })
       expect(view).toEqual({
         title: 'Web search',
-        sections: [{ label: 'Results', value: '0' }]
+        sections: [{ kind: 'text', label: 'Results', value: '0' }]
       })
     })
 
     it('tolerates malformed output without throwing', () => {
       expect(summarizeWebSearchActivity(undefined)).toEqual({
         title: 'Web search',
-        sections: [{ label: 'Results', value: '0' }]
+        sections: [{ kind: 'text', label: 'Results', value: '0' }]
       })
       expect(summarizeWebSearchActivity({ results: 'nope', query: 5 })).toEqual({
         title: 'Web search',
-        sections: [{ label: 'Results', value: '0' }]
+        sections: [{ kind: 'text', label: 'Results', value: '0' }]
       })
     })
   })

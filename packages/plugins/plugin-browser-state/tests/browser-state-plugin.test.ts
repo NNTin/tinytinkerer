@@ -113,35 +113,40 @@ describe('summarizeReadDomActivity', () => {
     expect(descriptor?.summarizeActivity).toBe(summarizeReadDomActivity)
   })
 
-  it('summarizes a matched read as ok with Matched/Returned/URL sections', () => {
-    const view = summarizeReadDomActivity(okResult)
+  it('summarizes a matched read as ok with Matched/Returned/URL sections', async () => {
+    const view = await summarizeReadDomActivity(okResult)
     expect(view.title).toBe('Read page DOM')
     expect(view.status).toBe('ok')
-    expect(view.sections).toContainEqual({ label: 'Matched', value: '2' })
-    expect(view.sections).toContainEqual({ label: 'Returned', value: '2' })
-    expect(view.sections).toContainEqual({ label: 'URL', value: 'https://example.test/#/' })
+    expect(view.sections).toContainEqual({ kind: 'text', label: 'Matched', value: '2' })
+    expect(view.sections).toContainEqual({ kind: 'text', label: 'Returned', value: '2' })
+    expect(view.sections).toContainEqual({
+      kind: 'text',
+      label: 'URL',
+      value: 'https://example.test/#/'
+    })
   })
 
-  it('marks a read that matched nothing as warn', () => {
-    const view = summarizeReadDomActivity({ ...okResult, matchedCount: 0, nodes: [] })
+  it('marks a read that matched nothing as warn', async () => {
+    const view = await summarizeReadDomActivity({ ...okResult, matchedCount: 0, nodes: [] })
     expect(view.status).toBe('warn')
   })
 
-  it('adds a Truncated section when the host omitted matches or content', () => {
-    const view = summarizeReadDomActivity({ ...okResult, truncated: true })
+  it('adds a Truncated section when the host omitted matches or content', async () => {
+    const view = await summarizeReadDomActivity({ ...okResult, truncated: true })
     expect(view.sections).toContainEqual({
+      kind: 'text',
       label: 'Truncated',
       value: 'Some matches or content were omitted'
     })
   })
 
-  it('tolerates malformed output without throwing', () => {
-    const view = summarizeReadDomActivity(undefined)
+  it('tolerates malformed output without throwing', async () => {
+    const view = await summarizeReadDomActivity(undefined)
     expect(view.title).toBe('Read page DOM')
     expect(view.status).toBe('warn')
     expect(view.sections).toEqual([
-      { label: 'Matched', value: '0' },
-      { label: 'Returned', value: '0' }
+      { kind: 'text', label: 'Matched', value: '0' },
+      { kind: 'text', label: 'Returned', value: '0' }
     ])
   })
 })

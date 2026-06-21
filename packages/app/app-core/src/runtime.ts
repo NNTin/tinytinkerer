@@ -41,6 +41,7 @@ export type {
   PluginModule,
   PluginToolDescriptor,
   ActivityView,
+  ActivityViewSection,
   ActivitySummarizer,
   PermissionView,
   PermissionViewSection,

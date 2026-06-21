@@ -1,6 +1,8 @@
 import {
   isPluginModule,
   PluginCaptureError,
+  type ActivityView,
+  type ActivityViewSection,
   type PluginHost,
   type SandboxExecutionResult
 } from '@tinytinkerer/contracts'
@@ -121,6 +123,17 @@ describe('codeExecPlugin', () => {
 })
 
 describe('summarizeCodeExecActivity', () => {
+  // Narrowers for the discriminated section union so assertions stay type-safe.
+  const textSection = (view: ActivityView, label: string) =>
+    view.sections.find(
+      (s): s is Extract<ActivityViewSection, { kind: 'text' }> =>
+        s.kind === 'text' && s.label === label
+    )
+  const codeSection = (view: ActivityView) =>
+    view.sections.find(
+      (s): s is Extract<ActivityViewSection, { kind: 'code' }> => s.kind === 'code'
+    )
+
   it('is wired onto the run_javascript tool descriptor', () => {
     const descriptor = codeExecPluginManifest.toolDescriptors?.find(
       (d) => d.id === 'run_javascript'
@@ -128,40 +141,88 @@ describe('summarizeCodeExecActivity', () => {
     expect(descriptor?.summarizeActivity).toBe(summarizeCodeExecActivity)
   })
 
-  it('summarizes a successful run as ok with a Result and Logs section', () => {
-    const view = summarizeCodeExecActivity({
+  it('renders the call input as a pretty-printed, read-only javascript code section', async () => {
+    const view = await summarizeCodeExecActivity(
+      { ok: true, result: 6, logs: [], timedOut: false },
+      { code: 'const a=1;const b=2;const c=3;return a+b+c;' }
+    )
+    const code = codeSection(view)
+    expect(code?.language).toBe('javascript')
+    expect(code?.code).toBe('const a = 1\nconst b = 2\nconst c = 3\nreturn a + b + c')
+    // The code section comes first, before the result/logs.
+    expect(view.sections[0]).toBe(code)
+    expect(view.report).toBeUndefined()
+  })
+
+  it('fails open with the raw source and a report when the input code is invalid JS', async () => {
+    const broken = 'const a = ;;; not ) valid('
+    const view = await summarizeCodeExecActivity(
+      { ok: true, result: 1, logs: [], timedOut: false },
+      { code: broken }
+    )
+    expect(codeSection(view)?.code).toBe(broken)
+    expect(view.report?.kind).toBe('format_failure')
+    expect(view.report?.contexts?.run_javascript_format_failure?.code).toBe(broken)
+  })
+
+  it('renders any non-code input fields as a json section', async () => {
+    const view = await summarizeCodeExecActivity(
+      { ok: true, result: 1, logs: [], timedOut: false },
+      { code: 'return input.x', input: { x: 1 } }
+    )
+    expect(view.sections).toContainEqual({
+      kind: 'json',
+      label: 'Input',
+      value: { input: { x: 1 } }
+    })
+  })
+
+  it('summarizes a successful run as ok with a Result and a "(none)" Logs section', async () => {
+    const view = await summarizeCodeExecActivity({
       ok: true,
       result: 314061,
       logs: [],
       timedOut: false
     })
-    expect(view).toEqual({
-      title: 'Ran JavaScript',
-      status: 'ok',
-      sections: [
-        { label: 'Result', value: '314061' },
-        { label: 'Logs', value: '0 lines' }
-      ]
-    })
-  })
-
-  it('pluralizes the log count and omits Result when there is none', () => {
-    const view = summarizeCodeExecActivity({ ok: true, logs: ['a', 'b'], timedOut: false })
+    expect(view.title).toBe('Ran JavaScript')
     expect(view.status).toBe('ok')
-    expect(view.sections).toEqual([{ label: 'Logs', value: '2 lines' }])
+    expect(textSection(view, 'Result')?.value).toBe('314061')
+    expect(textSection(view, 'Logs')?.value).toBe('(none)')
   })
 
-  it('marks a timeout as warn with a Timed out section', () => {
-    const view = summarizeCodeExecActivity({ ok: false, logs: [], timedOut: true })
+  it('shows the actual log lines, not just a count', async () => {
+    const view = await summarizeCodeExecActivity({
+      ok: true,
+      logs: ['first', 'second'],
+      timedOut: false
+    })
+    expect(view.status).toBe('ok')
+    expect(textSection(view, 'Logs')?.value).toBe('first\nsecond')
+    // No Result section when there is no result.
+    expect(textSection(view, 'Result')).toBeUndefined()
+  })
+
+  it('bounds a chatty run to a capped, explicitly-clipped log preview', async () => {
+    const logs = Array.from({ length: 50 }, (_, i) => `line ${i}`)
+    const view = await summarizeCodeExecActivity({ ok: true, logs, timedOut: false })
+    const value = textSection(view, 'Logs')?.value ?? ''
+    expect(value).toContain('line 0')
+    expect(value).not.toContain('line 49')
+    expect(value).toMatch(/… \(30 more lines\)$/)
+  })
+
+  it('marks a timeout as warn with a Timed out section', async () => {
+    const view = await summarizeCodeExecActivity({ ok: false, logs: [], timedOut: true })
     expect(view.status).toBe('warn')
     expect(view.sections).toContainEqual({
+      kind: 'text',
       label: 'Timed out',
       value: 'Execution exceeded the time limit'
     })
   })
 
-  it('marks a thrown error as error with an Error section', () => {
-    const view = summarizeCodeExecActivity({
+  it('marks a thrown error as error with an Error section', async () => {
+    const view = await summarizeCodeExecActivity({
       ok: false,
       logs: [],
       timedOut: false,
@@ -169,28 +230,30 @@ describe('summarizeCodeExecActivity', () => {
     })
     expect(view.status).toBe('error')
     expect(view.sections).toContainEqual({
+      kind: 'text',
       label: 'Error',
       value: 'ReferenceError: x is not defined'
     })
   })
 
-  it('truncates a large result preview', () => {
-    const view = summarizeCodeExecActivity({
+  it('truncates a large result preview', async () => {
+    const view = await summarizeCodeExecActivity({
       ok: true,
       result: '1'.repeat(500),
       logs: [],
       timedOut: false
     })
-    const result = view.sections.find((s) => s.label === 'Result')
+    const result = textSection(view, 'Result')
     expect(result?.value.endsWith('…')).toBe(true)
     expect(result?.value.length).toBe(121)
   })
 
-  it('tolerates malformed output without throwing', () => {
-    const view = summarizeCodeExecActivity(undefined)
+  it('tolerates malformed output without throwing', async () => {
+    const view = await summarizeCodeExecActivity(undefined)
     expect(view.title).toBe('Ran JavaScript')
     expect(view.status).toBe('error')
-    expect(view.sections).toEqual([{ label: 'Logs', value: '0 lines' }])
+    expect(textSection(view, 'Logs')?.value).toBe('(none)')
+    expect(codeSection(view)).toBeUndefined()
   })
 })
 

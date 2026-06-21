@@ -193,7 +193,15 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
         }
         return
       }
-      // Observation note for a non-think step: render at the step's own depth
+      // An 'act' step wraps a tool call, and its summary is the serialized tool
+      // result (see serializeToolNote in agent-runtime-base). The nested tool item
+      // already renders that result via the tool's ActivityView, so surfacing the
+      // summary again here is a duplicate (issue #277) — drop it. Other step kinds'
+      // summaries (e.g. 'observe') are genuine observation notes and are kept.
+      if (started?.stepKind === 'act') {
+        return
+      }
+      // Observation note for another non-think step: render at the step's own depth
       // (stepId, but no stepKind so it doesn't define hierarchy itself).
       if (hasSummary) {
         activity.items.push({
