@@ -133,7 +133,9 @@ Architecture calls are judgment calls; the user makes them, the skill informs th
 
 ## Constraints
 
-- **Emits findings, never edits code.** Every mode produces open points and hands the decision
+- **The review never edits code.** It emits findings: general and targeted reviews hand every
+  decision to the user, and plan review classifies them so the calling agent can auto-address
+  only the obvious, low-risk fixes (see `workflows/plan-review.md`) — everything else still goes
   to the user.
 - **Complements CI, doesn't duplicate it.** Don't re-flag boundary/type violations that
   `pnpm lint` / `pnpm typecheck` already catch — focus on what they can't.
@@ -148,4 +150,5 @@ Architecture calls are judgment calls; the user makes them, the skill informs th
 - The findings are architectural risks CI can't catch — not a rehash of boundary or type
   errors.
 - Findings reference `docs/ARCHITECTURE.md` / the boundary docs where one applies.
-- Every mode stopped for the user to decide; nothing was auto-applied.
+- The review never edited code itself: general and targeted reviews stopped for the user, and
+  plan review handed the calling agent a clear split of what to auto-address vs escalate.

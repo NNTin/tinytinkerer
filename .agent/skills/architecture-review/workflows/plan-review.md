@@ -3,8 +3,9 @@
 A subagent a planning or implementation agent spawns to review an implementation plan for
 architectural risk through the **predict-the-regret** lens (see `../SKILL.md`), at a chosen
 point **relative to implementation**: `before` the code is written, `after` it is written, or
-`both`. It **returns open architectural risks** for the caller/user to weigh — it does not edit
-code, does not auto-apply anything, and does not decide for the user.
+`both`. It **classifies the architectural risks by the action they warrant** (see the action
+policy) and returns them — the review itself never edits code; the calling agent auto-addresses
+only the obvious, low-risk fixes and escalates everything else for the user to decide.
 
 `before`/`after` are relative to **implementation**, never to how finished the plan is.
 
@@ -53,16 +54,40 @@ Aim above CI: `pnpm lint` / `pnpm typecheck` will catch a physical boundary or t
 once the code exists. Spend the review on the risks they can't — the design choices that are
 green today and regret tomorrow.
 
-## 4. Return the risks as open points
+## 4. Classify each risk by action policy
+
+Sort every risk into one of three actions:
+
+- **Auto-addressed obvious mistake** — the calling agent should fix it without a human when the
+  fix is **low-risk, local, and clearly implied by the plan or the repo architecture**. For
+  example:
+  - the implementation contradicts an explicit plan step;
+  - a file/update the plan plainly required was missed;
+  - logic is duplicated where the plan explicitly said to share it;
+  - code is misplaced when the relevant architecture doc gives it an unambiguous home;
+  - naming or structure drift makes the implementation inconsistent with the accepted plan.
+- **Needs human decision** — anything involving product/design tradeoffs, boundary-ownership
+  decisions, new abstractions, contract changes, unclear intent, scope expansion, or multiple
+  reasonable solutions. Surface it; do not act on it.
+- **No action / informational** — a real risk worth recording that warrants no change now.
+
+**When in doubt, classify it as needing human input.** A wrong auto-fix is worse than a human
+glance.
+
+## 5. Return the report
 
 Hand the caller/user a report that states:
 
-- **which timing mode ran** (`before` / `after` / `both`) and **what artifact(s) were
-  reviewed** (the plan, the diff, or both);
-- the **findings, grouped by severity**, each with: area, the regret (why it bites at 6 months
-  / 10× growth), the architecture reference where one applies, and a suggested direction phrased
-  as a recommendation;
+- **what artifact(s) were reviewed** (the plan, the diff, or both) and **which timing mode ran**
+  (`before` / `after` / `both`);
+- the findings split into three groups, each item with: area, the regret (why it bites at 6
+  months / 10× growth), the architecture reference where one applies, and a suggested direction
+  phrased as a recommendation —
+  1. **Auto-addressed obvious mistakes**
+  2. **Needs human decision**
+  3. **No action / informational risks**
 - for `after`, whether the implementation appears to **preserve, weaken, or change** the plan's
   architectural intent.
 
-**Do not apply anything** — surface the risks and let the user decide.
+The review never applies code changes itself: the calling agent acts only on group 1 and leaves
+groups 2 and 3 for the user.
