@@ -287,6 +287,41 @@ export class PluginCaptureError extends Error {
   }
 }
 
+const boundedText = (text: string, max: number): string => {
+  const limit = Number.isFinite(max) ? Math.max(0, Math.floor(max)) : 0
+  return text.length > limit ? `${text.slice(0, limit)}…` : text
+}
+
+// Renders an arbitrary value as a short, plain-text preview. Non-strings are
+// JSON-serialized where possible and fall back to String(), then the final text is
+// bounded so plugin-authored summaries cannot flood host surfaces.
+export const boundedPreview = (value: unknown, max: number): string => {
+  let text: string
+  if (typeof value === 'string') {
+    text = value
+  } else {
+    try {
+      text = JSON.stringify(value) ?? String(value)
+    } catch {
+      text = String(value)
+    }
+  }
+  return boundedText(text, max)
+}
+
+// Pretty-prints a JSON dump defensively and bounds its rendered size. Used by host
+// fallback surfaces for untrusted tool values; the full value still travels through
+// the runtime/model path.
+export const boundedJson = (value: unknown, max: number): string => {
+  let text: string
+  try {
+    text = JSON.stringify(value, null, 2) ?? String(value)
+  } catch {
+    return '(value could not be displayed)'
+  }
+  return boundedText(text, max)
+}
+
 // The plugin contract. A plugin optionally contributes tools and may run setup /
 // teardown when its activation state flips. Tools are constructed against the
 // host so they can route structured reports through the capture sink.
@@ -309,6 +344,12 @@ export type ActivityViewSection =
   | { kind: 'code'; label: string; language: string; code: string }
   | { kind: 'json'; label: string; value: unknown }
 
+export type ActivityTextSection = Extract<ActivityViewSection, { kind: 'text' }>
+export type ActivityCodeSection = Extract<ActivityViewSection, { kind: 'code' }>
+export type ActivityJsonSection = Extract<ActivityViewSection, { kind: 'json' }>
+
+export type ActivityStatus = 'ok' | 'error' | 'warn' | 'unknown'
+
 // A product-agnostic, React-free view-model a tool's owner produces from its raw
 // output so the host can render a consistent activity summary without knowing any
 // specific tool's shape. `title` (plus optional status styling) shows in the
@@ -317,7 +358,7 @@ export type ActivityViewSection =
 // the contract layer so plugins ship data, never a component.
 export type ActivityView = {
   title: string
-  status?: 'ok' | 'error' | 'warn'
+  status?: ActivityStatus
   sections: ActivityViewSection[]
   // Optional structured report the host forwards to its capture sink (e.g. a
   // formatter failure the owner wants surfaced with repro context). The owner
@@ -348,6 +389,10 @@ export type ActivitySummarizer = (
 export type PermissionViewSection =
   | { kind: 'code'; label: string; language: string; code: string }
   | { kind: 'json'; label: string; value: unknown }
+
+export type PermissionCodeSection = Extract<PermissionViewSection, { kind: 'code' }>
+export type PermissionJsonSection = Extract<PermissionViewSection, { kind: 'json' }>
+export type JsonViewSection = ActivityJsonSection & PermissionJsonSection
 
 export type PermissionView = {
   sections: PermissionViewSection[]

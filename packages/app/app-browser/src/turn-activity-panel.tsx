@@ -4,10 +4,10 @@ import type {
   TurnActivity,
   TurnActivityItem
 } from '@tinytinkerer/app-core'
-import type { ReActDecisionKind } from '@tinytinkerer/contracts'
+import { boundedJson, type ReActDecisionKind } from '@tinytinkerer/contracts'
 import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
-import { useEffect, useMemo, useState } from 'react'
-import { forwardPluginReport } from './telemetry/plugin-report'
+import { useEffect, useState } from 'react'
+import { useResolvedPluginView } from './resolved-plugin-view'
 
 // Resolves the activity summarizer a tool's owner provides, keyed by tool id, or
 // `undefined` for tools that ship none (the host then uses a neutral default).
@@ -111,7 +111,7 @@ const neutralView = (label: string, output: unknown): ActivityView => ({
 })
 
 const statusStyles: Record<
-  'ok' | 'error' | 'warn',
+  NonNullable<ActivityView['status']>,
   { border: string; summary: string; body: string; badge: string; icon: string; label: string }
 > = {
   ok: {
@@ -139,6 +139,14 @@ const statusStyles: Record<
     badge: 'border-amber-300 bg-amber-50 text-amber-800',
     icon: '⚠',
     label: 'Warning'
+  },
+  unknown: {
+    border: 'border-stone-200/70 bg-white/60',
+    summary: 'text-stone-600',
+    body: 'border-stone-100 text-[var(--muted)]',
+    badge: 'border-stone-300 bg-stone-50 text-stone-600',
+    icon: '?',
+    label: 'Unknown'
   }
 }
 
@@ -165,7 +173,7 @@ const ActivitySectionEntry = ({ section }: { section: ActivityView['sections'][n
       <div>
         {section.label ? <span className="text-[var(--muted)]">{section.label}: </span> : null}
         <pre className="mt-1 overflow-x-auto rounded-md border border-stone-200 bg-stone-50 p-2 text-stone-700">
-          {safeJson(section.value)}
+          {boundedJson(section.value, MAX_JSON_CHARS)}
         </pre>
       </div>
     )
@@ -183,24 +191,13 @@ const ActivitySectionEntry = ({ section }: { section: ActivityView['sections'][n
 // stays bounded. The full result still reaches the model.
 const MAX_JSON_CHARS = 4_000
 
-// Serializes a json section value defensively so a non-serializable value (e.g. a
-// cyclic object) can never throw while rendering the panel, and bounds its length.
-const safeJson = (value: unknown): string => {
-  let text: string
-  try {
-    text = JSON.stringify(value, null, 2) ?? String(value)
-  } catch {
-    return '(value could not be displayed)'
-  }
-  return text.length > MAX_JSON_CHARS ? `${text.slice(0, MAX_JSON_CHARS)}…` : text
-}
-
 // One generic renderer for every completed tool. It is driven entirely by the
 // resolved ActivityView and never branches on a tool id — each tool's owner (a
 // plugin, or the MCP layer) decides title/status/sections. text/json values are
 // rendered as plain text; tool output is untrusted and never injected as HTML.
 const ActivityViewEntry = ({ view }: { view: ActivityView }) => {
-  const styles = statusStyles[view.status ?? 'ok']
+  const status = view.status ?? 'unknown'
+  const styles = statusStyles[status]
   return (
     <details className={`group rounded-md border text-xs ${styles.border}`}>
       <summary
@@ -211,7 +208,7 @@ const ActivityViewEntry = ({ view }: { view: ActivityView }) => {
         </span>
         <span className="flex-1">{view.title}</span>
         <span
-          data-activity-status={view.status ?? 'ok'}
+          data-activity-status={status}
           className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${styles.badge}`}
         >
           <span aria-hidden>{styles.icon}</span>
@@ -230,12 +227,10 @@ const ActivityViewEntry = ({ view }: { view: ActivityView }) => {
   )
 }
 
-// Resolves a completed tool's ActivityView. A summarizer may be async (e.g. the
-// code-exec one lazy-loads a formatter to pretty-print the call's source), so the
-// view is resolved in an effect — mirroring the permission modal's
-// PermissionInputView. A synchronous summarizer (MCP, the neutral default) resolves
-// on first render with no flicker; an async one shows the title-only frame until it
-// settles, and a summarizer's `report` is forwarded to telemetry once.
+// Resolves a completed tool's ActivityView. The stable key deliberately excludes
+// raw input/output object references: buildTurns recreates projected items as live
+// events stream, so keying on those objects would re-run async summarizers and
+// duplicate reports for the same completed tool row.
 const CompletedToolEntry = ({
   item,
   label,
@@ -245,48 +240,16 @@ const CompletedToolEntry = ({
   label: string
   resolveSummarizer: ResolveActivitySummarizer
 }) => {
-  const produced = useMemo(() => {
-    const summarizer = resolveSummarizer(item.toolId)
-    return summarizer ? summarizer(item.output, item.input) : neutralView(label, item.output)
-  }, [resolveSummarizer, item.toolId, item.output, item.input, label])
+  const summarizer = resolveSummarizer(item.toolId)
+  const hasSummarizer = summarizer !== undefined
+  const view = useResolvedPluginView<ActivityView>({
+    viewKey: `activity:${item.id}:${item.toolId}:${label}:${hasSummarizer ? 'owner' : 'neutral'}`,
+    fallback: { title: label, sections: [] },
+    resolveView: () =>
+      summarizer ? summarizer(item.output, item.input) : neutralView(label, item.output)
+  })
 
-  const [view, setView] = useState<ActivityView | null>(() =>
-    produced instanceof Promise ? null : produced
-  )
-
-  useEffect(() => {
-    if (!(produced instanceof Promise)) {
-      setView(produced)
-      if (produced.report) {
-        forwardPluginReport(produced.report)
-      }
-      return
-    }
-    let cancelled = false
-    setView(null)
-    void produced
-      .then((resolved) => {
-        if (cancelled) {
-          return
-        }
-        setView(resolved)
-        if (resolved.report) {
-          forwardPluginReport(resolved.report)
-        }
-      })
-      .catch(() => {
-        // A summarizer is expected to fail open; if one rejects anyway, fall back to
-        // the neutral default rather than leaving the row stuck on its frame.
-        if (!cancelled) {
-          setView(neutralView(label, item.output))
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [produced, label, item.output])
-
-  return <ActivityViewEntry view={view ?? { title: label, sections: [] }} />
+  return <ActivityViewEntry view={view} />
 }
 
 const ToolEntry = ({

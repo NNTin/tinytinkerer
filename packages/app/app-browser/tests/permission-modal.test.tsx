@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PermissionModal } from '../src/permission-modal.js'
 import { requestPermission, resetPermissionStore } from '../src/permission-service.js'
+
+const forwardPluginReport = vi.hoisted(() => vi.fn())
+vi.mock('../src/telemetry/plugin-report', () => ({ forwardPluginReport }))
 
 afterEach(() => {
   resetPermissionStore()
   cleanup()
+  forwardPluginReport.mockClear()
 })
 
 const baseRequest = {
@@ -86,6 +90,27 @@ describe('PermissionModal', () => {
     // The executed payload is whatever the runtime already holds; the modal only
     // returns the decision. Allow resolves cleanly — the formatting is view-only.
     await expect(decision).resolves.toEqual({ allow: true })
+  })
+
+  it('forwards a permission summarizer report once for the pending permission id', async () => {
+    const { rerender } = render(<PermissionModal />)
+
+    const decision = requestPermission({
+      toolId: 'run_javascript',
+      input: { code: 'const a = ;;; this is not ) valid(' },
+      stepId: 'step-js'
+    })
+
+    await screen.findByRole('alertdialog')
+    await waitFor(() => expect(forwardPluginReport).toHaveBeenCalledTimes(1))
+
+    rerender(<PermissionModal />)
+
+    expect(forwardPluginReport).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deny' }))
+    const result = await decision
+    expect(result.allow).toBe(false)
   })
 
   it('processes a second pending request after the first is settled', async () => {

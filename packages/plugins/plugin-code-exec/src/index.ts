@@ -1,4 +1,5 @@
 import {
+  boundedPreview,
   PluginCaptureError,
   type ActivitySummarizer,
   type ActivityView,
@@ -62,28 +63,13 @@ const MAX_SUMMARY_VALUE = 120
 const MAX_LOG_LINES = 20
 const MAX_LOG_CHARS = 2_000
 
-// Renders an arbitrary sandbox value as a short, plain-text preview. The host
-// renders ActivityView text values as text (never HTML), so this only needs to be
-// a safe, bounded string. Non-serializable values fall back to String().
-const previewValue = (value: unknown): string => {
-  let text: string
-  if (typeof value === 'string') {
-    text = value
-  } else {
-    try {
-      text = JSON.stringify(value) ?? String(value)
-    } catch {
-      text = String(value)
-    }
-  }
-  return text.length > MAX_SUMMARY_VALUE ? `${text.slice(0, MAX_SUMMARY_VALUE)}…` : text
-}
-
 // Joins the captured console lines into a single bounded, multi-line string for the
 // Logs section, appending an explicit marker when lines or characters were dropped
 // so a reader can tell the view was clipped.
 const previewLogs = (logs: unknown[]): string => {
-  const lines = logs.map((line) => (typeof line === 'string' ? line : previewValue(line)))
+  const lines = logs.map((line) =>
+    typeof line === 'string' ? line : boundedPreview(line, MAX_SUMMARY_VALUE)
+  )
   const droppedLines = lines.length - MAX_LOG_LINES
   let shown = (droppedLines > 0 ? lines.slice(0, MAX_LOG_LINES) : lines).join('\n')
   let suffix =
@@ -145,7 +131,11 @@ export const summarizeCodeExecActivity: ActivitySummarizer = async (
   }
   sections.push(...otherInputFieldsSection(input ?? {}))
   if (value.result !== undefined) {
-    sections.push({ kind: 'text', label: 'Result', value: previewValue(value.result) })
+    sections.push({
+      kind: 'text',
+      label: 'Result',
+      value: boundedPreview(value.result, MAX_SUMMARY_VALUE)
+    })
   }
   sections.push({
     kind: 'text',
@@ -156,7 +146,11 @@ export const summarizeCodeExecActivity: ActivitySummarizer = async (
     sections.push({ kind: 'text', label: 'Timed out', value: 'Execution exceeded the time limit' })
   }
   if (typeof value.error === 'string' && value.error.length > 0) {
-    sections.push({ kind: 'text', label: 'Error', value: previewValue(value.error) })
+    sections.push({
+      kind: 'text',
+      label: 'Error',
+      value: boundedPreview(value.error, MAX_SUMMARY_VALUE)
+    })
   }
 
   return {

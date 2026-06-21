@@ -8,7 +8,7 @@ import {
 import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
 import { usePermissionStore, type PendingPermission } from './permission-service'
 import { loadPluginModules } from './plugins/registry'
-import { forwardPluginReport } from './telemetry/plugin-report'
+import { useResolvedPluginView } from './resolved-plugin-view'
 
 // Reason recorded when the user dismisses the prompt (overlay click / Escape /
 // Deny) rather than allowing the tool. The plugin wraps this into the runtime's
@@ -62,51 +62,23 @@ const usePermissionSummarizers = (): Map<string, PermissionSummarizer> => {
 // summarizer can never block approval. DISPLAY ONLY: the summarizer derives a view
 // from a copy of the input; the runtime still executes the original payload.
 const PermissionInputView = ({
+  requestId,
   request,
   summarizer
 }: {
+  requestId: string
   request: PermissionRequest
   summarizer: PermissionSummarizer | undefined
 }) => {
-  const [view, setView] = useState<PermissionView | null>(null)
-
-  useEffect(() => {
-    setView(null)
-    if (!summarizer) {
-      return
-    }
-    let cancelled = false
-    void Promise.resolve(summarizer(request.input))
-      .then((resolved) => {
-        if (cancelled) {
-          return
-        }
-        setView(resolved)
-        if (resolved.report) {
-          forwardPluginReport(resolved.report)
-        }
-      })
-      .catch(() => {
-        // A summarizer is expected to fail open and return a view; if one throws
-        // anyway, fall back to the JSON dump rather than blocking the prompt.
-        if (!cancelled) {
-          setView(null)
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [request, summarizer])
-
-  if (!view) {
-    return (
-      <Section label="Input">
-        <pre className="mt-1 overflow-x-auto rounded-md border border-stone-200 bg-stone-50 p-3 text-xs text-stone-700">
-          {formatJson(request.input)}
-        </pre>
-      </Section>
-    )
+  const fallback: PermissionView = {
+    sections: [{ kind: 'json', label: 'Input', value: request.input }]
   }
+  const hasSummarizer = summarizer !== undefined
+  const view = useResolvedPluginView<PermissionView>({
+    viewKey: `permission:${requestId}:${request.toolId}:${hasSummarizer ? 'owner' : 'neutral'}`,
+    fallback,
+    resolveView: () => (summarizer ? summarizer(request.input) : fallback)
+  })
 
   return (
     <>
@@ -190,7 +162,11 @@ export const PermissionModal = () => {
           <Section label="Tool">
             <p className="mt-1 break-all font-mono text-sm text-stone-800">{request.toolId}</p>
           </Section>
-          <PermissionInputView request={request} summarizer={summarizers.get(request.toolId)} />
+          <PermissionInputView
+            requestId={pending.id}
+            request={request}
+            summarizer={summarizers.get(request.toolId)}
+          />
         </div>
 
         <div className="flex justify-end gap-2 border-t border-[var(--border)] px-6 py-4">

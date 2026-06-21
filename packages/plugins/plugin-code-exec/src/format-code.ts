@@ -1,4 +1,4 @@
-import type { PluginReport } from '@tinytinkerer/contracts'
+import type { JsonViewSection, PluginReport } from '@tinytinkerer/contracts'
 import { CODE_EXEC_PLUGIN_ID } from './plugin-id'
 
 // Shared, view-agnostic formatting helpers for the run_javascript tool's `code`
@@ -12,14 +12,9 @@ import { CODE_EXEC_PLUGIN_ID } from './plugin-id'
 // prettier/standalone is plain JS with no browser APIs, and it is imported lazily so
 // it stays out of the eager plugin chunk.
 
-// A `json` section payload. Structurally a member of both ActivityViewSection and
-// PermissionViewSection, so the same value can be spread into either view's
-// `sections` array without coupling this module to a specific view type.
-export type JsonSection = { kind: 'json'; label: string; value: unknown }
-
 // Builds the JSON section for every input field other than `code`, or nothing when
 // there are no other fields.
-export const otherInputFieldsSection = (input: Record<string, unknown>): JsonSection[] => {
+export const otherInputFieldsSection = (input: Record<string, unknown>): JsonViewSection[] => {
   const rest = Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'code'))
   return Object.keys(rest).length > 0 ? [{ kind: 'json', label: 'Input', value: rest }] : []
 }

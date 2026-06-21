@@ -1,4 +1,5 @@
 import {
+  boundedPreview,
   PluginCaptureError,
   type ActivitySummarizer,
   type ActivityView,
@@ -47,9 +48,6 @@ export type ReadDomInput = z.infer<typeof readDomInputSchema>
 // never floods the activity panel. The full result still reaches the model.
 const MAX_SUMMARY_VALUE = 120
 
-const previewValue = (value: string): string =>
-  value.length > MAX_SUMMARY_VALUE ? `${value.slice(0, MAX_SUMMARY_VALUE)}…` : value
-
 // read_dom presentation owned by the plugin, not the host. Maps the DomReadResult
 // to the host's product-agnostic ActivityView. A read that matched something is
 // `ok`; a read that matched nothing is `warn` (likely a selector that needs
@@ -65,7 +63,11 @@ export const summarizeReadDomActivity: ActivitySummarizer = (output): ActivityVi
     { kind: 'text', label: 'Returned', value: String(returned) }
   ]
   if (typeof value.url === 'string' && value.url.length > 0) {
-    sections.push({ kind: 'text', label: 'URL', value: previewValue(value.url) })
+    sections.push({
+      kind: 'text',
+      label: 'URL',
+      value: boundedPreview(value.url, MAX_SUMMARY_VALUE)
+    })
   }
   if (value.truncated === true) {
     sections.push({

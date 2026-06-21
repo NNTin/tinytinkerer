@@ -1,5 +1,6 @@
 import {
   EDGE_ROUTE_PATHS,
+  boundedPreview,
   edgeErrorResponseSchema,
   PluginCaptureError,
   searchRequestSchema,
@@ -27,9 +28,6 @@ export const WEB_SEARCH_PLUGIN_ID = 'web-search'
 const MAX_RENDERED_RESULTS = 8
 const MAX_SNIPPET_CHARS = 300
 
-const truncate = (value: string, max: number): string =>
-  value.length > max ? `${value.slice(0, max)}…` : value
-
 // One Tavily result rendered as a readable text section: the title is the label and
 // the URL + snippet are the value. The panel renders text with `whitespace-pre-wrap`,
 // so the URL and snippet read on their own lines.
@@ -41,7 +39,7 @@ const resultSection = (
     typeof result.title === 'string' && result.title.length > 0 ? result.title : '(untitled)'
   const url = typeof result.url === 'string' ? result.url : ''
   const snippet =
-    typeof result.snippet === 'string' ? truncate(result.snippet, MAX_SNIPPET_CHARS) : ''
+    typeof result.snippet === 'string' ? boundedPreview(result.snippet, MAX_SNIPPET_CHARS) : ''
   const value = [url, snippet].filter((part) => part.length > 0).join('\n')
   return { kind: 'text', label: `${index + 1}. ${title}`, value }
 }

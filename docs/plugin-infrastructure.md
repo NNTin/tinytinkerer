@@ -404,11 +404,14 @@ Settings Modal toggle (app-browser/browser-settings-modal.tsx)
   keyed by tool id. The host's turn-activity panel (`turn-activity-panel.tsx`) carries **zero**
   per-tool branches: it builds a `Map<toolId, ActivitySummarizer>` from the discovered manifests
   (`surfaces.tsx`), resolves one per completed tool, and feeds the result to a single generic
-  renderer (`title` + status styling collapsed, `sections` as label/value rows on expand). Tools
-  without a summarizer get a neutral default (title = tool label; `(no output)` only when output
-  is genuinely empty). MCP tools are summarized by the MCP tool layer (`runtime/mcp-tool.ts`,
-  `summarizeMcpActivity` keyed by the `mcp:*` id pattern), not the panel. Output is untrusted:
-  the host renders every `ActivityView` value as text, never HTML.
+  renderer (`title` + status styling collapsed, `sections` as label/value rows on expand).
+  Summarizers should set `status` when the outcome is known; omitted status renders as the
+  neutral `unknown` cue, not as success. Tools without a summarizer get a neutral default:
+  title = tool label; `(no output)` only when output is genuinely empty; otherwise the host shows
+  bounded raw JSON output. That fallback is for debuggability, not curation — plugin authors should
+  ship `summarizeActivity` for sensitive or verbose outputs. MCP tools are summarized by the MCP
+  tool layer (`runtime/mcp-tool.ts`, `summarizeMcpActivity` keyed by the `mcp:*` id pattern), not
+  the panel. Output is untrusted: the host renders every `ActivityView` value as text, never HTML.
 
 ## Dynamic discovery (`app-browser`)
 

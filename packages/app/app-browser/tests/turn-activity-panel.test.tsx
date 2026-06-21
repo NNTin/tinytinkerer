@@ -1,11 +1,17 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ActivityView, TurnActivity } from '@tinytinkerer/app-core'
 import { TurnActivityPanel } from '../src/turn-activity-panel.js'
 
-afterEach(cleanup)
+const forwardPluginReport = vi.hoisted(() => vi.fn())
+vi.mock('../src/telemetry/plugin-report', () => ({ forwardPluginReport }))
+
+afterEach(() => {
+  cleanup()
+  forwardPluginReport.mockClear()
+})
 
 const activity = (items: TurnActivity['items']): TurnActivity => ({ items, reasoningText: '' })
 
@@ -135,8 +141,23 @@ describe('TurnActivityPanel hierarchy rendering', () => {
 })
 
 describe('TurnActivityPanel generic ActivityView rendering', () => {
-  const completedTool = (toolId: string, output: unknown): TurnActivity =>
-    activity([{ kind: 'tool', id: 't-1', toolId, stepId: 'tool-1', status: 'completed', output }])
+  const completedTool = (
+    toolId: string,
+    output: unknown,
+    input?: Record<string, unknown>,
+    id = 't-1'
+  ): TurnActivity =>
+    activity([
+      {
+        kind: 'tool',
+        id,
+        toolId,
+        stepId: `${id}-step`,
+        status: 'completed',
+        output,
+        ...(input ? { input } : {})
+      }
+    ])
 
   it('renders the resolved summarizer view: title heading and section rows', () => {
     const view: ActivityView = {
@@ -218,6 +239,92 @@ describe('TurnActivityPanel generic ActivityView rendering', () => {
     expect(container).toHaveTextContent('const answer = 42')
   })
 
+  it('does not re-resolve an async summarizer for the same completed tool item id', async () => {
+    const view: ActivityView = {
+      title: 'Ran JavaScript',
+      status: 'ok',
+      sections: [{ kind: 'code', label: 'Code', language: 'javascript', code: 'return 42' }]
+    }
+    const summarizer = vi.fn(() => Promise.resolve(view))
+    const resolveSummarizer = () => summarizer
+
+    const { container, rerender } = render(
+      <TurnActivityPanel
+        activity={completedTool('run_javascript', { ok: true }, { code: 'return 42' }, 'tool-a')}
+        isLive
+        serverNameById={new Map()}
+        resolveSummarizer={resolveSummarizer}
+      />
+    )
+
+    await waitFor(() => expect(container.querySelector('.cm-editor')).toBeInTheDocument())
+    const editor = container.querySelector('.cm-editor')
+
+    rerender(
+      <TurnActivityPanel
+        activity={completedTool('run_javascript', { ok: true }, { code: 'return 42' }, 'tool-a')}
+        isLive
+        serverNameById={new Map()}
+        resolveSummarizer={resolveSummarizer}
+      />
+    )
+
+    expect(summarizer).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('.cm-editor')).toBe(editor)
+  })
+
+  it('forwards a summarizer report once per completed tool item id and report kind', async () => {
+    const report: ActivityView['report'] = {
+      pluginId: 'test-plugin',
+      kind: 'format_failure',
+      level: 'warning',
+      message: 'format failed'
+    }
+    const view: ActivityView = {
+      title: 'Reported tool',
+      status: 'warn',
+      sections: [],
+      report
+    }
+    const summarizer = vi.fn(() => Promise.resolve(view))
+    const resolveSummarizer = () => summarizer
+
+    const { rerender } = render(
+      <TurnActivityPanel
+        activity={completedTool('reported-tool', { n: 1 }, undefined, 'tool-a')}
+        isLive
+        serverNameById={new Map()}
+        resolveSummarizer={resolveSummarizer}
+      />
+    )
+
+    await waitFor(() => expect(forwardPluginReport).toHaveBeenCalledTimes(1))
+
+    rerender(
+      <TurnActivityPanel
+        activity={completedTool('reported-tool', { n: 2 }, undefined, 'tool-a')}
+        isLive
+        serverNameById={new Map()}
+        resolveSummarizer={resolveSummarizer}
+      />
+    )
+
+    expect(summarizer).toHaveBeenCalledTimes(1)
+    expect(forwardPluginReport).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <TurnActivityPanel
+        activity={completedTool('reported-tool', { n: 3 }, undefined, 'tool-b')}
+        isLive
+        serverNameById={new Map()}
+        resolveSummarizer={resolveSummarizer}
+      />
+    )
+
+    await waitFor(() => expect(forwardPluginReport).toHaveBeenCalledTimes(2))
+    expect(summarizer).toHaveBeenCalledTimes(2)
+  })
+
   it('renders untrusted text section values as text, never as HTML', () => {
     const view: ActivityView = {
       title: 'Tool',
@@ -235,6 +342,26 @@ describe('TurnActivityPanel generic ActivityView rendering', () => {
     // The payload appears verbatim as text and no <img> element is injected.
     expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument()
     expect(document.querySelector('img')).toBeNull()
+  })
+
+  it('renders an omitted status as an unknown outcome cue', () => {
+    const view: ActivityView = {
+      title: 'Tool',
+      sections: [{ kind: 'text', label: 'Output', value: 'done' }]
+    }
+    const { container } = render(
+      <TurnActivityPanel
+        activity={completedTool('whatever', {})}
+        isLive
+        serverNameById={new Map()}
+        resolveSummarizer={() => () => view}
+      />
+    )
+
+    const cue = container.querySelector('[data-activity-status="unknown"]')
+    expect(cue).toBeInTheDocument()
+    expect(cue).toHaveTextContent('Unknown')
+    expect(container.querySelector('[data-activity-status="ok"]')).toBeNull()
   })
 
   it('neutral default: shows the tool label and "(no output)" for empty output', () => {
