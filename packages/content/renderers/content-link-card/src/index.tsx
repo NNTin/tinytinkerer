@@ -38,14 +38,29 @@ const tryParseUrl = (value: string): URL | null => {
   }
 }
 
+// A link card represents a real, navigable WEB destination, so it must only be
+// produced for absolute http(s) URLs with a host. `new URL()` is far more
+// permissive: it happily parses any bare `word:` as a custom-scheme URL — e.g.
+// `new URL('Then:')` yields protocol `then:` with an empty host — and accepts
+// `mailto:`/`tel:`/etc. Treating those as cards turns ordinary prose like a
+// paragraph that is just "Then:" into a bogus link card. Gate on http(s) + a
+// non-empty hostname so only genuine web URLs become cards; everything else
+// stays plain text.
+const isWebUrl = (value: string): boolean => {
+  const parsed = tryParseUrl(value)
+  if (!parsed) {
+    return false
+  }
+  return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname.length > 0
+}
+
 const detectLinkCard = (node: ParagraphNode): LinkCardSource | null => {
   const onlyChild = node.children.length === 1 ? node.children[0] : null
   if (!onlyChild) {
     return null
   }
   if (onlyChild.type === 'link') {
-    const parsed = tryParseUrl(onlyChild.url)
-    if (!parsed) {
+    if (!isWebUrl(onlyChild.url)) {
       return null
     }
     const displayText = inlineToText(onlyChild.children).trim()
@@ -56,11 +71,7 @@ const detectLinkCard = (node: ParagraphNode): LinkCardSource | null => {
   }
   if (onlyChild.type === 'text') {
     const trimmed = onlyChild.value.trim()
-    if (trimmed.length === 0) {
-      return null
-    }
-    const parsed = tryParseUrl(trimmed)
-    if (!parsed) {
+    if (!isWebUrl(trimmed)) {
       return null
     }
     return { url: trimmed, displayText: null }

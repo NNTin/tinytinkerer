@@ -362,4 +362,34 @@ test.describe('markdown renderers (#249)', () => {
     await expect(card).toBeVisible({ timeout: 30_000 })
     await expect(card).toHaveAttribute('href', 'https://example.com/article')
   })
+
+  test('link cards: a bare "Then:" paragraph stays plain text (no false card)', async ({
+    page
+  }) => {
+    // Regression for the reported repro: `new URL('Then:')` parses as a custom-scheme
+    // URL (protocol `then:`, empty host), so a standalone "Then:" between two inline
+    // code lines was wrongly rendered as a link card. It must render as plain text.
+    const answer = [
+      '`56412 * 45644 = 2574869328`',
+      '',
+      'Then:',
+      '',
+      '`2574869328 * 123131 = 317046235225968`'
+    ].join('\n')
+
+    await installChatMock(page, answer)
+    await page.goto('/web/')
+    await dismissFirstLoad(page)
+
+    await sendMessage(page, 'Multiply these.')
+
+    // The final code line confirms the whole turn rendered.
+    await expect(page.getByText('2574869328 * 123131 = 317046235225968')).toBeVisible({
+      timeout: 30_000
+    })
+    // "Then:" is plain text, not a clickable card.
+    await expect(page.getByText('Then:', { exact: true })).toBeVisible()
+    await expect(page.locator('a[data-tt-link-card]')).toHaveCount(0)
+    await expect(page.locator('a[href="Then:"]')).toHaveCount(0)
+  })
 })
