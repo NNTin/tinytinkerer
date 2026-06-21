@@ -17,7 +17,7 @@ export class AgentRuntime extends AgentRuntimeBase {
     yield createEvent('user.message', { text: prompt })
     yield createEvent('agent.run.started', { agentType: 'plan-execute' })
 
-    const callOptions = { ...(signal ? { signal } : {}), searchEnabled: this.searchEnabled }
+    const callOptions = { ...(signal ? { signal } : {}) }
 
     try {
       // The planner is a single-shot model call (a full plan in one response),

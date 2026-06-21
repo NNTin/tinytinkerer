@@ -58,10 +58,9 @@ describe('computeContextGauge', () => {
 })
 
 describe('context-usage plugin manifest', () => {
-  it('advertises the status capability with a matching descriptor', () => {
+  it('contributes a status descriptor and no tools', () => {
     expect(contextUsagePluginManifest.id).toBe(CONTEXT_USAGE_PLUGIN_ID)
     expect(contextUsagePlugin().id).toBe(CONTEXT_USAGE_PLUGIN_ID)
-    expect(contextUsagePluginManifest.capabilities).toEqual(['status'])
     expect(contextUsagePluginManifest.toolDescriptors).toBeUndefined()
     expect(contextUsagePluginManifest.statusDescriptor?.id).toBe(CONTEXT_USAGE_PLUGIN_ID)
     expect(contextUsagePluginManifest.statusDescriptor?.gaugeType).toBe('context_usage')

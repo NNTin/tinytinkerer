@@ -33,9 +33,10 @@ export { CONTEXT_INSPECTOR_PLUGIN_ID } from './plugin-id'
 export { summarizeRequest } from './inspector-view'
 
 // Host-facing metadata. `label` + `description` render verbatim in the Settings
-// modal, so they are written for a developer. `capabilities: ['inspector']`
-// advertises the persistent debug panel (no tools, no hooks). The
-// `inspectorDescriptor` carries the plugin's pure presentation mapper.
+// modal, so they are written for a developer. The `inspectorDescriptor` carries
+// the plugin's pure presentation mapper (the persistent debug panel; no tools, no
+// hooks). The host resolves it by its presence on the manifest, and arms
+// forwarded-request capture only while a plugin contributing one is enabled.
 export const contextInspectorPluginManifest: PluginManifest = {
   id: CONTEXT_INSPECTOR_PLUGIN_ID,
   label: 'Context inspector (developer)',
@@ -44,7 +45,6 @@ export const contextInspectorPluginManifest: PluginManifest = {
     'system prompt, conversation history, and tool results — plus the model and token ' +
     'estimates. The captured request stays on this device and is never sent anywhere. ' +
     'Web app only. Off by default.',
-  capabilities: ['inspector'],
   inspectorDescriptor: {
     id: CONTEXT_INSPECTOR_PLUGIN_ID,
     summarizeRequest

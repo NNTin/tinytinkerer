@@ -124,6 +124,17 @@ an absent or malformed module is rejected here rather than throwing into host co
 browser host performs the final validation after instantiating the plugin: `createPlugin().id`
 must match `manifest.id`, and duplicate plugin ids are ignored after the first valid plugin.
 
+**Where view-models live.** The status-gauge and context-inspector view-models
+(`GaugeView`/`StatusInput`, `InspectorView`/`InspectorEntry`, etc.) live in `contracts`
+(`src/plugin-views.ts`), split out of `plugins.ts` to contain their growth. They belong in
+`contracts` — not in the plugin packages — because they are the host↔plugin **boundary contract** in
+both directions: the host **produces** the inputs (the model numbers, the captured request) and
+**renders** the outputs, while the plugin only maps input→output via a pure summarizer. Since the
+host must never statically import a concrete plugin, every shape that crosses the boundary has to
+live in a layer the host can import. The rule: `contracts` may own these view-models, but they must
+stay **generic** host-render / plugin-emit shapes — never a plugin's private heuristics — and they
+carry no Zod schema (they are produced and rendered, never `.parse`d).
+
 `PluginHost.capture` is an **inversion-of-control sink**, exactly like the telemetry
 `setCaptureExceptionSink` in `@tinytinkerer/sentry-telemetry`: `contracts` defines the _type_,
 and the host (the browser) supplies the implementation that forwards to Sentry.
@@ -219,9 +230,17 @@ the generic plugin-activation list and is toggled through `pluginActivation` lik
 plugin. Its manifest sets `defaultEnabled: true`, so it ships enabled out-of-the-box; an explicit
 user choice (on or off) always wins over that default. There is no dedicated search setting,
 readiness gate, or special-cased plugin id in the host — `create-runtime.ts` activates plugins
-purely via `isPluginEnabled(activation, manifest)`. The runtime's planner flag is then derived from
-whether a `web-search` tool actually got registered, so toggling the plugin is the single source of
-truth for whether the planner proposes a search step.
+purely via `isPluginEnabled(activation, manifest)`.
+
+**The heuristic planner step travels with the plugin.** When the LLM planner is unavailable (an
+anonymous user, or a transport failure), the host falls back to `inferPlan` (in `app-core`). That
+fallback names **no concrete tool**: a tool descriptor may carry an optional `keywordPlannerStep`
+(`{ keywords, stepId?, summary, inputTemplate? }`), and `inferPlan` proposes a step for any active
+tool whose keywords match the prompt, substituting the `{{prompt}}` sentinel in `inputTemplate`. Web
+search ships its own `keywordPlannerStep` (the search keywords used to live hard-coded in
+`inferPlan`); because an inactive plugin's descriptor is simply absent from the active set, toggling
+the plugin remains the single source of truth for whether the heuristic planner proposes a search
+step — now without the host hard-coding the `web-search` id.
 
 ## The Code execution plugin (`@tinytinkerer/plugin-code-exec`)
 
@@ -329,9 +348,26 @@ where it sits):
   `children` so the agent can pull a bounded subtree of a container.
 
 The agent can chain a returned `html` string into the `run_javascript` tool (the code-exec plugin)
-for heavier parsing — the two plugins are independent, the conjunction is emergent agent behaviour
-driven by the tool descriptions, not wired in code. Note `run_javascript` is sandboxed and **cannot
-read the page itself**, so all DOM data must originate from `read_dom`.
+for heavier parsing. The two plugin **packages** stay independent (neither imports the other, and
+each is product-agnostic), but the host **does** wire a deliberate channel between them — see
+**The dom-snapshot channel** below. `run_javascript`'s sandbox cannot reach the live page itself, so
+all page data still originates from a `read_dom` read; the host carries it across.
+
+### The dom-snapshot channel (a deliberate host coupling)
+
+This is the **one** host↔plugin coupling the plugin system keeps by design, rather than driving from
+the manifest. On every `read_dom` call the host captures the full sanitized page into a
+runtime-scoped snapshot, and the sandbox executor exposes that snapshot to `run_javascript` as a
+`dom` binding — so the agent can read a cheap narrow view with `read_dom` and then compute over the
+whole (already-redacted) page in the sandbox, which cannot read the page on its own. The capture is
+**gated on a sandbox consumer being registered**: `create-runtime.ts` only builds the whole-body
+snapshot when a `run_javascript` tool actually registered (the lone remaining host literal,
+`RUN_JAVASCRIPT_TOOL_ID`), so a `read_dom` with no sandbox to feed never pays for — nor exposes — the
+deep clone. Sandboxed code therefore **does** receive first-party page content (the `read_dom`
+snapshot), but it adds **no new outbound data path**: the sandbox runs at an opaque origin with the
+network blocked by its in-document CSP, so it can compute over the snapshot but cannot transmit it.
+The only place page content leaves the device remains the model provider — already disclosed by the
+`read_dom` section of `PRIVACY.md` — so this internal flow needs no separate privacy disclosure.
 
 Reading the live DOM is the one capability a plugin must **never** implement itself — a plugin's
 `execute()` runs in the browser app runtime, so touching the page there would inherit app-origin
@@ -500,12 +536,18 @@ rather than an error issue. See [sentry-telemetry.md](./sentry-telemetry.md) and
 
 ## Adding a new plugin
 
-Because discovery is dynamic, adding a plugin touches **no host code**:
+Because discovery is dynamic, adding a plugin touches **no host code** — everything a plugin
+contributes is read off its manifest generically: tools (`toolDescriptors`), a heuristic planner
+step (`keywordPlannerStep`), a turn-activity summary (`summarizeActivity`), a permission view
+(`summarizePermission`), a persistent status gauge (`statusDescriptor`), and the developer inspector
+(`inspectorDescriptor`, which also arms request capture when present). The **one** exception is the
+dom-snapshot channel between `read_dom` and `run_javascript` (see above), which the host wires
+explicitly via a single tool-id literal; nothing else in `create-runtime.ts` names a concrete plugin.
 
 1. Create `packages/plugins/plugin-<name>` depending on `contracts`.
 2. From its `src/index.ts`, export the `PluginModule` surface: a `manifest`
-   (`{ id, label, description, toolDescriptors? }`) and a `createPlugin()` returning an
-   `AgentPlugin` (with `createTools`).
+   (`{ id, label, description, toolDescriptors? }`, plus any of the optional descriptors above) and a
+   `createPlugin()` returning an `AgentPlugin` (with `createTools`).
 3. Run `pnpm check:boundaries` to verify it stays product-agnostic.
 4. If the plugin sends user content anywhere, document it in `PRIVACY.md` / `PRIVACY-UPDATE.md`.
 

@@ -44,7 +44,7 @@ export interface ModelsGateway {
   streamResponse(
     prompt: string,
     history: ConversationMessage[],
-    options?: { signal?: AbortSignal; searchEnabled?: boolean }
+    options?: { signal?: AbortSignal }
   ): AsyncIterable<string>
 }
 

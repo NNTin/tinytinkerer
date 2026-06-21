@@ -77,18 +77,23 @@ export const summarizeWebSearchActivity: ActivitySummarizer = (output): Activity
   return { title: 'Web search', sections }
 }
 
+// Keywords that make the heuristic (no-LLM) fallback planner propose a web search.
+// These used to be hard-coded in app-core's inferPlan; they now travel with the
+// plugin so the host names no concrete tool id (see KeywordPlannerStep).
+const WEB_SEARCH_KEYWORDS = ['latest', 'news', 'search', 'web', 'compare', 'today', 'research']
+
 // UI + planner metadata for the host. The shape is the generic PluginManifest
 // contract from contracts; this plugin ships its own copy and tool descriptor.
 // The descriptor mirrors the SearchRequest schema so the planner can name the
 // tool without instantiating the plugin. `defaultEnabled` keeps web search on
 // out-of-the-box; it appears in the generic plugin activation list like any
 // other plugin and the user can turn it off there. `summarizeActivity` carries
-// the plugin's own activity-panel presentation (see summarizeWebSearchActivity).
+// the plugin's own activity-panel presentation (see summarizeWebSearchActivity);
+// `keywordPlannerStep` carries the heuristic-fallback step the plugin owns.
 export const webSearchPluginManifest: PluginManifest = {
   id: WEB_SEARCH_PLUGIN_ID,
   label: 'Web search (Tavily)',
   description: 'Allow the agent to search the web for up-to-date information.',
-  capabilities: ['tools'],
   defaultEnabled: true,
   toolDescriptors: [
     {
@@ -98,7 +103,13 @@ export const webSearchPluginManifest: PluginManifest = {
         query: { type: 'string', description: 'Search query (2–500 chars)' },
         maxResults: { type: 'number', description: 'Max results (1–10, optional)' }
       },
-      summarizeActivity: summarizeWebSearchActivity
+      summarizeActivity: summarizeWebSearchActivity,
+      keywordPlannerStep: {
+        keywords: WEB_SEARCH_KEYWORDS,
+        stepId: 'search',
+        summary: 'Collect current references from web search',
+        inputTemplate: { query: '{{prompt}}', maxResults: 5 }
+      }
     }
   ]
 }

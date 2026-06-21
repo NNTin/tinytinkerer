@@ -127,7 +127,6 @@ describe('manifest', () => {
   it('is a valid, off-by-default inspector plugin module', () => {
     expect(isPluginModule(contextInspectorModule)).toBe(true)
     expect(contextInspectorPluginManifest.id).toBe(CONTEXT_INSPECTOR_PLUGIN_ID)
-    expect(contextInspectorPluginManifest.capabilities).toEqual(['inspector'])
     expect(contextInspectorPluginManifest.defaultEnabled).toBeUndefined()
     expect(contextInspectorPluginManifest.inspectorDescriptor?.summarizeRequest).toBe(
       summarizeRequest

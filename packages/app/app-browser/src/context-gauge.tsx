@@ -5,10 +5,10 @@ import type {
   GaugeView,
   StatusSummarizer
 } from '@tinytinkerer/contracts'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useChatStore, useSettingsStore } from './app'
 import { useModels } from './models'
-import { loadPluginModules } from './plugins/registry'
+import { usePluginModules } from './plugins/use-plugin-modules'
 
 // Most recent reported prompt-token count (the "most-recent turn" semantics for
 // percent_context_used). Scans from the end for the latest agent.usage event;
@@ -35,20 +35,13 @@ export const useContextGauge = (): GaugeView | null => {
   const pluginActivation = useSettingsStore((state) => state.pluginActivation)
   const { models, refreshModels } = useModels(selectedModel)
 
-  const [summarizer, setSummarizer] = useState<StatusSummarizer | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    void loadPluginModules().then((modules) => {
-      if (cancelled) return
-      const active = modules.find(
-        (mod) => mod.manifest.statusDescriptor && isPluginEnabled(pluginActivation, mod.manifest)
-      )
-      setSummarizer(() => active?.manifest.statusDescriptor?.summarizeStatus ?? null)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [pluginActivation])
+  const pluginModules = usePluginModules()
+  const summarizer = useMemo<StatusSummarizer | null>(() => {
+    const active = pluginModules.find(
+      (mod) => mod.manifest.statusDescriptor && isPluginEnabled(pluginActivation, mod.manifest)
+    )
+    return active?.manifest.statusDescriptor?.summarizeStatus ?? null
+  }, [pluginModules, pluginActivation])
 
   // Best-effort: when the gauge is active but the selected model carries no
   // limits (the chat surface starts from the built-in fallback list), pull the

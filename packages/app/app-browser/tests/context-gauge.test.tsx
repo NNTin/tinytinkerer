@@ -45,7 +45,6 @@ vi.mock('../src/plugins/registry.js', () => ({
           id: 'ctx-plugin',
           label: 'ctx',
           description: 'ctx',
-          capabilities: ['status'],
           statusDescriptor: {
             id: 'ctx-plugin',
             gaugeType: 'context_usage',

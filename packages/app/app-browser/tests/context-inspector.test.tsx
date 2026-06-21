@@ -101,7 +101,6 @@ const inspectorModule: PluginModule = {
     id: 'context-inspector',
     label: 'Context inspector (developer)',
     description: 'dev',
-    capabilities: ['inspector'],
     inspectorDescriptor: { id: 'context-inspector', summarizeRequest }
   },
   createPlugin: () => ({ id: 'context-inspector' })

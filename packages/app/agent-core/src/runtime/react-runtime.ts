@@ -18,7 +18,6 @@ export class ReActRuntime extends AgentRuntimeBase {
     try {
       const result = yield* this.runReActLoop(context, {
         budget: this.maxIterations,
-        searchEnabled: this.searchEnabled,
         ...(signal ? { signal } : {})
       })
 

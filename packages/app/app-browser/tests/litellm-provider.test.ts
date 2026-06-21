@@ -66,12 +66,37 @@ describe('LiteLLMProvider', () => {
     expect(plan.steps.map((step) => step.id)).toEqual(['understand', 'compose'])
   })
 
-  it('returns a medium-complexity plan with a search step for search-keyword prompts', async () => {
-    const provider = new LiteLLMProvider({ baseUrl: 'http://example.com' })
+  it('proposes a heuristic search step from the web-search descriptor when the LLM planner is unavailable', async () => {
+    // With a tool present the provider tries the LLM planner first; here the network
+    // fails, so it falls through to the heuristic inferPlan. The web-search keyword
+    // step now travels on the descriptor (keywordPlannerStep), so the provider
+    // proposes it without the host naming the tool id itself.
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')))
+    const provider = new LiteLLMProvider({
+      baseUrl: 'http://example.com',
+      allToolDescriptors: [
+        {
+          id: 'web-search',
+          description: 'Search the web',
+          inputSchema: {},
+          keywordPlannerStep: {
+            keywords: ['latest', 'news', 'today'],
+            stepId: 'search',
+            summary: 'Collect current references from web search',
+            inputTemplate: { query: '{{prompt}}', maxResults: 5 }
+          }
+        }
+      ]
+    })
     const plan = await provider.plan('what is the latest news today?', [])
     expect(plan.complexity).toBe('medium')
     expect(plan.steps.map((step) => step.id)).toEqual(['understand', 'search', 'compose'])
     expect(plan.steps[1]?.toolCall?.toolId).toBe('web-search')
+    expect(plan.steps[1]?.toolCall?.input).toEqual({
+      query: 'what is the latest news today?',
+      maxResults: 5
+    })
+    vi.unstubAllGlobals()
   })
 
   it('throws a typed rate limit error for 429 responses', async () => {

@@ -144,8 +144,11 @@ export class LiteLLMProvider implements ModelProvider {
       }
     }
 
-    const searchEnabled = options?.searchEnabled
-    return inferPlan(prompt, searchEnabled !== undefined ? { searchEnabled } : undefined)
+    // Heuristic fallback: hand the active tool descriptors to inferPlan, which
+    // proposes a step for any whose declared keywords match the prompt. The host
+    // names no concrete tool id — web search ships its own keyword step on its
+    // descriptor, and an inactive plugin simply isn't in this list.
+    return inferPlan(prompt, allDescriptors)
   }
 
   execute(step: PlanStep, context: ExecutionContext): Promise<string> {

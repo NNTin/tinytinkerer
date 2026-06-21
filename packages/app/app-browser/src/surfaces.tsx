@@ -22,7 +22,7 @@ import {
   type Dispatch,
   type SetStateAction
 } from 'react'
-import { loadPluginModules } from './plugins/registry'
+import { usePluginModules } from './plugins/use-plugin-modules'
 import { isMcpToolId, summarizeMcpActivity } from './runtime/mcp-tool'
 import { toolLabel, type ResolveActivitySummarizer } from './turn-activity-panel'
 import { useWebSpeechInput } from './web-speech'
@@ -108,32 +108,22 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     [mcpServers]
   )
 
-  // Plugin-contributed activity summarizers, keyed by tool id. Discovered from the
-  // same dynamic plugin manifests the host already reads (see ./plugins/registry),
-  // so the panel stays free of any static dependency on a concrete plugin package.
-  const [pluginSummarizers, setPluginSummarizers] = useState<Map<string, ActivitySummarizer>>(
-    () => new Map()
-  )
-  useEffect(() => {
-    let cancelled = false
-    void loadPluginModules().then((modules) => {
-      if (cancelled) {
-        return
-      }
-      const map = new Map<string, ActivitySummarizer>()
-      for (const mod of modules) {
-        for (const descriptor of mod.manifest.toolDescriptors ?? []) {
-          if (descriptor.summarizeActivity) {
-            map.set(descriptor.id, descriptor.summarizeActivity)
-          }
+  // Plugin-contributed activity summarizers, keyed by tool id. Derived from the
+  // same dynamically-discovered plugin manifests the host already reads (via the
+  // shared usePluginModules hook), so the panel stays free of any static dependency
+  // on a concrete plugin package.
+  const pluginModules = usePluginModules()
+  const pluginSummarizers = useMemo(() => {
+    const map = new Map<string, ActivitySummarizer>()
+    for (const mod of pluginModules) {
+      for (const descriptor of mod.manifest.toolDescriptors ?? []) {
+        if (descriptor.summarizeActivity) {
+          map.set(descriptor.id, descriptor.summarizeActivity)
         }
       }
-      setPluginSummarizers(map)
-    })
-    return () => {
-      cancelled = true
     }
-  }, [])
+    return map
+  }, [pluginModules])
 
   // Resolve a tool's summarizer by id: a plugin descriptor's wins by exact id; an
   // `mcp:*` id falls back to the MCP layer's summarizer, bound here to the host's
@@ -280,20 +270,13 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const setToken = useAuthStore((state) => state.setToken)
   const { canStartGitHubOAuth, startGitHubOAuth } = useGitHubOAuth()
   const user = useGitHubUser()
-  // Plugin manifests are discovered dynamically (see ./plugins/registry); the
-  // settings UI has no static dependency on any concrete plugin package.
-  const [availablePlugins, setAvailablePlugins] = useState<PluginManifest[]>([])
-  useEffect(() => {
-    let cancelled = false
-    void loadPluginModules().then((modules) => {
-      if (!cancelled) {
-        setAvailablePlugins(modules.map((mod) => mod.manifest))
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  // Plugin manifests are discovered dynamically (via the shared usePluginModules
+  // hook); the settings UI has no static dependency on any concrete plugin package.
+  const pluginModules = usePluginModules()
+  const availablePlugins = useMemo<PluginManifest[]>(
+    () => pluginModules.map((mod) => mod.manifest),
+    [pluginModules]
+  )
   const selectedModel = useSettingsStore((state) => state.selectedModel)
   const {
     models,

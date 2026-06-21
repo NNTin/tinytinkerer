@@ -47,8 +47,7 @@ const hookPluginModule = (id: string, hook: AgentHookContribution): PluginModule
   manifest: {
     id,
     label: id,
-    description: 'hook plugin',
-    capabilities: ['hooks']
+    description: 'hook plugin'
   },
   createPlugin: () => ({
     id,

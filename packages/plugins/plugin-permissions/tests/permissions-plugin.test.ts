@@ -94,10 +94,9 @@ describe('permissionsPlugin', () => {
     expect(result).toEqual({ allow: true })
   })
 
-  it('manifest id matches the plugin id and advertises only hooks', () => {
+  it('manifest id matches the plugin id and contributes no tools', () => {
     expect(permissionsPluginManifest.id).toBe(PERMISSIONS_PLUGIN_ID)
     expect(permissionsPlugin().id).toBe(PERMISSIONS_PLUGIN_ID)
-    expect(permissionsPluginManifest.capabilities).toEqual(['hooks'])
     expect(permissionsPluginManifest.toolDescriptors).toBeUndefined()
   })
 

@@ -352,14 +352,13 @@ describe('AgentRuntime', () => {
     expect(capturedNotes[0]).not.toContain('Completed step:')
   })
 
-  it('does not emit agent.tool.started or agent.tool.failed for search when searchEnabled is false', async () => {
+  it('does not emit agent.tool.started or agent.tool.failed when the plan has no tool steps', async () => {
+    // The runtime no longer carries a searchEnabled flag: whether a search step is
+    // proposed is the planner's decision (driven by which tools are active). Here
+    // the provider returns a no-tool plan, mirroring web search being inactive.
     const searchProvider: ModelProvider = {
-      plan: (_prompt: string, _history: ConversationMessage[], options?: ProviderCallOptions) => {
-        const searchEnabled = options?.searchEnabled
-        return Promise.resolve(
-          inferPlan(_prompt, searchEnabled !== undefined ? { searchEnabled } : undefined)
-        )
-      },
+      plan: (_prompt: string, _history: ConversationMessage[], _options?: ProviderCallOptions) =>
+        Promise.resolve(inferPlan(_prompt, { searchEnabled: false })),
       async execute() {
         return 'ok'
       },
@@ -368,13 +367,13 @@ describe('AgentRuntime', () => {
       }
     }
 
-    const runtime = new AgentRuntime(searchProvider, new ToolRegistry(), { searchEnabled: false })
+    const runtime = new AgentRuntime(searchProvider, new ToolRegistry())
     const events: ChatEvent[] = []
     for await (const event of runtime.run('What is the latest news on AI?')) {
       events.push(event)
     }
 
-    // With search disabled the inferred plan has no tool steps, so no tool runs.
+    // The plan has no tool steps, so no tool runs.
     expect(events.some((event) => event.type === 'agent.tool.started')).toBe(false)
     expect(events.some((event) => event.type === 'agent.tool.failed')).toBe(false)
   })

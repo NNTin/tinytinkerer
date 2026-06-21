@@ -236,11 +236,11 @@ describe('isPluginModule', () => {
     expect(isPluginModule(value)).toBe(false)
   })
 
-  it('accepts a manifest carrying capability metadata', () => {
+  it('accepts a manifest carrying unknown extra metadata', () => {
     expect(
       isPluginModule({
         ...validModule,
-        manifest: { ...validModule.manifest, capabilities: ['hooks'] }
+        manifest: { ...validModule.manifest, futureField: ['anything'] }
       })
     ).toBe(true)
   })

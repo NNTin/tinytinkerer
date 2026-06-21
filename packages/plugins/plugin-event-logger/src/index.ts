@@ -52,13 +52,14 @@
 // needs no input schema (no zod dependency) and cannot affect a chat run.
 //
 //
-// THE MANIFEST / CAPABILITIES / createHooks CONTRACT
-// --------------------------------------------------
+// THE MANIFEST / createHooks CONTRACT
+// -----------------------------------
 //   • `PluginManifest` is host-facing metadata. Its `label` and `description`
 //     are shown verbatim in the Settings modal, so write them for an end user.
-//     `capabilities` advertises what the plugin contributes: `['hooks']` here
-//     (a tool plugin would use `['tools']` and add `toolDescriptors`). We set
-//     NO `toolDescriptors` because we ship no tools.
+//     What a plugin contributes is read directly off the manifest by the host:
+//     a tool plugin ships `toolDescriptors`, a status/inspector plugin ships a
+//     `statusDescriptor`/`inspectorDescriptor`. We set NONE because this plugin
+//     only observes via `createHooks` and ships no tools.
 //   • `createPlugin()` returns an `AgentPlugin`. A hook plugin implements
 //     `createHooks(host)` and returns its `AgentHookContribution[]`. (A tool
 //     plugin would implement `createTools(host)` instead/as well.) `host`
@@ -86,8 +87,8 @@ import type {
 export const EVENT_LOGGER_PLUGIN_ID = 'event-logger'
 
 // Host-facing metadata. `label` + `description` render verbatim in the Settings
-// modal, so they are written for an end user. `capabilities: ['hooks']` advertises
-// that this plugin contributes hooks and no tools (hence no `toolDescriptors`).
+// modal, so they are written for an end user. This plugin contributes only hooks,
+// so it ships no `toolDescriptors` (and no status/inspector descriptor).
 export const eventLoggerPluginManifest: PluginManifest = {
   id: EVENT_LOGGER_PLUGIN_ID,
   label: 'Event Logger (developer console)',
@@ -96,8 +97,7 @@ export const eventLoggerPluginManifest: PluginManifest = {
     'type, full payload, and a timestamp. Contributes no tools and never changes ' +
     'how the assistant behaves — it only observes. Handy for understanding the ' +
     'agent runtime or building your own plugin. Open the browser devtools console ' +
-    'to see the output. Off by default.',
-  capabilities: ['hooks']
+    'to see the output. Off by default.'
 }
 
 // Build the one-line summary printed for each event. Kept pure so the test can
@@ -177,8 +177,8 @@ export const createPlugin: PluginModule['createPlugin'] = eventLoggerPlugin
 //      the handler body. Keep the plugin `id` equal to the manifest `id`.
 //   4. For a GATE instead of an observer, return a `tool.beforeExecute`
 //      contribution whose handler resolves to `{ allow: true }` or
-//      `{ allow: false, reason }`. For a TOOL plugin, set `capabilities: ['tools']`,
-//      add `toolDescriptors`, and implement `createTools` (see plugin-feedback).
+//      `{ allow: false, reason }`. For a TOOL plugin, add `toolDescriptors` and
+//      implement `createTools` (see plugin-feedback).
 //   5. Keep `export const manifest` and `export const createPlugin` — they are
 //      the discovery surface. No host edits are needed: the glob picks it up and
 //      it appears (off by default) in the Settings modal automatically.

@@ -55,8 +55,32 @@ const assistantContent = (source: string): ContentDocument => ({
 })
 
 describe('app-core helpers', () => {
-  it('infers search plans', () => {
-    expect(inferPlan('latest ai news').steps.some((step) => step.id === 'search')).toBe(true)
+  // A web-search-shaped fallback tool: the keyword step that used to be hard-coded
+  // in inferPlan now travels on the tool descriptor (KeywordPlannerStep).
+  const searchTool = {
+    id: 'web-search',
+    keywordPlannerStep: {
+      keywords: ['latest', 'news', 'search'],
+      stepId: 'search',
+      summary: 'Collect current references from web search',
+      inputTemplate: { query: '{{prompt}}', maxResults: 5 }
+    }
+  }
+
+  it('proposes a keyword step when a matching tool descriptor is supplied', () => {
+    const plan = inferPlan('latest ai news', [searchTool])
+    const search = plan.steps.find((step) => step.id === 'search')
+    expect(search).toBeDefined()
+    // The {{prompt}} sentinel is replaced with the user prompt.
+    expect(search?.toolCall).toEqual({
+      toolId: 'web-search',
+      input: { query: 'latest ai news', maxResults: 5 }
+    })
+  })
+
+  it('proposes no tool step when no descriptor matches (or none is supplied)', () => {
+    expect(inferPlan('latest ai news').steps.some((step) => step.toolCall)).toBe(false)
+    expect(inferPlan('say hello', [searchTool]).steps.some((step) => step.toolCall)).toBe(false)
   })
 
   it('falls back to the default model for null/empty values', () => {

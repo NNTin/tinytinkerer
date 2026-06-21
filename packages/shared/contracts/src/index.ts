@@ -49,6 +49,11 @@ export * from './edge'
 // Plugin contracts — feedback tool input + plugin activation state.
 export * from './plugins'
 
+// Host↔plugin presentation view-models (status gauge + context inspector). Split
+// out of ./plugins to contain its growth; still the host↔plugin boundary contract,
+// so it stays in contracts (the only layer the host can import). See ./plugin-views.
+export * from './plugin-views'
+
 export const eventTypeSchema = z.enum([
   'user.message',
   // Generic agent-trace events. These describe an agent's reasoning/acting

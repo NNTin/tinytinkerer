@@ -43,7 +43,6 @@ export type AgentRuntimeOptions = {
    * edge — is the user-facing authority and never aborts a healthy stream first.
    */
   firstChunkTimeoutMs?: number
-  searchEnabled?: boolean
   createAssistantContentSession?: CreateAssistantContentSession
   reportError?: RuntimeErrorReporter
   hooks?: readonly AgentHookContribution[]
@@ -129,7 +128,6 @@ export abstract class AgentRuntimeBase {
   protected readonly toolTimeoutMs: number
   protected readonly stepTimeoutMs: number
   protected readonly firstChunkTimeoutMs: number
-  protected readonly searchEnabled: boolean
   protected readonly createAssistantContentSession: CreateAssistantContentSession
   protected readonly reportError: RuntimeErrorReporter
   protected readonly hooks: readonly AgentHookContribution[]
@@ -151,7 +149,6 @@ export abstract class AgentRuntimeBase {
     // 90s gives gpt-5-class models room to first token while staying under the
     // edge's 120s upstream backstop, so the frontend stays the authority.
     this.firstChunkTimeoutMs = options.firstChunkTimeoutMs ?? Math.max(this.stepTimeoutMs, 90_000)
-    this.searchEnabled = options.searchEnabled ?? true
     this.createAssistantContentSession =
       options.createAssistantContentSession ?? createPlainTextAssistantContentSession
     this.reportError = options.reportError ?? (() => {})
@@ -459,7 +456,6 @@ export abstract class AgentRuntimeBase {
     context: ExecutionContext,
     options: {
       budget: number
-      searchEnabled: boolean
       signal?: AbortSignal
       parentStepId?: string
     }
@@ -472,8 +468,7 @@ export abstract class AgentRuntimeBase {
     }
 
     const callOptions = {
-      ...(options.signal ? { signal: options.signal } : {}),
-      searchEnabled: options.searchEnabled
+      ...(options.signal ? { signal: options.signal } : {})
     }
 
     let iterations = 0

@@ -1,6 +1,10 @@
 import { parseJsonWithTelemetry, parseModelJsonWithTelemetry } from '../telemetry/request-telemetry'
 import type { ConversationMessage } from '@tinytinkerer/app-core'
-import { executionPlanSchema, type ExecutionPlan } from '@tinytinkerer/contracts'
+import {
+  executionPlanSchema,
+  type ExecutionPlan,
+  type KeywordPlannerStep
+} from '@tinytinkerer/contracts'
 import type { ModelsChatFetch } from './edge-fetch'
 import { createRateLimitError } from './rate-limit'
 
@@ -8,6 +12,10 @@ export type PlannerToolDescriptor = {
   id: string
   description: string
   inputSchema: Record<string, unknown>
+  // Optional keyword-fallback step the tool's owner declared. Carried so the
+  // heuristic planner (app-core's inferPlan) can propose the tool without the host
+  // naming any concrete tool id. See KeywordPlannerStep.
+  keywordPlannerStep?: KeywordPlannerStep
 }
 
 const buildPlanningSystemPrompt = (tools: PlannerToolDescriptor[]): string => {

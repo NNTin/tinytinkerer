@@ -20,7 +20,6 @@ export type ExecutionContext = {
 
 export type ProviderCallOptions = {
   signal?: AbortSignal
-  searchEnabled?: boolean
 }
 
 // A single piece of the synthesized response stream. `content` chunks build the

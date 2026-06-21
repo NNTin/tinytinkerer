@@ -68,10 +68,9 @@ describe('eventLoggerPlugin', () => {
     expect(logArgs).toContainEqual(['event', sampleEvent])
   })
 
-  it('manifest id matches the plugin id and advertises the hooks capability', () => {
+  it('manifest id matches the plugin id and contributes no tools', () => {
     expect(eventLoggerPluginManifest.id).toBe(EVENT_LOGGER_PLUGIN_ID)
     expect(eventLoggerPlugin().id).toBe(EVENT_LOGGER_PLUGIN_ID)
-    expect(eventLoggerPluginManifest.capabilities).toEqual(['hooks'])
     expect(eventLoggerPluginManifest.toolDescriptors).toBeUndefined()
   })
 

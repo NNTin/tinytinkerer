@@ -32,23 +32,16 @@ import {
 } from '../telemetry/request-telemetry'
 import { requestPermission } from '../permission-service'
 
-// The planner's stable id for the web-search tool (also the web-search plugin's
-// id). app-browser never imports the plugin — this literal only lets the runtime
-// tell its planner whether a web-search tool ended up registered, matching the
-// id already hard-coded in app-core's inferPlan.
-const WEB_SEARCH_TOOL_ID = 'web-search'
-
-// The code-exec plugin's tool id. Like WEB_SEARCH_TOOL_ID, app-browser never imports
-// the plugin — this literal only lets the runtime tell whether run_javascript ended
-// up registered, so read_dom only builds the (whole-body) DOM snapshot when a
-// sandbox consumer is actually present.
+// The code-exec plugin's tool id — the ONE host↔plugin coupling the plugin system
+// deliberately keeps (documented in docs/plugin-infrastructure.md as the dom-snapshot
+// channel). app-browser never imports the plugin; this literal only lets the runtime
+// decide whether read_dom should build the (whole-body) sanitized DOM snapshot, which
+// is wasted work — and an unnecessary exposure — unless a sandbox consumer
+// (run_javascript) is actually registered to read it as its `dom` binding. Every
+// other former host literal is now manifest-driven: the planner's keyword step
+// travels on the web-search descriptor (keywordPlannerStep), and inspector capture
+// is gated on a plugin contributing an inspectorDescriptor (see below).
 const RUN_JAVASCRIPT_TOOL_ID = 'run_javascript'
-
-// The context-inspector plugin's id (issue #270). As with the tool ids above,
-// app-browser never imports the plugin — this literal only lets the runtime decide
-// whether to arm forwarded-request capture, so the heavy payload is captured (and
-// retained) ONLY while the inspector plugin is enabled.
-const CONTEXT_INSPECTOR_PLUGIN_ID = 'context-inspector'
 
 export type BrowserPluginRuntime = {
   registry: PluginRegistry
@@ -286,7 +279,8 @@ export const createRuntime = (options: {
 
   // Enable DOM-snapshot capture only when run_javascript actually registered, so a
   // read_dom never builds the whole-body clone (nor exposes it) when no sandbox can
-  // consume it. Derived from the registered tools, mirroring `searchEnabled` below.
+  // consume it. Derived from the registered tools — the dom-snapshot channel is the
+  // one deliberate host↔plugin coupling (see RUN_JAVASCRIPT_TOOL_ID above).
   captureDomSnapshot = registeredToolIds.has(RUN_JAVASCRIPT_TOOL_ID)
 
   return createChatRuntime({
@@ -297,10 +291,12 @@ export const createRuntime = (options: {
       getModel: options.getModel,
       ...(options.getLiteLLMBaseUrl ? { getLiteLLMBaseUrl: options.getLiteLLMBaseUrl } : {}),
       allToolDescriptors,
-      // Arm forwarded-request capture ONLY when the inspector plugin is enabled,
-      // so the full conversation payload is captured/retained solely for the
-      // developer inspector and stays entirely client-side otherwise (#270).
-      ...(options.captureForwardedRequest && activePluginIds.has(CONTEXT_INSPECTOR_PLUGIN_ID)
+      // Arm forwarded-request capture ONLY when an active plugin contributes an
+      // inspectorDescriptor, so the full conversation payload is captured/retained
+      // solely for the developer inspector and stays entirely client-side otherwise
+      // (#270). Gated on the manifest capability, not a hard-coded plugin id.
+      ...(options.captureForwardedRequest &&
+      activePluginModules.some((mod) => mod.manifest.inspectorDescriptor)
         ? { onForwardRequest: options.captureForwardedRequest }
         : {})
     }),
@@ -344,11 +340,6 @@ export const createRuntime = (options: {
       }
     },
     tools,
-    hooks,
-    // The planner should only propose a web-search step when a web-search tool is
-    // actually available. Derive it from the registered tools rather than a
-    // separate setting, so activating/deactivating the web-search plugin is the
-    // single source of truth.
-    searchEnabled: registeredToolIds.has(WEB_SEARCH_TOOL_ID)
+    hooks
   })
 }

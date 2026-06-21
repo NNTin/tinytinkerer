@@ -1,9 +1,9 @@
 import { isPluginEnabled } from '@tinytinkerer/app-core'
 import type { InspectorEntry, InspectorSummarizer } from '@tinytinkerer/contracts'
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
 import { useInspectorStore, useSettingsStore } from './app'
 import { useModels } from './models'
-import { loadPluginModules } from './plugins/registry'
+import { usePluginModules } from './plugins/use-plugin-modules'
 
 // The panel (and the heavier CodeMirror JSON view it pulls in) is lazy-loaded so
 // it stays out of the eagerly-loaded chat route chunk and only loads when a
@@ -34,20 +34,13 @@ export const useContextInspector = (): ContextInspectorData => {
   const selectedModel = useSettingsStore((state) => state.selectedModel)
   const { models } = useModels(selectedModel)
 
-  const [summarizer, setSummarizer] = useState<InspectorSummarizer | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    void loadPluginModules().then((modules) => {
-      if (cancelled) return
-      const active = modules.find(
-        (mod) => mod.manifest.inspectorDescriptor && isPluginEnabled(pluginActivation, mod.manifest)
-      )
-      setSummarizer(() => active?.manifest.inspectorDescriptor?.summarizeRequest ?? null)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [pluginActivation])
+  const pluginModules = usePluginModules()
+  const summarizer = useMemo<InspectorSummarizer | null>(() => {
+    const active = pluginModules.find(
+      (mod) => mod.manifest.inspectorDescriptor && isPluginEnabled(pluginActivation, mod.manifest)
+    )
+    return active?.manifest.inspectorDescriptor?.summarizeRequest ?? null
+  }, [pluginModules, pluginActivation])
 
   const contextWindow =
     models.find((model) => model.id === selectedModel)?.limits?.max_input_tokens ?? null

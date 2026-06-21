@@ -53,7 +53,7 @@ export class HybridRuntime extends AgentRuntimeBase {
     yield createEvent('user.message', { text: prompt })
     yield createEvent('agent.run.started', { agentType: 'hybrid' })
 
-    const callOptions = { ...(signal ? { signal } : {}), searchEnabled: this.searchEnabled }
+    const callOptions = { ...(signal ? { signal } : {}) }
 
     try {
       // The planner is a single-shot model call, so it gets the generous
@@ -102,7 +102,6 @@ export class HybridRuntime extends AgentRuntimeBase {
         const budget = Math.min(this.maxSubIterations, this.maxIterations - total)
         const sub = yield* this.runReActLoop(context, {
           budget,
-          searchEnabled: this.searchEnabled,
           parentStepId: stepEventId,
           ...(signal ? { signal } : {})
         })

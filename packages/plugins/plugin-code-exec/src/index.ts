@@ -177,7 +177,6 @@ export const codeExecPluginManifest: PluginManifest = {
     'page snapshot that read_dom produces. Useful for calculations and data transforms. ' +
     'Off by default. Enable the Permissions plugin too if you want to approve each run ' +
     'before it executes.',
-  capabilities: ['tools'],
   toolDescriptors: [
     {
       id: 'run_javascript',

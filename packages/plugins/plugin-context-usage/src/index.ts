@@ -33,9 +33,9 @@ export { CONTEXT_USAGE_PLUGIN_ID } from './plugin-id'
 export { computeContextGauge, thresholdForPercent } from './gauge-view'
 
 // Host-facing metadata. `label` + `description` render verbatim in the Settings
-// modal, so they are written for an end user. `capabilities: ['status']`
-// advertises the persistent gauge contribution (no tools, no hooks). The
-// `statusDescriptor` carries the plugin's pure presentation mapper.
+// modal, so they are written for an end user. The `statusDescriptor` carries the
+// plugin's pure presentation mapper (the persistent gauge contribution; no tools,
+// no hooks). The host resolves it by its presence on the manifest.
 export const contextUsagePluginManifest: PluginManifest = {
   id: CONTEXT_USAGE_PLUGIN_ID,
   label: 'Context usage gauge',
@@ -44,7 +44,6 @@ export const contextUsagePluginManifest: PluginManifest = {
     'window is currently in use (healthy / warning / critical). The gauge is ' +
     'hidden until the model reports token usage and its context-window size is ' +
     'known. Off by default.',
-  capabilities: ['status'],
   statusDescriptor: {
     id: CONTEXT_USAGE_PLUGIN_ID,
     gaugeType: 'context_usage',

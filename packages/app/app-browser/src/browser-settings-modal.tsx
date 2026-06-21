@@ -562,11 +562,11 @@ export const McpServerList = () => {
   )
 }
 
-// The context-inspector plugin renders a developer panel that only exists in the
-// web shell, so its toggle is disabled on the widget/mobile shells. The id is
-// hard-coded here (as the runtime hard-codes plugin/tool ids) so the settings UI
-// keeps no static dependency on the concrete plugin package.
-const CONTEXT_INSPECTOR_PLUGIN_ID = 'context-inspector'
+// A plugin that contributes an inspector panel (manifest `inspectorDescriptor`)
+// renders a developer surface that only exists in the web shell, so its toggle is
+// disabled on the widget/mobile shells. Keyed on the capability — not a hard-coded
+// plugin id — so the settings UI names no concrete plugin (and any future
+// inspector-contributing plugin gets the same treatment).
 const INSPECTOR_WEB_ONLY_TOOLTIP =
   'The context inspector is only available in the web app. Open it there to inspect the model context.'
 
@@ -581,8 +581,7 @@ const PluginsSection = ({ inspectorPanelSupported }: { inspectorPanelSupported: 
   return (
     <div className="space-y-3">
       {availablePlugins.map((plugin) => {
-        const inspectorDisabled =
-          plugin.id === CONTEXT_INSPECTOR_PLUGIN_ID && !inspectorPanelSupported
+        const inspectorDisabled = Boolean(plugin.inspectorDescriptor) && !inspectorPanelSupported
         return (
           <ToggleRow
             key={plugin.id}

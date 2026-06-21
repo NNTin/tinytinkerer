@@ -25,6 +25,8 @@ When a server is added (or manually refreshed), the browser calls `POST /api/mcp
 
 When a chat run starts, `createRuntime` reads the current MCP server configs and their cached discovery results. Every tool from every enabled server with a successful discovery is registered into the `ToolRegistry` with the id format `mcp:<serverId>:<toolName>`.
 
+Each registered tool's input is **validated locally** against its discovered JSON Schema before the edge call: `createMcpTool` compiles the schema to a Zod validator (`mcp-schema.ts`, covering the common subset — `type` object/string/number/integer/boolean/array, `properties`, `required`, `enum`, nested `items`). So a hallucinated or mistyped argument fails locally — where the agent can correct it — rather than as an opaque remote error. The compiler is **fail-open**: any construct it can't model (or a non-object top-level schema) falls back to a permissive record, so a valid-but-exotic call is never rejected.
+
 ### 4 — Planning
 
 If the user is signed in with GitHub and at least one MCP tool is registered, the planner sends a one-shot request to `/api/models/chat` asking the model to produce a JSON `ExecutionPlan` that names which tools to call and what arguments to pass. On any failure it falls back to the keyword-based `inferPlan` heuristic.

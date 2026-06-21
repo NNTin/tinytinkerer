@@ -84,7 +84,6 @@ export type ExecutionContext = {
 
 export type ProviderCallOptions = {
   signal?: AbortSignal
-  searchEnabled?: boolean
 }
 
 export interface ModelProvider {
@@ -134,7 +133,6 @@ export const createChatRuntime = (options: {
   toolTimeoutMs?: number
   stepTimeoutMs?: number
   firstChunkTimeoutMs?: number
-  searchEnabled?: boolean
   createAssistantContentSession?: CreateAssistantContentSession
   reportError?: RuntimeErrorReporter
   hooks?: readonly AgentHookContribution[]
@@ -155,7 +153,6 @@ export const createChatRuntime = (options: {
     ...(options.firstChunkTimeoutMs !== undefined
       ? { firstChunkTimeoutMs: options.firstChunkTimeoutMs }
       : {}),
-    ...(options.searchEnabled !== undefined ? { searchEnabled: options.searchEnabled } : {}),
     ...(options.createAssistantContentSession
       ? { createAssistantContentSession: options.createAssistantContentSession }
       : {}),

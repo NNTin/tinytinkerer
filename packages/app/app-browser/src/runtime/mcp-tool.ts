@@ -7,8 +7,8 @@ import {
   type McpServerConfig,
   type McpToolMeta
 } from '@tinytinkerer/contracts'
-import { z } from 'zod'
 import type { EdgeFetch } from './edge-fetch'
+import { mcpInputSchemaToZod } from './mcp-schema'
 import { parseJsonWithTelemetry, parseWithTelemetry } from '../telemetry/request-telemetry'
 
 // A contributed tool id of the form `mcp:<serverId>:<toolName>`. The MCP layer —
@@ -40,7 +40,11 @@ export const createMcpTool = (
 ): Tool<Record<string, unknown>, McpCallResponse> => ({
   id: `mcp:${server.id}:${toolMeta.toolName}`,
   description: `[${server.name}] ${toolMeta.description}`,
-  schema: z.record(z.string(), z.unknown()),
+  // Validate the model's arguments against the tool's discovered JSON Schema before
+  // the edge call, so a bad/hallucinated argument fails locally (where the agent can
+  // correct it) rather than as an opaque remote error. Fail-open for schema shapes
+  // the compiler can't model — see mcpInputSchemaToZod.
+  schema: mcpInputSchemaToZod(toolMeta.inputSchema),
   async execute(input) {
     const response = await edgeFetch(
       EDGE_ROUTE_PATHS.mcpCall,

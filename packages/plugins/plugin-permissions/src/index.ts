@@ -22,8 +22,7 @@ export const permissionsPluginManifest: PluginManifest = {
     'Pause before every tool runs and ask you to allow or deny it. When on, the ' +
     'assistant cannot run any tool — web search, MCP tools, or other plugin tools — ' +
     'until you confirm it in a prompt. Denying lets the run continue without that ' +
-    'tool. Needs a host that can prompt you (the browser app); off by default.',
-  capabilities: ['hooks']
+    'tool. Needs a host that can prompt you (the browser app); off by default.'
 }
 
 // Builds the reason carried on a denial so the runtime's
