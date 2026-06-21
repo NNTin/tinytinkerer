@@ -9,7 +9,7 @@ import {
   type InspectorUsage
 } from '@tinytinkerer/contracts'
 import type { SynthesisChunk } from '@tinytinkerer/app-core'
-import { getTelemetryHeaders } from '../telemetry/telemetry'
+import { captureTelemetryException, getTelemetryHeaders } from '../telemetry/telemetry'
 import { extractUsageChunk, parseSseStream } from './sse-utils'
 
 // The terminal usage chunk variant the SSE parser / extractUsageChunk yield.
@@ -164,6 +164,63 @@ export type ForwardedRequestSink = (
 // inspector buffer. The panel is a debug view, not a transcript store.
 const MAX_CAPTURED_RESPONSE_CHARS = 20_000
 
+// Metadata for telemetry when response capture fails. Carries ONLY the request
+// area and model — never the conversation payload or response content (#270 keeps
+// the inspector payload entirely client-side). `signal` lets us tell an expected
+// cancellation apart from a genuine capture failure.
+type InspectorCaptureContext = {
+  area?: string
+  model: string
+  signal?: AbortSignal
+}
+
+// Where in the capture pipeline the response went missing, so a future agent can
+// see which path failed from the Sentry tag alone:
+//   clone      — response.clone() threw before we could tee the body
+//   read       — reading the tee'd body threw (and it was not an abort)
+//   empty      — a 200 OK body was read fully but yielded no content
+//   unexpected — the capture closure itself threw, leaving the entry pending
+type InspectorCaptureStage = 'clone' | 'read' | 'empty' | 'unexpected'
+
+// Surface a context-inspector response-capture failure to telemetry so a missing
+// response in the panel is NOT a silent gap (a future agent can investigate from
+// the issue). METADATA ONLY — the request payload and response content must never
+// leave the client (#270 privacy), so we attach area/model/stage/detail where
+// `detail` is a stream/abort error message, never message content.
+//
+// Expected cancellations are skipped: when the user cancels or a ReAct decision
+// step times out (attemptDecision aborts its own controller), the tee'd read
+// aborts too — that is normal, not a defect, mirroring how createEdgeFetch already
+// declines to capture AbortError/429.
+const reportInspectorCaptureFailure = (
+  stage: InspectorCaptureStage,
+  context: InspectorCaptureContext,
+  detail?: unknown
+): void => {
+  if (context.signal?.aborted) return
+  if (detail instanceof Error && detail.name === 'AbortError') return
+
+  const detailMessage =
+    detail instanceof Error ? detail.message : typeof detail === 'string' ? detail : ''
+  captureTelemetryException(
+    new Error(
+      `context-inspector response capture failed (${stage})${detailMessage ? `: ${detailMessage}` : ''}`
+    ),
+    {
+      level: 'error',
+      tags: {
+        source: 'context-inspector',
+        capture_stage: stage,
+        request_area: context.area ?? 'models.chat',
+        model: context.model
+      },
+      // One issue per (stage, area) so the four failure modes stay distinct rather
+      // than collapsing under the shared Error frame.
+      fingerprint: ['context-inspector-capture', stage, context.area ?? 'models.chat']
+    }
+  )
+}
+
 const toUsage = (chunk: UsageChunk): InspectorUsage => ({
   ...(chunk.promptTokens != null ? { promptTokens: chunk.promptTokens } : {}),
   ...(chunk.completionTokens != null ? { completionTokens: chunk.completionTokens } : {}),
@@ -176,9 +233,15 @@ const toUsage = (chunk: UsageChunk): InspectorUsage => ({
 const readResponseBody = async (
   clone: Response,
   httpStatus: number,
-  setResponse: (response: InspectorResponse) => void
+  setResponse: (response: InspectorResponse) => void,
+  context: InspectorCaptureContext
 ): Promise<void> => {
   const contentType = clone.headers.get('content-type') ?? ''
+  // A 200 OK whose body read clean but produced nothing is the "response missing"
+  // case the panel shows; flag it (non-abort only) so it is observable.
+  const reportIfEmpty = (content: string): void => {
+    if (content.length === 0) reportInspectorCaptureFailure('empty', context)
+  }
   try {
     if (contentType.includes('text/event-stream') && clone.body) {
       let content = ''
@@ -187,6 +250,7 @@ const readResponseBody = async (
         if (chunk.kind === 'content') content += chunk.text
         else if (chunk.kind === 'usage') usage = toUsage(chunk)
       }
+      reportIfEmpty(content)
       setResponse({
         status: 'ok',
         httpStatus,
@@ -209,6 +273,7 @@ const readResponseBody = async (
       const content = typeof rawContent === 'string' ? rawContent : ''
       const usageChunk = extractUsageChunk(json)
       const usage = usageChunk && usageChunk.kind === 'usage' ? toUsage(usageChunk) : undefined
+      reportIfEmpty(content)
       setResponse({
         status: 'ok',
         httpStatus,
@@ -217,11 +282,14 @@ const readResponseBody = async (
       })
     } catch {
       // Not JSON — keep the raw text (capped) so there is still something to show.
+      reportIfEmpty(text)
       setResponse({ status: 'ok', httpStatus, content: text.slice(0, MAX_CAPTURED_RESPONSE_CHARS) })
     }
-  } catch {
-    // A consumed/aborted body or read failure: record the success status with no
-    // content rather than leaving the entry stuck on `pending`.
+  } catch (error) {
+    // A read failure leaves the panel without a response. An aborted body (user
+    // cancel / ReAct decision timeout) is expected and filtered out inside the
+    // reporter; anything else is surfaced so it is not silent.
+    reportInspectorCaptureFailure('read', context, error)
     setResponse({ status: 'ok', httpStatus, content: '' })
   }
 }
@@ -232,7 +300,8 @@ const readResponseBody = async (
 // for the side effect of updating the inspector; never affects the real consumer.
 const captureResponse = (
   response: Response,
-  setResponse: (response: InspectorResponse) => void
+  setResponse: (response: InspectorResponse) => void,
+  context: InspectorCaptureContext
 ): void => {
   if (response.status === 429) {
     const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'))
@@ -252,11 +321,14 @@ const captureResponse = (
   let clone: Response
   try {
     clone = response.clone()
-  } catch {
+  } catch (error) {
+    // The body was already disturbed/locked before we could tee it — the panel
+    // would show an empty response, so surface why (non-abort only).
+    reportInspectorCaptureFailure('clone', context, error)
     setResponse({ status: 'ok', httpStatus: response.status, content: '' })
     return
   }
-  void readResponseBody(clone, response.status, setResponse)
+  void readResponseBody(clone, response.status, setResponse, context)
 }
 
 export const createModelsChatFetch =
@@ -300,12 +372,33 @@ export const createModelsChatFetch =
 
     if (setResponse) {
       const update = setResponse
+      const captureContext: InspectorCaptureContext = {
+        ...(options?.area ? { area: options.area } : {}),
+        model: init.model,
+        ...(options?.signal ? { signal: options.signal } : {})
+      }
       // Registered before the caller awaits the same promise, so the response is
       // tee'd before its body is consumed. Best-effort: capture must not perturb
-      // the real request path, so failures fall back to an error outcome.
+      // the real request path, so failures fall back to an error outcome. A throw
+      // inside the fulfilled handler would otherwise leave the entry stuck on
+      // `pending` (a silent missing response), so guard it and surface it.
       responsePromise.then(
-        (response) => captureResponse(response, update),
+        (response) => {
+          try {
+            captureResponse(response, update, captureContext)
+          } catch (error) {
+            reportInspectorCaptureFailure('unexpected', captureContext, error)
+            update({
+              status: 'error',
+              httpStatus: 0,
+              message: error instanceof Error ? error.message : 'Capture failed'
+            })
+          }
+        },
         (error) =>
+          // The request itself rejected (network error / abort). edge-fetch already
+          // owns telemetry for those, so record the inspector outcome without
+          // double-reporting here.
           update({
             status: 'error',
             httpStatus: 0,

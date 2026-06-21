@@ -210,6 +210,19 @@ describe('createModelsChatFetch', () => {
 })
 
 describe('createModelsChatFetch — inspector capture', () => {
+  // A missing response in the panel must NOT be a silent gap, so capture failures
+  // are reported to telemetry. Wire the shared exception sink to assert on it.
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    sink.mockReset()
+    setCaptureExceptionSink(sink)
+  })
+
+  afterEach(() => {
+    setCaptureExceptionSink(null)
+  })
+
   // Drive a request through the chokepoint with an inspector sink wired, then wait
   // for the (async, tee'd) response capture to settle and return it.
   const captureFor = async (response: Response) => {
@@ -218,11 +231,11 @@ describe('createModelsChatFetch — inspector capture', () => {
       vi.fn(() => Promise.resolve(response))
     )
     let captured: InspectorResponse | undefined
-    const sink: ForwardedRequestSink = () => (r) => {
+    const requestSink: ForwardedRequestSink = () => (r) => {
       captured = r
     }
     const edgeFetch = createEdgeFetch('http://example.com', () => 'token')
-    const modelsChat = createModelsChatFetch(edgeFetch, undefined, sink)
+    const modelsChat = createModelsChatFetch(edgeFetch, undefined, requestSink)
     await modelsChat(
       { model: 'openai/gpt-5', stream: true, messages: [{ role: 'user', content: 'hi' }] },
       { area: 'models.chat' }
@@ -279,5 +292,36 @@ describe('createModelsChatFetch — inspector capture', () => {
   it('reports a non-429 http error', async () => {
     const captured = await captureFor(new Response('boom', { status: 500 }))
     expect(captured).toMatchObject({ status: 'error', httpStatus: 500 })
+  })
+
+  it('sends a telemetry error when a 200 OK response yields no content (not silent)', async () => {
+    const captured = await captureFor(
+      new Response(JSON.stringify({ choices: [{ message: { content: '' } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    )
+    expect(captured).toMatchObject({ status: 'ok', httpStatus: 200, content: '' })
+
+    expect(sink).toHaveBeenCalledTimes(1)
+    const [error, options] = sink.mock.calls[0] ?? []
+    expect(error?.message).toContain('context-inspector response capture failed')
+    expect(options?.level).toBe('error')
+    expect(options?.tags).toMatchObject({
+      source: 'context-inspector',
+      capture_stage: 'empty',
+      request_area: 'models.chat',
+      model: 'openai/gpt-5'
+    })
+  })
+
+  it('does NOT send telemetry for a normal non-empty response', async () => {
+    await captureFor(
+      new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    )
+    expect(sink).not.toHaveBeenCalled()
   })
 })
