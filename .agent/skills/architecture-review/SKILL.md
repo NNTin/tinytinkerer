@@ -39,9 +39,11 @@ it does not edit code and it does not decide on the user's behalf.
 - **Targeted review** — the same lens scoped to one `packages/*`, `apps/*`, directory, or
   feature. Use it on a slice — a new package, a churny module, a boundary you suspect is
   eroding.
-- **Plan review** — spawnable inline (a planning agent invokes it) to review a written
-  implementation plan, or a PR's diff against its plan, before it is built. Takes a **timing**
-  input (`before` | `after` | `both`, default `after`).
+- **Plan review** — a subagent a planning or implementation agent spawns to review an
+  implementation plan for architectural risk, at a chosen point **relative to implementation**:
+  `before` the code is written (review the plan), `after` it is written (review the resulting
+  diff against the plan), or `both`. Takes a **timing** input (`before` | `after` | `both`,
+  default `after`).
 
 If you are about to _affirm_ a design ("looks good, ship it"), that is the trigger to run this
 first. The point is to find why it rots before you bless it.

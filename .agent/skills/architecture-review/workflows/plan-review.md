@@ -1,35 +1,53 @@
-# SOP: plan review — review a plan before it is built
+# SOP: plan review — spawnable subagent
 
-Review a **written implementation plan** (or a PR's diff against its plan) through the
-**predict-the-regret** lens (see `../SKILL.md`) _before_ the design hardens. Spawnable inline:
-a planning or implementing agent invokes it, and it **returns the architectural risks as open
-points** for the user (via the calling agent) to weigh in on. It does not auto-apply anything —
-architecture calls are the user's.
+A subagent a planning or implementation agent spawns to review an implementation plan for
+architectural risk through the **predict-the-regret** lens (see `../SKILL.md`), at a chosen
+point **relative to implementation**: `before` the code is written, `after` it is written, or
+`both`. It **returns open architectural risks** for the caller/user to weigh — it does not edit
+code, does not auto-apply anything, and does not decide for the user.
+
+`before`/`after` are relative to **implementation**, never to how finished the plan is.
 
 ## 1. Read the inputs
 
-- **The artifact** — the plan text, or a PR diff + the plan it claims to implement.
-- **`timing`** ∈ `before | after | both`. **Default `after`.**
-  - `after` (default) — review the concrete drafted plan. Right for most work: you review a
-    real artifact, not a sketch.
-  - `before` — opt-in for **foundational / high-stakes** designs (a new package, a new layer, a
-    contract every caller will depend on): catch a regret before the plan hardens.
-  - `both` — ideal but token-expensive; reserve for the highest-stakes foundational designs.
+- **Implementation plan text** — required for every mode. The design under review.
+- **Implementation evidence** — required for `after` (and the after half of `both`): a PR diff,
+  `git diff`, changed-file list, or a written summary of what was actually implemented.
+- **Optional** — scope (which part of the plan/diff to focus on), architecture docs the caller
+  already has in hand, and any specific concerns from the user or planning agent.
 
-## 2. Anchor on the architecture the plan touches
+**`timing`** ∈ `before | after | both`. **Default `after`.**
+
+- `before` — review the **written plan before any code is implemented**, to catch a regret
+  while the design is still cheap to change.
+- `after` — review the **implemented diff after the code is written**, comparing it against the
+  original plan _and_ the repo architecture: did the implementation drift, and did the drift
+  introduce risk?
+- `both` — run a `before` review on the plan, then later run an `after` review on the
+  implementation/diff against that same plan.
+
+If `after` (or the after half of `both`) is requested **without implementation evidence**, do
+not pretend to review it — report that the after review is **blocked / incomplete** for want of
+a diff or change summary, and offer the `before` review you _can_ do from the plan.
+
+## 2. Anchor on the architecture under review
 
 Read the `docs/ARCHITECTURE.md` Layers + Dependency Rules and the `docs/packages-concept.md`
-blocks for the layers the plan changes, plus the subsystem doc if relevant
+blocks for the layers the plan (or diff) touches, plus the subsystem doc if relevant
 (`plugin-infrastructure.md`, `content-platform.md`, `sentry-telemetry.md`,
-`mcp-integration.md`). The plan is judged against these, not against taste.
+`mcp-integration.md`). The work is judged against these, not against taste. Use any docs the
+caller already supplied before re-reading.
 
 ## 3. Run the lens — failure analysis first
 
-Apply every lens question to the plan: what hidden coupling does it add, which interface it
-introduces will churn, does it let logic settle in the wrong layer, is it abstracting for one
-caller or duplicating instead of sharing, what will it cost to maintain, what will it let a
-future developer accidentally break. **Do not propose directions until the failure analysis is
-done.**
+Apply every lens question to the plan (and, for `after`, to the diff): what hidden coupling
+does it add, which interface it introduces will churn, does it let logic settle in the wrong
+layer, is it abstracting for one caller or duplicating instead of sharing, what will it cost to
+maintain, what will it let a future developer accidentally break. **Do not propose directions
+until the failure analysis is done.**
+
+For `after`, also ask the drift question: does the implementation **preserve, weaken, or
+change** the plan's architectural intent?
 
 Aim above CI: `pnpm lint` / `pnpm typecheck` will catch a physical boundary or type violation
 once the code exists. Spend the review on the risks they can't — the design choices that are
@@ -37,7 +55,14 @@ green today and regret tomorrow.
 
 ## 4. Return the risks as open points
 
-Hand the calling agent / user the findings as **open points**, each with: area, the regret (why
-it bites at 6 months / 10× growth), the doc reference where one applies, and a suggested
-direction phrased as a recommendation. Note the timing the review ran under. **Do not apply
-anything** — surface the risks and let the user decide before the plan is built.
+Hand the caller/user a report that states:
+
+- **which timing mode ran** (`before` / `after` / `both`) and **what artifact(s) were
+  reviewed** (the plan, the diff, or both);
+- the **findings, grouped by severity**, each with: area, the regret (why it bites at 6 months
+  / 10× growth), the architecture reference where one applies, and a suggested direction phrased
+  as a recommendation;
+- for `after`, whether the implementation appears to **preserve, weaken, or change** the plan's
+  architectural intent.
+
+**Do not apply anything** — surface the risks and let the user decide.
