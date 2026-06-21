@@ -221,8 +221,15 @@ jobs:
     needs: [checks, ci, report]
     # `!cancelled()` so the preview (and the embedded /test-report/) still publishes
     # when tests fail — Allure is most useful exactly then, and the failing test jobs
-    # keep the PR's checks red. A broken BUILD still blocks the deploy via the
-    # `vercel build` step below, which re-runs `pnpm build`.
+    # keep the PR's checks red.
+    #
+    # A broken app BUILD no longer aborts the whole job: the `vercel build` step is
+    # `continue-on-error`, and when it fails we fall back to publishing the standalone
+    # Allure report on its own `*-report` preview domain (the report is most useful
+    # exactly when the build/tests are broken). The full preview's happy path — build
+    # succeeds, report bundled at <preview>/test-report/ — is unchanged. The real
+    # build failure still surfaces: the final "Fail if app build failed" step below
+    # re-reds this job, and the `ci`/`e2e` jobs stay red on their own.
     if: >
       !cancelled() &&
       github.event_name == 'pull_request' &&
@@ -259,29 +266,9 @@ jobs:
           name: test-report
           path: test-report
 
-      - name: Build Deployment Artifacts
-        # PR previews report to Sentry under a single shared `pr-preview`
-        # environment. Preview env vars (incl. VITE_EDGE_URL -> the develop edge)
-        # come from the pulled Preview scope; the Sentry build inputs are passed
-        # here, matching the production build. TINYTINKERER_TEST_REPORT_DIR tells
-        # build-pages.mjs to compose the downloaded report into /test-report/ — set
-        # only here, so develop/production deploys never publish it.
-        env:
-          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN_FRONTEND }}
-          VITE_SENTRY_ENVIRONMENT: pr-preview
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          TINYTINKERER_TEST_REPORT_DIR: test-report
-        run: vercel build --token="$VERCEL_TOKEN"
-
-      - name: Deploy to Vercel
-        id: deploy
-        run: |
-          # --archive=tgz uploads one tarball instead of thousands of individual
-          # files, staying under Vercel's free-plan per-file upload rate limit
-          # (api-upload-free) — the merged /test-report/ adds many small files.
-          url="$(vercel deploy --prebuilt --archive=tgz --token="$VERCEL_TOKEN")"
-          echo "url=$url" >> "$GITHUB_OUTPUT"
-
+      # Derive the preview domain BEFORE deploying so both the full-preview and the
+      # report-only fallback paths below can reference the slug/domain (the fallback
+      # appends a `-report` marker to the same slug). This step has no side effects.
       - name: Derive Preview Domain
         id: preview-domain
         shell: bash
@@ -312,22 +299,143 @@ jobs:
           slug="${slug%-}"
           domain="$slug$suffix"
 
+          # Report-only fallback domain: same slug with a `-report` marker, kept
+          # within the same 63-char budget. The `-report` (7 chars) is reserved up
+          # front and trimmed off the branch portion so the full domain still fits.
+          report_max_branch_length=$(( max_branch_length - 7 ))
+          if [ "$report_max_branch_length" -lt 1 ]; then
+            report_max_branch_length=1
+          fi
+          report_branch_slug="${branch_slug:0:$report_max_branch_length}"
+          report_branch_slug="${report_branch_slug%-}"
+          report_slug="${prefix}${report_branch_slug}-report"
+          report_domain="$report_slug$suffix"
+
           echo "slug=$slug" >> "$GITHUB_OUTPUT"
           echo "domain=$domain" >> "$GITHUB_OUTPUT"
+          echo "report_slug=$report_slug" >> "$GITHUB_OUTPUT"
+          echo "report_domain=$report_domain" >> "$GITHUB_OUTPUT"
+
+      - name: Build Deployment Artifacts
+        id: build
+        # PR previews report to Sentry under a single shared `pr-preview`
+        # environment. Preview env vars (incl. VITE_EDGE_URL -> the develop edge)
+        # come from the pulled Preview scope; the Sentry build inputs are passed
+        # here, matching the production build. TINYTINKERER_TEST_REPORT_DIR tells
+        # build-pages.mjs to compose the downloaded report into /test-report/ — set
+        # only here, so develop/production deploys never publish it.
+        #
+        # `continue-on-error`: a broken app build (this re-runs `pnpm build`) must
+        # NOT abort the job, otherwise the standalone Allure report — already built
+        # by the `report` job — would be lost. On failure, `steps.build.outcome` is
+        # `failure` and the report-only fallback below takes over; on success the
+        # original full-preview path runs unchanged. The failure is not swallowed:
+        # the final "Fail if app build failed" step re-reds this job.
+        continue-on-error: true
+        env:
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN_FRONTEND }}
+          VITE_SENTRY_ENVIRONMENT: pr-preview
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          TINYTINKERER_TEST_REPORT_DIR: test-report
+        run: vercel build --token="$VERCEL_TOKEN"
+
+      # ── Happy path: app build succeeded ─────────────────────────────────────────
+      # Deploy + alias the full preview exactly as before; the report ships bundled
+      # at <preview>/test-report/. Both steps are gated on the build succeeding so the
+      # URLs and behavior are byte-for-byte identical to the pre-fallback workflow.
+      - name: Deploy to Vercel
+        id: deploy
+        if: steps.build.outcome == 'success'
+        run: |
+          # --archive=tgz uploads one tarball instead of thousands of individual
+          # files, staying under Vercel's free-plan per-file upload rate limit
+          # (api-upload-free) — the merged /test-report/ adds many small files.
+          url="$(vercel deploy --prebuilt --archive=tgz --token="$VERCEL_TOKEN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: Alias Preview Domain
         id: alias
+        if: steps.build.outcome == 'success'
         run: |
           domain="${{ steps.preview-domain.outputs.domain }}"
           vercel alias set "${{ steps.deploy.outputs.url }}" "$domain" --token="$VERCEL_TOKEN"
           echo "preview_url=https://$domain" >> "$GITHUB_OUTPUT"
 
+      # ── Fallback path: app build failed ─────────────────────────────────────────
+      # The full app preview is unavailable, but the standalone Allure report (the
+      # `test-report` artifact downloaded above) still must be published. Assemble a
+      # minimal Vercel Build Output API v3 directory (.vercel/output) that serves the
+      # report verbatim, then deploy it `--prebuilt` and alias it to the dedicated
+      # `*-report` preview domain so the report is always reachable.
+      - name: Assemble report-only deployment
+        id: report-build
+        if: steps.build.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -d test-report ] || [ -z "$(ls -A test-report 2>/dev/null)" ]; then
+            # No report artifact (e.g. the report job itself failed to produce one):
+            # nothing to publish. Skip the fallback deploy rather than erroring — the
+            # build failure is still reported by the final step below.
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "No test-report directory found; skipping report-only deploy."
+            exit 0
+          fi
+
+          # Build Output API v3: static files live under .vercel/output/static and
+          # config.json must declare version 3. We serve the report under
+          # /test-report/ so the URL path matches the bundled happy-path layout, and
+          # add a root redirect so the bare domain lands on the report index.
+          rm -rf .vercel/output
+          mkdir -p .vercel/output/static/test-report
+          cp -R test-report/. .vercel/output/static/test-report/
+          cat > .vercel/output/config.json <<'JSON'
+          {
+            "version": 3,
+            "routes": [
+              { "src": "/", "status": 308, "headers": { "Location": "/test-report/" } }
+            ]
+          }
+          JSON
+
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy report-only to Vercel
+        id: report-deploy
+        if: steps.build.outcome == 'failure' && steps.report-build.outputs.published == 'true'
+        run: |
+          # Same --prebuilt --archive=tgz flags as the full deploy: the report is many
+          # small files, so the tarball upload stays under the free-plan rate limit.
+          url="$(vercel deploy --prebuilt --archive=tgz --token="$VERCEL_TOKEN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Alias report-only Domain
+        id: report-alias
+        if: steps.build.outcome == 'failure' && steps.report-build.outputs.published == 'true'
+        run: |
+          domain="${{ steps.preview-domain.outputs.report_domain }}"
+          vercel alias set "${{ steps.report-deploy.outputs.url }}" "$domain" --token="$VERCEL_TOKEN"
+          echo "report_url=https://$domain" >> "$GITHUB_OUTPUT"
+
+      # Always comment (build success OR failure) so the PR always carries the live
+      # links. The body branches on which path published: the full preview when the
+      # app build succeeded, or the standalone test-report-only deploy when it failed.
+      # `if: always()` is needed because the build step is `continue-on-error` — its
+      # `failure` outcome does not stop the job, but later step `if`s still must not
+      # be skipped here.
       - name: Comment Preview Link
+        if: always()
         uses: actions/github-script@v8
         env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
           PREVIEW_URL: ${{ steps.alias.outputs.preview_url }}
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
           PREVIEW_DOMAIN: ${{ steps.preview-domain.outputs.domain }}
+          REPORT_PUBLISHED: ${{ steps.report-build.outputs.published }}
+          REPORT_URL: ${{ steps.report-alias.outputs.report_url }}
+          REPORT_DEPLOYMENT_URL: ${{ steps.report-deploy.outputs.url }}
+          REPORT_DOMAIN: ${{ steps.preview-domain.outputs.report_domain }}
         with:
           script: |
             const marker = '<!-- vercel-preview -->'
@@ -338,21 +446,60 @@ jobs:
               per_page: 100,
             })
 
-            const previewUrl = process.env.PREVIEW_URL
-            const body = [
-              marker,
-              '## Vercel Preview',
-              '',
-              `- Web: ${previewUrl}/web/`,
-              `- Mobile: ${previewUrl}/mobile/`,
-              `- Widget: ${previewUrl}/widget/`,
-              `- Test report: ${previewUrl}/test-report/`,
-              '',
-              `Preview: ${previewUrl}`,
-              `Deployment: ${process.env.DEPLOYMENT_URL}`,
-              `Domain: \`${process.env.PREVIEW_DOMAIN}\``,
-              `Commit: \`${process.env.GITHUB_SHA}\``,
-            ].join('\n')
+            let body
+            if (process.env.BUILD_OUTCOME === 'success') {
+              // Happy path: full app preview with the report bundled at /test-report/.
+              const previewUrl = process.env.PREVIEW_URL
+              body = [
+                marker,
+                '## Vercel Preview',
+                '',
+                `- Web: ${previewUrl}/web/`,
+                `- Mobile: ${previewUrl}/mobile/`,
+                `- Widget: ${previewUrl}/widget/`,
+                `- Test report: ${previewUrl}/test-report/`,
+                '',
+                `Preview: ${previewUrl}`,
+                `Deployment: ${process.env.DEPLOYMENT_URL}`,
+                `Domain: \`${process.env.PREVIEW_DOMAIN}\``,
+                `Commit: \`${process.env.GITHUB_SHA}\``,
+              ].join('\n')
+            } else if (process.env.REPORT_PUBLISHED === 'true') {
+              // Fallback path: app build failed, so only the standalone Allure report
+              // was published (on its own *-report domain). Make this unambiguous so
+              // the comment is never mistaken for a working full preview.
+              const reportUrl = process.env.REPORT_URL
+              body = [
+                marker,
+                '## Vercel Preview',
+                '',
+                '> [!WARNING]',
+                '> The tinytinkerer **app build failed**, so the full preview ' +
+                  '(Web / Mobile / Widget) is unavailable for this commit. ' +
+                  'Only the Allure **test report** was published. See the ' +
+                  'failing CI / E2E checks for the build & test failures.',
+                '',
+                `- Test report: ${reportUrl}/test-report/`,
+                '',
+                `Report: ${reportUrl}`,
+                `Deployment: ${process.env.REPORT_DEPLOYMENT_URL}`,
+                `Domain: \`${process.env.REPORT_DOMAIN}\``,
+                `Commit: \`${process.env.GITHUB_SHA}\``,
+              ].join('\n')
+            } else {
+              // App build failed AND no report artifact was available to publish.
+              body = [
+                marker,
+                '## Vercel Preview',
+                '',
+                '> [!WARNING]',
+                '> The tinytinkerer **app build failed** and no Allure test report ' +
+                  'artifact was available to publish for this commit. See the failing ' +
+                  'CI / E2E checks for details.',
+                '',
+                `Commit: \`${process.env.GITHUB_SHA}\``,
+              ].join('\n')
+            }
 
             const existingComment = comments.find((comment) =>
               comment.user?.type === 'Bot' && comment.body?.includes(marker)
@@ -372,3 +519,14 @@ jobs:
               issue_number,
               body,
             })
+
+      # Re-red the job when the app build failed. `continue-on-error` on the build
+      # step let the report-only fallback publish, but the build failure is real and
+      # must NOT be swallowed: failing here keeps `deploy-preview` red (matching the
+      # old behavior where a broken build blocked the deploy), while the `ci`/`e2e`
+      # jobs stay red independently. Runs last so the report still publishes first.
+      - name: Fail if app build failed
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::tinytinkerer app build failed; published the standalone Allure report only. See the CI / E2E checks for the underlying build & test failures."
+          exit 1
