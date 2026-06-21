@@ -2,6 +2,7 @@ import {
   EDGE_ROUTE_PATHS,
   boundedPreview,
   edgeErrorResponseSchema,
+  KEYWORD_PROMPT_SENTINEL,
   PluginCaptureError,
   searchRequestSchema,
   searchResponseSchema,
@@ -108,7 +109,7 @@ export const webSearchPluginManifest: PluginManifest = {
         keywords: WEB_SEARCH_KEYWORDS,
         stepId: 'search',
         summary: 'Collect current references from web search',
-        inputTemplate: { query: '{{prompt}}', maxResults: 5 }
+        inputTemplate: { query: KEYWORD_PROMPT_SENTINEL, maxResults: 5 }
       }
     }
   ]

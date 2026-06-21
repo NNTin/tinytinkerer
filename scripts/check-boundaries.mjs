@@ -34,6 +34,28 @@ const PRODUCT_AGNOSTIC_SOURCE_RULES = [
   { pattern: /from\s+['"]zustand(?:\/[^'"]*)?['"]/, label: 'Zustand import' }
 ]
 
+// Modules that must stay a PURE, import-free, schema-free TYPE-DECLARATION leaf —
+// only `export type` / `export interface`. plugin-views.ts is the host↔plugin
+// presentation-view-model boundary contract: keeping it import-free stops it from
+// pulling in a foreign/plugin type, and schema-free stops it from drifting into a
+// logic/parsing module the way plugins.ts did before it was split out.
+//
+// NOTE: this gate is STRUCTURAL only. It cannot detect a plugin-SPECIFIC field
+// added inline to an otherwise-"generic" view-model (e.g. `searchProvider:
+// 'tavily'`) — that is not statically decidable and remains a review-time concern,
+// called out in the module's own header. Paths are repo-root-relative, POSIX style.
+const PURE_TYPE_MODULES = new Set(['packages/shared/contracts/src/plugin-views.ts'])
+
+const PURE_TYPE_MODULE_RULES = [
+  { pattern: /\bfrom\s*['"][^'"]+['"]/, label: 'an import or re-export (`from "…"`)' },
+  { pattern: /\brequire\s*\(/, label: 'a require() call' },
+  {
+    pattern: /\bexport\s+(?:const|let|var|function|class)\b/,
+    label: 'a runtime value (export const/let/var/function/class)'
+  },
+  { pattern: /(?<![\w$])z\.[a-zA-Z]/, label: 'a Zod schema (`z.*`)' }
+]
+
 const importPattern =
   /\b(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g
 
@@ -54,6 +76,7 @@ for (const pkg of workspacePackages) {
   for (const file of files) {
     const { source, specifiers } = await parseSourceFile(file)
     validateSourceConstraints(pkg, file, source)
+    validatePureTypeModule(file, source)
     for (const specifier of specifiers) {
       const target = resolveTarget(pkg, file, specifier)
       if (!target) {
@@ -403,6 +426,21 @@ function validateBoundary(sourcePkg, target, filePath) {
     const allowed = new Set(['@tinytinkerer/contracts'])
     if (!allowed.has(targetPkg.name)) {
       errors.push(`${sourceLabel}: contracts may import only local modules (${targetPkg.name})`)
+    }
+  }
+}
+
+function validatePureTypeModule(filePath, source) {
+  const rel = relative(rootDir, filePath).split('\\').join('/')
+  if (!PURE_TYPE_MODULES.has(rel)) {
+    return
+  }
+
+  for (const rule of PURE_TYPE_MODULE_RULES) {
+    if (rule.pattern.test(source)) {
+      errors.push(
+        `${rel}: pure type-declaration module must contain only \`export type\`/\`interface\` declarations — found ${rule.label}. It is the host↔plugin view-model boundary contract; keep it import-free and schema-free (see the module header).`
+      )
     }
   }
 }

@@ -1,17 +1,24 @@
 import { z } from 'zod'
 
-// Minimal JSON Schema → Zod compiler for the subset of constructs MCP tool
-// `inputSchema`s use in practice: `type` object/string/number/integer/boolean/array,
-// `properties`, `required`, `enum`, and nested `items`. It exists so an MCP tool's
-// advertised input contract is actually ENFORCED at execution — previously every
-// MCP tool used a permissive `z.record(unknown)`, so a hallucinated argument sailed
-// through to the remote server as an opaque error instead of failing locally where
-// the agent can correct it.
+// Minimal JSON Schema → Zod compiler that gives an MCP tool's discovered input
+// contract a LOCAL TRIAGE check at execution (previously every MCP tool used a
+// permissive `z.record(unknown)`, so a hallucinated argument sailed through to the
+// remote server as an opaque error). This is a partial check, NOT a full
+// JSON-Schema validator and NOT a replacement for the remote server's own
+// validation — callers must keep their remote/transport error handling regardless.
 //
-// It is deliberately FAIL-OPEN: any construct it does not model becomes `z.unknown()`
-// (and a non-object top-level schema falls back to a permissive record), so a
+// ENFORCED: required-ness (`required`), primitive `type`s (string / number /
+//   integer / boolean), `enum` membership, and nested object/array SHAPE
+//   (`properties`, `items`).
+// NOT MODELED (passes through silently → `z.unknown()`): numeric/string refinements
+//   (`minimum`/`maximum`/`pattern`/`format`/`minLength`…), composition (`$ref`/
+//   `definitions`, `oneOf`/`anyOf`/`allOf`), and `const`.
+//
+// It is deliberately FAIL-OPEN: any unmodeled construct becomes `z.unknown()` (and a
+// non-object top-level schema falls back to a permissive record), so a
 // valid-but-exotic tool call is never rejected. We validate what we can describe and
-// get out of the way otherwise.
+// get out of the way otherwise — the gap is invisible at the call site, so do not
+// over-trust this as "the input is validated."
 
 type JsonSchema = Record<string, unknown>
 

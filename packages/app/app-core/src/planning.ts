@@ -1,8 +1,9 @@
-import type { ExecutionPlan, KeywordPlannerStep, PlanStep } from '@tinytinkerer/contracts'
-
-// The sentinel an inputTemplate uses to stand in for the user prompt. Any string
-// value in the template equal to this is replaced by the prompt verbatim.
-const PROMPT_SENTINEL = '{{prompt}}'
+import {
+  KEYWORD_PROMPT_SENTINEL,
+  type ExecutionPlan,
+  type KeywordPlannerStep,
+  type PlanStep
+} from '@tinytinkerer/contracts'
 
 // A tool the heuristic fallback planner may propose: its id plus the optional
 // keyword step its owner declared (KeywordPlannerStep). Structurally a subset of
@@ -13,8 +14,10 @@ export type KeywordFallbackTool = {
   keywordPlannerStep?: KeywordPlannerStep
 }
 
-// Substitute the `{{prompt}}` sentinel in an input template with the user prompt.
-// Shallow by design — keyword-fallback templates are flat tool inputs.
+// Substitute the KEYWORD_PROMPT_SENTINEL placeholder in an input template with the
+// user prompt. Shallow by design — keyword-fallback templates are flat tool inputs,
+// so only top-level values exactly equal to the sentinel are replaced (see the
+// KeywordPlannerStep.inputTemplate contract).
 const fillInputTemplate = (
   template: Record<string, unknown> | undefined,
   prompt: string
@@ -24,7 +27,7 @@ const fillInputTemplate = (
   }
   const filled: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(template)) {
-    filled[key] = value === PROMPT_SENTINEL ? prompt : value
+    filled[key] = value === KEYWORD_PROMPT_SENTINEL ? prompt : value
   }
   return filled
 }

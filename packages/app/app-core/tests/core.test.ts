@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { KEYWORD_PROMPT_SENTINEL } from '@tinytinkerer/contracts'
 import type {
   ContentDocument,
   ChatEvent,
@@ -63,7 +64,7 @@ describe('app-core helpers', () => {
       keywords: ['latest', 'news', 'search'],
       stepId: 'search',
       summary: 'Collect current references from web search',
-      inputTemplate: { query: '{{prompt}}', maxResults: 5 }
+      inputTemplate: { query: KEYWORD_PROMPT_SENTINEL, maxResults: 5 }
     }
   }
 
@@ -71,10 +72,35 @@ describe('app-core helpers', () => {
     const plan = inferPlan('latest ai news', [searchTool])
     const search = plan.steps.find((step) => step.id === 'search')
     expect(search).toBeDefined()
-    // The {{prompt}} sentinel is replaced with the user prompt.
+    // The sentinel is replaced with the user prompt; non-sentinel values
+    // (maxResults: 5) pass through unchanged.
     expect(search?.toolCall).toEqual({
       toolId: 'web-search',
       input: { query: 'latest ai news', maxResults: 5 }
+    })
+  })
+
+  it('substitutes only exact top-level sentinels (shallow), passing everything else through', () => {
+    const tool = {
+      id: 't',
+      keywordPlannerStep: {
+        keywords: ['go'],
+        stepId: 'step',
+        summary: 's',
+        // A top-level non-sentinel string, a top-level sentinel, and a sentinel one
+        // level deep (must NOT be substituted — substitution is shallow by contract).
+        inputTemplate: {
+          q: KEYWORD_PROMPT_SENTINEL,
+          literal: 'keep me',
+          nested: { inner: KEYWORD_PROMPT_SENTINEL }
+        }
+      }
+    }
+    const step = inferPlan('go now', [tool]).steps.find((s) => s.id === 'step')
+    expect(step?.toolCall?.input).toEqual({
+      q: 'go now',
+      literal: 'keep me',
+      nested: { inner: KEYWORD_PROMPT_SENTINEL }
     })
   })
 

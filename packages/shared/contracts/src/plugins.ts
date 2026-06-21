@@ -417,12 +417,19 @@ export type PermissionSummarizer = (
   input: Record<string, unknown>
 ) => PermissionView | Promise<PermissionView>
 
+// The placeholder a `keywordPlannerStep.inputTemplate` uses to stand in for the
+// user prompt. Exported so the substitution contract has ONE source of truth: a
+// plugin author references this constant in its manifest instead of re-typing the
+// literal (a typo like `'{{ prompt }}'` would otherwise ship the literal string as
+// the tool argument, silently), and `inferPlan` (app-core) compares against the
+// same constant. See KeywordPlannerStep.
+export const KEYWORD_PROMPT_SENTINEL = '{{prompt}}'
+
 // A keyword-triggered planner step a tool's owner declares for the heuristic
 // fallback planner (used when the LLM planner is unavailable — e.g. an anonymous
 // user, or a transport failure). Data-only so a plugin names no host code: the
 // host's `inferPlan` matches `keywords` against the prompt and, on a hit, emits a
-// step whose `toolCall` targets THIS descriptor's `id` with `inputTemplate` (any
-// string value equal to the `{{prompt}}` sentinel is replaced by the user prompt).
+// step whose `toolCall` targets THIS descriptor's `id` with `inputTemplate`.
 // This replaces the previous arrangement where the host hard-coded the `web-search`
 // id and its keywords — the keyword logic now travels with the plugin.
 export type KeywordPlannerStep = {
@@ -430,7 +437,11 @@ export type KeywordPlannerStep = {
   // Step id used in the plan; defaults to the tool id when omitted.
   stepId?: string
   summary: string
-  // The tool input to propose, with `"{{prompt}}"` substituted for the user prompt.
+  // The tool input to propose. Substitution is SHALLOW / top-level only: a value is
+  // replaced by the user prompt iff it is EXACTLY `KEYWORD_PROMPT_SENTINEL`
+  // (`'{{prompt}}'`). Nested objects/arrays are passed through verbatim (a sentinel
+  // one level deep is NOT substituted), and any other value is emitted as-is. Use
+  // the `KEYWORD_PROMPT_SENTINEL` constant, never the bare string literal.
   inputTemplate?: Record<string, unknown>
 }
 

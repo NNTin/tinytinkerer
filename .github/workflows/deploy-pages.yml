@@ -113,6 +113,18 @@ jobs:
       - name: Generate merged report
         run: pnpm exec allure generate allure-results-vitest allure-results-e2e -o test-report --clean
 
+      # Guard against a generated-but-broken report. `if-no-files-found: error` on
+      # the upload only catches a *fully empty* dir, so an `allure generate` that
+      # emits a shell (no usable entry point) would otherwise ship a blank
+      # /test-report/ on a green check. Require the report's entry point so a broken
+      # generation reds THIS job at the source instead of publishing an empty page.
+      - name: Verify report was generated
+        run: |
+          if [ ! -f test-report/index.html ]; then
+            echo "::error::allure generate produced no test-report/index.html — the report is empty or malformed."
+            exit 1
+          fi
+
       - name: Upload report
         uses: actions/upload-artifact@v6
         with:
@@ -374,12 +386,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ ! -d test-report ] || [ -z "$(ls -A test-report 2>/dev/null)" ]; then
-            # No report artifact (e.g. the report job itself failed to produce one):
-            # nothing to publish. Skip the fallback deploy rather than erroring — the
-            # build failure is still reported by the final step below.
+          if [ ! -f test-report/index.html ]; then
+            # No usable report (the report job produced none, or only a broken shell
+            # with no entry point): nothing worth publishing. Skip the fallback deploy
+            # rather than erroring — the build failure is still reported by the final
+            # step below. Checking index.html (not just a non-empty dir) keeps this in
+            # step with the report job's "Verify report was generated" guard.
             echo "published=false" >> "$GITHUB_OUTPUT"
-            echo "No test-report directory found; skipping report-only deploy."
+            echo "No test-report/index.html found; skipping report-only deploy."
             exit 0
           fi
 

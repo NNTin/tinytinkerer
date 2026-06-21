@@ -25,7 +25,12 @@ When a server is added (or manually refreshed), the browser calls `POST /api/mcp
 
 When a chat run starts, `createRuntime` reads the current MCP server configs and their cached discovery results. Every tool from every enabled server with a successful discovery is registered into the `ToolRegistry` with the id format `mcp:<serverId>:<toolName>`.
 
-Each registered tool's input is **validated locally** against its discovered JSON Schema before the edge call: `createMcpTool` compiles the schema to a Zod validator (`mcp-schema.ts`, covering the common subset — `type` object/string/number/integer/boolean/array, `properties`, `required`, `enum`, nested `items`). So a hallucinated or mistyped argument fails locally — where the agent can correct it — rather than as an opaque remote error. The compiler is **fail-open**: any construct it can't model (or a non-object top-level schema) falls back to a permissive record, so a valid-but-exotic call is never rejected.
+Before the edge call, `createMcpTool` runs the model's arguments through a **local triage** validator compiled from the tool's discovered JSON Schema (`mcp-schema.ts`). This is a partial, **fail-open** check — a first line of defence, **not** a full JSON-Schema validator and **not** a substitute for the remote server's own validation:
+
+- **Enforced:** required-ness (`required`), primitive `type`s (`string` / `number` / `integer` / `boolean`), `enum` membership, and nested object/array **shape** (`properties`, `items`). A wrong-typed or missing-required argument fails locally, where the agent can correct it, instead of as an opaque remote error.
+- **NOT enforced (passes through silently):** numeric/string refinements (`minimum`/`maximum`/`pattern`/`format`/`minLength`…), schema composition (`$ref`/`definitions`, `oneOf`/`anyOf`/`allOf`), and `const`. Any construct the compiler can't model — or a non-object top-level schema — falls back to a permissive record, so a valid-but-exotic call is **never rejected**.
+
+Because the gap is invisible at the call site, treat this as triage only: **keep the remote server's validation and the tool's own error handling** — do not remove them on the strength of this local check.
 
 ### 4 — Planning
 

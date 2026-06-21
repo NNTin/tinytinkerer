@@ -17,6 +17,13 @@
 // a plugin's private heuristics. They are hand-declared types (no Zod): they are
 // never `.parse`d, only produced by a plugin and rendered by the host. Keep
 // React/DOM out — a plugin ships data, never a component.
+//
+// ENFORCEMENT: `scripts/check-boundaries.mjs` lists this file in PURE_TYPE_MODULES
+// and fails CI if it grows an import, a re-export, a runtime value, or a Zod schema
+// — locking the STRUCTURAL invariants above (import-free, schema-free, declaration-
+// only). That gate CANNOT see a plugin-SPECIFIC field smuggled into a "generic"
+// view-model (e.g. a Tavily-shaped enum on GaugeView) — that is not statically
+// decidable, so keeping these shapes generic stays a REVIEW-TIME responsibility.
 
 // === Persistent status contribution (the 'status' capability) ====================
 // Unlike ActivityView/PermissionView — which are transient and keyed to a single
