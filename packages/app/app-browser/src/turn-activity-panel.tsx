@@ -4,6 +4,7 @@ import type {
   TurnActivity,
   TurnActivityItem
 } from '@tinytinkerer/app-core'
+import type { ReActDecisionKind } from '@tinytinkerer/contracts'
 import { useEffect, useState } from 'react'
 
 // Resolves the activity summarizer a tool's owner provides, keyed by tool id, or
@@ -37,6 +38,56 @@ export const toolLabel = (toolId: string, serverNameById: Map<string, string>): 
 }
 
 type ToolItem = Extract<TurnActivityItem, { kind: 'tool' }>
+type LabelItem = Extract<TurnActivityItem, { kind: 'label' }>
+
+// Action vs final colour + a non-colour cue. Colour alone never carries the
+// distinction (WCAG 1.4.1, mirroring the context-usage gauge's colour+shape): a
+// glyph (▶ / ✓) and the spelled-out word are always shown alongside it. Reuses
+// the panel's tone palette so the badge reads as part of the same surface.
+const decisionStyles: Record<ReActDecisionKind, { badge: string; icon: string; label: string }> = {
+  action: {
+    badge: 'border-sky-300 bg-sky-50 text-sky-700',
+    icon: '▶',
+    label: 'Action'
+  },
+  final: {
+    badge: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+    icon: '✓',
+    label: 'Final'
+  }
+}
+
+// One reasoning/activity label row. A ReAct `think` step renders its streamed
+// chain-of-thought (italic) and, once its decision resolves, a colour+glyph+word
+// badge for the decision kind plus the model's structured reasoning ("why").
+// Both decision parts are optional: a step with no resolved decision (or a model
+// that omitted `reasoning`) simply shows the thought, degrading gracefully.
+const LabelEntry = ({ item }: { item: LabelItem }) => {
+  if (item.stepKind !== 'think') {
+    return <span className="text-xs text-stone-600">{item.label}</span>
+  }
+
+  const decision = item.decisionKind ? decisionStyles[item.decisionKind] : undefined
+  return (
+    <div className="space-y-1">
+      <span className="block font-mono text-xs italic text-stone-500">{item.label}</span>
+      {decision ? (
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1" data-react-decision>
+          <span
+            data-decision-kind={item.decisionKind}
+            className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${decision.badge}`}
+          >
+            <span aria-hidden>{decision.icon}</span>
+            {decision.label}
+          </span>
+          {item.decisionReasoning ? (
+            <span className="text-xs text-stone-600">{item.decisionReasoning}</span>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
 
 // True when a completed tool produced nothing worth summarizing: no output, an
 // empty object, or an empty string. Only then does the neutral default show
@@ -267,15 +318,7 @@ export const TurnActivityPanel = ({
                           resolveSummarizer={resolveSummarizer}
                         />
                       ) : (
-                        <span
-                          className={
-                            item.stepKind === 'think'
-                              ? 'font-mono text-xs italic text-stone-500'
-                              : 'text-xs text-stone-600'
-                          }
-                        >
-                          {item.label}
-                        </span>
+                        <LabelEntry item={item} />
                       )}
                     </div>
                   </div>

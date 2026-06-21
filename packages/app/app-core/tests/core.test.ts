@@ -246,6 +246,75 @@ describe('app-core helpers', () => {
     })
   })
 
+  it('folds a streaming decision kind + reasoning onto the matching think step (action)', () => {
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hi' }),
+      event('agent.step.started', { stepId: 'th1', kind: 'think', title: 'Thinking…' }),
+      event('agent.step.delta', { stepId: 'th1', text: 'Let me run the snippet' }),
+      event('agent.step.completed', {
+        stepId: 'th1',
+        summary: 'Let me run the snippet',
+        decisionKind: 'action',
+        decisionReasoning: 'Run the snippet in the sandbox to gather the observation.'
+      }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ]
+
+    const labels =
+      buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    expect(labels).toHaveLength(1)
+    expect(labels[0]).toMatchObject({
+      label: 'Let me run the snippet',
+      stepKind: 'think',
+      decisionKind: 'action',
+      decisionReasoning: 'Run the snippet in the sandbox to gather the observation.'
+    })
+  })
+
+  it('carries a non-streaming decision kind + reasoning from the started event (final)', () => {
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hi' }),
+      event('agent.step.started', {
+        stepId: 'th1',
+        kind: 'think',
+        title: 'The sandbox returned its result; ready to answer.',
+        decisionKind: 'final',
+        decisionReasoning: 'The sandbox returned its result; ready to answer.'
+      }),
+      event('agent.step.completed', {
+        stepId: 'th1',
+        decisionKind: 'final',
+        decisionReasoning: 'The sandbox returned its result; ready to answer.'
+      }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ]
+
+    const labels =
+      buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
+    expect(labels).toHaveLength(1)
+    expect(labels[0]).toMatchObject({
+      stepKind: 'think',
+      decisionKind: 'final',
+      decisionReasoning: 'The sandbox returned its result; ready to answer.'
+    })
+  })
+
+  it('omits decision fields when the model provides no reasoning/kind (graceful degrade)', () => {
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hi' }),
+      event('agent.step.started', { stepId: 'th1', kind: 'think', title: 'Thinking…' }),
+      event('agent.step.completed', { stepId: 'th1', summary: 'A bare thought' }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ]
+
+    const label = buildTurns(events)[0]?.activity.items.find((item) => item.kind === 'label')
+    expect(label).toMatchObject({ label: 'A bare thought', stepKind: 'think' })
+    expect(label && 'decisionKind' in label ? label.decisionKind : undefined).toBeUndefined()
+    expect(
+      label && 'decisionReasoning' in label ? label.decisionReasoning : undefined
+    ).toBeUndefined()
+  })
+
   it('appends a separate observation label for a non-think step completion', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hi' }),

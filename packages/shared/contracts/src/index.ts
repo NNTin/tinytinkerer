@@ -123,6 +123,12 @@ export const agentStepKindSchema = z.enum([
 ])
 export type AgentStepKind = z.infer<typeof agentStepKindSchema>
 
+// Whether a ReAct decision takes another action or finishes and answers. Shared
+// by the decision schema below and the step events that surface the decision on
+// the timeline (so the UI can colour/label the step by kind).
+export const reactDecisionKindSchema = z.enum(['action', 'final'])
+export type ReActDecisionKind = z.infer<typeof reactDecisionKindSchema>
+
 // A single decision in a ReAct loop: either take one concrete action (tool
 // call) next, or finish and synthesize the answer.
 export const reactDecisionSchema = z.discriminatedUnion('kind', [
@@ -168,7 +174,14 @@ export const agentStepStartedEventSchema = eventBaseSchema(
     stepId: z.string(),
     parentStepId: z.string().optional(),
     kind: agentStepKindSchema,
-    title: z.string()
+    title: z.string(),
+    // The structured ReAct decision this step resolved to, surfaced so the
+    // timeline can colour/label the step (action vs final) and show the "why".
+    // Optional and only set by paths where the decision is known when the step
+    // opens (the non-streaming ReAct decision); the streaming path carries them
+    // on agent.step.completed instead, once the decision resolves.
+    decisionKind: reactDecisionKindSchema.optional(),
+    decisionReasoning: z.string().optional()
   })
 )
 // Streamed, incrementally-growing text for a step (e.g. a ReAct thought as the
@@ -181,7 +194,16 @@ export const agentStepDeltaEventSchema = eventBaseSchema(
 )
 export const agentStepCompletedEventSchema = eventBaseSchema(
   'agent.step.completed',
-  z.object({ stepId: z.string(), summary: z.string().optional() })
+  z.object({
+    stepId: z.string(),
+    summary: z.string().optional(),
+    // The structured ReAct decision this step resolved to (see
+    // agentStepStartedEventSchema). The streaming decision path sets these the
+    // moment the decision resolves at end-of-stream, so the timeline surfaces the
+    // kind + reasoning live (and they persist via this completed event on reload).
+    decisionKind: reactDecisionKindSchema.optional(),
+    decisionReasoning: z.string().optional()
+  })
 )
 export const agentStepFailedEventSchema = eventBaseSchema(
   'agent.step.failed',

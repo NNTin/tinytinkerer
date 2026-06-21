@@ -1,4 +1,9 @@
-import type { AgentStepKind, ChatEvent, ContentDocument } from '@tinytinkerer/contracts'
+import type {
+  AgentStepKind,
+  ChatEvent,
+  ContentDocument,
+  ReActDecisionKind
+} from '@tinytinkerer/contracts'
 
 export type TurnNotice = {
   kind: 'system' | 'error' | 'rate-limit'
@@ -19,6 +24,11 @@ export type TurnActivityItem =
       stepId?: string
       parentId?: string
       stepKind?: AgentStepKind
+      // For a ReAct `think` step: the decision it resolved to. `decisionKind`
+      // drives the action/final colour + cue in the renderer; `decisionReasoning`
+      // is the model's "why" (omitted when the model provides none).
+      decisionKind?: ReActDecisionKind
+      decisionReasoning?: string
     }
   | {
       kind: 'tool'
@@ -143,7 +153,13 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
         label: event.payload.title,
         stepId: event.payload.stepId,
         stepKind: event.payload.kind,
-        ...(event.payload.parentStepId ? { parentId: event.payload.parentStepId } : {})
+        ...(event.payload.parentStepId ? { parentId: event.payload.parentStepId } : {}),
+        // Carried by the non-streaming ReAct path (the streaming path sets these
+        // on agent.step.completed once the decision resolves).
+        ...(event.payload.decisionKind ? { decisionKind: event.payload.decisionKind } : {}),
+        ...(event.payload.decisionReasoning
+          ? { decisionReasoning: event.payload.decisionReasoning }
+          : {})
       })
       return
     }
@@ -165,6 +181,15 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
       if (started?.stepKind === 'think') {
         if (hasSummary) {
           started.label = summary
+        }
+        // The streaming decision path resolves the kind/reasoning at end-of-stream
+        // and carries them here; fold them onto the think step's own label so the
+        // renderer can colour/label it action vs final and show the "why".
+        if (event.payload.decisionKind) {
+          started.decisionKind = event.payload.decisionKind
+        }
+        if (event.payload.decisionReasoning) {
+          started.decisionReasoning = event.payload.decisionReasoning
         }
         return
       }

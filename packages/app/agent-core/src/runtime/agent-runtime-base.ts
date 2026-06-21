@@ -404,12 +404,21 @@ export abstract class AgentRuntimeBase {
         throw new RuntimeTimeoutError('ReAct decision timed out')
       }
 
+      // The decision resolves at end-of-stream, so carry its kind + reasoning on
+      // the completed event: the timeline surfaces them the moment the decision
+      // lands (its "live" entry) and they persist via this event on reload. The
+      // structured `reasoning` is a field of the decision JSON — not token-
+      // streamed like the chain-of-thought above — so it appears as one entry
+      // when the decision resolves rather than growing token-by-token.
+      const resolved = decision ?? { kind: 'final' }
       yield createEvent('agent.step.completed', {
         stepId: thoughtStepId,
-        ...(thought.trim().length > 0 ? { summary: thought } : {})
+        ...(thought.trim().length > 0 ? { summary: thought } : {}),
+        decisionKind: resolved.kind,
+        ...(resolved.reasoning ? { decisionReasoning: resolved.reasoning } : {})
       })
 
-      return decision ?? { kind: 'final' }
+      return resolved
     }
 
     // Non-streaming decisions wait for the whole model response in one shot, so
@@ -423,13 +432,22 @@ export abstract class AgentRuntimeBase {
     const thoughtTitle =
       decision.reasoning ??
       (decision.kind === 'final' ? 'Finalizing answer' : 'Deciding next action')
+    // The non-streaming path knows the whole decision up front, so carry its
+    // kind + reasoning on the started event (no live stream to grow). The title
+    // already falls back to a generic phrase when the model omits `reasoning`,
+    // so the step still degrades gracefully.
+    const decisionFields = {
+      decisionKind: decision.kind,
+      ...(decision.reasoning ? { decisionReasoning: decision.reasoning } : {})
+    }
     yield createEvent('agent.step.started', {
       stepId: thoughtStepId,
       ...parentField,
       kind: 'think',
-      title: thoughtTitle
+      title: thoughtTitle,
+      ...decisionFields
     })
-    yield createEvent('agent.step.completed', { stepId: thoughtStepId })
+    yield createEvent('agent.step.completed', { stepId: thoughtStepId, ...decisionFields })
     return decision
   }
 

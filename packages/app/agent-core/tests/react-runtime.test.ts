@@ -316,7 +316,10 @@ describe('ReActRuntime', () => {
       async *streamDecision() {
         yield { kind: 'thought' as const, text: 'Let me' }
         yield { kind: 'thought' as const, text: 'Let me think' }
-        yield { kind: 'decision' as const, decision: { kind: 'final' as const } }
+        yield {
+          kind: 'decision' as const,
+          decision: { kind: 'final' as const, reasoning: 'Enough gathered to answer.' }
+        }
       },
       async *synthesize() {
         yield { kind: 'content' as const, text: 'answer' }
@@ -332,10 +335,90 @@ describe('ReActRuntime', () => {
     const deltas = events.filter(isEventType('agent.step.delta'))
     expect(deltas).toHaveLength(2)
     expect(deltas.at(-1)?.payload.text).toBe('Let me think')
-    // The think step's completion carries the final thought (persisted on reload).
+    // The think step's completion carries the final thought (persisted on reload)
+    // plus the resolved decision kind + reasoning, surfaced for the timeline.
     const completed = events.filter(isEventType('agent.step.completed'))
-    expect(completed.some((event) => event.payload.summary === 'Let me think')).toBe(true)
+    expect(
+      completed.some(
+        (event) =>
+          event.payload.summary === 'Let me think' &&
+          event.payload.decisionKind === 'final' &&
+          event.payload.decisionReasoning === 'Enough gathered to answer.'
+      )
+    ).toBe(true)
     expect(events.at(-1)?.type).toBe('assistant.done')
+  })
+
+  it('carries the decision kind + reasoning across an action then a final decision', async () => {
+    const provider: ModelProvider = {
+      async plan() {
+        return { complexity: 'low', steps: [] }
+      },
+      async execute() {
+        return ''
+      },
+      async *streamDecision(context) {
+        const acted = Object.keys(context.toolResults).length > 0
+        yield { kind: 'thought' as const, text: acted ? 'Have results' : 'Need a search' }
+        yield acted
+          ? {
+              kind: 'decision' as const,
+              decision: { kind: 'final' as const, reasoning: 'Observation gathered; answering.' }
+            }
+          : {
+              kind: 'decision' as const,
+              decision: {
+                kind: 'action' as const,
+                reasoning: 'Search to gather the observation.',
+                toolId: 'web-search',
+                input: { query: 'hello' }
+              }
+            }
+      },
+      async *synthesize() {
+        yield { kind: 'content' as const, text: 'answer' }
+      }
+    }
+
+    const runtime = new ReActRuntime(provider, webSearchRegistry())
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    const decisions = events
+      .filter(isEventType('agent.step.completed'))
+      .map((event) => ({
+        kind: event.payload.decisionKind,
+        reasoning: event.payload.decisionReasoning
+      }))
+      .filter((d) => d.kind !== undefined)
+    expect(decisions).toEqual([
+      { kind: 'action', reasoning: 'Search to gather the observation.' },
+      { kind: 'final', reasoning: 'Observation gathered; answering.' }
+    ])
+  })
+
+  it('emits the decision kind on the non-streaming path (no streamDecision)', async () => {
+    const provider = scriptedProvider(
+      [{ kind: 'final', reasoning: 'I can answer directly.' }],
+      async function* () {
+        yield { kind: 'content' as const, text: 'answer' }
+      }
+    )
+
+    const runtime = new ReActRuntime(provider, new ToolRegistry())
+    const events: ChatEvent[] = []
+    for await (const event of runtime.run('hello')) {
+      events.push(event)
+    }
+
+    const started = events.find(isEventType('agent.step.started'))
+    expect(started?.payload).toMatchObject({
+      kind: 'think',
+      decisionKind: 'final',
+      decisionReasoning: 'I can answer directly.'
+    })
   })
 
   it('times out a stalled streaming decision and fails the step', async () => {

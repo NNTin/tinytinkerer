@@ -66,6 +66,72 @@ describe('TurnActivityPanel hierarchy rendering', () => {
 
     expect(screen.getByText('Let me search the docs')).toBeInTheDocument()
   })
+
+  it('renders the decision reasoning with a colour + non-colour cue per kind', () => {
+    const a = activity([
+      {
+        kind: 'label',
+        id: 'l-action',
+        label: 'Need to run the snippet',
+        stepId: 'th1',
+        stepKind: 'think',
+        decisionKind: 'action',
+        decisionReasoning: 'Run the snippet in the sandbox to gather the observation.'
+      },
+      {
+        kind: 'label',
+        id: 'l-final',
+        label: 'I have the result',
+        stepId: 'th2',
+        stepKind: 'think',
+        decisionKind: 'final',
+        decisionReasoning: 'The sandbox returned its result; ready to answer.'
+      }
+    ])
+
+    const { container } = render(
+      <TurnActivityPanel activity={a} isLive serverNameById={new Map()} />
+    )
+
+    // The reasoning text is surfaced for both the action and the final step.
+    expect(
+      screen.getByText('Run the snippet in the sandbox to gather the observation.')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('The sandbox returned its result; ready to answer.')
+    ).toBeInTheDocument()
+
+    // The kind is conveyed by a non-colour cue (a spelled-out word) AND a stable
+    // data attribute the kind-styled colour hangs off (WCAG 1.4.1).
+    const action = container.querySelector('[data-decision-kind="action"]')
+    const final = container.querySelector('[data-decision-kind="final"]')
+    expect(action).toBeInTheDocument()
+    expect(final).toBeInTheDocument()
+    expect(action).toHaveTextContent('Action')
+    expect(final).toHaveTextContent('Final')
+    // Distinct colour classes back the two kinds (colour cue), not the same tone.
+    expect(action?.className).toContain('text-sky-700')
+    expect(final?.className).toContain('text-emerald-700')
+  })
+
+  it('renders a think step with no resolved decision as a plain thought', () => {
+    const a = activity([
+      {
+        kind: 'label',
+        id: 'l-th',
+        label: 'A bare thought',
+        stepId: 'th1',
+        stepKind: 'think'
+      }
+    ])
+
+    const { container } = render(
+      <TurnActivityPanel activity={a} isLive serverNameById={new Map()} />
+    )
+
+    expect(screen.getByText('A bare thought')).toBeInTheDocument()
+    expect(container.querySelector('[data-decision-kind]')).toBeNull()
+  })
 })
 
 describe('TurnActivityPanel generic ActivityView rendering', () => {

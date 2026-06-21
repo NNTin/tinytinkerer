@@ -503,6 +503,12 @@ export const enableContextUsagePlugin = (page: Page): Promise<void> =>
 export const enableContextInspectorPlugin = (page: Page): Promise<void> =>
   enablePlugin(page, 'Context inspector (developer)')
 
+// The Reasoning & Activity timeline (the inline per-turn panel). Not a plugin but
+// an Interface setting toggle, exposed through the same Settings ToggleRow flow as
+// the plugins, so the shared enablePlugin helper drives it by its toggle label.
+export const enableReasoningActivity = (page: Page): Promise<void> =>
+  enablePlugin(page, 'Show reasoning & activity')
+
 // Sends a prompt and waits until the run has folded the sandbox result back into a
 // follow-up request (i.e. the tool actually executed in a real browser sandbox).
 // Then asserts exactly one action was issued — a guard that the action→final phase
