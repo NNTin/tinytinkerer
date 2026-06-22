@@ -145,19 +145,12 @@ const sseStream = (content: string, usage?: { prompt_tokens: number }): string =
   return body + 'data: [DONE]\n\n'
 }
 
-// A single plain-content SSE delta. Models the real default model (chatgpt/gpt-5.4)
-// which has NO separate reasoning channel — its decision rationale is ordinary
-// `content` emitted before the tool call. The ReAct timeline renders this as the
-// think step's text (issue #276).
-const sseContentDelta = (text: string): string =>
-  `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`
-
-// Stream a single native tool call as OpenAI-style SSE deltas (issue #276): an
-// optional content preamble first (the model's rationale, like a non-reasoning
-// model emits), then the tool call whose id + name arrive in the first delta and
-// whose arguments are split across two more so the client's cross-delta tool-call
-// accumulation is exercised.
-const sseToolCallStream = (toolCall: ToolCall, preamble?: string): string => {
+// Stream a single native tool call as OpenAI-style SSE deltas (issue #276): the
+// tool call's id + name arrive in the first delta and its arguments are split
+// across two more so the client's cross-delta tool-call accumulation is exercised.
+// No content is emitted — a non-reasoning model returns ONLY the tool call on an
+// action turn, so the timeline derives the step label from the call itself.
+const sseToolCallStream = (toolCall: ToolCall): string => {
   const index = 0
   const mid = Math.ceil(toolCall.function.arguments.length / 2)
   const deltas = [
@@ -174,7 +167,7 @@ const sseToolCallStream = (toolCall: ToolCall, preamble?: string): string => {
     { tool_calls: [{ index, function: { arguments: toolCall.function.arguments.slice(0, mid) } }] },
     { tool_calls: [{ index, function: { arguments: toolCall.function.arguments.slice(mid) } }] }
   ]
-  let body = preamble ? sseContentDelta(preamble) : ''
+  let body = ''
   for (const delta of deltas) {
     body += `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
   }
@@ -196,11 +189,13 @@ const runJavascriptToolCall = (code: string): ToolCall => ({
   function: { name: 'run_javascript', arguments: JSON.stringify({ code }) }
 })
 
-// The rationale the mock streams as ordinary `content` for the ACTION and FINAL
-// decisions (the default model has no separate reasoning channel). Exported so the
-// ReAct-timeline spec asserts the SAME text the model "reasoned", keeping the
-// fixture the single source of truth (issue #276).
-export const REACT_ACTION_REASONING = 'Run the snippet in the sandbox to gather the observation.'
+// The rationale the mock streams as ordinary `content` for the FINAL decision (the
+// default model has no separate reasoning channel — its rationale IS the content).
+// An ACTION turn emits NO content (a non-reasoning model returns only the tool
+// call), so there is no action rationale to assert; the timeline derives that
+// step's label from the call itself. Exported so the ReAct-timeline spec asserts
+// the SAME text the model "reasoned", keeping the fixture the single source of
+// truth (issue #276).
 export const REACT_FINAL_REASONING = 'The sandbox returned its result; ready to answer.'
 
 const PLAN = JSON.stringify({
@@ -277,12 +272,14 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
       })
     }
 
-    // Act: stream a plain-content rationale preamble (no reasoning channel, like
-    // the real default model) then issue a single native run_javascript tool call.
+    // Act: issue a single native run_javascript tool call with NO content preamble.
+    // This is how a non-reasoning model actually behaves on a tool-calling turn —
+    // it returns only the tool call, no prose — so the timeline must derive the
+    // step's label from the call itself rather than from model text (issue #276).
     state.actions += 1
     const toolCall = runJavascriptToolCall(state.code)
     if (body.stream === true) {
-      return new Response(sseToolCallStream(toolCall, REACT_ACTION_REASONING), {
+      return new Response(sseToolCallStream(toolCall), {
         status: 200,
         headers: streamHeaders
       })

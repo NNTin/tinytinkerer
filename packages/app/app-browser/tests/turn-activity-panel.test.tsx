@@ -120,6 +120,49 @@ describe('TurnActivityPanel hierarchy rendering', () => {
     expect(final?.className).toContain('text-emerald-700')
   })
 
+  it('does not repeat the reasoning when it equals the streamed thought', () => {
+    // A non-reasoning model's prose IS its reasoning, so the streaming path sets
+    // both the step label and the decision reasoning to the same text. The "why"
+    // must not be shown twice — the label already carries it (issue #276 follow-up).
+    const prose = 'The sandbox returned its result; ready to answer.'
+    const a = activity([
+      {
+        kind: 'label',
+        id: 'l-final',
+        label: prose,
+        stepId: 'th1',
+        stepKind: 'think',
+        decisionKind: 'final',
+        decisionReasoning: prose
+      }
+    ])
+
+    render(<TurnActivityPanel activity={a} isLive serverNameById={new Map()} />)
+
+    // Exactly one occurrence (the label), not duplicated next to the badge.
+    expect(screen.getAllByText(prose)).toHaveLength(1)
+  })
+
+  it('shows the derived "why" when an action step has no streamed prose', () => {
+    // A native tool call with no content leaves the label as the placeholder while
+    // the derived label ("Calling …") is shown as the decision reasoning (#276).
+    const a = activity([
+      {
+        kind: 'label',
+        id: 'l-action',
+        label: 'Thinking…',
+        stepId: 'th1',
+        stepKind: 'think',
+        decisionKind: 'action',
+        decisionReasoning: 'Calling run_javascript({"code":"return 1+1"})'
+      }
+    ])
+
+    render(<TurnActivityPanel activity={a} isLive serverNameById={new Map()} />)
+
+    expect(screen.getByText('Calling run_javascript({"code":"return 1+1"})')).toBeInTheDocument()
+  })
+
   it('renders a think step with no resolved decision as a plain thought', () => {
     const a = activity([
       {

@@ -70,6 +70,14 @@ const LabelEntry = ({ item }: { item: LabelItem }) => {
   }
 
   const decision = item.decisionKind ? decisionStyles[item.decisionKind] : undefined
+  // When the model streamed prose, it already shows as the label above; its
+  // reasoning is that same prose, so don't repeat it as the "why". When the step
+  // has no streamed prose (a native tool call with no content), the reasoning is a
+  // distinct DERIVED label ("Calling …") and IS shown next to the badge (#276).
+  const why =
+    item.decisionReasoning && item.decisionReasoning !== item.label
+      ? item.decisionReasoning
+      : undefined
   return (
     <div className="space-y-1">
       <span className="block font-mono text-xs italic text-stone-500">{item.label}</span>
@@ -82,9 +90,7 @@ const LabelEntry = ({ item }: { item: LabelItem }) => {
             <span aria-hidden>{decision.icon}</span>
             {decision.label}
           </span>
-          {item.decisionReasoning ? (
-            <span className="text-xs text-stone-600">{item.decisionReasoning}</span>
-          ) : null}
+          {why ? <span className="text-xs text-stone-600">{why}</span> : null}
         </div>
       ) : null}
     </div>

@@ -183,6 +183,19 @@ describe('decideNextAction (native tool calling)', () => {
     expect(decision.reasoning).toBe('I should search the web to answer this.')
   })
 
+  it('derives the reasoning from the call when the model emits no prose', async () => {
+    // The common native tool-calling case: the model returns ONLY a tool call with
+    // no content. The decision still carries a non-empty reasoning derived from the
+    // call so the timeline step is never blank (issue #276 follow-up).
+    const edgeFetch = makeEdgeFetch(toolCallResponse('web-search', { query: 'Berlin' }))
+
+    const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
+    expect(decision.kind).toBe('action')
+    if (decision.kind !== 'action') throw new Error('Expected an action decision')
+    expect(decision.reasoning).toContain('Calling web-search(')
+    expect(decision.reasoning).toContain('Berlin')
+  })
+
   it('replays a multi-step (chained) tool history as ordered native turns', async () => {
     const edgeFetch = makeEdgeFetch(toolCallResponse('web-search', { query: 'follow-up' }))
 
@@ -297,6 +310,33 @@ describe('streamDecision (native tool calling)', () => {
     if (decision?.kind === 'decision' && decision.decision.kind === 'action') {
       expect(decision.decision.toolId).toBe('web-search')
       expect(decision.decision.input).toEqual({ query: 'Berlin' })
+      // The streamed prose is carried as the decision reasoning — the streaming
+      // path used to DROP it (it diverged from the non-streaming path), leaving
+      // the timeline's per-step "why" blank (issue #276 follow-up).
+      expect(decision.decision.reasoning).toBe('Let me think')
+    }
+  })
+
+  it('derives the reasoning from the call when the stream carries no prose', async () => {
+    // A non-reasoning model on a tool turn streams ONLY tool-call deltas. The
+    // resolved action still carries a derived reasoning so the timeline step is
+    // never blank (issue #276 follow-up).
+    const edgeFetch = makeSseEdgeFetch([
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"web-search","arguments":"{\\"query\\":\\"x\\"}"}}]}}]}',
+      'data: [DONE]',
+      ''
+    ])
+
+    const chunks = []
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks.some((chunk) => chunk.kind === 'thought')).toBe(false)
+    const decision = chunks.find((chunk) => chunk.kind === 'decision')
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('action')
+    if (decision?.kind === 'decision' && decision.decision.kind === 'action') {
+      expect(decision.decision.reasoning).toContain('Calling web-search(')
     }
   })
 
@@ -321,6 +361,10 @@ describe('streamDecision (native tool calling)', () => {
     expect(thoughts.at(-1)?.kind === 'thought' && thoughts.at(-1)?.text).toBe('I will search.')
     const decision = chunks.find((chunk) => chunk.kind === 'decision')
     expect(decision?.kind === 'decision' && decision.decision.kind).toBe('action')
+    // The streamed content (not just reasoning_content) is carried as the reasoning.
+    if (decision?.kind === 'decision' && decision.decision.kind === 'action') {
+      expect(decision.decision.reasoning).toBe('I will search.')
+    }
   })
 
   it('yields a final decision when the stream carries no tool call', async () => {

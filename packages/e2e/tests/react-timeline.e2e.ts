@@ -5,7 +5,6 @@ import {
   enableReasoningActivity,
   dismissTelemetryDialog,
   runSnippetViaChat,
-  REACT_ACTION_REASONING,
   REACT_FINAL_REASONING,
   SYNTHESIS_ANSWER
 } from '../fixtures/mock-litellm'
@@ -19,11 +18,12 @@ import {
 // Only LiteLLM is mocked; the run is anonymous through the real edge worker. The
 // mock drives a real sandbox run: the model issues one `run_javascript` ACTION
 // then, once the observation is folded back, a FINAL decision. With native tool
-// calling (issue #276) each decision's rationale is the model's ordinary streamed
-// `content` (the default model has no separate reasoning channel); both texts come
-// straight from fixtures/mock-litellm.ts. See e2e/README.md.
+// calling (issue #276) the ACTION turn returns ONLY the tool call (no prose, like
+// a real non-reasoning model), so the timeline derives that step's "why" from the
+// call itself ("Calling run_javascript(…)"); the FINAL turn answers with ordinary
+// `content`, which is shown verbatim. Both behaviours come straight from
+// fixtures/mock-litellm.ts. See e2e/README.md.
 
-const ACTION_REASONING = REACT_ACTION_REASONING
 const FINAL_REASONING = REACT_FINAL_REASONING
 const SNIPPET = 'return 1 + 1'
 
@@ -48,9 +48,11 @@ const assertDecisionRows = async (panel: Locator): Promise<void> => {
   await expect(action).toHaveText(/Action/)
   await expect(final).toHaveText(/Final/)
 
-  // The model's thinking (its streamed content rationale) is surfaced for each step
-  // — this is what regressed when native tool calls dropped the model's prose.
-  await expect(panel.getByText(ACTION_REASONING)).toBeVisible()
+  // Per-step "thinking" is surfaced for BOTH kinds — this is what regressed when
+  // native tool calls dropped the per-step rationale. The ACTION turn carries no
+  // model prose, so its reasoning is DERIVED from the call ("Calling run_javascript(…)");
+  // the FINAL turn's reasoning is the model's verbatim streamed content.
+  await expect(panel.getByText(/Calling run_javascript\(/)).toBeVisible()
   await expect(panel.getByText(FINAL_REASONING)).toBeVisible()
 
   // Tool USAGE is surfaced too: the act step names the tool and its completed run

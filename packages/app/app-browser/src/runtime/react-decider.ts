@@ -7,6 +7,7 @@ import { createRateLimitError } from './rate-limit'
 import { parseSseStream, splitInlineThink } from './sse-utils'
 import {
   buildToolNameMap,
+  describeToolCall,
   parseToolCallArguments,
   toolInvocationsToMessages,
   type ToolNameMap
@@ -108,7 +109,10 @@ const decisionMetadata = (
 // call whose arguments are not valid JSON is treated as empty input rather than
 // crashing the run — the tool's own schema validation is the real gate. Any prose
 // the model emitted alongside the call (its "why") is carried as `reasoning` so the
-// timeline can surface it (issue #276).
+// timeline can surface it; when the model emitted NO prose (the common native
+// tool-calling case), fall back to a label derived from the call itself so the
+// timeline step is never empty (issue #276). This is the single place both the
+// streaming and non-streaming paths resolve an action, so they cannot diverge.
 const toActionDecision = (
   toolCall: ChatToolCall,
   names: ToolNameMap,
@@ -117,7 +121,7 @@ const toActionDecision = (
   kind: 'action',
   toolId: names.toToolId(toolCall.function.name),
   input: parseToolCallArguments(toolCall.function.arguments),
-  ...(reasoning && reasoning.trim().length > 0 ? { reasoning } : {})
+  reasoning: reasoning && reasoning.trim().length > 0 ? reasoning : describeToolCall(toolCall)
 })
 
 // Accumulator for streamed native tool-call fragments (issue #276). OpenAI streams
@@ -215,8 +219,13 @@ export async function* streamDecision(
     .map(([, value]) => value)
     .find((value) => value.name.length > 0)
 
+  // Carry the streamed prose as the decision's reasoning, mirroring the
+  // non-streaming path so the two cannot diverge (issue #276). For an action with
+  // no prose, toActionDecision derives a label from the call; a final with no
+  // prose simply has no reasoning (the synthesized answer follows it).
+  const reasoning = thought.trim().length > 0 ? thought : undefined
   const decision: ReActDecision = firstCall
-    ? toActionDecision(accumulatorToToolCall(firstCall), names)
-    : { kind: 'final' }
+    ? toActionDecision(accumulatorToToolCall(firstCall), names, reasoning)
+    : { kind: 'final', ...(reasoning ? { reasoning } : {}) }
   yield { kind: 'decision', decision }
 }
