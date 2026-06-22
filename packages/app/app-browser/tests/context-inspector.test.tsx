@@ -71,7 +71,7 @@ const summarizeRequest = (entry: InspectorEntry): InspectorView => {
       index,
       role: message.role,
       isSystem: message.role === 'system',
-      content: message.content,
+      content: message.content ?? '',
       approxTokens: 21
     })),
     rawJson: JSON.stringify({ model: request.model, messages: request.messages }, null, 2),

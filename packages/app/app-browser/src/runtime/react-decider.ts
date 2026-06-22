@@ -106,11 +106,18 @@ const decisionMetadata = (
 // by their advertised (wire-safe) function name, so map it back to the real tool
 // id; the arguments arrive as a JSON string, parsed into the action input. A tool
 // call whose arguments are not valid JSON is treated as empty input rather than
-// crashing the run — the tool's own schema validation is the real gate.
-const toActionDecision = (toolCall: ChatToolCall, names: ToolNameMap): ReActDecision => ({
+// crashing the run — the tool's own schema validation is the real gate. Any prose
+// the model emitted alongside the call (its "why") is carried as `reasoning` so the
+// timeline can surface it (issue #276).
+const toActionDecision = (
+  toolCall: ChatToolCall,
+  names: ToolNameMap,
+  reasoning?: string
+): ReActDecision => ({
   kind: 'action',
   toolId: names.toToolId(toolCall.function.name),
-  input: parseToolCallArguments(toolCall.function.arguments)
+  input: parseToolCallArguments(toolCall.function.arguments),
+  ...(reasoning && reasoning.trim().length > 0 ? { reasoning } : {})
 })
 
 // Accumulator for streamed native tool-call fragments (issue #276). OpenAI streams
@@ -153,11 +160,18 @@ export const decideNextAction = async (
 
   const metadata = decisionMetadata(response, model, false)
   const data = await parseJsonWithTelemetry<{
-    choices?: Array<{ message?: { tool_calls?: ChatToolCall[] } }>
+    choices?: Array<{ message?: { content?: string | null; tool_calls?: ChatToolCall[] } }>
   }>(metadata, response)
-  const toolCall = data.choices?.[0]?.message?.tool_calls?.[0]
+  const message = data.choices?.[0]?.message
+  // A non-reasoning model expresses its rationale as ordinary `content` (not a
+  // separate reasoning channel); carry it as the decision's reasoning so the
+  // timeline shows the model's "why" for the step (issue #276).
+  const reasoning = typeof message?.content === 'string' ? message.content : undefined
+  const toolCall = message?.tool_calls?.[0]
 
-  return toolCall ? toActionDecision(toolCall, names) : { kind: 'final' }
+  return toolCall
+    ? toActionDecision(toolCall, names, reasoning)
+    : { kind: 'final', ...(reasoning && reasoning.trim().length > 0 ? { reasoning } : {}) }
 }
 
 // Streaming variant of decideNextAction. Requests a streamed completion and
@@ -183,15 +197,17 @@ export async function* streamDecision(
   }
 
   for await (const chunk of splitInlineThink(parseSseStream(response.body, signal))) {
-    if (chunk.kind === 'reasoning') {
+    // Both the reasoning channel (reasoning models) AND ordinary `content` (a
+    // non-reasoning model's prose preamble before/instead of a tool call) are the
+    // model's visible thinking, so stream both as the growing thought — otherwise
+    // the timeline shows no rationale for models that don't emit reasoning_content
+    // (issue #276). The terminal `usage` chunk carries no decision signal.
+    if (chunk.kind === 'reasoning' || chunk.kind === 'content') {
       thought += chunk.text
       yield { kind: 'thought', text: thought }
     } else if (chunk.kind === 'tool_call') {
       applyToolCallChunk(toolCalls, chunk)
     }
-    // `content` (the model's prose when it finishes) and the terminal `usage`
-    // chunk carry no decision signal here; the final answer is composed by the
-    // separate synthesize call.
   }
 
   const firstCall = [...toolCalls.entries()]

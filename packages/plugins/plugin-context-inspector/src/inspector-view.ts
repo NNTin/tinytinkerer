@@ -1,6 +1,7 @@
 import type {
   InspectorEntry,
   InspectorMessageView,
+  InspectorRequestMessage,
   InspectorResponse,
   InspectorResponseView,
   InspectorSummarizer,
@@ -8,6 +9,22 @@ import type {
 } from '@tinytinkerer/contracts'
 
 const SYSTEM_ROLE = 'system'
+
+// A display string for a message row. With native tool calling (issue #276) an
+// assistant turn that only calls tools has `content: null`, so summarize its
+// tool_calls (`name({args})`) — otherwise the row would render blank and hide the
+// tool the model invoked. A `tool` result turn keeps its content (the result).
+const messageDisplayContent = (message: InspectorRequestMessage): string => {
+  if (typeof message.content === 'string' && message.content.length > 0) {
+    return message.content
+  }
+  if (message.tool_calls && message.tool_calls.length > 0) {
+    return message.tool_calls
+      .map((call) => `→ ${call.function.name}(${call.function.arguments})`)
+      .join('\n')
+  }
+  return ''
+}
 
 // A rate-limited (429) call is rejected before the model runs, so it bills no
 // tokens. Surfaced verbatim in the panel so the behavior is unambiguous.
@@ -56,25 +73,34 @@ const approxTokens = (text: string): number => Math.ceil(text.length / 4)
 // least one captured entry); given an entry there is always something to show.
 export const summarizeRequest: InspectorSummarizer = (entry: InspectorEntry): InspectorView => {
   const { request: payload, response } = entry
-  const messages: InspectorMessageView[] = payload.messages.map((message, index) => ({
-    index,
-    role: message.role,
-    isSystem: message.role === SYSTEM_ROLE,
-    content: message.content,
-    approxTokens: approxTokens(message.content)
-  }))
+  const messages: InspectorMessageView[] = payload.messages.map((message, index) => {
+    const content = messageDisplayContent(message)
+    return {
+      index,
+      role: message.role,
+      isSystem: message.role === SYSTEM_ROLE,
+      content,
+      approxTokens: approxTokens(content),
+      ...(message.tool_call_id ? { toolCallId: message.tool_call_id } : {})
+    }
+  })
 
   const approxTotalTokens = messages.reduce((sum, message) => sum + message.approxTokens, 0)
+  const toolNames = (payload.tools ?? []).map((tool) => tool.function.name)
 
   // The exact forwarded body, pretty-printed for the host's JSON renderer and the
   // copy-to-clipboard affordance. Field order mirrors how the request is assembled
-  // (model, stream, stream_options, messages) so it reads like the real payload.
+  // (model, stream, stream_options, messages, tools, tool_choice) so it reads like
+  // the real payload — including the native tool-calling fields (issue #276) so the
+  // tools advertised and the tool_calls/tool results are all visible.
   const rawJson = JSON.stringify(
     {
       model: payload.model,
       stream: payload.stream,
       ...(payload.stream_options ? { stream_options: payload.stream_options } : {}),
-      messages: payload.messages
+      messages: payload.messages,
+      ...(payload.tools && payload.tools.length > 0 ? { tools: payload.tools } : {}),
+      ...(payload.tool_choice ? { tool_choice: payload.tool_choice } : {})
     },
     null,
     2
@@ -88,6 +114,8 @@ export const summarizeRequest: InspectorSummarizer = (entry: InspectorEntry): In
     messageCount: messages.length,
     approxTotalTokens,
     messages,
+    ...(toolNames.length > 0 ? { tools: toolNames } : {}),
+    ...(payload.tool_choice ? { toolChoice: payload.tool_choice } : {}),
     rawJson,
     response: summarizeResponse(response)
   }

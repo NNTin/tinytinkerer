@@ -1,7 +1,10 @@
 import { test, expect, type Page } from '@playwright/test'
 import {
   installChatMock,
+  installLiteLLMMock,
   enableContextInspectorPlugin,
+  enableCodeExecPlugin,
+  runSnippetViaChat,
   dismissTelemetryDialog,
   SYNTHESIS_ANSWER,
   type LiteLLMMock
@@ -74,6 +77,40 @@ test.describe('context-inspector plugin (#270)', () => {
 
     // The paired response is captured and shown too (the synthesized answer).
     await expect(panel.locator(RESPONSE)).toContainText(SYNTHESIS_ANSWER)
+  })
+
+  test('shows the native tools used: advertised tools, the tool call, and its result (#276)', async ({
+    page
+  }) => {
+    const mock = await installLiteLLMMock(page, 'return 1 + 1')
+    await page.goto('/web/')
+    await enableCodeExecPlugin(page)
+    await enableContextInspectorPlugin(page)
+
+    // Drive a real ReAct tool run (one run_javascript action, then final).
+    await runSnippetViaChat(page, mock)
+    await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
+
+    const toggle = page.locator(TOGGLE)
+    await expect(toggle).toBeVisible()
+    await toggle.click()
+    const panel = page.locator(PANEL)
+    await expect(panel).toBeVisible()
+
+    // The default view is the latest call (synthesize), which advertises the tools
+    // (tool_choice:'none') and replays the native tool call + result. The header
+    // lists the advertised tool — the inspector showed NONE of this before #276.
+    await expect(panel.locator('[data-testid="context-inspector-tools"]')).toContainText(
+      'run_javascript'
+    )
+
+    // The assistant tool-call turn renders a non-blank summary of the call (the
+    // wire content is null, so before #276 this row was blank). Expand every row so
+    // the (collapsed) message bodies are queryable.
+    for (const summary of await panel.locator('summary').all()) {
+      await summary.click().catch(() => undefined)
+    }
+    await expect(panel.getByText(/run_javascript\(/)).toBeVisible()
   })
 
   test('disabled (default): the inspector never captures or appears', async ({ page }) => {

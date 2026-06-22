@@ -157,6 +157,32 @@ describe('decideNextAction (native tool calling)', () => {
     expect(decision.kind).toBe('final')
   })
 
+  it('carries the model prose as the decision reasoning (so the timeline shows the "why")', async () => {
+    // A non-reasoning model expresses its rationale as ordinary content alongside
+    // the tool call; it must surface as the decision reasoning (issue #276).
+    const edgeFetch = makeEdgeFetch({
+      choices: [
+        {
+          message: {
+            role: 'assistant',
+            content: 'I should search the web to answer this.',
+            tool_calls: [
+              {
+                id: 'call_1',
+                type: 'function',
+                function: { name: 'web-search', arguments: '{"query":"x"}' }
+              }
+            ]
+          }
+        }
+      ]
+    })
+
+    const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
+    expect(decision.kind).toBe('action')
+    expect(decision.reasoning).toBe('I should search the web to answer this.')
+  })
+
   it('replays a multi-step (chained) tool history as ordered native turns', async () => {
     const edgeFetch = makeEdgeFetch(toolCallResponse('web-search', { query: 'follow-up' }))
 
@@ -272,6 +298,29 @@ describe('streamDecision (native tool calling)', () => {
       expect(decision.decision.toolId).toBe('web-search')
       expect(decision.decision.input).toEqual({ query: 'Berlin' })
     }
+  })
+
+  it('streams plain content as the thought (non-reasoning models) before an action', async () => {
+    // The model has no reasoning channel; its visible thinking is ordinary content
+    // emitted before the tool call. It must surface as the growing thought so the
+    // timeline is not blank (issue #276).
+    const edgeFetch = makeSseEdgeFetch([
+      'data: {"choices":[{"delta":{"content":"I will "}}]}',
+      'data: {"choices":[{"delta":{"content":"search."}}]}',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"web-search","arguments":"{\\"query\\":\\"x\\"}"}}]}}]}',
+      'data: [DONE]',
+      ''
+    ])
+
+    const chunks = []
+    for await (const chunk of streamDecision(baseContext(), [descriptor], 'm', edgeFetch)) {
+      chunks.push(chunk)
+    }
+
+    const thoughts = chunks.filter((chunk) => chunk.kind === 'thought')
+    expect(thoughts.at(-1)?.kind === 'thought' && thoughts.at(-1)?.text).toBe('I will search.')
+    const decision = chunks.find((chunk) => chunk.kind === 'decision')
+    expect(decision?.kind === 'decision' && decision.decision.kind).toBe('action')
   })
 
   it('yields a final decision when the stream carries no tool call', async () => {

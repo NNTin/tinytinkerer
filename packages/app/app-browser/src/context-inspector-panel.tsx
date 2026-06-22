@@ -181,6 +181,14 @@ export const ContextInspectorPanel = ({
           </span>
           <span data-testid="context-inspector-tokens">{totalLabel}</span>
           <span>{view.messageCount} messages</span>
+          {view.tools && view.tools.length > 0 ? (
+            <span data-testid="context-inspector-tools">
+              Tools: <span className="font-mono text-stone-800">{view.tools.join(', ')}</span>
+              {view.toolChoice ? (
+                <span className="text-stone-500"> ({view.toolChoice})</span>
+              ) : null}
+            </span>
+          ) : null}
         </div>
 
         {requestCount > 1 ? (

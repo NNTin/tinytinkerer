@@ -90,11 +90,32 @@ export type PluginStatusDescriptor = {
 // view-model the host renders (reusing its CodeMirror JSON view). No React/DOM in
 // the plugin (enforced by scripts/check-boundaries.mjs).
 
+// A native tool call captured on an assistant message, mirroring the forwarded
+// wire shape (issue #276). Declared inline (not imported from edge) so this view
+// contract stays product-agnostic.
+export type InspectorToolCall = {
+  id: string
+  type: string
+  function: { name: string; arguments: string }
+}
+
+// A tool advertised to the model for a captured request (issue #276), mirroring
+// the forwarded `tools` entry. Inline to keep this contract product-agnostic.
+export type InspectorToolDefinition = {
+  type: string
+  function: { name: string; description?: string; parameters?: unknown }
+}
+
 // One message of a captured request. Product-agnostic (no edge import): `role`
-// and `content` mirror the forwarded chat message shape.
+// and `content` mirror the forwarded chat message shape. Native tool calling adds
+// the structured tool fields so the inspector can show the tools used, not just
+// prose (issue #276): `tool_calls` on an assistant turn, `tool_call_id` on a
+// `tool` result turn. `content` is null on a pure tool-call assistant turn.
 export type InspectorRequestMessage = {
   role: string
-  content: string
+  content: string | null
+  tool_calls?: InspectorToolCall[]
+  tool_call_id?: string
 }
 
 // The exact request the client forwarded to the provider for a single model call,
@@ -106,6 +127,11 @@ export type InspectorRequestPayload = {
   stream: boolean
   stream_options?: { include_usage?: boolean }
   messages: InspectorRequestMessage[]
+  // Native tool calling (issue #276): the tools advertised to the model and the
+  // tool-use policy for this call, so the inspector shows what the model could
+  // call. Absent for plain chat requests.
+  tools?: InspectorToolDefinition[]
+  tool_choice?: string
   area?: string
   // ISO timestamp of when the request was captured, so the host can label and
   // order multiple captures within a turn.
@@ -141,13 +167,16 @@ export type InspectorEntry = {
 // One message row in the inspector view: the original role/content plus a rough
 // per-message token estimate and whether it is a system prompt (called out
 // distinctly by the host). The estimate is a char/4 heuristic — clearly an
-// approximation, not a tokenizer count.
+// approximation, not a tokenizer count. `content` is a display string: for an
+// assistant tool-call turn (wire content null) it summarizes the tool_calls so the
+// row is never blank (issue #276). `toolCallId` marks a `tool` result turn.
 export type InspectorMessageView = {
   index: number
   role: string
   isSystem: boolean
   content: string
   approxTokens: number
+  toolCallId?: string
 }
 
 // Display-ready view of a captured response the host renders beneath the request.
@@ -178,6 +207,11 @@ export type InspectorView = {
   messageCount: number
   approxTotalTokens: number
   messages: InspectorMessageView[]
+  // Names of the tools advertised to the model this call, and the tool-use policy
+  // (issue #276) — so the inspector shows what the model could call, not just the
+  // messages. Empty/absent for a plain chat request.
+  tools?: string[]
+  toolChoice?: string
   rawJson: string
   // The paired response outcome (pending until it resolves).
   response: InspectorResponseView

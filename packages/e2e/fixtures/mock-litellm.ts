@@ -145,18 +145,19 @@ const sseStream = (content: string, usage?: { prompt_tokens: number }): string =
   return body + 'data: [DONE]\n\n'
 }
 
-// A single reasoning (chain-of-thought) SSE delta. With native tool calling the
-// model's decision rationale is its streamed `reasoning_content` (issue #276), not
-// a structured `reasoning` field — the ReAct timeline renders it as the think
-// step's text.
-const sseReasoningDelta = (text: string): string =>
-  `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: text } }] })}\n\n`
+// A single plain-content SSE delta. Models the real default model (chatgpt/gpt-5.4)
+// which has NO separate reasoning channel — its decision rationale is ordinary
+// `content` emitted before the tool call. The ReAct timeline renders this as the
+// think step's text (issue #276).
+const sseContentDelta = (text: string): string =>
+  `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`
 
 // Stream a single native tool call as OpenAI-style SSE deltas (issue #276): an
-// optional reasoning delta first (the chain-of-thought), then the tool call whose
-// id + name arrive in the first delta and whose arguments are split across two
-// more so the client's cross-delta tool-call accumulation is exercised.
-const sseToolCallStream = (toolCall: ToolCall, reasoning?: string): string => {
+// optional content preamble first (the model's rationale, like a non-reasoning
+// model emits), then the tool call whose id + name arrive in the first delta and
+// whose arguments are split across two more so the client's cross-delta tool-call
+// accumulation is exercised.
+const sseToolCallStream = (toolCall: ToolCall, preamble?: string): string => {
   const index = 0
   const mid = Math.ceil(toolCall.function.arguments.length / 2)
   const deltas = [
@@ -173,7 +174,7 @@ const sseToolCallStream = (toolCall: ToolCall, reasoning?: string): string => {
     { tool_calls: [{ index, function: { arguments: toolCall.function.arguments.slice(0, mid) } }] },
     { tool_calls: [{ index, function: { arguments: toolCall.function.arguments.slice(mid) } }] }
   ]
-  let body = reasoning ? sseReasoningDelta(reasoning) : ''
+  let body = preamble ? sseContentDelta(preamble) : ''
   for (const delta of deltas) {
     body += `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
   }
@@ -195,9 +196,10 @@ const runJavascriptToolCall = (code: string): ToolCall => ({
   function: { name: 'run_javascript', arguments: JSON.stringify({ code }) }
 })
 
-// The chain-of-thought the mock streams as `reasoning_content` for the ACTION and
-// FINAL decisions. Exported so the ReAct-timeline spec asserts the SAME text the
-// model "reasoned", keeping the fixture the single source of truth (issue #276).
+// The rationale the mock streams as ordinary `content` for the ACTION and FINAL
+// decisions (the default model has no separate reasoning channel). Exported so the
+// ReAct-timeline spec asserts the SAME text the model "reasoned", keeping the
+// fixture the single source of truth (issue #276).
 export const REACT_ACTION_REASONING = 'Run the snippet in the sandbox to gather the observation.'
 export const REACT_FINAL_REASONING = 'The sandbox returned its result; ready to answer.'
 
@@ -253,24 +255,30 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
     // which the runtime replays as a `role: 'tool'` message).
     const hasToolResult = messages.some((m) => m.role === 'tool')
     if (state.mode === 'no-tool' || hasToolResult) {
-      // Finish: stream the chain-of-thought then answer with content (no
-      // tool_calls). streamDecision treats the absence of a tool call as `final`.
-      const finalText = 'I have the tool results I need; composing the answer.'
+      // Finish: answer with content and NO tool_calls (like a non-reasoning model);
+      // its rationale IS the content. streamDecision treats the absence of a tool
+      // call as the `final` decision and surfaces the content as the think text.
       if (body.stream === true) {
-        const stream = sseReasoningDelta(REACT_FINAL_REASONING) + sseStream(finalText)
-        return new Response(stream, { status: 200, headers: streamHeaders })
+        return new Response(sseStream(REACT_FINAL_REASONING), {
+          status: 200,
+          headers: streamHeaders
+        })
       }
       return jsonResponse({
         id: 'mock-completion',
         object: 'chat.completion',
         choices: [
-          { index: 0, message: { role: 'assistant', content: finalText }, finish_reason: 'stop' }
+          {
+            index: 0,
+            message: { role: 'assistant', content: REACT_FINAL_REASONING },
+            finish_reason: 'stop'
+          }
         ]
       })
     }
 
-    // Act: stream the chain-of-thought then issue a single native run_javascript
-    // tool call.
+    // Act: stream a plain-content rationale preamble (no reasoning channel, like
+    // the real default model) then issue a single native run_javascript tool call.
     state.actions += 1
     const toolCall = runJavascriptToolCall(state.code)
     if (body.stream === true) {

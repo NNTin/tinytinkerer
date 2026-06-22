@@ -355,23 +355,43 @@ export const createModelsChatFetch =
       try {
         // Report the clamped messages (what actually leaves the client), not the
         // pre-clamp `init`, so the inspector mirrors the forwarded payload exactly.
+        // Native tool calling (issue #276): preserve the STRUCTURED tool fields
+        // (content may be null on a tool-call turn, plus tool_calls / tool_call_id)
+        // so the inspector can show the tools used, not just prose.
         const messages = (body.messages as ChatMessage[]).map((message) => ({
           role: message.role,
-          // The inspector view is text-only; an assistant tool-call turn has
-          // `content: null`, so surface its tool_calls JSON instead so the panel
-          // still shows what was sent (issue #276).
-          content:
-            typeof message.content === 'string'
-              ? message.content
-              : 'tool_calls' in message && message.tool_calls
-                ? JSON.stringify(message.tool_calls)
-                : ''
+          content: typeof message.content === 'string' ? message.content : null,
+          ...('tool_calls' in message && message.tool_calls
+            ? { tool_calls: message.tool_calls }
+            : {}),
+          ...('tool_call_id' in message && message.tool_call_id
+            ? { tool_call_id: message.tool_call_id }
+            : {})
         }))
         setResponse = onForwardRequest({
           model: init.model,
           stream: init.stream,
           ...(init.stream_options ? { stream_options: init.stream_options } : {}),
           messages,
+          // Carry the advertised tools + policy so the inspector shows what the
+          // model could call this turn (issue #276). Normalize each tool so an
+          // absent description/parameters is omitted (not set to `undefined`),
+          // satisfying the inspector view contract under exactOptionalPropertyTypes.
+          ...(init.tools && init.tools.length > 0
+            ? {
+                tools: init.tools.map((tool) => ({
+                  type: tool.type,
+                  function: {
+                    name: tool.function.name,
+                    ...(tool.function.description
+                      ? { description: tool.function.description }
+                      : {}),
+                    ...(tool.function.parameters ? { parameters: tool.function.parameters } : {})
+                  }
+                }))
+              }
+            : {}),
+          ...(init.tool_choice ? { tool_choice: init.tool_choice } : {}),
           ...(options?.area ? { area: options.area } : {}),
           capturedAt: new Date().toISOString()
         })

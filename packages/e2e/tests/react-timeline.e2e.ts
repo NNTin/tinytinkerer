@@ -19,9 +19,9 @@ import {
 // Only LiteLLM is mocked; the run is anonymous through the real edge worker. The
 // mock drives a real sandbox run: the model issues one `run_javascript` ACTION
 // then, once the observation is folded back, a FINAL decision. With native tool
-// calling (issue #276) each decision's rationale is the model's streamed
-// chain-of-thought (`reasoning_content`); both texts come straight from
-// fixtures/mock-litellm.ts. See e2e/README.md.
+// calling (issue #276) each decision's rationale is the model's ordinary streamed
+// `content` (the default model has no separate reasoning channel); both texts come
+// straight from fixtures/mock-litellm.ts. See e2e/README.md.
 
 const ACTION_REASONING = REACT_ACTION_REASONING
 const FINAL_REASONING = REACT_FINAL_REASONING
@@ -48,9 +48,15 @@ const assertDecisionRows = async (panel: Locator): Promise<void> => {
   await expect(action).toHaveText(/Action/)
   await expect(final).toHaveText(/Final/)
 
-  // The decision reasoning text is surfaced for each step.
+  // The model's thinking (its streamed content rationale) is surfaced for each step
+  // — this is what regressed when native tool calls dropped the model's prose.
   await expect(panel.getByText(ACTION_REASONING)).toBeVisible()
   await expect(panel.getByText(FINAL_REASONING)).toBeVisible()
+
+  // Tool USAGE is surfaced too: the act step names the tool and its completed run
+  // renders with an OK status badge.
+  await expect(panel.getByText(/Using run_javascript/)).toBeVisible()
+  await expect(panel.locator('[data-activity-status="ok"]').first()).toBeVisible()
 }
 
 test.describe('ReAct decision timeline (#273)', () => {

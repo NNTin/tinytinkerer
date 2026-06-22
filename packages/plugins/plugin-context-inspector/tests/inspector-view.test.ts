@@ -70,6 +70,60 @@ describe('summarizeRequest', () => {
     expect(view.rawJson).toContain('\n  ')
   })
 
+  it('surfaces native tool calls and advertised tools (issue #276)', () => {
+    const view = summarizeRequest(
+      entry(
+        { status: 'pending' },
+        {
+          messages: [
+            { role: 'system', content: 'You are a ReAct agent.' },
+            { role: 'user', content: 'Run the snippet.' },
+            {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call_1',
+                  type: 'function',
+                  function: { name: 'run_javascript', arguments: '{"code":"return 1+1"}' }
+                }
+              ]
+            },
+            { role: 'tool', tool_call_id: 'call_1', content: '{"ok":true,"result":2}' }
+          ],
+          tools: [
+            {
+              type: 'function',
+              function: {
+                name: 'run_javascript',
+                description: 'Run JS',
+                parameters: { type: 'object' }
+              }
+            }
+          ],
+          tool_choice: 'auto'
+        }
+      )
+    )
+
+    // The advertised tools + policy are exposed for the header.
+    expect(view.tools).toEqual(['run_javascript'])
+    expect(view.toolChoice).toBe('auto')
+
+    // The assistant tool-call turn (wire content null) renders a non-blank summary
+    // of the call, and the tool result row carries its tool_call_id.
+    const assistantRow = view.messages[2]
+    expect(assistantRow?.content).toContain('run_javascript')
+    expect(assistantRow?.content).toContain('return 1+1')
+    expect(view.messages[3]).toMatchObject({ role: 'tool', toolCallId: 'call_1' })
+
+    // The raw payload includes the structured tool_calls and the advertised tools.
+    const parsed = JSON.parse(view.rawJson) as Record<string, unknown>
+    expect(parsed.tools).toBeDefined()
+    expect(parsed.tool_choice).toBe('auto')
+    expect(JSON.stringify(parsed)).toContain('tool_calls')
+  })
+
   it('omits stream_options and area cleanly when absent', () => {
     const view = summarizeRequest({
       request: {
