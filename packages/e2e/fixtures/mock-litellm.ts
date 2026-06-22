@@ -145,12 +145,20 @@ const sseStream = (content: string, usage?: { prompt_tokens: number }): string =
   return body + 'data: [DONE]\n\n'
 }
 
+// A single plain-content SSE delta. Used to stream an OPTIONAL action-turn
+// rationale before the tool call, for the spec that covers a model which DOES
+// narrate its action (issue #276); the default action turn stays silent.
+const sseContentDelta = (text: string): string =>
+  `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`
+
 // Stream a single native tool call as OpenAI-style SSE deltas (issue #276): the
 // tool call's id + name arrive in the first delta and its arguments are split
 // across two more so the client's cross-delta tool-call accumulation is exercised.
-// No content is emitted — a non-reasoning model returns ONLY the tool call on an
-// action turn, so the timeline derives the step label from the call itself.
-const sseToolCallStream = (toolCall: ToolCall): string => {
+// By default no content is emitted — a non-reasoning model returns ONLY the tool
+// call on an action turn, and the timeline then renders just the decision badge.
+// An optional `preamble` models a model that narrates its action, streamed as
+// ordinary content first (shown as the step's thought).
+const sseToolCallStream = (toolCall: ToolCall, preamble?: string): string => {
   const index = 0
   const mid = Math.ceil(toolCall.function.arguments.length / 2)
   const deltas = [
@@ -167,7 +175,7 @@ const sseToolCallStream = (toolCall: ToolCall): string => {
     { tool_calls: [{ index, function: { arguments: toolCall.function.arguments.slice(0, mid) } }] },
     { tool_calls: [{ index, function: { arguments: toolCall.function.arguments.slice(mid) } }] }
   ]
-  let body = ''
+  let body = preamble ? sseContentDelta(preamble) : ''
   for (const delta of deltas) {
     body += `data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`
   }
@@ -224,6 +232,10 @@ type UpstreamState = {
   // The synthesized final-answer content the mock streams back (per-test, so a
   // spec can stream e.g. a ```mermaid block instead of the default sentence).
   answer: string
+  // Optional: when set, the ACTION turn narrates this rationale as ordinary
+  // content before its tool call (models a model that explains its action). When
+  // undefined the action turn is silent — the realistic non-reasoning default.
+  actionReasoning?: string
   bodies: string[]
   actions: number
   provisionedKeys: Set<string>
@@ -272,14 +284,15 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
       })
     }
 
-    // Act: issue a single native run_javascript tool call with NO content preamble.
-    // This is how a non-reasoning model actually behaves on a tool-calling turn —
-    // it returns only the tool call, no prose — so the timeline must derive the
-    // step's label from the call itself rather than from model text (issue #276).
+    // Act: issue a single native run_javascript tool call. By default with NO
+    // content preamble — how a non-reasoning model actually behaves on a tool turn
+    // (only the tool call, no prose), so the timeline renders just the decision
+    // badge. When the spec opted into narration, the rationale is emitted as
+    // ordinary content first and shows as the step's thought (issue #276).
     state.actions += 1
     const toolCall = runJavascriptToolCall(state.code)
     if (body.stream === true) {
-      return new Response(sseToolCallStream(toolCall), {
+      return new Response(sseToolCallStream(toolCall, state.actionReasoning), {
         status: 200,
         headers: streamHeaders
       })
@@ -290,7 +303,11 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
       choices: [
         {
           index: 0,
-          message: { role: 'assistant', content: null, tool_calls: [toolCall] },
+          message: {
+            role: 'assistant',
+            content: state.actionReasoning ?? null,
+            tool_calls: [toolCall]
+          },
           finish_reason: 'tool_calls'
         }
       ]
@@ -452,13 +469,15 @@ const installMock = async (
   page: Page,
   code: string,
   mode: ChatMode,
-  answer: string
+  answer: string,
+  actionReasoning?: string
 ): Promise<LiteLLMMock> => {
   installLiteLLMUpstream()
   const state: UpstreamState = {
     code,
     mode,
     answer,
+    ...(actionReasoning !== undefined ? { actionReasoning } : {}),
     bodies: [],
     actions: 0,
     provisionedKeys: new Set(knownProvisionedKeys),
@@ -501,9 +520,19 @@ const installMock = async (
 }
 
 // The sandbox suite's mock: the model issues a single `run_javascript` action so a
-// real-browser sandbox run is driven (see installMock's 'tool' mode).
+// real-browser sandbox run is driven (see installMock's 'tool' mode). The action
+// turn is silent by default (realistic non-reasoning model).
 export const installLiteLLMMock = (page: Page, code: string): Promise<LiteLLMMock> =>
   installMock(page, code, 'tool', SYNTHESIS_ANSWER)
+
+// Like installLiteLLMMock, but the model NARRATES its action: the given rationale
+// is streamed as ordinary content before the tool call, so the timeline shows it
+// as the action step's thought. Covers the prose-narration path (issue #276).
+export const installNarratedToolMock = (
+  page: Page,
+  code: string,
+  actionReasoning: string
+): Promise<LiteLLMMock> => installMock(page, code, 'tool', SYNTHESIS_ANSWER, actionReasoning)
 
 // A NO-TOOL chat mock: the ReAct decision finishes immediately, so a plain message
 // completes and synthesizes user.message + assistant.* events WITHOUT the code-exec

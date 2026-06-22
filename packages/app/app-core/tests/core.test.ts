@@ -296,7 +296,7 @@ describe('app-core helpers', () => {
     })
   })
 
-  it('folds a streaming decision kind + reasoning onto the matching think step (action)', () => {
+  it('folds a streaming decision kind onto the matching think step; prose is the label (action)', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hi' }),
       event('agent.step.started', { stepId: 'th1', kind: 'think', title: 'Thinking…' }),
@@ -304,8 +304,7 @@ describe('app-core helpers', () => {
       event('agent.step.completed', {
         stepId: 'th1',
         summary: 'Let me run the snippet',
-        decisionKind: 'action',
-        decisionReasoning: 'Run the snippet in the sandbox to gather the observation.'
+        decisionKind: 'action'
       }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
@@ -313,43 +312,54 @@ describe('app-core helpers', () => {
     const labels =
       buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
     expect(labels).toHaveLength(1)
+    // The model's prose IS the label; the decision kind drives the badge.
     expect(labels[0]).toMatchObject({
       label: 'Let me run the snippet',
       stepKind: 'think',
-      decisionKind: 'action',
-      decisionReasoning: 'Run the snippet in the sandbox to gather the observation.'
+      decisionKind: 'action'
     })
   })
 
-  it('carries a non-streaming decision kind + reasoning from the started event (final)', () => {
+  it('clears the think label when a streaming action turn is silent (empty summary)', () => {
+    // A native tool-call turn with no model prose: the runtime emits an empty
+    // summary, which clears the live "Thinking…" so the step renders as just the
+    // decision badge (issue #276 arch-review follow-up).
+    const events: ChatEvent[] = [
+      event('user.message', { text: 'hi' }),
+      event('agent.step.started', { stepId: 'th1', kind: 'think', title: 'Thinking…' }),
+      event('agent.step.completed', { stepId: 'th1', summary: '', decisionKind: 'action' }),
+      event('assistant.done', { source: 'hi', content: assistantContent('hi') })
+    ]
+
+    const label = buildTurns(events)[0]?.activity.items.find((item) => item.kind === 'label')
+    expect(label).toMatchObject({ label: '', stepKind: 'think', decisionKind: 'action' })
+  })
+
+  it('carries a non-streaming decision kind from the started event; prose is the title (final)', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hi' }),
       event('agent.step.started', {
         stepId: 'th1',
         kind: 'think',
         title: 'The sandbox returned its result; ready to answer.',
-        decisionKind: 'final',
-        decisionReasoning: 'The sandbox returned its result; ready to answer.'
+        decisionKind: 'final'
       }),
-      event('agent.step.completed', {
-        stepId: 'th1',
-        decisionKind: 'final',
-        decisionReasoning: 'The sandbox returned its result; ready to answer.'
-      }),
+      event('agent.step.completed', { stepId: 'th1', decisionKind: 'final' }),
       event('assistant.done', { source: 'hi', content: assistantContent('hi') })
     ]
 
     const labels =
       buildTurns(events)[0]?.activity.items.filter((item) => item.kind === 'label') ?? []
     expect(labels).toHaveLength(1)
+    // The non-streaming path carries the prose as the title (the label).
     expect(labels[0]).toMatchObject({
+      label: 'The sandbox returned its result; ready to answer.',
       stepKind: 'think',
-      decisionKind: 'final',
-      decisionReasoning: 'The sandbox returned its result; ready to answer.'
+      decisionKind: 'final'
     })
   })
 
-  it('omits decision fields when the model provides no reasoning/kind (graceful degrade)', () => {
+  it('omits the decision kind when the model provides none (graceful degrade)', () => {
     const events: ChatEvent[] = [
       event('user.message', { text: 'hi' }),
       event('agent.step.started', { stepId: 'th1', kind: 'think', title: 'Thinking…' }),
@@ -360,9 +370,6 @@ describe('app-core helpers', () => {
     const label = buildTurns(events)[0]?.activity.items.find((item) => item.kind === 'label')
     expect(label).toMatchObject({ label: 'A bare thought', stepKind: 'think' })
     expect(label && 'decisionKind' in label ? label.decisionKind : undefined).toBeUndefined()
-    expect(
-      label && 'decisionReasoning' in label ? label.decisionReasoning : undefined
-    ).toBeUndefined()
   })
 
   it('drops the redundant tool-result summary of an act step (issue #277)', () => {

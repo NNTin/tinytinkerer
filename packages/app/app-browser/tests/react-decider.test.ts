@@ -183,17 +183,17 @@ describe('decideNextAction (native tool calling)', () => {
     expect(decision.reasoning).toBe('I should search the web to answer this.')
   })
 
-  it('derives the reasoning from the call when the model emits no prose', async () => {
+  it('omits reasoning when the model emits no prose (no host-derived label)', async () => {
     // The common native tool-calling case: the model returns ONLY a tool call with
-    // no content. The decision still carries a non-empty reasoning derived from the
-    // call so the timeline step is never blank (issue #276 follow-up).
+    // no content. `reasoning` stays genuine model prose only — it is left UNSET
+    // rather than filled with a synthetic "Calling …" label; the timeline renders
+    // just the decision badge for a silent step (issue #276 arch-review follow-up).
     const edgeFetch = makeEdgeFetch(toolCallResponse('web-search', { query: 'Berlin' }))
 
     const decision = await decideNextAction(baseContext(), [descriptor], 'm', edgeFetch)
     expect(decision.kind).toBe('action')
     if (decision.kind !== 'action') throw new Error('Expected an action decision')
-    expect(decision.reasoning).toContain('Calling web-search(')
-    expect(decision.reasoning).toContain('Berlin')
+    expect(decision.reasoning).toBeUndefined()
   })
 
   it('replays a multi-step (chained) tool history as ordered native turns', async () => {
@@ -317,10 +317,10 @@ describe('streamDecision (native tool calling)', () => {
     }
   })
 
-  it('derives the reasoning from the call when the stream carries no prose', async () => {
+  it('omits reasoning when the stream carries no prose (no host-derived label)', async () => {
     // A non-reasoning model on a tool turn streams ONLY tool-call deltas. The
-    // resolved action still carries a derived reasoning so the timeline step is
-    // never blank (issue #276 follow-up).
+    // resolved action carries NO reasoning (genuine model prose only) — the
+    // timeline renders just the decision badge (issue #276 arch-review follow-up).
     const edgeFetch = makeSseEdgeFetch([
       'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"web-search","arguments":"{\\"query\\":\\"x\\"}"}}]}}]}',
       'data: [DONE]',
@@ -336,7 +336,7 @@ describe('streamDecision (native tool calling)', () => {
     const decision = chunks.find((chunk) => chunk.kind === 'decision')
     expect(decision?.kind === 'decision' && decision.decision.kind).toBe('action')
     if (decision?.kind === 'decision' && decision.decision.kind === 'action') {
-      expect(decision.decision.reasoning).toContain('Calling web-search(')
+      expect(decision.decision.reasoning).toBeUndefined()
     }
   })
 

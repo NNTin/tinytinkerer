@@ -73,25 +73,25 @@ describe('TurnActivityPanel hierarchy rendering', () => {
     expect(screen.getByText('Let me search the docs')).toBeInTheDocument()
   })
 
-  it('renders the decision reasoning with a colour + non-colour cue per kind', () => {
+  it('shows the model prose as the step label with a colour + non-colour cue per kind', () => {
+    // The model's prose IS the step's thought (the label). It is shown once, with
+    // the decision badge below it — there is no separate "why" line (issue #276).
     const a = activity([
       {
         kind: 'label',
         id: 'l-action',
-        label: 'Need to run the snippet',
+        label: 'Run the snippet in the sandbox to gather the observation.',
         stepId: 'th1',
         stepKind: 'think',
-        decisionKind: 'action',
-        decisionReasoning: 'Run the snippet in the sandbox to gather the observation.'
+        decisionKind: 'action'
       },
       {
         kind: 'label',
         id: 'l-final',
-        label: 'I have the result',
+        label: 'The sandbox returned its result; ready to answer.',
         stepId: 'th2',
         stepKind: 'think',
-        decisionKind: 'final',
-        decisionReasoning: 'The sandbox returned its result; ready to answer.'
+        decisionKind: 'final'
       }
     ])
 
@@ -99,13 +99,11 @@ describe('TurnActivityPanel hierarchy rendering', () => {
       <TurnActivityPanel activity={a} isLive serverNameById={new Map()} />
     )
 
-    // The reasoning text is surfaced for both the action and the final step.
+    // The prose is surfaced once for each step (as its label, not a duplicated why).
     expect(
-      screen.getByText('Run the snippet in the sandbox to gather the observation.')
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText('The sandbox returned its result; ready to answer.')
-    ).toBeInTheDocument()
+      screen.getAllByText('Run the snippet in the sandbox to gather the observation.')
+    ).toHaveLength(1)
+    expect(screen.getAllByText('The sandbox returned its result; ready to answer.')).toHaveLength(1)
 
     // The kind is conveyed by a non-colour cue (a spelled-out word) AND a stable
     // data attribute the kind-styled colour hangs off (WCAG 1.4.1).
@@ -120,47 +118,30 @@ describe('TurnActivityPanel hierarchy rendering', () => {
     expect(final?.className).toContain('text-emerald-700')
   })
 
-  it('does not repeat the reasoning when it equals the streamed thought', () => {
-    // A non-reasoning model's prose IS its reasoning, so the streaming path sets
-    // both the step label and the decision reasoning to the same text. The "why"
-    // must not be shown twice — the label already carries it (issue #276 follow-up).
-    const prose = 'The sandbox returned its result; ready to answer.'
-    const a = activity([
-      {
-        kind: 'label',
-        id: 'l-final',
-        label: prose,
-        stepId: 'th1',
-        stepKind: 'think',
-        decisionKind: 'final',
-        decisionReasoning: prose
-      }
-    ])
-
-    render(<TurnActivityPanel activity={a} isLive serverNameById={new Map()} />)
-
-    // Exactly one occurrence (the label), not duplicated next to the badge.
-    expect(screen.getAllByText(prose)).toHaveLength(1)
-  })
-
-  it('shows the derived "why" when an action step has no streamed prose', () => {
-    // A native tool call with no content leaves the label as the placeholder while
-    // the derived label ("Calling …") is shown as the decision reasoning (#276).
+  it('renders a silent action step as just the decision badge (no label text)', () => {
+    // A native tool-call turn with no model prose: the label is empty, so the step
+    // renders only the Action badge — the tool + args live in the adjacent tool row
+    // (issue #276 arch-review follow-up).
     const a = activity([
       {
         kind: 'label',
         id: 'l-action',
-        label: 'Thinking…',
+        label: '',
         stepId: 'th1',
         stepKind: 'think',
-        decisionKind: 'action',
-        decisionReasoning: 'Calling run_javascript({"code":"return 1+1"})'
+        decisionKind: 'action'
       }
     ])
 
-    render(<TurnActivityPanel activity={a} isLive serverNameById={new Map()} />)
+    const { container } = render(
+      <TurnActivityPanel activity={a} isLive serverNameById={new Map()} />
+    )
 
-    expect(screen.getByText('Calling run_javascript({"code":"return 1+1"})')).toBeInTheDocument()
+    const action = container.querySelector('[data-decision-kind="action"]')
+    expect(action).toBeInTheDocument()
+    expect(action).toHaveTextContent('Action')
+    // No empty italic thought span is rendered for a silent step.
+    expect(container.querySelector('.italic')).toBeNull()
   })
 
   it('renders a think step with no resolved decision as a plain thought', () => {

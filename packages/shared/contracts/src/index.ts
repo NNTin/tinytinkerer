@@ -139,12 +139,16 @@ export type ReActDecisionKind = z.infer<typeof reactDecisionKindSchema>
 export const reactDecisionSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('action'),
+    // Genuine model prose only (the model's "why"); omitted when the model emits
+    // none. Never a host-derived display label — presentation is the timeline's
+    // concern, not the decision's (issue #276 arch-review follow-up).
     reasoning: z.string().optional(),
     toolId: z.string(),
     input: z.record(z.string(), z.unknown())
   }),
   z.object({
     kind: z.literal('final'),
+    // See the action variant: genuine model prose only, omitted when absent.
     reasoning: z.string().optional()
   })
 ])
@@ -180,13 +184,13 @@ export const agentStepStartedEventSchema = eventBaseSchema(
     parentStepId: z.string().optional(),
     kind: agentStepKindSchema,
     title: z.string(),
-    // The structured ReAct decision this step resolved to, surfaced so the
-    // timeline can colour/label the step (action vs final) and show the "why".
-    // Optional and only set by paths where the decision is known when the step
-    // opens (the non-streaming ReAct decision); the streaming path carries them
-    // on agent.step.completed instead, once the decision resolves.
-    decisionKind: reactDecisionKindSchema.optional(),
-    decisionReasoning: z.string().optional()
+    // The kind (action vs final) of the ReAct decision this step resolved to, so
+    // the timeline can colour/label the step. Optional and only set by paths where
+    // the decision is known when the step opens (the non-streaming ReAct decision);
+    // the streaming path carries it on agent.step.completed once the decision
+    // resolves. The model's prose rides on `title`/the streamed thought (the step
+    // label), not on a separate field (issue #276 arch-review follow-up).
+    decisionKind: reactDecisionKindSchema.optional()
   })
 )
 // Streamed, incrementally-growing text for a step (e.g. a ReAct thought as the
@@ -202,12 +206,12 @@ export const agentStepCompletedEventSchema = eventBaseSchema(
   z.object({
     stepId: z.string(),
     summary: z.string().optional(),
-    // The structured ReAct decision this step resolved to (see
-    // agentStepStartedEventSchema). The streaming decision path sets these the
-    // moment the decision resolves at end-of-stream, so the timeline surfaces the
-    // kind + reasoning live (and they persist via this completed event on reload).
-    decisionKind: reactDecisionKindSchema.optional(),
-    decisionReasoning: z.string().optional()
+    // The kind of the ReAct decision this step resolved to (see
+    // agentStepStartedEventSchema). The streaming decision path sets it the moment
+    // the decision resolves at end-of-stream, so the timeline surfaces the kind
+    // live (and it persists via this completed event on reload). The model's prose
+    // rides on `summary` (the step label), not a separate field (issue #276).
+    decisionKind: reactDecisionKindSchema.optional()
   })
 )
 export const agentStepFailedEventSchema = eventBaseSchema(

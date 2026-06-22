@@ -402,18 +402,17 @@ export abstract class AgentRuntimeBase {
         throw new RuntimeTimeoutError('ReAct decision timed out')
       }
 
-      // The decision resolves at end-of-stream, so carry its kind + reasoning on
-      // the completed event: the timeline surfaces them the moment the decision
-      // lands (its "live" entry) and they persist via this event on reload. The
-      // structured `reasoning` is a field of the decision JSON — not token-
-      // streamed like the chain-of-thought above — so it appears as one entry
-      // when the decision resolves rather than growing token-by-token.
+      // The decision resolves at end-of-stream, so carry its kind on the completed
+      // event: the timeline surfaces it the moment the decision lands (its "live"
+      // entry) and it persists on reload. The model's prose IS the streamed thought
+      // (the step label), so emit it as the summary — always, even empty, so a
+      // silent tool-call turn clears the live "Thinking…" placeholder and the step
+      // renders as just the decision badge (issue #276).
       const resolved = decision ?? { kind: 'final' }
       yield createEvent('agent.step.completed', {
         stepId: thoughtStepId,
-        ...(thought.trim().length > 0 ? { summary: thought } : {}),
-        decisionKind: resolved.kind,
-        ...(resolved.reasoning ? { decisionReasoning: resolved.reasoning } : {})
+        summary: thought,
+        decisionKind: resolved.kind
       })
 
       return resolved
@@ -427,25 +426,22 @@ export abstract class AgentRuntimeBase {
       this.firstChunkTimeoutMs,
       'ReAct decision timed out'
     )
-    const thoughtTitle =
-      decision.reasoning ??
-      (decision.kind === 'final' ? 'Finalizing answer' : 'Deciding next action')
-    // The non-streaming path knows the whole decision up front, so carry its
-    // kind + reasoning on the started event (no live stream to grow). The title
-    // already falls back to a generic phrase when the model omits `reasoning`,
-    // so the step still degrades gracefully.
-    const decisionFields = {
-      decisionKind: decision.kind,
-      ...(decision.reasoning ? { decisionReasoning: decision.reasoning } : {})
-    }
+    // The non-streaming path knows the whole decision up front (no live stream to
+    // grow), so the model's prose IS the step's thought: carry it as the title (the
+    // step label). When the model is silent the title is empty, so the step renders
+    // as just the decision badge — matching the streaming path (issue #276).
+    const thoughtTitle = decision.reasoning ?? ''
     yield createEvent('agent.step.started', {
       stepId: thoughtStepId,
       ...parentField,
       kind: 'think',
       title: thoughtTitle,
-      ...decisionFields
+      decisionKind: decision.kind
     })
-    yield createEvent('agent.step.completed', { stepId: thoughtStepId, ...decisionFields })
+    yield createEvent('agent.step.completed', {
+      stepId: thoughtStepId,
+      decisionKind: decision.kind
+    })
     return decision
   }
 

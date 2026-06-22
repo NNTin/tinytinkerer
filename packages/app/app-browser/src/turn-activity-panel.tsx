@@ -59,28 +59,24 @@ const decisionStyles: Record<ReActDecisionKind, { badge: string; icon: string; l
   }
 }
 
-// One reasoning/activity label row. A ReAct `think` step renders its streamed
-// chain-of-thought (italic) and, once its decision resolves, a colour+glyph+word
-// badge for the decision kind plus the model's structured reasoning ("why").
-// Both decision parts are optional: a step with no resolved decision (or a model
-// that omitted `reasoning`) simply shows the thought, degrading gracefully.
+// One reasoning/activity label row. A ReAct `think` step renders the model's
+// thinking (its streamed chain-of-thought, italic) and, once its decision
+// resolves, a colour+glyph+word badge for the decision kind. The model's prose is
+// the single source of "why": it IS the label. When the model emitted no prose (a
+// native tool-call turn with no content), the label is empty and the step renders
+// as just the decision badge — the chosen tool + args are shown by the adjacent
+// tool activity row (issue #276).
 const LabelEntry = ({ item }: { item: LabelItem }) => {
   if (item.stepKind !== 'think') {
     return <span className="text-xs text-stone-600">{item.label}</span>
   }
 
   const decision = item.decisionKind ? decisionStyles[item.decisionKind] : undefined
-  // When the model streamed prose, it already shows as the label above; its
-  // reasoning is that same prose, so don't repeat it as the "why". When the step
-  // has no streamed prose (a native tool call with no content), the reasoning is a
-  // distinct DERIVED label ("Calling …") and IS shown next to the badge (#276).
-  const why =
-    item.decisionReasoning && item.decisionReasoning !== item.label
-      ? item.decisionReasoning
-      : undefined
   return (
     <div className="space-y-1">
-      <span className="block font-mono text-xs italic text-stone-500">{item.label}</span>
+      {item.label ? (
+        <span className="block font-mono text-xs italic text-stone-500">{item.label}</span>
+      ) : null}
       {decision ? (
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1" data-react-decision>
           <span
@@ -90,7 +86,6 @@ const LabelEntry = ({ item }: { item: LabelItem }) => {
             <span aria-hidden>{decision.icon}</span>
             {decision.label}
           </span>
-          {why ? <span className="text-xs text-stone-600">{why}</span> : null}
         </div>
       ) : null}
     </div>

@@ -82,21 +82,6 @@ export const parseToolCallArguments = (argumentsJson: string): Record<string, un
   }
 }
 
-// Derive a short, human-readable label for a tool call (issue #276 follow-up).
-// Native tool calling means a non-reasoning model often returns ONLY a tool call
-// with no prose, so the ReAct timeline has no model "why" to show for the step.
-// In that case the decision itself is the meaningful thing to surface: the tool
-// it chose and the arguments it passed. The raw `arguments` JSON string is used
-// as-is (no parse — keeps this safe for the `*-decider` lint rule) and truncated
-// so large/sensitive payloads don't flood the timeline.
-const MAX_TOOL_CALL_ARGS = 120
-
-export const describeToolCall = (toolCall: ChatToolCall): string => {
-  const args = toolCall.function.arguments ?? ''
-  const trimmed = args.length > MAX_TOOL_CALL_ARGS ? `${args.slice(0, MAX_TOOL_CALL_ARGS)}…` : args
-  return `Calling ${toolCall.function.name}(${trimmed})`
-}
-
 // Serialize a tool invocation's result/error into the `tool` message content.
 // Tool output is arbitrary; JSON-encode it (falling back to String for
 // non-serializable values) so the model receives structured, parseable results.

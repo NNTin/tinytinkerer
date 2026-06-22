@@ -7,7 +7,6 @@ import { createRateLimitError } from './rate-limit'
 import { parseSseStream, splitInlineThink } from './sse-utils'
 import {
   buildToolNameMap,
-  describeToolCall,
   parseToolCallArguments,
   toolInvocationsToMessages,
   type ToolNameMap
@@ -108,11 +107,10 @@ const decisionMetadata = (
 // id; the arguments arrive as a JSON string, parsed into the action input. A tool
 // call whose arguments are not valid JSON is treated as empty input rather than
 // crashing the run — the tool's own schema validation is the real gate. Any prose
-// the model emitted alongside the call (its "why") is carried as `reasoning` so the
-// timeline can surface it; when the model emitted NO prose (the common native
-// tool-calling case), fall back to a label derived from the call itself so the
-// timeline step is never empty (issue #276). This is the single place both the
-// streaming and non-streaming paths resolve an action, so they cannot diverge.
+// the model emitted alongside the call (its "why") is carried as `reasoning` —
+// genuine model prose only, omitted when the model is silent (the common native
+// tool-calling case). The timeline shows the model's prose as the step's thought
+// and renders just the decision badge when there is none (issue #276).
 const toActionDecision = (
   toolCall: ChatToolCall,
   names: ToolNameMap,
@@ -121,7 +119,7 @@ const toActionDecision = (
   kind: 'action',
   toolId: names.toToolId(toolCall.function.name),
   input: parseToolCallArguments(toolCall.function.arguments),
-  reasoning: reasoning && reasoning.trim().length > 0 ? reasoning : describeToolCall(toolCall)
+  ...(reasoning && reasoning.trim().length > 0 ? { reasoning } : {})
 })
 
 // Accumulator for streamed native tool-call fragments (issue #276). OpenAI streams

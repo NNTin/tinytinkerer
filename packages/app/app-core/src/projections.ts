@@ -24,11 +24,10 @@ export type TurnActivityItem =
       stepId?: string
       parentId?: string
       stepKind?: AgentStepKind
-      // For a ReAct `think` step: the decision it resolved to. `decisionKind`
-      // drives the action/final colour + cue in the renderer; `decisionReasoning`
-      // is the model's "why" (omitted when the model provides none).
+      // For a ReAct `think` step: `decisionKind` drives the action/final colour +
+      // cue in the renderer. The model's "why" is the step's own `label` (the
+      // streamed thought), not a separate field (issue #276).
       decisionKind?: ReActDecisionKind
-      decisionReasoning?: string
     }
   | {
       kind: 'tool'
@@ -154,12 +153,9 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
         stepId: event.payload.stepId,
         stepKind: event.payload.kind,
         ...(event.payload.parentStepId ? { parentId: event.payload.parentStepId } : {}),
-        // Carried by the non-streaming ReAct path (the streaming path sets these
-        // on agent.step.completed once the decision resolves).
-        ...(event.payload.decisionKind ? { decisionKind: event.payload.decisionKind } : {}),
-        ...(event.payload.decisionReasoning
-          ? { decisionReasoning: event.payload.decisionReasoning }
-          : {})
+        // Carried by the non-streaming ReAct path (the streaming path sets this on
+        // agent.step.completed once the decision resolves).
+        ...(event.payload.decisionKind ? { decisionKind: event.payload.decisionKind } : {})
       })
       return
     }
@@ -179,17 +175,19 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
       // "Thinking…" placeholder / last streamed delta). Other steps' summaries
       // (observation notes) are appended as their own chronological label.
       if (started?.stepKind === 'think') {
-        if (hasSummary) {
+        // The model's prose (or empty, for a silent tool-call turn) rides on the
+        // summary. Set it whenever present — including an explicit '' from the
+        // streaming path, which clears the live "Thinking…" so the step renders as
+        // just the decision badge. An ABSENT summary (the non-streaming path) leaves
+        // the title-derived label intact (issue #276).
+        if (summary !== undefined) {
           started.label = summary
         }
-        // The streaming decision path resolves the kind/reasoning at end-of-stream
-        // and carries them here; fold them onto the think step's own label so the
-        // renderer can colour/label it action vs final and show the "why".
+        // The streaming decision path resolves the kind at end-of-stream and carries
+        // it here; fold it onto the think step so the renderer can colour/label it
+        // action vs final.
         if (event.payload.decisionKind) {
           started.decisionKind = event.payload.decisionKind
-        }
-        if (event.payload.decisionReasoning) {
-          started.decisionReasoning = event.payload.decisionReasoning
         }
         return
       }

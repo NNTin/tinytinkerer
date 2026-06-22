@@ -335,21 +335,20 @@ describe('ReActRuntime', () => {
     const deltas = events.filter(isEventType('agent.step.delta'))
     expect(deltas).toHaveLength(2)
     expect(deltas.at(-1)?.payload.text).toBe('Let me think')
-    // The think step's completion carries the final thought (persisted on reload)
-    // plus the resolved decision kind + reasoning, surfaced for the timeline.
+    // The think step's completion carries the final thought as the summary (the
+    // step label, persisted on reload) plus the resolved decision kind. The model's
+    // prose IS that summary — there is no separate reasoning field (issue #276).
     const completed = events.filter(isEventType('agent.step.completed'))
     expect(
       completed.some(
         (event) =>
-          event.payload.summary === 'Let me think' &&
-          event.payload.decisionKind === 'final' &&
-          event.payload.decisionReasoning === 'Enough gathered to answer.'
+          event.payload.summary === 'Let me think' && event.payload.decisionKind === 'final'
       )
     ).toBe(true)
     expect(events.at(-1)?.type).toBe('assistant.done')
   })
 
-  it('carries the decision kind + reasoning across an action then a final decision', async () => {
+  it('carries the decision kind + thought across an action then a final decision', async () => {
     const provider: ModelProvider = {
       async plan() {
         return { complexity: 'low', steps: [] }
@@ -386,16 +385,19 @@ describe('ReActRuntime', () => {
       events.push(event)
     }
 
+    // The model's prose rides on the step summary (the label), not a separate
+    // reasoning field; the completed think steps carry the decision kind + the
+    // streamed thought (issue #276).
     const decisions = events
       .filter(isEventType('agent.step.completed'))
       .map((event) => ({
         kind: event.payload.decisionKind,
-        reasoning: event.payload.decisionReasoning
+        summary: event.payload.summary
       }))
       .filter((d) => d.kind !== undefined)
     expect(decisions).toEqual([
-      { kind: 'action', reasoning: 'Search to gather the observation.' },
-      { kind: 'final', reasoning: 'Observation gathered; answering.' }
+      { kind: 'action', summary: 'Need a search' },
+      { kind: 'final', summary: 'Have results' }
     ])
   })
 
@@ -413,11 +415,13 @@ describe('ReActRuntime', () => {
       events.push(event)
     }
 
+    // The non-streaming path has no live stream, so the model's prose becomes the
+    // step title (the label); the decision kind drives the badge (issue #276).
     const started = events.find(isEventType('agent.step.started'))
     expect(started?.payload).toMatchObject({
       kind: 'think',
-      decisionKind: 'final',
-      decisionReasoning: 'I can answer directly.'
+      title: 'I can answer directly.',
+      decisionKind: 'final'
     })
   })
 
