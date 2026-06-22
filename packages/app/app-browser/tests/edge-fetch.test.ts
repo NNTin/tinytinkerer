@@ -289,6 +289,66 @@ describe('createModelsChatFetch — inspector capture', () => {
     })
   })
 
+  it('captures a streamed ACTION decision (tool_calls only) as the tool call, not empty (#276)', async () => {
+    // A react.decide ACTION turn streams ONLY tool-call fragments (no content), so
+    // the inspector used to show "(empty response)". The captured response now
+    // renders the chosen tool call (name + accumulated arguments).
+    const sse =
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"run_javascript","arguments":"{\\"code\\":\\"ret"}}]}}]}\n' +
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"urn 1+1\\"}"}}]}}]}\n' +
+      'data: [DONE]\n'
+    const captured = await captureFor(
+      new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    )
+    expect(captured).toMatchObject({ status: 'ok', httpStatus: 200 })
+    if (captured.status === 'ok') {
+      expect(captured.content).toBe('run_javascript({"code":"return 1+1"})')
+    }
+    // A captured tool call is a real response — no "empty response" telemetry.
+    expect(sink).not.toHaveBeenCalled()
+  })
+
+  it('captures a non-stream tool-call message as the tool call (#276)', async () => {
+    const captured = await captureFor(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'c1',
+                    type: 'function',
+                    function: { name: 'web-search', arguments: '{"q":"x"}' }
+                  }
+                ]
+              }
+            }
+          ]
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    )
+    expect(captured).toMatchObject({ status: 'ok', httpStatus: 200 })
+    if (captured.status === 'ok') {
+      expect(captured.content).toBe('web-search({"q":"x"})')
+    }
+  })
+
+  it('captures streamed reasoning alongside content when the model narrates (#276)', async () => {
+    const sse =
+      'data: {"choices":[{"delta":{"reasoning_content":"thinking…"}}]}\n' +
+      'data: {"choices":[{"delta":{"content":"answer"}}]}\n' +
+      'data: [DONE]\n'
+    const captured = await captureFor(
+      new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    )
+    if (captured.status === 'ok') {
+      expect(captured.content).toBe('thinking…\nanswer')
+    }
+  })
+
   it('reports a non-429 http error', async () => {
     const captured = await captureFor(new Response('boom', { status: 500 }))
     expect(captured).toMatchObject({ status: 'error', httpStatus: 500 })

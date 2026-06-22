@@ -113,6 +113,37 @@ test.describe('context-inspector plugin (#270)', () => {
     await expect(panel.getByText(/run_javascript\(/)).toBeVisible()
   })
 
+  test('captures the ACTION decide RESPONSE as the tool call, not "(empty response)" (#276)', async ({
+    page
+  }) => {
+    const mock = await installLiteLLMMock(page, 'return 1 + 1')
+    await page.goto('/web/')
+    await enableCodeExecPlugin(page)
+    await enableContextInspectorPlugin(page)
+
+    await runSnippetViaChat(page, mock)
+    await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
+
+    const toggle = page.locator(TOGGLE)
+    await expect(toggle).toBeVisible()
+    await toggle.click()
+    const panel = page.locator(PANEL)
+    await expect(panel).toBeVisible()
+
+    // Step BACK through the captured requests to the ACTION react.decide call: its
+    // model response is a tool call with no text, which before this fix the panel
+    // showed as "(empty response)". It must now render the captured tool call.
+    const response = panel.locator(RESPONSE)
+    const prev = page.getByRole('button', { name: 'Previous request' })
+    let sawToolCallResponse = (await response.textContent())?.includes('run_javascript(') ?? false
+    for (let i = 0; i < 6 && !sawToolCallResponse && (await prev.isEnabled()); i += 1) {
+      await prev.click()
+      sawToolCallResponse = (await response.textContent())?.includes('run_javascript(') ?? false
+    }
+    expect(sawToolCallResponse).toBe(true)
+    await expect(response).not.toContainText('(empty response)')
+  })
+
   test('disabled (default): the inspector never captures or appears', async ({ page }) => {
     const mock = await installChatMock(page)
     await page.goto('/web/')

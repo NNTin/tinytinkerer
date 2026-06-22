@@ -12,7 +12,7 @@ import {
 } from '@tinytinkerer/contracts'
 import type { SynthesisChunk } from '@tinytinkerer/app-core'
 import { captureTelemetryException, getTelemetryHeaders } from '../telemetry/telemetry'
-import { extractUsageChunk, parseSseStream } from './sse-utils'
+import { extractReasoning, extractUsageChunk, parseSseStream } from './sse-utils'
 
 // The terminal usage chunk variant the SSE parser / extractUsageChunk yield.
 type UsageChunk = Extract<SynthesisChunk, { kind: 'usage' }>
@@ -237,6 +237,48 @@ const toUsage = (chunk: UsageChunk): InspectorUsage => ({
   ...(chunk.totalTokens != null ? { totalTokens: chunk.totalTokens } : {})
 })
 
+// Compose the inspector's displayed response from the parts a model call can
+// return (issue #276): the model's prose (reasoning + content) AND any native
+// tool calls. A react.decide ACTION turn returns ONLY tool calls (no text), so
+// without rendering them the panel showed a misleading "(empty response)" even
+// though the model did respond. Tool calls render as `name(arguments)`, in index
+// order, so the captured response mirrors what the model actually chose.
+const composeInspectorResponseContent = (
+  reasoning: string,
+  content: string,
+  toolCalls: Map<number, { name: string; args: string }>
+): string => {
+  const parts: string[] = []
+  if (reasoning.trim().length > 0) parts.push(reasoning)
+  if (content.trim().length > 0) parts.push(content)
+  for (const [, call] of [...toolCalls.entries()].sort(([a], [b]) => a - b)) {
+    if (call.name.length > 0) parts.push(`${call.name}(${call.args})`)
+  }
+  return parts.join('\n')
+}
+
+// Pull native tool calls off a non-streamed `choices[0].message` (the decide /
+// plan JSON path), keyed by their array position so composeInspectorResponseContent
+// renders them deterministically. Mirrors the streaming tool-call accumulation.
+const nonStreamingToolCalls = (
+  message: Record<string, unknown> | undefined
+): Map<number, { name: string; args: string }> => {
+  const result = new Map<number, { name: string; args: string }>()
+  const toolCalls = message?.['tool_calls']
+  if (!Array.isArray(toolCalls)) return result
+  toolCalls.forEach((entry, index) => {
+    if (!entry || typeof entry !== 'object') return
+    const fn = (entry as Record<string, unknown>)['function'] as Record<string, unknown> | undefined
+    const rawName = fn?.['name']
+    const rawArgs = fn?.['arguments']
+    result.set(index, {
+      name: typeof rawName === 'string' ? rawName : '',
+      args: typeof rawArgs === 'string' ? rawArgs : ''
+    })
+  })
+  return result
+}
+
 // Read a successful response body (a tee'd clone, so the real consumer is
 // untouched) and report its content + usage. Handles both the SSE stream
 // (synthesize / streamed decide) and the non-streamed JSON body (decide / plan).
@@ -254,17 +296,28 @@ const readResponseBody = async (
   }
   try {
     if (contentType.includes('text/event-stream') && clone.body) {
+      let reasoning = ''
       let content = ''
+      const toolCalls = new Map<number, { name: string; args: string }>()
       let usage: InspectorUsage | undefined
       for await (const chunk of parseSseStream(clone.body, undefined)) {
         if (chunk.kind === 'content') content += chunk.text
+        else if (chunk.kind === 'reasoning') reasoning += chunk.text
         else if (chunk.kind === 'usage') usage = toUsage(chunk)
+        else if (chunk.kind === 'tool_call') {
+          const existing = toolCalls.get(chunk.index) ?? { name: '', args: '' }
+          toolCalls.set(chunk.index, {
+            name: chunk.name ?? existing.name,
+            args: existing.args + (chunk.argumentsDelta ?? '')
+          })
+        }
       }
-      reportIfEmpty(content)
+      const display = composeInspectorResponseContent(reasoning, content, toolCalls)
+      reportIfEmpty(display)
       setResponse({
         status: 'ok',
         httpStatus,
-        content: content.slice(0, MAX_CAPTURED_RESPONSE_CHARS),
+        content: display.slice(0, MAX_CAPTURED_RESPONSE_CHARS),
         ...(usage ? { usage } : {})
       })
       return
@@ -281,13 +334,16 @@ const readResponseBody = async (
         : undefined
       const rawContent = message?.['content']
       const content = typeof rawContent === 'string' ? rawContent : ''
+      const reasoning = extractReasoning(message) ?? ''
+      const toolCalls = nonStreamingToolCalls(message)
+      const display = composeInspectorResponseContent(reasoning, content, toolCalls)
       const usageChunk = extractUsageChunk(json)
       const usage = usageChunk && usageChunk.kind === 'usage' ? toUsage(usageChunk) : undefined
-      reportIfEmpty(content)
+      reportIfEmpty(display)
       setResponse({
         status: 'ok',
         httpStatus,
-        content: content.slice(0, MAX_CAPTURED_RESPONSE_CHARS),
+        content: display.slice(0, MAX_CAPTURED_RESPONSE_CHARS),
         ...(usage ? { usage } : {})
       })
     } catch {

@@ -14,6 +14,22 @@ import type { PlannerToolDescriptor } from './mcp-planner'
 // disambiguation against collisions is handled by buildToolNameMap.
 export const sanitizeToolName = (toolId: string): string => toolId.replace(/[^a-zA-Z0-9_-]/g, '_')
 
+// Normalize a tool descriptor's `inputSchema` into the JSON Schema OpenAI expects
+// for `function.parameters` (issue #276). The repo's built-in tools declare
+// `inputSchema` as a bare PROPERTIES MAP shorthand (`{ code: { type, … }, … }`)
+// — fine when the planner merely stringified it into a prompt, but native tool
+// calling sends it verbatim as the wire schema. Without the `{ type: 'object',
+// properties }` envelope the model isn't told the call HAS named parameters and
+// fires the tool with empty `{}` arguments (the `code: undefined` failures). MCP
+// tools already supply a real JSON Schema (it has `type`/`properties`), so pass
+// those through untouched; only the shorthand is wrapped.
+const toWireParameters = (inputSchema: Record<string, unknown>): Record<string, unknown> => {
+  if ('type' in inputSchema || 'properties' in inputSchema) {
+    return inputSchema
+  }
+  return { type: 'object', properties: inputSchema }
+}
+
 // A per-request mapping between runtime tool ids and the wire function names
 // advertised to the model, plus the advertised tool definitions. `toToolId`
 // resolves a name the model returned; it falls back to the raw name so an
@@ -51,7 +67,7 @@ export const buildToolNameMap = (tools: PlannerToolDescriptor[]): ToolNameMap =>
     function: {
       name: toWireMap.get(tool.id) ?? sanitizeToolName(tool.id),
       description: tool.description,
-      parameters: tool.inputSchema
+      parameters: toWireParameters(tool.inputSchema)
     }
   }))
 
