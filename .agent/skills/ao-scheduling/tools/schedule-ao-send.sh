@@ -3,19 +3,16 @@
 # command. Dry-run by default: prints the exact job it would queue and the
 # resolved time spec, but schedules nothing until you pass --apply. This is the
 # deterministic spine of the ao-scheduling skill (see ../SKILL.md) — it offloads
-# the easy-to-botch parts: verifying the `at` subsystem is actually usable,
-# safely quoting the session/message into the queued job, and reading the new
-# job back out of `atq` so you can confirm it landed.
+# the easy-to-botch parts: verifying the `at` subsystem is actually usable and
+# safely quoting the session/message into the queued job.
 #
 # It runs where `at` and `ao` coexist — the `ao` Agent-Orchestrator container
 # (atd is started by that service's entrypoint). It is NOT for recurring jobs;
 # `at` fires each job exactly once.
 #
 # Usage:
-#   schedule-ao-send.sh --check
 #   schedule-ao-send.sh <session> <at-time-spec> <message> [--apply]
 #
-#   --check         only verify `at`/`atq`/atd are available, then exit
 #   <session>       AO session to deliver to, e.g. tin-orchestrator
 #   <at-time-spec>  any spec `at` understands, e.g. "now + 2 hours",
 #                   "14:30", "2026-06-24 09:00", "tomorrow"
@@ -33,7 +30,19 @@ err() { printf '[schedule-ao-send] %s\n' "$*" >&2; }
 sq() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
 
 usage() {
-  sed -n '15,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  cat <<'USAGE'
+Usage:
+  schedule-ao-send.sh <session> <at-time-spec> <message> [--apply]
+
+  <session>       AO session to deliver to, e.g. tin-orchestrator
+  <at-time-spec>  any spec `at` understands, e.g. "now + 2 hours",
+                  "14:30", "2026-06-24 09:00", "tomorrow"
+  <message>       the message text passed to `ao send`
+  --apply         actually queue the job (default is a dry run)
+
+Exit: 0 ok (or dry run printed) | 1 usage | 2 at/atd unavailable
+      | 3 scheduling failed
+USAGE
 }
 
 # --- verify the `at` subsystem is usable (acceptance: fail CLEARLY if not) ---
@@ -48,33 +57,36 @@ check_at() {
     ok=0
   fi
   if [[ "$ok" == 0 ]]; then
-    err "Fix: rebuild/restart the 'ao' service so the image ships 'at' and"
-    err "     its entrypoint starts atd (lair repo: services/ao/)."
+    err "Abort: this agent does not have the rights to install or configure 'at'."
+    err "Ask an operator to rebuild/restart the 'ao' service so the image ships"
+    err "'at' and its entrypoint starts atd (lair repo: services/ao/)."
     return 2
   fi
   # `atq` reads the spool as the current user; a non-zero exit means this user
   # is not permitted to use `at` (see /etc/at.allow, /etc/at.deny).
   if ! atq >/dev/null 2>&1; then
     err "ERROR: 'atq' failed — this user is not permitted to use 'at'."
-    err "Fix: add this user to /etc/at.allow (the ao entrypoint does this for 'ao')."
+    err "Abort: this agent does not have the rights to edit /etc/at.allow."
+    err "Ask an operator to rebuild/restart the 'ao' service; its entrypoint"
+    err "must permit the 'ao' user to use 'at'."
     return 2
   fi
   # atd running is required for a queued job to FIRE (not just sit in the queue).
   if command -v pgrep >/dev/null 2>&1 && ! pgrep -x atd >/dev/null 2>&1; then
-    err "WARNING: atd does not appear to be running — jobs will queue but not fire"
-    err "         until atd starts. Restart the 'ao' service if this is unexpected."
+    err "ERROR: atd does not appear to be running — jobs will queue but not fire."
+    err "Abort: this agent does not have the rights to start or configure atd."
+    err "Ask an operator to rebuild/restart the 'ao' service so its entrypoint starts atd."
+    return 2
   fi
   return 0
 }
 
 # --- parse args ---
 APPLY=0
-CHECK_ONLY=0
 positional=()
 for arg in "$@"; do
   case "$arg" in
     --apply) APPLY=1 ;;
-    --check) CHECK_ONLY=1 ;;
     -h | --help)
       usage
       exit 0
@@ -87,12 +99,6 @@ for arg in "$@"; do
     *) positional+=("$arg") ;;
   esac
 done
-
-if [[ "$CHECK_ONLY" == 1 ]]; then
-  check_at || exit $?
-  log "OK: 'at' is available and usable."
-  exit 0
-fi
 
 if [[ "${#positional[@]}" -ne 3 ]]; then
   err "ERROR: expected exactly 3 arguments (session, time spec, message)."
@@ -143,11 +149,11 @@ echo
 after="$(atq | awk '{print $1}' | sort)"
 new_job="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | head -n1)"
 
-echo "== atq (verification) =="
+echo "== atq =="
 atq
 echo
 if [[ -n "$new_job" ]]; then
-  log "Queued job #$new_job. Inspect with: at -c $new_job"
+  log "Queued job #$new_job."
 else
-  log "Scheduled. Inspect the queue with: atq"
+  log "Scheduled."
 fi

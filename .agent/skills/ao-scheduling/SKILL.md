@@ -38,15 +38,13 @@ Schedule a **one-time** future `ao send <session> "<message>"` using the Unix
 ## How
 
 1. Follow `workflows/schedule-ao-message.md`.
-2. Validate the `at` subsystem first: `tools/schedule-ao-send.sh --check`.
-3. Gather and **confirm with the user** the three inputs — session, time spec,
-   message — then run the tool with `--apply`.
-4. Verify the job landed with `atq` (and `at -c <job>` to read it back).
+2. Gather and **confirm with the user** the three inputs — session, time spec,
+   message.
+3. Preview with the tool's default dry-run, then re-run the same command with
+   `--apply` after confirmation.
 
 ## Available tools
 
-- `tools/schedule-ao-send.sh --check` — verify `at`/`atq`/atd are installed and
-  usable by the current user; exits non-zero with a clear fix if not.
 - `tools/schedule-ao-send.sh <session> <at-time-spec> <message> [--apply]` —
   dry-run by default (prints the exact queued job and resolved time, schedules
   nothing); `--apply` queues it via `at` and prints the new `atq` entry. The
@@ -58,8 +56,8 @@ Schedule a **one-time** future `ao send <session> "<message>"` using the Unix
 
 - Runs where `at` and `ao` coexist — the **`ao` Agent-Orchestrator container**,
   whose entrypoint starts `atd` and permits the `ao` user via `/etc/at.allow`.
-  If `--check` fails, rebuild/restart the `ao` service (lair repo:
-  `projects/nntin-labs/services/ao/`) — do not work around it.
+  If the tool reports missing or unusable `at`, abort; agents do not have the
+  rights to install or configure it.
 - **Never schedule until the user explicitly confirms** the session, time, and
   message. The tool stays in dry-run until `--apply` to enforce this.
 - One-time only. `at` does not repeat jobs.
@@ -68,7 +66,7 @@ Schedule a **one-time** future `ao send <session> "<message>"` using the Unix
 
 ## Success criteria
 
-- `tools/schedule-ao-send.sh --check` exits 0 in the target environment.
-- After `--apply`, the job appears in `atq`, and `at -c <job>` shows the exact
-  `ao send <session> "<message>"` command.
+- The dry-run prints the exact queued `ao send <session> "<message>"` command
+  before anything is scheduled.
+- After `--apply`, the tool reports the queued job id.
 - The message is delivered once, at the chosen time.
