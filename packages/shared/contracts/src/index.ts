@@ -49,6 +49,11 @@ export * from './edge'
 // Plugin contracts — feedback tool input + plugin activation state.
 export * from './plugins'
 
+// Canonical Zod → JSON Schema path for tool descriptors and strict model-output
+// payloads (issue #287). The single source of truth for a tool's input shape is
+// its Zod schema; the planner-facing JSON Schema is generated, never duplicated.
+export * from './tool-schema'
+
 // Host↔plugin presentation view-models (status gauge + context inspector). Split
 // out of ./plugins to contain its growth; still the host↔plugin boundary contract,
 // so it stays in contracts (the only layer the host can import). See ./plugin-views.
@@ -109,6 +114,76 @@ export const executionPlanSchema = z.object({
 })
 
 export type ExecutionPlan = z.infer<typeof executionPlanSchema>
+
+// Strict structured-output WIRE schema for the planner (issue #287). The runtime
+// `executionPlanSchema` above is NOT directly usable as an OpenAI `strict:true`
+// `response_format`: strict mode forbids open objects (every object must be closed
+// with `additionalProperties:false` and list all keys as `required`), but a tool's
+// arguments (`toolCall.input`) are an arbitrary per-tool bag. So, exactly as native
+// tool calling carries `arguments` as a JSON-encoded STRING (issue #276), the wire
+// plan carries `toolCall.input` as a JSON string. `toolCall` is `.nullable()` (not
+// `.optional()`) so it stays a required-but-nullable field — strict-valid — and the
+// model emits `null` when a step takes no action. This schema is the source for the
+// json_schema sent to the provider; `executionPlanFromWire` maps it back to the
+// runtime `ExecutionPlan`, which is then re-validated against `executionPlanSchema`
+// (the authoritative backstop).
+const planToolCallWireSchema = z.object({
+  toolId: z.string().describe('Exact tool id to call'),
+  input: z
+    .string()
+    .describe('JSON-encoded object of the tool arguments (e.g. {"query":"…"}); use {} for none')
+})
+
+const planStepWireSchema = z.object({
+  id: z.string().describe('Unique step id'),
+  summary: z.string().describe('What this step does'),
+  toolCall: planToolCallWireSchema
+    .nullable()
+    .describe('The tool to invoke for this step, or null when the step calls no tool')
+})
+
+export const executionPlanWireSchema = z.object({
+  complexity: planComplexitySchema,
+  steps: z.array(planStepWireSchema)
+})
+
+export type ExecutionPlanWire = z.infer<typeof executionPlanWireSchema>
+
+// Parse a tool call's JSON-encoded `input` string into an arguments object. A
+// missing/blank/invalid value yields `{}` — the tool's own Zod schema validates the
+// arguments at execution, so a malformed bag fails there (where the agent can
+// correct it), not here. Mirrors parseToolCallArguments in the native tool-call
+// path (issue #276) so the two cannot diverge.
+const parsePlanToolInput = (inputJson: string): Record<string, unknown> => {
+  if (!inputJson || inputJson.trim().length === 0) {
+    return {}
+  }
+  try {
+    const parsed: unknown = JSON.parse(inputJson)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+// Map the strict wire plan back to the runtime ExecutionPlan: decode each step's
+// JSON-string `input` into an arguments object and drop a null `toolCall` (so the
+// runtime sees an action-less step, matching `toolCall?` optional semantics). The
+// caller re-validates the result against `executionPlanSchema`.
+export const executionPlanFromWire = (wire: ExecutionPlanWire): ExecutionPlan => ({
+  complexity: wire.complexity,
+  steps: wire.steps.map((step) => ({
+    id: step.id,
+    summary: step.summary,
+    ...(step.toolCall
+      ? {
+          toolCall: { toolId: step.toolCall.toolId, input: parsePlanToolInput(step.toolCall.input) }
+        }
+      : {})
+  }))
+})
 
 // Which agent strategy drives a run. Persisted as a user setting and carried on
 // `agent.run.started` so the UI (and future tooling) can adapt per strategy.

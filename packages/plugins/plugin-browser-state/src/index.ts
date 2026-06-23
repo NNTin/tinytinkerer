@@ -33,13 +33,59 @@ const MAX_DEPTH = 8
 // omitted `selector` (a structural outline of the page tree), or a `selector`
 // (matched elements, optionally with their descendants nested via `depth`).
 // Product-agnostic — no browser types leak here.
+// Planner-facing prose lives on the schema (issue #287): the read_dom tool
+// descriptor's JSON Schema is generated from here, so these descriptions reach the
+// model and cannot drift from the runtime contract. (The hand-written descriptor
+// this replaces had drifted — it omitted the `region`/`include` enums and the
+// integer bounds the Zod schema enforces.)
 export const readDomInputSchema = z.object({
-  selector: z.string().min(1).max(2_000).optional(),
-  include: z.array(z.enum(['html', 'text', 'attributes', 'rect'])).optional(),
-  depth: z.number().int().min(0).max(MAX_DEPTH).optional(),
-  region: z.enum(['top', 'bottom']).optional(),
-  maxNodes: z.number().int().positive().max(MAX_NODES).optional(),
-  maxChars: z.number().int().positive().max(MAX_CHARS).optional()
+  selector: z
+    .string()
+    .min(1)
+    .max(2_000)
+    .optional()
+    .describe(
+      'CSS selector to match elements. Omit it for a structural outline of the page ' +
+        'tree (or combine it with `region` to order just the matched elements).'
+    ),
+  include: z
+    .array(z.enum(['html', 'text', 'attributes', 'rect']))
+    .optional()
+    .describe(
+      'Which per-node fields to return for selector/region queries: any of "html", "text", ' +
+        '"attributes", "rect". Defaults to ["text","attributes","rect"]; add "html" for markup.'
+    ),
+  depth: z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_DEPTH)
+    .optional()
+    .describe(
+      'How many levels of descendants to include (0–8). For an outline it sets how deep ' +
+        "the tree goes (default 4); for a selector it nests each match's children (default 0)."
+    ),
+  region: z
+    .enum(['top', 'bottom'])
+    .optional()
+    .describe(
+      'Either "bottom" or "top": return rendered elements ordered by their vertical ' +
+        'position on the page. Best for "what is at the bottom/top of the page" questions.'
+    ),
+  maxNodes: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_NODES)
+    .optional()
+    .describe('Max number of elements to return (1–100, default 25).'),
+  maxChars: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_CHARS)
+    .optional()
+    .describe('Max characters per html/text field before truncation (default 4000).')
 })
 
 export type ReadDomInput = z.infer<typeof readDomInputSchema>
@@ -115,40 +161,11 @@ export const browserStatePluginManifest: PluginManifest = {
         'run_javascript tool receives automatically as its `dom` binding (no need to pass ' +
         'anything), so to count, search, or extract across the whole page, read_dom once and ' +
         'then do the heavy work in run_javascript.',
-      inputSchema: {
-        selector: {
-          type: 'string',
-          description:
-            'CSS selector to match elements. Omit it for a structural outline of the page ' +
-            'tree (or combine it with `region` to order just the matched elements).'
-        },
-        region: {
-          type: 'string',
-          description:
-            'Either "bottom" or "top": return rendered elements ordered by their vertical ' +
-            'position on the page. Best for "what is at the bottom/top of the page" questions.'
-        },
-        depth: {
-          type: 'number',
-          description:
-            'How many levels of descendants to include (0–8). For an outline it sets how deep ' +
-            "the tree goes (default 4); for a selector it nests each match's children (default 0)."
-        },
-        include: {
-          type: 'array',
-          description:
-            'Which per-node fields to return for selector/region queries: any of "html", "text", ' +
-            '"attributes", "rect". Defaults to ["text","attributes","rect"]; add "html" for markup.'
-        },
-        maxNodes: {
-          type: 'number',
-          description: 'Max number of elements to return (1–100, default 25).'
-        },
-        maxChars: {
-          type: 'number',
-          description: 'Max characters per html/text field before truncation (default 4000).'
-        }
-      },
+      // Canonical schema (issue #287): the SAME Zod schema the tool validates against
+      // (see createReadDomTool). The host generates the planner-visible JSON Schema
+      // from it — including the `region`/`include` enums and integer bounds the old
+      // hand-written descriptor had dropped. Planner prose lives on `.describe()`.
+      schema: readDomInputSchema,
       summarizeActivity: summarizeReadDomActivity
     }
   ]

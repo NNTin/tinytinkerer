@@ -41,12 +41,27 @@ const SANDBOX_TIMEOUT_MS = 8_000
 // run; `input` is an optional structured value (a JSON object or a top-level
 // array) injected into the sandbox as a readonly `input` binding.
 // Product-agnostic — no browser types leak here.
+// Planner-facing prose lives on the schema (issue #287): the run_javascript tool
+// descriptor's JSON Schema is generated from here, so these descriptions reach the
+// model and cannot drift from the runtime contract.
 export const codeExecInputSchema = z.object({
   code: z
     .string()
     .min(1, 'code must not be empty')
-    .max(MAX_CODE_BYTES, `code must be at most ${MAX_CODE_BYTES} bytes`),
-  input: z.union([z.record(z.string(), z.unknown()), z.array(z.unknown())]).optional()
+    .max(MAX_CODE_BYTES, `code must be at most ${MAX_CODE_BYTES} bytes`)
+    .describe(
+      'JavaScript source to run. It executes inside an async function body, so use ' +
+        '`return <value>` to produce a result and `await` for promises. No network or ' +
+        'storage; the live page is not readable, but the full sanitized DOM from the last ' +
+        'read_dom call is available as the readonly `dom` binding.'
+    ),
+  input: z
+    .union([z.record(z.string(), z.unknown()), z.array(z.unknown())])
+    .optional()
+    .describe(
+      'Optional JSON value (object or array) made available to the code as a readonly ' +
+        '`input` binding.'
+    )
 })
 
 export type CodeExecInput = z.infer<typeof codeExecInputSchema>
@@ -192,22 +207,10 @@ export const codeExecPluginManifest: PluginManifest = {
         'count/search/extract across the whole page — read_dom gives only a narrow, truncated ' +
         'view, so heavy DOM work belongs here. ' +
         'End your code with a `return` (it runs inside an async function) or rely on console.log.',
-      inputSchema: {
-        code: {
-          type: 'string',
-          description:
-            'JavaScript source to run. It executes inside an async function body, so use ' +
-            '`return <value>` to produce a result and `await` for promises. No network or ' +
-            'storage; the live page is not readable, but the full sanitized DOM from the last ' +
-            'read_dom call is available as the readonly `dom` binding.'
-        },
-        input: {
-          type: 'object',
-          description:
-            'Optional JSON value (object or array) made available to the code as a readonly ' +
-            '`input` binding.'
-        }
-      },
+      // Canonical schema (issue #287): the SAME Zod schema the tool validates against
+      // (see createCodeExecTool). The host generates the planner-visible JSON Schema
+      // from it; planner prose now lives on the schema's `.describe()` calls.
+      schema: codeExecInputSchema,
       summarizeActivity: summarizeCodeExecActivity,
       summarizePermission: summarizeCodeExecPermission
     }

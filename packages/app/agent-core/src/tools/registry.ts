@@ -28,6 +28,12 @@ export class ToolRegistry {
     }
 
     const parsed = z.any().pipe(tool.schema).parse(input)
-    return tool.execute(parsed)
+    const output = await tool.execute(parsed)
+    // Output contract (issue #287): when a tool declares an `outputSchema`, validate
+    // its result before returning so `agent.tool.completed.payload.output` is a
+    // checked structured payload by the time the inspector/timeline consume it. A
+    // tool without one keeps returning its raw `unknown` output (prior behaviour),
+    // so a tool whose output is intentionally open is unaffected.
+    return tool.outputSchema ? tool.outputSchema.parse(output) : output
   }
 }

@@ -9,6 +9,7 @@ import {
   type PluginModule,
   type Tool
 } from '@tinytinkerer/app-core'
+import { toolInputJsonSchema } from '@tinytinkerer/contracts'
 import type {
   AgentType,
   McpDiscoveryResult,
@@ -271,7 +272,18 @@ export const createRuntime = (options: {
       for (const descriptor of mod.manifest.toolDescriptors ?? []) {
         if (addedPluginToolIds.has(descriptor.id) && !describedToolIds.has(descriptor.id)) {
           describedToolIds.add(descriptor.id)
-          allToolDescriptors.push(descriptor)
+          // Canonical schema path (issue #287): the planner-visible JSON Schema is
+          // GENERATED here from the descriptor's Zod `schema` (the same schema the
+          // tool validates input against) via `toolInputJsonSchema`, instead of a
+          // hand-written property map that could drift from the runtime contract.
+          allToolDescriptors.push({
+            id: descriptor.id,
+            description: descriptor.description,
+            inputSchema: toolInputJsonSchema(descriptor.schema),
+            ...(descriptor.keywordPlannerStep
+              ? { keywordPlannerStep: descriptor.keywordPlannerStep }
+              : {})
+          })
         }
       }
     }

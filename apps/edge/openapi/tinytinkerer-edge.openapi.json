@@ -142,12 +142,14 @@
           "query": {
             "type": "string",
             "minLength": 2,
-            "maxLength": 500
+            "maxLength": 500,
+            "description": "Search query (2–500 chars)"
           },
           "maxResults": {
             "type": "integer",
             "exclusiveMinimum": 0,
-            "maximum": 10
+            "maximum": 10,
+            "description": "Max results to return (1–10, optional)"
           }
         },
         "required": [
@@ -405,6 +407,9 @@
           },
           "tool_choice": {
             "$ref": "#/components/schemas/ToolChoice"
+          },
+          "response_format": {
+            "$ref": "#/components/schemas/ResponseFormat"
           }
         },
         "required": [
@@ -533,6 +538,40 @@
           "none",
           "auto",
           "required"
+        ]
+      },
+      "ResponseFormat": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "json_schema"
+            ]
+          },
+          "json_schema": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "schema": {
+                "type": "object",
+                "additionalProperties": {}
+              },
+              "strict": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "schema"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "json_schema"
         ]
       },
       "McpDiscoveryResult": {

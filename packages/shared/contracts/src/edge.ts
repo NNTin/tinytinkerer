@@ -42,8 +42,17 @@ export type SearchResult = z.infer<typeof searchResultSchema>
 
 export const searchRequestSchema = z
   .object({
-    query: z.string().min(2).max(500),
-    maxResults: z.number().int().positive().max(10).optional()
+    // Planner-facing prose lives on the schema (issue #287): the tool descriptor's
+    // JSON Schema is generated from here, so the model sees these descriptions and
+    // they can never drift from the runtime contract.
+    query: z.string().min(2).max(500).describe('Search query (2–500 chars)'),
+    maxResults: z
+      .number()
+      .int()
+      .positive()
+      .max(10)
+      .optional()
+      .describe('Max results to return (1–10, optional)')
   })
   .meta({ id: 'SearchRequest' })
 
@@ -244,6 +253,28 @@ export const toolChoiceSchema = z.enum(['none', 'auto', 'required']).meta({ id: 
 
 export type ToolChoice = z.infer<typeof toolChoiceSchema>
 
+// Structured-output request (issue #287). The OpenAI-compatible `response_format`
+// with `type: 'json_schema'` asks the provider to ENFORCE that the model's content
+// matches `schema` at generation time, instead of relying solely on prompt text +
+// best-effort parsing afterwards. `strict: true` makes the provider hard-enforce
+// the (closed, all-required) schema; callers still re-validate the content against
+// the canonical Zod schema as the authoritative backstop, since LiteLLM-proxied
+// providers vary in json_schema support. The edge forwards this verbatim; it is
+// optional, so a plain chat request is unchanged. Only the `json_schema` variant is
+// modelled — that is the one the planner uses.
+export const responseFormatSchema = z
+  .object({
+    type: z.literal('json_schema'),
+    json_schema: z.object({
+      name: z.string(),
+      schema: z.record(z.string(), z.unknown()),
+      strict: z.boolean().optional()
+    })
+  })
+  .meta({ id: 'ResponseFormat' })
+
+export type ResponseFormat = z.infer<typeof responseFormatSchema>
+
 export const modelsChatRequestSchema = z
   .object({
     model: z.string().optional(),
@@ -255,7 +286,11 @@ export const modelsChatRequestSchema = z
     // and the policy governing whether it must/may/can't. Both optional so a
     // plain chat request (no tools) is unchanged.
     tools: z.array(chatToolDefinitionSchema).optional(),
-    tool_choice: toolChoiceSchema.optional()
+    tool_choice: toolChoiceSchema.optional(),
+    // Structured-output enforcement (issue #287). Optional: only the planner sends
+    // it (to enforce the ExecutionPlan json_schema); a plain chat/decide request
+    // omits it and is unchanged.
+    response_format: responseFormatSchema.optional()
   })
   .meta({ id: 'ModelsChatRequest' })
 

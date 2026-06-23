@@ -15,14 +15,14 @@ import type { PlannerToolDescriptor } from './mcp-planner'
 export const sanitizeToolName = (toolId: string): string => toolId.replace(/[^a-zA-Z0-9_-]/g, '_')
 
 // Normalize a tool descriptor's `inputSchema` into the JSON Schema OpenAI expects
-// for `function.parameters` (issue #276). The repo's built-in tools declare
-// `inputSchema` as a bare PROPERTIES MAP shorthand (`{ code: { type, … }, … }`)
-// — fine when the planner merely stringified it into a prompt, but native tool
-// calling sends it verbatim as the wire schema. Without the `{ type: 'object',
-// properties }` envelope the model isn't told the call HAS named parameters and
-// fires the tool with empty `{}` arguments (the `code: undefined` failures). MCP
-// tools already supply a real JSON Schema (it has `type`/`properties`), so pass
-// those through untouched; only the shorthand is wrapped.
+// for `function.parameters` (issue #276). Since issue #287 every planner descriptor
+// already arrives as a real JSON Schema object — plugin descriptors are GENERATED
+// from their Zod schema (toolInputJsonSchema, has `type: 'object'`/`properties`)
+// and MCP tools supply their discovered JSON Schema — so this normally passes the
+// schema through untouched. The legacy wrap of a bare PROPERTIES MAP shorthand
+// (`{ code: { type, … }, … }`) is kept only as a defensive fallback: without the
+// `{ type: 'object', properties }` envelope the model isn't told the call HAS named
+// parameters and fires the tool with empty `{}` arguments.
 const toWireParameters = (inputSchema: Record<string, unknown>): Record<string, unknown> => {
   if ('type' in inputSchema || 'properties' in inputSchema) {
     return inputSchema

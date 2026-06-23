@@ -27,9 +27,22 @@ export type FeedbackCategory = z.infer<typeof feedbackCategorySchema>
 // `message` is sender-authored content; routing it to telemetry is an intentional
 // privacy exception gated behind both plugin activation and telemetry consent.
 // `category` is required so every report is classified as a bug or an idea.
+// Planner-facing prose lives on the schema (issue #287): the send_feedback tool
+// descriptor's JSON Schema is generated from here, so these descriptions reach the
+// model and cannot drift from the runtime contract.
 export const feedbackInputSchema = z.object({
-  message: z.string().min(1).max(2000),
-  category: feedbackCategorySchema
+  message: z
+    .string()
+    .min(1)
+    .max(2000)
+    .describe(
+      'The feedback (1–2000 chars). For an environment limitation, describe what you ' +
+        'were trying to do and which tool/capability/permission was missing.'
+    ),
+  category: feedbackCategorySchema.describe(
+    'Required. "bug" for something broken or behaving incorrectly; "idea" for an ' +
+      'improvement or feature suggestion (including your own environment limitations).'
+  )
 })
 export type FeedbackInput = z.infer<typeof feedbackInputSchema>
 
@@ -52,6 +65,13 @@ export interface Tool<Input, Output> {
   id: string
   description: string
   schema: ZodSchema<Input>
+  // Optional output contract (issue #287). When present, the runtime
+  // (ToolRegistry.run) parses the tool's result through it before returning, so
+  // `agent.tool.completed.payload.output` is a VALIDATED structured payload by the
+  // time the inspector/timeline consume it — not an unchecked `unknown`. Omit it
+  // and the output stays unvalidated (the prior behaviour), which a tool whose
+  // output shape is intentionally open (e.g. a sandbox result) relies on.
+  outputSchema?: ZodSchema<Output>
   execute(input: Input): Promise<Output>
 }
 
@@ -446,12 +466,18 @@ export type KeywordPlannerStep = {
 }
 
 // Planner-facing description of a tool a plugin contributes. Lets a host name the
-// tool to its planner/model without instantiating the plugin. Structurally
-// matches the host's own planner descriptor shape (id / description / schema).
+// tool to its planner/model without instantiating the plugin.
+//
+// `schema` is the CANONICAL Zod input schema (issue #287): the SAME schema the
+// contributed tool's `execute` validates against (`Tool.schema`), not a parallel
+// hand-written property map. The host generates the planner-visible JSON Schema
+// from it via `toolInputJsonSchema`, so a descriptor can never drift from the
+// runtime contract. A plugin author references the one exported Zod schema in both
+// places (the descriptor and the tool), giving a single source of truth.
 export type PluginToolDescriptor = {
   id: string
   description: string
-  inputSchema: Record<string, unknown>
+  schema: ZodSchema<unknown>
   // Optional keyword-fallback planner step (see KeywordPlannerStep). Present only
   // for tools the heuristic planner should be able to propose without an LLM; the
   // host reads it generically, naming no concrete tool id.

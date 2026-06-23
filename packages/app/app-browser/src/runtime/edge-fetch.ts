@@ -8,6 +8,7 @@ import {
   type InspectorRequestPayload,
   type InspectorResponse,
   type InspectorUsage,
+  type ResponseFormat,
   type ToolChoice
 } from '@tinytinkerer/contracts'
 import type { SynthesisChunk } from '@tinytinkerer/app-core'
@@ -112,6 +113,11 @@ export type ModelsChatInit = {
   // policy for using them. Forwarded verbatim by the edge when present.
   tools?: ChatToolDefinition[]
   tool_choice?: ToolChoice
+  // Structured-output enforcement (issue #287): the planner sends a json_schema
+  // `response_format` so the provider enforces the ExecutionPlan shape at
+  // generation. Spread into the body by modelsChatRequestBody and forwarded
+  // verbatim by the edge; absent for plain chat/decide requests.
+  response_format?: ResponseFormat
 }
 
 type ModelsChatFetchOptions = {

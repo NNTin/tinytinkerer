@@ -100,10 +100,11 @@ export const webSearchPluginManifest: PluginManifest = {
     {
       id: WEB_SEARCH_PLUGIN_ID,
       description: 'Search the web for fresh context using Tavily.',
-      inputSchema: {
-        query: { type: 'string', description: 'Search query (2–500 chars)' },
-        maxResults: { type: 'number', description: 'Max results (1–10, optional)' }
-      },
+      // Canonical schema (issue #287): the SAME Zod schema the tool validates input
+      // against (see createWebSearchTool). The host generates the planner-visible
+      // JSON Schema from it, so the descriptor can never drift from the runtime
+      // contract. Planner prose now lives on the schema's `.describe()` calls.
+      schema: searchRequestSchema,
       summarizeActivity: summarizeWebSearchActivity,
       keywordPlannerStep: {
         keywords: WEB_SEARCH_KEYWORDS,
@@ -151,6 +152,11 @@ const createWebSearchTool = (
   id: WEB_SEARCH_PLUGIN_ID,
   description: 'Search the web for fresh context using Tavily.',
   schema: searchRequestSchema,
+  // Output contract (issue #287): the runtime re-validates the result before the
+  // inspector/timeline consume it. The tool already validates the edge body against
+  // this schema internally; declaring it here makes that guarantee part of the Tool
+  // contract the registry enforces, not just an internal check.
+  outputSchema: searchResponseSchema,
   async execute(input) {
     if (!edgeFetch) {
       // Should never happen: the tool is only constructed when the host provides

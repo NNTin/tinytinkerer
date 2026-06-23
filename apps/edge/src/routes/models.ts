@@ -624,7 +624,12 @@ export const registerModelRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) =>
           // replayed tool_calls/tool messages stay valid. Only sent when present,
           // so a plain chat request is unchanged.
           ...(body.tools ? { tools: body.tools } : {}),
-          ...(body.tool_choice ? { tool_choice: body.tool_choice } : {})
+          ...(body.tool_choice ? { tool_choice: body.tool_choice } : {}),
+          // Structured-output enforcement (issue #287): forward the planner's
+          // json_schema `response_format` so LiteLLM/the provider enforces the
+          // ExecutionPlan shape at generation. Only sent when present, so a plain
+          // chat/decide request is unchanged.
+          ...(body.response_format ? { response_format: body.response_format } : {})
         }),
         // Stop hammering the upstream as soon as the client disconnects instead
         // of keeping a doomed request alive until the backstop timeout fires

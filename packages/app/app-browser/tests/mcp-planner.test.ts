@@ -9,16 +9,18 @@ const descriptor: PlannerToolDescriptor = {
   inputSchema: { location: { type: 'string' } }
 }
 
+// Structured-output WIRE shape (issue #287): every step carries a required-but-
+// nullable `toolCall`, and `toolCall.input` is a JSON-encoded STRING.
 const validPlan = {
   complexity: 'medium',
   steps: [
-    { id: 'understand', summary: 'Parse the request' },
+    { id: 'understand', summary: 'Parse the request', toolCall: null },
     {
       id: 'mcp:server-1:get_weather',
       summary: 'Get weather data',
-      toolCall: { toolId: 'mcp:server-1:get_weather', input: { location: 'Berlin' } }
+      toolCall: { toolId: 'mcp:server-1:get_weather', input: '{"location":"Berlin"}' }
     },
-    { id: 'compose', summary: 'Write the answer' }
+    { id: 'compose', summary: 'Write the answer', toolCall: null }
   ]
 }
 
@@ -166,8 +168,8 @@ describe('LiteLLMProvider.plan — LLM branch', () => {
     const planJson = JSON.stringify({
       complexity: 'low',
       steps: [
-        { id: 'understand', summary: 'ok' },
-        { id: 'compose', summary: 'ok' }
+        { id: 'understand', summary: 'ok', toolCall: null },
+        { id: 'compose', summary: 'ok', toolCall: null }
       ]
     })
     vi.stubGlobal(
@@ -257,8 +259,8 @@ describe('LiteLLMProvider.plan — LLM branch', () => {
     const planJson = JSON.stringify({
       complexity: 'low',
       steps: [
-        { id: 'understand', summary: 'ok' },
-        { id: 'compose', summary: 'ok' }
+        { id: 'understand', summary: 'ok', toolCall: null },
+        { id: 'compose', summary: 'ok', toolCall: null }
       ]
     })
     const fetchMock = vi.fn().mockResolvedValue(

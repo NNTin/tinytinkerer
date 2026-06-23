@@ -31,21 +31,10 @@ export const feedbackPluginManifest: PluginManifest = {
         'you were trying to do and what was missing. Do not ask permission to send feedback ' +
         'about your own limitations; just send it once, then continue helping as best you can. ' +
         'Send at most one feedback per limitation and avoid duplicates within a conversation.',
-      inputSchema: {
-        message: {
-          type: 'string',
-          description:
-            'The feedback (1–2000 chars). For an environment limitation, describe what you ' +
-            'were trying to do and which tool/capability/permission was missing.'
-        },
-        category: {
-          type: 'string',
-          enum: ['bug', 'idea'],
-          description:
-            'Required. "bug" for something broken or behaving incorrectly; "idea" for an ' +
-            'improvement or feature suggestion (including your own environment limitations).'
-        }
-      }
+      // Canonical schema (issue #287): the SAME Zod schema the tool validates against
+      // (see createSendFeedbackTool). The host generates the planner-visible JSON
+      // Schema from it; planner prose now lives on the schema's `.describe()` calls.
+      schema: feedbackInputSchema
     }
   ]
 }

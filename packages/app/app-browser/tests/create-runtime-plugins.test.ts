@@ -31,7 +31,9 @@ const pluginModule = (options: {
       {
         id: options.toolId,
         description: options.descriptorDescription ?? `${options.toolId} descriptor`,
-        inputSchema: {}
+        // Canonical schema (issue #287): the descriptor carries the Zod schema; the
+        // host generates the planner-visible JSON Schema from it.
+        schema: z.object({}).passthrough()
       }
     ]
   },
@@ -101,11 +103,13 @@ describe('plugin runtime contributions', () => {
                 choices: [
                   {
                     message: {
+                      // Structured-output wire shape (issue #287): toolCall is a
+                      // required-but-nullable field and input is a JSON string.
                       content: JSON.stringify({
                         complexity: 'low',
                         steps: [
-                          { id: 'understand', summary: 'Understand the request' },
-                          { id: 'compose', summary: 'Compose the answer' }
+                          { id: 'understand', summary: 'Understand the request', toolCall: null },
+                          { id: 'compose', summary: 'Compose the answer', toolCall: null }
                         ]
                       })
                     }
@@ -154,6 +158,84 @@ describe('plugin runtime contributions', () => {
     expect(planningPrompt).toContain('Tool: web-search')
     expect(planningPrompt).toContain('Search the web for fresh context using Tavily.')
     expect(planningPrompt).not.toContain('plugin override descriptor')
+    vi.unstubAllGlobals()
+  })
+
+  it("surfaces an MCP tool's DISCOVERED JSON Schema to the planner unchanged (issue #287)", async () => {
+    // An MCP tool has no local Zod source — its single source of truth is the
+    // remote server's discovered JSON Schema. The canonical schema path must pass
+    // that through to the planner descriptor verbatim (no re-derivation), distinct
+    // from the plugin path that GENERATES JSON Schema from a Zod schema.
+    const requestBodies: Array<{ messages?: Array<{ content: string }>; stream?: boolean }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+          messages?: Array<{ content: string }>
+          stream?: boolean
+        }
+        requestBodies.push(body)
+        if (body.stream === false) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        complexity: 'low',
+                        steps: [
+                          { id: 'understand', summary: 'u', toolCall: null },
+                          { id: 'compose', summary: 'c', toolCall: null }
+                        ]
+                      })
+                    }
+                  }
+                ]
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } }
+            )
+          )
+        }
+        return Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' }
+          })
+        )
+      })
+    )
+
+    const discoveredSchema = {
+      type: 'object',
+      properties: { location: { type: 'string', description: 'City name' } },
+      required: ['location']
+    }
+    const runtime = createRuntime({
+      baseUrl: 'http://edge.local',
+      getToken: () => 'token',
+      getModel: () => 'openai/gpt-4.1-mini',
+      mcpServers: [{ id: 'srv', name: 'MyServer', url: 'https://mcp.example/sse', enabled: true }],
+      mcpDiscovery: {
+        srv: {
+          serverId: 'srv',
+          serverName: 'MyServer',
+          syncedAt: new Date().toISOString(),
+          tools: [
+            { toolName: 'get_weather', description: 'Get weather', inputSchema: discoveredSchema }
+          ]
+        }
+      }
+    })
+
+    await runRuntime(runtime)
+
+    const planningPrompt = requestBodies[0]?.messages?.[0]?.content ?? ''
+    expect(planningPrompt).toContain('mcp:srv:get_weather')
+    // The discovered schema reaches the planner verbatim (the `location` property
+    // and its `required` entry survive the descriptor build).
+    expect(planningPrompt).toContain('"location"')
+    expect(planningPrompt).toContain('"required"')
     vi.unstubAllGlobals()
   })
 
