@@ -37,6 +37,12 @@ const SVG_MARKUP =
   '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="green"/></svg>'
 const SVG_BASE64_URI = `data:image/svg+xml;base64,${Buffer.from(SVG_MARKUP).toString('base64')}`
 const SVG_PERCENT_URI = `data:image/svg+xml,${encodeURIComponent(SVG_MARKUP)}`
+// Issue #289 regression: model-generated SVGs often encode markup-significant
+// characters (`<>#`) but leave attribute-separating spaces literal. CommonMark
+// treats those spaces as the end of an unwrapped image destination, so this must be
+// rescued before parsing and rendered through the sanitized inline-SVG path.
+const SVG_PARTIAL_PERCENT_URI =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='80' viewBox='0 0 160 80'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1'%3E%3Cstop stop-color='%23ff7a59'/%3E%3Cstop offset='1' stop-color='%2300a6fb'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='160' height='80' rx='16' fill='url(%23g)'/%3E%3Ccircle cx='40' cy='40' r='18' fill='white' fill-opacity='.85'/%3E%3C/svg%3E"
 // The RAW form embeds an onload handler and a <script>; both must be stripped by the
 // shared DOMPurify pass before the inline SVG reaches the DOM.
 const SVG_RAW_URI =
@@ -149,6 +155,8 @@ test.describe('markdown renderers (#249)', () => {
       '',
       `![svg percent](${SVG_PERCENT_URI})`,
       '',
+      `![partial percent svg](${SVG_PARTIAL_PERCENT_URI})`,
+      '',
       `![raw svg](${SVG_RAW_URI})`,
       '',
       `![relative image](/local/c.png)`,
@@ -195,6 +203,19 @@ test.describe('markdown renderers (#249)', () => {
     await expect(inlineSvg.locator('rect')).toHaveCount(1)
     await expect(inlineSvg.locator('script')).toHaveCount(0)
     expect(await inlineSvg.getAttribute('onload')).toBeNull()
+
+    // ✅ partially percent-encoded SVG row: rendered as sanitized INLINE <svg>, not
+    // loose fallback text. This catches issue #289's literal-space destination bug.
+    const partialFigure = page.locator('figure[data-tt-image]', { hasText: 'partial percent svg' })
+    await expect(partialFigure).toBeVisible()
+    await expect(partialFigure.locator('img')).toHaveCount(0)
+    const partialSvg = partialFigure.locator('[data-tt-inline-svg] svg')
+    await expect(partialSvg).toBeVisible()
+    await expect(partialSvg.locator('linearGradient#g')).toHaveCount(1)
+    await expect(partialSvg.locator('rect[fill="url(#g)"]')).toHaveCount(1)
+    await expect(partialSvg.locator('circle')).toHaveCount(1)
+    await expect(page.getByText(/%3Csvg xmlns=/)).toHaveCount(0)
+
     // The strongest oracle: neither the onload handler nor the inline <script> ran.
     expect(await page.evaluate(() => (window as unknown as { __ttXss?: number }).__ttXss)).toBe(
       undefined
