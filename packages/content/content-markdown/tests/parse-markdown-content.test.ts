@@ -258,6 +258,16 @@ describe('parseMarkdownContent', () => {
     })
   })
 
+  it('preserves a partially percent-encoded SVG data URI as a standalone image node', () => {
+    const partial =
+      "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='80' viewBox='0 0 160 80'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1'%3E%3Cstop stop-color='%23ff7a59'/%3E%3Cstop offset='1' stop-color='%2300a6fb'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='160' height='80' rx='16' fill='url(%23g)'/%3E%3Ccircle cx='40' cy='40' r='18' fill='white' fill-opacity='.85'/%3E%3C/svg%3E"
+    const normalized =
+      "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='80' viewBox='0 0 160 80'><defs><linearGradient id='g' x1='0' x2='1'><stop stop-color='#ff7a59'/><stop offset='1' stop-color='#00a6fb'/></linearGradient></defs><rect width='160' height='80' rx='16' fill='url(#g)'/><circle cx='40' cy='40' r='18' fill='white' fill-opacity='.85'/></svg>"
+    expect(stripIds(parseMarkdownContent(`![Gradient dot](${partial})`))).toEqual({
+      nodes: [{ type: 'image', url: normalized, alt: 'Gradient dot' }]
+    })
+  })
+
   it('preserves an inline raw SVG data URI as an imageInline node', () => {
     const raw = 'data:image/svg+xml,<svg width="4"></svg>'
     expect(stripIds(parseMarkdownContent(`Look ![icon](${raw}) here`))).toEqual({
@@ -267,6 +277,25 @@ describe('parseMarkdownContent', () => {
           children: [
             { type: 'text', value: 'Look ' },
             { type: 'imageInline', url: raw, alt: 'icon' },
+            { type: 'text', value: ' here' }
+          ]
+        }
+      ]
+    })
+  })
+
+  it('preserves a partially percent-encoded SVG data URI as an inline image node', () => {
+    const partial =
+      "data:image/svg+xml,%3Csvg width='4' height='4'%3E%3Ccircle cx='2' cy='2' r='2' fill='url(%23g)'/%3E%3C/svg%3E"
+    const normalized =
+      "data:image/svg+xml,<svg width='4' height='4'><circle cx='2' cy='2' r='2' fill='url(#g)'/></svg>"
+    expect(stripIds(parseMarkdownContent(`Look ![icon](${partial}) here`))).toEqual({
+      nodes: [
+        {
+          type: 'paragraph',
+          children: [
+            { type: 'text', value: 'Look ' },
+            { type: 'imageInline', url: normalized, alt: 'icon' },
             { type: 'text', value: ' here' }
           ]
         }

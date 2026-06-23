@@ -60,27 +60,33 @@ const sanitizeImageUrl = (url: string): string => {
   return ''
 }
 
-// A raw (unencoded) SVG data URI inside markdown image syntax:
-// `![alt](data:image/svg+xml,<svg …></svg> "title")`. The destination contains
-// literal `<…>` markup and spaces, so CommonMark's image-destination parser ends it
-// at the first whitespace and NO image node is ever produced — the markup degrades
-// to loose text. We recognise this shape up front and swap the destination for a
-// sentinel data URI that parses cleanly (no spaces, no angle brackets), stashing the
-// original so it can be restored onto the image node after parsing. The renderer
-// then mounts the raw markup as sanitized inline SVG (it cannot ride in an `<img
-// src>`). The base64 (`;base64,`) and percent-encoded (`,%3Csvg…`) forms carry no
-// URL-breaking characters and already parse, so this only matches the raw form.
+// An SVG data URI inside markdown image syntax can contain URL-breaking characters:
+// `![alt](data:image/svg+xml,<svg …></svg> "title")`, or the common hybrid shape
+// `![alt](data:image/svg+xml,%3Csvg … %3C/svg%3E)`, where markup-significant
+// characters are percent-encoded but attribute separators remain literal spaces.
+// CommonMark's image-destination parser ends an unwrapped destination at the first
+// whitespace, so no image node is produced and the markup degrades to loose text.
+// We recognise these shapes up front and swap the destination for a sentinel data
+// URI that parses cleanly, stashing a normalized raw-SVG URI so it can be restored
+// onto the image node after parsing. The renderer then mounts the raw markup as
+// sanitized inline SVG (it cannot ride in an `<img src>`). Fully URL-safe base64
+// (`;base64,`) and percent-encoded (`%3Csvg%3E…`) forms already parse, so they are
+// left untouched unless literal URL-breaking characters are present.
 //
 // We deliberately avoid one all-in-one regex here: a pattern like
 // `!\[[^\]]*\]\(…<svg[\s\S]*?<\/svg>…\)` is polynomial-ReDoS-prone — the alt's `[^\]]*`
 // rescans from every `![`, and the lazy body rescans from every `<svg`, so adversarial
 // input (`![` ×n, or `![](data:image/svg+xml,<svg` ×n) is O(n²). Instead we ANCHOR on
-// the rare literal scheme with an all-literal regex (linear, no backtracking) and
-// validate the surrounding `![alt](… )` with plain index scans, so every character is
-// visited O(1) times overall.
+// the rare literal scheme with an all-literal regex (linear, no backtracking), scan
+// for a raw-or-percent-encoded `</svg>` close monotonically, and validate the
+// surrounding `![alt](… )` with plain index scans, so every character is visited O(1)
+// times overall.
 const RAW_SVG_SCHEME = /data:image\/svg\+xml,/gi
 const RAW_SVG_SENTINEL_PREFIX = 'data:image/svg+xml,tt-raw-svg-'
+const RAW_SVG_DATA_URI_PREFIX = 'data:image/svg+xml,'
+const SVG_OPEN = '<svg'
 const SVG_CLOSE = '</svg>'
+const HEX_BYTE = /^[\da-f]{2}$/i
 
 type RawSvgExtraction = {
   content: string
@@ -90,10 +96,116 @@ type RawSvgExtraction = {
 const isInlineWhitespace = (ch: string | undefined): boolean =>
   ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\f' || ch === '\v'
 
+type DecodedChar = {
+  ch: string
+  next: number
+}
+
+type SvgCloseMatch = {
+  start: number
+  end: number
+}
+
+const readDecodedChar = (content: string, index: number): DecodedChar | null => {
+  if (index >= content.length) return null
+
+  const ch = content[index] ?? ''
+  const hex = content.slice(index + 1, index + 3)
+  if (ch === '%' && HEX_BYTE.test(hex)) {
+    return { ch: String.fromCharCode(Number.parseInt(hex, 16)), next: index + 3 }
+  }
+
+  return { ch, next: index + 1 }
+}
+
+const readDecodedPrefix = (content: string, from: number, length: number): string => {
+  let prefix = ''
+  let index = from
+  while (prefix.length < length) {
+    const decoded = readDecodedChar(content, index)
+    if (!decoded) break
+    prefix += decoded.ch
+    index = decoded.next
+  }
+  return prefix
+}
+
+const startsDecodedSvgOpen = (content: string, from: number): boolean => {
+  const prefix = readDecodedPrefix(content, from, SVG_OPEN.length + 1)
+  if (prefix.slice(0, SVG_OPEN.length).toLowerCase() !== SVG_OPEN) return false
+
+  const next = prefix[SVG_OPEN.length]
+  return next === undefined || next === '>' || isInlineWhitespace(next)
+}
+
+const findDecodedSvgClose = (content: string, from: number): SvgCloseMatch | null => {
+  let index = from
+  let matched = 0
+  let start = -1
+
+  while (index < content.length) {
+    const charStart = index
+    const decoded = readDecodedChar(content, index)
+    if (!decoded) return null
+
+    const ch = decoded.ch.toLowerCase()
+    if (ch === SVG_CLOSE[matched]) {
+      if (matched === 0) start = charStart
+      matched += 1
+      if (matched === SVG_CLOSE.length) {
+        return { start, end: decoded.next }
+      }
+    } else if (ch === SVG_CLOSE[0]) {
+      matched = 1
+      start = charStart
+    } else {
+      matched = 0
+      start = -1
+    }
+
+    index = decoded.next
+  }
+
+  return null
+}
+
+const hasUnbalancedLiteralParens = (value: string): boolean => {
+  let depth = 0
+  for (const ch of value) {
+    if (ch === '(') {
+      depth += 1
+    } else if (ch === ')') {
+      if (depth === 0) return true
+      depth -= 1
+    }
+  }
+  return depth !== 0
+}
+
+const hasLiteralUrlBreakingCharacters = (dataUriBody: string): boolean =>
+  /[\s<>]/.test(dataUriBody) || hasUnbalancedLiteralParens(dataUriBody)
+
+const decodeSvgDataUriBody = (body: string): string => {
+  try {
+    return decodeURIComponent(body)
+  } catch {
+    try {
+      // Raw SVG bodies can legitimately contain `%` text (for example `width="100%"`).
+      // Escape only malformed percent signs, then let the platform decoder preserve
+      // UTF-8 sequences instead of hand-decoding byte-by-byte.
+      return decodeURIComponent(body.replace(/%(?![\da-f]{2})/gi, '%25'))
+    } catch {
+      return body.replace(/%([\da-f]{2})/gi, (_, hex: string) =>
+        String.fromCharCode(Number.parseInt(hex, 16))
+      )
+    }
+  }
+}
+
 const extractRawSvgImages = (content: string): RawSvgExtraction => {
   const rawBySentinel = new Map<string, string>()
-  // Cheap pre-gate: skip the whole pass unless a raw SVG scheme is present at all.
-  if (!content.includes('data:image/svg+xml,')) {
+  // Cheap pre-gate: skip the whole pass unless an SVG data URI scheme is present at all.
+  if (!/data:image\/svg\+xml,/i.test(content)) {
     return { content, rawBySentinel }
   }
 
@@ -101,17 +213,17 @@ const extractRawSvgImages = (content: string): RawSvgExtraction => {
   let copiedUpTo = 0 // everything before this index is already flushed to `result`
   let sentinelIndex = 0
 
-  // Monotonic cache for the forward `</svg>` search: `from` only ever increases across
-  // matches, so the first `</svg>` at-or-after an earlier `from` is still the first one
-  // for any later `from` that hasn't passed it. This keeps repeated lookups linear even
-  // when many `<svg` openings precede a single (or absent) close.
-  let cachedClose = -2 // -2 = not computed yet, -1 = none ahead
+  // Monotonic cache for the forward raw-or-percent-encoded `</svg>` search: `from`
+  // only ever increases across matches, so the first close at-or-after an earlier
+  // `from` is still the first one for any later `from` that hasn't passed it. This
+  // keeps repeated lookups linear even when many `<svg` openings precede one close.
+  let cachedClose: SvgCloseMatch | null | undefined
   let cachedFrom = 0
-  const findSvgClose = (from: number): number => {
-    if (cachedClose === -1 && from >= cachedFrom) return -1
-    if (cachedClose >= from && cachedFrom <= from) return cachedClose
+  const findSvgClose = (from: number): SvgCloseMatch | null => {
+    if (cachedClose === null && from >= cachedFrom) return null
+    if (cachedClose && cachedClose.start >= from && cachedFrom <= from) return cachedClose
     cachedFrom = from
-    cachedClose = content.indexOf(SVG_CLOSE, from)
+    cachedClose = findDecodedSvgClose(content, from)
     return cachedClose
   }
 
@@ -119,10 +231,11 @@ const extractRawSvgImages = (content: string): RawSvgExtraction => {
     const schemeStart = match.index
     if (schemeStart < copiedUpTo) continue // inside an image we already consumed
 
-    // Raw form only: optional whitespace then `<svg` right after the comma.
+    // Raw or partially percent-encoded form: optional whitespace then decoded `<svg`
+    // right after the comma.
     let bodyStart = schemeStart + match[0].length
     while (isInlineWhitespace(content[bodyStart])) bodyStart += 1
-    if (!content.startsWith('<svg', bodyStart)) continue
+    if (!startsDecodedSvgOpen(content, bodyStart)) continue
 
     // The destination must open with `(` (optionally preceded by whitespace), and the
     // alt must close with `]` just before it.
@@ -148,8 +261,11 @@ const extractRawSvgImages = (content: string): RawSvgExtraction => {
     // Find the SVG close, then the image close `)` (skipping an optional quoted title,
     // which may itself contain a `)`).
     const svgClose = findSvgClose(bodyStart)
-    if (svgClose === -1) break // no close anywhere ahead — nothing left to match
-    const dataUriEnd = svgClose + SVG_CLOSE.length
+    if (!svgClose) break // no close anywhere ahead — nothing left to match
+    const dataUriEnd = svgClose.end
+    const originalBody = content.slice(bodyStart, dataUriEnd)
+    if (!hasLiteralUrlBreakingCharacters(originalBody)) continue
+
     let k = dataUriEnd
     while (isInlineWhitespace(content[k])) k += 1
     const quote = content[k]
@@ -164,7 +280,7 @@ const extractRawSvgImages = (content: string): RawSvgExtraction => {
     const alt = content.slice(open + 2, altEnd)
     const title = content.slice(dataUriEnd, k).trim() // quoted title, or '' if none
     const sentinel = `${RAW_SVG_SENTINEL_PREFIX}${sentinelIndex++}`
-    rawBySentinel.set(sentinel, content.slice(schemeStart, dataUriEnd))
+    rawBySentinel.set(sentinel, `${RAW_SVG_DATA_URI_PREFIX}${decodeSvgDataUriBody(originalBody)}`)
     result += content.slice(copiedUpTo, open)
     result += `![${alt}](${sentinel}${title ? ` ${title}` : ''})`
     copiedUpTo = k + 1
