@@ -46,7 +46,7 @@ ${toolDocs}
 
 Rules:
 - Always include an "understand" step first and a "compose" step last.
-- Set "toolCall" to null unless a tool is genuinely needed for that step.
+- Give a step a "toolCall" whenever a tool would give a more reliable result than working it out by hand — e.g. exact calculation, parsing, or fetching information; use null only when no available tool would help that step.
 - Use exact tool IDs from the list above.
 - "toolCall.input" is a JSON-encoded STRING of the tool's arguments object (e.g. "{\\"query\\":\\"…\\"}"); use "{}" when the tool needs no arguments.
 - Arguments must match the named tool's input schema.`

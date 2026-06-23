@@ -23,7 +23,7 @@ Given the user's request and the tool results gathered so far, either call the S
 
 Rules:
 - Think through your decision step by step first; your thinking is shown to the user as it streams.
-- Call a tool only when one is genuinely needed to make progress.
+- Prefer calling a tool whenever one would give a more reliable result than working it out yourself — e.g. exact calculation, parsing, or fetching information. Your own arithmetic and recall are not always reliable, so reach for an available tool rather than guessing.
 - Call at most one tool per step.
 - When the gathered tool results are sufficient, stop calling tools and respond with a short confirmation; the final answer is composed separately.`
 
