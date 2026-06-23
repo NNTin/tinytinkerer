@@ -98,8 +98,22 @@ describe('llmPlan', () => {
     ).rejects.toThrow()
   })
 
-  it('throws when the response is not ok', async () => {
-    const modelsChat = makeModelsChat({ error: 'Service Unavailable' }, 503)
+  it('surfaces the edge error message on a non-ok response (so the real reason reaches Sentry)', async () => {
+    // Finding E: a provider behind LiteLLM that rejects the strict response_format
+    // answers a structured edge error; the planner must surface ITS message (not a
+    // bare status) so the run-error path reports the actual cause.
+    const modelsChat = makeModelsChat(
+      { error: 'response_format json_schema is not supported by this model' },
+      400
+    )
+
+    await expect(
+      llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat)
+    ).rejects.toThrow('response_format json_schema is not supported by this model')
+  })
+
+  it('falls back to a status message when the error body is not the structured shape', async () => {
+    const modelsChat = makeModelsChat('Service Unavailable', 503)
 
     await expect(
       llmPlan('What?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat)

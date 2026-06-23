@@ -9,7 +9,7 @@ import {
   type KeywordPlannerStep,
   type ResponseFormat
 } from '@tinytinkerer/contracts'
-import type { ModelsChatFetch } from './edge-fetch'
+import { createEdgeError, type ModelsChatFetch } from './edge-fetch'
 import { createRateLimitError } from './rate-limit'
 
 export type PlannerToolDescriptor = {
@@ -95,7 +95,14 @@ export const llmPlan = async (
     if (response.status === 429) {
       throw await createRateLimitError(response)
     }
-    throw new Error(`Planning request failed (${response.status})`)
+    // Preserve the edge's structured error message rather than a bare status
+    // (issue #287 — arch review finding E). A provider behind LiteLLM that rejects
+    // the strict `response_format` answers a non-429 error here; surfacing its
+    // actual reason (not just "failed (400)") means the run-error path reports the
+    // real cause to Sentry via the runtime's reportError sink, so a structured-
+    // output incompatibility is diagnosable instead of an opaque failure. Matches
+    // the ReAct decider and synthesizer, which already build errors this way.
+    throw await createEdgeError(response, `Planning request failed (${response.status})`)
   }
 
   const metadata = {

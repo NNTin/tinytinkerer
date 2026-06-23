@@ -4,10 +4,40 @@ import {
   executionPlanFromWire,
   executionPlanSchema,
   executionPlanWireSchema,
+  planStepSchema,
   toStrictResponseJsonSchema,
   toolInputJsonSchema,
   type ExecutionPlanWire
 } from '../src/index'
+
+// Recursively assert a JSON Schema is OpenAI strict-mode valid: EVERY object node
+// must close itself (`additionalProperties: false`) and list every declared
+// property in `required`. Walks properties, array `items`, and `anyOf`/`allOf`/
+// `oneOf` variants (a `.nullable()` field renders as `anyOf: [schema, {null}]`).
+// This guards the invariant that was previously prose-only (arch review finding C):
+// if a future edit adds `.optional()` or an open `z.record` to the wire schema, the
+// generated schema stops being strict-valid and the provider rejects it at runtime
+// — this test fails first.
+const assertStrictValid = (node: unknown): void => {
+  if (!node || typeof node !== 'object') return
+  const schema = node as Record<string, unknown>
+  const props = schema.properties as Record<string, unknown> | undefined
+  if (props) {
+    expect(
+      schema.additionalProperties,
+      `object not closed: ${JSON.stringify(schema).slice(0, 160)}`
+    ).toBe(false)
+    expect(new Set((schema.required as string[] | undefined) ?? [])).toEqual(
+      new Set(Object.keys(props))
+    )
+    for (const child of Object.values(props)) assertStrictValid(child)
+  }
+  if (schema.items) assertStrictValid(schema.items)
+  for (const key of ['anyOf', 'allOf', 'oneOf'] as const) {
+    const variants = schema[key]
+    if (Array.isArray(variants)) variants.forEach(assertStrictValid)
+  }
+}
 
 // Canonical Zod → JSON Schema path (issue #287). These guard the SHARED mechanism
 // every tool descriptor and the planner's structured output rely on: if it ever
@@ -66,6 +96,32 @@ describe('toStrictResponseJsonSchema', () => {
     expect(stepItems.additionalProperties).toBe(false)
     // toolCall is REQUIRED (nullable), not optional — the strict-mode shape.
     expect(stepItems.required).toEqual(['id', 'summary', 'toolCall'])
+  })
+
+  it('emits a fully strict-valid schema — every nested object closed + all keys required (finding C)', () => {
+    // Not just the root: recurse through steps, the nullable toolCall, and its
+    // nested objects. This is the guard the strict-mode invariant lacked before.
+    assertStrictValid(toStrictResponseJsonSchema(executionPlanWireSchema))
+  })
+})
+
+describe('wire/runtime plan schema alignment (finding D)', () => {
+  it('the wire step exposes exactly the runtime step fields — only the toolCall encoding differs', () => {
+    // executionPlanWireSchema/planStepWireSchema are DERIVED from the runtime
+    // schemas via omit/extend, so a field added to planStepSchema flows into the
+    // wire shape for free. This asserts that coupling holds: if a future edit
+    // replaces the derivation with a hand-written object that forgets a field, the
+    // key sets diverge and this fails — catching drift CI's types would not.
+    const wire = toStrictResponseJsonSchema(executionPlanWireSchema)
+    const wireStepItems = (
+      (wire.properties as Record<string, Record<string, unknown>>).steps as Record<string, unknown>
+    ).items as Record<string, unknown>
+    const wireKeys = Object.keys(wireStepItems.properties as Record<string, unknown>)
+    const runtimeKeys = Object.keys(
+      toolInputJsonSchema(planStepSchema).properties as Record<string, unknown>
+    )
+
+    expect(new Set(wireKeys)).toEqual(new Set(runtimeKeys))
   })
 })
 

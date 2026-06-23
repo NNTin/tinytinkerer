@@ -79,24 +79,13 @@ export const buildToolNameMap = (tools: PlannerToolDescriptor[]): ToolNameMap =>
 }
 
 // Parse the arguments of a native tool call into the action input. OpenAI sends
-// `function.arguments` as a JSON-encoded STRING (not a parsed object), so this is
-// strict tool-call wire parsing — not the brittle prose-wrapped decision JSON the
-// `*-decider`/`*-planner` lint rule targets — hence it lives here, beside the rest
-// of the tool-call plumbing. A missing or unparseable value yields empty input;
-// the tool's own schema validation is the real gate (issue #276).
-export const parseToolCallArguments = (argumentsJson: string): Record<string, unknown> => {
-  if (!argumentsJson || argumentsJson.trim().length === 0) {
-    return {}
-  }
-  try {
-    const parsed: unknown = JSON.parse(argumentsJson)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {}
-  } catch {
-    return {}
-  }
-}
+// `function.arguments` as a JSON-encoded STRING (not a parsed object), and the
+// planner carries `toolCall.input` the same way (issue #287) — so the decoder is
+// the CANONICAL one in `@tinytinkerer/contracts`, re-exported here beside the rest
+// of the tool-call plumbing. Both call sites share one definition and cannot
+// diverge. A missing or unparseable value yields empty input; the tool's own schema
+// validation is the real gate (issue #276).
+export { parseToolCallArguments } from '@tinytinkerer/contracts'
 
 // Serialize a tool invocation's result/error into the `tool` message content.
 // Tool output is arbitrary; JSON-encode it (falling back to String for

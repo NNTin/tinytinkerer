@@ -134,32 +134,42 @@ const planToolCallWireSchema = z.object({
     .describe('JSON-encoded object of the tool arguments (e.g. {"query":"…"}); use {} for none')
 })
 
-const planStepWireSchema = z.object({
-  id: z.string().describe('Unique step id'),
-  summary: z.string().describe('What this step does'),
+// Wire step schema DERIVED from the runtime `planStepSchema` (issue #287). The
+// shared fields (`id`, `summary`) are INHERITED, never re-declared, so adding a
+// field to `planStepSchema` flows into the wire shape for free and the runtime and
+// wire schemas cannot silently drift (the alignment is also asserted in
+// tool-schema.test.ts). Only `toolCall` is overridden: its runtime `.optional()`
+// record becomes a required-but-`.nullable()`, string-encoded shape so the
+// generated json_schema is strict-valid (see executionPlanWireSchema).
+const planStepWireSchema = planStepSchema.omit({ toolCall: true }).extend({
   toolCall: planToolCallWireSchema
     .nullable()
     .describe('The tool to invoke for this step, or null when the step calls no tool')
 })
 
-export const executionPlanWireSchema = z.object({
-  complexity: planComplexitySchema,
+// Likewise derived from `executionPlanSchema` so `complexity` stays shared and only
+// `steps` swaps to the wire step shape.
+export const executionPlanWireSchema = executionPlanSchema.omit({ steps: true }).extend({
   steps: z.array(planStepWireSchema)
 })
 
 export type ExecutionPlanWire = z.infer<typeof executionPlanWireSchema>
 
-// Parse a tool call's JSON-encoded `input` string into an arguments object. A
-// missing/blank/invalid value yields `{}` — the tool's own Zod schema validates the
-// arguments at execution, so a malformed bag fails there (where the agent can
-// correct it), not here. Mirrors parseToolCallArguments in the native tool-call
-// path (issue #276) so the two cannot diverge.
-const parsePlanToolInput = (inputJson: string): Record<string, unknown> => {
-  if (!inputJson || inputJson.trim().length === 0) {
+// Decode a tool call's JSON-encoded arguments string into an arguments object. This
+// is the CANONICAL home (issue #287) for the wire convention shared by BOTH native
+// tool calling (#276 — the ReAct decider's `function.arguments`) and the planner's
+// structured output (`toolCall.input`): each carries tool arguments as a JSON STRING
+// so an arbitrary per-tool argument bag survives a strict schema. A
+// missing/blank/non-object/invalid value yields `{}` — the tool's own Zod schema
+// validates the arguments at execution, so a malformed bag fails there (where the
+// agent can correct it), not here. `runtime/tool-calling.ts` re-exports this so the
+// native path and the planner path cannot diverge.
+export const parseToolCallArguments = (argumentsJson: string): Record<string, unknown> => {
+  if (!argumentsJson || argumentsJson.trim().length === 0) {
     return {}
   }
   try {
-    const parsed: unknown = JSON.parse(inputJson)
+    const parsed: unknown = JSON.parse(argumentsJson)
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : {}
@@ -179,7 +189,10 @@ export const executionPlanFromWire = (wire: ExecutionPlanWire): ExecutionPlan =>
     summary: step.summary,
     ...(step.toolCall
       ? {
-          toolCall: { toolId: step.toolCall.toolId, input: parsePlanToolInput(step.toolCall.input) }
+          toolCall: {
+            toolId: step.toolCall.toolId,
+            input: parseToolCallArguments(step.toolCall.input)
+          }
         }
       : {})
   }))

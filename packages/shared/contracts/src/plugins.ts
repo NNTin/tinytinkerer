@@ -71,6 +71,11 @@ export interface Tool<Input, Output> {
   // time the inspector/timeline consume it — not an unchecked `unknown`. Omit it
   // and the output stays unvalidated (the prior behaviour), which a tool whose
   // output shape is intentionally open (e.g. a sandbox result) relies on.
+  //
+  // This is an ENFORCEMENT point, not a hint: declaring it makes the registry THROW
+  // (a ZodError surfaced to the run-error path) when a result fails the schema, so a
+  // tool's output mismatch becomes a hard failure where it previously returned. Only
+  // add one for a tool whose output you intend to gate that strictly.
   outputSchema?: ZodSchema<Output>
   execute(input: Input): Promise<Output>
 }
