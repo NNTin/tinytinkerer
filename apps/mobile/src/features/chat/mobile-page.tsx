@@ -1,11 +1,14 @@
 import {
-  AssistantContent,
   ContextGaugeSlot,
+  ConversationEmptyState,
+  JumpToLatestButton,
   LazyBrowserSettingsModal,
   PermissionModal,
   TurnActivityPanel,
+  TurnChrome,
   useChatComposer,
-  useChatSurfaceController
+  useChatSurfaceController,
+  useStickToBottom
 } from '@tinytinkerer/app-browser'
 import {
   Button,
@@ -14,8 +17,7 @@ import {
   FaGithub,
   FaMicrophone,
   FaRotateLeft,
-  FaSpinner,
-  ThinkingDots
+  FaStop
 } from '@tinytinkerer/ui'
 import { ArrowDownTrayIcon } from '@heroicons/react/24/outline'
 import { Suspense, useEffect, useRef, useState } from 'react'
@@ -43,13 +45,16 @@ export const MobilePage = () => {
     submitLabel,
     isCoolingDown,
     submitPrompt,
+    rerunLastPrompt,
+    canRerun,
     resetConversation,
-    cancelRetry
+    cancelRetry,
+    stop
   } = useChatSurfaceController()
   const { prompt, setPrompt, speech, handleSubmit } = useChatComposer(submitPrompt)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const conversationEndRef = useRef<HTMLDivElement>(null)
+  const { scrollRef, showJumpButton, scrollToBottom } = useStickToBottom<HTMLDivElement>(events)
   const { canInstall, showIosHint, promptToInstall } = useInstallPrompt()
 
   useEffect(() => {
@@ -61,10 +66,6 @@ export const MobilePage = () => {
     element.style.height = 'auto'
     element.style.height = `${Math.min(element.scrollHeight, 180)}px`
   }, [prompt])
-
-  useEffect(() => {
-    conversationEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [events])
 
   if (isBooting || initializeError) {
     return <MobileChatLoading {...(initializeError ? { error: initializeError } : {})} />
@@ -96,7 +97,7 @@ export const MobilePage = () => {
           </div>
         ) : null}
 
-        <section className="flex min-h-0 flex-1 flex-col px-1 py-1">
+        <section className="relative flex min-h-0 flex-1 flex-col px-1 py-1">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
               Conversation
@@ -106,12 +107,13 @@ export const MobilePage = () => {
             </span>
           </div>
 
-          <div className="mt-3 flex-1 space-y-4 overflow-y-auto pr-1">
+          <div ref={scrollRef} className="mt-3 flex-1 space-y-4 overflow-y-auto pr-1">
             {turns.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-stone-300 bg-white/70 px-4 py-5 text-sm text-[var(--muted)]">
-                Ask a question to start. Replies, auth, settings, and runtime behavior all come from
-                the shared browser core.
-              </div>
+              <ConversationEmptyState
+                count={2}
+                onSelectPrompt={setPrompt}
+                className="rounded-2xl border border-dashed border-stone-300 bg-white/70 px-4 py-5"
+              />
             ) : (
               turns.map((turn, index) => (
                 <div key={turn.id} className="space-y-2">
@@ -138,25 +140,26 @@ export const MobilePage = () => {
                     />
                   ) : null}
 
-                  {turn.assistantContent ? (
-                    <div className="rounded-2xl bg-white px-3 py-3 text-sm text-stone-900 shadow-sm">
-                      <AssistantContent
-                        content={turn.assistantContent}
-                        className="prose-assistant"
-                        isStreaming={turn.isStreaming}
-                        turnId={turn.id}
-                      />
-                    </div>
-                  ) : isRunning ? (
-                    <div className="rounded-2xl bg-white px-3 py-3 text-sm text-stone-400 shadow-sm">
-                      <ThinkingDots />
-                    </div>
-                  ) : null}
+                  <TurnChrome
+                    turn={turn}
+                    isLive={isRunning && index === turns.length - 1}
+                    serverNameById={serverNameById}
+                    bubbleClassName="rounded-2xl bg-white px-3 py-3 text-sm text-stone-900 shadow-sm"
+                    contentClassName="prose-assistant"
+                    {...(index === turns.length - 1
+                      ? { onRegenerate: () => void rerunLastPrompt(), canRegenerate: canRerun }
+                      : {})}
+                  />
                 </div>
               ))
             )}
-            <div ref={conversationEndRef} />
           </div>
+
+          <JumpToLatestButton
+            visible={showJumpButton}
+            onClick={() => scrollToBottom()}
+            className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2"
+          />
         </section>
 
         <form
@@ -176,6 +179,7 @@ export const MobilePage = () => {
                 handleSubmit()
               }
             }}
+            aria-label="Message"
             placeholder="Ask anything…"
             rows={1}
             className="w-full resize-none rounded-2xl border border-stone-300 bg-white px-3 py-3 text-base leading-relaxed outline-none ring-amber-300 transition focus:ring-2"
@@ -222,7 +226,7 @@ export const MobilePage = () => {
               <ContextGaugeSlot className="text-stone-500" />
             </div>
 
-            {/* Right: microphone, send */}
+            {/* Right: microphone, stop/send */}
             <div className="flex items-center gap-2">
               {speech.visible ? (
                 <button
@@ -259,23 +263,32 @@ export const MobilePage = () => {
                 </Button>
               ) : null}
 
-              <Button
-                type="submit"
-                aria-label={
-                  isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'
-                }
-                title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
-                disabled={isRunning || isCoolingDown || !prompt.trim()}
-                className="h-10 min-w-10 rounded-full px-2"
-              >
-                {isCoolingDown ? (
-                  <span className="text-xs tabular-nums">{submitLabel}</span>
-                ) : isRunning ? (
-                  <FaSpinner className="h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <FaArrowUp className="h-4 w-4" aria-hidden="true" />
-                )}
-              </Button>
+              {isRunning ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  aria-label="Stop generating"
+                  title="Stop generating"
+                  onClick={stop}
+                  className="h-10 min-w-10 rounded-full px-2"
+                >
+                  <FaStop className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  aria-label={isCoolingDown ? `Wait ${submitLabel}` : 'Send'}
+                  title={isCoolingDown ? `Wait ${submitLabel}` : 'Send'}
+                  disabled={isCoolingDown || !prompt.trim()}
+                  className="h-10 min-w-10 rounded-full px-2"
+                >
+                  {isCoolingDown ? (
+                    <span className="text-xs tabular-nums">{submitLabel}</span>
+                  ) : (
+                    <FaArrowUp className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </Button>
+              )}
             </div>
           </div>
 

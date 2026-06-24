@@ -522,6 +522,13 @@ export type PluginManifest = {
   // out-of-the-box (e.g. web search) sets this to `true`. An explicit user
   // choice in settings always wins over this default.
   defaultEnabled?: boolean
+  // Optional cold-start suggestion the host may surface in the empty-state
+  // starter prompts (B3). Contributed here — alongside the other manifest
+  // descriptors — so the host derives starters from *enabled capabilities*
+  // without hard-coding any concrete plugin id, and never advertises a prompt
+  // for a disabled plugin. A short imperative sentence, e.g. "Help debug this
+  // code.".
+  starterPrompt?: string
 }
 
 // The shape every plugin package's entry module must export for dynamic

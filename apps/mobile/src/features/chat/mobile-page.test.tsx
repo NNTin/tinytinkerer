@@ -59,8 +59,10 @@ const mockChatState = vi.hoisted(() => ({
   isRetryPending: false,
   cooldownUntil: undefined as string | undefined,
   submitPrompt: vi.fn(() => true),
+  rerunLastPrompt: vi.fn(),
   resetConversation: vi.fn(),
-  cancelRetry: vi.fn()
+  cancelRetry: vi.fn(),
+  stop: vi.fn()
 }))
 
 const mockSpeechState = vi.hoisted(() => ({
@@ -106,6 +108,30 @@ vi.mock('@tinytinkerer/app-browser', async () => {
         {content.nodes[0]?.children?.[0]?.value}
       </div>
     ),
+    TurnChrome: ({
+      turn
+    }: {
+      turn: {
+        id: string
+        assistantContent: { nodes: Array<{ children?: Array<{ value?: string }> }> } | null
+      }
+    }) =>
+      turn.assistantContent ? (
+        <div data-turn-id={turn.id}>{turn.assistantContent.nodes[0]?.children?.[0]?.value}</div>
+      ) : null,
+    ConversationEmptyState: () => <div data-empty-state="true" />,
+    JumpToLatestButton: ({ visible }: { visible: boolean }) =>
+      visible ? (
+        <button type="button" aria-label="Jump to latest">
+          New messages
+        </button>
+      ) : null,
+    useStickToBottom: () => ({
+      scrollRef: { current: null },
+      isPinned: true,
+      showJumpButton: false,
+      scrollToBottom: () => undefined
+    }),
     TurnActivityPanel: ({ activity, isLive }: { activity: MockActivity; isLive: boolean }) => (
       <section aria-label="Reasoning and activity">
         <h3>Reasoning &amp; activity{isLive ? ' (live)' : ''}</h3>
@@ -130,8 +156,11 @@ vi.mock('@tinytinkerer/app-browser', async () => {
       isCoolingDown: false,
       submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
       submitPrompt: mockChatState.submitPrompt,
+      rerunLastPrompt: mockChatState.rerunLastPrompt,
+      canRerun: false,
       resetConversation: mockChatState.resetConversation,
-      cancelRetry: mockChatState.cancelRetry
+      cancelRetry: mockChatState.cancelRetry,
+      stop: mockChatState.stop
     })
   }
 })
@@ -278,10 +307,13 @@ describe('MobilePage', () => {
     expect(textarea.value).toBe('Blocked message')
   })
 
-  it('disables sending while the agent is running', () => {
+  it('replaces send with a Stop button while the agent is running', () => {
     mockChatState.isRunning = true
     renderMobilePage()
 
-    expect(screen.getByRole('button', { name: 'Thinking…' })).toBeDisabled()
+    const stopButton = screen.getByRole('button', { name: 'Stop generating' })
+    expect(stopButton).not.toBeDisabled()
+    fireEvent.click(stopButton)
+    expect(mockChatState.stop).toHaveBeenCalledTimes(1)
   })
 })

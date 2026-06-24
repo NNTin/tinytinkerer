@@ -51,6 +51,13 @@ export const FaReceipt = (props: FaIconProps) => (
   </svg>
 )
 
+// fa-stop (solid) — the "Stop generation" affordance.
+export const FaStop = (props: FaIconProps) => (
+  <svg viewBox="0 0 384 512" fill="currentColor" aria-hidden="true" {...props}>
+    <path d="M0 128C0 92.7 28.7 64 64 64L320 64c35.3 0 64 28.7 64 64l0 256c0 35.3-28.7 64-64 64L64 448c-35.3 0-64-28.7-64-64L0 128z" />
+  </svg>
+)
+
 // fa-spinner (solid)
 export const FaSpinner = (props: FaIconProps) => (
   <svg viewBox="0 0 512 512" fill="currentColor" aria-hidden="true" {...props}>

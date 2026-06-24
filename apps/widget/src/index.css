@@ -8,6 +8,15 @@
   --widget-border: #d7d4ca;
   --widget-text: #25231d;
   --widget-muted: #6c675a;
+  /* Generic tokens consumed by shared app-browser components (turn chrome,
+     empty state, tabbed settings, jump pill). Aliased to the widget palette so
+     a host theme that overrides --widget-* cascades into them too. */
+  --bg: var(--widget-bg);
+  --panel: var(--widget-panel);
+  --border: var(--widget-border);
+  --text: var(--widget-text);
+  --muted: var(--widget-muted);
+  --accent: #d97706;
   font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -97,6 +106,14 @@ body[data-widget-view-mode='host'] .widget-stage {
 
 .widget-floating-shell[data-dragging='true'] .widget-shell-grip {
   cursor: grabbing;
+}
+
+/* Keyboard focus must be visible on the window controls (C1). */
+.widget-shell-grip:focus-visible,
+.widget-shell-resize:focus-visible {
+  outline: 2px solid #d97706;
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .widget-shell-minimize {

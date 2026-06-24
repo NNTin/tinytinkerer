@@ -56,8 +56,16 @@ export type ChatSurfaceController = {
   // input the moment a prompt is accepted, without waiting for the backend
   // response. The send itself runs in the background (issue #206).
   submitPrompt: (prompt: string) => boolean
+  // Re-run the latest user prompt as a fresh generation, preserving history.
+  // Backs the per-message "Regenerate" action (shared TurnActions).
+  rerunLastPrompt: () => Promise<void>
+  // True when there is a user turn to regenerate and the surface is idle.
+  canRerun: boolean
   resetConversation: () => Promise<void>
   cancelRetry: () => void
+  // Abort the in-flight generation. Surfaced as the "Stop" affordance whenever
+  // `isRunning` is true.
+  stop: () => void
 }
 
 export const useChatSurfaceController = (): ChatSurfaceController => {
@@ -68,6 +76,8 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const isRetryPending = useChatStore((state) => state.isRetryPending)
   const initialize = useChatStore((state) => state.initialize)
   const sendPrompt = useChatStore((state) => state.sendPrompt)
+  const rerunLastPrompt = useChatStore((state) => state.rerunLastPrompt)
+  const stop = useChatStore((state) => state.stop)
   const resetConversation = useChatStore((state) => state.resetConversation)
   const cancelRetry = useChatStore((state) => state.cancelRetry)
   const refreshStatus = useStatusStore((state) => state.refresh)
@@ -179,8 +189,11 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     isCoolingDown,
     submitLabel,
     submitPrompt,
+    rerunLastPrompt,
+    canRerun: !isRunning && !isCoolingDown && turns.some((turn) => turn.userText.length > 0),
     resetConversation,
-    cancelRetry
+    cancelRetry,
+    stop
   }
 }
 

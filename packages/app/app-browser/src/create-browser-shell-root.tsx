@@ -69,6 +69,7 @@ export const createBrowserShellRoot = ({
     hostToken: injected.hostToken ?? null,
     githubClientId: injected.githubClientId ?? readEnvValue('VITE_GITHUB_CLIENT_ID'),
     githubRedirectUri: injected.githubRedirectUri,
+    theme: injected.theme,
     sentryDsn: readEnvValue('VITE_SENTRY_DSN'),
     sentryEnvironment: readEnvValue('VITE_SENTRY_ENVIRONMENT'),
     appVersion: __APP_VERSION__,

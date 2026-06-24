@@ -198,6 +198,74 @@ describe('createChatStore', () => {
     })
   })
 
+  it('stop() aborts the active run (Q1)', async () => {
+    let capturedSignal: AbortSignal | undefined
+    mockExecuteChatPrompt.mockImplementation(
+      (options: { signal?: AbortSignal }) =>
+        new Promise<void>(() => {
+          capturedSignal = options.signal
+        })
+    )
+
+    const store = createChatStore({
+      shell: makeShell(),
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    store.setState({ hydrated: true, conversationId: 'conv-1' })
+
+    // Kick off a run that never resolves, then stop it.
+    void store.getState().sendPrompt('hello')
+    await vi.waitFor(() => expect(capturedSignal).toBeDefined())
+    expect(capturedSignal?.aborted).toBe(false)
+
+    store.getState().stop()
+    expect(capturedSignal?.aborted).toBe(true)
+  })
+
+  it('rerunLastPrompt() re-runs the latest user prompt as a fresh generation', async () => {
+    mockExecuteChatPrompt.mockResolvedValue(undefined)
+
+    const store = createChatStore({
+      shell: makeShell(),
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    store.setState({
+      hydrated: true,
+      conversationId: 'conv-1',
+      events: [
+        { id: 'e1', type: 'user.message', payload: { text: 'first question' } },
+        {
+          id: 'e2',
+          type: 'assistant.done',
+          payload: { source: 'an answer', content: { nodes: [] } }
+        }
+      ] as never
+    })
+
+    await store.getState().rerunLastPrompt()
+
+    expect(mockExecuteChatPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: 'first question' })
+    )
+  })
+
+  it('rerunLastPrompt() is a no-op when there is no user prompt yet', async () => {
+    mockExecuteChatPrompt.mockResolvedValue(undefined)
+
+    const store = createChatStore({
+      shell: makeShell(),
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    store.setState({ hydrated: true, conversationId: 'conv-1', events: [] })
+
+    await store.getState().rerunLastPrompt()
+
+    expect(mockExecuteChatPrompt).not.toHaveBeenCalled()
+  })
+
   it('does not reload the cooldown when an unrelated setting changes', async () => {
     const getPreference = vi.fn(() => Promise.resolve(undefined))
     const shell = makeShell()

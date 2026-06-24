@@ -1,12 +1,15 @@
 import {
-  AssistantContent,
   ContextGaugeSlot,
   ContextInspectorSlot,
+  ConversationEmptyState,
+  JumpToLatestButton,
   LazyBrowserSettingsModal,
   PermissionModal,
   TurnActivityPanel,
+  TurnChrome,
   useChatComposer,
-  useChatSurfaceController
+  useChatSurfaceController,
+  useStickToBottom
 } from '@tinytinkerer/app-browser'
 import {
   Button,
@@ -16,19 +19,16 @@ import {
   FaMicrophone,
   FaReceipt,
   FaRotateLeft,
-  FaSpinner,
-  ThinkingDots
+  FaStop
 } from '@tinytinkerer/ui'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { WebChatLoading, WebPanelLoading } from '../../app/loading-screen'
 
-const systemLevelStyle: Record<'info' | 'warning' | 'error', string> = {
+const noticeStyle: Record<'info' | 'warning' | 'error', string> = {
   info: 'border-stone-200 bg-stone-50 text-stone-600',
   warning: 'border-amber-200 bg-amber-50 text-amber-800',
   error: 'border-rose-200 bg-rose-50 text-rose-700'
 }
-
-const noticeStyle: Record<'info' | 'warning' | 'error', string> = systemLevelStyle
 
 export const ChatPage = () => {
   const {
@@ -45,14 +45,18 @@ export const ChatPage = () => {
     submitLabel,
     isCoolingDown,
     submitPrompt,
+    rerunLastPrompt,
+    canRerun,
     resetConversation,
-    cancelRetry
+    cancelRetry,
+    stop
   } = useChatSurfaceController()
   const { prompt, setPrompt, speech, handleSubmit } = useChatComposer(submitPrompt)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const conversationEndRef = useRef<HTMLDivElement>(null)
+  // Smart auto-scroll + "Jump to latest" pill, shared across shells.
+  const { scrollRef, showJumpButton, scrollToBottom } = useStickToBottom<HTMLDivElement>(events)
 
   // Auto-grow textarea
   useEffect(() => {
@@ -61,11 +65,6 @@ export const ChatPage = () => {
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`
   }, [prompt])
-
-  // Scroll to bottom when new content arrives
-  useEffect(() => {
-    conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [events])
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -82,13 +81,13 @@ export const ChatPage = () => {
     <div className="mx-auto flex h-screen w-full max-w-5xl flex-col">
       <main className="flex flex-1 flex-col gap-3 overflow-hidden px-4 py-4 md:px-8">
         {/* Conversation */}
-        <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm">
+        <section className="relative flex min-h-0 flex-1 flex-col rounded-xl border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm">
           <h2 className="shrink-0 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
             Conversation
           </h2>
-          <div className="mt-3 flex-1 overflow-y-auto space-y-4">
+          <div ref={scrollRef} className="mt-3 flex-1 overflow-y-auto space-y-4">
             {turns.length === 0 ? (
-              <p className="text-sm text-[var(--muted)]">Start a conversation below.</p>
+              <ConversationEmptyState count={4} onSelectPrompt={setPrompt} />
             ) : (
               turns.map((turn, index) => (
                 <div key={turn.id} className="space-y-2">
@@ -115,25 +114,26 @@ export const ChatPage = () => {
                     />
                   ) : null}
 
-                  {turn.assistantContent ? (
-                    <div className="rounded-lg bg-white px-3 py-2 text-sm text-stone-900 shadow-sm">
-                      <AssistantContent
-                        content={turn.assistantContent}
-                        className="prose-assistant"
-                        isStreaming={turn.isStreaming}
-                        turnId={turn.id}
-                      />
-                    </div>
-                  ) : isRunning ? (
-                    <div className="rounded-lg bg-white px-3 py-2.5 text-sm text-stone-400 shadow-sm">
-                      <ThinkingDots />
-                    </div>
-                  ) : null}
+                  <TurnChrome
+                    turn={turn}
+                    isLive={isRunning && index === turns.length - 1}
+                    serverNameById={serverNameById}
+                    bubbleClassName="rounded-lg bg-white px-3 py-2 text-sm text-stone-900 shadow-sm"
+                    contentClassName="prose-assistant"
+                    {...(index === turns.length - 1
+                      ? { onRegenerate: () => void rerunLastPrompt(), canRegenerate: canRerun }
+                      : {})}
+                  />
                 </div>
               ))
             )}
-            <div ref={conversationEndRef} />
           </div>
+
+          <JumpToLatestButton
+            visible={showJumpButton}
+            onClick={() => scrollToBottom()}
+            className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
+          />
         </section>
 
         {/* Composer */}
@@ -149,11 +149,15 @@ export const ChatPage = () => {
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask anything… (Enter to send, Shift+Enter for newline)"
+            aria-label="Message"
+            placeholder="Ask anything…"
             rows={1}
             className="w-full resize-none rounded-md border border-stone-300 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none ring-amber-300 transition focus:ring-2"
             style={{ minHeight: '44px' }}
           />
+          <p className="mt-1 text-[11px] text-[var(--muted)]">
+            Enter to send • Shift+Enter for newline
+          </p>
 
           {/* Composer actions */}
           <div className="mt-2 flex items-center justify-between gap-2">
@@ -203,7 +207,7 @@ export const ChatPage = () => {
               <ContextInspectorSlot icon={<FaReceipt className="h-4 w-4" aria-hidden="true" />} />
             </div>
 
-            {/* Right: microphone, send */}
+            {/* Right: microphone, stop/send */}
             <div className="flex items-center gap-2">
               {speech.visible ? (
                 <button
@@ -236,24 +240,33 @@ export const ChatPage = () => {
                 </Button>
               ) : null}
 
-              {/* Send */}
-              <Button
-                type="submit"
-                aria-label={
-                  isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'
-                }
-                title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
-                disabled={isRunning || isCoolingDown || !prompt.trim()}
-                className="h-9 min-w-9 px-2"
-              >
-                {isCoolingDown ? (
-                  <span className="text-xs tabular-nums">{submitLabel}</span>
-                ) : isRunning ? (
-                  <FaSpinner className="h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <FaArrowUp className="h-4 w-4" aria-hidden="true" />
-                )}
-              </Button>
+              {/* Stop while running, otherwise Send */}
+              {isRunning ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  aria-label="Stop generating"
+                  title="Stop generating"
+                  onClick={stop}
+                  className="h-9 min-w-9 px-2"
+                >
+                  <FaStop className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  aria-label={isCoolingDown ? `Wait ${submitLabel}` : 'Send'}
+                  title={isCoolingDown ? `Wait ${submitLabel}` : 'Send'}
+                  disabled={isCoolingDown || !prompt.trim()}
+                  className="h-9 min-w-9 px-2"
+                >
+                  {isCoolingDown ? (
+                    <span className="text-xs tabular-nums">{submitLabel}</span>
+                  ) : (
+                    <FaArrowUp className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </Button>
+              )}
             </div>
           </div>
 

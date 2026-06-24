@@ -35,8 +35,10 @@ const mockChatState = vi.hoisted(() => ({
   isCoolingDown: false,
   // submitPrompt returns the accept/reject decision synchronously (issue #206).
   submitPrompt: vi.fn(() => true),
+  rerunLastPrompt: vi.fn(),
   resetConversation: vi.fn(),
-  cancelRetry: vi.fn()
+  cancelRetry: vi.fn(),
+  stop: vi.fn()
 }))
 
 const mockSettingsState = vi.hoisted(() => ({
@@ -95,12 +97,13 @@ vi.mock('@tinytinkerer/app-browser', async () => {
         {content.nodes[0]?.children?.[0]?.value}
       </div>
     ),
-    LazyBrowserSettingsModal: ({
+    LazySettingsPanel: ({
       open,
       onOpenChange
     }: {
       open: boolean
       onOpenChange: (open: boolean) => void
+      presentation?: 'modal' | 'inline'
     }) =>
       open ? (
         <div>
@@ -111,6 +114,32 @@ vi.mock('@tinytinkerer/app-browser', async () => {
         </div>
       ) : null,
     PermissionModal: () => null,
+    TurnChrome: ({
+      turn
+    }: {
+      turn: {
+        id: string
+        assistantContent: { nodes: Array<{ children?: Array<{ value?: string }> }> } | null
+      }
+    }) =>
+      turn.assistantContent ? (
+        <div data-turn-id={turn.id}>{turn.assistantContent.nodes[0]?.children?.[0]?.value}</div>
+      ) : null,
+    ConversationEmptyState: () => <div data-empty-state="true" />,
+    JumpToLatestButton: ({ visible }: { visible: boolean }) =>
+      visible ? (
+        <button type="button" aria-label="Jump to latest">
+          New messages
+        </button>
+      ) : null,
+    useStickToBottom: () => ({
+      scrollRef: { current: null },
+      isPinned: true,
+      showJumpButton: false,
+      scrollToBottom: () => undefined
+    }),
+    useBrowserShellConfig: () => ({ theme: undefined }),
+    shellThemeToCssVars: () => ({}),
     TINYTINKERER_BRAND_ASSET_URLS: {
       icon192: '/brand/icon-192.png'
     },
@@ -120,6 +149,7 @@ vi.mock('@tinytinkerer/app-browser', async () => {
       events: mockChatState.events,
       token: mockAuthState.token,
       turns: mockChatState.turns,
+      serverNameById: new Map<string, string>(),
       timeline: [],
       toolEvents: [],
       isRunning: mockChatState.isRunning,
@@ -129,8 +159,11 @@ vi.mock('@tinytinkerer/app-browser', async () => {
       isCoolingDown: mockChatState.isCoolingDown,
       submitLabel: mockChatState.isRunning ? 'Thinking…' : 'Send',
       submitPrompt: mockChatState.submitPrompt,
+      rerunLastPrompt: mockChatState.rerunLastPrompt,
+      canRerun: false,
       resetConversation: mockChatState.resetConversation,
-      cancelRetry: mockChatState.cancelRetry
+      cancelRetry: mockChatState.cancelRetry,
+      stop: mockChatState.stop
     }),
     useSettingsSurfaceController: () => ({
       effectiveStatus: mockSettingsState.effectiveStatus,
@@ -259,11 +292,14 @@ describe('WidgetPage', () => {
     expect(textarea.value).toBe('Blocked message')
   })
 
-  it('disables sending while the agent is running', () => {
+  it('replaces send with a Stop button while the agent is running', () => {
     mockChatState.isRunning = true
     render(<WidgetPage />)
 
-    expect(screen.getByRole('button', { name: 'Thinking…' })).toBeDisabled()
+    const stopButton = screen.getByRole('button', { name: 'Stop generating' })
+    expect(stopButton).not.toBeDisabled()
+    fireEvent.click(stopButton)
+    expect(mockChatState.stop).toHaveBeenCalledTimes(1)
   })
 
   it('opens settings from the footer trigger', () => {

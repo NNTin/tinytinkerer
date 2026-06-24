@@ -16,7 +16,14 @@ export type ChatState = {
   cooldownUntil: string | undefined
   initialize: () => Promise<void>
   sendPrompt: (prompt: string) => Promise<void>
+  // Re-run the latest user prompt as a fresh generation, preserving the existing
+  // conversation history. No-op when there is no user turn yet or a run is
+  // already in flight (gated by sendPrompt). Backs the "regenerate" action.
+  rerunLastPrompt: () => Promise<void>
   cancelRetry: () => void
+  // Abort the in-flight generation (the "Stop" affordance). Shares the single
+  // abort path with cancelRetry — both signal the same AbortController.
+  stop: () => void
   resetConversation: () => Promise<void>
 }
 
@@ -34,6 +41,13 @@ export const createChatStore = (options: {
   let activeRunController: AbortController | undefined
   let initializePromise: Promise<void> | null = null
   let runtimeFactoryPromise: Promise<ChatRuntimeFactory> | null = null
+
+  // Single abort path shared by `stop` (abort a live run) and `cancelRetry`
+  // (abort a queued auto-retry). Keeping one implementation avoids drift between
+  // the two affordances.
+  const abortActiveRun = () => {
+    activeRunController?.abort()
+  }
 
   const ensureInitialized = async (set: ChatStore['setState'], get: ChatStore['getState']) => {
     if (get().hydrated) {
@@ -145,9 +159,23 @@ export const createChatStore = (options: {
         set({ isRunning: false, isRetryPending: false })
       }
     },
+    rerunLastPrompt: async () => {
+      await ensureInitialized(set, get)
+      const { latestUserPrompt } = await loadCoreModule()
+      const prompt = latestUserPrompt(get().events)
+      if (!prompt) {
+        return
+      }
+      // Reuse the normal send path: it re-checks the cooldown/running gate and
+      // appends a fresh generation, so history is preserved (issue: regenerate).
+      await get().sendPrompt(prompt)
+    },
     cancelRetry: () => {
-      activeRunController?.abort()
+      abortActiveRun()
       set({ isRetryPending: false })
+    },
+    stop: () => {
+      abortActiveRun()
     },
     resetConversation: async () => {
       await ensureInitialized(set, get)

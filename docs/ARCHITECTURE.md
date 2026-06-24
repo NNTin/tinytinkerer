@@ -352,6 +352,13 @@ compositor and any external embedding page). It supersedes the former
 widget-only `window.__TINYTINKERER_WIDGET_CONFIG__` global — embedders must set
 `window.__TINYTINKERER_SHELL_CONFIG__` before the shell entry script runs.
 
+The injected config carries an optional `theme?: ShellThemeTokens`
+(`background`/`panel`/`text`/`border`/`accent`). An embedding page may pass it so
+the embedded shell maps host colors onto its design tokens
+(`shellThemeToCssVars`) and visually blends into its host. This is
+host-adaptation, not a full dark mode; see
+[ux-modernization-migration.md](./ux-modernization-migration.md).
+
 This means TinyTinkerer has two different kinds of sharing:
 
 - `app-core` stays headless

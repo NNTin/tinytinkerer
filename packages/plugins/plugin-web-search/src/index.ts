@@ -96,6 +96,7 @@ export const webSearchPluginManifest: PluginManifest = {
   label: 'Web search (Tavily)',
   description: 'Allow the agent to search the web for up-to-date information.',
   defaultEnabled: true,
+  starterPrompt: 'Research a topic for me.',
   toolDescriptors: [
     {
       id: WEB_SEARCH_PLUGIN_ID,

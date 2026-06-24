@@ -116,6 +116,22 @@ export const applyRateLimitEvent = async (
 export const canSendPrompt = (state: ChatStateSnapshot): boolean =>
   Boolean(state.conversationId) && !state.isRunning && !activeCooldown(state.cooldownUntil)
 
+/**
+ * The text of the most recent user message in an event log, or `undefined` when
+ * the conversation has no user turn yet. Backs the "regenerate" capability: the
+ * chat store re-runs this prompt as a fresh generation, preserving the existing
+ * conversation history. Scans from the end so it is O(1) for the common case.
+ */
+export const latestUserPrompt = (events: ChatEvent[]): string | undefined => {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type === 'user.message') {
+      return event.payload.text
+    }
+  }
+  return undefined
+}
+
 export const runPrompt = (
   runtimeFactory: ChatRuntimeFactory,
   prompt: string,

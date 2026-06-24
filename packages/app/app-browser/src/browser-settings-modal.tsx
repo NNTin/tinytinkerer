@@ -670,29 +670,200 @@ const PrivacySection = () => {
   )
 }
 
-export const BrowserSettingsModal = ({
-  open,
-  onOpenChange,
+// The four settings groups (B2). Tab labels are fixed; the Models tab also
+// carries the small Interface display prefs, and Tools carries MCP + Plugins, so
+// every existing section stays present (no setting is dropped or forked).
+const SETTINGS_TABS = [
+  { id: 'account', label: 'Account' },
+  { id: 'models', label: 'Models' },
+  { id: 'tools', label: 'Tools' },
+  { id: 'privacy', label: 'Privacy' }
+] as const
+
+type SettingsTabId = (typeof SETTINGS_TABS)[number]['id']
+
+// The shared tabbed body — identical for both presentations, so settings logic
+// is never forked between the modal (web/mobile) and the inline widget panel.
+const SettingsTabsBody = ({ inspectorPanelSupported }: { inspectorPanelSupported: boolean }) => {
+  const { effectiveStatus, refreshStatus } = useSettingsSurfaceController()
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('account')
+
+  useEffect(() => {
+    void refreshStatus()
+  }, [refreshStatus])
+
+  // Roving arrow-key navigation across the tab rail (WAI-ARIA tabs pattern).
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') {
+      return
+    }
+    event.preventDefault()
+    const index = SETTINGS_TABS.findIndex((tab) => tab.id === activeTab)
+    const delta = event.key === 'ArrowRight' ? 1 : -1
+    const next = SETTINGS_TABS[(index + delta + SETTINGS_TABS.length) % SETTINGS_TABS.length]
+    if (next) {
+      setActiveTab(next.id)
+    }
+  }
+
+  return (
+    <>
+      <div
+        role="tablist"
+        aria-label="Settings sections"
+        className="flex gap-1 border-b border-[var(--border)] px-3 pt-2"
+      >
+        {SETTINGS_TABS.map((tab) => {
+          const selected = tab.id === activeTab
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={`settings-tab-${tab.id}`}
+              aria-selected={selected}
+              aria-controls={`settings-panel-${tab.id}`}
+              tabIndex={selected ? 0 : -1}
+              onKeyDown={handleTabKeyDown}
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-t-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+                selected
+                  ? 'border-b-2 border-amber-500 text-stone-900'
+                  : 'text-[var(--muted)] hover:text-stone-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
+      <div
+        role="tabpanel"
+        id={`settings-panel-${activeTab}`}
+        aria-labelledby={`settings-tab-${activeTab}`}
+        className="max-h-[60vh] space-y-6 overflow-y-auto px-6 py-5"
+      >
+        {activeTab === 'account' ? (
+          <SettingsSection title="Auth">
+            <AuthSection status={effectiveStatus.auth} />
+          </SettingsSection>
+        ) : null}
+
+        {activeTab === 'models' ? (
+          <>
+            <SettingsSection title="Models">
+              <ModelsSection status={effectiveStatus.models} />
+            </SettingsSection>
+            <hr className="border-[var(--border)]" />
+            <SettingsSection title="Interface">
+              <InterfaceSection />
+            </SettingsSection>
+          </>
+        ) : null}
+
+        {activeTab === 'tools' ? (
+          <>
+            <SettingsSection title="MCP Servers">
+              <McpServerList />
+            </SettingsSection>
+            <hr className="border-[var(--border)]" />
+            <SettingsSection title="Plugins">
+              <PluginsSection inspectorPanelSupported={inspectorPanelSupported} />
+            </SettingsSection>
+          </>
+        ) : null}
+
+        {activeTab === 'privacy' ? (
+          <>
+            <SettingsSection title="Privacy">
+              <PrivacySection />
+            </SettingsSection>
+            <hr className="border-[var(--border)]" />
+            <BrandSettingsFooter
+              renderMarkdown={(markdown) => <MarkdownDocument markdown={markdown} />}
+            />
+          </>
+        ) : null}
+      </div>
+    </>
+  )
+}
+
+const SettingsHeader = ({ onClose }: { onClose: () => void }) => (
+  <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
+    <h2 className="text-base font-semibold text-stone-900">Settings</h2>
+    <button
+      type="button"
+      aria-label="Close settings"
+      onClick={onClose}
+      className="flex h-7 w-7 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+    >
+      <span aria-hidden="true" className="text-lg leading-none">
+        ×
+      </span>
+    </button>
+  </div>
+)
+
+export type SettingsPanelPresentation = 'modal' | 'inline'
+
+export type SettingsPanelProps = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  // 'modal' (web/mobile): centered overlay dialog. 'inline' (widget): a
+  // slide-over contained within the embedding shell, so it never covers the host
+  // page (honors the embedded-shell guidance in docs/ui-ux-concept.md).
+  presentation?: SettingsPanelPresentation
   // Whether this shell hosts the developer context-inspector panel. Only the web
   // shell passes `true`; the widget/mobile shells leave it `false`, which disables
   // the inspector plugin's toggle (with an explanatory tooltip). Defaults to
   // `false` so a new shell that forgets to opt in is safe.
-  inspectorPanelSupported = false
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
   inspectorPanelSupported?: boolean
-}) => {
-  const { effectiveStatus, refreshStatus } = useSettingsSurfaceController()
+}
 
+// Single shared settings surface (B2). The tabbed body is identical for every
+// shell; only the chrome around it (overlay modal vs contained slide-over)
+// changes with `presentation`.
+export const SettingsPanel = ({
+  open,
+  onOpenChange,
+  presentation = 'modal',
+  inspectorPanelSupported = false
+}: SettingsPanelProps) => {
   useEffect(() => {
-    if (open) {
-      void refreshStatus()
+    if (!open) {
+      return
     }
-  }, [open, refreshStatus])
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onOpenChange(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open, onOpenChange])
 
   if (!open) {
     return null
+  }
+
+  if (presentation === 'inline') {
+    return (
+      <div
+        role="dialog"
+        aria-modal="false"
+        aria-label="Settings"
+        className="settings-content absolute inset-0 z-30 flex flex-col rounded-[inherit] bg-[var(--panel)] outline-none"
+        data-state="open"
+        data-presentation="inline"
+      >
+        <SettingsHeader onClose={() => onOpenChange(false)} />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <SettingsTabsBody inspectorPanelSupported={inspectorPanelSupported} />
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -710,63 +881,26 @@ export const BrowserSettingsModal = ({
         aria-label="Settings"
         className="settings-content fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-xl outline-none"
         data-state="open"
+        data-presentation="modal"
       >
-        <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
-          <h2 className="text-base font-semibold text-stone-900">Settings</h2>
-          <button
-            type="button"
-            aria-label="Close settings"
-            onClick={() => onOpenChange(false)}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
-          >
-            <span aria-hidden="true" className="text-lg leading-none">
-              ×
-            </span>
-          </button>
-        </div>
-
-        <div className="max-h-[70vh] space-y-6 overflow-y-auto px-6 py-5">
-          <SettingsSection title="Auth">
-            <AuthSection status={effectiveStatus.auth} />
-          </SettingsSection>
-
-          <hr className="border-[var(--border)]" />
-
-          <SettingsSection title="Models">
-            <ModelsSection status={effectiveStatus.models} />
-          </SettingsSection>
-
-          <hr className="border-[var(--border)]" />
-
-          <SettingsSection title="Interface">
-            <InterfaceSection />
-          </SettingsSection>
-
-          <hr className="border-[var(--border)]" />
-
-          <SettingsSection title="MCP Servers">
-            <McpServerList />
-          </SettingsSection>
-
-          <hr className="border-[var(--border)]" />
-
-          <SettingsSection title="Plugins">
-            <PluginsSection inspectorPanelSupported={inspectorPanelSupported} />
-          </SettingsSection>
-
-          <hr className="border-[var(--border)]" />
-
-          <SettingsSection title="Privacy">
-            <PrivacySection />
-          </SettingsSection>
-
-          <hr className="border-[var(--border)]" />
-
-          <BrandSettingsFooter
-            renderMarkdown={(markdown) => <MarkdownDocument markdown={markdown} />}
-          />
-        </div>
+        <SettingsHeader onClose={() => onOpenChange(false)} />
+        <SettingsTabsBody inspectorPanelSupported={inspectorPanelSupported} />
       </div>
     </div>
   )
 }
+
+// Backward-compatible alias: the modal presentation of {@link SettingsPanel}.
+// web/mobile reach this through LazyBrowserSettingsModal.
+export const BrowserSettingsModal = ({
+  open,
+  onOpenChange,
+  inspectorPanelSupported = false
+}: Omit<SettingsPanelProps, 'presentation'>) => (
+  <SettingsPanel
+    open={open}
+    onOpenChange={onOpenChange}
+    presentation="modal"
+    inspectorPanelSupported={inspectorPanelSupported}
+  />
+)

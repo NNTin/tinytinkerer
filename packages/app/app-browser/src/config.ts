@@ -1,5 +1,17 @@
 export type BrowserAuthMode = 'oauth' | 'host-token' | 'hybrid'
 
+// Optional host-supplied theme (B4). An embedding page may pass colour values
+// that the embedded shell maps onto its existing design tokens (--bg, --panel,
+// --text, --border, --accent) so the widget visually blends into its host. All
+// fields are optional; an omitted field falls back to the shell's own token.
+export type ShellThemeTokens = {
+  background?: string
+  panel?: string
+  text?: string
+  border?: string
+  accent?: string
+}
+
 // Callers commonly pass values read from env (`import.meta.env.X`) that may be
 // undefined. Allowing explicit `undefined` here keeps the call sites ergonomic
 // without forcing a conditional spread on every field.
@@ -18,6 +30,7 @@ export type BrowserShellBootstrapOptions = {
   sentryEnvironment?: string | undefined
   appVersion?: string | undefined
   buildHash?: string | undefined
+  theme?: ShellThemeTokens | undefined
 }
 /* eslint-enable no-restricted-syntax */
 
@@ -33,6 +46,7 @@ export type BrowserShellConfig = {
   sentryEnvironment?: string
   appVersion?: string
   buildHash?: string
+  theme?: ShellThemeTokens
 }
 
 export type ResolvedBrowserShellConfig = {
@@ -47,6 +61,7 @@ export type ResolvedBrowserShellConfig = {
   sentryEnvironment: string
   appVersion: string
   buildHash: string
+  theme?: ShellThemeTokens
 }
 
 const DEFAULT_CONFIG: ResolvedBrowserShellConfig = {
@@ -88,6 +103,10 @@ export const resolveBrowserShellConfig = (
     resolved.manifestStartUrl = config.manifestStartUrl
   }
 
+  if (config.theme !== undefined) {
+    resolved.theme = config.theme
+  }
+
   return resolved
 }
 
@@ -111,6 +130,7 @@ export const resolveBrowserShellBootstrapConfig = (
       ? { manifestStartUrl: options.manifestStartUrl }
       : {}),
     ...(options.githubClientId ? { githubClientId: options.githubClientId } : {}),
-    ...(githubRedirectUri ? { githubRedirectUri } : {})
+    ...(githubRedirectUri ? { githubRedirectUri } : {}),
+    ...(options.theme ? { theme: options.theme } : {})
   }
 }

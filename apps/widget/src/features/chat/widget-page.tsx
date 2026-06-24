@@ -1,12 +1,16 @@
 import {
-  AssistantContent,
-  ContextGaugeSlot,
-  LazyBrowserSettingsModal,
+  ConversationEmptyState,
+  JumpToLatestButton,
+  LazySettingsPanel,
   PermissionModal,
   TINYTINKERER_BRAND_ASSET_URLS,
+  TurnChrome,
+  shellThemeToCssVars,
+  useBrowserShellConfig,
   useChatComposer,
   useChatSurfaceController,
-  useSettingsSurfaceController
+  useSettingsSurfaceController,
+  useStickToBottom
 } from '@tinytinkerer/app-browser'
 import {
   Button,
@@ -15,7 +19,7 @@ import {
   FaGithub,
   FaMicrophone,
   FaRotateLeft,
-  FaSpinner
+  FaStop
 } from '@tinytinkerer/ui'
 import {
   Suspense,
@@ -23,6 +27,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode
 } from 'react'
@@ -36,6 +41,8 @@ const WIDGET_MIN_WIDTH = 320
 const WIDGET_MIN_HEIGHT = 420
 const WIDGET_MINIMIZED_SIZE = 64
 const WIDGET_SAFE_MARGIN = 24
+// Keyboard nudge step for moving/resizing the standalone window (C1).
+const WIDGET_KEYBOARD_STEP = 16
 
 type WidgetLayout = {
   x: number
@@ -141,18 +148,21 @@ const WidgetLauncher = ({ onRestore }: { onRestore: () => void }) => (
 
 const WidgetShellBar = ({
   onMinimize,
-  onMovePointerDown
+  onMovePointerDown,
+  onMoveKeyDown
 }: {
   onMinimize: () => void
   onMovePointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void
+  onMoveKeyDown?: (event: ReactKeyboardEvent<HTMLButtonElement>) => void
 }) => (
   <div className="widget-shell-bar border-b border-[var(--widget-border)]">
     <button
       type="button"
       className="widget-shell-grip"
-      aria-label="Move widget"
-      title="Move widget"
+      aria-label="Move widget. Use arrow keys to move, Shift with arrow keys to resize."
+      title="Move widget (arrow keys move, Shift+arrows resize)"
       onPointerDown={onMovePointerDown}
+      {...(onMoveKeyDown ? { onKeyDown: onMoveKeyDown } : {})}
     />
     <button
       type="button"
@@ -172,6 +182,7 @@ const WidgetWindow = ({
   onRestore,
   onMinimize,
   onMovePointerDown,
+  onMoveKeyDown,
   children,
   resizeHandle,
   className,
@@ -182,6 +193,7 @@ const WidgetWindow = ({
   onRestore: () => void
   onMinimize: () => void
   onMovePointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void
+  onMoveKeyDown?: (event: ReactKeyboardEvent<HTMLButtonElement>) => void
   children: ReactNode
   resizeHandle?: ReactNode
   className?: string
@@ -198,7 +210,11 @@ const WidgetWindow = ({
         <WidgetLauncher onRestore={onRestore} />
       ) : (
         <>
-          <WidgetShellBar onMinimize={onMinimize} onMovePointerDown={onMovePointerDown} />
+          <WidgetShellBar
+            onMinimize={onMinimize}
+            onMovePointerDown={onMovePointerDown}
+            {...(onMoveKeyDown ? { onMoveKeyDown } : {})}
+          />
           {children}
         </>
       )}
@@ -213,29 +229,29 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
     initializeError,
     events,
     turns,
+    serverNameById,
     isRunning,
     isRetryPending,
     submitLabel,
     isCoolingDown,
     submitPrompt,
+    rerunLastPrompt,
+    canRerun,
     resetConversation,
-    cancelRetry
+    cancelRetry,
+    stop
   } = useChatSurfaceController()
   const { token } = useSettingsSurfaceController()
   const { prompt, setPrompt, speech, handleSubmit } = useChatComposer(submitPrompt)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const endRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'end' })
-  }, [events])
+  const { scrollRef, showJumpButton, scrollToBottom } = useStickToBottom<HTMLDivElement>(events)
 
   if (isBooting || initializeError) {
     return <WidgetChatLoading {...(initializeError ? { error: initializeError } : {})} />
   }
 
   return (
-    <div className="flex h-full w-full flex-col px-2.5 py-2.5">
+    <div className="relative flex h-full w-full flex-col px-2.5 py-2.5">
       <div
         className={[
           'flex h-full min-h-0 flex-col',
@@ -244,40 +260,42 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
             : 'bg-transparent'
         ].join(' ')}
       >
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
+        <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
           {turns.length === 0 ? (
-            <p className="text-[13px] leading-5 text-[var(--widget-muted)]">
-              Start a compact session. The widget reuses the shared runtime without copying the web
-              shell.
-            </p>
+            <ConversationEmptyState count={1} onSelectPrompt={setPrompt} />
           ) : (
             <div className="space-y-2.5">
-              {turns.map((turn) => (
+              {turns.map((turn, index) => (
                 <div key={turn.id} className="space-y-1">
                   {turn.userText ? (
                     <div className="rounded-xl bg-amber-100 px-2.5 py-1.5 text-[13px] leading-5 text-stone-900">
                       {turn.userText}
                     </div>
                   ) : null}
-                  <div className="rounded-xl border border-[var(--widget-border)] bg-white px-2.5 py-2">
-                    {turn.notice ? (
-                      <div className="mb-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] leading-4 text-amber-800">
-                        {turn.notice.message}
-                      </div>
-                    ) : null}
-                    {turn.assistantContent ? (
-                      <AssistantContent
-                        content={turn.assistantContent}
-                        className="widget-prose text-[13px] leading-5"
-                        turnId={turn.id}
-                      />
-                    ) : null}
-                  </div>
+                  {turn.notice ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] leading-4 text-amber-800">
+                      {turn.notice.message}
+                    </div>
+                  ) : null}
+                  <TurnChrome
+                    turn={turn}
+                    isLive={isRunning && index === turns.length - 1}
+                    serverNameById={serverNameById}
+                    bubbleClassName="rounded-xl border border-[var(--widget-border)] bg-white px-2.5 py-2"
+                    contentClassName="widget-prose text-[13px] leading-5"
+                    {...(index === turns.length - 1
+                      ? { onRegenerate: () => void rerunLastPrompt(), canRegenerate: canRerun }
+                      : {})}
+                  />
                 </div>
               ))}
-              <div ref={endRef} />
             </div>
           )}
+          <JumpToLatestButton
+            visible={showJumpButton}
+            onClick={() => scrollToBottom()}
+            className="sticky bottom-1 left-1/2 z-10 -translate-x-1/2"
+          />
         </div>
 
         <div className="border-t border-[var(--widget-border)] px-3 py-2.5">
@@ -290,6 +308,7 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
                 if (!isCoolingDown) handleSubmit()
               }
             }}
+            aria-label="Message"
             placeholder="Ask something current, compare options, or continue the thread."
             rows={2}
             className="min-h-16 max-h-28 w-full rounded-xl border border-[var(--widget-border)] bg-white px-3 py-2 text-[13px] leading-5 outline-none"
@@ -326,11 +345,8 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
               >
                 <FaRotateLeft className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
-              {/* Context-usage gauge (hidden unless the plugin is enabled and the
-                  model reports usage against a known context window) */}
-              <ContextGaugeSlot className="text-[var(--widget-muted)]" />
             </div>
-            {/* Right: microphone, send */}
+            {/* Right: microphone, stop/send */}
             <div className="flex items-center gap-1.5">
               {speech.visible ? (
                 <button
@@ -360,24 +376,33 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
                   Cancel retry
                 </Button>
               ) : null}
-              <Button
-                size="sm"
-                aria-label={
-                  isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'
-                }
-                title={isCoolingDown ? `Wait ${submitLabel}` : isRunning ? 'Thinking…' : 'Send'}
-                onClick={() => handleSubmit()}
-                disabled={isRunning || isCoolingDown || !prompt.trim()}
-                className="h-8 min-w-8 px-2"
-              >
-                {isCoolingDown ? (
-                  <span className="text-[11px] tabular-nums">{submitLabel}</span>
-                ) : isRunning ? (
-                  <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                ) : (
-                  <FaArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
-                )}
-              </Button>
+              {isRunning ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  aria-label="Stop generating"
+                  title="Stop generating"
+                  onClick={stop}
+                  className="h-8 min-w-8 px-2"
+                >
+                  <FaStop className="h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  aria-label={isCoolingDown ? `Wait ${submitLabel}` : 'Send'}
+                  title={isCoolingDown ? `Wait ${submitLabel}` : 'Send'}
+                  onClick={() => handleSubmit()}
+                  disabled={isCoolingDown || !prompt.trim()}
+                  className="h-8 min-w-8 px-2"
+                >
+                  {isCoolingDown ? (
+                    <span className="text-[11px] tabular-nums">{submitLabel}</span>
+                  ) : (
+                    <FaArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                </Button>
+              )}
             </div>
           </div>
           {speech.error ? (
@@ -389,7 +414,13 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
       </div>
       {settingsOpen ? (
         <Suspense fallback={null}>
-          <LazyBrowserSettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+          {/* Inline slide-over rather than a centered modal: the widget is an
+              embedded surface, so settings must not cover the host page. */}
+          <LazySettingsPanel
+            open={settingsOpen}
+            onOpenChange={setSettingsOpen}
+            presentation="inline"
+          />
         </Suspense>
       ) : null}
 
@@ -400,11 +431,13 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
 
 export const WidgetPage = () => {
   const viewMode = resolveWidgetViewMode(window.location.search)
+  const config = useBrowserShellConfig()
   const [layout, setLayout] = useState<WidgetLayout>(() => loadStandaloneLayout())
   const [hostMinimized, setHostMinimized] = useState(
     () => resolveWidgetWindowMode(window.location.search) === 'minimized'
   )
   const [isDragging, setIsDragging] = useState(false)
+  const [liveMessage, setLiveMessage] = useState('')
   const dragRef = useRef<{ startX: number; startY: number; startLayout: WidgetLayout } | null>(null)
   const resizeRef = useRef<{ startX: number; startY: number; startLayout: WidgetLayout } | null>(
     null
@@ -412,6 +445,7 @@ export const WidgetPage = () => {
 
   const isStandalone = viewMode === 'standalone'
   const isMinimized = isStandalone ? layout.minimized : hostMinimized
+  const themeStyle = shellThemeToCssVars(config.theme)
 
   useEffect(() => {
     document.body.dataset.widgetViewMode = viewMode
@@ -427,6 +461,57 @@ export const WidgetPage = () => {
       startLayout: layout
     }
     setIsDragging(true)
+  }
+
+  // Core keyboard nudge for the standalone window (C1). `resize` true adjusts
+  // width/height; false moves x/y. Each change is announced via the live region.
+  const nudgeLayout = (key: string, resize: boolean): boolean => {
+    const deltas: Record<string, { x: number; y: number }> = {
+      ArrowLeft: { x: -1, y: 0 },
+      ArrowRight: { x: 1, y: 0 },
+      ArrowUp: { x: 0, y: -1 },
+      ArrowDown: { x: 0, y: 1 }
+    }
+    const delta = deltas[key]
+    if (!delta) {
+      return false
+    }
+    const step = WIDGET_KEYBOARD_STEP
+
+    setLayout((current) => {
+      const next = resize
+        ? clampLayout({
+            ...current,
+            width: current.width + delta.x * step,
+            height: current.height + delta.y * step
+          })
+        : clampLayout({
+            ...current,
+            x: current.x + delta.x * step,
+            y: current.y + delta.y * step
+          })
+      setLiveMessage(
+        resize
+          ? `Widget resized to ${next.width} by ${next.height} pixels.`
+          : `Widget moved to ${next.x}, ${next.y}.`
+      )
+      return next
+    })
+    return true
+  }
+
+  // Grip: arrows move, Shift+arrows resize.
+  const handleGripKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (nudgeLayout(event.key, event.shiftKey)) {
+      event.preventDefault()
+    }
+  }
+
+  // Resize handle: the mirror — arrows resize, Shift+arrows move.
+  const handleResizeKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (nudgeLayout(event.key, !event.shiftKey)) {
+      event.preventDefault()
+    }
   }
 
   const handleHostMovePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -576,9 +661,17 @@ export const WidgetPage = () => {
     setHostMinimized(false)
   }
 
+  // Visually-hidden live region announcing keyboard move/resize (C1).
+  const liveRegion = (
+    <span role="status" aria-live="polite" className="sr-only">
+      {liveMessage}
+    </span>
+  )
+
   if (!isStandalone) {
     return (
-      <div className="widget-stage widget-stage-host">
+      <div className="widget-stage widget-stage-host" style={themeStyle}>
+        {liveRegion}
         <WidgetWindow
           minimized={isMinimized}
           dragging={isDragging}
@@ -594,13 +687,15 @@ export const WidgetPage = () => {
   }
 
   return (
-    <div className="widget-stage">
+    <div className="widget-stage" style={themeStyle}>
+      {liveRegion}
       <WidgetWindow
         minimized={isMinimized}
         dragging={isDragging}
         onRestore={handleRestore}
         onMinimize={handleMinimize}
         onMovePointerDown={handleStandaloneMovePointerDown}
+        onMoveKeyDown={handleGripKeyDown}
         style={{
           left: layout.x,
           top: layout.y,
@@ -611,8 +706,8 @@ export const WidgetPage = () => {
           <button
             type="button"
             className="widget-shell-resize"
-            aria-label="Resize widget"
-            title="Resize widget"
+            aria-label="Resize widget. Use arrow keys to resize, Shift with arrow keys to move."
+            title="Resize widget (arrow keys resize, Shift+arrows move)"
             onPointerDown={(event) => {
               resizeRef.current = {
                 startX: event.clientX,
@@ -620,6 +715,7 @@ export const WidgetPage = () => {
                 startLayout: layout
               }
             }}
+            onKeyDown={handleResizeKeyDown}
           />
         }
       >

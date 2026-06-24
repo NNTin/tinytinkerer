@@ -142,6 +142,7 @@ export const browserStatePluginManifest: PluginManifest = {
     'that is not showing). It reads the page through narrow queries — never the whole ' +
     'page at once — and the host redacts form-field values, so text you have typed but ' +
     'not sent is not included. Off by default.',
+  starterPrompt: 'Summarize what is on this page.',
   toolDescriptors: [
     {
       id: 'read_dom',
