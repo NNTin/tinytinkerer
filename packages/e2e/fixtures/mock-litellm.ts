@@ -580,7 +580,20 @@ export const enablePlugin = async (page: Page, label: string): Promise<void> => 
     await expect(settingsDialog).toBeVisible()
   }
 
+  // The settings surface is tabbed: the control may live under any tab (plugins
+  // under "Tools", interface prefs under "Models"), and only the active tab's
+  // panel is mounted. Reveal the control by activating whichever tab renders it.
   const labelText = page.getByText(label)
+  if (!(await labelText.isVisible().catch(() => false))) {
+    const tabs = settingsDialog.getByRole('tab')
+    const tabCount = await tabs.count()
+    for (let index = 0; index < tabCount; index += 1) {
+      await tabs.nth(index).click()
+      if (await labelText.isVisible().catch(() => false)) {
+        break
+      }
+    }
+  }
   await labelText.scrollIntoViewIfNeeded()
   const checkbox = page.getByRole('checkbox', { name: label })
   if (!(await checkbox.isChecked())) {
