@@ -241,6 +241,13 @@ export abstract class AgentRuntimeBase {
     // budget rather than the short machine timeout (D1). The flag drives both, so
     // the behaviour generalises to any future human-input tool — no tool id is
     // special-cased here.
+    //
+    // SCOPE: this skips the ENTIRE tool.beforeExecute hook chain, which today is
+    // exactly the permissions gate (the only beforeExecute gate that ships). The
+    // intent is to bypass that allow/deny gate specifically; if a future,
+    // non-permission beforeExecute gate is added that SHOULD still run for a
+    // human-input tool, narrow this skip to the permission gate rather than the
+    // whole chain.
     const awaitsHumanInput = this.registry.get(toolId)?.awaitsHumanInput === true
 
     if (!awaitsHumanInput) {
