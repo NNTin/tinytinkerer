@@ -89,8 +89,11 @@ const config: KnipConfig = {
       // Playwright specs use the `*.e2e.ts` extension (kept distinct from vitest's
       // globs), which knip's Playwright plugin does not match by default. Register
       // the config + specs as entries so the suite, its fixtures, and
-      // @playwright/test are all traced as used.
-      entry: ['playwright.config.ts', 'tests/**/*.e2e.ts'],
+      // @playwright/test are all traced as used. The custom reporters are likewise
+      // named only as string paths in the config's `reporter` array (knip can't load
+      // the config — it throws without E2E_PORT — so it can't follow them), so list
+      // them here too or they read as unused files.
+      entry: ['playwright.config.ts', 'tests/**/*.e2e.ts', 'reporters/**/*.ts'],
       project: ['**/*.ts'],
       // The Allure Playwright reporter is named as a string in the reporter array
       // (issue #254), not imported, so knip cannot trace it.
