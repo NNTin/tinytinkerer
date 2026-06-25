@@ -34,6 +34,34 @@ const requirePort = (name: string): number => {
 const webPort = requirePort('E2E_PORT')
 const widgetPort = requirePort('E2E_PORT_WIDGET')
 const mobilePort = requirePort('E2E_PORT_MOBILE')
+
+// Bail-fast budget. A single root cause typically reds many tests at once, and with
+// `retries: 1` each failure runs twice — so a fully-reddened shard burns CI minutes
+// (worst of all when the cascade manifests as 60s timeouts). `maxFailures` stops a shard
+// once N tests have failed; the remaining tests are then not run and the reporter below
+// (`reporters/bail-warning.ts`) surfaces them as a job WARNING.
+//
+// This is PER Playwright process, i.e. PER SHARD — the suite is sharded into independent
+// jobs (e2e-reusable.yml) with no cross-shard coordination, so the effective budget is
+// N×(shard count). That is acceptable: `--shard` distributes a cascade's victims across
+// shards, so each affected shard bails on its own cluster.
+//
+// CI-only by default (3); unbounded locally so a developer's full run is never truncated.
+// Override with E2E_MAX_FAILURES (0 = unbounded). Verified: a flaky test that passes on
+// retry does NOT count toward the budget, so `retries: 1` absorbs flakes without tripping
+// the bail; only tests that finally fail count, each after exhausting its retries.
+const resolveMaxFailures = (): number => {
+  const raw = process.env.E2E_MAX_FAILURES
+  if (raw !== undefined && raw.trim() !== '') {
+    const value = Number(raw)
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error(`E2E_MAX_FAILURES must be a non-negative integer, got ${raw}`)
+    }
+    return value
+  }
+  return process.env.CI ? 3 : 0
+}
+
 const baseURL = `http://localhost:${webPort}/web/`
 const widgetURL = `http://localhost:${widgetPort}/widget/`
 const mobileURL = `http://localhost:${mobilePort}/mobile/`
@@ -56,6 +84,8 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
+  // Stop a shard early once this many tests have failed (see resolveMaxFailures above).
+  maxFailures: resolveMaxFailures(),
   // In CI the suite also emits Allure results so the PR deploy-preview report can
   // merge them with the vitest results (issue #254). resultsDir is relative to this
   // package, i.e. packages/e2e/allure-results — the reusable e2e workflow uploads it
@@ -76,6 +106,10 @@ export default defineConfig({
     ? [
         ['github'],
         ['list'],
+        // Emits a job WARNING listing the tests a `maxFailures` bail skipped — they
+        // otherwise vanish silently from the merged Allure report (they run no test, so
+        // produce no result). See reporters/bail-warning.ts.
+        ['./reporters/bail-warning.ts'],
         [
           'allure-playwright',
           {

@@ -32,6 +32,9 @@ no secrets and makes no real network calls.
 - `fixtures/mock-litellm.ts` — pipes `/api/*` through the real edge worker and mocks
   the LiteLLM upstream it calls; plus the shared UI helpers.
 - `fixtures/snippets.ts` — adversarial inputs used by the current suite.
+- `reporters/bail-warning.ts` — a Playwright reporter (CI only) that emits a job
+  **warning** listing the tests a `maxFailures` bail skipped, since those run nothing and
+  so are otherwise absent from the merged Allure report. See _Bail-fast_ below.
 - `tests/*.e2e.ts` — the specs (`*.e2e.ts`, kept out of vitest's globs).
   `sandbox-isolation.e2e.ts` verifies the code-exec sandbox isolation guarantees
   that jsdom cannot cover; `event-logger.e2e.ts` verifies the Event Logger plugin
@@ -78,6 +81,24 @@ controllable stream — flush part 1, wait for `releaseStreamGate(page)`
 (`window.__ttGate.release()`), then flush the rest. Nothing in the app or edge is
 mocked (the bytes come from the real worker); only byte delivery is paced, exactly
 as a slow network would.
+
+## Bail-fast (`maxFailures`)
+
+In CI each shard stops once **3** tests have failed (`E2E_MAX_FAILURES`, default `3`;
+`0` = unbounded; unbounded locally). A single root cause tends to red many tests at once,
+and with `retries: 1` each failure runs twice, so bailing avoids burning CI minutes on an
+already-doomed shard — most of all when the cascade shows up as 60s timeouts.
+
+The budget is **per shard** (one Playwright process per shard, no cross-shard
+coordination), so the effective total is `3 × shard count`. That is fine: `--shard`
+spreads a cascade's victims across shards, so each affected shard bails on its own cluster.
+A flaky test that passes on retry does **not** count toward the budget.
+
+When a shard bails, its remaining tests don't run — so they produce no Allure result and
+are absent from the merged report. `reporters/bail-warning.ts` annotates the job with a
+warning naming those skipped tests so the partial report is not mistaken for a full pass.
+The failures that tripped the bail still red the e2e gate; **re-run to see the full
+failure picture.** Tune the threshold in `.github/workflows/e2e-reusable.yml`.
 
 ## Running locally
 

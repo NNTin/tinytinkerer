@@ -135,6 +135,11 @@ jobs:
           name: shells-dist
           path: apps
 
+      # `maxFailures` (playwright.config.ts) bails this shard once a few tests fail so a
+      # single cascading root cause doesn't run the whole reddened shard. It is PER SHARD,
+      # so the effective budget is the per-shard value × the shard count; the default is 3
+      # per shard. Tune it here by setting E2E_MAX_FAILURES (0 = unbounded). When a shard
+      # bails, the bail-warning reporter annotates this job with the tests it skipped.
       - name: Run Playwright e2e (shard ${{ matrix.shard }}/${{ strategy.job-total }})
         run: pnpm --filter @tinytinkerer/e2e e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
