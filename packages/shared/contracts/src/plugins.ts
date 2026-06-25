@@ -189,7 +189,9 @@ export type ChoicePromptRequest = ChoicePromptInput
 // can actually prompt (e.g. the browser, via a modal) provide it; a headless host
 // omits it and the choice-prompt plugin contributes no tool when it is absent (it
 // has no way to ask). Mirrors PermissionRequestService.
-export type ChoicePromptRequestService = (request: ChoicePromptRequest) => Promise<ChoicePromptResult>
+export type ChoicePromptRequestService = (
+  request: ChoicePromptRequest
+) => Promise<ChoicePromptResult>
 
 // The minimal, product-agnostic view of an edge response a plugin tool reads.
 // The host owns the underlying request (and its request telemetry); `json()`

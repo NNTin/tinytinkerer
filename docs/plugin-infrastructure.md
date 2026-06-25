@@ -459,7 +459,7 @@ also settles any open poll as `dismissed` when the run is aborted (Stop) or the 
 answers within the human-input budget surfaces as a tool failure.
 
 > **Note for #43 (Shared UI Package):** a `choicePrompt` **content node** (`ChoicePromptNode { prompt,
-> choices }`) already exists in `contracts`/`content-core` as an unused scaffold (no renderer, no
+choices }`) already exists in `contracts`/`content-core` as an unused scaffold (no renderer, no
 > markdown parser). #85 deliberately does **not** use it: the live poll is a host-rendered modal and the
 > durable record is the tool's activity events, so there is a single source of truth. Rendering an
 > answered poll **inline in the transcript** as that content node is #43's job — wire a renderer for the

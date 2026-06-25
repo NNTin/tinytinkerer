@@ -131,7 +131,9 @@ describe('awaitsHumanInput tools', () => {
       }
     })
 
-    const runtime = new AgentRuntime(planToolProvider('web-search'), registry, { hooks: [denyGate] })
+    const runtime = new AgentRuntime(planToolProvider('web-search'), registry, {
+      hooks: [denyGate]
+    })
     const events = await run(runtime)
 
     expect(completedFor(events, 'web-search')).toBe(false)

@@ -36,7 +36,10 @@ test.describe('choice-prompt plugin (#85)', () => {
     // does not actually block on it.
     await page.waitForTimeout(500)
     await expect(modal).toBeVisible()
-    expect(mock.choiceResult(), 'choice should not fold back before the user answers').toBeUndefined()
+    expect(
+      mock.choiceResult(),
+      'choice should not fold back before the user answers'
+    ).toBeUndefined()
 
     await modal.getByRole('button', { name: 'Blue' }).click()
     await expect(modal).toBeHidden()

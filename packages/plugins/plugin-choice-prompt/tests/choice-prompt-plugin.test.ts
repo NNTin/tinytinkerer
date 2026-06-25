@@ -66,7 +66,9 @@ describe('choice-prompt canonical schema (issue #287)', () => {
 
   it('descriptor schema is the SAME schema the runtime tool validates against', () => {
     const [tool] =
-      choicePromptPlugin().createTools?.(hostWithChoice(vi.fn().mockResolvedValue({ kind: 'dismissed' }))) ?? []
+      choicePromptPlugin().createTools?.(
+        hostWithChoice(vi.fn().mockResolvedValue({ kind: 'dismissed' }))
+      ) ?? []
     expect(descriptor?.id).toBe(ASK_USER_TOOL_ID)
     expect(descriptor?.schema).toBe(choicePromptInputSchema)
     expect(descriptor?.schema).toBe(tool?.schema)
