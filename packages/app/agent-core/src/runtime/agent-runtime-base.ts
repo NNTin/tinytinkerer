@@ -48,14 +48,18 @@ export type AgentRuntimeOptions = {
   hooks?: readonly AgentHookContribution[]
   hookTimeoutMs?: number
   /**
-   * Budget for gates that block on a human decision (those flagged
-   * `awaitsHumanInput`, e.g. the Permissions plugin's allow/deny prompt). A
-   * person needs far longer than a machine hook to read and approve a tool, so
-   * the generic `hookTimeoutMs` (60s) is too short and surfaces a confusing
-   * internal "hook timed out" reason. This larger budget governs human gates;
-   * it stays bounded so it still backstops a host that never renders the prompt.
+   * Budget for anything that blocks on a human (issue #85). It governs BOTH
+   * `tool.beforeExecute` gates flagged `awaitsHumanInput` (e.g. the Permissions
+   * plugin's allow/deny prompt) AND tools flagged `awaitsHumanInput` whose own
+   * `execute` blocks on a person (e.g. the choice-prompt tool awaiting a
+   * selection). A person needs far longer than a machine hook to read and answer,
+   * so the generic `hookTimeoutMs` (60s) / `toolTimeoutMs` (10s) are too short and
+   * surface a confusing internal timeout. This larger budget governs the human
+   * wait; it stays bounded so it still backstops a host that never renders the
+   * prompt. Named for what it is (a human-input budget), not for the hook it
+   * originally served.
    */
-  humanHookTimeoutMs?: number
+  humanInputTimeoutMs?: number
 }
 
 export type RunOptions = {
@@ -132,7 +136,7 @@ export abstract class AgentRuntimeBase {
   protected readonly reportError: RuntimeErrorReporter
   protected readonly hooks: readonly AgentHookContribution[]
   protected readonly hookTimeoutMs: number
-  protected readonly humanHookTimeoutMs: number
+  protected readonly humanInputTimeoutMs: number
 
   constructor(
     protected readonly provider: ModelProvider,
@@ -155,9 +159,10 @@ export abstract class AgentRuntimeBase {
     this.hooks = options.hooks ?? []
     this.hookTimeoutMs = options.hookTimeoutMs ?? 60_000
     // 5 minutes: generous enough for a human to read a tool (e.g. run_javascript
-    // source) and decide, while still bounding the wait so a host that never
-    // renders the prompt fails closed rather than hanging the run forever.
-    this.humanHookTimeoutMs = options.humanHookTimeoutMs ?? 300_000
+    // source) and decide, or to answer a choice poll, while still bounding the wait
+    // so a host that never renders the prompt fails closed rather than hanging the
+    // run forever.
+    this.humanInputTimeoutMs = options.humanInputTimeoutMs ?? 300_000
   }
 
   abstract run(prompt: string, options?: RunOptions): AsyncGenerator<ChatEvent>
@@ -229,27 +234,38 @@ export abstract class AgentRuntimeBase {
       return { ok: false, error }
     }
 
-    const gate = await runToolBeforeExecuteHooks(
-      this.hooks,
-      {
-        stepId,
-        ...(parentStepId ? { parentStepId } : {}),
-        toolId,
-        input
-      },
-      this.hookTimeoutMs,
-      this.humanHookTimeoutMs
-    )
-    if (!gate.allow) {
-      const error = `Tool execution blocked: ${gate.reason}`
-      yield createEvent('agent.tool.failed', { stepId, toolId, error })
-      return { ok: false, error }
+    // A tool whose own execution blocks on a human (issue #85, e.g. the
+    // choice-prompt tool) is SELF-GATING: it already asks the user, so running it
+    // through the tool.beforeExecute permission gate would be a prompt-to-show-a-
+    // prompt. Skip the gate for it (D6), and give its execution the human-input
+    // budget rather than the short machine timeout (D1). The flag drives both, so
+    // the behaviour generalises to any future human-input tool — no tool id is
+    // special-cased here.
+    const awaitsHumanInput = this.registry.get(toolId)?.awaitsHumanInput === true
+
+    if (!awaitsHumanInput) {
+      const gate = await runToolBeforeExecuteHooks(
+        this.hooks,
+        {
+          stepId,
+          ...(parentStepId ? { parentStepId } : {}),
+          toolId,
+          input
+        },
+        this.hookTimeoutMs,
+        this.humanInputTimeoutMs
+      )
+      if (!gate.allow) {
+        const error = `Tool execution blocked: ${gate.reason}`
+        yield createEvent('agent.tool.failed', { stepId, toolId, error })
+        return { ok: false, error }
+      }
     }
 
     try {
       const output = await withTimeout(
         this.registry.run(toolId, input),
-        this.toolTimeoutMs,
+        awaitsHumanInput ? this.humanInputTimeoutMs : this.toolTimeoutMs,
         `Tool ${toolId} timed out`
       )
       yield createEvent('agent.tool.completed', { stepId, toolId, output })

@@ -11,12 +11,13 @@ package, so a plugin package depends **only** on `contracts`. `agent-core` owns 
 _runtime_ (the `PluginRegistry`, the hook runners, and the `ToolRegistry`) and re-exports the
 contract so its public surface is unchanged for existing consumers (`app-core`, `app-browser`).
 
-The repo currently ships six plugins under `packages/plugins/*`: **Feedback**
+The repo currently ships seven plugins under `packages/plugins/*`: **Feedback**
 (`send_feedback`), **Event logger** (a `chat.event` observer hook), **Permissions** (a
 `tool.beforeExecute` gate), **Web search** (the Tavily `web-search` tool), **Code execution**
-(the `run_javascript` sandbox tool), and **Browser state** (the `read_dom` page-reading tool). A
-plugin contributes tools and/or hooks, and may use a host-injected capability (telemetry capture, a
-permission prompt, an edge request, a code sandbox, or a DOM read) without importing the host.
+(the `run_javascript` sandbox tool), **Browser state** (the `read_dom` page-reading tool), and
+**Choice prompt** (the `ask_user` human-in-the-loop tool). A plugin contributes tools and/or hooks,
+and may use a host-injected capability (telemetry capture, a permission prompt, a **user-choice
+prompt**, an edge request, a code sandbox, or a DOM read) without importing the host.
 
 > **Decoupling:** `app-browser` has **no static dependency** on any concrete plugin — not in its
 > `package.json`, not as an import. It depends only on the `PluginModule` contract in
@@ -408,6 +409,61 @@ and `<iframe srcdoc>` stripped for minimal exposure — so text the user typed b
 never shipped to the model (the outline likewise never previews a form field's or editor's text).
 Because `read_dom` sends first-party page content to the model provider when invoked, it is disclosed
 in `PRIVACY.md` (see the "Browser state plugin (read_dom)" section).
+
+## The Choice prompt plugin (`@tinytinkerer/plugin-choice-prompt`)
+
+The choice-prompt tool ships as its own package at `packages/plugins/plugin-choice-prompt`,
+depending only on `contracts`. It exports the `PluginModule` surface — `manifest` (a
+`PluginManifest` whose single `toolDescriptor` keeps the stable tool id `ask_user`) and
+`createPlugin` — plus `choicePromptPlugin()`, `choicePromptPluginManifest`,
+`summarizeChoicePromptActivity`, `CHOICE_PROMPT_PLUGIN_ID`, and `ASK_USER_TOOL_ID` for direct/test
+use. Its manifest sets **no** `defaultEnabled`, so it ships **off** — the first interactive
+human-in-the-loop tool blocks the run on the user, so it is opt-in.
+
+This is the first **two-way** surface (issue #85): the agent can ask the **user** a question with a
+set of `options` and (when `allowCustom`) a free-text answer, and the user's selection folds back into
+the run as the tool's result. Crucially it is an agent-**invoked tool** (like `web-search`), not a
+hook gate — its `execute` BLOCKS until the user answers, then returns the answer:
+
+```
+ask_user tool.execute({ question, options, allowCustom })
+        │  host.requestUserChoice({ question, options, allowCustom })   ← injected capability
+        ▼
+app-browser requestUserChoice  → enqueues on the shared choice store → <ChoicePromptModal/> resolves it
+        ▼
+   { kind: 'option', value } | { kind: 'custom', text } | { kind: 'dismissed' }   ← the tool result (#276)
+```
+
+`contracts` owns only the `ChoicePromptRequestService` / `ChoicePromptRequest` / `ChoicePromptResult`
+_types_ and the canonical `choicePromptInputSchema` / `choicePromptResultSchema`; `app-browser`'s
+`create-runtime.ts` implements the capability from `requestUserChoice` (`choice-service.ts`), and the
+generic `<ChoicePromptModal/>` renders it across the web/widget/mobile shells. `createTools(host)`
+returns no tool when `host.requestUserChoice` is absent (a headless host), exactly mirroring how
+web-search tolerates a missing `edgeFetch`. The request is **self-describing** (it _is_ the tool
+input), so unlike the permission prompt it needs **no plugin-emitted view-model** — only a
+`summarizeActivity` for the durable transcript record (the question asked + the answer given).
+
+**Human-input tools are a runtime concept, not a host hack.** Because a person cannot beat the 10s
+machine `toolTimeoutMs`, the `Tool` contract carries an `awaitsHumanInput` flag. When set, the runtime
+(`agent-runtime-base.ts`) (a) governs the tool's execution by the human-input budget
+(`humanInputTimeoutMs`, ~5 min — the same budget that governs the Permissions hook gate, renamed from
+`humanHookTimeoutMs` since it now covers tools too) and (b) treats the tool as **self-gating**: it is
+**exempt from the `tool.beforeExecute` permission gate**, since a tool that already asks the user needs
+no separate Allow/Deny prompt. Both behaviours key off the flag, not a tool id, so they generalise to
+any future HITL tool.
+
+**Dismissal vs. timeout.** A user who closes the prompt resolves a structured `{ kind: 'dismissed' }`
+result — a normal "the user declined" outcome the model reacts to — **not** a tool failure. The host
+also settles any open poll as `dismissed` when the run is aborted (Stop) or the conversation is reset
+(`chat-store.ts` → `resetChoiceStore`), so a poll never outlives its run. Only a poll the host never
+answers within the human-input budget surfaces as a tool failure.
+
+> **Note for #43 (Shared UI Package):** a `choicePrompt` **content node** (`ChoicePromptNode { prompt,
+> choices }`) already exists in `contracts`/`content-core` as an unused scaffold (no renderer, no
+> markdown parser). #85 deliberately does **not** use it: the live poll is a host-rendered modal and the
+> durable record is the tool's activity events, so there is a single source of truth. Rendering an
+> answered poll **inline in the transcript** as that content node is #43's job — wire a renderer for the
+> existing scaffold there rather than duplicating the poll as both an event record and a content node.
 
 ## Activation state flow
 

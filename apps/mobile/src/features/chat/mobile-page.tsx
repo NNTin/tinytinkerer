@@ -1,4 +1,5 @@
 import {
+  ChoicePromptModal,
   ContextGaugeSlot,
   ConversationEmptyState,
   JumpToLatestButton,
@@ -310,6 +311,7 @@ export const MobilePage = () => {
       ) : null}
 
       <PermissionModal />
+      <ChoicePromptModal />
     </div>
   )
 }

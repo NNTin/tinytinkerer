@@ -47,6 +47,10 @@ type SandboxResult = {
   error?: string
 }
 
+// The choice-prompt tool's result (issue #85), folded back as a `tool` message and
+// surfaced through `LiteLLMMock.choiceResult`.
+type ChoiceResult = { kind?: string; value?: unknown; text?: unknown }
+
 export type LiteLLMMock = {
   /** Raw chat-completion request bodies the edge forwarded to LiteLLM, in order. */
   requestBodies: () => string[]
@@ -59,6 +63,14 @@ export type LiteLLMMock = {
   sandboxResult: () => SandboxResult | undefined
   /** Number of ACTION decisions issued (run_javascript invocations requested). */
   actionCount: () => number
+  /**
+   * The `ChoicePromptResult` the runtime folded back into a later request's tool
+   * result message (issue #85), parsed out of the captured bodies (most recent
+   * first), or `undefined` if the choice prompt has not been answered yet. Lets a
+   * test assert the user's selection (`{ kind: 'option', value }` / `'custom'` /
+   * `'dismissed'`) re-entered the model context. Mirrors `sandboxResult`.
+   */
+  choiceResult: () => ChoiceResult | undefined
   /**
    * URLs of any request that actually reached the network for the exfiltration
    * sentinel host. A route fulfils these with 200, so a request only lands here if
@@ -106,6 +118,26 @@ const parseSandboxResultFromBody = (body: LiteLLMRequestBody): SandboxResult | u
       }
     } catch {
       /* a non-sandbox tool result (e.g. an "Error: …" blocked-tool message) */
+    }
+  }
+  return undefined
+}
+
+// Parse the ChoicePromptResult the runtime fed back as a native `tool` result
+// message (issue #85): the answered choice prompt produces a `role: 'tool'` turn
+// whose `content` is the JSON-encoded `{ kind, … }` result. A dismissed/blocked turn
+// is also valid JSON (`{ kind: 'dismissed' }`); only a `kind` discriminant is needed.
+const parseChoiceResultFromBody = (body: LiteLLMRequestBody): ChoiceResult | undefined => {
+  const messages = Array.isArray(body.messages) ? body.messages : []
+  for (const message of messages) {
+    if (message.role !== 'tool' || typeof message.content !== 'string') continue
+    try {
+      const parsed: unknown = JSON.parse(message.content)
+      if (parsed && typeof parsed === 'object' && 'kind' in parsed) {
+        return parsed as ChoiceResult
+      }
+    } catch {
+      /* a non-choice tool result (e.g. a sandbox result, or an "Error: …" message) */
     }
   }
   return undefined
@@ -197,6 +229,27 @@ const runJavascriptToolCall = (code: string): ToolCall => ({
   function: { name: 'run_javascript', arguments: JSON.stringify({ code }) }
 })
 
+// The fixed choice poll the mock issues in 'ask' mode (issue #85). Exported so the
+// choice-prompt spec asserts against the SAME question/options the model "asked",
+// keeping the fixture the single source of truth.
+export const CHOICE_QUESTION = 'Which colour do you prefer?'
+export const CHOICE_OPTIONS = ['Red', 'Blue']
+
+// The single ask_user tool call the mock issues in 'ask' mode (issue #85): a native
+// tool call whose arguments are the choice poll the host renders.
+const askUserToolCall = (): ToolCall => ({
+  id: 'call_ask_user_1',
+  type: 'function',
+  function: {
+    name: 'ask_user',
+    arguments: JSON.stringify({
+      question: CHOICE_QUESTION,
+      options: CHOICE_OPTIONS,
+      allowCustom: true
+    })
+  }
+})
+
 // The rationale the mock streams as ordinary `content` for the FINAL decision (the
 // default model has no separate reasoning channel — its rationale IS the content).
 // An ACTION turn emits NO content (a non-reasoning model returns only the tool
@@ -220,10 +273,12 @@ export const SYNTHESIS_ANSWER = 'Done — the sandbox finished executing the req
 
 // How the mocked model resolves a ReAct decision:
 //   • 'tool'    — issue a single `run_javascript` action (the sandbox suite path).
+//   • 'ask'     — issue a single `ask_user` action (the choice-prompt suite path,
+//                 issue #85), so a real-browser HITL poll is driven.
 //   • 'no-tool' — finish immediately with no action, so a plain chat completes and
 //                 synthesizes WITHOUT needing the code-exec tool (for suites where
 //                 that tool stays disabled, e.g. the event-logger spec).
-type ChatMode = 'tool' | 'no-tool'
+type ChatMode = 'tool' | 'ask' | 'no-tool'
 
 // Per-run state, captured as the edge forwards chat requests to the LiteLLM mock.
 type UpstreamState = {
@@ -290,7 +345,7 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
     // badge. When the spec opted into narration, the rationale is emitted as
     // ordinary content first and shows as the step's thought (issue #276).
     state.actions += 1
-    const toolCall = runJavascriptToolCall(state.code)
+    const toolCall = state.mode === 'ask' ? askUserToolCall() : runJavascriptToolCall(state.code)
     if (body.stream === true) {
       return new Response(sseToolCallStream(toolCall, state.actionReasoning), {
         status: 200,
@@ -515,6 +570,19 @@ const installMock = async (
       return undefined
     },
     actionCount: () => state.actions,
+    choiceResult: () => {
+      for (let i = state.bodies.length - 1; i >= 0; i -= 1) {
+        const raw = state.bodies[i]
+        if (!raw) continue
+        try {
+          const result = parseChoiceResultFromBody(JSON.parse(raw) as LiteLLMRequestBody)
+          if (result) return result
+        } catch {
+          /* a non-JSON body never carries a tool result */
+        }
+      }
+      return undefined
+    },
     sentinelHits: () => sentinelHits
   }
 }
@@ -533,6 +601,13 @@ export const installNarratedToolMock = (
   code: string,
   actionReasoning: string
 ): Promise<LiteLLMMock> => installMock(page, code, 'tool', SYNTHESIS_ANSWER, actionReasoning)
+
+// The choice-prompt suite's mock (issue #85): the model issues a single `ask_user`
+// action so a real-browser HITL poll is driven and its answer folds back. The action
+// turn is silent (realistic non-reasoning model), and the run finishes once the
+// answer (or a dismissal) is present as a `tool` result.
+export const installChoicePromptMock = (page: Page): Promise<LiteLLMMock> =>
+  installMock(page, '', 'ask', SYNTHESIS_ANSWER)
 
 // A NO-TOOL chat mock: the ReAct decision finishes immediately, so a plain message
 // completes and synthesizes user.message + assistant.* events WITHOUT the code-exec
@@ -629,6 +704,11 @@ export const enablePermissionsPlugin = (page: Page): Promise<void> =>
 // via its Settings label (exactly `manifest.label`).
 export const enableContextUsagePlugin = (page: Page): Promise<void> =>
   enablePlugin(page, 'Context usage gauge')
+
+// The Choice prompt plugin (ask_user human-in-the-loop tool), enabled via its
+// Settings label (exactly `manifest.label`).
+export const enableChoicePromptPlugin = (page: Page): Promise<void> =>
+  enablePlugin(page, 'Choice prompt (ask you a question)')
 
 // The Context inspector plugin (developer panel showing the exact forwarded
 // request), enabled via its Settings label (exactly `manifest.label`).

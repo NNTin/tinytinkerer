@@ -126,6 +126,7 @@ vi.mock('@tinytinkerer/app-browser', async () => {
         </div>
       ) : null,
     PermissionModal: () => null,
+    ChoicePromptModal: () => null,
     ContextGaugeSlot: () => null,
     ContextInspectorSlot: () => null,
     AssistantContent: ({

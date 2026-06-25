@@ -1,4 +1,5 @@
 import {
+  ChoicePromptModal,
   ContextGaugeSlot,
   ContextInspectorSlot,
   ConversationEmptyState,
@@ -292,6 +293,7 @@ export const ChatPage = () => {
       ) : null}
 
       <PermissionModal />
+      <ChoicePromptModal />
     </div>
   )
 }

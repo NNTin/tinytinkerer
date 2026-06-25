@@ -799,6 +799,12 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/plugins/plugin-choice-prompt:
+    dependencies:
+      '@tinytinkerer/contracts':
+        specifier: workspace:*
+        version: link:../../shared/contracts
+
   packages/plugins/plugin-code-exec:
     dependencies:
       '@tinytinkerer/contracts':

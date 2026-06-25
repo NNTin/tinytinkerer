@@ -1,4 +1,5 @@
 import {
+  ChoicePromptModal,
   ConversationEmptyState,
   JumpToLatestButton,
   LazySettingsPanel,
@@ -428,6 +429,7 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
       ) : null}
 
       <PermissionModal />
+      <ChoicePromptModal />
     </div>
   )
 }

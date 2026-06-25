@@ -46,6 +46,47 @@ export const feedbackInputSchema = z.object({
 })
 export type FeedbackInput = z.infer<typeof feedbackInputSchema>
 
+// Input contract for the `ask_user` tool exposed by the choice-prompt plugin
+// (issue #85) — the first interactive human-in-the-loop tool. The agent invokes
+// it to ask the USER a question with a set of selectable `options`, optionally
+// allowing a free-text `custom` answer. The shape is intentionally self-describing
+// so the host can render the live poll directly from this input — unlike the
+// permission prompt, no plugin-emitted view-model is needed. Planner-facing prose
+// lives on the schema (#287): the descriptor's JSON Schema is generated from here,
+// so what the model reads cannot drift from the runtime contract.
+export const choicePromptInputSchema = z.object({
+  question: z
+    .string()
+    .min(1)
+    .max(1000)
+    .describe('The question to ask the user. Be specific so the choice is unambiguous.'),
+  options: z
+    .array(z.string().min(1).max(200))
+    .min(1)
+    .max(10)
+    .describe('The selectable answers (1–10). Each is a short, distinct label the user can pick.'),
+  allowCustom: z
+    .boolean()
+    .default(true)
+    .describe(
+      'When true (default), the user may type a free-text answer instead of picking an option.'
+    )
+})
+export type ChoicePromptInput = z.infer<typeof choicePromptInputSchema>
+
+// Output contract for the `ask_user` tool (issue #85). A discriminated union over
+// the three terminal outcomes so the model can react precisely: the user picked an
+// `option`, typed a `custom` answer, or `dismissed` the prompt without choosing. A
+// dismissal is a NORMAL result (the user declined), not a tool failure — the model
+// is told and continues. The host PRODUCES this value, so the runtime validates it
+// strictly via the tool's `outputSchema`.
+export const choicePromptResultSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('option'), value: z.string() }),
+  z.object({ kind: z.literal('custom'), text: z.string().max(2000) }),
+  z.object({ kind: z.literal('dismissed') })
+])
+export type ChoicePromptResult = z.infer<typeof choicePromptResultSchema>
+
 // Persisted activation state for optional plugins: a map of pluginId -> enabled.
 // A missing entry means "not activated"; all plugins are off by default.
 export const pluginActivationStateSchema = z.record(z.string(), z.boolean())
@@ -77,6 +118,20 @@ export interface Tool<Input, Output> {
   // tool's output mismatch becomes a hard failure where it previously returned. Only
   // add one for a tool whose output you intend to gate that strictly.
   outputSchema?: ZodSchema<Output>
+  // Human-in-the-loop tools (issue #85). A tool whose `execute` BLOCKS on a human
+  // — e.g. the choice-prompt tool awaiting the user's selection — sets this so the
+  // runtime treats it differently from a machine tool in two ways:
+  //   (a) TIMEOUT: it is governed by the human-input budget (`humanInputTimeoutMs`,
+  //       minutes) instead of the short machine `toolTimeoutMs` (10s), which a
+  //       person could never beat; and
+  //   (b) SELF-GATING: it is EXEMPT from the `tool.beforeExecute` permission gate.
+  //       A tool that already asks the user for input needs no separate allow/deny
+  //       prompt — gating it would be a prompt-to-show-a-prompt. The exemption is
+  //       tied to this flag, not to any concrete tool id, so the principle
+  //       ("human-input tools are self-gating") generalises to future HITL tools.
+  // Omit it (the default) and a tool keeps the machine timeout and is gated
+  // normally — the prior behaviour, unchanged for every existing tool.
+  awaitsHumanInput?: boolean
   execute(input: Input): Promise<Output>
 }
 
@@ -120,6 +175,21 @@ export type PermissionRequest = {
 // host omits it and a gating plugin must default to allow when it is absent
 // (it has no way to ask, so it cannot block).
 export type PermissionRequestService = (request: PermissionRequest) => Promise<ToolGateResult>
+
+// A request to ask the human a choice poll (issue #85). It is exactly the
+// choice-prompt tool's input — `{ question, options, allowCustom }` — because that
+// shape is already everything the host needs to render the live prompt (the request
+// is self-describing, so no separate plugin-emitted view-model is required, unlike
+// PermissionView). The tool's `execute` forwards its parsed input here verbatim.
+export type ChoicePromptRequest = ChoicePromptInput
+
+// Optional service a host registers so the choice-prompt tool can ask a human a
+// question and await their answer. Resolves to a ChoicePromptResult (an `option`
+// pick, a `custom` free-text answer, or a `dismissed` no-answer). Only hosts that
+// can actually prompt (e.g. the browser, via a modal) provide it; a headless host
+// omits it and the choice-prompt plugin contributes no tool when it is absent (it
+// has no way to ask). Mirrors PermissionRequestService.
+export type ChoicePromptRequestService = (request: ChoicePromptRequest) => Promise<ChoicePromptResult>
 
 // The minimal, product-agnostic view of an edge response a plugin tool reads.
 // The host owns the underlying request (and its request telemetry); `json()`
@@ -255,6 +325,12 @@ export interface PluginHost {
   // Optional: present only on hosts that can prompt a human. See
   // PermissionRequestService — plugins must tolerate its absence.
   requestPermission?: PermissionRequestService
+  // Optional: present only on hosts that can prompt a human with a choice poll
+  // (the browser). The choice-prompt tool (issue #85) awaits this to ask the user
+  // a question with selectable options and an optional free-text answer; a plugin
+  // must tolerate its absence (contribute no tool when missing). See
+  // ChoicePromptRequestService.
+  requestUserChoice?: ChoicePromptRequestService
   // Optional: present only on hosts with an edge backend. A tool that needs to
   // reach the edge (e.g. web search) builds against this and must tolerate its
   // absence. See PluginEdgeFetch.
@@ -298,7 +374,7 @@ export type AgentHookContribution =
       // Set by gates that block on a human decision (e.g. an allow/deny prompt).
       // The runtime gives these a separate, much larger timeout than a machine
       // hook and surfaces a clear, user-facing reason if that budget elapses —
-      // see runToolBeforeExecuteHooks and AgentRuntimeOptions.humanHookTimeoutMs.
+      // see runToolBeforeExecuteHooks and AgentRuntimeOptions.humanInputTimeoutMs.
       awaitsHumanInput?: boolean
     }
 
