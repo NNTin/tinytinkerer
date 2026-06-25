@@ -2,21 +2,22 @@
 @source "../../../packages";
 
 :root {
-  color-scheme: light;
+  /* The widget's own palette. The generic base tokens (and the derived tokens
+     built on them) are defined in @tinytinkerer/app-browser/styles.css; here we
+     point the generic tokens at the widget palette so a host theme that
+     overrides either --widget-* or the generic tokens cascades into the shared
+     components. The derived tokens (--panel-hover, --accent-soft, …) follow
+     automatically because they are expressed in terms of these. */
   --widget-bg: #f7f7f4;
   --widget-panel: #fffdf8;
   --widget-border: #d7d4ca;
   --widget-text: #25231d;
   --widget-muted: #6c675a;
-  /* Generic tokens consumed by shared app-browser components (turn chrome,
-     empty state, tabbed settings, jump pill). Aliased to the widget palette so
-     a host theme that overrides --widget-* cascades into them too. */
   --bg: var(--widget-bg);
   --panel: var(--widget-panel);
   --border: var(--widget-border);
   --text: var(--widget-text);
   --muted: var(--widget-muted);
-  --accent: #d97706;
   font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
 }
 

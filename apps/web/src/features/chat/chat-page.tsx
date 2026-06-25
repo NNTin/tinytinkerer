@@ -92,7 +92,7 @@ export const ChatPage = () => {
               turns.map((turn, index) => (
                 <div key={turn.id} className="space-y-2">
                   {turn.userText ? (
-                    <p className="rounded-lg bg-amber-100/70 px-3 py-2 text-sm text-stone-800">
+                    <p className="rounded-lg bg-[var(--user-bubble)] px-3 py-2 text-sm text-[var(--text)]">
                       {turn.userText}
                     </p>
                   ) : null}
@@ -118,10 +118,13 @@ export const ChatPage = () => {
                     turn={turn}
                     isLive={isRunning && index === turns.length - 1}
                     serverNameById={serverNameById}
-                    bubbleClassName="rounded-lg bg-white px-3 py-2 text-sm text-stone-900 shadow-sm"
+                    bubbleClassName="rounded-lg bg-[var(--panel)] px-3 py-2 text-sm text-[var(--text-strong)] shadow-sm"
                     contentClassName="prose-assistant"
                     {...(index === turns.length - 1
-                      ? { onRegenerate: () => void rerunLastPrompt(), canRegenerate: canRerun }
+                      ? {
+                          onRegenerateLatest: () => void rerunLastPrompt(),
+                          canRegenerateLatest: canRerun
+                        }
                       : {})}
                   />
                 </div>

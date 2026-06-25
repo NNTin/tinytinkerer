@@ -50,7 +50,7 @@ const RegenerateIcon = () => (
 )
 
 const actionButtonClass =
-  'inline-flex items-center gap-1 rounded-md border border-transparent px-1.5 py-1 text-[11px] text-[var(--muted)] transition-colors hover:border-stone-200 hover:bg-stone-50 hover:text-stone-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300'
+  'inline-flex items-center gap-1 rounded-md border border-transparent px-1.5 py-1 text-[11px] text-[var(--muted)] transition-colors hover:border-[var(--border)] hover:bg-[var(--panel-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-ring)]'
 
 // The compact, live "Now: …" status (C2). Derived from the turn's activity log
 // so it needs no new event: the latest in-flight tool wins, then the most recent
@@ -128,8 +128,13 @@ export type TurnActionsProps = {
   collapsed: boolean
   onToggleCollapsed: () => void
   collapsibleId: string
-  onRegenerate?: () => void
-  canRegenerate?: boolean
+  // Regenerate re-runs the most recent user prompt (`rerunLastPrompt`), which
+  // always targets the LATEST turn regardless of which message this row sits on.
+  // Wire it only on the latest turn — attaching it to an earlier message would
+  // silently regenerate the latest turn, not that message. The name encodes the
+  // contract so a future caller does not assume per-message regeneration.
+  onRegenerateLatest?: () => void
+  canRegenerateLatest?: boolean
 }
 
 // The per-message action row (B1): copy, collapse, regenerate. Lives inside
@@ -140,8 +145,8 @@ export const TurnActions = ({
   collapsed,
   onToggleCollapsed,
   collapsibleId,
-  onRegenerate,
-  canRegenerate = false
+  onRegenerateLatest,
+  canRegenerateLatest = false
 }: TurnActionsProps) => (
   <div className="mt-1.5 flex items-center gap-0.5">
     {copyText.trim().length > 0 ? <CopyButton text={copyText} /> : null}
@@ -155,11 +160,11 @@ export const TurnActions = ({
     >
       <span aria-hidden="true">{collapsed ? 'Show more' : 'Collapse'}</span>
     </button>
-    {onRegenerate ? (
+    {onRegenerateLatest ? (
       <button
         type="button"
-        onClick={onRegenerate}
-        disabled={!canRegenerate}
+        onClick={onRegenerateLatest}
+        disabled={!canRegenerateLatest}
         className={actionButtonClass}
         aria-label="Regenerate response"
         title="Regenerate response"
@@ -185,8 +190,10 @@ export type TurnChromeProps = {
   showActions?: boolean
   // The compact live status line. Default on.
   showStatusLine?: boolean
-  onRegenerate?: () => void
-  canRegenerate?: boolean
+  // Regenerate re-runs the latest user prompt (see {@link TurnActionsProps}).
+  // Pass these only for the latest turn.
+  onRegenerateLatest?: () => void
+  canRegenerateLatest?: boolean
 }
 
 /**
@@ -207,8 +214,8 @@ export const TurnChrome = ({
   contentClassName,
   showActions = true,
   showStatusLine = true,
-  onRegenerate,
-  canRegenerate = false
+  onRegenerateLatest,
+  canRegenerateLatest = false
 }: TurnChromeProps) => {
   const [collapsed, setCollapsed] = useState(false)
   const collapsibleId = useId()
@@ -253,7 +260,7 @@ export const TurnChrome = ({
               collapsed={collapsed}
               onToggleCollapsed={() => setCollapsed((value) => !value)}
               collapsibleId={collapsibleId}
-              {...(onRegenerate ? { onRegenerate, canRegenerate } : {})}
+              {...(onRegenerateLatest ? { onRegenerateLatest, canRegenerateLatest } : {})}
             />
           ) : null}
         </>

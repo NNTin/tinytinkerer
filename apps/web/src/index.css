@@ -1,15 +1,8 @@
 @import 'tailwindcss';
 @source "../../../packages";
 
-:root {
-  color-scheme: light;
-  --bg: #f6f2ec;
-  --panel: #fffaf5;
-  --muted: #766a5d;
-  --border: #dccdb9;
-  --text: #2f2923;
-  --accent: #d97706;
-}
+/* Design tokens live in @tinytinkerer/app-browser/styles.css (imported first in
+   main.tsx). The web shell uses the default palette unchanged. */
 
 body {
   margin: 0;

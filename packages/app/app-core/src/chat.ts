@@ -120,7 +120,9 @@ export const canSendPrompt = (state: ChatStateSnapshot): boolean =>
  * The text of the most recent user message in an event log, or `undefined` when
  * the conversation has no user turn yet. Backs the "regenerate" capability: the
  * chat store re-runs this prompt as a fresh generation, preserving the existing
- * conversation history. Scans from the end so it is O(1) for the common case.
+ * conversation history. Scans from the end, so it returns after one step when
+ * the latest event is the user's prompt (the common case) and is O(n) only when
+ * a tail of assistant/tool events follows it.
  */
 export const latestUserPrompt = (events: ChatEvent[]): string | undefined => {
   for (let index = events.length - 1; index >= 0; index -= 1) {

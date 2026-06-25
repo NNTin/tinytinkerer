@@ -726,10 +726,10 @@ const SettingsTabsBody = ({ inspectorPanelSupported }: { inspectorPanelSupported
               tabIndex={selected ? 0 : -1}
               onKeyDown={handleTabKeyDown}
               onClick={() => setActiveTab(tab.id)}
-              className={`rounded-t-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+              className={`rounded-t-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-ring)] ${
                 selected
-                  ? 'border-b-2 border-amber-500 text-stone-900'
-                  : 'text-[var(--muted)] hover:text-stone-700'
+                  ? 'border-b-2 border-[var(--accent)] text-[var(--text-strong)]'
+                  : 'text-[var(--muted)] hover:text-[var(--text)]'
               }`}
             >
               {tab.label}
@@ -792,12 +792,12 @@ const SettingsTabsBody = ({ inspectorPanelSupported }: { inspectorPanelSupported
 
 const SettingsHeader = ({ onClose }: { onClose: () => void }) => (
   <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
-    <h2 className="text-base font-semibold text-stone-900">Settings</h2>
+    <h2 className="text-base font-semibold text-[var(--text-strong)]">Settings</h2>
     <button
       type="button"
       aria-label="Close settings"
       onClick={onClose}
-      className="flex h-7 w-7 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+      className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--muted)] transition-colors hover:bg-[var(--panel-hover)] hover:text-[var(--text)]"
     >
       <span aria-hidden="true" className="text-lg leading-none">
         ×

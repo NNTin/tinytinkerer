@@ -84,9 +84,10 @@ test.describe('chat history persistence across reload (#250)', () => {
       // The user bubble and the assistant content render for the live turn.
       await expect(page.getByText(prompt)).toBeVisible({ timeout: 30_000 })
       await expect(page.getByText(ANSWER)).toBeVisible({ timeout: 30_000 })
-      // The user bubble carries the amber background (its class token is e.g.
-      // `bg-amber-100` or `bg-amber-100/70`, so match on the substring).
-      await expect(page.locator('[class*="bg-amber-100"]', { hasText: prompt })).toBeVisible()
+      // The user bubble carries the themed user-bubble background token
+      // (`bg-[var(--user-bubble)]`); match on the token name, which only the
+      // user bubble uses, so the selector survives palette changes.
+      await expect(page.locator('[class*="user-bubble"]', { hasText: prompt })).toBeVisible()
 
       // Reload in the SAME browser context — IndexedDB is preserved. The telemetry
       // choice is already persisted, so only a Settings dialog might reappear.
@@ -98,7 +99,7 @@ test.describe('chat history persistence across reload (#250)', () => {
       // — no new chat request is made on reload; the turns are loaded from Dexie.
       await expect(page.getByText(prompt)).toBeVisible({ timeout: 30_000 })
       await expect(page.getByText(ANSWER)).toBeVisible({ timeout: 30_000 })
-      await expect(page.locator('[class*="bg-amber-100"]', { hasText: prompt })).toBeVisible()
+      await expect(page.locator('[class*="user-bubble"]', { hasText: prompt })).toBeVisible()
     })
   }
 

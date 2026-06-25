@@ -118,7 +118,7 @@ export const MobilePage = () => {
               turns.map((turn, index) => (
                 <div key={turn.id} className="space-y-2">
                   {turn.userText ? (
-                    <p className="rounded-2xl bg-amber-100/80 px-3 py-2.5 text-sm text-stone-900">
+                    <p className="rounded-2xl bg-[var(--user-bubble)] px-3 py-2.5 text-sm text-[var(--text)]">
                       {turn.userText}
                     </p>
                   ) : null}
@@ -144,10 +144,13 @@ export const MobilePage = () => {
                     turn={turn}
                     isLive={isRunning && index === turns.length - 1}
                     serverNameById={serverNameById}
-                    bubbleClassName="rounded-2xl bg-white px-3 py-3 text-sm text-stone-900 shadow-sm"
+                    bubbleClassName="rounded-2xl bg-[var(--panel)] px-3 py-3 text-sm text-[var(--text-strong)] shadow-sm"
                     contentClassName="prose-assistant"
                     {...(index === turns.length - 1
-                      ? { onRegenerate: () => void rerunLastPrompt(), canRegenerate: canRerun }
+                      ? {
+                          onRegenerateLatest: () => void rerunLastPrompt(),
+                          canRegenerateLatest: canRerun
+                        }
                       : {})}
                   />
                 </div>

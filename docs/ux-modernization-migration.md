@@ -88,10 +88,22 @@ window.__TINYTINKERER_SHELL_CONFIG__ = {
 `shellThemeToCssVars(theme)` maps these onto the shell's CSS custom properties
 (both the generic `--bg/--panel/--text/--border/--accent` tokens and the
 widget-specific `--widget-*` tokens). The widget applies the result to its stage
-element. This is host-adaptation only — it is **not** a full dark mode. The
-generic tokens are now defined in every shell's `index.css` (the widget aliases
-them to its palette), which prepares the codebase for a future
-`prefers-color-scheme` dark theme.
+element.
+
+The design tokens are defined **once** in
+`@tinytinkerer/app-browser/styles.css` (imported by every shell before its own
+`index.css`), so the three shells no longer keep their own copies and cannot
+drift. That file also defines the _derived_ tokens — `--text-strong`,
+`--panel-hover`, `--accent-ring`, `--accent-soft`, `--user-bubble` — as
+`color-mix` expressions over the base tokens. The shared conversation surface
+(message bubbles, `TurnChrome`, `ConversationEmptyState`, `JumpToLatestButton`,
+the tabbed settings) carries **no literal palette values**; it reads only these
+tokens. So overriding the base tokens — a host theme today, a
+`prefers-color-scheme` dark mode tomorrow — recolors the whole conversation
+surface in one shot, with no per-component change. Fixed semantic colors (the
+notice/warning banners and destructive-action hovers) intentionally stay put.
+This is host-adaptation; it is **not** itself a full dark mode, but it is the
+mechanism a dark mode would reuse.
 
 ## 4. New shared exports (app-browser)
 

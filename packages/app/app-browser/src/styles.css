@@ -1,5 +1,41 @@
 @import '@tinytinkerer/content-react/styles.css';
 
+/*
+ * Design tokens — the single source of truth shared by every shell. Each shell
+ * imports this stylesheet before its own `index.css`, so the values below are
+ * the defaults; a shell may override any base token (the widget aliases them to
+ * its own `--widget-*` palette) and an embedding host may override them at
+ * runtime via `shellThemeToCssVars`.
+ *
+ * The base tokens (`--bg`/`--panel`/`--text`/`--muted`/`--border`/`--accent`)
+ * were previously duplicated in every shell's stylesheet; defining them here
+ * once stops the three copies from drifting.
+ *
+ * The derived tokens are expressed in terms of the base tokens via `color-mix`,
+ * so shared components carry no literal palette values: overriding a base token
+ * (a host theme today, a `prefers-color-scheme` dark mode tomorrow) recolors the
+ * whole conversation surface — bubbles, turn chrome, empty state, jump pill and
+ * settings — with no per-component change.
+ */
+:root {
+  color-scheme: light;
+
+  /* Base palette (the warm default shared by the web and mobile shells). */
+  --bg: #f6f2ec;
+  --panel: #fffaf5;
+  --muted: #766a5d;
+  --border: #dccdb9;
+  --text: #2f2923;
+  --accent: #d97706;
+
+  /* Derived tokens consumed by the shared components. */
+  --text-strong: var(--text);
+  --panel-hover: color-mix(in srgb, var(--text) 6%, var(--panel));
+  --accent-ring: color-mix(in srgb, var(--accent) 42%, white);
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  --user-bubble: color-mix(in srgb, var(--accent) 16%, var(--panel));
+}
+
 @keyframes collapsible-open {
   from {
     height: 0;

@@ -109,7 +109,7 @@ export const ConversationEmptyState = ({
               <button
                 type="button"
                 onClick={() => onSelectPrompt(prompt)}
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-left text-sm text-stone-700 transition-colors hover:border-amber-300 hover:bg-amber-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-left text-sm text-[var(--text)] transition-colors hover:border-[var(--accent-ring)] hover:bg-[var(--accent-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-ring)]"
               >
                 {prompt}
               </button>

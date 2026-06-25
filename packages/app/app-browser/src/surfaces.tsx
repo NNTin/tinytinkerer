@@ -190,6 +190,12 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     submitLabel,
     submitPrompt,
     rerunLastPrompt,
+    // Advisory UI hint for whether the Regenerate control should be enabled. The
+    // single source of truth for whether a rerun actually runs is the store's
+    // `rerunLastPrompt`, which re-checks the same gate as `sendPrompt`
+    // (`latestUserPrompt` exists + not running + off cooldown) — this flag only
+    // mirrors that so the button can disable ahead of the click. Keep the two in
+    // sync: this must never permit a rerun the store would reject.
     canRerun: !isRunning && !isCoolingDown && turns.some((turn) => turn.userText.length > 0),
     resetConversation,
     cancelRetry,

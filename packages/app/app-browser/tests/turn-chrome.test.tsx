@@ -98,7 +98,7 @@ describe('TurnChrome', () => {
   })
 
   it('exposes regenerate only when the capability is provided', () => {
-    const onRegenerate = vi.fn()
+    const onRegenerateLatest = vi.fn()
     const { rerender } = render(
       <TurnChrome turn={makeTurn()} isLive={false} serverNameById={noServers} />
     )
@@ -109,12 +109,12 @@ describe('TurnChrome', () => {
         turn={makeTurn()}
         isLive={false}
         serverNameById={noServers}
-        onRegenerate={onRegenerate}
-        canRegenerate
+        onRegenerateLatest={onRegenerateLatest}
+        canRegenerateLatest
       />
     )
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate response' }))
-    expect(onRegenerate).toHaveBeenCalledTimes(1)
+    expect(onRegenerateLatest).toHaveBeenCalledTimes(1)
   })
 
   it('hides actions while the turn is still streaming', () => {
@@ -123,8 +123,8 @@ describe('TurnChrome', () => {
         turn={makeTurn({ isStreaming: true })}
         isLive
         serverNameById={noServers}
-        onRegenerate={() => undefined}
-        canRegenerate
+        onRegenerateLatest={() => undefined}
+        canRegenerateLatest
       />
     )
     expect(screen.queryByRole('button', { name: 'Copy message' })).toBeNull()

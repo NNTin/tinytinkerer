@@ -268,7 +268,7 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
               {turns.map((turn, index) => (
                 <div key={turn.id} className="space-y-1">
                   {turn.userText ? (
-                    <div className="rounded-xl bg-amber-100 px-2.5 py-1.5 text-[13px] leading-5 text-stone-900">
+                    <div className="rounded-xl bg-[var(--user-bubble)] px-2.5 py-1.5 text-[13px] leading-5 text-[var(--text)]">
                       {turn.userText}
                     </div>
                   ) : null}
@@ -281,10 +281,13 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
                     turn={turn}
                     isLive={isRunning && index === turns.length - 1}
                     serverNameById={serverNameById}
-                    bubbleClassName="rounded-xl border border-[var(--widget-border)] bg-white px-2.5 py-2"
+                    bubbleClassName="rounded-xl border border-[var(--widget-border)] bg-[var(--panel)] px-2.5 py-2"
                     contentClassName="widget-prose text-[13px] leading-5"
                     {...(index === turns.length - 1
-                      ? { onRegenerate: () => void rerunLastPrompt(), canRegenerate: canRerun }
+                      ? {
+                          onRegenerateLatest: () => void rerunLastPrompt(),
+                          canRegenerateLatest: canRerun
+                        }
                       : {})}
                   />
                 </div>
@@ -311,7 +314,7 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
             aria-label="Message"
             placeholder="Ask something current, compare options, or continue the thread."
             rows={2}
-            className="min-h-16 max-h-28 w-full rounded-xl border border-[var(--widget-border)] bg-white px-3 py-2 text-[13px] leading-5 outline-none"
+            className="min-h-16 max-h-28 w-full rounded-xl border border-[var(--widget-border)] bg-[var(--panel)] px-3 py-2 text-[13px] leading-5 outline-none"
           />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-1.5">
             {/* Left: settings, sign in, reset */}
@@ -321,7 +324,7 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
                 aria-label="Settings"
                 title="Settings"
                 onClick={() => setSettingsOpen(true)}
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-white text-[var(--widget-muted)] transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-[var(--widget-text)]"
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-[var(--panel)] text-[var(--widget-muted)] transition-colors hover:border-[var(--border)] hover:bg-[var(--panel-hover)] hover:text-[var(--widget-text)]"
               >
                 <FaGear className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
@@ -331,7 +334,7 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
                   aria-label="Sign in with GitHub"
                   title="Sign in with GitHub"
                   onClick={() => setSettingsOpen(true)}
-                  className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-white text-[var(--widget-muted)] transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-[var(--widget-text)]"
+                  className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-[var(--panel)] text-[var(--widget-muted)] transition-colors hover:border-[var(--border)] hover:bg-[var(--panel-hover)] hover:text-[var(--widget-text)]"
                 >
                   <FaGithub className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
@@ -341,7 +344,7 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
                 aria-label="Reset conversation"
                 title="Reset conversation"
                 onClick={() => void resetConversation()}
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-white text-[var(--widget-muted)] transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-[var(--panel)] text-[var(--widget-muted)] transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
               >
                 <FaRotateLeft className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
@@ -365,7 +368,7 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
                   className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                     speech.listening
                       ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
-                      : 'border-[var(--widget-border)] bg-white text-[var(--widget-muted)] hover:border-stone-300 hover:bg-stone-50 hover:text-[var(--widget-text)]'
+                      : 'border-[var(--widget-border)] bg-[var(--panel)] text-[var(--widget-muted)] hover:border-[var(--border)] hover:bg-[var(--panel-hover)] hover:text-[var(--widget-text)]'
                   }`}
                 >
                   <FaMicrophone className="h-3.5 w-3.5" aria-hidden="true" />
