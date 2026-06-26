@@ -37,7 +37,7 @@ afterEach(() => {
 })
 
 describe('llmPlan', () => {
-  it('requests a plan with tool descriptors in the system message', async () => {
+  it('advertises the tools natively on the request, not in the system message', async () => {
     const modelsChat = makeModelsChat({
       choices: [{ message: { content: JSON.stringify(validPlan) } }]
     })
@@ -46,14 +46,26 @@ describe('llmPlan', () => {
 
     expect(modelsChat).toHaveBeenCalledOnce()
     const [init] = (modelsChat as ReturnType<typeof vi.fn>).mock.calls[0] as [
-      { model: string; stream: boolean; messages: Array<{ role: string; content: string }> }
+      {
+        model: string
+        stream: boolean
+        tool_choice?: string
+        tools?: Array<{ function: { name: string; description?: string } }>
+        messages: Array<{ role: string; content: string }>
+      }
     ]
     expect(init.model).toBe('openai/gpt-4.1-mini')
     expect(init.stream).toBe(false)
 
+    // The tool reaches the model via the native `tools` array (by its wire-safe name)
+    // with tool_choice 'none' — the plan is returned as structured output, not calls.
+    expect(init.tool_choice).toBe('none')
+    const advertised = init.tools?.find((t) => t.function.name === 'mcp_server-1_get_weather')
+    expect(advertised?.function.description).toContain('Get current weather')
+
+    // The system message carries only the planning rules now, not a tool catalogue.
     const systemMsg = init.messages.find((m) => m.role === 'system')
-    expect(systemMsg?.content).toContain('mcp:server-1:get_weather')
-    expect(systemMsg?.content).toContain('Get current weather')
+    expect(systemMsg?.content).not.toContain('mcp:server-1:get_weather')
   })
 
   it('returns the parsed ExecutionPlan on a successful response', async () => {
@@ -73,6 +85,32 @@ describe('llmPlan', () => {
     expect(plan.steps).toHaveLength(3)
     expect(plan.steps[0]?.id).toBe('understand')
     expect(plan.steps[2]?.id).toBe('compose')
+  })
+
+  it('maps an advertised wire tool name in the plan back to the real runtime tool id', async () => {
+    // The model addresses the tool by its advertised, wire-safe name (colons in the
+    // id are sanitized to underscores). The planner must resolve that back to the
+    // real registry id so the executor can run it.
+    const wireNamedPlan = {
+      complexity: 'medium',
+      steps: [
+        { id: 'understand', summary: 'Parse', toolCall: null },
+        {
+          id: 'fetch',
+          summary: 'Get weather',
+          toolCall: { toolId: 'mcp_server-1_get_weather', input: '{"location":"Berlin"}' }
+        },
+        { id: 'compose', summary: 'Answer', toolCall: null }
+      ]
+    }
+    const modelsChat = makeModelsChat({
+      choices: [{ message: { content: JSON.stringify(wireNamedPlan) } }]
+    })
+
+    const plan = await llmPlan('weather?', [], [descriptor], 'openai/gpt-4.1-mini', modelsChat)
+
+    expect(plan.steps[1]?.toolCall?.toolId).toBe('mcp:server-1:get_weather')
+    expect(plan.steps[1]?.toolCall?.input).toEqual({ location: 'Berlin' })
   })
 
   it('strips markdown code fences before parsing JSON', async () => {
