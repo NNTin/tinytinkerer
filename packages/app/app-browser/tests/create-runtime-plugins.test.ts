@@ -85,7 +85,11 @@ describe('plugin runtime contributions', () => {
   })
 
   it('does not expose plugin descriptors for tools that collide with existing tools', async () => {
-    const requestBodies: Array<{ messages?: Array<{ content: string }>; stream?: boolean }> = []
+    const requestBodies: Array<{
+      messages?: Array<{ content: string }>
+      stream?: boolean
+      tools?: Array<{ function: { name: string; description?: string } }>
+    }> = []
     vi.stubGlobal(
       'fetch',
       vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
@@ -94,6 +98,7 @@ describe('plugin runtime contributions', () => {
         const body = JSON.parse(bodyText) as {
           messages?: Array<{ content: string }>
           stream?: boolean
+          tools?: Array<{ function: { name: string; description?: string } }>
         }
         requestBodies.push(body)
         if (body.stream === false) {
@@ -154,10 +159,16 @@ describe('plugin runtime contributions', () => {
 
     await runRuntime(runtime)
 
-    const planningPrompt = requestBodies[0]?.messages?.[0]?.content ?? ''
-    expect(planningPrompt).toContain('Tool: web-search')
-    expect(planningPrompt).toContain('Search the web for fresh context using Tavily.')
-    expect(planningPrompt).not.toContain('plugin override descriptor')
+    // Tools are advertised natively on the request (issue #287), so the planner
+    // descriptor reaches the model via the `tools` array, not the prompt text. The
+    // first plugin to claim 'web-search' owns the descriptor; the collider's
+    // override never advertises.
+    const advertisedTools = requestBodies[0]?.tools ?? []
+    const webSearch = advertisedTools.find((t) => t.function.name === 'web-search')
+    expect(webSearch?.function.description).toBe('Search the web for fresh context using Tavily.')
+    expect(advertisedTools.map((t) => t.function.description)).not.toContain(
+      'plugin override descriptor'
+    )
     vi.unstubAllGlobals()
   })
 
@@ -166,13 +177,18 @@ describe('plugin runtime contributions', () => {
     // remote server's discovered JSON Schema. The canonical schema path must pass
     // that through to the planner descriptor verbatim (no re-derivation), distinct
     // from the plugin path that GENERATES JSON Schema from a Zod schema.
-    const requestBodies: Array<{ messages?: Array<{ content: string }>; stream?: boolean }> = []
+    const requestBodies: Array<{
+      messages?: Array<{ content: string }>
+      stream?: boolean
+      tools?: Array<{ function: { name: string; parameters?: Record<string, unknown> } }>
+    }> = []
     vi.stubGlobal(
       'fetch',
       vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
           messages?: Array<{ content: string }>
           stream?: boolean
+          tools?: Array<{ function: { name: string; parameters?: Record<string, unknown> } }>
         }
         requestBodies.push(body)
         if (body.stream === false) {
@@ -230,12 +246,16 @@ describe('plugin runtime contributions', () => {
 
     await runRuntime(runtime)
 
-    const planningPrompt = requestBodies[0]?.messages?.[0]?.content ?? ''
-    expect(planningPrompt).toContain('mcp:srv:get_weather')
-    // The discovered schema reaches the planner verbatim (the `location` property
-    // and its `required` entry survive the descriptor build).
-    expect(planningPrompt).toContain('"location"')
-    expect(planningPrompt).toContain('"required"')
+    // The MCP tool is advertised natively (issue #287). Its runtime id
+    // `mcp:srv:get_weather` is sanitized to a wire-safe function name, and its
+    // DISCOVERED JSON Schema reaches the planner verbatim as `function.parameters`
+    // (the `location` property and its `required` entry survive the descriptor build).
+    const advertisedTools = requestBodies[0]?.tools ?? []
+    const weather = advertisedTools.find((t) => t.function.name === 'mcp_srv_get_weather')
+    expect(weather).toBeDefined()
+    const params = JSON.stringify(weather?.function.parameters ?? {})
+    expect(params).toContain('"location"')
+    expect(params).toContain('"required"')
     vi.unstubAllGlobals()
   })
 

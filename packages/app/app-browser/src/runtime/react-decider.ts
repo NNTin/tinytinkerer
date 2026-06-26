@@ -18,14 +18,12 @@ import {
 // the system prompt and the model no longer emits a hand-rolled JSON decision —
 // that brittle prose protocol (and its truncation-recovery parsing) is retired.
 const buildDecisionSystemPrompt = (): string =>
-  `You are a ReAct agent. You solve the user's request by reasoning and acting one step at a time.
-Given the user's request and the tool results gathered so far, either call the SINGLE most useful tool to make progress, or — once you have enough information — answer directly without calling any tool.
+  `You are a ReAct agent: solve the user's request one step at a time. Given the request and the tool results so far, either call the single most useful tool to make progress, or — once you have enough — answer directly with no tool call.
 
-Rules:
-- Think through your decision step by step first; your thinking is shown to the user as it streams.
-- Prefer calling a tool whenever one would give a more reliable result than working it out yourself — e.g. exact calculation, parsing, or fetching information. Your own arithmetic and recall are not always reliable, so reach for an available tool rather than guessing.
-- Call at most one tool per step.
-- When the gathered tool results are sufficient, stop calling tools and respond with a short confirmation; the final answer is composed separately.`
+- Think first; your reasoning streams to the user.
+- Prefer a tool whenever it would be more reliable than working it out yourself (exact calculation, parsing, fetching).
+- At most one tool per step.
+- When the results suffice, stop calling tools and give a short confirmation; the final answer is composed separately.`
 
 // Assemble the request messages shared by both decision variants. The accumulated
 // tool I/O is replayed as native assistant `tool_calls` + `tool` result turns

@@ -6,11 +6,13 @@ import {
   executionPlanWireSchema,
   toStrictResponseJsonSchema,
   type ExecutionPlan,
+  type ExecutionPlanWire,
   type KeywordPlannerStep,
   type ResponseFormat
 } from '@tinytinkerer/contracts'
 import { createEdgeError, type ModelsChatFetch } from './edge-fetch'
 import { createRateLimitError } from './rate-limit'
+import { buildToolNameMap, type ToolNameMap } from './tool-calling'
 
 export type PlannerToolDescriptor = {
   id: string
@@ -25,32 +27,36 @@ export type PlannerToolDescriptor = {
 // Name of the structured-output schema sent in `response_format` (issue #287).
 const EXECUTION_PLAN_SCHEMA_NAME = 'execution_plan'
 
-const buildPlanningSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
-  const toolDocs = tools
-    .map(
-      (t) =>
-        `Tool: ${t.id}\nDescription: ${t.description}\nInput schema: ${JSON.stringify(t.inputSchema, null, 2)}`
-    )
-    .join('\n\n')
-
-  // The OUTPUT SHAPE is enforced by the json_schema `response_format` (issue #287),
-  // so the prompt no longer hand-describes the JSON envelope or begs for "ONLY
-  // JSON" — it states the planning task and the tool catalogue. One wire detail the
-  // schema can't convey: a step's `toolCall.input` is a JSON-ENCODED STRING (the
-  // strict-mode workaround for arbitrary per-tool arguments, mirroring native
-  // tool-call `arguments`), so the model must stringify the arguments object.
-  return `You are a planning assistant. Given a user prompt and conversation history, produce an execution plan.
-
-Available tools:
-${toolDocs}
+// Tools are advertised NATIVELY on the request (the `tools` array — the same
+// `buildToolNameMap` definitions the ReAct decider/synthesizer send), so the model
+// reads each tool's name, description, and parameter schema from the tool list, not
+// a hand-built prompt catalogue. The OUTPUT SHAPE is enforced by the json_schema
+// `response_format` (issue #287). Two wire details the tool list / schema can't
+// convey: a step's `toolCall.input` is a JSON-ENCODED STRING (the strict-mode
+// workaround for arbitrary per-tool arguments, mirroring native tool-call
+// `arguments`), and `toolCall.toolId` is the advertised tool name.
+const buildPlanningSystemPrompt = (): string =>
+  `You are a planning assistant. Given the user prompt and conversation history, produce an execution plan using the tools available to you.
 
 Rules:
-- Always include an "understand" step first and a "compose" step last.
-- Give a step a "toolCall" whenever a tool would give a more reliable result than working it out by hand — e.g. exact calculation, parsing, or fetching information; use null only when no available tool would help that step.
-- Use exact tool IDs from the list above.
-- "toolCall.input" is a JSON-encoded STRING of the tool's arguments object (e.g. "{\\"query\\":\\"…\\"}"); use "{}" when the tool needs no arguments.
-- Arguments must match the named tool's input schema.`
-}
+- Start with an "understand" step and end with a "compose" step.
+- Give a step a "toolCall" whenever a tool would be more reliable than doing it by hand (exact calculation, parsing, fetching); use null when no tool would help.
+- "toolCall.toolId" must be the exact name of an available tool.
+- "toolCall.input" is a JSON-encoded STRING of that tool's arguments object (e.g. "{\\"query\\":\\"…\\"}"), or "{}" when none; it must match the tool's parameters.`
+
+// The model addresses a tool by its advertised (wire-safe) name, exactly like the
+// ReAct decider. Map each planned step's `toolId` back to the real runtime tool id
+// (the reverse of buildToolNameMap, NOT a lossy regex round-trip) so the executor
+// resolves it in the registry — mirroring react-decider's toActionDecision. A name
+// the map doesn't know falls through unchanged; the registry is the real gate.
+const resolvePlanToolIds = (wire: ExecutionPlanWire, names: ToolNameMap): ExecutionPlanWire => ({
+  ...wire,
+  steps: wire.steps.map((step) =>
+    step.toolCall
+      ? { ...step, toolCall: { ...step.toolCall, toolId: names.toToolId(step.toolCall.toolId) } }
+      : step
+  )
+})
 
 // The structured-output request (issue #287): ask the provider to enforce the
 // ExecutionPlan shape at generation via a strict json_schema generated from the
@@ -75,7 +81,8 @@ export const llmPlan = async (
   modelsChat: ModelsChatFetch,
   signal?: AbortSignal
 ): Promise<ExecutionPlan> => {
-  const systemPrompt = buildPlanningSystemPrompt(tools)
+  const systemPrompt = buildPlanningSystemPrompt()
+  const names = buildToolNameMap(tools)
 
   const messages = [
     { role: 'system' as const, content: systemPrompt },
@@ -84,7 +91,19 @@ export const llmPlan = async (
   ]
 
   const response = await modelsChat(
-    { model, stream: false, messages, response_format: executionPlanResponseFormat() },
+    {
+      model,
+      stream: false,
+      messages,
+      // Advertise the tools natively (the same definitions the decider sends) so the
+      // planner reads each tool's name/description/parameters from the tool list.
+      // `tool_choice: 'none'` forbids native tool_calls — the plan comes back as
+      // structured output via `response_format`, not as calls (issue #287).
+      ...(names.definitions.length > 0
+        ? { tools: names.definitions, tool_choice: 'none' as const }
+        : {}),
+      response_format: executionPlanResponseFormat()
+    },
     {
       area: 'planning.chat',
       ...(signal ? { signal } : {})
@@ -138,8 +157,9 @@ export const llmPlan = async (
     response
   )
 
-  // Map the strict wire plan (string-encoded tool inputs) back to the runtime
-  // ExecutionPlan and re-validate against the canonical schema — the single
+  // Resolve each step's advertised (wire-safe) tool name back to the real runtime
+  // tool id, then map the strict wire plan (string-encoded tool inputs) back to the
+  // runtime ExecutionPlan and re-validate against the canonical schema — the single
   // contract every downstream consumer (executor, inspector, timeline) relies on.
-  return executionPlanSchema.parse(executionPlanFromWire(wirePlan))
+  return executionPlanSchema.parse(executionPlanFromWire(resolvePlanToolIds(wirePlan, names)))
 }
