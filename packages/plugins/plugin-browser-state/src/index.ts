@@ -45,15 +45,15 @@ export const readDomInputSchema = z.object({
     .max(2_000)
     .optional()
     .describe(
-      'CSS selector to match elements. Omit it for a structural outline of the page ' +
-        'tree (or combine it with `region` to order just the matched elements).'
+      'CSS selector to match elements. Omit for a structural outline of the page tree ' +
+        '(or combine with `region` to order just the matched elements).'
     ),
   include: z
     .array(z.enum(['html', 'text', 'attributes', 'rect']))
     .optional()
     .describe(
-      'Which per-node fields to return for selector/region queries: any of "html", "text", ' +
-        '"attributes", "rect". Defaults to ["text","attributes","rect"]; add "html" for markup.'
+      'Per-node fields for selector/region queries: any of "html", "text", "attributes", ' +
+        '"rect". Default ["text","attributes","rect"]; add "html" for markup.'
     ),
   depth: z
     .number()
@@ -69,8 +69,8 @@ export const readDomInputSchema = z.object({
     .enum(['top', 'bottom'])
     .optional()
     .describe(
-      'Either "bottom" or "top": return rendered elements ordered by their vertical ' +
-        'position on the page. Best for "what is at the bottom/top of the page" questions.'
+      'Return rendered elements ordered by vertical position. Best for "what is at the ' +
+        'bottom/top of the page" questions.'
     ),
   maxNodes: z
     .number()
@@ -147,21 +147,18 @@ export const browserStatePluginManifest: PluginManifest = {
     {
       id: 'read_dom',
       description:
-        'Read the current page. Three ways to call it: (1) with no selector, get page ' +
-        'meta plus a STRUCTURAL OUTLINE of the page tree (tag/id/classes/childCount + a ' +
-        'short text preview, nested to `depth`) — most apps mount their whole UI under a ' +
-        'single <div id="root">, so the outline is how you discover that subtree and pick ' +
-        'a selector; (2) with `region`:"bottom" or "top", get the rendered elements ordered ' +
-        'by where they sit on the page (use this for "what is at the bottom/top of the page"); ' +
-        '(3) with a CSS `selector`, get the matched elements as plain data (tag, id, classes, ' +
-        'and optionally html/text/attributes/layout box), and set `depth` to also nest their ' +
-        'descendants. Use include:["html"] to inspect rendered markup such as an SVG when ' +
-        "debugging why something is not showing. This tool's own output is deliberately " +
-        'narrow and truncated — use it for a quick look and to pick selectors. Separately, ' +
-        'every call also snapshots the FULL sanitized page into a structured tree that the ' +
-        'run_javascript tool receives automatically as its `dom` binding (no need to pass ' +
-        'anything), so to count, search, or extract across the whole page, read_dom once and ' +
-        'then do the heavy work in run_javascript.',
+        'Read the current page. Three modes: (1) no selector → page meta plus a STRUCTURAL ' +
+        'OUTLINE of the tree (tag/id/classes/childCount + short text preview, nested to ' +
+        '`depth`); most apps mount their UI under one <div id="root">, so use the outline to ' +
+        'find that subtree and pick a selector. (2) `region`:"bottom"|"top" → rendered ' +
+        'elements ordered by on-page position (for "what is at the bottom/top of the page"). ' +
+        '(3) CSS `selector` → matched elements as data (tag, id, classes, optionally ' +
+        'html/text/attributes/layout box), with `depth` to nest descendants; use ' +
+        'include:["html"] to inspect markup such as an SVG. Output is deliberately narrow and ' +
+        'truncated — use it for a quick look and to pick selectors. Every call also snapshots ' +
+        'the FULL sanitized page into the `dom` binding that run_javascript receives ' +
+        'automatically, so for whole-page counting/searching/extraction, read_dom once then do ' +
+        'the heavy work in run_javascript.',
       // Canonical schema (issue #287): the SAME Zod schema the tool validates against
       // (see createReadDomTool). The host generates the planner-visible JSON Schema
       // from it — including the `region`/`include` enums and integer bounds the old

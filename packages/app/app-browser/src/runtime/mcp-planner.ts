@@ -29,7 +29,7 @@ const buildPlanningSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
   const toolDocs = tools
     .map(
       (t) =>
-        `Tool: ${t.id}\nDescription: ${t.description}\nInput schema: ${JSON.stringify(t.inputSchema, null, 2)}`
+        `Tool: ${t.id}\nDescription: ${t.description}\nInput schema: ${JSON.stringify(t.inputSchema)}`
     )
     .join('\n\n')
 
@@ -39,17 +39,16 @@ const buildPlanningSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
   // schema can't convey: a step's `toolCall.input` is a JSON-ENCODED STRING (the
   // strict-mode workaround for arbitrary per-tool arguments, mirroring native
   // tool-call `arguments`), so the model must stringify the arguments object.
-  return `You are a planning assistant. Given a user prompt and conversation history, produce an execution plan.
+  return `You are a planning assistant. Given the user prompt and conversation history, produce an execution plan.
 
 Available tools:
 ${toolDocs}
 
 Rules:
-- Always include an "understand" step first and a "compose" step last.
-- Give a step a "toolCall" whenever a tool would give a more reliable result than working it out by hand — e.g. exact calculation, parsing, or fetching information; use null only when no available tool would help that step.
-- Use exact tool IDs from the list above.
-- "toolCall.input" is a JSON-encoded STRING of the tool's arguments object (e.g. "{\\"query\\":\\"…\\"}"); use "{}" when the tool needs no arguments.
-- Arguments must match the named tool's input schema.`
+- Start with an "understand" step and end with a "compose" step.
+- Give a step a "toolCall" whenever a tool would be more reliable than doing it by hand (exact calculation, parsing, fetching); use null when no tool would help.
+- Use exact tool IDs from the list.
+- "toolCall.input" is a JSON-encoded STRING of the arguments object (e.g. "{\\"query\\":\\"…\\"}"), or "{}" when none; it must match the tool's input schema.`
 }
 
 // The structured-output request (issue #287): ask the provider to enforce the

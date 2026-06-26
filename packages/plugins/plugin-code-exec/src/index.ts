@@ -50,10 +50,8 @@ export const codeExecInputSchema = z.object({
     .min(1, 'code must not be empty')
     .max(MAX_CODE_BYTES, `code must be at most ${MAX_CODE_BYTES} bytes`)
     .describe(
-      'JavaScript source to run. It executes inside an async function body, so use ' +
-        '`return <value>` to produce a result and `await` for promises. No network or ' +
-        'storage; the live page is not readable, but the full sanitized DOM from the last ' +
-        'read_dom call is available as the readonly `dom` binding.'
+      'JavaScript source. Runs inside an async function body — use `return <value>` for ' +
+        'the result and `await` for promises.'
     ),
   input: z
     .union([z.record(z.string(), z.unknown()), z.array(z.unknown())])
@@ -197,17 +195,15 @@ export const codeExecPluginManifest: PluginManifest = {
     {
       id: 'run_javascript',
       description:
-        'Run JavaScript in an isolated sandbox and get back its result plus console output. ' +
-        'Use it for calculations, parsing, and data transforms where running code is more ' +
-        'reliable than reasoning by hand. The sandbox has no network or storage access and ' +
-        'cannot read the live page, BUT it receives the full sanitized page DOM from the most ' +
-        'recent read_dom call as a readonly `dom` binding: a structured node tree rooted at ' +
-        '<body> — { tag, id?, classes?, text?, attributes?, children? }, where `text` is the ' +
-        "node's OWN direct text (concatenate `children` for a subtree's text). It is null if " +
-        'read_dom has not run, and script/style content is omitted. Walk `dom` to ' +
-        'count/search/extract across the whole page — read_dom gives only a narrow, truncated ' +
-        'view, so heavy DOM work belongs here. ' +
-        'End your code with a `return` (it runs inside an async function) or rely on console.log.',
+        'Run JavaScript in an isolated sandbox; returns its result plus console output. Use ' +
+        'for calculations, parsing, and data transforms. No network or storage and cannot read ' +
+        'the live page, BUT it receives the full sanitized DOM from the most recent read_dom ' +
+        'call as the readonly `dom` binding: a node tree rooted at <body> — ' +
+        '{ tag, id?, classes?, text?, attributes?, children? }, where `text` is the ' +
+        "node's OWN direct text (concatenate `children` for a subtree). It is null until " +
+        'read_dom runs; script/style content is omitted. read_dom returns only a narrow, ' +
+        'truncated view, so do heavy whole-page counting/searching/extraction here by walking ' +
+        '`dom`. End with a `return` (runs in an async function) or use console.log.',
       // Canonical schema (issue #287): the SAME Zod schema the tool validates against
       // (see createCodeExecTool). The host generates the planner-visible JSON Schema
       // from it; planner prose now lives on the schema's `.describe()` calls.
