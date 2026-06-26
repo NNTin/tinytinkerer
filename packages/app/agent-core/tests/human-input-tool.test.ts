@@ -6,11 +6,13 @@ import { ToolRegistry } from '../src/tools/registry'
 import type { AgentHookContribution } from '../src/plugins/types'
 import type { ModelProvider } from '../src/types'
 
-// Issue #85 — a human-in-the-loop tool (`awaitsHumanInput`) is treated differently
-// from a machine tool in two ways the runtime owns: (D1) it gets the human-input
-// budget instead of the short machine `toolTimeoutMs`, and (D6) it is exempt from the
-// `tool.beforeExecute` permission gate because it already asks the user. These tests
-// drive a full plan-execute run whose single plan step calls the tool.
+// Issue #85 — a human-in-the-loop tool (`awaitsHumanInput`). The RUNTIME owns exactly
+// one behaviour: (D1) the tool's execution gets the human-input budget instead of the
+// short machine `toolTimeoutMs`. The gate EXEMPTION (D6) is NOT a runtime skip — the
+// runtime surfaces the flag on `ToolExecutionContext.awaitsHumanInput` and always runs
+// the gate chain; a gate (the permissions gate, tested in plugin-permissions) reads the
+// flag to self-exempt, while a gate that ignores it still blocks. These tests drive a
+// full plan-execute run whose single plan step calls the tool.
 
 const askInput = { question: 'Pick one', options: ['a', 'b'], allowCustom: true }
 
@@ -44,9 +46,22 @@ const run = async (runtime: AgentRuntime): Promise<ChatEvent[]> => {
   return events
 }
 
+// A gate that denies every tool unconditionally — it does NOT consult the
+// context flag. Used to prove the runtime no longer blanket-skips the gate chain
+// for human-input tools: such a gate still blocks them.
 const denyGate: AgentHookContribution = {
   event: 'tool.beforeExecute',
   handler: () => ({ allow: false, reason: 'Denied by user' })
+}
+
+// A gate that mimics the permissions gate's self-exemption: it allows a tool that
+// declares itself human-input (via the runtime-propagated `context.awaitsHumanInput`)
+// and denies everything else. Proves the runtime surfaces the flag on the context and
+// that a GATE — not the runtime — owns the exemption.
+const selfExemptGate: AgentHookContribution = {
+  event: 'tool.beforeExecute',
+  handler: (context) =>
+    context.awaitsHumanInput ? { allow: true } : { allow: false, reason: 'Denied by user' }
 }
 
 const completedFor = (events: ChatEvent[], toolId: string): boolean =>
@@ -101,7 +116,34 @@ describe('awaitsHumanInput tools', () => {
     expect(failedFor(events, 'slow')).toBe(true)
   })
 
-  it('(D6) exempts a human-input tool from a denying permission gate', async () => {
+  it('(D6) a gate self-exempts a human-input tool via context.awaitsHumanInput', async () => {
+    // The runtime surfaces the tool's flag on ToolExecutionContext; the gate reads it
+    // and allows. A normal tool through the SAME gate is blocked — the exemption is the
+    // gate's decision keyed on the context flag, not a runtime skip.
+    const registry = new ToolRegistry()
+    registry.register({
+      id: 'ask_user',
+      description: 'asks the user',
+      schema: askSchema,
+      awaitsHumanInput: true,
+      async execute() {
+        return { kind: 'option', value: 'a' }
+      }
+    })
+
+    const runtime = new AgentRuntime(planToolProvider('ask_user'), registry, {
+      hooks: [selfExemptGate]
+    })
+    const events = await run(runtime)
+
+    expect(completedFor(events, 'ask_user')).toBe(true)
+    expect(failedFor(events, 'ask_user')).toBe(false)
+  })
+
+  it('runs the gate chain for a human-input tool: a gate that ignores the flag still blocks it', async () => {
+    // The runtime no longer blanket-skips the gate chain for human-input tools — only a
+    // gate that opts to exempt (like the permissions gate) does. A generic deny gate that
+    // does not consult the flag therefore still blocks even a human-input tool.
     const registry = new ToolRegistry()
     registry.register({
       id: 'ask_user',
@@ -116,8 +158,8 @@ describe('awaitsHumanInput tools', () => {
     const runtime = new AgentRuntime(planToolProvider('ask_user'), registry, { hooks: [denyGate] })
     const events = await run(runtime)
 
-    expect(completedFor(events, 'ask_user')).toBe(true)
-    expect(failedFor(events, 'ask_user')).toBe(false)
+    expect(completedFor(events, 'ask_user')).toBe(false)
+    expect(failedFor(events, 'ask_user')).toBe(true)
   })
 
   it('still gates a normal tool through the permission gate', async () => {

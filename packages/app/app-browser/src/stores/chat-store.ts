@@ -6,7 +6,7 @@ import { loadCoreModule } from '../core-module'
 import type { AuthStore } from './auth-store'
 import type { SettingsStore } from './settings-store'
 import type { InspectorStore } from './inspector-store'
-import { resetChoiceStore } from '../choice-service'
+import { resetAllHumanPrompts } from '../human-prompt-bridge'
 
 export type ChatState = {
   hydrated: boolean
@@ -48,9 +48,10 @@ export const createChatStore = (options: {
   // the two affordances.
   const abortActiveRun = () => {
     activeRunController?.abort()
-    // Settle any open choice poll as `dismissed` (issue #85) so a Stop never leaves a
-    // prompt hanging until the human-input timeout. No-op when nothing is pending.
-    resetChoiceStore()
+    // Settle every open human prompt (permission allow/deny, choice poll) so a Stop
+    // never leaves one hanging until the human-input timeout (issue #85). Generic —
+    // names no specific feature. No-op when nothing is pending.
+    resetAllHumanPrompts()
   }
 
   const ensureInitialized = async (set: ChatStore['setState'], get: ChatStore['getState']) => {
@@ -183,9 +184,9 @@ export const createChatStore = (options: {
     },
     resetConversation: async () => {
       await ensureInitialized(set, get)
-      // Settle any open choice poll as `dismissed` (issue #85): it belongs to the
-      // conversation being cleared, so it must not survive into the fresh one.
-      resetChoiceStore()
+      // Settle every open human prompt (issue #85): each belongs to the conversation
+      // being cleared, so none must survive into the fresh one.
+      resetAllHumanPrompts()
       const { resetConversation } = await loadCoreModule()
       const events = await resetConversation(options.shell.conversations, get().conversationId)
       set({ events })

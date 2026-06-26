@@ -51,6 +51,16 @@ type SandboxResult = {
 // surfaced through `LiteLLMMock.choiceResult`.
 type ChoiceResult = { kind?: string; value?: unknown; text?: unknown }
 
+// The fixed id the MOCK gives its ask_user tool call. Note the runtime assigns its
+// OWN id to the executed call when it replays the turn (issue #276), so this is not
+// what appears on the folded-back `tool` result — the parser correlates by the tool's
+// function name instead (see parseChoiceResultFromBody). Declared ahead of its use.
+const ASK_USER_CALL_ID = 'call_ask_user_1'
+
+// The advertised function name of the choice-prompt tool. `ask_user` has no characters
+// the wire-name sanitiser changes, so it is also the name on the forwarded tool_calls.
+const ASK_USER_TOOL_NAME = 'ask_user'
+
 export type LiteLLMMock = {
   /** Raw chat-completion request bodies the edge forwarded to LiteLLM, in order. */
   requestBodies: () => string[]
@@ -124,20 +134,33 @@ const parseSandboxResultFromBody = (body: LiteLLMRequestBody): SandboxResult | u
 }
 
 // Parse the ChoicePromptResult the runtime fed back as a native `tool` result
-// message (issue #85): the answered choice prompt produces a `role: 'tool'` turn
-// whose `content` is the JSON-encoded `{ kind, … }` result. A dismissed/blocked turn
-// is also valid JSON (`{ kind: 'dismissed' }`); only a `kind` discriminant is needed.
+// message (issue #85): the answered choice prompt produces a `role: 'tool'` turn whose
+// `content` is the JSON-encoded `{ kind, … }` result. The runtime assigns the executed
+// call its OWN id (not the mock's), so we cannot match the mock's id directly. Instead
+// correlate by the ask_user tool's function NAME: find the assistant tool-call turn
+// that called ask_user, take the id the runtime gave it, then read the tool result with
+// that id. This keys off the ask_user tool specifically, so a future tool whose result
+// also has a `kind` field can never be mis-attributed here (mirrors how the sandbox
+// parser owns `'timedOut'`).
 const parseChoiceResultFromBody = (body: LiteLLMRequestBody): ChoiceResult | undefined => {
   const messages = Array.isArray(body.messages) ? body.messages : []
+  const askUserCallIds = new Set<string>()
   for (const message of messages) {
-    if (message.role !== 'tool' || typeof message.content !== 'string') continue
+    if (message.role !== 'assistant' || !Array.isArray(message.tool_calls)) continue
+    for (const call of message.tool_calls) {
+      if (call.function.name === ASK_USER_TOOL_NAME) askUserCallIds.add(call.id)
+    }
+  }
+  for (const message of messages) {
+    if (message.role !== 'tool' || typeof message.tool_call_id !== 'string') continue
+    if (!askUserCallIds.has(message.tool_call_id) || typeof message.content !== 'string') continue
     try {
       const parsed: unknown = JSON.parse(message.content)
       if (parsed && typeof parsed === 'object' && 'kind' in parsed) {
         return parsed as ChoiceResult
       }
     } catch {
-      /* a non-choice tool result (e.g. a sandbox result, or an "Error: …" message) */
+      /* a tool result that is not JSON (e.g. an "Error: …" message) */
     }
   }
   return undefined
@@ -238,7 +261,7 @@ export const CHOICE_OPTIONS = ['Red', 'Blue']
 // The single ask_user tool call the mock issues in 'ask' mode (issue #85): a native
 // tool call whose arguments are the choice poll the host renders.
 const askUserToolCall = (): ToolCall => ({
-  id: 'call_ask_user_1',
+  id: ASK_USER_CALL_ID,
   type: 'function',
   function: {
     name: 'ask_user',

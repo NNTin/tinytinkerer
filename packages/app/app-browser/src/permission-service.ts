@@ -1,61 +1,24 @@
 import type { PermissionRequest, ToolGateResult } from '@tinytinkerer/app-core'
-import { createStore } from 'zustand/vanilla'
-import { useStore } from 'zustand'
+import { createHumanPromptBridge, type PendingPrompt } from './human-prompt-bridge'
 
-// A permission request awaiting a human decision. `resolve` settles the promise
-// returned by `requestPermission`; the entry is removed from the queue the moment
-// it is called so the modal advances to the next pending request (if any).
-export type PendingPermission = {
-  id: string
-  request: PermissionRequest
-  resolve: (result: ToolGateResult) => void
-}
+// The permissions allow/deny prompt, built on the shared human-prompt bridge (see
+// human-prompt-bridge.ts). The runtime factory wires `requestPermission` into the
+// plugin host; the mounted <PermissionModal /> subscribes via `usePermissionStore`
+// and resolves each request with the user's Allow/Deny choice. On run abort /
+// conversation reset the chat-store calls resetAllHumanPrompts(), which settles any
+// pending permission as a denial (the safe default for an unanswered gate).
+const bridge = createHumanPromptBridge<PermissionRequest, ToolGateResult>({
+  idPrefix: 'perm',
+  resetValue: { allow: false, reason: 'cancelled' }
+})
 
-type PermissionState = {
-  queue: PendingPermission[]
-}
+// A permission request awaiting a human decision — the bridge's pending-entry type
+// specialised to this prompt. Re-exported under the stable name its consumers use.
+export type PendingPermission = PendingPrompt<PermissionRequest, ToolGateResult>
 
-// Module-level singleton, like the telemetry sink: the runtime factory wires a
-// plain `requestPermission` function into the plugin host, while React surfaces
-// subscribe to the same store to render the modal. Both sides share this one
-// store so a tool gate raised deep in a runtime run reaches the mounted modal.
-const permissionStore = createStore<PermissionState>(() => ({ queue: [] }))
+export const requestPermission = bridge.request
+export const usePermissionStore = bridge.useStore
 
-let counter = 0
-
-const removeFromQueue = (id: string): void => {
-  permissionStore.setState((state) => ({
-    queue: state.queue.filter((entry) => entry.id !== id)
-  }))
-}
-
-// The PermissionRequestService implementation handed to the plugin host. Enqueues
-// the request and resolves once the modal reports the user's choice. If no modal
-// is mounted the promise never settles here; the runtime's hook timeout is the
-// backstop (it denies the tool), so a host that forgets to render the modal fails
-// safe rather than hanging forever.
-export const requestPermission = (request: PermissionRequest): Promise<ToolGateResult> =>
-  new Promise<ToolGateResult>((resolve) => {
-    const id = `perm-${(counter += 1)}`
-    const entry: PendingPermission = {
-      id,
-      request,
-      resolve: (result) => {
-        removeFromQueue(id)
-        resolve(result)
-      }
-    }
-    permissionStore.setState((state) => ({ queue: [...state.queue, entry] }))
-  })
-
-export const usePermissionStore = <T>(selector: (state: PermissionState) => T): T =>
-  useStore(permissionStore, selector)
-
-// Test seam: settle every pending request as denied and clear the queue so a
-// test never leaks an unresolved permission promise between cases.
-export const resetPermissionStore = (): void => {
-  for (const entry of permissionStore.getState().queue) {
-    entry.resolve({ allow: false, reason: 'cancelled' })
-  }
-  permissionStore.setState({ queue: [] })
-}
+// Settle every pending permission as denied and clear the queue. Used as the test
+// seam and reached in production through resetAllHumanPrompts (run abort / reset).
+export const resetPermissionStore = bridge.reset

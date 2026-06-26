@@ -444,19 +444,30 @@ input), so unlike the permission prompt it needs **no plugin-emitted view-model*
 `summarizeActivity` for the durable transcript record (the question asked + the answer given).
 
 **Human-input tools are a runtime concept, not a host hack.** Because a person cannot beat the 10s
-machine `toolTimeoutMs`, the `Tool` contract carries an `awaitsHumanInput` flag. When set, the runtime
-(`agent-runtime-base.ts`) (a) governs the tool's execution by the human-input budget
-(`humanInputTimeoutMs`, ~5 min — the same budget that governs the Permissions hook gate, renamed from
-`humanHookTimeoutMs` since it now covers tools too) and (b) treats the tool as **self-gating**: it is
-**exempt from the `tool.beforeExecute` permission gate**, since a tool that already asks the user needs
-no separate Allow/Deny prompt. Both behaviours key off the flag, not a tool id, so they generalise to
-any future HITL tool.
+machine `toolTimeoutMs`, the `Tool` contract carries an `awaitsHumanInput` flag. The runtime
+(`agent-runtime-base.ts`) uses it for exactly **one** thing: it governs the tool's execution by the
+human-input budget (`humanInputTimeoutMs`, ~5 min — the same budget that governs the Permissions hook
+gate, renamed from `humanHookTimeoutMs` since it now covers tools too). The runtime does **not** skip
+the gate chain; instead it surfaces the flag on `ToolExecutionContext.awaitsHumanInput`, and the
+**permissions gate self-exempts** a human-input tool there (`plugin-permissions`), returning `allow`
+without prompting — gating a tool that already asks the user would be a prompt-to-show-a-prompt.
+Keeping the exemption in the gate (keyed on the context flag, not a tool id) means a future
+non-permission `tool.beforeExecute` gate **still runs** for human-input tools, and the runtime owns
+only the budget while the gate owns the exemption.
 
 **Dismissal vs. timeout.** A user who closes the prompt resolves a structured `{ kind: 'dismissed' }`
 result — a normal "the user declined" outcome the model reacts to — **not** a tool failure. The host
-also settles any open poll as `dismissed` when the run is aborted (Stop) or the conversation is reset
-(`chat-store.ts` → `resetChoiceStore`), so a poll never outlives its run. Only a poll the host never
-answers within the human-input budget surfaces as a tool failure.
+also settles any open prompt when the run is aborted (Stop) or the conversation is reset
+(`chat-store.ts` → `resetAllHumanPrompts`), so a prompt never outlives its run. Only a poll the host
+never answers within the human-input budget surfaces as a tool failure.
+
+**The shared human-prompt bridge.** The Permissions allow/deny prompt and the Choice poll are the same
+machinery — a module-level store of pending requests that a mounted modal resolves — so it lives once in
+`human-prompt-bridge.ts` (`createHumanPromptBridge<Req, Res>({ idPrefix, resetValue })`); `permission-service.ts`
+and `choice-service.ts` are thin instantiations that differ only in their request/result types and reset
+default. Each bridge auto-registers its reset, and the chat-store settles **all** of them at once via the
+generic `resetAllHumanPrompts()` on abort/reset — so the run lifecycle names no specific feature and a
+future HITL surface is settled automatically just by using the factory.
 
 > **Note for #43 (Shared UI Package):** a `choicePrompt` **content node** (`ChoicePromptNode { prompt,
 choices }`) already exists in `contracts`/`content-core` as an unused scaffold (no renderer, no

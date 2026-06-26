@@ -65,6 +65,16 @@ describe('ChoicePromptModal', () => {
     await expect(answer).resolves.toEqual({ kind: 'dismissed' })
   })
 
+  it('resolves dismissed via the visible Skip button', async () => {
+    render(<ChoicePromptModal />)
+    const answer = requestUserChoice(baseRequest)
+
+    await screen.findByRole('dialog')
+    fireEvent.click(screen.getByRole('button', { name: 'Skip' }))
+
+    await expect(answer).resolves.toEqual({ kind: 'dismissed' })
+  })
+
   it('resetChoiceStore settles every pending choice as dismissed', async () => {
     const answer = requestUserChoice(baseRequest)
     resetChoiceStore()

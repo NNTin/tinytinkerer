@@ -119,16 +119,18 @@ export interface Tool<Input, Output> {
   // add one for a tool whose output you intend to gate that strictly.
   outputSchema?: ZodSchema<Output>
   // Human-in-the-loop tools (issue #85). A tool whose `execute` BLOCKS on a human
-  // — e.g. the choice-prompt tool awaiting the user's selection — sets this so the
-  // runtime treats it differently from a machine tool in two ways:
-  //   (a) TIMEOUT: it is governed by the human-input budget (`humanInputTimeoutMs`,
-  //       minutes) instead of the short machine `toolTimeoutMs` (10s), which a
-  //       person could never beat; and
-  //   (b) SELF-GATING: it is EXEMPT from the `tool.beforeExecute` permission gate.
-  //       A tool that already asks the user for input needs no separate allow/deny
-  //       prompt — gating it would be a prompt-to-show-a-prompt. The exemption is
-  //       tied to this flag, not to any concrete tool id, so the principle
-  //       ("human-input tools are self-gating") generalises to future HITL tools.
+  // — e.g. the choice-prompt tool awaiting the user's selection — sets this. It
+  // drives ONE runtime behaviour: TIMEOUT — the tool's execution is governed by the
+  // human-input budget (`humanInputTimeoutMs`, minutes) instead of the short machine
+  // `toolTimeoutMs` (10s), which a person could never beat.
+  //
+  // It ALSO makes the tool self-gating, but that is the GATE's concern, not the
+  // runtime's: the runtime propagates this flag onto `ToolExecutionContext.awaitsHumanInput`,
+  // and a `tool.beforeExecute` gate reads it to exempt the tool (the permissions gate
+  // skips its allow/deny prompt — gating a tool that already asks the user would be a
+  // prompt-to-show-a-prompt). Because the exemption lives in the gate, a future
+  // non-permission gate still runs for human-input tools.
+  //
   // Omit it (the default) and a tool keeps the machine timeout and is gated
   // normally — the prior behaviour, unchanged for every existing tool.
   awaitsHumanInput?: boolean
@@ -358,6 +360,14 @@ export type ToolExecutionContext = {
   parentStepId?: string
   toolId: string
   input: Record<string, unknown>
+  // True when the tool being guarded is itself a human-in-the-loop tool (issue
+  // #85) — the runtime sets this from the tool's `Tool.awaitsHumanInput`. A gate
+  // reads it to SELF-EXEMPT a tool that already prompts the user: e.g. the
+  // permissions gate skips its allow/deny prompt for the choice-prompt tool, since
+  // gating a tool that already asks the user would be a prompt-to-show-a-prompt.
+  // The exemption is the gate's own concern — the runtime no longer skips the gate
+  // chain — so a future non-permission gate still runs for human-input tools.
+  awaitsHumanInput?: boolean
 }
 
 export type ToolGateResult = { allow: true } | { allow: false; reason: string }

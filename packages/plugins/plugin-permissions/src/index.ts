@@ -44,6 +44,17 @@ const createPermissionGate = (host: PluginHost): AgentHookContribution => ({
   // "hook timed out" string if the prompt is never answered.
   awaitsHumanInput: true,
   handler: async (context: ToolExecutionContext): Promise<ToolGateResult> => {
+    // Self-gating tools (issue #85): a tool whose own execution already prompts the
+    // user — the choice-prompt tool — sets `Tool.awaitsHumanInput`, which the runtime
+    // surfaces here as `context.awaitsHumanInput`. Asking allow/deny before a tool
+    // that already asks the user would be a prompt-to-show-a-prompt, so exempt it.
+    // Keying off the context flag (not a tool id) keeps this generic for any future
+    // human-input tool; the runtime no longer skips the gate, so this is the single
+    // place the exemption lives.
+    if (context.awaitsHumanInput) {
+      return { allow: true }
+    }
+
     // A host with no permission service cannot prompt a human (e.g. a headless
     // host running tests). It has no way to ask, so it must not block: default
     // to allow rather than denying every tool.

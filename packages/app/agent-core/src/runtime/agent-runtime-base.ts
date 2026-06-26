@@ -235,38 +235,31 @@ export abstract class AgentRuntimeBase {
     }
 
     // A tool whose own execution blocks on a human (issue #85, e.g. the
-    // choice-prompt tool) is SELF-GATING: it already asks the user, so running it
-    // through the tool.beforeExecute permission gate would be a prompt-to-show-a-
-    // prompt. Skip the gate for it (D6), and give its execution the human-input
-    // budget rather than the short machine timeout (D1). The flag drives both, so
-    // the behaviour generalises to any future human-input tool — no tool id is
-    // special-cased here.
-    //
-    // SCOPE: this skips the ENTIRE tool.beforeExecute hook chain, which today is
-    // exactly the permissions gate (the only beforeExecute gate that ships). The
-    // intent is to bypass that allow/deny gate specifically; if a future,
-    // non-permission beforeExecute gate is added that SHOULD still run for a
-    // human-input tool, narrow this skip to the permission gate rather than the
-    // whole chain.
+    // choice-prompt tool) is handled differently in exactly ONE way the runtime
+    // owns: its execution gets the human-input budget rather than the short machine
+    // timeout (D1, see the withTimeout below). The runtime does NOT skip the gate —
+    // it surfaces the flag on the ToolExecutionContext and lets each gate decide.
+    // The permissions gate self-exempts a human-input tool (gating a tool that
+    // already asks the user would be a prompt-to-show-a-prompt), but a future
+    // non-permission gate still runs. So the gate chain always runs here.
     const awaitsHumanInput = this.registry.get(toolId)?.awaitsHumanInput === true
 
-    if (!awaitsHumanInput) {
-      const gate = await runToolBeforeExecuteHooks(
-        this.hooks,
-        {
-          stepId,
-          ...(parentStepId ? { parentStepId } : {}),
-          toolId,
-          input
-        },
-        this.hookTimeoutMs,
-        this.humanInputTimeoutMs
-      )
-      if (!gate.allow) {
-        const error = `Tool execution blocked: ${gate.reason}`
-        yield createEvent('agent.tool.failed', { stepId, toolId, error })
-        return { ok: false, error }
-      }
+    const gate = await runToolBeforeExecuteHooks(
+      this.hooks,
+      {
+        stepId,
+        ...(parentStepId ? { parentStepId } : {}),
+        toolId,
+        input,
+        ...(awaitsHumanInput ? { awaitsHumanInput: true } : {})
+      },
+      this.hookTimeoutMs,
+      this.humanInputTimeoutMs
+    )
+    if (!gate.allow) {
+      const error = `Tool execution blocked: ${gate.reason}`
+      yield createEvent('agent.tool.failed', { stepId, toolId, error })
+      return { ok: false, error }
     }
 
     try {

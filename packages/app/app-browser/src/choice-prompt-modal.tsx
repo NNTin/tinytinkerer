@@ -104,6 +104,19 @@ export const ChoicePromptModal = () => {
             </div>
           </div>
         ) : null}
+
+        {/* Always-visible Skip: makes the "I won't answer" exit discoverable (the
+            same `dismissed` outcome as Escape/overlay), so the composer is never
+            silently blocked waiting on a poll the user has no intent to answer. */}
+        <div className="flex justify-end border-t border-[var(--border)] px-6 py-4">
+          <button
+            type="button"
+            onClick={() => resolve({ kind: 'dismissed' })}
+            className="inline-flex items-center rounded-md border border-stone-200 bg-white px-4 py-2 text-sm text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50"
+          >
+            Skip
+          </button>
+        </div>
       </div>
     </div>
   )

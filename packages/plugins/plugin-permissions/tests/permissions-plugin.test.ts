@@ -94,6 +94,22 @@ describe('permissionsPlugin', () => {
     expect(result).toEqual({ allow: true })
   })
 
+  it('self-exempts a human-input tool: allows without consulting the host (issue #85)', async () => {
+    // A tool that already prompts the user (context.awaitsHumanInput) must not be put
+    // behind an allow/deny prompt — that would be a prompt-to-show-a-prompt. The gate
+    // returns allow immediately and never calls the host permission service.
+    const requestPermission = vi
+      .fn<(request: PermissionRequest) => Promise<ToolGateResult>>()
+      .mockResolvedValue({ allow: false, reason: 'should never be asked' })
+    const host: PluginHost = { capture: vi.fn(), requestPermission }
+    const gate = gateOf(host)
+
+    const result = await gate.handler(toolContext({ toolId: 'ask_user', awaitsHumanInput: true }))
+
+    expect(result).toEqual({ allow: true })
+    expect(requestPermission).not.toHaveBeenCalled()
+  })
+
   it('manifest id matches the plugin id and contributes no tools', () => {
     expect(permissionsPluginManifest.id).toBe(PERMISSIONS_PLUGIN_ID)
     expect(permissionsPlugin().id).toBe(PERMISSIONS_PLUGIN_ID)

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import {
   installChoicePromptMock,
   enableChoicePromptPlugin,
+  enablePermissionsPlugin,
   sendMessage,
   CHOICE_QUESTION
 } from '../fixtures/mock-litellm'
@@ -78,6 +79,39 @@ test.describe('choice-prompt plugin (#85)', () => {
       })
       .toEqual({ kind: 'dismissed' })
 
+    await expect(page.getByText('Done')).toBeVisible({ timeout: 30_000 })
+  })
+
+  test('self-gating: with Permissions ON, ask_user shows the choice modal but no permission prompt', async ({
+    page
+  }) => {
+    // The choice-prompt tool is human-input, so the permissions gate self-exempts it
+    // (issue #85): even with Permissions enabled, ask_user must NOT raise an allow/deny
+    // prompt — that would be a prompt-to-show-a-prompt. The choice modal still shows and
+    // the answer folds back, proving the tool ran without being gated.
+    const mock = await installChoicePromptMock(page)
+    await page.goto('/web/')
+    await enableChoicePromptPlugin(page)
+    await enablePermissionsPlugin(page)
+
+    await sendMessage(page, 'Ask me which colour I prefer.')
+
+    const choiceModal = page.getByRole('dialog', { name: MODAL_NAME })
+    await expect(choiceModal).toBeVisible({ timeout: 30_000 })
+
+    // The permission gate self-exempted, so its modal must never have appeared.
+    const permissionModal = page.getByRole('alertdialog', { name: 'Tool permission request' })
+    await expect(permissionModal).toBeHidden()
+
+    await choiceModal.getByRole('button', { name: 'Blue' }).click()
+    await expect(choiceModal).toBeHidden()
+
+    await expect
+      .poll(() => mock.choiceResult(), {
+        timeout: 30_000,
+        message: 'the picked option was never folded back (was the tool blocked by the gate?)'
+      })
+      .toEqual({ kind: 'option', value: 'Blue' })
     await expect(page.getByText('Done')).toBeVisible({ timeout: 30_000 })
   })
 })
