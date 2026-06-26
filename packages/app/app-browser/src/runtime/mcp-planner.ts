@@ -26,6 +26,15 @@ export type PlannerToolDescriptor = {
 const EXECUTION_PLAN_SCHEMA_NAME = 'execution_plan'
 
 const buildPlanningSystemPrompt = (tools: PlannerToolDescriptor[]): string => {
+  // The planner request does NOT advertise tools natively (no `tools:` array, unlike
+  // the ReAct decider/synthesizer in react-decider/litellm-provider) — it asks for a
+  // structured ExecutionPlan via `response_format`, not native `tool_calls`. So this
+  // text catalogue is the planner's ONLY channel for tool awareness: the model needs
+  // each tool's id (to fill `toolCall.toolId`), description (to choose one), and input
+  // schema (to fill a `toolCall.input` that matches it). It is load-bearing for the
+  // plan-execute and hybrid agent types; the default `react` type never plans.
+  // Compact JSON (not pretty-printed) keeps the schema's information without the
+  // per-line indentation that bloats every plan request.
   const toolDocs = tools
     .map(
       (t) =>
