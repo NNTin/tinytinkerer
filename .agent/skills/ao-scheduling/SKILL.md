@@ -50,7 +50,16 @@ Schedule a **one-time** future `ao send <session> "<message>"` using the Unix
   nothing); `--apply` queues it via `at` and prints the new `atq` entry. The
   time spec is anything `at` accepts (`"now + 2 hours"`, `"14:30"`,
   `"2026-06-24 09:00"`, `"tomorrow"`). Session and message are quoted safely
-  into the job.
+  into the job, and the queued command always includes `--no-wait` (see below).
+
+## Why `--no-wait`
+
+Deferred `ao send` jobs always pass `--no-wait`. A plain `ao send` blocks for up
+to 600s waiting for the target session to become idle before delivering. A job
+that fires at a future time is fire-and-queue: it must hand off the message and
+return immediately, not stall the `at` job waiting on the session. The tool
+bakes `--no-wait` into the queued command, so the emitted job is
+`ao send <session> "<message>" --no-wait`.
 
 ## Constraints
 
@@ -66,7 +75,7 @@ Schedule a **one-time** future `ao send <session> "<message>"` using the Unix
 
 ## Success criteria
 
-- The dry-run prints the exact queued `ao send <session> "<message>"` command
-  before anything is scheduled.
+- The dry-run prints the exact queued `ao send <session> "<message>" --no-wait`
+  command before anything is scheduled.
 - After `--apply`, the tool reports the queued job id.
 - The message is delivered once, at the chosen time.
