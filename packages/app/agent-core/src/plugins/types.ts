@@ -7,8 +7,9 @@
 export type {
   PluginReport,
   PluginCaptureSink,
-  PermissionRequest,
-  PermissionRequestService,
+  HumanPromptView,
+  HumanPromptResult,
+  HumanInputService,
   PluginEdgeResponse,
   PluginEdgeFetch,
   SandboxExecutionRequest,

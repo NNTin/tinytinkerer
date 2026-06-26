@@ -93,8 +93,6 @@ vi.mock('@tinytinkerer/app-browser', async () => {
       return { prompt, setPrompt, speech: mockSpeechState, handleSubmit }
     },
     LazyBrowserSettingsModal: () => null,
-    PermissionModal: () => null,
-    ChoicePromptModal: () => null,
     ContextGaugeSlot: () => null,
     AssistantContent: ({
       content,

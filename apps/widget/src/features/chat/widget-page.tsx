@@ -1,9 +1,7 @@
 import {
-  ChoicePromptModal,
   ConversationEmptyState,
   JumpToLatestButton,
   LazySettingsPanel,
-  PermissionModal,
   TINYTINKERER_BRAND_ASSET_URLS,
   TurnChrome,
   shellThemeToCssVars,
@@ -427,9 +425,6 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
           />
         </Suspense>
       ) : null}
-
-      <PermissionModal />
-      <ChoicePromptModal />
     </div>
   )
 }

@@ -113,8 +113,6 @@ vi.mock('@tinytinkerer/app-browser', async () => {
           </button>
         </div>
       ) : null,
-    PermissionModal: () => null,
-    ChoicePromptModal: () => null,
     TurnChrome: ({
       turn
     }: {

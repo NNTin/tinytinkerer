@@ -1,10 +1,9 @@
 import {
   isPluginModule,
   type AgentHookContribution,
-  type PermissionRequest,
+  type HumanPromptResult,
   type PluginHost,
-  type ToolExecutionContext,
-  type ToolGateResult
+  type ToolExecutionContext
 } from '@tinytinkerer/contracts'
 import { describe, expect, it, vi } from 'vitest'
 import * as permissionsModule from '../src/index'
@@ -16,6 +15,10 @@ const toolContext = (overrides: Partial<ToolExecutionContext> = {}): ToolExecuti
   input: { query: 'cats' },
   ...overrides
 })
+
+// A host whose single human-input prompt resolves with the given answer.
+const promptFor = (result: HumanPromptResult) =>
+  vi.fn<NonNullable<PluginHost['requestHumanInput']>>().mockResolvedValue(result)
 
 type ToolGate = Extract<AgentHookContribution, { event: 'tool.beforeExecute' }>
 
@@ -36,56 +39,54 @@ describe('permissionsPlugin', () => {
     expect(plugin.createTools).toBeUndefined()
   })
 
-  it('delegates to the host permission service and allows when granted', async () => {
-    const requestPermission = vi
-      .fn<(request: PermissionRequest) => Promise<ToolGateResult>>()
-      .mockResolvedValue({ allow: true })
-    const host: PluginHost = { capture: vi.fn(), requestPermission }
+  it('builds the allow/deny prompt view and allows when the user picks Allow', async () => {
+    const requestHumanInput = promptFor({ kind: 'action', id: 'allow' })
+    const host: PluginHost = { capture: vi.fn(), requestHumanInput }
     const gate = gateOf(host)
 
-    const context = toolContext({ parentStepId: 'act-1' })
-    const result = await gate.handler(context)
+    const result = await gate.handler(toolContext({ parentStepId: 'act-1' }))
 
     expect(result).toEqual({ allow: true })
-    expect(requestPermission).toHaveBeenCalledWith({
-      toolId: 'web-search',
-      input: { query: 'cats' },
-      stepId: 'step-1',
-      parentStepId: 'act-1'
-    })
+    // The plugin owns the view: an alertdialog with Allow/Deny actions and the gated
+    // tool's input handed to the host for cross-plugin body enrichment by tool id.
+    expect(requestHumanInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'alertdialog',
+        ariaLabel: 'Tool permission request',
+        inputContext: { toolId: 'web-search', input: { query: 'cats' } },
+        actions: [
+          { id: 'deny', label: 'Deny' },
+          { id: 'allow', label: 'Allow', tone: 'primary' }
+        ]
+      })
+    )
   })
 
-  it('maps a denial to a deny result whose reason names the tool', async () => {
-    const requestPermission = vi
-      .fn<(request: PermissionRequest) => Promise<ToolGateResult>>()
-      .mockResolvedValue({ allow: false, reason: 'User declined' })
-    const host: PluginHost = { capture: vi.fn(), requestPermission }
+  it('denies and names the tool when the user picks Deny', async () => {
+    const host: PluginHost = {
+      capture: vi.fn(),
+      requestHumanInput: promptFor({ kind: 'action', id: 'deny' })
+    }
     const gate = gateOf(host)
 
     const result = await gate.handler(toolContext())
 
-    expect(result).toEqual({
-      allow: false,
-      reason: 'Permission denied for tool "web-search": User declined'
-    })
+    expect(result).toEqual({ allow: false, reason: 'Permission denied for tool "web-search"' })
   })
 
-  it('still names the tool when the host gives no reason', async () => {
-    const requestPermission = vi
-      .fn<(request: PermissionRequest) => Promise<ToolGateResult>>()
-      .mockResolvedValue({ allow: false, reason: '   ' })
-    const host: PluginHost = { capture: vi.fn(), requestPermission }
+  it('treats a dismissal (overlay/Escape) as a deny that names the tool', async () => {
+    const host: PluginHost = {
+      capture: vi.fn(),
+      requestHumanInput: promptFor({ kind: 'dismissed' })
+    }
     const gate = gateOf(host)
 
     const result = await gate.handler(toolContext({ toolId: 'mcp:files:read' }))
 
-    expect(result).toEqual({
-      allow: false,
-      reason: 'Permission denied for tool "mcp:files:read"'
-    })
+    expect(result).toEqual({ allow: false, reason: 'Permission denied for tool "mcp:files:read"' })
   })
 
-  it('defaults to allow when the host has no permission service', async () => {
+  it('defaults to allow when the host cannot prompt a human', async () => {
     const host: PluginHost = { capture: vi.fn() }
     const gate = gateOf(host)
 
@@ -94,20 +95,18 @@ describe('permissionsPlugin', () => {
     expect(result).toEqual({ allow: true })
   })
 
-  it('self-exempts a human-input tool: allows without consulting the host (issue #85)', async () => {
+  it('self-exempts a human-input tool: allows without prompting (issue #85)', async () => {
     // A tool that already prompts the user (context.awaitsHumanInput) must not be put
     // behind an allow/deny prompt — that would be a prompt-to-show-a-prompt. The gate
-    // returns allow immediately and never calls the host permission service.
-    const requestPermission = vi
-      .fn<(request: PermissionRequest) => Promise<ToolGateResult>>()
-      .mockResolvedValue({ allow: false, reason: 'should never be asked' })
-    const host: PluginHost = { capture: vi.fn(), requestPermission }
+    // returns allow immediately and never opens the human-input prompt.
+    const requestHumanInput = promptFor({ kind: 'dismissed' })
+    const host: PluginHost = { capture: vi.fn(), requestHumanInput }
     const gate = gateOf(host)
 
     const result = await gate.handler(toolContext({ toolId: 'ask_user', awaitsHumanInput: true }))
 
     expect(result).toEqual({ allow: true })
-    expect(requestPermission).not.toHaveBeenCalled()
+    expect(requestHumanInput).not.toHaveBeenCalled()
   })
 
   it('manifest id matches the plugin id and contributes no tools', () => {

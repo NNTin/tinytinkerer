@@ -161,40 +161,6 @@ export type PluginReport = {
 // the telemetry sink, a host that registers nothing simply drops reports.
 export type PluginCaptureSink = (report: PluginReport) => void
 
-// A request for human-in-the-loop permission before a tool runs. Mirrors the
-// runtime's ToolExecutionContext so a gating plugin can forward the tool it is
-// about to guard (id, input, and the step linkage) verbatim to the host.
-export type PermissionRequest = {
-  toolId: string
-  input: Record<string, unknown>
-  stepId: string
-  parentStepId?: string
-}
-
-// Optional service a host registers so a gating plugin can ask a human to allow
-// or deny a tool before it runs. Resolves to a ToolGateResult. Only hosts that
-// can actually prompt (e.g. the browser, via a modal) provide this; a headless
-// host omits it and a gating plugin must default to allow when it is absent
-// (it has no way to ask, so it cannot block).
-export type PermissionRequestService = (request: PermissionRequest) => Promise<ToolGateResult>
-
-// A request to ask the human a choice poll (issue #85). It is exactly the
-// choice-prompt tool's input — `{ question, options, allowCustom }` — because that
-// shape is already everything the host needs to render the live prompt (the request
-// is self-describing, so no separate plugin-emitted view-model is required, unlike
-// PermissionView). The tool's `execute` forwards its parsed input here verbatim.
-export type ChoicePromptRequest = ChoicePromptInput
-
-// Optional service a host registers so the choice-prompt tool can ask a human a
-// question and await their answer. Resolves to a ChoicePromptResult (an `option`
-// pick, a `custom` free-text answer, or a `dismissed` no-answer). Only hosts that
-// can actually prompt (e.g. the browser, via a modal) provide it; a headless host
-// omits it and the choice-prompt plugin contributes no tool when it is absent (it
-// has no way to ask). Mirrors PermissionRequestService.
-export type ChoicePromptRequestService = (
-  request: ChoicePromptRequest
-) => Promise<ChoicePromptResult>
-
 // The minimal, product-agnostic view of an edge response a plugin tool reads.
 // The host owns the underlying request (and its request telemetry); `json()`
 // reads the body and the host applies any intrinsic response-parse telemetry.
@@ -211,7 +177,7 @@ export type PluginEdgeResponse = {
 // own edge/fetch layer (so request telemetry is preserved); only hosts that have
 // an edge backend provide it, so a plugin tool that needs it must tolerate its
 // absence (contribute no tool when it is missing). Mirrors how `capture` and
-// `requestPermission` are injected — the contract only owns the function type.
+// `requestHumanInput` are injected — the contract only owns the function type.
 export type PluginEdgeFetch = (
   path: string,
   body: unknown,
@@ -326,15 +292,14 @@ export type DomReader = (query: DomQuery) => Promise<DomReadResult>
 // runtime or browser API.
 export interface PluginHost {
   capture: PluginCaptureSink
-  // Optional: present only on hosts that can prompt a human. See
-  // PermissionRequestService — plugins must tolerate its absence.
-  requestPermission?: PermissionRequestService
-  // Optional: present only on hosts that can prompt a human with a choice poll
-  // (the browser). The choice-prompt tool (issue #85) awaits this to ask the user
-  // a question with selectable options and an optional free-text answer; a plugin
-  // must tolerate its absence (contribute no tool when missing). See
-  // ChoicePromptRequestService.
-  requestUserChoice?: ChoicePromptRequestService
+  // Optional: present only on hosts that can prompt a human (the browser). The ONE
+  // human-in-the-loop capability (issue #85): a plugin that needs the user — the
+  // permissions gate's allow/deny, the choice-prompt poll — builds a HumanPromptView
+  // and awaits the answer here; the host renders its single generic modal and resolves
+  // a HumanPromptResult the plugin maps back to its own outcome. A plugin must tolerate
+  // its absence (a gate defaults to allow; a tool contributes nothing). Replaces the
+  // former per-feature requestPermission / requestUserChoice. See HumanInputService.
+  requestHumanInput?: HumanInputService
   // Optional: present only on hosts with an edge backend. A tool that needs to
   // reach the edge (e.g. web search) builds against this and must tolerate its
   // absence. See PluginEdgeFetch.
@@ -529,6 +494,52 @@ export type PermissionView = {
 export type PermissionSummarizer = (
   input: Record<string, unknown>
 ) => PermissionView | Promise<PermissionView>
+
+// === Generic human-in-the-loop prompt (the host's single interactive surface) =====
+// A "human prompt" is any request a plugin raises that BLOCKS the run on a person
+// answering it in the UI — the Permissions allow/deny gate and the Choice-prompt poll
+// today. Rather than each feature shipping its own host capability + modal + per-shell
+// mount, a plugin builds this product-agnostic VIEW and awaits the user's answer
+// through the single injected `requestHumanInput` capability; the host owns ONE generic
+// modal that renders any HumanPromptView and resolves a HumanPromptResult, which the
+// plugin maps back to its own outcome (e.g. ToolGateResult or ChoicePromptResult).
+// Plugins ship data, never a component (see HumanPromptHost in app-browser). Mirrors how
+// PermissionView / ActivityView are plugin-emitted and host-rendered.
+
+// What the host renders for a human prompt. `role`/`ariaLabel` drive the dialog
+// semantics and keep stable accessible names; `sections` is a static body; `inputContext`
+// asks the host to render the gated tool's input via the owner's `summarizePermission`
+// (resolved host-side by tool id, falling back to a JSON dump) — the one cross-plugin
+// enrichment only the host can do; `actions` are the mutually-exclusive choices (Allow/Deny
+// | poll options); `allowCustom` adds a free-text answer; `dismissLabel` names the
+// overlay/Escape exit, and `dismissAction`, when set, adds an explicit dismiss button
+// (e.g. a poll's "Skip").
+export type HumanPromptView = {
+  role: 'dialog' | 'alertdialog'
+  ariaLabel: string
+  title: string
+  description?: string
+  sections?: PermissionViewSection[]
+  inputContext?: { toolId: string; input: Record<string, unknown> }
+  actions: { id: string; label: string; tone?: 'primary' | 'default' }[]
+  allowCustom?: boolean
+  dismissLabel: string
+  dismissAction?: { label: string }
+}
+
+// The user's answer to a human prompt: a picked action (by id), a typed custom answer,
+// or a dismissal (overlay / Escape / explicit dismiss, or a host-forced settle on run
+// abort / conversation reset). The requesting plugin maps this back to its own result.
+export type HumanPromptResult =
+  | { kind: 'action'; id: string }
+  | { kind: 'custom'; text: string }
+  | { kind: 'dismissed' }
+
+// An injected capability that shows the host's single human-prompt modal and resolves
+// the user's answer. Only hosts that can prompt a human (the browser) provide it; a
+// plugin that needs it must tolerate its absence (a gate defaults to allow; a tool
+// contributes nothing). Replaces the former requestPermission / requestUserChoice.
+export type HumanInputService = (view: HumanPromptView) => Promise<HumanPromptResult>
 
 // The placeholder a `keywordPlannerStep.inputTemplate` uses to stand in for the
 // user prompt. Exported so the substitution contract has ONE source of truth: a

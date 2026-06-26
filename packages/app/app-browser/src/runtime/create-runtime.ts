@@ -31,8 +31,7 @@ import {
   parseJsonWithTelemetry,
   type RequestTelemetryMetadata
 } from '../telemetry/request-telemetry'
-import { requestPermission } from '../permission-service'
-import { requestUserChoice } from '../choice-service'
+import { requestHumanInput } from '../human-prompt-bridge'
 
 // The code-exec plugin's tool id — the ONE host↔plugin coupling the plugin system
 // deliberately keeps (documented in docs/plugin-infrastructure.md as the dom-snapshot
@@ -235,18 +234,13 @@ export const createRuntime = (options: {
           captureTelemetryException(report.message, captureOptions)
         }
       },
-      // Human-in-the-loop gate: a permission-gating plugin (e.g. plugin-permissions)
-      // calls this to ask the user before a tool runs. It enqueues a request on the
-      // shared permission store; the mounted <PermissionModal /> resolves it with the
-      // user's Allow/Deny choice. The browser can prompt, so it always provides this.
-      requestPermission,
-      // Choice-prompt capability (issue #85): the choice-prompt tool calls this to
-      // ask the user a question and await their answer. It enqueues a request on the
-      // shared choice store; the mounted <ChoicePromptModal /> resolves it with the
-      // user's selection (or a typed/dismissed answer). The browser can prompt, so it
-      // always provides this; a headless host omits it and the plugin contributes no
-      // tool. Mirrors `requestPermission`.
-      requestUserChoice,
+      // Human-in-the-loop capability (issue #85): the ONE prompt surface. A plugin that
+      // needs the user — the permissions gate's allow/deny, the choice-prompt poll —
+      // builds a HumanPromptView and awaits this; it enqueues the view on the shared
+      // human-prompt store and the mounted <HumanPromptHost /> resolves it with the
+      // user's answer. The browser can prompt, so it always provides this; a headless
+      // host omits it and such plugins degrade (a gate allows, a tool contributes none).
+      requestHumanInput,
       // Edge capability: a plugin tool that must reach the edge (web search) builds
       // against this. The browser always has an edge backend, so it always provides
       // it; request telemetry rides along inside the wrapped edgeFetch.

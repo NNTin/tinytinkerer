@@ -26,16 +26,13 @@ export const permissionsPluginManifest: PluginManifest = {
 }
 
 // Builds the reason carried on a denial so the runtime's
-// "Tool execution blocked: <reason>" message names the tool that was denied. A
-// reason supplied by the host is appended for context when present.
-const denyReason = (toolId: string, hostReason?: string): string => {
-  const base = `Permission denied for tool "${toolId}"`
-  const trimmed = hostReason?.trim()
-  return trimmed && trimmed.length > 0 ? `${base}: ${trimmed}` : base
-}
+// "Tool execution blocked: <reason>" message names the tool that was denied.
+const denyReason = (toolId: string): string => `Permission denied for tool "${toolId}"`
 
-// The single gate this plugin contributes. It delegates the allow/deny decision
-// to the host's permission service and maps the outcome to a ToolGateResult.
+// The single gate this plugin contributes. It builds the host's generic human-prompt
+// VIEW (an alertdialog with Allow/Deny + the gated tool's input body) and maps the
+// user's answer to a ToolGateResult. The host owns the modal; this plugin owns the
+// prompt definition and the decision — it ships data, never a component.
 const createPermissionGate = (host: PluginHost): AgentHookContribution => ({
   event: 'tool.beforeExecute',
   // This gate blocks on a human clicking Allow/Deny, so the runtime gives it a
@@ -55,34 +52,43 @@ const createPermissionGate = (host: PluginHost): AgentHookContribution => ({
       return { allow: true }
     }
 
-    // A host with no permission service cannot prompt a human (e.g. a headless
-    // host running tests). It has no way to ask, so it must not block: default
-    // to allow rather than denying every tool.
-    if (!host.requestPermission) {
+    // A host that cannot prompt a human (e.g. a headless host running tests) has no
+    // way to ask, so it must not block: default to allow rather than denying every tool.
+    if (!host.requestHumanInput) {
       return { allow: true }
     }
 
-    const decision = await host.requestPermission({
-      toolId: context.toolId,
-      input: context.input,
-      stepId: context.stepId,
-      ...(context.parentStepId ? { parentStepId: context.parentStepId } : {})
+    const answer = await host.requestHumanInput({
+      role: 'alertdialog',
+      ariaLabel: 'Tool permission request',
+      title: 'Allow this tool to run?',
+      description: 'The assistant wants to run a tool. Review it and choose whether to allow it.',
+      // The host renders the tool's input via the gated tool owner's summarizePermission
+      // (resolved by tool id), so the rich per-tool body stays with that tool, not here.
+      inputContext: { toolId: context.toolId, input: context.input },
+      actions: [
+        { id: 'deny', label: 'Deny' },
+        { id: 'allow', label: 'Allow', tone: 'primary' }
+      ],
+      // Overlay / Escape is the safe deny for a permission prompt; no explicit Skip
+      // button — Deny already is the visible "decline" affordance.
+      dismissLabel: 'Deny tool'
     })
 
-    if (decision.allow) {
+    // Only an explicit Allow lets the tool run; Deny, a dismissal (overlay/Escape), or
+    // any other answer blocks it. The reason names the tool for the runtime's
+    // "Tool execution blocked: <reason>" message.
+    if (answer.kind === 'action' && answer.id === 'allow') {
       return { allow: true }
     }
 
-    return {
-      allow: false,
-      reason: denyReason(context.toolId, decision.reason)
-    }
+    return { allow: false, reason: denyReason(context.toolId) }
   }
 })
 
 // The permissions plugin. Contributes one tool.beforeExecute gate and no tools;
 // needs no activate/deactivate lifecycle. The host (app-browser) supplies the
-// permission service that opens the confirmation modal.
+// requestHumanInput capability that opens the generic confirmation modal.
 export const permissionsPlugin = (): AgentPlugin => ({
   id: PERMISSIONS_PLUGIN_ID,
   createHooks: (host): AgentHookContribution[] => [createPermissionGate(host)]

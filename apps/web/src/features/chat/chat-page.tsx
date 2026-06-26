@@ -1,11 +1,9 @@
 import {
-  ChoicePromptModal,
   ContextGaugeSlot,
   ContextInspectorSlot,
   ConversationEmptyState,
   JumpToLatestButton,
   LazyBrowserSettingsModal,
-  PermissionModal,
   TurnActivityPanel,
   TurnChrome,
   useChatComposer,
@@ -291,9 +289,6 @@ export const ChatPage = () => {
           />
         </Suspense>
       ) : null}
-
-      <PermissionModal />
-      <ChoicePromptModal />
     </div>
   )
 }

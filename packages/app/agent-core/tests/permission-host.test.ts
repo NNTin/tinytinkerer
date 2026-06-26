@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { runToolBeforeExecuteHooks } from '../src/plugins/hooks'
 import type {
   AgentHookContribution,
-  PermissionRequest,
+  HumanPromptResult,
   PluginHost,
   ToolExecutionContext,
   ToolGateResult
@@ -15,44 +15,55 @@ const context: ToolExecutionContext = {
   input: { query: 'cats' }
 }
 
-// A gate that mirrors a permission-gating plugin: it forwards the tool to the
-// host's optional permission service. This exercises the PluginHost.requestPermission
-// type addition end to end through runToolBeforeExecuteHooks.
+// A gate that mirrors the permissions plugin: it builds the host's generic human-prompt
+// VIEW and maps the user's answer to a ToolGateResult. This exercises the single
+// PluginHost.requestHumanInput capability end to end through runToolBeforeExecuteHooks.
 const permissionGate = (host: PluginHost): AgentHookContribution => ({
   event: 'tool.beforeExecute',
-  handler: async (ctx) =>
-    host.requestPermission
-      ? host.requestPermission({
-          toolId: ctx.toolId,
-          input: ctx.input,
-          stepId: ctx.stepId,
-          ...(ctx.parentStepId ? { parentStepId: ctx.parentStepId } : {})
-        })
-      : { allow: true }
+  handler: async (ctx) => {
+    if (!host.requestHumanInput) {
+      return { allow: true }
+    }
+    const answer = await host.requestHumanInput({
+      role: 'alertdialog',
+      ariaLabel: 'Tool permission request',
+      title: 'Allow this tool to run?',
+      inputContext: { toolId: ctx.toolId, input: ctx.input },
+      actions: [
+        { id: 'deny', label: 'Deny' },
+        { id: 'allow', label: 'Allow', tone: 'primary' }
+      ],
+      dismissLabel: 'Deny tool'
+    })
+    return answer.kind === 'action' && answer.id === 'allow'
+      ? { allow: true }
+      : { allow: false, reason: 'Denied by user' }
+  }
 })
 
-describe('PluginHost.requestPermission', () => {
-  it('lets a gate allow a tool via the host permission service', async () => {
-    const requestPermission = vi
-      .fn<(request: PermissionRequest) => Promise<ToolGateResult>>()
-      .mockResolvedValue({ allow: true })
-    const host: PluginHost = { capture: vi.fn(), requestPermission }
+describe('PluginHost.requestHumanInput', () => {
+  it('lets a gate allow a tool via the host human-input prompt', async () => {
+    const requestHumanInput = vi
+      .fn<NonNullable<PluginHost['requestHumanInput']>>()
+      .mockResolvedValue({ kind: 'action', id: 'allow' })
+    const host: PluginHost = { capture: vi.fn(), requestHumanInput }
 
     const result = await runToolBeforeExecuteHooks([permissionGate(host)], context, 1000)
 
     expect(result).toEqual({ allow: true })
-    expect(requestPermission).toHaveBeenCalledWith({
-      toolId: 'web-search',
-      input: { query: 'cats' },
-      stepId: 'step-1',
-      parentStepId: 'act-1'
-    })
+    expect(requestHumanInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'alertdialog',
+        inputContext: { toolId: 'web-search', input: { query: 'cats' } }
+      })
+    )
   })
 
   it('lets a gate deny a tool, carrying the reason to the runtime', async () => {
+    const denied: HumanPromptResult = { kind: 'action', id: 'deny' }
     const host: PluginHost = {
       capture: vi.fn(),
-      requestPermission: () => Promise.resolve({ allow: false, reason: 'Denied by user' })
+      requestHumanInput: () => Promise.resolve(denied)
     }
 
     const result = await runToolBeforeExecuteHooks([permissionGate(host)], context, 1000)
@@ -60,7 +71,7 @@ describe('PluginHost.requestPermission', () => {
     expect(result).toEqual({ allow: false, reason: 'Denied by user' })
   })
 
-  it('allows when the host omits the optional permission service', async () => {
+  it('allows when the host omits the optional human-input capability', async () => {
     const host: PluginHost = { capture: vi.fn() }
 
     const result = await runToolBeforeExecuteHooks([permissionGate(host)], context, 1000)

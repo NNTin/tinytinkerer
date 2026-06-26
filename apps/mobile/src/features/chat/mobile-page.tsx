@@ -1,10 +1,8 @@
 import {
-  ChoicePromptModal,
   ContextGaugeSlot,
   ConversationEmptyState,
   JumpToLatestButton,
   LazyBrowserSettingsModal,
-  PermissionModal,
   TurnActivityPanel,
   TurnChrome,
   useChatComposer,
@@ -309,9 +307,6 @@ export const MobilePage = () => {
           <LazyBrowserSettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
         </Suspense>
       ) : null}
-
-      <PermissionModal />
-      <ChoicePromptModal />
     </div>
   )
 }

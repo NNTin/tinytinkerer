@@ -110,12 +110,13 @@ export const choicePromptPluginManifest: PluginManifest = {
   ]
 }
 
-// Builds the ask_user tool against the host's choice-prompt capability. The host
-// owns the live poll UI; this tool only forwards its parsed input to the host and
-// returns the user's answer as the tool result. It stays product-agnostic — no
-// browser APIs, no React, no app-browser imports.
+// Builds the ask_user tool against the host's generic human-input capability. The
+// host owns the live poll UI; this tool builds the product-agnostic HumanPromptView
+// (the poll's question/options/custom affordance), awaits the user's answer, and maps
+// the generic HumanPromptResult back to a ChoicePromptResult. It stays product-agnostic
+// — no browser APIs, no React, no app-browser imports.
 const createAskUserTool = (
-  requestUserChoice: NonNullable<PluginHost['requestUserChoice']>
+  requestHumanInput: NonNullable<PluginHost['requestHumanInput']>
 ): Tool<ChoicePromptInput, ChoicePromptResult> => ({
   id: ASK_USER_TOOL_ID,
   description: ASK_USER_DESCRIPTION,
@@ -129,21 +130,40 @@ const createAskUserTool = (
   // self-gating (exempt from the permission gate) — see Tool.awaitsHumanInput.
   awaitsHumanInput: true,
   async execute(input) {
-    // The request IS the input — `{ question, options, allowCustom }` is everything
-    // the host needs to render the poll. The host resolves with the user's answer.
-    return requestUserChoice(input)
+    // Build the generic poll view from the parsed input and await the user's answer,
+    // then map it back to this tool's ChoicePromptResult: a picked action is an
+    // `option` (the action id IS the option text), a typed answer is `custom`, and a
+    // dismissal (overlay / Escape / Skip, or a host-forced settle on abort) is the
+    // normal `dismissed` outcome — not a tool failure.
+    const answer = await requestHumanInput({
+      role: 'dialog',
+      ariaLabel: 'Assistant question',
+      title: 'The assistant has a question',
+      description: input.question,
+      actions: input.options.map((option) => ({ id: option, label: option })),
+      allowCustom: input.allowCustom,
+      dismissLabel: 'Dismiss question',
+      dismissAction: { label: 'Skip' }
+    })
+    if (answer.kind === 'action') {
+      return { kind: 'option', value: answer.id }
+    }
+    if (answer.kind === 'custom') {
+      return { kind: 'custom', text: answer.text }
+    }
+    return { kind: 'dismissed' }
   }
 })
 
 // The choice-prompt plugin. Contributes a single ask_user tool built against the
-// host's choice-prompt capability; needs no activate/deactivate lifecycle. A host
-// that cannot prompt a human (headless/edge) simply gets no tool — the plugin
+// host's generic human-input capability; needs no activate/deactivate lifecycle. A
+// host that cannot prompt a human (headless/edge) simply gets no tool — the plugin
 // tolerates the capability's absence rather than contributing a tool that can never
 // be answered, exactly mirroring how web-search tolerates a missing edgeFetch.
 export const choicePromptPlugin = (): AgentPlugin => ({
   id: CHOICE_PROMPT_PLUGIN_ID,
   createTools: (host): Tool<unknown, unknown>[] =>
-    host.requestUserChoice ? [createAskUserTool(host.requestUserChoice)] : []
+    host.requestHumanInput ? [createAskUserTool(host.requestHumanInput)] : []
 })
 
 // PluginModule contract surface: the named exports a host discovers dynamically.

@@ -16,8 +16,9 @@ The repo currently ships seven plugins under `packages/plugins/*`: **Feedback**
 `tool.beforeExecute` gate), **Web search** (the Tavily `web-search` tool), **Code execution**
 (the `run_javascript` sandbox tool), **Browser state** (the `read_dom` page-reading tool), and
 **Choice prompt** (the `ask_user` human-in-the-loop tool). A plugin contributes tools and/or hooks,
-and may use a host-injected capability (telemetry capture, a permission prompt, a **user-choice
-prompt**, an edge request, a code sandbox, or a DOM read) without importing the host.
+and may use a host-injected capability (telemetry capture, a **human-in-the-loop prompt** — the one
+surface behind both the permissions gate and the choice poll — an edge request, a code sandbox, or a
+DOM read) without importing the host.
 
 > **Decoupling:** `app-browser` has **no static dependency** on any concrete plugin — not in its
 > `package.json`, not as an import. It depends only on the `PluginModule` contract in
@@ -53,7 +54,7 @@ interface AgentPlugin {
 
 interface PluginHost {
   capture: PluginCaptureSink // always present; forwards reports out-of-band (telemetry)
-  requestPermission?: PermissionRequestService // optional; only hosts that can prompt a human
+  requestHumanInput?: HumanInputService // optional; the ONE human-in-the-loop prompt (issue #85)
   edgeFetch?: PluginEdgeFetch // optional; only hosts with an edge backend
 }
 
@@ -63,7 +64,13 @@ type PluginCaptureSink = (report: PluginReport) => void
 // supplied only by hosts that can back them — the browser provides both; a
 // headless host omits them. contracts owns only the *function types*; the host
 // implements them. A plugin that needs one must tolerate its absence.
-type PermissionRequestService = (request: PermissionRequest) => Promise<ToolGateResult>
+//
+// A plugin that needs the user — the permissions gate's allow/deny, the choice
+// poll — builds a product-agnostic HumanPromptView and awaits this; the host renders
+// its single generic modal and resolves a HumanPromptResult the plugin maps back to
+// its own outcome. One capability + one modal replaces the former per-feature
+// requestPermission / requestUserChoice (see "The Choice prompt plugin" below).
+type HumanInputService = (view: HumanPromptView) => Promise<HumanPromptResult>
 
 type PluginEdgeResponse = { ok: boolean; status: number; json(): Promise<unknown> }
 type PluginEdgeFetch = (
@@ -224,7 +231,7 @@ it from the runtime's existing `edgeFetch`, so **request** telemetry (`http_erro
 `abort`, the 429 cooldown triage) rides along unchanged, and **response-parse** telemetry stays on
 the host side of the capability. `createTools(host)` returns no tool when `host.edgeFetch` is absent
 (a headless host), exactly mirroring how the permissions plugin tolerates a missing
-`requestPermission`.
+`requestHumanInput`.
 
 **Activation is generic, just default-on.** Web search is a normal discovered plugin: it appears in
 the generic plugin-activation list and is toggled through `pluginActivation` like every other
@@ -427,21 +434,25 @@ hook gate — its `execute` BLOCKS until the user answers, then returns the answ
 
 ```
 ask_user tool.execute({ question, options, allowCustom })
-        │  host.requestUserChoice({ question, options, allowCustom })   ← injected capability
+        │  builds a HumanPromptView (a 'dialog' poll: options → actions, allowCustom, a Skip dismiss)
+        │  host.requestHumanInput(view)   ← the ONE injected human-in-the-loop capability
         ▼
-app-browser requestUserChoice  → enqueues on the shared choice store → <ChoicePromptModal/> resolves it
+app-browser requestHumanInput  → enqueues the view on the shared human-prompt store → <HumanPromptHost/> resolves it
+        │  { kind: 'action', id } | { kind: 'custom', text } | { kind: 'dismissed' }   ← generic HumanPromptResult
         ▼
-   { kind: 'option', value } | { kind: 'custom', text } | { kind: 'dismissed' }   ← the tool result (#276)
+ask_user maps it back → { kind: 'option', value } | { kind: 'custom', text } | { kind: 'dismissed' }   ← tool result (#276)
 ```
 
-`contracts` owns only the `ChoicePromptRequestService` / `ChoicePromptRequest` / `ChoicePromptResult`
-_types_ and the canonical `choicePromptInputSchema` / `choicePromptResultSchema`; `app-browser`'s
-`create-runtime.ts` implements the capability from `requestUserChoice` (`choice-service.ts`), and the
-generic `<ChoicePromptModal/>` renders it across the web/widget/mobile shells. `createTools(host)`
-returns no tool when `host.requestUserChoice` is absent (a headless host), exactly mirroring how
-web-search tolerates a missing `edgeFetch`. The request is **self-describing** (it _is_ the tool
-input), so unlike the permission prompt it needs **no plugin-emitted view-model** — only a
-`summarizeActivity` for the durable transcript record (the question asked + the answer given).
+There is **no choice-specific host code**: `contracts` owns the generic `HumanInputService` /
+`HumanPromptView` / `HumanPromptResult` view-models plus the choice tool's own `ChoicePromptResult` and
+the canonical `choicePromptInputSchema` / `choicePromptResultSchema`; the plugin builds the view and
+maps the answer (pure, product-agnostic — no React, enforced by `check-boundaries.mjs`), and
+`app-browser`'s `create-runtime.ts` wires the one `requestHumanInput` capability
+(`human-prompt-bridge.ts`) which a single generic `<HumanPromptHost/>` resolves. `createTools(host)`
+returns no tool when `host.requestHumanInput` is absent (a headless host), exactly mirroring how
+web-search tolerates a missing `edgeFetch`. The poll is **self-describing**, so unlike the permission
+prompt it carries no `inputContext` body — only a `summarizeActivity` for the durable transcript record
+(the question asked + the answer given).
 
 **Human-input tools are a runtime concept, not a host hack.** Because a person cannot beat the 10s
 machine `toolTimeoutMs`, the `Tool` contract carries an `awaitsHumanInput` flag. The runtime
@@ -461,13 +472,19 @@ also settles any open prompt when the run is aborted (Stop) or the conversation 
 (`chat-store.ts` → `resetAllHumanPrompts`), so a prompt never outlives its run. Only a poll the host
 never answers within the human-input budget surfaces as a tool failure.
 
-**The shared human-prompt bridge.** The Permissions allow/deny prompt and the Choice poll are the same
-machinery — a module-level store of pending requests that a mounted modal resolves — so it lives once in
-`human-prompt-bridge.ts` (`createHumanPromptBridge<Req, Res>({ idPrefix, resetValue })`); `permission-service.ts`
-and `choice-service.ts` are thin instantiations that differ only in their request/result types and reset
-default. Each bridge auto-registers its reset, and the chat-store settles **all** of them at once via the
-generic `resetAllHumanPrompts()` on abort/reset — so the run lifecycle names no specific feature and a
-future HITL surface is settled automatically just by using the factory.
+**One generic human-prompt surface — no per-feature host code.** The Permissions allow/deny prompt and
+the Choice poll are the same machinery, so the host owns exactly **one** of everything: one capability
+(`requestHumanInput`), one module-level store of pending `HumanPromptView`s (`human-prompt-bridge.ts`),
+and one generic modal (`<HumanPromptHost/>`) mounted **once** in the browser shell root
+(`create-browser-shell-root.tsx`) — never named per-shell. A plugin owns its prompt entirely: it builds
+the `HumanPromptView` (title, `actions`, `allowCustom`, a `dismissAction`) and maps the generic
+`HumanPromptResult` back to its own outcome — the permissions gate to a `ToolGateResult`, the choice tool
+to a `ChoicePromptResult`. The **one** cross-plugin concern only the host can do stays host-side and
+generic: a view's optional `inputContext: { toolId, input }` is rendered via the **gated tool owner's**
+`summarizePermission` (resolved by tool id across all manifests, falling back to a JSON dump) — so the
+permission body still travels with the tool it describes, not with the permissions plugin. The chat-store
+settles every open prompt via `resetAllHumanPrompts()` on abort/reset, so the run lifecycle names no
+feature and a future HITL surface needs no new service, component, or shell mount — just the `HumanPromptView`.
 
 > **Note for #43 (Shared UI Package):** a `choicePrompt` **content node** (`ChoicePromptNode { prompt,
 choices }`) already exists in `contracts`/`content-core` as an unused scaffold (no renderer, no
@@ -596,10 +613,10 @@ rather than an error issue. See [sentry-telemetry.md](./sentry-telemetry.md) and
 - `@tinytinkerer/app-browser` **must not** import a concrete plugin package, statically or via a
   literal dynamic import — plugins are discovered through `import.meta.glob`. The boundary check
   rejects any `@tinytinkerer/plugin-*` import from `app-browser`. It implements the `PluginHost`
-  capabilities (the capture sink → telemetry, the permission prompt → the confirmation modal,
-  `edgeFetch` → its own edge layer, `executeSandboxedCode` → its opaque-origin iframe + Worker
-  sandbox, and `readDom` → its current-page DOM reader with host-side caps + redaction) and surfaces
-  the Settings toggles from the discovered manifests.
+  capabilities (the capture sink → telemetry, `requestHumanInput` → its single generic
+  `<HumanPromptHost/>` modal, `edgeFetch` → its own edge layer, `executeSandboxedCode` → its
+  opaque-origin iframe + Worker sandbox, and `readDom` → its current-page DOM reader with host-side
+  caps + redaction) and surfaces the Settings toggles from the discovered manifests.
 
 ## Adding a new plugin
 

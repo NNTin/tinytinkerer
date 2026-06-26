@@ -36,7 +36,7 @@ export const runToolBeforeExecuteHooks = async (
   // than a machine hook to read and approve a tool, so these get a separate,
   // much larger timeout. It is still bounded (not unbounded) because it doubles
   // as the fail-safe backstop for a host that never renders an approval UI — see
-  // app-browser's permission-service. Defaults to the machine timeout when the
+  // app-browser's human-prompt-bridge. Defaults to the machine timeout when the
   // caller supplies none.
   humanInputTimeoutMs: number = timeoutMs
 ): Promise<ToolGateResult> => {

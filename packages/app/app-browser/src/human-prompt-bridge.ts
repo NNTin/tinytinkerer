@@ -1,104 +1,63 @@
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
+import type { HumanPromptView, HumanPromptResult } from '@tinytinkerer/app-core'
 
-// Shared bridge for human-in-the-loop prompts (issue #85). A "human prompt" is a
-// request raised deep inside a runtime run that BLOCKS on a person answering it in
-// the UI — today the Permissions allow/deny gate and the Choice-prompt poll. Each
-// is the same machinery: a module-level zustand store holding a queue of pending
-// requests, a `request()` that enqueues one and returns a Promise the mounted modal
-// resolves, a `useStore` hook the modal subscribes to, and a `reset()` that settles
-// every pending request with a safe default. This factory is that machinery once;
-// `permission-service` and `choice-service` are thin instantiations (they differ
-// only in the request/result types, the id prefix, and the reset value).
-//
-// WHY A FACTORY (and not two copies): the run lifecycle must settle EVERY open human
-// prompt when a run is aborted or the conversation is reset, so none lingers past the
-// run that raised it. Each bridge auto-registers its `reset` here, and the chat-store
-// calls the single `resetAllHumanPrompts()` — so the generic lifecycle path names no
-// specific feature, and a future HITL surface is settled automatically just by using
-// this factory. Introduced for the two surfaces that exist today, not a speculative
-// third.
+// The host's single human-in-the-loop bridge (issue #85). Every human prompt — the
+// Permissions allow/deny gate and the Choice-prompt poll — is the SAME machinery: a
+// module-level queue of pending HumanPromptViews that the mounted <HumanPromptHost />
+// resolves with the user's answer. A plugin builds a product-agnostic HumanPromptView
+// and awaits `requestHumanInput` (wired into the PluginHost in create-runtime); the
+// host renders it generically and resolves a HumanPromptResult the plugin maps back to
+// its own outcome. There is ONE store and ONE modal, so adding a future HITL surface
+// needs no new service, component, or per-shell mount — the run lifecycle names no
+// feature.
 
-// One queued human prompt: a stable id, the request the modal renders, and the
-// `resolve` that settles the Promise returned by `request()`. The entry is removed
-// from the queue the moment `resolve` is called so the modal advances to the next.
-export type PendingPrompt<Req, Res> = {
+// One queued human prompt: a stable id, the view the modal renders, and the resolve
+// that settles the Promise returned by `requestHumanInput`. Removed from the queue the
+// moment resolve is called, so the modal advances to the next.
+export type PendingHumanPrompt = {
   id: string
-  request: Req
-  resolve: (result: Res) => void
+  view: HumanPromptView
+  resolve: (result: HumanPromptResult) => void
 }
 
-// The store state a bridge exposes to its modal — a queue of pending prompts. Kept
-// as a `{ queue }` object (not a bare array) so a modal selects with
-// `(state) => state.queue[0]`, the shape both modals already use.
-export type PromptState<Req, Res> = {
-  queue: PendingPrompt<Req, Res>[]
+type HumanPromptState = { queue: PendingHumanPrompt[] }
+
+const store = createStore<HumanPromptState>(() => ({ queue: [] }))
+let counter = 0
+
+const removeFromQueue = (id: string): void => {
+  store.setState((state) => ({ queue: state.queue.filter((entry) => entry.id !== id) }))
 }
 
-export type HumanPromptBridge<Req, Res> = {
-  request: (request: Req) => Promise<Res>
-  useStore: <T>(selector: (state: PromptState<Req, Res>) => T) => T
-  reset: () => void
-}
-
-// The reset of every bridge created in this module, drained by resetAllHumanPrompts.
-const registeredResets: Array<() => void> = []
-
-export const createHumanPromptBridge = <Req, Res>(options: {
-  // Short prefix for generated entry ids (e.g. 'perm', 'choice'); only needs to be
-  // unique enough to read in a debugger — ids are not cross-referenced.
-  idPrefix: string
-  // The value every pending request is settled with on `reset()`: the safe "no
-  // answer" outcome for this prompt (e.g. deny for permissions, dismissed for choice).
-  resetValue: Res
-}): HumanPromptBridge<Req, Res> => {
-  const store = createStore<PromptState<Req, Res>>(() => ({ queue: [] }))
-  let counter = 0
-
-  const removeFromQueue = (id: string): void => {
-    store.setState((state) => ({ queue: state.queue.filter((entry) => entry.id !== id) }))
-  }
-
-  const request = (request: Req): Promise<Res> =>
-    new Promise<Res>((resolve) => {
-      const id = `${options.idPrefix}-${(counter += 1)}`
-      const entry: PendingPrompt<Req, Res> = {
-        id,
-        request,
-        resolve: (result) => {
-          removeFromQueue(id)
-          resolve(result)
-        }
+// The injected PluginHost.requestHumanInput implementation: enqueue a view and return
+// a Promise the mounted modal resolves with the user's answer.
+export const requestHumanInput = (view: HumanPromptView): Promise<HumanPromptResult> =>
+  new Promise<HumanPromptResult>((resolve) => {
+    const id = `prompt-${(counter += 1)}`
+    const entry: PendingHumanPrompt = {
+      id,
+      view,
+      resolve: (result) => {
+        removeFromQueue(id)
+        resolve(result)
       }
-      store.setState((state) => ({ queue: [...state.queue, entry] }))
-    })
-
-  const useBridgeStore = <T>(selector: (state: PromptState<Req, Res>) => T): T =>
-    useStore(store, selector)
-
-  // Settle every pending request with the safe default and clear the queue. Called
-  // by resetAllHumanPrompts on run abort / conversation reset, and reused as the
-  // test seam. Resolving (not rejecting) means the awaiting tool/gate sees a normal
-  // "no answer" outcome rather than a thrown error.
-  const reset = (): void => {
-    for (const entry of store.getState().queue) {
-      entry.resolve(options.resetValue)
     }
-    store.setState({ queue: [] })
-  }
+    store.setState((state) => ({ queue: [...state.queue, entry] }))
+  })
 
-  registeredResets.push(reset)
+// Subscription hook the modal uses to read the head-of-queue prompt.
+export const useHumanPromptStore = <T>(selector: (state: HumanPromptState) => T): T =>
+  useStore(store, selector)
 
-  return { request, useStore: useBridgeStore, reset }
-}
-
-// Settle every open human prompt across all bridges (issue #85). The chat-store
+// Settle every open human prompt as `dismissed` and clear the queue. The chat-store
 // calls this when a run is aborted (Stop) or the conversation is reset, so neither a
-// permission prompt nor a choice poll outlives the run that raised it. Generic by
-// construction — it names no feature, and any bridge created via the factory above
-// is included automatically.
+// permission prompt nor a choice poll outlives the run that raised it. Resolving (not
+// rejecting) means the awaiting gate/tool sees a normal "no answer" outcome — the
+// permissions gate maps it to deny, the choice tool to a dismissed result.
 export const resetAllHumanPrompts = (): void => {
-  for (const reset of registeredResets) {
-    reset()
+  for (const entry of store.getState().queue) {
+    entry.resolve({ kind: 'dismissed' })
   }
+  store.setState({ queue: [] })
 }

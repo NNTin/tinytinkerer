@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router-dom'
 import { AppBrowserProvider, createBrowserApp } from './app'
 import { useBrowserAppBootstrap } from './bootstrap'
+import { LazyHumanPromptHost } from './lazy-human-prompt-host'
 import { resolveBrowserShellBootstrapConfig } from './config'
 import { LazyPrivacyPolicyUpdateGate } from './telemetry/lazy-privacy-update-gate'
 import { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
@@ -91,6 +92,14 @@ export const createBrowserShellRoot = ({
         <AppBrowserProvider app={browserApp}>
           <QueryClientProvider client={queryClient}>
             <RouterProvider router={router} />
+            {/* The host's single human-in-the-loop modal (issue #85), mounted once for
+                every shell here rather than named per-shell. It renders nothing until a
+                plugin (permissions, choice-prompt, or any future HITL surface) raises a
+                prompt, so an optional plugin that is absent leaves no trace. Lazy so its
+                CodeMirror dependency code-splits out of the entry bundle. */}
+            <Suspense fallback={null}>
+              <LazyHumanPromptHost />
+            </Suspense>
             <Suspense fallback={null}>
               <LazyPrivacyPolicyUpdateGate />
             </Suspense>
