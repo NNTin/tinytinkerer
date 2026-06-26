@@ -112,8 +112,11 @@ message="${positional[2]}"
 # Prerequisites must pass before we describe or schedule anything.
 check_at || exit $?
 
+# A deferred send is fire-and-queue: when the job fires at its future time it
+# must NOT block waiting (up to 600s) for the session to go idle, so emit
+# `--no-wait` to make the queued `ao send` return immediately.
 ao_bin="$(command -v ao || echo ao)"
-job_line="$(printf '%s send %s %s' "$ao_bin" "$(sq "$session")" "$(sq "$message")")"
+job_line="$(printf '%s send %s %s --no-wait' "$ao_bin" "$(sq "$session")" "$(sq "$message")")"
 
 echo "== Scheduled job =="
 echo "  session : $session"

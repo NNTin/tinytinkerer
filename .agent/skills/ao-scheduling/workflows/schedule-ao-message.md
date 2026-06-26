@@ -22,6 +22,13 @@ bash .agent/skills/ao-scheduling/tools/schedule-ao-send.sh \
 ```
 
 Show the user the printed session, resolved time spec, and `ao send` command.
+The previewed command includes `--no-wait` — a deferred send is fire-and-queue,
+so it must not block waiting for the session to go idle when it fires:
+
+```
+ao send tin-orchestrator "Check the deploy and report status" --no-wait
+```
+
 **Schedule nothing until the user explicitly confirms all three.**
 
 ## 3. Schedule
