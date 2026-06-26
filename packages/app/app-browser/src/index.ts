@@ -43,6 +43,7 @@ export { ConversationEmptyState, useStarterPrompts } from './conversation-empty-
 export type { ConversationEmptyStateProps } from './conversation-empty-state'
 export { shellThemeToCssVars } from './shell-theme'
 export type { ShellThemeTokens } from './config'
+export { HumanPromptComposerDock } from './human-prompt-composer-dock'
 export { TelemetryConsentGate } from './telemetry/consent-gate'
 export { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
 export { PrivacyPolicyUpdateGate } from './telemetry/privacy-update-gate'

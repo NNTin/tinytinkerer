@@ -1,5 +1,6 @@
 import {
   ConversationEmptyState,
+  HumanPromptComposerDock,
   JumpToLatestButton,
   LazySettingsPanel,
   TINYTINKERER_BRAND_ASSET_URLS,
@@ -299,6 +300,10 @@ const WidgetSurface = ({ framed = true }: { framed?: boolean }) => {
             className="sticky bottom-1 left-1/2 z-10 -translate-x-1/2"
           />
         </div>
+
+        {/* Composer-docked human prompt (issue #85), shown above the message box when
+            the choice plugin's presentation is "composer". */}
+        <HumanPromptComposerDock />
 
         <div className="border-t border-[var(--widget-border)] px-3 py-2.5">
           <textarea

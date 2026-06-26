@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { PreferencesStore } from '@tinytinkerer/app-core'
+import { resolvePluginSetting, type PreferencesStore } from '@tinytinkerer/app-core'
 import { createSettingsStore } from '../src/stores/settings-store.js'
 import type { BrowserShell } from '../src/shell.js'
 
@@ -60,5 +60,65 @@ describe('settings-store plugin activation', () => {
     await store.getState().setPluginEnabled('a', true)
     await store.getState().setPluginEnabled('b', true)
     expect(store.getState().pluginActivation).toEqual({ a: true, b: true })
+  })
+})
+
+describe('settings-store plugin config', () => {
+  it('defaults plugin config to an empty map', () => {
+    const store = createSettingsStore(makeShell(preferences))
+    expect(store.getState().pluginConfig).toEqual({})
+  })
+
+  it('persists a per-plugin setting and merges further keys without clobbering', async () => {
+    const store = createSettingsStore(makeShell(preferences))
+
+    await store.getState().setPluginSetting('choice-prompt', 'presentation', 'composer')
+    expect(store.getState().pluginConfig).toEqual({ 'choice-prompt': { presentation: 'composer' } })
+    expect(preferences.store.get('settings_plugins_config')).toBe(
+      JSON.stringify({ 'choice-prompt': { presentation: 'composer' } })
+    )
+
+    await store.getState().setPluginSetting('choice-prompt', 'compact', true)
+    expect(store.getState().pluginConfig).toEqual({
+      'choice-prompt': { presentation: 'composer', compact: true }
+    })
+  })
+})
+
+describe('resolvePluginSetting', () => {
+  const manifest = {
+    id: 'choice-prompt',
+    settingsDescriptor: {
+      fields: [
+        {
+          key: 'presentation',
+          label: 'Question style',
+          type: 'enum' as const,
+          options: [
+            { value: 'modal', label: 'Pop-up dialog' },
+            { value: 'composer', label: 'Docked above the message box' }
+          ],
+          default: 'modal'
+        }
+      ]
+    }
+  }
+
+  it('returns the stored value when present', () => {
+    expect(
+      resolvePluginSetting(
+        { 'choice-prompt': { presentation: 'composer' } },
+        manifest,
+        'presentation'
+      )
+    ).toBe('composer')
+  })
+
+  it('falls back to the field default when unset', () => {
+    expect(resolvePluginSetting({}, manifest, 'presentation')).toBe('modal')
+  })
+
+  it('returns undefined for an unknown key with no field', () => {
+    expect(resolvePluginSetting({}, manifest, 'nope')).toBeUndefined()
   })
 })

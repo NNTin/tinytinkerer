@@ -486,6 +486,26 @@ permission body still travels with the tool it describes, not with the permissio
 settles every open prompt via `resetAllHumanPrompts()` on abort/reset, so the run lifecycle names no
 feature and a future HITL surface needs no new service, component, or shell mount — just the `HumanPromptView`.
 
+**Selectable presentations (the generic per-plugin settings subsystem).** A human prompt can be drawn in
+more than one place, chosen by the user. A `HumanPromptView` carries `source` (the originating plugin id)
+and the host resolves a per-plugin **presentation** preference for it: `modal` (a centered overlay — the
+default, and the only fit for the permissions allow/deny interrupt) or `composer` (a panel docked directly
+above the message box). Two renderers subscribe to the one human-prompt store — `HumanPromptHost` (modal,
+mounted once in the shell root) and `HumanPromptComposerDock` (placed by each shell above its composer, the
+way the shells already place `ContextGaugeSlot`) — and each draws the head-of-queue prompt only when the
+resolved presentation matches, so exactly one shows; both reuse the shared `HumanPromptControls`. A view
+with no `source` (the permissions prompt) is always the modal.
+
+The choice is the first user of a **generic per-plugin settings subsystem**: a plugin declares typed fields
+in `PluginManifest.settingsDescriptor` (an `enum` → a dropdown, a `boolean` → a toggle); the host renders
+them generically in that plugin's Settings row (only while it is enabled), persists the values as
+`PluginConfigState` (`Record<pluginId, Record<settingKey, string | boolean>>`, key `settings_plugins_config`),
+and reads them back with `resolvePluginSetting` (stored value, else the field's `default`). The host names no
+concrete plugin — the choice-prompt plugin just declares a `presentation` enum (key
+`HUMAN_PROMPT_PRESENTATION_SETTING_KEY`) and stamps its id as the view's `source`; the host maps the stored
+value to the matching renderer. Settings are **host-consumed** here (the host reads `presentation` to pick
+the surface); injecting config _into_ a plugin at execute time is a future extension.
+
 > **Note for #43 (Shared UI Package):** a `choicePrompt` **content node** (`ChoicePromptNode { prompt,
 choices }`) already exists in `contracts`/`content-core` as an unused scaffold (no renderer, no
 > markdown parser). #85 deliberately does **not** use it: the live poll is a host-rendered modal and the
@@ -623,8 +643,10 @@ rather than an error issue. See [sentry-telemetry.md](./sentry-telemetry.md) and
 Because discovery is dynamic, adding a plugin touches **no host code** — everything a plugin
 contributes is read off its manifest generically: tools (`toolDescriptors`), a heuristic planner
 step (`keywordPlannerStep`), a turn-activity summary (`summarizeActivity`), a permission view
-(`summarizePermission`), a persistent status gauge (`statusDescriptor`), and the developer inspector
-(`inspectorDescriptor`, which also arms request capture when present). The **one** exception is the
+(`summarizePermission`), a persistent status gauge (`statusDescriptor`), the developer inspector
+(`inspectorDescriptor`, which also arms request capture when present), and user-configurable settings
+(`settingsDescriptor` — dropdowns/toggles the host renders, persists, and reads generically). The **one**
+exception is the
 dom-snapshot channel between `read_dom` and `run_javascript` (see above), which the host wires
 explicitly via a single tool-id literal; nothing else in `create-runtime.ts` names a concrete plugin.
 

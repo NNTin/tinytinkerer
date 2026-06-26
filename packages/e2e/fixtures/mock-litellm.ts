@@ -1,4 +1,4 @@
-import { expect, type Page, type Route } from '@playwright/test'
+import { expect, type Locator, type Page, type Route } from '@playwright/test'
 import { SENTINEL_HOST } from './snippets'
 // The REAL edge Hono worker, exercised in-process: every /api/* request the app
 // makes is piped through `edgeApp.fetch` (see pipeToEdge), so the suite covers the
@@ -667,7 +667,10 @@ export const dismissTelemetryDialog = async (page: Page): Promise<void> => {
 // inputs). The label is also a substring of the checkbox's accessible name (the
 // label text plus the plugin description share the wrapping <label>), so a single
 // string locates both the click target and the checkbox.
-export const enablePlugin = async (page: Page, label: string): Promise<void> => {
+// Opens Settings (if not already open), reveals the tab that renders the given plugin
+// label, and ensures its toggle is checked. Returns the Settings dialog locator so the
+// caller can read further controls (e.g. a per-plugin dropdown) before closing.
+const openSettingsAndEnablePlugin = async (page: Page, label: string): Promise<Locator> => {
   await dismissTelemetryDialog(page)
   const settingsDialog = page.getByRole('dialog', { name: 'Settings' })
   // The settings modal can already be open on first load; only open it if not.
@@ -698,15 +701,23 @@ export const enablePlugin = async (page: Page, label: string): Promise<void> => 
     await labelText.click()
   }
   await expect(checkbox).toBeChecked()
+  return settingsDialog
+}
 
-  // Close via the X button inside the dialog (the backdrop also carries the
-  // "Close settings" label but sits behind the dialog content).
+// Closes the Settings dialog via the X button inside it (the backdrop also carries the
+// "Close settings" label but sits behind the dialog content) and waits for the composer.
+const closeSettings = async (page: Page): Promise<void> => {
   await page
     .getByRole('dialog', { name: 'Settings' })
     .getByRole('button', { name: 'Close settings' })
     .click()
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeHidden()
   await expect(page.getByRole('button', { name: 'Send' })).toBeVisible()
+}
+
+export const enablePlugin = async (page: Page, label: string): Promise<void> => {
+  await openSettingsAndEnablePlugin(page, label)
+  await closeSettings(page)
 }
 
 // The Code execution plugin (run_javascript tool), enabled via its Settings label.
@@ -732,6 +743,19 @@ export const enableContextUsagePlugin = (page: Page): Promise<void> =>
 // Settings label (exactly `manifest.label`).
 export const enableChoicePromptPlugin = (page: Page): Promise<void> =>
   enablePlugin(page, 'Choice prompt (ask you a question)')
+
+// Enable the Choice prompt plugin AND switch its presentation to "composer" (docked
+// above the message box) in one Settings session. The presentation dropdown — the
+// plugin's declared `settingsDescriptor` field, rendered generically by the host —
+// only appears once the plugin is enabled.
+export const enableChoicePromptComposer = async (page: Page): Promise<void> => {
+  const settingsDialog = await openSettingsAndEnablePlugin(
+    page,
+    'Choice prompt (ask you a question)'
+  )
+  await settingsDialog.getByLabel('Question style').selectOption('composer')
+  await closeSettings(page)
+}
 
 // The Context inspector plugin (developer panel showing the exact forwarded
 // request), enabled via its Settings label (exactly `manifest.label`).

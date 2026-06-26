@@ -125,6 +125,7 @@ vi.mock('@tinytinkerer/app-browser', async () => {
         <div data-turn-id={turn.id}>{turn.assistantContent.nodes[0]?.children?.[0]?.value}</div>
       ) : null,
     ConversationEmptyState: () => <div data-empty-state="true" />,
+    HumanPromptComposerDock: () => null,
     JumpToLatestButton: ({ visible }: { visible: boolean }) =>
       visible ? (
         <button type="button" aria-label="Jump to latest">

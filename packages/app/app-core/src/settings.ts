@@ -10,10 +10,13 @@ import {
   mcpDiscoveryResultSchema,
   mcpServerConfigSchema,
   pluginActivationStateSchema,
+  pluginConfigStateSchema,
   type AgentType,
   type McpDiscoveryResult,
   type McpServerConfig,
-  type PluginActivationState
+  type PluginActivationState,
+  type PluginConfigState,
+  type PluginSettingsDescriptor
 } from '@tinytinkerer/contracts'
 
 const DEFAULT_AGENT_TYPE: AgentType = 'react'
@@ -28,7 +31,8 @@ export const SETTINGS_KEYS = {
   mcpServers: 'settings_mcp_servers',
   mcpDiscovery: 'settings_mcp_discovery',
   telemetryEnabled: 'settings_telemetry_enabled',
-  pluginActivation: 'settings_plugins_activation'
+  pluginActivation: 'settings_plugins_activation',
+  pluginConfig: 'settings_plugins_config'
 } as const
 
 export type SettingsState = {
@@ -43,6 +47,7 @@ export type SettingsState = {
   mcpDiscovery: Record<string, McpDiscoveryResult>
   telemetryEnabled: boolean
   pluginActivation: PluginActivationState
+  pluginConfig: PluginConfigState
 }
 
 const parseBool = (value: string | undefined, fallback: boolean): boolean => {
@@ -67,7 +72,8 @@ export const defaultSettingsState = (): SettingsState => ({
   mcpServers: [],
   mcpDiscovery: {},
   telemetryEnabled: false,
-  pluginActivation: {}
+  pluginActivation: {},
+  pluginConfig: {}
 })
 
 export const loadSettingsState = async (preferences: PreferencesStore): Promise<SettingsState> => {
@@ -81,7 +87,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     mcpServersRaw,
     mcpDiscoveryRaw,
     telemetryEnabled,
-    pluginActivationRaw
+    pluginActivationRaw,
+    pluginConfigRaw
   ] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
     preferences.get(SETTINGS_KEYS.litellmBaseUrl),
@@ -92,7 +99,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     preferences.get(SETTINGS_KEYS.mcpServers),
     preferences.get(SETTINGS_KEYS.mcpDiscovery),
     preferences.get(SETTINGS_KEYS.telemetryEnabled),
-    preferences.get(SETTINGS_KEYS.pluginActivation)
+    preferences.get(SETTINGS_KEYS.pluginActivation),
+    preferences.get(SETTINGS_KEYS.pluginConfig)
   ])
 
   return {
@@ -106,7 +114,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     mcpServers: parseMcpServers(mcpServersRaw),
     mcpDiscovery: parseMcpDiscovery(mcpDiscoveryRaw),
     telemetryEnabled: parseBool(telemetryEnabled, false),
-    pluginActivation: parsePluginActivation(pluginActivationRaw)
+    pluginActivation: parsePluginActivation(pluginActivationRaw),
+    pluginConfig: parsePluginConfig(pluginConfigRaw)
   }
 }
 
@@ -136,6 +145,42 @@ export const isPluginEnabled = (
   activation: PluginActivationState,
   manifest: { id: string; defaultEnabled?: boolean }
 ): boolean => activation[manifest.id] ?? manifest.defaultEnabled ?? false
+
+// Per-plugin CONFIGURATION (issue #85). Same shape/flow as activation: parse a
+// validated map of pluginId -> (settingKey -> value) on load; persist the whole map
+// on every change.
+const parsePluginConfig = (raw: string | undefined): PluginConfigState => {
+  if (!raw) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    const result = pluginConfigStateSchema.safeParse(parsed)
+    return result.success ? result.data : {}
+  } catch {
+    return {}
+  }
+}
+
+export const persistPluginConfig = async (
+  preferences: PreferencesStore,
+  config: PluginConfigState
+): Promise<void> => {
+  await preferences.set(SETTINGS_KEYS.pluginConfig, JSON.stringify(config))
+}
+
+// Current value of one declared plugin setting: an explicit stored value always wins;
+// with no stored entry the manifest field's own `default` decides. Mirrors
+// `isPluginEnabled` for the richer config map, and is the single source of truth the
+// settings UI and the host renderers read. Returns `undefined` only for an unknown key
+// (no stored value and no declared field).
+export const resolvePluginSetting = (
+  config: PluginConfigState,
+  manifest: { id: string; settingsDescriptor?: PluginSettingsDescriptor },
+  key: string
+): string | boolean | undefined => {
+  const stored = config[manifest.id]?.[key]
+  if (stored !== undefined) return stored
+  return manifest.settingsDescriptor?.fields.find((field) => field.key === key)?.default
+}
 
 const parseMcpServers = (raw: string | undefined): McpServerConfig[] => {
   if (!raw) return []

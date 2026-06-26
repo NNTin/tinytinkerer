@@ -28,6 +28,7 @@ type SettingsActions = {
   clearMcpDiscovery: (serverId: string) => Promise<void>
   setTelemetryEnabled: (enabled: boolean) => Promise<void>
   setPluginEnabled: (pluginId: string, enabled: boolean) => Promise<void>
+  setPluginSetting: (pluginId: string, key: string, value: string | boolean) => Promise<void>
 }
 
 export type SettingsState = CoreSettingsState & {
@@ -153,5 +154,15 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       const nextActivation = { ...get().pluginActivation, [pluginId]: enabled }
       await persistPluginActivation(shell.preferences, nextActivation)
       set({ pluginActivation: nextActivation })
+    },
+    setPluginSetting: async (pluginId, key, value) => {
+      const { persistPluginConfig } = await loadCoreModule()
+      const current = get().pluginConfig
+      const nextConfig = {
+        ...current,
+        [pluginId]: { ...current[pluginId], [key]: value }
+      }
+      await persistPluginConfig(shell.preferences, nextConfig)
+      set({ pluginConfig: nextConfig })
     }
   }))

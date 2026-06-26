@@ -1,7 +1,16 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { AgentType, McpServerConfig, ServiceStatus } from '@tinytinkerer/contracts'
+import type {
+  AgentType,
+  McpServerConfig,
+  PluginSettingField,
+  ServiceStatus
+} from '@tinytinkerer/contracts'
 import { BrandSettingsFooter } from '@tinytinkerer/brand-assets'
-import { isPluginEnabled, LITELLM_DEPLOYMENT_DEFAULT } from '@tinytinkerer/app-core'
+import {
+  isPluginEnabled,
+  resolvePluginSetting,
+  LITELLM_DEPLOYMENT_DEFAULT
+} from '@tinytinkerer/app-core'
 import { MarkdownDocument } from './markdown-document'
 import { useSettingsSurfaceController } from './surfaces'
 import { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
@@ -570,9 +579,63 @@ export const McpServerList = () => {
 const INSPECTOR_WEB_ONLY_TOOLTIP =
   'The context inspector is only available in the web app. Open it there to inspect the model context.'
 
+// One declared plugin setting, rendered generically from the manifest (issue #85):
+// an `enum` is a labelled dropdown (same markup as the model picker), a `boolean`
+// reuses the toggle row. The host names no concrete plugin — it renders whatever
+// fields the manifest's settingsDescriptor declares.
+const PluginSettingFieldRow = ({
+  pluginId,
+  field,
+  value,
+  onChange
+}: {
+  pluginId: string
+  field: PluginSettingField
+  value: string | boolean | undefined
+  onChange: (value: string | boolean) => void
+}) => {
+  if (field.type === 'boolean') {
+    return (
+      <ToggleRow
+        label={field.label}
+        {...(field.description ? { description: field.description } : {})}
+        checked={value === true}
+        onChange={(next) => onChange(next)}
+      />
+    )
+  }
+  const selectId = `plugin-setting-${pluginId}-${field.key}`
+  return (
+    <label htmlFor={selectId} className="block space-y-1">
+      <span className="block text-sm text-stone-800">{field.label}</span>
+      {field.description ? (
+        <span className="block text-xs text-[var(--muted)]">{field.description}</span>
+      ) : null}
+      <select
+        id={selectId}
+        value={typeof value === 'string' ? value : field.default}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+      >
+        {field.options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 const PluginsSection = ({ inspectorPanelSupported }: { inspectorPanelSupported: boolean }) => {
-  const { availablePlugins, pluginActivation, setPluginEnabled, telemetryEnabled } =
-    useSettingsSurfaceController()
+  const {
+    availablePlugins,
+    pluginActivation,
+    setPluginEnabled,
+    pluginConfig,
+    setPluginSetting,
+    telemetryEnabled
+  } = useSettingsSurfaceController()
 
   if (availablePlugins.length === 0) {
     return <p className="text-xs text-[var(--muted)]">No plugins available.</p>
@@ -582,16 +645,34 @@ const PluginsSection = ({ inspectorPanelSupported }: { inspectorPanelSupported: 
     <div className="space-y-3">
       {availablePlugins.map((plugin) => {
         const inspectorDisabled = Boolean(plugin.inspectorDescriptor) && !inspectorPanelSupported
+        const enabled = isPluginEnabled(pluginActivation, plugin)
+        const settingFields = plugin.settingsDescriptor?.fields ?? []
         return (
-          <ToggleRow
-            key={plugin.id}
-            label={plugin.label}
-            description={plugin.description}
-            checked={isPluginEnabled(pluginActivation, plugin)}
-            disabled={inspectorDisabled}
-            {...(inspectorDisabled ? { tooltip: INSPECTOR_WEB_ONLY_TOOLTIP } : {})}
-            onChange={(next) => void setPluginEnabled(plugin.id, next)}
-          />
+          <div key={plugin.id} className="space-y-2">
+            <ToggleRow
+              label={plugin.label}
+              description={plugin.description}
+              checked={enabled}
+              disabled={inspectorDisabled}
+              {...(inspectorDisabled ? { tooltip: INSPECTOR_WEB_ONLY_TOOLTIP } : {})}
+              onChange={(next) => void setPluginEnabled(plugin.id, next)}
+            />
+            {/* A plugin's own settings appear only once it is enabled — they
+                configure behaviour that does nothing while the plugin is off. */}
+            {enabled && settingFields.length > 0 ? (
+              <div className="space-y-2 border-l-2 border-stone-100 pl-3">
+                {settingFields.map((field) => (
+                  <PluginSettingFieldRow
+                    key={field.key}
+                    pluginId={plugin.id}
+                    field={field}
+                    value={resolvePluginSetting(pluginConfig, plugin, field.key)}
+                    onChange={(value) => void setPluginSetting(plugin.id, field.key, value)}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
         )
       })}
       <p className="text-xs text-[var(--muted)]">

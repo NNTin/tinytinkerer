@@ -12,6 +12,7 @@ import {
   type McpDiscoveryResult,
   type McpServerConfig,
   type PluginActivationState,
+  type PluginConfigState,
   type SystemStatus
 } from '@tinytinkerer/contracts'
 import {
@@ -279,6 +280,8 @@ export type SettingsSurfaceController = {
   availablePlugins: PluginManifest[]
   pluginActivation: PluginActivationState
   setPluginEnabled: (pluginId: string, enabled: boolean) => Promise<void>
+  pluginConfig: PluginConfigState
+  setPluginSetting: (pluginId: string, key: string, value: string | boolean) => Promise<void>
 }
 
 export const useSettingsSurfaceController = (): SettingsSurfaceController => {
@@ -331,6 +334,8 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const setTelemetryEnabled = useSettingsStore((state) => state.setTelemetryEnabled)
   const pluginActivation = useSettingsStore((state) => state.pluginActivation)
   const setPluginEnabled = useSettingsStore((state) => state.setPluginEnabled)
+  const pluginConfig = useSettingsStore((state) => state.pluginConfig)
+  const setPluginSetting = useSettingsStore((state) => state.setPluginSetting)
   const { shell } = useBrowserApp()
 
   const effectiveStatus = status ?? OFFLINE_SYSTEM_STATUS
@@ -435,7 +440,9 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     setTelemetryEnabled,
     availablePlugins,
     pluginActivation,
-    setPluginEnabled
+    setPluginEnabled,
+    pluginConfig,
+    setPluginSetting
   }
 }
 

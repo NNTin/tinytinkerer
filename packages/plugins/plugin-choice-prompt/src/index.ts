@@ -2,6 +2,7 @@ import {
   boundedPreview,
   choicePromptInputSchema,
   choicePromptResultSchema,
+  HUMAN_PROMPT_PRESENTATION_SETTING_KEY,
   type ActivitySummarizer,
   type ActivityView,
   type AgentPlugin,
@@ -107,7 +108,26 @@ export const choicePromptPluginManifest: PluginManifest = {
       schema: choicePromptInputSchema,
       summarizeActivity: summarizeChoicePromptActivity
     }
-  ]
+  ],
+  // Per-plugin setting (issue #85): how the host presents the poll. Declared as pure
+  // data; the host renders the dropdown, persists the choice, and applies it when the
+  // `ask_user` view (stamped with this plugin's id as `source`) is rendered. The values
+  // are the host's HumanPromptPresentation vocabulary.
+  settingsDescriptor: {
+    fields: [
+      {
+        key: HUMAN_PROMPT_PRESENTATION_SETTING_KEY,
+        label: 'Question style',
+        description: 'How the assistant shows you its question.',
+        type: 'enum',
+        options: [
+          { value: 'modal', label: 'Pop-up dialog' },
+          { value: 'composer', label: 'Docked above the message box' }
+        ],
+        default: 'modal'
+      }
+    ]
+  }
 }
 
 // Builds the ask_user tool against the host's generic human-input capability. The
@@ -143,7 +163,10 @@ const createAskUserTool = (
       actions: input.options.map((option) => ({ id: option, label: option })),
       allowCustom: input.allowCustom,
       dismissLabel: 'Dismiss question',
-      dismissAction: { label: 'Skip' }
+      dismissAction: { label: 'Skip' },
+      // Identify the source so the host can apply THIS plugin's presentation setting
+      // (modal vs docked) when rendering the poll.
+      source: CHOICE_PROMPT_PLUGIN_ID
     })
     if (answer.kind === 'action') {
       return { kind: 'option', value: answer.id }

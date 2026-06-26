@@ -9,6 +9,14 @@ import { requestHumanInput, resetAllHumanPrompts } from '../src/human-prompt-bri
 const forwardPluginReport = vi.hoisted(() => vi.fn())
 vi.mock('../src/telemetry/plugin-report', () => ({ forwardPluginReport }))
 
+// The modal resolves presentation from the settings store (per-plugin). With no stored
+// config every view defaults to `modal`, so these views (no `source`) render here.
+vi.mock('../src/app.js', () => ({
+  useSettingsStore: (
+    selector: (state: { pluginConfig: Record<string, Record<string, string | boolean>> }) => unknown
+  ) => selector({ pluginConfig: {} })
+}))
+
 afterEach(() => {
   resetAllHumanPrompts()
   cleanup()

@@ -36,6 +36,16 @@ describe('choicePromptPlugin', () => {
     expect(choicePromptPluginManifest.defaultEnabled).toBeUndefined()
   })
 
+  it('declares a presentation setting the host renders as a dropdown', () => {
+    const fields = choicePromptPluginManifest.settingsDescriptor?.fields ?? []
+    const presentation = fields.find((field) => field.key === 'presentation')
+    expect(presentation?.type).toBe('enum')
+    expect(presentation?.type === 'enum' && presentation.default).toBe('modal')
+    expect(
+      presentation?.type === 'enum' && presentation.options.map((option) => option.value)
+    ).toEqual(['modal', 'composer'])
+  })
+
   it('exposes the ask_user tool only when the host can prompt a human', () => {
     const withCapability = choicePromptPlugin().createTools?.(
       hostWith(choiceFor({ kind: 'dismissed' }))
@@ -70,7 +80,9 @@ describe('choicePromptPlugin', () => {
           { id: 'Red', label: 'Red' },
           { id: 'Blue', label: 'Blue' }
         ],
-        dismissAction: { label: 'Skip' }
+        dismissAction: { label: 'Skip' },
+        // Stamps its own id so the host can apply this plugin's presentation setting.
+        source: CHOICE_PROMPT_PLUGIN_ID
       })
     )
     // A picked action maps back: the action id IS the option value.

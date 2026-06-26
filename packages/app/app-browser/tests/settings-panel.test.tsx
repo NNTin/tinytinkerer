@@ -41,9 +41,32 @@ const controller = vi.hoisted(() => ({
   refreshMcpServer: vi.fn(),
   telemetryEnabled: true,
   setTelemetryEnabled: vi.fn(),
-  availablePlugins: [{ id: 'web-search', label: 'Web search', description: 'Search the web.' }],
-  pluginActivation: {},
-  setPluginEnabled: vi.fn()
+  availablePlugins: [
+    { id: 'web-search', label: 'Web search', description: 'Search the web.' },
+    {
+      id: 'choice-prompt',
+      label: 'Choice prompt',
+      description: 'Ask you a question.',
+      settingsDescriptor: {
+        fields: [
+          {
+            key: 'presentation',
+            label: 'Question style',
+            type: 'enum' as const,
+            options: [
+              { value: 'modal', label: 'Pop-up dialog' },
+              { value: 'composer', label: 'Docked above the message box' }
+            ],
+            default: 'modal'
+          }
+        ]
+      }
+    }
+  ],
+  pluginActivation: { 'choice-prompt': true },
+  setPluginEnabled: vi.fn(),
+  pluginConfig: {},
+  setPluginSetting: vi.fn()
 }))
 
 vi.mock('../src/surfaces.js', () => ({
@@ -109,5 +132,27 @@ describe('SettingsPanel (B2)', () => {
     render(<SettingsPanel open onOpenChange={onOpenChange} />)
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('renders an enabled plugin’s declared dropdown setting and persists a change', () => {
+    render(<SettingsPanel open onOpenChange={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Tools' }))
+
+    // The choice-prompt plugin is enabled and declares a `presentation` enum field,
+    // so the host renders it generically as a labelled dropdown.
+    const dropdown = screen.getByLabelText('Question style')
+    expect(dropdown).toHaveValue('modal')
+    expect(
+      within(dropdown)
+        .getAllByRole<HTMLOptionElement>('option')
+        .map((option) => option.value)
+    ).toEqual(['modal', 'composer'])
+
+    fireEvent.change(dropdown, { target: { value: 'composer' } })
+    expect(controller.setPluginSetting).toHaveBeenCalledWith(
+      'choice-prompt',
+      'presentation',
+      'composer'
+    )
   })
 })

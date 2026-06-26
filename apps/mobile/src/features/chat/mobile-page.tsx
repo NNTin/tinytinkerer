@@ -1,6 +1,7 @@
 import {
   ContextGaugeSlot,
   ConversationEmptyState,
+  HumanPromptComposerDock,
   JumpToLatestButton,
   LazyBrowserSettingsModal,
   TurnActivityPanel,
@@ -163,6 +164,10 @@ export const MobilePage = () => {
             className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2"
           />
         </section>
+
+        {/* Composer-docked human prompt (issue #85), shown above the message box when
+            the choice plugin's presentation is "composer". */}
+        <HumanPromptComposerDock />
 
         <form
           className="px-1 py-1"

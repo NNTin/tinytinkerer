@@ -3,7 +3,8 @@ import {
   boundedJson,
   boundedPreview,
   feedbackInputSchema,
-  pluginActivationStateSchema
+  pluginActivationStateSchema,
+  pluginConfigStateSchema
 } from '../src/index.js'
 
 describe('feedbackInputSchema', () => {
@@ -49,6 +50,23 @@ describe('pluginActivationStateSchema', () => {
 
   it('rejects non-boolean values', () => {
     expect(pluginActivationStateSchema.safeParse({ 'send-feedback': 'yes' }).success).toBe(false)
+  })
+})
+
+describe('pluginConfigStateSchema', () => {
+  it('parses a map of plugin ids to (settingKey -> string|boolean) maps', () => {
+    expect(
+      pluginConfigStateSchema.parse({
+        'choice-prompt': { presentation: 'composer', compact: true }
+      })
+    ).toEqual({ 'choice-prompt': { presentation: 'composer', compact: true } })
+  })
+
+  it('rejects a non-primitive setting value', () => {
+    expect(
+      pluginConfigStateSchema.safeParse({ 'choice-prompt': { presentation: { nested: 1 } } })
+        .success
+    ).toBe(false)
   })
 })
 

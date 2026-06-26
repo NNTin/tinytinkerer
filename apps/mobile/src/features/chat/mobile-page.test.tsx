@@ -94,6 +94,7 @@ vi.mock('@tinytinkerer/app-browser', async () => {
     },
     LazyBrowserSettingsModal: () => null,
     ContextGaugeSlot: () => null,
+    HumanPromptComposerDock: () => null,
     AssistantContent: ({
       content,
       className,

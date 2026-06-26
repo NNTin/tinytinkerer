@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import {
   installChoicePromptMock,
   enableChoicePromptPlugin,
+  enableChoicePromptComposer,
   enablePermissionsPlugin,
   sendMessage,
   CHOICE_QUESTION
@@ -79,6 +80,39 @@ test.describe('choice-prompt plugin (#85)', () => {
       })
       .toEqual({ kind: 'dismissed' })
 
+    await expect(page.getByText('Done')).toBeVisible({ timeout: 30_000 })
+  })
+
+  test('presentation: with the plugin set to "composer", the poll docks above the composer (no modal overlay)', async ({
+    page
+  }) => {
+    // The choice-prompt plugin declares a `presentation` setting (issue #85). Set to
+    // "composer", the host renders the SAME poll as a panel docked above the message
+    // box instead of a centered modal — proving the per-plugin settings subsystem
+    // drives a different host presentation end to end.
+    const mock = await installChoicePromptMock(page)
+    await page.goto('/web/')
+    await enableChoicePromptComposer(page)
+
+    await sendMessage(page, 'Ask me which colour I prefer.')
+
+    const panel = page.getByRole('dialog', { name: MODAL_NAME })
+    await expect(panel).toBeVisible({ timeout: 30_000 })
+    await expect(panel).toContainText(CHOICE_QUESTION)
+
+    // Docked, not modal: the modal's overlay dismiss affordance ("Dismiss question")
+    // is absent — only the composer dock renders this prompt.
+    await expect(page.getByRole('button', { name: 'Dismiss question' })).toBeHidden()
+
+    await panel.getByRole('button', { name: 'Blue' }).click()
+    await expect(panel).toBeHidden()
+
+    await expect
+      .poll(() => mock.choiceResult(), {
+        timeout: 30_000,
+        message: 'the docked poll answer was never folded back into a model request'
+      })
+      .toEqual({ kind: 'option', value: 'Blue' })
     await expect(page.getByText('Done')).toBeVisible({ timeout: 30_000 })
   })
 

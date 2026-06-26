@@ -5,17 +5,17 @@ import {
   type PermissionViewSection
 } from '@tinytinkerer/app-core'
 import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
-import { useHumanPromptStore, type PendingHumanPrompt } from './human-prompt-bridge'
+import { type PendingHumanPrompt } from './human-prompt-bridge'
+import { useHumanPromptPresentation } from './human-prompt-presentation'
 import { loadPluginModules } from './plugins/registry'
 import { useResolvedPluginView } from './resolved-plugin-view'
 
-// The host's single human-in-the-loop modal (issue #85). It renders the head-of-queue
-// HumanPromptView — the Permissions allow/deny prompt, the Choice-prompt poll, or any
-// future HITL surface — and settles it with the user's answer. The requesting plugin
-// owns the view shape (title, body, actions, custom/dismiss affordances) and maps the
-// generic answer back to its own outcome; this generic renderer owns only the chrome.
-// Plugins ship data, never a component. Mounted ONCE in the browser shell root
-// (create-browser-shell-root), so no shell names a feature.
+// The host's human-in-the-loop MODAL (issue #85) — one of two presentations for a
+// HumanPromptView (the other is the composer dock). It renders the head-of-queue
+// prompt as a centered overlay when that prompt's resolved presentation is `modal`
+// (the default, and the only fit for the permissions allow/deny interrupt) and settles
+// it with the user's answer. The requesting plugin owns the view shape; this generic
+// renderer owns the chrome. Mounted ONCE in the browser shell root.
 
 const formatJson = (value: unknown): string => {
   try {
@@ -121,39 +121,115 @@ const InputContextView = ({
   )
 }
 
-export const HumanPromptHost = () => {
-  const pending = useHumanPromptStore((state): PendingHumanPrompt | undefined => state.queue[0])
-  const summarizers = usePermissionSummarizers()
+// The interactive answer affordances shared by every presentation (issue #85): the
+// action buttons, the optional free-text answer, and the explicit dismiss ("Skip").
+// Escape also dismisses. Both the modal and the composer dock render this; only the
+// chrome around it (overlay vs docked bar) differs. The presentation gate guarantees
+// only one is mounted for a given prompt, so only one Escape listener is active.
+export const HumanPromptControls = ({ pending }: { pending: PendingHumanPrompt }) => {
+  const { view, resolve } = pending
 
   // Free-text answer, reset whenever the head-of-queue prompt changes so a typed answer
   // never leaks from one prompt into the next.
   const [customText, setCustomText] = useState('')
   useEffect(() => {
     setCustomText('')
-  }, [pending?.id])
+  }, [pending.id])
 
-  // Dismissing (overlay click / Escape) resolves `dismissed`. What that means is the
-  // plugin's call: the permissions gate maps it to deny, the choice tool to a normal
-  // dismissed result the model reacts to.
   useEffect(() => {
-    if (!pending) {
-      return
-    }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        pending.resolve({ kind: 'dismissed' })
+        resolve({ kind: 'dismissed' })
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [pending])
+  }, [resolve])
 
-  if (!pending) {
+  const trimmedCustom = customText.trim()
+
+  return (
+    <>
+      <div className="max-h-[60vh] space-y-2 overflow-y-auto px-6 py-5">
+        {view.actions.map((action, index) => (
+          <button
+            key={`${index}-${action.id}`}
+            type="button"
+            onClick={() => resolve({ kind: 'action', id: action.id })}
+            className={
+              action.tone === 'primary'
+                ? 'flex w-full items-center justify-center rounded-md border border-stone-800 bg-stone-900 px-4 py-2 text-sm text-white transition-colors hover:bg-stone-700'
+                : 'flex w-full items-center rounded-md border border-stone-200 bg-white px-4 py-2 text-left text-sm text-stone-800 transition-colors hover:border-stone-300 hover:bg-stone-50'
+            }
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
+
+      {view.allowCustom ? (
+        <div className="space-y-2 border-t border-[var(--border)] px-6 py-4">
+          <label
+            htmlFor="tt-prompt-custom"
+            className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]"
+          >
+            Or type your own answer
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="tt-prompt-custom"
+              type="text"
+              value={customText}
+              onChange={(event) => setCustomText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && trimmedCustom.length > 0) {
+                  resolve({ kind: 'custom', text: trimmedCustom })
+                }
+              }}
+              placeholder="Type an answer…"
+              className="flex-1 rounded-md border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800 outline-none focus:border-stone-400"
+            />
+            <button
+              type="button"
+              disabled={trimmedCustom.length === 0}
+              onClick={() => resolve({ kind: 'custom', text: trimmedCustom })}
+              className="inline-flex items-center rounded-md border border-stone-800 bg-stone-900 px-4 py-2 text-sm text-white transition-colors hover:bg-stone-700 disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-200 disabled:text-stone-400"
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* An explicit dismiss button when the view asks for one (e.g. a poll's "Skip"):
+          makes the "I won't answer" exit discoverable — the same `dismissed` outcome as
+          Escape/overlay — so the composer is never silently blocked. */}
+      {view.dismissAction ? (
+        <div className="flex justify-end border-t border-[var(--border)] px-6 py-4">
+          <button
+            type="button"
+            onClick={() => resolve({ kind: 'dismissed' })}
+            className="inline-flex items-center rounded-md border border-stone-200 bg-white px-4 py-2 text-sm text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50"
+          >
+            {view.dismissAction.label}
+          </button>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+export const HumanPromptHost = () => {
+  const { pending, presentation } = useHumanPromptPresentation()
+  const summarizers = usePermissionSummarizers()
+
+  // Only the modal presentation renders here; a `composer` prompt is drawn by the
+  // composer dock instead. A view with no presentation preference defaults to modal.
+  if (!pending || presentation !== 'modal') {
     return null
   }
 
   const { view, resolve } = pending
-  const trimmedCustom = customText.trim()
   const hasBody = Boolean(view.inputContext) || (view.sections?.length ?? 0) > 0
 
   return (
@@ -193,71 +269,7 @@ export const HumanPromptHost = () => {
           </div>
         ) : null}
 
-        <div className="max-h-[60vh] space-y-2 overflow-y-auto px-6 py-5">
-          {view.actions.map((action, index) => (
-            <button
-              key={`${index}-${action.id}`}
-              type="button"
-              onClick={() => resolve({ kind: 'action', id: action.id })}
-              className={
-                action.tone === 'primary'
-                  ? 'flex w-full items-center justify-center rounded-md border border-stone-800 bg-stone-900 px-4 py-2 text-sm text-white transition-colors hover:bg-stone-700'
-                  : 'flex w-full items-center rounded-md border border-stone-200 bg-white px-4 py-2 text-left text-sm text-stone-800 transition-colors hover:border-stone-300 hover:bg-stone-50'
-              }
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
-
-        {view.allowCustom ? (
-          <div className="space-y-2 border-t border-[var(--border)] px-6 py-4">
-            <label
-              htmlFor="tt-prompt-custom"
-              className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]"
-            >
-              Or type your own answer
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="tt-prompt-custom"
-                type="text"
-                value={customText}
-                onChange={(event) => setCustomText(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && trimmedCustom.length > 0) {
-                    resolve({ kind: 'custom', text: trimmedCustom })
-                  }
-                }}
-                placeholder="Type an answer…"
-                className="flex-1 rounded-md border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800 outline-none focus:border-stone-400"
-              />
-              <button
-                type="button"
-                disabled={trimmedCustom.length === 0}
-                onClick={() => resolve({ kind: 'custom', text: trimmedCustom })}
-                className="inline-flex items-center rounded-md border border-stone-800 bg-stone-900 px-4 py-2 text-sm text-white transition-colors hover:bg-stone-700 disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-200 disabled:text-stone-400"
-              >
-                Send
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {/* An explicit dismiss button when the view asks for one (e.g. a poll's "Skip"):
-            makes the "I won't answer" exit discoverable — the same `dismissed` outcome as
-            Escape/overlay — so the composer is never silently blocked. */}
-        {view.dismissAction ? (
-          <div className="flex justify-end border-t border-[var(--border)] px-6 py-4">
-            <button
-              type="button"
-              onClick={() => resolve({ kind: 'dismissed' })}
-              className="inline-flex items-center rounded-md border border-stone-200 bg-white px-4 py-2 text-sm text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50"
-            >
-              {view.dismissAction.label}
-            </button>
-          </div>
-        ) : null}
+        <HumanPromptControls pending={pending} />
       </div>
     </div>
   )

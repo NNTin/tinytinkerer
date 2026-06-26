@@ -92,6 +92,18 @@ export type ChoicePromptResult = z.infer<typeof choicePromptResultSchema>
 export const pluginActivationStateSchema = z.record(z.string(), z.boolean())
 export type PluginActivationState = z.infer<typeof pluginActivationStateSchema>
 
+// Persisted per-plugin CONFIGURATION — a map of pluginId -> (settingKey -> value),
+// the first per-plugin config beyond on/off (issue #85 presentation modes). A plugin
+// declares its settings via `PluginManifest.settingsDescriptor`; the host renders,
+// persists, and reads them generically. A missing entry falls back to the field's
+// declared default (see resolvePluginSetting in app-core). Values are the primitive
+// field types the host can render: a string (enum pick) or a boolean (toggle).
+export const pluginConfigStateSchema = z.record(
+  z.string(),
+  z.record(z.string(), z.union([z.string(), z.boolean()]))
+)
+export type PluginConfigState = z.infer<typeof pluginConfigStateSchema>
+
 // =============================================================================
 // Tool interface — the pure tool contract.
 // =============================================================================
@@ -506,6 +518,20 @@ export type PermissionSummarizer = (
 // Plugins ship data, never a component (see HumanPromptHost in app-browser). Mirrors how
 // PermissionView / ActivityView are plugin-emitted and host-rendered.
 
+// Where the host draws a human prompt (issue #85). A host-render hint, like `role`:
+// `modal` is a centered overlay (the default, and the only fit for an interrupt like the
+// permissions allow/deny prompt); `composer` docks the prompt directly above the message
+// box so the conversation stays visible. The user picks per-plugin via the plugin's
+// settings (see PluginManifest.settingsDescriptor); the host resolves it from the view's
+// `source` and renders the matching surface. A view with no resolved preference is modal.
+export type HumanPromptPresentation = 'modal' | 'composer'
+export const HUMAN_PROMPT_PRESENTATIONS: readonly HumanPromptPresentation[] = ['modal', 'composer']
+
+// The plugin-settings field key under which a plugin stores its chosen human-prompt
+// presentation. Shared so the declaring plugin (its settingsDescriptor field `key`)
+// and the host (which reads `pluginConfig[view.source]?.[this]`) cannot drift.
+export const HUMAN_PROMPT_PRESENTATION_SETTING_KEY = 'presentation'
+
 // What the host renders for a human prompt. `role`/`ariaLabel` drive the dialog
 // semantics and keep stable accessible names; `sections` is a static body; `inputContext`
 // asks the host to render the gated tool's input via the owner's `summarizePermission`
@@ -513,7 +539,9 @@ export type PermissionSummarizer = (
 // enrichment only the host can do; `actions` are the mutually-exclusive choices (Allow/Deny
 // | poll options); `allowCustom` adds a free-text answer; `dismissLabel` names the
 // overlay/Escape exit, and `dismissAction`, when set, adds an explicit dismiss button
-// (e.g. a poll's "Skip").
+// (e.g. a poll's "Skip"). `source` is the originating plugin id: it lets the host apply
+// THAT plugin's presentation preference (a per-plugin setting) to choose the render
+// surface — a view without `source` (the permissions prompt) is always the modal.
 export type HumanPromptView = {
   role: 'dialog' | 'alertdialog'
   ariaLabel: string
@@ -525,6 +553,7 @@ export type HumanPromptView = {
   allowCustom?: boolean
   dismissLabel: string
   dismissAction?: { label: string }
+  source?: string
 }
 
 // The user's answer to a human prompt: a picked action (by id), a typed custom answer,
@@ -599,6 +628,28 @@ export type PluginToolDescriptor = {
   summarizePermission?: PermissionSummarizer
 }
 
+// One user-configurable setting a plugin declares (issue #85). Pure DATA — the plugin
+// describes the control (key, label, type, default, options); the host renders it as a
+// dropdown / toggle, persists the value (PluginConfigState), and reads it back. Two
+// field types today: an `enum` (a single pick from `options`, rendered as a dropdown)
+// and a `boolean` (rendered as a toggle). `key` is unique within the plugin and is the
+// key under which the value is stored. A plugin ships data, never a component.
+export type PluginSettingField = {
+  key: string
+  label: string
+  description?: string
+} & (
+  | { type: 'enum'; options: { value: string; label: string }[]; default: string }
+  | { type: 'boolean'; default: boolean }
+)
+
+// A plugin's settings contribution: the fields the host renders in that plugin's row
+// in the Settings modal. The host resolves each field's current value with
+// `resolvePluginSetting` (stored value, else the field's `default`).
+export type PluginSettingsDescriptor = {
+  fields: PluginSettingField[]
+}
+
 // Host-agnostic metadata about a plugin: the copy a host surfaces in its settings
 // UI plus the planner descriptors for the tools the plugin contributes. Lives in
 // the contract layer (not inside any concrete plugin) so hosts depend only on the
@@ -621,6 +672,11 @@ export type PluginManifest = {
   // out-of-the-box (e.g. web search) sets this to `true`. An explicit user
   // choice in settings always wins over this default.
   defaultEnabled?: boolean
+  // Optional user-configurable settings the host renders in this plugin's Settings
+  // row (issue #85) — the first per-plugin configuration beyond on/off. The host
+  // renders, persists (PluginConfigState), and reads each field generically; it names
+  // no concrete plugin. See PluginSettingsDescriptor.
+  settingsDescriptor?: PluginSettingsDescriptor
   // Optional cold-start suggestion the host may surface in the empty-state
   // starter prompts (B3). Contributed here — alongside the other manifest
   // descriptors — so the host derives starters from *enabled capabilities*

@@ -2,6 +2,7 @@ import {
   ContextGaugeSlot,
   ContextInspectorSlot,
   ConversationEmptyState,
+  HumanPromptComposerDock,
   JumpToLatestButton,
   LazyBrowserSettingsModal,
   TurnActivityPanel,
@@ -137,6 +138,10 @@ export const ChatPage = () => {
             className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
           />
         </section>
+
+        {/* A composer-docked human prompt (issue #85) renders here, just above the
+            message box, when the choice plugin's presentation is set to "composer". */}
+        <HumanPromptComposerDock />
 
         {/* Composer */}
         <form
