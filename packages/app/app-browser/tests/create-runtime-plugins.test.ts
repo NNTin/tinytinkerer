@@ -239,6 +239,144 @@ describe('plugin runtime contributions', () => {
     vi.unstubAllGlobals()
   })
 
+  it('registers app-local tools and surfaces a planner descriptor derived from their Zod schema', async () => {
+    // App tools (e.g. the canvas app's Excalidraw tools) are injected straight
+    // into the runtime — not discovered as plugins and not activation-gated. They
+    // must register and advertise a planner descriptor generated from their own
+    // Zod schema, the same canonical path plugin tools use (issue #287).
+    const requestBodies: Array<{ messages?: Array<{ content: string }>; stream?: boolean }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+          messages?: Array<{ content: string }>
+          stream?: boolean
+        }
+        requestBodies.push(body)
+        if (body.stream === false) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        complexity: 'low',
+                        steps: [
+                          { id: 'understand', summary: 'u', toolCall: null },
+                          { id: 'compose', summary: 'c', toolCall: null }
+                        ]
+                      })
+                    }
+                  }
+                ]
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } }
+            )
+          )
+        }
+        return Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' }
+          })
+        )
+      })
+    )
+
+    const drawTool: Tool<{ shapeKind: string }, unknown> = {
+      id: 'draw_on_canvas',
+      description: 'Draw shapes on the Excalidraw canvas.',
+      schema: z.object({ shapeKind: z.string() }),
+      execute: () => Promise.resolve({ ok: true })
+    }
+
+    const runtime = createRuntime({
+      baseUrl: 'http://edge.local',
+      getToken: () => 'token',
+      getModel: () => 'openai/gpt-4.1-mini',
+      appTools: [drawTool]
+    })
+
+    await runRuntime(runtime)
+
+    const planningPrompt = requestBodies[0]?.messages?.[0]?.content ?? ''
+    expect(planningPrompt).toContain('Tool: draw_on_canvas')
+    expect(planningPrompt).toContain('Draw shapes on the Excalidraw canvas.')
+    // The planner-visible JSON Schema is generated from the tool's own Zod schema.
+    expect(planningPrompt).toContain('"shapeKind"')
+    vi.unstubAllGlobals()
+  })
+
+  it('does not let an app tool override a plugin tool that already claimed its id', async () => {
+    // App tools register after MCP + plugins; addTool dedupes, first writer wins.
+    const requestBodies: Array<{ messages?: Array<{ content: string }>; stream?: boolean }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+          messages?: Array<{ content: string }>
+          stream?: boolean
+        }
+        requestBodies.push(body)
+        if (body.stream === false) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        complexity: 'low',
+                        steps: [{ id: 'understand', summary: 'u', toolCall: null }]
+                      })
+                    }
+                  }
+                ]
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } }
+            )
+          )
+        }
+        return Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' }
+          })
+        )
+      })
+    )
+
+    const runtime = createRuntime({
+      baseUrl: 'http://edge.local',
+      getToken: () => 'token',
+      getModel: () => 'openai/gpt-4.1-mini',
+      pluginActivation: { owner: true },
+      pluginModules: [
+        pluginModule({
+          manifestId: 'owner',
+          toolId: 'shared_id',
+          descriptorDescription: 'plugin owns this id'
+        })
+      ],
+      appTools: [
+        {
+          id: 'shared_id',
+          description: 'app override should be dropped',
+          schema: z.object({}).passthrough(),
+          execute: () => Promise.resolve('ok')
+        }
+      ]
+    })
+
+    await runRuntime(runtime)
+
+    const planningPrompt = requestBodies[0]?.messages?.[0]?.content ?? ''
+    expect(planningPrompt).toContain('plugin owns this id')
+    expect(planningPrompt).not.toContain('app override should be dropped')
+    vi.unstubAllGlobals()
+  })
+
   it('fires deactivate when a persistent plugin runtime sees a plugin turn off', () => {
     const activate = vi.fn()
     const deactivate = vi.fn()

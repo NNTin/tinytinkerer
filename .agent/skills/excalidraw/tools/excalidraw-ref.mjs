@@ -12,10 +12,10 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-// Recorded for the FUTURE human-approved dependency add (the repo has a 7-day
-// dependency age gate; do NOT add the dep as part of a skill-only change).
+// The version pinned in apps/canvas/package.json (cleared the repo's 7-day
+// dependency age gate). Bump deliberately and re-check the gate before changing.
 const PACKAGE = '@excalidraw/excalidraw'
-const RECORDED_NPM_VERSION = '0.18.1' // `npm view @excalidraw/excalidraw version` at authoring time
+const PINNED_NPM_VERSION = '0.18.1' // see apps/canvas/package.json
 
 const REF = join(homedir(), 'excalidraw')
 
@@ -34,7 +34,7 @@ const SETUP = `git clone https://github.com/excalidraw/excalidraw ${REF}`
 
 const printHeader = () => {
   console.log(`reference clone : ${REF}`)
-  console.log(`npm package     : ${PACKAGE}@${RECORDED_NPM_VERSION} (recorded; not yet a dep)`)
+  console.log(`npm package     : ${PACKAGE}@${PINNED_NPM_VERSION} (pinned in apps/canvas)`)
 }
 
 if (!existsSync(REF)) {

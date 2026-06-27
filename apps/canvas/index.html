@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en" translate="no">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- In-browser translation (e.g. Google Translate) rewrites text nodes into
+         <font> wrappers, detaching nodes React owns; React's next removeChild then
+         throws "NotFoundError: ... not a child of this node" (TINYTINKERER-FRONTEND-6).
+         Opt the React-managed shell out of automatic translation. -->
+    <meta name="google" content="notranslate" />
+    <title>tinytinkerer canvas</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --widget-bg: #f7f7f4;
+        --widget-panel: #fffdf8;
+        --widget-border: #d7d4ca;
+        --widget-text: #25231d;
+        --widget-muted: #6c675a;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--widget-bg);
+        color: var(--widget-text);
+        font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .tt-boot {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 16px;
+      }
+
+      .tt-boot__card {
+        width: min(100%, 420px);
+        border: 1px solid var(--widget-border);
+        border-radius: 32px;
+        background: var(--widget-panel);
+        padding: 24px;
+        box-shadow: 0 24px 70px rgba(36, 33, 24, 0.14);
+      }
+
+      .tt-boot__eyebrow {
+        margin: 0 0 8px;
+        font-size: 11px;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+        color: var(--widget-muted);
+      }
+
+      .tt-boot__title {
+        margin: 0;
+        font-size: 24px;
+      }
+
+      .tt-boot__body {
+        margin: 12px 0 0;
+        font-size: 14px;
+        line-height: 1.7;
+        color: var(--widget-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="tt-boot">
+        <div class="tt-boot__card">
+          <p class="tt-boot__eyebrow">Canvas Boot</p>
+          <h1 class="tt-boot__title">Loading tinytinkerer</h1>
+          <p class="tt-boot__body">Preparing the whiteboard and chat assistant.</p>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

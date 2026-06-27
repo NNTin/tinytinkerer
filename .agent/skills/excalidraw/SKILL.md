@@ -24,20 +24,21 @@ Skills the agent uses to work in this repo. Core idea: **offload deterministic s
 
 END GENERATED: .agent/README.md -->
 
-Work on the widget's Excalidraw integration and the planned **chat-assistant ⇄ Excalidraw bridge**. Read `../../README.md` first for the WAT framework.
+Work on the **`apps/canvas`** app — a full-window Excalidraw whiteboard with the chat assistant floating on top — and the **chat-assistant ⇄ Excalidraw bridge** that lets a user draw by prompting. Read `../../README.md` first for the WAT framework.
 
-Excalidraw is a React whiteboard component (`@excalidraw/excalidraw`). The widget does **not** embed it yet — this skill is the map for the agent who wires it in, and for the one who then lets the chat assistant read and draw on the canvas. The authoritative prop/API contracts live in a **read-only reference clone**, not in this repo.
+Excalidraw is a React whiteboard component (`@excalidraw/excalidraw`). It is **embedded and wired up** in `apps/canvas` (added in the canvas feature work); this skill maps the integration so the next agent can extend it. The authoritative prop/API contracts live in a **read-only reference clone**, not in this repo.
 
 ## When to use
 
-- Embedding `<Excalidraw>` into `apps/widget` (mount, CSS/assets, code-splitting).
-- Building the chat ⇄ canvas bridge: letting the assistant **read** the scene (export/inspect) or **write/draw** on it via tools.
+- Extending or debugging `apps/canvas` (the whiteboard app + chat overlay).
+- Adding/adjusting the assistant's canvas tools (`draw_on_canvas` / `read_canvas` / `clear_canvas`) or the canvas bridge.
+- Embedding `<Excalidraw>` somewhere new (mount, CSS/assets, code-splitting) or touching the app-tools seam.
 - Any question about Excalidraw props, the `excalidrawAPI` handle, or programmatic element creation — go to the reference, don't guess.
 
 ## How
 
-1. `node .agent/skills/excalidraw/tools/excalidraw-ref.mjs` — prints the clone location, the recorded npm version, and the high-value doc paths. Pass a query to `git grep` the reference (e.g. `… updateScene`).
-2. Read the relevant doc in the clone (paths below), then the matching widget file in `apps/widget`.
+1. `node .agent/skills/excalidraw/tools/excalidraw-ref.mjs` — prints the clone location, the pinned npm version, and the high-value doc paths. Pass a query to `git grep` the reference (e.g. `… updateScene`).
+2. Read the relevant doc in the clone (paths below), then the matching integration file in `apps/canvas` (see "How it is wired" below).
 3. To add a new API call end-to-end, follow `workflows/wire-excalidraw-api-call.md`.
 
 ## Reference clone (READ-ONLY)
@@ -52,13 +53,12 @@ Excalidraw is a React whiteboard component (`@excalidraw/excalidraw`). The widge
   - `dev-docs/.../api/excalidraw-element-skeleton.mdx` — `convertToExcalidrawElements`.
   - `dev-docs/.../installation.mdx` + `integration.mdx` — CSS, fonts/`EXCALIDRAW_ASSET_PATH`, SSR, bundler notes.
 
-## npm package (do NOT add the dep here)
+## npm package
 
-- Package: **`@excalidraw/excalidraw`**, recorded version **`0.18.1`** (latest at authoring; verify with `npm view @excalidraw/excalidraw version`).
-- Adding the dep is **future, human-approved work** — the repo enforces a 7-day dependency age gate. This skill is knowledge only.
-- Peer deps: `react` + `react-dom`. The widget is on **React 19** (`apps/widget/package.json`), which Excalidraw 0.18 supports.
-- Required imports once added: `import { Excalidraw } from '@excalidraw/excalidraw'` **and** `import '@excalidraw/excalidraw/index.css'`.
-- Self-hosting fonts: copy `dist/prod/fonts` into a served path and set `window.EXCALIDRAW_ASSET_PATH`; otherwise fonts come from a CDN.
+- Package: **`@excalidraw/excalidraw`**, pinned at **`0.18.1`** in `apps/canvas/package.json` (published 2026-04-20, so it cleared the repo's 7-day `minimumReleaseAge` gate without an exclude).
+- Peer deps: `react` + `react-dom`. The app is on **React 19**, which Excalidraw 0.18 supports (its transitive Radix deps warn about React 16–18 peers; harmless).
+- Imports: `import { Excalidraw, convertToExcalidrawElements, CaptureUpdateAction } from '@excalidraw/excalidraw'` **and** `import '@excalidraw/excalidraw/index.css'`. `ExcalidrawImperativeAPI` is a type at the `@excalidraw/excalidraw/types` subpath.
+- Self-hosting fonts: copy `dist/prod/fonts` into a served path and set `window.EXCALIDRAW_ASSET_PATH`; otherwise fonts come from a CDN (the current MVP uses the CDN default).
 
 ## API map — tagged for the bridge
 
@@ -80,29 +80,33 @@ The `excalidrawAPI` handle (captured via the `excalidrawAPI={(api) => …}` prop
 
 `captureUpdate` (`CaptureUpdateAction.IMMEDIATELY` / `EVENTUALLY` / `NEVER`) controls undo/redo — use `NEVER` for assistant-driven writes you don't want on the user's undo stack. Element/appState/skeleton type shapes: read the doc, don't invent fields.
 
-## This repo today (grounding)
+## How it is wired in `apps/canvas`
 
-- The widget is a small **floating chat window**, not a canvas app: `apps/widget/src/features/chat/widget-page.tsx`. Default 400×680, min 320×420 (`WIDGET_DEFAULT_*` / `WIDGET_MIN_*`); it also renders embedded-in-host and minimized modes.
-- Mount today is `WidgetSurface` (the chat column) inside `WidgetWindow`. **No Excalidraw is present.** A canvas does not fit the chat column — it needs a dedicated surface (a tab/route or a separate larger pane), decided with the maintainer.
-- Routing: `apps/widget/src/app/router.tsx` (hash router; `WidgetPage` is already `lazy`-loaded).
-- **Bundle budget is the hard constraint.** `apps/widget/src/bundle-size.test.ts` caps the lazy widget-route chunk at **40 kB** and every non-vendor chunk at **120 kB**. Excalidraw is hundreds of kB, so it **must** be its own lazy chunk (`React.lazy` / dynamic `import()`), never bundled into `widget-page`. Expect to add a vendor-chunk carve-out, mirroring the existing `react-vendor` / `codemirror-vendor` split.
-- No SSR concern here (the widget is a client SPA via `createBrowserShellRoot` in `apps/widget/src/main.tsx`), but the component is still client-only — keep it behind the lazy boundary.
+`apps/canvas` is its own browser shell (mirrors `apps/widget`). Excalidraw is the full-window base; the chat floats on top, sharing one React tree.
 
-## Path toward the chat ⇄ Excalidraw bridge
+- `apps/canvas/src/features/canvas/canvas-page.tsx` — composes `<ExcalidrawCanvas>` (base) + the shared `<FloatingWidgetChat>` (overlay). The overlay is click-through (`.canvas-chat-overlay` is `pointer-events: none`; only `.widget-floating-shell` re-enables it) so the whiteboard stays usable.
+- `apps/canvas/src/features/canvas/excalidraw-canvas.tsx` — the **only** static importer of `@excalidraw/excalidraw` + its CSS; loaded via `React.lazy` from the page so it code-splits into `excalidraw-vendor`. On mount it registers the API via `setCanvasApi`.
+- `apps/canvas/src/canvas-bridge.ts` — module singleton holding the live `ExcalidrawImperativeAPI` (`setCanvasApi`/`getCanvasApi`), modeled on app-browser's `human-prompt-bridge.ts`.
+- `apps/canvas/src/canvas-tools.ts` — `createCanvasTools()` builds the `draw_on_canvas` / `read_canvas` / `clear_canvas` tools, closing over `getCanvasApi()`. **Excalidraw is dynamic-`import()`ed inside `execute`** so it never enters the entry chunk; tools degrade gracefully when the API is null.
+- `apps/canvas/src/main.tsx` — `createBrowserShellRoot({ router, BootScreen, appTools: createCanvasTools() })`.
 
-The assistant already calls **tools** through the chat runtime — see `packages/app/app-browser/src/runtime/tool-calling.ts` and `mcp-tool.ts` (each tool is a `Tool<Input, Output>` from `@tinytinkerer/app-core`; MCP tools use the id pattern `mcp:<server>:<tool>`). The bridge is: register **local tools that close over the live `excalidrawAPI`** and map onto the table above.
+**The app-tools seam** (NOT a plugin): `appTools` threads `createBrowserShellRoot → createBrowserApp → createChatStore → createBrowserRuntimeFactory → createRuntime` (`packages/app/app-browser/src/...`), where each tool registers with a planner descriptor derived from its Zod `schema`. App tools are always-on and only present in the app that passes them — web/widget/mobile are unaffected.
+
+**The floating chat chrome is shared**: `FloatingWidgetChat` + `WidgetChatSurface` live in `packages/app/app-browser/src/widget-chat/` (extracted from the widget). `apps/widget`'s `WidgetPage` and `apps/canvas` both consume it. app-browser must not depend on `@tinytinkerer/ui`, so the surface uses `react-icons/fa6` + a local button (the turn-chrome precedent).
+
+- **Bundle budget is the hard constraint.** `apps/canvas/src/bundle-size.test.ts`: entry < 65 kB, lazy `canvas-page` route < 40 kB, first-party chunks < 120 kB, Excalidraw isolated in a lazy `excalidraw-vendor` chunk. `apps/canvas/vite.config.ts` `manualChunks` routes `node_modules/@excalidraw/` (+ roughjs/points-on-\* render deps) into `excalidraw-vendor`. Excalidraw also lazily pulls a bundled Mermaid (large third-party lazy chunks) — exempt from the first-party budget by the `moduleIds` check.
+- Client-only (no SSR) via `createBrowserShellRoot`; keep Excalidraw behind the lazy boundary.
 
 ```mermaid
 flowchart LR
   user[User] --> chat[Chat runtime]
-  chat -->|tool call| bridge[Excalidraw tools]
-  bridge -->|WRITE updateScene / convert| api[excalidrawAPI]
-  api -->|READ getSceneElements / export| bridge
+  chat -->|tool call| tools[Canvas tools]
+  tools -->|WRITE updateScene / convert| api[excalidrawAPI]
+  api -->|READ getSceneElements| tools
   api --> canvas[Excalidraw canvas]
-  canvas -->|onChange| chat
 ```
 
-Sequence to build it: (1) embed `<Excalidraw>` behind a lazy boundary and lift the `excalidrawAPI` handle into a store; (2) expose READ tools (inspect/export) first — lower risk; (3) add WRITE tools (`convertToExcalidrawElements` → `updateScene`) with `captureUpdate: NEVER`; (4) wire `onChange` so edits flow back to the assistant. `workflows/wire-excalidraw-api-call.md` is the per-call SOP.
+To add a new canvas capability, follow `workflows/wire-excalidraw-api-call.md`.
 
 ## Available tools
 
@@ -110,10 +114,10 @@ Sequence to build it: (1) embed `<Excalidraw>` behind a lazy boundary and lift t
 
 ## Constraints
 
-- **Knowledge only here.** Do NOT add the npm dependency, do NOT embed Excalidraw, do NOT implement the bridge — that is future, human-approved work (7-day dep age gate applies).
-- Never modify or commit `~/excalidraw`.
-- When the integration is built, the new Excalidraw code must stay in its own lazy chunk to keep `bundle-size.test.ts` green.
+- Never modify or commit `~/excalidraw` (read-only reference clone, outside this repo).
+- Keep all Excalidraw code behind the lazy boundary (its own `excalidraw-vendor` chunk) so `apps/canvas/src/bundle-size.test.ts` stays green — never statically import `@excalidraw/excalidraw` from `main.tsx`, the router, or `canvas-tools.ts` (use dynamic `import()` there).
+- app-browser must not depend on `@tinytinkerer/ui` (boundary check) — the shared chat surface uses `react-icons` + local primitives.
 
 ## Success criteria
 
-A future agent can, from this skill alone: find the read-only reference, know the package + version to request, know which API call reads vs writes the canvas, know where Excalidraw would mount in `apps/widget` and the bundle constraint, and know which runtime files host the chat ⇄ canvas bridge — without re-deriving any of it.
+A future agent can, from this skill alone: find the read-only reference, know which API call reads vs writes the canvas, locate every integration file in `apps/canvas` + the app-tools seam in app-browser, and extend the canvas tools — without re-deriving any of it.
