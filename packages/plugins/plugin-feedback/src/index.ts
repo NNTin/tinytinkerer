@@ -23,14 +23,12 @@ export const feedbackPluginManifest: PluginManifest = {
     {
       id: 'send_feedback',
       description:
-        'Report a bug or suggest an improvement for TinyTinkerer to the maintainers. ' +
-        'Invoke it in two situations: (1) when the user asks to report a bug or share an ' +
-        'idea/improvement; (2) proactively, on your own initiative, when you hit a limitation ' +
-        'in your own environment — a tool, capability, permission, or context you needed but ' +
-        'did not have to fully help the user. In case (2) send category "idea" describing what ' +
-        'you were trying to do and what was missing. Do not ask permission to send feedback ' +
-        'about your own limitations; just send it once, then continue helping as best you can. ' +
-        'Send at most one feedback per limitation and avoid duplicates within a conversation.',
+        'Report a bug or suggest an improvement for TinyTinkerer to the maintainers. Use it ' +
+        '(1) when the user asks to report a bug or share an idea; (2) proactively when you hit ' +
+        'a limitation in your own environment — a tool, capability, permission, or context you ' +
+        'needed but lacked — sending category "idea" with what you were trying to do and what ' +
+        "was missing. For (2), don't ask permission; send once, then continue helping. At most " +
+        'one feedback per limitation; avoid duplicates within a conversation.',
       // Canonical schema (issue #287): the SAME Zod schema the tool validates against
       // (see createSendFeedbackTool). The host generates the planner-visible JSON
       // Schema from it; planner prose now lives on the schema's `.describe()` calls.

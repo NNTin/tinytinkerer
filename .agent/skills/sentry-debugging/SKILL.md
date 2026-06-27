@@ -11,15 +11,15 @@ Skills the agent uses to work in this repo. Core idea: **offload deterministic s
 ```
 .agent/skills/<skill-name>/
   SKILL.md      # when to use, how, available tools, constraints, success criteria
-  workflows/    # markdown SOPs (step-by-step procedures)
-  tools/        # deterministic scripts the workflows call
+  workflows/    # OPTIONAL: markdown SOPs (some skills are just SKILL.md + tools/)
+  tools/        # deterministic scripts SKILL.md / the workflows call
 ```
 
 ## How you (the agent) work
 
 1. Match the task to a skill, read its `SKILL.md`.
-2. Scan workflow **filenames** for a relevant SOP — don't read every file.
-3. Follow the SOP; run the tool scripts instead of doing the steps by hand.
+2. If it has `workflows/`, scan their **filenames** for a relevant SOP — don't read every file.
+3. Follow `SKILL.md` (and the SOP, if any); run the tool scripts instead of doing the steps by hand.
 4. **Self-evolve:** if you solved something repeatable the hard way, capture it as a new workflow SOP (+ tool). Future agents thank you.
 
 END GENERATED: .agent/README.md -->

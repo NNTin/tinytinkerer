@@ -29,10 +29,9 @@ const MAX_ANSWER_PREVIEW_CHARS = 300
 // descriptor and the runtime tool reference the same string so they cannot drift.
 const ASK_USER_DESCRIPTION =
   'Ask the user a question and wait for their answer when you need a decision only ' +
-  'they can make — a preference, a disambiguation between options, or missing ' +
-  'information you cannot infer. Provide clear, distinct `options`; set ' +
-  '`allowCustom` (default true) to also let them type their own answer. Use it ' +
-  'sparingly: only when proceeding without the user would be a guess.'
+  'they can make — a preference, a disambiguation, or information you cannot infer. ' +
+  'Provide clear, distinct `options`; set `allowCustom` (default true) to also allow a ' +
+  'typed answer. Use sparingly: only when proceeding would otherwise be a guess.'
 
 // Choice-prompt presentation owned by the plugin, not the host. Maps the call's
 // raw input ({ question, options }) and the result ({ kind, … }) to the host's
