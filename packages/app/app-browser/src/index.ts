@@ -44,6 +44,13 @@ export type { ConversationEmptyStateProps } from './conversation-empty-state'
 export { shellThemeToCssVars } from './shell-theme'
 export type { ShellThemeTokens } from './config'
 export { HumanPromptComposerDock } from './human-prompt-composer-dock'
+export { FloatingWidgetChat } from './widget-chat/floating-widget-chat'
+export type { FloatingWidgetChatProps } from './widget-chat/floating-widget-chat'
+export { WidgetChatSurface } from './widget-chat/widget-chat-surface'
+export type {
+  WidgetChatSurfaceProps,
+  WidgetChatLoadingComponent
+} from './widget-chat/widget-chat-surface'
 export { TelemetryConsentGate } from './telemetry/consent-gate'
 export { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
 export { PrivacyPolicyUpdateGate } from './telemetry/privacy-update-gate'
@@ -79,6 +86,9 @@ export {
   normalizeSelectedModel
 } from '@tinytinkerer/app-core'
 export type { Turn, TurnActivity, TurnActivityItem } from '@tinytinkerer/app-core'
+// The runtime tool contract, re-exported so an app can build app-local tools
+// (passed via createBrowserShellRoot's `appTools`) depending only on app-browser.
+export type { Tool } from '@tinytinkerer/app-core'
 export { TurnActivityPanel, toolLabel } from './turn-activity-panel'
 export type { ResolveActivitySummarizer } from './turn-activity-panel'
 export type {

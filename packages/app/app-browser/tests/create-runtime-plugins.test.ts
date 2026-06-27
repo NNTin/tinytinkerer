@@ -259,6 +259,161 @@ describe('plugin runtime contributions', () => {
     vi.unstubAllGlobals()
   })
 
+  it('registers app-local tools and surfaces a planner descriptor derived from their Zod schema', async () => {
+    // App tools (e.g. the canvas app's Excalidraw tools) are injected straight
+    // into the runtime — not discovered as plugins and not activation-gated. They
+    // must register and advertise natively, with parameters generated from their
+    // own Zod schema, the same canonical path plugin tools use (issue #287).
+    const requestBodies: Array<{
+      messages?: Array<{ content: string }>
+      stream?: boolean
+      tools?: Array<{ function: { name: string; description?: string; parameters?: unknown } }>
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+          messages?: Array<{ content: string }>
+          stream?: boolean
+          tools?: Array<{ function: { name: string; description?: string; parameters?: unknown } }>
+        }
+        requestBodies.push(body)
+        if (body.stream === false) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        complexity: 'low',
+                        steps: [
+                          { id: 'understand', summary: 'u', toolCall: null },
+                          { id: 'compose', summary: 'c', toolCall: null }
+                        ]
+                      })
+                    }
+                  }
+                ]
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } }
+            )
+          )
+        }
+        return Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' }
+          })
+        )
+      })
+    )
+
+    const drawTool: Tool<{ shapeKind: string }, unknown> = {
+      id: 'draw_on_canvas',
+      description: 'Draw shapes on the Excalidraw canvas.',
+      schema: z.object({ shapeKind: z.string() }),
+      execute: () => Promise.resolve({ ok: true })
+    }
+
+    const runtime = createRuntime({
+      baseUrl: 'http://edge.local',
+      getToken: () => 'token',
+      getModel: () => 'openai/gpt-4.1-mini',
+      appTools: [drawTool]
+    })
+
+    await runRuntime(runtime)
+
+    // Tools are advertised natively on the request (issue #287): the app tool
+    // reaches the model via the `tools` array with parameters generated from its
+    // own Zod schema.
+    const advertisedTools = requestBodies[0]?.tools ?? []
+    const drawn = advertisedTools.find((t) => t.function.name === 'draw_on_canvas')
+    expect(drawn?.function.description).toBe('Draw shapes on the Excalidraw canvas.')
+    expect(JSON.stringify(drawn?.function.parameters)).toContain('"shapeKind"')
+    vi.unstubAllGlobals()
+  })
+
+  it('does not let an app tool override a plugin tool that already claimed its id', async () => {
+    // App tools register after MCP + plugins; addTool dedupes, first writer wins.
+    const requestBodies: Array<{
+      messages?: Array<{ content: string }>
+      stream?: boolean
+      tools?: Array<{ function: { name: string; description?: string } }>
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+          messages?: Array<{ content: string }>
+          stream?: boolean
+          tools?: Array<{ function: { name: string; description?: string } }>
+        }
+        requestBodies.push(body)
+        if (body.stream === false) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        complexity: 'low',
+                        steps: [{ id: 'understand', summary: 'u', toolCall: null }]
+                      })
+                    }
+                  }
+                ]
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } }
+            )
+          )
+        }
+        return Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' }
+          })
+        )
+      })
+    )
+
+    const runtime = createRuntime({
+      baseUrl: 'http://edge.local',
+      getToken: () => 'token',
+      getModel: () => 'openai/gpt-4.1-mini',
+      pluginActivation: { owner: true },
+      pluginModules: [
+        pluginModule({
+          manifestId: 'owner',
+          toolId: 'shared_id',
+          descriptorDescription: 'plugin owns this id'
+        })
+      ],
+      appTools: [
+        {
+          id: 'shared_id',
+          description: 'app override should be dropped',
+          schema: z.object({}).passthrough(),
+          execute: () => Promise.resolve('ok')
+        }
+      ]
+    })
+
+    await runRuntime(runtime)
+
+    // The first plugin to claim 'shared_id' owns the advertised descriptor; the
+    // app tool's override is dropped (addTool dedupes, first writer wins).
+    const advertisedTools = requestBodies[0]?.tools ?? []
+    const shared = advertisedTools.find((t) => t.function.name === 'shared_id')
+    expect(shared?.function.description).toBe('plugin owns this id')
+    expect(advertisedTools.map((t) => t.function.description)).not.toContain(
+      'app override should be dropped'
+    )
+    vi.unstubAllGlobals()
+  })
+
   it('fires deactivate when a persistent plugin runtime sees a plugin turn off', () => {
     const activate = vi.fn()
     const deactivate = vi.fn()

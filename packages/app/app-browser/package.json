@@ -38,6 +38,7 @@
     "@tinytinkerer/contracts": "workspace:*",
     "@tinytinkerer/sentry-telemetry": "workspace:*",
     "dexie": "4.4.3",
+    "react-icons": "5.6.0",
     "zod": "4.4.3",
     "zustand": "5.0.14"
   },
