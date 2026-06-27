@@ -11,6 +11,7 @@ import { LazyPrivacyPolicyUpdateGate } from './telemetry/lazy-privacy-update-gat
 import { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
 import { registerPwa } from './register-pwa'
 import type { BrowserShellConfig } from './config'
+import type { Tool } from '@tinytinkerer/app-core'
 
 declare global {
   interface Window {
@@ -29,6 +30,12 @@ export type BrowserShellBootScreenProps = { error?: string }
 export type CreateBrowserShellRootOptions = {
   router: ShellRouter
   BootScreen: ComponentType<BrowserShellBootScreenProps>
+  // App-local, always-on chat tools the app contributes to its own runtime (the
+  // only per-app runtime input — there is still no shell id or onInit hook). A
+  // harness shell (e.g. the canvas shell) passes its app's draw/read/clear verbs
+  // here; web/mobile/widget omit it. Threaded straight to createBrowserApp → chat
+  // store → runtime.
+  appTools?: Tool<unknown, unknown>[]
 }
 
 // Env values are read through an untyped index access because each shell's
@@ -52,7 +59,8 @@ const readEnvValue = (key: string): string | undefined => {
  */
 export const createBrowserShellRoot = ({
   router,
-  BootScreen
+  BootScreen,
+  appTools
 }: CreateBrowserShellRootOptions): void => {
   // Shell-agnostic embedding contract: every shell reads the same window key.
   // Empty for web/mobile, populated by widget embedders. The embedding page is
@@ -78,7 +86,7 @@ export const createBrowserShellRoot = ({
   })
 
   const queryClient = new QueryClient()
-  const browserApp = createBrowserApp(browserConfig)
+  const browserApp = createBrowserApp(browserConfig, appTools ? { appTools } : {})
 
   const ShellBootstrap = () => {
     const { ready, error } = useBrowserAppBootstrap(browserApp, browserConfig)

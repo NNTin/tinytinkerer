@@ -95,6 +95,14 @@ export const createRuntime = (options: {
   // Only wired into the provider when that plugin is enabled (see below), so a
   // disabled inspector never captures or retains the forwarded payload.
   captureForwardedRequest?: ForwardedRequestSink
+  // App-local tools an app injects into its own runtime (e.g. a harness shell's
+  // draw/read/clear verbs that drive an iframe app). Unlike plugins these are NOT
+  // discovered from `packages/plugins/*` and are not globally shared — only the
+  // app that passes them gets them, and they are always-on (intrinsic to the
+  // app), so there is no activation/settings surface. Their planner descriptor
+  // is derived from the tool's own Zod `schema`, the same canonical path plugin
+  // tool descriptors use (issue #287).
+  appTools?: Tool<unknown, unknown>[]
 }) => {
   const edgeFetch = createEdgeFetch(options.baseUrl, options.getToken)
 
@@ -288,6 +296,34 @@ export const createRuntime = (options: {
           })
         }
       }
+    }
+  }
+
+  // App-local tools (e.g. a harness shell's draw/read/clear verbs). Registered
+  // after MCP + plugins so an app tool cannot silently shadow a plugin tool with
+  // the same id (addTool dedupes, first writer wins). Always-on: each registered
+  // app tool surfaces a planner descriptor derived from its own Zod `schema`.
+  for (const tool of options.appTools ?? []) {
+    if (addTool(tool)) {
+      allToolDescriptors.push({
+        id: tool.id,
+        description: tool.description,
+        inputSchema: toolInputJsonSchema(tool.schema)
+      })
+    } else {
+      // The id is already taken (an MCP server or plugin claimed it first), so
+      // this app verb was dropped: the model will never see it and cannot drive
+      // the app for that verb. Unlike interchangeable plugin tools, a missing app
+      // verb is a shell misconfiguration — a verb id colliding with a tool id —
+      // so surface it instead of letting it fail silently at model-call time.
+      captureTelemetryMessage(
+        `app tool "${tool.id}" was dropped: its id collides with an existing tool`,
+        {
+          level: 'warning',
+          tags: { tool: tool.id },
+          fingerprint: ['app-tool-collision', tool.id]
+        }
+      )
     }
   }
 

@@ -1,0 +1,45 @@
+{
+  "name": "@tinytinkerer/app-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": [
+    "./src/styles.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./styles.css": "./src/styles.css"
+  },
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "pnpm -w generate:privacy-policy && tsc -p tsconfig.json",
+    "lint": "eslint src tests",
+    "test": "pnpm -w generate:privacy-policy && vitest run --passWithNoTests",
+    "typecheck": "pnpm -w generate:privacy-policy && tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tinytinkerer/app-bridge": "workspace:*",
+    "@tinytinkerer/app-browser": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@types/react": "19.2.15",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "jsdom": "29.1.1",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "vite": "8.0.14",
+    "vitest": "4.1.7",
+    "zod": "4.4.3"
+  }
+}

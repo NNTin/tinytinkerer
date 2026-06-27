@@ -1,5 +1,5 @@
 import type { ChatEvent } from '@tinytinkerer/contracts'
-import type { ChatRuntimeFactory } from '@tinytinkerer/app-core'
+import type { ChatRuntimeFactory, Tool } from '@tinytinkerer/app-core'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { BrowserShell } from '../shell'
 import { loadCoreModule } from '../core-module'
@@ -38,6 +38,10 @@ export const createChatStore = (options: {
   // the runtime factory, which arms capture only while the inspector plugin is on.
   // Optional so tests can omit it; the app always provides it.
   inspectorStore?: InspectorStore
+  // App-local, always-on tools injected by the host app (e.g. a harness shell's
+  // draw/read/clear verbs). Forwarded to the runtime factory; absent for
+  // web/widget/mobile.
+  appTools?: Tool<unknown, unknown>[]
 }): ChatStore => {
   let activeRunController: AbortController | undefined
   let initializePromise: Promise<void> | null = null
@@ -89,6 +93,7 @@ export const createChatStore = (options: {
         authStore: options.authStore,
         settingsStore: options.settingsStore,
         pluginModules,
+        ...(options.appTools ? { appTools: options.appTools } : {}),
         // The runtime arms this only while the inspector plugin is enabled, so a
         // disabled inspector captures (and retains) nothing. Records the request as
         // a pending entry and returns an updater the chokepoint calls with the

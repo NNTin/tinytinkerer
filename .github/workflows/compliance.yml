@@ -59,6 +59,15 @@ jobs:
           fail-on-severity: moderate
           fail-on-scopes: runtime, development, unknown
           license-check: false
+          # Dev/build-only advisories already accepted repo-wide in
+          # pnpm-workspace.yaml's auditConfig.ignoreGhsas (see the rationale there).
+          # They surface here whenever a PR adds a package.json that pulls Vite as a
+          # dev dependency (e.g. a new test-bearing package), even though Vite is
+          # already used across the repo. Both are Windows-only dev-server issues
+          # that never reach CI or the deployed artifacts:
+          #   - GHSA-fx2h-pf6j-xcff (vite, server.fs.deny bypass on Windows)
+          #   - GHSA-v6wh-96g9-6wx3 (launch-editor via vite, NTLMv2 disclosure on Windows)
+          allow-ghsas: GHSA-fx2h-pf6j-xcff, GHSA-v6wh-96g9-6wx3
 
   compliance:
     name: SBOM, Notices, License Policy & Supply Chain

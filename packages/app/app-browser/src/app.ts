@@ -29,6 +29,7 @@ import {
   setTelemetryConsent
 } from './telemetry/telemetry'
 import type { ContentRenderErrorInfo } from '@tinytinkerer/content-react'
+import type { Tool } from '@tinytinkerer/app-core'
 
 export type BrowserApp = {
   shell: BrowserShell
@@ -56,7 +57,14 @@ const requireBrowserApp = (app: BrowserApp | undefined): BrowserApp => {
   return app
 }
 
-export const createBrowserApp = (config: BrowserShellConfig): BrowserApp => {
+export const createBrowserApp = (
+  config: BrowserShellConfig,
+  options: {
+    // App-local, always-on chat tools (e.g. a harness shell's draw/read/clear
+    // verbs). Threaded down to the chat store / runtime; absent for web/widget/mobile.
+    appTools?: Tool<unknown, unknown>[]
+  } = {}
+): BrowserApp => {
   const shell = createBrowserShell(config)
   const auth = createAuthStore(shell)
   const settings = createSettingsStore(shell)
@@ -66,7 +74,8 @@ export const createBrowserApp = (config: BrowserShellConfig): BrowserApp => {
     shell,
     authStore: auth,
     settingsStore: settings,
-    inspectorStore: inspector
+    inspectorStore: inspector,
+    ...(options.appTools ? { appTools: options.appTools } : {})
   })
 
   const app: BrowserApp = {
