@@ -15,8 +15,8 @@ export const createBrowserRuntimeFactory = (options: {
   // Optional client-only capture sink for the context-inspector plugin (#270).
   // createRuntime only forwards it to the provider when that plugin is enabled.
   captureForwardedRequest?: ForwardedRequestSink
-  // App-local, always-on tools injected by the host app (e.g. the canvas app's
-  // Excalidraw tools). Forwarded verbatim to createRuntime; omitted by web/mobile.
+  // App-local, always-on tools injected by the host app (e.g. a harness shell's
+  // draw/read/clear verbs). Forwarded verbatim to createRuntime; omitted by web/mobile.
   appTools?: Tool<unknown, unknown>[]
 }): ChatRuntimeFactory => {
   const pluginRuntime = createPluginRuntime(options.pluginModules ?? [])

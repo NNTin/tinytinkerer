@@ -38,9 +38,9 @@ export const createChatStore = (options: {
   // the runtime factory, which arms capture only while the inspector plugin is on.
   // Optional so tests can omit it; the app always provides it.
   inspectorStore?: InspectorStore
-  // App-local, always-on tools injected by the host app (e.g. the canvas app's
-  // Excalidraw draw/read/clear tools). Forwarded to the runtime factory; absent
-  // for web/widget/mobile.
+  // App-local, always-on tools injected by the host app (e.g. a harness shell's
+  // draw/read/clear verbs). Forwarded to the runtime factory; absent for
+  // web/widget/mobile.
   appTools?: Tool<unknown, unknown>[]
 }): ChatStore => {
   let activeRunController: AbortController | undefined

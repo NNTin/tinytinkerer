@@ -31,9 +31,10 @@ export type CreateBrowserShellRootOptions = {
   router: ShellRouter
   BootScreen: ComponentType<BrowserShellBootScreenProps>
   // App-local, always-on chat tools the app contributes to its own runtime (the
-  // only per-app runtime input — there is still no shell id or onInit hook). The
-  // canvas app passes its Excalidraw draw/read/clear tools here; web/mobile/widget
-  // omit it. Threaded straight to createBrowserApp → chat store → runtime.
+  // only per-app runtime input — there is still no shell id or onInit hook). A
+  // harness shell (e.g. the canvas shell) passes its app's draw/read/clear verbs
+  // here; web/mobile/widget omit it. Threaded straight to createBrowserApp → chat
+  // store → runtime.
   appTools?: Tool<unknown, unknown>[]
 }
 

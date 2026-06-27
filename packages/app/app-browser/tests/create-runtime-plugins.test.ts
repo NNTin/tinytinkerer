@@ -6,6 +6,7 @@ import type {
   PluginModule,
   Tool
 } from '@tinytinkerer/app-core'
+import { setCaptureMessageSink } from '@tinytinkerer/sentry-telemetry'
 import { createPluginRuntime, createRuntime } from '../src/runtime/create-runtime.js'
 
 const testTool = (id: string): Tool<unknown, unknown> => ({
@@ -379,6 +380,11 @@ describe('plugin runtime contributions', () => {
       })
     )
 
+    // A dropped app verb is a shell misconfiguration, so it must not vanish
+    // silently — the runtime reports it as a telemetry warning.
+    const messageSink = vi.fn()
+    setCaptureMessageSink(messageSink)
+
     const runtime = createRuntime({
       baseUrl: 'http://edge.local',
       getToken: () => 'token',
@@ -411,6 +417,13 @@ describe('plugin runtime contributions', () => {
     expect(advertisedTools.map((t) => t.function.description)).not.toContain(
       'app override should be dropped'
     )
+    // The collision surfaced as a warning rather than failing silently.
+    expect(messageSink).toHaveBeenCalledWith(
+      expect.stringContaining('app tool "shared_id" was dropped'),
+      expect.objectContaining({ level: 'warning' })
+    )
+
+    setCaptureMessageSink(null)
     vi.unstubAllGlobals()
   })
 
