@@ -1,6 +1,7 @@
 import { cp, mkdir, rm, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
+import { HOSTED_APP_SPECS } from './app-definitions.mjs'
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const workspaceRoot = resolve(currentDir, '../../..')
@@ -16,26 +17,15 @@ const testReportDir = process.env.TINYTINKERER_TEST_REPORT_DIR?.trim()
 
 const hostDistDir = join(workspaceRoot, 'apps/host/dist')
 const hostPublicDir = join(workspaceRoot, 'apps/host/public')
-const webDistDir = join(workspaceRoot, 'apps/web/dist')
-const widgetDistDir = join(workspaceRoot, 'apps/widget/dist')
-const mobileDistDir = join(workspaceRoot, 'apps/mobile/dist')
-const canvasDistDir = join(workspaceRoot, 'apps/canvas/dist')
-const excalidrawAppDistDir = join(workspaceRoot, 'apps/excalidraw-app/dist')
-
 await rm(hostDistDir, { recursive: true, force: true })
 await mkdir(hostDistDir, { recursive: true })
-await mkdir(join(hostDistDir, 'web'), { recursive: true })
-await mkdir(join(hostDistDir, 'widget'), { recursive: true })
-await mkdir(join(hostDistDir, 'mobile'), { recursive: true })
-await mkdir(join(hostDistDir, 'canvas'), { recursive: true })
-await mkdir(join(hostDistDir, 'excalidraw-app'), { recursive: true })
 
 await cp(hostPublicDir, hostDistDir, { recursive: true })
-await cp(webDistDir, join(hostDistDir, 'web'), { recursive: true })
-await cp(widgetDistDir, join(hostDistDir, 'widget'), { recursive: true })
-await cp(mobileDistDir, join(hostDistDir, 'mobile'), { recursive: true })
-await cp(canvasDistDir, join(hostDistDir, 'canvas'), { recursive: true })
-await cp(excalidrawAppDistDir, join(hostDistDir, 'excalidraw-app'), { recursive: true })
+for (const { slug } of HOSTED_APP_SPECS) {
+  const target = join(hostDistDir, slug)
+  await mkdir(target, { recursive: true })
+  await cp(join(workspaceRoot, 'apps', slug, 'dist'), target, { recursive: true })
+}
 
 let composedReport = false
 if (testReportDir) {

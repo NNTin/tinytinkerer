@@ -6,6 +6,7 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { dirname, extname, join, relative, resolve } from 'node:path'
 import { createServer as createViteServer } from 'vite'
+import { createAppDefinitions } from './app-definitions.mjs'
 
 /** @typedef {import('node:http').IncomingMessage} IncomingMessage */
 /** @typedef {import('node:http').ServerResponse} ServerResponse */
@@ -32,18 +33,6 @@ import { createServer as createViteServer } from 'vite'
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const workspaceRoot = resolve(currentDir, '../../..')
-
-/**
- * @param {string} rootDir
- * @returns {HostAppDefinition[]}
- */
-const createAppDefinitions = (rootDir) => [
-  { mountPath: '/canvas/', root: join(rootDir, 'apps/canvas') },
-  { mountPath: '/excalidraw-app/', root: join(rootDir, 'apps/excalidraw-app') },
-  { mountPath: '/mobile/', root: join(rootDir, 'apps/mobile') },
-  { mountPath: '/widget/', root: join(rootDir, 'apps/widget') },
-  { mountPath: '/web/', root: join(rootDir, 'apps/web') }
-]
 
 const staticContentTypes = {
   '.css': 'text/css; charset=utf-8',

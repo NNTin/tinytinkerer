@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "tinytinkerer": {
+    "architectureRole": "host-compositor"
+  },
   "scripts": {
     "dev": "node ./src/host-server.mjs",
     "build": "node ./src/build-pages.mjs",

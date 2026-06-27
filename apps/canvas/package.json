@@ -3,6 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "tinytinkerer": {
+    "architectureRole": "harness-shell",
+    "protocolPackage": "@tinytinkerer/excalidraw-protocol"
+  },
   "scripts": {
     "dev": "if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite",
     "build": "if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite build",

@@ -35,12 +35,12 @@ assistant verbs connecting them. Read `../../README.md` first for the WAT framew
 
 ## Architecture
 
-- `packages/shared/excalidraw-protocol` owns the app id, protocol version, and
-  Zod payload schemas used by both sides.
+- `packages/shared/excalidraw-protocol` owns the app id, protocol version,
+  advertised verbs, and Zod input/result contracts used by both sides.
 - `apps/canvas` is a thin browser shell. It declares model-facing verb
   descriptions, converts them to app tools, and renders `HarnessShell`.
 - `apps/excalidraw-app` owns `@excalidraw/excalidraw`, mounts the component, and
-  registers schema-bearing handlers with `createBridgeServer`.
+  binds inferred handlers with `defineBridgeVerb`.
 - The iframe is mounted with `sandbox="allow-scripts"` and communicates only via
   `@tinytinkerer/app-bridge`, correlated by parent/frame identity and the nonce in
   the URL fragment.
@@ -70,6 +70,6 @@ Read results must remain compact and serializable.
 
 ## Success criteria
 
-Payloads are validated on both sides, writes are undoable, missing/mismatched
-iframes fail through the bridge, Excalidraw stays out of all chat-shell bundles,
-and the iframe app's bundle/compliance checks pass.
+Inputs and results are validated, writes are undoable, missing verbs or
+mismatched iframes fail during handshake, Excalidraw stays out of all chat-shell
+bundles, and the iframe app's bundle/compliance checks pass.

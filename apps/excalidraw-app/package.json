@@ -3,6 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "tinytinkerer": {
+    "architectureRole": "iframe-app",
+    "protocolPackage": "@tinytinkerer/excalidraw-protocol"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

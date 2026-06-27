@@ -53,25 +53,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Check advisory allow-list synchronization
+        run: node scripts/check-advisory-allowlists.mjs
+
       - name: Dependency Review
         uses: actions/dependency-review-action@v5
         with:
-          fail-on-severity: moderate
-          fail-on-scopes: runtime, development, unknown
-          license-check: false
-          # Advisories already accepted repo-wide in pnpm-workspace.yaml's
-          # auditConfig.ignoreGhsas (see the full reachability rationale there).
-          # The Vite findings are Windows-only dev-server issues. The lodash-es
-          # findings are confined to Excalidraw's bundled Mermaid parser and have
-          # no released fix; the nanoid finding requires a non-integer size and
-          # Excalidraw IDs are not security-bearing:
-          #   - GHSA-fx2h-pf6j-xcff (vite, server.fs.deny bypass on Windows)
-          #   - GHSA-v6wh-96g9-6wx3 (launch-editor via vite, NTLMv2 disclosure on Windows)
-          #   - GHSA-r5fr-rjxr-66jc (lodash-es template code injection)
-          #   - GHSA-f23m-r3pf-42rh (lodash-es prototype pollution)
-          #   - GHSA-xxjr-mmjv-4gpg (lodash-es prototype pollution)
-          #   - GHSA-mwcw-c2x4-8c55 (nanoid predictable output for non-integer size)
-          allow-ghsas: GHSA-fx2h-pf6j-xcff, GHSA-v6wh-96g9-6wx3, GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh, GHSA-xxjr-mmjv-4gpg, GHSA-mwcw-c2x4-8c55
+          config-file: ./.github/dependency-review-config.yml
 
   compliance:
     name: SBOM, Notices, License Policy & Supply Chain
@@ -91,6 +79,9 @@ jobs:
 
       - name: Check reviewed install lifecycle scripts
         run: pnpm check:install-scripts
+
+      - name: Check advisory allow-list synchronization
+        run: pnpm check:advisory-allowlists
 
       - name: Audit dependencies
         run: pnpm audit --audit-level=moderate

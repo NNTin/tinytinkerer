@@ -32,6 +32,8 @@ When shared code appears, place it according to what kind of thing it is:
 
 - headless product logic -> `packages/app-core`
 - browser-specific shared logic, shell-facing hooks, shared browser components, bootstrap helpers, and shared browser styles -> `packages/app-browser`
+- product-agnostic iframe transport and hosting -> `packages/app-bridge` / `packages/app-harness`
+- app-specific bridge input/result contracts -> `packages/shared/<app>-protocol`
 - stateless visual atoms and primitives -> `packages/ui`
 - assistant-content parsing, AST, rendering, and specialized content runtimes -> `packages/content-*`
 - foundational shared schemas and types -> `packages/contracts`
@@ -151,6 +153,14 @@ Must not own:
 - product-specific controller logic
 - persistence logic
 
+### App harness packages
+
+- `app-bridge` owns the product-agnostic, versioned transport, correlation, timeouts, handshake capability checks, and schema-bound verb execution.
+- `app-harness` owns sandboxed iframe lifecycle, bridge handles, verb-to-tool adaptation, shared harness layout, and deployment-safe sibling app URL resolution.
+- Each `<app>-protocol` package owns only that app's Zod input/result contracts, inferred types, identity, and advertised verb names.
+
+The harness shell and iframe app declare architecture-role metadata in their manifests. This lets the boundary checker apply the generic layer rules to every future app without learning concrete package names.
+
 ### `packages/content-*`
 
 The content platform is five packages with strict layering:
@@ -206,6 +216,7 @@ For browser apps, `packages/app-browser` is the main shared frontend boundary.
 - Shared brand links, manifests, and theme metadata should be applied through `app-browser`, not directly from app HTML or a lower-level package.
 - Shared browser-shell behavior should usually be extracted into `app-browser` before it is copied into a second app.
 - `app-browser` may expose React hooks and components when that is the correct shared browser-surface contract.
+- Shared browser-shell build policy belongs in `scripts/browser-shell-vite.mjs`; app Vite configs supply only shell-specific plugins, PWA behavior, and development-server routes.
 
 ## When To Introduce A New Package
 

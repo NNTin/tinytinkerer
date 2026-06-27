@@ -34,7 +34,13 @@ export const drawInputSchema = z.object({
 export const readInputSchema = z.object({}).strict()
 export const clearInputSchema = z.object({}).strict()
 
-export const readElementSchema = z.object({
+const drawResultSchema = z.object({
+  ok: z.literal(true),
+  drawn: z.number().int().nonnegative(),
+  replaced: z.boolean()
+})
+
+const readElementSchema = z.object({
   id: z.string(),
   type: z.string(),
   x: z.number(),
@@ -57,15 +63,31 @@ export const readResultSchema = z.object({
   })
 })
 
-export const excalidrawVerbSchemas = {
-  draw: drawInputSchema,
-  read: readInputSchema,
-  clear: clearInputSchema
+const clearResultSchema = z.object({
+  ok: z.literal(true)
+})
+
+export const excalidrawVerbContracts = {
+  draw: {
+    inputSchema: drawInputSchema,
+    resultSchema: drawResultSchema
+  },
+  read: {
+    inputSchema: readInputSchema,
+    resultSchema: readResultSchema
+  },
+  clear: {
+    inputSchema: clearInputSchema,
+    resultSchema: clearResultSchema
+  }
 } as const
+
+export const EXCALIDRAW_VERBS = Object.freeze(
+  Object.keys(excalidrawVerbContracts) as Array<keyof typeof excalidrawVerbContracts>
+)
 
 export type DrawElement = z.infer<typeof drawElementSchema>
 export type DrawInput = z.infer<typeof drawInputSchema>
 export type ReadInput = z.infer<typeof readInputSchema>
 export type ClearInput = z.infer<typeof clearInputSchema>
-export type ReadElement = z.infer<typeof readElementSchema>
 export type ReadResult = z.infer<typeof readResultSchema>

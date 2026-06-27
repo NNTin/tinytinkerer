@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   clearInputSchema,
   drawInputSchema,
+  excalidrawVerbContracts,
   EXCALIDRAW_PROTOCOL_VERSION,
+  EXCALIDRAW_VERBS,
   readInputSchema
 } from '../src/index'
 
@@ -36,5 +38,17 @@ describe('excalidraw protocol', () => {
 
   it('uses the shared bridge protocol version', () => {
     expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(1)
+  })
+
+  it('defines input and result contracts for every advertised verb', () => {
+    expect(Object.keys(excalidrawVerbContracts)).toEqual(EXCALIDRAW_VERBS)
+    expect(
+      excalidrawVerbContracts.draw.resultSchema.safeParse({
+        ok: true,
+        drawn: 2,
+        replaced: false
+      }).success
+    ).toBe(true)
+    expect(excalidrawVerbContracts.clear.resultSchema.safeParse({ ok: false }).success).toBe(false)
   })
 })

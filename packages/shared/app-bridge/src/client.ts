@@ -19,6 +19,16 @@ export class BridgeVersionMismatchError extends Error {
   }
 }
 
+export class BridgeCapabilityMismatchError extends Error {
+  readonly missingVerbs: readonly string[]
+
+  constructor(missingVerbs: readonly string[]) {
+    super(`app-bridge: app did not advertise required verbs: ${missingVerbs.join(', ')}`)
+    this.name = 'BridgeCapabilityMismatchError'
+    this.missingVerbs = missingVerbs
+  }
+}
+
 export type BridgeHandshake = {
   appId: string
   protocolVersion: number
@@ -26,8 +36,8 @@ export type BridgeHandshake = {
 }
 
 export type BridgeClient = {
-  // Resolves once the app announces it is ready (and the version/appId match);
-  // rejects on a version/appId mismatch. Requests should await this first.
+  // Resolves once the app announces it is ready and identity/version/capabilities
+  // match; rejects on mismatch. Requests should await this first.
   readonly ready: Promise<BridgeHandshake>
   // Invoke a verb on the app. Resolves with the verb's result or rejects on the
   // app's error, a request timeout, or a transport failure.
@@ -46,6 +56,9 @@ export type CreateBridgeClientOptions = {
   // When set, a `ready` from a different appId rejects `ready` (defends against a
   // wrong/foreign frame answering on the shared message channel).
   expectedAppId?: string
+  // Required app capabilities. Extra advertised verbs are allowed, but a missing
+  // required verb rejects the handshake before tools can target an incompatible app.
+  expectedVerbs?: readonly string[]
   // Per-request timeout. Defaults to 15s.
   timeoutMs?: number
   // Id generator (injectable for tests). Defaults to crypto.randomUUID.
@@ -104,6 +117,15 @@ export const createBridgeClient = (
         rejectReady(
           new BridgeVersionMismatchError(options.protocolVersion, message.protocolVersion)
         )
+        return
+      }
+      const advertisedVerbs = new Set(message.verbs)
+      const missingVerbs = (options.expectedVerbs ?? []).filter(
+        (verb) => !advertisedVerbs.has(verb)
+      )
+      if (missingVerbs.length > 0) {
+        readySettled = true
+        rejectReady(new BridgeCapabilityMismatchError(missingVerbs))
         return
       }
       readySettled = true

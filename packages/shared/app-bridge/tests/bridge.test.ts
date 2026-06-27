@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createBridgeClient, BridgeVersionMismatchError } from '../src/client'
-import { createBridgeServer } from '../src/server'
+import {
+  BridgeCapabilityMismatchError,
+  createBridgeClient,
+  BridgeVersionMismatchError
+} from '../src/client'
+import { createBridgeServer, defineBridgeVerb } from '../src/server'
 import type { BridgeTransport } from '../src/transport'
 import { z } from 'zod'
 
@@ -89,17 +93,45 @@ describe('app-bridge client/server round-trip', () => {
       protocolVersion: VERSION,
       sessionNonce: NONCE,
       handlers: {
-        draw: {
-          inputSchema: z.object({ count: z.number().int().positive() }),
-          handler
-        }
+        draw: defineBridgeVerb(
+          {
+            inputSchema: z.object({ count: z.number().int().positive() }),
+            resultSchema: z.object({ accepted: z.number() })
+          },
+          (payload) => {
+            handler(payload)
+            return { accepted: payload.count }
+          }
+        )
       }
     })
     await client.ready
 
-    await expect(client.request('draw', { count: 2 })).resolves.toEqual({ count: 2 })
+    await expect(client.request('draw', { count: 2 })).resolves.toEqual({ accepted: 2 })
     await expect(client.request('draw', { count: 0 })).rejects.toThrow()
     expect(handler).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a handler result that violates the verb contract', async () => {
+    const { harness, app } = createLinkedTransports()
+    const client = createBridgeClient(harness, { protocolVersion: VERSION, sessionNonce: NONCE })
+    createBridgeServer(app, {
+      appId: 'a',
+      protocolVersion: VERSION,
+      sessionNonce: NONCE,
+      handlers: {
+        draw: defineBridgeVerb(
+          {
+            inputSchema: z.object({}),
+            resultSchema: z.object({ ok: z.literal(true) })
+          },
+          () => ({ ok: false as true })
+        )
+      }
+    })
+    await client.ready
+
+    await expect(client.request('draw', {})).rejects.toThrow()
   })
 
   it('rejects a request for an unknown verb', async () => {
@@ -166,6 +198,27 @@ describe('app-bridge client/server round-trip', () => {
       handlers: {}
     })
     await expect(client.ready).rejects.toThrow(/unexpected appId "someone-else"/)
+  })
+
+  it('rejects ready when the app omits a required verb', async () => {
+    const { harness, app } = createLinkedTransports()
+    const client = createBridgeClient(harness, {
+      protocolVersion: VERSION,
+      sessionNonce: NONCE,
+      expectedVerbs: ['draw', 'read']
+    })
+    createBridgeServer(app, {
+      appId: 'a',
+      protocolVersion: VERSION,
+      sessionNonce: NONCE,
+      handlers: { draw: (payload) => payload }
+    })
+
+    await expect(client.ready).rejects.toBeInstanceOf(BridgeCapabilityMismatchError)
+    await expect(client.ready).rejects.toMatchObject({
+      name: 'BridgeCapabilityMismatchError',
+      missingVerbs: ['read']
+    })
   })
 
   it('ignores messages stamped with a different session nonce', async () => {

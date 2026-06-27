@@ -9,15 +9,35 @@ import type { ZodType } from 'zod'
 // type is `unknown` because it already absorbs promises.)
 export type BridgeVerbHandler = (payload: unknown) => unknown
 
-// Apps may attach their app-owned payload schema to a verb. The bridge validates
-// before invoking the handler so malformed payloads can never reach app logic.
-// Function-only handlers remain supported for generic/legacy callers.
+export type BridgeVerbContract<TInput, TResult> = {
+  inputSchema: ZodType<TInput>
+  resultSchema: ZodType<TResult>
+}
+
+const bridgeVerbDefinitionBrand: unique symbol = Symbol('app-bridge-verb-definition')
+
 export type BridgeVerbDefinition = {
-  inputSchema?: ZodType
+  readonly [bridgeVerbDefinitionBrand]: true
+  inputSchema: ZodType
+  resultSchema: ZodType
   handler: BridgeVerbHandler
 }
 
 export type BridgeVerbRegistration = BridgeVerbHandler | BridgeVerbDefinition
+
+// Bind an app-owned input/result contract to its handler once. The generic
+// contract gives app code inferred payload/result types; the bridge keeps the
+// only necessary unknown→typed cast at this boundary and validates both sides
+// of the handler before anything crosses the wire.
+export const defineBridgeVerb = <TInput, TResult>(
+  contract: BridgeVerbContract<TInput, TResult>,
+  handler: (payload: TInput) => TResult | Promise<TResult>
+): BridgeVerbDefinition => ({
+  [bridgeVerbDefinitionBrand]: true,
+  inputSchema: contract.inputSchema,
+  resultSchema: contract.resultSchema,
+  handler: (payload) => handler(payload as TInput)
+})
 
 export type BridgeServer = {
   // Re-announce readiness. Called once automatically on creation; exposed so an
@@ -36,7 +56,8 @@ export type CreateBridgeServerOptions = {
   protocolVersion: number
   // The per-mount nonce (passed from the harness, e.g. via the iframe URL hash).
   sessionNonce: string
-  // verb → handler/definition. The set of keys is advertised in the handshake.
+  // verb → legacy handler or defineBridgeVerb result. Keys are advertised in the
+  // handshake; app-owned verbs should always use the validated definition form.
   handlers: Record<string, BridgeVerbRegistration>
 }
 
@@ -100,11 +121,14 @@ export const createBridgeServer = (
     // bridge error response and the handler is never invoked.
     void (async () => {
       try {
-        const payload = definition.inputSchema
-          ? definition.inputSchema.parse(message.payload)
-          : message.payload
+        const payload =
+          'inputSchema' in definition
+            ? definition.inputSchema.parse(message.payload)
+            : message.payload
         const result = await definition.handler(payload)
-        reply({ ok: true, result: result ?? null })
+        const validatedResult =
+          'resultSchema' in definition ? definition.resultSchema.parse(result) : result
+        reply({ ok: true, result: validatedResult ?? null })
       } catch (error) {
         reply({ ok: false, error: error instanceof Error ? error.message : String(error) })
       }

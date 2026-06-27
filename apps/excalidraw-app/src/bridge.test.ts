@@ -28,8 +28,12 @@ const run = (
   payload: unknown
 ): Promise<unknown> => {
   const registration = createExcalidrawHandlers(api)[verb]
+  if (!registration) throw new Error(`Missing Excalidraw handler: ${verb}`)
   if (typeof registration === 'function') return Promise.resolve(registration(payload))
-  return Promise.resolve(registration.handler(registration.inputSchema?.parse(payload)))
+  const input = registration.inputSchema.parse(payload)
+  return Promise.resolve(registration.handler(input)).then((result) =>
+    registration.resultSchema.parse(result)
+  )
 }
 
 describe('Excalidraw bridge handlers', () => {

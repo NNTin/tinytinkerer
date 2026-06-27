@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AppBridgeHandle } from '@tinytinkerer/app-harness'
 import { createCanvasAppTools } from './canvas-runtime'
-import { resolveExcalidrawAppSrc } from './canvas-page'
 
 const handle = (request = vi.fn().mockResolvedValue({ ok: true })): AppBridgeHandle => ({
   setClient: vi.fn(),
@@ -11,11 +10,6 @@ const handle = (request = vi.fn().mockResolvedValue({ ok: true })): AppBridgeHan
 })
 
 describe('canvas app tools', () => {
-  it('resolves the iframe as a sibling of the canvas deployment path', () => {
-    expect(resolveExcalidrawAppSrc('/canvas/')).toBe('/excalidraw-app/')
-    expect(resolveExcalidrawAppSrc('/tinytinkerer/canvas/')).toBe('/tinytinkerer/excalidraw-app/')
-  })
-
   it('exposes only the protocol-backed draw, read, and clear verbs', () => {
     const tools = createCanvasAppTools(handle())
     expect(tools.map((tool) => tool.id)).toEqual(['draw', 'read', 'clear'])

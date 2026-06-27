@@ -5,6 +5,7 @@ import { createServer as createHttpServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { HOSTED_APP_SPECS } from './app-definitions.mjs'
 import { createHostServer } from './host-server.mjs'
 
 /** @typedef {import('node:http').Server} HttpServer */
@@ -77,13 +78,11 @@ const createTempHostRoot = async (backendPort) => {
   const rootDir = await mkdtemp(join(tmpdir(), 'tinytinkerer-host-test-'))
   activeClosers.add(() => rm(rootDir, { recursive: true, force: true }))
 
-  const apps = [
-    { name: 'web', mountPath: '/web/', proxyHealth: true },
-    { name: 'mobile', mountPath: '/mobile/', proxyHealth: false },
-    { name: 'widget', mountPath: '/widget/', proxyHealth: false },
-    { name: 'canvas', mountPath: '/canvas/', proxyHealth: false },
-    { name: 'excalidraw-app', mountPath: '/excalidraw-app/', proxyHealth: false }
-  ]
+  const apps = HOSTED_APP_SPECS.map(({ slug, mountPath }) => ({
+    name: slug,
+    mountPath,
+    proxyHealth: slug === 'web'
+  }))
 
   for (const app of apps) {
     const appRoot = join(rootDir, 'apps', app.name)
@@ -163,6 +162,16 @@ afterAll(async () => {
 })
 
 describe('host server', () => {
+  it('keeps the host app inventory unique and canonical', () => {
+    expect(new Set(HOSTED_APP_SPECS.map(({ slug }) => slug)).size).toBe(HOSTED_APP_SPECS.length)
+    expect(new Set(HOSTED_APP_SPECS.map(({ mountPath }) => mountPath)).size).toBe(
+      HOSTED_APP_SPECS.length
+    )
+    for (const { slug, mountPath } of HOSTED_APP_SPECS) {
+      expect(mountPath).toBe(`/${slug}/`)
+    }
+  })
+
   beforeAll(async () => {
     sharedHostServer = await createHostServer({ port: 0, disableDependencyOptimization: true })
     activeClosers.add(() => sharedHostServer?.close() ?? Promise.resolve())

@@ -56,6 +56,8 @@ flowchart LR
     web["@tinytinkerer/web<br/>full browser UI shell"]
     widget["@tinytinkerer/widget<br/>embeddable browser UI shell"]
     mobile["@tinytinkerer/mobile<br/>mobile PWA shell"]
+    canvas["@tinytinkerer/canvas<br/>Excalidraw harness shell"]
+    excalidrawapp["@tinytinkerer/excalidraw-app<br/>isolated iframe app"]
     edge["@tinytinkerer/edge<br/>stateless edge backend"]
   end
 
@@ -78,6 +80,7 @@ flowchart LR
     appbrowser["@tinytinkerer/app-browser<br/>browser adapters + shell-facing exports"]
     appbridge["@tinytinkerer/app-bridge<br/>typed postMessage protocol (leaf)"]
     appharness["@tinytinkerer/app-harness<br/>iframe host + bridge client + appTools seam"]
+    excalidrawprotocol["@tinytinkerer/excalidraw-protocol<br/>draw/read/clear contracts"]
     ui["@tinytinkerer/ui<br/>presentational React primitives"]
     sentrytelemetry["@tinytinkerer/sentry-telemetry<br/>SDK-agnostic telemetry core"]
 
@@ -107,10 +110,18 @@ flowchart LR
   host --> web
   host --> widget
   host --> mobile
+  host --> canvas
+  host --> excalidrawapp
 
   web --> common
   widget --> common
   mobile --> common
+  canvas --> common
+  canvas --> appharness
+  canvas --> excalidrawprotocol
+  excalidrawapp --> appbridge
+  excalidrawapp --> excalidrawprotocol
+  excalidrawprotocol --> appbridge
 
   common --> ui
   common --> appbrowser
@@ -176,13 +187,13 @@ flowchart LR
   classDef coreLayer fill:#e5e7eb,stroke:#6b7280,color:#111827,stroke-width:2px;
   classDef brandLayer fill:#ffe4e6,stroke:#be123c,color:#111827,stroke-width:2px;
 
-  class web,widget,mobile,legendUiApp uiApp;
+  class web,widget,mobile,canvas,excalidrawapp,legendUiApp uiApp;
   class host,legendHost hostInfra;
   class edge,legendEdge edgeApp;
   class common,appbrowser,appharness,legendBrowser browserAssembly;
   class ui,legendUi uiPrimitives;
   class contentcore,contentmarkdown,contentreact,contentmermaid,contentwireframe,contentimage,contentcode,contentcallout,contentlinkcard,contenttable,legendFeature sharedFeature;
-  class contracts,appbridge,legendContracts contractsLayer;
+  class contracts,appbridge,excalidrawprotocol,legendContracts contractsLayer;
   class agent,appcore,sentrytelemetry,pluginfeedback,plugineventlogger,pluginpermissions,pluginwebsearch,plugincodeexec,pluginbrowserstate,legendCore coreLayer;
   class brand,legendBrand brandLayer;
 ```
@@ -280,6 +291,7 @@ These conventions are gated in CI, not left to reviewers:
 | `packages/app-browser`      | shared browser composition boundary   | browser adapters, shell bootstrap config, OAuth helpers, shell-facing hooks and components, shared browser styles, the always-on `appTools` seam on `createBrowserShellRoot`                                                                | app-specific layout, app-owned screens                                          |
 | `packages/app-bridge`       | iframe ↔ harness wire contract (leaf) | the Zod message envelope (`req`/`res`/`event`/`ready`/`hello`), request/response correlation + timeouts, the session-nonce trust model, and the transport-agnostic `createBridgeClient` / `createBridgeServer` + DOM `postMessage` adapters | any app-specific verb knowledge, React, browser product logic                   |
 | `packages/app-harness`      | iframe-app hosting boundary           | `<AppFrame>` (sandboxed iframe host + ready/version handshake + lifecycle), `createAppBridgeHandle`, `appToolsFromVerbs` (verbs → appTools), `<HarnessShell>` (frame + chat overlay), harness layout styles                                 | app domain logic, third-party app deps                                          |
+| `packages/<app>-protocol`   | app-owned bridge contract             | Zod input/result contracts, inferred types, app identity, and advertised verb names                                                                                                                                                         | iframe runtime logic, chat UI, third-party app code                             |
 | `apps/<app>` harness shell  | thin per-app chat shell               | the `<AppFrame>` target (app page URL), the app's verb→tool declarations, sandbox/origin wiring, route + boot screen                                                                                                                        | app domain logic, third-party npm deps, a parallel tool path                    |
 | `apps/<app>-app` iframe app | embedded third-party app (own build)  | the first-party wrapper that mounts the third-party component and implements the bridge **server** (verb handlers); owns ALL heavy/third-party deps, its own bundle chunking, and its own license/advisory allow-list                       | the chat runtime, `app-browser`/`app-core`/`agent-core`, harness chat UI        |
 | `packages/brand-assets`     | shared brand metadata                 | favicon, icon, manifest, and theme definitions                                                                                                                                                                                              | DOM mutation, app bootstrapping                                                 |
@@ -290,9 +302,9 @@ These conventions are gated in CI, not left to reviewers:
 ## Dependency Rules
 
 - Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
-- A **harness shell** (e.g. `apps/canvas`) is a browser app that may _additionally_ depend on `@tinytinkerer/app-harness` (and, for its verb schemas, the app's own protocol package — see below). It must stay thin: no third-party app deps, no chat-runtime imports, no app domain logic.
+- Every app and app-protocol package declares its architecture role (and protocol package where applicable) in package metadata, so `check-boundaries` governs future apps without hard-coded package names. A **harness shell** (e.g. `apps/canvas`) is a browser app that may _additionally_ depend on `@tinytinkerer/app-harness` and its app-owned protocol package. Harness shells stay thin: no third-party app deps, chat-runtime imports, or app domain logic.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
-- `app-bridge` is a leaf: it may depend only on `zod` and its own local modules. It is product-agnostic — it carries no knowledge of any specific app's verbs. Per-app verb payload schemas live in a small app-owned protocol package (e.g. `excalidraw-protocol`) that depends on `app-bridge`, imported by both the harness shell (for the tool input schemas the model sees) and the iframe app (as schema-bearing server verb definitions), so the vocabulary has a single source of truth and malformed payloads never enter app code.
+- `app-bridge` is a leaf: it may depend only on `zod` and its own local modules. It is product-agnostic — it carries no knowledge of any specific app's verbs. Per-app input/result contracts and advertised verb names live in a small app-owned protocol package (e.g. `excalidraw-protocol`) that depends on `app-bridge`. The shell uses its input schemas and required verb list; the iframe binds the same contracts to inferred handlers through `defineBridgeVerb`, so mismatches fail at handshake or validation rather than entering app code.
 - `app-harness` may depend on `app-browser` (it reuses `FloatingWidgetChat` and the `Tool` contract), `app-bridge`, and its own local modules. It must not depend on any concrete iframe app.
 - An **iframe app** (`apps/<app>-app`) may depend on `app-bridge`, its app-owned protocol package, and its third-party component libraries. It must **not** depend on `app-browser`, `app-core`, `agent-core`, or the chat runtime — it shares neither the chat shell's React tree nor its bundle, and runs at an opaque origin (sandboxed iframe). All heavy/third-party dependencies and any advisory/license allow-list they require live here, off the chat shell.
 - `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `sentry-telemetry`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`). It must **not** statically depend on any concrete plugin package — plugins are discovered dynamically via `import.meta.glob` over `packages/plugins/*` (see [plugin-infrastructure.md](./plugin-infrastructure.md)).
@@ -334,7 +346,9 @@ The current flow is:
 
 ## Browser App Model
 
-All three browser shells consume the same browser-facing shared layer.
+All browser shells consume the same browser-facing shared layer; harness shells additionally compose `app-harness` and their app-owned protocol.
+
+Browser-shell Vite configurations compose `scripts/browser-shell-vite.mjs`, which owns deployment bases, build identity, Sentry/source-map policy, and vendor chunking. Each shell continues to own app-specific plugins, PWA behavior, and development-server routes.
 
 `@tinytinkerer/app-browser` currently owns:
 
@@ -392,6 +406,8 @@ This means TinyTinkerer has two different kinds of sharing:
 ## Host Model
 
 `apps/host` is both the local dev environment and the composed deployment surface for the frontends.
+
+Its host-owned app inventory in `apps/host/src/app-definitions.mjs` is shared by dev serving, redirects, production composition, and host tests. Turbo's static build edges remain explicit.
 
 It is allowed to own:
 

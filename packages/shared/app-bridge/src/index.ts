@@ -21,12 +21,17 @@ export type {
 
 export type { BridgeTransport } from './transport'
 
-export { createBridgeClient, BridgeVersionMismatchError } from './client'
+export {
+  createBridgeClient,
+  BridgeCapabilityMismatchError,
+  BridgeVersionMismatchError
+} from './client'
 export type { BridgeClient, BridgeHandshake, CreateBridgeClientOptions } from './client'
 
-export { createBridgeServer } from './server'
+export { createBridgeServer, defineBridgeVerb } from './server'
 export type {
   BridgeServer,
+  BridgeVerbContract,
   BridgeVerbDefinition,
   BridgeVerbHandler,
   BridgeVerbRegistration,
