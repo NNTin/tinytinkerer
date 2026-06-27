@@ -1,12 +1,43 @@
 import { bridgeMessageSchema } from './protocol'
 import type { BridgeTransport } from './transport'
+import type { ZodType } from 'zod'
 
 // A verb handler runs inside the iframe app and maps a request payload to a
 // result (or throws to signal failure). It may be sync or async — the server
-// awaits the return value either way. Payloads arrive untyped — handlers validate
-// with their own app-owned Zod schemas. (The result type is `unknown` rather than
-// `unknown | Promise<unknown>` because `unknown` already absorbs the promise.)
+// awaits the return value either way. Schema-bearing definitions are parsed by
+// the server first; function-only handlers receive unknown payloads. (The result
+// type is `unknown` because it already absorbs promises.)
 export type BridgeVerbHandler = (payload: unknown) => unknown
+
+export type BridgeVerbContract<TInput, TResult> = {
+  inputSchema: ZodType<TInput>
+  resultSchema: ZodType<TResult>
+}
+
+const bridgeVerbDefinitionBrand: unique symbol = Symbol('app-bridge-verb-definition')
+
+export type BridgeVerbDefinition = {
+  readonly [bridgeVerbDefinitionBrand]: true
+  inputSchema: ZodType
+  resultSchema: ZodType
+  handler: BridgeVerbHandler
+}
+
+export type BridgeVerbRegistration = BridgeVerbHandler | BridgeVerbDefinition
+
+// Bind an app-owned input/result contract to its handler once. The generic
+// contract gives app code inferred payload/result types; the bridge keeps the
+// only necessary unknown→typed cast at this boundary and validates both sides
+// of the handler before anything crosses the wire.
+export const defineBridgeVerb = <TInput, TResult>(
+  contract: BridgeVerbContract<TInput, TResult>,
+  handler: (payload: TInput) => TResult | Promise<TResult>
+): BridgeVerbDefinition => ({
+  [bridgeVerbDefinitionBrand]: true,
+  inputSchema: contract.inputSchema,
+  resultSchema: contract.resultSchema,
+  handler: (payload) => handler(payload as TInput)
+})
 
 export type BridgeServer = {
   // Re-announce readiness. Called once automatically on creation; exposed so an
@@ -25,8 +56,9 @@ export type CreateBridgeServerOptions = {
   protocolVersion: number
   // The per-mount nonce (passed from the harness, e.g. via the iframe URL hash).
   sessionNonce: string
-  // verb → handler. The set of keys is advertised in the handshake.
-  handlers: Record<string, BridgeVerbHandler>
+  // verb → legacy handler or defineBridgeVerb result. Keys are advertised in the
+  // handshake; app-owned verbs should always use the validated definition form.
+  handlers: Record<string, BridgeVerbRegistration>
 }
 
 export const createBridgeServer = (
@@ -77,17 +109,26 @@ export const createBridgeServer = (
       })
     }
 
-    const handler = options.handlers[message.verb]
-    if (!handler) {
+    const registration = options.handlers[message.verb]
+    if (!registration) {
       reply({ ok: false, error: `app-bridge: unknown verb "${message.verb}"` })
       return
     }
 
-    // Run the (possibly async) handler and reply with its result or error.
+    const definition = typeof registration === 'function' ? { handler: registration } : registration
+
+    // Parse before entering app code. Zod errors are returned through the normal
+    // bridge error response and the handler is never invoked.
     void (async () => {
       try {
-        const result = await handler(message.payload)
-        reply({ ok: true, result: result ?? null })
+        const payload =
+          'inputSchema' in definition
+            ? definition.inputSchema.parse(message.payload)
+            : message.payload
+        const result = await definition.handler(payload)
+        const validatedResult =
+          'resultSchema' in definition ? definition.resultSchema.parse(result) : result
+        reply({ ok: true, result: validatedResult ?? null })
       } catch (error) {
         reply({ ok: false, error: error instanceof Error ? error.message : String(error) })
       }

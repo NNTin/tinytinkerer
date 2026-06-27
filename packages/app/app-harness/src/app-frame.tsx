@@ -15,6 +15,9 @@ export type AppFrameProps = {
   appId: string
   // The protocol version the harness speaks; the app is gated on it.
   protocolVersion: number
+  // Capabilities this shell exposes as tools. The handshake must advertise all
+  // of them before the handle becomes ready.
+  expectedVerbs: readonly string[]
   // The shared handle the always-on appTools call through. MUST be stable across
   // renders (create it once, e.g. module-level or via useRef) — it is an effect
   // dependency. <AppFrame> populates it on ready / clears it on teardown.
@@ -41,6 +44,7 @@ export const AppFrame = ({
   src,
   appId,
   protocolVersion,
+  expectedVerbs,
   handle,
   title,
   className,
@@ -70,7 +74,8 @@ export const AppFrame = ({
     const client = createBridgeClient(iframeClientTransport(frame), {
       protocolVersion,
       sessionNonce: nonceRef.current,
-      expectedAppId: appId
+      expectedAppId: appId,
+      expectedVerbs
     })
 
     const readyTimer = setTimeout(() => {
@@ -100,7 +105,7 @@ export const AppFrame = ({
       handle.setClient(null)
       client.dispose()
     }
-  }, [src, appId, protocolVersion, handle, readyTimeoutMs, report])
+  }, [src, appId, protocolVersion, expectedVerbs, handle, readyTimeoutMs, report])
 
   return (
     <iframe

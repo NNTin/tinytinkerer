@@ -28,7 +28,7 @@
     "jscpd": "jscpd apps packages scripts --config config/jscpd.json",
     "knip": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && knip --config config/knip.ts",
     "lint": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 turbo run lint && node ./scripts/check-boundaries.mjs",
-    "test": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && turbo run test && pnpm compliance:test",
+    "test": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && turbo run test && pnpm compliance:test && pnpm check:advisory-allowlists && node --test scripts/browser-shell-chunks.test.mjs",
     "test:allure": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 turbo run test -- --reporter=default --reporter=allure-vitest/reporter",
     "collect:allure-results": "node ./scripts/collect-allure-results.mjs",
     "metadata:allure": "node ./scripts/write-allure-metadata.mjs",
@@ -41,6 +41,7 @@
     "pin:dependencies": "node ./scripts/pin-direct-dependencies.mjs",
     "check:exact-dependencies": "node ./scripts/check-exact-dependencies.mjs",
     "check:install-scripts": "node ./scripts/check-install-scripts.mjs",
+    "check:advisory-allowlists": "node ./scripts/check-advisory-allowlists.mjs",
     "dependency:status": "node ./scripts/dependency-status.mjs",
     "bootstrap:scriptless-install": "node ./scripts/bootstrap-scriptless-install.mjs",
     "setup:workspace": "pnpm install --frozen-lockfile --ignore-scripts && pnpm bootstrap:scriptless-install"

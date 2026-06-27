@@ -12,7 +12,19 @@
  * dependencies that ship no license metadata.
  */
 const LICENSE_POLICY = {
-  allow: ['0BSD', 'MIT', 'ISC', 'Apache-2.0', 'BSD', 'BSD-2-Clause', 'BSD-3-Clause'],
+  // CC0-1.0 and Zlib are permissive licenses used by Excalidraw's
+  // fractional-indexing and pako transitive dependencies.
+  allow: [
+    '0BSD',
+    'MIT',
+    'ISC',
+    'Apache-2.0',
+    'BSD',
+    'BSD-2-Clause',
+    'BSD-3-Clause',
+    'CC0-1.0',
+    'Zlib'
+  ],
   warn: ['LGPL', 'MPL-2.0', 'Unlicense'],
   block: ['GPL', 'GPL-2.0', 'GPL-3.0', 'AGPL', 'AGPL-3.0']
 }

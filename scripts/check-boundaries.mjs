@@ -5,6 +5,14 @@ import process from 'node:process'
 const rootDir = process.cwd()
 const workspaceRoots = [join(rootDir, 'apps'), join(rootDir, 'packages')]
 const sourceExtensions = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'])
+const APP_ARCHITECTURE_ROLES = new Set([
+  'browser-shell',
+  'edge-service',
+  'harness-shell',
+  'host-compositor',
+  'iframe-app'
+])
+const ARCHITECTURE_ROLES = new Set([...APP_ARCHITECTURE_ROLES, 'app-protocol'])
 
 const SPECIALIZED_CONTENT_PACKAGES = new Set([
   '@tinytinkerer/content-mermaid',
@@ -70,6 +78,7 @@ const sourceRules = new Map([
 ])
 
 for (const pkg of workspacePackages) {
+  validateArchitectureMetadata(pkg)
   validateDeclaredWorkspaceDependencies(pkg)
   const files = await collectSourceFiles(pkg.dir)
 
@@ -213,6 +222,76 @@ function validateDeclaredWorkspaceDependencies(pkg) {
   }
 }
 
+function validateArchitectureMetadata(pkg) {
+  const metadata = pkg.manifest.tinytinkerer
+  if (metadata === undefined) {
+    if (pkg.kind === 'app') {
+      errors.push(
+        `${relative(rootDir, pkg.dir)}/package.json: apps must declare tinytinkerer architecture metadata`
+      )
+    }
+    if (pkg.name?.endsWith('-protocol')) {
+      errors.push(
+        `${relative(rootDir, pkg.dir)}/package.json: protocol packages must declare tinytinkerer architecture metadata`
+      )
+    }
+    return
+  }
+
+  if (
+    typeof metadata !== 'object' ||
+    metadata === null ||
+    !ARCHITECTURE_ROLES.has(metadata.architectureRole)
+  ) {
+    errors.push(`${relative(rootDir, pkg.dir)}/package.json: invalid tinytinkerer.architectureRole`)
+    return
+  }
+
+  if (metadata.architectureRole === 'app-protocol') {
+    if (pkg.kind !== 'package') {
+      errors.push(
+        `${relative(rootDir, pkg.dir)}/package.json: app-protocol is a package-only architecture role`
+      )
+    }
+    if (metadata.protocolPackage !== undefined) {
+      errors.push(
+        `${relative(rootDir, pkg.dir)}/package.json: app-protocol packages must not declare protocolPackage`
+      )
+    }
+    return
+  }
+
+  if (!APP_ARCHITECTURE_ROLES.has(metadata.architectureRole) || pkg.kind !== 'app') {
+    errors.push(
+      `${relative(rootDir, pkg.dir)}/package.json: ${metadata.architectureRole} is an app-only architecture role`
+    )
+  }
+
+  const requiresProtocol =
+    metadata.architectureRole === 'harness-shell' || metadata.architectureRole === 'iframe-app'
+  if (!requiresProtocol) {
+    if (metadata.protocolPackage !== undefined) {
+      errors.push(
+        `${relative(rootDir, pkg.dir)}/package.json: ${metadata.architectureRole} must not declare protocolPackage`
+      )
+    }
+    return
+  }
+
+  const protocolPkg = workspaceByName.get(metadata.protocolPackage)
+  if (!protocolPkg) {
+    errors.push(
+      `${relative(rootDir, pkg.dir)}/package.json: ${metadata.architectureRole} must declare a workspace protocolPackage`
+    )
+    return
+  }
+  if (protocolPkg.manifest.tinytinkerer?.architectureRole !== 'app-protocol') {
+    errors.push(
+      `${relative(rootDir, pkg.dir)}/package.json: protocolPackage ${protocolPkg.name} must declare the app-protocol architecture role`
+    )
+  }
+}
+
 async function parseSourceFile(filePath) {
   const source = await readFile(filePath, 'utf8')
   const specifiers = []
@@ -278,11 +357,9 @@ function validateBoundary(sourcePkg, target, filePath) {
     )
   }
 
-  if (
-    sourcePkg.name === '@tinytinkerer/web' ||
-    sourcePkg.name === '@tinytinkerer/widget' ||
-    sourcePkg.name === '@tinytinkerer/mobile'
-  ) {
+  const architecture = sourcePkg.manifest.tinytinkerer
+
+  if (architecture?.architectureRole === 'browser-shell') {
     if (!isBrowserAppDependencyAllowed(targetPkg)) {
       errors.push(
         `${sourceLabel}: browser apps may depend only on @tinytinkerer/app-browser or @tinytinkerer/ui (${targetPkg.name})`
@@ -290,7 +367,44 @@ function validateBoundary(sourcePkg, target, filePath) {
     }
   }
 
-  if (sourcePkg.name === '@tinytinkerer/edge') {
+  if (architecture?.architectureRole === 'harness-shell') {
+    const allowed = new Set([
+      sourcePkg.name,
+      '@tinytinkerer/app-browser',
+      '@tinytinkerer/app-harness',
+      '@tinytinkerer/ui',
+      architecture.protocolPackage
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(
+        `${sourceLabel}: harness shells may depend only on app-browser, app-harness, ui, their app-owned protocol package, and local modules (${targetPkg.name})`
+      )
+    }
+  }
+
+  if (architecture?.architectureRole === 'iframe-app') {
+    const allowed = new Set([
+      sourcePkg.name,
+      '@tinytinkerer/app-bridge',
+      architecture.protocolPackage
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(
+        `${sourceLabel}: iframe apps may depend only on app-bridge, their app-owned protocol package, and local modules (${targetPkg.name})`
+      )
+    }
+  }
+
+  if (architecture?.architectureRole === 'app-protocol') {
+    const allowed = new Set([sourcePkg.name, '@tinytinkerer/app-bridge'])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(
+        `${sourceLabel}: app-owned protocol packages may depend only on app-bridge and local modules (${targetPkg.name})`
+      )
+    }
+  }
+
+  if (architecture?.architectureRole === 'edge-service') {
     const allowed = new Set([
       '@tinytinkerer/edge',
       '@tinytinkerer/contracts',

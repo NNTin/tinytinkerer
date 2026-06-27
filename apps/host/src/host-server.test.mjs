@@ -5,6 +5,7 @@ import { createServer as createHttpServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { HOSTED_APP_SPECS } from './app-definitions.mjs'
 import { createHostServer } from './host-server.mjs'
 
 /** @typedef {import('node:http').Server} HttpServer */
@@ -77,11 +78,11 @@ const createTempHostRoot = async (backendPort) => {
   const rootDir = await mkdtemp(join(tmpdir(), 'tinytinkerer-host-test-'))
   activeClosers.add(() => rm(rootDir, { recursive: true, force: true }))
 
-  const apps = [
-    { name: 'web', mountPath: '/web/', proxyHealth: true },
-    { name: 'mobile', mountPath: '/mobile/', proxyHealth: false },
-    { name: 'widget', mountPath: '/widget/', proxyHealth: false }
-  ]
+  const apps = HOSTED_APP_SPECS.map(({ slug, mountPath }) => ({
+    name: slug,
+    mountPath,
+    proxyHealth: slug === 'web'
+  }))
 
   for (const app of apps) {
     const appRoot = join(rootDir, 'apps', app.name)
@@ -161,6 +162,16 @@ afterAll(async () => {
 })
 
 describe('host server', () => {
+  it('keeps the host app inventory unique and canonical', () => {
+    expect(new Set(HOSTED_APP_SPECS.map(({ slug }) => slug)).size).toBe(HOSTED_APP_SPECS.length)
+    expect(new Set(HOSTED_APP_SPECS.map(({ mountPath }) => mountPath)).size).toBe(
+      HOSTED_APP_SPECS.length
+    )
+    for (const { slug, mountPath } of HOSTED_APP_SPECS) {
+      expect(mountPath).toBe(`/${slug}/`)
+    }
+  })
+
   beforeAll(async () => {
     sharedHostServer = await createHostServer({ port: 0, disableDependencyOptimization: true })
     activeClosers.add(() => sharedHostServer?.close() ?? Promise.resolve())
@@ -179,9 +190,10 @@ describe('host server', () => {
     expect(body).toContain('src="./web/"')
     expect(body).toContain('src="./mobile/"')
     expect(body).toContain('src="./widget/?view=host"')
+    expect(body).toContain('href="./canvas/"')
   })
 
-  it('redirects non-suffixed web, widget, and mobile paths', async () => {
+  it('redirects non-suffixed app paths', async () => {
     if (!sharedHostServer) {
       throw new Error('Expected the shared host server to be available.')
     }
@@ -189,6 +201,10 @@ describe('host server', () => {
     const webResponse = await fetch(`${sharedHostServer.url}/web`, { redirect: 'manual' })
     const widgetResponse = await fetch(`${sharedHostServer.url}/widget`, { redirect: 'manual' })
     const mobileResponse = await fetch(`${sharedHostServer.url}/mobile`, { redirect: 'manual' })
+    const canvasResponse = await fetch(`${sharedHostServer.url}/canvas`, { redirect: 'manual' })
+    const excalidrawResponse = await fetch(`${sharedHostServer.url}/excalidraw-app`, {
+      redirect: 'manual'
+    })
 
     expect(webResponse.status).toBe(301)
     expect(webResponse.headers.get('location')).toBe('/web/')
@@ -196,6 +212,10 @@ describe('host server', () => {
     expect(widgetResponse.headers.get('location')).toBe('/widget/')
     expect(mobileResponse.status).toBe(301)
     expect(mobileResponse.headers.get('location')).toBe('/mobile/')
+    expect(canvasResponse.status).toBe(301)
+    expect(canvasResponse.headers.get('location')).toBe('/canvas/')
+    expect(excalidrawResponse.status).toBe(301)
+    expect(excalidrawResponse.headers.get('location')).toBe('/excalidraw-app/')
   })
 
   it('serves the web app from /web/ with the web base path intact', async () => {
@@ -223,6 +243,24 @@ describe('host server', () => {
     expect(response.status).toBe(200)
     expect(body).toContain('src="/widget/@vite/client"')
     expect(body).toContain('src="/widget/src/main.tsx"')
+  })
+
+  it('serves the canvas shell and Excalidraw iframe app on separate mounts', async () => {
+    if (!sharedHostServer) {
+      throw new Error('Expected the shared host server to be available.')
+    }
+
+    const canvasResponse = await fetch(`${sharedHostServer.url}/canvas/`)
+    const canvasBody = await canvasResponse.text()
+    const excalidrawResponse = await fetch(`${sharedHostServer.url}/excalidraw-app/`)
+    const excalidrawBody = await excalidrawResponse.text()
+
+    expect(canvasResponse.status).toBe(200)
+    expect(canvasBody).toContain('src="/canvas/@vite/client"')
+    expect(canvasBody).toContain('src="/canvas/src/main.tsx"')
+    expect(excalidrawResponse.status).toBe(200)
+    expect(excalidrawBody).toContain('src="/excalidraw-app/@vite/client"')
+    expect(excalidrawBody).toContain('src="/excalidraw-app/src/main.tsx"')
   })
 
   it('serves the mobile manifest through the unified host', async () => {

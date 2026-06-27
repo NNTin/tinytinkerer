@@ -6,6 +6,7 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { dirname, extname, join, relative, resolve } from 'node:path'
 import { createServer as createViteServer } from 'vite'
+import { createAppDefinitions } from './app-definitions.mjs'
 
 /** @typedef {import('node:http').IncomingMessage} IncomingMessage */
 /** @typedef {import('node:http').ServerResponse} ServerResponse */
@@ -32,16 +33,6 @@ import { createServer as createViteServer } from 'vite'
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const workspaceRoot = resolve(currentDir, '../../..')
-
-/**
- * @param {string} rootDir
- * @returns {HostAppDefinition[]}
- */
-const createAppDefinitions = (rootDir) => [
-  { mountPath: '/mobile/', root: join(rootDir, 'apps/mobile') },
-  { mountPath: '/widget/', root: join(rootDir, 'apps/widget') },
-  { mountPath: '/web/', root: join(rootDir, 'apps/web') }
-]
 
 const staticContentTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -218,12 +209,12 @@ const createRequestHandler = (apps, publicDir) => (req, res) => {
     const requestUrl = req.url ?? '/'
     const pathname = requestUrl.split('?')[0] ?? '/'
 
-    if (pathname === '/mobile' || pathname === '/widget' || pathname === '/web') {
+    const appWithoutSlash = apps.find(
+      (app) => app.mountPath !== '/' && app.mountPath.slice(0, -1) === pathname
+    )
+    if (appWithoutSlash) {
       res.statusCode = 301
-      res.setHeader(
-        'Location',
-        pathname === '/mobile' ? '/mobile/' : pathname === '/widget' ? '/widget/' : '/web/'
-      )
+      res.setHeader('Location', appWithoutSlash.mountPath)
       res.end()
       return
     }
