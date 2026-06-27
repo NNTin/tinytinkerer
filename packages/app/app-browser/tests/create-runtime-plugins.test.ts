@@ -262,15 +262,20 @@ describe('plugin runtime contributions', () => {
   it('registers app-local tools and surfaces a planner descriptor derived from their Zod schema', async () => {
     // App tools (e.g. the canvas app's Excalidraw tools) are injected straight
     // into the runtime — not discovered as plugins and not activation-gated. They
-    // must register and advertise a planner descriptor generated from their own
-    // Zod schema, the same canonical path plugin tools use (issue #287).
-    const requestBodies: Array<{ messages?: Array<{ content: string }>; stream?: boolean }> = []
+    // must register and advertise natively, with parameters generated from their
+    // own Zod schema, the same canonical path plugin tools use (issue #287).
+    const requestBodies: Array<{
+      messages?: Array<{ content: string }>
+      stream?: boolean
+      tools?: Array<{ function: { name: string; description?: string; parameters?: unknown } }>
+    }> = []
     vi.stubGlobal(
       'fetch',
       vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
           messages?: Array<{ content: string }>
           stream?: boolean
+          tools?: Array<{ function: { name: string; description?: string; parameters?: unknown } }>
         }
         requestBodies.push(body)
         if (body.stream === false) {
@@ -320,23 +325,30 @@ describe('plugin runtime contributions', () => {
 
     await runRuntime(runtime)
 
-    const planningPrompt = requestBodies[0]?.messages?.[0]?.content ?? ''
-    expect(planningPrompt).toContain('Tool: draw_on_canvas')
-    expect(planningPrompt).toContain('Draw shapes on the Excalidraw canvas.')
-    // The planner-visible JSON Schema is generated from the tool's own Zod schema.
-    expect(planningPrompt).toContain('"shapeKind"')
+    // Tools are advertised natively on the request (issue #287): the app tool
+    // reaches the model via the `tools` array with parameters generated from its
+    // own Zod schema.
+    const advertisedTools = requestBodies[0]?.tools ?? []
+    const drawn = advertisedTools.find((t) => t.function.name === 'draw_on_canvas')
+    expect(drawn?.function.description).toBe('Draw shapes on the Excalidraw canvas.')
+    expect(JSON.stringify(drawn?.function.parameters)).toContain('"shapeKind"')
     vi.unstubAllGlobals()
   })
 
   it('does not let an app tool override a plugin tool that already claimed its id', async () => {
     // App tools register after MCP + plugins; addTool dedupes, first writer wins.
-    const requestBodies: Array<{ messages?: Array<{ content: string }>; stream?: boolean }> = []
+    const requestBodies: Array<{
+      messages?: Array<{ content: string }>
+      stream?: boolean
+      tools?: Array<{ function: { name: string; description?: string } }>
+    }> = []
     vi.stubGlobal(
       'fetch',
       vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
           messages?: Array<{ content: string }>
           stream?: boolean
+          tools?: Array<{ function: { name: string; description?: string } }>
         }
         requestBodies.push(body)
         if (body.stream === false) {
@@ -391,9 +403,14 @@ describe('plugin runtime contributions', () => {
 
     await runRuntime(runtime)
 
-    const planningPrompt = requestBodies[0]?.messages?.[0]?.content ?? ''
-    expect(planningPrompt).toContain('plugin owns this id')
-    expect(planningPrompt).not.toContain('app override should be dropped')
+    // The first plugin to claim 'shared_id' owns the advertised descriptor; the
+    // app tool's override is dropped (addTool dedupes, first writer wins).
+    const advertisedTools = requestBodies[0]?.tools ?? []
+    const shared = advertisedTools.find((t) => t.function.name === 'shared_id')
+    expect(shared?.function.description).toBe('plugin owns this id')
+    expect(advertisedTools.map((t) => t.function.description)).not.toContain(
+      'app override should be dropped'
+    )
     vi.unstubAllGlobals()
   })
 

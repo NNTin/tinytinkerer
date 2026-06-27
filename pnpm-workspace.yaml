@@ -55,6 +55,20 @@ auditLevel: moderate
 #     percent-decoding): apps/edge>wrangler>miniflare>undici, apps/mobile>jsdom>
 #     undici, and apps/edge>@sentry/cli>undici — all dev/build/test-only, not in
 #     the deployed Worker runtime. Patched in undici@7.28.0 (6.27.0 for @sentry/cli).
+#
+# The four entries below are transitive advisories pulled in by @excalidraw/excalidraw
+# (apps/canvas, added 2026-06-27). They are confined to Excalidraw's bundled
+# "Mermaid to diagram" parser subtree and core ID generation, neither of which
+# apps/canvas surfaces, and the lodash-es ones have no released fix (4.17.21 is the
+# latest; the advisories' ">=4.18.0" does not exist). Re-check on Excalidraw upgrades.
+#   - GHSA-r5fr-rjxr-66jc (lodash-es, code injection via _.template): only via
+#     @excalidraw/mermaid-to-excalidraw>@mermaid-js/parser>langium>chevrotain>
+#     lodash-es — a parser internal, never fed attacker-controlled templates. No fix.
+#   - GHSA-f23m-r3pf-42rh / GHSA-xxjr-mmjv-4gpg (lodash-es, prototype pollution in
+#     _.unset/_.omit): same chevrotain parser path; not reachable from our code. No fix.
+#   - GHSA-mwcw-c2x4-8c55 (nanoid, predictable IDs for non-integer size): via
+#     @excalidraw/excalidraw>nanoid (and the mermaid subtree). Excalidraw never passes
+#     a non-integer size, and IDs are not security-bearing here.
 auditConfig:
   ignoreGhsas:
     - GHSA-gv7w-rqvm-qjhr
@@ -67,6 +81,10 @@ auditConfig:
     - GHSA-vxpw-j846-p89q
     - GHSA-hm92-r4w5-c3mj
     - GHSA-p88m-4jfj-68fv
+    - GHSA-r5fr-rjxr-66jc
+    - GHSA-f23m-r3pf-42rh
+    - GHSA-xxjr-mmjv-4gpg
+    - GHSA-mwcw-c2x4-8c55
 onlyBuiltDependencies:
   - '@sentry/cli'
   - esbuild

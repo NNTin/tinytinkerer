@@ -59,6 +59,12 @@ jobs:
           fail-on-severity: moderate
           fail-on-scopes: runtime, development, unknown
           license-check: false
+          # Transitive advisories from @excalidraw/excalidraw (apps/canvas): the
+          # lodash-es ones (via its bundled mermaid parser → langium → chevrotain)
+          # have no released fix, and nanoid's predictable-ID issue needs a
+          # non-integer size Excalidraw never passes. Mirrors the pnpm-workspace.yaml
+          # auditConfig.ignoreGhsas rationale; re-check on Excalidraw upgrades.
+          allow-ghsas: GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh, GHSA-xxjr-mmjv-4gpg, GHSA-mwcw-c2x4-8c55
 
   compliance:
     name: SBOM, Notices, License Policy & Supply Chain
