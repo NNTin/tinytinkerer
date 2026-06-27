@@ -25,6 +25,8 @@ The deployed and local host serves the frontend entrypoints:
 - `/` renders the host-owned composite workspace.
 - `/web/` renders the full web shell.
 - `/mobile/` renders the mobile shell.
+- `/canvas/` renders the thin Excalidraw harness shell.
+- `/excalidraw-app/` renders the isolated Excalidraw iframe app.
 - `/widget/` renders the standalone widget shell.
 
 The root compositor is not a fourth app. It is a thin host page that embeds the real shells:
@@ -290,7 +292,7 @@ These conventions are gated in CI, not left to reviewers:
 - Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
 - A **harness shell** (e.g. `apps/canvas`) is a browser app that may _additionally_ depend on `@tinytinkerer/app-harness` (and, for its verb schemas, the app's own protocol package — see below). It must stay thin: no third-party app deps, no chat-runtime imports, no app domain logic.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
-- `app-bridge` is a leaf: it may depend only on `zod` and its own local modules. It is product-agnostic — it carries no knowledge of any specific app's verbs. Per-app verb payload schemas live in a small app-owned protocol package (e.g. `excalidraw-protocol`) that depends on `app-bridge`, imported by both the harness shell (for the tool input schemas the model sees) and the iframe app (for server-side validation), so the vocabulary has a single source of truth.
+- `app-bridge` is a leaf: it may depend only on `zod` and its own local modules. It is product-agnostic — it carries no knowledge of any specific app's verbs. Per-app verb payload schemas live in a small app-owned protocol package (e.g. `excalidraw-protocol`) that depends on `app-bridge`, imported by both the harness shell (for the tool input schemas the model sees) and the iframe app (as schema-bearing server verb definitions), so the vocabulary has a single source of truth and malformed payloads never enter app code.
 - `app-harness` may depend on `app-browser` (it reuses `FloatingWidgetChat` and the `Tool` contract), `app-bridge`, and its own local modules. It must not depend on any concrete iframe app.
 - An **iframe app** (`apps/<app>-app`) may depend on `app-bridge`, its app-owned protocol package, and its third-party component libraries. It must **not** depend on `app-browser`, `app-core`, `agent-core`, or the chat runtime — it shares neither the chat shell's React tree nor its bundle, and runs at an opaque origin (sandboxed iframe). All heavy/third-party dependencies and any advisory/license allow-list they require live here, off the chat shell.
 - `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `sentry-telemetry`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`). It must **not** statically depend on any concrete plugin package — plugins are discovered dynamically via `import.meta.glob` over `packages/plugins/*` (see [plugin-infrastructure.md](./plugin-infrastructure.md)).

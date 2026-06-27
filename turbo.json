@@ -19,7 +19,9 @@
       "dependsOn": [
         "@tinytinkerer/web#build",
         "@tinytinkerer/widget#build",
-        "@tinytinkerer/mobile#build"
+        "@tinytinkerer/mobile#build",
+        "@tinytinkerer/canvas#build",
+        "@tinytinkerer/excalidraw-app#build"
       ],
       "outputs": ["dist/**"],
       "env": [

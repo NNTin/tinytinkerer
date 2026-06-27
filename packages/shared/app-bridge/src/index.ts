@@ -25,7 +25,13 @@ export { createBridgeClient, BridgeVersionMismatchError } from './client'
 export type { BridgeClient, BridgeHandshake, CreateBridgeClientOptions } from './client'
 
 export { createBridgeServer } from './server'
-export type { BridgeServer, BridgeVerbHandler, CreateBridgeServerOptions } from './server'
+export type {
+  BridgeServer,
+  BridgeVerbDefinition,
+  BridgeVerbHandler,
+  BridgeVerbRegistration,
+  CreateBridgeServerOptions
+} from './server'
 
 export { iframeClientTransport, parentServerTransport } from './dom-transport'
 export type { IframeClientTransportOptions, ParentServerTransportOptions } from './dom-transport'

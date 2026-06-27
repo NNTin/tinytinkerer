@@ -80,7 +80,9 @@ const createTempHostRoot = async (backendPort) => {
   const apps = [
     { name: 'web', mountPath: '/web/', proxyHealth: true },
     { name: 'mobile', mountPath: '/mobile/', proxyHealth: false },
-    { name: 'widget', mountPath: '/widget/', proxyHealth: false }
+    { name: 'widget', mountPath: '/widget/', proxyHealth: false },
+    { name: 'canvas', mountPath: '/canvas/', proxyHealth: false },
+    { name: 'excalidraw-app', mountPath: '/excalidraw-app/', proxyHealth: false }
   ]
 
   for (const app of apps) {
@@ -179,9 +181,10 @@ describe('host server', () => {
     expect(body).toContain('src="./web/"')
     expect(body).toContain('src="./mobile/"')
     expect(body).toContain('src="./widget/?view=host"')
+    expect(body).toContain('href="./canvas/"')
   })
 
-  it('redirects non-suffixed web, widget, and mobile paths', async () => {
+  it('redirects non-suffixed app paths', async () => {
     if (!sharedHostServer) {
       throw new Error('Expected the shared host server to be available.')
     }
@@ -189,6 +192,10 @@ describe('host server', () => {
     const webResponse = await fetch(`${sharedHostServer.url}/web`, { redirect: 'manual' })
     const widgetResponse = await fetch(`${sharedHostServer.url}/widget`, { redirect: 'manual' })
     const mobileResponse = await fetch(`${sharedHostServer.url}/mobile`, { redirect: 'manual' })
+    const canvasResponse = await fetch(`${sharedHostServer.url}/canvas`, { redirect: 'manual' })
+    const excalidrawResponse = await fetch(`${sharedHostServer.url}/excalidraw-app`, {
+      redirect: 'manual'
+    })
 
     expect(webResponse.status).toBe(301)
     expect(webResponse.headers.get('location')).toBe('/web/')
@@ -196,6 +203,10 @@ describe('host server', () => {
     expect(widgetResponse.headers.get('location')).toBe('/widget/')
     expect(mobileResponse.status).toBe(301)
     expect(mobileResponse.headers.get('location')).toBe('/mobile/')
+    expect(canvasResponse.status).toBe(301)
+    expect(canvasResponse.headers.get('location')).toBe('/canvas/')
+    expect(excalidrawResponse.status).toBe(301)
+    expect(excalidrawResponse.headers.get('location')).toBe('/excalidraw-app/')
   })
 
   it('serves the web app from /web/ with the web base path intact', async () => {
@@ -223,6 +234,24 @@ describe('host server', () => {
     expect(response.status).toBe(200)
     expect(body).toContain('src="/widget/@vite/client"')
     expect(body).toContain('src="/widget/src/main.tsx"')
+  })
+
+  it('serves the canvas shell and Excalidraw iframe app on separate mounts', async () => {
+    if (!sharedHostServer) {
+      throw new Error('Expected the shared host server to be available.')
+    }
+
+    const canvasResponse = await fetch(`${sharedHostServer.url}/canvas/`)
+    const canvasBody = await canvasResponse.text()
+    const excalidrawResponse = await fetch(`${sharedHostServer.url}/excalidraw-app/`)
+    const excalidrawBody = await excalidrawResponse.text()
+
+    expect(canvasResponse.status).toBe(200)
+    expect(canvasBody).toContain('src="/canvas/@vite/client"')
+    expect(canvasBody).toContain('src="/canvas/src/main.tsx"')
+    expect(excalidrawResponse.status).toBe(200)
+    expect(excalidrawBody).toContain('src="/excalidraw-app/@vite/client"')
+    expect(excalidrawBody).toContain('src="/excalidraw-app/src/main.tsx"')
   })
 
   it('serves the mobile manifest through the unified host', async () => {

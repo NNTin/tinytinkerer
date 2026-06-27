@@ -55,6 +55,17 @@ auditLevel: moderate
 #     percent-decoding): apps/edge>wrangler>miniflare>undici, apps/mobile>jsdom>
 #     undici, and apps/edge>@sentry/cli>undici — all dev/build/test-only, not in
 #     the deployed Worker runtime. Patched in undici@7.28.0 (6.27.0 for @sentry/cli).
+#
+# These four advisories are transitive through @excalidraw/excalidraw and are
+# confined to apps/excalidraw-app's opaque-origin iframe. The lodash-es findings
+# are in Excalidraw's bundled Mermaid parser (not templates or object paths this
+# integration invokes) and have no released fix. The nanoid issue requires a
+# non-integer size; Excalidraw's IDs are not security-bearing here. Re-check all
+# four when upgrading Excalidraw.
+#   - GHSA-r5fr-rjxr-66jc (lodash-es template code injection)
+#   - GHSA-f23m-r3pf-42rh (lodash-es prototype pollution)
+#   - GHSA-xxjr-mmjv-4gpg (lodash-es prototype pollution)
+#   - GHSA-mwcw-c2x4-8c55 (nanoid predictable output for non-integer size)
 auditConfig:
   ignoreGhsas:
     - GHSA-gv7w-rqvm-qjhr
@@ -67,6 +78,10 @@ auditConfig:
     - GHSA-vxpw-j846-p89q
     - GHSA-hm92-r4w5-c3mj
     - GHSA-p88m-4jfj-68fv
+    - GHSA-r5fr-rjxr-66jc
+    - GHSA-f23m-r3pf-42rh
+    - GHSA-xxjr-mmjv-4gpg
+    - GHSA-mwcw-c2x4-8c55
 onlyBuiltDependencies:
   - '@sentry/cli'
   - esbuild

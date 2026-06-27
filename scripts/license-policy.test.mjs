@@ -12,6 +12,8 @@ const cases = [
   ['Apache-2.0', 'allow'],
   ['BSD-3-Clause', 'allow'],
   ['0BSD', 'allow'],
+  ['CC0-1.0', 'allow'],
+  ['Zlib', 'allow'],
   ['MPL-2.0', 'warn'],
   ['Unlicense', 'warn'],
   ['LGPL-2.1-only', 'warn'],

@@ -38,6 +38,8 @@ const workspaceRoot = resolve(currentDir, '../../..')
  * @returns {HostAppDefinition[]}
  */
 const createAppDefinitions = (rootDir) => [
+  { mountPath: '/canvas/', root: join(rootDir, 'apps/canvas') },
+  { mountPath: '/excalidraw-app/', root: join(rootDir, 'apps/excalidraw-app') },
   { mountPath: '/mobile/', root: join(rootDir, 'apps/mobile') },
   { mountPath: '/widget/', root: join(rootDir, 'apps/widget') },
   { mountPath: '/web/', root: join(rootDir, 'apps/web') }
@@ -218,12 +220,12 @@ const createRequestHandler = (apps, publicDir) => (req, res) => {
     const requestUrl = req.url ?? '/'
     const pathname = requestUrl.split('?')[0] ?? '/'
 
-    if (pathname === '/mobile' || pathname === '/widget' || pathname === '/web') {
+    const appWithoutSlash = apps.find(
+      (app) => app.mountPath !== '/' && app.mountPath.slice(0, -1) === pathname
+    )
+    if (appWithoutSlash) {
       res.statusCode = 301
-      res.setHeader(
-        'Location',
-        pathname === '/mobile' ? '/mobile/' : pathname === '/widget' ? '/widget/' : '/web/'
-      )
+      res.setHeader('Location', appWithoutSlash.mountPath)
       res.end()
       return
     }

@@ -290,6 +290,43 @@ function validateBoundary(sourcePkg, target, filePath) {
     }
   }
 
+  if (sourcePkg.name === '@tinytinkerer/canvas') {
+    const allowed = new Set([
+      '@tinytinkerer/canvas',
+      '@tinytinkerer/app-browser',
+      '@tinytinkerer/app-harness',
+      '@tinytinkerer/ui',
+      '@tinytinkerer/excalidraw-protocol'
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(
+        `${sourceLabel}: harness shells may depend only on app-browser, app-harness, ui, their app-owned protocol package, and local modules (${targetPkg.name})`
+      )
+    }
+  }
+
+  if (sourcePkg.name === '@tinytinkerer/excalidraw-app') {
+    const allowed = new Set([
+      '@tinytinkerer/excalidraw-app',
+      '@tinytinkerer/app-bridge',
+      '@tinytinkerer/excalidraw-protocol'
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(
+        `${sourceLabel}: iframe apps may depend only on app-bridge, their app-owned protocol package, and local modules (${targetPkg.name})`
+      )
+    }
+  }
+
+  if (sourcePkg.name === '@tinytinkerer/excalidraw-protocol') {
+    const allowed = new Set(['@tinytinkerer/excalidraw-protocol', '@tinytinkerer/app-bridge'])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(
+        `${sourceLabel}: app-owned protocol packages may depend only on app-bridge and local modules (${targetPkg.name})`
+      )
+    }
+  }
+
   if (sourcePkg.name === '@tinytinkerer/edge') {
     const allowed = new Set([
       '@tinytinkerer/edge',

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBridgeClient, BridgeVersionMismatchError } from '../src/client'
 import { createBridgeServer } from '../src/server'
 import type { BridgeTransport } from '../src/transport'
+import { z } from 'zod'
 
 // Two transports wired together in memory, delivering each message to the other
 // side on a microtask (so the async hop mimics postMessage without a real iframe).
@@ -77,6 +78,28 @@ describe('app-bridge client/server round-trip', () => {
     })
     await client.ready
     await expect(client.request('boom')).rejects.toThrow('handler exploded')
+  })
+
+  it('validates a verb payload before invoking its handler', async () => {
+    const { harness, app } = createLinkedTransports()
+    const client = createBridgeClient(harness, { protocolVersion: VERSION, sessionNonce: NONCE })
+    const handler = vi.fn((payload: unknown) => payload)
+    createBridgeServer(app, {
+      appId: 'a',
+      protocolVersion: VERSION,
+      sessionNonce: NONCE,
+      handlers: {
+        draw: {
+          inputSchema: z.object({ count: z.number().int().positive() }),
+          handler
+        }
+      }
+    })
+    await client.ready
+
+    await expect(client.request('draw', { count: 2 })).resolves.toEqual({ count: 2 })
+    await expect(client.request('draw', { count: 0 })).rejects.toThrow()
+    expect(handler).toHaveBeenCalledTimes(1)
   })
 
   it('rejects a request for an unknown verb', async () => {
