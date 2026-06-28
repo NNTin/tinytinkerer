@@ -80,7 +80,7 @@ flowchart LR
     appbridge["@tinytinkerer/app-bridge<br/>typed postMessage protocol (leaf)"]
     appharness["@tinytinkerer/app-harness<br/>iframe host + bridge client + appTools seam"]
     excalidrawapp["@tinytinkerer/excalidraw-app<br/>isolated iframe package"]
-    excalidrawprotocol["@tinytinkerer/excalidraw-protocol<br/>draw/read/clear contracts"]
+    excalidrawprotocol["@tinytinkerer/excalidraw-protocol<br/>draw/search/inspect/read/edit/clear contracts"]
     ui["@tinytinkerer/ui<br/>presentational React primitives"]
     sentrytelemetry["@tinytinkerer/sentry-telemetry<br/>SDK-agnostic telemetry core"]
 

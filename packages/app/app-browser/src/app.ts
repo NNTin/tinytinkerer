@@ -60,7 +60,7 @@ const requireBrowserApp = (app: BrowserApp | undefined): BrowserApp => {
 export const createBrowserApp = (
   config: BrowserShellConfig,
   options: {
-    // App-local, always-on chat tools (e.g. a harness shell's draw/read/clear
+    // App-local, always-on chat tools (e.g. a harness shell's app-specific
     // verbs). Threaded down to the chat store / runtime; absent for web/widget/mobile.
     appTools?: Tool<unknown, unknown>[]
   } = {}

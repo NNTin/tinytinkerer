@@ -10,12 +10,20 @@ const handle = (request = vi.fn().mockResolvedValue({ ok: true })): AppBridgeHan
 })
 
 describe('canvas app tools', () => {
-  it('exposes only the protocol-backed draw, read, and clear verbs', () => {
+  it('exposes only the protocol-backed Excalidraw verbs', () => {
     const tools = createCanvasAppTools(handle())
-    expect(tools.map((tool) => tool.id)).toEqual(['draw', 'read', 'clear'])
+    expect(tools.map((tool) => tool.id)).toEqual([
+      'draw',
+      'search',
+      'inspect',
+      'read',
+      'edit',
+      'clear'
+    ])
     expect(
       tools.find((tool) => tool.id === 'draw')?.schema.safeParse({ elements: [] }).success
     ).toBe(false)
+    expect(tools.find((tool) => tool.id === 'read')?.schema.safeParse({}).success).toBe(false)
   })
 
   it('forwards validated tool input to the bridge handle', async () => {

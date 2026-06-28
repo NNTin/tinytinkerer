@@ -30,7 +30,7 @@ assistant verbs connecting them. Read `../../README.md` first for the WAT framew
 ## When to use
 
 - Changing `packages/app/excalidraw-app` or `apps/canvas`.
-- Adding or modifying the `draw`, `read`, or `clear` assistant verbs.
+- Adding or modifying the Excalidraw assistant verbs.
 - Using the Excalidraw imperative API or changing its bundle boundary.
 
 ## Architecture
@@ -60,11 +60,18 @@ secondary iframe entry at `/canvas/excalidraw-app/`.
 
 ## Current verbs
 
-| Verb    | Direction | Implementation                                                  |
-| ------- | --------- | --------------------------------------------------------------- |
-| `draw`  | WRITE     | `convertToExcalidrawElements`, `updateScene`, `scrollToContent` |
-| `read`  | READ      | capped `getSceneElements` plus compact `getAppState`            |
-| `clear` | WRITE     | undoable `updateScene({ elements: [] })`                        |
+| Verb      | Direction | Implementation                                                  |
+| --------- | --------- | --------------------------------------------------------------- |
+| `draw`    | WRITE     | `convertToExcalidrawElements`, `updateScene`, `scrollToContent` |
+| `search`  | READ      | capped candidate search by query, type, selection, or viewport  |
+| `inspect` | READ      | compact scene, viewport, selection, and relationship summaries  |
+| `read`    | READ      | normalized full element records with edit versions              |
+| `edit`    | WRITE     | atomic, version-checked, invariant-safe element patches         |
+| `clear`   | WRITE     | undoable `updateScene({ elements: [] })`                        |
+
+Use the `search` → `inspect` → `read` → `edit` ladder for iterative work. `edit`
+requires the current element version from `read`; retry stale edits only after
+reading the element again.
 
 Assistant writes use `CaptureUpdateAction.IMMEDIATELY` so the user can undo them.
 Read results must remain compact and serializable.

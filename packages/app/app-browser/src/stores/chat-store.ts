@@ -39,7 +39,7 @@ export const createChatStore = (options: {
   // Optional so tests can omit it; the app always provides it.
   inspectorStore?: InspectorStore
   // App-local, always-on tools injected by the host app (e.g. a harness shell's
-  // draw/read/clear verbs). Forwarded to the runtime factory; absent for
+  // app-specific verbs). Forwarded to the runtime factory; absent for
   // web/widget/mobile.
   appTools?: Tool<unknown, unknown>[]
 }): ChatStore => {
