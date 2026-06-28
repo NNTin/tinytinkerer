@@ -24,8 +24,9 @@ Skills the agent uses to work in this repo. Core idea: **offload deterministic s
 
 END GENERATED: .agent/README.md -->
 
-Schedule a **one-time** future `ao send <session> "<message>"` using the Unix
-`at` command. Read `../../README.md` first for the WAT framework.
+Schedule, inspect, and cancel a **one-time** future
+`ao send <session> "<message>"` using the Unix `at` command. Read
+`../../README.md` first for the WAT framework.
 
 ## When to use
 
@@ -34,14 +35,17 @@ Schedule a **one-time** future `ao send <session> "<message>"` using the Unix
   tin-orchestrator at 14:30".
 - You need a single deferred `ao send`, not a recurring schedule (`at` fires
   each job exactly once; use a different mechanism for cron-style repetition).
+- A user wants to see upcoming AO sends, including their times, messages, and
+  destination sessions.
+- A user wants to cancel one queued AO send before it fires.
 
 ## How
 
-1. Follow `workflows/schedule-ao-message.md`.
-2. Gather and **confirm with the user** the three inputs — session, time spec,
-   message.
-3. Preview with the tool's default dry-run, then re-run the same command with
-   `--apply` after confirmation.
+1. To create a schedule, follow `workflows/schedule-ao-message.md`.
+2. To inspect or cancel schedules, follow
+   `workflows/list-and-cancel-ao-schedules.md`.
+3. Preview scheduling and cancellation with each tool's default dry-run, and
+   re-run with `--apply` only after explicit user confirmation.
 
 ## Available tools
 
@@ -51,6 +55,12 @@ Schedule a **one-time** future `ao send <session> "<message>"` using the Unix
   time spec is anything `at` accepts (`"now + 2 hours"`, `"14:30"`,
   `"2026-06-24 09:00"`, `"tomorrow"`). Session and message are quoted safely
   into the job, and the queued command always includes `--no-wait` (see below).
+- `tools/list-ao-sends.sh [job-id]` — list every recognized queued AO send, or
+  inspect one job id. Prints the timestamp and timezone, owner, queue, session,
+  message, and exact command. It ignores unrelated `at` jobs.
+- `tools/cancel-ao-send.sh <job-id> [--apply]` — validate and preview one AO
+  send cancellation. It changes nothing without `--apply`; after application,
+  it verifies that the job id was removed from `atq`.
 
 ## Why `--no-wait`
 
@@ -69,6 +79,11 @@ bakes `--no-wait` into the queued command, so the emitted job is
   rights to install or configure it.
 - **Never schedule until the user explicitly confirms** the session, time, and
   message. The tool stays in dry-run until `--apply` to enforce this.
+- **Never cancel until the user explicitly confirms** the listed job id, time,
+  session, and message. The cancellation tool stays in dry-run until `--apply`.
+- Listing and cancellation manage only the strict command shape emitted by
+  `schedule-ao-send.sh`; they never evaluate job content or remove unrelated
+  `at` jobs.
 - One-time only. `at` does not repeat jobs.
 - The queued job runs detached as the submitting user; `ao` is resolved to an
   absolute path at schedule time so the job finds it.
@@ -78,4 +93,6 @@ bakes `--no-wait` into the queued command, so the emitted job is
 - The dry-run prints the exact queued `ao send <session> "<message>" --no-wait`
   command before anything is scheduled.
 - After `--apply`, the tool reports the queued job id.
+- Listing reports verbose details for each recognized upcoming AO send.
+- Cancellation previews the selected job and removes it only with `--apply`.
 - The message is delivered once, at the chosen time.

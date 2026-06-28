@@ -45,9 +45,7 @@ entry, and reports the job id.
 
 ## Removing a scheduled job
 
-If the user changes their mind before it fires:
-
-```
-atq                 # find the job id
-atrm <job>          # cancel it
-```
+If the user changes their mind before it fires, follow
+`workflows/list-and-cancel-ao-schedules.md`. Preview the selected job with
+`tools/cancel-ao-send.sh <job-id>`, obtain explicit confirmation, then re-run
+with `--apply`. Do not call `atrm` directly.
