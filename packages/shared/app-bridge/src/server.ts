@@ -118,7 +118,9 @@ export const createBridgeServer = (
     const definition = typeof registration === 'function' ? { handler: registration } : registration
 
     // Parse before entering app code. Zod errors are returned through the normal
-    // bridge error response and the handler is never invoked.
+    // bridge error response and the handler is never invoked. Every error string
+    // is non-empty so the reply satisfies the wire schema instead of being dropped
+    // and leaving the request to hang until its timeout.
     void (async () => {
       try {
         const payload =
@@ -130,7 +132,8 @@ export const createBridgeServer = (
           'resultSchema' in definition ? definition.resultSchema.parse(result) : result
         reply({ ok: true, result: validatedResult ?? null })
       } catch (error) {
-        reply({ ok: false, error: error instanceof Error ? error.message : String(error) })
+        const text = error instanceof Error ? error.message : String(error)
+        reply({ ok: false, error: text || `app-bridge: verb "${message.verb}" failed` })
       }
     })()
   })

@@ -71,6 +71,13 @@ export const AppFrame = ({
     if (!frame) return
     let cancelled = false
 
+    // A fresh handshake is starting — on initial mount, a prop change, or a
+    // StrictMode effect re-run. The previous client was already torn down (its
+    // cleanup cleared the handle), so reset to 'loading' instead of leaving a
+    // stale 'ready' on data-app-frame-status / onStatusChange while the handle is
+    // cleared and rejecting requests.
+    report('loading')
+
     const client = createBridgeClient(iframeClientTransport(frame), {
       protocolVersion,
       sessionNonce: nonceRef.current,

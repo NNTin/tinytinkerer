@@ -77,7 +77,9 @@ describe('AppFrame', () => {
       />
     )
     await waitFor(() => expect(handle.getStatus()).toBe('ready'))
-    expect(onStatusChange).toHaveBeenCalledWith('ready')
+    // The frame reports 'loading' while the handshake is in flight, then 'ready'.
+    expect(onStatusChange).toHaveBeenCalledWith('loading')
+    expect(onStatusChange).toHaveBeenLastCalledWith('ready')
   })
 
   it('degrades to version-mismatch and marks the handle unavailable', async () => {

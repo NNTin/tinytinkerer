@@ -29,7 +29,11 @@ export const iframeClientTransport = (
     subscribe(handler) {
       const listener = (event: MessageEvent): void => {
         // Identity check: only messages from this iframe's window are trusted.
-        if (event.source !== frame.contentWindow) return
+        // Guard the null case explicitly — before the iframe is attached/loaded
+        // `contentWindow` is null, and `event.source` is also null for messages
+        // from non-window senders, so a bare `!==` would let those through.
+        const target = frame.contentWindow
+        if (!target || event.source !== target) return
         handler(event.data)
       }
       host.addEventListener('message', listener)
