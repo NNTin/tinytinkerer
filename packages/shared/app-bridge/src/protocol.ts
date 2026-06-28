@@ -29,15 +29,20 @@ export const requestMessageSchema = z.object({
   payload: z.unknown()
 })
 
-// App → harness: the reply to a request, correlated by the same `id`.
-export const responseMessageSchema = z.object({
+// App → harness: the reply to a request, correlated by the same `id`. Modeled as
+// a discriminated union on `ok` so the envelope itself enforces the invariant — a
+// success carries a (possibly null) `result`, a failure carries a non-empty
+// `error`. The channel is untrusted, so a malformed reply (e.g. `ok: false` with
+// no error) is rejected on receipt rather than papered over with a fallback.
+const responseBaseShape = {
   ...envelopeBaseShape,
   kind: z.literal('res'),
-  id: z.string().min(1),
-  ok: z.boolean(),
-  result: z.unknown().optional(),
-  error: z.string().optional()
-})
+  id: z.string().min(1)
+}
+export const responseMessageSchema = z.discriminatedUnion('ok', [
+  z.object({ ...responseBaseShape, ok: z.literal(true), result: z.unknown().optional() }),
+  z.object({ ...responseBaseShape, ok: z.literal(false), error: z.string().min(1) })
+])
 
 // App → harness: an unsolicited notification (e.g. "scene-changed"). Fire-and-forget.
 export const eventMessageSchema = z.object({
@@ -67,7 +72,11 @@ export const helloMessageSchema = z.object({
   kind: z.literal('hello')
 })
 
-export const bridgeMessageSchema = z.discriminatedUnion('kind', [
+// A plain union (not `discriminatedUnion('kind')`) because `responseMessageSchema`
+// is itself a discriminated union (on `ok`) and so cannot be a member of an outer
+// discriminated union. Each member still carries a literal `kind`, so consumers
+// narrow on it normally.
+export const bridgeMessageSchema = z.union([
   requestMessageSchema,
   responseMessageSchema,
   eventMessageSchema,

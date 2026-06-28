@@ -73,4 +73,19 @@ describe('bridgeMessageSchema', () => {
       bridgeMessageSchema.safeParse({ ...base, kind: 'event', verb: '', payload: 1 }).success
     ).toBe(false)
   })
+
+  it('enforces the response invariant (ok:false requires a non-empty error)', () => {
+    // ok:false without an error — must be rejected, not interpreted with a fallback.
+    expect(
+      bridgeMessageSchema.safeParse({ ...base, kind: 'res', id: '1', ok: false }).success
+    ).toBe(false)
+    // ok:false with an empty error — still rejected.
+    expect(
+      bridgeMessageSchema.safeParse({ ...base, kind: 'res', id: '1', ok: false, error: '' }).success
+    ).toBe(false)
+    // ok:true needs no error and may omit result.
+    expect(bridgeMessageSchema.safeParse({ ...base, kind: 'res', id: '1', ok: true }).success).toBe(
+      true
+    )
+  })
 })

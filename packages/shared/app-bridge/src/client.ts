@@ -123,7 +123,9 @@ export const createBridgeClient = (
       if (message.ok) {
         entry.resolve(message.result ?? null)
       } else {
-        entry.reject(new Error(message.error ?? `app-bridge: request "${message.id}" failed`))
+        // `error` is a required non-empty string on the ok:false branch (enforced
+        // by responseMessageSchema), so no fallback is needed here.
+        entry.reject(new Error(message.error))
       }
       return
     }

@@ -83,13 +83,17 @@ export const createBridgeServer = (
       return
     }
 
-    // Run the (possibly async) handler and reply with its result or error.
+    // Run the (possibly async) handler and reply with its result or error. The
+    // error string is guaranteed non-empty so the reply satisfies the wire schema
+    // (an empty `error` would be rejected on receipt and the request would hang
+    // until its timeout instead of rejecting promptly).
     void (async () => {
       try {
         const result = await handler(message.payload)
         reply({ ok: true, result: result ?? null })
       } catch (error) {
-        reply({ ok: false, error: error instanceof Error ? error.message : String(error) })
+        const text = error instanceof Error ? error.message : String(error)
+        reply({ ok: false, error: text || `app-bridge: verb "${message.verb}" failed` })
       }
     })()
   })
