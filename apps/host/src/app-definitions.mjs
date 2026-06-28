@@ -4,11 +4,11 @@ import { join } from 'node:path'
 // redirects, and host tests all consume this list so adding an app cannot leave
 // one hosting mode behind.
 export const HOSTED_APP_SPECS = Object.freeze([
-  { slug: 'canvas', mountPath: '/canvas/' },
-  { slug: 'excalidraw-app', mountPath: '/excalidraw-app/' },
-  { slug: 'mobile', mountPath: '/mobile/' },
-  { slug: 'widget', mountPath: '/widget/' },
-  { slug: 'web', mountPath: '/web/' }
+  { slug: 'canvas', label: 'Canvas', mountPath: '/canvas/' },
+  { slug: 'excalidraw-app', label: 'Excalidraw app', mountPath: '/excalidraw-app/' },
+  { slug: 'mobile', label: 'Mobile', mountPath: '/mobile/' },
+  { slug: 'widget', label: 'Widget', mountPath: '/widget/' },
+  { slug: 'web', label: 'Web', mountPath: '/web/' }
 ])
 
 /**

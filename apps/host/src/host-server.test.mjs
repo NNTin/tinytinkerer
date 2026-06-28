@@ -167,7 +167,9 @@ describe('host server', () => {
     expect(new Set(HOSTED_APP_SPECS.map(({ mountPath }) => mountPath)).size).toBe(
       HOSTED_APP_SPECS.length
     )
-    for (const { slug, mountPath } of HOSTED_APP_SPECS) {
+    expect(new Set(HOSTED_APP_SPECS.map(({ label }) => label)).size).toBe(HOSTED_APP_SPECS.length)
+    for (const { slug, label, mountPath } of HOSTED_APP_SPECS) {
+      expect(label.trim()).not.toBe('')
       expect(mountPath).toBe(`/${slug}/`)
     }
   })

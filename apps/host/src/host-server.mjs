@@ -6,7 +6,7 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { dirname, extname, join, relative, resolve } from 'node:path'
 import { createServer as createViteServer } from 'vite'
-import { createAppDefinitions } from './app-definitions.mjs'
+import { createAppDefinitions, HOSTED_APP_SPECS } from './app-definitions.mjs'
 
 /** @typedef {import('node:http').IncomingMessage} IncomingMessage */
 /** @typedef {import('node:http').ServerResponse} ServerResponse */
@@ -403,9 +403,9 @@ export const runHostServer = async ({ host = 'localhost', preferredPort = 3111 }
 
   console.log(`@tinytinkerer/host listening at ${hostServer.url}`)
   console.log(`  Composite: ${hostServer.url}/`)
-  console.log(`  Web: ${hostServer.url}/web/`)
-  console.log(`  Widget: ${hostServer.url}/widget/`)
-  console.log(`  Mobile: ${hostServer.url}/mobile/`)
+  for (const { label, mountPath } of HOSTED_APP_SPECS) {
+    console.log(`  ${label}: ${hostServer.url}${mountPath}`)
+  }
 
   const shutdown = async () => {
     try {
