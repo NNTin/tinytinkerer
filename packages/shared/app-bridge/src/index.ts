@@ -23,6 +23,7 @@ export type { BridgeTransport } from './transport'
 
 export {
   createBridgeClient,
+  AppProtocolVersionMismatchError,
   BridgeCapabilityMismatchError,
   BridgeVersionMismatchError
 } from './client'

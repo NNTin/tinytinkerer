@@ -11,7 +11,7 @@ const CanvasPage = (): React.JSX.Element => (
   <HarnessShell
     appId={EXCALIDRAW_APP_ID}
     src={resolveEmbeddedAppUrl(import.meta.env.BASE_URL, 'excalidraw-app')}
-    protocolVersion={EXCALIDRAW_PROTOCOL_VERSION}
+    appProtocolVersion={EXCALIDRAW_PROTOCOL_VERSION}
     expectedVerbs={EXCALIDRAW_VERBS}
     handle={canvasBridgeHandle}
     frameTitle="Excalidraw whiteboard"

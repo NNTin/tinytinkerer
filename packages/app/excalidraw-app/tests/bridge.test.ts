@@ -28,6 +28,8 @@ vi.mock('@excalidraw/excalidraw', () => ({
     return [x1, y1, x2, y2]
   },
   getVisibleSceneBounds: () => [0, 0, 400, 300],
+  hashElementsVersion: (elements: Array<{ version: number }>) =>
+    elements.reduce((version, element) => version + element.version, 0),
   newElementWith: (
     element: Record<string, unknown> & { version: number },
     updates: Record<string, unknown>
@@ -170,11 +172,12 @@ describe('Excalidraw bridge handlers', () => {
       selectedElementIds: { router: true }
     })
 
-    await expect(run(api, 'search', { query: 'core', types: ['rectangle'] })).resolves.toEqual({
+    await expect(
+      run(api, 'search', { query: 'core', types: ['rectangle'] })
+    ).resolves.toMatchObject({
       ok: true,
       sceneCount: 3,
       matched: 1,
-      truncated: false,
       elements: [
         {
           id: 'router',
@@ -194,6 +197,16 @@ describe('Excalidraw bridge handlers', () => {
         matched: 1
       }
     )
+    const summary = (await run(api, 'search', {
+      query: 'router',
+      detail: 'summary'
+    })) as {
+      detail: string
+      elements: Array<Record<string, unknown>>
+    }
+    expect(summary.detail).toBe('summary')
+    expect(summary.elements[0]).toMatchObject({ id: 'router' })
+    expect(summary.elements[0]).not.toHaveProperty('name')
   })
 
   it('inspects scene, viewport, selection, and requested relationships', async () => {
@@ -261,11 +274,21 @@ describe('Excalidraw bridge handlers', () => {
     expect(result.missingIds).toEqual(['missing'])
     expect(result.elements[0]).toMatchObject({
       id: 'router',
+      kind: 'shape',
       version: 4,
       zIndex: 0,
       style: { strokeColor: '#1b1b1f', opacity: 100 },
-      label: { elementId: 'router-label', text: 'Router' }
+      label: { elementId: 'router-label', text: 'Router' },
+      capabilities: {
+        requiresUnlock: false
+      }
     })
+    const capabilities = result.elements[0]?.capabilities as {
+      editableFields: string[]
+      restrictions: string[]
+    }
+    expect(capabilities.editableFields).toEqual(expect.arrayContaining(['strokeColor', 'locked']))
+    expect(capabilities.restrictions).toContain('relationship-geometry')
     expect(result.elements[1]).toMatchObject({
       id: 'router-label',
       text: { text: 'Router', containerId: 'router' }
@@ -282,6 +305,56 @@ describe('Excalidraw bridge handlers', () => {
     })
     expect(result.elements[0]).not.toHaveProperty('seed')
     expect(result.elements[0]).not.toHaveProperty('versionNonce')
+  })
+
+  it('paginates a stable snapshot and rejects scene drift', async () => {
+    const api = fakeApi([baseElement('first'), baseElement('second', { version: 2 })])
+    const first = (await run(api, 'read', {
+      elementIds: ['first', 'second'],
+      limit: 1
+    })) as { sceneVersion: number; page: { nextOffset: number } }
+    expect(first.page.nextOffset).toBe(1)
+    await expect(
+      run(api, 'read', {
+        elementIds: ['first', 'second'],
+        offset: 1,
+        limit: 1,
+        expectedSceneVersion: first.sceneVersion + 1
+      })
+    ).rejects.toThrow('scene changed')
+  })
+
+  it('bounds detail fields and reports field truncation', async () => {
+    const api = fakeApi([textElement('long', 'x'.repeat(9_000))])
+    const result = (await run(api, 'read', {
+      elementIds: ['long'],
+      detail: 'full'
+    })) as {
+      elements: Array<{ text?: { text: string } }>
+      truncation: { truncated: boolean; fields: string[]; serializedBytes: number }
+    }
+    expect(result.elements[0]?.text?.text).toHaveLength(8_192)
+    expect(result.truncation.truncated).toBe(true)
+    expect(result.truncation.fields).toContain('long.text.text')
+    expect(result.truncation.serializedBytes).toBeLessThanOrEqual(64 * 1_024)
+  })
+
+  it('keeps paged read results inside the exact UTF-8 result budget', async () => {
+    const elements = Array.from({ length: 10 }, (_, index) =>
+      textElement(`long-${index}`, 'x'.repeat(9_000))
+    )
+    const result = (await run(fakeApi(elements), 'read', {
+      elementIds: elements.map((element) => String(element.id)),
+      detail: 'full',
+      limit: 10
+    })) as {
+      elements: unknown[]
+      truncation: { omittedElements: number; serializedBytes: number }
+    }
+    const actualBytes = new TextEncoder().encode(JSON.stringify(result)).byteLength
+    expect(result.truncation.omittedElements).toBeGreaterThan(0)
+    expect(result.truncation.serializedBytes).toBe(actualBytes)
+    expect(actualBytes).toBeLessThanOrEqual(64 * 1_024)
   })
 
   it('applies a versioned edit batch atomically as one undoable update', async () => {
@@ -331,7 +404,7 @@ describe('Excalidraw bridge handlers', () => {
       run(staleApi, 'edit', {
         edits: [{ id: 'related', expectedVersion: 2, changes: { x: 100 } }]
       })
-    ).rejects.toThrow('relationship-aware')
+    ).rejects.toThrow('relationship-geometry')
     expect(staleApi.updateScene).not.toHaveBeenCalled()
   })
 
@@ -375,6 +448,27 @@ describe('Excalidraw bridge handlers', () => {
       })
     ).resolves.toMatchObject({ ok: true, updated: 0 })
     expect(api.updateScene).not.toHaveBeenCalled()
+  })
+
+  it('retains every compact edit receipt when detailed records exceed budget', async () => {
+    const elements = Array.from({ length: 20 }, (_, index) =>
+      textElement(`text-${index}`, 'x'.repeat(9_000), { version: index + 1 })
+    )
+    const result = (await run(fakeApi(elements), 'edit', {
+      edits: elements.map((element, index) => ({
+        id: String(element.id),
+        expectedVersion: index + 1,
+        changes: { opacity: 99 }
+      }))
+    })) as {
+      receipts: unknown[]
+      elements: unknown[]
+      truncation: { omittedElements: number; serializedBytes: number }
+    }
+    expect(result.receipts).toHaveLength(20)
+    expect(result.elements.length).toBeLessThan(20)
+    expect(result.truncation.omittedElements).toBe(20 - result.elements.length)
+    expect(result.truncation.serializedBytes).toBeLessThanOrEqual(64 * 1_024)
   })
 
   it('clears the scene as an undoable update', async () => {

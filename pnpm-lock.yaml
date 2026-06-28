@@ -999,9 +999,6 @@ importers:
 
   packages/shared/excalidraw-protocol:
     dependencies:
-      '@tinytinkerer/app-bridge':
-        specifier: workspace:*
-        version: link:../app-bridge
       zod:
         specifier: 4.4.3
         version: 4.4.3

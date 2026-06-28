@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  AppProtocolVersionMismatchError,
   BridgeVersionMismatchError,
   createBridgeClient,
   iframeClientTransport
@@ -14,7 +15,7 @@ export type AppFrameProps = {
   // The id the harness expects the app to announce; pins the handshake.
   appId: string
   // The protocol version the harness speaks; the app is gated on it.
-  protocolVersion: number
+  appProtocolVersion: number
   // Capabilities this shell exposes as tools. The handshake must advertise all
   // of them before the handle becomes ready.
   expectedVerbs: readonly string[]
@@ -43,7 +44,7 @@ const appendSessionNonce = (src: string, nonce: string): string => {
 export const AppFrame = ({
   src,
   appId,
-  protocolVersion,
+  appProtocolVersion,
   expectedVerbs,
   handle,
   title,
@@ -79,7 +80,7 @@ export const AppFrame = ({
     report('loading')
 
     const client = createBridgeClient(iframeClientTransport(frame), {
-      protocolVersion,
+      appProtocolVersion,
       sessionNonce: nonceRef.current,
       expectedAppId: appId,
       expectedVerbs
@@ -102,7 +103,12 @@ export const AppFrame = ({
         if (cancelled) return
         clearTimeout(readyTimer)
         handle.setUnavailable(error instanceof Error ? error.message : String(error))
-        report(error instanceof BridgeVersionMismatchError ? 'version-mismatch' : 'error')
+        report(
+          error instanceof BridgeVersionMismatchError ||
+            error instanceof AppProtocolVersionMismatchError
+            ? 'version-mismatch'
+            : 'error'
+        )
       }
     )
 
@@ -112,7 +118,7 @@ export const AppFrame = ({
       handle.setClient(null)
       client.dispose()
     }
-  }, [src, appId, protocolVersion, expectedVerbs, handle, readyTimeoutMs, report])
+  }, [src, appId, appProtocolVersion, expectedVerbs, handle, readyTimeoutMs, report])
 
   return (
     <iframe

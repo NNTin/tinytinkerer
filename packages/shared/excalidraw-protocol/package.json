@@ -22,7 +22,6 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tinytinkerer/app-bridge": "workspace:*",
     "zod": "4.4.3"
   }
 }

@@ -1,10 +1,30 @@
-import { APP_BRIDGE_PROTOCOL_VERSION } from '@tinytinkerer/app-bridge'
 import { z } from 'zod'
 
 export const EXCALIDRAW_APP_ID = 'excalidraw'
-export const EXCALIDRAW_PROTOCOL_VERSION = APP_BRIDGE_PROTOCOL_VERSION
+// Version of the Excalidraw verb contracts, intentionally independent from the
+// generic app-bridge envelope version.
+export const EXCALIDRAW_PROTOCOL_VERSION = 2
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
+export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
+
+export const EXCALIDRAW_FIELD_LIMITS = Object.freeze({
+  name: 160,
+  standardText: 2_048,
+  fullText: 8_192,
+  points: 1_024,
+  relationships: 256,
+  groups: 64
+})
+
+export const EXCALIDRAW_PAYLOAD_BUDGETS = Object.freeze({
+  search: { request: 8 * 1_024, result: 16 * 1_024 },
+  inspect: { request: 16 * 1_024, result: 32 * 1_024 },
+  read: { request: 16 * 1_024, result: 64 * 1_024 },
+  draw: { request: 64 * 1_024, result: 64 * 1_024 },
+  edit: { request: 64 * 1_024, result: 64 * 1_024 },
+  clear: { request: 1 * 1_024, result: 1 * 1_024 }
+})
 
 const colorSchema = z
   .string()
@@ -18,6 +38,18 @@ const uniqueElementIdsSchema = z
   .min(1)
   .max(EXCALIDRAW_ELEMENT_LIMIT)
   .refine((ids) => new Set(ids).size === ids.length, 'Element ids must be unique.')
+
+const pagingShape = {
+  offset: z.number().int().nonnegative().default(0),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(EXCALIDRAW_ELEMENT_LIMIT)
+    .default(EXCALIDRAW_SEARCH_DEFAULT_LIMIT),
+  expectedSceneVersion: z.number().int().nonnegative().optional(),
+  detail: z.enum(EXCALIDRAW_DETAIL_LEVELS).default('standard')
+}
 
 export const drawElementSchema = z.object({
   type: z
@@ -57,26 +89,50 @@ export const searchInputSchema = z
       .refine((types) => new Set(types).size === types.length, 'Element types must be unique.')
       .optional(),
     scope: z.enum(['all', 'selection', 'viewport']).default('all'),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(EXCALIDRAW_ELEMENT_LIMIT)
-      .default(EXCALIDRAW_SEARCH_DEFAULT_LIMIT)
+    ...pagingShape
   })
   .strict()
+  .superRefine((input, ctx) => {
+    if (input.offset > 0 && input.expectedSceneVersion === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expectedSceneVersion'],
+        message: 'Required after offset 0.'
+      })
+    }
+  })
 
 export const inspectInputSchema = z
   .object({
-    elementIds: uniqueElementIdsSchema.optional()
+    elementIds: uniqueElementIdsSchema.optional(),
+    ...pagingShape
   })
   .strict()
+  .superRefine((input, ctx) => {
+    if (input.offset > 0 && input.expectedSceneVersion === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expectedSceneVersion'],
+        message: 'Required after offset 0.'
+      })
+    }
+  })
 
 export const readInputSchema = z
   .object({
-    elementIds: uniqueElementIdsSchema
+    elementIds: uniqueElementIdsSchema,
+    ...pagingShape
   })
   .strict()
+  .superRefine((input, ctx) => {
+    if (input.offset > 0 && input.expectedSceneVersion === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expectedSceneVersion'],
+        message: 'Required after offset 0.'
+      })
+    }
+  })
 
 export const editChangesSchema = z
   .object({

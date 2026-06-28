@@ -8,6 +8,7 @@ import {
   EXCALIDRAW_VERBS,
   inspectInputSchema,
   readInputSchema,
+  readElementSchema,
   searchInputSchema
 } from '../src/index'
 
@@ -35,7 +36,12 @@ describe('excalidraw protocol', () => {
   })
 
   it('defaults and bounds candidate search', () => {
-    expect(searchInputSchema.parse({})).toEqual({ scope: 'all', limit: 20 })
+    expect(searchInputSchema.parse({})).toEqual({
+      scope: 'all',
+      offset: 0,
+      limit: 20,
+      detail: 'standard'
+    })
     expect(
       searchInputSchema.parse({
         query: 'router',
@@ -55,6 +61,15 @@ describe('excalidraw protocol', () => {
     expect(readInputSchema.safeParse({ elementIds: ['shape-1'] }).success).toBe(true)
     expect(readInputSchema.safeParse({}).success).toBe(false)
     expect(readInputSchema.safeParse({ elementIds: ['shape-1', 'shape-1'] }).success).toBe(false)
+    expect(readInputSchema.safeParse({ elementIds: ['shape-1'], offset: 1 }).success).toBe(false)
+    expect(
+      readInputSchema.parse({
+        elementIds: ['shape-1'],
+        offset: 1,
+        expectedSceneVersion: 7,
+        detail: 'full'
+      })
+    ).toMatchObject({ offset: 1, expectedSceneVersion: 7, detail: 'full' })
   })
 
   it('requires versioned, unique, non-empty edit patches', () => {
@@ -95,8 +110,8 @@ describe('excalidraw protocol', () => {
     expect(clearInputSchema.safeParse({ extra: true }).success).toBe(false)
   })
 
-  it('uses the shared bridge protocol version', () => {
-    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(1)
+  it('uses an independently owned app contract version', () => {
+    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(2)
   })
 
   it('defines input and result contracts for every advertised verb', () => {
@@ -110,5 +125,49 @@ describe('excalidraw protocol', () => {
       }).success
     ).toBe(true)
     expect(excalidrawVerbContracts.clear.resultSchema.safeParse({ ok: false }).success).toBe(false)
+  })
+
+  it('rejects impossible discriminated element records', () => {
+    const common = {
+      id: 'a',
+      version: 1,
+      zIndex: 0,
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      angleDegrees: 0,
+      style: {
+        strokeColor: '#000',
+        backgroundColor: 'transparent',
+        fillStyle: 'solid',
+        strokeWidth: 1,
+        strokeStyle: 'solid',
+        roughness: 1,
+        opacity: 100
+      },
+      locked: false,
+      groupIds: [],
+      frameId: null,
+      link: null,
+      boundElements: [],
+      capabilities: { editableFields: ['locked'], requiresUnlock: false, restrictions: [] }
+    }
+    expect(
+      readElementSchema.safeParse({
+        ...common,
+        kind: 'text',
+        type: 'text',
+        linear: { points: [], startBinding: null, endBinding: null }
+      }).success
+    ).toBe(false)
+    expect(
+      readElementSchema.safeParse({
+        ...common,
+        kind: 'unsupported',
+        type: 'laser',
+        unsupportedType: 'laser'
+      }).success
+    ).toBe(true)
   })
 })

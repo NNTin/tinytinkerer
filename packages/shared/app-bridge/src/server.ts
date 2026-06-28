@@ -1,4 +1,4 @@
-import { bridgeMessageSchema } from './protocol'
+import { APP_BRIDGE_PROTOCOL_VERSION, bridgeMessageSchema } from './protocol'
 import type { BridgeTransport } from './transport'
 import type { ZodType } from 'zod'
 
@@ -52,8 +52,10 @@ export type BridgeServer = {
 export type CreateBridgeServerOptions = {
   // Identifies this app in the handshake; the harness can pin it via expectedAppId.
   appId: string
-  // The version this app speaks; the harness gates on it.
-  protocolVersion: number
+  // Generic bridge envelope version. Override only in compatibility tests.
+  protocolVersion?: number
+  // Independently versioned app-owned contract advertised in the handshake.
+  appProtocolVersion: number
   // The per-mount nonce (passed from the harness, e.g. via the iframe URL hash).
   sessionNonce: string
   // verb → legacy handler or defineBridgeVerb result. Keys are advertised in the
@@ -66,12 +68,14 @@ export const createBridgeServer = (
   options: CreateBridgeServerOptions
 ): BridgeServer => {
   const verbs = Object.keys(options.handlers)
+  const protocolVersion = options.protocolVersion ?? APP_BRIDGE_PROTOCOL_VERSION
 
   const announceReady = (): void => {
     transport.post({
       kind: 'ready',
       appId: options.appId,
-      protocolVersion: options.protocolVersion,
+      protocolVersion,
+      appProtocolVersion: options.appProtocolVersion,
       sessionNonce: options.sessionNonce,
       verbs
     })
@@ -82,7 +86,7 @@ export const createBridgeServer = (
       kind: 'event',
       verb,
       payload: payload ?? null,
-      protocolVersion: options.protocolVersion,
+      protocolVersion,
       sessionNonce: options.sessionNonce
     })
   }
@@ -98,12 +102,13 @@ export const createBridgeServer = (
       return
     }
     if (message.kind !== 'req') return
+    if (message.protocolVersion !== protocolVersion) return
 
     const reply = (body: { ok: true; result: unknown } | { ok: false; error: string }): void => {
       transport.post({
         kind: 'res',
         id: message.id,
-        protocolVersion: options.protocolVersion,
+        protocolVersion,
         sessionNonce: options.sessionNonce,
         ...body
       })

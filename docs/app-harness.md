@@ -56,8 +56,12 @@ flowchart LR
 
   harness --> browser
   harness --> bridge
-  protocol --> bridge
 ```
+
+Notice that there is no dependency edge between `excalidraw-protocol` and
+`app-bridge`. The app contract and generic transport are separately versioned,
+independently buildable packages. They meet only in `excalidraw-app`, which binds the
+contracts to the transport, and in the canvas/harness composition.
 
 The corresponding **runtime topology** has a `postMessage` boundary between the canvas
 shell and Excalidraw. No JavaScript object, React context, module singleton, or
@@ -97,7 +101,7 @@ flowchart TB
 
 | Location                              | Role                                        | May know about                                                           | Must not own                                                      |
 | ------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| `packages/shared/app-bridge`          | Generic request/response/event transport    | Envelopes, correlation ids, versions, nonces, transports, timeouts       | Excalidraw, React UI, model tool descriptions, app-specific verbs |
+| `packages/shared/app-bridge`          | Generic request/response/event transport    | Envelopes, correlation ids, bridge version, nonces, transports, timeouts | Excalidraw, React UI, model tool descriptions, app-specific verbs |
 | `packages/shared/excalidraw-protocol` | Excalidraw wire vocabulary                  | Verb names and Zod input/result schemas                                  | Excalidraw runtime code, iframe lifecycle, chat UI                |
 | `packages/app/excalidraw-app`         | Excalidraw iframe implementation            | Excalidraw component/API, protocol contracts, bridge server              | Chat runtime, canvas routing, model provider                      |
 | `packages/app/app-harness`            | Generic iframe/chat composition             | `AppFrame`, bridge client, stable bridge handle, verb-to-tool adaptation | Excalidraw-specific behavior or schemas                           |
@@ -137,16 +141,23 @@ on this interface rather than directly on `window`. Production uses:
 Tests can substitute an in-memory transport while exercising the same correlation,
 validation, error, and timeout behavior.
 
-Every wire message contains `protocolVersion` and `sessionNonce`. The message variants
-are:
+Every wire message contains the generic `protocolVersion` and `sessionNonce`.
+`protocolVersion` is `APP_BRIDGE_PROTOCOL_VERSION`; it changes only when the envelope
+or generic bridge semantics become incompatible. The `ready` message additionally
+contains `appProtocolVersion`, supplied by the app-specific contract package. For
+Excalidraw this is `EXCALIDRAW_PROTOCOL_VERSION`. It changes when an Excalidraw verb
+input or result becomes incompatible, without forcing every other iframe app to
+upgrade its generic transport.
 
-| Kind    | Direction        | Purpose                                                 |
-| ------- | ---------------- | ------------------------------------------------------- |
-| `hello` | harness → iframe | Ask an already-running server to announce itself again  |
-| `ready` | iframe → harness | Advertise app id, protocol version, and supported verbs |
-| `req`   | harness → iframe | Invoke one verb with a correlation id and payload       |
-| `res`   | iframe → harness | Resolve or reject the correlated request                |
-| `event` | iframe → harness | Send an unsolicited app event                           |
+The message variants are:
+
+| Kind    | Direction        | Purpose                                                     |
+| ------- | ---------------- | ----------------------------------------------------------- |
+| `hello` | harness → iframe | Ask an already-running server to announce itself again      |
+| `ready` | iframe → harness | Advertise app id, app contract version, and supported verbs |
+| `req`   | harness → iframe | Invoke one verb with a correlation id and payload           |
+| `res`   | iframe → harness | Resolve or reject the correlated request                    |
+| `event` | iframe → harness | Send an unsolicited app event                               |
 
 The generic layer performs two levels of validation:
 
@@ -158,11 +169,23 @@ The generic layer performs two levels of validation:
 `app-bridge` does not know that a verb named `read` exists or what an Excalidraw element
 looks like. That knowledge belongs to `excalidraw-protocol`.
 
+```mermaid
+flowchart LR
+  generic["APP_BRIDGE_PROTOCOL_VERSION<br/>generic envelope compatibility"]
+  ready["ready handshake"]
+  app["EXCALIDRAW_PROTOCOL_VERSION<br/>verb-contract compatibility"]
+  client["AppFrame client gates both"]
+
+  generic --> ready
+  app --> ready
+  ready --> client
+```
+
 ## `packages/shared/excalidraw-protocol`: the shared vocabulary
 
 `@tinytinkerer/excalidraw-protocol` is imported on both sides of the iframe boundary:
 
-- `apps/canvas` uses its app id, protocol version, advertised verb list, and **input
+- `apps/canvas` uses its app id, app contract version, advertised verb list, and **input
   schemas** when registering model tools and gating the handshake.
 - `packages/app/excalidraw-app` binds the complete input/result contracts to iframe
   handlers.
@@ -189,6 +212,73 @@ stable, model-relevant fields such as geometry, styles, text, z-order, grouping,
 selection, versions, and bindings while hiding implementation fields such as seeds and
 version nonces.
 
+### Normalized element union and edit capabilities
+
+`read` returns a strict discriminated union on `kind`, not a record containing several
+unrelated optional detail objects. The variants are `shape`, `text`, `line`, `arrow`,
+`freeDraw`, `image`, `frame`, `embed`, and `unsupported`. The explicit unsupported
+variant preserves common geometry/style/context for a new upstream Excalidraw type
+without pretending that the contract understands its type-specific fields. Strict
+variant schemas reject impossible combinations such as a `kind: "text"` record with
+linear points.
+
+Every record contains `capabilities`:
+
+- `editableFields` is the exact set accepted by the current safe edit implementation;
+- `requiresUnlock` tells the caller to include `locked: false` with other changes; and
+- `restrictions` contains stable codes such as `relationship-geometry`,
+  `unsupported-resize`, `container-text`, and `fixed-text`.
+
+The read and edit paths derive their decisions from the same capability calculation.
+This prevents the contract from advertising an edit that the write path subsequently
+rejects. Capability exposure is descriptive, not an authorization mechanism: `edit`
+still rechecks the current element and scene immediately before its atomic update.
+
+### Detail, pagination, and payload bounds
+
+`search`, `inspect`, and `read` accept `detail: "summary" | "standard" | "full"`;
+`standard` is the default. Search and inspection remain compact discovery surfaces:
+summary search omits display names, summary inspection omits relationship lists, and
+full inspection raises its group/relationship limits. For `read`, summary omits
+type-specific heavy fields, standard includes bounded working detail, and full raises
+the bounded field limits. Every result echoes the effective detail level. “Full” means
+the fullest safe contract representation, not unbounded upstream JSON.
+
+All three read verbs use element-level offset pagination:
+
+- `offset` defaults to zero, `limit` defaults to 20 and is at most 50;
+- every result returns `sceneVersion`, `page`, and `truncation`;
+- a page after offset zero must include `expectedSceneVersion`; and
+- the iframe rejects the page if the current scene no longer has that version.
+
+This provides deterministic paging and tells the caller to restart after concurrent
+user or model edits. Large strings and arrays are not nested pagination streams. They
+return a bounded prefix and list their field path in truncation metadata.
+
+| Bounded field               | Maximum                |
+| --------------------------- | ---------------------- |
+| Discovery name              | 160 UTF-8 bytes        |
+| Standard text/original text | 2,048 UTF-8 bytes each |
+| Full text/original text     | 8,192 UTF-8 bytes each |
+| Full points and pressures   | 1,024 entries each     |
+| Relationship references     | 256 entries            |
+| Group ids                   | 64 entries             |
+
+Budgets are measured as exact UTF-8 bytes of serialized JSON. Requests over budget
+fail before behavior executes. Results drop trailing detailed element records until
+they fit and report both omissions and field truncations. Edit receipts (`id` and new
+`version`) are always retained even when detailed edited records are omitted; callers
+retrieve omitted detail with `read`.
+
+| Verb      | Request budget | Result budget |
+| --------- | -------------: | ------------: |
+| `search`  |          8 KiB |        16 KiB |
+| `inspect` |         16 KiB |        32 KiB |
+| `read`    |         16 KiB |        64 KiB |
+| `draw`    |         64 KiB |        64 KiB |
+| `edit`    |         64 KiB |        64 KiB |
+| `clear`   |          1 KiB |         1 KiB |
+
 ```mermaid
 flowchart LR
   input["Model tool input"]
@@ -214,9 +304,35 @@ flowchart LR
 2. receives the `ExcalidrawImperativeAPI`;
 3. reads the per-mount nonce from `location.hash`;
 4. creates a bridge server using `parentServerTransport()`; and
-5. binds each contract from `excalidraw-protocol` to a handler in `bridge.ts`.
+5. binds each contract from `excalidraw-protocol` to app-owned behavior in `bridge.ts`.
 
-The handlers translate the stable model vocabulary into Excalidraw operations:
+Ownership remains entirely in `excalidraw-app`, but behavior is split by concern:
+
+```mermaid
+flowchart LR
+  bridge["bridge.ts<br/>verb binding only"]
+  create["create.ts<br/>draw and clear"]
+  query["query.ts<br/>snapshots, search, inspect,<br/>read, paging, budgets"]
+  normalization["normalization.ts<br/>union, details, bounds,<br/>capabilities"]
+  edit["edit.ts<br/>preflight, versions,<br/>patch and atomic update"]
+  payload["payload.ts<br/>UTF-8 measurement<br/>and bounded prefixes"]
+  api["ExcalidrawImperativeAPI"]
+
+  bridge --> create --> api
+  bridge --> query --> api
+  query --> normalization
+  query --> payload
+  bridge --> edit --> api
+  edit --> normalization
+  edit --> payload
+  normalization --> payload
+```
+
+`bridge.ts` contains no query, normalization, or mutation rules; it only associates
+verb contracts with functions and creates the server. This keeps the transport seam
+auditable without moving domain ownership into a generic package.
+
+The modules translate the stable model vocabulary into Excalidraw operations:
 
 - `draw` converts simplified skeletons and performs an undoable scene update;
 - `search`, `inspect`, and `read` normalize current elements and app state;
@@ -262,7 +378,7 @@ holding a stale bridge client.
 
 `CanvasPage` renders `HarnessShell` with:
 
-- the expected app id and protocol version;
+- the expected app id and Excalidraw contract version;
 - the complete required verb list;
 - the resolved `/canvas/excalidraw-app/` URL;
 - the stable bridge handle; and
@@ -348,7 +464,8 @@ This distinction matters when adding features:
 
 `AppFrame` creates one session nonce per mounted frame and appends it to the iframe URL
 fragment. It then creates an `app-bridge` client configured with the expected app id,
-protocol version, and required verbs.
+Excalidraw app contract version, and required verbs. The bridge client itself uses the
+generic bridge version.
 
 ```mermaid
 sequenceDiagram
@@ -358,13 +475,13 @@ sequenceDiagram
   participant Server as app-bridge server
   participant App as excalidraw-app
 
-  Canvas->>Frame: Render src, appId, version, required verbs, handle
+  Canvas->>Frame: Render src, appId, app contract version, required verbs, handle
   Frame->>Frame: Generate nonce and append URL fragment
   Frame->>Client: Create client and attach iframe transport
   Client->>Server: hello
   App->>Server: Create server after API and nonce are available
-  Server-->>Client: ready(appId, version, verbs)
-  Client->>Client: Verify identity, version, and required capabilities
+  Server-->>Client: ready(appId, bridge version, app version, verbs)
+  Client->>Client: Verify identity, both versions, and required capabilities
   Client-->>Frame: ready promise resolves
   Frame->>Frame: handle.setClient(client)
 ```
@@ -377,7 +494,7 @@ Failure behavior is explicit:
 
 - before readiness, the handle rejects tool calls instead of queuing or hanging;
 - a missing required verb produces a capability mismatch;
-- a protocol mismatch marks the frame `version-mismatch`;
+- either a generic bridge or app contract mismatch marks the frame `version-mismatch`;
 - a handshake timeout marks the app unavailable;
 - disposing or remounting the frame clears the handle and rejects pending requests.
 
@@ -406,9 +523,9 @@ sequenceDiagram
   Client->>Server: req(id, "edit", payload)
   Server->>Server: Validate envelope and edit input
   Server->>Handler: Invoke typed handler
-  Handler->>Handler: Check ids, versions, locks, and relationships
+  Handler->>Handler: Check budget, ids, versions, and advertised capabilities
   Handler->>API: updateScene(one atomic undoable batch)
-  Handler-->>Server: normalized updated elements
+  Handler-->>Server: receipts plus budget-bounded normalized details
   Server->>Server: Validate edit result
   Server-->>Client: res(id, ok, result)
   Client-->>Runtime: Resolve tool result
