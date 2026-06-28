@@ -57,7 +57,7 @@ auditLevel: moderate
 #     the deployed Worker runtime. Patched in undici@7.28.0 (6.27.0 for @sentry/cli).
 #
 # These four advisories are transitive through @excalidraw/excalidraw and are
-# confined to apps/excalidraw-app's opaque-origin iframe. The lodash-es findings
+# confined to packages/app/excalidraw-app's opaque-origin iframe. The lodash-es findings
 # are in Excalidraw's bundled Mermaid parser (not templates or object paths this
 # integration invokes) and have no released fix. The nanoid issue requires a
 # non-integer size; Excalidraw's IDs are not security-bearing here. Re-check all

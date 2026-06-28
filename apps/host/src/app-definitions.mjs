@@ -5,7 +5,6 @@ import { join } from 'node:path'
 // one hosting mode behind.
 export const HOSTED_APP_SPECS = Object.freeze([
   { slug: 'canvas', label: 'Canvas', mountPath: '/canvas/' },
-  { slug: 'excalidraw-app', label: 'Excalidraw app', mountPath: '/excalidraw-app/' },
   { slug: 'mobile', label: 'Mobile', mountPath: '/mobile/' },
   { slug: 'widget', label: 'Widget', mountPath: '/widget/' },
   { slug: 'web', label: 'Web', mountPath: '/web/' }

@@ -80,6 +80,9 @@ importers:
       '@tinytinkerer/app-harness':
         specifier: workspace:*
         version: link:../../packages/app/app-harness
+      '@tinytinkerer/excalidraw-app':
+        specifier: workspace:*
+        version: link:../../packages/app/excalidraw-app
       '@tinytinkerer/excalidraw-protocol':
         specifier: workspace:*
         version: link:../../packages/shared/excalidraw-protocol
@@ -157,40 +160,6 @@ importers:
       wrangler:
         specifier: 4.95.0
         version: 4.95.0
-
-  apps/excalidraw-app:
-    dependencies:
-      '@excalidraw/excalidraw':
-        specifier: 0.18.1
-        version: 0.18.1(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@tinytinkerer/app-bridge':
-        specifier: workspace:*
-        version: link:../../packages/shared/app-bridge
-      '@tinytinkerer/excalidraw-protocol':
-        specifier: workspace:*
-        version: link:../../packages/shared/excalidraw-protocol
-      react:
-        specifier: 19.2.6
-        version: 19.2.6
-      react-dom:
-        specifier: 19.2.6
-        version: 19.2.6(react@19.2.6)
-    devDependencies:
-      '@types/react':
-        specifier: 19.2.15
-        version: 19.2.15
-      '@types/react-dom':
-        specifier: 19.2.3
-        version: 19.2.3(@types/react@19.2.15)
-      '@vitejs/plugin-react':
-        specifier: 6.0.2
-        version: 6.0.2(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.3)(yaml@2.9.0))
-      vite:
-        specifier: 8.0.14
-        version: 8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.3)(yaml@2.9.0)
-      vitest:
-        specifier: 4.1.7
-        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@25.9.1)(jsdom@29.1.1)(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.3)(yaml@2.9.0))
 
   apps/host:
     dependencies:
@@ -535,6 +504,37 @@ importers:
       zod:
         specifier: 4.4.3
         version: 4.4.3
+
+  packages/app/excalidraw-app:
+    dependencies:
+      '@excalidraw/excalidraw':
+        specifier: 0.18.1
+        version: 0.18.1(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@tinytinkerer/app-bridge':
+        specifier: workspace:*
+        version: link:../../shared/app-bridge
+      '@tinytinkerer/excalidraw-protocol':
+        specifier: workspace:*
+        version: link:../../shared/excalidraw-protocol
+    devDependencies:
+      '@types/react':
+        specifier: 19.2.15
+        version: 19.2.15
+      '@types/react-dom':
+        specifier: 19.2.3
+        version: 19.2.3(@types/react@19.2.15)
+      jsdom:
+        specifier: 29.1.1
+        version: 29.1.1
+      react:
+        specifier: 19.2.6
+        version: 19.2.6
+      react-dom:
+        specifier: 19.2.6
+        version: 19.2.6(react@19.2.6)
+      vitest:
+        specifier: 4.1.7
+        version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@25.9.1)(jsdom@29.1.1)(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.3)(yaml@2.9.0))
 
   packages/brand/brand-assets:
     dependencies:

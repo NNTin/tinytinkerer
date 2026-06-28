@@ -204,9 +204,6 @@ describe('host server', () => {
     const widgetResponse = await fetch(`${sharedHostServer.url}/widget`, { redirect: 'manual' })
     const mobileResponse = await fetch(`${sharedHostServer.url}/mobile`, { redirect: 'manual' })
     const canvasResponse = await fetch(`${sharedHostServer.url}/canvas`, { redirect: 'manual' })
-    const excalidrawResponse = await fetch(`${sharedHostServer.url}/excalidraw-app`, {
-      redirect: 'manual'
-    })
 
     expect(webResponse.status).toBe(301)
     expect(webResponse.headers.get('location')).toBe('/web/')
@@ -216,8 +213,6 @@ describe('host server', () => {
     expect(mobileResponse.headers.get('location')).toBe('/mobile/')
     expect(canvasResponse.status).toBe(301)
     expect(canvasResponse.headers.get('location')).toBe('/canvas/')
-    expect(excalidrawResponse.status).toBe(301)
-    expect(excalidrawResponse.headers.get('location')).toBe('/excalidraw-app/')
   })
 
   it('serves the web app from /web/ with the web base path intact', async () => {
@@ -247,22 +242,25 @@ describe('host server', () => {
     expect(body).toContain('src="/widget/src/main.tsx"')
   })
 
-  it('serves the canvas shell and Excalidraw iframe app on separate mounts', async () => {
+  it('serves the Excalidraw iframe entry inside the canvas mount', async () => {
     if (!sharedHostServer) {
       throw new Error('Expected the shared host server to be available.')
     }
 
     const canvasResponse = await fetch(`${sharedHostServer.url}/canvas/`)
     const canvasBody = await canvasResponse.text()
-    const excalidrawResponse = await fetch(`${sharedHostServer.url}/excalidraw-app/`)
+    const excalidrawResponse = await fetch(`${sharedHostServer.url}/canvas/excalidraw-app/`)
     const excalidrawBody = await excalidrawResponse.text()
 
     expect(canvasResponse.status).toBe(200)
     expect(canvasBody).toContain('src="/canvas/@vite/client"')
     expect(canvasBody).toContain('src="/canvas/src/main.tsx"')
     expect(excalidrawResponse.status).toBe(200)
-    expect(excalidrawBody).toContain('src="/excalidraw-app/@vite/client"')
-    expect(excalidrawBody).toContain('src="/excalidraw-app/src/main.tsx"')
+    expect(excalidrawBody).toContain('src="/canvas/@vite/client"')
+    expect(excalidrawBody).toContain('src="./main.tsx"')
+
+    const standaloneResponse = await fetch(`${sharedHostServer.url}/excalidraw-app/`)
+    expect(standaloneResponse.status).toBe(404)
   })
 
   it('serves the mobile manifest through the unified host', async () => {

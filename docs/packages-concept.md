@@ -33,6 +33,7 @@ When shared code appears, place it according to what kind of thing it is:
 - headless product logic -> `packages/app-core`
 - browser-specific shared logic, shell-facing hooks, shared browser components, bootstrap helpers, and shared browser styles -> `packages/app-browser`
 - product-agnostic iframe transport and hosting -> `packages/app-bridge` / `packages/app-harness`
+- isolated third-party iframe runtime used by one harness -> `packages/app/<app>-app`
 - app-specific bridge input/result contracts -> `packages/shared/<app>-protocol`
 - stateless visual atoms and primitives -> `packages/ui`
 - assistant-content parsing, AST, rendering, and specialized content runtimes -> `packages/content-*`
@@ -156,7 +157,8 @@ Must not own:
 ### App harness packages
 
 - `app-bridge` owns the product-agnostic, versioned transport, correlation, timeouts, handshake capability checks, and schema-bound verb execution.
-- `app-harness` owns sandboxed iframe lifecycle, bridge handles, verb-to-tool adaptation, shared harness layout, and deployment-safe sibling app URL resolution.
+- `app-harness` owns sandboxed iframe lifecycle, bridge handles, verb-to-tool adaptation, shared harness layout, and deployment-safe embedded app URL resolution.
+- An `<app>-app` package owns one harness's third-party iframe runtime and is imported only by that harness's declared secondary entry.
 - Each `<app>-protocol` package owns only that app's Zod input/result contracts, inferred types, identity, and advertised verb names.
 
 The harness shell and iframe app declare architecture-role metadata in their manifests. This lets the boundary checker apply the generic layer rules to every future app without learning concrete package names.
@@ -227,6 +229,10 @@ Introduce a new package only when all of the following are true:
 - the feature is expected to be reused by at least two apps or by multiple layers
 - the feature would otherwise create duplicated logic or duplicated policy
 - the feature has a clear ownership boundary
+
+An isolated iframe runtime is the deliberate single-consumer exception: the package boundary
+keeps third-party code, bridge handlers, and compliance ownership out of the deployable shell,
+while the shell owns the route and build entry.
 
 Do not create a package for trivial wrappers or one-off helpers. The point is to prevent meaningful duplication, not to atomize the repo.
 

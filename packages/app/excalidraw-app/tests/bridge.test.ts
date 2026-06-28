@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CaptureUpdateAction } from '@excalidraw/excalidraw'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
-import { createExcalidrawHandlers } from './bridge'
+import { createExcalidrawHandlers } from '../src/bridge'
 
 vi.mock('@excalidraw/excalidraw', () => ({
   CaptureUpdateAction: { IMMEDIATELY: 'immediately' },

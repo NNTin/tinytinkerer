@@ -10,14 +10,14 @@ TinyTinkerer is a multi-app harness: the chat assistant is the through-line, and
 
 ## Pieces
 
-| Piece           | Package / location                                        | Responsibility                                                                                                                                                                      |
-| --------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Wire protocol   | `@tinytinkerer/app-bridge` (`packages/shared/app-bridge`) | Product-agnostic message envelope + correlation/timeouts + the client/server helpers and DOM transports. Knows nothing about any specific app.                                      |
-| Hosting         | `@tinytinkerer/app-harness` (`packages/app/app-harness`)  | `<AppFrame>` (sandboxed iframe host + handshake + lifecycle), `createAppBridgeHandle`, `appToolsFromVerbs` (verbs → always-on `appTools`), `<HarnessShell>` (frame + chat overlay). |
-| Tool seam       | `@tinytinkerer/app-browser`                               | `createBrowserShellRoot({ appTools })` registers always-on, schema-driven tools intrinsic to a shell (no activation surface); web/widget/mobile omit it.                            |
-| Harness shell   | `apps/<app>` (e.g. `apps/canvas`)                         | Thin: points `<AppFrame>` at its app page and declares its verb→tool mapping. No third-party deps.                                                                                  |
-| Iframe app      | `apps/<app>-app` (e.g. `apps/excalidraw-app`)             | First-party wrapper that mounts the third-party component and implements the bridge **server**. Owns all heavy/third-party deps, on its own build.                                  |
-| Verb vocabulary | app-owned protocol package (e.g. `excalidraw-protocol`)   | Zod input/result contracts and advertised verb names, imported by both the shell and iframe app — one source of truth.                                                              |
+| Piece           | Package / location                                            | Responsibility                                                                                                                                                                      |
+| --------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Wire protocol   | `@tinytinkerer/app-bridge` (`packages/shared/app-bridge`)     | Product-agnostic message envelope + correlation/timeouts + the client/server helpers and DOM transports. Knows nothing about any specific app.                                      |
+| Hosting         | `@tinytinkerer/app-harness` (`packages/app/app-harness`)      | `<AppFrame>` (sandboxed iframe host + handshake + lifecycle), `createAppBridgeHandle`, `appToolsFromVerbs` (verbs → always-on `appTools`), `<HarnessShell>` (frame + chat overlay). |
+| Tool seam       | `@tinytinkerer/app-browser`                                   | `createBrowserShellRoot({ appTools })` registers always-on, schema-driven tools intrinsic to a shell (no activation surface); web/widget/mobile omit it.                            |
+| Harness shell   | `apps/<app>` (e.g. `apps/canvas`)                             | Thin: owns the deployable route and secondary iframe HTML entry, points `<AppFrame>` at that entry, and declares its verb→tool mapping. No direct third-party deps.                 |
+| Iframe app      | `packages/app/<app>-app` (e.g. `packages/app/excalidraw-app`) | Canvas-only package that mounts the third-party component and implements the bridge **server**. Owns all heavy/third-party deps in the secondary entry graph.                       |
+| Verb vocabulary | app-owned protocol package (e.g. `excalidraw-protocol`)       | Zod input/result contracts and advertised verb names, imported by both the shell and iframe app — one source of truth.                                                              |
 
 ## The wire protocol (`app-bridge`)
 
@@ -54,4 +54,4 @@ The iframe is mounted `sandbox="allow-scripts"` **without** `allow-same-origin`,
 
 `targetOrigin` is `'*'` on every `postMessage`: this is safe because bridge payloads carry no harness secrets (only verb names and app data). This mirrors the long-standing approach in `app-browser`'s `sandbox-executor.ts`.
 
-Consequently, all of an app's heavy/third-party code — and any advisory (GHSA) or license allow-list it needs — lives in the `apps/<app>-app` build, off the chat shell's origin and bundle.
+Consequently, all of an app's heavy/third-party code — and any advisory (GHSA) or license allow-list it needs — lives in the `packages/app/<app>-app` package and its harness-owned iframe entry graph, outside the chat shell's startup graph.

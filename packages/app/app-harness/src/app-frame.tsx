@@ -9,7 +9,7 @@ import type { AppBridgeHandle } from './bridge-handle'
 export type AppFrameStatus = 'loading' | 'ready' | 'version-mismatch' | 'error'
 
 export type AppFrameProps = {
-  // The iframe app page, served same-origin by the host (e.g. "/excalidraw-app/").
+  // The iframe app page, served under its harness route (e.g. "/canvas/excalidraw-app/").
   src: string
   // The id the harness expects the app to announce; pins the handshake.
   appId: string

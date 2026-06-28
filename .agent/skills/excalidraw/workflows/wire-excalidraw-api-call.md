@@ -5,7 +5,7 @@
 2. Define or extend the input and result schemas in
    `packages/shared/excalidraw-protocol`; keep it model-friendly and serializable.
 3. Bind the contract with `defineBridgeVerb` in
-   `apps/excalidraw-app/src/bridge.ts`. The bridge validates before and after app
+   `packages/app/excalidraw-app/src/bridge.ts`. The bridge validates before and after app
    code; cap READ output and use
    `CaptureUpdateAction.IMMEDIATELY` for undoable WRITE operations.
 4. Declare the verb description in `apps/canvas/src/canvas-runtime.ts`. Do not

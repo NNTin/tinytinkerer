@@ -14,4 +14,4 @@ export type { AppFrameProps, AppFrameStatus } from './app-frame'
 export { HarnessShell } from './harness-shell'
 export type { HarnessShellProps } from './harness-shell'
 
-export { resolveSiblingAppUrl } from './app-url'
+export { resolveEmbeddedAppUrl } from './app-url'

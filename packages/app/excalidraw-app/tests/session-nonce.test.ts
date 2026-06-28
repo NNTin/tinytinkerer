@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readSessionNonce } from './session-nonce'
+import { readSessionNonce } from '../src/session-nonce'
 
 describe('Excalidraw app session nonce', () => {
   it('reads and decodes the harness nonce from the URL fragment', () => {

@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { resolveSiblingAppUrl } from '../src/app-url'
+import { resolveEmbeddedAppUrl } from '../src/app-url'
 
-describe('resolveSiblingAppUrl', () => {
-  it('resolves root and nested deployment siblings', () => {
-    expect(resolveSiblingAppUrl('/canvas/', 'excalidraw-app')).toBe('/excalidraw-app/')
-    expect(resolveSiblingAppUrl('/tinytinkerer/canvas/', '/excalidraw-app/')).toBe(
-      '/tinytinkerer/excalidraw-app/'
+describe('resolveEmbeddedAppUrl', () => {
+  it('resolves root and nested deployment children', () => {
+    expect(resolveEmbeddedAppUrl('/canvas/', 'excalidraw-app')).toBe('/canvas/excalidraw-app/')
+    expect(resolveEmbeddedAppUrl('/tinytinkerer/canvas/', '/excalidraw-app/')).toBe(
+      '/tinytinkerer/canvas/excalidraw-app/'
     )
   })
 
   it('rejects ambiguous relative or empty paths', () => {
-    expect(() => resolveSiblingAppUrl('canvas/', 'excalidraw-app')).toThrow()
-    expect(() => resolveSiblingAppUrl('/canvas/', '')).toThrow()
+    expect(() => resolveEmbeddedAppUrl('canvas/', 'excalidraw-app')).toThrow()
+    expect(() => resolveEmbeddedAppUrl('/canvas', 'excalidraw-app')).toThrow()
+    expect(() => resolveEmbeddedAppUrl('/canvas/', '')).toThrow()
   })
 })

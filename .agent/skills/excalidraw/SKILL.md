@@ -29,7 +29,7 @@ assistant verbs connecting them. Read `../../README.md` first for the WAT framew
 
 ## When to use
 
-- Changing `apps/excalidraw-app` or `apps/canvas`.
+- Changing `packages/app/excalidraw-app` or `apps/canvas`.
 - Adding or modifying the `draw`, `read`, or `clear` assistant verbs.
 - Using the Excalidraw imperative API or changing its bundle boundary.
 
@@ -39,7 +39,7 @@ assistant verbs connecting them. Read `../../README.md` first for the WAT framew
   advertised verbs, and Zod input/result contracts used by both sides.
 - `apps/canvas` is a thin browser shell. It declares model-facing verb
   descriptions, converts them to app tools, and renders `HarnessShell`.
-- `apps/excalidraw-app` owns `@excalidraw/excalidraw`, mounts the component, and
+- `packages/app/excalidraw-app` owns `@excalidraw/excalidraw`, mounts the component, and
   binds inferred handlers with `defineBridgeVerb`.
 - The iframe is mounted with `sandbox="allow-scripts"` and communicates only via
   `@tinytinkerer/app-bridge`, correlated by parent/frame identity and the nonce in
@@ -47,7 +47,8 @@ assistant verbs connecting them. Read `../../README.md` first for the WAT framew
 
 Never import Excalidraw from the canvas shell or another chat shell. All of its
 runtime code, license exceptions, advisory exceptions, and bundle tests belong to
-`apps/excalidraw-app`.
+`packages/app/excalidraw-app`. Canvas is its only consumer, through the declared
+secondary iframe entry at `/canvas/excalidraw-app/`.
 
 ## Reference workflow
 

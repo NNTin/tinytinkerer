@@ -16,7 +16,7 @@ const KEY_DOCS = [
 ]
 
 console.log(`reference clone : ${REF}`)
-console.log(`npm package     : ${PACKAGE}@${PINNED_NPM_VERSION} (apps/excalidraw-app)`)
+console.log(`npm package     : ${PACKAGE}@${PINNED_NPM_VERSION} (packages/app/excalidraw-app)`)
 
 if (!existsSync(REF)) {
   console.error(

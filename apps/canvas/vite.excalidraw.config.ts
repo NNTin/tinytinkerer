@@ -1,16 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { fileURLToPath } from 'node:url'
 
 const deployBase = process.env.TINYTINKERER_DEPLOY_BASE?.replace(/\/+$/, '')
-const base = deployBase ? `${deployBase}/excalidraw-app/` : '/excalidraw-app/'
+const base = deployBase ? `${deployBase}/canvas/excalidraw-app/` : '/canvas/excalidraw-app/'
 
 export default defineConfig({
+  root: fileURLToPath(new URL('./excalidraw-app', import.meta.url)),
   base,
   plugins: [react()],
-  server: {
-    host: 'localhost'
-  },
   build: {
+    outDir: '../dist/excalidraw-app',
+    emptyOutDir: false,
     sourcemap: false,
     rollupOptions: {
       output: {

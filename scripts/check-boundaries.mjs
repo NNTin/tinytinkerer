@@ -9,10 +9,10 @@ const APP_ARCHITECTURE_ROLES = new Set([
   'browser-shell',
   'edge-service',
   'harness-shell',
-  'host-compositor',
-  'iframe-app'
+  'host-compositor'
 ])
-const ARCHITECTURE_ROLES = new Set([...APP_ARCHITECTURE_ROLES, 'app-protocol'])
+const PACKAGE_ARCHITECTURE_ROLES = new Set(['app-protocol', 'iframe-app'])
+const ARCHITECTURE_ROLES = new Set([...APP_ARCHITECTURE_ROLES, ...PACKAGE_ARCHITECTURE_ROLES])
 
 const SPECIALIZED_CONTENT_PACKAGES = new Set([
   '@tinytinkerer/content-mermaid',
@@ -230,9 +230,9 @@ function validateArchitectureMetadata(pkg) {
         `${relative(rootDir, pkg.dir)}/package.json: apps must declare tinytinkerer architecture metadata`
       )
     }
-    if (pkg.name?.endsWith('-protocol')) {
+    if (pkg.name?.endsWith('-protocol') || pkg.name?.endsWith('-app')) {
       errors.push(
-        `${relative(rootDir, pkg.dir)}/package.json: protocol packages must declare tinytinkerer architecture metadata`
+        `${relative(rootDir, pkg.dir)}/package.json: app protocol/runtime packages must declare tinytinkerer architecture metadata`
       )
     }
     return
@@ -261,23 +261,46 @@ function validateArchitectureMetadata(pkg) {
     return
   }
 
+  if (metadata.architectureRole === 'iframe-app') {
+    if (pkg.kind !== 'package') {
+      errors.push(
+        `${relative(rootDir, pkg.dir)}/package.json: iframe-app is a package-only architecture role`
+      )
+    }
+    validateProtocolPackage(pkg, metadata)
+    if (metadata.iframeAppPackage !== undefined || metadata.iframeEntry !== undefined) {
+      errors.push(
+        `${relative(rootDir, pkg.dir)}/package.json: iframe-app packages must not declare harness iframe metadata`
+      )
+    }
+    return
+  }
+
   if (!APP_ARCHITECTURE_ROLES.has(metadata.architectureRole) || pkg.kind !== 'app') {
     errors.push(
       `${relative(rootDir, pkg.dir)}/package.json: ${metadata.architectureRole} is an app-only architecture role`
     )
   }
 
-  const requiresProtocol =
-    metadata.architectureRole === 'harness-shell' || metadata.architectureRole === 'iframe-app'
+  const requiresProtocol = metadata.architectureRole === 'harness-shell'
   if (!requiresProtocol) {
-    if (metadata.protocolPackage !== undefined) {
+    if (
+      metadata.protocolPackage !== undefined ||
+      metadata.iframeAppPackage !== undefined ||
+      metadata.iframeEntry !== undefined
+    ) {
       errors.push(
-        `${relative(rootDir, pkg.dir)}/package.json: ${metadata.architectureRole} must not declare protocolPackage`
+        `${relative(rootDir, pkg.dir)}/package.json: ${metadata.architectureRole} must not declare harness protocol/iframe metadata`
       )
     }
     return
   }
 
+  validateProtocolPackage(pkg, metadata)
+  validateHarnessIframePackage(pkg, metadata)
+}
+
+function validateProtocolPackage(pkg, metadata) {
   const protocolPkg = workspaceByName.get(metadata.protocolPackage)
   if (!protocolPkg) {
     errors.push(
@@ -288,6 +311,36 @@ function validateArchitectureMetadata(pkg) {
   if (protocolPkg.manifest.tinytinkerer?.architectureRole !== 'app-protocol') {
     errors.push(
       `${relative(rootDir, pkg.dir)}/package.json: protocolPackage ${protocolPkg.name} must declare the app-protocol architecture role`
+    )
+  }
+}
+
+function validateHarnessIframePackage(pkg, metadata) {
+  const iframePkg = workspaceByName.get(metadata.iframeAppPackage)
+  if (!iframePkg || iframePkg.kind !== 'package') {
+    errors.push(
+      `${relative(rootDir, pkg.dir)}/package.json: harness-shell must declare a workspace iframeAppPackage`
+    )
+    return
+  }
+  if (iframePkg.manifest.tinytinkerer?.architectureRole !== 'iframe-app') {
+    errors.push(
+      `${relative(rootDir, pkg.dir)}/package.json: iframeAppPackage ${iframePkg.name} must declare the iframe-app architecture role`
+    )
+  }
+  if (iframePkg.manifest.tinytinkerer?.protocolPackage !== metadata.protocolPackage) {
+    errors.push(
+      `${relative(rootDir, pkg.dir)}/package.json: harness shell and iframe app package must use the same protocolPackage`
+    )
+  }
+  if (
+    typeof metadata.iframeEntry !== 'string' ||
+    metadata.iframeEntry.startsWith('/') ||
+    metadata.iframeEntry.split('/').includes('..') ||
+    !sourceExtensions.has(extname(metadata.iframeEntry))
+  ) {
+    errors.push(
+      `${relative(rootDir, pkg.dir)}/package.json: harness-shell must declare iframeEntry as a relative source file`
     )
   }
 }
@@ -358,6 +411,25 @@ function validateBoundary(sourcePkg, target, filePath) {
   }
 
   const architecture = sourcePkg.manifest.tinytinkerer
+  const targetArchitecture = targetPkg.manifest.tinytinkerer
+
+  if (targetArchitecture?.architectureRole === 'iframe-app') {
+    if (
+      architecture?.architectureRole !== 'harness-shell' ||
+      architecture.iframeAppPackage !== targetPkg.name
+    ) {
+      errors.push(
+        `${sourceLabel}: iframe app packages may be consumed only by their declaring harness shell (${sourcePkg.name} -> ${targetPkg.name})`
+      )
+    } else if (
+      sourceLabel !== relative(rootDir, join(sourcePkg.dir, 'package.json')) &&
+      relative(sourcePkg.dir, filePath).split('\\').join('/') !== architecture.iframeEntry
+    ) {
+      errors.push(
+        `${sourceLabel}: ${targetPkg.name} may be imported only from the declared iframeEntry (${architecture.iframeEntry})`
+      )
+    }
+  }
 
   if (architecture?.architectureRole === 'browser-shell') {
     if (!isBrowserAppDependencyAllowed(targetPkg)) {
@@ -373,7 +445,8 @@ function validateBoundary(sourcePkg, target, filePath) {
       '@tinytinkerer/app-browser',
       '@tinytinkerer/app-harness',
       '@tinytinkerer/ui',
-      architecture.protocolPackage
+      architecture.protocolPackage,
+      architecture.iframeAppPackage
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(

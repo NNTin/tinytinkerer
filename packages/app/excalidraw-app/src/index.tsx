@@ -1,21 +1,20 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import type { Root } from 'react-dom/client'
 import { Excalidraw } from '@excalidraw/excalidraw'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { createExcalidrawBridge } from './bridge'
 import { readSessionNonce } from './session-nonce'
-import './index.css'
+import './styles.css'
 
-const sessionNonce = readSessionNonce(window.location.hash)
-
-const ExcalidrawApp = (): React.JSX.Element => {
+const ExcalidrawApp = ({ sessionNonce }: { sessionNonce: string | null }): React.JSX.Element => {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null)
 
   useEffect(() => {
     if (!api || !sessionNonce) return
     const server = createExcalidrawBridge(api, sessionNonce)
     return () => server.dispose()
-  }, [api])
+  }, [api, sessionNonce])
 
   if (!sessionNonce) {
     return (
@@ -32,11 +31,15 @@ const ExcalidrawApp = (): React.JSX.Element => {
   )
 }
 
-const root = document.getElementById('root')
-if (!root) throw new Error('Missing #root element.')
-
-createRoot(root).render(
-  <StrictMode>
-    <ExcalidrawApp />
-  </StrictMode>
-)
+export const mountExcalidrawApp = (
+  rootElement: HTMLElement,
+  locationHash: string
+): (() => void) => {
+  const root: Root = createRoot(rootElement)
+  root.render(
+    <StrictMode>
+      <ExcalidrawApp sessionNonce={readSessionNonce(locationHash)} />
+    </StrictMode>
+  )
+  return () => root.unmount()
+}

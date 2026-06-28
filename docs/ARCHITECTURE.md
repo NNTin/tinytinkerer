@@ -6,7 +6,7 @@ Do NOT delete above lines.
 
 # Architecture
 
-This document describes the current TinyTinkerer architecture as it exists in the repo today. The frontend is split into three thin shells, a host-owned compositor, a shared browser composition package, and a dedicated assistant-content platform.
+This document describes the current TinyTinkerer architecture as it exists in the repo today. The frontend is split into thin browser and harness shells, a host-owned compositor, a shared browser composition package, and a dedicated assistant-content platform.
 
 See also:
 
@@ -25,8 +25,8 @@ The deployed and local host serves the frontend entrypoints:
 - `/` renders the host-owned composite workspace.
 - `/web/` renders the full web shell.
 - `/mobile/` renders the mobile shell.
-- `/canvas/` renders the thin Excalidraw harness shell.
-- `/excalidraw-app/` renders the isolated Excalidraw iframe app.
+- `/canvas/` renders the thin Excalidraw harness shell and owns its internal
+  `/canvas/excalidraw-app/` iframe entry.
 - `/widget/` renders the standalone widget shell.
 
 The root compositor is not a fourth app. It is a thin host page that embeds the real shells:
@@ -42,7 +42,7 @@ The root compositor is not a fourth app. It is a thin host page that embeds the 
 Beyond the chat shells, the host also serves **harness apps**: a chat assistant that drives an embedded third-party application living in a sandboxed iframe. Each harness app is two pieces composed at routes by the host:
 
 - a thin **harness shell** (e.g. `/canvas/`) — the chat overlay plus a sandboxed `<AppFrame>`; carries no third-party dependencies.
-- an **iframe app page** (e.g. `/excalidraw-app/`) — a first-party wrapper that mounts the third-party component and answers the bridge; owns all the heavy/third-party dependencies, on its own build, off the chat shell's bundle.
+- an **iframe app package and page entry** (e.g. `@tinytinkerer/excalidraw-app` at `/canvas/excalidraw-app/`) — a first-party wrapper that mounts the third-party component and answers the bridge; owns all heavy/third-party dependencies in a separate entry graph, off the chat shell's startup graph.
 
 The shell drives the app over a shared, versioned, Zod-typed `postMessage` protocol (`@tinytinkerer/app-bridge`), hosted by `@tinytinkerer/app-harness`. Adding the next app is "new iframe app page + thin harness shell + declare its verbs," not a bespoke integration. See [app-harness.md](./app-harness.md).
 
@@ -57,7 +57,6 @@ flowchart LR
     widget["@tinytinkerer/widget<br/>embeddable browser UI shell"]
     mobile["@tinytinkerer/mobile<br/>mobile PWA shell"]
     canvas["@tinytinkerer/canvas<br/>Excalidraw harness shell"]
-    excalidrawapp["@tinytinkerer/excalidraw-app<br/>isolated iframe app"]
     edge["@tinytinkerer/edge<br/>stateless edge backend"]
   end
 
@@ -80,6 +79,7 @@ flowchart LR
     appbrowser["@tinytinkerer/app-browser<br/>browser adapters + shell-facing exports"]
     appbridge["@tinytinkerer/app-bridge<br/>typed postMessage protocol (leaf)"]
     appharness["@tinytinkerer/app-harness<br/>iframe host + bridge client + appTools seam"]
+    excalidrawapp["@tinytinkerer/excalidraw-app<br/>isolated iframe package"]
     excalidrawprotocol["@tinytinkerer/excalidraw-protocol<br/>draw/read/clear contracts"]
     ui["@tinytinkerer/ui<br/>presentational React primitives"]
     sentrytelemetry["@tinytinkerer/sentry-telemetry<br/>SDK-agnostic telemetry core"]
@@ -111,13 +111,13 @@ flowchart LR
   host --> widget
   host --> mobile
   host --> canvas
-  host --> excalidrawapp
 
   web --> common
   widget --> common
   mobile --> common
   canvas --> common
   canvas --> appharness
+  canvas --> excalidrawapp
   canvas --> excalidrawprotocol
   excalidrawapp --> appbridge
   excalidrawapp --> excalidrawprotocol
@@ -187,10 +187,10 @@ flowchart LR
   classDef coreLayer fill:#e5e7eb,stroke:#6b7280,color:#111827,stroke-width:2px;
   classDef brandLayer fill:#ffe4e6,stroke:#be123c,color:#111827,stroke-width:2px;
 
-  class web,widget,mobile,canvas,excalidrawapp,legendUiApp uiApp;
+  class web,widget,mobile,canvas,legendUiApp uiApp;
   class host,legendHost hostInfra;
   class edge,legendEdge edgeApp;
-  class common,appbrowser,appharness,legendBrowser browserAssembly;
+  class common,appbrowser,appharness,excalidrawapp,legendBrowser browserAssembly;
   class ui,legendUi uiPrimitives;
   class contentcore,contentmarkdown,contentreact,contentmermaid,contentwireframe,contentimage,contentcode,contentcallout,contentlinkcard,contenttable,legendFeature sharedFeature;
   class contracts,appbridge,excalidrawprotocol,legendContracts contractsLayer;
@@ -277,36 +277,36 @@ These conventions are gated in CI, not left to reviewers:
 
 ## Layers
 
-| Layer                       | Purpose                               | Owns                                                                                                                                                                                                                                        | Must not own                                                                    |
-| --------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `apps/host`                 | frontend composition infrastructure   | dev routing, build composition, root compositor page                                                                                                                                                                                        | shared runtime logic, app feature code                                          |
-| `apps/web`                  | full browser shell                    | routes, page composition, shell-local layout                                                                                                                                                                                                | copied shared runtime logic, direct lower-layer imports                         |
-| `apps/widget`               | embeddable browser shell              | host integration, compact layout, widget window UX                                                                                                                                                                                          | copied shared runtime logic, direct lower-layer imports                         |
-| `apps/mobile`               | mobile browser shell                  | PWA shell, install affordances, narrow-screen layout                                                                                                                                                                                        | copied shared runtime logic, direct lower-layer imports                         |
-| `apps/edge`                 | stateless backend boundary            | HTTP endpoints, upstream normalization, transport concerns                                                                                                                                                                                  | browser APIs, UI logic                                                          |
-| `packages/contracts`        | foundational shared schemas and types | Zod schemas, inferred types, canonical content model, DTOs, the plugin SDK (plugin contract + `Tool` interface)                                                                                                                             | runtime orchestration, UI code                                                  |
-| `packages/agent-core`       | product-agnostic runtime abstractions | provider/tool abstractions, runtime mechanics, the plugin runtime (registry + hooks) and tool registry — re-exports the plugin contract + `Tool` interface from contracts                                                                   | browser code, app-specific behavior                                             |
-| `packages/plugins/*`        | optional plugin packages              | one plugin's tools and/or hooks + UI manifest over the contracts plugin contract (e.g. `plugin-feedback`, `plugin-event-logger`, `plugin-permissions`, `plugin-web-search`, `plugin-code-exec`, `plugin-browser-state`)                     | browser APIs, telemetry SDKs, app-specific UI                                   |
-| `packages/app-core`         | headless product behavior             | chat/auth/settings orchestration, projections, ports                                                                                                                                                                                        | React, browser APIs, fetch, storage adapters                                    |
-| `packages/app-browser`      | shared browser composition boundary   | browser adapters, shell bootstrap config, OAuth helpers, shell-facing hooks and components, shared browser styles, the always-on `appTools` seam on `createBrowserShellRoot`                                                                | app-specific layout, app-owned screens                                          |
-| `packages/app-bridge`       | iframe ↔ harness wire contract (leaf) | the Zod message envelope (`req`/`res`/`event`/`ready`/`hello`), request/response correlation + timeouts, the session-nonce trust model, and the transport-agnostic `createBridgeClient` / `createBridgeServer` + DOM `postMessage` adapters | any app-specific verb knowledge, React, browser product logic                   |
-| `packages/app-harness`      | iframe-app hosting boundary           | `<AppFrame>` (sandboxed iframe host + ready/version handshake + lifecycle), `createAppBridgeHandle`, `appToolsFromVerbs` (verbs → appTools), `<HarnessShell>` (frame + chat overlay), harness layout styles                                 | app domain logic, third-party app deps                                          |
-| `packages/<app>-protocol`   | app-owned bridge contract             | Zod input/result contracts, inferred types, app identity, and advertised verb names                                                                                                                                                         | iframe runtime logic, chat UI, third-party app code                             |
-| `apps/<app>` harness shell  | thin per-app chat shell               | the `<AppFrame>` target (app page URL), the app's verb→tool declarations, sandbox/origin wiring, route + boot screen                                                                                                                        | app domain logic, third-party npm deps, a parallel tool path                    |
-| `apps/<app>-app` iframe app | embedded third-party app (own build)  | the first-party wrapper that mounts the third-party component and implements the bridge **server** (verb handlers); owns ALL heavy/third-party deps, its own bundle chunking, and its own license/advisory allow-list                       | the chat runtime, `app-browser`/`app-core`/`agent-core`, harness chat UI        |
-| `packages/brand-assets`     | shared brand metadata                 | favicon, icon, manifest, and theme definitions                                                                                                                                                                                              | DOM mutation, app bootstrapping                                                 |
-| `packages/sentry-telemetry` | SDK-agnostic error-telemetry core     | PII scrubbers, `fetchWithTelemetry` + request-failure capture, the `accept` mechanism, the capture-sink indirection                                                                                                                         | a Sentry SDK runtime dependency, consent UI, runtime `Sentry.init`/`withSentry` |
-| `packages/ui`               | presentational primitives             | buttons, icons, tiny visual atoms, styling helpers                                                                                                                                                                                          | feature runtimes, orchestration                                                 |
-| `packages/content-*`        | shared content platform               | content behavior over the canonical content model, stable IDs, source-plugin contracts, React runtime + chrome, markdown parsing, specialized content plugins                                                                               | app shells, transport orchestration                                             |
+| Layer                                   | Purpose                               | Owns                                                                                                                                                                                                                                        | Must not own                                                                    |
+| --------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `apps/host`                             | frontend composition infrastructure   | dev routing, build composition, root compositor page                                                                                                                                                                                        | shared runtime logic, app feature code                                          |
+| `apps/web`                              | full browser shell                    | routes, page composition, shell-local layout                                                                                                                                                                                                | copied shared runtime logic, direct lower-layer imports                         |
+| `apps/widget`                           | embeddable browser shell              | host integration, compact layout, widget window UX                                                                                                                                                                                          | copied shared runtime logic, direct lower-layer imports                         |
+| `apps/mobile`                           | mobile browser shell                  | PWA shell, install affordances, narrow-screen layout                                                                                                                                                                                        | copied shared runtime logic, direct lower-layer imports                         |
+| `apps/edge`                             | stateless backend boundary            | HTTP endpoints, upstream normalization, transport concerns                                                                                                                                                                                  | browser APIs, UI logic                                                          |
+| `packages/contracts`                    | foundational shared schemas and types | Zod schemas, inferred types, canonical content model, DTOs, the plugin SDK (plugin contract + `Tool` interface)                                                                                                                             | runtime orchestration, UI code                                                  |
+| `packages/agent-core`                   | product-agnostic runtime abstractions | provider/tool abstractions, runtime mechanics, the plugin runtime (registry + hooks) and tool registry — re-exports the plugin contract + `Tool` interface from contracts                                                                   | browser code, app-specific behavior                                             |
+| `packages/plugins/*`                    | optional plugin packages              | one plugin's tools and/or hooks + UI manifest over the contracts plugin contract (e.g. `plugin-feedback`, `plugin-event-logger`, `plugin-permissions`, `plugin-web-search`, `plugin-code-exec`, `plugin-browser-state`)                     | browser APIs, telemetry SDKs, app-specific UI                                   |
+| `packages/app-core`                     | headless product behavior             | chat/auth/settings orchestration, projections, ports                                                                                                                                                                                        | React, browser APIs, fetch, storage adapters                                    |
+| `packages/app-browser`                  | shared browser composition boundary   | browser adapters, shell bootstrap config, OAuth helpers, shell-facing hooks and components, shared browser styles, the always-on `appTools` seam on `createBrowserShellRoot`                                                                | app-specific layout, app-owned screens                                          |
+| `packages/app-bridge`                   | iframe ↔ harness wire contract (leaf) | the Zod message envelope (`req`/`res`/`event`/`ready`/`hello`), request/response correlation + timeouts, the session-nonce trust model, and the transport-agnostic `createBridgeClient` / `createBridgeServer` + DOM `postMessage` adapters | any app-specific verb knowledge, React, browser product logic                   |
+| `packages/app-harness`                  | iframe-app hosting boundary           | `<AppFrame>` (sandboxed iframe host + ready/version handshake + lifecycle), `createAppBridgeHandle`, `appToolsFromVerbs` (verbs → appTools), `<HarnessShell>` (frame + chat overlay), harness layout styles                                 | app domain logic, third-party app deps                                          |
+| `packages/<app>-protocol`               | app-owned bridge contract             | Zod input/result contracts, inferred types, app identity, and advertised verb names                                                                                                                                                         | iframe runtime logic, chat UI, third-party app code                             |
+| `apps/<app>` harness shell              | thin per-app chat shell               | the `<AppFrame>` target (app page URL), the app's verb→tool declarations, sandbox/origin wiring, route + boot screen                                                                                                                        | app domain logic, third-party npm deps, a parallel tool path                    |
+| `packages/app/<app>-app` iframe package | embedded third-party app runtime      | the first-party wrapper that mounts the third-party component and implements the bridge **server** (verb handlers); owns ALL heavy/third-party deps, its iframe entry graph, and its license/advisory allow-list                            | the chat runtime, `app-browser`/`app-core`/`agent-core`, harness chat UI        |
+| `packages/brand-assets`                 | shared brand metadata                 | favicon, icon, manifest, and theme definitions                                                                                                                                                                                              | DOM mutation, app bootstrapping                                                 |
+| `packages/sentry-telemetry`             | SDK-agnostic error-telemetry core     | PII scrubbers, `fetchWithTelemetry` + request-failure capture, the `accept` mechanism, the capture-sink indirection                                                                                                                         | a Sentry SDK runtime dependency, consent UI, runtime `Sentry.init`/`withSentry` |
+| `packages/ui`                           | presentational primitives             | buttons, icons, tiny visual atoms, styling helpers                                                                                                                                                                                          | feature runtimes, orchestration                                                 |
+| `packages/content-*`                    | shared content platform               | content behavior over the canonical content model, stable IDs, source-plugin contracts, React runtime + chrome, markdown parsing, specialized content plugins                                                                               | app shells, transport orchestration                                             |
 
 ## Dependency Rules
 
 - Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
-- Every app and app-protocol package declares its architecture role (and protocol package where applicable) in package metadata, so `check-boundaries` governs future apps without hard-coded package names. A **harness shell** (e.g. `apps/canvas`) is a browser app that may _additionally_ depend on `@tinytinkerer/app-harness` and its app-owned protocol package. Harness shells stay thin: no third-party app deps, chat-runtime imports, or app domain logic.
+- Every app, iframe app package, and app-protocol package declares its architecture role in package metadata, so `check-boundaries` governs future apps without hard-coded package names. A **harness shell** declares its protocol, iframe package, and the single secondary entry allowed to import that package. Harness shells stay thin: no direct third-party app deps, chat-runtime imports, or app domain logic.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
 - `app-bridge` is a leaf: it may depend only on `zod` and its own local modules. It is product-agnostic — it carries no knowledge of any specific app's verbs. Per-app input/result contracts and advertised verb names live in a small app-owned protocol package (e.g. `excalidraw-protocol`) that depends on `app-bridge`. The shell uses its input schemas and required verb list; the iframe binds the same contracts to inferred handlers through `defineBridgeVerb`, so mismatches fail at handshake or validation rather than entering app code.
 - `app-harness` may depend on `app-browser` (it reuses `FloatingWidgetChat` and the `Tool` contract), `app-bridge`, and its own local modules. It must not depend on any concrete iframe app.
-- An **iframe app** (`apps/<app>-app`) may depend on `app-bridge`, its app-owned protocol package, and its third-party component libraries. It must **not** depend on `app-browser`, `app-core`, `agent-core`, or the chat runtime — it shares neither the chat shell's React tree nor its bundle, and runs at an opaque origin (sandboxed iframe). All heavy/third-party dependencies and any advisory/license allow-list they require live here, off the chat shell.
+- An **iframe app package** (`packages/app/<app>-app`) may depend on `app-bridge`, its app-owned protocol package, and its third-party component libraries. Only its declaring harness shell's iframe entry may import it. It must **not** depend on `app-browser`, `app-core`, `agent-core`, or the chat runtime; it executes in a separate opaque-origin iframe document. All heavy/third-party dependencies and any advisory/license allow-list they require live here, outside the shell startup graph.
 - `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `sentry-telemetry`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`). It must **not** statically depend on any concrete plugin package — plugins are discovered dynamically via `import.meta.glob` over `packages/plugins/*` (see [plugin-infrastructure.md](./plugin-infrastructure.md)).
 - `brand-assets` may depend on `contracts` and nothing else.
 - `sentry-telemetry` is a leaf: it may depend only on `@sentry/core` (external, types only) and its own local modules.

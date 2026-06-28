@@ -5,12 +5,14 @@
   "type": "module",
   "tinytinkerer": {
     "architectureRole": "harness-shell",
-    "protocolPackage": "@tinytinkerer/excalidraw-protocol"
+    "protocolPackage": "@tinytinkerer/excalidraw-protocol",
+    "iframeAppPackage": "@tinytinkerer/excalidraw-app",
+    "iframeEntry": "excalidraw-app/main.tsx"
   },
   "scripts": {
     "dev": "if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite",
-    "build": "if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite build",
-    "lint": "eslint src",
+    "build": "if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite build && vite build --config vite.excalidraw.config.ts",
+    "lint": "eslint src excalidraw-app",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "preview": "vite preview"
@@ -18,6 +20,7 @@
   "dependencies": {
     "@tinytinkerer/app-browser": "workspace:*",
     "@tinytinkerer/app-harness": "workspace:*",
+    "@tinytinkerer/excalidraw-app": "workspace:*",
     "@tinytinkerer/excalidraw-protocol": "workspace:*",
     "react": "19.2.6",
     "react-dom": "19.2.6",
