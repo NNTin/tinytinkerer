@@ -7,7 +7,7 @@ import type { AppBridgeHandle } from './bridge-handle'
 export type HarnessShellProps = {
   appId: string
   src: string
-  protocolVersion: number
+  appProtocolVersion: number
   expectedVerbs: readonly string[]
   // The shared bridge handle (see createAppBridgeHandle). MUST be stable.
   handle: AppBridgeHandle
@@ -26,7 +26,7 @@ export type HarnessShellProps = {
 export const HarnessShell = ({
   appId,
   src,
-  protocolVersion,
+  appProtocolVersion,
   expectedVerbs,
   handle,
   frameTitle,
@@ -39,7 +39,7 @@ export const HarnessShell = ({
       className="app-harness-frame"
       appId={appId}
       src={src}
-      protocolVersion={protocolVersion}
+      appProtocolVersion={appProtocolVersion}
       expectedVerbs={expectedVerbs}
       handle={handle}
       title={frameTitle}

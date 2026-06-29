@@ -80,7 +80,7 @@ flowchart LR
     appbridge["@tinytinkerer/app-bridge<br/>typed postMessage protocol (leaf)"]
     appharness["@tinytinkerer/app-harness<br/>iframe host + bridge client + appTools seam"]
     excalidrawapp["@tinytinkerer/excalidraw-app<br/>isolated iframe package"]
-    excalidrawprotocol["@tinytinkerer/excalidraw-protocol<br/>draw/read/clear contracts"]
+    excalidrawprotocol["@tinytinkerer/excalidraw-protocol<br/>draw/search/inspect/read/edit/clear contracts"]
     ui["@tinytinkerer/ui<br/>presentational React primitives"]
     sentrytelemetry["@tinytinkerer/sentry-telemetry<br/>SDK-agnostic telemetry core"]
 
@@ -121,7 +121,6 @@ flowchart LR
   canvas --> excalidrawprotocol
   excalidrawapp --> appbridge
   excalidrawapp --> excalidrawprotocol
-  excalidrawprotocol --> appbridge
 
   common --> ui
   common --> appbrowser
@@ -304,7 +303,7 @@ These conventions are gated in CI, not left to reviewers:
 - Browser apps (`web`, `widget`, `mobile`) may depend only on `@tinytinkerer/app-browser`, `@tinytinkerer/ui`, and their own local modules.
 - Every app, iframe app package, and app-protocol package declares its architecture role in package metadata, so `check-boundaries` governs future apps without hard-coded package names. A **harness shell** declares its protocol, iframe package, and the single secondary entry allowed to import that package. Harness shells stay thin: no direct third-party app deps, chat-runtime imports, or app domain logic.
 - Browser apps must not import `contracts`, `app-core`, `agent-core`, or any `content-*` package directly.
-- `app-bridge` is a leaf: it may depend only on `zod` and its own local modules. It is product-agnostic — it carries no knowledge of any specific app's verbs. Per-app input/result contracts and advertised verb names live in a small app-owned protocol package (e.g. `excalidraw-protocol`) that depends on `app-bridge`. The shell uses its input schemas and required verb list; the iframe binds the same contracts to inferred handlers through `defineBridgeVerb`, so mismatches fail at handshake or validation rather than entering app code.
+- `app-bridge` is a leaf: it may depend only on `zod` and its own local modules. It is product-agnostic — it carries no knowledge of any specific app's verbs. Per-app input/result contracts and advertised verb names live in an independent, small app-owned protocol package (e.g. `excalidraw-protocol`). The generic bridge envelope and each app contract have separate compatibility versions. The shell uses the app package's input schemas, app version, and required verb list; the iframe imports both packages and binds the contracts to inferred handlers through `defineBridgeVerb`, so mismatches fail at handshake or validation rather than entering app code.
 - `app-harness` may depend on `app-browser` (it reuses `FloatingWidgetChat` and the `Tool` contract), `app-bridge`, and its own local modules. It must not depend on any concrete iframe app.
 - An **iframe app package** (`packages/app/<app>-app`) may depend on `app-bridge`, its app-owned protocol package, and its third-party component libraries. Only its declaring harness shell's iframe entry may import it. It must **not** depend on `app-browser`, `app-core`, `agent-core`, or the chat runtime; it executes in a separate opaque-origin iframe document. All heavy/third-party dependencies and any advisory/license allow-list they require live here, outside the shell startup graph.
 - `app-browser` may depend on `app-core`, `brand-assets`, `contracts`, `sentry-telemetry`, `content-react`, and the outward-facing content packages (`content-markdown`, `content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`). It must **not** statically depend on any concrete plugin package — plugins are discovered dynamically via `import.meta.glob` over `packages/plugins/*` (see [plugin-infrastructure.md](./plugin-infrastructure.md)).

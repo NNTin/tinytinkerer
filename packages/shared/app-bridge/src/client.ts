@@ -1,4 +1,4 @@
-import { bridgeMessageSchema } from './protocol'
+import { APP_BRIDGE_PROTOCOL_VERSION, bridgeMessageSchema } from './protocol'
 import type { BridgeTransport } from './transport'
 
 // Thrown when the app's `ready` handshake advertises a protocol version the
@@ -29,9 +29,24 @@ export class BridgeCapabilityMismatchError extends Error {
   }
 }
 
+export class AppProtocolVersionMismatchError extends Error {
+  readonly expected: number
+  readonly received: number
+
+  constructor(expected: number, received: number) {
+    super(
+      `app-bridge: app protocol version mismatch (harness expected ${expected}, app reported ${received})`
+    )
+    this.name = 'AppProtocolVersionMismatchError'
+    this.expected = expected
+    this.received = received
+  }
+}
+
 export type BridgeHandshake = {
   appId: string
   protocolVersion: number
+  appProtocolVersion: number
   verbs: readonly string[]
 }
 
@@ -49,8 +64,10 @@ export type BridgeClient = {
 }
 
 export type CreateBridgeClientOptions = {
-  // The version the harness speaks; compared against the app's `ready`.
-  protocolVersion: number
+  // The generic bridge envelope version. Override only in compatibility tests.
+  protocolVersion?: number
+  // The independently versioned contract spoken by the embedded app.
+  appProtocolVersion: number
   // The per-mount nonce this client accepts (and stamps on outbound messages).
   sessionNonce: string
   // When set, a `ready` from a different appId rejects `ready` (defends against a
@@ -78,6 +95,7 @@ export const createBridgeClient = (
   options: CreateBridgeClientOptions
 ): BridgeClient => {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const protocolVersion = options.protocolVersion ?? APP_BRIDGE_PROTOCOL_VERSION
   const generateId = options.generateId ?? (() => crypto.randomUUID())
 
   const pending = new Map<string, PendingRequest>()
@@ -100,6 +118,9 @@ export const createBridgeClient = (
     const message = parsed.data
     // Drop anything not stamped with our session's nonce.
     if (message.sessionNonce !== options.sessionNonce) return
+    // `ready` must be inspected so it can reject with a useful mismatch. Other
+    // messages from a different generic envelope version are never processed.
+    if (message.kind !== 'ready' && message.protocolVersion !== protocolVersion) return
 
     if (message.kind === 'ready') {
       if (readySettled) return
@@ -112,10 +133,18 @@ export const createBridgeClient = (
         )
         return
       }
-      if (message.protocolVersion !== options.protocolVersion) {
+      if (message.protocolVersion !== protocolVersion) {
+        readySettled = true
+        rejectReady(new BridgeVersionMismatchError(protocolVersion, message.protocolVersion))
+        return
+      }
+      if (message.appProtocolVersion !== options.appProtocolVersion) {
         readySettled = true
         rejectReady(
-          new BridgeVersionMismatchError(options.protocolVersion, message.protocolVersion)
+          new AppProtocolVersionMismatchError(
+            options.appProtocolVersion,
+            message.appProtocolVersion
+          )
         )
         return
       }
@@ -132,6 +161,7 @@ export const createBridgeClient = (
       resolveReady({
         appId: message.appId,
         protocolVersion: message.protocolVersion,
+        appProtocolVersion: message.appProtocolVersion,
         verbs: message.verbs
       })
       return
@@ -166,7 +196,7 @@ export const createBridgeClient = (
   try {
     transport.post({
       kind: 'hello',
-      protocolVersion: options.protocolVersion,
+      protocolVersion,
       sessionNonce: options.sessionNonce
     })
   } catch {
@@ -187,7 +217,7 @@ export const createBridgeClient = (
           id,
           verb,
           payload: payload ?? null,
-          protocolVersion: options.protocolVersion,
+          protocolVersion,
           sessionNonce: options.sessionNonce
         })
       } catch (error) {

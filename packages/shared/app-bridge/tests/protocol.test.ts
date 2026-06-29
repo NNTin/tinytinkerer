@@ -29,6 +29,7 @@ describe('bridgeMessageSchema', () => {
         ...base,
         kind: 'ready',
         appId: 'excalidraw',
+        appProtocolVersion: 2,
         verbs: ['draw']
       }).success
     ).toBe(true)

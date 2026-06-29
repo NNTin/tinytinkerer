@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "tinytinkerer": {
     "architectureRole": "app-protocol"
   },
@@ -21,7 +22,6 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tinytinkerer/app-bridge": "workspace:*",
     "zod": "4.4.3"
   }
 }

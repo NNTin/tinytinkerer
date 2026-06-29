@@ -16,7 +16,7 @@ export const createBrowserRuntimeFactory = (options: {
   // createRuntime only forwards it to the provider when that plugin is enabled.
   captureForwardedRequest?: ForwardedRequestSink
   // App-local, always-on tools injected by the host app (e.g. a harness shell's
-  // draw/read/clear verbs). Forwarded verbatim to createRuntime; omitted by web/mobile.
+  // app-specific verbs). Forwarded verbatim to createRuntime; omitted by web/mobile.
   appTools?: Tool<unknown, unknown>[]
 }): ChatRuntimeFactory => {
   const pluginRuntime = createPluginRuntime(options.pluginModules ?? [])

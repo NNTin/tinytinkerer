@@ -25,6 +25,7 @@ const bridgeMock = vi.hoisted(() => {
 
 vi.mock('@tinytinkerer/app-bridge', () => ({
   BridgeVersionMismatchError: bridgeMock.BridgeVersionMismatchError,
+  AppProtocolVersionMismatchError: bridgeMock.BridgeVersionMismatchError,
   iframeClientTransport: () => ({ post: () => {}, subscribe: () => () => {} }),
   createBridgeClient: () => ({
     ready: bridgeMock.ready,
@@ -49,7 +50,7 @@ describe('AppFrame', () => {
       <AppFrame
         src="/excalidraw-app/"
         appId="excalidraw"
-        protocolVersion={1}
+        appProtocolVersion={2}
         expectedVerbs={['draw']}
         handle={handle}
         title="Excalidraw"
@@ -62,14 +63,19 @@ describe('AppFrame', () => {
   })
 
   it('populates the handle and reports ready on a successful handshake', async () => {
-    bridgeMock.ready = Promise.resolve({ appId: 'excalidraw', protocolVersion: 1, verbs: ['draw'] })
+    bridgeMock.ready = Promise.resolve({
+      appId: 'excalidraw',
+      protocolVersion: 2,
+      appProtocolVersion: 2,
+      verbs: ['draw']
+    })
     const handle = createAppBridgeHandle()
     const onStatusChange = vi.fn()
     render(
       <AppFrame
         src="/excalidraw-app/"
         appId="excalidraw"
-        protocolVersion={1}
+        appProtocolVersion={2}
         expectedVerbs={['draw']}
         handle={handle}
         title="Excalidraw"
@@ -91,7 +97,7 @@ describe('AppFrame', () => {
       <AppFrame
         src="/excalidraw-app/"
         appId="excalidraw"
-        protocolVersion={1}
+        appProtocolVersion={2}
         expectedVerbs={['draw']}
         handle={handle}
         title="Excalidraw"

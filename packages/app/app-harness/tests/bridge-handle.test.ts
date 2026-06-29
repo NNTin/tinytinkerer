@@ -3,7 +3,7 @@ import type { BridgeClient } from '@tinytinkerer/app-bridge'
 import { createAppBridgeHandle } from '../src/bridge-handle'
 
 const fakeClient = (request = vi.fn().mockResolvedValue('ok')): BridgeClient => ({
-  ready: Promise.resolve({ appId: 'a', protocolVersion: 1, verbs: [] }),
+  ready: Promise.resolve({ appId: 'a', protocolVersion: 2, appProtocolVersion: 2, verbs: [] }),
   request,
   on: vi.fn(() => () => {}),
   dispose: vi.fn()

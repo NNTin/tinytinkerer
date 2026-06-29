@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  AppProtocolVersionMismatchError,
   BridgeCapabilityMismatchError,
   createBridgeClient,
   BridgeVersionMismatchError
@@ -48,12 +49,14 @@ describe('app-bridge client/server round-trip', () => {
     const { harness, app } = createLinkedTransports()
     const client = createBridgeClient(harness, {
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       expectedAppId: 'excalidraw'
     })
     createBridgeServer(app, {
       appId: 'excalidraw',
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       handlers: {
         echo: (payload) => ({ echoed: payload })
@@ -61,7 +64,12 @@ describe('app-bridge client/server round-trip', () => {
     })
 
     const handshake = await client.ready
-    expect(handshake).toEqual({ appId: 'excalidraw', protocolVersion: VERSION, verbs: ['echo'] })
+    expect(handshake).toEqual({
+      appId: 'excalidraw',
+      protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
+      verbs: ['echo']
+    })
 
     await expect(client.request('echo', { a: 1 })).resolves.toEqual({ echoed: { a: 1 } })
     client.dispose()
@@ -69,10 +77,15 @@ describe('app-bridge client/server round-trip', () => {
 
   it('rejects a request when the handler throws', async () => {
     const { harness, app } = createLinkedTransports()
-    const client = createBridgeClient(harness, { protocolVersion: VERSION, sessionNonce: NONCE })
+    const client = createBridgeClient(harness, {
+      protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
+      sessionNonce: NONCE
+    })
     createBridgeServer(app, {
       appId: 'a',
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       handlers: {
         boom: () => {
@@ -86,11 +99,16 @@ describe('app-bridge client/server round-trip', () => {
 
   it('validates a verb payload before invoking its handler', async () => {
     const { harness, app } = createLinkedTransports()
-    const client = createBridgeClient(harness, { protocolVersion: VERSION, sessionNonce: NONCE })
+    const client = createBridgeClient(harness, {
+      protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
+      sessionNonce: NONCE
+    })
     const handler = vi.fn((payload: unknown) => payload)
     createBridgeServer(app, {
       appId: 'a',
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       handlers: {
         draw: defineBridgeVerb(
@@ -114,10 +132,15 @@ describe('app-bridge client/server round-trip', () => {
 
   it('rejects a handler result that violates the verb contract', async () => {
     const { harness, app } = createLinkedTransports()
-    const client = createBridgeClient(harness, { protocolVersion: VERSION, sessionNonce: NONCE })
+    const client = createBridgeClient(harness, {
+      protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
+      sessionNonce: NONCE
+    })
     createBridgeServer(app, {
       appId: 'a',
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       handlers: {
         draw: defineBridgeVerb(
@@ -136,10 +159,15 @@ describe('app-bridge client/server round-trip', () => {
 
   it('rejects a request for an unknown verb', async () => {
     const { harness, app } = createLinkedTransports()
-    const client = createBridgeClient(harness, { protocolVersion: VERSION, sessionNonce: NONCE })
+    const client = createBridgeClient(harness, {
+      protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
+      sessionNonce: NONCE
+    })
     createBridgeServer(app, {
       appId: 'a',
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       handlers: {}
     })
@@ -149,10 +177,15 @@ describe('app-bridge client/server round-trip', () => {
 
   it('delivers app events to subscribers', async () => {
     const { harness, app } = createLinkedTransports()
-    const client = createBridgeClient(harness, { protocolVersion: VERSION, sessionNonce: NONCE })
+    const client = createBridgeClient(harness, {
+      protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
+      sessionNonce: NONCE
+    })
     const server = createBridgeServer(app, {
       appId: 'a',
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       handlers: {}
     })
@@ -174,26 +207,50 @@ describe('app-bridge client/server round-trip', () => {
 
   it('rejects ready on a protocol version mismatch', async () => {
     const { harness, app } = createLinkedTransports()
-    const client = createBridgeClient(harness, { protocolVersion: 1, sessionNonce: NONCE })
+    const client = createBridgeClient(harness, {
+      protocolVersion: 1,
+      appProtocolVersion: VERSION,
+      sessionNonce: NONCE
+    })
     createBridgeServer(app, {
       appId: 'a',
       protocolVersion: 2,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       handlers: {}
     })
     await expect(client.ready).rejects.toBeInstanceOf(BridgeVersionMismatchError)
   })
 
+  it('rejects an app contract mismatch independently of the bridge version', async () => {
+    const { harness, app } = createLinkedTransports()
+    const client = createBridgeClient(harness, {
+      protocolVersion: 2,
+      appProtocolVersion: 3,
+      sessionNonce: NONCE
+    })
+    createBridgeServer(app, {
+      appId: 'a',
+      protocolVersion: 2,
+      appProtocolVersion: 4,
+      sessionNonce: NONCE,
+      handlers: {}
+    })
+    await expect(client.ready).rejects.toBeInstanceOf(AppProtocolVersionMismatchError)
+  })
+
   it('rejects ready when the appId does not match expectedAppId', async () => {
     const { harness, app } = createLinkedTransports()
     const client = createBridgeClient(harness, {
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       expectedAppId: 'excalidraw'
     })
     createBridgeServer(app, {
       appId: 'someone-else',
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       handlers: {}
     })
@@ -204,12 +261,14 @@ describe('app-bridge client/server round-trip', () => {
     const { harness, app } = createLinkedTransports()
     const client = createBridgeClient(harness, {
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       expectedVerbs: ['draw', 'read']
     })
     createBridgeServer(app, {
       appId: 'a',
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       handlers: { draw: (payload) => payload }
     })
@@ -223,11 +282,16 @@ describe('app-bridge client/server round-trip', () => {
 
   it('ignores messages stamped with a different session nonce', async () => {
     const { harness, app } = createLinkedTransports()
-    const client = createBridgeClient(harness, { protocolVersion: VERSION, sessionNonce: 'mine' })
+    const client = createBridgeClient(harness, {
+      protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
+      sessionNonce: 'mine'
+    })
     // Server speaks a different nonce — its ready/replies must be ignored.
     createBridgeServer(app, {
       appId: 'a',
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: 'theirs',
       handlers: { echo: (p) => p }
     })
@@ -247,6 +311,7 @@ describe('app-bridge client/server round-trip', () => {
     createBridgeServer(app, {
       appId: 'excalidraw',
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       handlers: { echo: (p) => p }
     })
@@ -257,6 +322,7 @@ describe('app-bridge client/server round-trip', () => {
     // receive a fresh `ready` (mirrors a React strict-mode effect re-run).
     const client = createBridgeClient(harness, {
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       expectedAppId: 'excalidraw'
     })
@@ -273,6 +339,7 @@ describe('app-bridge client/server round-trip', () => {
     }
     const client = createBridgeClient(deadTransport, {
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       timeoutMs: 1000
     })
@@ -289,6 +356,7 @@ describe('app-bridge client/server round-trip', () => {
     }
     const client = createBridgeClient(deadTransport, {
       protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
       sessionNonce: NONCE,
       timeoutMs: 60_000
     })

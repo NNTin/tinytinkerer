@@ -96,7 +96,7 @@ export const createRuntime = (options: {
   // disabled inspector never captures or retains the forwarded payload.
   captureForwardedRequest?: ForwardedRequestSink
   // App-local tools an app injects into its own runtime (e.g. a harness shell's
-  // draw/read/clear verbs that drive an iframe app). Unlike plugins these are NOT
+  // app-specific verbs that drive an iframe app). Unlike plugins these are NOT
   // discovered from `packages/plugins/*` and are not globally shared — only the
   // app that passes them gets them, and they are always-on (intrinsic to the
   // app), so there is no activation/settings surface. Their planner descriptor
@@ -299,7 +299,7 @@ export const createRuntime = (options: {
     }
   }
 
-  // App-local tools (e.g. a harness shell's draw/read/clear verbs). Registered
+  // App-local tools (e.g. a harness shell's app-specific verbs). Registered
   // after MCP + plugins so an app tool cannot silently shadow a plugin tool with
   // the same id (addTool dedupes, first writer wins). Always-on: each registered
   // app tool surfaces a planner descriptor derived from its own Zod `schema`.

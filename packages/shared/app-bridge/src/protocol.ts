@@ -2,10 +2,9 @@ import { z } from 'zod'
 
 // The wire protocol version. Bump this whenever the envelope shape below changes
 // in a backward-incompatible way. Each iframe app advertises the version it was
-// built against in its `ready` handshake; the harness compares it against the
-// version it expects and degrades the app's tools gracefully on a mismatch rather
-// than speaking a wire format the other side cannot parse.
-export const APP_BRIDGE_PROTOCOL_VERSION = 1
+// built against on every envelope. The ready handshake separately advertises the
+// app-owned contract version, so app verb evolution does not bump this version.
+export const APP_BRIDGE_PROTOCOL_VERSION = 2
 
 // Fields every message carries regardless of `kind`:
 //   - protocolVersion: the version the sender was built against (handshake gate).
@@ -59,6 +58,7 @@ export const readyMessageSchema = z.object({
   ...envelopeBaseShape,
   kind: z.literal('ready'),
   appId: z.string().min(1),
+  appProtocolVersion: z.number().int().nonnegative(),
   verbs: z.array(z.string().min(1))
 })
 
