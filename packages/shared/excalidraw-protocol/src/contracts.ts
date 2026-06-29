@@ -1,12 +1,20 @@
 import { z } from 'zod'
 import {
+  alignInputSchema,
   clearInputSchema,
+  deleteInputSchema,
+  distributeInputSchema,
+  duplicateInputSchema,
   drawInputSchema,
   editInputSchema,
   EXCALIDRAW_DETAIL_LEVELS,
+  groupInputSchema,
   inspectInputSchema,
   readInputSchema,
-  searchInputSchema
+  reorderInputSchema,
+  searchInputSchema,
+  stackInputSchema,
+  ungroupInputSchema
 } from './inputs'
 
 export const editableFieldSchema = z.enum([
@@ -337,7 +345,11 @@ export const readResultSchema = z
   })
   .strict()
 const editReceiptSchema = z
-  .object({ id: z.string(), version: z.number().int().nonnegative() })
+  .object({
+    id: z.string(),
+    version: z.number().int().nonnegative(),
+    sourceId: z.string().optional()
+  })
   .strict()
 const editResultSchema = z
   .object({
@@ -348,6 +360,53 @@ const editResultSchema = z
     truncation: truncationSchema
   })
   .strict()
+const structuralMutationResultSchema = z
+  .object({
+    ok: z.literal(true),
+    updated: z.number().int().nonnegative(),
+    receipts: z.array(editReceiptSchema),
+    elements: z.array(readElementSchema),
+    truncation: truncationSchema
+  })
+  .strict()
+const groupResultSchema = structuralMutationResultSchema
+  .extend({
+    groupId: z.string()
+  })
+  .strict()
+const ungroupResultSchema = structuralMutationResultSchema
+  .extend({
+    removedGroupIds: z.array(z.string())
+  })
+  .strict()
+const duplicateResultSchema = structuralMutationResultSchema
+  .extend({
+    duplicated: z.number().int().nonnegative(),
+    copies: z.array(
+      z
+        .object({
+          sourceId: z.string(),
+          id: z.string(),
+          version: z.number().int().nonnegative()
+        })
+        .strict()
+    )
+  })
+  .strict()
+const deleteResultSchema = z
+  .object({
+    ok: z.literal(true),
+    deleted: z.number().int().nonnegative(),
+    deletedIds: z.array(z.string())
+  })
+  .strict()
+const reorderResultSchema = z
+  .object({
+    ok: z.literal(true),
+    moved: z.number().int().nonnegative(),
+    zOrder: z.array(z.string())
+  })
+  .strict()
 const clearResultSchema = z.object({ ok: z.literal(true) }).strict()
 
 export const excalidrawVerbContracts = {
@@ -356,6 +415,14 @@ export const excalidrawVerbContracts = {
   inspect: { inputSchema: inspectInputSchema, resultSchema: inspectResultSchema },
   read: { inputSchema: readInputSchema, resultSchema: readResultSchema },
   edit: { inputSchema: editInputSchema, resultSchema: editResultSchema },
+  group: { inputSchema: groupInputSchema, resultSchema: groupResultSchema },
+  ungroup: { inputSchema: ungroupInputSchema, resultSchema: ungroupResultSchema },
+  duplicate: { inputSchema: duplicateInputSchema, resultSchema: duplicateResultSchema },
+  delete: { inputSchema: deleteInputSchema, resultSchema: deleteResultSchema },
+  align: { inputSchema: alignInputSchema, resultSchema: structuralMutationResultSchema },
+  distribute: { inputSchema: distributeInputSchema, resultSchema: structuralMutationResultSchema },
+  stack: { inputSchema: stackInputSchema, resultSchema: structuralMutationResultSchema },
+  reorder: { inputSchema: reorderInputSchema, resultSchema: reorderResultSchema },
   clear: { inputSchema: clearInputSchema, resultSchema: clearResultSchema }
 } as const
 

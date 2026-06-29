@@ -36,6 +36,8 @@ Put app behavior in the focused internal module that owns the concern:
 - `query.ts` — search, inspect, read, scene snapshots, pagination, and result budgets.
 - `normalization.ts` — normalized element records, bounds, labels, relationships, and capabilities.
 - `edit.ts` — preflight, version checks, safe patches, atomic undoable updates, and edit receipts.
+- `structure.ts` — group/ungroup, duplicate/delete, align/distribute/stack, layer reorder, and
+  relationship-aware structural movement.
 - `payload.ts` — exact UTF-8 size measurement and bounded string prefixes.
 
 Keep `bridge.ts` as verb binding only: import the protocol contracts, wrap handlers with

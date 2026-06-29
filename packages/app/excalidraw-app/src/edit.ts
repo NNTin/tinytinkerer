@@ -10,17 +10,36 @@ import type {
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { EXCALIDRAW_PAYLOAD_BUDGETS } from '@tinytinkerer/excalidraw-protocol'
 import type { EditChanges, EditInput } from '@tinytinkerer/excalidraw-protocol'
-import { capabilitiesFor, elementMap, normalizeElement } from './normalization'
+import {
+  capabilitiesFor,
+  elementMap,
+  geometryRelationshipInfo,
+  normalizeElement,
+  sceneVersionOf
+} from './normalization'
 import { settleSerializedBytes } from './payload'
 import { assertRequestBudget } from './query'
 
 const hasChange = (changes: EditChanges, key: keyof EditChanges) =>
   Object.prototype.hasOwnProperty.call(changes, key)
 
+const GEOMETRY_FIELDS: Array<keyof EditChanges> = ['x', 'y', 'width', 'height', 'angleDegrees']
+const hasGeometryChange = (changes: EditChanges): boolean =>
+  GEOMETRY_FIELDS.some((field) => hasChange(changes, field))
+
+const checkSceneVersion = (expected: number | undefined, actual: number): void => {
+  if (expected !== undefined && expected !== actual) {
+    throw new Error(
+      `edit: scene changed (expected scene version ${expected}, current version ${actual}); read it again before retrying`
+    )
+  }
+}
+
 const validateEdit = (
   element: OrderedExcalidrawElement,
   changes: EditChanges,
-  elements: readonly OrderedExcalidrawElement[]
+  elements: readonly OrderedExcalidrawElement[],
+  expectedSceneVersion: number | undefined
 ): void => {
   const capabilities = capabilitiesFor(element, elements)
   const requested = Object.keys(changes) as Array<keyof EditChanges>
@@ -35,6 +54,16 @@ const validateEdit = (
         `edit: field "${field}" is not editable for element "${element.id}" (${capabilities.restrictions.join(', ') || 'unsupported'})`
       )
     }
+  }
+  const relationshipInfo = geometryRelationshipInfo(element, elements)
+  if (
+    relationshipInfo.hasRelationship &&
+    hasGeometryChange(changes) &&
+    expectedSceneVersion === undefined
+  ) {
+    throw new Error(
+      `edit: element "${element.id}" has relationships; include expectedSceneVersion so related geometry can be updated safely`
+    )
   }
 }
 
@@ -93,6 +122,7 @@ const applyChanges = (
 export const executeEdit = (api: ExcalidrawImperativeAPI, input: EditInput) => {
   assertRequestBudget('edit', input)
   const elements = api.getSceneElements()
+  checkSceneVersion(input.expectedSceneVersion, sceneVersionOf(elements))
   const byId = elementMap(elements)
   for (const edit of input.edits) {
     const element = byId.get(edit.id)
@@ -101,26 +131,56 @@ export const executeEdit = (api: ExcalidrawImperativeAPI, input: EditInput) => {
       throw new Error(
         `edit: element "${edit.id}" is stale (expected version ${edit.expectedVersion}, current version ${element.version}); read it again before retrying`
       )
-    validateEdit(element, edit.changes, elements)
+    validateEdit(element, edit.changes, elements, input.expectedSceneVersion)
   }
   const edits = new Map(input.edits.map((edit) => [edit.id, edit]))
-  let updated = 0
-  const nextElements = elements.map((element) => {
+  let nextElements = elements.map((element) => {
     const edit = edits.get(element.id)
     if (!edit) return element
-    const next = applyChanges(element, edit.changes)
-    if (next !== element) updated++
-    return next
+    return applyChanges(element, edit.changes)
   })
+  const nextById = elementMap(nextElements)
+  const dependentDeltas = new Map<string, { dx: number; dy: number }>()
+  for (const edit of input.edits) {
+    const original = byId.get(edit.id)!
+    const next = nextById.get(edit.id)!
+    const dx = next.x - original.x
+    const dy = next.y - original.y
+    if (dx === 0 && dy === 0) continue
+    const info = geometryRelationshipInfo(original, elements)
+    for (const id of [...info.dependentTextIds, ...info.frameChildIds]) {
+      const dependentEdit = edits.get(id)
+      if (
+        dependentEdit &&
+        (hasChange(dependentEdit.changes, 'x') || hasChange(dependentEdit.changes, 'y'))
+      ) {
+        continue
+      }
+      const current = dependentDeltas.get(id) ?? { dx: 0, dy: 0 }
+      dependentDeltas.set(id, { dx: current.dx + dx, dy: current.dy + dy })
+    }
+  }
+  if (dependentDeltas.size) {
+    nextElements = nextElements.map((element) => {
+      const delta = dependentDeltas.get(element.id)
+      if (!delta || (delta.dx === 0 && delta.dy === 0)) return element
+      return newElementWith(element, { x: element.x + delta.dx, y: element.y + delta.dy })
+    })
+  }
+  const updated = nextElements.reduce(
+    (count, element, index) => count + (element === elements[index] ? 0 : 1),
+    0
+  )
   if (updated)
     api.updateScene({ elements: nextElements, captureUpdate: CaptureUpdateAction.IMMEDIATELY })
 
-  const receipts = input.edits.map(({ id }) => {
+  const receiptIds = [...new Set([...input.edits.map(({ id }) => id), ...dependentDeltas.keys()])]
+  const receipts = receiptIds.map((id) => {
     const element = nextElements.find((candidate) => candidate.id === id)!
     return { id, version: element.version }
   })
   const truncatedFields: string[] = []
-  let details = input.edits.map(({ id }) => {
+  let details = receiptIds.map((id) => {
     const index = nextElements.findIndex((element) => element.id === id)
     const normalized = normalizeElement(nextElements[index]!, index, nextElements, 'standard')
     truncatedFields.push(

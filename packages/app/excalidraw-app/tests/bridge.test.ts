@@ -132,7 +132,21 @@ const fakeApi = (
     scrollToContent: vi.fn()
   }) as unknown as ExcalidrawImperativeAPI
 
-type Verb = 'draw' | 'search' | 'inspect' | 'read' | 'edit' | 'clear'
+type Verb =
+  | 'draw'
+  | 'search'
+  | 'inspect'
+  | 'read'
+  | 'edit'
+  | 'group'
+  | 'ungroup'
+  | 'duplicate'
+  | 'delete'
+  | 'align'
+  | 'distribute'
+  | 'stack'
+  | 'reorder'
+  | 'clear'
 
 const run = (api: ExcalidrawImperativeAPI, verb: Verb, payload: unknown): Promise<unknown> => {
   const registration = createExcalidrawHandlers(api)[verb]
@@ -572,6 +586,236 @@ describe('Excalidraw bridge handlers', () => {
     expect(result.elements.length).toBeLessThan(20)
     expect(result.truncation.omittedElements).toBe(20 - result.elements.length)
     expect(result.truncation.serializedBytes).toBeLessThanOrEqual(64 * 1_024)
+  })
+
+  it('moves relationship-owned text with versioned geometry edits', async () => {
+    const container = baseElement('box', {
+      version: 2,
+      boundElements: [{ id: 'box-label', type: 'text' }]
+    })
+    const label = textElement('box-label', 'Box', { version: 3, containerId: 'box', x: 20, y: 30 })
+    const api = fakeApi([container, label])
+
+    await expect(
+      run(api, 'edit', {
+        edits: [{ id: 'box', expectedVersion: 2, changes: { x: 50 } }]
+      })
+    ).rejects.toThrow('expectedSceneVersion')
+    expect(api.updateScene).not.toHaveBeenCalled()
+
+    const result = (await run(api, 'edit', {
+      expectedSceneVersion: 5,
+      edits: [{ id: 'box', expectedVersion: 2, changes: { x: 50 } }]
+    })) as { receipts: Array<{ id: string }>; elements: Array<Record<string, unknown>> }
+
+    expect(result.receipts.map(({ id }) => id)).toEqual(['box', 'box-label'])
+    expect(result.elements[1]).toMatchObject({ id: 'box-label', x: 60 })
+    const update = vi.mocked(api.updateScene).mock.calls[0]?.[0]
+    expect(update?.captureUpdate).toBe(CaptureUpdateAction.IMMEDIATELY)
+    expect((update?.elements as ReadonlyArray<Record<string, unknown>>)[1]).toMatchObject({
+      id: 'box-label',
+      x: 60
+    })
+  })
+
+  it('groups and ungroups elements atomically by id and version', async () => {
+    const first = baseElement('first', { version: 2 })
+    const second = baseElement('second', { version: 3 })
+    const api = fakeApi([first, second])
+
+    const grouped = (await run(api, 'group', {
+      expectedSceneVersion: 5,
+      elements: [
+        { id: 'first', expectedVersion: 2 },
+        { id: 'second', expectedVersion: 3 }
+      ],
+      groupId: 'group-a'
+    })) as { groupId: string; updated: number }
+
+    expect(grouped).toMatchObject({ groupId: 'group-a', updated: 2 })
+    expect(api.updateScene).toHaveBeenCalledTimes(1)
+    expect(
+      (
+        vi.mocked(api.updateScene).mock.calls[0]?.[0].elements as ReadonlyArray<
+          Record<string, unknown>
+        >
+      )[0]
+    ).toMatchObject({ groupIds: ['group-a'], version: 3 })
+
+    const ungroupApi = fakeApi([
+      baseElement('first', { version: 4, groupIds: ['group-a'] }),
+      baseElement('second', { version: 5, groupIds: ['group-a'] })
+    ])
+    await expect(
+      run(ungroupApi, 'ungroup', {
+        expectedSceneVersion: 9,
+        elements: [
+          { id: 'first', expectedVersion: 4 },
+          { id: 'second', expectedVersion: 5 }
+        ],
+        groupId: 'group-a'
+      })
+    ).resolves.toMatchObject({ updated: 2, removedGroupIds: ['group-a'] })
+  })
+
+  it('duplicates and deletes elements safely by id', async () => {
+    const first = baseElement('first', { version: 2 })
+    const second = baseElement('second', { version: 3 })
+    const duplicateApi = fakeApi([first, second])
+
+    const duplicated = (await run(duplicateApi, 'duplicate', {
+      expectedSceneVersion: 5,
+      elements: [
+        { id: 'first', expectedVersion: 2 },
+        { id: 'second', expectedVersion: 3 }
+      ],
+      offsetX: 10,
+      offsetY: 15
+    })) as { duplicated: number; copies: Array<{ sourceId: string; id: string }> }
+
+    expect(duplicated.duplicated).toBe(2)
+    expect(duplicated.copies.map(({ sourceId }) => sourceId)).toEqual(['first', 'second'])
+    const duplicateUpdate = vi.mocked(duplicateApi.updateScene).mock.calls[0]?.[0]
+    expect(duplicateUpdate?.elements).toHaveLength(4)
+    expect(duplicateApi.scrollToContent).toHaveBeenCalledWith(expect.any(Array), {
+      fitToContent: true
+    })
+
+    const container = baseElement('box', {
+      version: 2,
+      boundElements: [{ id: 'box-label', type: 'text' }]
+    })
+    const label = textElement('box-label', 'Box', { version: 3, containerId: 'box' })
+    const deleteApi = fakeApi([container, label])
+    await expect(
+      run(deleteApi, 'delete', {
+        expectedSceneVersion: 5,
+        elements: [{ id: 'box', expectedVersion: 2 }]
+      })
+    ).rejects.toThrow('include related')
+    expect(deleteApi.updateScene).not.toHaveBeenCalled()
+
+    await expect(
+      run(deleteApi, 'delete', {
+        expectedSceneVersion: 5,
+        elements: [{ id: 'box', expectedVersion: 2 }],
+        includeRelated: true
+      })
+    ).resolves.toMatchObject({ deleted: 2, deletedIds: ['box', 'box-label'] })
+  })
+
+  it('aligns, distributes, stacks, and reorders specified elements', async () => {
+    const elements = [
+      baseElement('a', { x: 0, y: 0, width: 10, height: 10 }),
+      baseElement('b', { x: 30, y: 10, width: 10, height: 10 }),
+      baseElement('c', { x: 100, y: 20, width: 10, height: 10 })
+    ]
+    const refs = elements.map((element) => ({ id: String(element.id), expectedVersion: 1 }))
+
+    const alignApi = fakeApi(elements)
+    await expect(
+      run(alignApi, 'align', {
+        expectedSceneVersion: 3,
+        elements: refs,
+        axis: 'x',
+        position: 'start'
+      })
+    ).resolves.toMatchObject({ updated: 2 })
+    expect(
+      (
+        vi.mocked(alignApi.updateScene).mock.calls[0]?.[0].elements as ReadonlyArray<
+          Record<string, unknown>
+        >
+      ).map(({ x }) => x)
+    ).toEqual([0, 0, 0])
+
+    const singleApi = fakeApi([elements[0]!])
+    await expect(
+      run(singleApi, 'distribute', {
+        expectedSceneVersion: 1,
+        elements: [refs[0]!],
+        axis: 'x'
+      })
+    ).resolves.toMatchObject({ updated: 0 })
+    expect(singleApi.updateScene).not.toHaveBeenCalled()
+
+    const distributeApi = fakeApi(elements)
+    await expect(
+      run(distributeApi, 'distribute', {
+        expectedSceneVersion: 3,
+        elements: refs,
+        axis: 'x'
+      })
+    ).resolves.toMatchObject({ updated: 1 })
+    expect(
+      (
+        vi.mocked(distributeApi.updateScene).mock.calls[0]?.[0].elements as ReadonlyArray<
+          Record<string, unknown>
+        >
+      ).map(({ x }) => x)
+    ).toEqual([0, 50, 100])
+
+    const stackApi = fakeApi(elements)
+    await expect(
+      run(stackApi, 'stack', {
+        expectedSceneVersion: 3,
+        elements: refs,
+        axis: 'x',
+        spacing: 5
+      })
+    ).resolves.toMatchObject({ updated: 2 })
+    expect(
+      (
+        vi.mocked(stackApi.updateScene).mock.calls[0]?.[0].elements as ReadonlyArray<
+          Record<string, unknown>
+        >
+      ).map(({ x }) => x)
+    ).toEqual([0, 15, 30])
+
+    const reorderApi = fakeApi(elements)
+    await expect(
+      run(reorderApi, 'reorder', {
+        expectedSceneVersion: 3,
+        elements: [{ id: 'b', expectedVersion: 1 }],
+        direction: 'front'
+      })
+    ).resolves.toMatchObject({ moved: 1, zOrder: ['a', 'c', 'b'] })
+    expect(
+      (
+        vi.mocked(reorderApi.updateScene).mock.calls[0]?.[0].elements as ReadonlyArray<
+          Record<string, unknown>
+        >
+      ).map(({ id }) => id)
+    ).toEqual(['a', 'c', 'b'])
+  })
+
+  it('rejects unknown ids and stale structural versions before updates', async () => {
+    const api = fakeApi([baseElement('known', { version: 2 })])
+    await expect(
+      run(api, 'align', {
+        expectedSceneVersion: 2,
+        elements: [{ id: 'missing', expectedVersion: 1 }],
+        axis: 'x',
+        position: 'start'
+      })
+    ).rejects.toThrow('does not exist')
+    await expect(
+      run(api, 'align', {
+        expectedSceneVersion: 2,
+        elements: [{ id: 'known', expectedVersion: 1 }],
+        axis: 'x',
+        position: 'start'
+      })
+    ).rejects.toThrow('stale')
+    await expect(
+      run(api, 'align', {
+        expectedSceneVersion: 3,
+        elements: [{ id: 'known', expectedVersion: 2 }],
+        axis: 'x',
+        position: 'start'
+      })
+    ).rejects.toThrow('scene changed')
+    expect(api.updateScene).not.toHaveBeenCalled()
   })
 
   it('clears the scene as an undoable update', async () => {

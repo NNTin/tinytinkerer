@@ -3,7 +3,7 @@ import { z } from 'zod'
 export const EXCALIDRAW_APP_ID = 'excalidraw'
 // Version of the Excalidraw verb contracts, intentionally independent from the
 // generic app-bridge envelope version.
-export const EXCALIDRAW_PROTOCOL_VERSION = 3
+export const EXCALIDRAW_PROTOCOL_VERSION = 4
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
 export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
@@ -23,6 +23,14 @@ export const EXCALIDRAW_PAYLOAD_BUDGETS = Object.freeze({
   read: { request: 16 * 1_024, result: 64 * 1_024 },
   draw: { request: 64 * 1_024, result: 64 * 1_024 },
   edit: { request: 64 * 1_024, result: 64 * 1_024 },
+  group: { request: 64 * 1_024, result: 64 * 1_024 },
+  ungroup: { request: 64 * 1_024, result: 64 * 1_024 },
+  duplicate: { request: 64 * 1_024, result: 64 * 1_024 },
+  delete: { request: 64 * 1_024, result: 64 * 1_024 },
+  align: { request: 64 * 1_024, result: 64 * 1_024 },
+  distribute: { request: 64 * 1_024, result: 64 * 1_024 },
+  stack: { request: 64 * 1_024, result: 64 * 1_024 },
+  reorder: { request: 64 * 1_024, result: 64 * 1_024 },
   clear: { request: 1 * 1_024, result: 1 * 1_024 }
 })
 
@@ -252,6 +260,14 @@ const editItemSchema = z.object({
 
 export const editInputSchema = z
   .object({
+    expectedSceneVersion: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe(
+        'Scene version from read/inspect/search. Required when an edit moves or resizes relationship-sensitive elements so related geometry can be updated safely.'
+      ),
     edits: z
       .array(editItemSchema)
       .min(1)
@@ -263,6 +279,131 @@ export const editInputSchema = z
   })
   .strict()
 
+const versionedElementRefSchema = z
+  .object({
+    id: elementIdSchema,
+    expectedVersion: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('Current element version from read; guards stale structural mutations.')
+  })
+  .strict()
+
+const versionedElementRefsSchema = (minimum: number) =>
+  z
+    .array(versionedElementRefSchema)
+    .min(minimum)
+    .max(EXCALIDRAW_ELEMENT_LIMIT)
+    .refine(
+      (elements) => new Set(elements.map((element) => element.id)).size === elements.length,
+      'Element ids must be unique.'
+    )
+
+const structuralBaseShape = (minimum: number) => ({
+  expectedSceneVersion: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe(
+      'Scene version from read/inspect/search; guards layer order and relationship-aware dependent updates.'
+    ),
+  elements: versionedElementRefsSchema(minimum).describe(
+    'Elements to mutate, by id and expected version from read.'
+  )
+})
+
+export const groupInputSchema = z
+  .object({
+    ...structuralBaseShape(2),
+    groupId: elementIdSchema.optional().describe('Optional group id to add to all elements.')
+  })
+  .strict()
+
+export const ungroupInputSchema = z
+  .object({
+    ...structuralBaseShape(1),
+    groupId: elementIdSchema
+      .optional()
+      .describe('Specific group id to remove. Defaults to the innermost group on each element.'),
+    mode: z
+      .enum(['innermost', 'all'])
+      .default('innermost')
+      .describe('Remove only the innermost matching group, or every group id on each element.')
+  })
+  .strict()
+
+export const duplicateInputSchema = z
+  .object({
+    ...structuralBaseShape(1),
+    offsetX: z.number().finite().default(20).describe('Horizontal offset for duplicated copies.'),
+    offsetY: z.number().finite().default(20).describe('Vertical offset for duplicated copies.'),
+    includeRelated: z
+      .boolean()
+      .default(true)
+      .describe('Also duplicate relationship-owned labels and frame children needed for safety.')
+  })
+  .strict()
+
+export const deleteInputSchema = z
+  .object({
+    ...structuralBaseShape(1),
+    includeRelated: z
+      .boolean()
+      .default(false)
+      .describe(
+        'Also delete relationship-owned labels, arrows, and frame children; otherwise unsafe relationship crossings are rejected.'
+      )
+  })
+  .strict()
+
+export const alignInputSchema = z
+  .object({
+    ...structuralBaseShape(1),
+    axis: z
+      .enum(['x', 'y'])
+      .describe('Axis to align on: x for left/center/right, y for top/middle/bottom.'),
+    position: z
+      .enum(['start', 'center', 'end'])
+      .describe('Alignment target within the selection bounds.')
+  })
+  .strict()
+
+export const distributeInputSchema = z
+  .object({
+    ...structuralBaseShape(1),
+    axis: z.enum(['x', 'y']).describe('Axis to distribute gaps across.')
+  })
+  .strict()
+
+export const stackInputSchema = z
+  .object({
+    ...structuralBaseShape(1),
+    axis: z.enum(['x', 'y']).describe('Stack horizontally on x or vertically on y.'),
+    spacing: z
+      .number()
+      .finite()
+      .nonnegative()
+      .default(20)
+      .describe('Gap between adjacent elements.'),
+    order: z
+      .enum(['input', 'position'])
+      .default('input')
+      .describe(
+        'Use the provided element order or sort by current canvas position before stacking.'
+      )
+  })
+  .strict()
+
+export const reorderInputSchema = z
+  .object({
+    ...structuralBaseShape(1),
+    direction: z
+      .enum(['forward', 'backward', 'front', 'back'])
+      .describe('Layer move: one step forward/backward or all the way to front/back.')
+  })
+  .strict()
+
 export const clearInputSchema = z.object({}).strict()
 
 export const excalidrawVerbInputSchemas = {
@@ -271,6 +412,14 @@ export const excalidrawVerbInputSchemas = {
   inspect: inspectInputSchema,
   read: readInputSchema,
   edit: editInputSchema,
+  group: groupInputSchema,
+  ungroup: ungroupInputSchema,
+  duplicate: duplicateInputSchema,
+  delete: deleteInputSchema,
+  align: alignInputSchema,
+  distribute: distributeInputSchema,
+  stack: stackInputSchema,
+  reorder: reorderInputSchema,
   clear: clearInputSchema
 } as const
 
@@ -286,4 +435,13 @@ export type InspectInput = z.infer<typeof inspectInputSchema>
 export type ReadInput = z.infer<typeof readInputSchema>
 export type EditInput = z.infer<typeof editInputSchema>
 export type EditChanges = z.infer<typeof editChangesSchema>
+export type VersionedElementRef = z.infer<typeof versionedElementRefSchema>
+export type GroupInput = z.infer<typeof groupInputSchema>
+export type UngroupInput = z.infer<typeof ungroupInputSchema>
+export type DuplicateInput = z.infer<typeof duplicateInputSchema>
+export type DeleteInput = z.infer<typeof deleteInputSchema>
+export type AlignInput = z.infer<typeof alignInputSchema>
+export type DistributeInput = z.infer<typeof distributeInputSchema>
+export type StackInput = z.infer<typeof stackInputSchema>
+export type ReorderInput = z.infer<typeof reorderInputSchema>
 export type ClearInput = z.infer<typeof clearInputSchema>

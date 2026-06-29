@@ -38,8 +38,57 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
       edit: {
         description:
           'Safely edit existing Excalidraw elements by id and expected version from read. Batches ' +
-          'are atomic and undoable; relationship-sensitive geometry changes are rejected.',
+          'are atomic and undoable; include expectedSceneVersion when moving or resizing elements ' +
+          'with labels or frame children so related geometry is updated safely.',
         schema: excalidrawVerbInputSchemas.edit
+      },
+      group: {
+        description:
+          'Group existing Excalidraw elements by id and expected version from read. The operation ' +
+          'is scene-version checked, atomic, undoable, and includes bound text labels.',
+        schema: excalidrawVerbInputSchemas.group
+      },
+      ungroup: {
+        description:
+          'Ungroup existing Excalidraw elements by id and expected version. Removes an innermost ' +
+          'or specified group id in one atomic undoable scene update.',
+        schema: excalidrawVerbInputSchemas.ungroup
+      },
+      duplicate: {
+        description:
+          'Duplicate existing Excalidraw elements by id and expected version with a configurable ' +
+          'offset. Relationship-owned labels and frame children are duplicated by default.',
+        schema: excalidrawVerbInputSchemas.duplicate
+      },
+      delete: {
+        description:
+          'Delete existing Excalidraw elements by id and expected version. Relationship crossings ' +
+          'are rejected unless includeRelated is true, and the update is undoable.',
+        schema: excalidrawVerbInputSchemas.delete
+      },
+      align: {
+        description:
+          'Align specified Excalidraw elements by id along x or y using start, center, or end. ' +
+          'Single-element align is a safe no-op; related labels move with their containers.',
+        schema: excalidrawVerbInputSchemas.align
+      },
+      distribute: {
+        description:
+          'Distribute specified Excalidraw elements by id along x or y. One or two elements are ' +
+          'safe no-ops; labels and frame children move with their owners.',
+        schema: excalidrawVerbInputSchemas.distribute
+      },
+      stack: {
+        description:
+          'Stack specified Excalidraw elements horizontally or vertically with configurable ' +
+          'spacing. Uses input order by default and keeps the mutation atomic and undoable.',
+        schema: excalidrawVerbInputSchemas.stack
+      },
+      reorder: {
+        description:
+          'Reorder Excalidraw layers by id: bring forward/backward one step or send to front/back. ' +
+          'The scene version and element versions guard stale z-order changes.',
+        schema: excalidrawVerbInputSchemas.reorder
       },
       clear: {
         description: 'Remove every element from the visible Excalidraw whiteboard.',

@@ -53,14 +53,17 @@ Read the relevant sections before designing or implementing:
 
 - `packages/shared/excalidraw-protocol` owns `EXCALIDRAW_APP_ID`, `EXCALIDRAW_PROTOCOL_VERSION`,
   `EXCALIDRAW_VERBS`, Zod input/result contracts, payload budgets, detail levels, pagination fields,
-  truncation metadata, normalized result variants, and edit capability vocabulary. It must remain small,
-  serializable, side-effect-free, and independent of `@tinytinkerer/app-bridge`.
+  truncation metadata, normalized result variants, edit capability vocabulary, and structural editing
+  vocabulary. It must remain small, serializable, side-effect-free, and independent of
+  `@tinytinkerer/app-bridge`.
 - `packages/app/excalidraw-app` owns every import from `@excalidraw/excalidraw`, all interaction with
   `ExcalidrawImperativeAPI`, and app-domain behavior. Keep implementation in focused internal modules:
   `create.ts` for draw/clear and connector endpoint generation, `query.ts` for search/inspect/read and
   budgets, `normalization.ts` for normalized element records and capabilities, `edit.ts` for atomic
-  versioned edits, and `payload.ts` for exact UTF-8 measurement/truncation. Keep `bridge.ts` limited to
-  `defineBridgeVerb(...)` binding and server creation.
+  versioned relationship-aware edits, `structure.ts` for group/ungroup, duplicate/delete,
+  align/distribute, stack, and layer reorder operations, and `payload.ts` for exact UTF-8
+  measurement/truncation. Keep `bridge.ts` limited to `defineBridgeVerb(...)` binding and server
+  creation.
 - `apps/canvas` owns the deployable canvas shell, iframe URL, app id/version wiring, and model-facing
   verb descriptions in `src/canvas-runtime.ts`. It may import Excalidraw contracts, but it must never
   import `@excalidraw/excalidraw` or reimplement app-domain behavior.
@@ -84,22 +87,31 @@ Read the relevant sections before designing or implementing:
   capability calculation.
 - Writes must be undoable with `CaptureUpdateAction.IMMEDIATELY`. Reject stale, locked, missing, or
   relationship-unsafe edit batches before any partial `updateScene`.
-- Use the safe iterative ladder for modifying existing drawings: `search` → `inspect` → `read` → `edit`.
-  `edit` requires the current element version from `read`; retry stale edits only after reading again.
+- Use the safe iterative ladder for modifying existing drawings: `search` → `inspect` → `read` → write
+  verb. `edit` and structural write verbs require the current element version from `read`; structural
+  writes also require the current scene version. Retry stale edits only after reading again.
 - For generated diagrams, prefer declarative `draw.connectors` over hand-built arrow coordinates.
   Horizontal row links use a shared `rowY` so `startY === endY`; vertical trunks use a shared `trunkX` so
   `startX === endX`. Connector endpoints are computed after node conversion from final bounds.
 
 ## Current verbs
 
-| Verb      | Direction | Implementation focus                                                                  |
-| --------- | --------- | ------------------------------------------------------------------------------------- |
-| `draw`    | WRITE     | Element skeletons, stable ids, post-layout connectors, undoable scene update          |
-| `search`  | READ      | Capped candidates by query, type, selection, or viewport                              |
-| `inspect` | READ      | Compact scene, viewport, selection, grouping, z-order, locking, and relationships     |
-| `read`    | READ      | Budgeted normalized discriminated element records, capabilities, versions, pagination |
-| `edit`    | WRITE     | Atomic, version-checked, invariant-safe patches with compact receipts                 |
-| `clear`   | WRITE     | Undoable `updateScene({ elements: [] })`                                              |
+| Verb         | Direction | Implementation focus                                                                  |
+| ------------ | --------- | ------------------------------------------------------------------------------------- |
+| `draw`       | WRITE     | Element skeletons, stable ids, post-layout connectors, undoable scene update          |
+| `search`     | READ      | Capped candidates by query, type, selection, or viewport                              |
+| `inspect`    | READ      | Compact scene, viewport, selection, grouping, z-order, locking, and relationships     |
+| `read`       | READ      | Budgeted normalized discriminated element records, capabilities, versions, pagination |
+| `edit`       | WRITE     | Atomic, version-checked, relationship-aware patches with compact receipts             |
+| `group`      | WRITE     | Atomic group creation/update by versioned element id                                  |
+| `ungroup`    | WRITE     | Atomic group id removal by versioned element id                                       |
+| `duplicate`  | WRITE     | Atomic duplicate by versioned id with safe related-label handling                     |
+| `delete`     | WRITE     | Atomic deletion by versioned id with relationship crossing checks                     |
+| `align`      | WRITE     | Atomic alignment by versioned id and scene version                                    |
+| `distribute` | WRITE     | Atomic distribution by versioned id and scene version                                 |
+| `stack`      | WRITE     | Atomic horizontal/vertical stacking by versioned id and spacing                       |
+| `reorder`    | WRITE     | Atomic layer ordering by versioned id and scene version                               |
+| `clear`      | WRITE     | Undoable `updateScene({ elements: [] })`                                              |
 
 ## Useful tools and checks
 

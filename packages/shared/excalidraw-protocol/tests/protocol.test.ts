@@ -1,15 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import {
+  alignInputSchema,
   clearInputSchema,
+  deleteInputSchema,
+  distributeInputSchema,
+  duplicateInputSchema,
   drawInputSchema,
   editInputSchema,
   excalidrawVerbContracts,
   EXCALIDRAW_PROTOCOL_VERSION,
   EXCALIDRAW_VERBS,
+  groupInputSchema,
   inspectInputSchema,
   readInputSchema,
   readElementSchema,
-  searchInputSchema
+  reorderInputSchema,
+  searchInputSchema,
+  stackInputSchema,
+  ungroupInputSchema
 } from '../src/index'
 
 describe('excalidraw protocol', () => {
@@ -90,6 +98,7 @@ describe('excalidraw protocol', () => {
   it('requires versioned, unique, non-empty edit patches', () => {
     expect(
       editInputSchema.parse({
+        expectedSceneVersion: 10,
         edits: [
           {
             id: 'shape-1',
@@ -120,18 +129,89 @@ describe('excalidraw protocol', () => {
     ).toBe(false)
   })
 
+  it('defines versioned structural editing inputs', () => {
+    const refs = [
+      { id: 'a', expectedVersion: 1 },
+      { id: 'b', expectedVersion: 2 },
+      { id: 'c', expectedVersion: 3 }
+    ]
+    expect(
+      groupInputSchema.parse({ expectedSceneVersion: 6, elements: refs.slice(0, 2) })
+    ).toMatchObject({ expectedSceneVersion: 6, elements: refs.slice(0, 2) })
+    expect(
+      groupInputSchema.safeParse({ expectedSceneVersion: 6, elements: refs.slice(0, 1) }).success
+    ).toBe(false)
+    expect(
+      ungroupInputSchema.parse({ expectedSceneVersion: 6, elements: refs.slice(0, 1) })
+    ).toMatchObject({ mode: 'innermost' })
+    expect(
+      duplicateInputSchema.parse({ expectedSceneVersion: 6, elements: refs.slice(0, 1) })
+    ).toMatchObject({ offsetX: 20, offsetY: 20, includeRelated: true })
+    expect(
+      deleteInputSchema.parse({ expectedSceneVersion: 6, elements: refs.slice(0, 1) })
+    ).toMatchObject({ includeRelated: false })
+    expect(
+      alignInputSchema.parse({
+        expectedSceneVersion: 6,
+        elements: refs.slice(0, 1),
+        axis: 'x',
+        position: 'center'
+      })
+    ).toMatchObject({ position: 'center' })
+    expect(
+      distributeInputSchema.parse({
+        expectedSceneVersion: 6,
+        elements: refs.slice(0, 1),
+        axis: 'y'
+      })
+    ).toMatchObject({ axis: 'y' })
+    expect(
+      stackInputSchema.parse({ expectedSceneVersion: 6, elements: refs, axis: 'x' })
+    ).toMatchObject({ spacing: 20, order: 'input' })
+    expect(
+      reorderInputSchema.parse({
+        expectedSceneVersion: 6,
+        elements: refs.slice(0, 1),
+        direction: 'front'
+      })
+    ).toMatchObject({ direction: 'front' })
+    expect(
+      alignInputSchema.safeParse({
+        expectedSceneVersion: 6,
+        elements: [refs[0], refs[0]],
+        axis: 'x',
+        position: 'start'
+      }).success
+    ).toBe(false)
+  })
+
   it('requires clear payloads to be empty objects', () => {
     expect(clearInputSchema.safeParse({}).success).toBe(true)
     expect(clearInputSchema.safeParse({ extra: true }).success).toBe(false)
   })
 
   it('uses an independently owned app contract version', () => {
-    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(3)
+    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(4)
   })
 
   it('defines input and result contracts for every advertised verb', () => {
     expect(Object.keys(excalidrawVerbContracts)).toEqual(EXCALIDRAW_VERBS)
-    expect(EXCALIDRAW_VERBS).toEqual(['draw', 'search', 'inspect', 'read', 'edit', 'clear'])
+    expect(EXCALIDRAW_VERBS).toEqual([
+      'draw',
+      'search',
+      'inspect',
+      'read',
+      'edit',
+      'group',
+      'ungroup',
+      'duplicate',
+      'delete',
+      'align',
+      'distribute',
+      'stack',
+      'reorder',
+      'clear'
+    ])
     expect(
       excalidrawVerbContracts.draw.resultSchema.safeParse({
         ok: true,

@@ -18,12 +18,30 @@ describe('canvas app tools', () => {
       'inspect',
       'read',
       'edit',
+      'group',
+      'ungroup',
+      'duplicate',
+      'delete',
+      'align',
+      'distribute',
+      'stack',
+      'reorder',
       'clear'
     ])
     expect(
       tools.find((tool) => tool.id === 'draw')?.schema.safeParse({ elements: [] }).success
     ).toBe(false)
     expect(tools.find((tool) => tool.id === 'read')?.schema.safeParse({}).success).toBe(false)
+    expect(
+      tools
+        .find((tool) => tool.id === 'align')
+        ?.schema.safeParse({
+          expectedSceneVersion: 1,
+          elements: [{ id: 'shape', expectedVersion: 2 }],
+          axis: 'x',
+          position: 'center'
+        }).success
+    ).toBe(true)
   })
 
   it('forwards validated tool input to the bridge handle', async () => {

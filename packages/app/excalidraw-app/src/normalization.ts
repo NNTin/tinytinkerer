@@ -26,7 +26,8 @@ const STYLE_FIELDS: EditableField[] = [
   'opacity',
   'locked'
 ]
-const POSITION_FIELDS: EditableField[] = ['x', 'y', 'angleDegrees']
+const MOVE_FIELDS: EditableField[] = ['x', 'y']
+const ROTATION_FIELDS: EditableField[] = ['angleDegrees']
 const RESIZE_FIELDS: EditableField[] = ['width', 'height']
 const supportedTypes = new Set([
   'rectangle',
@@ -74,10 +75,7 @@ const boundedArray = <T>(
   return value.slice(0, limit)
 }
 
-export const labelFor = (
-  element: ExcalidrawElement,
-  byId: ReadonlyMap<string, ExcalidrawElement>
-) => {
+const labelFor = (element: ExcalidrawElement, byId: ReadonlyMap<string, ExcalidrawElement>) => {
   const reference = element.boundElements?.find((bound) => bound.type === 'text')
   const label = reference ? byId.get(reference.id) : undefined
   return label?.type === 'text' ? { elementId: label.id, text: label.text } : undefined
@@ -94,37 +92,90 @@ export const displayNameFor = (
   return undefined
 }
 
-export const hasRelationship = (
+export type GeometryRelationshipInfo = {
+  hasRelationship: boolean
+  hasUnsafeGeometry: boolean
+  dependentTextIds: string[]
+  frameChildIds: string[]
+  linearBindingIds: string[]
+}
+
+export const geometryRelationshipInfo = (
   target: ExcalidrawElement,
   elements: readonly OrderedExcalidrawElement[]
-): boolean => {
-  if (target.groupIds.length || target.frameId || target.boundElements?.length) return true
-  if (target.type === 'text' && target.containerId) return true
+): GeometryRelationshipInfo => {
+  const dependentTextIds = new Set<string>()
+  const frameChildIds = new Set<string>()
+  const linearBindingIds = new Set<string>()
+  let hasRelationship =
+    target.groupIds.length > 0 || target.frameId !== null || (target.boundElements?.length ?? 0) > 0
+  let hasUnsafeGeometry = target.frameId !== null
+
+  if (target.type === 'text' && target.containerId) {
+    hasRelationship = true
+    hasUnsafeGeometry = true
+  }
   if (
     (target.type === 'line' || target.type === 'arrow') &&
     (target.startBinding || target.endBinding)
-  )
-    return true
-  return elements.some(
-    (element) =>
-      element.id !== target.id &&
-      (element.frameId === target.id ||
-        (element.type === 'text' && element.containerId === target.id) ||
-        ((element.type === 'line' || element.type === 'arrow') &&
-          (element.startBinding?.elementId === target.id ||
-            element.endBinding?.elementId === target.id)))
-  )
+  ) {
+    hasRelationship = true
+    hasUnsafeGeometry = true
+  }
+
+  for (const bound of target.boundElements ?? []) {
+    hasRelationship = true
+    if (bound.type === 'text') dependentTextIds.add(bound.id)
+    if (bound.type === 'arrow') {
+      linearBindingIds.add(bound.id)
+      hasUnsafeGeometry = true
+    }
+  }
+
+  for (const element of elements) {
+    if (element.id === target.id) continue
+    if (element.frameId === target.id) {
+      hasRelationship = true
+      frameChildIds.add(element.id)
+    }
+    if (element.type === 'text' && element.containerId === target.id) {
+      hasRelationship = true
+      dependentTextIds.add(element.id)
+    }
+    if (
+      (element.type === 'line' || element.type === 'arrow') &&
+      (element.startBinding?.elementId === target.id || element.endBinding?.elementId === target.id)
+    ) {
+      hasRelationship = true
+      linearBindingIds.add(element.id)
+      hasUnsafeGeometry = true
+    }
+  }
+
+  return {
+    hasRelationship,
+    hasUnsafeGeometry,
+    dependentTextIds: [...dependentTextIds],
+    frameChildIds: [...frameChildIds],
+    linearBindingIds: [...linearBindingIds]
+  }
 }
 
 export const capabilitiesFor = (
   element: OrderedExcalidrawElement,
   elements: readonly OrderedExcalidrawElement[]
 ) => {
-  const relationships = hasRelationship(element, elements)
+  const relationshipInfo = geometryRelationshipInfo(element, elements)
+  const relationships = relationshipInfo.hasRelationship
+  const canEditGeometry = !relationshipInfo.hasUnsafeGeometry
   const restrictions: EditRestriction[] = []
   if (element.locked) restrictions.push('locked')
   if (relationships) restrictions.push('relationship-geometry')
-  if (!['rectangle', 'ellipse', 'diamond', 'text', 'line', 'arrow'].includes(element.type))
+  if (
+    !['rectangle', 'ellipse', 'diamond', 'text', 'line', 'arrow', 'frame', 'magicframe'].includes(
+      element.type
+    )
+  )
     restrictions.push('unsupported-geometry')
   if (!['rectangle', 'ellipse', 'diamond'].includes(element.type))
     restrictions.push('unsupported-resize')
@@ -134,12 +185,17 @@ export const capabilitiesFor = (
 
   const editableFields: EditableField[] = [...STYLE_FIELDS]
   if (
-    !relationships &&
-    ['rectangle', 'ellipse', 'diamond', 'text', 'line', 'arrow'].includes(element.type)
-  )
-    editableFields.push(...POSITION_FIELDS)
-  if (!relationships && ['rectangle', 'ellipse', 'diamond'].includes(element.type))
+    canEditGeometry &&
+    ['rectangle', 'ellipse', 'diamond', 'text', 'line', 'arrow', 'frame', 'magicframe'].includes(
+      element.type
+    )
+  ) {
+    editableFields.push(...MOVE_FIELDS)
+    if (!relationships) editableFields.push(...ROTATION_FIELDS)
+  }
+  if (canEditGeometry && ['rectangle', 'ellipse', 'diamond'].includes(element.type)) {
     editableFields.push(...RESIZE_FIELDS)
+  }
   if (
     element.type === 'text' &&
     !relationships &&

@@ -74,7 +74,7 @@ flowchart TB
 
   subgraph shell["apps/canvas — parent window"]
     chat["FloatingWidgetChat<br/>from app-browser"]
-    tools["draw / search / inspect / read / edit / clear"]
+    tools["draw / search / inspect / read / edit<br/>group / ungroup / duplicate / delete<br/>align / distribute / stack / reorder / clear"]
     handle["AppBridgeHandle"]
     client["app-bridge client"]
     frame["AppFrame"]
@@ -192,14 +192,22 @@ flowchart LR
 
 This is the only shared source of truth for the Excalidraw vocabulary:
 
-| Verb      | Class | Contract purpose                                                 |
-| --------- | ----- | ---------------------------------------------------------------- |
-| `draw`    | write | Create supported element skeletons and post-layout connectors    |
-| `search`  | read  | Return compact candidates by query, type, selection, or viewport |
-| `inspect` | read  | Summarize scene, viewport, selection, groups, and relationships  |
-| `read`    | read  | Return normalized full element records and edit versions         |
-| `edit`    | write | Apply atomic, version-checked, invariant-safe patches            |
-| `clear`   | write | Remove all scene elements as an undoable update                  |
+| Verb         | Class | Contract purpose                                                 |
+| ------------ | ----- | ---------------------------------------------------------------- |
+| `draw`       | write | Create supported element skeletons and post-layout connectors    |
+| `search`     | read  | Return compact candidates by query, type, selection, or viewport |
+| `inspect`    | read  | Summarize scene, viewport, selection, groups, and relationships  |
+| `read`       | read  | Return normalized full element records and edit versions         |
+| `edit`       | write | Apply atomic, version-checked, relationship-aware patches        |
+| `group`      | write | Add a group id to versioned existing elements                    |
+| `ungroup`    | write | Remove innermost, specified, or all group ids                    |
+| `duplicate`  | write | Duplicate versioned elements with safe related-label handling    |
+| `delete`     | write | Delete versioned elements, rejecting unsafe relationship crosses |
+| `align`      | write | Align versioned elements on x or y within selection bounds       |
+| `distribute` | write | Distribute versioned elements across x or y gaps/centers         |
+| `stack`      | write | Stack versioned elements horizontally or vertically with spacing |
+| `reorder`    | write | Move versioned elements forward/backward or to front/back        |
+| `clear`      | write | Remove all scene elements as an undoable update                  |
 
 The package internally separates input schemas from result contracts and declares
 `sideEffects: false`. This lets the canvas startup graph retain the schemas needed to
@@ -309,18 +317,26 @@ return a bounded prefix and list their field path in truncation metadata.
 
 Budgets are measured as exact UTF-8 bytes of serialized JSON. Requests over budget
 fail before behavior executes. Results drop trailing detailed element records until
-they fit and report both omissions and field truncations. Edit receipts (`id` and new
-`version`) are always retained even when detailed edited records are omitted; callers
-retrieve omitted detail with `read`.
+they fit and report both omissions and field truncations. Edit and structural receipts
+(`id`, new `version`, and duplicate `sourceId` where relevant) are always retained even
+when detailed edited records are omitted; callers retrieve omitted detail with `read`.
 
-| Verb      | Request budget | Result budget |
-| --------- | -------------: | ------------: |
-| `search`  |          8 KiB |        16 KiB |
-| `inspect` |         16 KiB |        32 KiB |
-| `read`    |         16 KiB |        64 KiB |
-| `draw`    |         64 KiB |        64 KiB |
-| `edit`    |         64 KiB |        64 KiB |
-| `clear`   |          1 KiB |         1 KiB |
+| Verb         | Request budget | Result budget |
+| ------------ | -------------: | ------------: |
+| `search`     |          8 KiB |        16 KiB |
+| `inspect`    |         16 KiB |        32 KiB |
+| `read`       |         16 KiB |        64 KiB |
+| `draw`       |         64 KiB |        64 KiB |
+| `edit`       |         64 KiB |        64 KiB |
+| `group`      |         64 KiB |        64 KiB |
+| `ungroup`    |         64 KiB |        64 KiB |
+| `duplicate`  |         64 KiB |        64 KiB |
+| `delete`     |         64 KiB |        64 KiB |
+| `align`      |         64 KiB |        64 KiB |
+| `distribute` |         64 KiB |        64 KiB |
+| `stack`      |         64 KiB |        64 KiB |
+| `reorder`    |         64 KiB |        64 KiB |
+| `clear`      |          1 KiB |         1 KiB |
 
 ```mermaid
 flowchart LR
@@ -357,7 +373,8 @@ flowchart LR
   create["create.ts<br/>draw, clear,<br/>post-layout connectors"]
   query["query.ts<br/>snapshots, search, inspect,<br/>read, paging, budgets"]
   normalization["normalization.ts<br/>union, details, bounds,<br/>capabilities"]
-  edit["edit.ts<br/>preflight, versions,<br/>patch and atomic update"]
+  edit["edit.ts<br/>preflight, versions,<br/>relationship-aware patch update"]
+  structure["structure.ts<br/>group, duplicate/delete,<br/>align/distribute/stack/reorder"]
   payload["payload.ts<br/>UTF-8 measurement<br/>and bounded prefixes"]
   api["ExcalidrawImperativeAPI"]
 
@@ -368,6 +385,9 @@ flowchart LR
   bridge --> edit --> api
   edit --> normalization
   edit --> payload
+  bridge --> structure --> api
+  structure --> normalization
+  structure --> payload
   normalization --> payload
 ```
 
@@ -381,7 +401,11 @@ The modules translate the stable model vocabulary into Excalidraw operations:
   final node bounds, and performs one undoable scene update;
 - `search`, `inspect`, and `read` normalize current elements and app state;
 - `edit` preflights the whole batch, checks element versions and relationship
-  invariants, and performs one undoable update; and
+  -aware geometry invariants, moves dependent labels/frame children where safe, and
+  performs one undoable update;
+- `group`, `ungroup`, `duplicate`, `delete`, `align`, `distribute`, `stack`, and
+  `reorder` preflight ids, element versions, and scene versions before applying one
+  undoable structural update; and
 - `clear` submits an empty element list as an undoable update.
 
 All writes use `CaptureUpdateAction.IMMEDIATELY`. A successful edit batch therefore
