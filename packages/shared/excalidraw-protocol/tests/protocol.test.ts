@@ -1,15 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import {
+  alignInputSchema,
   clearInputSchema,
+  deleteInputSchema,
+  distributeInputSchema,
   drawInputSchema,
+  duplicateInputSchema,
   editInputSchema,
   excalidrawVerbContracts,
   EXCALIDRAW_PROTOCOL_VERSION,
   EXCALIDRAW_VERBS,
+  groupInputSchema,
   inspectInputSchema,
+  orderInputSchema,
   readInputSchema,
   readElementSchema,
-  searchInputSchema
+  searchInputSchema,
+  stackInputSchema,
+  transformInputSchema
 } from '../src/index'
 
 describe('excalidraw protocol', () => {
@@ -125,13 +133,78 @@ describe('excalidraw protocol', () => {
     expect(clearInputSchema.safeParse({ extra: true }).success).toBe(false)
   })
 
+  it('defaults and validates structural editing verbs', () => {
+    expect(groupInputSchema.parse({ operation: 'group' })).toEqual({ operation: 'group' })
+    expect(groupInputSchema.safeParse({ operation: 'merge' }).success).toBe(false)
+    expect(duplicateInputSchema.parse({ elementIds: ['a'] })).toMatchObject({
+      offset: { x: 10, y: 10 }
+    })
+    expect(duplicateInputSchema.safeParse({ elementIds: [] }).success).toBe(false)
+    expect(deleteInputSchema.safeParse({ elementIds: ['a', 'a'] }).success).toBe(false)
+    // single-element align/distribute are accepted by the schema (handled as a no-op)
+    expect(
+      alignInputSchema.safeParse({ elementIds: ['a'], axis: 'x', position: 'start' }).success
+    ).toBe(true)
+    // empty selection: omitting elementIds is valid (falls back to selection)
+    expect(alignInputSchema.parse({ axis: 'y', position: 'center' })).toEqual({
+      axis: 'y',
+      position: 'center'
+    })
+    expect(distributeInputSchema.safeParse({ axis: 'z' }).success).toBe(false)
+    expect(stackInputSchema.parse({ direction: 'horizontal' })).toMatchObject({
+      spacing: 20,
+      align: 'center'
+    })
+    expect(orderInputSchema.safeParse({ operation: 'front' }).success).toBe(true)
+    expect(orderInputSchema.safeParse({ operation: 'sideways' }).success).toBe(false)
+  })
+
+  it('requires versioned, non-empty transform geometry changes', () => {
+    expect(
+      transformInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 2, move: { dx: 5, dy: -5 } }]
+      })
+    ).toMatchObject({ elements: [{ id: 'a', expectedVersion: 2 }] })
+    expect(
+      transformInputSchema.safeParse({ elements: [{ id: 'a', expectedVersion: 2 }] }).success
+    ).toBe(false)
+    expect(
+      transformInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 2, resize: {} }]
+      }).success
+    ).toBe(false)
+    expect(
+      transformInputSchema.safeParse({
+        elements: [
+          { id: 'a', expectedVersion: 1, move: { dx: 1, dy: 1 } },
+          { id: 'a', expectedVersion: 1, move: { dx: 2, dy: 2 } }
+        ]
+      }).success
+    ).toBe(false)
+  })
+
   it('uses an independently owned app contract version', () => {
-    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(3)
+    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(4)
   })
 
   it('defines input and result contracts for every advertised verb', () => {
     expect(Object.keys(excalidrawVerbContracts)).toEqual(EXCALIDRAW_VERBS)
-    expect(EXCALIDRAW_VERBS).toEqual(['draw', 'search', 'inspect', 'read', 'edit', 'clear'])
+    expect(EXCALIDRAW_VERBS).toEqual([
+      'draw',
+      'search',
+      'inspect',
+      'read',
+      'edit',
+      'clear',
+      'group',
+      'duplicate',
+      'delete',
+      'align',
+      'distribute',
+      'stack',
+      'order',
+      'transform'
+    ])
     expect(
       excalidrawVerbContracts.draw.resultSchema.safeParse({
         ok: true,

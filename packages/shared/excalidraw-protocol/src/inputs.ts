@@ -3,7 +3,7 @@ import { z } from 'zod'
 export const EXCALIDRAW_APP_ID = 'excalidraw'
 // Version of the Excalidraw verb contracts, intentionally independent from the
 // generic app-bridge envelope version.
-export const EXCALIDRAW_PROTOCOL_VERSION = 3
+export const EXCALIDRAW_PROTOCOL_VERSION = 4
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
 export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
@@ -23,7 +23,15 @@ export const EXCALIDRAW_PAYLOAD_BUDGETS = Object.freeze({
   read: { request: 16 * 1_024, result: 64 * 1_024 },
   draw: { request: 64 * 1_024, result: 64 * 1_024 },
   edit: { request: 64 * 1_024, result: 64 * 1_024 },
-  clear: { request: 1 * 1_024, result: 1 * 1_024 }
+  clear: { request: 1 * 1_024, result: 1 * 1_024 },
+  group: { request: 16 * 1_024, result: 64 * 1_024 },
+  duplicate: { request: 16 * 1_024, result: 64 * 1_024 },
+  delete: { request: 16 * 1_024, result: 16 * 1_024 },
+  align: { request: 16 * 1_024, result: 64 * 1_024 },
+  distribute: { request: 16 * 1_024, result: 64 * 1_024 },
+  stack: { request: 16 * 1_024, result: 64 * 1_024 },
+  order: { request: 16 * 1_024, result: 64 * 1_024 },
+  transform: { request: 32 * 1_024, result: 64 * 1_024 }
 })
 
 const colorSchema = z
@@ -265,13 +273,169 @@ export const editInputSchema = z
 
 export const clearInputSchema = z.object({}).strict()
 
+// Structural editing verbs operate on a set of existing elements. When
+// `elementIds` is omitted they fall back to the live canvas selection, which is
+// why the field is optional here but still validated for uniqueness when given.
+// `expectedSceneVersion` is the optimistic concurrency guard: supply the
+// `sceneVersion` from a prior read/inspect to make the mutation reject if the
+// scene drifted underneath you.
+const selectionTargetIdsSchema = uniqueElementIdsSchema
+  .optional()
+  .describe('Element ids to operate on. Omit to use the current canvas selection.')
+const expectedSceneVersionField = {
+  expectedSceneVersion: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe('Scene version from a prior read/inspect; rejects the edit if the scene changed.')
+}
+
+export const groupInputSchema = z
+  .object({
+    operation: z
+      .enum(['group', 'ungroup'])
+      .describe(
+        'group: enclose the elements in one new group. ungroup: remove their outermost group.'
+      ),
+    elementIds: selectionTargetIdsSchema,
+    ...expectedSceneVersionField
+  })
+  .strict()
+
+export const duplicateInputSchema = z
+  .object({
+    elementIds: uniqueElementIdsSchema.describe('Existing element ids to duplicate.'),
+    offset: z
+      .object({ x: z.number().finite(), y: z.number().finite() })
+      .strict()
+      .default({ x: 10, y: 10 })
+      .describe('Canvas-pixel offset applied to every duplicated element.'),
+    ...expectedSceneVersionField
+  })
+  .strict()
+
+export const deleteInputSchema = z
+  .object({
+    elementIds: uniqueElementIdsSchema.describe('Existing element ids to delete.'),
+    ...expectedSceneVersionField
+  })
+  .strict()
+
+export const alignInputSchema = z
+  .object({
+    elementIds: selectionTargetIdsSchema,
+    axis: z
+      .enum(['x', 'y'])
+      .describe('x aligns left/center/right edges; y aligns top/middle/bottom edges.'),
+    position: z
+      .enum(['start', 'center', 'end'])
+      .describe('start = left/top edge, center = center line, end = right/bottom edge.'),
+    ...expectedSceneVersionField
+  })
+  .strict()
+
+export const distributeInputSchema = z
+  .object({
+    elementIds: selectionTargetIdsSchema,
+    axis: z
+      .enum(['x', 'y'])
+      .describe('x spaces elements evenly left-to-right; y spaces them top-to-bottom.'),
+    ...expectedSceneVersionField
+  })
+  .strict()
+
+export const stackInputSchema = z
+  .object({
+    elementIds: selectionTargetIdsSchema,
+    direction: z
+      .enum(['horizontal', 'vertical'])
+      .describe('Lay the elements out left-to-right or top-to-bottom in the given order.'),
+    spacing: z
+      .number()
+      .finite()
+      .nonnegative()
+      .default(20)
+      .describe('Gap in canvas pixels between consecutive elements.'),
+    align: z
+      .enum(['start', 'center', 'end'])
+      .default('center')
+      .describe('Cross-axis alignment relative to the first element.'),
+    ...expectedSceneVersionField
+  })
+  .strict()
+
+export const orderInputSchema = z
+  .object({
+    elementIds: selectionTargetIdsSchema,
+    operation: z
+      .enum(['front', 'back', 'forward', 'backward'])
+      .describe('front/back jump to the top/bottom of the z-stack; forward/backward step by one.'),
+    ...expectedSceneVersionField
+  })
+  .strict()
+
+const transformResizeSchema = z
+  .object({
+    width: z.number().finite().positive().optional(),
+    height: z.number().finite().positive().optional()
+  })
+  .strict()
+  .refine(
+    (resize) => resize.width !== undefined || resize.height !== undefined,
+    'resize requires width or height.'
+  )
+
+const transformItemSchema = z
+  .object({
+    id: elementIdSchema,
+    expectedVersion: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('The element version from a prior read; rejects stale edits.'),
+    move: z
+      .object({ dx: z.number().finite(), dy: z.number().finite() })
+      .strict()
+      .optional()
+      .describe('Translate by this delta, carrying labels and frame children.'),
+    resize: transformResizeSchema.optional()
+  })
+  .strict()
+  .refine(
+    (item) => item.move !== undefined || item.resize !== undefined,
+    'Each transform requires move or resize.'
+  )
+
+export const transformInputSchema = z
+  .object({
+    elements: z
+      .array(transformItemSchema)
+      .min(1)
+      .max(EXCALIDRAW_ELEMENT_LIMIT)
+      .refine(
+        (elements) => new Set(elements.map((element) => element.id)).size === elements.length,
+        'Transform element ids must be unique.'
+      ),
+    ...expectedSceneVersionField
+  })
+  .strict()
+
 export const excalidrawVerbInputSchemas = {
   draw: drawInputSchema,
   search: searchInputSchema,
   inspect: inspectInputSchema,
   read: readInputSchema,
   edit: editInputSchema,
-  clear: clearInputSchema
+  clear: clearInputSchema,
+  group: groupInputSchema,
+  duplicate: duplicateInputSchema,
+  delete: deleteInputSchema,
+  align: alignInputSchema,
+  distribute: distributeInputSchema,
+  stack: stackInputSchema,
+  order: orderInputSchema,
+  transform: transformInputSchema
 } as const
 
 export const EXCALIDRAW_VERBS = Object.freeze(
@@ -287,3 +451,11 @@ export type ReadInput = z.infer<typeof readInputSchema>
 export type EditInput = z.infer<typeof editInputSchema>
 export type EditChanges = z.infer<typeof editChangesSchema>
 export type ClearInput = z.infer<typeof clearInputSchema>
+export type GroupInput = z.infer<typeof groupInputSchema>
+export type DuplicateInput = z.infer<typeof duplicateInputSchema>
+export type DeleteInput = z.infer<typeof deleteInputSchema>
+export type AlignInput = z.infer<typeof alignInputSchema>
+export type DistributeInput = z.infer<typeof distributeInputSchema>
+export type StackInput = z.infer<typeof stackInputSchema>
+export type OrderInput = z.infer<typeof orderInputSchema>
+export type TransformInput = z.infer<typeof transformInputSchema>

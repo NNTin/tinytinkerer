@@ -132,7 +132,21 @@ const fakeApi = (
     scrollToContent: vi.fn()
   }) as unknown as ExcalidrawImperativeAPI
 
-type Verb = 'draw' | 'search' | 'inspect' | 'read' | 'edit' | 'clear'
+type Verb =
+  | 'draw'
+  | 'search'
+  | 'inspect'
+  | 'read'
+  | 'edit'
+  | 'clear'
+  | 'group'
+  | 'duplicate'
+  | 'delete'
+  | 'align'
+  | 'distribute'
+  | 'stack'
+  | 'order'
+  | 'transform'
 
 const run = (api: ExcalidrawImperativeAPI, verb: Verb, payload: unknown): Promise<unknown> => {
   const registration = createExcalidrawHandlers(api)[verb]
@@ -145,6 +159,26 @@ const run = (api: ExcalidrawImperativeAPI, verb: Verb, payload: unknown): Promis
 }
 
 describe('Excalidraw bridge handlers', () => {
+  it('binds every advertised verb to a schema-validated handler', () => {
+    const handlers = createExcalidrawHandlers(fakeApi())
+    expect(Object.keys(handlers)).toEqual([
+      'draw',
+      'search',
+      'inspect',
+      'read',
+      'edit',
+      'clear',
+      'group',
+      'duplicate',
+      'delete',
+      'align',
+      'distribute',
+      'stack',
+      'order',
+      'transform'
+    ])
+  })
+
   it('converts and appends draw elements as an undoable update', async () => {
     const api = fakeApi([baseElement('existing')])
     const result = await run(api, 'draw', {

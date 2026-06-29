@@ -6,6 +6,7 @@ import {
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import type { DrawConnector, DrawElement, DrawInput } from '@tinytinkerer/excalidraw-protocol'
+import { uniqueId } from './ids'
 import { assertRequestBudget } from './query'
 
 const skeleton = (element: DrawElement): Record<string, unknown> => {
@@ -53,21 +54,6 @@ type ConnectorReceipt = {
   anchorRule: 'horizontal-row' | 'vertical-trunk'
   horizontal: boolean
   vertical: boolean
-}
-
-const randomSuffix = (): string => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-    return crypto.randomUUID()
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-}
-
-const uniqueId = (prefix: string, used: Set<string>): string => {
-  let id: string
-  do {
-    id = `${prefix}-${randomSuffix()}`
-  } while (used.has(id))
-  used.add(id)
-  return id
 }
 
 const elementBounds = (element: OrderedExcalidrawElement): Bounds => {

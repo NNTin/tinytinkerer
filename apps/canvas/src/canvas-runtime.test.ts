@@ -18,12 +18,28 @@ describe('canvas app tools', () => {
       'inspect',
       'read',
       'edit',
-      'clear'
+      'clear',
+      'group',
+      'duplicate',
+      'delete',
+      'align',
+      'distribute',
+      'stack',
+      'order',
+      'transform'
     ])
     expect(
       tools.find((tool) => tool.id === 'draw')?.schema.safeParse({ elements: [] }).success
     ).toBe(false)
     expect(tools.find((tool) => tool.id === 'read')?.schema.safeParse({}).success).toBe(false)
+    // structural verbs consume the shared schemas, e.g. transform requires versioned edits
+    expect(
+      tools.find((tool) => tool.id === 'transform')?.schema.safeParse({ elements: [] }).success
+    ).toBe(false)
+    expect(
+      tools.find((tool) => tool.id === 'align')?.schema.safeParse({ axis: 'x', position: 'start' })
+        .success
+    ).toBe(true)
   })
 
   it('forwards validated tool input to the bridge handle', async () => {

@@ -59,7 +59,10 @@ Read the relevant sections before designing or implementing:
   `ExcalidrawImperativeAPI`, and app-domain behavior. Keep implementation in focused internal modules:
   `create.ts` for draw/clear and connector endpoint generation, `query.ts` for search/inspect/read and
   budgets, `normalization.ts` for normalized element records and capabilities, `edit.ts` for atomic
-  versioned edits, and `payload.ts` for exact UTF-8 measurement/truncation. Keep `bridge.ts` limited to
+  versioned field edits, `structure.ts` for the structural verbs (group, duplicate, delete, align,
+  distribute, stack, order, transform), `mutation.ts` for the shared receipt + budget-bounded record
+  helper used by `edit` and `structure`, `ids.ts` for stable id minting used by `create` and
+  `structure`, and `payload.ts` for exact UTF-8 measurement/truncation. Keep `bridge.ts` limited to
   `defineBridgeVerb(...)` binding and server creation.
 - `apps/canvas` owns the deployable canvas shell, iframe URL, app id/version wiring, and model-facing
   verb descriptions in `src/canvas-runtime.ts`. It may import Excalidraw contracts, but it must never
@@ -92,14 +95,28 @@ Read the relevant sections before designing or implementing:
 
 ## Current verbs
 
-| Verb      | Direction | Implementation focus                                                                  |
-| --------- | --------- | ------------------------------------------------------------------------------------- |
-| `draw`    | WRITE     | Element skeletons, stable ids, post-layout connectors, undoable scene update          |
-| `search`  | READ      | Capped candidates by query, type, selection, or viewport                              |
-| `inspect` | READ      | Compact scene, viewport, selection, grouping, z-order, locking, and relationships     |
-| `read`    | READ      | Budgeted normalized discriminated element records, capabilities, versions, pagination |
-| `edit`    | WRITE     | Atomic, version-checked, invariant-safe patches with compact receipts                 |
-| `clear`   | WRITE     | Undoable `updateScene({ elements: [] })`                                              |
+| Verb         | Direction | Implementation focus                                                                  |
+| ------------ | --------- | ------------------------------------------------------------------------------------- |
+| `draw`       | WRITE     | Element skeletons, stable ids, post-layout connectors, undoable scene update          |
+| `search`     | READ      | Capped candidates by query, type, selection, or viewport                              |
+| `inspect`    | READ      | Compact scene, viewport, selection, grouping, z-order, locking, and relationships     |
+| `read`       | READ      | Budgeted normalized discriminated element records, capabilities, versions, pagination |
+| `edit`       | WRITE     | Atomic, version-checked, invariant-safe patches with compact receipts                 |
+| `clear`      | WRITE     | Undoable `updateScene({ elements: [] })`                                              |
+| `group`      | WRITE     | Group/ungroup by id or selection, carrying bound labels; contiguous z-order           |
+| `duplicate`  | WRITE     | Copy by id with offset, fresh ids, remapped groups/labels/intra-set bindings          |
+| `delete`     | WRITE     | Delete by id, remove bound labels, detach dangling connector bindings                 |
+| `align`      | WRITE     | Align ≥2 elements to a shared edge/center on the x or y axis                          |
+| `distribute` | WRITE     | Equalize gaps between ≥3 elements along an axis, ends fixed                           |
+| `stack`      | WRITE     | Lay elements out in order with a configurable gap and cross-axis alignment            |
+| `order`      | WRITE     | Reorder z-layers: front/back, forward/backward (array reorder → fractional resync)    |
+| `transform`  | WRITE     | Relationship-aware move/resize by id + expected version; rejects binding distortion   |
+
+The eight structural verbs live in `structure.ts` and share `mutation.ts` (receipts +
+budget trimming, also used by `edit`) and `ids.ts` (id minting, also used by `draw`).
+They accept explicit `elementIds` or fall back to the live selection, take an optional
+`expectedSceneVersion` for optimistic concurrency, and commit exactly one atomic,
+undoable `updateScene`.
 
 ## Useful tools and checks
 

@@ -1,12 +1,20 @@
 import { z } from 'zod'
 import {
+  alignInputSchema,
   clearInputSchema,
+  deleteInputSchema,
+  distributeInputSchema,
   drawInputSchema,
+  duplicateInputSchema,
   editInputSchema,
   EXCALIDRAW_DETAIL_LEVELS,
+  groupInputSchema,
   inspectInputSchema,
+  orderInputSchema,
   readInputSchema,
-  searchInputSchema
+  searchInputSchema,
+  stackInputSchema,
+  transformInputSchema
 } from './inputs'
 
 export const editableFieldSchema = z.enum([
@@ -350,16 +358,72 @@ const editResultSchema = z
   .strict()
 const clearResultSchema = z.object({ ok: z.literal(true) }).strict()
 
+// Shared shape for structural mutations: an undoable batch reports how many
+// elements changed, the resulting scene version (use it as the next
+// `expectedSceneVersion`), per-element version receipts, and budget-bounded
+// normalized records that mirror `read`.
+const mutationResultShape = {
+  ok: z.literal(true),
+  updated: z.number().int().nonnegative(),
+  sceneVersion: z.number().int().nonnegative(),
+  receipts: z.array(editReceiptSchema),
+  elements: z.array(readElementSchema),
+  truncation: truncationSchema
+}
+const alignResultSchema = z.object(mutationResultShape).strict()
+const distributeResultSchema = z.object(mutationResultShape).strict()
+const stackResultSchema = z.object(mutationResultShape).strict()
+const orderResultSchema = z.object(mutationResultShape).strict()
+const transformResultSchema = z.object(mutationResultShape).strict()
+const groupResultSchema = z
+  .object({
+    ...mutationResultShape,
+    operation: z.enum(['group', 'ungroup']),
+    groupId: z.string().nullable()
+  })
+  .strict()
+const duplicateResultSchema = z
+  .object({
+    ok: z.literal(true),
+    created: z.number().int().nonnegative(),
+    sceneVersion: z.number().int().nonnegative(),
+    idMap: z.array(z.object({ sourceId: z.string(), newId: z.string() }).strict()),
+    elements: z.array(readElementSchema),
+    truncation: truncationSchema
+  })
+  .strict()
+const deleteResultSchema = z
+  .object({
+    ok: z.literal(true),
+    deleted: z.number().int().nonnegative(),
+    sceneVersion: z.number().int().nonnegative(),
+    deletedIds: z.array(z.string()),
+    removedRelatedIds: z.array(z.string())
+  })
+  .strict()
+
 export const excalidrawVerbContracts = {
   draw: { inputSchema: drawInputSchema, resultSchema: drawResultSchema },
   search: { inputSchema: searchInputSchema, resultSchema: searchResultSchema },
   inspect: { inputSchema: inspectInputSchema, resultSchema: inspectResultSchema },
   read: { inputSchema: readInputSchema, resultSchema: readResultSchema },
   edit: { inputSchema: editInputSchema, resultSchema: editResultSchema },
-  clear: { inputSchema: clearInputSchema, resultSchema: clearResultSchema }
+  clear: { inputSchema: clearInputSchema, resultSchema: clearResultSchema },
+  group: { inputSchema: groupInputSchema, resultSchema: groupResultSchema },
+  duplicate: { inputSchema: duplicateInputSchema, resultSchema: duplicateResultSchema },
+  delete: { inputSchema: deleteInputSchema, resultSchema: deleteResultSchema },
+  align: { inputSchema: alignInputSchema, resultSchema: alignResultSchema },
+  distribute: { inputSchema: distributeInputSchema, resultSchema: distributeResultSchema },
+  stack: { inputSchema: stackInputSchema, resultSchema: stackResultSchema },
+  order: { inputSchema: orderInputSchema, resultSchema: orderResultSchema },
+  transform: { inputSchema: transformInputSchema, resultSchema: transformResultSchema }
 } as const
 
 export type EditableField = z.infer<typeof editableFieldSchema>
 export type EditRestriction = z.infer<typeof editRestrictionSchema>
 export type ReadElement = z.infer<typeof readElementSchema>
 export type ReadResult = z.infer<typeof readResultSchema>
+export type MutationResult = z.infer<typeof alignResultSchema>
+export type GroupResult = z.infer<typeof groupResultSchema>
+export type DuplicateResult = z.infer<typeof duplicateResultSchema>
+export type DeleteResult = z.infer<typeof deleteResultSchema>

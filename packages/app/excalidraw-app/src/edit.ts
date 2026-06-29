@@ -10,8 +10,8 @@ import type {
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { EXCALIDRAW_PAYLOAD_BUDGETS } from '@tinytinkerer/excalidraw-protocol'
 import type { EditChanges, EditInput } from '@tinytinkerer/excalidraw-protocol'
-import { capabilitiesFor, elementMap, normalizeElement } from './normalization'
-import { settleSerializedBytes } from './payload'
+import { attachBoundedRecords, versionReceipts } from './mutation'
+import { capabilitiesFor, elementMap } from './normalization'
 import { assertRequestBudget } from './query'
 
 const hasChange = (changes: EditChanges, key: keyof EditChanges) =>
@@ -115,50 +115,12 @@ export const executeEdit = (api: ExcalidrawImperativeAPI, input: EditInput) => {
   if (updated)
     api.updateScene({ elements: nextElements, captureUpdate: CaptureUpdateAction.IMMEDIATELY })
 
-  const receipts = input.edits.map(({ id }) => {
-    const element = nextElements.find((candidate) => candidate.id === id)!
-    return { id, version: element.version }
-  })
-  const truncatedFields: string[] = []
-  let details = input.edits.map(({ id }) => {
-    const index = nextElements.findIndex((element) => element.id === id)
-    const normalized = normalizeElement(nextElements[index]!, index, nextElements, 'standard')
-    truncatedFields.push(
-      ...normalized.truncatedFields.map((field) => `${normalized.element.id}.${field}`)
-    )
-    return normalized.element
-  })
-  const budgetBytes = EXCALIDRAW_PAYLOAD_BUDGETS.edit.result
-  let result = {
-    ok: true as const,
-    updated,
-    receipts,
-    elements: details,
-    truncation: {
-      truncated: truncatedFields.length > 0,
-      fields: truncatedFields,
-      omittedElements: 0,
-      serializedBytes: 0,
-      budgetBytes
-    }
-  }
-  settleSerializedBytes(result)
-  while (result.truncation.serializedBytes > budgetBytes && details.length) {
-    details = details.slice(0, -1)
-    result = {
-      ...result,
-      elements: details,
-      truncation: {
-        ...result.truncation,
-        truncated: true,
-        omittedElements: receipts.length - details.length
-      }
-    }
-    settleSerializedBytes(result)
-  }
-  settleSerializedBytes(result)
-  if (result.truncation.serializedBytes > budgetBytes) {
-    throw new Error(`edit: compact receipts exceed the ${budgetBytes} byte payload budget`)
-  }
-  return result
+  const ids = input.edits.map(({ id }) => id)
+  const receipts = versionReceipts(nextElements, ids)
+  return attachBoundedRecords(
+    { ok: true as const, updated, receipts },
+    nextElements,
+    ids,
+    EXCALIDRAW_PAYLOAD_BUDGETS.edit.result
+  )
 }
