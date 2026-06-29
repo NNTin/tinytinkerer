@@ -61,24 +61,42 @@ const resolveScene = (
   return { elements, sceneVersion }
 }
 
-// Resolve operands: explicit ids (validated to exist, order preserved) or the
-// live canvas selection when ids are omitted.
-const resolveTargets = (
+type VersionedRef = { id: string; expectedVersion: number }
+
+// Resolve operands with versioning-by-default. Explicit `refs` are validated to
+// exist and to match their `expectedVersion` (order preserved); the scene
+// version is checked in `resolveScene`. When `refs` is omitted we fall back to
+// the live canvas selection — the only un-versioned convenience path.
+const resolveOperands = (
   api: ExcalidrawImperativeAPI,
   verb: string,
-  elements: readonly OrderedExcalidrawElement[],
-  ids: readonly string[] | undefined
-): OrderedExcalidrawElement[] => {
-  if (ids === undefined) {
+  refs: readonly VersionedRef[] | undefined,
+  expectedSceneVersion: number | undefined
+): {
+  elements: readonly OrderedExcalidrawElement[]
+  sceneVersion: number
+  targets: OrderedExcalidrawElement[]
+} => {
+  const { elements, sceneVersion } = resolveScene(api, verb, expectedSceneVersion)
+  if (refs === undefined) {
     const selected = new Set(Object.keys(api.getAppState().selectedElementIds))
-    return elements.filter((element) => selected.has(element.id))
+    return {
+      elements,
+      sceneVersion,
+      targets: elements.filter((element) => selected.has(element.id))
+    }
   }
   const byId = elementMap(elements)
-  return ids.map((id) => {
-    const element = byId.get(id)
-    if (!element) throw new Error(`${verb}: element "${id}" does not exist`)
+  const targets = refs.map((ref) => {
+    const element = byId.get(ref.id)
+    if (!element) throw new Error(`${verb}: element "${ref.id}" does not exist`)
+    if (element.version !== ref.expectedVersion)
+      throw new Error(
+        `${verb}: element "${ref.id}" is stale (expected version ${ref.expectedVersion}, current version ${element.version}); read it again before retrying`
+      )
     return element
   })
+  return { elements, sceneVersion, targets }
 }
 
 const isLinear = (element: OrderedExcalidrawElement): boolean =>
@@ -148,8 +166,12 @@ const commit = (
 
 export const executeAlign = (api: ExcalidrawImperativeAPI, input: AlignInput) => {
   assertRequestBudget('align', input)
-  const { elements } = resolveScene(api, 'align', input.expectedSceneVersion)
-  const targets = resolveTargets(api, 'align', elements, input.elementIds)
+  const { elements, targets } = resolveOperands(
+    api,
+    'align',
+    input.elements,
+    input.expectedSceneVersion
+  )
   const baseDeltas = new Map<string, Delta>()
   if (targets.length >= 2) {
     const boxes = targets.map(boxOf)
@@ -188,8 +210,12 @@ export const executeAlign = (api: ExcalidrawImperativeAPI, input: AlignInput) =>
 
 export const executeDistribute = (api: ExcalidrawImperativeAPI, input: DistributeInput) => {
   assertRequestBudget('distribute', input)
-  const { elements } = resolveScene(api, 'distribute', input.expectedSceneVersion)
-  const targets = resolveTargets(api, 'distribute', elements, input.elementIds)
+  const { elements, targets } = resolveOperands(
+    api,
+    'distribute',
+    input.elements,
+    input.expectedSceneVersion
+  )
   const baseDeltas = new Map<string, Delta>()
   if (targets.length >= 3) {
     const items = targets
@@ -221,8 +247,12 @@ export const executeDistribute = (api: ExcalidrawImperativeAPI, input: Distribut
 
 export const executeStack = (api: ExcalidrawImperativeAPI, input: StackInput) => {
   assertRequestBudget('stack', input)
-  const { elements } = resolveScene(api, 'stack', input.expectedSceneVersion)
-  const targets = resolveTargets(api, 'stack', elements, input.elementIds)
+  const { elements, targets } = resolveOperands(
+    api,
+    'stack',
+    input.elements,
+    input.expectedSceneVersion
+  )
   const baseDeltas = new Map<string, Delta>()
   if (targets.length >= 1) {
     const boxes = targets.map(boxOf)
@@ -276,8 +306,12 @@ const withBoundLabels = (
 
 export const executeOrder = (api: ExcalidrawImperativeAPI, input: OrderInput) => {
   assertRequestBudget('order', input)
-  const { elements } = resolveScene(api, 'order', input.expectedSceneVersion)
-  const targets = resolveTargets(api, 'order', elements, input.elementIds)
+  const { elements, targets } = resolveOperands(
+    api,
+    'order',
+    input.elements,
+    input.expectedSceneVersion
+  )
   const targetSet = withBoundLabels(elements, new Set(targets.map((element) => element.id)))
   const members = elements.filter((element) => targetSet.has(element.id))
   const others = elements.filter((element) => !targetSet.has(element.id))
@@ -312,8 +346,12 @@ export const executeOrder = (api: ExcalidrawImperativeAPI, input: OrderInput) =>
 
 export const executeGroup = (api: ExcalidrawImperativeAPI, input: GroupInput) => {
   assertRequestBudget('group', input)
-  const { elements } = resolveScene(api, 'group', input.expectedSceneVersion)
-  const targets = resolveTargets(api, 'group', elements, input.elementIds)
+  const { elements, targets } = resolveOperands(
+    api,
+    'group',
+    input.elements,
+    input.expectedSceneVersion
+  )
   const groupResult = (
     operation: 'group' | 'ungroup',
     groupId: string | null,
@@ -374,13 +412,12 @@ export const executeGroup = (api: ExcalidrawImperativeAPI, input: GroupInput) =>
 
 export const executeDuplicate = (api: ExcalidrawImperativeAPI, input: DuplicateInput) => {
   assertRequestBudget('duplicate', input)
-  const { elements } = resolveScene(api, 'duplicate', input.expectedSceneVersion)
-  const byId = elementMap(elements)
-  const sources = input.elementIds.map((id) => {
-    const element = byId.get(id)
-    if (!element) throw new Error(`duplicate: element "${id}" does not exist`)
-    return element
-  })
+  const { elements, targets: sources } = resolveOperands(
+    api,
+    'duplicate',
+    input.elements,
+    input.expectedSceneVersion
+  )
   const sourceSet = withBoundLabels(elements, new Set(sources.map((element) => element.id)))
   const cluster = elements.filter((element) => sourceSet.has(element.id))
   const usedIds = new Set(elements.map((element) => element.id))
@@ -437,24 +474,44 @@ export const executeDuplicate = (api: ExcalidrawImperativeAPI, input: DuplicateI
 
 export const executeDelete = (api: ExcalidrawImperativeAPI, input: DeleteInput) => {
   assertRequestBudget('delete', input)
-  const { elements } = resolveScene(api, 'delete', input.expectedSceneVersion)
-  const byId = elementMap(elements)
-  const deletedIds = input.elementIds.map((id) => {
-    if (!byId.has(id)) throw new Error(`delete: element "${id}" does not exist`)
-    return id
-  })
-  const removalSet = new Set(deletedIds)
-  const removedRelatedIds: string[] = []
-  for (const element of elements)
-    if (
-      element.type === 'text' &&
-      element.containerId &&
-      removalSet.has(element.containerId) &&
-      !removalSet.has(element.id)
-    ) {
-      removalSet.add(element.id)
-      removedRelatedIds.push(element.id)
-    }
+  const { elements, targets } = resolveOperands(
+    api,
+    'delete',
+    input.elements,
+    input.expectedSceneVersion
+  )
+  const explicit = new Set(targets.map((element) => element.id))
+  const deletedIds = targets.map((element) => element.id)
+  // Bound text labels are force-deleted with their container; that crosses a
+  // relationship the caller did not list explicitly.
+  const cascadeLabelIds = elements
+    .filter(
+      (element) =>
+        element.type === 'text' &&
+        element.containerId &&
+        explicit.has(element.containerId) &&
+        !explicit.has(element.id)
+    )
+    .map((element) => element.id)
+  const removalSet = new Set([...explicit, ...cascadeLabelIds])
+  // Surviving elements whose boundElements/connector bindings would be rewritten.
+  const detachedSurvivorIds = elements
+    .filter((element) => !removalSet.has(element.id))
+    .filter(
+      (element) =>
+        element.boundElements?.some((bound) => removalSet.has(bound.id)) ||
+        ((element.type === 'arrow' || element.type === 'line') &&
+          ((element.startBinding && removalSet.has(element.startBinding.elementId)) ||
+            (element.endBinding && removalSet.has(element.endBinding.elementId))))
+    )
+    .map((element) => element.id)
+  // Predictable blast radius: refuse to cross relationships unless asked to.
+  if (!input.includeRelated && (cascadeLabelIds.length > 0 || detachedSurvivorIds.length > 0)) {
+    const crossings = [...new Set([...cascadeLabelIds, ...detachedSurvivorIds])]
+    throw new Error(
+      `delete: removing ${deletedIds.join(', ')} would affect related elements (${crossings.join(', ')}); pass includeRelated:true to cascade bound labels and detach connectors`
+    )
+  }
   const remaining = elements
     .filter((element) => !removalSet.has(element.id))
     .map((element) => {
@@ -475,7 +532,7 @@ export const executeDelete = (api: ExcalidrawImperativeAPI, input: DeleteInput) 
     deleted: deletedIds.length,
     sceneVersion: sceneVersionOf(remaining),
     deletedIds,
-    removedRelatedIds
+    removedRelatedIds: cascadeLabelIds
   }
 }
 
@@ -504,7 +561,6 @@ export const executeTransform = (api: ExcalidrawImperativeAPI, input: TransformI
         element.boundElements?.some((bound) => bound.type === 'arrow') ||
         elements.some(
           (other) =>
-            isLinear(other) &&
             (other.type === 'arrow' || other.type === 'line') &&
             (other.startBinding?.elementId === element.id ||
               other.endBinding?.elementId === element.id)

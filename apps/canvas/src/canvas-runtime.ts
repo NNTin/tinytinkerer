@@ -4,6 +4,12 @@ import { excalidrawVerbInputSchemas } from '@tinytinkerer/excalidraw-protocol'
 
 export const canvasBridgeHandle = createAppBridgeHandle()
 
+// Shared concurrency note for the structural verbs (stored once, reused by each
+// description). Explicit operands are versioned by default.
+const versionedExplicit =
+  'Pass versioned element refs ({id, expectedVersion}) and expectedSceneVersion from a prior read. Atomic and undoable.'
+const versionedOperands = `${versionedExplicit} Omit elements to operate on the current selection instead.`
+
 export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandle) =>
   appToolsFromVerbs({
     handle,
@@ -47,47 +53,53 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
       },
       group: {
         description:
-          'Group or ungroup Excalidraw elements by id (or the current selection). Grouping ' +
-          'encloses two or more elements in one new group and carries their bound labels; ' +
-          'ungrouping removes the outermost group. Atomic and undoable.',
+          'Group or ungroup Excalidraw elements. Grouping encloses two or more in one new group ' +
+          'and carries their bound labels; ungrouping removes the outermost group. ' +
+          versionedOperands,
         schema: excalidrawVerbInputSchemas.group
       },
       duplicate: {
         description:
-          'Duplicate existing Excalidraw elements by id, offset by a configurable delta. Bound ' +
-          'labels, groups, and intra-selection bindings are copied with fresh ids so the copy is ' +
-          'independent. Returns the source-to-new id map.',
+          'Duplicate Excalidraw elements, offset by a configurable delta. Bound labels, groups, ' +
+          'and intra-selection bindings are copied with fresh ids so the copy is independent; ' +
+          'returns the source-to-new id map. ' +
+          versionedExplicit,
         schema: excalidrawVerbInputSchemas.duplicate
       },
       delete: {
         description:
-          'Delete existing Excalidraw elements by id. Bound text labels are removed with their ' +
-          'container and dangling connector bindings are detached so the scene stays valid. ' +
-          'Atomic and undoable.',
+          'Delete Excalidraw elements. By default a delete that would cross a relationship ' +
+          '(cascade a bound label or frame child, or detach a connector) is rejected; set ' +
+          'includeRelated:true to allow the cascade. ' +
+          versionedExplicit,
         schema: excalidrawVerbInputSchemas.delete
       },
       align: {
         description:
-          'Align two or more Excalidraw elements (by id or selection) to a shared edge or center ' +
-          'on the x or y axis. Labels and frame children move with their parent.',
+          'Align two or more Excalidraw elements to a shared edge or center on the x or y axis. ' +
+          'Labels and frame children move with their parent. ' +
+          versionedOperands,
         schema: excalidrawVerbInputSchemas.align
       },
       distribute: {
         description:
           'Evenly distribute three or more Excalidraw elements along the x or y axis, keeping the ' +
-          'outermost two fixed and equalizing the gaps between the rest.',
+          'outermost two fixed and equalizing the gaps between the rest. ' +
+          versionedOperands,
         schema: excalidrawVerbInputSchemas.distribute
       },
       stack: {
         description:
           'Stack Excalidraw elements horizontally or vertically in order with a configurable gap, ' +
-          'anchored at the first element, with optional cross-axis alignment.',
+          'anchored at the first element, with optional cross-axis alignment. ' +
+          versionedOperands,
         schema: excalidrawVerbInputSchemas.stack
       },
       order: {
         description:
           'Reorder Excalidraw layers: bring elements to front/back or step them forward/backward ' +
-          'in the z-stack. Bound labels keep their relative order above their container.',
+          'in the z-stack. Bound labels keep their order above their container. ' +
+          versionedOperands,
         schema: excalidrawVerbInputSchemas.order
       },
       transform: {

@@ -134,29 +134,82 @@ describe('excalidraw protocol', () => {
   })
 
   it('defaults and validates structural editing verbs', () => {
+    // Selection fallback: omitting `elements` stays valid and un-versioned.
     expect(groupInputSchema.parse({ operation: 'group' })).toEqual({ operation: 'group' })
     expect(groupInputSchema.safeParse({ operation: 'merge' }).success).toBe(false)
-    expect(duplicateInputSchema.parse({ elementIds: ['a'] })).toMatchObject({
-      offset: { x: 10, y: 10 }
-    })
-    expect(duplicateInputSchema.safeParse({ elementIds: [] }).success).toBe(false)
-    expect(deleteInputSchema.safeParse({ elementIds: ['a', 'a'] }).success).toBe(false)
-    // single-element align/distribute are accepted by the schema (handled as a no-op)
-    expect(
-      alignInputSchema.safeParse({ elementIds: ['a'], axis: 'x', position: 'start' }).success
-    ).toBe(true)
-    // empty selection: omitting elementIds is valid (falls back to selection)
     expect(alignInputSchema.parse({ axis: 'y', position: 'center' })).toEqual({
       axis: 'y',
       position: 'center'
     })
-    expect(distributeInputSchema.safeParse({ axis: 'z' }).success).toBe(false)
     expect(stackInputSchema.parse({ direction: 'horizontal' })).toMatchObject({
       spacing: 20,
       align: 'center'
     })
     expect(orderInputSchema.safeParse({ operation: 'front' }).success).toBe(true)
     expect(orderInputSchema.safeParse({ operation: 'sideways' }).success).toBe(false)
+    expect(distributeInputSchema.safeParse({ axis: 'z' }).success).toBe(false)
+    // duplicate/delete are always explicit + versioned.
+    expect(
+      duplicateInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        expectedSceneVersion: 5
+      })
+    ).toMatchObject({ offset: { x: 10, y: 10 } })
+    expect(duplicateInputSchema.safeParse({ elements: [], expectedSceneVersion: 5 }).success).toBe(
+      false
+    )
+    expect(
+      duplicateInputSchema.safeParse({ elements: [{ id: 'a', expectedVersion: 1 }] }).success
+    ).toBe(false)
+    expect(
+      deleteInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        expectedSceneVersion: 5
+      })
+    ).toMatchObject({ includeRelated: false })
+    expect(
+      deleteInputSchema.safeParse({
+        elements: [
+          { id: 'a', expectedVersion: 1 },
+          { id: 'a', expectedVersion: 2 }
+        ],
+        expectedSceneVersion: 5
+      }).success
+    ).toBe(false)
+  })
+
+  it('versions explicit structural operands by default', () => {
+    // Explicit elements require a per-element expectedVersion AND expectedSceneVersion.
+    expect(
+      alignInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        axis: 'x',
+        position: 'start'
+      }).success
+    ).toBe(false)
+    expect(
+      alignInputSchema.safeParse({
+        elements: [{ id: 'a' }],
+        axis: 'x',
+        position: 'start',
+        expectedSceneVersion: 3
+      }).success
+    ).toBe(false)
+    expect(
+      alignInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        axis: 'x',
+        position: 'start',
+        expectedSceneVersion: 3
+      }).success
+    ).toBe(true)
+    // single-element explicit align is allowed by the schema (handled as a no-op)
+    expect(
+      orderInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        operation: 'front'
+      }).success
+    ).toBe(false)
   })
 
   it('requires versioned, non-empty transform geometry changes', () => {

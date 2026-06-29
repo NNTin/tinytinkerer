@@ -192,34 +192,44 @@ flowchart LR
 
 This is the only shared source of truth for the Excalidraw vocabulary:
 
-| Verb         | Class | Contract purpose                                                 |
-| ------------ | ----- | ---------------------------------------------------------------- |
-| `draw`       | write | Create supported element skeletons and post-layout connectors    |
-| `search`     | read  | Return compact candidates by query, type, selection, or viewport |
-| `inspect`    | read  | Summarize scene, viewport, selection, groups, and relationships  |
-| `read`       | read  | Return normalized full element records and edit versions         |
-| `edit`       | write | Apply atomic, version-checked, invariant-safe patches            |
-| `clear`      | write | Remove all scene elements as an undoable update                  |
-| `group`      | write | Group or ungroup elements, carrying bound labels                 |
-| `duplicate`  | write | Copy elements by id with offset and remapped relationships       |
-| `delete`     | write | Delete elements by id, removing labels and detaching connectors  |
-| `align`      | write | Align selected/specified elements on the x or y axis             |
-| `distribute` | write | Even out spacing between selected/specified elements             |
-| `stack`      | write | Lay elements out horizontally or vertically with a fixed gap     |
-| `order`      | write | Reorder z-layers (front/back, forward/backward)                  |
-| `transform`  | write | Relationship-aware move/resize by id and expected version        |
+| Verb         | Class | Contract purpose                                                              |
+| ------------ | ----- | ----------------------------------------------------------------------------- |
+| `draw`       | write | Create supported element skeletons and post-layout connectors                 |
+| `search`     | read  | Return compact candidates by query, type, selection, or viewport              |
+| `inspect`    | read  | Summarize scene, viewport, selection, groups, and relationships               |
+| `read`       | read  | Return normalized full element records and edit versions                      |
+| `edit`       | write | Apply atomic, version-checked, invariant-safe patches                         |
+| `clear`      | write | Remove all scene elements as an undoable update                               |
+| `group`      | write | Group or ungroup elements, carrying bound labels                              |
+| `duplicate`  | write | Copy elements by id with offset and remapped relationships                    |
+| `delete`     | write | Delete elements by id; rejects relationship crossings unless `includeRelated` |
+| `align`      | write | Align selected/specified elements on the x or y axis                          |
+| `distribute` | write | Even out spacing between selected/specified elements                          |
+| `stack`      | write | Lay elements out horizontally or vertically with a fixed gap                  |
+| `order`      | write | Reorder z-layers (front/back, forward/backward)                               |
+| `transform`  | write | Relationship-aware move/resize by id and expected version                     |
 
 The eight structural verbs (`group` through `transform`) extend the safe edit ladder for
-co-editing existing drawings. Each one resolves its operands from explicit element ids or
-the live selection, preflights version and relationship safety, and commits exactly one
-atomic, undoable `updateScene`. They reuse the shared budget/receipt machinery in
-`mutation.ts`, so their results carry the same compact version receipts and budget-bounded
-normalized records as `edit`. Relationship safety is uniform: labels follow their
-container, frame children follow their frame, and connectors only travel when both bound
-endpoints move by the same delta — a one-sided move or a resize that would distort a
-binding is rejected before any mutation. Optimistic concurrency uses an optional
-`expectedSceneVersion` (from a prior read/inspect), while `transform` additionally
-version-checks each element like `edit`.
+co-editing existing drawings. Each one resolves its operands, preflights version and
+relationship safety, and commits exactly one atomic, undoable `updateScene`. They reuse the
+shared budget/receipt machinery in `mutation.ts`, so their results carry the same compact
+version receipts and budget-bounded normalized records as `edit`. Relationship safety is
+uniform: labels follow their container, frame children follow their frame, and connectors
+only travel when both bound endpoints move by the same delta — a one-sided move or a resize
+that would distort a binding is rejected before any mutation.
+
+**Versioning by default.** Whenever operands are passed explicitly they are versioned
+element refs (`{ id, expectedVersion }`) and `expectedSceneVersion` is required, so the
+mutation rejects — before any `updateScene` — if either the element or the scene drifted
+since the caller read it (`transform` and `edit` already worked this way). The single
+un-versioned convenience path is the live-selection fallback: omit `elements` and the verb
+operates on the current canvas selection. `duplicate` and `delete` are always explicit, so
+they always require both versions.
+
+**Predictable blast radius for `delete`.** A delete that would cross a relationship —
+cascade-delete a bound label or frame child, or detach a surviving connector — is rejected
+unless `includeRelated: true` is passed, instead of silently cascading. A self-contained
+delete (every affected element listed explicitly, no surviving references) needs no flag.
 
 The package internally separates input schemas from result contracts and declares
 `sideEffects: false`. This lets the canvas startup graph retain the schemas needed to

@@ -273,22 +273,61 @@ export const editInputSchema = z
 
 export const clearInputSchema = z.object({}).strict()
 
-// Structural editing verbs operate on a set of existing elements. When
-// `elementIds` is omitted they fall back to the live canvas selection, which is
-// why the field is optional here but still validated for uniqueness when given.
-// `expectedSceneVersion` is the optimistic concurrency guard: supply the
-// `sceneVersion` from a prior read/inspect to make the mutation reject if the
-// scene drifted underneath you.
-const selectionTargetIdsSchema = uniqueElementIdsSchema
-  .optional()
-  .describe('Element ids to operate on. Omit to use the current canvas selection.')
+// Structural editing verbs operate on a set of existing elements. Concurrency is
+// versioned by default: whenever operands are passed explicitly, each is a
+// `{ id, expectedVersion }` ref AND `expectedSceneVersion` is required, so the
+// mutation rejects (before any scene update) if either the element or the scene
+// drifted since the caller read it. Omitting `elements` falls back to the live
+// canvas selection — the one un-versioned convenience path.
+const versionedElementRefSchema = z
+  .object({
+    id: elementIdSchema,
+    expectedVersion: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('The element version from a prior read; rejects stale edits.')
+  })
+  .strict()
+
+const versionedElementsSchema = z
+  .array(versionedElementRefSchema)
+  .min(1)
+  .max(EXCALIDRAW_ELEMENT_LIMIT)
+  .refine(
+    (refs) => new Set(refs.map((ref) => ref.id)).size === refs.length,
+    'Element ids must be unique.'
+  )
+
 const expectedSceneVersionField = {
   expectedSceneVersion: z
     .number()
     .int()
     .nonnegative()
     .optional()
-    .describe('Scene version from a prior read/inspect; rejects the edit if the scene changed.')
+    .describe(
+      'Scene version from a prior read/inspect. Required when `elements` is passed; rejects the edit if the scene changed.'
+    )
+}
+
+// Explicit operands are versioned; selection fallback is not. Shared by the
+// selection-capable structural verbs.
+const selectionOperandShape = {
+  elements: versionedElementsSchema
+    .optional()
+    .describe('Versioned element refs to operate on. Omit to use the current canvas selection.'),
+  ...expectedSceneVersionField
+}
+const requireSceneVersionWithElements = (
+  input: { elements?: unknown; expectedSceneVersion?: unknown },
+  ctx: z.RefinementCtx
+): void => {
+  if (input.elements !== undefined && input.expectedSceneVersion === undefined)
+    ctx.addIssue({
+      code: 'custom',
+      path: ['expectedSceneVersion'],
+      message: 'Required when elements are passed explicitly by id.'
+    })
 }
 
 export const groupInputSchema = z
@@ -298,56 +337,70 @@ export const groupInputSchema = z
       .describe(
         'group: enclose the elements in one new group. ungroup: remove their outermost group.'
       ),
-    elementIds: selectionTargetIdsSchema,
-    ...expectedSceneVersionField
+    ...selectionOperandShape
   })
   .strict()
+  .superRefine(requireSceneVersionWithElements)
 
 export const duplicateInputSchema = z
   .object({
-    elementIds: uniqueElementIdsSchema.describe('Existing element ids to duplicate.'),
+    elements: versionedElementsSchema.describe('Versioned refs of the elements to duplicate.'),
     offset: z
       .object({ x: z.number().finite(), y: z.number().finite() })
       .strict()
       .default({ x: 10, y: 10 })
       .describe('Canvas-pixel offset applied to every duplicated element.'),
-    ...expectedSceneVersionField
+    expectedSceneVersion: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('Scene version from a prior read/inspect; rejects the edit if the scene changed.')
   })
   .strict()
 
 export const deleteInputSchema = z
   .object({
-    elementIds: uniqueElementIdsSchema.describe('Existing element ids to delete.'),
-    ...expectedSceneVersionField
+    elements: versionedElementsSchema.describe('Versioned refs of the elements to delete.'),
+    includeRelated: z
+      .boolean()
+      .default(false)
+      .describe(
+        'Allow the delete to cross relationships (cascade bound labels, frame children, and detach connectors). When false, such a delete is rejected instead of silently cascading.'
+      ),
+    expectedSceneVersion: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('Scene version from a prior read/inspect; rejects the edit if the scene changed.')
   })
   .strict()
 
 export const alignInputSchema = z
   .object({
-    elementIds: selectionTargetIdsSchema,
+    ...selectionOperandShape,
     axis: z
       .enum(['x', 'y'])
       .describe('x aligns left/center/right edges; y aligns top/middle/bottom edges.'),
     position: z
       .enum(['start', 'center', 'end'])
-      .describe('start = left/top edge, center = center line, end = right/bottom edge.'),
-    ...expectedSceneVersionField
+      .describe('start = left/top edge, center = center line, end = right/bottom edge.')
   })
   .strict()
+  .superRefine(requireSceneVersionWithElements)
 
 export const distributeInputSchema = z
   .object({
-    elementIds: selectionTargetIdsSchema,
+    ...selectionOperandShape,
     axis: z
       .enum(['x', 'y'])
-      .describe('x spaces elements evenly left-to-right; y spaces them top-to-bottom.'),
-    ...expectedSceneVersionField
+      .describe('x spaces elements evenly left-to-right; y spaces them top-to-bottom.')
   })
   .strict()
+  .superRefine(requireSceneVersionWithElements)
 
 export const stackInputSchema = z
   .object({
-    elementIds: selectionTargetIdsSchema,
+    ...selectionOperandShape,
     direction: z
       .enum(['horizontal', 'vertical'])
       .describe('Lay the elements out left-to-right or top-to-bottom in the given order.'),
@@ -360,20 +413,20 @@ export const stackInputSchema = z
     align: z
       .enum(['start', 'center', 'end'])
       .default('center')
-      .describe('Cross-axis alignment relative to the first element.'),
-    ...expectedSceneVersionField
+      .describe('Cross-axis alignment relative to the first element.')
   })
   .strict()
+  .superRefine(requireSceneVersionWithElements)
 
 export const orderInputSchema = z
   .object({
-    elementIds: selectionTargetIdsSchema,
+    ...selectionOperandShape,
     operation: z
       .enum(['front', 'back', 'forward', 'backward'])
-      .describe('front/back jump to the top/bottom of the z-stack; forward/backward step by one.'),
-    ...expectedSceneVersionField
+      .describe('front/back jump to the top/bottom of the z-stack; forward/backward step by one.')
   })
   .strict()
+  .superRefine(requireSceneVersionWithElements)
 
 const transformResizeSchema = z
   .object({

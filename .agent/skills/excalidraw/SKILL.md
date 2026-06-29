@@ -105,7 +105,7 @@ Read the relevant sections before designing or implementing:
 | `clear`      | WRITE     | Undoable `updateScene({ elements: [] })`                                              |
 | `group`      | WRITE     | Group/ungroup by id or selection, carrying bound labels; contiguous z-order           |
 | `duplicate`  | WRITE     | Copy by id with offset, fresh ids, remapped groups/labels/intra-set bindings          |
-| `delete`     | WRITE     | Delete by id, remove bound labels, detach dangling connector bindings                 |
+| `delete`     | WRITE     | Delete by id; rejects relationship crossings unless `includeRelated`                  |
 | `align`      | WRITE     | Align ≥2 elements to a shared edge/center on the x or y axis                          |
 | `distribute` | WRITE     | Equalize gaps between ≥3 elements along an axis, ends fixed                           |
 | `stack`      | WRITE     | Lay elements out in order with a configurable gap and cross-axis alignment            |
@@ -114,8 +114,12 @@ Read the relevant sections before designing or implementing:
 
 The eight structural verbs live in `structure.ts` and share `mutation.ts` (receipts +
 budget trimming, also used by `edit`) and `ids.ts` (id minting, also used by `draw`).
-They accept explicit `elementIds` or fall back to the live selection, take an optional
-`expectedSceneVersion` for optimistic concurrency, and commit exactly one atomic,
+Concurrency is versioned by default: explicit operands are `{ id, expectedVersion }` refs
+**and** require `expectedSceneVersion`, both checked before any `updateScene` (matching
+`transform`/`edit`). Omitting `elements` falls back to the live canvas selection — the one
+un-versioned convenience path; `duplicate` and `delete` are always explicit. `delete`
+additionally rejects relationship crossings (cascading a bound label/frame child or
+detaching a connector) unless `includeRelated: true`. Each verb commits exactly one atomic,
 undoable `updateScene`.
 
 ## Useful tools and checks

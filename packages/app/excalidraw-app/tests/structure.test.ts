@@ -89,6 +89,22 @@ const arrow = (id: string, overrides: Record<string, unknown> = {}): Record<stri
     ...overrides
   })
 
+// Mirrors the mocked hashElementsVersion: the scene version is the sum of element
+// versions, so tests can compute the expectedSceneVersion their operands require.
+const sceneVersion = (elements: Array<Record<string, unknown>>): number =>
+  elements.reduce((sum, element) => sum + (element.version as number), 0)
+
+// Build versioned operand refs from scene elements (defaulting expectedVersion to
+// the element's current version).
+const refs = (
+  elements: Array<Record<string, unknown>>,
+  ids: string[]
+): Array<{ id: string; expectedVersion: number }> =>
+  ids.map((id) => {
+    const element = elements.find((candidate) => candidate.id === id)!
+    return { id, expectedVersion: element.version as number }
+  })
+
 const fakeApi = (
   elements: unknown[] = [],
   state: Record<string, unknown> = {}
@@ -135,11 +151,13 @@ describe('structure: grouping', () => {
     const container = rect('box', { boundElements: [{ id: 'label', type: 'text' }] })
     const label = text('label', 'Box', { containerId: 'box' })
     const other = rect('other', { x: 400 })
-    const api = fakeApi([container, label, other])
+    const elements = [container, label, other]
+    const api = fakeApi(elements)
 
     const result = (await run(api, 'group', {
       operation: 'group',
-      elementIds: ['box', 'other']
+      elements: refs(elements, ['box', 'other']),
+      expectedSceneVersion: sceneVersion(elements)
     })) as {
       operation: string
       groupId: string
@@ -160,27 +178,89 @@ describe('structure: grouping', () => {
   })
 
   it('is a no-op for a single-element group request', async () => {
-    const api = fakeApi([rect('box')])
+    const elements = [rect('box')]
+    const api = fakeApi(elements)
     await expect(
-      run(api, 'group', { operation: 'group', elementIds: ['box'] })
-    ).resolves.toMatchObject({
-      operation: 'group',
-      updated: 0,
-      groupId: null
-    })
+      run(api, 'group', {
+        operation: 'group',
+        elements: refs(elements, ['box']),
+        expectedSceneVersion: sceneVersion(elements)
+      })
+    ).resolves.toMatchObject({ operation: 'group', updated: 0, groupId: null })
     expect(api.updateScene).not.toHaveBeenCalled()
   })
 
   it('ungroups by removing the outermost shared group', async () => {
     const a = rect('a', { groupIds: ['g1'] })
     const b = rect('b', { x: 200, groupIds: ['g1'] })
-    const api = fakeApi([a, b])
+    const elements = [a, b]
+    const api = fakeApi(elements)
     const result = (await run(api, 'group', {
       operation: 'ungroup',
-      elementIds: ['a', 'b']
+      elements: refs(elements, ['a', 'b']),
+      expectedSceneVersion: sceneVersion(elements)
     })) as { updated: number; elements: Array<{ groupIds: string[] }> }
     expect(result.updated).toBe(2)
     expect(sceneOf(api)!.every((element) => (element.groupIds as string[]).length === 0)).toBe(true)
+  })
+
+  it('groups the current selection when elements are omitted', async () => {
+    const a = rect('a')
+    const b = rect('b', { x: 200 })
+    const api = fakeApi([a, b], { selectedElementIds: { a: true, b: true } })
+    await expect(run(api, 'group', { operation: 'group' })).resolves.toMatchObject({ updated: 2 })
+  })
+})
+
+describe('structure: versioning by default', () => {
+  it('rejects a structural edit when an explicit element version is stale', async () => {
+    const a = rect('a', { x: 0, version: 5 })
+    const b = rect('b', { x: 200, version: 1 })
+    const elements = [a, b]
+    const api = fakeApi(elements)
+    await expect(
+      run(api, 'align', {
+        elements: [
+          { id: 'a', expectedVersion: 2 },
+          { id: 'b', expectedVersion: 1 }
+        ],
+        axis: 'x',
+        position: 'start',
+        expectedSceneVersion: sceneVersion(elements)
+      })
+    ).rejects.toThrow('stale')
+    expect(api.updateScene).not.toHaveBeenCalled()
+  })
+
+  it('rejects a structural edit when the expected scene version is stale', async () => {
+    const elements = [rect('a'), rect('b', { x: 200 })]
+    const api = fakeApi(elements)
+    await expect(
+      run(api, 'align', {
+        elements: refs(elements, ['a', 'b']),
+        axis: 'x',
+        position: 'start',
+        expectedSceneVersion: 999
+      })
+    ).rejects.toThrow('scene changed')
+    expect(api.updateScene).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unknown explicit id', async () => {
+    const elements = [rect('a'), rect('b', { x: 200 })]
+    const api = fakeApi(elements)
+    await expect(
+      run(api, 'align', {
+        elements: [
+          { id: 'a', expectedVersion: 1 },
+          { id: 'ghost', expectedVersion: 1 }
+        ],
+        axis: 'x',
+        position: 'start',
+        expectedSceneVersion: sceneVersion(elements)
+      })
+    ).rejects.toThrow('does not exist')
+    expect(api.updateScene).not.toHaveBeenCalled()
   })
 })
 
@@ -188,11 +268,13 @@ describe('structure: duplicate and delete', () => {
   it('duplicates by id with an offset and fresh, remapped relationships', async () => {
     const container = rect('box', { boundElements: [{ id: 'label', type: 'text' }] })
     const label = text('label', 'Box', { containerId: 'box', x: 10, y: 40 })
-    const api = fakeApi([container, label])
+    const elements = [container, label]
+    const api = fakeApi(elements)
 
     const result = (await run(api, 'duplicate', {
-      elementIds: ['box'],
-      offset: { x: 25, y: 35 }
+      elements: refs(elements, ['box']),
+      offset: { x: 25, y: 35 },
+      expectedSceneVersion: sceneVersion(elements)
     })) as {
       created: number
       idMap: Array<{ sourceId: string; newId: string }>
@@ -212,51 +294,86 @@ describe('structure: duplicate and delete', () => {
   })
 
   it('rejects duplicating an unknown id without touching the scene', async () => {
-    const api = fakeApi([rect('box')])
-    await expect(run(api, 'duplicate', { elementIds: ['ghost'] })).rejects.toThrow('does not exist')
+    const elements = [rect('box')]
+    const api = fakeApi(elements)
+    await expect(
+      run(api, 'duplicate', {
+        elements: [{ id: 'ghost', expectedVersion: 1 }],
+        expectedSceneVersion: sceneVersion(elements)
+      })
+    ).rejects.toThrow('does not exist')
     expect(api.updateScene).not.toHaveBeenCalled()
   })
 
-  it('deletes by id, removes bound labels, and detaches connectors', async () => {
+  it('deletes a plain element by id', async () => {
+    const elements = [rect('a'), rect('b', { x: 200 })]
+    const api = fakeApi(elements)
+    const result = (await run(api, 'delete', {
+      elements: refs(elements, ['a']),
+      expectedSceneVersion: sceneVersion(elements)
+    })) as { deleted: number; deletedIds: string[]; removedRelatedIds: string[] }
+    expect(result).toMatchObject({ deleted: 1, deletedIds: ['a'], removedRelatedIds: [] })
+    expect(sceneOf(api)!.map((element) => element.id)).toEqual(['b'])
+  })
+
+  it('rejects a relationship-crossing delete unless includeRelated is set', async () => {
     const container = rect('box', { boundElements: [{ id: 'label', type: 'text' }] })
     const label = text('label', 'Box', { containerId: 'box' })
     const link = arrow('link', { startBinding: { elementId: 'box', focus: 0, gap: 4 } })
-    const api = fakeApi([container, label, link])
+    const elements = [container, label, link]
+    const api = fakeApi(elements)
+    await expect(
+      run(api, 'delete', {
+        elements: refs(elements, ['box']),
+        expectedSceneVersion: sceneVersion(elements)
+      })
+    ).rejects.toThrow('includeRelated:true')
+    expect(api.updateScene).not.toHaveBeenCalled()
+  })
 
-    const result = (await run(api, 'delete', { elementIds: ['box'] })) as {
-      deleted: number
-      deletedIds: string[]
-      removedRelatedIds: string[]
-    }
+  it('cascades bound labels and detaches connectors when includeRelated is set', async () => {
+    const container = rect('box', { boundElements: [{ id: 'label', type: 'text' }] })
+    const label = text('label', 'Box', { containerId: 'box' })
+    const link = arrow('link', { startBinding: { elementId: 'box', focus: 0, gap: 4 } })
+    const elements = [container, label, link]
+    const api = fakeApi(elements)
 
-    expect(result).toMatchObject({
-      deleted: 1,
-      deletedIds: ['box'],
-      removedRelatedIds: ['label']
-    })
+    const result = (await run(api, 'delete', {
+      elements: refs(elements, ['box']),
+      includeRelated: true,
+      expectedSceneVersion: sceneVersion(elements)
+    })) as { deleted: number; deletedIds: string[]; removedRelatedIds: string[] }
+
+    expect(result).toMatchObject({ deleted: 1, deletedIds: ['box'], removedRelatedIds: ['label'] })
     const scene = sceneOf(api)!
     expect(scene.map((element) => element.id)).toEqual(['link'])
     expect(scene[0]).toMatchObject({ startBinding: null })
   })
 
-  it('rejects deleting an unknown id', async () => {
-    const api = fakeApi([rect('box')])
-    await expect(run(api, 'delete', { elementIds: ['ghost'] })).rejects.toThrow('does not exist')
-    expect(api.updateScene).not.toHaveBeenCalled()
+  it('allows a self-contained delete (container + label) without includeRelated', async () => {
+    const container = rect('box', { boundElements: [{ id: 'label', type: 'text' }] })
+    const label = text('label', 'Box', { containerId: 'box' })
+    const elements = [container, label]
+    const api = fakeApi(elements)
+    const result = (await run(api, 'delete', {
+      elements: refs(elements, ['box', 'label']),
+      expectedSceneVersion: sceneVersion(elements)
+    })) as { deleted: number }
+    expect(result.deleted).toBe(2)
+    expect(sceneOf(api)!).toHaveLength(0)
   })
 })
 
 describe('structure: align, distribute, stack', () => {
   it('aligns specified elements to a shared left edge', async () => {
-    const a = rect('a', { x: 0 })
-    const b = rect('b', { x: 200 })
-    const c = rect('c', { x: 500 })
-    const api = fakeApi([a, b, c])
+    const elements = [rect('a', { x: 0 }), rect('b', { x: 200 }), rect('c', { x: 500 })]
+    const api = fakeApi(elements)
     const result = (await run(api, 'align', {
-      elementIds: ['a', 'b', 'c'],
+      elements: refs(elements, ['a', 'b', 'c']),
       axis: 'x',
-      position: 'start'
-    })) as { updated: number; elements: Array<{ id: string; x: number }> }
+      position: 'start',
+      expectedSceneVersion: sceneVersion(elements)
+    })) as { updated: number }
     expect(result.updated).toBe(2) // b and c move to x=0
     const scene = sceneOf(api)!
     expect(scene.find((element) => element.id === 'b')).toMatchObject({ x: 0 })
@@ -264,9 +381,15 @@ describe('structure: align, distribute, stack', () => {
   })
 
   it('treats a single-element align as a no-op', async () => {
-    const api = fakeApi([rect('a')])
+    const elements = [rect('a')]
+    const api = fakeApi(elements)
     await expect(
-      run(api, 'align', { elementIds: ['a'], axis: 'x', position: 'center' })
+      run(api, 'align', {
+        elements: refs(elements, ['a']),
+        axis: 'x',
+        position: 'center',
+        expectedSceneVersion: sceneVersion(elements)
+      })
     ).resolves.toMatchObject({ updated: 0 })
     expect(api.updateScene).not.toHaveBeenCalled()
   })
@@ -280,13 +403,16 @@ describe('structure: align, distribute, stack', () => {
   })
 
   it('distributes three elements to equal gaps, keeping the ends fixed', async () => {
-    const a = rect('a', { x: 0, width: 100 })
-    const b = rect('b', { x: 150, width: 100 })
-    const c = rect('c', { x: 600, width: 100 })
-    const api = fakeApi([a, b, c])
+    const elements = [
+      rect('a', { x: 0, width: 100 }),
+      rect('b', { x: 150, width: 100 }),
+      rect('c', { x: 600, width: 100 })
+    ]
+    const api = fakeApi(elements)
     const result = (await run(api, 'distribute', {
-      elementIds: ['a', 'b', 'c'],
-      axis: 'x'
+      elements: refs(elements, ['a', 'b', 'c']),
+      axis: 'x',
+      expectedSceneVersion: sceneVersion(elements)
     })) as { updated: number }
     // span 0..700, sizes 300, free 400, gap 200 → b.left = 0+100+200 = 300
     const scene = sceneOf(api)!
@@ -297,14 +423,17 @@ describe('structure: align, distribute, stack', () => {
   })
 
   it('stacks elements horizontally with spacing and centers them cross-axis', async () => {
-    const a = rect('a', { x: 0, y: 0, width: 100, height: 100 })
-    const b = rect('b', { x: 999, y: 50, width: 100, height: 40 })
-    const api = fakeApi([a, b])
+    const elements = [
+      rect('a', { x: 0, y: 0, width: 100, height: 100 }),
+      rect('b', { x: 999, y: 50, width: 100, height: 40 })
+    ]
+    const api = fakeApi(elements)
     await run(api, 'stack', {
-      elementIds: ['a', 'b'],
+      elements: refs(elements, ['a', 'b']),
       direction: 'horizontal',
       spacing: 20,
-      align: 'center'
+      align: 'center',
+      expectedSceneVersion: sceneVersion(elements)
     })
     const scene = sceneOf(api)!
     // b.left = a.left + a.width + spacing = 120; centered on a.cy (50) → top = 50 - 20 = 30
@@ -318,21 +447,36 @@ describe('structure: reorder layers', () => {
     const container = rect('box', { x: 200, boundElements: [{ id: 'label', type: 'text' }] })
     const label = text('label', 'Box', { containerId: 'box' })
     const top = rect('top', { x: 400 })
-    const api = fakeApi([a, container, label, top])
-    await run(api, 'order', { elementIds: ['box'], operation: 'front' })
+    const elements = [a, container, label, top]
+    const api = fakeApi(elements)
+    await run(api, 'order', {
+      elements: refs(elements, ['box']),
+      operation: 'front',
+      expectedSceneVersion: sceneVersion(elements)
+    })
     expect(sceneOf(api)!.map((element) => element.id)).toEqual(['a', 'top', 'box', 'label'])
   })
 
   it('steps an element backward by one position', async () => {
-    const api = fakeApi([rect('a'), rect('b', { x: 200 }), rect('c', { x: 400 })])
-    await run(api, 'order', { elementIds: ['c'], operation: 'backward' })
+    const elements = [rect('a'), rect('b', { x: 200 }), rect('c', { x: 400 })]
+    const api = fakeApi(elements)
+    await run(api, 'order', {
+      elements: refs(elements, ['c']),
+      operation: 'backward',
+      expectedSceneVersion: sceneVersion(elements)
+    })
     expect(sceneOf(api)!.map((element) => element.id)).toEqual(['a', 'c', 'b'])
   })
 
   it('does not update the scene when already at the front', async () => {
-    const api = fakeApi([rect('a'), rect('b', { x: 200 })])
+    const elements = [rect('a'), rect('b', { x: 200 })]
+    const api = fakeApi(elements)
     await expect(
-      run(api, 'order', { elementIds: ['b'], operation: 'front' })
+      run(api, 'order', {
+        elements: refs(elements, ['b']),
+        operation: 'front',
+        expectedSceneVersion: sceneVersion(elements)
+      })
     ).resolves.toMatchObject({ updated: 0 })
     expect(api.updateScene).not.toHaveBeenCalled()
   })
@@ -432,18 +576,5 @@ describe('structure: relationship-aware transform', () => {
       })
     ).rejects.toThrow('locked')
     expect(locked.updateScene).not.toHaveBeenCalled()
-  })
-
-  it('rejects a structural edit when the expected scene version is stale', async () => {
-    const api = fakeApi([rect('a'), rect('b', { x: 200 })])
-    await expect(
-      run(api, 'align', {
-        elementIds: ['a', 'b'],
-        axis: 'x',
-        position: 'start',
-        expectedSceneVersion: 999
-      })
-    ).rejects.toThrow('scene changed')
-    expect(api.updateScene).not.toHaveBeenCalled()
   })
 })
