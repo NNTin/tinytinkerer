@@ -11,7 +11,10 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
       draw: {
         description:
           'Draw shapes, text, arrows, or lines on the visible Excalidraw whiteboard. Use canvas ' +
-          'coordinates in pixels. New elements append by default; use replace:true to start fresh.',
+          'coordinates in pixels. For diagrams, prefer declarative connectors with element ids: ' +
+          'horizontal links use one shared rowY and vertical trunks use one shared trunkX, computed ' +
+          'after node layout so connector endpoints stay aligned. New elements append by default; ' +
+          'use replace:true to start fresh.',
         schema: excalidrawVerbInputSchemas.draw
       },
       search: {

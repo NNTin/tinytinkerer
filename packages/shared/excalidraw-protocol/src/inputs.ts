@@ -3,7 +3,7 @@ import { z } from 'zod'
 export const EXCALIDRAW_APP_ID = 'excalidraw'
 // Version of the Excalidraw verb contracts, intentionally independent from the
 // generic app-bridge envelope version.
-export const EXCALIDRAW_PROTOCOL_VERSION = 2
+export const EXCALIDRAW_PROTOCOL_VERSION = 3
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
 export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
@@ -52,6 +52,11 @@ const pagingShape = {
 }
 
 export const drawElementSchema = z.object({
+  id: elementIdSchema
+    .optional()
+    .describe(
+      'Optional stable id for this newly drawn element. Supply ids for shapes that connectors reference.'
+    ),
   type: z
     .enum(['rectangle', 'ellipse', 'diamond', 'text', 'arrow', 'line'])
     .describe('The kind of element to draw.'),
@@ -64,13 +69,95 @@ export const drawElementSchema = z.object({
   backgroundColor: colorSchema.optional()
 })
 
-export const drawInputSchema = z.object({
-  elements: z
-    .array(drawElementSchema)
-    .min(1)
-    .describe('Elements to draw, positioned in canvas coordinates.'),
-  replace: z.boolean().optional().describe('Clear the canvas before drawing instead of appending.')
-})
+const drawEndpointSchema = z.union([
+  z
+    .object({
+      elementId: elementIdSchema.describe('Existing or newly drawn element id to anchor to.'),
+      side: z.enum(['auto', 'left', 'right', 'top', 'bottom', 'center']).default('auto')
+    })
+    .strict(),
+  z
+    .object({
+      x: z.number().finite().describe('Absolute x coordinate in canvas coordinates.'),
+      y: z.number().finite().describe('Absolute y coordinate in canvas coordinates.')
+    })
+    .strict()
+])
+
+export const drawConnectorSchema = z
+  .object({
+    id: elementIdSchema.optional().describe('Optional stable id for the connector.'),
+    type: z.enum(['arrow', 'line']).default('arrow'),
+    from: drawEndpointSchema.describe('Start endpoint.'),
+    to: drawEndpointSchema.describe('End endpoint.'),
+    routing: z
+      .enum(['auto', 'horizontal', 'vertical'])
+      .default('auto')
+      .describe(
+        'Connector route. Use horizontal with rowY for same-row diagram links and vertical with trunkX for trunks.'
+      ),
+    rowY: z
+      .number()
+      .finite()
+      .optional()
+      .describe('Forced shared y coordinate for horizontal row connectors.'),
+    trunkX: z
+      .number()
+      .finite()
+      .optional()
+      .describe('Forced shared x coordinate for vertical trunk connectors.'),
+    text: z.string().optional().describe('Optional centered connector label.'),
+    strokeColor: colorSchema.optional(),
+    backgroundColor: colorSchema.optional()
+  })
+  .strict()
+
+export const drawInputSchema = z
+  .object({
+    elements: z
+      .array(drawElementSchema)
+      .max(EXCALIDRAW_ELEMENT_LIMIT)
+      .default([])
+      .describe('Elements to draw, positioned in canvas coordinates.'),
+    connectors: z
+      .array(drawConnectorSchema)
+      .max(EXCALIDRAW_ELEMENT_LIMIT)
+      .default([])
+      .describe(
+        'Declarative post-layout connectors. The iframe computes endpoints from final node bounds so same-row links stay horizontal and trunks stay vertical.'
+      ),
+    replace: z
+      .boolean()
+      .optional()
+      .describe('Clear the canvas before drawing instead of appending.')
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.elements.length === 0 && input.connectors.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['elements'],
+        message: 'At least one element or connector is required.'
+      })
+    }
+    if (input.elements.length + input.connectors.length > EXCALIDRAW_ELEMENT_LIMIT) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['elements'],
+        message: `At most ${EXCALIDRAW_ELEMENT_LIMIT} elements and connectors are allowed.`
+      })
+    }
+    const ids = [...input.elements, ...input.connectors]
+      .map(({ id }) => id)
+      .filter((id): id is string => typeof id === 'string')
+    if (new Set(ids).size !== ids.length) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['elements'],
+        message: 'Draw element and connector ids must be unique.'
+      })
+    }
+  })
 
 export const searchInputSchema = z
   .object({
@@ -192,6 +279,7 @@ export const EXCALIDRAW_VERBS = Object.freeze(
 )
 
 export type DrawElement = z.infer<typeof drawElementSchema>
+export type DrawConnector = z.infer<typeof drawConnectorSchema>
 export type DrawInput = z.infer<typeof drawInputSchema>
 export type SearchInput = z.infer<typeof searchInputSchema>
 export type InspectInput = z.infer<typeof inspectInputSchema>

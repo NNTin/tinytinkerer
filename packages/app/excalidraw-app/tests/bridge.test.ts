@@ -154,12 +154,115 @@ describe('Excalidraw bridge handlers', () => {
       ]
     })
 
-    expect(result).toEqual({ ok: true, drawn: 2, replaced: false })
+    expect(result).toEqual({ ok: true, drawn: 2, replaced: false, connectors: [] })
     expect(api.updateScene).toHaveBeenCalledWith(
       expect.objectContaining({ captureUpdate: CaptureUpdateAction.IMMEDIATELY })
     )
     expect(JSON.stringify(vi.mocked(api.updateScene).mock.calls[0])).toContain('"existing"')
     expect(api.scrollToContent).toHaveBeenCalledWith(expect.any(Array), { fitToContent: true })
+  })
+
+  it('computes declarative connector endpoints after node layout', async () => {
+    const api = fakeApi()
+    const result = (await run(api, 'draw', {
+      elements: [
+        {
+          id: 'router',
+          type: 'rectangle',
+          x: 10,
+          y: 20,
+          width: 120,
+          height: 80,
+          text: 'Router'
+        },
+        {
+          id: 'switch',
+          type: 'rectangle',
+          x: 220,
+          y: 0,
+          width: 120,
+          height: 120,
+          text: 'Switch'
+        }
+      ],
+      connectors: [
+        {
+          id: 'router-switch',
+          type: 'arrow',
+          from: { elementId: 'router', side: 'right' },
+          to: { elementId: 'switch', side: 'left' },
+          routing: 'horizontal',
+          rowY: 60
+        },
+        {
+          id: 'distribution-trunk',
+          type: 'line',
+          from: { x: 180, y: 60 },
+          to: { x: 180, y: 180 },
+          routing: 'vertical',
+          trunkX: 180
+        }
+      ],
+      replace: true
+    })) as {
+      drawn: number
+      connectors: Array<{
+        id: string
+        type: 'arrow' | 'line'
+        routing: 'horizontal' | 'vertical'
+        start: [number, number]
+        end: [number, number]
+        horizontal: boolean
+        vertical: boolean
+        anchorRule: string
+      }>
+    }
+
+    expect(result.drawn).toBe(4)
+    expect(result.connectors).toEqual([
+      {
+        id: 'router-switch',
+        type: 'arrow',
+        routing: 'horizontal',
+        start: [130, 60],
+        end: [220, 60],
+        anchorRule: 'horizontal-row',
+        horizontal: true,
+        vertical: false
+      },
+      {
+        id: 'distribution-trunk',
+        type: 'line',
+        routing: 'vertical',
+        start: [180, 60],
+        end: [180, 180],
+        anchorRule: 'vertical-trunk',
+        horizontal: false,
+        vertical: true
+      }
+    ])
+    const update = vi.mocked(api.updateScene).mock.calls[0]?.[0]
+    const elements = update?.elements as unknown as ReadonlyArray<Record<string, unknown>>
+    expect(elements.find((element) => element.id === 'router-switch')).toMatchObject({
+      x: 130,
+      y: 60,
+      width: 90,
+      height: 0,
+      points: [
+        [0, 0],
+        [90, 0]
+      ]
+    })
+    expect(elements.find((element) => element.id === 'distribution-trunk')).toMatchObject({
+      x: 180,
+      y: 60,
+      width: 0,
+      height: 120,
+      points: [
+        [0, 0],
+        [0, 120]
+      ]
+    })
   })
 
   it('searches compact candidates by label, type, selection, and viewport', async () => {

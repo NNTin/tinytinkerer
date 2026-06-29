@@ -17,12 +17,21 @@ describe('excalidraw protocol', () => {
     expect(
       drawInputSchema.parse({
         elements: [
-          { type: 'rectangle', x: 10, y: 20, width: 120, height: 80, text: 'Start' },
+          { id: 'start', type: 'rectangle', x: 10, y: 20, width: 120, height: 80, text: 'Start' },
           { type: 'arrow', x: 130, y: 60, strokeColor: '#111' }
+        ],
+        connectors: [
+          {
+            id: 'start-to-end',
+            from: { elementId: 'start', side: 'right' },
+            to: { x: 240, y: 60 },
+            routing: 'horizontal',
+            rowY: 60
+          }
         ],
         replace: true
       })
-    ).toMatchObject({ replace: true })
+    ).toMatchObject({ replace: true, connectors: [{ id: 'start-to-end', routing: 'horizontal' }] })
   })
 
   it('rejects empty, unknown, and malformed draw elements', () => {
@@ -32,6 +41,12 @@ describe('excalidraw protocol', () => {
     )
     expect(
       drawInputSchema.safeParse({ elements: [{ type: 'text', x: Number.NaN, y: 0 }] }).success
+    ).toBe(false)
+    expect(
+      drawInputSchema.safeParse({
+        elements: [{ id: 'same', type: 'rectangle', x: 0, y: 0 }],
+        connectors: [{ id: 'same', from: { x: 0, y: 0 }, to: { x: 10, y: 0 } }]
+      }).success
     ).toBe(false)
   })
 
@@ -111,7 +126,7 @@ describe('excalidraw protocol', () => {
   })
 
   it('uses an independently owned app contract version', () => {
-    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(2)
+    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(3)
   })
 
   it('defines input and result contracts for every advertised verb', () => {
@@ -121,7 +136,8 @@ describe('excalidraw protocol', () => {
       excalidrawVerbContracts.draw.resultSchema.safeParse({
         ok: true,
         drawn: 2,
-        replaced: false
+        replaced: false,
+        connectors: []
       }).success
     ).toBe(true)
     expect(excalidrawVerbContracts.clear.resultSchema.safeParse({ ok: false }).success).toBe(false)

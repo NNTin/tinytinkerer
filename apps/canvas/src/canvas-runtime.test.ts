@@ -30,8 +30,9 @@ describe('canvas app tools', () => {
     const request = vi.fn().mockResolvedValue({ ok: true, drawn: 1 })
     const draw = createCanvasAppTools(handle(request)).find((tool) => tool.id === 'draw')
     const input = { elements: [{ type: 'rectangle' as const, x: 0, y: 0 }] }
+    const parsed = draw?.schema.parse(input)
 
-    await expect(draw?.execute(draw.schema.parse(input))).resolves.toEqual({ ok: true, drawn: 1 })
-    expect(request).toHaveBeenCalledWith('draw', input)
+    await expect(draw?.execute(parsed)).resolves.toEqual({ ok: true, drawn: 1 })
+    expect(request).toHaveBeenCalledWith('draw', { ...input, connectors: [] })
   })
 })

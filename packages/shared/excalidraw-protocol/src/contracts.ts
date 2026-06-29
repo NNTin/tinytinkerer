@@ -247,8 +247,25 @@ const pageResultShape = {
   truncation: truncationSchema
 }
 
+const drawConnectorReceiptSchema = z
+  .object({
+    id: z.string(),
+    type: z.enum(['arrow', 'line']),
+    routing: z.enum(['horizontal', 'vertical']),
+    start: pointSchema,
+    end: pointSchema,
+    anchorRule: z.enum(['horizontal-row', 'vertical-trunk']),
+    horizontal: z.boolean(),
+    vertical: z.boolean()
+  })
+  .strict()
 const drawResultSchema = z
-  .object({ ok: z.literal(true), drawn: z.number().int().nonnegative(), replaced: z.boolean() })
+  .object({
+    ok: z.literal(true),
+    drawn: z.number().int().nonnegative(),
+    replaced: z.boolean(),
+    connectors: z.array(drawConnectorReceiptSchema)
+  })
   .strict()
 const searchElementSchema = z
   .object({

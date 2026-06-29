@@ -194,7 +194,7 @@ This is the only shared source of truth for the Excalidraw vocabulary:
 
 | Verb      | Class | Contract purpose                                                 |
 | --------- | ----- | ---------------------------------------------------------------- |
-| `draw`    | write | Create supported element skeletons                               |
+| `draw`    | write | Create supported element skeletons and post-layout connectors    |
 | `search`  | read  | Return compact candidates by query, type, selection, or viewport |
 | `inspect` | read  | Summarize scene, viewport, selection, groups, and relationships  |
 | `read`    | read  | Return normalized full element records and edit versions         |
@@ -206,6 +206,49 @@ The package internally separates input schemas from result contracts and declare
 describe and validate model calls while tree-shaking the larger result validators.
 The root export remains the only public import path, preserving the workspace package
 boundary.
+
+### Draw elements and post-layout connectors
+
+`draw` supports two creation surfaces:
+
+- `elements` creates the supported Excalidraw element skeletons (`rectangle`, `ellipse`,
+  `diamond`, `text`, `arrow`, and `line`) at explicit canvas coordinates. Element ids are
+  optional, but callers should provide stable ids for nodes that a connector will target.
+- `connectors` describes relationships between already-created ids or absolute points.
+  The iframe computes connector endpoints **after** element conversion, using the final
+  visible bounds of the target nodes. This avoids mixed anchor rules where one diagram
+  arrow accidentally uses a box top or stale pre-layout y coordinate while the rest of
+  the row uses center or row geometry.
+
+The connector policy is intentionally small and deterministic. Same-row diagram links
+use `routing: "horizontal"` and one shared `rowY`; both endpoints are placed on that
+exact y coordinate. Distribution trunks use `routing: "vertical"` and one shared
+`trunkX`; both endpoints are placed on that exact x coordinate. `routing: "auto"` picks
+horizontal when the endpoints are mostly side-by-side and vertical when they are mostly
+stacked. The result includes compact connector receipts with the computed start/end
+coordinates, routing, and boolean `horizontal`/`vertical` invariants so the assistant can
+detect outliers without reading raw Excalidraw internals.
+
+```mermaid
+flowchart LR
+  input["draw input"]
+  elements["elements[]<br/>nodes and freeform primitives"]
+  ids["stable ids<br/>for referenced nodes"]
+  conversion["convertToExcalidrawElements"]
+  bounds["final visible bounds<br/>from converted scene"]
+  connectors["connectors[]<br/>from/to + routing"]
+  endpoints["computed endpoints<br/>rowY or trunkX"]
+  scene["single undoable scene update"]
+  receipts["connector receipts<br/>start/end + invariants"]
+
+  input --> elements --> ids --> conversion --> bounds
+  input --> connectors
+  bounds --> endpoints
+  connectors --> endpoints
+  endpoints --> scene
+  conversion --> scene
+  endpoints --> receipts
+```
 
 The normalized result schemas are intentionally not raw Excalidraw JSON. They expose
 stable, model-relevant fields such as geometry, styles, text, z-order, grouping,
@@ -311,7 +354,7 @@ Ownership remains entirely in `excalidraw-app`, but behavior is split by concern
 ```mermaid
 flowchart LR
   bridge["bridge.ts<br/>verb binding only"]
-  create["create.ts<br/>draw and clear"]
+  create["create.ts<br/>draw, clear,<br/>post-layout connectors"]
   query["query.ts<br/>snapshots, search, inspect,<br/>read, paging, budgets"]
   normalization["normalization.ts<br/>union, details, bounds,<br/>capabilities"]
   edit["edit.ts<br/>preflight, versions,<br/>patch and atomic update"]
@@ -334,7 +377,8 @@ auditable without moving domain ownership into a generic package.
 
 The modules translate the stable model vocabulary into Excalidraw operations:
 
-- `draw` converts simplified skeletons and performs an undoable scene update;
+- `draw` converts simplified skeletons, computes declarative connector endpoints from
+  final node bounds, and performs one undoable scene update;
 - `search`, `inspect`, and `read` normalize current elements and app state;
 - `edit` preflights the whole batch, checks element versions and relationship
   invariants, and performs one undoable update; and
