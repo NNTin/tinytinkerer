@@ -15,6 +15,7 @@ const CanvasPage = (): React.JSX.Element => (
     expectedVerbs={EXCALIDRAW_VERBS}
     handle={canvasBridgeHandle}
     frameTitle="Excalidraw whiteboard"
+    persistenceKey="tinytinkerer:canvas-scene:v1"
     chat={{
       viewMode: 'standalone',
       storageKey: 'tinytinkerer:canvas-layout:v2',

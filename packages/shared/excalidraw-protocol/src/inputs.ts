@@ -2,8 +2,9 @@ import { z } from 'zod'
 
 export const EXCALIDRAW_APP_ID = 'excalidraw'
 // Version of the Excalidraw verb contracts, intentionally independent from the
-// generic app-bridge envelope version.
-export const EXCALIDRAW_PROTOCOL_VERSION = 4
+// generic app-bridge envelope version. Bumped to 5 when the persistence snapshot
+// restore contract was added (host-replayed scene on reload).
+export const EXCALIDRAW_PROTOCOL_VERSION = 5
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
 export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
@@ -474,6 +475,24 @@ export const transformInputSchema = z
   })
   .strict()
 
+// Schema version for a persisted scene snapshot. The `version` is a literal in the
+// schema below so a snapshot written by an older/newer build fails validation and
+// the harness falls back to an empty scene instead of feeding the canvas a shape it
+// can no longer interpret. Bump this only when the snapshot payload shape changes.
+export const EXCALIDRAW_SNAPSHOT_VERSION = 1
+
+// A persisted scene snapshot: the live (non-deleted) elements plus a curated slice
+// of view state. Elements are kept opaque (the full Excalidraw element records the
+// app produced) so a restore round-trips losslessly; volatile appState (selection,
+// editing ids, collaborators, cursor) is intentionally excluded.
+export const excalidrawSnapshotSchema = z
+  .object({
+    version: z.literal(EXCALIDRAW_SNAPSHOT_VERSION),
+    elements: z.array(z.record(z.string(), z.unknown())),
+    appState: z.record(z.string(), z.unknown()).optional()
+  })
+  .strict()
+
 export const excalidrawVerbInputSchemas = {
   draw: drawInputSchema,
   search: searchInputSchema,
@@ -512,3 +531,4 @@ export type DistributeInput = z.infer<typeof distributeInputSchema>
 export type StackInput = z.infer<typeof stackInputSchema>
 export type OrderInput = z.infer<typeof orderInputSchema>
 export type TransformInput = z.infer<typeof transformInputSchema>
+export type ExcalidrawSnapshot = z.infer<typeof excalidrawSnapshotSchema>

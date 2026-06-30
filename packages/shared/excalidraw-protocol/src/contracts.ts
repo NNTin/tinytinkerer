@@ -8,6 +8,7 @@ import {
   duplicateInputSchema,
   editInputSchema,
   EXCALIDRAW_DETAIL_LEVELS,
+  excalidrawSnapshotSchema,
   groupInputSchema,
   inspectInputSchema,
   orderInputSchema,
@@ -401,6 +402,19 @@ const deleteResultSchema = z
     removedRelatedIds: z.array(z.string())
   })
   .strict()
+
+const snapshotRestoreResultSchema = z
+  .object({ ok: z.literal(true), restored: z.number().int().nonnegative() })
+  .strict()
+
+// Contract for the reserved `app:restore` system verb (see APP_SNAPSHOT_RESTORE_VERB
+// in app-bridge). It is intentionally NOT part of excalidrawVerbContracts / the
+// model-facing verb set: the harness calls it on reload to replay a persisted scene,
+// not the model. Validating the input here version-guards the snapshot at the wire.
+export const excalidrawSnapshotRestoreContract = {
+  inputSchema: excalidrawSnapshotSchema,
+  resultSchema: snapshotRestoreResultSchema
+}
 
 export const excalidrawVerbContracts = {
   draw: { inputSchema: drawInputSchema, resultSchema: drawResultSchema },

@@ -7,8 +7,11 @@ import {
   drawInputSchema,
   duplicateInputSchema,
   editInputSchema,
+  excalidrawSnapshotRestoreContract,
+  excalidrawSnapshotSchema,
   excalidrawVerbContracts,
   EXCALIDRAW_PROTOCOL_VERSION,
+  EXCALIDRAW_SNAPSHOT_VERSION,
   EXCALIDRAW_VERBS,
   groupInputSchema,
   inspectInputSchema,
@@ -237,7 +240,7 @@ describe('excalidraw protocol', () => {
   })
 
   it('uses an independently owned app contract version', () => {
-    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(4)
+    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(5)
   })
 
   it('defines input and result contracts for every advertised verb', () => {
@@ -267,6 +270,29 @@ describe('excalidraw protocol', () => {
       }).success
     ).toBe(true)
     expect(excalidrawVerbContracts.clear.resultSchema.safeParse({ ok: false }).success).toBe(false)
+  })
+
+  it('version-guards the persistence snapshot and keeps restore out of the verb set', () => {
+    // The restore contract is intentionally not part of the model-facing verb set.
+    expect(EXCALIDRAW_VERBS).not.toContain('app:restore')
+    expect(
+      excalidrawSnapshotSchema.safeParse({
+        version: EXCALIDRAW_SNAPSHOT_VERSION,
+        elements: [{ id: 'a', type: 'rectangle' }],
+        appState: { scrollX: 1, zoom: { value: 1 } }
+      }).success
+    ).toBe(true)
+    // A snapshot from another schema version fails closed (harness → empty scene).
+    expect(excalidrawSnapshotSchema.safeParse({ version: 999, elements: [] }).success).toBe(false)
+    expect(
+      excalidrawSnapshotRestoreContract.resultSchema.safeParse({ ok: true, restored: 3 }).success
+    ).toBe(true)
+    expect(
+      excalidrawSnapshotRestoreContract.inputSchema.safeParse({
+        version: EXCALIDRAW_SNAPSHOT_VERSION,
+        elements: []
+      }).success
+    ).toBe(true)
   })
 
   it('rejects impossible discriminated element records', () => {

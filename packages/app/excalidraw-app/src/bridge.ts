@@ -1,5 +1,6 @@
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import {
+  APP_SNAPSHOT_RESTORE_VERB,
   createBridgeServer,
   defineBridgeVerb,
   parentServerTransport
@@ -8,9 +9,11 @@ import type { BridgeServer, CreateBridgeServerOptions } from '@tinytinkerer/app-
 import {
   EXCALIDRAW_APP_ID,
   EXCALIDRAW_PROTOCOL_VERSION,
+  excalidrawSnapshotRestoreContract,
   excalidrawVerbContracts
 } from '@tinytinkerer/excalidraw-protocol'
 import { executeClear, executeDraw } from './create'
+import { applySnapshot } from './persistence'
 import { executeEdit } from './edit'
 import { executeInspect, executeRead, executeSearch } from './query'
 import {
@@ -59,5 +62,13 @@ export const createExcalidrawBridge = (
     appId: EXCALIDRAW_APP_ID,
     appProtocolVersion: EXCALIDRAW_PROTOCOL_VERSION,
     sessionNonce,
-    handlers: createExcalidrawHandlers(api)
+    handlers: {
+      ...createExcalidrawHandlers(api),
+      // Reserved system verb (not model-facing): the harness replays a persisted
+      // scene snapshot here on reload. Kept out of createExcalidrawHandlers so the
+      // model-facing verb set and its tests stay unchanged.
+      [APP_SNAPSHOT_RESTORE_VERB]: defineBridgeVerb(excalidrawSnapshotRestoreContract, (input) =>
+        applySnapshot(api, input)
+      )
+    }
   })
