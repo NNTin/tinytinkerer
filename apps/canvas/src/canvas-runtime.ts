@@ -106,8 +106,27 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
         description:
           'Move or resize existing Excalidraw elements by id and expected version while respecting ' +
           'relationships: labels and frame children follow, connectors move only when both ends do, ' +
-          'and edits that would distort a binding are rejected. Atomic and undoable.',
+          'and edits that would distort a binding are rejected. Pass reflowConnectors:true to let ' +
+          'connectors bound to a moved or resized shape follow their endpoints instead. Atomic and ' +
+          'undoable.',
         schema: excalidrawVerbInputSchemas.transform
+      },
+      bind: {
+        description:
+          'Bind, rebind, or detach an Excalidraw connector endpoint. Attach a start and/or end to a ' +
+          'target shape with an optional anchor (focus -1..1 along the facing edge, plus a gap), or ' +
+          'detach to free an endpoint. The connector is re-anchored so it stays readable, and target ' +
+          'boundElements are kept in sync. ' +
+          versionedExplicit,
+        schema: excalidrawVerbInputSchemas.bind
+      },
+      audit: {
+        description:
+          'Audit Excalidraw connector bindings without changing anything. Reports each endpoint as ' +
+          'unbound, ok, stale, detached, or ambiguous and suggests safe repairs (rebind or detach via ' +
+          'the bind verb). Pass connectorIds to scope it, or omit to audit every connector. Budgeted, ' +
+          'paginated, and detail-aware.',
+        schema: excalidrawVerbInputSchemas.audit
       }
     }
   })

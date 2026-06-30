@@ -10,6 +10,7 @@ import {
   EXCALIDRAW_PROTOCOL_VERSION,
   excalidrawVerbContracts
 } from '@tinytinkerer/excalidraw-protocol'
+import { executeAudit, executeBind } from './binding'
 import { executeClear, executeDraw } from './create'
 import { executeEdit } from './edit'
 import { executeInspect, executeRead, executeSearch } from './query'
@@ -48,7 +49,9 @@ export const createExcalidrawHandlers = (
   order: defineBridgeVerb(excalidrawVerbContracts.order, (input) => executeOrder(api, input)),
   transform: defineBridgeVerb(excalidrawVerbContracts.transform, (input) =>
     executeTransform(api, input)
-  )
+  ),
+  bind: defineBridgeVerb(excalidrawVerbContracts.bind, (input) => executeBind(api, input)),
+  audit: defineBridgeVerb(excalidrawVerbContracts.audit, (input) => executeAudit(api, input))
 })
 
 export const createExcalidrawBridge = (

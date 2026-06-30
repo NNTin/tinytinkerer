@@ -94,6 +94,8 @@ behavior → `ExcalidrawImperativeAPI` → result (validated against protocol re
   - `edit.ts` — atomic, version-checked, invariant-safe field patches with receipts.
   - `structure.ts` — the 8 structural verbs (`group`, `duplicate`, `delete`, `align`, `distribute`,
     `stack`, `order`, `transform`).
+  - `binding.ts` — the connector binding verbs (`bind`, `audit`) and the shared edge-anchor reflow geometry
+    reused by `transform`'s `reflowConnectors`.
   - `mutation.ts` — shared receipt + budget-bounded record helper used by `edit` **and** `structure`.
   - `ids.ts` — collision-free id minting used by `create` **and** `structure`.
   - `payload.ts` — exact UTF-8 measurement/truncation.
@@ -117,7 +119,7 @@ tests fail.
 2. **One verb = touch all five seams.** Add an entry to `excalidrawVerbInputSchemas` (`inputs.ts`) and
    `excalidrawVerbContracts` (`contracts.ts`); an `execute*` in the owning `excalidraw-app` module; a
    `defineBridgeVerb` line in `bridge.ts`; a description in `canvas-runtime.ts`; and update the canvas bundle
-   test's tool-count guard (currently "fourteen-tool startup entry" + size budget in
+   test's tool-count guard (currently "sixteen-tool startup entry" + size budget in
    `apps/canvas/src/bundle-size.test.ts`).
 3. **Mutations are atomic, undoable, version-checked.** validate → preflight versions + relationship safety
    → exactly **one** `api.updateScene({ ..., captureUpdate: CaptureUpdateAction.IMMEDIATELY })`. Reject
@@ -130,13 +132,13 @@ tests fail.
    `truncation`. Requests over budget fail before behavior runs; results drop trailing records and report
    omissions. `read`'s discriminated union and per-element `capabilities` must match what `edit` enforces —
    any advertised `editableField` must be honored by `edit`, computed from the same capability logic.
-5. **Versioning.** Bump `EXCALIDRAW_PROTOCOL_VERSION` (currently **4**) for any incompatible app-contract
+5. **Versioning.** Bump `EXCALIDRAW_PROTOCOL_VERSION` (currently **5**) for any incompatible app-contract
    change (verb names, required inputs, result shapes, normalized variants, budgets, semantics). Do **not**
    bump `APP_BRIDGE_PROTOCOL_VERSION` unless the generic envelope changes.
 6. **Serializable & model-friendly.** Zod schemas are the wire source of truth. Never expose raw Excalidraw
    seeds, nonces, React state, functions, DOM objects, or module instances.
 
-## Current verbs (14)
+## Current verbs (16)
 
 | Verb         | Dir.  | Module         | Focus                                                                               |
 | ------------ | ----- | -------------- | ----------------------------------------------------------------------------------- |
@@ -153,12 +155,19 @@ tests fail.
 | `distribute` | WRITE | `structure.ts` | Equalize gaps between ≥3 elements along an axis, ends fixed                         |
 | `stack`      | WRITE | `structure.ts` | Lay out in order with a configurable gap and cross-axis alignment                   |
 | `order`      | WRITE | `structure.ts` | Reorder z-layers: front/back, forward/backward (array reorder → fractional resync)  |
-| `transform`  | WRITE | `structure.ts` | Relationship-aware move/resize by id + expected version; rejects binding distortion |
+| `transform`  | WRITE | `structure.ts` | Relationship-aware move/resize by id + expected version; opt-in `reflowConnectors`   |
+| `bind`       | WRITE | `binding.ts`   | (Re)bind/detach a connector endpoint to a target + anchor; re-anchors, syncs bounds  |
+| `audit`      | READ  | `binding.ts`   | Connector binding health: unbound/ok/stale/detached/ambiguous + safe repair hints    |
 
 The 8 structural verbs share `mutation.ts` (receipts + budget trimming, also used by `edit`) and `ids.ts`
 (also used by `create`). Each commits exactly one atomic, undoable `updateScene`. `delete` additionally
 rejects relationship crossings (cascading a bound label/frame child, detaching a connector) unless
 `includeRelated: true`.
+
+The connector binding verbs `bind` and `audit` live in `binding.ts`, which also owns the deterministic
+edge-anchor geometry that `transform`'s opt-in `reflowConnectors` reuses to keep bindings consistent on
+move/resize. `bind` is versioned by default (connector ref + attach target refs + `expectedSceneVersion`)
+and commits one atomic, undoable `updateScene`; `audit` is a budgeted, paginated, detail-aware read.
 
 ## Upstream `@excalidraw/excalidraw` API map
 

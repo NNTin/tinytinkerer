@@ -12,6 +12,7 @@ import type {
   StackInput,
   TransformInput
 } from '@tinytinkerer/excalidraw-protocol'
+import { reflowBoundConnectors } from './binding'
 import { uniqueId } from './ids'
 import { attachBoundedRecords, versionReceipts } from './mutation'
 import { elementMap, sceneVersionOf } from './normalization'
@@ -557,18 +558,22 @@ export const executeTransform = (api: ExcalidrawImperativeAPI, input: TransformI
         throw new Error(
           `transform: element "${item.id}" of type "${element.type}" cannot be resized`
         )
-      const boundConnector =
-        element.boundElements?.some((bound) => bound.type === 'arrow') ||
-        elements.some(
-          (other) =>
-            (other.type === 'arrow' || other.type === 'line') &&
-            (other.startBinding?.elementId === element.id ||
-              other.endBinding?.elementId === element.id)
-        )
-      if (boundConnector)
-        throw new Error(
-          `transform: element "${item.id}" has connector bindings; resizing it would distort them`
-        )
+      // Resizing a bound shape distorts its connectors unless the caller opts in
+      // to reflow, which re-anchors them to the moved/resized bounds afterward.
+      if (!input.reflowConnectors) {
+        const boundConnector =
+          element.boundElements?.some((bound) => bound.type === 'arrow') ||
+          elements.some(
+            (other) =>
+              (other.type === 'arrow' || other.type === 'line') &&
+              (other.startBinding?.elementId === element.id ||
+                other.endBinding?.elementId === element.id)
+          )
+        if (boundConnector)
+          throw new Error(
+            `transform: element "${item.id}" has connector bindings; resizing it would distort them (pass reflowConnectors:true to re-anchor them)`
+          )
+      }
     }
   }
   const baseDeltas = new Map<string, Delta>()
@@ -602,9 +607,11 @@ export const executeTransform = (api: ExcalidrawImperativeAPI, input: TransformI
     const endDelta = endId ? baseDeltas.get(endId) : undefined
     const consistent =
       startMoved && endMoved && startDelta!.dx === endDelta!.dx && startDelta!.dy === endDelta!.dy
-    if (!consistent && !baseDeltas.has(element.id))
+    // A one-sided move would distort the connector unless the caller opts in to
+    // reflow, which re-anchors the moved endpoint afterward.
+    if (!consistent && !baseDeltas.has(element.id) && !input.reflowConnectors)
       throw new Error(
-        `transform: connector "${element.id}" binds a moved element; move both endpoints together to keep it connected`
+        `transform: connector "${element.id}" binds a moved element; move both endpoints together or pass reflowConnectors:true to re-anchor it`
       )
   }
   const moved = applyDeltas(elements, baseDeltas)
@@ -636,6 +643,12 @@ export const executeTransform = (api: ExcalidrawImperativeAPI, input: TransformI
         ? updateWith(element, { x: element.x + dx, y: element.y + dy })
         : element
     })
+  }
+  // After all moves and resizes settle, re-anchor connectors bound to any shape
+  // that changed so their bindings follow the new geometry.
+  if (input.reflowConnectors) {
+    const changedTargetIds = new Set<string>([...moved.movedIds, ...resizeIds])
+    nextElements = reflowBoundConnectors(nextElements, changedTargetIds)
   }
   const changedIds = nextElements
     .filter((element, index) => element !== elements[index])

@@ -175,7 +175,9 @@ describe('Excalidraw bridge handlers', () => {
       'distribute',
       'stack',
       'order',
-      'transform'
+      'transform',
+      'bind',
+      'audit'
     ])
   })
 

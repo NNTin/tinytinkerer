@@ -26,7 +26,9 @@ describe('canvas app tools', () => {
       'distribute',
       'stack',
       'order',
-      'transform'
+      'transform',
+      'bind',
+      'audit'
     ])
     expect(
       tools.find((tool) => tool.id === 'draw')?.schema.safeParse({ elements: [] }).success
@@ -40,6 +42,16 @@ describe('canvas app tools', () => {
       tools.find((tool) => tool.id === 'align')?.schema.safeParse({ axis: 'x', position: 'start' })
         .success
     ).toBe(true)
+    // the binding verbs consume the shared schemas too
+    expect(
+      tools
+        .find((tool) => tool.id === 'bind')
+        ?.schema.safeParse({
+          connector: { id: 'link', expectedVersion: 1 },
+          expectedSceneVersion: 2
+        }).success
+    ).toBe(false)
+    expect(tools.find((tool) => tool.id === 'audit')?.schema.safeParse({}).success).toBe(true)
   })
 
   it('forwards validated tool input to the bridge handle', async () => {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   alignInputSchema,
+  auditInputSchema,
+  bindInputSchema,
   clearInputSchema,
   deleteInputSchema,
   distributeInputSchema,
@@ -8,6 +10,7 @@ import {
   duplicateInputSchema,
   editInputSchema,
   excalidrawVerbContracts,
+  EXCALIDRAW_DEFAULT_BINDING_GAP,
   EXCALIDRAW_PROTOCOL_VERSION,
   EXCALIDRAW_VERBS,
   groupInputSchema,
@@ -236,8 +239,77 @@ describe('excalidraw protocol', () => {
     ).toBe(false)
   })
 
+  it('defaults transform reflow off and accepts the opt-in', () => {
+    expect(
+      transformInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 2, move: { dx: 5, dy: -5 } }]
+      })
+    ).toMatchObject({ reflowConnectors: false })
+    expect(
+      transformInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 2, resize: { width: 50 } }],
+        reflowConnectors: true
+      })
+    ).toMatchObject({ reflowConnectors: true })
+  })
+
+  it('validates connector bind input and anchor defaults', () => {
+    // Attaching defaults the anchor to a centered, gapped edge.
+    expect(
+      bindInputSchema.parse({
+        connector: { id: 'link', expectedVersion: 3 },
+        start: { action: 'attach', target: { id: 'box', expectedVersion: 1 } },
+        expectedSceneVersion: 9
+      })
+    ).toMatchObject({
+      start: { action: 'attach', anchor: { focus: 0, gap: EXCALIDRAW_DEFAULT_BINDING_GAP } }
+    })
+    // Detach needs no target.
+    expect(
+      bindInputSchema.safeParse({
+        connector: { id: 'link', expectedVersion: 3 },
+        end: { action: 'detach' },
+        expectedSceneVersion: 9
+      }).success
+    ).toBe(true)
+    // At least one endpoint change is required.
+    expect(
+      bindInputSchema.safeParse({
+        connector: { id: 'link', expectedVersion: 3 },
+        expectedSceneVersion: 9
+      }).success
+    ).toBe(false)
+    // focus is clamped to [-1, 1].
+    expect(
+      bindInputSchema.safeParse({
+        connector: { id: 'link', expectedVersion: 3 },
+        start: {
+          action: 'attach',
+          target: { id: 'box', expectedVersion: 1 },
+          anchor: { focus: 2 }
+        },
+        expectedSceneVersion: 9
+      }).success
+    ).toBe(false)
+    // Unknown action is rejected.
+    expect(
+      bindInputSchema.safeParse({
+        connector: { id: 'link', expectedVersion: 3 },
+        start: { action: 'move' },
+        expectedSceneVersion: 9
+      }).success
+    ).toBe(false)
+  })
+
+  it('validates connector audit paging', () => {
+    expect(auditInputSchema.parse({})).toMatchObject({ offset: 0, limit: 20, detail: 'standard' })
+    expect(auditInputSchema.safeParse({ connectorIds: ['a', 'a'] }).success).toBe(false)
+    expect(auditInputSchema.safeParse({ offset: 1 }).success).toBe(false)
+    expect(auditInputSchema.safeParse({ offset: 1, expectedSceneVersion: 4 }).success).toBe(true)
+  })
+
   it('uses an independently owned app contract version', () => {
-    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(4)
+    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(5)
   })
 
   it('defines input and result contracts for every advertised verb', () => {
@@ -256,7 +328,9 @@ describe('excalidraw protocol', () => {
       'distribute',
       'stack',
       'order',
-      'transform'
+      'transform',
+      'bind',
+      'audit'
     ])
     expect(
       excalidrawVerbContracts.draw.resultSchema.safeParse({
@@ -267,6 +341,54 @@ describe('excalidraw protocol', () => {
       }).success
     ).toBe(true)
     expect(excalidrawVerbContracts.clear.resultSchema.safeParse({ ok: false }).success).toBe(false)
+    expect(
+      excalidrawVerbContracts.bind.resultSchema.safeParse({
+        ok: true,
+        updated: 2,
+        sceneVersion: 7,
+        receipts: [{ id: 'link', version: 2 }],
+        elements: [],
+        truncation: {
+          truncated: false,
+          fields: [],
+          omittedElements: 0,
+          serializedBytes: 10,
+          budgetBytes: 65536
+        },
+        connectorId: 'link',
+        start: { bound: true, targetId: 'box', focus: 0, gap: 4 },
+        end: { bound: false, targetId: null, focus: null, gap: null }
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.audit.resultSchema.safeParse({
+        ok: true,
+        detail: 'standard',
+        sceneVersion: 7,
+        connectors: [
+          {
+            id: 'link',
+            type: 'arrow',
+            version: 2,
+            start: { bound: true, targetId: 'box', status: 'ok', focus: 0, gap: 4 },
+            end: { bound: false, targetId: null, status: 'unbound', focus: null, gap: null },
+            issues: [],
+            repairs: []
+          }
+        ],
+        healthy: 1,
+        flagged: 0,
+        missingIds: [],
+        page: { offset: 0, limit: 20, returned: 1, total: 1, nextOffset: null },
+        truncation: {
+          truncated: false,
+          fields: [],
+          omittedElements: 0,
+          serializedBytes: 10,
+          budgetBytes: 65536
+        }
+      }).success
+    ).toBe(true)
   })
 
   it('rejects impossible discriminated element records', () => {

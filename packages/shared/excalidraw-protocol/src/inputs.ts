@@ -3,10 +3,14 @@ import { z } from 'zod'
 export const EXCALIDRAW_APP_ID = 'excalidraw'
 // Version of the Excalidraw verb contracts, intentionally independent from the
 // generic app-bridge envelope version.
-export const EXCALIDRAW_PROTOCOL_VERSION = 4
+export const EXCALIDRAW_PROTOCOL_VERSION = 5
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
 export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
+// Default distance a bound connector endpoint keeps from its target's edge. Kept
+// here (not imported from Excalidraw) so the wire vocabulary stays side-effect
+// free; the iframe owns the exact anchoring math.
+export const EXCALIDRAW_DEFAULT_BINDING_GAP = 4
 
 export const EXCALIDRAW_FIELD_LIMITS = Object.freeze({
   name: 160,
@@ -31,7 +35,9 @@ export const EXCALIDRAW_PAYLOAD_BUDGETS = Object.freeze({
   distribute: { request: 16 * 1_024, result: 64 * 1_024 },
   stack: { request: 16 * 1_024, result: 64 * 1_024 },
   order: { request: 16 * 1_024, result: 64 * 1_024 },
-  transform: { request: 32 * 1_024, result: 64 * 1_024 }
+  transform: { request: 32 * 1_024, result: 64 * 1_024 },
+  bind: { request: 16 * 1_024, result: 64 * 1_024 },
+  audit: { request: 16 * 1_024, result: 64 * 1_024 }
 })
 
 const colorSchema = z
@@ -470,9 +476,97 @@ export const transformInputSchema = z
         (elements) => new Set(elements.map((element) => element.id)).size === elements.length,
         'Transform element ids must be unique.'
       ),
+    reflowConnectors: z
+      .boolean()
+      .default(false)
+      .describe(
+        'When true, connectors bound to a moved or resized shape follow their endpoints (re-anchored to the deterministic edge policy) instead of the move/resize being rejected for distorting a binding.'
+      ),
     ...expectedSceneVersionField
   })
   .strict()
+
+// Connector binding verbs. `bind` (re)binds or detaches a connector endpoint;
+// `audit` is a read that reports binding health. Both are part of the connectors
+// & bindings slice and consume the same versioned-ref + paging vocabulary as the
+// structural verbs and reads.
+
+// Where a connector endpoint attaches on its target. `focus` is the perpendicular
+// offset along the chosen edge (-1..1, 0 centers it) and `gap` is the distance the
+// endpoint keeps from the edge. The iframe picks the facing edge deterministically
+// from the opposite endpoint, so the connector stays readable after move/resize.
+const bindingAnchorSchema = z
+  .object({
+    focus: z
+      .number()
+      .finite()
+      .min(-1)
+      .max(1)
+      .default(0)
+      .describe('Offset along the target edge, -1..1; 0 centers the endpoint.'),
+    gap: z
+      .number()
+      .finite()
+      .nonnegative()
+      .default(EXCALIDRAW_DEFAULT_BINDING_GAP)
+      .describe('Distance in canvas pixels the endpoint keeps from the target edge.')
+  })
+  .strict()
+
+const bindEndpointSchema = z.discriminatedUnion('action', [
+  z
+    .object({
+      action: z.literal('attach'),
+      target: versionedElementRefSchema.describe(
+        'Versioned ref of the shape this endpoint should bind to.'
+      ),
+      anchor: bindingAnchorSchema
+        .default({ focus: 0, gap: EXCALIDRAW_DEFAULT_BINDING_GAP })
+        .describe('Anchor/focus point on the target. Defaults to a centered, gapped edge anchor.')
+    })
+    .strict(),
+  z
+    .object({ action: z.literal('detach') })
+    .strict()
+    .describe('Free this endpoint: clear its binding and leave it at its current point.')
+])
+
+export const bindInputSchema = z
+  .object({
+    connector: versionedElementRefSchema.describe(
+      'Versioned ref of the arrow or line whose endpoints to (re)bind.'
+    ),
+    start: bindEndpointSchema.optional().describe('Change the start endpoint binding.'),
+    end: bindEndpointSchema.optional().describe('Change the end endpoint binding.'),
+    expectedSceneVersion: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('Scene version from a prior read/inspect; rejects the edit if the scene changed.')
+  })
+  .strict()
+  .refine(
+    (input) => input.start !== undefined || input.end !== undefined,
+    'Provide a start and/or end binding change.'
+  )
+
+export const auditInputSchema = z
+  .object({
+    connectorIds: uniqueElementIdsSchema
+      .optional()
+      .describe('Connector ids to audit. Omit to audit every connector in the scene.'),
+    ...pagingShape
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.offset > 0 && input.expectedSceneVersion === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expectedSceneVersion'],
+        message: 'Required after offset 0.'
+      })
+    }
+  })
 
 export const excalidrawVerbInputSchemas = {
   draw: drawInputSchema,
@@ -488,7 +582,9 @@ export const excalidrawVerbInputSchemas = {
   distribute: distributeInputSchema,
   stack: stackInputSchema,
   order: orderInputSchema,
-  transform: transformInputSchema
+  transform: transformInputSchema,
+  bind: bindInputSchema,
+  audit: auditInputSchema
 } as const
 
 export const EXCALIDRAW_VERBS = Object.freeze(
@@ -512,3 +608,5 @@ export type DistributeInput = z.infer<typeof distributeInputSchema>
 export type StackInput = z.infer<typeof stackInputSchema>
 export type OrderInput = z.infer<typeof orderInputSchema>
 export type TransformInput = z.infer<typeof transformInputSchema>
+export type BindInput = z.infer<typeof bindInputSchema>
+export type AuditInput = z.infer<typeof auditInputSchema>

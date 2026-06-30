@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import {
   alignInputSchema,
+  auditInputSchema,
+  bindInputSchema,
   clearInputSchema,
   deleteInputSchema,
   distributeInputSchema,
@@ -402,6 +404,70 @@ const deleteResultSchema = z
   })
   .strict()
 
+// `bind` (re)binds/detaches connector endpoints and re-anchors the geometry. It
+// reports the same undoable receipt + budget-bounded records as the structural
+// verbs, plus the resulting per-endpoint binding state for verification.
+const bindEndpointResultSchema = z
+  .object({
+    bound: z.boolean(),
+    targetId: z.string().nullable(),
+    focus: z.number().nullable(),
+    gap: z.number().nullable()
+  })
+  .strict()
+const bindResultSchema = z
+  .object({
+    ...mutationResultShape,
+    connectorId: z.string(),
+    start: bindEndpointResultSchema,
+    end: bindEndpointResultSchema
+  })
+  .strict()
+
+// `audit` is a read: it classifies each connector's endpoints as unbound, ok,
+// stale, detached, or ambiguous and suggests safe repairs. Paginated and budgeted
+// like the other read verbs.
+const bindingIssueSchema = z.enum(['stale', 'detached', 'ambiguous'])
+const bindingStatusSchema = z.enum(['unbound', 'ok', 'stale', 'detached', 'ambiguous'])
+const auditEndpointSchema = z
+  .object({
+    bound: z.boolean(),
+    targetId: z.string().nullable(),
+    status: bindingStatusSchema,
+    focus: z.number().nullable(),
+    gap: z.number().nullable()
+  })
+  .strict()
+const connectorRepairSchema = z
+  .object({
+    endpoint: z.enum(['start', 'end']),
+    action: z.enum(['detach', 'rebind']),
+    targetId: z.string().nullable(),
+    reason: z.string()
+  })
+  .strict()
+const connectorAuditSchema = z
+  .object({
+    id: z.string(),
+    type: z.enum(['arrow', 'line']),
+    version: z.number().int().nonnegative(),
+    start: auditEndpointSchema,
+    end: auditEndpointSchema,
+    issues: z.array(bindingIssueSchema),
+    repairs: z.array(connectorRepairSchema)
+  })
+  .strict()
+const auditResultSchema = z
+  .object({
+    ok: z.literal(true),
+    connectors: z.array(connectorAuditSchema),
+    healthy: z.number().int().nonnegative(),
+    flagged: z.number().int().nonnegative(),
+    missingIds: z.array(z.string()),
+    ...pageResultShape
+  })
+  .strict()
+
 export const excalidrawVerbContracts = {
   draw: { inputSchema: drawInputSchema, resultSchema: drawResultSchema },
   search: { inputSchema: searchInputSchema, resultSchema: searchResultSchema },
@@ -416,7 +482,9 @@ export const excalidrawVerbContracts = {
   distribute: { inputSchema: distributeInputSchema, resultSchema: distributeResultSchema },
   stack: { inputSchema: stackInputSchema, resultSchema: stackResultSchema },
   order: { inputSchema: orderInputSchema, resultSchema: orderResultSchema },
-  transform: { inputSchema: transformInputSchema, resultSchema: transformResultSchema }
+  transform: { inputSchema: transformInputSchema, resultSchema: transformResultSchema },
+  bind: { inputSchema: bindInputSchema, resultSchema: bindResultSchema },
+  audit: { inputSchema: auditInputSchema, resultSchema: auditResultSchema }
 } as const
 
 export type EditableField = z.infer<typeof editableFieldSchema>
@@ -427,3 +495,6 @@ export type MutationResult = z.infer<typeof alignResultSchema>
 export type GroupResult = z.infer<typeof groupResultSchema>
 export type DuplicateResult = z.infer<typeof duplicateResultSchema>
 export type DeleteResult = z.infer<typeof deleteResultSchema>
+export type BindResult = z.infer<typeof bindResultSchema>
+export type AuditResult = z.infer<typeof auditResultSchema>
+export type ConnectorAudit = z.infer<typeof connectorAuditSchema>

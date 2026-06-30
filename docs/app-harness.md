@@ -74,7 +74,7 @@ flowchart TB
 
   subgraph shell["apps/canvas — parent window"]
     chat["FloatingWidgetChat<br/>from app-browser"]
-    tools["draw / search / inspect / read / edit / clear<br/>group / duplicate / delete / align<br/>distribute / stack / order / transform"]
+    tools["draw / search / inspect / read / edit / clear<br/>group / duplicate / delete / align<br/>distribute / stack / order / transform<br/>bind / audit"]
     handle["AppBridgeHandle"]
     client["app-bridge client"]
     frame["AppFrame"]
@@ -208,6 +208,8 @@ This is the only shared source of truth for the Excalidraw vocabulary:
 | `stack`      | write | Lay elements out horizontally or vertically with a fixed gap                  |
 | `order`      | write | Reorder z-layers (front/back, forward/backward)                               |
 | `transform`  | write | Relationship-aware move/resize by id and expected version                     |
+| `bind`       | write | (Re)bind or detach a connector endpoint to a target shape and anchor point    |
+| `audit`      | read  | Report connector binding health (stale, detached, ambiguous) and safe repairs |
 
 The eight structural verbs (`group` through `transform`) extend the safe edit ladder for
 co-editing existing drawings. Each one resolves its operands, preflights version and
@@ -216,7 +218,9 @@ shared budget/receipt machinery in `mutation.ts`, so their results carry the sam
 version receipts and budget-bounded normalized records as `edit`. Relationship safety is
 uniform: labels follow their container, frame children follow their frame, and connectors
 only travel when both bound endpoints move by the same delta — a one-sided move or a resize
-that would distort a binding is rejected before any mutation.
+that would distort a binding is rejected before any mutation, unless the caller opts in to
+`transform`'s `reflowConnectors`, which re-anchors the affected connectors instead (see the
+connectors & bindings section).
 
 **Versioning by default.** Whenever operands are passed explicitly they are versioned
 element refs (`{ id, expectedVersion }`) and `expectedSceneVersion` is required, so the
@@ -284,6 +288,48 @@ The normalized result schemas are intentionally not raw Excalidraw JSON. They ex
 stable, model-relevant fields such as geometry, styles, text, z-order, grouping,
 selection, versions, and bindings while hiding implementation fields such as seeds and
 version nonces.
+
+### Connectors and bindings
+
+After a diagram exists, `bind` and `audit` co-edit the connectors between shapes, and
+`transform` can keep bindings consistent on move/resize. All three share one deterministic
+edge-anchor policy so connectors stay readable: the bound endpoint sits on the target edge
+that faces the opposite endpoint, `focus` (`-1..1`) slides it along that edge, and `gap`
+offsets it outward. Recomputing from the target's current bounds keeps the same `focus`
+valid after a move or resize.
+
+- `bind` is a write. It attaches, rebinds, or detaches a connector's `start` and/or `end` to
+  a target shape with an optional `{ focus, gap }` anchor, re-anchors the connector geometry,
+  and keeps each target's `boundElements` in sync. It is versioned by default — the connector
+  ref, each attach target ref, and `expectedSceneVersion` are all checked before the single
+  atomic, undoable `updateScene`. A binding that would collapse the connector to zero length
+  is rejected for readability.
+- `transform` gains `reflowConnectors` (default `false`). When `true`, moving one endpoint of
+  a bound connector or resizing a bound shape re-anchors the affected connectors to the new
+  geometry instead of being rejected; the binding's `focus`/`gap` are preserved. The default
+  keeps the strict reject-on-distortion behavior.
+- `audit` is a read. It classifies each connector endpoint as `unbound`, `ok`, `stale`,
+  `detached` (the target does not list the connector back), or `ambiguous` (the binding points
+  at a missing or non-bindable element) and suggests a safe `detach`/`rebind` repair routed
+  back through `bind`. Like the other reads it is budgeted, paginated, and detail-aware
+  (`summary` omits the repair hints); stale endpoints are those that have drifted beyond
+  `gap` plus a tolerance from their target.
+
+```mermaid
+flowchart LR
+  bindInput["bind input<br/>connector + start/end"]
+  anchor["edge-anchor policy<br/>focus + gap"]
+  geometry["re-anchored points<br/>+ synced boundElements"]
+  scene["single undoable scene update"]
+  moveResize["transform move/resize<br/>reflowConnectors"]
+  auditInput["audit input<br/>connectorIds?"]
+  health["per-endpoint status<br/>stale / detached / ambiguous"]
+  repairs["safe repairs via bind"]
+
+  bindInput --> anchor --> geometry --> scene
+  moveResize --> anchor
+  auditInput --> health --> repairs
+```
 
 ### Normalized element union and edit capabilities
 
@@ -389,6 +435,7 @@ flowchart LR
   normalization["normalization.ts<br/>union, details, bounds,<br/>capabilities"]
   edit["edit.ts<br/>preflight, versions,<br/>patch and atomic update"]
   structure["structure.ts<br/>group, duplicate, delete,<br/>align, distribute, stack,<br/>order, transform"]
+  binding["binding.ts<br/>bind, audit,<br/>connector reflow geometry"]
   mutation["mutation.ts<br/>shared receipts and<br/>budget-bounded records"]
   ids["ids.ts<br/>stable id minting"]
   payload["payload.ts<br/>UTF-8 measurement<br/>and bounded prefixes"]
@@ -403,6 +450,10 @@ flowchart LR
   bridge --> structure --> api
   structure --> mutation
   structure --> ids
+  structure --> binding
+  bridge --> binding --> api
+  binding --> mutation
+  binding --> query
   create --> ids
   mutation --> normalization
   edit --> normalization
@@ -426,7 +477,12 @@ The modules translate the stable model vocabulary into Excalidraw operations:
   preflight version/relationship safety, and perform one undoable update each. They lean
   on `mutation.ts` for the shared receipt + budget machinery (also used by `edit`) and on
   `ids.ts` for collision-free id minting (also used by `draw`). z-order changes reorder
-  the element array, which `Scene.replaceAllElements` resyncs to fractional indices; and
+  the element array, which `Scene.replaceAllElements` resyncs to fractional indices;
+- `bind` and `audit` (in `binding.ts`) own connector binding behavior: `bind` re-anchors
+  and (re)binds/detaches connector endpoints with synced `boundElements`, `audit` reports
+  binding health, and the shared edge-anchor geometry is reused by `transform`'s
+  `reflowConnectors` reflow. `binding.ts` reuses `mutation.ts` receipts and the read
+  budget/pagination helpers from `query.ts`; and
 - `clear` submits an empty element list as an undoable update.
 
 All writes use `CaptureUpdateAction.IMMEDIATELY`. A successful write batch therefore

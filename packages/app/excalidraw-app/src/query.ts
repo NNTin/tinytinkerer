@@ -33,7 +33,7 @@ const checkSceneVersion = (expected: number | undefined, actual: number, verb: s
   }
 }
 
-const makePage = (offset: number, limit: number, returned: number, total: number) => ({
+export const makePage = (offset: number, limit: number, returned: number, total: number) => ({
   offset,
   limit,
   returned,
