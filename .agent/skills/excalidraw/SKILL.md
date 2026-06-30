@@ -24,145 +24,211 @@ Skills the agent uses to work in this repo. Core idea: **offload deterministic s
 
 END GENERATED: .agent/README.md -->
 
-This skill is for implementation agents changing TinyTinkerer's Excalidraw integration. It is **not**
-a chat-assistant prompt or usage guide for drawing on the canvas. Use it to modify contracts, handlers,
-tool wiring, iframe lifecycle, tests, and docs without breaking package ownership or bundle isolation.
+This skill is for implementation agents **changing TinyTinkerer's Excalidraw integration**, which is now
+shipped and live. It is **not** a chat-assistant prompt or a usage guide for drawing on the canvas. Use it
+to extend the verb ladder, change contracts/handlers/tool wiring, touch the iframe lifecycle, or fix
+rendering bugs — without breaking package ownership or bundle isolation.
+
+The integration exists today: a sandboxed Excalidraw iframe talks to the chat shell over a generic,
+versioned `postMessage` bridge, and the assistant drives it through **14 verbs**. Everything below describes
+the real, implemented system — not a plan.
 
 ## When to use
 
 - Changing `packages/shared/excalidraw-protocol`, `packages/app/excalidraw-app`, or `apps/canvas`.
-- Adding, removing, or changing Excalidraw assistant verbs or their model-facing descriptions.
-- Touching Excalidraw imperative API calls, element normalization, edit safety, connector layout, budgets,
-  pagination, versioning, or the isolated iframe build.
-- Investigating rendering bugs caused by generated Excalidraw elements or connector coordinates.
+- Adding, removing, or changing Excalidraw verbs or their model-facing descriptions.
+- Touching Excalidraw imperative API calls, element normalization, edit/structure safety, connector layout,
+  budgets, pagination, versioning, or the isolated iframe build.
+- Investigating rendering bugs caused by generated elements or connector coordinates.
 
 ## Required references
 
-Read the relevant sections before designing or implementing:
+- `docs/app-harness.md` — **source of truth** for package relationships, generic-bridge vs app-contract
+  versions, verbs, detail levels, pagination, payload budgets, connector policy, iframe lifecycle, and the
+  `excalidraw-app` module split. The diagrams in this skill are distilled from it; keep them in step.
+- `docs/ARCHITECTURE.md` — dependency rules and the monorepo package map; package `tinytinkerer`
+  architecture roles (`app-protocol`, `iframe-app`, `harness-shell`) that `check:boundaries` enforces.
+- `workflows/wire-excalidraw-api-call.md` — the SOP for wiring a new/changed verb end to end.
 
-- `docs/app-harness.md` — source of truth for Excalidraw package relationships, generic bridge vs app
-  contract versions, verbs, detail levels, pagination, payload budgets, connector policy, iframe lifecycle,
-  and the internal `excalidraw-app` module split.
-- `docs/ARCHITECTURE.md` — dependency rules and the monorepo package map. In particular, `app-bridge`
-  is generic and product-agnostic; app-specific contracts live in the app protocol package.
-- `docs/packages-concept.md` — why apps stay thin, what app-harness packages own, and when behavior
-  belongs in shared packages versus deployable shells.
-- `workflows/wire-excalidraw-api-call.md` — SOP for wiring a new or changed API capability end to end.
+## End-to-end data flow
+
+A verb is four coordinated pieces in a fixed dependency order (the numbers are the order to touch files —
+see the SOP). `bridge.ts` only binds; all behavior is in the adjacent modules; the parent shell never
+imports `@excalidraw/excalidraw`.
+
+```mermaid
+flowchart LR
+  subgraph contract["1. excalidraw-protocol (shared)"]
+    schema["Zod input + result schemas<br/>budgets, EXCALIDRAW_VERBS, version"]
+  end
+  subgraph app["2-3. excalidraw-app (iframe only)"]
+    behavior["2. create / query / edit / structure<br/>mutation, ids, normalization, payload"]
+    binding["3. bridge.ts<br/>defineBridgeVerb (binding only)"]
+  end
+  shell["4. apps/canvas<br/>canvas-runtime.ts: description + schema"]
+  api["ExcalidrawImperativeAPI"]
+
+  schema --> binding
+  schema --> shell
+  binding --> behavior
+  behavior --> api
+  shell -. "appToolsFromVerbs, postMessage req/res" .-> binding
+```
+
+Wire path at call time: model tool (validated by protocol input schema in canvas) → `AppBridgeHandle` →
+app-bridge client → `postMessage` → server (re-validates input) → `defineBridgeVerb` handler → `execute*`
+behavior → `ExcalidrawImperativeAPI` → result (validated against protocol result schema) back across.
 
 ## Ownership map
 
-- `packages/shared/excalidraw-protocol` owns `EXCALIDRAW_APP_ID`, `EXCALIDRAW_PROTOCOL_VERSION`,
-  `EXCALIDRAW_VERBS`, Zod input/result contracts, payload budgets, detail levels, pagination fields,
-  truncation metadata, normalized result variants, and edit capability vocabulary. It must remain small,
-  serializable, side-effect-free, and independent of `@tinytinkerer/app-bridge`.
-- `packages/app/excalidraw-app` owns every import from `@excalidraw/excalidraw`, all interaction with
-  `ExcalidrawImperativeAPI`, and app-domain behavior. Keep implementation in focused internal modules:
-  `create.ts` for draw/clear and connector endpoint generation, `query.ts` for search/inspect/read and
-  budgets, `normalization.ts` for normalized element records and capabilities, `edit.ts` for atomic
-  versioned field edits, `structure.ts` for the structural verbs (group, duplicate, delete, align,
-  distribute, stack, order, transform), `mutation.ts` for the shared receipt + budget-bounded record
-  helper used by `edit` and `structure`, `ids.ts` for stable id minting used by `create` and
-  `structure`, and `payload.ts` for exact UTF-8 measurement/truncation. Keep `bridge.ts` limited to
-  `defineBridgeVerb(...)` binding and server creation.
-- `apps/canvas` owns the deployable canvas shell, iframe URL, app id/version wiring, and model-facing
-  verb descriptions in `src/canvas-runtime.ts`. It may import Excalidraw contracts, but it must never
-  import `@excalidraw/excalidraw` or reimplement app-domain behavior.
-- `packages/shared/app-bridge` and `packages/app/app-harness` are generic. They must not know Excalidraw
-  verb names, schemas, element kinds, or behavior.
-- `apps/widget` is a chat-only sibling. Do not add Excalidraw protocol, bridge, or harness dependencies
-  there unless the architecture docs are intentionally changed first.
+- `packages/shared/excalidraw-protocol` (role `app-protocol`) owns `EXCALIDRAW_APP_ID`,
+  `EXCALIDRAW_PROTOCOL_VERSION`, `EXCALIDRAW_VERBS`, Zod input/result contracts (`inputs.ts` / `contracts.ts`,
+  re-exported from `index.ts`), payload budgets, detail levels, pagination fields, truncation metadata,
+  normalized result variants, and edit-capability vocabulary. Stays small, serializable, side-effect-free
+  (`sideEffects: false`), and **must not import** `@tinytinkerer/app-bridge` or `@excalidraw/excalidraw`.
+- `packages/app/excalidraw-app` (role `iframe-app`) owns **every** import from `@excalidraw/excalidraw`, all
+  interaction with `ExcalidrawImperativeAPI`, and app-domain behavior, split into focused modules:
+  - `create.ts` — `draw`/`clear`, stable ids, post-layout connector endpoints.
+  - `query.ts` — `search`/`inspect`/`read`, scene snapshots, pagination, result budgets.
+  - `normalization.ts` — normalized element records, bounds, labels, relationships, capabilities.
+  - `edit.ts` — atomic, version-checked, invariant-safe field patches with receipts.
+  - `structure.ts` — the 8 structural verbs (`group`, `duplicate`, `delete`, `align`, `distribute`,
+    `stack`, `order`, `transform`).
+  - `mutation.ts` — shared receipt + budget-bounded record helper used by `edit` **and** `structure`.
+  - `ids.ts` — collision-free id minting used by `create` **and** `structure`.
+  - `payload.ts` — exact UTF-8 measurement/truncation.
+  - `bridge.ts` — **binding only**: `defineBridgeVerb(...)` + `createBridgeServer`. No behavior.
+- `apps/canvas` (role `harness-shell`) owns the deployable shell, iframe URL, app id/version wiring, and the
+  model-facing verb descriptions in `src/canvas-runtime.ts`. It imports Excalidraw **contracts** but **never**
+  `@excalidraw/excalidraw` and never reimplements behavior.
+- `packages/shared/app-bridge` and `packages/app/app-harness` are generic. They must not know Excalidraw verb
+  names, schemas, element kinds, or behavior.
+- `apps/widget` is a chat-only sibling: no Excalidraw protocol/bridge/harness dependency.
 
-## Contract and implementation rules
+## Rules every new (or changed) verb MUST follow
 
-- Bump `EXCALIDRAW_PROTOCOL_VERSION` for incompatible app-contract changes: verb names, required inputs,
-  result shapes, normalized variants, budgets, or semantics that older canvas code cannot safely consume.
-  Do not bump `APP_BRIDGE_PROTOCOL_VERSION` unless the generic bridge envelope changes.
-- Zod schemas are the wire source of truth. Validate inputs before app code and results before returning
-  through the bridge. Keep data JSON-serializable and model-friendly; do not expose raw Excalidraw seeds,
-  nonces, React state, functions, DOM objects, or module instances.
-- Read paths must stay bounded. Preserve `detail`, `offset`, `limit`, `expectedSceneVersion`, `page`,
-  `sceneVersion`, and `truncation` behavior unless the contract version and docs are updated together.
-- `read` returns a strict discriminated union over normalized element `kind`s and per-element
-  `capabilities`. Any edit capability advertised by `read` must be enforced by `edit` using the same
-  capability calculation.
-- Writes must be undoable with `CaptureUpdateAction.IMMEDIATELY`. Reject stale, locked, missing, or
-  relationship-unsafe edit batches before any partial `updateScene`.
-- Use the safe iterative ladder for modifying existing drawings: `search` → `inspect` → `read` → `edit`.
-  `edit` requires the current element version from `read`; retry stale edits only after reading again.
-- For generated diagrams, prefer declarative `draw.connectors` over hand-built arrow coordinates.
-  Horizontal row links use a shared `rowY` so `startY === endY`; vertical trunks use a shared `trunkX` so
-  `startX === endX`. Connector endpoints are computed after node conversion from final bounds.
+These are enforced — break one and `pnpm check:boundaries`, the canvas bundle test, lint, or the contract
+tests fail.
 
-## Current verbs
+1. **Boundaries.** Behavior in `excalidraw-app`; schemas in `excalidraw-protocol`; `bridge.ts` is binding
+   only; canvas consumes the shared input schema and stays free of `@excalidraw/excalidraw`. No
+   workspace-subpath imports, no app-to-app imports; the iframe package is imported only by its declaring
+   harness shell's iframe entry (`check:boundaries`).
+2. **One verb = touch all five seams.** Add an entry to `excalidrawVerbInputSchemas` (`inputs.ts`) and
+   `excalidrawVerbContracts` (`contracts.ts`); an `execute*` in the owning `excalidraw-app` module; a
+   `defineBridgeVerb` line in `bridge.ts`; a description in `canvas-runtime.ts`; and update the canvas bundle
+   test's tool-count guard (currently "fourteen-tool startup entry" + size budget in
+   `apps/canvas/src/bundle-size.test.ts`).
+3. **Mutations are atomic, undoable, version-checked.** validate → preflight versions + relationship safety
+   → exactly **one** `api.updateScene({ ..., captureUpdate: CaptureUpdateAction.IMMEDIATELY })`. Reject
+   stale/locked/missing/relationship-unsafe batches **before** any partial write. Versioned by default:
+   explicit operands are `{ id, expectedVersion }` refs **and** require `expectedSceneVersion`. The only
+   un-versioned path is the live-selection fallback (omit `elements`); `duplicate`/`delete` are always
+   explicit.
+4. **Reads are bounded.** Budgeted (exact UTF-8 bytes), paginated (`offset`/`limit`/`expectedSceneVersion`),
+   and detail-level-aware (`summary`/`standard`/`full`). Always return `sceneVersion`, `page`, and
+   `truncation`. Requests over budget fail before behavior runs; results drop trailing records and report
+   omissions. `read`'s discriminated union and per-element `capabilities` must match what `edit` enforces —
+   any advertised `editableField` must be honored by `edit`, computed from the same capability logic.
+5. **Versioning.** Bump `EXCALIDRAW_PROTOCOL_VERSION` (currently **4**) for any incompatible app-contract
+   change (verb names, required inputs, result shapes, normalized variants, budgets, semantics). Do **not**
+   bump `APP_BRIDGE_PROTOCOL_VERSION` unless the generic envelope changes.
+6. **Serializable & model-friendly.** Zod schemas are the wire source of truth. Never expose raw Excalidraw
+   seeds, nonces, React state, functions, DOM objects, or module instances.
 
-| Verb         | Direction | Implementation focus                                                                  |
-| ------------ | --------- | ------------------------------------------------------------------------------------- |
-| `draw`       | WRITE     | Element skeletons, stable ids, post-layout connectors, undoable scene update          |
-| `search`     | READ      | Capped candidates by query, type, selection, or viewport                              |
-| `inspect`    | READ      | Compact scene, viewport, selection, grouping, z-order, locking, and relationships     |
-| `read`       | READ      | Budgeted normalized discriminated element records, capabilities, versions, pagination |
-| `edit`       | WRITE     | Atomic, version-checked, invariant-safe patches with compact receipts                 |
-| `clear`      | WRITE     | Undoable `updateScene({ elements: [] })`                                              |
-| `group`      | WRITE     | Group/ungroup by id or selection, carrying bound labels; contiguous z-order           |
-| `duplicate`  | WRITE     | Copy by id with offset, fresh ids, remapped groups/labels/intra-set bindings          |
-| `delete`     | WRITE     | Delete by id; rejects relationship crossings unless `includeRelated`                  |
-| `align`      | WRITE     | Align ≥2 elements to a shared edge/center on the x or y axis                          |
-| `distribute` | WRITE     | Equalize gaps between ≥3 elements along an axis, ends fixed                           |
-| `stack`      | WRITE     | Lay elements out in order with a configurable gap and cross-axis alignment            |
-| `order`      | WRITE     | Reorder z-layers: front/back, forward/backward (array reorder → fractional resync)    |
-| `transform`  | WRITE     | Relationship-aware move/resize by id + expected version; rejects binding distortion   |
+## Current verbs (14)
 
-The eight structural verbs live in `structure.ts` and share `mutation.ts` (receipts +
-budget trimming, also used by `edit`) and `ids.ts` (id minting, also used by `draw`).
-Concurrency is versioned by default: explicit operands are `{ id, expectedVersion }` refs
-**and** require `expectedSceneVersion`, both checked before any `updateScene` (matching
-`transform`/`edit`). Omitting `elements` falls back to the live canvas selection — the one
-un-versioned convenience path; `duplicate` and `delete` are always explicit. `delete`
-additionally rejects relationship crossings (cascading a bound label/frame child or
-detaching a connector) unless `includeRelated: true`. Each verb commits exactly one atomic,
-undoable `updateScene`.
+| Verb         | Dir.  | Module         | Focus                                                                               |
+| ------------ | ----- | -------------- | ----------------------------------------------------------------------------------- |
+| `draw`       | WRITE | `create.ts`    | Element skeletons, stable ids, post-layout connectors, one undoable update          |
+| `clear`      | WRITE | `create.ts`    | Undoable `updateScene({ elements: [] })`                                            |
+| `search`     | READ  | `query.ts`     | Capped candidates by query, type, selection, or viewport                            |
+| `inspect`    | READ  | `query.ts`     | Compact scene/viewport/selection/grouping/z-order/locking/relationships             |
+| `read`       | READ  | `query.ts`     | Budgeted normalized discriminated records, capabilities, versions, pagination       |
+| `edit`       | WRITE | `edit.ts`      | Atomic, version-checked, invariant-safe field patches with receipts                 |
+| `group`      | WRITE | `structure.ts` | Group/ungroup by id or selection, carrying bound labels; contiguous z-order         |
+| `duplicate`  | WRITE | `structure.ts` | Copy by id with offset, fresh ids, remapped groups/labels/intra-set bindings        |
+| `delete`     | WRITE | `structure.ts` | Delete by id; rejects relationship crossings unless `includeRelated`                |
+| `align`      | WRITE | `structure.ts` | Align ≥2 elements to a shared edge/center on x or y                                 |
+| `distribute` | WRITE | `structure.ts` | Equalize gaps between ≥3 elements along an axis, ends fixed                         |
+| `stack`      | WRITE | `structure.ts` | Lay out in order with a configurable gap and cross-axis alignment                   |
+| `order`      | WRITE | `structure.ts` | Reorder z-layers: front/back, forward/backward (array reorder → fractional resync)  |
+| `transform`  | WRITE | `structure.ts` | Relationship-aware move/resize by id + expected version; rejects binding distortion |
 
-## Useful tools and checks
+The 8 structural verbs share `mutation.ts` (receipts + budget trimming, also used by `edit`) and `ids.ts`
+(also used by `create`). Each commits exactly one atomic, undoable `updateScene`. `delete` additionally
+rejects relationship crossings (cascading a bound label/frame child, detaching a connector) unless
+`includeRelated: true`.
 
-Use the local Excalidraw reference helper before relying on memory of upstream APIs:
+## Upstream `@excalidraw/excalidraw` API map
+
+Pinned at `0.18.1` (see `tools/excalidraw-ref.mjs`). Only `excalidraw-app` may call these. Verify any
+signature against the clone before relying on memory — do not guess.
+
+| Symbol                                         | R/W         | Used in                               | Purpose                                 |
+| ---------------------------------------------- | ----------- | ------------------------------------- | --------------------------------------- |
+| `Excalidraw`, `ExcalidrawImperativeAPI`        | —           | `index.tsx`, all                      | Mount component; imperative handle      |
+| `api.getSceneElements()`                       | READ        | `query`, `edit`, `structure`          | Current ordered, non-deleted elements   |
+| `api.getAppState()`                            | READ        | `query`                               | Viewport, selection, theme, grid        |
+| `getVisibleSceneBounds(appState)`              | READ        | `query`                               | Viewport bounds                         |
+| `getCommonBounds(elements)`                    | READ        | `query`, `normalization`, `structure` | Bounding box for layout/align/normalize |
+| `hashElementsVersion(elements)`                | READ        | `normalization`                       | Scene version hash                      |
+| `convertToExcalidrawElements(skeletons)`       | write-prep  | `create`                              | Skeletons → full elements               |
+| `newElementWith(element, patch)`               | write-prep  | `structure`                           | Immutable element clone with updates    |
+| `api.updateScene({ elements, captureUpdate })` | WRITE       | `create`, `edit`, `structure`         | **The one atomic commit** per verb      |
+| `CaptureUpdateAction.IMMEDIATELY`              | WRITE       | `create`, `edit`, `structure`         | Marks the update as one undo checkpoint |
+| `api.scrollToContent()`                        | WRITE(view) | `create`                              | Reveal newly drawn content              |
+
+Every write funnels through exactly one `api.updateScene(..., { captureUpdate: CaptureUpdateAction.IMMEDIATELY })`,
+so a successful batch is one user-visible undo step and a failed batch changes nothing.
+
+## Editing ladder & connector policy
+
+- Safe co-editing ladder for existing drawings: `search` → `inspect` → `read` → `edit`/structure. `edit` and
+  explicit structural operands require the current element version from `read`; retry stale edits only after
+  reading again.
+- For generated diagrams, prefer declarative `draw.connectors` over hand-built arrow coordinates. Endpoints
+  are computed **after** node conversion from final bounds. Horizontal row links use a shared `rowY`
+  (`startY === endY`); vertical trunks use a shared `trunkX` (`startX === endX`); `routing: "auto"` picks by
+  endpoint geometry. Receipts expose the computed start/end + `horizontal`/`vertical` invariants.
+
+## Tools and checks
+
+Use the reference helper before relying on memory of upstream APIs:
 
 ```bash
-node .agent/skills/excalidraw/tools/excalidraw-ref.mjs
+node .agent/skills/excalidraw/tools/excalidraw-ref.mjs                          # list key docs
 node .agent/skills/excalidraw/tools/excalidraw-ref.mjs convertToExcalidrawElements
 node .agent/skills/excalidraw/tools/excalidraw-ref.mjs updateScene
 ```
 
-Focused validation for protocol, iframe app, and canvas shell changes:
+Focused validation for the touched packages:
 
 ```bash
-pnpm --filter @tinytinkerer/excalidraw-protocol test
-pnpm --filter @tinytinkerer/excalidraw-protocol typecheck
-pnpm --filter @tinytinkerer/excalidraw-protocol lint
-pnpm --filter @tinytinkerer/excalidraw-app test
-pnpm --filter @tinytinkerer/excalidraw-app typecheck
-pnpm --filter @tinytinkerer/excalidraw-app lint
-pnpm --filter @tinytinkerer/canvas test
-pnpm --filter @tinytinkerer/canvas typecheck
+pnpm --filter @tinytinkerer/excalidraw-protocol test   # + typecheck, lint
+pnpm --filter @tinytinkerer/excalidraw-app test        # + typecheck, lint
+pnpm --filter @tinytinkerer/canvas test                # + typecheck
 ```
 
-Repository-level validation before pushing substantial Excalidraw work:
+Repository-level checks before pushing (husky pre-commit runs these — never `--no-verify`):
 
-```bash
+````bash
 pnpm typecheck
-pnpm lint
+pnpm lint                # also runs check:boundaries
 pnpm test
 pnpm format:check
-pnpm check:mermaid
-pnpm check:skill-readme
-```
+pnpm check:boundaries    # package roles + import boundaries (call out explicitly)
+pnpm check:mermaid       # every ```mermaid block must render
+pnpm check:skill-readme  # SKILL.md index block in sync (run `pnpm sync:skill-readme` to fix)
+````
 
 ## Success criteria
 
 - Contracts, handlers, model-facing descriptions, docs, and tests move together.
-- Excalidraw runtime code remains isolated to `packages/app/excalidraw-app` and its iframe build.
-- Generic bridge/harness packages remain app-agnostic.
-- Reads are validated, paginated, compact, budgeted, and safe to serialize.
-- Writes are atomic, undoable, version-aware, and do not corrupt relationship-sensitive elements.
-- Generated connectors use one post-layout anchoring policy per route and expose receipts that let callers
-  verify horizontal/vertical invariants.
-- Bundle-isolation, boundary, skill README, Mermaid, lint, typecheck, and tests pass for the touched scope.
+- Excalidraw runtime code stays isolated to `excalidraw-app` and its iframe build; generic bridge/harness
+  packages stay app-agnostic; the parent shell never imports `@excalidraw/excalidraw`.
+- Reads are validated, paginated, compact, budgeted, serializable. Writes are atomic, undoable,
+  version-aware, and never corrupt relationship-sensitive elements.
+- Generated connectors use one post-layout anchoring policy per route and expose verifiable receipts.
+- `check:boundaries`, canvas bundle isolation, `check:skill-readme`, `check:mermaid`, lint, typecheck, and
+  tests all pass for the touched scope.
