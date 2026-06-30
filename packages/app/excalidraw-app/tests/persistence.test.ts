@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
-import { applySnapshot, serializeScene, subscribeScenePersistence } from '../src/persistence'
+import { applySnapshot, createScenePersistence, serializeScene } from '../src/persistence'
 
 vi.mock('@excalidraw/excalidraw', () => ({
   CaptureUpdateAction: { IMMEDIATELY: 'immediately', NEVER: 'never' }
@@ -26,6 +26,7 @@ const fakeApi = (
       ...state
     })),
     updateScene: vi.fn(),
+    updateLibrary: vi.fn(),
     onChange: vi.fn((cb: () => void) => {
       onChangeCb = cb
       return () => {
@@ -60,6 +61,14 @@ describe('excalidraw scene persistence', () => {
     })
     expect(snapshot.appState).not.toHaveProperty('selectedElementIds')
     expect(snapshot.appState).not.toHaveProperty('collaborators')
+    expect(snapshot).not.toHaveProperty('libraryItems')
+  })
+
+  it('includes imported library items when present', () => {
+    const snapshot = serializeScene(fakeApi([{ id: 'a' }]), () => [{ id: 'lib-1' }])
+    expect(snapshot.libraryItems).toEqual([{ id: 'lib-1' }])
+    // An empty library is omitted entirely.
+    expect(serializeScene(fakeApi(), () => [])).not.toHaveProperty('libraryItems')
   })
 
   it('applies a snapshot without polluting the undo history', () => {
@@ -75,12 +84,26 @@ describe('excalidraw scene persistence', () => {
       appState: { scrollX: 1 },
       captureUpdate: 'never'
     })
+    expect(api.updateLibrary).not.toHaveBeenCalled()
+  })
+
+  it('restores persisted library items on apply', () => {
+    const api = fakeApi()
+    applySnapshot(api, {
+      version: 1,
+      elements: [],
+      libraryItems: [{ id: 'lib-1' }, { id: 'lib-2' }]
+    })
+    expect(api.updateLibrary).toHaveBeenCalledWith({
+      libraryItems: [{ id: 'lib-1' }, { id: 'lib-2' }],
+      merge: false
+    })
   })
 
   it('emits at most one debounced snapshot per quiet window', () => {
     const api = fakeApi([{ id: 'a' }])
     const emit = vi.fn()
-    const stop = subscribeScenePersistence(api, emit)
+    const persistence = createScenePersistence(api, emit)
 
     api.emitChange()
     api.emitChange()
@@ -91,19 +114,29 @@ describe('excalidraw scene persistence', () => {
     expect(emit).toHaveBeenCalledTimes(1)
     expect(emit).toHaveBeenCalledWith(expect.objectContaining({ version: 1 }))
 
-    stop()
+    persistence.dispose()
     api.emitChange()
     vi.advanceTimersByTime(600)
-    // No further emits after unsubscribe.
+    // No further emits after dispose.
     expect(emit).toHaveBeenCalledTimes(1)
   })
 
-  it('cancels a pending debounced write on unsubscribe', () => {
+  it('save() can be triggered directly (e.g. on a library change)', () => {
+    const api = fakeApi([{ id: 'a' }])
+    const emit = vi.fn()
+    const persistence = createScenePersistence(api, emit, () => [{ id: 'lib-1' }])
+    persistence.save()
+    vi.advanceTimersByTime(600)
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ libraryItems: [{ id: 'lib-1' }] }))
+    persistence.dispose()
+  })
+
+  it('cancels a pending debounced write on dispose', () => {
     const api = fakeApi()
     const emit = vi.fn()
-    const stop = subscribeScenePersistence(api, emit)
+    const persistence = createScenePersistence(api, emit)
     api.emitChange()
-    stop()
+    persistence.dispose()
     vi.advanceTimersByTime(600)
     expect(emit).not.toHaveBeenCalled()
   })

@@ -11,8 +11,8 @@
   },
   "scripts": {
     "dev": "if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite",
-    "build": "if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite build && vite build --config vite.excalidraw.config.ts",
-    "lint": "eslint src excalidraw-app",
+    "build": "if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite build && vite build --config vite.excalidraw.config.ts && vite build --config vite.callback.config.ts",
+    "lint": "eslint src excalidraw-app library-callback",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "preview": "vite preview"

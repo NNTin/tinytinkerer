@@ -693,7 +693,34 @@ weakening the sandbox:
 `app:snapshot` and `app:restore` are generic, reserved bridge verb names
 (`APP_SNAPSHOT_EVENT` / `APP_SNAPSHOT_RESTORE_VERB` in `app-bridge`); the snapshot
 schema and its version live in `excalidraw-protocol`. The harness only moves an opaque
-blob between the app and `localStorage`.
+blob between the app and `localStorage`. Imported libraries (see below) ride along in the
+same snapshot so they are restored on reload too.
+
+## Libraries
+
+The Excalidraw "Browse libraries" flow opens `libraries.excalidraw.com`, and "Add to
+Excalidraw" navigates `target=<window.name||_blank>` to `<libraryReturnUrl>#addLibrary=…`.
+That round-trip cannot reach our canvas directly: the iframe has an opaque origin and is
+gated by the session nonce (so a navigation that drops the nonce would only hit the
+"opened by the canvas harness" guard), and browser navigation rules forbid the
+cross-origin library popup from targeting our sandboxed iframe. So the import is relayed
+on the **real origin** instead:
+
+1. `excalidraw-app` sets `libraryReturnUrl` to the shell's same-origin
+   `/canvas/library-callback/` page (derived from the iframe's real `location.href`).
+2. "Add to Excalidraw" opens that callback page in a new tab with
+   `#addLibrary=<url>&token=<token>`. The page posts the URL on a same-origin
+   `BroadcastChannel` (`EXCALIDRAW_LIBRARY_CHANNEL`) and closes itself. It imports no
+   React or Excalidraw — it stays a tiny standalone build entry.
+3. The live canvas shell listens on that channel, allow-lists the URL to excalidraw.com
+   (`isAllowedLibraryUrl`), fetches the `.excalidrawlib`, and forwards the text into the
+   iframe over the reserved `excalidraw:import-library` system verb.
+4. `excalidraw-app` hands the text to `updateLibrary` (Excalidraw's own loader) and tracks
+   `onLibraryChange` so the library is persisted in the scene snapshot.
+
+The iframe is never navigated, so the nonce, bridge, and scene are untouched. Like
+`app:restore`, `excalidraw:import-library` is a system verb kept out of the model-facing
+verb set.
 
 ## Adding another iframe app
 

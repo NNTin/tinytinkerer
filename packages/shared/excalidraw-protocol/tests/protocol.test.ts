@@ -7,12 +7,15 @@ import {
   drawInputSchema,
   duplicateInputSchema,
   editInputSchema,
+  excalidrawLibraryImportContract,
   excalidrawSnapshotRestoreContract,
   excalidrawSnapshotSchema,
   excalidrawVerbContracts,
+  EXCALIDRAW_LIBRARY_IMPORT_VERB,
   EXCALIDRAW_PROTOCOL_VERSION,
   EXCALIDRAW_SNAPSHOT_VERSION,
   EXCALIDRAW_VERBS,
+  isAllowedLibraryUrl,
   groupInputSchema,
   inspectInputSchema,
   orderInputSchema,
@@ -293,6 +296,39 @@ describe('excalidraw protocol', () => {
         elements: []
       }).success
     ).toBe(true)
+    // Imported library items round-trip through the snapshot.
+    expect(
+      excalidrawSnapshotSchema.safeParse({
+        version: EXCALIDRAW_SNAPSHOT_VERSION,
+        elements: [],
+        libraryItems: [{ id: 'lib-1' }]
+      }).success
+    ).toBe(true)
+  })
+
+  it('defines the library import system verb outside the model-facing set', () => {
+    expect(EXCALIDRAW_VERBS).not.toContain(EXCALIDRAW_LIBRARY_IMPORT_VERB)
+    expect(
+      excalidrawLibraryImportContract.inputSchema.safeParse({ content: '{"libraryItems":[]}' })
+        .success
+    ).toBe(true)
+    // Empty content is rejected at the wire.
+    expect(excalidrawLibraryImportContract.inputSchema.safeParse({ content: '' }).success).toBe(
+      false
+    )
+    expect(
+      excalidrawLibraryImportContract.resultSchema.safeParse({ ok: true, imported: 2 }).success
+    ).toBe(true)
+  })
+
+  it('allow-lists only https excalidraw.com library URLs', () => {
+    expect(isAllowedLibraryUrl('https://libraries.excalidraw.com/x.excalidrawlib')).toBe(true)
+    expect(isAllowedLibraryUrl('https://excalidraw.com/x.excalidrawlib')).toBe(true)
+    expect(isAllowedLibraryUrl('http://libraries.excalidraw.com/x.excalidrawlib')).toBe(false)
+    expect(isAllowedLibraryUrl('https://evil.example.com/x.excalidrawlib')).toBe(false)
+    // No substring/suffix spoofing of the host.
+    expect(isAllowedLibraryUrl('https://excalidraw.com.evil.example/x')).toBe(false)
+    expect(isAllowedLibraryUrl('not a url')).toBe(false)
   })
 
   it('rejects impossible discriminated element records', () => {
