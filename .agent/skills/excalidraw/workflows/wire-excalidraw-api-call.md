@@ -68,7 +68,7 @@ Update `apps/canvas/src/canvas-runtime.ts` only for model-facing verb descriptio
 binding (via `appToolsFromVerbs`). The parent shell may import `@tinytinkerer/excalidraw-protocol`; it must
 not import `@excalidraw/excalidraw` or reimplement Excalidraw behavior. If you added or removed a verb,
 update the tool-count guard and size budget in `apps/canvas/src/bundle-size.test.ts` (currently asserts the
-"fourteen-tool startup entry").
+"twenty-tool startup entry").
 
 ## 5. Check boundaries
 

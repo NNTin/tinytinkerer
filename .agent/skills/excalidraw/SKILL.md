@@ -30,7 +30,7 @@ to extend the verb ladder, change contracts/handlers/tool wiring, touch the ifra
 rendering bugs — without breaking package ownership or bundle isolation.
 
 The integration exists today: a sandboxed Excalidraw iframe talks to the chat shell over a generic,
-versioned `postMessage` bridge, and the assistant drives it through **14 verbs**. Everything below describes
+versioned `postMessage` bridge, and the assistant drives it through **20 verbs**. Everything below describes
 the real, implemented system — not a plan.
 
 ## When to use
@@ -119,7 +119,7 @@ tests fail.
 2. **One verb = touch all five seams.** Add an entry to `excalidrawVerbInputSchemas` (`inputs.ts`) and
    `excalidrawVerbContracts` (`contracts.ts`); an `execute*` in the owning `excalidraw-app` module; a
    `defineBridgeVerb` line in `bridge.ts`; a description in `canvas-runtime.ts`; and update the canvas bundle
-   test's tool-count guard (currently "sixteen-tool startup entry" + size budget in
+   test's tool-count guard (currently "twenty-tool startup entry" + size budget in
    `apps/canvas/src/bundle-size.test.ts`).
 3. **Mutations are atomic, undoable, version-checked.** validate → preflight versions + relationship safety
    → exactly **one** `api.updateScene({ ..., captureUpdate: CaptureUpdateAction.IMMEDIATELY })`. Reject
@@ -132,32 +132,36 @@ tests fail.
    `truncation`. Requests over budget fail before behavior runs; results drop trailing records and report
    omissions. `read`'s discriminated union and per-element `capabilities` must match what `edit` enforces —
    any advertised `editableField` must be honored by `edit`, computed from the same capability logic.
-5. **Versioning.** Bump `EXCALIDRAW_PROTOCOL_VERSION` (currently **5**) for any incompatible app-contract
+5. **Versioning.** Bump `EXCALIDRAW_PROTOCOL_VERSION` (currently **6**) for any incompatible app-contract
    change (verb names, required inputs, result shapes, normalized variants, budgets, semantics). Do **not**
    bump `APP_BRIDGE_PROTOCOL_VERSION` unless the generic envelope changes.
 6. **Serializable & model-friendly.** Zod schemas are the wire source of truth. Never expose raw Excalidraw
    seeds, nonces, React state, functions, DOM objects, or module instances.
 
-## Current verbs (16)
+## Current verbs (20)
 
-| Verb         | Dir.  | Module         | Focus                                                                               |
-| ------------ | ----- | -------------- | ----------------------------------------------------------------------------------- |
-| `draw`       | WRITE | `create.ts`    | Element skeletons, stable ids, post-layout connectors, one undoable update          |
-| `clear`      | WRITE | `create.ts`    | Undoable `updateScene({ elements: [] })`                                            |
-| `search`     | READ  | `query.ts`     | Capped candidates by query, type, selection, or viewport                            |
-| `inspect`    | READ  | `query.ts`     | Compact scene/viewport/selection/grouping/z-order/locking/relationships             |
-| `read`       | READ  | `query.ts`     | Budgeted normalized discriminated records, capabilities, versions, pagination       |
-| `edit`       | WRITE | `edit.ts`      | Atomic, version-checked, invariant-safe field patches with receipts                 |
-| `group`      | WRITE | `structure.ts` | Group/ungroup by id or selection, carrying bound labels; contiguous z-order         |
-| `duplicate`  | WRITE | `structure.ts` | Copy by id with offset, fresh ids, remapped groups/labels/intra-set bindings        |
-| `delete`     | WRITE | `structure.ts` | Delete by id; rejects relationship crossings unless `includeRelated`                |
-| `align`      | WRITE | `structure.ts` | Align ≥2 elements to a shared edge/center on x or y                                 |
-| `distribute` | WRITE | `structure.ts` | Equalize gaps between ≥3 elements along an axis, ends fixed                         |
-| `stack`      | WRITE | `structure.ts` | Lay out in order with a configurable gap and cross-axis alignment                   |
-| `order`      | WRITE | `structure.ts` | Reorder z-layers: front/back, forward/backward (array reorder → fractional resync)  |
-| `transform`  | WRITE | `structure.ts` | Relationship-aware move/resize by id + expected version; opt-in `reflowConnectors`  |
-| `bind`       | WRITE | `binding.ts`   | (Re)bind/detach a connector endpoint to a target + anchor; re-anchors, syncs bounds |
-| `audit`      | READ  | `binding.ts`   | Connector binding health: unbound/ok/stale/detached/ambiguous + safe repair hints   |
+| Verb         | Dir.  | Module         | Focus                                                                                |
+| ------------ | ----- | -------------- | ------------------------------------------------------------------------------------ |
+| `draw`       | WRITE | `create.ts`    | Element skeletons, stable ids, post-layout connectors, one undoable update           |
+| `clear`      | WRITE | `create.ts`    | Undoable `updateScene({ elements: [] })`                                             |
+| `search`     | READ  | `query.ts`     | Capped candidates by query, type, selection, or viewport                             |
+| `inspect`    | READ  | `query.ts`     | Compact scene/viewport/selection/grouping/z-order/locking/relationships              |
+| `read`       | READ  | `query.ts`     | Budgeted normalized discriminated records, capabilities, versions, pagination        |
+| `edit`       | WRITE | `edit.ts`      | Atomic, version-checked, invariant-safe field patches with receipts                  |
+| `group`      | WRITE | `structure.ts` | Group/ungroup by id or selection, carrying bound labels; contiguous z-order          |
+| `duplicate`  | WRITE | `structure.ts` | Copy by id with offset, fresh ids, remapped groups/labels/intra-set bindings         |
+| `delete`     | WRITE | `structure.ts` | Delete by id; rejects relationship crossings unless `includeRelated`                 |
+| `align`      | WRITE | `structure.ts` | Align ≥2 elements to a shared edge/center on x or y                                  |
+| `distribute` | WRITE | `structure.ts` | Equalize gaps between ≥3 elements along an axis, ends fixed                          |
+| `stack`      | WRITE | `structure.ts` | Lay out in order with a configurable gap and cross-axis alignment                    |
+| `order`      | WRITE | `structure.ts` | Reorder z-layers: front/back, forward/backward (array reorder → fractional resync)   |
+| `transform`  | WRITE | `structure.ts` | Relationship-aware move/resize by id + expected version; opt-in `reflowConnectors`   |
+| `bind`       | WRITE | `binding.ts`   | (Re)bind/detach a connector endpoint to a target + anchor; re-anchors, syncs bounds  |
+| `audit`      | READ  | `binding.ts`   | Connector binding health: unbound/ok/stale/detached/ambiguous + safe repair hints    |
+| `snap`       | WRITE | `layout.ts`    | Snap top-left (and optionally size) to the grid; carries relationships, reflows      |
+| `place`      | WRITE | `layout.ts`    | Position a cluster relative to an anchor element/group (below/above/left/right/over) |
+| `arrange`    | WRITE | `layout.ts`    | Auto-layout into a row-major grid or an evenly spaced circle                         |
+| `survey`     | READ  | `layout.ts`    | Layout health: element overlaps, label overflow, unreadable connectors + fixes       |
 
 The 8 structural verbs share `mutation.ts` (receipts + budget trimming, also used by `edit`) and `ids.ts`
 (also used by `create`). Each commits exactly one atomic, undoable `updateScene`. `delete` additionally
@@ -168,6 +172,12 @@ The connector binding verbs `bind` and `audit` live in `binding.ts`, which also 
 edge-anchor geometry that `transform`'s opt-in `reflowConnectors` reuses to keep bindings consistent on
 move/resize. `bind` is versioned by default (connector ref + attach target refs + `expectedSceneVersion`)
 and commits one atomic, undoable `updateScene`; `audit` is a budgeted, paginated, detail-aware read.
+
+The layout helpers `snap`/`place`/`arrange`/`survey` live in `layout.ts`. The three writes reuse
+`structure.ts`'s `applyDeltas`/`boxOf` and `binding.ts`'s `reflowBoundConnectors` so repositioning carries
+labels/frame children and re-anchors bound connectors; `survey` reuses `binding.ts`'s
+`connectorEndpoints`/`distanceToBox` plus the `query.ts` paging/budget helpers as a bounded read. They are
+versioned by default like the other structural verbs (`snap` also offers the selection fallback).
 
 ## Upstream `@excalidraw/excalidraw` API map
 

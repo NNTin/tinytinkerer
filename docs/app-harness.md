@@ -210,6 +210,10 @@ This is the only shared source of truth for the Excalidraw vocabulary:
 | `transform`  | write | Relationship-aware move/resize by id and expected version                     |
 | `bind`       | write | (Re)bind or detach a connector endpoint to a target shape and anchor point    |
 | `audit`      | read  | Report connector binding health (stale, detached, ambiguous) and safe repairs |
+| `snap`       | write | Snap elements (and optionally their size) to the grid                         |
+| `place`      | write | Position elements relative to an anchor element or group                      |
+| `arrange`    | write | Auto-layout elements into a grid or circle                                    |
+| `survey`     | read  | Report layout health (overlaps, label overflow, unreadable connectors)        |
 
 The eight structural verbs (`group` through `transform`) extend the safe edit ladder for
 co-editing existing drawings. Each one resolves its operands, preflights version and
@@ -331,6 +335,46 @@ flowchart LR
   auditInput --> health --> repairs
 ```
 
+### Layout helpers
+
+`snap`, `place`, and `arrange` are writes that reposition existing elements, and `survey`
+is a read that reports layout health. The three writes share the same relationship-safe
+translation machinery as the structural verbs: they seed a per-element delta map and apply
+it through `applyDeltas` (so bound labels and frame children follow), then re-anchor bound
+connectors through `reflowBoundConnectors` (the connectors & bindings reflow), and commit
+exactly one atomic, undoable `updateScene`. They are versioned by default like the other
+structural verbs.
+
+- `snap` rounds each element's top-left — and, with `snapSize`, its width/height — to the
+  grid. It uses an explicit `gridSize` or the live scene grid size; with neither available
+  it is a no-op. It accepts explicit versioned elements or falls back to the selection.
+- `place` moves a versioned cluster of elements relative to an anchor **element or group**:
+  `below`, `above`, `left-of`, `right-of`, or `center-over`, with a `gap` and cross-axis
+  `align`. The cluster keeps its internal arrangement (one shared delta).
+- `arrange` lays elements out in the given order into a row-major `grid` (columns/rows +
+  gaps) or an evenly spaced `circle` — the 2-D arrangements that linear `align`/`distribute`/
+  `stack` do not cover.
+- `survey` reports findings the writes can fix: element **overlaps** (ignoring intended
+  label-in-container and frame-child overlaps), bound **labels** that overflow their
+  container, and **connectors** too short to read. Each finding carries a suggested fix.
+  Like the other reads it is budgeted, paginated, and detail-aware (`summary` drops the fix
+  hints); `checks` and `elementIds` scope it.
+
+```mermaid
+flowchart LR
+  writeInput["snap / place / arrange input"]
+  deltas["per-element delta map"]
+  apply["applyDeltas<br/>labels + frame children follow"]
+  reflow["reflowBoundConnectors<br/>re-anchor bound connectors"]
+  scene["single undoable scene update"]
+  surveyInput["survey input<br/>checks + elementIds"]
+  findings["findings<br/>overlap / label / arrow"]
+  fixes["suggested fixes"]
+
+  writeInput --> deltas --> apply --> reflow --> scene
+  surveyInput --> findings --> fixes
+```
+
 ### Normalized element union and edit capabilities
 
 `read` returns a strict discriminated union on `kind`, not a record containing several
@@ -436,6 +480,7 @@ flowchart LR
   edit["edit.ts<br/>preflight, versions,<br/>patch and atomic update"]
   structure["structure.ts<br/>group, duplicate, delete,<br/>align, distribute, stack,<br/>order, transform"]
   binding["binding.ts<br/>bind, audit,<br/>connector reflow geometry"]
+  layout["layout.ts<br/>snap, place, arrange,<br/>survey"]
   mutation["mutation.ts<br/>shared receipts and<br/>budget-bounded records"]
   ids["ids.ts<br/>stable id minting"]
   payload["payload.ts<br/>UTF-8 measurement<br/>and bounded prefixes"]
@@ -454,6 +499,10 @@ flowchart LR
   bridge --> binding --> api
   binding --> mutation
   binding --> query
+  bridge --> layout --> api
+  layout --> structure
+  layout --> binding
+  layout --> mutation
   create --> ids
   mutation --> normalization
   edit --> normalization
@@ -482,7 +531,12 @@ The modules translate the stable model vocabulary into Excalidraw operations:
   and (re)binds/detaches connector endpoints with synced `boundElements`, `audit` reports
   binding health, and the shared edge-anchor geometry is reused by `transform`'s
   `reflowConnectors` reflow. `binding.ts` reuses `mutation.ts` receipts and the read
-  budget/pagination helpers from `query.ts`; and
+  budget/pagination helpers from `query.ts`;
+- `snap`, `place`, `arrange`, and `survey` (in `layout.ts`) own the layout helpers: the
+  three writes reuse `structure.ts`'s `applyDeltas`/`boxOf` and `binding.ts`'s
+  `reflowBoundConnectors` so repositioning carries relationships and re-anchors connectors;
+  `survey` reuses `binding.ts`'s `connectorEndpoints`/`distanceToBox` and the `query.ts`
+  paging/budget helpers to report layout health as a bounded read; and
 - `clear` submits an empty element list as an undoable update.
 
 All writes use `CaptureUpdateAction.IMMEDIATELY`. A successful write batch therefore

@@ -28,7 +28,11 @@ describe('canvas app tools', () => {
       'order',
       'transform',
       'bind',
-      'audit'
+      'audit',
+      'snap',
+      'place',
+      'arrange',
+      'survey'
     ])
     expect(
       tools.find((tool) => tool.id === 'draw')?.schema.safeParse({ elements: [] }).success
@@ -52,6 +56,22 @@ describe('canvas app tools', () => {
         }).success
     ).toBe(false)
     expect(tools.find((tool) => tool.id === 'audit')?.schema.safeParse({}).success).toBe(true)
+    // the layout verbs consume the shared schemas too
+    expect(tools.find((tool) => tool.id === 'snap')?.schema.safeParse({}).success).toBe(true)
+    expect(tools.find((tool) => tool.id === 'survey')?.schema.safeParse({}).success).toBe(true)
+    expect(
+      tools
+        .find((tool) => tool.id === 'place')
+        ?.schema.safeParse({
+          elements: [{ id: 'a', expectedVersion: 1 }],
+          anchor: { elementId: 'box' },
+          relation: 'below',
+          expectedSceneVersion: 2
+        }).success
+    ).toBe(true)
+    expect(
+      tools.find((tool) => tool.id === 'arrange')?.schema.safeParse({ elements: [] }).success
+    ).toBe(false)
   })
 
   it('forwards validated tool input to the bridge handle', async () => {

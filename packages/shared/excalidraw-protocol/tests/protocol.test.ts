@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   alignInputSchema,
+  arrangeInputSchema,
   auditInputSchema,
   bindInputSchema,
   clearInputSchema,
@@ -16,10 +17,13 @@ import {
   groupInputSchema,
   inspectInputSchema,
   orderInputSchema,
+  placeInputSchema,
   readInputSchema,
   readElementSchema,
   searchInputSchema,
+  snapInputSchema,
   stackInputSchema,
+  surveyInputSchema,
   transformInputSchema
 } from '../src/index'
 
@@ -308,8 +312,57 @@ describe('excalidraw protocol', () => {
     expect(auditInputSchema.safeParse({ offset: 1, expectedSceneVersion: 4 }).success).toBe(true)
   })
 
+  it('validates the layout helper verbs', () => {
+    // snap: selection fallback stays valid; gridSize must be positive.
+    expect(snapInputSchema.parse({})).toMatchObject({ snapSize: false })
+    expect(snapInputSchema.safeParse({ gridSize: 0 }).success).toBe(false)
+    expect(
+      snapInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        gridSize: 10
+      }).success
+    ).toBe(false) // explicit elements need expectedSceneVersion
+    // place: defaults gap/align; requires anchor + relation + versioned elements.
+    expect(
+      placeInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        anchor: { elementId: 'box' },
+        relation: 'below',
+        expectedSceneVersion: 4
+      })
+    ).toMatchObject({ gap: 20, align: 'center' })
+    expect(
+      placeInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        anchor: { groupId: 'g1' },
+        relation: 'sideways',
+        expectedSceneVersion: 4
+      }).success
+    ).toBe(false)
+    // arrange: discriminated grid/circle layout.
+    expect(
+      arrangeInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        layout: { pattern: 'grid', columns: 2 },
+        expectedSceneVersion: 4
+      })
+    ).toMatchObject({ layout: { pattern: 'grid', gapX: 20, gapY: 20 } })
+    expect(
+      arrangeInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        layout: { pattern: 'spiral' },
+        expectedSceneVersion: 4
+      }).success
+    ).toBe(false)
+    // survey: paging + unique checks.
+    expect(surveyInputSchema.parse({})).toMatchObject({ offset: 0, limit: 20, detail: 'standard' })
+    expect(surveyInputSchema.safeParse({ checks: ['overlap', 'overlap'] }).success).toBe(false)
+    expect(surveyInputSchema.safeParse({ checks: [] }).success).toBe(false)
+    expect(surveyInputSchema.safeParse({ offset: 1 }).success).toBe(false)
+  })
+
   it('uses an independently owned app contract version', () => {
-    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(5)
+    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(6)
   })
 
   it('defines input and result contracts for every advertised verb', () => {
@@ -330,7 +383,11 @@ describe('excalidraw protocol', () => {
       'order',
       'transform',
       'bind',
-      'audit'
+      'audit',
+      'snap',
+      'place',
+      'arrange',
+      'survey'
     ])
     expect(
       excalidrawVerbContracts.draw.resultSchema.safeParse({
@@ -380,6 +437,49 @@ describe('excalidraw protocol', () => {
         flagged: 0,
         missingIds: [],
         page: { offset: 0, limit: 20, returned: 1, total: 1, nextOffset: null },
+        truncation: {
+          truncated: false,
+          fields: [],
+          omittedElements: 0,
+          serializedBytes: 10,
+          budgetBytes: 65536
+        }
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.survey.resultSchema.safeParse({
+        ok: true,
+        detail: 'standard',
+        sceneVersion: 7,
+        findings: [
+          {
+            kind: 'overlap',
+            elementIds: ['a', 'b'],
+            message: 'elements "a" and "b" overlap',
+            suggestion: 'separate them or snap them to a grid'
+          }
+        ],
+        overlaps: 1,
+        labelIssues: 0,
+        arrowIssues: 0,
+        missingIds: [],
+        page: { offset: 0, limit: 20, returned: 1, total: 1, nextOffset: null },
+        truncation: {
+          truncated: false,
+          fields: [],
+          omittedElements: 0,
+          serializedBytes: 10,
+          budgetBytes: 65536
+        }
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.arrange.resultSchema.safeParse({
+        ok: true,
+        updated: 3,
+        sceneVersion: 9,
+        receipts: [{ id: 'a', version: 2 }],
+        elements: [],
         truncation: {
           truncated: false,
           fields: [],

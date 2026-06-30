@@ -177,7 +177,11 @@ describe('Excalidraw bridge handlers', () => {
       'order',
       'transform',
       'bind',
-      'audit'
+      'audit',
+      'snap',
+      'place',
+      'arrange',
+      'survey'
     ])
   })
 

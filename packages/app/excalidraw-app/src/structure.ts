@@ -25,8 +25,8 @@ import { assertRequestBudget } from './query'
 // container, frame children follow their frame, connectors follow consistently
 // moved endpoints) so the scene never desynchronizes.
 
-type Delta = { dx: number; dy: number }
-type Box = {
+export type Delta = { dx: number; dy: number }
+export type Box = {
   x1: number
   y1: number
   x2: number
@@ -43,12 +43,12 @@ const updateWith = (
 ): OrderedExcalidrawElement =>
   newElementWith(element, updates as Parameters<typeof newElementWith<OrderedExcalidrawElement>>[1])
 
-const boxOf = (element: OrderedExcalidrawElement): Box => {
+export const boxOf = (element: OrderedExcalidrawElement): Box => {
   const [x1, y1, x2, y2] = getCommonBounds([element])
   return { x1, y1, x2, y2, width: x2 - x1, height: y2 - y1, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 }
 }
 
-const resolveScene = (
+export const resolveScene = (
   api: ExcalidrawImperativeAPI,
   verb: string,
   expectedSceneVersion: number | undefined
@@ -62,13 +62,13 @@ const resolveScene = (
   return { elements, sceneVersion }
 }
 
-type VersionedRef = { id: string; expectedVersion: number }
+export type VersionedRef = { id: string; expectedVersion: number }
 
 // Resolve operands with versioning-by-default. Explicit `refs` are validated to
 // exist and to match their `expectedVersion` (order preserved); the scene
 // version is checked in `resolveScene`. When `refs` is omitted we fall back to
 // the live canvas selection — the only un-versioned convenience path.
-const resolveOperands = (
+export const resolveOperands = (
   api: ExcalidrawImperativeAPI,
   verb: string,
   refs: readonly VersionedRef[] | undefined,
@@ -106,7 +106,7 @@ const isLinear = (element: OrderedExcalidrawElement): boolean =>
 // Translate elements by a per-element delta, expanding rigid dependents so the
 // related geometry stays consistent. Returns the new element array (unchanged
 // elements keep their identity) plus the ids that actually moved.
-const applyDeltas = (
+export const applyDeltas = (
   elements: readonly OrderedExcalidrawElement[],
   baseDeltas: ReadonlyMap<string, Delta>
 ): { nextElements: OrderedExcalidrawElement[]; movedIds: string[] } => {

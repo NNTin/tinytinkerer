@@ -13,6 +13,7 @@ import {
 import { executeAudit, executeBind } from './binding'
 import { executeClear, executeDraw } from './create'
 import { executeEdit } from './edit'
+import { executeArrange, executePlace, executeSnap, executeSurvey } from './layout'
 import { executeInspect, executeRead, executeSearch } from './query'
 import {
   executeAlign,
@@ -51,7 +52,11 @@ export const createExcalidrawHandlers = (
     executeTransform(api, input)
   ),
   bind: defineBridgeVerb(excalidrawVerbContracts.bind, (input) => executeBind(api, input)),
-  audit: defineBridgeVerb(excalidrawVerbContracts.audit, (input) => executeAudit(api, input))
+  audit: defineBridgeVerb(excalidrawVerbContracts.audit, (input) => executeAudit(api, input)),
+  snap: defineBridgeVerb(excalidrawVerbContracts.snap, (input) => executeSnap(api, input)),
+  place: defineBridgeVerb(excalidrawVerbContracts.place, (input) => executePlace(api, input)),
+  arrange: defineBridgeVerb(excalidrawVerbContracts.arrange, (input) => executeArrange(api, input)),
+  survey: defineBridgeVerb(excalidrawVerbContracts.survey, (input) => executeSurvey(api, input))
 })
 
 export const createExcalidrawBridge = (

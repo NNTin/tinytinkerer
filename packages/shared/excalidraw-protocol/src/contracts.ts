@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   alignInputSchema,
+  arrangeInputSchema,
   auditInputSchema,
   bindInputSchema,
   clearInputSchema,
@@ -13,9 +14,12 @@ import {
   groupInputSchema,
   inspectInputSchema,
   orderInputSchema,
+  placeInputSchema,
   readInputSchema,
   searchInputSchema,
+  snapInputSchema,
   stackInputSchema,
+  surveyInputSchema,
   transformInputSchema
 } from './inputs'
 
@@ -468,6 +472,35 @@ const auditResultSchema = z
   })
   .strict()
 
+// `snap`/`place`/`arrange` are writes that reposition elements; they report the
+// same undoable receipt + budget-bounded records as the structural verbs.
+const snapResultSchema = z.object(mutationResultShape).strict()
+const placeResultSchema = z.object(mutationResultShape).strict()
+const arrangeResultSchema = z.object(mutationResultShape).strict()
+
+// `survey` is a read: it reports layout-health findings (box overlaps, label
+// overflow, unreadable connectors) with a suggested fix, paginated and budgeted
+// like the other read verbs.
+const layoutFindingSchema = z
+  .object({
+    kind: z.enum(['overlap', 'label', 'arrow']),
+    elementIds: z.array(z.string()),
+    message: z.string(),
+    suggestion: z.string().nullable()
+  })
+  .strict()
+const surveyResultSchema = z
+  .object({
+    ok: z.literal(true),
+    findings: z.array(layoutFindingSchema),
+    overlaps: z.number().int().nonnegative(),
+    labelIssues: z.number().int().nonnegative(),
+    arrowIssues: z.number().int().nonnegative(),
+    missingIds: z.array(z.string()),
+    ...pageResultShape
+  })
+  .strict()
+
 export const excalidrawVerbContracts = {
   draw: { inputSchema: drawInputSchema, resultSchema: drawResultSchema },
   search: { inputSchema: searchInputSchema, resultSchema: searchResultSchema },
@@ -484,7 +517,11 @@ export const excalidrawVerbContracts = {
   order: { inputSchema: orderInputSchema, resultSchema: orderResultSchema },
   transform: { inputSchema: transformInputSchema, resultSchema: transformResultSchema },
   bind: { inputSchema: bindInputSchema, resultSchema: bindResultSchema },
-  audit: { inputSchema: auditInputSchema, resultSchema: auditResultSchema }
+  audit: { inputSchema: auditInputSchema, resultSchema: auditResultSchema },
+  snap: { inputSchema: snapInputSchema, resultSchema: snapResultSchema },
+  place: { inputSchema: placeInputSchema, resultSchema: placeResultSchema },
+  arrange: { inputSchema: arrangeInputSchema, resultSchema: arrangeResultSchema },
+  survey: { inputSchema: surveyInputSchema, resultSchema: surveyResultSchema }
 } as const
 
 export type EditableField = z.infer<typeof editableFieldSchema>
@@ -498,3 +535,5 @@ export type DeleteResult = z.infer<typeof deleteResultSchema>
 export type BindResult = z.infer<typeof bindResultSchema>
 export type AuditResult = z.infer<typeof auditResultSchema>
 export type ConnectorAudit = z.infer<typeof connectorAuditSchema>
+export type SurveyResult = z.infer<typeof surveyResultSchema>
+export type LayoutFinding = z.infer<typeof layoutFindingSchema>

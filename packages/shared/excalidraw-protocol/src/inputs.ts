@@ -3,7 +3,7 @@ import { z } from 'zod'
 export const EXCALIDRAW_APP_ID = 'excalidraw'
 // Version of the Excalidraw verb contracts, intentionally independent from the
 // generic app-bridge envelope version.
-export const EXCALIDRAW_PROTOCOL_VERSION = 5
+export const EXCALIDRAW_PROTOCOL_VERSION = 6
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
 export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
@@ -37,7 +37,11 @@ export const EXCALIDRAW_PAYLOAD_BUDGETS = Object.freeze({
   order: { request: 16 * 1_024, result: 64 * 1_024 },
   transform: { request: 32 * 1_024, result: 64 * 1_024 },
   bind: { request: 16 * 1_024, result: 64 * 1_024 },
-  audit: { request: 16 * 1_024, result: 64 * 1_024 }
+  audit: { request: 16 * 1_024, result: 64 * 1_024 },
+  snap: { request: 16 * 1_024, result: 64 * 1_024 },
+  place: { request: 16 * 1_024, result: 64 * 1_024 },
+  arrange: { request: 16 * 1_024, result: 64 * 1_024 },
+  survey: { request: 16 * 1_024, result: 64 * 1_024 }
 })
 
 const colorSchema = z
@@ -568,6 +572,136 @@ export const auditInputSchema = z
     }
   })
 
+// Layout helper verbs. `snap`/`place`/`arrange` are writes that reposition
+// elements (carrying labels/frame children and re-anchoring bound connectors);
+// `survey` is a read that reports layout health. They consume the same
+// versioned-ref + paging vocabulary as the structural verbs and reads.
+
+const gridSizeSchema = z
+  .number()
+  .finite()
+  .positive()
+  .describe('Grid spacing in canvas pixels. Defaults to the live scene grid size when omitted.')
+
+export const snapInputSchema = z
+  .object({
+    ...selectionOperandShape,
+    gridSize: gridSizeSchema.optional(),
+    snapSize: z
+      .boolean()
+      .default(false)
+      .describe('Also round width/height to the grid (resizable shapes only).')
+  })
+  .strict()
+  .superRefine(requireSceneVersionWithElements)
+
+const placeAnchorSchema = z.union([
+  z
+    .object({ elementId: elementIdSchema.describe('Anchor element to position relative to.') })
+    .strict(),
+  z
+    .object({ groupId: z.string().min(1).describe('Anchor group to position relative to.') })
+    .strict()
+])
+
+export const placeInputSchema = z
+  .object({
+    elements: versionedElementsSchema.describe(
+      'Versioned refs of the elements to move as one cluster, preserving their relative arrangement.'
+    ),
+    anchor: placeAnchorSchema.describe('The reference element or group to position relative to.'),
+    relation: z
+      .enum(['below', 'above', 'left-of', 'right-of', 'center-over'])
+      .describe(
+        'Where to put the cluster relative to the anchor. center-over centers it on the anchor.'
+      ),
+    gap: z
+      .number()
+      .finite()
+      .nonnegative()
+      .default(20)
+      .describe(
+        'Gap in canvas pixels between the cluster and the anchor edge (ignored for center-over).'
+      ),
+    align: z
+      .enum(['start', 'center', 'end'])
+      .default('center')
+      .describe('Cross-axis alignment relative to the anchor (ignored for center-over).'),
+    expectedSceneVersion: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('Scene version from a prior read/inspect; rejects the edit if the scene changed.')
+  })
+  .strict()
+
+const arrangeGridSchema = z
+  .object({
+    pattern: z.literal('grid'),
+    columns: z.number().int().positive().optional().describe('Number of columns (row-major fill).'),
+    rows: z.number().int().positive().optional().describe('Number of rows.'),
+    gapX: z.number().finite().nonnegative().default(20).describe('Horizontal gap between cells.'),
+    gapY: z.number().finite().nonnegative().default(20).describe('Vertical gap between cells.')
+  })
+  .strict()
+const arrangeCircleSchema = z
+  .object({
+    pattern: z.literal('circle'),
+    radius: z
+      .number()
+      .finite()
+      .positive()
+      .optional()
+      .describe('Circle radius in canvas pixels; derived from the cluster when omitted.'),
+    center: z
+      .object({ x: z.number().finite(), y: z.number().finite() })
+      .strict()
+      .optional()
+      .describe('Circle center in canvas coordinates; the cluster center when omitted.')
+  })
+  .strict()
+
+export const arrangeInputSchema = z
+  .object({
+    elements: versionedElementsSchema.describe(
+      'Versioned refs of the elements to arrange, in the order they should be laid out.'
+    ),
+    layout: z
+      .discriminatedUnion('pattern', [arrangeGridSchema, arrangeCircleSchema])
+      .describe('The arrangement: a row-major grid or an evenly spaced circle.'),
+    expectedSceneVersion: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe('Scene version from a prior read/inspect; rejects the edit if the scene changed.')
+  })
+  .strict()
+
+export const surveyInputSchema = z
+  .object({
+    elementIds: uniqueElementIdsSchema
+      .optional()
+      .describe('Limit the survey to these elements. Omit to survey the whole scene.'),
+    checks: z
+      .array(z.enum(['overlap', 'label', 'arrow']))
+      .min(1)
+      .max(3)
+      .refine((checks) => new Set(checks).size === checks.length, 'Checks must be unique.')
+      .optional()
+      .describe('Which checks to run. Defaults to all: overlap, label, arrow.'),
+    ...pagingShape
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.offset > 0 && input.expectedSceneVersion === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expectedSceneVersion'],
+        message: 'Required after offset 0.'
+      })
+    }
+  })
+
 export const excalidrawVerbInputSchemas = {
   draw: drawInputSchema,
   search: searchInputSchema,
@@ -584,7 +718,11 @@ export const excalidrawVerbInputSchemas = {
   order: orderInputSchema,
   transform: transformInputSchema,
   bind: bindInputSchema,
-  audit: auditInputSchema
+  audit: auditInputSchema,
+  snap: snapInputSchema,
+  place: placeInputSchema,
+  arrange: arrangeInputSchema,
+  survey: surveyInputSchema
 } as const
 
 export const EXCALIDRAW_VERBS = Object.freeze(
@@ -610,3 +748,7 @@ export type OrderInput = z.infer<typeof orderInputSchema>
 export type TransformInput = z.infer<typeof transformInputSchema>
 export type BindInput = z.infer<typeof bindInputSchema>
 export type AuditInput = z.infer<typeof auditInputSchema>
+export type SnapInput = z.infer<typeof snapInputSchema>
+export type PlaceInput = z.infer<typeof placeInputSchema>
+export type ArrangeInput = z.infer<typeof arrangeInputSchema>
+export type SurveyInput = z.infer<typeof surveyInputSchema>

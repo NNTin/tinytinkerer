@@ -15,7 +15,7 @@ import { assertRequestBudget, makePage } from './query'
 // policy so connectors stay readable: the facing edge is chosen from the opposite
 // endpoint, `focus` slides the anchor along that edge, and `gap` offsets it out.
 
-type Point = { x: number; y: number }
+export type Point = { x: number; y: number }
 type Bounds = {
   x1: number
   y1: number
@@ -69,7 +69,9 @@ const anchorPointOnBounds = (bounds: Bounds, toward: Point, focus: number, gap: 
   return { x: bounds.cx + focus * (bounds.width / 2), y }
 }
 
-const connectorEndpoints = (connector: OrderedExcalidrawElement): { start: Point; end: Point } => {
+export const connectorEndpoints = (
+  connector: OrderedExcalidrawElement
+): { start: Point; end: Point } => {
   const points = (connector as { points?: ReadonlyArray<readonly [number, number]> }).points ?? []
   const first = points[0] ?? [0, 0]
   const last = points[points.length - 1] ?? first

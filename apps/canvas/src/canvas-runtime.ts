@@ -127,6 +127,38 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
           'the bind verb). Pass connectorIds to scope it, or omit to audit every connector. Budgeted, ' +
           'paginated, and detail-aware.',
         schema: excalidrawVerbInputSchemas.audit
+      },
+      snap: {
+        description:
+          'Snap Excalidraw elements to the grid: round their top-left (and optionally width/height ' +
+          'with snapSize) to the nearest grid multiple. Uses the scene grid size unless gridSize is ' +
+          'given. Labels and frame children follow, and bound connectors re-anchor. ' +
+          versionedOperands,
+        schema: excalidrawVerbInputSchemas.snap
+      },
+      place: {
+        description:
+          'Place Excalidraw elements relative to an anchor element or group: below, above, left-of, ' +
+          'right-of, or center-over it, with a gap and cross-axis alignment. The elements move as one ' +
+          'cluster preserving their arrangement; bound connectors re-anchor. ' +
+          versionedExplicit,
+        schema: excalidrawVerbInputSchemas.place
+      },
+      arrange: {
+        description:
+          'Auto-layout Excalidraw elements into a common arrangement that align/distribute/stack do ' +
+          'not cover: a row-major grid (columns/rows + gaps) or an evenly spaced circle. Elements are ' +
+          'laid out in the given order; bound connectors re-anchor. ' +
+          versionedExplicit,
+        schema: excalidrawVerbInputSchemas.arrange
+      },
+      survey: {
+        description:
+          'Survey Excalidraw layout health without changing anything. Reports element overlaps, bound ' +
+          'labels that overflow their container, and connectors too short to read, each with a ' +
+          'suggested fix. Pass elementIds and/or checks to scope it. Budgeted, paginated, and ' +
+          'detail-aware.',
+        schema: excalidrawVerbInputSchemas.survey
       }
     }
   })
