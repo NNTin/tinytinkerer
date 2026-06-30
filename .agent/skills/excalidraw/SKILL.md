@@ -155,9 +155,9 @@ tests fail.
 | `distribute` | WRITE | `structure.ts` | Equalize gaps between ≥3 elements along an axis, ends fixed                         |
 | `stack`      | WRITE | `structure.ts` | Lay out in order with a configurable gap and cross-axis alignment                   |
 | `order`      | WRITE | `structure.ts` | Reorder z-layers: front/back, forward/backward (array reorder → fractional resync)  |
-| `transform`  | WRITE | `structure.ts` | Relationship-aware move/resize by id + expected version; opt-in `reflowConnectors`   |
-| `bind`       | WRITE | `binding.ts`   | (Re)bind/detach a connector endpoint to a target + anchor; re-anchors, syncs bounds  |
-| `audit`      | READ  | `binding.ts`   | Connector binding health: unbound/ok/stale/detached/ambiguous + safe repair hints    |
+| `transform`  | WRITE | `structure.ts` | Relationship-aware move/resize by id + expected version; opt-in `reflowConnectors`  |
+| `bind`       | WRITE | `binding.ts`   | (Re)bind/detach a connector endpoint to a target + anchor; re-anchors, syncs bounds |
+| `audit`      | READ  | `binding.ts`   | Connector binding health: unbound/ok/stale/detached/ambiguous + safe repair hints   |
 
 The 8 structural verbs share `mutation.ts` (receipts + budget trimming, also used by `edit`) and `ids.ts`
 (also used by `create`). Each commits exactly one atomic, undoable `updateScene`. `delete` additionally
