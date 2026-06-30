@@ -162,8 +162,8 @@ rejects relationship crossings (cascading a bound label/frame child, detaching a
 
 ## Upstream `@excalidraw/excalidraw` API map
 
-Pinned at `0.18.1` (see `tools/excalidraw-ref.mjs`). Only `excalidraw-app` may call these. Verify any
-signature against the clone before relying on memory — do not guess.
+Pinned at `0.18.1`. Only `excalidraw-app` may call these. **Authoritative source for exact signatures =
+the installed pinned type declarations**, not the clone (see "Verifying upstream APIs" below). Don't guess.
 
 | Symbol                                         | R/W         | Used in                               | Purpose                                 |
 | ---------------------------------------------- | ----------- | ------------------------------------- | --------------------------------------- |
@@ -192,15 +192,36 @@ so a successful batch is one user-visible undo step and a failed batch changes n
   (`startY === endY`); vertical trunks use a shared `trunkX` (`startX === endX`); `routing: "auto"` picks by
   endpoint geometry. Receipts expose the computed start/end + `horizontal`/`vertical` invariants.
 
-## Tools and checks
+## Verifying upstream APIs (read the source, in this order)
 
-Use the reference helper before relying on memory of upstream APIs:
+Never rely on memory for Excalidraw signatures. Two sources, two purposes — know which is authoritative:
 
-```bash
-node .agent/skills/excalidraw/tools/excalidraw-ref.mjs                          # list key docs
-node .agent/skills/excalidraw/tools/excalidraw-ref.mjs convertToExcalidrawElements
-node .agent/skills/excalidraw/tools/excalidraw-ref.mjs updateScene
-```
+1. **Exact signatures / types → the installed pinned `0.18.1` declarations.** This is what our code actually
+   type-checks against, so it is the source of truth. Grep/Read them directly:
+
+   ```bash
+   # resolve the pinned type dir (pnpm hoists under a hashed dir)
+   T=$(dirname "$(find node_modules/.pnpm -path '*@excalidraw/excalidraw/dist/types/excalidraw/types.d.ts' | head -1)")
+   grep -n "captureUpdate" "$T/types.d.ts"            # e.g. updateScene's options
+   grep -n "convertToExcalidrawElements" "$T/data/transform.d.ts"
+   ```
+
+   Prefer the native Grep/Read tools over `git grep` here — line-numbered, navigable, lets you follow types.
+
+2. **Concepts / examples / prose → the `~/excalidraw` clone, via the ref helper.** Use it to find _where_
+   something lives and _how_ it's meant to be used, then confirm the signature against source #1.
+
+   ```bash
+   node .agent/skills/excalidraw/tools/excalidraw-ref.mjs                       # list key docs
+   node .agent/skills/excalidraw/tools/excalidraw-ref.mjs CaptureUpdateAction   # git grep over the clone
+   ```
+
+   **Caveats:** the helper is a thin `git grep` wrapper, so common terms return noisy, repo-wide hits; and
+   the clone tracks upstream **`master`** (its doc links point at `blob/master/…`), which can drift from the
+   pinned `0.18.1` API. Treat clone findings as a lead to verify against the installed types, not as final.
+   If `~/excalidraw` is absent the helper prints the `git clone …` command to recreate it.
+
+## Validation checks
 
 Focused validation for the touched packages:
 

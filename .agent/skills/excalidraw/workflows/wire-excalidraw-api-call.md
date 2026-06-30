@@ -5,16 +5,26 @@ bug that crosses protocol, iframe implementation, and canvas tool wiring.
 
 ## 1. Confirm upstream Excalidraw behavior
 
-Do not rely on memory for Excalidraw APIs or element shapes. Inspect the pinned package docs/types and,
-when useful, the read-only upstream clone:
+Do not rely on memory for Excalidraw APIs or element shapes. Two sources, in order of authority:
 
-```bash
-node .agent/skills/excalidraw/tools/excalidraw-ref.mjs
-node .agent/skills/excalidraw/tools/excalidraw-ref.mjs <api-or-type-name>
-```
+1. **Exact signatures/types — the installed pinned `0.18.1` declarations** (what our code type-checks
+   against; the source of truth). Grep/Read them directly:
 
-Also check the installed package types under `@excalidraw/excalidraw/dist/types` when the public docs do
-not answer a signature or element-field question.
+   ```bash
+   T=$(dirname "$(find node_modules/.pnpm -path '*@excalidraw/excalidraw/dist/types/excalidraw/types.d.ts' | head -1)")
+   grep -n "<symbol>" "$T"/**/*.d.ts
+   ```
+
+2. **Concepts/examples — the read-only `~/excalidraw` clone**, via the helper (use it to locate and
+   understand, then confirm the signature against #1):
+
+   ```bash
+   node .agent/skills/excalidraw/tools/excalidraw-ref.mjs
+   node .agent/skills/excalidraw/tools/excalidraw-ref.mjs <api-or-type-name>
+   ```
+
+The clone tracks upstream `master`, so it can drift from the pinned `0.18.1` API — never cite a signature
+from the clone without checking it against the installed types.
 
 ## 2. Update the app-owned protocol first
 
