@@ -1,13 +1,15 @@
+import { CaptureUpdateAction } from '@excalidraw/excalidraw'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
+import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import type { ReadElement } from '@tinytinkerer/excalidraw-protocol'
-import { normalizeElement } from './normalization'
-import { settleSerializedBytes } from './payload'
+import { normalizeElement, sceneVersionOf } from './normalization'
+import { settleSerializedBytes, trimToBudget } from './payload'
 
-// Shared receipt + budget machinery for write verbs. A mutation reports which
-// elements changed via compact version receipts (never dropped) plus normalized
-// `read`-shaped records, and the records are trimmed from the tail until the
-// serialized result fits its byte budget. Reads, edits, and structural verbs all
-// share this one truncation policy.
+// Shared write machinery for the mutating verbs. A write reports which elements
+// changed via compact version receipts (never dropped) plus normalized
+// `read`-shaped records trimmed to a byte budget, and commits exactly one atomic,
+// undoable scene update. Edits, structural verbs, binding, and layout all share
+// this so the write invariant and truncation policy live once.
 
 export type ResultTruncation = {
   truncated: boolean
@@ -16,6 +18,15 @@ export type ResultTruncation = {
   serializedBytes: number
   budgetBytes: number
 }
+
+// The ids of elements a rebuild actually replaced (identity changed at their index
+// because `updateWith` returns the same object when nothing changed). The common
+// "which elements changed" diff for verbs that map the whole scene array.
+export const changedByIdentity = (
+  elements: readonly OrderedExcalidrawElement[],
+  nextElements: readonly OrderedExcalidrawElement[]
+): string[] =>
+  nextElements.filter((element, index) => element !== elements[index]).map((element) => element.id)
 
 export const versionReceipts = (
   nextElements: readonly OrderedExcalidrawElement[],
@@ -40,34 +51,52 @@ export const attachBoundedRecords = <TBase extends object>(
     fields.push(...normalized.truncatedFields.map((field) => `${normalized.element.id}.${field}`))
     return normalized.element
   })
-  let elements = all
-  let result: TBase & { elements: ReadElement[]; truncation: ResultTruncation } = {
-    ...base,
-    elements,
-    truncation: {
-      truncated: fields.length > 0,
-      fields: [...new Set(fields)],
-      omittedElements: 0,
-      serializedBytes: 0,
-      budgetBytes
-    }
-  }
-  settleSerializedBytes(result)
-  while (result.truncation.serializedBytes > budgetBytes && elements.length) {
-    elements = elements.slice(0, -1)
-    result = {
-      ...result,
-      elements,
-      truncation: {
-        ...result.truncation,
-        truncated: true,
-        omittedElements: all.length - elements.length
+  // Drop trailing detailed records until the serialized result fits; receipts stay.
+  return trimToBudget(
+    (count) => {
+      const elements = all.slice(0, count)
+      const result: TBase & { elements: ReadElement[]; truncation: ResultTruncation } = {
+        ...base,
+        elements,
+        truncation: {
+          truncated: fields.length > 0 || count < all.length,
+          fields: [...new Set(fields)],
+          omittedElements: all.length - count,
+          serializedBytes: 0,
+          budgetBytes
+        }
       }
-    }
-    settleSerializedBytes(result)
-  }
-  settleSerializedBytes(result)
-  if (result.truncation.serializedBytes > budgetBytes)
-    throw new Error(`result records exceed the ${budgetBytes} byte payload budget`)
-  return result
+      settleSerializedBytes(result)
+      return result
+    },
+    all.length,
+    budgetBytes
+  )
+}
+
+// The single write choke-point: commit exactly one atomic, undoable `updateScene`
+// when something changed (an empty change set is a no-op), then return the shared
+// receipt + budget-bounded records. `extra` carries verb-specific result fields
+// (e.g. bind's connector state, group's operation/groupId).
+export const commitWrite = <TExtra extends object>(
+  api: ExcalidrawImperativeAPI,
+  nextElements: readonly OrderedExcalidrawElement[],
+  changedIds: readonly string[],
+  resultBudget: number,
+  extra?: TExtra
+) => {
+  if (changedIds.length > 0)
+    api.updateScene({ elements: nextElements, captureUpdate: CaptureUpdateAction.IMMEDIATELY })
+  return attachBoundedRecords(
+    {
+      ok: true as const,
+      updated: changedIds.length,
+      sceneVersion: sceneVersionOf(nextElements),
+      receipts: versionReceipts(nextElements, changedIds),
+      ...(extra ?? ({} as TExtra))
+    },
+    nextElements,
+    changedIds,
+    resultBudget
+  )
 }

@@ -479,9 +479,10 @@ flowchart LR
   normalization["normalization.ts<br/>union, details, bounds,<br/>capabilities"]
   edit["edit.ts<br/>preflight, versions,<br/>patch and atomic update"]
   structure["structure.ts<br/>group, duplicate, delete,<br/>align, distribute, stack,<br/>order, transform"]
-  binding["binding.ts<br/>bind, audit,<br/>connector reflow geometry"]
+  binding["binding.ts<br/>bind, audit"]
   layout["layout.ts<br/>snap, place, arrange,<br/>survey"]
-  mutation["mutation.ts<br/>shared receipts and<br/>budget-bounded records"]
+  geometry["geometry.ts<br/>box math, edge anchors,<br/>connector reflow"]
+  mutation["mutation.ts<br/>shared receipts, budget-bounded<br/>records, commitWrite"]
   ids["ids.ts<br/>stable id minting"]
   payload["payload.ts<br/>UTF-8 measurement<br/>and bounded prefixes"]
   api["ExcalidrawImperativeAPI"]
@@ -495,14 +496,16 @@ flowchart LR
   bridge --> structure --> api
   structure --> mutation
   structure --> ids
-  structure --> binding
+  structure --> geometry
   bridge --> binding --> api
   binding --> mutation
   binding --> query
+  binding --> geometry
   bridge --> layout --> api
   layout --> structure
-  layout --> binding
   layout --> mutation
+  layout --> geometry
+  geometry --> normalization
   create --> ids
   mutation --> normalization
   edit --> normalization
@@ -524,23 +527,27 @@ The modules translate the stable model vocabulary into Excalidraw operations:
 - `group`, `duplicate`, `delete`, `align`, `distribute`, `stack`, `order`, and
   `transform` (in `structure.ts`) resolve operands from ids or the live selection,
   preflight version/relationship safety, and perform one undoable update each. They lean
-  on `mutation.ts` for the shared receipt + budget machinery (also used by `edit`) and on
-  `ids.ts` for collision-free id minting (also used by `draw`). z-order changes reorder
-  the element array, which `Scene.replaceAllElements` resyncs to fractional indices;
+  on `mutation.ts` for the shared receipt + budget machinery and the `commitWrite`
+  choke-point (also used by `edit`, binding, and layout) and on `ids.ts` for collision-free
+  id minting (also used by `draw`). z-order changes reorder the element array, which
+  `Scene.replaceAllElements` resyncs to fractional indices;
 - `bind` and `audit` (in `binding.ts`) own connector binding behavior: `bind` re-anchors
-  and (re)binds/detaches connector endpoints with synced `boundElements`, `audit` reports
-  binding health, and the shared edge-anchor geometry is reused by `transform`'s
-  `reflowConnectors` reflow. `binding.ts` reuses `mutation.ts` receipts and the read
-  budget/pagination helpers from `query.ts`;
+  and (re)binds/detaches connector endpoints with synced `boundElements`, and `audit`
+  reports binding health;
 - `snap`, `place`, `arrange`, and `survey` (in `layout.ts`) own the layout helpers: the
-  three writes reuse `structure.ts`'s `applyDeltas`/`boxOf` and `binding.ts`'s
-  `reflowBoundConnectors` so repositioning carries relationships and re-anchors connectors;
-  `survey` reuses `binding.ts`'s `connectorEndpoints`/`distanceToBox` and the `query.ts`
-  paging/budget helpers to report layout health as a bounded read; and
+  three writes reuse `structure.ts`'s `applyDeltas` so repositioning carries relationships,
+  and `survey` reports overlaps/label/connector health as a bounded read;
+- `geometry.ts` is the shared, verb-agnostic geometry: the axis-aligned box math, the
+  deterministic connector edge-anchor policy, and `reflowBoundConnectors` (re-anchoring
+  connectors bound to a moved/resized shape). `structure`, `binding`, and `layout` all
+  consume it instead of re-deriving box/anchor math, and it depends only on
+  `normalization`, so it never forms an import cycle with the verb modules; and
 - `clear` submits an empty element list as an undoable update.
 
-All writes use `CaptureUpdateAction.IMMEDIATELY`. A successful write batch therefore
-becomes one user-visible undo checkpoint. A failed write changes nothing.
+All writes commit through `mutation.ts`'s `commitWrite` with
+`CaptureUpdateAction.IMMEDIATELY` (a no-op when nothing changed). A successful write batch
+therefore becomes one user-visible undo checkpoint, from a single choke-point; a failed
+write changes nothing.
 
 The package does not render chat, create model tools, or decide where the iframe is
 served. Those are parent-shell concerns.

@@ -1,4 +1,4 @@
-import { CaptureUpdateAction, getCommonBounds, newElementWith } from '@excalidraw/excalidraw'
+import { CaptureUpdateAction } from '@excalidraw/excalidraw'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { EXCALIDRAW_PAYLOAD_BUDGETS } from '@tinytinkerer/excalidraw-protocol'
@@ -12,43 +12,22 @@ import type {
   StackInput,
   TransformInput
 } from '@tinytinkerer/excalidraw-protocol'
-import { reflowBoundConnectors } from './binding'
+import { boxOf, isLinear, reflowBoundConnectors, updateWith } from './geometry'
 import { uniqueId } from './ids'
-import { attachBoundedRecords, versionReceipts } from './mutation'
+import { attachBoundedRecords, changedByIdentity, commitWrite } from './mutation'
 import { elementMap, sceneVersionOf } from './normalization'
 import { assertRequestBudget } from './query'
 
 // Structural editing verbs. They reorder, group, duplicate, delete, align, and
 // translate existing elements. Every mutation is preflighted (version + relation
-// safety) before a single atomic, undoable `updateScene`; nothing partial is
-// committed. Geometry helpers carry rigid relationships (labels follow their
-// container, frame children follow their frame, connectors follow consistently
-// moved endpoints) so the scene never desynchronizes.
+// safety) before a single atomic, undoable `updateScene` (via `commitWrite`);
+// nothing partial is committed. Geometry helpers (in `geometry.ts`) carry rigid
+// relationships (labels follow their container, frame children follow their frame,
+// connectors follow consistently moved endpoints) so the scene never desyncs.
 
 export type Delta = { dx: number; dy: number }
-export type Box = {
-  x1: number
-  y1: number
-  x2: number
-  y2: number
-  width: number
-  height: number
-  cx: number
-  cy: number
-}
 
-const updateWith = (
-  element: OrderedExcalidrawElement,
-  updates: Record<string, unknown>
-): OrderedExcalidrawElement =>
-  newElementWith(element, updates as Parameters<typeof newElementWith<OrderedExcalidrawElement>>[1])
-
-export const boxOf = (element: OrderedExcalidrawElement): Box => {
-  const [x1, y1, x2, y2] = getCommonBounds([element])
-  return { x1, y1, x2, y2, width: x2 - x1, height: y2 - y1, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 }
-}
-
-export const resolveScene = (
+const resolveScene = (
   api: ExcalidrawImperativeAPI,
   verb: string,
   expectedSceneVersion: number | undefined
@@ -62,7 +41,7 @@ export const resolveScene = (
   return { elements, sceneVersion }
 }
 
-export type VersionedRef = { id: string; expectedVersion: number }
+type VersionedRef = { id: string; expectedVersion: number }
 
 // Resolve operands with versioning-by-default. Explicit `refs` are validated to
 // exist and to match their `expectedVersion` (order preserved); the scene
@@ -100,9 +79,6 @@ export const resolveOperands = (
   return { elements, sceneVersion, targets }
 }
 
-const isLinear = (element: OrderedExcalidrawElement): boolean =>
-  element.type === 'arrow' || element.type === 'line'
-
 // Translate elements by a per-element delta, expanding rigid dependents so the
 // related geometry stays consistent. Returns the new element array (unchanged
 // elements keep their identity) plus the ids that actually moved.
@@ -135,34 +111,6 @@ export const applyDeltas = (
     return updateWith(element, { x: element.x + delta.dx, y: element.y + delta.dy })
   })
   return { nextElements, movedIds }
-}
-
-// Standard structural result: undoable update receipt + budget-bounded records.
-const mutationResult = (
-  verb: 'align' | 'distribute' | 'stack' | 'order' | 'transform',
-  nextElements: readonly OrderedExcalidrawElement[],
-  changedIds: readonly string[],
-  sceneVersion: number
-) =>
-  attachBoundedRecords(
-    {
-      ok: true as const,
-      updated: changedIds.length,
-      sceneVersion,
-      receipts: versionReceipts(nextElements, changedIds)
-    },
-    nextElements,
-    changedIds,
-    EXCALIDRAW_PAYLOAD_BUDGETS[verb].result
-  )
-
-const commit = (
-  api: ExcalidrawImperativeAPI,
-  changed: boolean,
-  nextElements: readonly OrderedExcalidrawElement[]
-): void => {
-  if (changed)
-    api.updateScene({ elements: nextElements, captureUpdate: CaptureUpdateAction.IMMEDIATELY })
 }
 
 export const executeAlign = (api: ExcalidrawImperativeAPI, input: AlignInput) => {
@@ -205,8 +153,7 @@ export const executeAlign = (api: ExcalidrawImperativeAPI, input: AlignInput) =>
     })
   }
   const { nextElements, movedIds } = applyDeltas(elements, baseDeltas)
-  commit(api, movedIds.length > 0, nextElements)
-  return mutationResult('align', nextElements, movedIds, sceneVersionOf(nextElements))
+  return commitWrite(api, nextElements, movedIds, EXCALIDRAW_PAYLOAD_BUDGETS.align.result)
 }
 
 export const executeDistribute = (api: ExcalidrawImperativeAPI, input: DistributeInput) => {
@@ -242,8 +189,7 @@ export const executeDistribute = (api: ExcalidrawImperativeAPI, input: Distribut
     })
   }
   const { nextElements, movedIds } = applyDeltas(elements, baseDeltas)
-  commit(api, movedIds.length > 0, nextElements)
-  return mutationResult('distribute', nextElements, movedIds, sceneVersionOf(nextElements))
+  return commitWrite(api, nextElements, movedIds, EXCALIDRAW_PAYLOAD_BUDGETS.distribute.result)
 }
 
 export const executeStack = (api: ExcalidrawImperativeAPI, input: StackInput) => {
@@ -288,8 +234,7 @@ export const executeStack = (api: ExcalidrawImperativeAPI, input: StackInput) =>
     })
   }
   const { nextElements, movedIds } = applyDeltas(elements, baseDeltas)
-  commit(api, movedIds.length > 0, nextElements)
-  return mutationResult('stack', nextElements, movedIds, sceneVersionOf(nextElements))
+  return commitWrite(api, nextElements, movedIds, EXCALIDRAW_PAYLOAD_BUDGETS.stack.result)
 }
 
 // Expand a target set with bound text labels so a container and its label keep
@@ -341,8 +286,7 @@ export const executeOrder = (api: ExcalidrawImperativeAPI, input: OrderInput) =>
         nextOrder.findIndex((element) => element.id === id) !==
         elements.findIndex((element) => element.id === id)
     )
-  commit(api, changedIds.length > 0, nextOrder)
-  return mutationResult('order', nextOrder, changedIds, sceneVersionOf(nextOrder))
+  return commitWrite(api, nextOrder, changedIds, EXCALIDRAW_PAYLOAD_BUDGETS.order.result)
 }
 
 export const executeGroup = (api: ExcalidrawImperativeAPI, input: GroupInput) => {
@@ -359,19 +303,10 @@ export const executeGroup = (api: ExcalidrawImperativeAPI, input: GroupInput) =>
     nextElements: readonly OrderedExcalidrawElement[],
     changedIds: readonly string[]
   ) =>
-    attachBoundedRecords(
-      {
-        ok: true as const,
-        operation,
-        groupId,
-        updated: changedIds.length,
-        sceneVersion: sceneVersionOf(nextElements),
-        receipts: versionReceipts(nextElements, changedIds)
-      },
-      nextElements,
-      changedIds,
-      EXCALIDRAW_PAYLOAD_BUDGETS.group.result
-    )
+    commitWrite(api, nextElements, changedIds, EXCALIDRAW_PAYLOAD_BUDGETS.group.result, {
+      operation,
+      groupId
+    })
 
   if (input.operation === 'group') {
     if (targets.length < 2) return groupResult('group', null, elements, [])
@@ -390,7 +325,6 @@ export const executeGroup = (api: ExcalidrawImperativeAPI, input: GroupInput) =>
     const before = tagged.slice(0, lastIndex + 1).filter((element) => !memberSet.has(element.id))
     const after = tagged.slice(lastIndex + 1)
     const nextElements = [...before, ...membersOrdered, ...after]
-    commit(api, true, nextElements)
     return groupResult('group', groupId, nextElements, changedIds)
   }
 
@@ -407,7 +341,6 @@ export const executeGroup = (api: ExcalidrawImperativeAPI, input: GroupInput) =>
     changedIds.push(element.id)
     return updateWith(element, { groupIds: filtered })
   })
-  commit(api, changedIds.length > 0, nextElements)
   return groupResult('ungroup', null, nextElements, changedIds)
 }
 
@@ -458,7 +391,10 @@ export const executeDuplicate = (api: ExcalidrawImperativeAPI, input: DuplicateI
     return updateWith(element, updates)
   })
   const nextElements = [...elements, ...copies]
-  commit(api, copies.length > 0, nextElements)
+  // duplicate has a bespoke result shape (idMap, no receipts), so it commits
+  // directly rather than through `commitWrite`.
+  if (copies.length > 0)
+    api.updateScene({ elements: nextElements, captureUpdate: CaptureUpdateAction.IMMEDIATELY })
   const newIds = copies.map((element) => element.id)
   return attachBoundedRecords(
     {
@@ -527,7 +463,9 @@ export const executeDelete = (api: ExcalidrawImperativeAPI, input: DeleteInput) 
       }
       return Object.keys(updates).length > 0 ? updateWith(element, updates) : element
     })
-  commit(api, true, remaining)
+  // delete has a bespoke result shape (deletedIds, no receipts), so it commits
+  // directly rather than through `commitWrite`.
+  api.updateScene({ elements: remaining, captureUpdate: CaptureUpdateAction.IMMEDIATELY })
   return {
     ok: true as const,
     deleted: deletedIds.length,
@@ -650,9 +588,6 @@ export const executeTransform = (api: ExcalidrawImperativeAPI, input: TransformI
     const changedTargetIds = new Set<string>([...moved.movedIds, ...resizeIds])
     nextElements = reflowBoundConnectors(nextElements, changedTargetIds)
   }
-  const changedIds = nextElements
-    .filter((element, index) => element !== elements[index])
-    .map((element) => element.id)
-  commit(api, changedIds.length > 0, nextElements)
-  return mutationResult('transform', nextElements, changedIds, sceneVersionOf(nextElements))
+  const changedIds = changedByIdentity(elements, nextElements)
+  return commitWrite(api, nextElements, changedIds, EXCALIDRAW_PAYLOAD_BUDGETS.transform.result)
 }

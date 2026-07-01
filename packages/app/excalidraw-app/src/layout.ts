@@ -1,4 +1,3 @@
-import { CaptureUpdateAction, getCommonBounds, newElementWith } from '@excalidraw/excalidraw'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { EXCALIDRAW_PAYLOAD_BUDGETS } from '@tinytinkerer/excalidraw-protocol'
@@ -9,19 +8,29 @@ import type {
   SnapInput,
   SurveyInput
 } from '@tinytinkerer/excalidraw-protocol'
-import { connectorEndpoints, reflowBoundConnectors } from './binding'
-import { attachBoundedRecords, versionReceipts } from './mutation'
+import {
+  boxOf,
+  boxesIntersect,
+  combinedBox,
+  connectorEndpoints,
+  isLinear,
+  reflowBoundConnectors,
+  updateWith,
+  type Box
+} from './geometry'
+import { changedByIdentity, commitWrite } from './mutation'
 import { elementMap, sceneVersionOf } from './normalization'
-import { settleSerializedBytes } from './payload'
+import { settleSerializedBytes, trimToBudget } from './payload'
 import { assertRequestBudget, makePage } from './query'
-import { applyDeltas, boxOf, resolveOperands } from './structure'
-import type { Box, Delta } from './structure'
+import { applyDeltas, resolveOperands } from './structure'
+import type { Delta } from './structure'
 
 // Layout helper verbs. `snap`/`place`/`arrange` reposition existing elements,
 // carrying labels/frame children (via `applyDeltas`) and re-anchoring bound
-// connectors (via `reflowBoundConnectors`) so relationships stay consistent.
-// `survey` is a read that reports layout health (overlaps, label overflow,
-// unreadable connectors). All writes commit exactly one atomic, undoable update.
+// connectors (via `reflowBoundConnectors`) so relationships stay consistent, then
+// commit through the shared `commitWrite`. `survey` is a read that reports layout
+// health (overlaps, label overflow, unreadable connectors). The box/overlap and
+// connector geometry all live in `geometry.ts`.
 
 // Connectors shorter than this read as unreadable; survey flags them.
 const MIN_READABLE_CONNECTOR_LENGTH = 8
@@ -29,47 +38,12 @@ const RESIZABLE_TYPES = new Set(['rectangle', 'ellipse', 'diamond'])
 // Element kinds whose bounding boxes are meaningful for overlap detection.
 const NODE_TYPES = new Set(['rectangle', 'ellipse', 'diamond', 'image', 'text'])
 
-const updateWith = (
-  element: OrderedExcalidrawElement,
-  updates: Record<string, unknown>
-): OrderedExcalidrawElement =>
-  newElementWith(element, updates as Parameters<typeof newElementWith<OrderedExcalidrawElement>>[1])
-
-const combinedBox = (elements: readonly OrderedExcalidrawElement[]): Box => {
-  const [x1, y1, x2, y2] = getCommonBounds(elements)
-  return { x1, y1, x2, y2, width: x2 - x1, height: y2 - y1, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 }
-}
-
 const snapValueToGrid = (value: number, size: number): number => Math.round(value / size) * size
 
 const gridSizeFor = (api: ExcalidrawImperativeAPI, explicit: number | undefined): number | null => {
   if (explicit !== undefined) return explicit
   const size = (api.getAppState() as { gridSize?: unknown }).gridSize
   return typeof size === 'number' && size > 0 ? size : null
-}
-
-const commitWrite = (
-  api: ExcalidrawImperativeAPI,
-  verb: 'snap' | 'place' | 'arrange',
-  elements: readonly OrderedExcalidrawElement[],
-  nextElements: readonly OrderedExcalidrawElement[]
-) => {
-  const changedIds = nextElements
-    .filter((element, index) => element !== elements[index])
-    .map((element) => element.id)
-  if (changedIds.length > 0)
-    api.updateScene({ elements: nextElements, captureUpdate: CaptureUpdateAction.IMMEDIATELY })
-  return attachBoundedRecords(
-    {
-      ok: true as const,
-      updated: changedIds.length,
-      sceneVersion: sceneVersionOf(nextElements),
-      receipts: versionReceipts(nextElements, changedIds)
-    },
-    nextElements,
-    changedIds,
-    EXCALIDRAW_PAYLOAD_BUDGETS[verb].result
-  )
 }
 
 export const executeSnap = (api: ExcalidrawImperativeAPI, input: SnapInput) => {
@@ -109,7 +83,12 @@ export const executeSnap = (api: ExcalidrawImperativeAPI, input: SnapInput) => {
   }
   if (changedTargetIds.size > 0)
     nextElements = reflowBoundConnectors([...nextElements], changedTargetIds)
-  return commitWrite(api, 'snap', elements, nextElements)
+  return commitWrite(
+    api,
+    nextElements,
+    changedByIdentity(elements, nextElements),
+    EXCALIDRAW_PAYLOAD_BUDGETS.snap.result
+  )
 }
 
 // The cluster's target top-left for a relation, then the delta to get there.
@@ -188,7 +167,12 @@ export const executePlace = (api: ExcalidrawImperativeAPI, input: PlaceInput) =>
     baseDeltas
   ).nextElements
   nextElements = reflowBoundConnectors([...nextElements], new Set(targets.map((t) => t.id)))
-  return commitWrite(api, 'place', elements, nextElements)
+  return commitWrite(
+    api,
+    nextElements,
+    changedByIdentity(elements, nextElements),
+    EXCALIDRAW_PAYLOAD_BUDGETS.place.result
+  )
 }
 
 const arrangeDeltas = (
@@ -243,15 +227,13 @@ export const executeArrange = (api: ExcalidrawImperativeAPI, input: ArrangeInput
     baseDeltas
   ).nextElements
   nextElements = reflowBoundConnectors([...nextElements], new Set(targets.map((t) => t.id)))
-  return commitWrite(api, 'arrange', elements, nextElements)
+  return commitWrite(
+    api,
+    nextElements,
+    changedByIdentity(elements, nextElements),
+    EXCALIDRAW_PAYLOAD_BUDGETS.arrange.result
+  )
 }
-
-// Two boxes overlap when they share positive area (touching edges do not count).
-const boxesIntersect = (a: Box, b: Box): boolean =>
-  a.x1 < b.x2 && b.x1 < a.x2 && a.y1 < b.y2 && b.y1 < a.y2
-
-const isLinear = (element: OrderedExcalidrawElement): boolean =>
-  element.type === 'arrow' || element.type === 'line'
 
 // A pair's overlap is intended (not a finding) when one is the other's bound
 // text label or frame child.
@@ -363,38 +345,33 @@ export const executeSurvey = (api: ExcalidrawImperativeAPI, input: SurveyInput) 
 
   const budget = EXCALIDRAW_PAYLOAD_BUDGETS.survey.result
   const sliceLength = visible.slice(input.offset, input.offset + input.limit).length
-  const build = (count: number) => {
-    const pageItems = visible.slice(input.offset, input.offset + count)
-    const page = makePage(input.offset, input.limit, pageItems.length, visible.length)
-    const omittedElements = sliceLength - pageItems.length
-    const result = {
-      ok: true as const,
-      detail: input.detail,
-      sceneVersion,
-      findings: pageItems,
-      overlaps,
-      labelIssues,
-      arrowIssues,
-      missingIds,
-      page,
-      truncation: {
-        truncated: omittedElements > 0 || page.nextOffset !== null,
-        fields: [] as string[],
-        omittedElements,
-        serializedBytes: 0,
-        budgetBytes: budget
+  return trimToBudget(
+    (count) => {
+      const pageItems = visible.slice(input.offset, input.offset + count)
+      const page = makePage(input.offset, input.limit, pageItems.length, visible.length)
+      const omittedElements = sliceLength - pageItems.length
+      const result = {
+        ok: true as const,
+        detail: input.detail,
+        sceneVersion,
+        findings: pageItems,
+        overlaps,
+        labelIssues,
+        arrowIssues,
+        missingIds,
+        page,
+        truncation: {
+          truncated: omittedElements > 0 || page.nextOffset !== null,
+          fields: [] as string[],
+          omittedElements,
+          serializedBytes: 0,
+          budgetBytes: budget
+        }
       }
-    }
-    settleSerializedBytes(result)
-    return result
-  }
-  let returned = sliceLength
-  let result = build(returned)
-  while (result.truncation.serializedBytes > budget && returned > 0) {
-    returned -= 1
-    result = build(returned)
-  }
-  if (result.truncation.serializedBytes > budget)
-    throw new Error(`result metadata exceeds the ${budget} byte payload budget`)
-  return result
+      settleSerializedBytes(result)
+      return result
+    },
+    sliceLength,
+    budget
+  )
 }

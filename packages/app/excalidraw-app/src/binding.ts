@@ -1,152 +1,38 @@
-import { CaptureUpdateAction, getCommonBounds, newElementWith } from '@excalidraw/excalidraw'
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { EXCALIDRAW_PAYLOAD_BUDGETS } from '@tinytinkerer/excalidraw-protocol'
 import type { AuditInput, BindInput, ConnectorAudit } from '@tinytinkerer/excalidraw-protocol'
-import { attachBoundedRecords, versionReceipts } from './mutation'
+import {
+  anchorPointOnBounds,
+  bindingOf,
+  boxOf,
+  centerOf,
+  connectorEndpoints,
+  connectorGeometry,
+  distanceToBox,
+  isDegenerate,
+  isLinear,
+  updateWith,
+  type LinearBinding,
+  type Point
+} from './geometry'
+import { changedByIdentity, commitWrite } from './mutation'
 import { elementMap, sceneVersionOf } from './normalization'
-import { settleSerializedBytes } from './payload'
+import { settleSerializedBytes, trimToBudget } from './payload'
 import { assertRequestBudget, makePage } from './query'
 
-// Connector binding behavior: rebind/detach a connector endpoint to a target
-// shape and anchor point (`bind`), re-anchor connectors whose bound shapes moved
-// or resized (`reflowBoundConnectors`, used by `transform`), and report binding
-// health (`audit`). All endpoint geometry uses one deterministic edge-anchor
-// policy so connectors stay readable: the facing edge is chosen from the opposite
-// endpoint, `focus` slides the anchor along that edge, and `gap` offsets it out.
+// Connector binding behavior: rebind/detach a connector endpoint (`bind`) and
+// report binding health (`audit`). The endpoint geometry — the deterministic
+// edge-anchor policy and the reflow used by `transform` — lives in `geometry.ts`.
 
-export type Point = { x: number; y: number }
-type Bounds = {
-  x1: number
-  y1: number
-  x2: number
-  y2: number
-  cx: number
-  cy: number
-  width: number
-  height: number
-}
-
-// Endpoints closer than this would render as a zero-length, unreadable connector.
-const MIN_CONNECTOR_LENGTH = 1
 // How far a bound endpoint may drift from its target (beyond `gap`) before `audit`
 // flags it as stale.
 const STALE_TOLERANCE = 16
-
-const updateWith = (
-  element: OrderedExcalidrawElement,
-  updates: Record<string, unknown>
-): OrderedExcalidrawElement =>
-  newElementWith(element, updates as Parameters<typeof newElementWith<OrderedExcalidrawElement>>[1])
-
-const isLinear = (element: OrderedExcalidrawElement): boolean =>
-  element.type === 'arrow' || element.type === 'line'
 
 // A connector may bind to any non-linear, non-freehand element (shapes, text,
 // frames, images, embeds). Linear elements and freedraw are not bind targets.
 const isBindable = (element: OrderedExcalidrawElement): boolean =>
   !isLinear(element) && element.type !== 'freedraw'
-
-const boundsOf = (element: OrderedExcalidrawElement): Bounds => {
-  const [x1, y1, x2, y2] = getCommonBounds([element])
-  return { x1, y1, x2, y2, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2, width: x2 - x1, height: y2 - y1 }
-}
-
-const centerOf = (bounds: Bounds): Point => ({ x: bounds.cx, y: bounds.cy })
-
-// The point on a target's facing edge for a bound endpoint. The edge is chosen by
-// the dominant direction toward the opposite endpoint; `focus` slides along it and
-// `gap` pushes it outward. Recomputing from the target's current bounds keeps the
-// same focus valid after a move or resize.
-const anchorPointOnBounds = (bounds: Bounds, toward: Point, focus: number, gap: number): Point => {
-  const dx = toward.x - bounds.cx
-  const dy = toward.y - bounds.cy
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    const x = dx >= 0 ? bounds.x2 + gap : bounds.x1 - gap
-    return { x, y: bounds.cy + focus * (bounds.height / 2) }
-  }
-  const y = dy >= 0 ? bounds.y2 + gap : bounds.y1 - gap
-  return { x: bounds.cx + focus * (bounds.width / 2), y }
-}
-
-export const connectorEndpoints = (
-  connector: OrderedExcalidrawElement
-): { start: Point; end: Point } => {
-  const points = (connector as { points?: ReadonlyArray<readonly [number, number]> }).points ?? []
-  const first = points[0] ?? [0, 0]
-  const last = points[points.length - 1] ?? first
-  return {
-    start: { x: connector.x + first[0], y: connector.y + first[1] },
-    end: { x: connector.x + last[0], y: connector.y + last[1] }
-  }
-}
-
-const connectorGeometry = (start: Point, end: Point): Record<string, unknown> => {
-  const dx = end.x - start.x
-  const dy = end.y - start.y
-  return {
-    x: start.x,
-    y: start.y,
-    width: dx,
-    height: dy,
-    points: [
-      [0, 0],
-      [dx, dy]
-    ]
-  }
-}
-
-const isDegenerate = (start: Point, end: Point): boolean =>
-  Math.hypot(end.x - start.x, end.y - start.y) < MIN_CONNECTOR_LENGTH
-
-type LinearBinding = { elementId: string; focus: number; gap: number } | null
-
-const bindingOf = (element: OrderedExcalidrawElement, end: 'start' | 'end'): LinearBinding => {
-  const value = (element as Record<string, unknown>)[`${end}Binding`]
-  if (!value || typeof value !== 'object') return null
-  const binding = value as { elementId?: unknown; focus?: unknown; gap?: unknown }
-  if (typeof binding.elementId !== 'string') return null
-  return {
-    elementId: binding.elementId,
-    focus: typeof binding.focus === 'number' ? binding.focus : 0,
-    gap: typeof binding.gap === 'number' ? binding.gap : 0
-  }
-}
-
-// Re-anchor every connector bound to a moved or resized shape so its endpoints
-// follow. Only endpoints whose target is in `changedTargetIds` are recomputed; the
-// opposite endpoint keeps its current point. Used by `transform` under
-// `reflowConnectors`. A recompute that would collapse the connector is skipped.
-export const reflowBoundConnectors = (
-  elements: readonly OrderedExcalidrawElement[],
-  changedTargetIds: ReadonlySet<string>
-): OrderedExcalidrawElement[] => {
-  if (changedTargetIds.size === 0) return elements.map((element) => element)
-  const byId = elementMap(elements)
-  return elements.map((element) => {
-    if (!isLinear(element)) return element
-    const startBinding = bindingOf(element, 'start')
-    const endBinding = bindingOf(element, 'end')
-    const startChanged = Boolean(startBinding && changedTargetIds.has(startBinding.elementId))
-    const endChanged = Boolean(endBinding && changedTargetIds.has(endBinding.elementId))
-    if (!startChanged && !endChanged) return element
-    const { start: curStart, end: curEnd } = connectorEndpoints(element)
-    const startTarget = startBinding ? byId.get(startBinding.elementId) : undefined
-    const endTarget = endBinding ? byId.get(endBinding.elementId) : undefined
-    const startRef = startTarget ? centerOf(boundsOf(startTarget)) : curStart
-    const endRef = endTarget ? centerOf(boundsOf(endTarget)) : curEnd
-    const nextStart =
-      startChanged && startTarget
-        ? anchorPointOnBounds(boundsOf(startTarget), endRef, startBinding!.focus, startBinding!.gap)
-        : curStart
-    const nextEnd =
-      endChanged && endTarget
-        ? anchorPointOnBounds(boundsOf(endTarget), startRef, endBinding!.focus, endBinding!.gap)
-        : curEnd
-    if (isDegenerate(nextStart, nextEnd)) return element
-    return updateWith(element, connectorGeometry(nextStart, nextEnd))
-  })
-}
 
 const endpointStateOf = (binding: LinearBinding) => ({
   bound: binding !== null,
@@ -207,11 +93,11 @@ export const executeBind = (api: ExcalidrawImperativeAPI, input: BindInput) => {
     prev: LinearBinding,
     currentPoint: Point
   ): Point => {
-    if (spec?.action === 'attach' && attachTarget) return centerOf(boundsOf(attachTarget))
+    if (spec?.action === 'attach' && attachTarget) return centerOf(boxOf(attachTarget))
     if (spec?.action === 'detach') return currentPoint
     if (prev) {
       const target = byId.get(prev.elementId)
-      if (target) return centerOf(boundsOf(target))
+      if (target) return centerOf(boxOf(target))
     }
     return currentPoint
   }
@@ -221,7 +107,7 @@ export const executeBind = (api: ExcalidrawImperativeAPI, input: BindInput) => {
   const nextStart: Point =
     input.start?.action === 'attach' && startTarget
       ? anchorPointOnBounds(
-          boundsOf(startTarget),
+          boxOf(startTarget),
           endRef,
           input.start.anchor.focus,
           input.start.anchor.gap
@@ -230,7 +116,7 @@ export const executeBind = (api: ExcalidrawImperativeAPI, input: BindInput) => {
   const nextEnd: Point =
     input.end?.action === 'attach' && endTarget
       ? anchorPointOnBounds(
-          boundsOf(endTarget),
+          boxOf(endTarget),
           startRef,
           input.end.anchor.focus,
           input.end.anchor.gap
@@ -243,11 +129,7 @@ export const executeBind = (api: ExcalidrawImperativeAPI, input: BindInput) => {
 
   const nextStartBinding: LinearBinding =
     input.start?.action === 'attach'
-      ? {
-          elementId: startTarget!.id,
-          focus: input.start.anchor.focus,
-          gap: input.start.anchor.gap
-        }
+      ? { elementId: startTarget!.id, focus: input.start.anchor.focus, gap: input.start.anchor.gap }
       : input.start?.action === 'detach'
         ? null
         : prevStart
@@ -292,34 +174,13 @@ export const executeBind = (api: ExcalidrawImperativeAPI, input: BindInput) => {
     }
     return element
   })
-  const changedIds = nextElements
-    .filter((element, index) => element !== elements[index])
-    .map((element) => element.id)
-  if (changedIds.length > 0)
-    api.updateScene({ elements: nextElements, captureUpdate: CaptureUpdateAction.IMMEDIATELY })
+  const changedIds = changedByIdentity(elements, nextElements)
 
-  return attachBoundedRecords(
-    {
-      ok: true as const,
-      updated: changedIds.length,
-      sceneVersion: sceneVersionOf(nextElements),
-      receipts: versionReceipts(nextElements, changedIds),
-      connectorId: connector.id,
-      start: endpointStateOf(nextStartBinding),
-      end: endpointStateOf(nextEndBinding)
-    },
-    nextElements,
-    changedIds,
-    EXCALIDRAW_PAYLOAD_BUDGETS.bind.result
-  )
-}
-
-// Squared/clamped distance from a point to a box (0 inside). Used to detect a
-// bound endpoint that has drifted off its target.
-const distanceToBox = (point: Point, bounds: Bounds): number => {
-  const dx = Math.max(bounds.x1 - point.x, 0, point.x - bounds.x2)
-  const dy = Math.max(bounds.y1 - point.y, 0, point.y - bounds.y2)
-  return Math.hypot(dx, dy)
+  return commitWrite(api, nextElements, changedIds, EXCALIDRAW_PAYLOAD_BUDGETS.bind.result, {
+    connectorId: connector.id,
+    start: endpointStateOf(nextStartBinding),
+    end: endpointStateOf(nextEndBinding)
+  })
 }
 
 type EndpointAudit = ConnectorAudit['start']
@@ -375,7 +236,7 @@ const auditEndpoint = (
         reason: 'target does not list this connector; rebind to restore the link or detach'
       }
     }
-  if (distanceToBox(point, boundsOf(target)) > binding.gap + STALE_TOLERANCE)
+  if (distanceToBox(point, boxOf(target)) > binding.gap + STALE_TOLERANCE)
     return {
       endpoint: { ...base, status: 'stale' },
       repair: {
@@ -442,37 +303,32 @@ export const executeAudit = (api: ExcalidrawImperativeAPI, input: AuditInput) =>
 
   const budget = EXCALIDRAW_PAYLOAD_BUDGETS.audit.result
   const sliceLength = audits.slice(input.offset, input.offset + input.limit).length
-  let returned = sliceLength
-  const build = (count: number) => {
-    const pageItems = audits.slice(input.offset, input.offset + count)
-    const page = makePage(input.offset, input.limit, pageItems.length, audits.length)
-    const omittedElements = sliceLength - pageItems.length
-    const result = {
-      ok: true as const,
-      detail: input.detail,
-      sceneVersion,
-      connectors: pageItems,
-      healthy,
-      flagged,
-      missingIds,
-      page,
-      truncation: {
-        truncated: omittedElements > 0 || page.nextOffset !== null,
-        fields: [] as string[],
-        omittedElements,
-        serializedBytes: 0,
-        budgetBytes: budget
+  return trimToBudget(
+    (count) => {
+      const pageItems = audits.slice(input.offset, input.offset + count)
+      const page = makePage(input.offset, input.limit, pageItems.length, audits.length)
+      const omittedElements = sliceLength - pageItems.length
+      const result = {
+        ok: true as const,
+        detail: input.detail,
+        sceneVersion,
+        connectors: pageItems,
+        healthy,
+        flagged,
+        missingIds,
+        page,
+        truncation: {
+          truncated: omittedElements > 0 || page.nextOffset !== null,
+          fields: [] as string[],
+          omittedElements,
+          serializedBytes: 0,
+          budgetBytes: budget
+        }
       }
-    }
-    settleSerializedBytes(result)
-    return result
-  }
-  let result = build(returned)
-  while (result.truncation.serializedBytes > budget && returned > 0) {
-    returned -= 1
-    result = build(returned)
-  }
-  if (result.truncation.serializedBytes > budget)
-    throw new Error(`result metadata exceeds the ${budget} byte payload budget`)
-  return result
+      settleSerializedBytes(result)
+      return result
+    },
+    sliceLength,
+    budget
+  )
 }

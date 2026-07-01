@@ -26,3 +26,25 @@ export const settleSerializedBytes = (value: {
   }
   return value.truncation.serializedBytes
 }
+
+// The one budget-trim policy shared by every paginated/bounded result: `build`
+// produces a candidate for a given item count (and must settle its own
+// `serializedBytes`); drop the trailing item until it fits, and throw if even the
+// empty result overflows. Read verbs (`boundedResult`), the write receipt helper,
+// and the audit/survey readers all funnel through this so the "shrink until it
+// fits" invariant lives once.
+export const trimToBudget = <T extends { truncation: { serializedBytes: number } }>(
+  build: (count: number) => T,
+  initialCount: number,
+  budgetBytes: number
+): T => {
+  let count = initialCount
+  let result = build(count)
+  while (result.truncation.serializedBytes > budgetBytes && count > 0) {
+    count -= 1
+    result = build(count)
+  }
+  if (result.truncation.serializedBytes > budgetBytes)
+    throw new Error(`result metadata exceeds the ${budgetBytes} byte payload budget`)
+  return result
+}

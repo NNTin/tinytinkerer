@@ -6,7 +6,8 @@ import {
   EXCALIDRAW_PAYLOAD_BUDGETS
 } from '@tinytinkerer/excalidraw-protocol'
 import type { InspectInput, ReadInput, SearchInput } from '@tinytinkerer/excalidraw-protocol'
-import { serializedUtf8Bytes, settleSerializedBytes, truncateUtf8 } from './payload'
+import type { ResultTruncation } from './mutation'
+import { serializedUtf8Bytes, settleSerializedBytes, trimToBudget, truncateUtf8 } from './payload'
 import {
   compactBounds,
   displayNameFor,
@@ -45,57 +46,39 @@ const boundedResult = <T extends { elements: unknown[]; page: ReturnType<typeof 
   result: T,
   budgetBytes: number,
   fields: string[]
-): T & {
-  truncation: {
-    truncated: boolean
-    fields: string[]
-    omittedElements: number
-    serializedBytes: number
-    budgetBytes: number
-  }
-} => {
+): T & { truncation: ResultTruncation } => {
   const originalCount = result.elements.length
-  let elements = result.elements
-  let candidate: T & {
-    truncation: {
-      truncated: boolean
-      fields: string[]
-      omittedElements: number
-      serializedBytes: number
-      budgetBytes: number
-    }
-  }
-  for (;;) {
-    const omittedElements = originalCount - elements.length
-    candidate = {
-      ...result,
-      elements,
-      page: {
-        ...result.page,
-        returned: elements.length,
-        nextOffset:
-          result.page.offset + elements.length < result.page.total
-            ? result.page.offset + elements.length
-            : null
-      },
-      truncation: {
-        truncated:
-          fields.length > 0 ||
-          omittedElements > 0 ||
-          result.page.offset + elements.length < result.page.total,
-        fields: [...new Set(fields)],
-        omittedElements,
-        serializedBytes: 0,
-        budgetBytes
+  // Drop trailing element records until the serialized page fits its budget,
+  // recomputing the page counters as the page shrinks.
+  return trimToBudget(
+    (count) => {
+      const elements = result.elements.slice(0, count)
+      const nextOffsetBase = result.page.offset + elements.length
+      const candidate = {
+        ...result,
+        elements,
+        page: {
+          ...result.page,
+          returned: elements.length,
+          nextOffset: nextOffsetBase < result.page.total ? nextOffsetBase : null
+        },
+        truncation: {
+          truncated:
+            fields.length > 0 ||
+            elements.length < originalCount ||
+            nextOffsetBase < result.page.total,
+          fields: [...new Set(fields)],
+          omittedElements: originalCount - elements.length,
+          serializedBytes: 0,
+          budgetBytes
+        }
       }
-    }
-    settleSerializedBytes(candidate)
-    if (candidate.truncation.serializedBytes <= budgetBytes) return candidate
-    if (elements.length === 0) {
-      throw new Error(`result metadata exceeds the ${budgetBytes} byte payload budget`)
-    }
-    elements = elements.slice(0, -1)
-  }
+      settleSerializedBytes(candidate)
+      return candidate
+    },
+    originalCount,
+    budgetBytes
+  )
 }
 
 const visibleElements = (

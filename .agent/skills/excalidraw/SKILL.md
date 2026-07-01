@@ -94,11 +94,15 @@ behavior → `ExcalidrawImperativeAPI` → result (validated against protocol re
   - `edit.ts` — atomic, version-checked, invariant-safe field patches with receipts.
   - `structure.ts` — the 8 structural verbs (`group`, `duplicate`, `delete`, `align`, `distribute`,
     `stack`, `order`, `transform`).
-  - `binding.ts` — the connector binding verbs (`bind`, `audit`) and the shared edge-anchor reflow geometry
-    reused by `transform`'s `reflowConnectors`.
-  - `mutation.ts` — shared receipt + budget-bounded record helper used by `edit` **and** `structure`.
+  - `binding.ts` — the connector binding verbs (`bind`, `audit`).
+  - `layout.ts` — the layout verbs (`snap`, `place`, `arrange`, `survey`).
+  - `geometry.ts` — shared, verb-agnostic geometry: box math, the edge-anchor policy, and
+    `reflowBoundConnectors` (used by `transform`'s `reflowConnectors` and the layout writes). Consumed by
+    `structure`/`binding`/`layout`; depends only on `normalization`, so no import cycle with the verbs.
+  - `mutation.ts` — shared write machinery: receipt + budget-bounded records and the `commitWrite`
+    choke-point (one atomic `updateScene`), used by `edit`, `structure`, `binding`, and `layout`.
   - `ids.ts` — collision-free id minting used by `create` **and** `structure`.
-  - `payload.ts` — exact UTF-8 measurement/truncation.
+  - `payload.ts` — exact UTF-8 measurement/truncation and the shared `trimToBudget` policy.
   - `bridge.ts` — **binding only**: `defineBridgeVerb(...)` + `createBridgeServer`. No behavior.
 - `apps/canvas` (role `harness-shell`) owns the deployable shell, iframe URL, app id/version wiring, and the
   model-facing verb descriptions in `src/canvas-runtime.ts`. It imports Excalidraw **contracts** but **never**
@@ -168,15 +172,16 @@ The 8 structural verbs share `mutation.ts` (receipts + budget trimming, also use
 rejects relationship crossings (cascading a bound label/frame child, detaching a connector) unless
 `includeRelated: true`.
 
-The connector binding verbs `bind` and `audit` live in `binding.ts`, which also owns the deterministic
-edge-anchor geometry that `transform`'s opt-in `reflowConnectors` reuses to keep bindings consistent on
-move/resize. `bind` is versioned by default (connector ref + attach target refs + `expectedSceneVersion`)
-and commits one atomic, undoable `updateScene`; `audit` is a budgeted, paginated, detail-aware read.
+The connector binding verbs `bind` and `audit` live in `binding.ts`. The deterministic edge-anchor
+geometry and `reflowBoundConnectors` (which `transform`'s opt-in `reflowConnectors` reuses to keep
+bindings consistent on move/resize) live in the shared `geometry.ts`. `bind` is versioned by default
+(connector ref + attach target refs + `expectedSceneVersion`) and commits one atomic, undoable
+`updateScene` via `commitWrite`; `audit` is a budgeted, paginated, detail-aware read.
 
 The layout helpers `snap`/`place`/`arrange`/`survey` live in `layout.ts`. The three writes reuse
-`structure.ts`'s `applyDeltas`/`boxOf` and `binding.ts`'s `reflowBoundConnectors` so repositioning carries
-labels/frame children and re-anchors bound connectors; `survey` reuses `binding.ts`'s
-`connectorEndpoints`/`distanceToBox` plus the `query.ts` paging/budget helpers as a bounded read. They are
+`structure.ts`'s `applyDeltas` and `geometry.ts`'s box/`reflowBoundConnectors` so repositioning carries
+labels/frame children and re-anchors bound connectors; `survey` reuses `geometry.ts`'s
+`connectorEndpoints`/box math plus the `query.ts` paging/budget helpers as a bounded read. They are
 versioned by default like the other structural verbs (`snap` also offers the selection fallback).
 
 ## Upstream `@excalidraw/excalidraw` API map
