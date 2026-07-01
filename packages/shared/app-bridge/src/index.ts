@@ -3,6 +3,8 @@
 // (Excalidraw or otherwise); per-app verb payload schemas compose on top of this.
 export {
   APP_BRIDGE_PROTOCOL_VERSION,
+  APP_SNAPSHOT_EVENT,
+  APP_SNAPSHOT_RESTORE_VERB,
   bridgeMessageSchema,
   requestMessageSchema,
   responseMessageSchema,

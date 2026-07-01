@@ -1,5 +1,6 @@
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import {
+  APP_SNAPSHOT_RESTORE_VERB,
   createBridgeServer,
   defineBridgeVerb,
   parentServerTransport
@@ -7,11 +8,16 @@ import {
 import type { BridgeServer, CreateBridgeServerOptions } from '@tinytinkerer/app-bridge'
 import {
   EXCALIDRAW_APP_ID,
+  EXCALIDRAW_LIBRARY_IMPORT_VERB,
   EXCALIDRAW_PROTOCOL_VERSION,
+  excalidrawLibraryImportContract,
+  excalidrawSnapshotRestoreContract,
   excalidrawVerbContracts
 } from '@tinytinkerer/excalidraw-protocol'
 import { executeAudit, executeBind } from './binding'
 import { executeClear, executeDraw } from './create'
+import { importLibraryContent } from './library'
+import { applySnapshot } from './persistence'
 import { executeEdit } from './edit'
 import { executeArrange, executePlace, executeSnap, executeSurvey } from './layout'
 import { executeInspect, executeRead, executeSearch } from './query'
@@ -67,5 +73,19 @@ export const createExcalidrawBridge = (
     appId: EXCALIDRAW_APP_ID,
     appProtocolVersion: EXCALIDRAW_PROTOCOL_VERSION,
     sessionNonce,
-    handlers: createExcalidrawHandlers(api)
+    handlers: {
+      ...createExcalidrawHandlers(api),
+      // Reserved system verb (not model-facing): the harness replays a persisted
+      // scene snapshot here on reload. Kept out of createExcalidrawHandlers so the
+      // model-facing verb set and its tests stay unchanged.
+      [APP_SNAPSHOT_RESTORE_VERB]: defineBridgeVerb(excalidrawSnapshotRestoreContract, (input) =>
+        applySnapshot(api, input)
+      ),
+      // Reserved system verb (not model-facing): the canvas shell's library relay
+      // pushes a fetched `.excalidrawlib` here, since the libraries.excalidraw.com
+      // round-trip cannot reach this opaque-origin sandboxed iframe directly.
+      [EXCALIDRAW_LIBRARY_IMPORT_VERB]: defineBridgeVerb(excalidrawLibraryImportContract, (input) =>
+        importLibraryContent(api, input.content)
+      )
+    }
   })

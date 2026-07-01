@@ -16,6 +16,9 @@ export type HarnessShellProps = {
   // `stageClassName` is supplied by the harness for the click-through overlay.
   chat: Omit<FloatingWidgetChatProps, 'stageClassName'>
   className?: string
+  // localStorage key for persisting the embedded app's opaque scene snapshot across
+  // reloads. Omit to disable persistence. See AppFrame.persistenceKey.
+  persistenceKey?: string
   onStatusChange?: (status: AppFrameStatus) => void
 }
 
@@ -32,6 +35,7 @@ export const HarnessShell = ({
   frameTitle,
   chat,
   className,
+  persistenceKey,
   onStatusChange
 }: HarnessShellProps): React.JSX.Element => (
   <div className={['app-harness-stage', className].filter(Boolean).join(' ')}>
@@ -43,6 +47,7 @@ export const HarnessShell = ({
       expectedVerbs={expectedVerbs}
       handle={handle}
       title={frameTitle}
+      {...(persistenceKey !== undefined ? { persistenceKey } : {})}
       {...(onStatusChange ? { onStatusChange } : {})}
     />
     <FloatingWidgetChat {...chat} stageClassName="app-harness-chat-overlay" />

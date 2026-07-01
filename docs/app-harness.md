@@ -741,9 +741,30 @@ sequenceDiagram
 
 ## Security boundary
 
-The iframe is mounted with `sandbox="allow-scripts"` and without
-`allow-same-origin`. It can execute the Excalidraw bundle but receives an opaque origin
-and cannot access the parent shell's DOM, cookies, storage, or authentication state.
+The iframe is mounted with
+`sandbox="allow-scripts allow-downloads allow-popups allow-popups-to-escape-sandbox"`
+and `allow="clipboard-write; clipboard-read"`, but **without** `allow-same-origin`. It
+can execute the Excalidraw bundle but receives an opaque origin and cannot access the
+parent shell's DOM, cookies, storage, or authentication state.
+
+The grant is the minimum the embedded app's features need, and each flag is deliberate:
+
+- `allow-scripts` — run the app bundle.
+- `allow-downloads` — Excalidraw export / save-to-image triggers a file download.
+- `allow-popups` — external links (the GitHub link, the Excalidraw Libraries browser)
+  open in a new window.
+- `allow-popups-to-escape-sandbox` — those popups land in a normal top-level context
+  rather than inheriting this restrictive sandbox, so the external sites work.
+- `allow="clipboard-write; clipboard-read"` — the Clipboard API is gated by Permissions
+  Policy independently of the sandbox, so copy-to-clipboard (write) and paste (read)
+  stay blocked unless the host frame delegates them.
+
+`allow-same-origin` is intentionally omitted: granting it would collapse the opaque
+origin (the app is served from the harness's own origin), letting the iframe reach the
+parent DOM/storage and defeating the isolation the nonce handshake is built on. Because
+the opaque origin also means the app has **no Web Storage of its own**, scene
+persistence is delegated to the harness (see "Scene persistence" below) rather than
+weakening the sandbox.
 
 Because an opaque iframe reports `event.origin` as `"null"`, trust is not based on a
 literal origin allowlist. It is based on:
@@ -764,6 +785,59 @@ window identity and nonce still gate receipt.
 The security boundary also enforces supply-chain isolation: Excalidraw and its
 transitive dependencies, license considerations, and advisory allow-lists belong to the
 iframe implementation/build, not widget or the canvas startup graph.
+
+## Scene persistence
+
+A reload must restore the last canvas. The opaque-origin iframe cannot use `localStorage`
+(or any Web Storage) itself, so persistence is split across the boundary instead of
+weakening the sandbox:
+
+1. **App serializes (owns the data).** `excalidraw-app` subscribes to the Excalidraw
+   `onChange` and, debounced, emits a versioned snapshot — the live elements plus a
+   curated slice of view state (`scrollX`, `scrollY`, `zoom`, `viewBackgroundColor`,
+   `theme`) — over the bridge `event` channel under the reserved `app:snapshot` verb.
+2. **Harness persists (owns the storage).** `<AppFrame>`, which runs at the real origin,
+   writes the **opaque** snapshot blob to `localStorage` under the shell-provided
+   `persistenceKey`. It never interprets the payload, so the generic harness stays
+   product-agnostic. Reads and writes fail safe (missing key, unavailable storage, or
+   corrupt JSON all degrade to an empty scene).
+3. **Harness replays on reload.** Once the handshake completes, `<AppFrame>` reads the
+   stored blob and hands it back through the reserved `app:restore` request. The app's
+   contract version-guards the snapshot; a stale/incompatible blob is rejected at the
+   wire and the canvas opens empty rather than corrupt. The restore applies with
+   `CaptureUpdateAction.NEVER` so hydration never pollutes the undo history.
+
+`app:snapshot` and `app:restore` are generic, reserved bridge verb names
+(`APP_SNAPSHOT_EVENT` / `APP_SNAPSHOT_RESTORE_VERB` in `app-bridge`); the snapshot
+schema and its version live in `excalidraw-protocol`. The harness only moves an opaque
+blob between the app and `localStorage`. Imported libraries (see below) ride along in the
+same snapshot so they are restored on reload too.
+
+## Libraries
+
+The Excalidraw "Browse libraries" flow opens `libraries.excalidraw.com`, and "Add to
+Excalidraw" navigates `target=<window.name||_blank>` to `<libraryReturnUrl>#addLibrary=…`.
+That round-trip cannot reach our canvas directly: the iframe has an opaque origin and is
+gated by the session nonce (so a navigation that drops the nonce would only hit the
+"opened by the canvas harness" guard), and browser navigation rules forbid the
+cross-origin library popup from targeting our sandboxed iframe. So the import is relayed
+on the **real origin** instead:
+
+1. `excalidraw-app` sets `libraryReturnUrl` to the shell's same-origin
+   `/canvas/library-callback/` page (derived from the iframe's real `location.href`).
+2. "Add to Excalidraw" opens that callback page in a new tab with
+   `#addLibrary=<url>&token=<token>`. The page posts the URL on a same-origin
+   `BroadcastChannel` (`EXCALIDRAW_LIBRARY_CHANNEL`) and closes itself. It imports no
+   React or Excalidraw — it stays a tiny standalone build entry.
+3. The live canvas shell listens on that channel, allow-lists the URL to excalidraw.com
+   (`isAllowedLibraryUrl`), fetches the `.excalidrawlib`, and forwards the text into the
+   iframe over the reserved `excalidraw:import-library` system verb.
+4. `excalidraw-app` hands the text to `updateLibrary` (Excalidraw's own loader) and tracks
+   `onLibraryChange` so the library is persisted in the scene snapshot.
+
+The iframe is never navigated, so the nonce, bridge, and scene are untouched. Like
+`app:restore`, `excalidraw:import-library` is a system verb kept out of the model-facing
+verb set.
 
 ## Adding another iframe app
 

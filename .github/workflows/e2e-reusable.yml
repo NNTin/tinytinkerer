@@ -44,10 +44,11 @@ jobs:
           restore-keys: |
             turbo-${{ github.workflow }}-e2e-shells-
 
-      # Build all three product shells (generates brand/privacy/notices first) so
+      # Build all four product shells (generates brand/privacy/notices first) so
       # `vite preview` can serve each production bundle the suite targets — web,
-      # widget, and mobile, each on its own port/origin (chat-persistence #250).
-      - name: Build shells (web, widget, mobile)
+      # widget, mobile, and canvas, each on its own port/origin (chat-persistence #250;
+      # canvas Excalidraw features #317).
+      - name: Build shells (web, widget, mobile, canvas)
         run: |
           pnpm generate:brand-assets
           pnpm generate:privacy-policy
@@ -55,10 +56,12 @@ jobs:
           TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build \
             --filter=@tinytinkerer/web \
             --filter=@tinytinkerer/widget \
-            --filter=@tinytinkerer/mobile
+            --filter=@tinytinkerer/mobile \
+            --filter=@tinytinkerer/canvas
 
-      # Common ancestor of the three paths is `apps/`, so the artifact stores
-      # `web/dist`, `widget/dist`, `mobile/dist`; the shards download it into `apps`.
+      # Common ancestor of the four paths is `apps/`, so the artifact stores
+      # `web/dist`, `widget/dist`, `mobile/dist`, `canvas/dist`; the shards download it
+      # into `apps`.
       - name: Upload built shells
         uses: actions/upload-artifact@v6
         with:
@@ -67,6 +70,7 @@ jobs:
             apps/web/dist
             apps/widget/dist
             apps/mobile/dist
+            apps/canvas/dist
           if-no-files-found: error
           retention-days: 1
 
@@ -84,11 +88,12 @@ jobs:
         shard: [1, 2, 3]
     env:
       # Pin the per-run ports so each shell's webServer URL is deterministic in CI.
-      # One origin per shell: web / widget / mobile. Shards run on separate runners,
-      # so the fixed ports never collide across shards.
+      # One origin per shell: web / widget / mobile / canvas. Shards run on separate
+      # runners, so the fixed ports never collide across shards.
       E2E_PORT: 43117
       E2E_PORT_WIDGET: 43118
       E2E_PORT_MOBILE: 43119
+      E2E_PORT_CANVAS: 43120
       # The merged report combines all shards by test, so the shard boundary is
       # otherwise invisible. playwright.config.ts reads this to tag every test in this
       # shard's process with `shard-<n>`, keeping the merged report filterable by shard

@@ -1,8 +1,9 @@
 import { z } from 'zod'
 
 export const EXCALIDRAW_APP_ID = 'excalidraw'
-// Version of the Excalidraw verb contracts, intentionally independent from the
-// generic app-bridge envelope version.
+// generic app-bridge envelope version. Bumped to 5 for the persistence snapshot
+// restore contract (host-replayed scene on reload), then to 6 for the connectors
+// & bindings and layout-helper verbs.
 export const EXCALIDRAW_PROTOCOL_VERSION = 6
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
@@ -701,6 +702,56 @@ export const surveyInputSchema = z
       })
     }
   })
+// Schema version for a persisted scene snapshot. The `version` is a literal in the
+// schema below so a snapshot written by an older/newer build fails validation and
+// the harness falls back to an empty scene instead of feeding the canvas a shape it
+// can no longer interpret. Bump this only when the snapshot payload shape changes.
+export const EXCALIDRAW_SNAPSHOT_VERSION = 1
+
+// A persisted scene snapshot: the live (non-deleted) elements plus a curated slice
+// of view state, and any imported library items. Elements/library items are kept
+// opaque (the full Excalidraw records the app produced) so a restore round-trips
+// losslessly; volatile appState (selection, editing ids, collaborators, cursor) is
+// intentionally excluded.
+export const excalidrawSnapshotSchema = z
+  .object({
+    version: z.literal(EXCALIDRAW_SNAPSHOT_VERSION),
+    elements: z.array(z.record(z.string(), z.unknown())),
+    appState: z.record(z.string(), z.unknown()).optional(),
+    libraryItems: z.array(z.record(z.string(), z.unknown())).optional()
+  })
+  .strict()
+
+// Reserved system verb (not model-facing): the canvas shell calls this to push a
+// library, fetched by its same-origin callback relay, into the sandboxed iframe. The
+// iframe cannot receive the libraries.excalidraw.com round-trip directly (opaque
+// origin + nonce), so the shell relays the `.excalidrawlib` content over the bridge.
+export const EXCALIDRAW_LIBRARY_IMPORT_VERB = 'excalidraw:import-library'
+
+// Same-origin BroadcastChannel name shared by the library callback page (which
+// receives the libraries.excalidraw.com return navigation in a new tab) and the live
+// canvas shell (which forwards the library into the iframe).
+export const EXCALIDRAW_LIBRARY_CHANNEL = 'tinytinkerer:canvas-library'
+
+// Allow only official Excalidraw library URLs to be fetched by the relay, mirroring
+// Excalidraw's own default `validateLibraryUrl` allow-list. Guards the shell against
+// being pointed at an arbitrary origin via a crafted `addLibrary` parameter.
+export const isAllowedLibraryUrl = (url: string): boolean => {
+  try {
+    const { protocol, hostname } = new URL(url)
+    return (
+      protocol === 'https:' &&
+      (hostname === 'excalidraw.com' || hostname.endsWith('.excalidraw.com'))
+    )
+  } catch {
+    return false
+  }
+}
+
+// Input for the library import system verb: the raw `.excalidrawlib` JSON text, which
+// the iframe hands to Excalidraw's own Blob loader (so parsing/normalization stays in
+// the upstream component).
+export const excalidrawLibraryImportSchema = z.object({ content: z.string().min(1) }).strict()
 
 export const excalidrawVerbInputSchemas = {
   draw: drawInputSchema,
@@ -752,3 +803,5 @@ export type SnapInput = z.infer<typeof snapInputSchema>
 export type PlaceInput = z.infer<typeof placeInputSchema>
 export type ArrangeInput = z.infer<typeof arrangeInputSchema>
 export type SurveyInput = z.infer<typeof surveyInputSchema>
+export type ExcalidrawSnapshot = z.infer<typeof excalidrawSnapshotSchema>
+export type ExcalidrawLibraryImport = z.infer<typeof excalidrawLibraryImportSchema>

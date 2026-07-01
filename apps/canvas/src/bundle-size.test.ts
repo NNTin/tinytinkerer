@@ -17,6 +17,7 @@ type OutputChunk = {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 let shellChunks: OutputChunk[] = []
 let iframeChunks: OutputChunk[] = []
+let callbackChunks: OutputChunk[] = []
 
 const outputChunks = (result: Awaited<ReturnType<typeof build>>): OutputChunk[] => {
   const output = Array.isArray(result) ? result[0] : result
@@ -38,8 +39,15 @@ beforeAll(async () => {
     mode: 'production',
     build: { write: false, minify: 'esbuild', sourcemap: false }
   })
+  const callbackResult = await build({
+    configFile: resolve(root, 'vite.callback.config.ts'),
+    logLevel: 'silent',
+    mode: 'production',
+    build: { write: false, minify: 'esbuild', sourcemap: false }
+  })
   shellChunks = outputChunks(shellResult)
   iframeChunks = outputChunks(iframeResult)
+  callbackChunks = outputChunks(callbackResult)
 }, 90_000)
 
 describe('canvas bundle regression guard', () => {
@@ -77,5 +85,18 @@ describe('canvas bundle regression guard', () => {
     expect(entry).toBeDefined()
     expect(vendor).toBeDefined()
     expect((vendor?.code?.length ?? 0) / 1024).toBeLessThan(5120)
+  })
+
+  it('keeps the library-callback relay free of Excalidraw and React', () => {
+    const entry = callbackChunks.find((chunk) =>
+      chunk.facadeModuleId?.endsWith('/library-callback/index.html')
+    )
+    expect(entry).toBeDefined()
+    const heavyModules = callbackChunks.flatMap((chunk) =>
+      (chunk.moduleIds ?? []).filter(
+        (id) => id.includes('node_modules/@excalidraw/') || id.includes('node_modules/react')
+      )
+    )
+    expect(heavyModules).toEqual([])
   })
 })

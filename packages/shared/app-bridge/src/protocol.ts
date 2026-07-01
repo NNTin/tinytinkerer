@@ -43,7 +43,17 @@ export const responseMessageSchema = z.discriminatedUnion('ok', [
   z.object({ ...responseBaseShape, ok: z.literal(false), error: z.string().min(1) })
 ])
 
-// App → harness: an unsolicited notification (e.g. "scene-changed"). Fire-and-forget.
+// Reserved generic verbs for host-persisted app snapshots. A sandboxed iframe app
+// runs at an opaque origin and so has no Web Storage of its own (see the security
+// boundary in docs/app-harness.md). To survive a page reload it emits an opaque
+// snapshot via the APP_SNAPSHOT_EVENT event for the harness — which runs at a real
+// origin — to persist, and the harness replays it through the APP_SNAPSHOT_RESTORE
+// request after the handshake. The snapshot payload is OPAQUE to the bridge and the
+// harness: only the app interprets it, so this channel stays product-agnostic.
+export const APP_SNAPSHOT_EVENT = 'app:snapshot'
+export const APP_SNAPSHOT_RESTORE_VERB = 'app:restore'
+
+// App → harness: an unsolicited notification (e.g. an app snapshot). Fire-and-forget.
 export const eventMessageSchema = z.object({
   ...envelopeBaseShape,
   kind: z.literal('event'),

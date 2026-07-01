@@ -11,6 +11,8 @@ import {
   duplicateInputSchema,
   editInputSchema,
   EXCALIDRAW_DETAIL_LEVELS,
+  excalidrawLibraryImportSchema,
+  excalidrawSnapshotSchema,
   groupInputSchema,
   inspectInputSchema,
   orderInputSchema,
@@ -500,6 +502,31 @@ const surveyResultSchema = z
     ...pageResultShape
   })
   .strict()
+
+const snapshotRestoreResultSchema = z
+  .object({ ok: z.literal(true), restored: z.number().int().nonnegative() })
+  .strict()
+
+// Contract for the reserved `app:restore` system verb (see APP_SNAPSHOT_RESTORE_VERB
+// in app-bridge). It is intentionally NOT part of excalidrawVerbContracts / the
+// model-facing verb set: the harness calls it on reload to replay a persisted scene,
+// not the model. Validating the input here version-guards the snapshot at the wire.
+export const excalidrawSnapshotRestoreContract = {
+  inputSchema: excalidrawSnapshotSchema,
+  resultSchema: snapshotRestoreResultSchema
+}
+
+const libraryImportResultSchema = z
+  .object({ ok: z.literal(true), imported: z.number().int().nonnegative() })
+  .strict()
+
+// Contract for the reserved `excalidraw:import-library` system verb. Like the restore
+// contract it is intentionally NOT part of excalidrawVerbContracts / the model-facing
+// verb set: the canvas shell calls it from its library relay, not the model.
+export const excalidrawLibraryImportContract = {
+  inputSchema: excalidrawLibraryImportSchema,
+  resultSchema: libraryImportResultSchema
+}
 
 export const excalidrawVerbContracts = {
   draw: { inputSchema: drawInputSchema, resultSchema: drawResultSchema },
