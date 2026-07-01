@@ -1,5 +1,5 @@
-import { FloatingWidgetChat } from '@tinytinkerer/app-browser'
-import type { FloatingWidgetChatProps } from '@tinytinkerer/app-browser'
+import { ChatApp } from '@tinytinkerer/app-browser'
+import type { ChatAppProps } from '@tinytinkerer/app-browser'
 import { AppFrame } from './app-frame'
 import type { AppFrameStatus } from './app-frame'
 import type { AppBridgeHandle } from './bridge-handle'
@@ -12,9 +12,10 @@ export type HarnessShellProps = {
   // The shared bridge handle (see createAppBridgeHandle). MUST be stable.
   handle: AppBridgeHandle
   frameTitle: string
-  // FloatingWidgetChat configuration (storageKey, LoadingComponent, viewMode, …).
-  // `stageClassName` is supplied by the harness for the click-through overlay.
-  chat: Omit<FloatingWidgetChatProps, 'stageClassName'>
+  // Shared ChatApp configuration (storageKey, LoadingComponent, …). The harness
+  // pins it to the floating layout (non-morphable) and supplies `stageClassName`
+  // for the click-through overlay.
+  chat: Omit<ChatAppProps, 'stageClassName' | 'mode' | 'morphable' | 'onModeChange'>
   className?: string
   // localStorage key for persisting the embedded app's opaque scene snapshot across
   // reloads. Omit to disable persistence. See AppFrame.persistenceKey.
@@ -50,6 +51,11 @@ export const HarnessShell = ({
       {...(persistenceKey !== undefined ? { persistenceKey } : {})}
       {...(onStatusChange ? { onStatusChange } : {})}
     />
-    <FloatingWidgetChat {...chat} stageClassName="app-harness-chat-overlay" />
+    <ChatApp
+      {...chat}
+      mode="floating"
+      morphable={false}
+      stageClassName="app-harness-chat-overlay"
+    />
   </div>
 )

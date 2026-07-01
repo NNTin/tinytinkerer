@@ -14,35 +14,27 @@ import {
   useSettingsSurfaceController
 } from '../surfaces'
 import { useStickToBottom } from '../use-stick-to-bottom'
+import { surfaceButtonClass } from './surface-button'
 
-export type WidgetChatLoadingComponent = ComponentType<{ error?: string }>
+// The compact-session loading/error view, supplied by the host app so each shell
+// keeps its own boot copy and palette.
+export type ChatLoadingComponent = ComponentType<{ error?: string }>
 
-// Local replacement for ui's <Button> (app-browser cannot depend on ui). Mirrors
-// the small-size button variants the surface uses; callers pass `extra` to size
-// icon-only buttons without class conflicts (we deliberately avoid tailwind-merge).
-const surfaceButtonClass = (variant: 'default' | 'secondary', extra = 'h-9 px-3'): string =>
-  [
-    'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:pointer-events-none disabled:opacity-50',
-    variant === 'secondary'
-      ? 'bg-stone-800 text-stone-100 hover:bg-stone-700'
-      : 'bg-amber-600 text-amber-50 hover:bg-amber-700',
-    extra
-  ].join(' ')
-
-export type WidgetChatSurfaceProps = {
-  // The compact-session loading/error view, supplied by the host app so each
-  // shell keeps its own boot copy and palette.
-  LoadingComponent: WidgetChatLoadingComponent
+export type FloatingChatSurfaceProps = {
+  LoadingComponent: ChatLoadingComponent
   // Whether to draw the rounded framed card around the conversation. Floating
   // shells supply their own glass frame, so they pass `false`.
   framed?: boolean
 }
 
-// The compact chat body shared by every floating widget shell (the widget app and
-// the canvas app's overlay). It is pure composition over the shared chat-surface
-// hooks — no layout/drag/resize concerns live here; that is the floating window's
-// job (see floating-widget-chat.tsx).
-export const WidgetChatSurface = ({ LoadingComponent, framed = true }: WidgetChatSurfaceProps) => {
+// The compact chat body shared by every floating layout (the widget app and the
+// canvas app's overlay). It is pure composition over the shared chat-surface hooks
+// — no layout/drag/resize concerns live here; that is the floating layout's job
+// (see floating-layout.tsx).
+export const FloatingChatSurface = ({
+  LoadingComponent,
+  framed = true
+}: FloatingChatSurfaceProps) => {
   const {
     isBooting,
     initializeError,

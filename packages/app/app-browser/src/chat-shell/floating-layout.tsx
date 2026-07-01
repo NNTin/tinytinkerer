@@ -10,144 +10,42 @@ import {
 import { TINYTINKERER_BRAND_ASSET_URLS } from '@tinytinkerer/brand-assets'
 import { useBrowserShellConfig } from '../hooks'
 import { shellThemeToCssVars } from '../shell-theme'
-import { WidgetChatSurface, type WidgetChatLoadingComponent } from './widget-chat-surface'
+import {
+  clampLayout,
+  loadStandaloneLayout,
+  saveStandaloneLayout,
+  DEFAULT_DIMS,
+  WIDGET_KEYBOARD_STEP,
+  WIDGET_MINIMIZED_SIZE,
+  type WidgetDims,
+  type WidgetLayout
+} from './layout-geometry'
 
 // The floating, movable/resizable chat window shared by the widget app and the
-// canvas app's overlay. It owns ALL the window chrome and the standalone layout
-// state machine (drag/resize/keyboard nudge/minimize/persistence) plus the
-// host-embed (iframe) mode that posts drag/state to the parent. The chat body is
-// the shared WidgetChatSurface; per-app concerns (which view mode, where layout
-// persists, the boot copy) arrive as props — no shell is named here.
+// canvas app's overlay. It owns the window chrome and the standalone layout state
+// machine (drag/resize/keyboard nudge/minimize/persistence). The chat body arrives
+// as `children`; per-app concerns (where layout persists, boot copy) are the
+// caller's — no shell is named here. When `onDock` is provided the shell bar shows
+// a dock button so ChatApp can morph the window into the docked sidebar layout.
 
-const WIDGET_MINIMIZED_SIZE = 64
-const WIDGET_SAFE_MARGIN = 24
-// Keyboard nudge step for moving/resizing the standalone window (C1).
-const WIDGET_KEYBOARD_STEP = 16
-
-const DEFAULT_DIMS = {
-  defaultWidth: 400,
-  defaultHeight: 680,
-  minWidth: 320,
-  minHeight: 420
-}
-
-type WidgetDims = typeof DEFAULT_DIMS
-
-export type FloatingWidgetChatProps = {
-  // Which presentation: a free-floating window on its own page ('standalone') or
-  // an iframe embedded in a host page ('host', which posts drag/state to parent).
-  viewMode: 'host' | 'standalone'
-  // Start minimized (host mode passes the embedder's requested window mode).
-  initialMinimized?: boolean
-  // localStorage key the standalone layout persists under (per app).
+export type FloatingLayoutProps = {
+  // localStorage key the layout persists under (per app).
   storageKey: string
-  // The compact-session loading/error view, supplied by the host app.
-  LoadingComponent: WidgetChatLoadingComponent
+  // Start minimized.
+  initialMinimized?: boolean
   // Window sizing overrides; defaults match the widget's historical sizes.
   defaultWidth?: number
   defaultHeight?: number
   minWidth?: number
   minHeight?: number
-  // Passed through to the chat body's frame.
-  framed?: boolean
   // Extra class on the outer stage — the canvas overlay uses it to make the stage
   // click-through (pointer-events: none) so the whiteboard beneath stays usable
   // while the floating shell (pointer-events: auto) remains interactive.
   stageClassName?: string
-}
-
-type WidgetLayout = {
-  x: number
-  y: number
-  width: number
-  height: number
-  minimized: boolean
-}
-
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), max)
-
-const clampLayout = (layout: WidgetLayout, dims: WidgetDims): WidgetLayout => {
-  const width = clamp(
-    Math.round(layout.width),
-    dims.minWidth,
-    Math.max(dims.minWidth, window.innerWidth - WIDGET_SAFE_MARGIN * 2)
-  )
-  const height = clamp(
-    Math.round(layout.height),
-    dims.minHeight,
-    Math.max(dims.minHeight, window.innerHeight - WIDGET_SAFE_MARGIN * 2)
-  )
-  const boxWidth = layout.minimized ? WIDGET_MINIMIZED_SIZE : width
-  const boxHeight = layout.minimized ? WIDGET_MINIMIZED_SIZE : height
-
-  return {
-    ...layout,
-    width,
-    height,
-    x: clamp(
-      Math.round(layout.x),
-      WIDGET_SAFE_MARGIN,
-      Math.max(WIDGET_SAFE_MARGIN, window.innerWidth - boxWidth - WIDGET_SAFE_MARGIN)
-    ),
-    y: clamp(
-      Math.round(layout.y),
-      WIDGET_SAFE_MARGIN,
-      Math.max(WIDGET_SAFE_MARGIN, window.innerHeight - boxHeight - WIDGET_SAFE_MARGIN)
-    )
-  }
-}
-
-const createDefaultStandaloneLayout = (dims: WidgetDims): WidgetLayout =>
-  clampLayout(
-    {
-      x: Math.round((window.innerWidth - dims.defaultWidth) / 2),
-      y: Math.round(window.innerHeight - dims.defaultHeight - 32),
-      width: dims.defaultWidth,
-      height: dims.defaultHeight,
-      minimized: false
-    },
-    dims
-  )
-
-const loadStandaloneLayout = (storageKey: string, dims: WidgetDims): WidgetLayout => {
-  const stored = window.localStorage.getItem(storageKey)
-  if (!stored) {
-    return createDefaultStandaloneLayout(dims)
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(stored)
-    if (typeof parsed !== 'object' || parsed === null) {
-      return createDefaultStandaloneLayout(dims)
-    }
-    const r = parsed as Record<string, unknown>
-    if (
-      typeof r.x !== 'number' ||
-      typeof r.y !== 'number' ||
-      typeof r.width !== 'number' ||
-      typeof r.height !== 'number'
-    ) {
-      return createDefaultStandaloneLayout(dims)
-    }
-
-    return clampLayout(
-      {
-        x: r.x,
-        y: r.y,
-        width: r.width,
-        height: r.height,
-        minimized: r.minimized === true
-      },
-      dims
-    )
-  } catch {
-    return createDefaultStandaloneLayout(dims)
-  }
-}
-
-const saveStandaloneLayout = (storageKey: string, layout: WidgetLayout): void => {
-  window.localStorage.setItem(storageKey, JSON.stringify(layout))
+  // When set, the shell bar shows a "dock" button that morphs into the sidebar.
+  onDock?: () => void
+  // The chat body (e.g. FloatingChatSurface).
+  children: ReactNode
 }
 
 const WidgetLauncher = ({ onRestore }: { onRestore: () => void }) => (
@@ -166,10 +64,12 @@ const WidgetLauncher = ({ onRestore }: { onRestore: () => void }) => (
 
 const WidgetShellBar = ({
   onMinimize,
+  onDock,
   onMovePointerDown,
   onMoveKeyDown
 }: {
   onMinimize: () => void
+  onDock?: () => void
   onMovePointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void
   onMoveKeyDown?: (event: ReactKeyboardEvent<HTMLButtonElement>) => void
 }) => (
@@ -182,6 +82,17 @@ const WidgetShellBar = ({
       onPointerDown={onMovePointerDown}
       {...(onMoveKeyDown ? { onKeyDown: onMoveKeyDown } : {})}
     />
+    {onDock ? (
+      <button
+        type="button"
+        className="widget-shell-dock"
+        aria-label="Dock to sidebar"
+        title="Dock to sidebar"
+        onClick={onDock}
+      >
+        <span aria-hidden="true" />
+      </button>
+    ) : null}
     <button
       type="button"
       className="widget-shell-minimize"
@@ -199,6 +110,7 @@ const WidgetWindow = ({
   dragging,
   onRestore,
   onMinimize,
+  onDock,
   onMovePointerDown,
   onMoveKeyDown,
   children,
@@ -210,6 +122,7 @@ const WidgetWindow = ({
   dragging: boolean
   onRestore: () => void
   onMinimize: () => void
+  onDock?: () => void
   onMovePointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void
   onMoveKeyDown?: (event: ReactKeyboardEvent<HTMLButtonElement>) => void
   children: ReactNode
@@ -230,6 +143,7 @@ const WidgetWindow = ({
         <>
           <WidgetShellBar
             onMinimize={onMinimize}
+            {...(onDock ? { onDock } : {})}
             onMovePointerDown={onMovePointerDown}
             {...(onMoveKeyDown ? { onMoveKeyDown } : {})}
           />
@@ -241,18 +155,17 @@ const WidgetWindow = ({
   </div>
 )
 
-export const FloatingWidgetChat = ({
-  viewMode,
-  initialMinimized = false,
+export const FloatingLayout = ({
   storageKey,
-  LoadingComponent,
+  initialMinimized = false,
   defaultWidth,
   defaultHeight,
   minWidth,
   minHeight,
-  framed = false,
-  stageClassName
-}: FloatingWidgetChatProps) => {
+  stageClassName,
+  onDock,
+  children
+}: FloatingLayoutProps) => {
   const dims: WidgetDims = {
     defaultWidth: defaultWidth ?? DEFAULT_DIMS.defaultWidth,
     defaultHeight: defaultHeight ?? DEFAULT_DIMS.defaultHeight,
@@ -260,8 +173,9 @@ export const FloatingWidgetChat = ({
     minHeight: minHeight ?? DEFAULT_DIMS.minHeight
   }
   const config = useBrowserShellConfig()
-  const [layout, setLayout] = useState<WidgetLayout>(() => loadStandaloneLayout(storageKey, dims))
-  const [hostMinimized, setHostMinimized] = useState(initialMinimized)
+  const [layout, setLayout] = useState<WidgetLayout>(() =>
+    clampLayout({ ...loadStandaloneLayout(storageKey, dims), minimized: initialMinimized }, dims)
+  )
   const [isDragging, setIsDragging] = useState(false)
   const [liveMessage, setLiveMessage] = useState('')
   const dragRef = useRef<{ startX: number; startY: number; startLayout: WidgetLayout } | null>(null)
@@ -269,18 +183,17 @@ export const FloatingWidgetChat = ({
     null
   )
 
-  const isStandalone = viewMode === 'standalone'
-  const isMinimized = isStandalone ? layout.minimized : hostMinimized
+  const isMinimized = layout.minimized
   const themeStyle = shellThemeToCssVars(config.theme)
 
   useEffect(() => {
-    document.body.dataset.widgetViewMode = viewMode
+    document.body.dataset.widgetViewMode = 'standalone'
     return () => {
       delete document.body.dataset.widgetViewMode
     }
-  }, [viewMode])
+  }, [])
 
-  const handleStandaloneMovePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handleMovePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     dragRef.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -346,88 +259,11 @@ export const FloatingWidgetChat = ({
     }
   }
 
-  const handleHostMovePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (window.parent === window) {
-      return
-    }
-
-    setIsDragging(true)
-
-    const target = event.currentTarget
-    target.setPointerCapture(event.pointerId)
-
-    const postDragEvent = (
-      phase: 'start' | 'move' | 'end',
-      clientX: number,
-      clientY: number,
-      screenX: number,
-      screenY: number
-    ) => {
-      window.parent.postMessage(
-        {
-          type: 'tinytinkerer.widget.drag',
-          phase,
-          clientX,
-          clientY,
-          screenX,
-          screenY
-        },
-        window.location.origin
-      )
-    }
-
-    postDragEvent('start', event.clientX, event.clientY, event.screenX, event.screenY)
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      postDragEvent(
-        'move',
-        moveEvent.clientX,
-        moveEvent.clientY,
-        moveEvent.screenX,
-        moveEvent.screenY
-      )
-    }
-
-    const handlePointerEnd = (endEvent: PointerEvent) => {
-      setIsDragging(false)
-      postDragEvent('end', endEvent.clientX, endEvent.clientY, endEvent.screenX, endEvent.screenY)
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', handlePointerEnd)
-      window.removeEventListener('pointercancel', handlePointerEnd)
-    }
-
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', handlePointerEnd)
-    window.addEventListener('pointercancel', handlePointerEnd)
-  }
-
   useEffect(() => {
-    if (!isStandalone) {
-      return
-    }
-
     saveStandaloneLayout(storageKey, layout)
-  }, [isStandalone, layout, storageKey])
+  }, [layout, storageKey])
 
   useEffect(() => {
-    if (isStandalone || window.parent === window) {
-      return
-    }
-
-    window.parent.postMessage(
-      {
-        type: 'tinytinkerer.widget.state',
-        mode: hostMinimized ? 'minimized' : 'expanded'
-      },
-      window.location.origin
-    )
-  }, [hostMinimized, isStandalone])
-
-  useEffect(() => {
-    if (!isStandalone) {
-      return
-    }
-
     const handlePointerMove = (event: PointerEvent) => {
       if (dragRef.current) {
         const { startX, startY, startLayout } = dragRef.current
@@ -479,27 +315,16 @@ export const FloatingWidgetChat = ({
       window.removeEventListener('pointercancel', handlePointerUp)
       window.removeEventListener('resize', handleResize)
     }
-    // Re-bind only when the mode flips; the handlers close over the current
-    // `dims`/`layout` via setLayout's updater, matching the widget's original
-    // single-bind behavior.
-  }, [isStandalone])
+    // Bind once; the handlers close over the current `dims`/`layout` via setLayout's
+    // updater, matching the widget's original single-bind behavior.
+  }, [])
 
   const handleMinimize = () => {
-    if (isStandalone) {
-      setLayout((currentLayout) => clampLayout({ ...currentLayout, minimized: true }, dims))
-      return
-    }
-
-    setHostMinimized(true)
+    setLayout((currentLayout) => clampLayout({ ...currentLayout, minimized: true }, dims))
   }
 
   const handleRestore = () => {
-    if (isStandalone) {
-      setLayout((currentLayout) => clampLayout({ ...currentLayout, minimized: false }, dims))
-      return
-    }
-
-    setHostMinimized(false)
+    setLayout((currentLayout) => clampLayout({ ...currentLayout, minimized: false }, dims))
   }
 
   // Visually-hidden live region announcing keyboard move/resize (C1).
@@ -509,35 +334,18 @@ export const FloatingWidgetChat = ({
     </span>
   )
 
-  const stageClass = (base: string) => [base, stageClassName].filter(Boolean).join(' ')
-
-  if (!isStandalone) {
-    return (
-      <div className={stageClass('widget-stage widget-stage-host')} style={themeStyle}>
-        {liveRegion}
-        <WidgetWindow
-          minimized={isMinimized}
-          dragging={isDragging}
-          onRestore={handleRestore}
-          onMinimize={handleMinimize}
-          onMovePointerDown={handleHostMovePointerDown}
-          className="widget-embedded-shell"
-        >
-          <WidgetChatSurface LoadingComponent={LoadingComponent} framed={framed} />
-        </WidgetWindow>
-      </div>
-    )
-  }
+  const stageClass = ['widget-stage', stageClassName].filter(Boolean).join(' ')
 
   return (
-    <div className={stageClass('widget-stage')} style={themeStyle}>
+    <div className={stageClass} style={themeStyle}>
       {liveRegion}
       <WidgetWindow
         minimized={isMinimized}
         dragging={isDragging}
         onRestore={handleRestore}
         onMinimize={handleMinimize}
-        onMovePointerDown={handleStandaloneMovePointerDown}
+        {...(onDock ? { onDock } : {})}
+        onMovePointerDown={handleMovePointerDown}
         onMoveKeyDown={handleGripKeyDown}
         style={{
           left: layout.x,
@@ -562,7 +370,7 @@ export const FloatingWidgetChat = ({
           />
         }
       >
-        <WidgetChatSurface LoadingComponent={LoadingComponent} framed={framed} />
+        {children}
       </WidgetWindow>
     </div>
   )

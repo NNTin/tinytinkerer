@@ -1,16 +1,16 @@
 import { render } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// WidgetPage is now a thin shell over the shared FloatingWidgetChat (whose
-// behavior — minimize/restore, host messaging, send/stop/settings — is tested in
-// app-browser's floating-widget-chat test). Here we only assert the widget wires
-// the URL-derived view/window mode and its own boot copy + layout key correctly.
+// WidgetPage is now a thin shell over the shared ChatApp (whose behavior — layouts,
+// morph, send/stop/settings — is tested in app-browser). Here we only assert the
+// widget wires the floating layout, its boot copy + layout key, and the URL-derived
+// window mode correctly.
 const captured = vi.hoisted(() => ({ props: undefined as Record<string, unknown> | undefined }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
-  FloatingWidgetChat: (props: Record<string, unknown>) => {
+  ChatApp: (props: Record<string, unknown>) => {
     captured.props = props
-    return <div data-floating-widget-chat="true" />
+    return <div data-chat-app="true" />
   }
 }))
 
@@ -22,21 +22,21 @@ beforeEach(() => {
 })
 
 describe('WidgetPage', () => {
-  it('renders the shared floating chat in standalone mode by default', () => {
+  it('renders the shared chat in the floating layout by default', () => {
     render(<WidgetPage />)
 
-    expect(captured.props?.viewMode).toBe('standalone')
+    expect(captured.props?.mode).toBe('floating')
     expect(captured.props?.initialMinimized).toBe(false)
     expect(captured.props?.storageKey).toBe('tinytinkerer:widget-layout:v1')
     expect(captured.props?.LoadingComponent).toBeTypeOf('function')
   })
 
-  it('selects host view mode and the minimized window mode from the URL', () => {
-    window.history.replaceState({}, '', '/widget/?view=host&mode=minimized')
+  it('starts minimized when the URL requests the minimized window mode', () => {
+    window.history.replaceState({}, '', '/widget/?mode=minimized')
 
     render(<WidgetPage />)
 
-    expect(captured.props?.viewMode).toBe('host')
+    expect(captured.props?.mode).toBe('floating')
     expect(captured.props?.initialMinimized).toBe(true)
   })
 })

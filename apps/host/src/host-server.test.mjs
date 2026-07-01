@@ -125,14 +125,6 @@ const createTempHostRoot = async (backendPort) => {
     await writeFile(join(appRoot, 'src/main.js'), `console.log('${app.name}')\n`)
   }
 
-  await mkdir(join(rootDir, 'apps/host/public/__host'), { recursive: true })
-  await writeFile(
-    join(rootDir, 'apps/host/public/index.html'),
-    '<!doctype html><html><head><title>host</title></head><body>host</body></html>\n'
-  )
-  await writeFile(join(rootDir, 'apps/host/public/__host/compositor.css'), 'body{}\n')
-  await writeFile(join(rootDir, 'apps/host/public/__host/compositor.js'), 'console.log("host")\n')
-
   return rootDir
 }
 
@@ -170,7 +162,8 @@ describe('host server', () => {
     expect(new Set(HOSTED_APP_SPECS.map(({ label }) => label)).size).toBe(HOSTED_APP_SPECS.length)
     for (const { slug, label, mountPath } of HOSTED_APP_SPECS) {
       expect(label.trim()).not.toBe('')
-      expect(mountPath).toBe(`/${slug}/`)
+      // The root composition app mounts at '/'; every other shell at '/<slug>/'.
+      expect(mountPath).toBe(slug === 'host' ? '/' : `/${slug}/`)
     }
   })
 
@@ -179,7 +172,7 @@ describe('host server', () => {
     activeClosers.add(() => sharedHostServer?.close() ?? Promise.resolve())
   })
 
-  it('serves the composite host page from the root path', async () => {
+  it('serves the single-document root app (no iframes) from the root path', async () => {
     if (!sharedHostServer) {
       throw new Error('Expected the shared host server to be available.')
     }
@@ -188,11 +181,11 @@ describe('host server', () => {
     const body = await response.text()
 
     expect(response.status).toBe(200)
-    expect(body).toContain('<title>tinytinkerer host</title>')
-    expect(body).toContain('src="./web/"')
-    expect(body).toContain('src="./mobile/"')
-    expect(body).toContain('src="./widget/?view=host"')
-    expect(body).toContain('href="./canvas/"')
+    // The root is now a real Vite React app at base '/', not a static iframe page.
+    expect(body).toContain('<div id="root"')
+    expect(body).toContain('src="/@vite/client"')
+    expect(body).toContain('src="/src/main.tsx"')
+    expect(body).not.toContain('<iframe')
   })
 
   it('redirects non-suffixed app paths', async () => {
@@ -259,8 +252,14 @@ describe('host server', () => {
     expect(excalidrawBody).toContain('src="/canvas/@vite/client"')
     expect(excalidrawBody).toContain('src="./main.tsx"')
 
+    // The sandboxed Excalidraw sub-app is only reachable under /canvas/. A
+    // top-level /excalidraw-app/ no longer 404s (the root app is the catch-all '/'
+    // mount) but must fall through to the root composition, never the sub-app.
     const standaloneResponse = await fetch(`${sharedHostServer.url}/excalidraw-app/`)
-    expect(standaloneResponse.status).toBe(404)
+    const standaloneBody = await standaloneResponse.text()
+    expect(standaloneResponse.status).toBe(200)
+    expect(standaloneBody).toContain('<div id="root"')
+    expect(standaloneBody).not.toContain('src="./main.tsx"')
   })
 
   it('serves the mobile manifest through the unified host', async () => {

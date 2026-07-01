@@ -111,10 +111,15 @@ describe('web bundle regression guard', () => {
     expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(65)
   })
 
-  it('keeps the lazy chat route chunk under 40 kB', () => {
+  it('keeps the lazy chat route chunk under 55 kB', () => {
+    // Budget raised from 40 kB for #325: the chat route now imports the shared
+    // ChatApp, which carries BOTH layout shells (Floating + Sidebar) and their
+    // bodies so the widget↔sidebar morph happens in-place without a second load.
+    // The route is still lazy (split from the entry); this ceiling keeps that
+    // splitting honest while allowing the one-time merged-surface cost.
     const chunk = chunks.find((entry) => entry.fileName.includes('chat-page'))
     expect(chunk, 'No chat route chunk found in build output').toBeDefined()
-    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(40)
+    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(55)
   })
 
   it('keeps every non-vendor JS chunk under 120 kB', () => {

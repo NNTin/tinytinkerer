@@ -63,10 +63,13 @@ describe('mobile bundle regression guard', () => {
     expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(65)
   })
 
-  it('keeps the lazy mobile route chunk under 40 kB', () => {
+  it('keeps the lazy mobile route chunk under 55 kB', () => {
+    // Budget raised from 40 kB for #325: the route now imports the shared ChatApp,
+    // which carries both layout shells (Floating + Sidebar) + bodies so the shared
+    // surface is identical across shells. Still lazy (split from the entry).
     const chunk = chunks.find((entry) => entry.fileName.includes('mobile-page'))
     expect(chunk, 'No mobile route chunk found in build output').toBeDefined()
-    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(40)
+    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(55)
   })
 
   it('keeps every non-vendor JS chunk under 120 kB', () => {

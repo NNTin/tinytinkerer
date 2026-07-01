@@ -1,11 +1,4 @@
 {
-  "extends": "../../config/tsconfig.base.json",
-  "compilerOptions": {
-    "allowJs": true,
-    "checkJs": true,
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "types": ["node", "vitest/globals"]
-  },
-  "include": ["src/**/*.mjs"]
+  "files": [],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
 }
