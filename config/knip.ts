@@ -26,9 +26,7 @@ const config: KnipConfig = {
   },
   ignore: [
     // Agent skill tools are invoked by external tooling, not imported by the app.
-    '.agent/**',
-    // Static assets the host shell loads at runtime, not via module imports.
-    'apps/host/public/__host/**'
+    '.agent/**'
   ],
   // Dependencies that are present for tooling/typing reasons and are not
   // statically importable, so knip cannot trace them. Baselined for the

@@ -182,12 +182,6 @@ importers:
       '@tailwindcss/vite':
         specifier: 4.3.0
         version: 4.3.0(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.3)(yaml@2.9.0))
-      '@testing-library/jest-dom':
-        specifier: 6.9.1
-        version: 6.9.1
-      '@testing-library/react':
-        specifier: 16.3.2
-        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@types/react':
         specifier: 19.2.15
         version: 19.2.15
@@ -197,9 +191,6 @@ importers:
       '@vitejs/plugin-react':
         specifier: 6.0.2
         version: 6.0.2(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.3)(yaml@2.9.0))
-      jsdom:
-        specifier: 29.1.1
-        version: 29.1.1
       tailwindcss:
         specifier: 4.3.0
         version: 4.3.0

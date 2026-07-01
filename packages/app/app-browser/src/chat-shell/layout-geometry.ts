@@ -5,7 +5,7 @@
 // and, hand-rolled a second time, in the host compositor's vanilla JS.
 
 export const WIDGET_MINIMIZED_SIZE = 64
-export const WIDGET_SAFE_MARGIN = 24
+const WIDGET_SAFE_MARGIN = 24
 // Keyboard nudge step for moving/resizing the standalone floating window (C1).
 export const WIDGET_KEYBOARD_STEP = 16
 
@@ -26,7 +26,7 @@ export type WidgetLayout = {
   minimized: boolean
 }
 
-export const clamp = (value: number, min: number, max: number): number =>
+const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max)
 
 export const clampLayout = (layout: WidgetLayout, dims: WidgetDims): WidgetLayout => {
@@ -60,7 +60,7 @@ export const clampLayout = (layout: WidgetLayout, dims: WidgetDims): WidgetLayou
   }
 }
 
-export const createDefaultStandaloneLayout = (dims: WidgetDims): WidgetLayout =>
+const createDefaultStandaloneLayout = (dims: WidgetDims): WidgetLayout =>
   clampLayout(
     {
       x: Math.round((window.innerWidth - dims.defaultWidth) / 2),
