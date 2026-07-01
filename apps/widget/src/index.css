@@ -39,11 +39,6 @@ body {
   color: var(--widget-text);
 }
 
-body[data-widget-view-mode='host'] {
-  min-height: 100%;
-  background: transparent;
-}
-
 * {
   box-sizing: border-box;
 }

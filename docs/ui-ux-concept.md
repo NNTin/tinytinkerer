@@ -21,10 +21,10 @@ flowchart LR
 
 `@tinytinkerer/host` is the composition layer for local development and deployment output.
 
-- `/` is a multi-surface compositor workspace.
+- `/` is a single-document root React app that composes the shells' chat surfaces as panes over one shared session.
 - `/web/`, `/mobile/`, and `/widget/` are the real shells.
-- The root compositor is not a fourth product shell.
-- Host may own workspace chrome, iframe composition, and floating-window behavior for the dev workspace.
+- The root app is a real React app but not a fourth product shell.
+- Host may own workspace chrome, in-process `ChatApp` pane composition, and floating/docked layout behavior for the root workspace.
 - Host must not become the home for shared feature logic.
 
 ## Purpose
@@ -134,7 +134,7 @@ The following are expected to stay shell-local unless a stronger shared contract
 - page layout
 - route structure
 - mobile install UX
-- widget window chrome and host embedding behavior
+- widget window chrome and external embedding behavior
 - shell-specific copy
 - app-local panel arrangement
 

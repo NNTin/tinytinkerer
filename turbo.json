@@ -22,7 +22,7 @@
         "@tinytinkerer/mobile#build",
         "@tinytinkerer/canvas#build"
       ],
-      "outputs": ["dist/**"],
+      "outputs": ["dist/**", "dist-root/**"],
       "env": [
         "TINYTINKERER_SKIP_BRAND_ASSET_GENERATION",
         "TINYTINKERER_DEPLOY_BASE",

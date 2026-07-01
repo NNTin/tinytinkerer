@@ -4,11 +4,10 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// FloatingWidgetChat + WidgetChatSurface compose the shared chat-surface hooks and
-// presentational pieces. We mock those sibling source modules so the test exercises
-// the floating window chrome (minimize/restore, host-mode messaging) and the
-// surface wiring (send/stop/settings) without a live app or runtime. The hooks'
-// own logic is unit-tested in surfaces/web-speech tests.
+// FloatingLayout owns the floating window chrome (drag/minimize/restore/dock) and
+// renders the shared FloatingChatSurface body. We mock the sibling source modules
+// so the test exercises the window chrome + surface wiring (send/stop/settings)
+// without a live app or runtime. The hooks' own logic is unit-tested elsewhere.
 
 const mockAuthState = vi.hoisted(() => ({ token: null as string | null }))
 
@@ -151,17 +150,19 @@ vi.mock('../src/shell-theme.js', () => ({
   shellThemeToCssVars: () => ({})
 }))
 
-import { FloatingWidgetChat } from '../src/widget-chat/floating-widget-chat.js'
+import { FloatingChatSurface } from '../src/chat-shell/floating-chat-surface.js'
+import { FloatingLayout } from '../src/chat-shell/floating-layout.js'
 
 const Loading = ({ error }: { error?: string }) => <div data-loading="true">{error}</div>
 
-const renderStandalone = () =>
+const renderStandalone = (props?: { onDock?: () => void }) =>
   render(
-    <FloatingWidgetChat
-      viewMode="standalone"
+    <FloatingLayout
       storageKey="test:widget-layout"
-      LoadingComponent={Loading}
-    />
+      {...(props?.onDock ? { onDock: props.onDock } : {})}
+    >
+      <FloatingChatSurface LoadingComponent={Loading} framed={false} />
+    </FloatingLayout>
   )
 
 beforeAll(() => {
@@ -185,7 +186,7 @@ beforeEach(() => {
   mockSpeechState.error = null
 })
 
-describe('FloatingWidgetChat', () => {
+describe('FloatingLayout', () => {
   it('shows conversation-first layout with footer settings and sign-in actions', () => {
     renderStandalone()
 
@@ -282,26 +283,21 @@ describe('FloatingWidgetChat', () => {
     expect(screen.getByRole('button', { name: 'Minimize widget' })).toBeInTheDocument()
   })
 
-  it('shows the shared minimize control in host mode and posts the minimized state', () => {
-    const postMessageSpy = vi.fn()
-    Object.defineProperty(window, 'parent', {
-      value: { postMessage: postMessageSpy },
-      configurable: true
-    })
-
-    render(
-      <FloatingWidgetChat
-        viewMode="host"
-        storageKey="test:widget-layout"
-        LoadingComponent={Loading}
-      />
+  it('shows a dock button only when onDock is provided and invokes it', () => {
+    const onDock = vi.fn()
+    const { rerender } = render(
+      <FloatingLayout storageKey="test:widget-layout">
+        <FloatingChatSurface LoadingComponent={Loading} framed={false} />
+      </FloatingLayout>
     )
+    expect(screen.queryByRole('button', { name: 'Dock to sidebar' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Minimize widget' }))
-
-    expect(postMessageSpy).toHaveBeenCalledWith(
-      { type: 'tinytinkerer.widget.state', mode: 'minimized' },
-      window.location.origin
+    rerender(
+      <FloatingLayout storageKey="test:widget-layout" onDock={onDock}>
+        <FloatingChatSurface LoadingComponent={Loading} framed={false} />
+      </FloatingLayout>
     )
+    fireEvent.click(screen.getByRole('button', { name: 'Dock to sidebar' }))
+    expect(onDock).toHaveBeenCalledTimes(1)
   })
 })

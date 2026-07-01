@@ -7,7 +7,12 @@ export const HOSTED_APP_SPECS = Object.freeze([
   { slug: 'canvas', label: 'Canvas', mountPath: '/canvas/' },
   { slug: 'mobile', label: 'Mobile', mountPath: '/mobile/' },
   { slug: 'widget', label: 'Widget', mountPath: '/widget/' },
-  { slug: 'web', label: 'Web', mountPath: '/web/' }
+  { slug: 'web', label: 'Web', mountPath: '/web/' },
+  // The root composition app (single document, all three shells over one shared
+  // App). Its mountPath '/' matches every pathname in findTargetApp, so it MUST
+  // stay last; the /<slug>/ prefixes above are matched first. It is the root Vite
+  // app under apps/host itself, not a separate apps/<slug> shell.
+  { slug: 'host', label: 'Root', mountPath: '/' }
 ])
 
 /**

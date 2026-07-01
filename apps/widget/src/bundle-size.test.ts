@@ -55,10 +55,13 @@ describe('widget bundle regression guard', () => {
     expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(65)
   })
 
-  it('keeps the lazy widget route chunk under 40 kB', () => {
+  it('keeps the lazy widget route chunk under 55 kB', () => {
+    // Budget raised from 40 kB for #325: the widget route now imports the shared
+    // ChatApp (both layout shells + bodies) instead of the floating-only surface,
+    // so the widget can morph into the docked sidebar in-place. Still lazy.
     const chunk = chunks.find((entry) => entry.fileName.includes('widget-page'))
     expect(chunk, 'No widget route chunk found in build output').toBeDefined()
-    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(40)
+    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(55)
   })
 
   it('keeps every non-vendor JS chunk under 120 kB', () => {

@@ -16,12 +16,18 @@ const deployBase = process.env.TINYTINKERER_DEPLOY_BASE?.replace(/\/+$/, '')
 const testReportDir = process.env.TINYTINKERER_TEST_REPORT_DIR?.trim()
 
 const hostDistDir = join(workspaceRoot, 'apps/host/dist')
-const hostPublicDir = join(workspaceRoot, 'apps/host/public')
+// The root composition app builds to apps/host/dist-root (base '/'); it becomes the
+// site root. Kept separate from dist (the composed output) so the two never collide.
+const hostRootDistDir = join(workspaceRoot, 'apps/host/dist-root')
 await rm(hostDistDir, { recursive: true, force: true })
 await mkdir(hostDistDir, { recursive: true })
 
-await cp(hostPublicDir, hostDistDir, { recursive: true })
+await cp(hostRootDistDir, hostDistDir, { recursive: true })
 for (const { slug } of HOSTED_APP_SPECS) {
+  // `host` is the root app already copied above; the others mount under /<slug>/.
+  if (slug === 'host') {
+    continue
+  }
   const target = join(hostDistDir, slug)
   await mkdir(target, { recursive: true })
   await cp(join(workspaceRoot, 'apps', slug, 'dist'), target, { recursive: true })

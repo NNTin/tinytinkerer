@@ -2,6 +2,9 @@ node_modules
 .pnpm-store
 .turbo
 dist
+# The root composition app (apps/host) builds here before build-pages composes it
+# into apps/host/dist alongside the /<slug>/ shells. Build artifact, never versioned.
+dist-root
 coverage
 # Allure test-report inputs/outputs (issue #254): per-package raw results from the
 # allure-vitest/allure-playwright reporters, the consolidated vitest results, and the
