@@ -73,7 +73,7 @@ flowchart TB
   model[Chat model]
 
   subgraph shell["apps/canvas — parent window"]
-    chat["FloatingWidgetChat<br/>from app-browser"]
+    chat["ChatApp / FloatingChatSurface<br/>from app-browser"]
     tools["draw / search / inspect / read / edit / clear<br/>group / duplicate / delete / align<br/>distribute / stack / order / transform<br/>bind / audit"]
     handle["AppBridgeHandle"]
     client["app-bridge client"]
@@ -106,7 +106,7 @@ flowchart TB
 | `packages/app/excalidraw-app`         | Excalidraw iframe implementation            | Excalidraw component/API, protocol contracts, bridge server              | Chat runtime, canvas routing, model provider                      |
 | `packages/app/app-harness`            | Generic iframe/chat composition             | `AppFrame`, bridge client, stable bridge handle, verb-to-tool adaptation | Excalidraw-specific behavior or schemas                           |
 | `apps/canvas`                         | Deployable Excalidraw shell and build owner | Tool descriptions, protocol metadata, iframe URL, shell routing          | Excalidraw domain behavior in the parent window                   |
-| `apps/widget`                         | Deployable chat-only shell                  | Shared chat UI and widget URL modes                                      | App bridge, Excalidraw protocol, iframe app                       |
+| `apps/widget`                         | Deployable chat-only shell                  | Shared chat UI and widget window mode (`?mode=minimized`)                | App bridge, Excalidraw protocol, iframe app                       |
 
 These boundaries are intentional. For example:
 
@@ -590,9 +590,10 @@ holding a stale bridge client.
 - the stable bridge handle; and
 - chat configuration.
 
-`HarnessShell` places `AppFrame` as the stage layer and
-`FloatingWidgetChat` as a click-through overlay. The whiteboard remains directly
-interactive while chat is visible.
+`HarnessShell` places `AppFrame` as the stage layer and the shared `ChatApp` —
+pinned to the floating layout (`morphable=false`), rendering `FloatingChatSurface`
+— as a click-through overlay. The whiteboard remains directly interactive while
+chat is visible.
 
 ### Two build graphs
 
@@ -623,7 +624,10 @@ parent-window application graph. Bundle regression tests enforce that separation
 chat behavior and which parts exist only for app hosting.
 
 Both widget and canvas call `createBrowserShellRoot` from `app-browser`, use hash
-routing, provide a boot screen, and ultimately render `FloatingWidgetChat`.
+routing, provide a boot screen, and ultimately render the shared `ChatApp`
+(`FloatingChatSurface`). The widget endpoint is morphable — its floating window
+can dock into the sidebar layout and back in place — while canvas pins the
+floating layout (`morphable=false`).
 
 The difference is that widget passes no `appTools` and renders the chat surface
 directly:
@@ -633,7 +637,7 @@ flowchart LR
   subgraph widget["apps/widget"]
     widgetMain["createBrowserShellRoot"]
     widgetPage["WidgetPage"]
-    widgetChat["FloatingWidgetChat"]
+    widgetChat["ChatApp (FloatingChatSurface)"]
     widgetMain --> widgetPage --> widgetChat
   end
 
@@ -641,7 +645,7 @@ flowchart LR
     canvasMain["createBrowserShellRoot<br/>with appTools"]
     canvasPage["CanvasPage"]
     harnessShell["HarnessShell"]
-    canvasChat["FloatingWidgetChat"]
+    canvasChat["ChatApp (FloatingChatSurface)"]
     appFrame["AppFrame"]
     canvasMain --> canvasPage --> harnessShell
     harnessShell --> canvasChat
