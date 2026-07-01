@@ -76,7 +76,7 @@ test.describe('canvas Excalidraw features (#317)', () => {
     const { frame } = await openCanvas(page)
     // Stub the external library site so the popup loads instantly and hermetically.
     await context.route(
-      (url) => url.host.endsWith('libraries.excalidraw.com'),
+      (url) => url.host === 'libraries.excalidraw.com',
       (route) =>
         route.fulfill({
           status: 200,
