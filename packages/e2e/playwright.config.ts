@@ -34,6 +34,7 @@ const requirePort = (name: string): number => {
 const webPort = requirePort('E2E_PORT')
 const widgetPort = requirePort('E2E_PORT_WIDGET')
 const mobilePort = requirePort('E2E_PORT_MOBILE')
+const canvasPort = requirePort('E2E_PORT_CANVAS')
 
 // Bail-fast budget. A single root cause typically reds many tests at once, and with
 // `retries: 1` each failure runs twice — so a fully-reddened shard burns CI minutes
@@ -65,6 +66,7 @@ const resolveMaxFailures = (): number => {
 const baseURL = `http://localhost:${webPort}/web/`
 const widgetURL = `http://localhost:${widgetPort}/widget/`
 const mobileURL = `http://localhost:${mobilePort}/mobile/`
+const canvasURL = `http://localhost:${canvasPort}/canvas/`
 
 // The app under test is the standalone web shell built for production (so the
 // minified SANDBOX_SRCDOC + worker bootstrap are exercised, not just the dev
@@ -164,14 +166,14 @@ export default defineConfig({
       use: { ...devices['Desktop Safari'] }
     }
   ],
-  // Serves the prebuilt dist of all THREE shells, each from its own `vite preview`
+  // Serves the prebuilt dist of all FOUR shells, each from its own `vite preview`
   // on its own port (its own origin). Every shell must be built first (the generate:*
   // steps, then `turbo run build` for @tinytinkerer/web, @tinytinkerer/widget,
-  // @tinytinkerer/mobile); CI and the README do this before invoking the suite.
-  // `vite preview` is fast since it only serves static files, so the 120s window is
-  // generous headroom. reuseExistingServer is only enabled when the package wrapper
-  // generated the local random ports; in CI, or when a caller pins ports, always
-  // start fresh so stale output cannot be served silently.
+  // @tinytinkerer/mobile, @tinytinkerer/canvas); CI and the README do this before
+  // invoking the suite. `vite preview` is fast since it only serves static files, so
+  // the 120s window is generous headroom. reuseExistingServer is only enabled when the
+  // package wrapper generated the local random ports; in CI, or when a caller pins
+  // ports, always start fresh so stale output cannot be served silently.
   webServer: [
     {
       command: `pnpm --filter @tinytinkerer/web exec vite preview --port ${webPort} --strictPort`,
@@ -192,6 +194,17 @@ export default defineConfig({
     {
       command: `pnpm --filter @tinytinkerer/mobile exec vite preview --port ${mobilePort} --strictPort`,
       url: mobileURL,
+      reuseExistingServer: !process.env.CI && process.env.E2E_PORT_GENERATED === '1',
+      timeout: 120_000,
+      stdout: 'pipe',
+      stderr: 'pipe'
+    },
+    {
+      // The canvas shell hosts the sandboxed Excalidraw iframe. Its `vite preview` sends
+      // Access-Control-Allow-Origin (apps/canvas/vite.config.ts preview.headers) so the
+      // opaque-origin iframe can load its ES-module assets, matching production.
+      command: `pnpm --filter @tinytinkerer/canvas exec vite preview --port ${canvasPort} --strictPort`,
+      url: canvasURL,
       reuseExistingServer: !process.env.CI && process.env.E2E_PORT_GENERATED === '1',
       timeout: 120_000,
       stdout: 'pipe',
