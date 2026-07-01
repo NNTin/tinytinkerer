@@ -139,13 +139,92 @@ export const openCanvas = async (
   return { frame: page.frameLocator(CANVAS_FRAME), iframe, box }
 }
 
+// A minimal view of a persisted Excalidraw element — enough for the geometry the
+// line-alignment spec inspects. `points` is present on linear elements (line/arrow).
+export type SnapshotElement = {
+  type?: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  points?: Array<[number, number]>
+}
+
 export const readSnapshot = (
   page: Page
-): Promise<{ elements?: unknown[]; libraryItems?: unknown[] } | null> =>
+): Promise<{ elements?: SnapshotElement[]; libraryItems?: unknown[] } | null> =>
   page.evaluate((key) => {
     const raw = localStorage.getItem(key)
-    return raw ? (JSON.parse(raw) as { elements?: unknown[]; libraryItems?: unknown[] }) : null
+    return raw
+      ? (JSON.parse(raw) as { elements?: SnapshotElement[]; libraryItems?: unknown[] })
+      : null
   }, SNAPSHOT_KEY)
+
+// Drive the REAL `draw` verb over the app-bridge, exactly as the model does in
+// production: post a `req` envelope (packages/shared/app-bridge protocol) from the top
+// (harness) window to the sandboxed iframe, which the bridge server trusts because
+// `event.source` is its parent and the session nonce matches. The nonce is the same
+// per-mount secret the harness appends to the iframe URL (app-bridge-nonce=...), so we
+// read it straight off the iframe `src`. This exercises the true pipeline —
+// defineBridgeVerb('draw') -> executeDraw -> convertToExcalidrawElements — so bugs in
+// element normalization reproduce authentically, unlike the jsdom unit tests which mock
+// convertToExcalidrawElements away. Resolves with the verb result (draw receipts).
+export const drawViaVerb = async (
+  page: Page,
+  elements: ReadonlyArray<Record<string, unknown>>,
+  options: { connectors?: ReadonlyArray<Record<string, unknown>>; replace?: boolean } = {}
+): Promise<{ ok: boolean; drawn?: number }> => {
+  const nonce = await page.locator(CANVAS_FRAME).evaluate((frame) => {
+    // The harness passes the per-mount nonce in the iframe URL *fragment*
+    // (#app-bridge-nonce=...), never the query string (see app-frame.tsx).
+    const hash = new URL((frame as HTMLIFrameElement).src).hash.replace(/^#/, '')
+    return new URLSearchParams(hash).get('app-bridge-nonce') ?? ''
+  })
+  if (!nonce) throw new Error('canvas iframe is missing its app-bridge-nonce')
+  return page.evaluate(
+    ({ frameSelector, sessionNonce, payload }) =>
+      new Promise<{ ok: boolean; drawn?: number }>((resolve, reject) => {
+        const target = document.querySelector<HTMLIFrameElement>(frameSelector)?.contentWindow
+        if (!target) return reject(new Error('canvas iframe has no contentWindow'))
+        const id = `e2e-draw-${Math.random().toString(36).slice(2)}`
+        const timer = window.setTimeout(() => {
+          window.removeEventListener('message', onMessage)
+          reject(new Error('draw verb timed out'))
+        }, 15_000)
+        const onMessage = (event: MessageEvent): void => {
+          if (event.source !== target) return
+          const data = event.data as {
+            kind?: string
+            id?: string
+            ok?: boolean
+            result?: { ok: boolean; drawn?: number }
+            error?: string
+          }
+          if (data?.kind !== 'res' || data.id !== id) return
+          window.clearTimeout(timer)
+          window.removeEventListener('message', onMessage)
+          if (data.ok) resolve(data.result ?? { ok: true })
+          else reject(new Error(data.error ?? 'draw verb failed'))
+        }
+        window.addEventListener('message', onMessage)
+        // protocolVersion must match APP_BRIDGE_PROTOCOL_VERSION (2); the server drops
+        // envelopes on any other version, nonce mismatch, or foreign event.source.
+        target.postMessage(
+          { kind: 'req', protocolVersion: 2, sessionNonce, id, verb: 'draw', payload },
+          '*'
+        )
+      }),
+    {
+      frameSelector: CANVAS_FRAME,
+      sessionNonce: nonce,
+      payload: {
+        elements,
+        connectors: options.connectors ?? [],
+        ...(options.replace === undefined ? {} : { replace: options.replace })
+      }
+    }
+  )
+}
 
 // Draw a rectangle in the clear canvas to the RIGHT of the floating chat panel (which
 // covers the centre) using the real toolbar tool + a pointer drag. The tool <input> is

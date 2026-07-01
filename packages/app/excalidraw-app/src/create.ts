@@ -19,11 +19,27 @@ const skeleton = (element: DrawElement): Record<string, unknown> => {
   }
   if (element.type === 'text') return { ...base, type: 'text', text: element.text ?? '' }
   const linear = element.type === 'arrow' || element.type === 'line'
+  const width = element.width ?? 120
+  const height = element.height ?? (linear ? 0 : 80)
   return {
     ...base,
     type: element.type,
-    width: element.width ?? 120,
-    height: element.height ?? (linear ? 0 : 80),
+    width,
+    height,
+    // Emit explicit points for linear elements so the delta comes straight from our
+    // width/height. convertToExcalidrawElements derives a linear element's points via
+    // `element.width || DEFAULT` (=100), which mistakes a legitimate width:0 vertical
+    // line for "missing" and produces points [0,0]→[100,h] — a spine that veers right
+    // and detaches from everything anchored to its intended x. Passing points here (it
+    // spreads last in the line/arrow cases) keeps the stored geometry self-consistent.
+    ...(linear
+      ? {
+          points: [
+            [0, 0],
+            [width, height]
+          ]
+        }
+      : {}),
     ...(element.text ? { label: { text: element.text } } : {})
   }
 }
