@@ -22,10 +22,11 @@ export const HOSTED_APP_SPECS = Object.freeze([
 
 /**
  * @param {string} rootDir
- * @returns {Array<{ mountPath: string, root: string, base: string, server?: import('vite').ViteDevServer }>}
+ * @returns {Array<{ slug: string, mountPath: string, root: string, base: string, server?: import('vite').ViteDevServer }>}
  */
 export const createAppDefinitions = (rootDir) =>
-  HOSTED_APP_SPECS.map(({ mountPath, source }) => ({
+  HOSTED_APP_SPECS.map(({ slug, mountPath, source }) => ({
+    slug,
     mountPath,
     root: join(rootDir, 'apps', source),
     // In dev each mount runs its own Vite server rooted at its `source`, but the

@@ -16,6 +16,7 @@ import { createAppDefinitions, HOSTED_APP_SPECS } from './app-definitions.mjs'
 
 /**
  * @typedef HostAppDefinition
+ * @property {string} [slug]
  * @property {string} mountPath
  * @property {string} root
  * @property {string} [base]
@@ -267,6 +268,11 @@ export const createHostServer = async ({
         // path so Vite resolves module/asset URLs under that prefix. (No-op for
         // canvas/host, whose vite.config base already equals the mount path.)
         ...(app.base ? { base: app.base } : {}),
+        // The three browser mounts share ONE root (apps/shell), so give each its own
+        // dep-optimization cache dir — otherwise the concurrent dev servers clobber
+        // each other's node_modules/.vite/deps and a mount can serve a stale/corrupt
+        // pre-bundle, leaving that page stuck on the boot screen. Distinct per slug.
+        ...(app.slug ? { cacheDir: join(app.root, 'node_modules', `.vite-${app.slug}`) } : {}),
         configFile: join(app.root, 'vite.config.ts'),
         server: {
           middlewareMode: true,
