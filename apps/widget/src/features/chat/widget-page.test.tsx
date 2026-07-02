@@ -11,7 +11,8 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   ChatApp: (props: Record<string, unknown>) => {
     captured.props = props
     return <div data-chat-app="true" />
-  }
+  },
+  ContextInspectorSlot: () => <div data-inspector-slot="true" />
 }))
 
 import { WidgetPage } from './widget-page.js'
@@ -29,6 +30,13 @@ describe('WidgetPage', () => {
     expect(captured.props?.initialMinimized).toBe(false)
     expect(captured.props?.storageKey).toBe('tinytinkerer:widget-layout:v1')
     expect(captured.props?.LoadingComponent).toBeTypeOf('function')
+  })
+
+  it('opts into the context inspector (toggle + viewer button) like the web shell', () => {
+    render(<WidgetPage />)
+
+    expect(captured.props?.inspectorPanelSupported).toBe(true)
+    expect(captured.props?.inspectorSlot).toBeTruthy()
   })
 
   it('starts minimized when the URL requests the minimized window mode', () => {

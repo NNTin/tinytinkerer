@@ -123,7 +123,12 @@ export const ChatApp = ({
       {...(minHeight !== undefined ? { minHeight } : {})}
       {...(stageClassName !== undefined ? { stageClassName } : {})}
     >
-      <FloatingChatSurface LoadingComponent={LoadingComponent} framed={framed} />
+      <FloatingChatSurface
+        LoadingComponent={LoadingComponent}
+        framed={framed}
+        inspectorSlot={inspectorSlot}
+        {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
+      />
     </FloatingLayout>
   )
 }

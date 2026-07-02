@@ -1,4 +1,4 @@
-import { Suspense, useState, type ComponentType } from 'react'
+import { Suspense, useState, type ComponentType, type ReactNode } from 'react'
 // Icons come straight from the external react-icons (not @tinytinkerer/ui): the
 // boundary check forbids app-browser depending on the ui package (see turn-chrome's
 // local-primitive precedent), and react-icons is the same source ui re-exports.
@@ -25,6 +25,12 @@ export type FloatingChatSurfaceProps = {
   // Whether to draw the rounded framed card around the conversation. Floating
   // shells supply their own glass frame, so they pass `false`.
   framed?: boolean
+  // Whether this shell hosts the developer context-inspector: enables the
+  // inspector plugin's toggle in Settings. Forwarded to the inline settings panel.
+  inspectorPanelSupported?: boolean
+  // Optional context-inspector button (its icon comes from @tinytinkerer/ui, which
+  // app-browser cannot import), rendered in the composer's left action row.
+  inspectorSlot?: ReactNode
 }
 
 // The compact chat body shared by every floating layout (the widget app and the
@@ -33,7 +39,9 @@ export type FloatingChatSurfaceProps = {
 // (see floating-layout.tsx).
 export const FloatingChatSurface = ({
   LoadingComponent,
-  framed = true
+  framed = true,
+  inspectorPanelSupported,
+  inspectorSlot
 }: FloatingChatSurfaceProps) => {
   const {
     isBooting,
@@ -163,6 +171,9 @@ export const FloatingChatSurface = ({
               >
                 <FaRotateLeft className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
+              {/* Context inspector (developer): supplied by the widget page. Renders
+                  nothing until an inspector plugin is enabled and context captured. */}
+              {inspectorSlot}
             </div>
             {/* Right: microphone, stop/send */}
             <div className="flex items-center gap-1.5">
@@ -241,6 +252,7 @@ export const FloatingChatSurface = ({
             open={settingsOpen}
             onOpenChange={setSettingsOpen}
             presentation="inline"
+            {...(inspectorPanelSupported ? { inspectorPanelSupported: true } : {})}
           />
         </Suspense>
       ) : null}

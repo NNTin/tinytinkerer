@@ -5,8 +5,8 @@ import { WebChatLoading, WebPanelLoading } from '../../app/loading-screen'
 // The web shell is a thin wrapper over the shared ChatApp in its docked (sidebar)
 // layout. The chat body, composer, settings, and state all live in the shared App;
 // the web shell only supplies its boot copy, its layout storage key, and the
-// developer context-inspector slot (web only — its trigger icon comes from
-// @tinytinkerer/ui, which the shared App package cannot import).
+// developer context-inspector slot (its trigger icon comes from @tinytinkerer/ui,
+// which the shared App package cannot import; the widget shell wires it too).
 export const ChatPage = () => (
   <ChatApp
     mode="sidebar"

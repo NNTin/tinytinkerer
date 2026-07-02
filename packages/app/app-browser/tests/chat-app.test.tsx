@@ -20,8 +20,15 @@ vi.mock('@tinytinkerer/brand-assets', () => ({
   TINYTINKERER_BRAND_ASSET_URLS: { icon192: '' }
 }))
 
+const capturedFloating = vi.hoisted(() => ({
+  props: undefined as Record<string, unknown> | undefined
+}))
+
 vi.mock('../src/chat-shell/floating-chat-surface.js', () => ({
-  FloatingChatSurface: () => <div data-testid="floating-body" />
+  FloatingChatSurface: (props: Record<string, unknown>) => {
+    capturedFloating.props = props
+    return <div data-testid="floating-body" />
+  }
 }))
 
 vi.mock('../src/chat-shell/docked-chat-surface.js', () => ({
@@ -38,6 +45,7 @@ afterEach(() => {
 
 beforeEach(() => {
   window.localStorage.clear()
+  capturedFloating.props = undefined
 })
 
 describe('ChatApp', () => {
@@ -45,6 +53,21 @@ describe('ChatApp', () => {
     render(<ChatApp mode="sidebar" storageKey="k" LoadingComponent={Loading} />)
     expect(screen.getByTestId('docked-body')).toBeInTheDocument()
     expect(screen.queryByTestId('floating-body')).toBeNull()
+  })
+
+  it('threads the inspector props into the floating body (so the widget can enable it)', () => {
+    const slot = <span data-testid="inspector-slot" />
+    render(
+      <ChatApp
+        mode="floating"
+        storageKey="k"
+        LoadingComponent={Loading}
+        inspectorPanelSupported
+        inspectorSlot={slot}
+      />
+    )
+    expect(capturedFloating.props?.inspectorPanelSupported).toBe(true)
+    expect(capturedFloating.props?.inspectorSlot).toBe(slot)
   })
 
   it('morphs floating -> sidebar -> floating via the dock/undock toggle', () => {

@@ -334,6 +334,9 @@ importers:
       '@tinytinkerer/app-browser':
         specifier: workspace:*
         version: link:../../packages/app/app-browser
+      '@tinytinkerer/ui':
+        specifier: workspace:*
+        version: link:../../packages/shared/ui
       react:
         specifier: 19.2.6
         version: 19.2.6

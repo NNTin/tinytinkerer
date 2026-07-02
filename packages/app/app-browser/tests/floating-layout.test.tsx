@@ -126,14 +126,19 @@ vi.mock('../src/human-prompt-composer-dock.js', () => ({
 vi.mock('../src/lazy-browser-settings-modal.js', () => ({
   LazySettingsPanel: ({
     open,
-    onOpenChange
+    onOpenChange,
+    inspectorPanelSupported
   }: {
     open: boolean
     onOpenChange: (open: boolean) => void
     presentation?: 'modal' | 'inline'
+    inspectorPanelSupported?: boolean
   }) =>
     open ? (
-      <div>
+      <div
+        data-testid="settings-panel"
+        data-inspector-supported={inspectorPanelSupported ? 'true' : 'false'}
+      >
         <span>Settings modal</span>
         <button type="button" aria-label="Close settings" onClick={() => onOpenChange(false)}>
           Close
@@ -299,5 +304,35 @@ describe('FloatingLayout', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Dock to sidebar' }))
     expect(onDock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('FloatingChatSurface inspector wiring', () => {
+  it('renders the inspector slot and enables inspector support in the inline settings', () => {
+    render(
+      <FloatingChatSurface
+        LoadingComponent={Loading}
+        framed={false}
+        inspectorPanelSupported
+        inspectorSlot={<span data-testid="floating-inspector-slot" />}
+      />
+    )
+
+    // The viewer button slot is rendered in the composer's left action row.
+    expect(screen.getByTestId('floating-inspector-slot')).toBeInTheDocument()
+
+    // Opening settings forwards inspectorPanelSupported so the plugin toggle is enabled.
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(screen.getByTestId('settings-panel')).toHaveAttribute('data-inspector-supported', 'true')
+  })
+
+  it('leaves inspector support off and renders no slot by default', () => {
+    render(<FloatingChatSurface LoadingComponent={Loading} framed={false} />)
+    expect(screen.queryByTestId('floating-inspector-slot')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(screen.getByTestId('settings-panel')).toHaveAttribute(
+      'data-inspector-supported',
+      'false'
+    )
   })
 })

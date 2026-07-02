@@ -103,8 +103,8 @@ const VARIANTS: Record<DockedSizeVariant, VariantConfig> = {
 export type DockedChatSurfaceProps = {
   LoadingComponent: ChatLoadingComponent
   sizeVariant?: DockedSizeVariant
-  // Developer context inspector (web only) — passed in by the app page because its
-  // trigger icon comes from @tinytinkerer/ui, which app-browser cannot import.
+  // Developer context inspector (web + widget shells) — passed in by the app page
+  // because its trigger icon comes from @tinytinkerer/ui, which app-browser cannot import.
   inspectorSlot?: ReactNode
   // Install banner (mobile PWA only), likewise supplied by the app page.
   installSlot?: ReactNode
