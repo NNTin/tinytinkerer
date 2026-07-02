@@ -18,6 +18,7 @@ import { createAppDefinitions, HOSTED_APP_SPECS } from './app-definitions.mjs'
  * @typedef HostAppDefinition
  * @property {string} mountPath
  * @property {string} root
+ * @property {string} [base]
  * @property {ViteDevServer | undefined} [server]
  */
 
@@ -261,6 +262,11 @@ export const createHostServer = async ({
       /** @type {InlineConfig} */
       const viteConfig = {
         root: app.root,
+        // The shell source builds with a relative base ('./') so one build serves
+        // /web/, /widget/, /mobile/; in dev each mount pins the base to its mount
+        // path so Vite resolves module/asset URLs under that prefix. (No-op for
+        // canvas/host, whose vite.config base already equals the mount path.)
+        ...(app.base ? { base: app.base } : {}),
         configFile: join(app.root, 'vite.config.ts'),
         server: {
           middlewareMode: true,

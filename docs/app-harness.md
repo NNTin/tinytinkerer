@@ -8,7 +8,7 @@ Do NOT delete above lines.
 
 TinyTinkerer has two related browser-shell shapes:
 
-1. **Chat-only shells**, such as `apps/widget`, render the shared chat surface directly.
+1. **Chat-only shells**, such as `apps/shell`, render the shared chat surface directly.
 2. **App harness shells**, currently `apps/canvas`, render the same chat surface over an
    isolated iframe application and give the assistant app-specific tools.
 
@@ -31,7 +31,7 @@ entry whose main module imports `@tinytinkerer/excalidraw-app`.
 
 ```mermaid
 flowchart LR
-  widget["apps/widget<br/>chat-only browser shell"]
+  widget["apps/shell<br/>chat-only browser shell"]
   canvas["apps/canvas<br/>Excalidraw harness shell"]
   canvasEntry["apps/canvas/excalidraw-app<br/>secondary HTML entry"]
 
@@ -106,7 +106,7 @@ flowchart TB
 | `packages/app/excalidraw-app`         | Excalidraw iframe implementation            | Excalidraw component/API, protocol contracts, bridge server              | Chat runtime, canvas routing, model provider                      |
 | `packages/app/app-harness`            | Generic iframe/chat composition             | `AppFrame`, bridge client, stable bridge handle, verb-to-tool adaptation | Excalidraw-specific behavior or schemas                           |
 | `apps/canvas`                         | Deployable Excalidraw shell and build owner | Tool descriptions, protocol metadata, iframe URL, shell routing          | Excalidraw domain behavior in the parent window                   |
-| `apps/widget`                         | Deployable chat-only shell                  | Shared chat UI and widget window mode (`?mode=minimized`)                | App bridge, Excalidraw protocol, iframe app                       |
+| `apps/shell`                          | Deployable chat-only shell                  | Shared chat UI and widget window mode (`?mode=minimized`)                | App bridge, Excalidraw protocol, iframe app                       |
 
 These boundaries are intentional. For example:
 
@@ -116,7 +116,7 @@ These boundaries are intentional. For example:
   and schemas from the shell.
 - `apps/canvas` can import Excalidraw **contracts**, but its parent-window source cannot
   import `@excalidraw/excalidraw`.
-- `apps/widget` does not import `app-harness`, `app-bridge`, or
+- `apps/shell` does not import `app-harness`, `app-bridge`, or
   `excalidraw-protocol`. Its relationship to canvas is reuse of the chat shell, not
   participation in the iframe protocol.
 
@@ -618,9 +618,9 @@ The secondary entry at `apps/canvas/excalidraw-app/main.tsx` imports
 canvas manifest because canvas owns this build entry, but it is not imported by the
 parent-window application graph. Bundle regression tests enforce that separation.
 
-## `apps/widget`: the chat-only sibling
+## `apps/shell`: the chat-only sibling
 
-`apps/widget` is important because it demonstrates which parts of canvas are generic
+`apps/shell` is important because it demonstrates which parts of canvas are generic
 chat behavior and which parts exist only for app hosting.
 
 Both widget and canvas call `createBrowserShellRoot` from `app-browser`, use hash
@@ -634,7 +634,7 @@ directly:
 
 ```mermaid
 flowchart LR
-  subgraph widget["apps/widget"]
+  subgraph widget["apps/shell"]
     widgetMain["createBrowserShellRoot"]
     widgetPage["WidgetPage"]
     widgetChat["ChatApp (FloatingChatSurface)"]
@@ -659,7 +659,7 @@ flowchart LR
 
 Widget is therefore **not** a client of `app-bridge` and does not load
 `excalidraw-protocol` or `excalidraw-app`. Canvas reuses widget's shared chat surface
-through `app-browser`; it does not embed `apps/widget` or communicate with a widget
+through `app-browser`; it does not embed `apps/shell` or communicate with a widget
 window.
 
 This distinction matters when adding features:

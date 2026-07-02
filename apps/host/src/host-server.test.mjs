@@ -78,13 +78,20 @@ const createTempHostRoot = async (backendPort) => {
   const rootDir = await mkdtemp(join(tmpdir(), 'tinytinkerer-host-test-'))
   activeClosers.add(() => rm(rootDir, { recursive: true, force: true }))
 
-  const apps = HOSTED_APP_SPECS.map(({ slug, mountPath }) => ({
-    name: slug,
-    mountPath,
-    proxyHealth: slug === 'web'
-  }))
+  // Fixture apps live under apps/<source>. web/widget/mobile share the single
+  // `shell` source, so we write one fixture per unique source. The edge proxy prefers
+  // the /web/ mount, so the shell source carries the /health proxy.
+  /** @type {Map<string, { name: string, proxyHealth: boolean }>} */
+  const sources = new Map()
+  for (const { source, slug } of HOSTED_APP_SPECS) {
+    const entry = sources.get(source) ?? { name: source, proxyHealth: false }
+    if (slug === 'web') {
+      entry.proxyHealth = true
+    }
+    sources.set(source, entry)
+  }
 
-  for (const app of apps) {
+  for (const app of sources.values()) {
     const appRoot = join(rootDir, 'apps', app.name)
     await mkdir(join(appRoot, 'src'), { recursive: true })
     // Deliberately avoid `import { defineConfig } from 'vite'` here. These
@@ -98,7 +105,9 @@ const createTempHostRoot = async (backendPort) => {
       join(appRoot, 'vite.config.ts'),
       [
         'export default {',
-        `  base: '${app.mountPath}',`,
+        // The host server overrides base per mount path, so the fixture base is
+        // irrelevant; a valid value keeps Vite happy.
+        `  base: '/',`,
         app.proxyHealth
           ? `  server: { proxy: { '/health': { target: 'http://127.0.0.1:${backendPort}', changeOrigin: true } } }`
           : '  server: {}',
@@ -208,7 +217,7 @@ describe('host server', () => {
     expect(canvasResponse.headers.get('location')).toBe('/canvas/')
   })
 
-  it('serves the web app from /web/ with the web base path intact', async () => {
+  it('serves the shell from /web/ with the web base path intact', async () => {
     if (!sharedHostServer) {
       throw new Error('Expected the shared host server to be available.')
     }
@@ -217,7 +226,8 @@ describe('host server', () => {
     const body = await response.text()
 
     expect(response.status).toBe(200)
-    expect(body).toContain('<title>web</title>')
+    // The single shell serves every browser endpoint; its title is the shared brand.
+    expect(body).toContain('<title>tinytinkerer</title>')
     expect(body).toContain('src="/web/@vite/client"')
     expect(body).toContain('src="/web/src/main.tsx"')
   })

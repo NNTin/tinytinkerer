@@ -161,7 +161,7 @@ jobs:
       - name: Build Deployment Artifacts
         # VITE_SENTRY_DSN activates runtime error reporting and SENTRY_AUTH_TOKEN
         # enables source map upload from the Sentry Vite plugin during the build
-        # (see apps/web/vite.config.ts). VITE_SENTRY_ENVIRONMENT tags every event
+        # (see scripts/browser-shell-vite.mjs). VITE_SENTRY_ENVIRONMENT tags every event
         # so production, develop, and PR previews are distinguishable in Sentry.
         env:
           VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN_FRONTEND }}

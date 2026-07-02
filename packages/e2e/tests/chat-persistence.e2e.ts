@@ -9,12 +9,11 @@ import { installChatMock, dismissTelemetryDialog } from '../fixtures/mock-litell
 // conversation's events and the surface re-rendering them as turns — is uncovered.
 // This spec closes that gap in a real browser.
 //
-// HARNESS TOPOLOGY: each shell is served by its own `vite preview` on its own port,
-// i.e. its own ORIGIN (see playwright.config.ts). IndexedDB is origin-scoped, so even
-// though all three shells default to the SAME Dexie DB name (storageNamespace
-// `tinytinkerer`), their storage is ISOLATED: a conversation created under /web/ is
-// not visible from /widget/. The final test asserts exactly that. (Had the shells
-// been served same-origin under different paths, they would SHARE one database.)
+// HARNESS TOPOLOGY: the three browser endpoints are ONE build served from ONE origin
+// (the composed apps/host/dist), at different paths — matching production. IndexedDB is
+// origin-scoped, so with the shared default Dexie DB name (storageNamespace
+// `tinytinkerer`) the three endpoints SHARE one database: a conversation created under
+// /web/ IS visible from /widget/. The final test asserts exactly that shared session.
 //
 // Only LiteLLM is mocked; the run is anonymous through the real edge worker, and the
 // answer streams as small SSE deltas. The agent answers directly (no tool), so this
@@ -28,7 +27,8 @@ const requireShellPort = (name: string): string => {
   return value
 }
 
-// One origin per shell (different ports → different origins → isolated IndexedDB).
+// One shared origin, three paths (E2E_PORT_WIDGET / E2E_PORT_MOBILE alias E2E_PORT) →
+// one shared IndexedDB across the endpoints.
 const SHELLS = [
   { name: 'web', url: `http://localhost:${requireShellPort('E2E_PORT')}/web/` },
   { name: 'widget', url: `http://localhost:${requireShellPort('E2E_PORT_WIDGET')}/widget/` },
@@ -103,12 +103,12 @@ test.describe('chat history persistence across reload (#250)', () => {
     })
   }
 
-  test('shared namespace, isolated by origin: a /web/ conversation is not visible from /widget/', async ({
+  test('shared session across endpoints: a /web/ conversation IS visible from /widget/', async ({
     page
   }) => {
     const web = SHELLS.find((s) => s.name === 'web')!
     const widget = SHELLS.find((s) => s.name === 'widget')!
-    const prompt = 'Origin-isolation probe created in the web shell.'
+    const prompt = 'Shared-session probe created in the web endpoint.'
 
     await installChatMock(page, ANSWER)
     await page.goto(web.url)
@@ -117,14 +117,14 @@ test.describe('chat history persistence across reload (#250)', () => {
     await expect(page.getByText(prompt)).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText(ANSWER)).toBeVisible({ timeout: 30_000 })
 
-    // Navigate to the widget — a DIFFERENT origin (different port) in the SAME
-    // browser context. IndexedDB is origin-scoped, so despite the shared
-    // `tinytinkerer` DB name the widget origin has its own, empty database: the web
-    // conversation must NOT appear here. (Same-origin/different-path topology would
-    // instead SHARE it — documented in playwright.config.ts and the README.)
+    // Navigate to the widget — the SAME origin (one build, one composed dist), a
+    // different path, in the SAME browser context. IndexedDB is origin-scoped and the
+    // endpoints share the `tinytinkerer` DB name, so the conversation created under
+    // /web/ MUST be restored here: signing in / a conversation on one endpoint carries
+    // to the others. (Distinct-origin topology would instead isolate them.)
     await page.goto(widget.url)
     await dismissFirstLoad(page)
-    await expect(page.getByText(prompt)).toHaveCount(0)
-    await expect(page.getByText(ANSWER)).toHaveCount(0)
+    await expect(page.getByText(prompt)).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(ANSWER)).toBeVisible({ timeout: 30_000 })
   })
 })
