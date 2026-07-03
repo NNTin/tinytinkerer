@@ -35,6 +35,8 @@ The root is not a fourth product shell. It is a real Vite React app (living at `
 - mobile as a docked `SidebarLayout` (mobile, full-bleed variant)
 - widget as a floating `FloatingLayout` (morphable — it can dock/undock in place)
 
+The floating window drags via pointer capture (`setPointerCapture` on the grip/launcher), so a drag survives the cursor leaving the window — even over a sandboxed iframe beneath (the canvas overlay) or past the viewport edge (`#323`). The minimized launcher doubles as a drag handle: a movement past the click threshold repositions it, a plain click restores it (`#323`). While dragging, nearing a viewport edge arms a ghost **snap preview**; releasing there morphs the window into the docked, resizable "web mode" split for that edge (top/bottom/left/right), and the undock button floats it again (`#324`). The mode-state lives in `ChatApp`; the snap-zone/preview geometry in `chat-shell/layout-geometry.ts` (`detectSnapEdge`, `snapPreviewRect`); the docked split (any edge, single-axis resize) in `SidebarLayout`.
+
 `/health`, `/api/*`, and `/auth/github/exchange` are still shared edge-facing routes and are proxied through the host in dev.
 
 ### Multi-app harness routes

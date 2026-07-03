@@ -66,3 +66,60 @@ test.describe('widget↔sidebar morph (#325)', () => {
     await expect(page.getByText(ANSWER)).toBeVisible()
   })
 })
+
+// Real-browser verification of the snap-to-web-mode flow (#324): dragging the floating
+// widget near a viewport edge arms a ghost snap preview; releasing there morphs the
+// window into the docked, resizable "web mode" split for that edge, and dragging the
+// undock button turns it back into a widget — all over the one shared session, so the
+// conversation survives. Pointer capture (the #323 fix) is what keeps this drag alive
+// as the cursor travels to the screen edge.
+test.describe('snap-to-web-mode (#324)', () => {
+  test('snap-drag to an edge docks into the resizable split, and back', async ({ page }) => {
+    await installChatMock(page, ANSWER)
+    await page.goto(WIDGET_URL)
+    await dismissFirstLoad(page)
+
+    // Seed a conversation so we can prove continuity across the snap-dock morph.
+    const composer = page.locator('textarea').first()
+    await composer.fill(PROMPT)
+    await composer.press('Enter')
+    await expect(page.getByText(PROMPT)).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(ANSWER)).toBeVisible({ timeout: 30_000 })
+
+    const viewport = page.viewportSize()
+    if (!viewport) throw new Error('viewport size unavailable')
+
+    const grip = page.getByRole('button', { name: /move widget/i })
+    const box = await grip.boundingBox()
+    if (!box) throw new Error('drag grip not found')
+
+    // Press on the grip and drag toward the right edge in steps so pointermove fires
+    // and the snap detection arms.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(viewport.width - 200, box.y + box.height / 2, { steps: 8 })
+    await page.mouse.move(viewport.width - 3, box.y + box.height / 2, { steps: 8 })
+
+    // The ghost snap preview for the right edge appears while hovering the zone.
+    const preview = page.locator('.widget-snap-preview')
+    await expect(preview).toBeVisible()
+    await expect(preview).toHaveAttribute('data-edge', 'right')
+
+    await page.mouse.up()
+
+    // Now in docked web mode: the resize handle + undock (float) button are present,
+    // the dock button is gone, and the SAME conversation is still on screen.
+    await expect(page.getByRole('button', { name: 'Resize sidebar' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Float chat' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Dock to sidebar' })).toHaveCount(0)
+    await expect(page.locator('.widget-snap-preview')).toHaveCount(0)
+    await expect(page.getByText(PROMPT)).toBeVisible()
+    await expect(page.getByText(ANSWER)).toBeVisible()
+
+    // Float it again — back to the floating widget, conversation intact.
+    await page.getByRole('button', { name: 'Float chat' }).click()
+    await expect(page.getByRole('button', { name: 'Dock to sidebar' })).toBeVisible()
+    await expect(page.getByText(PROMPT)).toBeVisible()
+    await expect(page.getByText(ANSWER)).toBeVisible()
+  })
+})

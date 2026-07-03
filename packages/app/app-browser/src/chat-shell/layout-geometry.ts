@@ -112,17 +112,96 @@ export const saveStandaloneLayout = (storageKey: string, layout: WidgetLayout): 
   window.localStorage.setItem(storageKey, JSON.stringify(layout))
 }
 
-// Single-axis clamp for the docked sidebar panel width: at least `minWidth`, at
-// most `maxFraction` of the viewport (so the docked panel never swallows the page).
-export const clampWidth = (
-  width: number,
-  { minWidth, maxFraction }: { minWidth: number; maxFraction: number }
-): number =>
-  clamp(
-    Math.round(width),
-    minWidth,
-    Math.max(minWidth, Math.round(window.innerWidth * maxFraction))
-  )
+// Single-axis clamp for a docked panel's size (width for a left/right dock, height
+// for a top/bottom dock): at least `min`, at most `maxFraction` of the axis `extent`
+// (so the docked split never swallows the page). `extent` is the viewport size along
+// the resize axis (innerWidth for horizontal docks, innerHeight for vertical ones).
+export const clampSize = (
+  size: number,
+  extent: number,
+  { min, maxFraction }: { min: number; maxFraction: number }
+): number => clamp(Math.round(size), min, Math.max(min, Math.round(extent * maxFraction)))
+
+// === Snap-to-dock geometry (issue #324) ===
+//
+// While the floating widget is dragged, the shell arms a "snap" preview when the
+// pointer nears a viewport edge; releasing there morphs the widget into the docked
+// "web mode" (SidebarLayout) filling that edge. The zone detection + preview rect
+// math live here so the drag surface (floating-layout) and the docked layout stay
+// thin and the behavior is unit-testable without a DOM.
+
+export type SnapEdge = 'top' | 'bottom' | 'left' | 'right'
+
+export type Viewport = { width: number; height: number }
+
+export type PreviewRect = { left: number; top: number; width: number; height: number }
+
+// How close (px) the pointer must come to a viewport edge during a drag to arm the
+// snap preview for that edge.
+export const SNAP_THRESHOLD = 56
+
+// Fraction of the viewport the docked web-mode split fills in the snap preview.
+export const SNAP_PREVIEW_FRACTION = 0.5
+
+// Which edge (if any) a pointer at `point` is within `threshold` px of. At a corner
+// the nearest edge wins, so a diagonal approach resolves to a single deterministic
+// edge rather than flickering between two.
+export const detectSnapEdge = (
+  point: { x: number; y: number },
+  viewport: Viewport,
+  threshold: number = SNAP_THRESHOLD
+): SnapEdge | null => {
+  const distances: ReadonlyArray<readonly [SnapEdge, number]> = [
+    ['top', point.y],
+    ['bottom', viewport.height - point.y],
+    ['left', point.x],
+    ['right', viewport.width - point.x]
+  ]
+  let best: SnapEdge | null = null
+  let bestDistance = threshold
+  for (const [edge, distance] of distances) {
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = edge
+    }
+  }
+  return best
+}
+
+// The viewport-pixel region the docked web mode would fill for `edge`. Drives the
+// ghost preview overlay while dragging and mirrors where SidebarLayout docks.
+export const snapPreviewRect = (
+  edge: SnapEdge,
+  viewport: Viewport,
+  fraction: number = SNAP_PREVIEW_FRACTION
+): PreviewRect => {
+  const splitWidth = Math.round(viewport.width * fraction)
+  const splitHeight = Math.round(viewport.height * fraction)
+  switch (edge) {
+    case 'left':
+      return { left: 0, top: 0, width: splitWidth, height: viewport.height }
+    case 'right':
+      return {
+        left: viewport.width - splitWidth,
+        top: 0,
+        width: splitWidth,
+        height: viewport.height
+      }
+    case 'top':
+      return { left: 0, top: 0, width: viewport.width, height: splitHeight }
+    case 'bottom':
+      return {
+        left: 0,
+        top: viewport.height - splitHeight,
+        width: viewport.width,
+        height: splitHeight
+      }
+  }
+}
+
+// Top/bottom docks resize along the vertical axis (height); left/right along the
+// horizontal axis (width). Used by the docked layout's resize math + persistence.
+export const isVerticalEdge = (edge: SnapEdge): boolean => edge === 'top' || edge === 'bottom'
 
 // Generic JSON localStorage load/save used by layouts whose persisted shape is not
 // a WidgetLayout (e.g. the sidebar's { width, side }). `parse` validates/normalizes

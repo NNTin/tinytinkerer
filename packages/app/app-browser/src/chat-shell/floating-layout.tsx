@@ -12,11 +12,14 @@ import { useBrowserShellConfig } from '../hooks'
 import { shellThemeToCssVars } from '../shell-theme'
 import {
   clampLayout,
+  detectSnapEdge,
   loadStandaloneLayout,
   saveStandaloneLayout,
+  snapPreviewRect,
   DEFAULT_DIMS,
   WIDGET_KEYBOARD_STEP,
   WIDGET_MINIMIZED_SIZE,
+  type SnapEdge,
   type WidgetDims,
   type WidgetLayout
 } from './layout-geometry'
@@ -26,7 +29,13 @@ import {
 // machine (drag/resize/keyboard nudge/minimize/persistence). The chat body arrives
 // as `children`; per-app concerns (where layout persists, boot copy) are the
 // caller's — no shell is named here. When `onDock` is provided the shell bar shows
-// a dock button so ChatApp can morph the window into the docked sidebar layout.
+// a dock button, and dragging the window near a viewport edge arms a snap preview so
+// releasing there morphs the window into the docked sidebar ("web mode", #324).
+
+// Below this pointer travel (px) a drag counts as a click. Used so the minimized
+// launcher can be BOTH a drag handle and a restore button (#323): a small movement
+// restores, a real drag repositions without restoring.
+const DRAG_CLICK_THRESHOLD = 5
 
 export type FloatingLayoutProps = {
   // localStorage key the layout persists under (per app).
@@ -42,18 +51,28 @@ export type FloatingLayoutProps = {
   // click-through (pointer-events: none) so the whiteboard beneath stays usable
   // while the floating shell (pointer-events: auto) remains interactive.
   stageClassName?: string
-  // When set, the shell bar shows a "dock" button that morphs into the sidebar.
-  onDock?: () => void
+  // When set, the shell bar shows a "dock" button (docks to the caller's side) and
+  // dragging near a viewport edge morphs into that edge's docked split. Receives the
+  // released snap edge, or no argument for the plain dock button.
+  onDock?: (edge?: SnapEdge) => void
   // The chat body (e.g. FloatingChatSurface).
   children: ReactNode
 }
 
-const WidgetLauncher = ({ onRestore }: { onRestore: () => void }) => (
+const WidgetLauncher = ({
+  onRestore,
+  onDragPointerDown
+}: {
+  onRestore: () => void
+  onDragPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void
+}) => (
   <div className="flex h-full items-center justify-center p-2">
     <button
       type="button"
       onClick={onRestore}
+      onPointerDown={onDragPointerDown}
       aria-label="Restore widget"
+      title="Drag to move, click to restore"
       className="widget-launcher inline-flex h-16 w-16 items-center justify-center rounded-[1.35rem] border border-[var(--widget-border)] bg-[var(--widget-panel)] shadow-[0_18px_48px_rgba(36,33,24,0.16)]"
     >
       <img src={TINYTINKERER_BRAND_ASSET_URLS.icon192} alt="" className="h-11 w-11 rounded-2xl" />
@@ -112,6 +131,7 @@ const WidgetWindow = ({
   onMinimize,
   onDock,
   onMovePointerDown,
+  onLauncherPointerDown,
   onMoveKeyDown,
   children,
   resizeHandle,
@@ -124,6 +144,7 @@ const WidgetWindow = ({
   onMinimize: () => void
   onDock?: () => void
   onMovePointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void
+  onLauncherPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void
   onMoveKeyDown?: (event: ReactKeyboardEvent<HTMLButtonElement>) => void
   children: ReactNode
   resizeHandle?: ReactNode
@@ -138,7 +159,7 @@ const WidgetWindow = ({
   >
     <div className="widget-shell-body">
       {minimized ? (
-        <WidgetLauncher onRestore={onRestore} />
+        <WidgetLauncher onRestore={onRestore} onDragPointerDown={onLauncherPointerDown} />
       ) : (
         <>
           <WidgetShellBar
@@ -154,6 +175,16 @@ const WidgetWindow = ({
     {!minimized ? resizeHandle : null}
   </div>
 )
+
+type DragState = {
+  startX: number
+  startY: number
+  startLayout: WidgetLayout
+  // Whether the pointer has travelled past the click threshold.
+  moved: boolean
+  // Drag started from the minimized launcher (which doubles as a restore button).
+  fromLauncher: boolean
+}
 
 export const FloatingLayout = ({
   storageKey,
@@ -178,13 +209,24 @@ export const FloatingLayout = ({
   )
   const [isDragging, setIsDragging] = useState(false)
   const [liveMessage, setLiveMessage] = useState('')
-  const dragRef = useRef<{ startX: number; startY: number; startLayout: WidgetLayout } | null>(null)
+  const [snapEdge, setSnapEdge] = useState<SnapEdge | null>(null)
+  const dragRef = useRef<DragState | null>(null)
   const resizeRef = useRef<{ startX: number; startY: number; startLayout: WidgetLayout } | null>(
     null
   )
+  // Mirrors of drag-loop inputs that the once-bound window handlers read: the live
+  // snap edge, the current onDock, and a one-shot flag that suppresses the launcher's
+  // restore click after a real drag (so dragging the minimized widget never restores).
+  const snapEdgeRef = useRef<SnapEdge | null>(null)
+  const onDockRef = useRef<FloatingLayoutProps['onDock']>(onDock)
+  const suppressLauncherClickRef = useRef(false)
 
   const isMinimized = layout.minimized
   const themeStyle = shellThemeToCssVars(config.theme)
+
+  useEffect(() => {
+    onDockRef.current = onDock
+  }, [onDock])
 
   useEffect(() => {
     document.body.dataset.widgetViewMode = 'standalone'
@@ -193,13 +235,49 @@ export const FloatingLayout = ({
     }
   }, [])
 
-  const handleMovePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const beginDrag = (event: ReactPointerEvent<HTMLButtonElement>, fromLauncher: boolean) => {
     dragRef.current = {
       startX: event.clientX,
       startY: event.clientY,
-      startLayout: layout
+      startLayout: layout,
+      moved: false,
+      fromLauncher
+    }
+    // Capture the pointer so the drag keeps tracking even when the cursor leaves the
+    // window — including over a sandboxed iframe beneath (the canvas overlay) or past
+    // the viewport edge (#323: "moving the widget from below to top loses the drag").
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // jsdom / unsupported: the window listeners still receive the events.
     }
     setIsDragging(true)
+  }
+
+  const handleGripPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    beginDrag(event, false)
+  }
+
+  const handleLauncherPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    beginDrag(event, true)
+  }
+
+  const handleMinimize = () => {
+    setLayout((currentLayout) => clampLayout({ ...currentLayout, minimized: true }, dims))
+  }
+
+  const handleRestore = () => {
+    setLayout((currentLayout) => clampLayout({ ...currentLayout, minimized: false }, dims))
+  }
+
+  const handleLauncherClick = () => {
+    // A real drag just ended — swallow the trailing click so the widget stays put
+    // instead of restoring. A plain click (or keyboard activation) restores.
+    if (suppressLauncherClickRef.current) {
+      suppressLauncherClickRef.current = false
+      return
+    }
+    handleRestore()
   }
 
   // Core keyboard nudge for the standalone window (C1). `resize` true adjusts
@@ -265,18 +343,39 @@ export const FloatingLayout = ({
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
-      if (dragRef.current) {
-        const { startX, startY, startLayout } = dragRef.current
+      const drag = dragRef.current
+      if (drag) {
+        if (
+          !drag.moved &&
+          (Math.abs(event.clientX - drag.startX) > DRAG_CLICK_THRESHOLD ||
+            Math.abs(event.clientY - drag.startY) > DRAG_CLICK_THRESHOLD)
+        ) {
+          drag.moved = true
+        }
         setLayout(
           clampLayout(
             {
-              ...startLayout,
-              x: startLayout.x + (event.clientX - startX),
-              y: startLayout.y + (event.clientY - startY)
+              ...drag.startLayout,
+              x: drag.startLayout.x + (event.clientX - drag.startX),
+              y: drag.startLayout.y + (event.clientY - drag.startY)
             },
             dims
           )
         )
+
+        // Snap preview only for a normal (non-minimized) window drag when docking is
+        // offered — dragging the minimized launcher just repositions it.
+        const edge =
+          !drag.fromLauncher && onDockRef.current
+            ? detectSnapEdge(
+                { x: event.clientX, y: event.clientY },
+                { width: window.innerWidth, height: window.innerHeight }
+              )
+            : null
+        if (edge !== snapEdgeRef.current) {
+          snapEdgeRef.current = edge
+          setSnapEdge(edge)
+        }
       }
 
       if (resizeRef.current) {
@@ -295,9 +394,26 @@ export const FloatingLayout = ({
     }
 
     const handlePointerUp = () => {
+      const drag = dragRef.current
+      const edge = snapEdgeRef.current
       dragRef.current = null
       resizeRef.current = null
       setIsDragging(false)
+      snapEdgeRef.current = null
+      setSnapEdge(null)
+
+      if (!drag) {
+        return
+      }
+      // Released in a snap zone → morph into the docked web mode for that edge.
+      if (!drag.fromLauncher && edge && onDockRef.current) {
+        onDockRef.current(edge)
+        return
+      }
+      // A dragged launcher must not fire its restore click on release.
+      if (drag.fromLauncher && drag.moved) {
+        suppressLauncherClickRef.current = true
+      }
     }
 
     const handleResize = () => {
@@ -315,17 +431,10 @@ export const FloatingLayout = ({
       window.removeEventListener('pointercancel', handlePointerUp)
       window.removeEventListener('resize', handleResize)
     }
-    // Bind once; the handlers close over the current `dims`/`layout` via setLayout's
-    // updater, matching the widget's original single-bind behavior.
+    // Bind once; the handlers close over the current `dims` via setLayout's updater
+    // and read live drag inputs through refs, matching the widget's original
+    // single-bind behavior.
   }, [])
-
-  const handleMinimize = () => {
-    setLayout((currentLayout) => clampLayout({ ...currentLayout, minimized: true }, dims))
-  }
-
-  const handleRestore = () => {
-    setLayout((currentLayout) => clampLayout({ ...currentLayout, minimized: false }, dims))
-  }
 
   // Visually-hidden live region announcing keyboard move/resize (C1).
   const liveRegion = (
@@ -336,16 +445,35 @@ export const FloatingLayout = ({
 
   const stageClass = ['widget-stage', stageClassName].filter(Boolean).join(' ')
 
+  const snapPreview = snapEdge
+    ? (() => {
+        const rect = snapPreviewRect(snapEdge, {
+          width: window.innerWidth,
+          height: window.innerHeight
+        })
+        return (
+          <div
+            className="widget-snap-preview"
+            data-edge={snapEdge}
+            aria-hidden="true"
+            style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
+          />
+        )
+      })()
+    : null
+
   return (
     <div className={stageClass} style={themeStyle}>
       {liveRegion}
+      {snapPreview}
       <WidgetWindow
         minimized={isMinimized}
         dragging={isDragging}
-        onRestore={handleRestore}
+        onRestore={handleLauncherClick}
         onMinimize={handleMinimize}
-        {...(onDock ? { onDock } : {})}
-        onMovePointerDown={handleMovePointerDown}
+        {...(onDock ? { onDock: () => onDock() } : {})}
+        onMovePointerDown={handleGripPointerDown}
+        onLauncherPointerDown={handleLauncherPointerDown}
         onMoveKeyDown={handleGripKeyDown}
         style={{
           left: layout.x,
@@ -364,6 +492,11 @@ export const FloatingLayout = ({
                 startX: event.clientX,
                 startY: event.clientY,
                 startLayout: layout
+              }
+              try {
+                event.currentTarget.setPointerCapture(event.pointerId)
+              } catch {
+                // jsdom / unsupported: window listeners still receive the events.
               }
             }}
             onKeyDown={handleResizeKeyDown}

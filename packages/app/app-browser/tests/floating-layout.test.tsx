@@ -172,6 +172,10 @@ const renderStandalone = (props?: { onDock?: () => void }) =>
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn()
+  // jsdom does not implement pointer capture; stub it so the drag handlers can call
+  // setPointerCapture (the #323 fix for keeping a drag alive outside the window).
+  Element.prototype.setPointerCapture = vi.fn()
+  Element.prototype.releasePointerCapture = vi.fn()
 })
 
 afterEach(() => {
@@ -303,7 +307,89 @@ describe('FloatingLayout', () => {
       </FloatingLayout>
     )
     fireEvent.click(screen.getByRole('button', { name: 'Dock to sidebar' }))
+    // The dock button docks to the caller's side, so it passes no snap edge.
     expect(onDock).toHaveBeenCalledTimes(1)
+    expect(onDock).toHaveBeenCalledWith()
+  })
+
+  it('captures the pointer when a grip drag starts (#323: drag survives leaving the window)', () => {
+    const capture = vi.spyOn(Element.prototype, 'setPointerCapture')
+    renderStandalone()
+
+    const grip = screen.getByRole('button', { name: /move widget/i })
+    fireEvent.pointerDown(grip, { clientX: 200, clientY: 400, pointerId: 7 })
+
+    expect(capture).toHaveBeenCalledWith(7)
+    capture.mockRestore()
+  })
+
+  it('can be dragged while minimized without restoring (#323 bullet 2)', () => {
+    const { container } = renderStandalone()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Minimize widget' }))
+    const launcher = screen.getByRole('button', { name: 'Restore widget' })
+    const shell = container.querySelector('.widget-floating-shell') as HTMLElement
+    const startLeft = shell.style.left
+
+    // Drag the launcher past the click threshold.
+    fireEvent.pointerDown(launcher, { clientX: 100, clientY: 100, pointerId: 3 })
+    fireEvent.pointerMove(window, { clientX: 180, clientY: 160 })
+    fireEvent.pointerUp(window)
+
+    // It moved…
+    expect(shell.style.left).not.toBe(startLeft)
+    // …and the trailing click does NOT restore (still minimized).
+    fireEvent.click(launcher)
+    expect(screen.getByRole('button', { name: 'Restore widget' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Minimize widget' })).toBeNull()
+  })
+
+  it('still restores on a plain click while minimized (no drag)', () => {
+    renderStandalone()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Minimize widget' }))
+    const launcher = screen.getByRole('button', { name: 'Restore widget' })
+
+    // A press that does not move is a click, not a drag.
+    fireEvent.pointerDown(launcher, { clientX: 100, clientY: 100, pointerId: 4 })
+    fireEvent.pointerUp(window)
+    fireEvent.click(launcher)
+
+    expect(screen.getByRole('button', { name: 'Minimize widget' })).toBeInTheDocument()
+  })
+
+  it('shows a snap preview near an edge and docks to it on release (#324)', () => {
+    const onDock = vi.fn()
+    const { container } = renderStandalone({ onDock })
+
+    const grip = screen.getByRole('button', { name: /move widget/i })
+    fireEvent.pointerDown(grip, { clientX: 300, clientY: 400, pointerId: 9 })
+
+    // No preview until the pointer nears an edge.
+    expect(container.querySelector('.widget-snap-preview')).toBeNull()
+
+    // Drag toward the right edge (past innerWidth - threshold).
+    fireEvent.pointerMove(window, { clientX: window.innerWidth - 5, clientY: 400 })
+    const preview = container.querySelector('.widget-snap-preview')
+    expect(preview).not.toBeNull()
+    expect(preview).toHaveAttribute('data-edge', 'right')
+
+    fireEvent.pointerUp(window)
+    expect(onDock).toHaveBeenCalledWith('right')
+    // The preview is cleared once the drag ends.
+    expect(container.querySelector('.widget-snap-preview')).toBeNull()
+  })
+
+  it('does not snap-dock when the drag stays clear of every edge (#324)', () => {
+    const onDock = vi.fn()
+    renderStandalone({ onDock })
+
+    const grip = screen.getByRole('button', { name: /move widget/i })
+    fireEvent.pointerDown(grip, { clientX: 300, clientY: 400, pointerId: 11 })
+    fireEvent.pointerMove(window, { clientX: 320, clientY: 420 })
+    fireEvent.pointerUp(window)
+
+    expect(onDock).not.toHaveBeenCalled()
   })
 })
 

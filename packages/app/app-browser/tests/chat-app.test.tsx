@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ChatApp picks a layout by `mode` and, when morphable, exposes a dock/undock toggle
 // that swaps FloatingLayout <-> SidebarLayout. Here we use the REAL layouts (session
@@ -38,6 +38,11 @@ vi.mock('../src/chat-shell/docked-chat-surface.js', () => ({
 import { ChatApp } from '../src/chat-shell/chat-app.js'
 
 const Loading = () => <div data-loading="true" />
+
+beforeAll(() => {
+  Element.prototype.setPointerCapture = vi.fn()
+  Element.prototype.releasePointerCapture = vi.fn()
+})
 
 afterEach(() => {
   cleanup()
@@ -96,6 +101,30 @@ describe('ChatApp', () => {
     unmount()
     render(<ChatApp mode="floating" storageKey="k" LoadingComponent={Loading} />)
     expect(screen.getByTestId('docked-body')).toBeInTheDocument()
+  })
+
+  it('snap-docks to the edge a drag is released in, then undocks (#324)', () => {
+    const { container } = render(
+      <ChatApp mode="floating" storageKey="k" LoadingComponent={Loading} />
+    )
+    expect(screen.getByTestId('floating-body')).toBeInTheDocument()
+
+    // Drag the grip to the right edge and release → morph into the right-docked split.
+    const grip = screen.getByRole('button', { name: /move widget/i })
+    fireEvent.pointerDown(grip, { clientX: 300, clientY: 300, pointerId: 2 })
+    fireEvent.pointerMove(window, { clientX: window.innerWidth - 3, clientY: 300 })
+    fireEvent.pointerUp(window)
+
+    const panel = container.querySelector('.sidebar-panel') as HTMLElement
+    expect(panel).not.toBeNull()
+    expect(panel).toHaveAttribute('data-edge', 'right')
+    expect(screen.getByTestId('docked-body')).toBeInTheDocument()
+    expect(window.localStorage.getItem('k:edge')).toBe('right')
+
+    // The docked web mode is resizable (issue #324) and can morph back to floating.
+    expect(screen.getByRole('button', { name: 'Resize sidebar' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Float chat' }))
+    expect(screen.getByTestId('floating-body')).toBeInTheDocument()
   })
 
   it('hides the dock/undock toggle when not morphable', () => {

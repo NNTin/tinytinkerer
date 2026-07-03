@@ -59,13 +59,24 @@ export { DockedChatSurface } from './chat-shell/docked-chat-surface'
 export type { DockedChatSurfaceProps, DockedSizeVariant } from './chat-shell/docked-chat-surface'
 export {
   clampLayout,
-  clampWidth,
+  clampSize,
   loadStandaloneLayout,
   saveStandaloneLayout,
   loadPersisted,
-  savePersisted
+  savePersisted,
+  detectSnapEdge,
+  snapPreviewRect,
+  isVerticalEdge,
+  SNAP_THRESHOLD,
+  SNAP_PREVIEW_FRACTION
 } from './chat-shell/layout-geometry'
-export type { WidgetLayout, WidgetDims } from './chat-shell/layout-geometry'
+export type {
+  WidgetLayout,
+  WidgetDims,
+  SnapEdge,
+  Viewport,
+  PreviewRect
+} from './chat-shell/layout-geometry'
 export { TelemetryConsentGate } from './telemetry/consent-gate'
 export { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
 export { PrivacyPolicyUpdateGate } from './telemetry/privacy-update-gate'

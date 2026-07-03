@@ -4,6 +4,7 @@ import { FloatingChatSurface, type ChatLoadingComponent } from './floating-chat-
 import { FloatingLayout } from './floating-layout'
 import { SidebarLayout } from './sidebar-layout'
 import type { DockedSizeVariant } from './docked-chat-surface'
+import type { SnapEdge } from './layout-geometry'
 
 export type ChatMode = 'floating' | 'sidebar'
 
@@ -47,6 +48,17 @@ const readStoredMode = (storageKey: string): ChatMode | null => {
   }
 }
 
+const readStoredEdge = (storageKey: string): SnapEdge | null => {
+  try {
+    const stored = window.localStorage.getItem(`${storageKey}:edge`)
+    return stored === 'top' || stored === 'bottom' || stored === 'left' || stored === 'right'
+      ? stored
+      : null
+  } catch {
+    return null
+  }
+}
+
 // The single shared chat App: one session (the surface hooks + stores live above
 // this in AppBrowserProvider) rendered through a pluggable layout shell. Because
 // only the layout wrapper swaps on morph, the conversation and any in-flight run
@@ -76,18 +88,36 @@ export const ChatApp = ({
   const [activeMode, setActiveMode] = useState<ChatMode>(
     () => (morphable ? readStoredMode(storageKey) : null) ?? mode
   )
+  // Which edge the docked "web mode" fills. Set by the dock button (the configured
+  // `side`) or by a snap-drag release near a viewport edge (#324), and persisted so a
+  // reload restores the same split.
+  const [dockEdge, setDockEdge] = useState<SnapEdge>(
+    () => (morphable ? readStoredEdge(storageKey) : null) ?? side
+  )
 
-  const toggleMode = () => {
-    setActiveMode((current) => {
-      const next: ChatMode = current === 'floating' ? 'sidebar' : 'floating'
-      try {
-        window.localStorage.setItem(`${storageKey}:mode`, next)
-      } catch {
-        // Non-fatal: mode just won't persist across reloads.
-      }
-      onModeChange?.(next)
-      return next
-    })
+  // Morph into the docked web mode. `edge` comes from a snap-drag release; the plain
+  // dock button omits it and docks to the configured `side`.
+  const dockTo = (edge?: SnapEdge) => {
+    const target: SnapEdge = edge ?? side
+    setDockEdge(target)
+    setActiveMode('sidebar')
+    try {
+      window.localStorage.setItem(`${storageKey}:mode`, 'sidebar')
+      window.localStorage.setItem(`${storageKey}:edge`, target)
+    } catch {
+      // Non-fatal: the mode/edge just won't persist across reloads.
+    }
+    onModeChange?.('sidebar')
+  }
+
+  const undock = () => {
+    setActiveMode('floating')
+    try {
+      window.localStorage.setItem(`${storageKey}:mode`, 'floating')
+    } catch {
+      // Non-fatal.
+    }
+    onModeChange?.('floating')
   }
 
   if (activeMode === 'sidebar') {
@@ -96,9 +126,12 @@ export const ChatApp = ({
         storageKey={`${storageKey}:sidebar`}
         sizeVariant={sizeVariant}
         side={side}
-        resizable={resizable}
+        edge={dockEdge}
+        // The morph target is the resizable web-mode split (#324); the pinned panes
+        // (root composition, /web, /mobile) keep their static `resizable` prop.
+        resizable={morphable ? true : resizable}
         fill={fill}
-        {...(morphable ? { onUndock: toggleMode } : {})}
+        {...(morphable ? { onUndock: undock } : {})}
       >
         <DockedChatSurface
           LoadingComponent={LoadingComponent}
@@ -116,7 +149,7 @@ export const ChatApp = ({
     <FloatingLayout
       storageKey={`${storageKey}:floating`}
       initialMinimized={initialMinimized}
-      {...(morphable ? { onDock: toggleMode } : {})}
+      {...(morphable ? { onDock: dockTo } : {})}
       {...(defaultWidth !== undefined ? { defaultWidth } : {})}
       {...(defaultHeight !== undefined ? { defaultHeight } : {})}
       {...(minWidth !== undefined ? { minWidth } : {})}
