@@ -32,7 +32,9 @@ describe('canvas app tools', () => {
       'snap',
       'place',
       'arrange',
-      'survey'
+      'survey',
+      'preset',
+      'icon'
     ])
     expect(
       tools.find((tool) => tool.id === 'draw')?.schema.safeParse({ elements: [] }).success

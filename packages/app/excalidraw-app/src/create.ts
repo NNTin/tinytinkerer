@@ -228,26 +228,40 @@ const buildConnector = (
   }
 }
 
-export const executeDraw = (api: ExcalidrawImperativeAPI, input: DrawInput) => {
-  assertRequestBudget('draw', input)
-  const existing = input.replace ? [] : api.getSceneElements()
-  const usedIds = new Set(existing.map(({ id }) => id))
-  const preparedElements = input.elements.map((element) => {
-    if (element.id && usedIds.has(element.id))
-      throw new Error(`draw: element id "${element.id}" already exists in the scene`)
-    const id = element.id ?? uniqueId('tt-element', usedIds)
-    if (element.id) usedIds.add(element.id)
-    return { ...element, id }
-  })
+export type DrawCommit = {
+  drawn: number
+  replaced: boolean
+  connectors: ConnectorReceipt[]
+  converted: OrderedExcalidrawElement[]
+  existing: readonly OrderedExcalidrawElement[]
+}
+
+// Convert prepared element skeletons plus declarative connectors and commit them
+// in exactly one atomic, undoable scene update. Shared by `draw` and the
+// diagram-semantics inserts (`preset`/`icon`), which build their own skeletons —
+// with group ids and richer styling — but reuse the same post-layout connector
+// anchoring and the single-commit invariant. Element ids on the skeletons must
+// already be minted and reserved in `usedIds` (connectors mint against the same
+// set so ids never collide with the scene or each other).
+export const drawFromSkeletons = (
+  api: ExcalidrawImperativeAPI,
+  params: {
+    elementSkeletons: Array<Record<string, unknown>>
+    connectors: readonly DrawConnector[]
+    replace: boolean
+    usedIds: Set<string>
+  }
+): DrawCommit => {
+  const existing = params.replace ? [] : api.getSceneElements()
   const convertedElements = convertToExcalidrawElements(
-    preparedElements.map(skeleton) as Parameters<typeof convertToExcalidrawElements>[0],
+    params.elementSkeletons as Parameters<typeof convertToExcalidrawElements>[0],
     { regenerateIds: false }
   )
   const elementsById = new Map<string, OrderedExcalidrawElement>(
     [...existing, ...convertedElements].map((element) => [element.id, element])
   )
-  const connectors = input.connectors.map((connector) =>
-    buildConnector(connector, elementsById, usedIds)
+  const connectors = params.connectors.map((connector) =>
+    buildConnector(connector, elementsById, params.usedIds)
   )
   const convertedConnectors = convertToExcalidrawElements(
     connectors.map(({ skeleton }) => skeleton) as Parameters<typeof convertToExcalidrawElements>[0],
@@ -260,10 +274,36 @@ export const executeDraw = (api: ExcalidrawImperativeAPI, input: DrawInput) => {
   })
   api.scrollToContent(converted, { fitToContent: true })
   return {
-    ok: true as const,
     drawn: converted.length,
-    replaced: input.replace === true,
-    connectors: connectors.map(({ receipt }) => receipt)
+    replaced: params.replace,
+    connectors: connectors.map(({ receipt }) => receipt),
+    converted,
+    existing
+  }
+}
+
+export const executeDraw = (api: ExcalidrawImperativeAPI, input: DrawInput) => {
+  assertRequestBudget('draw', input)
+  const existing = input.replace ? [] : api.getSceneElements()
+  const usedIds = new Set(existing.map(({ id }) => id))
+  const preparedElements = input.elements.map((element) => {
+    if (element.id && usedIds.has(element.id))
+      throw new Error(`draw: element id "${element.id}" already exists in the scene`)
+    const id = element.id ?? uniqueId('tt-element', usedIds)
+    if (element.id) usedIds.add(element.id)
+    return { ...element, id }
+  })
+  const commit = drawFromSkeletons(api, {
+    elementSkeletons: preparedElements.map(skeleton),
+    connectors: input.connectors,
+    replace: input.replace === true,
+    usedIds
+  })
+  return {
+    ok: true as const,
+    drawn: commit.drawn,
+    replaced: commit.replaced,
+    connectors: commit.connectors
   }
 }
 

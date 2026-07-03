@@ -51,10 +51,10 @@ beforeAll(async () => {
 }, 90_000)
 
 describe('canvas bundle regression guard', () => {
-  it('keeps the twenty-tool startup entry below 79 kB', () => {
+  it('keeps the twenty-two-tool startup entry below 84 kB', () => {
     const entry = shellChunks.find((chunk) => chunk.facadeModuleId?.endsWith('/canvas/index.html'))
     expect(entry).toBeDefined()
-    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(79)
+    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(84)
   })
 
   it('keeps Excalidraw outside the canvas startup graph', () => {

@@ -192,28 +192,42 @@ flowchart LR
 
 This is the only shared source of truth for the Excalidraw vocabulary:
 
-| Verb         | Class | Contract purpose                                                              |
-| ------------ | ----- | ----------------------------------------------------------------------------- |
-| `draw`       | write | Create supported element skeletons and post-layout connectors                 |
-| `search`     | read  | Return compact candidates by query, type, selection, or viewport              |
-| `inspect`    | read  | Summarize scene, viewport, selection, groups, and relationships               |
-| `read`       | read  | Return normalized full element records and edit versions                      |
-| `edit`       | write | Apply atomic, version-checked, invariant-safe patches                         |
-| `clear`      | write | Remove all scene elements as an undoable update                               |
-| `group`      | write | Group or ungroup elements, carrying bound labels                              |
-| `duplicate`  | write | Copy elements by id with offset and remapped relationships                    |
-| `delete`     | write | Delete elements by id; rejects relationship crossings unless `includeRelated` |
-| `align`      | write | Align selected/specified elements on the x or y axis                          |
-| `distribute` | write | Even out spacing between selected/specified elements                          |
-| `stack`      | write | Lay elements out horizontally or vertically with a fixed gap                  |
-| `order`      | write | Reorder z-layers (front/back, forward/backward)                               |
-| `transform`  | write | Relationship-aware move/resize by id and expected version                     |
-| `bind`       | write | (Re)bind or detach a connector endpoint to a target shape and anchor point    |
-| `audit`      | read  | Report connector binding health (stale, detached, ambiguous) and safe repairs |
-| `snap`       | write | Snap elements (and optionally their size) to the grid                         |
-| `place`      | write | Position elements relative to an anchor element or group                      |
-| `arrange`    | write | Auto-layout elements into a grid or circle                                    |
-| `survey`     | read  | Report layout health (overlaps, label overflow, unreadable connectors)        |
+| Verb         | Class | Contract purpose                                                               |
+| ------------ | ----- | ------------------------------------------------------------------------------ |
+| `draw`       | write | Create supported element skeletons and post-layout connectors                  |
+| `search`     | read  | Return compact candidates by query, type, selection, or viewport               |
+| `inspect`    | read  | Summarize scene, viewport, selection, groups, and relationships                |
+| `read`       | read  | Return normalized full element records and edit versions                       |
+| `edit`       | write | Apply atomic, version-checked, invariant-safe patches                          |
+| `clear`      | write | Remove all scene elements as an undoable update                                |
+| `group`      | write | Group or ungroup elements, carrying bound labels                               |
+| `duplicate`  | write | Copy elements by id with offset and remapped relationships                     |
+| `delete`     | write | Delete elements by id; rejects relationship crossings unless `includeRelated`  |
+| `align`      | write | Align selected/specified elements on the x or y axis                           |
+| `distribute` | write | Even out spacing between selected/specified elements                           |
+| `stack`      | write | Lay elements out horizontally or vertically with a fixed gap                   |
+| `order`      | write | Reorder z-layers (front/back, forward/backward)                                |
+| `transform`  | write | Relationship-aware move/resize by id and expected version                      |
+| `bind`       | write | (Re)bind or detach a connector endpoint to a target shape and anchor point     |
+| `audit`      | read  | Report connector binding health (stale, detached, ambiguous) and safe repairs  |
+| `snap`       | write | Snap elements (and optionally their size) to the grid                          |
+| `place`      | write | Position elements relative to an anchor element or group                       |
+| `arrange`    | write | Auto-layout elements into a grid or circle                                     |
+| `survey`     | read  | Report layout health (overlaps, label overflow, unreadable connectors)         |
+| `preset`     | write | Insert a network/flowchart/UML/wireframe diagram scaffold (grouped, connected) |
+| `icon`       | write | Insert infrastructure icon glyphs (router/laptop/phone/cloud/server/printer)   |
+
+The two diagram-semantics verbs (`preset` and `icon`) turn intent into a ready-made,
+grouped scaffold. `preset` inserts a network topology (star / internet-edge), a flowchart
+(linear / decision), a UML diagram (class / sequence / use-case), or a wireframe (screen /
+modal); `icon` inserts one or more of the six infrastructure glyphs. Every shape is encoded
+locally as an Excalidraw element skeleton — nothing is fetched from libraries.excalidraw.com
+(or anywhere) at runtime, so they work offline and inside the sandboxed iframe. Both reuse
+the `draw` engine's post-layout connector anchoring and its single-commit invariant, so an
+insert is exactly one atomic, undoable `updateScene`; the optional `expectedSceneVersion`
+makes it version-checked (rejected before any write if the scene drifted). Each node/icon is
+placed in its own Excalidraw group so it moves as a unit, and the icon factories are the same
+building blocks the network preset composes from.
 
 The eight structural verbs (`group` through `transform`) extend the safe edit ladder for
 co-editing existing drawings. Each one resolves its operands, preflights version and
@@ -474,7 +488,8 @@ Ownership remains entirely in `excalidraw-app`, but behavior is split by concern
 ```mermaid
 flowchart LR
   bridge["bridge.ts<br/>verb binding only"]
-  create["create.ts<br/>draw, clear,<br/>post-layout connectors"]
+  create["create.ts<br/>draw, clear,<br/>post-layout connectors,<br/>drawFromSkeletons"]
+  presets["presets.ts<br/>preset, icon,<br/>icon factories, builders"]
   query["query.ts<br/>snapshots, search, inspect,<br/>read, paging, budgets"]
   normalization["normalization.ts<br/>union, details, bounds,<br/>capabilities"]
   edit["edit.ts<br/>preflight, versions,<br/>patch and atomic update"]
@@ -488,6 +503,10 @@ flowchart LR
   api["ExcalidrawImperativeAPI"]
 
   bridge --> create --> api
+  bridge --> presets --> api
+  presets --> create
+  presets --> ids
+  presets --> normalization
   bridge --> query --> api
   query --> normalization
   query --> payload
@@ -537,6 +556,11 @@ The modules translate the stable model vocabulary into Excalidraw operations:
 - `snap`, `place`, `arrange`, and `survey` (in `layout.ts`) own the layout helpers: the
   three writes reuse `structure.ts`'s `applyDeltas` so repositioning carries relationships,
   and `survey` reports overlaps/label/connector health as a bounded read;
+- `preset` and `icon` (in `presets.ts`) own the diagram-semantics inserts: pure builders turn
+  intent into an intermediate set of primitives + declarative links (keyed by local names),
+  the six infrastructure icon factories encode each glyph locally (no runtime library fetch),
+  and the executor mints collision-free ids/group ids, version-checks the scene, and reuses
+  `create.ts`'s `drawFromSkeletons` to convert + commit in one atomic, undoable update;
 - `geometry.ts` is the shared, verb-agnostic geometry: the axis-aligned box math, the
   deterministic connector edge-anchor policy, and `reflowBoundConnectors` (re-anchoring
   connectors bound to a moved/resized shape). `structure`, `binding`, and `layout` all

@@ -20,6 +20,7 @@ import { importLibraryContent } from './library'
 import { applySnapshot } from './persistence'
 import { executeEdit } from './edit'
 import { executeArrange, executePlace, executeSnap, executeSurvey } from './layout'
+import { executeIcon, executePreset } from './presets'
 import { executeInspect, executeRead, executeSearch } from './query'
 import {
   executeAlign,
@@ -62,7 +63,9 @@ export const createExcalidrawHandlers = (
   snap: defineBridgeVerb(excalidrawVerbContracts.snap, (input) => executeSnap(api, input)),
   place: defineBridgeVerb(excalidrawVerbContracts.place, (input) => executePlace(api, input)),
   arrange: defineBridgeVerb(excalidrawVerbContracts.arrange, (input) => executeArrange(api, input)),
-  survey: defineBridgeVerb(excalidrawVerbContracts.survey, (input) => executeSurvey(api, input))
+  survey: defineBridgeVerb(excalidrawVerbContracts.survey, (input) => executeSurvey(api, input)),
+  preset: defineBridgeVerb(excalidrawVerbContracts.preset, (input) => executePreset(api, input)),
+  icon: defineBridgeVerb(excalidrawVerbContracts.icon, (input) => executeIcon(api, input))
 })
 
 export const createExcalidrawBridge = (

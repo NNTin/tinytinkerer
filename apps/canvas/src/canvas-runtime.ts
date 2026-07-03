@@ -159,6 +159,23 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
           'suggested fix. Pass elementIds and/or checks to scope it. Budgeted, paginated, and ' +
           'detail-aware.',
         schema: excalidrawVerbInputSchemas.survey
+      },
+      preset: {
+        description:
+          'Insert a ready-made Excalidraw diagram scaffold at x,y: a network topology (star or ' +
+          'internet-edge), a flowchart (linear or decision), a UML diagram (class, sequence, or ' +
+          'use-case), or a wireframe (screen or modal). Nodes are grouped and connected with labeled ' +
+          'connectors; every shape is encoded locally so it works offline. Appends by default (use ' +
+          'replace:true to start fresh) as one atomic, undoable, version-checked insert.',
+        schema: excalidrawVerbInputSchemas.preset
+      },
+      icon: {
+        description:
+          'Insert infrastructure icons — router, laptop, phone, cloud/internet, server, or printer — ' +
+          'as grouped, labeled shape elements at the given canvas coordinates. Each icon is a local ' +
+          'Excalidraw glyph (never fetched from an external library), reusable as a building block for ' +
+          'diagrams. Appends by default; one atomic, undoable, version-checked insert.',
+        schema: excalidrawVerbInputSchemas.icon
       }
     }
   })

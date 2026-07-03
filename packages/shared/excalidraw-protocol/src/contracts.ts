@@ -11,12 +11,16 @@ import {
   duplicateInputSchema,
   editInputSchema,
   EXCALIDRAW_DETAIL_LEVELS,
+  EXCALIDRAW_ICON_TYPES,
+  EXCALIDRAW_PRESET_KINDS,
   excalidrawLibraryImportSchema,
   excalidrawSnapshotSchema,
   groupInputSchema,
+  iconInputSchema,
   inspectInputSchema,
   orderInputSchema,
   placeInputSchema,
+  presetInputSchema,
   readInputSchema,
   searchInputSchema,
   snapInputSchema,
@@ -503,6 +507,40 @@ const surveyResultSchema = z
   })
   .strict()
 
+// Diagram-semantics insertion results. `preset` and `icon` are atomic, undoable,
+// version-checked inserts. Both report the total elements drawn, whether the
+// canvas was replaced, the resulting scene version (use it as the next
+// `expectedSceneVersion`), the group ids created (each node/icon is grouped so it
+// moves as a unit), the ids of the created elements (for follow-up edits), and the
+// post-layout connector receipts (shared with `draw`).
+const insertionResultShape = {
+  ok: z.literal(true),
+  drawn: z.number().int().nonnegative(),
+  replaced: z.boolean(),
+  sceneVersion: z.number().int().nonnegative(),
+  groupIds: z.array(z.string()),
+  createdIds: z.array(z.string()),
+  connectors: z.array(drawConnectorReceiptSchema)
+}
+const iconPlacementSchema = z
+  .object({
+    type: z.enum(EXCALIDRAW_ICON_TYPES),
+    label: z.string(),
+    groupId: z.string(),
+    elementIds: z.array(z.string())
+  })
+  .strict()
+const iconResultSchema = z
+  .object({ ...insertionResultShape, icons: z.array(iconPlacementSchema) })
+  .strict()
+const presetResultSchema = z
+  .object({
+    ...insertionResultShape,
+    kind: z.enum(EXCALIDRAW_PRESET_KINDS),
+    variant: z.string()
+  })
+  .strict()
+
 const snapshotRestoreResultSchema = z
   .object({ ok: z.literal(true), restored: z.number().int().nonnegative() })
   .strict()
@@ -548,7 +586,9 @@ export const excalidrawVerbContracts = {
   snap: { inputSchema: snapInputSchema, resultSchema: snapResultSchema },
   place: { inputSchema: placeInputSchema, resultSchema: placeResultSchema },
   arrange: { inputSchema: arrangeInputSchema, resultSchema: arrangeResultSchema },
-  survey: { inputSchema: surveyInputSchema, resultSchema: surveyResultSchema }
+  survey: { inputSchema: surveyInputSchema, resultSchema: surveyResultSchema },
+  preset: { inputSchema: presetInputSchema, resultSchema: presetResultSchema },
+  icon: { inputSchema: iconInputSchema, resultSchema: iconResultSchema }
 } as const
 
 export type EditableField = z.infer<typeof editableFieldSchema>
@@ -564,3 +604,6 @@ export type AuditResult = z.infer<typeof auditResultSchema>
 export type ConnectorAudit = z.infer<typeof connectorAuditSchema>
 export type SurveyResult = z.infer<typeof surveyResultSchema>
 export type LayoutFinding = z.infer<typeof layoutFindingSchema>
+export type PresetResult = z.infer<typeof presetResultSchema>
+export type IconResult = z.infer<typeof iconResultSchema>
+export type IconPlacement = z.infer<typeof iconPlacementSchema>

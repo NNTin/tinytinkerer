@@ -3,8 +3,9 @@ import { z } from 'zod'
 export const EXCALIDRAW_APP_ID = 'excalidraw'
 // generic app-bridge envelope version. Bumped to 5 for the persistence snapshot
 // restore contract (host-replayed scene on reload), then to 6 for the connectors
-// & bindings and layout-helper verbs.
-export const EXCALIDRAW_PROTOCOL_VERSION = 6
+// & bindings and layout-helper verbs, then to 7 for the diagram-semantics verbs
+// (`preset` + `icon`).
+export const EXCALIDRAW_PROTOCOL_VERSION = 7
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
 export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
@@ -42,7 +43,9 @@ export const EXCALIDRAW_PAYLOAD_BUDGETS = Object.freeze({
   snap: { request: 16 * 1_024, result: 64 * 1_024 },
   place: { request: 16 * 1_024, result: 64 * 1_024 },
   arrange: { request: 16 * 1_024, result: 64 * 1_024 },
-  survey: { request: 16 * 1_024, result: 64 * 1_024 }
+  survey: { request: 16 * 1_024, result: 64 * 1_024 },
+  preset: { request: 16 * 1_024, result: 64 * 1_024 },
+  icon: { request: 16 * 1_024, result: 64 * 1_024 }
 })
 
 const colorSchema = z
@@ -702,6 +705,158 @@ export const surveyInputSchema = z
       })
     }
   })
+// Diagram-semantics verbs. `preset` inserts a ready-made diagram scaffold
+// (network / flowchart / UML / wireframe) and `icon` inserts one or more
+// infrastructure glyphs (router, laptop, phone, cloud, server, printer) as
+// grouped, labeled shape elements. Both are fully offline: every glyph is encoded
+// locally as Excalidraw element skeletons — nothing is fetched from
+// libraries.excalidraw.com (or anywhere) at runtime, so they work inside the
+// sandboxed iframe. Insertion is atomic and undoable (one scene update) and
+// version-checked via the optional `expectedSceneVersion` (rejects if the scene
+// drifted since the caller read it).
+
+export const EXCALIDRAW_ICON_TYPES = [
+  'router',
+  'laptop',
+  'phone',
+  'cloud',
+  'server',
+  'printer'
+] as const
+
+export const EXCALIDRAW_PRESET_KINDS = ['network', 'flowchart', 'uml', 'wireframe'] as const
+
+// Each icon expands into a handful of primitives, so cap a single batch well
+// under EXCALIDRAW_ELEMENT_LIMIT converted elements.
+export const EXCALIDRAW_ICON_LIMIT = 12
+
+const iconTypeSchema = z.enum(EXCALIDRAW_ICON_TYPES).describe('Infrastructure icon to insert.')
+
+// Shared version guard for the inserts: clear-first flag plus the optional
+// scene-version check. Inserts append by default, so the check is opt-in.
+const insertionGuardShape = {
+  replace: z
+    .boolean()
+    .default(false)
+    .describe('Clear the canvas before inserting instead of appending.'),
+  expectedSceneVersion: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe(
+      'Scene version from a prior read/inspect. When provided, the insertion is rejected if the scene changed since (version-checked).'
+    )
+}
+
+const iconSpecSchema = z
+  .object({
+    type: iconTypeSchema,
+    x: z.number().finite().describe('Left position of this icon in canvas coordinates.'),
+    y: z.number().finite().describe('Top position of this icon in canvas coordinates.'),
+    label: z
+      .string()
+      .trim()
+      .min(1)
+      .max(EXCALIDRAW_FIELD_LIMITS.name)
+      .optional()
+      .describe('Override the default caption. Defaults to the icon type, e.g. "Router".')
+  })
+  .strict()
+
+export const iconInputSchema = z
+  .object({
+    icons: z
+      .array(iconSpecSchema)
+      .min(1)
+      .max(EXCALIDRAW_ICON_LIMIT)
+      .describe('Infrastructure icons to insert, each positioned in canvas coordinates.'),
+    ...insertionGuardShape
+  })
+  .strict()
+
+// Common controls for a diagram preset: where to anchor it, an optional heading,
+// and the shared insertion guard.
+const presetOriginShape = {
+  x: z
+    .number()
+    .finite()
+    .default(0)
+    .describe('Left position of the inserted scaffold in canvas coordinates.'),
+  y: z
+    .number()
+    .finite()
+    .default(0)
+    .describe('Top position of the inserted scaffold in canvas coordinates.'),
+  title: z
+    .string()
+    .trim()
+    .min(1)
+    .max(EXCALIDRAW_FIELD_LIMITS.name)
+    .optional()
+    .describe('Optional heading drawn above the preset.'),
+  ...insertionGuardShape
+}
+
+const networkPresetSchema = z
+  .object({
+    kind: z.literal('network'),
+    variant: z
+      .enum(['star', 'edge'])
+      .default('star')
+      .describe(
+        'star: a central router linked to labeled device icons. edge: an internet cloud → router → server chain.'
+      ),
+    ...presetOriginShape
+  })
+  .strict()
+
+const flowchartPresetSchema = z
+  .object({
+    kind: z.literal('flowchart'),
+    variant: z
+      .enum(['linear', 'decision'])
+      .default('linear')
+      .describe(
+        'linear: start terminal → process box → end terminal. decision: adds a decision diamond with labeled Yes/No connectors.'
+      ),
+    ...presetOriginShape
+  })
+  .strict()
+
+const umlPresetSchema = z
+  .object({
+    kind: z.literal('uml'),
+    variant: z
+      .enum(['class', 'sequence', 'usecase'])
+      .default('class')
+      .describe(
+        'class: class boxes with name/attribute/method compartments. sequence: lifelines with messages. usecase: an actor with use-case ovals.'
+      ),
+    ...presetOriginShape
+  })
+  .strict()
+
+const wireframePresetSchema = z
+  .object({
+    kind: z.literal('wireframe'),
+    variant: z
+      .enum(['screen', 'modal'])
+      .default('screen')
+      .describe(
+        'screen: a screen frame with a nav bar, input field, buttons, and a card. modal: a dimmed screen behind a centered modal dialog.'
+      ),
+    ...presetOriginShape
+  })
+  .strict()
+
+export const presetInputSchema = z.discriminatedUnion('kind', [
+  networkPresetSchema,
+  flowchartPresetSchema,
+  umlPresetSchema,
+  wireframePresetSchema
+])
+
 // Schema version for a persisted scene snapshot. The `version` is a literal in the
 // schema below so a snapshot written by an older/newer build fails validation and
 // the harness falls back to an empty scene instead of feeding the canvas a shape it
@@ -773,7 +928,9 @@ export const excalidrawVerbInputSchemas = {
   snap: snapInputSchema,
   place: placeInputSchema,
   arrange: arrangeInputSchema,
-  survey: surveyInputSchema
+  survey: surveyInputSchema,
+  preset: presetInputSchema,
+  icon: iconInputSchema
 } as const
 
 export const EXCALIDRAW_VERBS = Object.freeze(
@@ -803,5 +960,9 @@ export type SnapInput = z.infer<typeof snapInputSchema>
 export type PlaceInput = z.infer<typeof placeInputSchema>
 export type ArrangeInput = z.infer<typeof arrangeInputSchema>
 export type SurveyInput = z.infer<typeof surveyInputSchema>
+export type PresetInput = z.infer<typeof presetInputSchema>
+export type IconInput = z.infer<typeof iconInputSchema>
+export type IconType = (typeof EXCALIDRAW_ICON_TYPES)[number]
+export type PresetKind = (typeof EXCALIDRAW_PRESET_KINDS)[number]
 export type ExcalidrawSnapshot = z.infer<typeof excalidrawSnapshotSchema>
 export type ExcalidrawLibraryImport = z.infer<typeof excalidrawLibraryImportSchema>

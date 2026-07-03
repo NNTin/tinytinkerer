@@ -15,15 +15,18 @@ import {
   excalidrawSnapshotSchema,
   excalidrawVerbContracts,
   EXCALIDRAW_DEFAULT_BINDING_GAP,
+  EXCALIDRAW_ICON_LIMIT,
   EXCALIDRAW_LIBRARY_IMPORT_VERB,
   EXCALIDRAW_PROTOCOL_VERSION,
   EXCALIDRAW_SNAPSHOT_VERSION,
   EXCALIDRAW_VERBS,
+  iconInputSchema,
   isAllowedLibraryUrl,
   groupInputSchema,
   inspectInputSchema,
   orderInputSchema,
   placeInputSchema,
+  presetInputSchema,
   readInputSchema,
   readElementSchema,
   searchInputSchema,
@@ -367,8 +370,77 @@ describe('excalidraw protocol', () => {
     expect(surveyInputSchema.safeParse({ offset: 1 }).success).toBe(false)
   })
 
+  it('validates the diagram-semantics preset and icon verbs', () => {
+    // preset: discriminated on kind, variant defaults, origin defaults, opt-in version guard.
+    expect(presetInputSchema.parse({ kind: 'network' })).toMatchObject({
+      kind: 'network',
+      variant: 'star',
+      x: 0,
+      y: 0,
+      replace: false
+    })
+    expect(
+      presetInputSchema.parse({
+        kind: 'flowchart',
+        variant: 'decision',
+        x: 40,
+        expectedSceneVersion: 3
+      })
+    ).toMatchObject({ kind: 'flowchart', variant: 'decision', x: 40, expectedSceneVersion: 3 })
+    expect(presetInputSchema.safeParse({ kind: 'uml', variant: 'sequence' }).success).toBe(true)
+    expect(presetInputSchema.safeParse({ kind: 'wireframe', variant: 'modal' }).success).toBe(true)
+    // unknown kind / variant are rejected.
+    expect(presetInputSchema.safeParse({ kind: 'mindmap' }).success).toBe(false)
+    expect(presetInputSchema.safeParse({ kind: 'network', variant: 'mesh' }).success).toBe(false)
+
+    // icon: requires at least one placed icon, rejects unknown types, caps the batch.
+    expect(iconInputSchema.parse({ icons: [{ type: 'router', x: 0, y: 0 }] })).toMatchObject({
+      replace: false,
+      icons: [{ type: 'router' }]
+    })
+    expect(iconInputSchema.safeParse({ icons: [] }).success).toBe(false)
+    expect(iconInputSchema.safeParse({ icons: [{ type: 'satellite', x: 0, y: 0 }] }).success).toBe(
+      false
+    )
+    expect(
+      iconInputSchema.safeParse({
+        icons: Array.from({ length: EXCALIDRAW_ICON_LIMIT + 1 }, () => ({
+          type: 'server' as const,
+          x: 0,
+          y: 0
+        }))
+      }).success
+    ).toBe(false)
+    // insertion result contracts round-trip.
+    expect(
+      excalidrawVerbContracts.preset.resultSchema.safeParse({
+        ok: true,
+        drawn: 6,
+        replaced: false,
+        sceneVersion: 12,
+        groupIds: ['g1'],
+        createdIds: ['a', 'b'],
+        connectors: [],
+        kind: 'flowchart',
+        variant: 'linear'
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.icon.resultSchema.safeParse({
+        ok: true,
+        drawn: 4,
+        replaced: false,
+        sceneVersion: 3,
+        groupIds: ['g1'],
+        createdIds: ['a'],
+        connectors: [],
+        icons: [{ type: 'router', label: 'Router', groupId: 'g1', elementIds: ['a'] }]
+      }).success
+    ).toBe(true)
+  })
+
   it('uses an independently owned app contract version', () => {
-    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(6)
+    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(7)
   })
 
   it('defines input and result contracts for every advertised verb', () => {
@@ -393,7 +465,9 @@ describe('excalidraw protocol', () => {
       'snap',
       'place',
       'arrange',
-      'survey'
+      'survey',
+      'preset',
+      'icon'
     ])
     expect(
       excalidrawVerbContracts.draw.resultSchema.safeParse({
