@@ -1,0 +1,105 @@
+@import 'tailwindcss';
+@source "../../../packages";
+
+/* Design tokens (the generic --bg/--panel/--text/--muted/--border + derived tokens)
+   come from @tinytinkerer/app-browser/styles.css, imported first in main.tsx. The
+   root composition uses the default palette unchanged, like the web shell. */
+
+* {
+  box-sizing: border-box;
+}
+
+/* Assistant markdown styling for the docked bodies (matches the web/mobile shells;
+   the floating body uses .widget-prose from app-browser styles). */
+.tt-markdown.prose-assistant {
+  line-height: 1.6;
+}
+
+.tt-markdown.prose-assistant h1 {
+  font-size: 1.2em;
+}
+
+.tt-markdown.prose-assistant h2 {
+  font-size: 1.1em;
+}
+
+.tt-markdown.prose-assistant ul,
+.tt-markdown.prose-assistant ol {
+  padding-left: 1.4em;
+}
+
+.tt-markdown.prose-assistant pre {
+  border-radius: 6px;
+}
+
+/* Root `/` composition layout: web pane + phone-framed mobile pane, with the
+   floating widget overlaying both. */
+.root-stage {
+  position: relative;
+  display: flex;
+  gap: 1rem;
+  height: 100vh;
+  width: 100%;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.root-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+}
+
+.root-pane-web {
+  flex: 1 1 auto;
+}
+
+.root-pane-label {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.root-pane-body {
+  position: relative;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.root-phone {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.root-phone-frame {
+  width: 380px;
+  height: 100%;
+  max-height: 800px;
+  overflow: hidden;
+  border: 10px solid #1c1a15;
+  border-radius: 2.5rem;
+  background: var(--bg);
+  box-shadow: 0 30px 80px rgba(36, 33, 24, 0.28);
+}
+
+/* The widget's floating stage as a click-through overlay over the whole root stage
+   (mirrors the canvas harness overlay), so the panes beneath stay interactive. */
+.widget-stage.root-widget-overlay {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.root-widget-overlay .widget-floating-shell {
+  pointer-events: auto;
+}

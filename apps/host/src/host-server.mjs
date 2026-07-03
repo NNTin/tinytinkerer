@@ -1,10 +1,9 @@
 // @ts-check
 
 import { createServer as createHttpServer } from 'node:http'
-import { readFile } from 'node:fs/promises'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { dirname, extname, join, relative, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { createServer as createViteServer } from 'vite'
 import { createAppDefinitions, HOSTED_APP_SPECS } from './app-definitions.mjs'
 
@@ -17,8 +16,10 @@ import { createAppDefinitions, HOSTED_APP_SPECS } from './app-definitions.mjs'
 
 /**
  * @typedef HostAppDefinition
+ * @property {string} [slug]
  * @property {string} mountPath
  * @property {string} root
+ * @property {string} [base]
  * @property {ViteDevServer | undefined} [server]
  */
 
@@ -33,12 +34,6 @@ import { createAppDefinitions, HOSTED_APP_SPECS } from './app-definitions.mjs'
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const workspaceRoot = resolve(currentDir, '../../..')
-
-const staticContentTypes = {
-  '.css': 'text/css; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8'
-}
 
 const edgeProxyPrefixes = ['/api', '/auth/github/exchange']
 
@@ -148,64 +143,11 @@ const getEdgeProxyApp = (apps) => {
 }
 
 /**
- * @param {string} publicDir
- * @param {string} pathname
- * @returns {string | undefined}
- */
-const resolveHostStaticPath = (publicDir, pathname) => {
-  if (pathname === '/' || pathname === '/index.html') {
-    return join(publicDir, 'index.html')
-  }
-
-  if (!pathname.startsWith('/__host/')) {
-    return undefined
-  }
-
-  const candidate = resolve(publicDir, `.${pathname}`)
-  const rel = relative(publicDir, candidate)
-  if (rel.startsWith('..') || rel === '') {
-    return undefined
-  }
-
-  return candidate
-}
-
-/**
- * @param {string} publicDir
- * @param {string} pathname
- * @returns {Promise<{ body: Buffer, contentType: string } | undefined>}
- */
-const readHostStaticAsset = async (publicDir, pathname) => {
-  const assetPath = resolveHostStaticPath(publicDir, pathname)
-  if (!assetPath) {
-    return undefined
-  }
-
-  try {
-    const body = await readFile(assetPath)
-    const contentType =
-      /** @type {Record<string, string>} */ (staticContentTypes)[extname(assetPath)] ??
-      'application/octet-stream'
-    return { body, contentType }
-  } catch (error) {
-    if (error instanceof Error && 'code' in error) {
-      const code = /** @type {string} */ (error.code)
-      if (code === 'ENOENT' || code === 'EISDIR' || code === 'ENOTDIR') {
-        return undefined
-      }
-    }
-
-    throw error
-  }
-}
-
-/**
  * @param {HostAppDefinition[]} apps
- * @param {string} publicDir
  * @returns {(req: IncomingMessage, res: ServerResponse) => void}
  */
-const createRequestHandler = (apps, publicDir) => (req, res) => {
-  const handleRequest = async () => {
+const createRequestHandler = (apps) => (req, res) => {
+  try {
     const requestUrl = req.url ?? '/'
     const pathname = requestUrl.split('?')[0] ?? '/'
 
@@ -227,14 +169,6 @@ const createRequestHandler = (apps, publicDir) => (req, res) => {
       return
     }
 
-    const staticAsset = await readHostStaticAsset(publicDir, pathname)
-    if (staticAsset) {
-      res.statusCode = 200
-      res.setHeader('Content-Type', staticAsset.contentType)
-      res.end(staticAsset.body)
-      return
-    }
-
     const target = findTargetApp(apps, pathname)
     if (!target) {
       res.statusCode = 404
@@ -246,16 +180,14 @@ const createRequestHandler = (apps, publicDir) => (req, res) => {
       res.statusCode = 404
       res.end('Not found')
     })
-  }
-
-  void handleRequest().catch((error) => {
+  } catch (error) {
     // Log the real error server-side; never reflect exception text back to the
     // client, where it could be interpreted as HTML (CodeQL js/xss-through-exception).
     console.error('Unhandled error while handling request.', error)
     res.statusCode = 500
     res.setHeader('Content-Type', 'text/plain; charset=utf-8')
     res.end('Internal server error')
-  })
+  }
 }
 
 /**
@@ -324,7 +256,6 @@ export const createHostServer = async ({
   }
 
   const apps = createAppDefinitions(rootDir)
-  const publicDir = join(rootDir, 'apps/host/public')
   const httpServer = createHttpServer()
 
   try {
@@ -332,6 +263,16 @@ export const createHostServer = async ({
       /** @type {InlineConfig} */
       const viteConfig = {
         root: app.root,
+        // The shell source builds with a relative base ('./') so one build serves
+        // /web/, /widget/, /mobile/; in dev each mount pins the base to its mount
+        // path so Vite resolves module/asset URLs under that prefix. (No-op for
+        // canvas/host, whose vite.config base already equals the mount path.)
+        ...(app.base ? { base: app.base } : {}),
+        // The three browser mounts share ONE root (apps/shell), so give each its own
+        // dep-optimization cache dir — otherwise the concurrent dev servers clobber
+        // each other's node_modules/.vite/deps and a mount can serve a stale/corrupt
+        // pre-bundle, leaving that page stuck on the boot screen. Distinct per slug.
+        ...(app.slug ? { cacheDir: join(app.root, 'node_modules', `.vite-${app.slug}`) } : {}),
         configFile: join(app.root, 'vite.config.ts'),
         server: {
           middlewareMode: true,
@@ -346,7 +287,7 @@ export const createHostServer = async ({
       app.server = await createViteServer(viteConfig)
     }
 
-    httpServer.on('request', createRequestHandler(apps, publicDir))
+    httpServer.on('request', createRequestHandler(apps))
 
     await startListening(httpServer, { host, port, preferredPort })
   } catch (error) {

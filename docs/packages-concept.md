@@ -6,7 +6,7 @@ This document explains how TinyTinkerer should divide responsibility between app
 
 Thin apps make UI replacement practical and reduce behavioral drift.
 
-- `apps/web`, `apps/mobile`, and `apps/widget` should be easy to change without rewriting product behavior.
+- `apps/shell` (the single browser shell, serving the web/widget/mobile presentations) should be easy to change without rewriting product behavior.
 - Shared capability should not be trapped inside a single shell.
 - The widget is the stricter surface, so shared behavior must be designed to survive compact or embedded shells.
 - When behavior changes, it should usually change once in a package instead of separately in each app.
@@ -192,9 +192,7 @@ Must not own:
 
 Allowed examples:
 
-- `apps/web` importing `app-browser` and `ui`
-- `apps/mobile` importing `app-browser` and `ui`
-- `apps/widget` importing `app-browser` and `ui`
+- `apps/shell` (the single browser shell serving the web/widget/mobile presentations) importing `app-browser` and `ui`
 - `app-browser` importing `app-core`, `contracts`, `brand-assets`, `content-react`, and outward-facing `content-*`
 - `brand-assets` importing `contracts`
 - `apps/edge` importing `contracts`
@@ -207,7 +205,7 @@ Forbidden examples:
 - `ui` containing app-specific feature flows or runtime composition
 - `content-*` bypassing `app-browser` to become a second browser assembly boundary
 - `app-browser` absorbing page layouts or shell-specific page ownership
-- `apps/widget` copying `apps/web` or `apps/mobile` feature logic instead of reusing packages
+- `apps/shell` duplicating feature logic across its web/widget/mobile presentations instead of reusing packages (keep per-presentation divergence in the descriptor table, not copied code)
 
 ## Browser Assembly Boundary
 

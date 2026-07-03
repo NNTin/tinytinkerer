@@ -6,10 +6,11 @@ worker**, end to end in a real browser.
 ## How it works
 
 The suite mocks **only LiteLLM** (the upstream model provider). Everything else is
-real: the production `vite preview` builds of the product shells (`@tinytinkerer/web`,
-`@tinytinkerer/widget`, `@tinytinkerer/mobile`, `@tinytinkerer/canvas`), and the actual edge Hono worker —
-driven in-process via `app.fetch`, so its routing, validation, CORS, anonymous-tier
-key provisioning, and the chat proxy are all covered.
+real: the production build of the single browser shell (`@tinytinkerer/shell`, served
+from the composed `apps/host/dist` at `/web/`, `/widget/`, `/mobile/`) plus
+`@tinytinkerer/canvas`, and the actual edge Hono worker — driven in-process via
+`app.fetch`, so its routing, validation, CORS, anonymous-tier key provisioning, and the
+chat proxy are all covered.
 
 Runs are **anonymous** (no GitHub auth) and **rate limiting is disabled** — neither
 auth nor rate limiting is under test. Because only LiteLLM is mocked, the suite needs
@@ -18,17 +19,19 @@ no secrets and makes no real network calls.
 ## Layout
 
 - `scripts/e2e.mjs` — chooses the per-run ports before Playwright starts, so the
-  servers and workers share the same base URLs. One port per shell: `E2E_PORT` (web),
-  `E2E_PORT_WIDGET`, `E2E_PORT_MOBILE`, `E2E_PORT_CANVAS` (each derived as the base
-  `+1`/`+2`/`+3` locally, pinned explicitly in CI), so parallel git worktrees don't collide.
+  servers and workers share the same base URLs. The three browser endpoints share ONE
+  origin: `E2E_PORT` (and its aliases `E2E_PORT_WIDGET` / `E2E_PORT_MOBILE`, kept for the
+  specs that build per-endpoint URLs). Canvas has its own origin `E2E_PORT_CANVAS`
+  (base `+3` locally, pinned explicitly in CI), so parallel git worktrees don't collide.
 - `playwright.config.ts` — three browser projects: `chromium`, `firefox`, `webkit`.
   Chromium runs the whole suite; `firefox` + `webkit` are restricted (via per-project
   `testMatch`) to **just** `sandbox-isolation.e2e.ts`, because the sandbox-isolation
   guarantees are engine-sensitive (Blink / Gecko / WebKit) and cross-engine coverage
   is the point of issue #245. Every other spec stays Chromium-only — out of scope for
-  #245. The `webServer` is an array running one `vite preview` per shell (web on
-  `/web/`, widget on `/widget/`, mobile on `/mobile/`, canvas on `/canvas/`), each
-  `--strictPort` on its own port — i.e. its own **origin** — shared by all browser projects.
+  #245. The `webServer` is an array of two `vite preview` servers: the composed
+  `apps/host/dist` (the single shell build fanned to `/web/`, `/widget/`, `/mobile/`,
+  plus the root app) on one origin, and the canvas shell (`/canvas/`) on its own origin
+  (it needs ACAO headers for the sandboxed iframe). Each is `--strictPort`.
 - `fixtures/mock-litellm.ts` — pipes `/api/*` through the real edge worker and mocks
   the LiteLLM upstream it calls; plus the shared UI helpers.
 - `fixtures/snippets.ts` — adversarial inputs used by the current suite.
@@ -48,22 +51,19 @@ no secrets and makes no real network calls.
   the image lightbox, CodeMirror highlighting, the scriptless wireframe iframe,
   callouts, and link cards — each streamed as deltas so incremental parsing is covered;
   `chat-persistence.e2e.ts` verifies a conversation persists to IndexedDB (Dexie) and
-  is restored on reload across all three shells (web/widget/mobile), and asserts the
-  origin-isolation behaviour described below.
+  is restored on reload across all three endpoints (web/widget/mobile), and asserts the
+  shared-session behaviour described below.
 
-### Multi-shell topology and the shared IndexedDB namespace
+### Single-origin topology and the shared IndexedDB namespace
 
-`chat-persistence.e2e.ts` drives all three product shells, so the harness serves each
-one from its own `vite preview` on its own port — meaning each shell is a distinct
-**origin** (`localhost:<webPort>`, `localhost:<widgetPort>`, `localhost:<mobilePort>`).
-That topology choice has a storage consequence worth calling out: all three shells
-default to the **same** Dexie database name (`storageNamespace` = `tinytinkerer`), but
-IndexedDB is **origin-scoped**, so serving them on different ports gives each its own,
-**isolated** database despite the shared name. The spec asserts this directly — a
-conversation created under `/web/` is _not_ visible from `/widget/`. (Had we instead
-served all three same-origin under different paths, they would **share** one database;
-we chose separate origins because three `vite preview` servers need no extra tooling.)
-Build all three shells before a run (see below); CI builds and pins all three ports.
+`chat-persistence.e2e.ts` drives all three browser endpoints, which are ONE build served
+from ONE origin (the composed `apps/host/dist`) at different paths — matching production.
+All three default to the **same** Dexie database name (`storageNamespace` =
+`tinytinkerer`) and, being same-origin, **share** one IndexedDB: a conversation created
+under `/web/` **is** visible from `/widget/`, so signing in / a conversation on one
+endpoint carries to the others. The spec asserts this directly. (A distinct-origin
+topology would instead isolate them.) Build the composed host before a run (see below);
+CI builds it and pins the shared port.
 
 ### Observing a mid-stream render
 
@@ -114,19 +114,19 @@ This installs all three engines. To iterate on just one, target a project:
 pnpm --filter @tinytinkerer/e2e e2e -- --project=firefox   # or chromium / webkit
 ```
 
-Build all four shells once (the suite serves their production bundles), then run:
+Build the composed host once (it builds the shell + canvas + root and composes the
+`apps/host/dist` the suite serves), then run:
 
 ```bash
 pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices
 TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build \
-  --filter=@tinytinkerer/web --filter=@tinytinkerer/widget --filter=@tinytinkerer/mobile \
-  --filter=@tinytinkerer/canvas
+  --filter=@tinytinkerer/host
 pnpm --filter @tinytinkerer/e2e e2e
 ```
 
-> Pin `E2E_PORT` (and optionally `E2E_PORT_WIDGET` / `E2E_PORT_MOBILE` / `E2E_PORT_CANVAS`)
-> to fix the per-shell ports; otherwise the wrapper picks a random base port and derives
-> the other three from it.
+> Pin `E2E_PORT` (and optionally `E2E_PORT_CANVAS`) to fix the ports; otherwise the
+> wrapper picks a random base port and derives canvas from it. The three browser
+> endpoints share `E2E_PORT` (one origin).
 
 > On a headless box without root (e.g. some WSL2 setups) where
 > `playwright install --with-deps` cannot install the OS libraries, download the

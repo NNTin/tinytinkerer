@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en" translate="no">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- In-browser translation (e.g. Google Translate) rewrites text nodes into
+         <font> wrappers, detaching nodes React owns; React's next removeChild then
+         throws "NotFoundError: ... not a child of this node" (TINYTINKERER-FRONTEND-6).
+         Opt the React-managed shell out of automatic translation. -->
+    <meta name="google" content="notranslate" />
+    <title>tinytinkerer</title>
+    <script>
+      // ONE bundle is served at /web/, /widget/, and /mobile/. Pick the shell from
+      // the path BEFORE first paint so the boot card + app palette are correct with
+      // no flash. The app re-derives the same value at runtime (resolvePresentation),
+      // and CSS keys the per-shell look off html[data-shell].
+      ;(function () {
+        var segments = location.pathname.split('/').filter(Boolean)
+        var shell =
+          segments.indexOf('mobile') >= 0
+            ? 'mobile'
+            : segments.indexOf('widget') >= 0
+              ? 'widget'
+              : 'web'
+        document.documentElement.setAttribute('data-shell', shell)
+      })()
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f2ec;
+        --panel: #fffaf5;
+        --muted: #766a5d;
+        --border: #dccdb9;
+        --text: #2f2923;
+      }
+
+      html[data-shell='widget'] {
+        --bg: #f7f7f4;
+        --panel: #fffdf8;
+        --border: #d7d4ca;
+        --text: #25231d;
+        --muted: #6c675a;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at top, #fff5e8 0%, var(--bg) 42%);
+        color: var(--text);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+
+      html[data-shell='widget'] body {
+        background:
+          radial-gradient(circle at top right, #f3e2bc 0%, transparent 28%),
+          linear-gradient(180deg, #fbfaf7 0%, var(--bg) 100%);
+        font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .tt-boot {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: max(env(safe-area-inset-top), 16px) 16px max(env(safe-area-inset-bottom), 16px);
+      }
+
+      .tt-boot__card {
+        width: min(100%, 480px);
+        border: 1px solid var(--border);
+        border-radius: 32px;
+        background: var(--panel);
+        padding: 24px;
+        box-shadow: 0 24px 70px rgba(47, 41, 35, 0.1);
+      }
+
+      .tt-boot__eyebrow {
+        margin: 0 0 8px;
+        font-size: 11px;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .tt-boot__title {
+        margin: 0;
+        font-size: 26px;
+      }
+
+      .tt-boot__body {
+        margin: 12px 0 0;
+        font-size: 14px;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="tt-boot">
+        <div class="tt-boot__card">
+          <p class="tt-boot__eyebrow">Boot</p>
+          <h1 class="tt-boot__title">Loading tinytinkerer</h1>
+          <p class="tt-boot__body">Preparing the shell before the chat runtime hydrates.</p>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // VitePWA injects a <link rel="manifest"> for the mobile install experience.
+      // In this single bundle it lands on every page; strip it off /web/ and /widget/
+      // so only the mobile presentation advertises the installable app. Runs at end of
+      // body, after the head <link> has been parsed and before the deferred app module.
+      ;(function () {
+        if (document.documentElement.getAttribute('data-shell') === 'mobile') return
+        var manifest = document.querySelector('link[rel="manifest"]')
+        if (manifest) manifest.remove()
+      })()
+    </script>
+  </body>
+</html>

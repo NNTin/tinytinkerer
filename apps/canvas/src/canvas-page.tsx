@@ -21,7 +21,6 @@ const CanvasPage = (): React.JSX.Element => {
       frameTitle="Excalidraw whiteboard"
       persistenceKey="tinytinkerer:canvas-scene:v1"
       chat={{
-        viewMode: 'standalone',
         storageKey: 'tinytinkerer:canvas-layout:v2',
         LoadingComponent: CanvasChatLoading
       }}

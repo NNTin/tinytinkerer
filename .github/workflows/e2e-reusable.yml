@@ -44,32 +44,29 @@ jobs:
           restore-keys: |
             turbo-${{ github.workflow }}-e2e-shells-
 
-      # Build all four product shells (generates brand/privacy/notices first) so
-      # `vite preview` can serve each production bundle the suite targets — web,
-      # widget, mobile, and canvas, each on its own port/origin (chat-persistence #250;
-      # canvas Excalidraw features #317).
-      - name: Build shells (web, widget, mobile, canvas)
+      # Build the composed host (generates brand/privacy/notices first). host#build
+      # builds the single shell + canvas + the root app and composes them into
+      # apps/host/dist (the deploy surface with /web/, /widget/, /mobile/, /canvas/).
+      # The e2e suite serves that composed dist so the three browser endpoints share one
+      # origin exactly as deployed (chat-persistence #250), plus apps/canvas/dist for the
+      # separate canvas origin (canvas Excalidraw features #317).
+      - name: Build composed host (shell + canvas + root)
         run: |
           pnpm generate:brand-assets
           pnpm generate:privacy-policy
           pnpm generate:notices
           TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build \
-            --filter=@tinytinkerer/web \
-            --filter=@tinytinkerer/widget \
-            --filter=@tinytinkerer/mobile \
-            --filter=@tinytinkerer/canvas
+            --filter=@tinytinkerer/host
 
-      # Common ancestor of the four paths is `apps/`, so the artifact stores
-      # `web/dist`, `widget/dist`, `mobile/dist`, `canvas/dist`; the shards download it
-      # into `apps`.
+      # Common ancestor of the paths is `apps/`, so the artifact stores `host/dist`
+      # (the composed browser origin) and `canvas/dist` (the separate canvas origin);
+      # the shards download it into `apps`.
       - name: Upload built shells
         uses: actions/upload-artifact@v6
         with:
           name: shells-dist
           path: |
-            apps/web/dist
-            apps/widget/dist
-            apps/mobile/dist
+            apps/host/dist
             apps/canvas/dist
           if-no-files-found: error
           retention-days: 1
@@ -87,12 +84,11 @@ jobs:
         # (strategy.job-total) tracks it automatically.
         shard: [1, 2, 3]
     env:
-      # Pin the per-run ports so each shell's webServer URL is deterministic in CI.
-      # One origin per shell: web / widget / mobile / canvas. Shards run on separate
-      # runners, so the fixed ports never collide across shards.
+      # Pin the per-run ports so the webServer URLs are deterministic in CI. The three
+      # browser endpoints (web / widget / mobile) share ONE origin (E2E_PORT); the e2e
+      # wrapper aliases E2E_PORT_WIDGET / E2E_PORT_MOBILE to it. Canvas keeps its own
+      # origin. Shards run on separate runners, so the fixed ports never collide.
       E2E_PORT: 43117
-      E2E_PORT_WIDGET: 43118
-      E2E_PORT_MOBILE: 43119
       E2E_PORT_CANVAS: 43120
       # The merged report combines all shards by test, so the shard boundary is
       # otherwise invisible. playwright.config.ts reads this to tag every test in this

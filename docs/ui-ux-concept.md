@@ -10,30 +10,26 @@ It complements [ARCHITECTURE.md](./ARCHITECTURE.md) by focusing on UI ownership,
 flowchart LR
   host["@tinytinkerer/host<br/>dev + deployment composition"]
 
-  web["@tinytinkerer/web"]
-  widget["@tinytinkerer/widget"]
-  mobile["@tinytinkerer/mobile"]
+  shell["@tinytinkerer/shell<br/>web · widget · mobile presentations"]
 
-  host --> web
-  host --> widget
-  host --> mobile
+  host --> shell
 ```
 
 `@tinytinkerer/host` is the composition layer for local development and deployment output.
 
-- `/` is a multi-surface compositor workspace.
-- `/web/`, `/mobile/`, and `/widget/` are the real shells.
-- The root compositor is not a fourth product shell.
-- Host may own workspace chrome, iframe composition, and floating-window behavior for the dev workspace.
+- `/` is a single-document root React app that composes the shell's presentations as panes over one shared session.
+- `/web/`, `/mobile/`, and `/widget/` are the same `@tinytinkerer/shell` build, one origin, presentation chosen from the URL path.
+- The root app is a real React app but not a fourth product shell.
+- Host may own workspace chrome, in-process `ChatApp` pane composition, and floating/docked layout behavior for the root workspace.
 - Host must not become the home for shared feature logic.
 
 ## Purpose
 
-The frontend apps are different shells around the same product runtime:
+The frontend surfaces are different presentations of one shell (`@tinytinkerer/shell`) around the same product runtime, selected at runtime from the URL path:
 
-- `@tinytinkerer/web` is the full browser shell.
-- `@tinytinkerer/mobile` is the installable narrow-screen shell.
-- `@tinytinkerer/widget` is the stricter embedded shell.
+- the **web** presentation is the full browser shell.
+- the **mobile** presentation is the installable narrow-screen shell.
+- the **widget** presentation is the stricter embedded shell.
 
 They should feel like the same product family without forcing identical layouts.
 
@@ -83,7 +79,7 @@ The widget may differ in shell structure, but it must not fork shared feature be
 
 ### Web
 
-`@tinytinkerer/web` is the most spacious browser shell.
+The **web** presentation is the most spacious browser shell.
 
 - Use the conversation as the dominant surface.
 - Keep the page as a single primary workflow instead of adding competing panes.
@@ -92,7 +88,7 @@ The widget may differ in shell structure, but it must not fork shared feature be
 
 ### Mobile
 
-`@tinytinkerer/mobile` uses the same core product language on narrower screens.
+The **mobile** presentation uses the same core product language on narrower screens.
 
 - Preserve the single-column flow.
 - Prefer thumb-friendly controls, larger hit targets, and safe-area-aware spacing.
@@ -101,12 +97,12 @@ The widget may differ in shell structure, but it must not fork shared feature be
 
 ### Widget
 
-`@tinytinkerer/widget` is the stricter embedded shell.
+The **widget** presentation is the stricter embedded shell.
 
 - Optimize for compact sessions and host integration.
 - Inline configuration is acceptable when it reduces friction inside an embedded surface.
 - Avoid assuming a full-page shell, modal-heavy flows, or large supporting panels.
-- Keep the widget thin: it should reuse shared runtime and shared content rendering instead of copying web or mobile internals.
+- Keep the widget presentation thin: it should reuse shared runtime and shared content rendering instead of copying web or mobile internals.
 
 ## Feature Reuse Rules
 
@@ -134,7 +130,7 @@ The following are expected to stay shell-local unless a stronger shared contract
 - page layout
 - route structure
 - mobile install UX
-- widget window chrome and host embedding behavior
+- widget window chrome and external embedding behavior
 - shell-specific copy
 - app-local panel arrangement
 

@@ -44,13 +44,28 @@ export type { ConversationEmptyStateProps } from './conversation-empty-state'
 export { shellThemeToCssVars } from './shell-theme'
 export type { ShellThemeTokens } from './config'
 export { HumanPromptComposerDock } from './human-prompt-composer-dock'
-export { FloatingWidgetChat } from './widget-chat/floating-widget-chat'
-export type { FloatingWidgetChatProps } from './widget-chat/floating-widget-chat'
-export { WidgetChatSurface } from './widget-chat/widget-chat-surface'
+export { ChatApp } from './chat-shell/chat-app'
+export type { ChatAppProps, ChatMode } from './chat-shell/chat-app'
+export { FloatingLayout } from './chat-shell/floating-layout'
+export type { FloatingLayoutProps } from './chat-shell/floating-layout'
+export { SidebarLayout } from './chat-shell/sidebar-layout'
+export type { SidebarLayoutProps } from './chat-shell/sidebar-layout'
+export { FloatingChatSurface } from './chat-shell/floating-chat-surface'
 export type {
-  WidgetChatSurfaceProps,
-  WidgetChatLoadingComponent
-} from './widget-chat/widget-chat-surface'
+  FloatingChatSurfaceProps,
+  ChatLoadingComponent
+} from './chat-shell/floating-chat-surface'
+export { DockedChatSurface } from './chat-shell/docked-chat-surface'
+export type { DockedChatSurfaceProps, DockedSizeVariant } from './chat-shell/docked-chat-surface'
+export {
+  clampLayout,
+  clampWidth,
+  loadStandaloneLayout,
+  saveStandaloneLayout,
+  loadPersisted,
+  savePersisted
+} from './chat-shell/layout-geometry'
+export type { WidgetLayout, WidgetDims } from './chat-shell/layout-geometry'
 export { TelemetryConsentGate } from './telemetry/consent-gate'
 export { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
 export { PrivacyPolicyUpdateGate } from './telemetry/privacy-update-gate'
@@ -60,6 +75,8 @@ export { bootstrapBrowserShell } from './initialize'
 export { formatCooldown, useBrowserShellConfig, useChatCooldown, useGitHubOAuth } from './hooks'
 export { useWebSpeechInput } from './web-speech'
 export { resolveBrowserShellBootstrapConfig } from './config'
+export { BrowserAppShell } from './browser-app-shell'
+export type { BrowserAppShellProps } from './browser-app-shell'
 export { createBrowserShellRoot } from './create-browser-shell-root'
 export type {
   BrowserShellBootScreenProps,

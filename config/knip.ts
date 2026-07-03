@@ -26,9 +26,7 @@ const config: KnipConfig = {
   },
   ignore: [
     // Agent skill tools are invoked by external tooling, not imported by the app.
-    '.agent/**',
-    // Static assets the host shell loads at runtime, not via module imports.
-    'apps/host/public/__host/**'
+    '.agent/**'
   ],
   // Dependencies that are present for tooling/typing reasons and are not
   // statically importable, so knip cannot trace them. Baselined for the
@@ -69,17 +67,14 @@ const config: KnipConfig = {
       // Pinned explicitly so the native binary is part of the locked supply chain.
       ignoreDependencies: ['workerd']
     },
-    'apps/web': {
-      // Radix primitives kept for parity with the shared UI package; not yet
-      // imported directly by the app.
+    'apps/shell': {
+      // Radix primitives kept for parity with the shared UI package; consumed by
+      // @tinytinkerer/ui, not imported directly by the shell app.
       ignoreDependencies: [
         '@radix-ui/react-collapsible',
         '@radix-ui/react-dialog',
         '@radix-ui/react-tooltip'
       ]
-    },
-    'apps/mobile': {
-      ignoreDependencies: ['@radix-ui/react-collapsible', '@radix-ui/react-dialog']
     },
     'packages/plugins/plugin-feedback': {
       // Declared for the plugin's schema work; no runtime import yet.

@@ -14,7 +14,8 @@ import {
 // The plugin contributes a developer panel showing the EXACT chat request the
 // client forwards to the provider each model call — the messages array (system
 // prompt + history + tool observations), the model, and stream options. It is off
-// by default, web-only, and captures nothing until enabled. jsdom unit tests cover
+// by default, available in the web and widget shells, and captures nothing until
+// enabled. jsdom unit tests cover
 // the payload→view mapping and the store ring buffer in isolation; this spec proves
 // the end-to-end wiring: capture is armed only when enabled, and what the panel
 // shows equals what the edge forwarded (the mock's `requestBodies()`).

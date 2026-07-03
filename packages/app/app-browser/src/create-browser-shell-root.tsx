@@ -1,14 +1,9 @@
-import { StrictMode, Suspense } from 'react'
 import type { ComponentProps, ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router-dom'
-import { AppBrowserProvider, createBrowserApp } from './app'
-import { useBrowserAppBootstrap } from './bootstrap'
-import { LazyHumanPromptHost } from './lazy-human-prompt-host'
+import { createBrowserApp } from './app'
+import { BrowserAppShell } from './browser-app-shell'
 import { resolveBrowserShellBootstrapConfig } from './config'
-import { LazyPrivacyPolicyUpdateGate } from './telemetry/lazy-privacy-update-gate'
-import { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
 import { registerPwa } from './register-pwa'
 import type { BrowserShellConfig } from './config'
 import type { Tool } from '@tinytinkerer/app-core'
@@ -36,6 +31,14 @@ export type CreateBrowserShellRootOptions = {
   // here; web/mobile/widget omit it. Threaded straight to createBrowserApp → chat
   // store → runtime.
   appTools?: Tool<unknown, unknown>[]
+  // Whether to register the service worker for this page load. Defaults to true
+  // (a shell that ships no SW no-ops, so this stays a no-op for canvas/host). The
+  // single path-routed browser shell is ONE build served at /web/, /widget/, and
+  // /mobile/ from one origin, but only the mobile presentation should own a
+  // service worker — its scope is the serving path (`/mobile/`), so registering it
+  // under /web/ or /widget/ would hand those paths a precaching SW too. The shell
+  // therefore passes `false` for the non-mobile presentations. See apps/shell.
+  registerServiceWorker?: boolean
 }
 
 // Env values are read through an untyped index access because each shell's
@@ -60,7 +63,8 @@ const readEnvValue = (key: string): string | undefined => {
 export const createBrowserShellRoot = ({
   router,
   BootScreen,
-  appTools
+  appTools,
+  registerServiceWorker = true
 }: CreateBrowserShellRootOptions): void => {
   // Shell-agnostic embedding contract: every shell reads the same window key.
   // Empty for web/mobile, populated by widget embedders. The embedding page is
@@ -85,45 +89,20 @@ export const createBrowserShellRoot = ({
     buildHash: __BUILD_HASH__
   })
 
-  const queryClient = new QueryClient()
   const browserApp = createBrowserApp(browserConfig, appTools ? { appTools } : {})
 
-  const ShellBootstrap = () => {
-    const { ready, error } = useBrowserAppBootstrap(browserApp, browserConfig)
-
-    if (!ready) {
-      return <BootScreen {...(error ? { error } : {})} />
-    }
-
-    return (
-      <StrictMode>
-        <AppBrowserProvider app={browserApp}>
-          <QueryClientProvider client={queryClient}>
-            <RouterProvider router={router} />
-            {/* The host's single human-in-the-loop modal (issue #85), mounted once for
-                every shell here rather than named per-shell. It renders nothing until a
-                plugin (permissions, choice-prompt, or any future HITL surface) raises a
-                prompt, so an optional plugin that is absent leaves no trace. Lazy so its
-                CodeMirror dependency code-splits out of the entry bundle. */}
-            <Suspense fallback={null}>
-              <LazyHumanPromptHost />
-            </Suspense>
-            <Suspense fallback={null}>
-              <LazyPrivacyPolicyUpdateGate />
-            </Suspense>
-            <Suspense fallback={null}>
-              <LazyTelemetryConsentGate />
-            </Suspense>
-          </QueryClientProvider>
-        </AppBrowserProvider>
-      </StrictMode>
-    )
+  // Register the service worker and start update checks independently of the
+  // React render, so a shell that ships one (the mobile presentation) stays
+  // registered even while the boot screen is showing. No-op where no SW was
+  // emitted; skipped entirely where the caller opts out (the shell's non-mobile
+  // presentations, so their same-origin paths never adopt the mobile SW).
+  if (registerServiceWorker) {
+    registerPwa()
   }
 
-  // Register the service worker and start update checks independently of the
-  // React render, so a shell that ships one (mobile today) stays registered
-  // even while the boot screen is showing. No-op where no SW was emitted.
-  registerPwa()
-
-  createRoot(document.getElementById('root')!).render(<ShellBootstrap />)
+  createRoot(document.getElementById('root')!).render(
+    <BrowserAppShell app={browserApp} config={browserConfig} BootScreen={BootScreen}>
+      <RouterProvider router={router} />
+    </BrowserAppShell>
+  )
 }
