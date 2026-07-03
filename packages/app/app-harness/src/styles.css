@@ -1,13 +1,23 @@
 /* app-harness layout. The embedded iframe app fills the stage as the base layer;
-   the shared FloatingWidgetChat floats above it. The chat's stage is made
-   click-through so the app beneath stays usable, while the floating shell itself
-   re-enables pointer events. Structural only — palette/theme come from the shell. */
+   the shared morphable ChatApp floats above it (widget mode) or docks to an edge as a
+   resizable split (web mode, #324). The chat stage is click-through except its own
+   interactive surface, so the app beneath stays usable in widget mode and the empty
+   split gutter stays usable in web mode. Structural only — palette/theme come from the
+   shell. */
 
 .app-harness-stage {
   position: relative;
   width: 100%;
   height: 100vh;
   overflow: hidden;
+}
+
+/* Holds the iframe. In widget mode it fills the stage; in web mode the harness sets an
+   inline inset (right/left/top/bottom) so the iframe shrinks to the region the docked
+   chat panel leaves, giving a real, resizable split. */
+.app-harness-frame-region {
+  position: absolute;
+  inset: 0;
 }
 
 .app-harness-frame {
@@ -18,16 +28,24 @@
   border: 0;
 }
 
-/* `stageClassName` lands on FloatingWidgetChat's own `.widget-stage`; this two-class
-   selector outranks `.widget-stage` so the overlay positioning wins regardless of
-   stylesheet order. */
-.widget-stage.app-harness-chat-overlay {
+/* The ChatApp overlay covers the stage but only its floating shell / docked panel take
+   pointer events; everywhere else is click-through to the app (or the split gutter)
+   beneath. Scoped to both layout stages so the rule holds across the widget↔web morph. */
+.app-harness-chat {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.app-harness-chat .widget-stage,
+.app-harness-chat .sidebar-stage {
   position: absolute;
   inset: 0;
   min-height: 0;
   pointer-events: none;
 }
 
-.app-harness-chat-overlay .widget-floating-shell {
+.app-harness-chat .widget-floating-shell,
+.app-harness-chat .sidebar-panel {
   pointer-events: auto;
 }
