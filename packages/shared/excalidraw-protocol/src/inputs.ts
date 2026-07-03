@@ -798,64 +798,49 @@ const presetOriginShape = {
   ...insertionGuardShape
 }
 
-const networkPresetSchema = z
+// The valid variants per kind. `preset` is a single flat object (not a
+// discriminated union) so its tool schema has an object root — model function-call
+// APIs (e.g. OpenAI/ChatGPT) reject a top-level union/`anyOf` for a tool's
+// parameters. A superRefine enforces the kind→variant pairing, and the builder
+// defaults an omitted variant to the first for the kind.
+export const EXCALIDRAW_PRESET_VARIANTS = {
+  network: ['star', 'edge'],
+  flowchart: ['linear', 'decision'],
+  uml: ['class', 'sequence', 'usecase'],
+  wireframe: ['screen', 'modal']
+} as const
+
+export const presetInputSchema = z
   .object({
-    kind: z.literal('network'),
+    kind: z.enum(EXCALIDRAW_PRESET_KINDS).describe('The kind of diagram scaffold to insert.'),
     variant: z
-      .enum(['star', 'edge'])
-      .default('star')
+      .enum([
+        'star',
+        'edge',
+        'linear',
+        'decision',
+        'class',
+        'sequence',
+        'usecase',
+        'screen',
+        'modal'
+      ])
+      .optional()
       .describe(
-        'star: a central router linked to labeled device icons. edge: an internet cloud → router → server chain.'
+        'Variant within the kind. network: star (central router → device icons) or edge (internet cloud → router → server). flowchart: linear (start → process → end) or decision (adds a decision diamond with Yes/No). uml: class, sequence, or usecase. wireframe: screen or modal. Defaults to the first variant for the kind.'
       ),
     ...presetOriginShape
   })
   .strict()
-
-const flowchartPresetSchema = z
-  .object({
-    kind: z.literal('flowchart'),
-    variant: z
-      .enum(['linear', 'decision'])
-      .default('linear')
-      .describe(
-        'linear: start terminal → process box → end terminal. decision: adds a decision diamond with labeled Yes/No connectors.'
-      ),
-    ...presetOriginShape
+  .superRefine((input, ctx) => {
+    const allowed: readonly string[] = EXCALIDRAW_PRESET_VARIANTS[input.kind]
+    if (input.variant !== undefined && !allowed.includes(input.variant))
+      ctx.addIssue({
+        code: 'custom',
+        path: ['variant'],
+        message: `variant "${input.variant}" is not valid for kind "${input.kind}"; use one of: ${allowed.join(', ')}.`
+      })
   })
-  .strict()
-
-const umlPresetSchema = z
-  .object({
-    kind: z.literal('uml'),
-    variant: z
-      .enum(['class', 'sequence', 'usecase'])
-      .default('class')
-      .describe(
-        'class: class boxes with name/attribute/method compartments. sequence: lifelines with messages. usecase: an actor with use-case ovals.'
-      ),
-    ...presetOriginShape
-  })
-  .strict()
-
-const wireframePresetSchema = z
-  .object({
-    kind: z.literal('wireframe'),
-    variant: z
-      .enum(['screen', 'modal'])
-      .default('screen')
-      .describe(
-        'screen: a screen frame with a nav bar, input field, buttons, and a card. modal: a dimmed screen behind a centered modal dialog.'
-      ),
-    ...presetOriginShape
-  })
-  .strict()
-
-export const presetInputSchema = z.discriminatedUnion('kind', [
-  networkPresetSchema,
-  flowchartPresetSchema,
-  umlPresetSchema,
-  wireframePresetSchema
-])
 
 // Schema version for a persisted scene snapshot. The `version` is a literal in the
 // schema below so a snapshot written by an older/newer build fails validation and

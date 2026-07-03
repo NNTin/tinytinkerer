@@ -1,10 +1,11 @@
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
-import type {
-  DrawConnector,
-  IconInput,
-  IconType,
-  PresetInput
+import {
+  EXCALIDRAW_PRESET_VARIANTS,
+  type DrawConnector,
+  type IconInput,
+  type IconType,
+  type PresetInput
 } from '@tinytinkerer/excalidraw-protocol'
 import { drawFromSkeletons } from './create'
 import { uniqueId } from './ids'
@@ -975,7 +976,8 @@ export const executePreset = (api: ExcalidrawImperativeAPI, input: PresetInput) 
     createdIds: committed.createdIds,
     connectors: committed.connectors,
     kind: input.kind,
-    variant: input.variant
+    // Report the effective variant: an omitted variant defaults to the first for the kind.
+    variant: input.variant ?? EXCALIDRAW_PRESET_VARIANTS[input.kind][0]
   }
 }
 

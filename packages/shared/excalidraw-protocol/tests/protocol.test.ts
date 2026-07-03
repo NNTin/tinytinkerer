@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import {
   alignInputSchema,
   arrangeInputSchema,
@@ -14,6 +15,7 @@ import {
   excalidrawSnapshotRestoreContract,
   excalidrawSnapshotSchema,
   excalidrawVerbContracts,
+  excalidrawVerbInputSchemas,
   EXCALIDRAW_DEFAULT_BINDING_GAP,
   EXCALIDRAW_ICON_LIMIT,
   EXCALIDRAW_LIBRARY_IMPORT_VERB,
@@ -371,14 +373,12 @@ describe('excalidraw protocol', () => {
   })
 
   it('validates the diagram-semantics preset and icon verbs', () => {
-    // preset: discriminated on kind, variant defaults, origin defaults, opt-in version guard.
-    expect(presetInputSchema.parse({ kind: 'network' })).toMatchObject({
-      kind: 'network',
-      variant: 'star',
-      x: 0,
-      y: 0,
-      replace: false
-    })
+    // preset: a flat object (object root, not a top-level union — model function-call
+    // APIs reject a union root), origin defaults, opt-in version guard, and a
+    // superRefine that enforces the kind→variant pairing (variant is optional).
+    const parsedNetwork = presetInputSchema.parse({ kind: 'network' })
+    expect(parsedNetwork).toMatchObject({ kind: 'network', x: 0, y: 0, replace: false })
+    expect(parsedNetwork.variant).toBeUndefined()
     expect(
       presetInputSchema.parse({
         kind: 'flowchart',
@@ -389,9 +389,11 @@ describe('excalidraw protocol', () => {
     ).toMatchObject({ kind: 'flowchart', variant: 'decision', x: 40, expectedSceneVersion: 3 })
     expect(presetInputSchema.safeParse({ kind: 'uml', variant: 'sequence' }).success).toBe(true)
     expect(presetInputSchema.safeParse({ kind: 'wireframe', variant: 'modal' }).success).toBe(true)
-    // unknown kind / variant are rejected.
+    // unknown kind / unknown variant are rejected.
     expect(presetInputSchema.safeParse({ kind: 'mindmap' }).success).toBe(false)
     expect(presetInputSchema.safeParse({ kind: 'network', variant: 'mesh' }).success).toBe(false)
+    // a variant valid for another kind is rejected for this kind.
+    expect(presetInputSchema.safeParse({ kind: 'network', variant: 'linear' }).success).toBe(false)
 
     // icon: requires at least one placed icon, rejects unknown types, caps the batch.
     expect(iconInputSchema.parse({ icons: [{ type: 'router', x: 0, y: 0 }] })).toMatchObject({
@@ -437,6 +439,21 @@ describe('excalidraw protocol', () => {
         icons: [{ type: 'router', label: 'Router', groupId: 'g1', elementIds: ['a'] }]
       }).success
     ).toBe(true)
+  })
+
+  it('renders an object-root JSON schema for every verb (model function-call safe)', () => {
+    // Native tool calling forwards a verb's input schema as `function.parameters`,
+    // which OpenAI/ChatGPT-compatible APIs require to have an object root — a
+    // top-level union/`anyOf` (e.g. a bare `z.discriminatedUnion`) is rejected. This
+    // guards every verb, including `preset`, which is a flat object for this reason.
+    for (const [verb, schema] of Object.entries(excalidrawVerbInputSchemas)) {
+      const json = z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'input' }) as Record<
+        string,
+        unknown
+      >
+      expect(json.type, `${verb} must have an object root`).toBe('object')
+      expect('anyOf' in json, `${verb} must not have a top-level union`).toBe(false)
+    }
   })
 
   it('uses an independently owned app contract version', () => {
