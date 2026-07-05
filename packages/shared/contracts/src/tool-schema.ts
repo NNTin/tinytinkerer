@@ -35,8 +35,25 @@ const stripSchemaDialect = (schema: JsonSchemaObject): JsonSchemaObject => {
 //   render as `anyOf`, optionals stay out of `required`. This mirrors the runtime
 //   contract exactly; strict-mode shaping is a separate concern handled only where
 //   a provider demands it (see toStrictResponseJsonSchema).
-export const toolInputJsonSchema = (schema: z.ZodType): JsonSchemaObject =>
-  stripSchemaDialect(z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'input' }))
+//
+// Object-root invariant: the result is forwarded verbatim as a tool's
+// `function.parameters`, which OpenAI/ChatGPT-compatible providers require to have
+// an object root. A schema whose ROOT is a union/array/primitive — e.g. a
+// top-level `z.discriminatedUnion(...)` (renders as `anyOf`) — is rejected at call
+// time with an opaque "Invalid schema for function '<tool>'" error. We fail fast
+// here instead, where the descriptor is built, with an actionable message; nest a
+// top-level union/array inside a `z.object({ ... })` to fix it. (A union nested in
+// a property is fine and stays faithful — only the root must be an object.)
+export const toolInputJsonSchema = (schema: z.ZodType): JsonSchemaObject => {
+  const json = stripSchemaDialect(z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'input' }))
+  if (json.type !== 'object')
+    throw new Error(
+      `tool input schema must have an object root for function.parameters, got ` +
+        `${JSON.stringify(json.type ?? (json.anyOf ? 'anyOf/union' : Object.keys(json)))}; ` +
+        `wrap a top-level union/array in a z.object({ ... })`
+    )
+  return json
+}
 
 // Strict JSON Schema for a model RESPONSE payload (OpenAI `response_format`
 // `json_schema` with `strict: true`), generated from a Zod schema. Strict mode

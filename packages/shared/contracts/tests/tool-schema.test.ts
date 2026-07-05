@@ -82,6 +82,29 @@ describe('toolInputJsonSchema', () => {
     expect(props.input).toHaveProperty('anyOf')
     expect(Array.isArray(props.input?.anyOf)).toBe(true)
   })
+
+  it('rejects a non-object root (invalid function.parameters) so bad tool schemas fail fast', () => {
+    // A tool's parameters must have an object root — providers reject a top-level
+    // union/array/primitive. This guards the class of bug where a verb schema is a
+    // bare `z.discriminatedUnion` (renders as a root `anyOf`) instead of a
+    // `z.object`, which otherwise only surfaces at LLM-call time.
+    expect(() =>
+      toolInputJsonSchema(
+        z.discriminatedUnion('kind', [
+          z.object({ kind: z.literal('a'), x: z.number() }),
+          z.object({ kind: z.literal('b'), y: z.number() })
+        ])
+      )
+    ).toThrow(/object root/)
+    expect(() => toolInputJsonSchema(z.array(z.string()) as unknown as z.ZodType)).toThrow(
+      /object root/
+    )
+    expect(() => toolInputJsonSchema(z.string() as unknown as z.ZodType)).toThrow(/object root/)
+    // A union nested inside an object property is fine — only the root must be an object.
+    expect(() =>
+      toolInputJsonSchema(z.object({ choice: z.union([z.string(), z.number()]) }))
+    ).not.toThrow()
+  })
 })
 
 describe('toStrictResponseJsonSchema', () => {
