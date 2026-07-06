@@ -100,7 +100,7 @@ A model call has **two** parse steps; harden only the right one:
    `parse_error` here is a **real edge bug** → fix it. Do NOT make it lenient.
 2. **Decision-content parse** — the model's `content` _string_ → robust JSON →
    your schema. THIS is the unavoidable one: route it through the shared
-   `parseModelJsonWithTelemetry` helper (`@tinytinkerer/sentry-telemetry`), on its
+   `parseModelJsonWithTelemetry` helper (`@tinytinkerer/app-browser`), on its
    **own** metadata, so the leniency never weakens the strict envelope check above.
    The decider then recovers-to-`final`; the planner surfaces the error (see
    "The fix" below). (Earlier drafts said to `accept` the content parse_error on
@@ -116,8 +116,8 @@ catches rate-limit errors) and **kills the whole agent run**. So:
    recover.** Model output is frequently _sloppy-but-complete_: wrapped in prose,
    single-quoted, trailing commas, unquoted keys. Recover those instead of
    needlessly dropping to `final` (which loses the action). The shared
-   `parseModelJsonWithTelemetry` helper (`@tinytinkerer/sentry-telemetry`,
-   `src/model-json.ts`) folds the whole boilerplate into one call — strip ` ```json `
+   `parseModelJsonWithTelemetry` helper (`@tinytinkerer/app-browser`,
+   `src/runtime/model-json.ts`) folds the whole boilerplate into one call — strip ` ```json `
    fences → `parseRobustModelJson` (strict `JSON.parse`, else first **balanced**
    object re-parsed with **JSON5**) → `zod` schema → telemetry. Crucially it
    **never repairs a truncated value** (no auto-closing brackets/strings) — a
@@ -193,7 +193,7 @@ older test that asserted these _throw_ (they encoded the pre-fix crash contract)
 - On a **pure-prose finish** (no JSON at all): the sink is **NOT called** — locks
   in the `FRONTEND-K` regression fix so nobody re-captures the benign prose finish.
   Add matching unit tests for the helper itself in
-  `packages/shared/sentry-telemetry/tests/model-json.test.ts`: with `silentWhenNoJson`,
+  `packages/app/app-browser/tests/model-json.test.ts`: with `silentWhenNoJson`,
   prose → `no_json` thrown + no capture; truncated → `parse_error` captured;
   wrong-shape → `schema_error` captured.
 

@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { setCaptureExceptionSink, type CaptureExceptionSink } from '../src/capture.js'
+import { setCaptureExceptionSink, type CaptureExceptionSink } from '@tinytinkerer/sentry-telemetry'
 import {
   containsJsonValue,
   ModelJsonError,
   parseModelJsonWithTelemetry,
   parseRobustModelJson,
   stripModelJsonFences
-} from '../src/model-json.js'
+} from '../src/runtime/model-json.js'
 
 const sink = vi.fn<CaptureExceptionSink>()
 

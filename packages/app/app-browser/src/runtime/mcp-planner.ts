@@ -1,4 +1,5 @@
-import { parseJsonWithTelemetry, parseModelJsonWithTelemetry } from '../telemetry/request-telemetry'
+import { parseJsonWithTelemetry } from '../telemetry/request-telemetry'
+import { parseModelJsonWithTelemetry } from './model-json'
 import type { ConversationMessage } from '@tinytinkerer/app-core'
 import {
   executionPlanFromWire,

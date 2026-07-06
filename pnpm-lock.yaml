@@ -327,6 +327,9 @@ importers:
       dexie:
         specifier: 4.4.3
         version: 4.4.3
+      json5:
+        specifier: 2.2.3
+        version: 2.2.3
       react-icons:
         specifier: 5.6.0
         version: 5.6.0(react@19.2.6)
@@ -929,9 +932,6 @@ importers:
       '@sentry/core':
         specifier: 10.55.0
         version: 10.55.0
-      json5:
-        specifier: 2.2.3
-        version: 2.2.3
 
   packages/shared/ui:
     dependencies:

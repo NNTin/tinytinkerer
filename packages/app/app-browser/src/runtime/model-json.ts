@@ -1,5 +1,5 @@
 import JSON5 from 'json5'
-import { parseWithTelemetry, type RequestTelemetryMetadata } from './request-telemetry'
+import { parseWithTelemetry, type RequestTelemetryMetadata } from '../telemetry/request-telemetry'
 
 // Find the first *balanced* JSON object/array in `text`, honouring string
 // literals (both " and ' — JSON5 allows single quotes) and escapes, and return

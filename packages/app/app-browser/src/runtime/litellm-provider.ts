@@ -27,12 +27,12 @@ import {
   type ModelsChatFetch
 } from './edge-fetch'
 import {
-  ModelJsonError,
   parseJsonWithTelemetry,
   parseWithTelemetry,
   type AcceptedOutcome,
   type RequestTelemetryMetadata
 } from '../telemetry/request-telemetry'
+import { ModelJsonError } from './model-json'
 import { llmPlan, type PlannerToolDescriptor } from './mcp-planner'
 import { buildToolNameMap, toolInvocationsToMessages } from './tool-calling'
 import {

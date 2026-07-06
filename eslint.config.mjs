@@ -77,7 +77,7 @@ export default tseslint.config(
           object: 'JSON',
           property: 'parse',
           message:
-            'Do not raw-JSON.parse model output. Use parseModelJsonWithTelemetry from @tinytinkerer/sentry-telemetry (re-exported by @tinytinkerer/app-browser): it strips ```json fences, parses robustly (sloppy-but-complete output, never repairing truncation), validates the schema, and captures parse_error/schema_error.'
+            'Do not raw-JSON.parse model output. Use parseModelJsonWithTelemetry from @tinytinkerer/app-browser (src/runtime/model-json.ts): it strips ```json fences, parses robustly (sloppy-but-complete output, never repairing truncation), validates the schema, and captures parse_error/schema_error.'
         }
       ]
     }
