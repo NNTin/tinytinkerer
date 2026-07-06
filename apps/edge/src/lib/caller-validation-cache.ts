@@ -1,5 +1,6 @@
 import { SHARED_CREDENTIAL_KEY, type CredentialKey } from './rate-limit'
 import type { CallerIdentity } from './caller-validation'
+import { ExpiringMap } from './expiring-map'
 
 /**
  * Short-TTL cache for SUCCESSFUL caller validations (issue #177).
@@ -32,13 +33,11 @@ const VALIDATED_UNTIL_HEADER = 'x-caller-validated-until'
 const cacheKeyForCredential = (credentialKey: CredentialKey): string =>
   `https://caller-validation-cache.tiny.nntin.xyz/github/${credentialKey}`
 
-type CachedCallerIdentity = {
-  identity: CallerIdentity
-  validUntilMs: number
-}
-
-// In-memory mirror: credential key -> GitHub identity + validated-until epoch ms.
-const validCallerByCredential = new Map<CredentialKey, CachedCallerIdentity>()
+// In-memory mirror: credential key -> GitHub identity, expiring at the
+// validated-until stamp. Expired entries are actively evicted — one entry per
+// unique credential would otherwise accumulate for the isolate's lifetime
+// (issue #343).
+const validCallerByCredential = new ExpiringMap<CredentialKey, CallerIdentity>()
 
 const cacheStore = (): Cache | undefined =>
   (globalThis as { caches?: { default?: Cache } }).caches?.default
@@ -56,8 +55,8 @@ export const readCachedCallerValidation = async (
   // caching under it would validate every caller off one token. Never serve it.
   if (credentialKey === SHARED_CREDENTIAL_KEY) return undefined
 
-  const inMemory = validCallerByCredential.get(credentialKey)
-  if (inMemory && inMemory.validUntilMs > nowMs) return inMemory.identity
+  const inMemory = validCallerByCredential.get(credentialKey, nowMs)
+  if (inMemory) return inMemory
 
   const store = cacheStore()
   if (!store) return undefined
@@ -68,10 +67,7 @@ export const readCachedCallerValidation = async (
     if (untilMs <= nowMs) return undefined
     const identity = (await hit.json()) as CallerIdentity
     if (!identity.id || !identity.login) return undefined
-    validCallerByCredential.set(credentialKey, {
-      identity,
-      validUntilMs: untilMs
-    })
+    validCallerByCredential.set(credentialKey, identity, untilMs, nowMs)
     return identity
   } catch {
     // A malformed cache entry must never break the request — just re-probe.
@@ -88,7 +84,7 @@ export const writeCachedCallerValidation = async (
   if (credentialKey === SHARED_CREDENTIAL_KEY) return
 
   const untilMs = nowMs + VALID_TTL_MS
-  validCallerByCredential.set(credentialKey, { identity, validUntilMs: untilMs })
+  validCallerByCredential.set(credentialKey, identity, untilMs, nowMs)
 
   const store = cacheStore()
   if (!store) return
@@ -111,3 +107,6 @@ export const writeCachedCallerValidation = async (
 export const clearCallerValidationCache = (): void => {
   validCallerByCredential.clear()
 }
+
+/** Entry count of the in-memory mirror (tests only — observes #343 eviction). */
+export const callerValidationCacheSize = (): number => validCallerByCredential.size

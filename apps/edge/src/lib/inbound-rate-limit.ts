@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from 'hono'
 import { edgeErrorResponseSchema } from '@tinytinkerer/contracts'
 import type { Bindings } from './bindings'
 import { deriveCredentialKey, SHARED_CREDENTIAL_KEY } from './rate-limit'
+import { ExpiringMap } from './expiring-map'
 
 /**
  * Inbound (caller-facing) request throttling for the edge worker.
@@ -40,8 +41,10 @@ const DEFAULT_INBOUND_LIMITS: Record<InboundRateLimitScope, number> = {
 
 type WindowState = { count: number; resetAtMs: number }
 
-// In-memory mirror: `${scope}/${callerKey}` -> current fixed window.
-const windowsByBucket = new Map<string, WindowState>()
+// In-memory mirror: `${scope}/${callerKey}` -> current fixed window. Expired
+// windows are actively evicted — the key space is one entry per unique caller,
+// so a plain Map would grow for the isolate's lifetime (issue #343).
+const windowsByBucket = new ExpiringMap<string, WindowState>()
 
 const bucketCacheKey = (bucket: string): string =>
   `https://inbound-rate-limit.tiny.nntin.xyz/${bucket}`
@@ -106,8 +109,7 @@ export const checkInboundRateLimit = async (
 ): Promise<InboundRateLimitResult> => {
   const bucket = `${scope}/${callerKey}`
 
-  let window = windowsByBucket.get(bucket)
-  if (window && window.resetAtMs <= nowMs) window = undefined
+  let window = windowsByBucket.get(bucket, nowMs)
   if (!window) {
     const durable = await readDurableWindow(bucket)
     if (durable && durable.resetAtMs > nowMs) window = durable
@@ -116,14 +118,14 @@ export const checkInboundRateLimit = async (
   if (window && window.count >= limit) {
     // Over the limit: report the remaining window without counting the request,
     // so a rejected burst does not extend its own punishment.
-    windowsByBucket.set(bucket, window)
+    windowsByBucket.set(bucket, window, window.resetAtMs, nowMs)
     return { limited: true, retryAfterMs: window.resetAtMs - nowMs }
   }
 
   const next: WindowState = window
     ? { count: window.count + 1, resetAtMs: window.resetAtMs }
     : { count: 1, resetAtMs: nowMs + windowMs }
-  windowsByBucket.set(bucket, next)
+  windowsByBucket.set(bucket, next, next.resetAtMs, nowMs)
   await writeDurableWindow(bucket, next, nowMs)
   return { limited: false }
 }
@@ -132,6 +134,9 @@ export const checkInboundRateLimit = async (
 export const clearInboundRateLimits = (): void => {
   windowsByBucket.clear()
 }
+
+/** Entry count of the in-memory mirror (tests only — observes #343 eviction). */
+export const inboundRateLimitCacheSize = (): number => windowsByBucket.size
 
 /** A positive integer from a binding, the fallback otherwise. `'0'` is kept: it means "disabled". */
 const parseLimitBinding = (raw: string | undefined, fallback: number): number => {
