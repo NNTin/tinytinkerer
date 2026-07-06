@@ -109,7 +109,7 @@ test.describe('snap-to-web-mode (#324)', () => {
 
     // Now in docked web mode: the resize handle + undock (float) button are present,
     // the dock button is gone, and the SAME conversation is still on screen.
-    await expect(page.getByRole('button', { name: 'Resize sidebar' })).toBeVisible()
+    await expect(page.getByRole('separator', { name: 'Resize sidebar' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Float chat' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Dock to sidebar' })).toHaveCount(0)
     await expect(page.locator('.widget-snap-preview')).toHaveCount(0)
