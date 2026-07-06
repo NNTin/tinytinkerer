@@ -88,6 +88,8 @@ export { useWebSpeechInput } from './web-speech'
 export { resolveBrowserShellBootstrapConfig } from './config'
 export { BrowserAppShell } from './browser-app-shell'
 export type { BrowserAppShellProps } from './browser-app-shell'
+export { AppErrorBoundary } from './app-error-boundary'
+export type { AppErrorBoundaryProps } from './app-error-boundary'
 export { createBrowserShellRoot } from './create-browser-shell-root'
 export type {
   BrowserShellBootScreenProps,

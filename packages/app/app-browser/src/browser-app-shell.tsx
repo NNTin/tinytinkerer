@@ -2,6 +2,7 @@ import { StrictMode, Suspense, useState, type ComponentType, type ReactNode } fr
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppBrowserProvider } from './app'
 import type { BrowserApp } from './app'
+import { AppErrorBoundary } from './app-error-boundary'
 import { useBrowserAppBootstrap } from './bootstrap'
 import { LazyHumanPromptHost } from './lazy-human-prompt-host'
 import { LazyPrivacyPolicyUpdateGate } from './telemetry/lazy-privacy-update-gate'
@@ -41,26 +42,28 @@ export const BrowserAppShell = ({
 
   return (
     <StrictMode>
-      <AppBrowserProvider app={app}>
-        <QueryClientProvider client={queryClient}>
-          {children}
-          {mountGlobals ? (
-            <>
-              {/* The single human-in-the-loop modal (issue #85): renders nothing until a
-                  plugin raises a prompt. Lazy so its CodeMirror dep code-splits out. */}
-              <Suspense fallback={null}>
-                <LazyHumanPromptHost />
-              </Suspense>
-              <Suspense fallback={null}>
-                <LazyPrivacyPolicyUpdateGate />
-              </Suspense>
-              <Suspense fallback={null}>
-                <LazyTelemetryConsentGate />
-              </Suspense>
-            </>
-          ) : null}
-        </QueryClientProvider>
-      </AppBrowserProvider>
+      <AppErrorBoundary>
+        <AppBrowserProvider app={app}>
+          <QueryClientProvider client={queryClient}>
+            {children}
+            {mountGlobals ? (
+              <>
+                {/* The single human-in-the-loop modal (issue #85): renders nothing until a
+                    plugin raises a prompt. Lazy so its CodeMirror dep code-splits out. */}
+                <Suspense fallback={null}>
+                  <LazyHumanPromptHost />
+                </Suspense>
+                <Suspense fallback={null}>
+                  <LazyPrivacyPolicyUpdateGate />
+                </Suspense>
+                <Suspense fallback={null}>
+                  <LazyTelemetryConsentGate />
+                </Suspense>
+              </>
+            ) : null}
+          </QueryClientProvider>
+        </AppBrowserProvider>
+      </AppErrorBoundary>
     </StrictMode>
   )
 }
