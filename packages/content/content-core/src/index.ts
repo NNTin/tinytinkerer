@@ -236,12 +236,19 @@ const normalizeBlockNode = (node: BlockNode, counts: Map<string, number>): Block
   }
 }
 
-export const assignNodeIds = (doc: ContentDocument): ContentDocument => {
-  const counts = new Map<string, number>()
-  return {
-    nodes: doc.nodes.map((node) => normalizeBlockNode(node, counts))
-  }
-}
+// Nodes-level id assignment against an externally-owned counts ledger. This
+// lets callers (the incremental markdown parser) thread occurrence counts
+// across fragments so ids assigned to a later chunk agree with what a single
+// full-document pass would have produced. `assignNodeIds` below is just this
+// with a fresh, single-use ledger.
+export const assignBlockNodeIds = (
+  nodes: readonly BlockNode[],
+  counts: Map<string, number>
+): BlockNode[] => nodes.map((node) => normalizeBlockNode(node, counts))
+
+export const assignNodeIds = (doc: ContentDocument): ContentDocument => ({
+  nodes: assignBlockNodeIds(doc.nodes, new Map())
+})
 
 export type ContentSourceSnapshot = {
   source: string
