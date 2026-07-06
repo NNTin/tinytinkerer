@@ -12,7 +12,6 @@ import {
   type ReactNode
 } from 'react'
 import {
-  assignNodeIds,
   type BlockquoteNode,
   type CodeBlockNode,
   type ContentDocument,
@@ -165,6 +164,21 @@ export const useContentRenderOptions = (): ResolvedContentRenderOptions => {
 }
 
 export type ContentDocumentContentProps = {
+  /**
+   * The document must already be normalized — every block and inline node
+   * must carry an `id` (see `assignNodeIds` in `@tinytinkerer/content-core`).
+   * `ContentDocumentRenderer` keys children by `node.id`, so a missing id
+   * produces an undefined React key.
+   *
+   * Normalization has exactly one owner: the producer. Parser output
+   * (`ContentSourcePlugin.parse` / `parseMarkdownContent`, including
+   * documents reloaded from persistence) is always normalized already.
+   * Hand-built documents (plugin views, fixtures, tests, etc.) must call
+   * `assignNodeIds(...)` at the build site — this component does not
+   * re-normalize, both to avoid re-hashing every node on each render
+   * (`assignNodeIds` clones the whole tree) and to preserve node object
+   * identity for downstream memoization.
+   */
   document: ContentDocument
   className?: string
   isStreaming?: boolean
@@ -584,7 +598,6 @@ export const ContentDocumentContent = ({
   executionPolicy,
   renderOptions
 }: ContentDocumentContentProps) => {
-  const normalizedDocument = useMemo(() => assignNodeIds(document), [document])
   const runtime = useMemo(() => {
     const built = createReactContentRuntime(executionPolicy ? { executionPolicy } : undefined)
     if (plugins) {
@@ -600,7 +613,7 @@ export const ContentDocumentContent = ({
   return (
     <ContentRenderOptionsContext.Provider value={contextValue}>
       <ContentDocumentRenderer
-        document={normalizedDocument}
+        document={document}
         isStreaming={isStreaming}
         runtime={runtime}
         {...(className ? { className } : {})}

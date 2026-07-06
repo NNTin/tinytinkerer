@@ -3,11 +3,32 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { lazy, type ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+// Spy on `@tinytinkerer/content-core`'s `assignNodeIds` while delegating to the
+// real implementation, so tests can assert ContentDocumentContent does NOT
+// re-normalize an already-normalized document (issue #341) without losing the
+// real normalization behavior other tests in this file rely on via `withIds`.
+// `vi.hoisted` is required because `vi.mock` factories run before the module's
+// own top-level `const` declarations are initialized.
+const { assignNodeIdsSpy } = vi.hoisted(() => ({ assignNodeIdsSpy: vi.fn() }))
+
+vi.mock('@tinytinkerer/content-core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tinytinkerer/content-core')>()
+  return {
+    ...actual,
+    assignNodeIds: (doc: Parameters<typeof actual.assignNodeIds>[0]) => {
+      assignNodeIdsSpy(doc)
+      return actual.assignNodeIds(doc)
+    }
+  }
+})
+
 import {
   assignNodeIds,
   ContentDocumentContent,
   ContentDocumentRenderer,
   type ContentDocument,
+  type ReactContentPlugin,
   createReactContentRuntime,
   MARKDOWN_ROOT_CLASS,
   MARKDOWN_STREAMING_CLASS,
@@ -464,16 +485,39 @@ describe('ContentDocumentRenderer', () => {
 })
 
 describe('ContentDocumentContent', () => {
-  it('normalizes hand-built documents before rendering them', () => {
-    render(
-      <ContentDocumentContent
-        document={{
-          nodes: [{ type: 'paragraph', children: [{ type: 'text', value: 'Hello adapter' }] }]
-        }}
-      />
-    )
+  // Normalization has exactly one owner: the producer (issue #341).
+  // `ContentDocumentContent` used to call `assignNodeIds` on every render, which
+  // clones the whole tree and re-hashes every node — expensive per streamed
+  // delta, and it destroys node object identity that memoization relies on.
+  // This test proves the component trusts an already-normalized document as-is:
+  // it never calls `assignNodeIds`, and the exact node object the caller passed
+  // in is what reaches a renderer plugin (no clone in between).
+  it('renders an already-normalized document without re-normalizing it', () => {
+    const document = withIds({
+      nodes: [{ type: 'paragraph', children: [{ type: 'text', value: 'Hello adapter' }] }]
+    })
+    const originalParagraph = document.nodes[0]
+    expect(originalParagraph?.id).toBeTruthy()
+
+    let renderedNode: unknown
+    const capturePlugin: ReactContentPlugin = {
+      id: 'test:capture-paragraph',
+      nodeType: 'paragraph',
+      // Outrank the built-in core:paragraph plugin (priority 0) so this one wins
+      // and we can inspect the exact node object handed to a renderer.
+      priority: 100,
+      render: (node) => {
+        renderedNode = node
+        return <span>Hello adapter</span>
+      }
+    }
+
+    assignNodeIdsSpy.mockClear()
+    render(<ContentDocumentContent document={document} plugins={[capturePlugin]} />)
 
     expect(screen.getByText('Hello adapter')).toBeInTheDocument()
+    expect(assignNodeIdsSpy).not.toHaveBeenCalled()
+    expect(renderedNode).toBe(originalParagraph)
   })
 })
 

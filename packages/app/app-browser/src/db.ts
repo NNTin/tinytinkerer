@@ -6,6 +6,7 @@ import type {
   PersistedEvent,
   PreferencesStore
 } from '@tinytinkerer/app-core'
+import { assignNodeIds } from '@tinytinkerer/content-react'
 
 type Preference = {
   key: string
@@ -73,14 +74,16 @@ class TinyTinkererDb extends Dexie {
           const content = isStructuredDocument
             ? rawContent
             : typeof rawContent === 'string' && rawContent.trim().length > 0
-              ? {
+              ? // Hand-built document: this repair path is the producer, so it owns
+                // normalization (the renderer no longer assigns ids on read).
+                assignNodeIds({
                   nodes: [
                     {
                       type: 'paragraph',
                       children: [{ type: 'text', value: rawContent }]
                     }
                   ]
-                }
+                })
               : { nodes: [] }
 
           await eventsTable.put({
@@ -127,14 +130,16 @@ class TinyTinkererDb extends Dexie {
           }
           const repaired =
             typeof rawContent === 'string' && rawContent.trim().length > 0
-              ? {
+              ? // Hand-built document: this repair path is the producer, so it owns
+                // normalization (the renderer no longer assigns ids on read).
+                assignNodeIds({
                   nodes: [
                     {
                       type: 'paragraph',
                       children: [{ type: 'text', value: rawContent }]
                     }
                   ]
-                }
+                })
               : { nodes: [] }
           await eventsTable.put({
             ...event,
