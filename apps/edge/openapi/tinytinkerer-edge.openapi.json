@@ -783,6 +783,16 @@
                 }
               }
             }
+          },
+          "502": {
+            "description": "Upstream OAuth failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubExchangeResponse"
+                }
+              }
+            }
           }
         }
       }
