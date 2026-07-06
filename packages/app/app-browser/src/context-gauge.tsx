@@ -30,7 +30,10 @@ const latestPromptTokens = (events: ChatEvent[]): number | null => {
 // status plugin, unknown context window, or no usage seen yet. The plugin owns
 // the math/thresholds; the host only supplies data and renders the result.
 export const useContextGauge = (): GaugeView | null => {
-  const events = useChatStore((state) => state.events)
+  // Subscribe only to the derived token count, not the whole events array: the
+  // gauge depends solely on the latest reported usage, so this re-renders it
+  // when that number changes instead of on every streamed delta (issue #340).
+  const inputTokensUsed = useChatStore((state) => latestPromptTokens(state.events))
   const selectedModel = useSettingsStore((state) => state.selectedModel)
   const pluginActivation = useSettingsStore((state) => state.pluginActivation)
   const { models, refreshModels } = useModels(selectedModel)
@@ -69,8 +72,8 @@ export const useContextGauge = (): GaugeView | null => {
     if (!summarizer) return null
     const contextWindow =
       models.find((model) => model.id === selectedModel)?.limits?.max_input_tokens ?? null
-    return summarizer({ contextWindow, inputTokensUsed: latestPromptTokens(events) })
-  }, [summarizer, models, selectedModel, events])
+    return summarizer({ contextWindow, inputTokensUsed })
+  }, [summarizer, models, selectedModel, inputTokensUsed])
 }
 
 const THRESHOLD_COLOR: Record<GaugeThreshold, string> = {

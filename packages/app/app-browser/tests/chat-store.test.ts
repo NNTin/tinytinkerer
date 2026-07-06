@@ -266,6 +266,71 @@ describe('createChatStore', () => {
     expect(mockExecuteChatPrompt).not.toHaveBeenCalled()
   })
 
+  it('does not start a second concurrent run when re-entered during the async window (issue #334)', async () => {
+    // executeChatPrompt never resolves, so the first run stays in-flight through
+    // the whole test; the second send must be rejected by the synchronous latch.
+    let calls = 0
+    mockExecuteChatPrompt.mockImplementation(() => {
+      calls += 1
+      return new Promise<void>(() => {})
+    })
+
+    const store = createChatStore({
+      shell: makeShell(),
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    store.setState({ hydrated: true, conversationId: 'conv-1' })
+
+    // Fire two sends back-to-back without awaiting the first — the race the
+    // gate must close (Enter, then Regenerate while the module still loads).
+    void store.getState().sendPrompt('first')
+    void store.getState().sendPrompt('second')
+
+    await vi.waitFor(() => expect(calls).toBe(1))
+    // Give any wrongly-admitted second run a chance to reach executeChatPrompt.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(calls).toBe(1)
+  })
+
+  it('resetConversation aborts the active run and its late events do not repopulate (issue #332)', async () => {
+    let capturedOnEvent: ((event: unknown) => void) | undefined
+    let capturedSignal: AbortSignal | undefined
+    mockExecuteChatPrompt.mockImplementation(
+      (options: { onEvent: (event: unknown) => void; signal?: AbortSignal }) =>
+        new Promise<void>(() => {
+          capturedOnEvent = options.onEvent
+          capturedSignal = options.signal
+        })
+    )
+
+    const shell = makeShell()
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    store.setState({ hydrated: true, conversationId: 'conv-1' })
+
+    void store.getState().sendPrompt('hi')
+    await vi.waitFor(() => expect(capturedSignal).toBeDefined())
+    expect(capturedSignal?.aborted).toBe(false)
+
+    await store.getState().resetConversation()
+
+    // The run was aborted and the timeline cleared...
+    expect(capturedSignal?.aborted).toBe(true)
+    expect(store.getState().events).toEqual([])
+
+    // ...and a straggler event from the aborted run must not resurrect anything.
+    capturedOnEvent?.({
+      id: 'late',
+      type: 'assistant.done',
+      payload: { source: 'orphan', content: { nodes: [] } }
+    })
+    expect(store.getState().events).toEqual([])
+  })
+
   it('does not reload the cooldown when an unrelated setting changes', async () => {
     const getPreference = vi.fn(() => Promise.resolve(undefined))
     const shell = makeShell()

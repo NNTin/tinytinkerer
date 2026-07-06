@@ -191,6 +191,14 @@ export const executeChatPrompt = async (options: {
     history,
     options.signal
   )) {
+    // Stop the instant the run is aborted (e.g. a mid-stream conversation
+    // reset): no further events must be surfaced OR persisted, or the aborted
+    // run's tail would resurrect itself into — and re-persist under — the
+    // conversation that was just cleared (issue #332).
+    if (options.signal?.aborted) {
+      break
+    }
+
     await options.onEvent(event)
 
     if (persistableTypes.has(event.type)) {

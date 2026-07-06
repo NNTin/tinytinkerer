@@ -299,6 +299,63 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
   }
 }
 
+// `assistant.chunk` and `reasoning.chunk` are live-stream-only: each payload
+// carries the FULL accumulated source, parsed content, and text so far
+// (last-writer-wins), and neither is ever persisted. Retaining every one makes a
+// streamed
+// answer cost O(chunks²) memory (hundreds of growing snapshots) and O(n²) array
+// copying. Because only the latest matters to the in-flight turn, we keep at
+// most one of each live in the array (issue #339).
+const LIVE_ONLY_COLLAPSIBLE: ReadonlySet<ChatEvent['type']> = new Set([
+  'assistant.chunk',
+  'reasoning.chunk'
+])
+
+// Which live chunks a `*.done` supersedes: once a terminal event lands (it
+// carries the final snapshot/text) the live chunks it subsumes are pure dead
+// weight and are dropped. `assistant.done` is the turn's terminal event, so it
+// clears BOTH stream types (any reasoning it didn't already close via
+// `reasoning.done` is settled too) — this bounds retention regardless of how
+// reasoning and content deltas interleaved.
+const DONE_SUPERSEDES: Partial<Record<ChatEvent['type'], readonly ChatEvent['type'][]>> = {
+  'assistant.done': ['assistant.chunk', 'reasoning.chunk'],
+  'reasoning.done': ['reasoning.chunk']
+}
+
+/**
+ * Append a runtime event to the live event log while bounding the retention of
+ * live-only stream snapshots (issue #339). Pure and total, so the chat store can
+ * use it as its `onEvent` reducer and it can be unit-tested directly:
+ *
+ * - a collapsible live chunk replaces its immediately-preceding same-type
+ *   sibling instead of growing the array (its payload already subsumes it);
+ * - a `*.done` event drops the live chunk it supersedes, so a settled turn
+ *   retains zero stream snapshots.
+ *
+ * buildTurns treats a chunk and its done via last-writer-wins, so both prunings
+ * leave the derived turns unchanged. Persistence is unaffected — the pruned
+ * chunk types were never persisted.
+ */
+export const appendLiveChatEvent = (events: ChatEvent[], event: ChatEvent): ChatEvent[] => {
+  if (LIVE_ONLY_COLLAPSIBLE.has(event.type)) {
+    const last = events[events.length - 1]
+    if (last && last.type === event.type) {
+      const next = events.slice(0, -1)
+      next.push(event)
+      return next
+    }
+    return [...events, event]
+  }
+
+  const superseded = DONE_SUPERSEDES[event.type]
+  if (superseded) {
+    const drop = new Set<ChatEvent['type']>(superseded)
+    return [...events.filter((existing) => !drop.has(existing.type)), event]
+  }
+
+  return [...events, event]
+}
+
 export const buildTurns = (events: ChatEvent[]): Turn[] => {
   const turns: Turn[] = []
   let pendingTurn: Turn | undefined
@@ -386,3 +443,80 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
 
   return turns
 }
+
+const noticesEqual = (a: TurnNotice | undefined, b: TurnNotice | undefined): boolean => {
+  if (a === b) return true
+  if (!a || !b) return false
+  return a.kind === b.kind && a.message === b.message && a.level === b.level
+}
+
+const activityItemsEqual = (a: TurnActivityItem, b: TurnActivityItem): boolean => {
+  if (a.kind !== b.kind) return false
+  if (a.kind === 'reasoning' && b.kind === 'reasoning') {
+    return a.id === b.id && a.text === b.text
+  }
+  if (a.kind === 'label' && b.kind === 'label') {
+    return (
+      a.id === b.id &&
+      a.label === b.label &&
+      a.stepId === b.stepId &&
+      a.parentId === b.parentId &&
+      a.stepKind === b.stepKind &&
+      a.decisionKind === b.decisionKind
+    )
+  }
+  if (a.kind === 'tool' && b.kind === 'tool') {
+    return (
+      a.id === b.id &&
+      a.toolId === b.toolId &&
+      a.stepId === b.stepId &&
+      a.parentId === b.parentId &&
+      a.status === b.status &&
+      a.error === b.error &&
+      a.input === b.input &&
+      a.output === b.output
+    )
+  }
+  return false
+}
+
+const activitiesEqual = (a: TurnActivity, b: TurnActivity): boolean => {
+  if (a.reasoningText !== b.reasoningText) return false
+  if (a.items.length !== b.items.length) return false
+  return a.items.every((item, index) => {
+    const other = b.items[index]
+    return other !== undefined && activityItemsEqual(item, other)
+  })
+}
+
+/**
+ * Whether two turns are render-equivalent — same id and same content down to
+ * the activity log. `buildTurns` returns fresh `Turn` objects on every call, so
+ * during streaming a settled turn is rebuilt (new object, equal value) on every
+ * delta. The chat surface reconciles new turns against the previous array with
+ * this predicate to reuse the prior object for unchanged turns, restoring
+ * referential stability so `React.memo` can skip re-rendering settled turns
+ * (issue #340). `assistantContent` is compared by reference: for a settled turn
+ * it is the same `event.payload.content` object across rebuilds.
+ */
+export const turnsEquivalent = (a: Turn, b: Turn): boolean =>
+  a.id === b.id &&
+  a.userText === b.userText &&
+  a.assistantSource === b.assistantSource &&
+  a.assistantContent === b.assistantContent &&
+  a.isStreaming === b.isStreaming &&
+  noticesEqual(a.notice, b.notice) &&
+  activitiesEqual(a.activity, b.activity)
+
+/**
+ * Reconcile a freshly-built turn list against the previous one, reusing each
+ * previous `Turn` object whenever {@link turnsEquivalent} holds. Turns are
+ * matched by position (the log is append-only, so a turn's index is stable),
+ * which keeps this O(n) per delta while giving settled turns referential
+ * stability for memoized rendering (issue #340).
+ */
+export const reconcileTurns = (previous: Turn[], next: Turn[]): Turn[] =>
+  next.map((turn, index) => {
+    const before = previous[index]
+    return before && turnsEquivalent(before, turn) ? before : turn
+  })

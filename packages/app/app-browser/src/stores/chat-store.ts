@@ -46,6 +46,11 @@ export const createChatStore = (options: {
   let activeRunController: AbortController | undefined
   let initializePromise: Promise<void> | null = null
   let runtimeFactoryPromise: Promise<ChatRuntimeFactory> | null = null
+  // Synchronous re-entry latch for sendPrompt (issue #334). isRunning is only
+  // set true after sendPrompt's awaits resolve, so it cannot gate a second send
+  // that enters during those awaits; this closure flag, set before the first
+  // await, can.
+  let isSending = false
 
   // Single abort path shared by `stop` (abort a live run) and `cancelRetry`
   // (abort a queued auto-retry). Keeping one implementation avoids drift between
@@ -124,49 +129,68 @@ export const createChatStore = (options: {
       await ensureInitialized(set, get)
     },
     sendPrompt: async (prompt) => {
-      await ensureInitialized(set, get)
-      const state = get()
-      const { canSendPrompt, executeChatPrompt } = await loadCoreModule()
-      if (!canSendPrompt(state)) {
+      // Gate re-entry synchronously (issue #334): a second send/regenerate that
+      // fires while the first is still resolving its awaits (module load, runtime
+      // factory) would otherwise read the not-yet-set isRunning flag and start a
+      // concurrent run against the same conversation.
+      if (isSending || get().isRunning) {
         return
       }
-
-      const conversationId = state.conversationId
-      if (!conversationId) {
-        return
-      }
-
-      const runtimeFactory = await getRuntimeFactory()
-      const runController = new AbortController()
-      activeRunController = runController
-      set({ isRunning: true, isRetryPending: false })
-
+      isSending = true
       try {
-        await executeChatPrompt({
-          conversationId,
-          existingEvents: get().events,
-          prompt,
-          runtimeFactory,
-          conversations: options.shell.conversations,
-          preferences: options.shell.preferences,
-          // Cooldowns are scoped per LiteLLM deployment (issue #179).
-          cooldownScope: options.settingsStore.getState().litellmBaseUrl,
-          signal: runController.signal,
-          onEvent: (event) => {
-            set((currentState) => ({
-              events: [...currentState.events, event]
-            }))
-          },
-          onRateLimitState: (rateLimitState) => {
-            set(rateLimitState)
-          }
-        })
-      } finally {
-        if (activeRunController === runController) {
-          activeRunController = undefined
+        await ensureInitialized(set, get)
+        const state = get()
+        const { canSendPrompt, executeChatPrompt, appendLiveChatEvent } = await loadCoreModule()
+        if (!canSendPrompt(state)) {
+          return
         }
 
-        set({ isRunning: false, isRetryPending: false })
+        const conversationId = state.conversationId
+        if (!conversationId) {
+          return
+        }
+
+        const runtimeFactory = await getRuntimeFactory()
+        const runController = new AbortController()
+        activeRunController = runController
+        set({ isRunning: true, isRetryPending: false })
+
+        try {
+          await executeChatPrompt({
+            conversationId,
+            existingEvents: get().events,
+            prompt,
+            runtimeFactory,
+            conversations: options.shell.conversations,
+            preferences: options.shell.preferences,
+            // Cooldowns are scoped per LiteLLM deployment (issue #179).
+            cooldownScope: options.settingsStore.getState().litellmBaseUrl,
+            signal: runController.signal,
+            onEvent: (event) => {
+              // Drop events from a run aborted mid-stream (e.g. by a reset) so its
+              // tail cannot land on the fresh conversation (issue #332), and
+              // collapse live-only stream snapshots so they don't accumulate
+              // without bound (issue #339).
+              if (runController.signal.aborted) {
+                return
+              }
+              set((currentState) => ({
+                events: appendLiveChatEvent(currentState.events, event)
+              }))
+            },
+            onRateLimitState: (rateLimitState) => {
+              set(rateLimitState)
+            }
+          })
+        } finally {
+          if (activeRunController === runController) {
+            activeRunController = undefined
+          }
+
+          set({ isRunning: false, isRetryPending: false })
+        }
+      } finally {
+        isSending = false
       }
     },
     rerunLastPrompt: async () => {
@@ -189,9 +213,12 @@ export const createChatStore = (options: {
     },
     resetConversation: async () => {
       await ensureInitialized(set, get)
-      // Settle every open human prompt (issue #85): each belongs to the conversation
-      // being cleared, so none must survive into the fresh one.
-      resetAllHumanPrompts()
+      // Abort any in-flight run BEFORE clearing (issue #332): otherwise the run
+      // keeps appending and re-persisting its tail onto the conversation we are
+      // about to empty, resurrecting an orphaned assistant turn that survives
+      // reload. abortActiveRun also settles every open human prompt (issue #85),
+      // which each belong to the conversation being cleared.
+      abortActiveRun()
       const { resetConversation } = await loadCoreModule()
       const events = await resetConversation(options.shell.conversations, get().conversationId)
       set({ events })

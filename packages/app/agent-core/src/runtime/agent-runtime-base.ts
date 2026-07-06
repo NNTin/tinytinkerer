@@ -750,12 +750,12 @@ export const createPlainTextAssistantContentSession = (
     content:
       source.trim().length > 0
         ? {
-            // Every block node must carry an id: ContentDocumentRenderer keys the
+            // Every block node must carry an id: the react renderer keys the
             // top-level nodes strictly by `node.id` (no fallback), and since #341
             // the renderer no longer normalizes on read — the producer owns it.
             // agent-core may not depend on content-core (boundary), so we assign a
             // stable literal id here rather than call `assignNodeIds`; a single
-            // paragraph needs no hashing to be unique within its own document. Any
+            // paragraph needs no hashing to be unique within its own tree. Any
             // surface that actually renders (the browser) injects the markdown
             // session, whose parser normalizes; this plain-text fallback is the
             // headless/test default.

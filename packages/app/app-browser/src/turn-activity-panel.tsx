@@ -6,7 +6,7 @@ import type {
 } from '@tinytinkerer/app-core'
 import { boundedJson, type ReActDecisionKind } from '@tinytinkerer/contracts'
 import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { useResolvedPluginView } from './resolved-plugin-view'
 
 // Resolves the activity summarizer a tool's owner provides, keyed by tool id, or
@@ -326,7 +326,11 @@ const itemDepth = (
 // (streaming/running) and collapses once complete; the user can toggle at any
 // time. Renders the model's raw chain-of-thought (when emitted) followed by the
 // chronological planning/tool activity — visually separated above the answer.
-export const TurnActivityPanel = ({
+// Memoized alongside TurnChrome (issue #340): with settled turns keeping their
+// object identity (activity included) via the surface's reconcileTurns, and a
+// memoized serverNameById/resolveSummarizer, the default shallow comparison
+// skips re-rendering every past turn's panel on each streamed delta.
+export const TurnActivityPanel = memo(function TurnActivityPanel({
   activity,
   isLive,
   serverNameById,
@@ -338,7 +342,7 @@ export const TurnActivityPanel = ({
   // Resolves a tool's owner-provided activity summarizer by id. Defaults to "no
   // summarizer" so callers (and tests) that don't wire it get the neutral default.
   resolveSummarizer?: ResolveActivitySummarizer
-}) => {
+}) {
   const [open, setOpen] = useState(isLive)
 
   // Auto-expand when the turn starts running and auto-collapse when it finishes.
@@ -430,4 +434,4 @@ export const TurnActivityPanel = ({
       ) : null}
     </section>
   )
-}
+})

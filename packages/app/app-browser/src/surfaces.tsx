@@ -1,5 +1,6 @@
 import {
   buildTurns,
+  reconcileTurns,
   type ActivitySummarizer,
   type PluginManifest,
   type Turn
@@ -19,6 +20,7 @@ import {
   useEffect,
   useEffectEvent,
   useMemo,
+  useRef,
   useState,
   type Dispatch,
   type SetStateAction
@@ -113,7 +115,18 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
 
   useEffect(() => startStatusPolling(refreshStatus), [refreshStatus])
 
-  const turns = useMemo(() => buildTurns(events), [events])
+  // buildTurns returns fresh Turn objects every time `events` changes (once per
+  // streamed delta). Reconcile against the previous list so settled turns keep
+  // their object identity, letting the memoized per-turn renderers skip them and
+  // only the in-flight turn re-render (issue #340). Reusing the prior object for
+  // an unchanged turn is idempotent, so this stays correct under StrictMode's
+  // double-invocation.
+  const previousTurnsRef = useRef<Turn[]>([])
+  const turns = useMemo(() => {
+    const reconciled = reconcileTurns(previousTurnsRef.current, buildTurns(events))
+    previousTurnsRef.current = reconciled
+    return reconciled
+  }, [events])
   const serverNameById = useMemo(
     () => new Map(mcpServers.map((server) => [server.id, server.name])),
     [mcpServers]
