@@ -8,6 +8,14 @@
   }
 }
 
+/* Long unbroken tokens (URLs, hashes) must wrap inside message bubbles.
+   Inherits into paragraphs, list items, table cells, headings; `pre` is
+   unaffected because `white-space: pre` never soft-wraps and already
+   scrolls via overflow-x. */
+.tt-markdown {
+  overflow-wrap: anywhere;
+}
+
 .tt-markdown--streaming::after {
   content: '|';
   display: inline-block;

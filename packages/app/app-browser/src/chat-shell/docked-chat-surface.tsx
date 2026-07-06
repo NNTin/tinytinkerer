@@ -57,7 +57,8 @@ const VARIANTS: Record<DockedSizeVariant, VariantConfig> = {
     showTurnCount: false,
     scroll: 'mt-3 flex-1 overflow-y-auto space-y-4',
     emptyCount: 4,
-    userBubble: 'rounded-lg bg-[var(--user-bubble)] px-3 py-2 text-sm text-[var(--text)]',
+    userBubble:
+      'wrap-anywhere rounded-lg bg-[var(--user-bubble)] px-3 py-2 text-sm text-[var(--text)]',
     noticeRadius: 'rounded-lg',
     turnBubble:
       'rounded-lg bg-[var(--panel)] px-3 py-2 text-sm text-[var(--text-strong)] shadow-sm',
@@ -81,7 +82,8 @@ const VARIANTS: Record<DockedSizeVariant, VariantConfig> = {
     scroll: 'mt-3 flex-1 space-y-4 overflow-y-auto pr-1',
     emptyCount: 2,
     emptyClassName: 'rounded-2xl border border-dashed border-stone-300 bg-white/70 px-4 py-5',
-    userBubble: 'rounded-2xl bg-[var(--user-bubble)] px-3 py-2.5 text-sm text-[var(--text)]',
+    userBubble:
+      'wrap-anywhere rounded-2xl bg-[var(--user-bubble)] px-3 py-2.5 text-sm text-[var(--text)]',
     noticeRadius: 'rounded-2xl',
     turnBubble:
       'rounded-2xl bg-[var(--panel)] px-3 py-3 text-sm text-[var(--text-strong)] shadow-sm',
