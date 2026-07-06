@@ -237,3 +237,82 @@ test('edge-service apps may import only contracts, sentry-telemetry, and edge-lo
     /edge may import only contracts, sentry-telemetry, and edge-local modules/
   )
 })
+
+test('app-bridge is a leaf: importing a per-app protocol package is rejected', async (t) => {
+  const result = await withFixture(t, {
+    'packages/excalidraw-protocol/package.json': pkg('@tinytinkerer/excalidraw-protocol', {
+      tinytinkerer: { architectureRole: 'app-protocol' }
+    }),
+    'packages/app-bridge/package.json': pkg('@tinytinkerer/app-bridge'),
+    'packages/app-bridge/src/index.ts':
+      "import { schema } from '@tinytinkerer/excalidraw-protocol'\n"
+  })
+
+  assert.equal(result.code, 1)
+  assert.match(result.stderr, /app-bridge is a leaf/)
+})
+
+test('app-bridge importing only local modules passes', async (t) => {
+  const result = await withFixture(t, {
+    'packages/app-bridge/package.json': pkg('@tinytinkerer/app-bridge'),
+    'packages/app-bridge/src/index.ts': "export { defineBridgeVerb } from './verbs'\n",
+    'packages/app-bridge/src/verbs.ts': 'export const defineBridgeVerb = () => undefined\n'
+  })
+
+  assert.equal(result.code, 0)
+  assert.equal(result.stdout.trim(), 'Boundary checks passed.')
+})
+
+test('app-harness may import only app-browser, app-bridge, and local modules', async (t) => {
+  const result = await withFixture(t, {
+    'packages/contracts/package.json': pkg('@tinytinkerer/contracts'),
+    'packages/app-harness/package.json': pkg('@tinytinkerer/app-harness'),
+    'packages/app-harness/src/index.ts': "import { x } from '@tinytinkerer/contracts'\n"
+  })
+
+  assert.equal(result.code, 1)
+  assert.match(
+    result.stderr,
+    /app-harness may import only app-browser, app-bridge, and app-harness-local modules/
+  )
+})
+
+test('app-harness importing app-browser and app-bridge passes', async (t) => {
+  const result = await withFixture(t, {
+    'packages/app-browser/package.json': pkg('@tinytinkerer/app-browser'),
+    'packages/app-bridge/package.json': pkg('@tinytinkerer/app-bridge'),
+    'packages/app-harness/package.json': pkg('@tinytinkerer/app-harness'),
+    'packages/app-harness/src/index.ts':
+      "import { ChatApp } from '@tinytinkerer/app-browser'\nimport { defineBridgeVerb } from '@tinytinkerer/app-bridge'\n\nexport const use = () => [ChatApp, defineBridgeVerb]\n"
+  })
+
+  assert.equal(result.code, 0)
+  assert.equal(result.stdout.trim(), 'Boundary checks passed.')
+})
+
+test('host compositors may not import a non-app-browser workspace package', async (t) => {
+  const result = await withFixture(t, {
+    'packages/contracts/package.json': pkg('@tinytinkerer/contracts'),
+    'apps/host/package.json': pkg('@tinytinkerer/host', {
+      tinytinkerer: { architectureRole: 'host-compositor' }
+    }),
+    'apps/host/src/main.ts': "import { schema } from '@tinytinkerer/contracts'\n"
+  })
+
+  assert.equal(result.code, 1)
+  assert.match(result.stderr, /host compositors may depend only on/)
+})
+
+test('host compositor importing app-browser passes', async (t) => {
+  const result = await withFixture(t, {
+    'packages/app-browser/package.json': pkg('@tinytinkerer/app-browser'),
+    'apps/host/package.json': pkg('@tinytinkerer/host', {
+      tinytinkerer: { architectureRole: 'host-compositor' }
+    }),
+    'apps/host/src/main.ts':
+      "import { ChatApp } from '@tinytinkerer/app-browser'\n\nexport const app = ChatApp\n"
+  })
+
+  assert.equal(result.code, 0)
+  assert.equal(result.stdout.trim(), 'Boundary checks passed.')
+})

@@ -439,6 +439,18 @@ function validateBoundary(sourcePkg, target, filePath) {
     }
   }
 
+  // The host compositor renders the same browser surface as a browser shell, so
+  // it may import app-browser/ui and its own local modules — but nothing else.
+  // It composes the other built or dev-served apps by path, never by module
+  // import (the app-to-app rule above already forbids importing another app).
+  if (architecture?.architectureRole === 'host-compositor') {
+    if (!isBrowserAppDependencyAllowed(targetPkg)) {
+      errors.push(
+        `${sourceLabel}: host compositors may depend only on @tinytinkerer/app-browser or @tinytinkerer/ui and host-local modules; other apps are composed by path, not imported (${targetPkg.name})`
+      )
+    }
+  }
+
   if (architecture?.architectureRole === 'harness-shell') {
     const allowed = new Set([
       sourcePkg.name,
@@ -550,6 +562,31 @@ function validateBoundary(sourcePkg, target, filePath) {
     if (!allowed.has(targetPkg.name)) {
       errors.push(
         `${sourceLabel}: plugin packages may import only contracts and plugin-local modules (${targetPkg.name})`
+      )
+    }
+  }
+
+  if (sourcePkg.name === '@tinytinkerer/app-bridge') {
+    // Product-agnostic bridge leaf: only `zod` (external) and local modules. It
+    // must carry no knowledge of any specific app, so a per-app protocol package
+    // (e.g. excalidraw-protocol) must never be imported here.
+    const allowed = new Set(['@tinytinkerer/app-bridge'])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(
+        `${sourceLabel}: app-bridge is a leaf (it may import only zod and app-bridge-local modules) (${targetPkg.name})`
+      )
+    }
+  }
+
+  if (sourcePkg.name === '@tinytinkerer/app-harness') {
+    const allowed = new Set([
+      '@tinytinkerer/app-harness',
+      '@tinytinkerer/app-browser',
+      '@tinytinkerer/app-bridge'
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(
+        `${sourceLabel}: app-harness may import only app-browser, app-bridge, and app-harness-local modules (it must not depend on any concrete iframe app) (${targetPkg.name})`
       )
     }
   }
