@@ -122,7 +122,7 @@ describe('ChatApp', () => {
     expect(window.localStorage.getItem('k:edge')).toBe('right')
 
     // The docked web mode is resizable (issue #324) and can morph back to floating.
-    expect(screen.getByRole('button', { name: 'Resize sidebar' })).toBeInTheDocument()
+    expect(screen.getByRole('separator', { name: 'Resize sidebar' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Float chat' }))
     expect(screen.getByTestId('floating-body')).toBeInTheDocument()
   })
