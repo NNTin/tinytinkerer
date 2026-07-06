@@ -1,10 +1,11 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type {
-  AuthTokenStore,
-  Conversation,
-  ConversationRepository,
-  PersistedEvent,
-  PreferencesStore
+import {
+  compareEventOrder,
+  type AuthTokenStore,
+  type Conversation,
+  type ConversationRepository,
+  type PersistedEvent,
+  type PreferencesStore
 } from '@tinytinkerer/app-core'
 
 type Preference = {
@@ -184,7 +185,12 @@ export const createBrowserPersistence = (
       return db.conversations.orderBy('updatedAt').last()
     },
     async loadConversationEvents(conversationId) {
-      return db.events.where('conversationId').equals(conversationId).sortBy('timestamp')
+      // Sort with the shared comparator (timestamp, then seq, then id): plain
+      // .sortBy('timestamp') left same-millisecond events in random primary-key
+      // order, breaking replay (issue #333). sortBy is JS-side anyway, so this
+      // needs no schema/version change.
+      const events = await db.events.where('conversationId').equals(conversationId).toArray()
+      return events.sort(compareEventOrder)
     },
     async appendEvent(event) {
       await db.events.put(event)

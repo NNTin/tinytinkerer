@@ -213,6 +213,12 @@ describe('FloatingLayout', () => {
     expect(screen.getByText('Hi there.')).toBeInTheDocument()
   })
 
+  it('lets long unbroken tokens wrap inside the user bubble (issue #358)', () => {
+    renderStandalone()
+
+    expect(screen.getByText('hello')).toHaveClass('wrap-anywhere')
+  })
+
   it('submits prompts through the shared chat store', async () => {
     renderStandalone()
 

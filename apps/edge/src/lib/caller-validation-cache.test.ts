@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  callerValidationCacheSize,
   clearCallerValidationCache,
   readCachedCallerValidation,
   writeCachedCallerValidation
@@ -114,6 +115,18 @@ describe('caller-validation-cache', () => {
     await expect(
       readCachedCallerValidation(CREDENTIAL_KEY, writtenAtMs + 6 * 60_000)
     ).resolves.toBeUndefined()
+  })
+
+  it('evicts an expired entry from the in-memory mirror when read (issue #343)', async () => {
+    const writtenAtMs = Date.now()
+    await writeCachedCallerValidation(CREDENTIAL_KEY, IDENTITY, writtenAtMs)
+    expect(callerValidationCacheSize()).toBe(1)
+
+    // Reading past the TTL must not just miss — it must free the entry.
+    await expect(
+      readCachedCallerValidation(CREDENTIAL_KEY, writtenAtMs + 6 * 60_000)
+    ).resolves.toBeUndefined()
+    expect(callerValidationCacheSize()).toBe(0)
   })
 
   it('returns false on an in-memory miss when no durable cache exists (vitest/Node)', async () => {

@@ -36,6 +36,20 @@ describe('contracts', () => {
     expect(event.type).toBe('assistant.done')
   })
 
+  it('accepts an optional monotonic seq on chat events (legacy events omit it)', () => {
+    const base = {
+      id: '1',
+      timestamp: new Date().toISOString(),
+      type: 'user.message' as const,
+      payload: { text: 'hi' }
+    }
+
+    expect(chatEventSchema.parse(base).seq).toBeUndefined()
+    expect(chatEventSchema.parse({ ...base, seq: 3 }).seq).toBe(3)
+    expect(() => chatEventSchema.parse({ ...base, seq: -1 })).toThrow()
+    expect(() => chatEventSchema.parse({ ...base, seq: 1.5 })).toThrow()
+  })
+
   it('keeps the canonical content schema and assistant alias aligned', () => {
     const document = {
       nodes: [
