@@ -9,6 +9,7 @@ import { type PendingHumanPrompt } from './human-prompt-bridge'
 import { useHumanPromptPresentation } from './human-prompt-presentation'
 import { loadPluginModules } from './plugins/registry'
 import { useResolvedPluginView } from './resolved-plugin-view'
+import { useDialogFocus } from './use-dialog-focus'
 
 // The host's human-in-the-loop MODAL (issue #85) — one of two presentations for a
 // HumanPromptView (the other is the composer dock). It renders the head-of-queue
@@ -114,7 +115,7 @@ const InputContextView = ({
   return (
     <>
       <Section label="Tool">
-        <p className="mt-1 break-all font-mono text-sm text-stone-800">{toolId}</p>
+        <p className="mt-1 break-all font-mono text-sm text-[var(--text)]">{toolId}</p>
       </Section>
       <SectionList sections={view.sections} />
     </>
@@ -155,6 +156,10 @@ export const HumanPromptControls = ({ pending }: { pending: PendingHumanPrompt }
           <button
             key={`${index}-${action.id}`}
             type="button"
+            // Initial focus lands on the first action — for the permission prompt that
+            // is Deny, the least destructive choice, per the alertdialog pattern (issue
+            // #353). Inert in the composer-dock presentation.
+            {...(index === 0 ? { 'data-autofocus': true } : {})}
             onClick={() => resolve({ kind: 'action', id: action.id })}
             className={
               action.tone === 'primary'
@@ -223,6 +228,12 @@ export const HumanPromptHost = () => {
   const { pending, presentation } = useHumanPromptPresentation()
   const summarizers = usePermissionSummarizers()
 
+  // Focus management for the modal presentation (issue #353). `focusKey` re-enters
+  // the dialog when a queued prompt replaces the answered one.
+  const dialogRef = useDialogFocus(Boolean(pending) && presentation === 'modal', {
+    focusKey: pending?.id
+  })
+
   // Only the modal presentation renders here; a `composer` prompt is drawn by the
   // composer dock instead. A view with no presentation preference defaults to modal.
   if (!pending || presentation !== 'modal') {
@@ -241,15 +252,19 @@ export const HumanPromptHost = () => {
         onClick={() => resolve({ kind: 'dismissed' })}
       />
       <div
+        ref={dialogRef}
         role={view.role}
         aria-modal="true"
         aria-label={view.ariaLabel}
+        tabIndex={-1}
         className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-xl outline-none"
       >
         <div className="border-b border-[var(--border)] px-6 py-4">
-          <h2 className="text-base font-semibold text-stone-900">{view.title}</h2>
+          <h2 className="text-base font-semibold text-[var(--text-strong)]">{view.title}</h2>
           {view.description ? (
-            <p className="mt-1 whitespace-pre-wrap text-sm text-stone-700">{view.description}</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--text)]">
+              {view.description}
+            </p>
           ) : null}
         </div>
 
