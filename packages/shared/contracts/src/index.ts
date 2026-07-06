@@ -249,6 +249,9 @@ const eventBaseSchema = <TType extends EventType, TPayload extends z.ZodTypeAny>
   z.object({
     id: z.string(),
     timestamp: z.string(),
+    // Monotonic per-session counter that disambiguates same-millisecond events on
+    // replay; optional because pre-existing persisted events lack it (issue #333).
+    seq: z.number().int().nonnegative().optional(),
     type: z.literal(type),
     payload
   })
