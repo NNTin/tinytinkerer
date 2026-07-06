@@ -9,6 +9,15 @@ const WIDGET_SAFE_MARGIN = 24
 // Keyboard nudge step for moving/resizing the standalone floating window (C1).
 export const WIDGET_KEYBOARD_STEP = 16
 
+// Unit x/y deltas for the arrow keys — shared by the floating window's keyboard
+// nudge and the docked splitter's keyboard resize (#356).
+export const ARROW_KEY_DELTAS: Record<string, { x: number; y: number }> = {
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 }
+}
+
 export const DEFAULT_DIMS = {
   defaultWidth: 400,
   defaultHeight: 680,
@@ -143,6 +152,30 @@ export const SNAP_THRESHOLD = 56
 // Fraction of the viewport the docked web-mode split fills in the snap preview.
 export const SNAP_PREVIEW_FRACTION = 0.5
 
+// Minimum net pointer travel (px) toward a viewport edge, since drag start, for a
+// snap dock to count as deliberate (#336). Mere proximity is not intent: the grip of
+// a widget parked at the safe margin always sits inside a snap zone (SNAP_THRESHOLD
+// 56 > WIDGET_SAFE_MARGIN 24), so a click or a slide along the edge must not dock.
+export const SNAP_INTENT_TRAVEL = 24
+
+export const isDeliberateSnap = (
+  start: { x: number; y: number },
+  point: { x: number; y: number },
+  edge: SnapEdge,
+  travel: number = SNAP_INTENT_TRAVEL
+): boolean => {
+  switch (edge) {
+    case 'top':
+      return start.y - point.y >= travel
+    case 'bottom':
+      return point.y - start.y >= travel
+    case 'left':
+      return start.x - point.x >= travel
+    case 'right':
+      return point.x - start.x >= travel
+  }
+}
+
 // Which edge (if any) a pointer at `point` is within `threshold` px of. At a corner
 // the nearest edge wins, so a diagonal approach resolves to a single deterministic
 // edge rather than flickering between two.
@@ -203,6 +236,22 @@ export const snapPreviewRect = (
 // horizontal axis (width). Used by the docked layout's resize math + persistence.
 export const isVerticalEdge = (edge: SnapEdge): boolean => edge === 'top' || edge === 'bottom'
 
+// Signed size delta (px) a keyboard event applies to a docked panel, per the WAI-ARIA
+// window-splitter pattern: arrows move the divider, and moving it toward the viewport
+// centre grows the panel (#356). Null for keys off the dock's resize axis.
+export const dockedResizeDelta = (
+  key: string,
+  edge: SnapEdge,
+  step: number = WIDGET_KEYBOARD_STEP
+): number | null => {
+  const delta = ARROW_KEY_DELTAS[key]
+  if (!delta) return null
+  const along = isVerticalEdge(edge) ? delta.y : delta.x
+  if (along === 0) return null
+  const grows = edge === 'right' || edge === 'bottom' ? -along : along
+  return grows * step
+}
+
 // Generic JSON localStorage load/save used by layouts whose persisted shape is not
 // a WidgetLayout (e.g. the sidebar's { width, side }). `parse` validates/normalizes
 // the raw parsed value and returns the fallback on any bad shape.
@@ -225,4 +274,20 @@ export const loadPersisted = <T>(
 
 export const savePersisted = <T>(storageKey: string, value: T): void => {
   window.localStorage.setItem(storageKey, JSON.stringify(value))
+}
+
+// Merge `patch` into the JSON object persisted under `storageKey`, preserving keys the
+// caller doesn't own — e.g. the sidebar's cross-axis size, so docking top/bottom never
+// erases the stored width and vice versa (#335). A missing or non-object stored value
+// is replaced by the patch alone.
+export const updatePersisted = (storageKey: string, patch: Record<string, unknown>): void => {
+  const existing = loadPersisted<Record<string, unknown>>(
+    storageKey,
+    (raw) =>
+      typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+        ? (raw as Record<string, unknown>)
+        : null,
+    {}
+  )
+  savePersisted(storageKey, { ...existing, ...patch })
 }

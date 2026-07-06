@@ -1,10 +1,16 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   clampSize,
   detectSnapEdge,
+  dockedResizeDelta,
+  isDeliberateSnap,
   isVerticalEdge,
   snapPreviewRect,
+  updatePersisted,
+  SNAP_INTENT_TRAVEL,
   SNAP_THRESHOLD,
+  WIDGET_KEYBOARD_STEP,
   type SnapEdge
 } from '../src/chat-shell/layout-geometry.js'
 
@@ -38,6 +44,39 @@ describe('detectSnapEdge (#324 snap zones)', () => {
   it('honours a custom threshold', () => {
     expect(detectSnapEdge({ x: 100, y: 400 }, viewport, 40)).toBeNull()
     expect(detectSnapEdge({ x: 100, y: 400 }, viewport, 200)).toBe('left')
+  })
+})
+
+describe('isDeliberateSnap (#336 intent gate)', () => {
+  const start = { x: 500, y: 400 }
+
+  it('accepts travel of at least SNAP_INTENT_TRAVEL toward each edge', () => {
+    expect(SNAP_INTENT_TRAVEL).toBe(24)
+    expect(isDeliberateSnap(start, { x: 500, y: 376 }, 'top')).toBe(true)
+    expect(isDeliberateSnap(start, { x: 500, y: 424 }, 'bottom')).toBe(true)
+    expect(isDeliberateSnap(start, { x: 476, y: 400 }, 'left')).toBe(true)
+    expect(isDeliberateSnap(start, { x: 524, y: 400 }, 'right')).toBe(true)
+  })
+
+  it('rejects travel one pixel short of the threshold', () => {
+    expect(isDeliberateSnap(start, { x: 500, y: 377 }, 'top')).toBe(false)
+    expect(isDeliberateSnap(start, { x: 500, y: 423 }, 'bottom')).toBe(false)
+    expect(isDeliberateSnap(start, { x: 477, y: 400 }, 'left')).toBe(false)
+    expect(isDeliberateSnap(start, { x: 523, y: 400 }, 'right')).toBe(false)
+  })
+
+  it('rejects a jittery click (a couple of px of travel)', () => {
+    expect(isDeliberateSnap(start, { x: 502, y: 398 }, 'top')).toBe(false)
+  })
+
+  it('rejects sliding along an edge without moving toward it', () => {
+    // Large horizontal travel inside the top zone is not intent to dock top.
+    expect(isDeliberateSnap({ x: 100, y: 30 }, { x: 400, y: 30 }, 'top')).toBe(false)
+  })
+
+  it('honours a custom travel argument', () => {
+    expect(isDeliberateSnap(start, { x: 500, y: 390 }, 'top', 10)).toBe(true)
+    expect(isDeliberateSnap(start, { x: 500, y: 390 }, 'top', 11)).toBe(false)
   })
 })
 
@@ -98,5 +137,65 @@ describe('clampSize', () => {
 
   it('never lets the max fall below the min for a tiny extent', () => {
     expect(clampSize(50, 100, { min: 320, maxFraction: 0.6 })).toBe(320)
+  })
+})
+
+describe('dockedResizeDelta (#356 splitter keys)', () => {
+  it('moves the divider toward the viewport centre to grow the panel, per edge', () => {
+    expect(dockedResizeDelta('ArrowLeft', 'right')).toBe(WIDGET_KEYBOARD_STEP)
+    expect(dockedResizeDelta('ArrowRight', 'right')).toBe(-WIDGET_KEYBOARD_STEP)
+    expect(dockedResizeDelta('ArrowRight', 'left')).toBe(WIDGET_KEYBOARD_STEP)
+    expect(dockedResizeDelta('ArrowLeft', 'left')).toBe(-WIDGET_KEYBOARD_STEP)
+    expect(dockedResizeDelta('ArrowDown', 'top')).toBe(WIDGET_KEYBOARD_STEP)
+    expect(dockedResizeDelta('ArrowUp', 'top')).toBe(-WIDGET_KEYBOARD_STEP)
+    expect(dockedResizeDelta('ArrowUp', 'bottom')).toBe(WIDGET_KEYBOARD_STEP)
+    expect(dockedResizeDelta('ArrowDown', 'bottom')).toBe(-WIDGET_KEYBOARD_STEP)
+  })
+
+  it('returns null for arrows off the dock resize axis', () => {
+    expect(dockedResizeDelta('ArrowUp', 'right')).toBeNull()
+    expect(dockedResizeDelta('ArrowDown', 'left')).toBeNull()
+    expect(dockedResizeDelta('ArrowLeft', 'top')).toBeNull()
+    expect(dockedResizeDelta('ArrowRight', 'bottom')).toBeNull()
+  })
+
+  it('returns null for non-arrow keys', () => {
+    expect(dockedResizeDelta('Enter', 'right')).toBeNull()
+    expect(dockedResizeDelta('Home', 'top')).toBeNull()
+  })
+
+  it('honours a custom step', () => {
+    expect(dockedResizeDelta('ArrowLeft', 'right', 4)).toBe(4)
+    expect(dockedResizeDelta('ArrowRight', 'right', 4)).toBe(-4)
+  })
+})
+
+describe('updatePersisted (#335)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('merges the patch into the stored object, keeping the other axis', () => {
+    window.localStorage.setItem('test:persist', JSON.stringify({ width: 600 }))
+    updatePersisted('test:persist', { height: 420 })
+    expect(JSON.parse(window.localStorage.getItem('test:persist') ?? '{}')).toEqual({
+      width: 600,
+      height: 420
+    })
+  })
+
+  it('stores just the patch when nothing is persisted yet', () => {
+    updatePersisted('test:persist', { width: 500 })
+    expect(JSON.parse(window.localStorage.getItem('test:persist') ?? '{}')).toEqual({ width: 500 })
+  })
+
+  it('replaces a stored non-object with the patch alone', () => {
+    window.localStorage.setItem('test:persist', JSON.stringify('nope'))
+    updatePersisted('test:persist', { width: 500 })
+    expect(JSON.parse(window.localStorage.getItem('test:persist') ?? '{}')).toEqual({ width: 500 })
+
+    window.localStorage.setItem('test:persist', JSON.stringify([1, 2]))
+    updatePersisted('test:persist', { height: 300 })
+    expect(JSON.parse(window.localStorage.getItem('test:persist') ?? '{}')).toEqual({ height: 300 })
   })
 })

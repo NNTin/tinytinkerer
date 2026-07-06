@@ -14,6 +14,7 @@ import {
 import { MarkdownDocument } from './markdown-document'
 import { useSettingsSurfaceController } from './surfaces'
 import { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
+import { useDialogFocus } from './use-dialog-focus'
 
 const GitHubMark = () => (
   <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4" aria-hidden="true">
@@ -87,7 +88,7 @@ const ToggleRow = ({
     className={`flex items-start justify-between gap-4 py-1 ${disabled ? 'opacity-60' : 'cursor-pointer'}`}
   >
     <span className="min-w-0">
-      <span className="block text-sm text-stone-800">{label}</span>
+      <span className="block text-sm text-[var(--text)]">{label}</span>
       {description ? (
         <span className="mt-0.5 block text-xs text-[var(--muted)]">{description}</span>
       ) : null}
@@ -124,7 +125,7 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
               />
             ) : null}
             <div className="min-w-0">
-              <p className="truncate text-sm text-stone-800">
+              <p className="truncate text-sm text-[var(--text)]">
                 {user ? (user.name ?? user.login) : 'Signed in'}
               </p>
               {user ? (
@@ -268,7 +269,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <label htmlFor="model-select" className="block text-sm text-stone-800">
+        <label htmlFor="model-select" className="block text-sm text-[var(--text)]">
           Model
         </label>
         <button
@@ -299,7 +300,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
       </p>
       {modelsRefreshError ? <p className="text-xs text-rose-600">{modelsRefreshError}</p> : null}
 
-      <label htmlFor="agent-type-select" className="block pt-2 text-sm text-stone-800">
+      <label htmlFor="agent-type-select" className="block pt-2 text-sm text-[var(--text)]">
         Agent strategy
       </label>
       <select
@@ -351,6 +352,9 @@ const McpServerCard = ({
   onSave: (patch: Partial<Omit<McpServerConfig, 'id'>>, triggerRefresh: boolean) => void
 }) => {
   const [editing, setEditing] = useState(false)
+  // Arm-then-confirm for the destructive remove button (issue #354): the first
+  // click arms it, the second removes; blurring away disarms.
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [form, setForm] = useState<McpServerFormState>({
     name: server.name,
     url: server.url,
@@ -398,15 +402,17 @@ const McpServerCard = ({
             checked={server.enabled}
             onChange={(e) => onToggle(e.target.checked)}
             className="h-3.5 w-3.5 accent-amber-500"
-            title={server.enabled ? 'Disable' : 'Enable'}
+            aria-label={`Enable ${server.name}`}
           />
           <button
             type="button"
             onClick={onRefresh}
             disabled={isSyncing}
+            aria-label={`Refresh ${server.name}`}
+            title={`Refresh ${server.name}`}
             className="rounded px-1.5 py-0.5 text-xs text-stone-500 hover:bg-stone-100 disabled:opacity-50"
           >
-            ↺
+            <span aria-hidden="true">↺</span>
           </button>
           <button
             type="button"
@@ -417,10 +423,20 @@ const McpServerCard = ({
           </button>
           <button
             type="button"
-            onClick={onRemove}
+            onClick={() => {
+              if (confirmingRemove) {
+                onRemove()
+              } else {
+                setConfirmingRemove(true)
+              }
+            }}
+            onBlur={() => setConfirmingRemove(false)}
+            aria-label={
+              confirmingRemove ? `Confirm removing ${server.name}` : `Remove ${server.name}`
+            }
             className="rounded px-1.5 py-0.5 text-xs text-rose-500 hover:bg-rose-50"
           >
-            ✕
+            {confirmingRemove ? 'Remove?' : <span aria-hidden="true">✕</span>}
           </button>
         </div>
       </div>
@@ -608,7 +624,7 @@ const PluginSettingFieldRow = ({
   const selectId = `plugin-setting-${pluginId}-${field.key}`
   return (
     <label htmlFor={selectId} className="block space-y-1">
-      <span className="block text-sm text-stone-800">{field.label}</span>
+      <span className="block text-sm text-[var(--text)]">{field.label}</span>
       {field.description ? (
         <span className="block text-xs text-[var(--muted)]">{field.description}</span>
       ) : null}
@@ -741,7 +757,7 @@ const PrivacySection = () => {
         <button
           type="button"
           onClick={() => setPolicyOpen(true)}
-          className="font-medium text-amber-700 underline-offset-2 hover:underline"
+          className="font-medium text-[var(--accent)] underline-offset-2 hover:underline"
         >
           See Privacy Policy
         </button>{' '}
@@ -785,6 +801,9 @@ const SettingsTabsBody = ({ inspectorPanelSupported }: { inspectorPanelSupported
     const next = SETTINGS_TABS[(index + delta + SETTINGS_TABS.length) % SETTINGS_TABS.length]
     if (next) {
       setActiveTab(next.id)
+      // Roving tabindex (issue #355): DOM focus follows the selection so the
+      // newly active tab is the one that keeps keyboard focus.
+      document.getElementById(`settings-tab-${next.id}`)?.focus()
     }
   }
 
@@ -913,6 +932,10 @@ export const SettingsPanel = ({
   presentation = 'modal',
   inspectorPanelSupported = false
 }: SettingsPanelProps) => {
+  // Focus management for the modal presentation only (issue #353); the inline
+  // slide-over is non-modal and keeps the embedding shell's tab order.
+  const dialogRef = useDialogFocus(open && presentation === 'modal')
+
   useEffect(() => {
     if (!open) {
       return
@@ -958,9 +981,11 @@ export const SettingsPanel = ({
         onClick={() => onOpenChange(false)}
       />
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
+        tabIndex={-1}
         className="settings-content fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-xl outline-none"
         data-state="open"
         data-presentation="modal"

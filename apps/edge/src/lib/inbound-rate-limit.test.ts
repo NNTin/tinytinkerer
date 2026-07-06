@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { checkInboundRateLimit, clearInboundRateLimits } from './inbound-rate-limit.js'
+import {
+  checkInboundRateLimit,
+  clearInboundRateLimits,
+  inboundRateLimitCacheSize
+} from './inbound-rate-limit.js'
+import { SWEEP_EVERY_N_SETS } from './expiring-map.js'
 import { makeCacheMock } from '../test/cache-mock.js'
 
 const WINDOW_MS = 60_000
@@ -75,5 +80,19 @@ describe('checkInboundRateLimit', () => {
     clearInboundRateLimits()
     const limited = await checkInboundRateLimit('auth', 'caller-a', 1, WINDOW_MS, nowMs + 5_000)
     expect(limited).toEqual({ limited: true, retryAfterMs: 55_000 })
+  })
+
+  it('evicts expired windows from the in-memory mirror (issue #343)', async () => {
+    const nowMs = 1_000_000
+    await checkInboundRateLimit('auth', 'caller-a', 3, WINDOW_MS, nowMs)
+    expect(inboundRateLimitCacheSize()).toBe(1)
+
+    // An IP-diverse flood after caller-a's window elapsed: caller-a's key is
+    // never touched again, so only the amortized sweep on write reclaims it.
+    const floodMs = nowMs + WINDOW_MS + 1
+    for (let i = 0; i < SWEEP_EVERY_N_SETS; i++) {
+      await checkInboundRateLimit('auth', `flood-${i}`, 3, WINDOW_MS, floodMs)
+    }
+    expect(inboundRateLimitCacheSize()).toBe(SWEEP_EVERY_N_SETS)
   })
 })

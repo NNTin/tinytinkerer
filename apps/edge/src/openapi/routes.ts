@@ -117,6 +117,10 @@ export const authExchangeRoute = createRoute({
     501: {
       description: 'OAuth not configured',
       content: json(githubExchangeResponseSchema)
+    },
+    502: {
+      description: 'Upstream OAuth failure',
+      content: json(githubExchangeResponseSchema)
     }
   }
 })

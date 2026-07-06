@@ -67,7 +67,7 @@ describe('SidebarLayout', () => {
     expect(panel).not.toBeNull()
     expect(panel.style.width).toBe('420px')
 
-    const handle = screen.getByRole('button', { name: 'Resize sidebar' })
+    const handle = screen.getByRole('separator', { name: 'Resize sidebar' })
     // Right-docked panel grows as the pointer moves left (startX - clientX).
     fireEvent.pointerDown(handle, { clientX: 500 })
     fireEvent.pointerMove(window, { clientX: 450 })
@@ -101,7 +101,7 @@ describe('SidebarLayout', () => {
     // Top dock resizes vertically (its handle sits on the panel's bottom inner edge).
     expect(container.querySelector('.sidebar-resize-top')).not.toBeNull()
 
-    const handle = screen.getByRole('button', { name: 'Resize sidebar' })
+    const handle = screen.getByRole('separator', { name: 'Resize sidebar' })
     // A top-docked panel grows as the pointer moves down (clientY - startY).
     fireEvent.pointerDown(handle, { clientX: 0, clientY: 100 })
     fireEvent.pointerMove(window, { clientY: 150 })
@@ -109,6 +109,113 @@ describe('SidebarLayout', () => {
 
     expect(panel.style.height).toBe('450px')
     expect(JSON.parse(window.localStorage.getItem('test:top') ?? '{}')).toEqual({ height: 450 })
+  })
+
+  it("preserves the other axis's stored size when docking to a perpendicular edge (#335)", () => {
+    // A previous side-dock session stored a width; docking top must not erase it.
+    window.localStorage.setItem('test:sb', JSON.stringify({ width: 600 }))
+    const { container, unmount } = render(
+      <SidebarLayout storageKey="test:sb" resizable edge="top" defaultWidth={400}>
+        <div />
+      </SidebarLayout>
+    )
+
+    const handle = screen.getByRole('separator', { name: 'Resize sidebar' })
+    fireEvent.pointerDown(handle, { clientX: 0, clientY: 100 })
+    fireEvent.pointerMove(window, { clientY: 150 })
+    fireEvent.pointerUp(window)
+    expect((container.querySelector('.sidebar-panel') as HTMLElement).style.height).toBe('450px')
+    expect(JSON.parse(window.localStorage.getItem('test:sb') ?? '{}')).toEqual({
+      width: 600,
+      height: 450
+    })
+
+    // Round-trip: re-docking to the right restores the untouched width.
+    unmount()
+    const remounted = render(
+      <SidebarLayout storageKey="test:sb" resizable edge="right" defaultWidth={420}>
+        <div />
+      </SidebarLayout>
+    )
+    const panel = remounted.container.querySelector('.sidebar-panel') as HTMLElement
+    expect(panel.style.width).toBe('600px')
+  })
+
+  it('resizes with arrow keys per the splitter pattern and persists (#356)', () => {
+    const { container } = render(
+      <SidebarLayout storageKey="test:sb" resizable defaultWidth={420}>
+        <div />
+      </SidebarLayout>
+    )
+    const panel = container.querySelector('.sidebar-panel') as HTMLElement
+    const handle = screen.getByRole('separator', { name: 'Resize sidebar' })
+
+    // Right dock: ArrowLeft moves the divider toward the centre → the panel grows.
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' })
+    expect(panel.style.width).toBe('436px')
+    expect(screen.getByRole('status')).toHaveTextContent('Sidebar resized to 436 pixels.')
+
+    fireEvent.keyDown(handle, { key: 'ArrowRight' })
+    expect(panel.style.width).toBe('420px')
+    expect(screen.getByRole('status')).toHaveTextContent('Sidebar resized to 420 pixels.')
+    expect(JSON.parse(window.localStorage.getItem('test:sb') ?? '{}')).toEqual({ width: 420 })
+  })
+
+  it('Home and End jump to the minimum and maximum split size (#356)', () => {
+    const { container } = render(
+      <SidebarLayout storageKey="test:sb" resizable defaultWidth={420}>
+        <div />
+      </SidebarLayout>
+    )
+    const panel = container.querySelector('.sidebar-panel') as HTMLElement
+    const handle = screen.getByRole('separator', { name: 'Resize sidebar' })
+    const max = Math.round(window.innerWidth * 0.6)
+
+    fireEvent.keyDown(handle, { key: 'End' })
+    expect(panel.style.width).toBe(`${max}px`)
+
+    fireEvent.keyDown(handle, { key: 'Home' })
+    expect(panel.style.width).toBe('320px')
+  })
+
+  it('ignores off-axis arrows (#356)', () => {
+    const { container } = render(
+      <SidebarLayout storageKey="test:sb" resizable defaultWidth={420}>
+        <div />
+      </SidebarLayout>
+    )
+    const panel = container.querySelector('.sidebar-panel') as HTMLElement
+
+    fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize sidebar' }), {
+      key: 'ArrowUp'
+    })
+    expect(panel.style.width).toBe('420px')
+  })
+
+  it('exposes window-splitter semantics (#356)', () => {
+    render(
+      <SidebarLayout storageKey="test:sb" resizable defaultWidth={420}>
+        <div />
+      </SidebarLayout>
+    )
+    const handle = screen.getByRole('separator', { name: 'Resize sidebar' })
+    // A right dock has a vertical divider whose value is the panel width.
+    expect(handle).toHaveAttribute('aria-orientation', 'vertical')
+    expect(handle).toHaveAttribute('aria-valuenow', '420')
+    expect(handle).toHaveAttribute('aria-valuemin', '320')
+    expect(handle).toHaveAttribute('aria-valuemax', `${Math.round(window.innerWidth * 0.6)}`)
+    cleanup()
+
+    render(
+      <SidebarLayout storageKey="test:top" resizable edge="top" defaultWidth={420}>
+        <div />
+      </SidebarLayout>
+    )
+    // A top dock's divider is horizontal.
+    expect(screen.getByRole('separator', { name: 'Resize sidebar' })).toHaveAttribute(
+      'aria-orientation',
+      'horizontal'
+    )
   })
 
   it('ignores resizable in the mobile variant (full-bleed, no handle)', () => {

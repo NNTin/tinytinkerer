@@ -11,14 +11,18 @@ package, so a plugin package depends **only** on `contracts`. `agent-core` owns 
 _runtime_ (the `PluginRegistry`, the hook runners, and the `ToolRegistry`) and re-exports the
 contract so its public surface is unchanged for existing consumers (`app-core`, `app-browser`).
 
-The repo currently ships seven plugins under `packages/plugins/*`: **Feedback**
+The repo currently ships nine plugins under `packages/plugins/*`: **Feedback**
 (`send_feedback`), **Event logger** (a `chat.event` observer hook), **Permissions** (a
 `tool.beforeExecute` gate), **Web search** (the Tavily `web-search` tool), **Code execution**
-(the `run_javascript` sandbox tool), **Browser state** (the `read_dom` page-reading tool), and
-**Choice prompt** (the `ask_user` human-in-the-loop tool). A plugin contributes tools and/or hooks,
-and may use a host-injected capability (telemetry capture, a **human-in-the-loop prompt** — the one
-surface behind both the permissions gate and the choice poll — an edge request, a code sandbox, or a
-DOM read) without importing the host.
+(the `run_javascript` sandbox tool), **Browser state** (the `read_dom` page-reading tool),
+**Choice prompt** (the `ask_user` human-in-the-loop tool), **Context usage** (a status plugin —
+the `statusDescriptor` context-window gauge), and **Context inspector** (an inspector plugin —
+the `inspectorDescriptor` developer panel showing the exact forwarded LLM request). A plugin
+contributes tools and/or hooks — or, like the two context plugins, neither: just a pure
+view-model mapper on a manifest descriptor the host reads — and may use a host-injected
+capability (telemetry capture, a **human-in-the-loop prompt** — the one surface behind both the
+permissions gate and the choice poll — an edge request, a code sandbox, or a DOM read) without
+importing the host.
 
 > **Decoupling:** `app-browser` has **no static dependency** on any concrete plugin — not in its
 > `package.json`, not as an import. It depends only on the `PluginModule` contract in

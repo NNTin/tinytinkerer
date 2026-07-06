@@ -40,13 +40,13 @@ test.describe('canvas web mode (#324)', () => {
     const panel = page.locator('.sidebar-panel')
     await expect(panel).toBeVisible()
     await expect(panel).toHaveAttribute('data-edge', 'right')
-    await expect(page.getByRole('button', { name: 'Resize sidebar' })).toBeVisible()
+    await expect(page.getByRole('separator', { name: 'Resize sidebar' })).toBeVisible()
     await expect.poll(async () => frameWidth(iframe), { timeout: 5_000 }).toBeLessThan(1000)
     const dockedWidth = await frameWidth(iframe)
 
     // The divider resizes the split: dragging the handle left grows the chat panel, so
     // the iframe shrinks further.
-    const handle = page.getByRole('button', { name: 'Resize sidebar' })
+    const handle = page.getByRole('separator', { name: 'Resize sidebar' })
     const handleBox = await handle.boundingBox()
     if (!handleBox) throw new Error('resize handle not found')
     await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
@@ -54,6 +54,16 @@ test.describe('canvas web mode (#324)', () => {
     await page.mouse.move(handleBox.x - 150, handleBox.y, { steps: 8 })
     await page.mouse.up()
     await expect.poll(async () => frameWidth(iframe), { timeout: 5_000 }).toBeLessThan(dockedWidth)
+
+    // The divider is also keyboard-operable (#356): each ArrowLeft press grows the
+    // chat panel by 16px, so the iframe shrinks further still.
+    const preKeyboardWidth = await frameWidth(iframe)
+    await handle.press('ArrowLeft')
+    await handle.press('ArrowLeft')
+    await handle.press('ArrowLeft')
+    await expect
+      .poll(async () => frameWidth(iframe), { timeout: 5_000 })
+      .toBeLessThan(preKeyboardWidth)
 
     // Float it again → the iframe fills the stage once more, widget overlaying it.
     await page.getByRole('button', { name: 'Float chat' }).click()

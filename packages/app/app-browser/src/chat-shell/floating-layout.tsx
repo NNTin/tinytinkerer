@@ -13,9 +13,11 @@ import { shellThemeToCssVars } from '../shell-theme'
 import {
   clampLayout,
   detectSnapEdge,
+  isDeliberateSnap,
   loadStandaloneLayout,
   saveStandaloneLayout,
   snapPreviewRect,
+  ARROW_KEY_DELTAS,
   DEFAULT_DIMS,
   WIDGET_KEYBOARD_STEP,
   WIDGET_MINIMIZED_SIZE,
@@ -283,13 +285,7 @@ export const FloatingLayout = ({
   // Core keyboard nudge for the standalone window (C1). `resize` true adjusts
   // width/height; false moves x/y. Each change is announced via the live region.
   const nudgeLayout = (key: string, resize: boolean): boolean => {
-    const deltas: Record<string, { x: number; y: number }> = {
-      ArrowLeft: { x: -1, y: 0 },
-      ArrowRight: { x: 1, y: 0 },
-      ArrowUp: { x: 0, y: -1 },
-      ArrowDown: { x: 0, y: 1 }
-    }
-    const delta = deltas[key]
+    const delta = ARROW_KEY_DELTAS[key]
     if (!delta) {
       return false
     }
@@ -364,13 +360,24 @@ export const FloatingLayout = ({
         )
 
         // Snap preview only for a normal (non-minimized) window drag when docking is
-        // offered — dragging the minimized launcher just repositions it.
-        const edge =
+        // offered — dragging the minimized launcher just repositions it. A zone hit
+        // arms only after deliberate travel toward that edge (#336): proximity alone
+        // would dock on a click or an along-the-edge slide.
+        const candidate =
           !drag.fromLauncher && onDockRef.current
             ? detectSnapEdge(
                 { x: event.clientX, y: event.clientY },
                 { width: window.innerWidth, height: window.innerHeight }
               )
+            : null
+        const edge =
+          candidate &&
+          isDeliberateSnap(
+            { x: drag.startX, y: drag.startY },
+            { x: event.clientX, y: event.clientY },
+            candidate
+          )
+            ? candidate
             : null
         if (edge !== snapEdgeRef.current) {
           snapEdgeRef.current = edge
@@ -405,8 +412,9 @@ export const FloatingLayout = ({
       if (!drag) {
         return
       }
-      // Released in a snap zone → morph into the docked web mode for that edge.
-      if (!drag.fromLauncher && edge && onDockRef.current) {
+      // Released in a snap zone → morph into the docked web mode for that edge. A
+      // sub-threshold press is a click, never a dock (#336).
+      if (!drag.fromLauncher && drag.moved && edge && onDockRef.current) {
         onDockRef.current(edge)
         return
       }
@@ -416,19 +424,37 @@ export const FloatingLayout = ({
       }
     }
 
+    // A browser-aborted gesture (touch takeover, pointer reclaim) reverts to the
+    // pre-drag state instead of committing the most consequential outcome (#336) —
+    // in particular it must never dock.
+    const handlePointerCancel = () => {
+      const drag = dragRef.current
+      const resize = resizeRef.current
+      dragRef.current = null
+      resizeRef.current = null
+      setIsDragging(false)
+      snapEdgeRef.current = null
+      setSnapEdge(null)
+
+      const startLayout = drag?.startLayout ?? resize?.startLayout
+      if (startLayout) {
+        setLayout(clampLayout(startLayout, dims))
+      }
+    }
+
     const handleResize = () => {
       setLayout((currentLayout) => clampLayout(currentLayout, dims))
     }
 
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
-    window.addEventListener('pointercancel', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerCancel)
     window.addEventListener('resize', handleResize)
 
     return () => {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
-      window.removeEventListener('pointercancel', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerCancel)
       window.removeEventListener('resize', handleResize)
     }
     // Bind once; the handlers close over the current `dims` via setLayout's updater

@@ -170,6 +170,68 @@ describe('HumanPromptHost', () => {
     await expect(answer).resolves.toEqual({ kind: 'dismissed' })
   })
 
+  it('moves initial focus to the first action button', async () => {
+    render(<HumanPromptHost />)
+    void requestHumanInput(alertView())
+
+    await screen.findByRole('alertdialog')
+    // Initial focus lands on the first action (issue #353) — for the permission
+    // prompt that is Deny, the least destructive choice.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Deny' }))
+  })
+
+  it('traps Tab within the dialog', async () => {
+    render(<HumanPromptHost />)
+    void requestHumanInput(alertView())
+
+    await screen.findByRole('alertdialog')
+    const deny = screen.getByRole('button', { name: 'Deny' })
+    const allow = screen.getByRole('button', { name: 'Allow' })
+
+    // Tab past the last focusable wraps to the first, and Shift+Tab back again.
+    allow.focus()
+    fireEvent.keyDown(allow, { key: 'Tab' })
+    expect(document.activeElement).toBe(deny)
+
+    fireEvent.keyDown(deny, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(allow)
+  })
+
+  it('restores focus when the prompt is resolved', async () => {
+    render(
+      <>
+        <button>composer</button>
+        <HumanPromptHost />
+      </>
+    )
+    const composer = screen.getByRole('button', { name: 'composer' })
+    composer.focus()
+
+    const answer = requestHumanInput(alertView())
+    const dialog = await screen.findByRole('alertdialog')
+    expect(document.activeElement).not.toBe(composer)
+    expect(dialog).toContainElement(document.activeElement as HTMLElement)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
+    await expect(answer).resolves.toEqual({ kind: 'action', id: 'allow' })
+    await waitFor(() => expect(document.activeElement).toBe(composer))
+  })
+
+  it('renders the title and description with theme tokens', async () => {
+    render(<HumanPromptHost />)
+    void requestHumanInput(dialogView())
+
+    await screen.findByRole('dialog')
+    // Text on the var(--panel) surface follows the theme (issue #357), not stone.
+    const title = screen.getByText('The assistant has a question')
+    expect(title.className).toContain('text-[var(--text-strong)]')
+    expect(title.className).not.toMatch(/stone/)
+
+    const description = screen.getByText('Pick a colour')
+    expect(description.className).toContain('text-[var(--text)]')
+    expect(description.className).not.toMatch(/stone/)
+  })
+
   it('advances to the next pending prompt after the first is answered', async () => {
     render(<HumanPromptHost />)
     const first = requestHumanInput(dialogView())

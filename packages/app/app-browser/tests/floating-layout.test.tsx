@@ -213,6 +213,12 @@ describe('FloatingLayout', () => {
     expect(screen.getByText('Hi there.')).toBeInTheDocument()
   })
 
+  it('lets long unbroken tokens wrap inside the user bubble (issue #358)', () => {
+    renderStandalone()
+
+    expect(screen.getByText('hello')).toHaveClass('wrap-anywhere')
+  })
+
   it('submits prompts through the shared chat store', async () => {
     renderStandalone()
 
@@ -390,6 +396,73 @@ describe('FloatingLayout', () => {
     fireEvent.pointerUp(window)
 
     expect(onDock).not.toHaveBeenCalled()
+  })
+
+  it('does not dock on a sub-threshold press inside a snap zone (#336)', () => {
+    const onDock = vi.fn()
+    const { container } = renderStandalone({ onDock })
+
+    // The grip starts inside the top snap zone (safe margin < SNAP_THRESHOLD), so a
+    // press with only jitter must stay a click — no preview, no dock.
+    const grip = screen.getByRole('button', { name: /move widget/i })
+    fireEvent.pointerDown(grip, { clientX: 300, clientY: 10, pointerId: 12 })
+    fireEvent.pointerMove(window, { clientX: 301, clientY: 11 })
+    expect(container.querySelector('.widget-snap-preview')).toBeNull()
+    fireEvent.pointerUp(window)
+
+    expect(onDock).not.toHaveBeenCalled()
+  })
+
+  it('does not dock when sliding along an edge without travel toward it (#336)', () => {
+    const onDock = vi.fn()
+    const { container } = renderStandalone({ onDock })
+
+    const grip = screen.getByRole('button', { name: /move widget/i })
+    fireEvent.pointerDown(grip, { clientX: 300, clientY: 30, pointerId: 13 })
+    // Well past the click threshold and inside the top zone throughout, but with no
+    // vertical travel toward the edge — sliding along it is not intent to dock.
+    fireEvent.pointerMove(window, { clientX: 500, clientY: 30 })
+    expect(container.querySelector('.widget-snap-preview')).toBeNull()
+    fireEvent.pointerUp(window)
+
+    expect(onDock).not.toHaveBeenCalled()
+  })
+
+  it('docks after deliberate travel toward the edge (#336)', () => {
+    const onDock = vi.fn()
+    const { container } = renderStandalone({ onDock })
+
+    const grip = screen.getByRole('button', { name: /move widget/i })
+    fireEvent.pointerDown(grip, { clientX: 300, clientY: 300, pointerId: 14 })
+    fireEvent.pointerMove(window, { clientX: 300, clientY: 10 })
+    const preview = container.querySelector('.widget-snap-preview')
+    expect(preview).not.toBeNull()
+    expect(preview).toHaveAttribute('data-edge', 'top')
+
+    fireEvent.pointerUp(window)
+    expect(onDock).toHaveBeenCalledWith('top')
+  })
+
+  it('reverts instead of docking when the browser cancels the drag (#336)', () => {
+    const onDock = vi.fn()
+    const { container } = renderStandalone({ onDock })
+
+    const shell = container.querySelector('.widget-floating-shell') as HTMLElement
+    const startLeft = shell.style.left
+    const startTop = shell.style.top
+
+    const grip = screen.getByRole('button', { name: /move widget/i })
+    fireEvent.pointerDown(grip, { clientX: 300, clientY: 300, pointerId: 15 })
+    fireEvent.pointerMove(window, { clientX: 300, clientY: 10 })
+    expect(container.querySelector('.widget-snap-preview')).not.toBeNull()
+
+    // The browser reclaims the pointer (e.g. touch takeover): the gesture must
+    // revert to the pre-drag layout, never commit the dock.
+    fireEvent.pointerCancel(window)
+    expect(onDock).not.toHaveBeenCalled()
+    expect(container.querySelector('.widget-snap-preview')).toBeNull()
+    expect(shell.style.left).toBe(startLeft)
+    expect(shell.style.top).toBe(startTop)
   })
 })
 

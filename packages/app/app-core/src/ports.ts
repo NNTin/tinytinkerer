@@ -12,6 +12,22 @@ export type PersistedEvent = ChatEvent & {
   conversationId: string
 }
 
+// Deterministic replay order for persisted events: timestamp (ISO-8601 sorts
+// lexicographically), then `seq` to break same-millisecond ties (legacy events
+// without seq keep their timestamp position, sorting before seq-bearing ones),
+// then id as a final deterministic tiebreak (issue #333).
+export const compareEventOrder = (a: ChatEvent, b: ChatEvent): number => {
+  if (a.timestamp !== b.timestamp) {
+    return a.timestamp < b.timestamp ? -1 : 1
+  }
+  const aSeq = a.seq ?? -1
+  const bSeq = b.seq ?? -1
+  if (aSeq !== bSeq) {
+    return aSeq - bSeq
+  }
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+}
+
 export interface ConversationRepository {
   createConversation(): Promise<Conversation>
   getLatestConversation(): Promise<Conversation | undefined>

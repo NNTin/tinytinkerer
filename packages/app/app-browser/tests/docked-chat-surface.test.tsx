@@ -202,6 +202,24 @@ describe('DockedChatSurface', () => {
     expect(screen.getByTestId('install')).toBeInTheDocument()
   })
 
+  it('lets long unbroken tokens wrap inside the user bubble in both variants (issue #358)', () => {
+    mockChatState.turns = [
+      {
+        id: 'turn-1',
+        userText: 'hello',
+        assistantContent: null,
+        activity: { reasoningText: '', items: [] }
+      }
+    ]
+    const { rerender } = render(
+      <DockedChatSurface LoadingComponent={Loading} sizeVariant="comfortable" />
+    )
+    expect(screen.getByText('hello')).toHaveClass('wrap-anywhere')
+
+    rerender(<DockedChatSurface LoadingComponent={Loading} sizeVariant="mobile" />)
+    expect(screen.getByText('hello')).toHaveClass('wrap-anywhere')
+  })
+
   it('shows the turn-count badge only in the mobile variant', () => {
     const { rerender } = render(
       <DockedChatSurface LoadingComponent={Loading} sizeVariant="comfortable" />

@@ -12,6 +12,7 @@ import {
   buildConversationHistory,
   buildTurns,
   canSendPrompt,
+  compareEventOrder,
   DEFAULT_MODEL,
   DEFAULT_MODEL_PROVIDER,
   defaultChatState,
@@ -889,5 +890,83 @@ describe('rate-limit cooldown', () => {
 
     const state = await initializeChatState(conversations, prefs, baseUrl)
     expect(state.cooldownUntil).toBe(future)
+  })
+})
+
+describe('compareEventOrder', () => {
+  const orderedEvent = (id: string, timestamp: string, seq?: number): ChatEvent => ({
+    id,
+    timestamp,
+    ...(seq === undefined ? {} : { seq }),
+    type: 'user.message',
+    payload: { text: '' }
+  })
+
+  it('orders by timestamp before seq', () => {
+    const earlier = orderedEvent('a', '2026-07-05T00:00:00.001Z', 9)
+    const later = orderedEvent('b', '2026-07-05T00:00:00.002Z', 0)
+
+    expect(compareEventOrder(earlier, later)).toBeLessThan(0)
+    expect(compareEventOrder(later, earlier)).toBeGreaterThan(0)
+  })
+
+  it('breaks same-millisecond ties by seq', () => {
+    const first = orderedEvent('z', '2026-07-05T00:00:00.001Z', 3)
+    const second = orderedEvent('a', '2026-07-05T00:00:00.001Z', 4)
+
+    expect(compareEventOrder(first, second)).toBeLessThan(0)
+    expect(compareEventOrder(second, first)).toBeGreaterThan(0)
+  })
+
+  it('sorts legacy events (no seq) before seq-bearing ones at the same timestamp', () => {
+    const legacy = orderedEvent('z', '2026-07-05T00:00:00.001Z')
+    const stamped = orderedEvent('a', '2026-07-05T00:00:00.001Z', 0)
+
+    expect(compareEventOrder(legacy, stamped)).toBeLessThan(0)
+    expect(compareEventOrder(stamped, legacy)).toBeGreaterThan(0)
+  })
+
+  it('falls back to id when timestamp and seq are equal', () => {
+    const a = orderedEvent('a', '2026-07-05T00:00:00.001Z')
+    const b = orderedEvent('b', '2026-07-05T00:00:00.001Z')
+
+    expect(compareEventOrder(a, b)).toBeLessThan(0)
+    expect(compareEventOrder(b, a)).toBeGreaterThan(0)
+    expect(compareEventOrder(a, { ...a })).toBe(0)
+  })
+
+  it('restores tool started/completed order for same-millisecond replay (#333)', () => {
+    const timestamp = '2026-07-05T00:00:00.000Z'
+    const events: ChatEvent[] = [
+      {
+        id: 'evt-completed',
+        timestamp,
+        seq: 2,
+        type: 'agent.tool.completed',
+        payload: { stepId: 'act-1', toolId: 'web-search', output: { results: [] } }
+      },
+      {
+        id: 'evt-started',
+        timestamp,
+        seq: 1,
+        type: 'agent.tool.started',
+        payload: { stepId: 'act-1', toolId: 'web-search', input: { query: 'hi' } }
+      },
+      {
+        id: 'evt-user',
+        timestamp,
+        seq: 0,
+        type: 'user.message',
+        payload: { text: 'hi' }
+      }
+    ]
+
+    const turns = buildTurns([...events].sort(compareEventOrder))
+    expect(turns).toHaveLength(1)
+    const tools = turns[0]?.activity.items.filter((item) => item.kind === 'tool') ?? []
+    // Without deterministic ordering the completed event replays before its
+    // started sibling and leaves an extra tool item stuck in 'started'.
+    expect(tools).toHaveLength(1)
+    expect(tools[0]).toMatchObject({ toolId: 'web-search', status: 'completed' })
   })
 })

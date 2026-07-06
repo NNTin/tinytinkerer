@@ -28,15 +28,22 @@ export const changedByIdentity = (
 ): string[] =>
   nextElements.filter((element, index) => element !== elements[index]).map((element) => element.id)
 
+// One O(scene) pass instead of an O(scene) scan per changed id — a whole-scene
+// arrange must not pay O(changed × scene).
+const indexById = (elements: readonly OrderedExcalidrawElement[]): Map<string, number> =>
+  new Map(elements.map((element, index) => [element.id, index]))
+
 export const versionReceipts = (
   nextElements: readonly OrderedExcalidrawElement[],
   ids: readonly string[]
-): Array<{ id: string; version: number }> =>
-  ids.map((id) => {
-    const element = nextElements.find((candidate) => candidate.id === id)
-    if (!element) throw new Error(`receipt: element "${id}" is missing after the update`)
-    return { id, version: element.version }
+): Array<{ id: string; version: number }> => {
+  const indices = indexById(nextElements)
+  return ids.map((id) => {
+    const index = indices.get(id)
+    if (index === undefined) throw new Error(`receipt: element "${id}" is missing after the update`)
+    return { id, version: nextElements[index]!.version }
   })
+}
 
 export const attachBoundedRecords = <TBase extends object>(
   base: TBase,
@@ -45,8 +52,9 @@ export const attachBoundedRecords = <TBase extends object>(
   budgetBytes: number
 ): TBase & { elements: ReadElement[]; truncation: ResultTruncation } => {
   const fields: string[] = []
+  const indices = indexById(nextElements)
   const all = recordIds.map((id) => {
-    const index = nextElements.findIndex((element) => element.id === id)
+    const index = indices.get(id)!
     const normalized = normalizeElement(nextElements[index]!, index, nextElements, 'standard')
     fields.push(...normalized.truncatedFields.map((field) => `${normalized.element.id}.${field}`))
     return normalized.element

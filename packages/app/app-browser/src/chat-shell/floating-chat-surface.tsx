@@ -87,7 +87,7 @@ export const FloatingChatSurface = ({
               {turns.map((turn, index) => (
                 <div key={turn.id} className="space-y-1">
                   {turn.userText ? (
-                    <div className="rounded-xl bg-[var(--user-bubble)] px-2.5 py-1.5 text-[13px] leading-5 text-[var(--text)]">
+                    <div className="wrap-anywhere rounded-xl bg-[var(--user-bubble)] px-2.5 py-1.5 text-[13px] leading-5 text-[var(--text)]">
                       {turn.userText}
                     </div>
                   ) : null}

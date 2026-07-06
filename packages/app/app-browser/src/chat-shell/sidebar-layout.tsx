@@ -1,11 +1,18 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode
+} from 'react'
 import { useBrowserShellConfig } from '../hooks'
 import { shellThemeToCssVars } from '../shell-theme'
 import {
   clampSize,
+  dockedResizeDelta,
   isVerticalEdge,
   loadPersisted,
-  savePersisted,
+  updatePersisted,
   type SnapEdge
 } from './layout-geometry'
 
@@ -64,8 +71,9 @@ export const SidebarLayout = ({
   const vertical = isVerticalEdge(dockEdge)
   const isDocked = resizable && sizeVariant !== 'mobile'
 
-  // Top/bottom docks persist a `{ height }`, left/right a `{ width }`, so a widget
-  // that was docked to a side keeps its size when re-docked to that same side.
+  // Top/bottom docks persist under `height`, left/right under `width` — both axes
+  // coexist in the one stored object (#335), so a widget that was docked to a side
+  // keeps its size when re-docked to that same side, whatever it docked to since.
   const sizeKey = vertical ? 'height' : 'width'
   const axisExtent = () => (vertical ? window.innerHeight : window.innerWidth)
 
@@ -84,10 +92,11 @@ export const SidebarLayout = ({
       : defaultWidth
   )
   const resizeRef = useRef<{ startX: number; startY: number; startSize: number } | null>(null)
+  const [liveMessage, setLiveMessage] = useState('')
 
   useEffect(() => {
     if (!isDocked) return
-    savePersisted(storageKey, { [sizeKey]: size })
+    updatePersisted(storageKey, { [sizeKey]: size })
   }, [isDocked, storageKey, sizeKey, size])
 
   useEffect(() => {
@@ -127,6 +136,29 @@ export const SidebarLayout = ({
       window.removeEventListener('resize', handleResize)
     }
   }, [isDocked, dockEdge, minWidth, maxFraction, vertical])
+
+  const maxSize = () =>
+    clampSize(Number.MAX_SAFE_INTEGER, axisExtent(), { min: minWidth, maxFraction })
+
+  // Keyboard resize per the window-splitter pattern: arrows step the divider (mapping
+  // per dock edge lives in dockedResizeDelta), Home/End jump to the min/max size. Each
+  // change is announced via the live region, mirroring the floating layout's nudge.
+  const handleResizeKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const delta = dockedResizeDelta(event.key, dockEdge)
+    const target =
+      event.key === 'Home'
+        ? minWidth
+        : event.key === 'End'
+          ? maxSize()
+          : delta !== null
+            ? size + delta
+            : null
+    if (target === null) return
+    event.preventDefault()
+    const next = clampSize(target, axisExtent(), { min: minWidth, maxFraction })
+    setSize(next)
+    setLiveMessage(`Sidebar resized to ${next} pixels.`)
+  }
 
   const heightClass = fill ? 'h-full' : sizeVariant === 'mobile' ? 'h-[100dvh]' : 'h-screen'
 
@@ -174,8 +206,16 @@ export const SidebarLayout = ({
         <button
           type="button"
           className={`sidebar-resize ${resizeEdgeClass}`}
+          // WAI-ARIA window splitter (#356): a top/bottom dock has a horizontal
+          // divider; left/right a vertical one. Stays a <button> so it keeps native
+          // focusability and the existing .sidebar-resize CSS.
+          role="separator"
+          aria-orientation={vertical ? 'horizontal' : 'vertical'}
+          aria-valuemin={minWidth}
+          aria-valuemax={maxSize()}
+          aria-valuenow={size}
           aria-label="Resize sidebar"
-          title="Resize sidebar"
+          title="Resize sidebar (arrow keys resize, Home/End for min/max)"
           onPointerDown={(event) => {
             resizeRef.current = {
               startX: event.clientX,
@@ -188,7 +228,11 @@ export const SidebarLayout = ({
               // jsdom / unsupported: window listeners still receive the events.
             }
           }}
+          onKeyDown={handleResizeKeyDown}
         />
+        <span role="status" aria-live="polite" className="sr-only">
+          {liveMessage}
+        </span>
         {undockButton}
         {children}
       </div>

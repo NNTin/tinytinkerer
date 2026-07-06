@@ -14,6 +14,7 @@ import type { Bindings } from '../lib/bindings'
 import { applyCorsHeaders } from '../lib/cors'
 import { modelsChatRoute, modelsListRoute } from '../openapi/routes'
 import { fetchWithTimeout } from '../lib/fetch'
+import { safeJsonParse } from '../lib/json'
 import { isFresh, readCachedModels, writeCachedModels } from '../lib/models-cache'
 import {
   clearBackoff,
@@ -193,22 +194,6 @@ const safeUpstreamError = (rawText: string, fallback: string): string => {
   return message.length > MAX_UPSTREAM_ERROR_MESSAGE_LENGTH
     ? `${message.slice(0, MAX_UPSTREAM_ERROR_MESSAGE_LENGTH - 3)}...`
     : message
-}
-
-// Parse a JSON string without throwing, returning a discriminated result so the
-// "parse failed" signal is explicit in the type (a parsed JSON value can itself
-// be any `unknown`, including null, so a bare sentinel could not be narrowed). A
-// malformed-but-200 upstream body resolves to `{ ok: false }` and flows into the
-// same typed-502 handling the error paths use, instead of surfacing as an
-// unhandled framework 500.
-type JsonParseResult = { ok: true; value: unknown } | { ok: false }
-
-const safeJsonParse = (raw: string): JsonParseResult => {
-  try {
-    return { ok: true, value: JSON.parse(raw) }
-  } catch {
-    return { ok: false }
-  }
 }
 
 // Typed 502 for a success-status upstream body that could not be parsed or
