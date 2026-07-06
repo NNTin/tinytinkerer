@@ -1,12 +1,12 @@
 import { useEffect, type ReactNode } from 'react'
-import { LICENSE_TEXT } from './license.generated'
-import { THIRD_PARTY_NOTICES } from './third-party-notices.generated'
-import { TINYTINKERER_LICENSE } from './brand-links'
 import {
+  LICENSE_TEXT,
+  THIRD_PARTY_NOTICES,
   TINYTINKERER_CREDITS,
   TINYTINKERER_CREDITS_NOTE,
-  TINYTINKERER_CREDITS_TITLE
-} from './credits'
+  TINYTINKERER_CREDITS_TITLE,
+  TINYTINKERER_LICENSE
+} from '@tinytinkerer/brand-assets'
 
 export type AboutDialogKind = 'license' | 'credits' | 'notices'
 

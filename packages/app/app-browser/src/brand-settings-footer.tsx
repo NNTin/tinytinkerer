@@ -7,9 +7,13 @@ import {
   FaListUl,
   FaScaleBalanced
 } from 'react-icons/fa6'
-import { TINYTINKERER_LICENSE, TINYTINKERER_SOCIALS, type BrandSocial } from './brand-links'
-import { TINYTINKERER_CREDITS_TITLE } from './credits'
-import type { AboutDialogKind } from './settings-dialogs'
+import {
+  TINYTINKERER_CREDITS_TITLE,
+  TINYTINKERER_LICENSE,
+  TINYTINKERER_SOCIALS,
+  type BrandSocial
+} from '@tinytinkerer/brand-assets'
+import type { AboutDialogKind } from './brand-settings-dialogs'
 
 const SOCIAL_ICONS: Record<BrandSocial['kind'], ComponentType<{ className?: string }>> = {
   github: FaGithub,
@@ -33,7 +37,7 @@ const ABOUT_ACTIONS: ReadonlyArray<{
 // The dialog chrome, license text, and credits list are only needed once a user
 // opens a dialog, so they are split into their own chunk to keep the startup
 // bundle small (see apps/widget bundle-size regression guard).
-const AboutDialogs = lazy(() => import('./settings-dialogs'))
+const AboutDialogs = lazy(() => import('./brand-settings-dialogs'))
 
 export const BrandSettingsFooter = ({
   renderMarkdown

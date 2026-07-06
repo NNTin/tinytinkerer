@@ -5,7 +5,7 @@ import type {
   PluginSettingField,
   ServiceStatus
 } from '@tinytinkerer/contracts'
-import { BrandSettingsFooter } from '@tinytinkerer/brand-assets'
+import { BrandSettingsFooter } from './brand-settings-footer'
 import {
   isPluginEnabled,
   resolvePluginSetting,

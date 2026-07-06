@@ -1,5 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises'
-import { dirname, extname, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 
 const rootDir = process.cwd()
@@ -74,8 +74,20 @@ const graph = new Map(workspacePackages.map((pkg) => [pkg.name, new Set()]))
 const sourceRules = new Map([
   ['@tinytinkerer/app-core', PRODUCT_AGNOSTIC_SOURCE_RULES],
   ['@tinytinkerer/agent-core', PRODUCT_AGNOSTIC_SOURCE_RULES],
-  ['@tinytinkerer/content-core', PRODUCT_AGNOSTIC_SOURCE_RULES]
+  ['@tinytinkerer/content-core', PRODUCT_AGNOSTIC_SOURCE_RULES],
+  // brand-assets is a renderer-agnostic metadata leaf: no React, DOM, or fetch.
+  // This keeps UI (which used to live here as BrandSettingsFooter) from
+  // re-accreting below the browser assembly boundary.
+  ['@tinytinkerer/brand-assets', PRODUCT_AGNOSTIC_SOURCE_RULES]
 ])
+
+// Generated data modules (e.g. the aggregated third-party-notice text) are not
+// authored source the boundary rules govern, and their embedded upstream text
+// can legitimately contain trigger substrings (`window.`, `fetch(`) that would
+// false-positive against PRODUCT_AGNOSTIC_SOURCE_RULES. Their workspace imports
+// are still checked by validateBoundary; only the source-constraint scan skips
+// them. Matches `*.generated.ts/tsx/js/…` (optionally `.mts`/`.cts`).
+const GENERATED_SOURCE_FILE = /\.generated\.[cm]?[jt]sx?$/
 
 for (const pkg of workspacePackages) {
   validateArchitectureMetadata(pkg)
@@ -670,6 +682,10 @@ function validatePureTypeModule(filePath, source) {
 }
 
 function validateSourceConstraints(pkg, filePath, source) {
+  if (GENERATED_SOURCE_FILE.test(basename(filePath))) {
+    return
+  }
+
   const sourceLabel = relative(rootDir, filePath)
   const rules =
     sourceRules.get(pkg.name) ?? (isPluginPackage(pkg) ? PRODUCT_AGNOSTIC_SOURCE_RULES : undefined)

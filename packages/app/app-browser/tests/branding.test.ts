@@ -55,7 +55,15 @@ vi.mock('@tinytinkerer/brand-assets', () => ({
         }
       ]
     }
-  }
+  },
+  // The settings footer (brand-settings-footer.tsx), statically re-exported via
+  // src/index.ts, reads these brand symbols at module scope, so the mock must
+  // supply them even though this suite never renders the footer.
+  TINYTINKERER_SOCIALS: [
+    { kind: 'github', label: 'GitHub', href: 'https://github.com/nntin/tinytinkerer' }
+  ],
+  TINYTINKERER_LICENSE: { title: 'License' },
+  TINYTINKERER_CREDITS_TITLE: 'Credits'
 }))
 
 vi.mock('../src/shell.js', () => ({

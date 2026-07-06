@@ -3,8 +3,8 @@ import type { BrandDefinition } from '@tinytinkerer/contracts'
 // These `new URL(..., import.meta.url)` asset references are why this lives in
 // its own module rather than the package barrel: they make bundlers treat the
 // module as impure, which would defeat tree-shaking. Keeping them here lets the
-// barrel stay a pure re-export surface, so app entry chunks that only need the
-// brand metadata don't drag in the (React + icons) settings footer.
+// barrel stay a pure re-export surface, so app entry chunks that only need part
+// of the brand metadata don't drag in the asset-URL definitions.
 export const TINYTINKERER_BRAND_ASSET_URLS = {
   faviconIco: new URL('../assets/generated/favicon.ico', import.meta.url).href,
   favicon16: new URL('../assets/generated/favicon-16.png', import.meta.url).href,

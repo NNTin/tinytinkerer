@@ -316,3 +316,49 @@ test('host compositor importing app-browser passes', async (t) => {
   assert.equal(result.code, 0)
   assert.equal(result.stdout.trim(), 'Boundary checks passed.')
 })
+
+test('brand-assets is metadata-only: authored React code is rejected', async (t) => {
+  const result = await withFixture(t, {
+    'packages/brand-assets/package.json': pkg('@tinytinkerer/brand-assets'),
+    'packages/brand-assets/src/react.tsx':
+      "import { useState } from 'react'\n\nexport const Footer = () => useState(0)\n"
+  })
+
+  assert.equal(result.code, 1)
+  assert.match(result.stderr, /@tinytinkerer\/brand-assets must not use React import/)
+})
+
+test('brand-assets exporting pure metadata passes', async (t) => {
+  const result = await withFixture(t, {
+    'packages/brand-assets/package.json': pkg('@tinytinkerer/brand-assets'),
+    'packages/brand-assets/src/index.ts': "export const TINYTINKERER_BRAND = { name: 'x' }\n"
+  })
+
+  assert.equal(result.code, 0)
+  assert.equal(result.stdout.trim(), 'Boundary checks passed.')
+})
+
+test('generated data modules are exempt from source-constraint scanning', async (t) => {
+  // A *.generated.ts file whose embedded upstream text happens to contain
+  // trigger substrings must NOT trip the source rules — generated notice/license
+  // data is not authored source the boundary governs.
+  const result = await withFixture(t, {
+    'packages/brand-assets/package.json': pkg('@tinytinkerer/brand-assets'),
+    'packages/brand-assets/src/notices.generated.ts':
+      "export const NOTICES = 'see window.location and fetch( for details'\n"
+  })
+
+  assert.equal(result.code, 0)
+  assert.equal(result.stdout.trim(), 'Boundary checks passed.')
+})
+
+test('the same trigger text in a hand-written module is still rejected', async (t) => {
+  const result = await withFixture(t, {
+    'packages/brand-assets/package.json': pkg('@tinytinkerer/brand-assets'),
+    'packages/brand-assets/src/notices.ts':
+      "export const href = window.location.href\n\nexport const load = () => fetch('/x')\n"
+  })
+
+  assert.equal(result.code, 1)
+  assert.match(result.stderr, /@tinytinkerer\/brand-assets must not use/)
+})
