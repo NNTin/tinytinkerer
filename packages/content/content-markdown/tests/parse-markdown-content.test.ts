@@ -401,4 +401,70 @@ describe('parseMarkdownContent', () => {
     expect(second?.type).toBe('paragraph')
     expect(first?.id).not.toBe(second?.id)
   })
+
+  // The renderer stopped normalizing on read (issue #341): the parser is the
+  // sole owner of id assignment, so every block AND inline node it emits must
+  // already carry a non-empty id, or `ContentDocumentRenderer` produces
+  // undefined React keys. This walks a rich corpus to hold that invariant.
+  it('assigns a non-empty id to every block and inline node (issue #341)', () => {
+    const corpus = [
+      '# Heading with *emphasis* and **strong**',
+      '',
+      'A paragraph with `inline code`, a [link](https://example.com), and an',
+      '![image](https://example.com/i.png).',
+      '',
+      '- loose item one',
+      '',
+      '- loose item two',
+      '  - nested item',
+      '',
+      '> a blockquote with **bold**',
+      '',
+      '| a | b |',
+      '| :--- | ---: |',
+      '| 1 | 2 |',
+      '',
+      '```ts',
+      'const answer = 42',
+      '```',
+      '',
+      '---'
+    ].join('\n')
+
+    const assertInline = (node: InlineNode): void => {
+      expect((node as { id?: string }).id, `inline ${node.type} id`).toBeTruthy()
+      if ('children' in node) {
+        for (const child of node.children) assertInline(child)
+      }
+    }
+    const assertBlock = (node: BlockNode): void => {
+      expect(node.id, `block ${node.type} id`).toBeTruthy()
+      switch (node.type) {
+        case 'heading':
+        case 'paragraph':
+          node.children.forEach(assertInline)
+          return
+        case 'list':
+          node.children.forEach((item) => {
+            expect(item.id, 'listItem id').toBeTruthy()
+            item.children.forEach(assertBlock)
+          })
+          return
+        case 'blockquote':
+          node.children.forEach(assertBlock)
+          return
+        case 'table':
+          for (const row of [node.header, ...node.rows]) {
+            for (const cell of row) cell.forEach(assertInline)
+          }
+          return
+        default:
+          return
+      }
+    }
+
+    const doc = parseMarkdownContent(corpus)
+    expect(doc.nodes.length).toBeGreaterThan(0)
+    doc.nodes.forEach(assertBlock)
+  })
 })

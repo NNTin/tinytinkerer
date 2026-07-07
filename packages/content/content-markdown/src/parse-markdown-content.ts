@@ -17,7 +17,7 @@ import type {
 import remarkGfm from 'remark-gfm'
 import remarkParse from 'remark-parse'
 import {
-  assignNodeIds,
+  assignBlockNodeIds,
   computeNodeId,
   type BlockNode,
   type BlockquoteNode,
@@ -42,17 +42,18 @@ type IdAllocator = {
   allocate: (type: string, digest: string) => NodeId
 }
 
-const createIdAllocator = (): IdAllocator => {
-  const counts = new Map<string, number>()
-  return {
-    allocate: (type, digest) => {
-      const key = `${type}\u0000${digest}`
-      const occurrence = counts.get(key) ?? 0
-      counts.set(key, occurrence + 1)
-      return computeNodeId(type, digest, occurrence)
-    }
+// The counts map is owned by the caller (a `MarkdownParseState`) so occurrence
+// numbering can be threaded across incrementally-parsed fragments: allocating
+// ids against the SAME map a later fragment's allocator also mutates is what
+// makes `parse(prefix) ++ parse(tail)` agree with `parse(prefix + tail)`.
+const createIdAllocator = (counts: Map<string, number>): IdAllocator => ({
+  allocate: (type, digest) => {
+    const key = `${type}\u0000${digest}`
+    const occurrence = counts.get(key) ?? 0
+    counts.set(key, occurrence + 1)
+    return computeNodeId(type, digest, occurrence)
   }
-}
+})
 
 const sanitizeImageUrl = (url: string): string => {
   if (/^https?:/i.test(url)) return url
@@ -91,6 +92,7 @@ const HEX_BYTE = /^[\da-f]{2}$/i
 type RawSvgExtraction = {
   content: string
   rawBySentinel: Map<string, string>
+  nextSentinelIndex: number
 }
 
 const isInlineWhitespace = (ch: string | undefined): boolean =>
@@ -138,7 +140,7 @@ const startsDecodedSvgOpen = (content: string, from: number): boolean => {
   return next === undefined || next === '>' || isInlineWhitespace(next)
 }
 
-const findDecodedSvgClose = (content: string, from: number): SvgCloseMatch | null => {
+export const findDecodedSvgClose = (content: string, from: number): SvgCloseMatch | null => {
   let index = from
   let matched = 0
   let start = -1
@@ -202,16 +204,22 @@ const decodeSvgDataUriBody = (body: string): string => {
   }
 }
 
-const extractRawSvgImages = (content: string): RawSvgExtraction => {
+// `sentinelStart` lets incremental parsing continue the sentinel numbering
+// across fragments: sentinels are only used as scratch keys within a single
+// `parseMarkdownFragment` call (restored immediately after), but they still
+// must not collide with sentinels a prior fragment left allocated in case
+// any bookkeeping ever compares them — so we thread the counter like the
+// other two pieces of cross-fragment id state.
+const extractRawSvgImages = (content: string, sentinelStart = 0): RawSvgExtraction => {
   const rawBySentinel = new Map<string, string>()
   // Cheap pre-gate: skip the whole pass unless an SVG data URI scheme is present at all.
   if (!/data:image\/svg\+xml,/i.test(content)) {
-    return { content, rawBySentinel }
+    return { content, rawBySentinel, nextSentinelIndex: sentinelStart }
   }
 
   let result = ''
   let copiedUpTo = 0 // everything before this index is already flushed to `result`
-  let sentinelIndex = 0
+  let sentinelIndex = sentinelStart
 
   // Monotonic cache for the forward raw-or-percent-encoded `</svg>` search: `from`
   // only ever increases across matches, so the first close at-or-after an earlier
@@ -287,7 +295,7 @@ const extractRawSvgImages = (content: string): RawSvgExtraction => {
   }
 
   result += content.slice(copiedUpTo)
-  return { content: result, rawBySentinel }
+  return { content: result, rawBySentinel, nextSentinelIndex: sentinelIndex }
 }
 
 const restoreRawSvgInline = (node: InlineNode, rawBySentinel: Map<string, string>): void => {
@@ -535,10 +543,51 @@ const blockFromMdast = (node: RootContent | BlockContent, ids: IdAllocator): Blo
   }
 }
 
-export const parseMarkdownContent = (content: string): ContentDocument => {
-  const { content: preprocessed, rawBySentinel } = extractRawSvgImages(content)
+// The three pieces of order-dependent state that must be threaded across
+// incrementally-parsed fragments for `parse(prefix) ++ parse(tail)` to agree
+// with a single `parse(prefix + tail)`:
+//   - `allocatorCounts`: mdast-conversion block ids (digest = mdast `toString`).
+//   - `normalizeCounts`: the content-core id-assignment pass (inline ids, plus
+//     the same per-(type,digest) occurrence counting re-applied to blocks —
+//     see `withAssignedId`/`assignBlockNodeIds`; digest = content-core serialize).
+//   - `svgSentinelIndex`: the raw-SVG sentinel counter, since image block ids
+//     are allocated while the url is still the sentinel placeholder.
+// A session parsing chunk-by-chunk owns one of these per "committed" prefix
+// and clones it before speculatively parsing a still-growing tail, so the
+// volatile tail never pollutes the counts a later, definitive fragment reads.
+export type MarkdownParseState = {
+  allocatorCounts: Map<string, number>
+  normalizeCounts: Map<string, number>
+  svgSentinelIndex: number
+}
+
+export const createMarkdownParseState = (): MarkdownParseState => ({
+  allocatorCounts: new Map(),
+  normalizeCounts: new Map(),
+  svgSentinelIndex: 0
+})
+
+export const cloneMarkdownParseState = (state: MarkdownParseState): MarkdownParseState => ({
+  allocatorCounts: new Map(state.allocatorCounts),
+  normalizeCounts: new Map(state.normalizeCounts),
+  svgSentinelIndex: state.svgSentinelIndex
+})
+
+// Parses one fragment of markdown against a shared, mutated `state`. Callers
+// that stream markdown incrementally call this once per stabilized chunk (in
+// source order) against the same `state` object, so ids for a later fragment
+// continue the occurrence counting a former fragment left off — identical to
+// what a single full-document parse would have assigned.
+export const parseMarkdownFragment = (content: string, state: MarkdownParseState): BlockNode[] => {
+  const {
+    content: preprocessed,
+    rawBySentinel,
+    nextSentinelIndex
+  } = extractRawSvgImages(content, state.svgSentinelIndex)
+  state.svgSentinelIndex = nextSentinelIndex
+
   const root = parser.parse(preprocessed)
-  const ids = createIdAllocator()
+  const ids = createIdAllocator(state.allocatorCounts)
   const nodes: BlockNode[] = []
 
   for (const child of root.children) {
@@ -556,5 +605,9 @@ export const parseMarkdownContent = (content: string): ContentDocument => {
     }
   }
 
-  return assignNodeIds({ nodes })
+  return assignBlockNodeIds(nodes, state.normalizeCounts)
 }
+
+export const parseMarkdownContent = (content: string): ContentDocument => ({
+  nodes: parseMarkdownFragment(content, createMarkdownParseState())
+})

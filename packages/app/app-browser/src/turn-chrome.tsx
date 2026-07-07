@@ -1,5 +1,5 @@
 import type { Turn } from '@tinytinkerer/app-core'
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { AssistantContent } from './assistant-content'
 import { toolLabel } from './turn-activity-panel'
 
@@ -206,7 +206,13 @@ export type TurnChromeProps = {
  * Renders nothing when there is neither content nor a live generation, matching
  * the previous `turn.assistantContent ? … : isRunning ? … : null` guard.
  */
-export const TurnChrome = ({
+// Memoized so a streamed delta only re-renders the in-flight turn, not every
+// settled message tree (issue #340). Its props are referentially stable for a
+// settled turn: `turn` identity is preserved by the surface's reconcileTurns,
+// `serverNameById`/callbacks are memoized by the controller, and the class
+// names are constant per shell — so the default shallow comparison skips
+// unchanged turns. The last (live) turn keeps re-rendering as it streams.
+export const TurnChrome = memo(function TurnChrome({
   turn,
   isLive,
   serverNameById,
@@ -216,7 +222,7 @@ export const TurnChrome = ({
   showStatusLine = true,
   onRegenerateLatest,
   canRegenerateLatest = false
-}: TurnChromeProps) => {
+}: TurnChromeProps) {
   const [collapsed, setCollapsed] = useState(false)
   const collapsibleId = useId()
 
@@ -271,4 +277,4 @@ export const TurnChrome = ({
       )}
     </div>
   )
-}
+})

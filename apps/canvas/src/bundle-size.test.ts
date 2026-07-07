@@ -51,10 +51,15 @@ beforeAll(async () => {
 }, 90_000)
 
 describe('canvas bundle regression guard', () => {
-  it('keeps the twenty-two-tool startup entry below 84 kB', () => {
+  it('keeps the twenty-two-tool startup entry below 85 kB', () => {
     const entry = shellChunks.find((chunk) => chunk.facadeModuleId?.endsWith('/canvas/index.html'))
     expect(entry).toBeDefined()
-    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(84)
+    // Raised 84 → 85 kB when the shared chat surface gained always-loaded turn
+    // reconciliation + memoization (#340): a deliberate perf feature that stops
+    // the whole conversation re-rendering per streamed delta. The startup entry
+    // sat right at the old round-number budget, so the small addition tipped it;
+    // Excalidraw and the heavy graph are still guarded out by the tests below.
+    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(85)
   })
 
   it('keeps Excalidraw outside the canvas startup graph', () => {
