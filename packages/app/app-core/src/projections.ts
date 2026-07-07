@@ -444,27 +444,13 @@ export const buildTurns = (events: ChatEvent[]): Turn[] => {
   return turns
 }
 
-const noticesEqual = (a: TurnNotice | undefined, b: TurnNotice | undefined): boolean => {
-  if (a === b) return true
-  if (!a || !b) return false
-  return a.kind === b.kind && a.message === b.message && a.level === b.level
-}
-
-const activityItemsEqual = (a: TurnActivityItem, b: TurnActivityItem): boolean => {
+// A tool item carries the only potentially-large fields (`input`/`output`), so
+// compare those by reference — buildTurns reuses the same event-payload objects
+// across rebuilds, keeping a settled turn O(1) to check even with big results.
+// reasoning/label items hold only small strings, so a JSON compare is both cheap
+// and compact (buildTurns emits stable key order).
+const activityItemEqual = (a: TurnActivityItem, b: TurnActivityItem): boolean => {
   if (a.kind !== b.kind) return false
-  if (a.kind === 'reasoning' && b.kind === 'reasoning') {
-    return a.id === b.id && a.text === b.text
-  }
-  if (a.kind === 'label' && b.kind === 'label') {
-    return (
-      a.id === b.id &&
-      a.label === b.label &&
-      a.stepId === b.stepId &&
-      a.parentId === b.parentId &&
-      a.stepKind === b.stepKind &&
-      a.decisionKind === b.decisionKind
-    )
-  }
   if (a.kind === 'tool' && b.kind === 'tool') {
     return (
       a.id === b.id &&
@@ -477,17 +463,16 @@ const activityItemsEqual = (a: TurnActivityItem, b: TurnActivityItem): boolean =
       a.output === b.output
     )
   }
-  return false
+  return JSON.stringify(a) === JSON.stringify(b)
 }
 
-const activitiesEqual = (a: TurnActivity, b: TurnActivity): boolean => {
-  if (a.reasoningText !== b.reasoningText) return false
-  if (a.items.length !== b.items.length) return false
-  return a.items.every((item, index) => {
+const activitiesEqual = (a: TurnActivity, b: TurnActivity): boolean =>
+  a.reasoningText === b.reasoningText &&
+  a.items.length === b.items.length &&
+  a.items.every((item, index) => {
     const other = b.items[index]
-    return other !== undefined && activityItemsEqual(item, other)
+    return other !== undefined && activityItemEqual(item, other)
   })
-}
 
 /**
  * Whether two turns are render-equivalent — same id and same content down to
@@ -505,7 +490,7 @@ export const turnsEquivalent = (a: Turn, b: Turn): boolean =>
   a.assistantSource === b.assistantSource &&
   a.assistantContent === b.assistantContent &&
   a.isStreaming === b.isStreaming &&
-  noticesEqual(a.notice, b.notice) &&
+  JSON.stringify(a.notice) === JSON.stringify(b.notice) &&
   activitiesEqual(a.activity, b.activity)
 
 /**
