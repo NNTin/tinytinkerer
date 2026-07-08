@@ -1,5 +1,7 @@
 export { useBrowserAppBootstrap } from './bootstrap'
 export type { LoadingScreenProps } from './loading-screen-types'
+export { LoadingStatusPanel } from './loading-status-panel'
+export type { LoadingStatusPanelProps, LoadingStatusPanelVariant } from './loading-status-panel'
 export {
   canStartGitHubOAuth,
   completeGitHubOAuthCallback,
