@@ -20,7 +20,9 @@ import { importLibraryContent } from './library'
 import { applySnapshot } from './persistence'
 import { executeEdit } from './edit'
 import { executeArrange, executePlace, executeSnap, executeSurvey } from './layout'
+import { executePick } from './pick'
 import { executeIcon, executePreset } from './presets'
+import { executePreview } from './preview'
 import { executeInspect, executeRead, executeSearch } from './query'
 import {
   executeAlign,
@@ -32,6 +34,7 @@ import {
   executeStack,
   executeTransform
 } from './structure'
+import { executeThumbnail } from './thumbnail'
 
 // This file is deliberately only the wire binding surface. Excalidraw owns the
 // behavior in the adjacent create/query/normalization/edit modules.
@@ -65,7 +68,12 @@ export const createExcalidrawHandlers = (
   arrange: defineBridgeVerb(excalidrawVerbContracts.arrange, (input) => executeArrange(api, input)),
   survey: defineBridgeVerb(excalidrawVerbContracts.survey, (input) => executeSurvey(api, input)),
   preset: defineBridgeVerb(excalidrawVerbContracts.preset, (input) => executePreset(api, input)),
-  icon: defineBridgeVerb(excalidrawVerbContracts.icon, (input) => executeIcon(api, input))
+  icon: defineBridgeVerb(excalidrawVerbContracts.icon, (input) => executeIcon(api, input)),
+  preview: defineBridgeVerb(excalidrawVerbContracts.preview, (input) => executePreview(api, input)),
+  thumbnail: defineBridgeVerb(excalidrawVerbContracts.thumbnail, (input) =>
+    executeThumbnail(api, input)
+  ),
+  pick: defineBridgeVerb(excalidrawVerbContracts.pick, (input) => executePick(api, input))
 })
 
 export const createExcalidrawBridge = (

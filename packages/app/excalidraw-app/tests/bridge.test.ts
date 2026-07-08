@@ -183,7 +183,10 @@ describe('Excalidraw bridge handlers', () => {
       'arrange',
       'survey',
       'preset',
-      'icon'
+      'icon',
+      'preview',
+      'thumbnail',
+      'pick'
     ])
   })
 

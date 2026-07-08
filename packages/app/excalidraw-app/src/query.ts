@@ -26,7 +26,11 @@ export const assertRequestBudget = (
     throw new Error(`${verb}: request payload is ${size} bytes; maximum is ${budget} bytes`)
 }
 
-const checkSceneVersion = (expected: number | undefined, actual: number, verb: string): void => {
+export const checkSceneVersion = (
+  expected: number | undefined,
+  actual: number,
+  verb: string
+): void => {
   if (expected !== undefined && expected !== actual) {
     throw new Error(
       `${verb}: scene changed (expected scene version ${expected}, current version ${actual}); restart pagination from offset 0`
