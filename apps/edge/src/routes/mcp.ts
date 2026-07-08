@@ -8,7 +8,7 @@ import {
   mcpDiscoveryResultSchema
 } from '@tinytinkerer/contracts'
 import type { Bindings } from '../lib/bindings'
-import { validateLiteLLMCaller } from '../lib/caller-validation'
+import { callerValidationErrorResponse, validateLiteLLMCaller } from '../lib/caller-validation'
 import { mcpCallRoute, mcpDiscoverRoute } from '../openapi/routes'
 
 // NOTE: This check covers only literal IP addresses and a set of well-known
@@ -133,19 +133,8 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
     // it (otherwise the edge is an open SSRF proxy). Validate the caller's
     // GitHub identity before connecting, mirroring the models routes.
     const callerValidation = await validateLiteLLMCaller(authorization, c.env)
-    if (callerValidation.status === 'invalid') {
-      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
-    }
-    if (callerValidation.status === 'forbidden') {
-      return c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
-    }
-    if (callerValidation.status === 'unavailable') {
-      return c.json(
-        edgeErrorResponseSchema.parse({
-          error: 'Caller validation is temporarily unavailable.'
-        }),
-        503
-      )
+    if (callerValidation.status !== 'valid') {
+      return callerValidationErrorResponse(c, callerValidation.status)
     }
 
     const { url, bearerToken } = c.req.valid('json')
@@ -205,19 +194,8 @@ export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
     // request: a present-but-unverified Authorization header must not turn the
     // edge into an open SSRF proxy (mirrors the models routes).
     const callerValidation = await validateLiteLLMCaller(authorization, c.env)
-    if (callerValidation.status === 'invalid') {
-      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
-    }
-    if (callerValidation.status === 'forbidden') {
-      return c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
-    }
-    if (callerValidation.status === 'unavailable') {
-      return c.json(
-        edgeErrorResponseSchema.parse({
-          error: 'Caller validation is temporarily unavailable.'
-        }),
-        503
-      )
+    if (callerValidation.status !== 'valid') {
+      return callerValidationErrorResponse(c, callerValidation.status)
     }
 
     const { url, bearerToken, toolName, arguments: toolArgs } = c.req.valid('json')

@@ -24,7 +24,11 @@ import {
   toRateLimitResponse,
   type CredentialKey
 } from '../lib/rate-limit'
-import { validateLiteLLMCaller, type CallerIdentity } from '../lib/caller-validation'
+import {
+  callerValidationErrorResponse,
+  validateLiteLLMCaller,
+  type CallerIdentity
+} from '../lib/caller-validation'
 import {
   ANONYMOUS_IDENTITY,
   clearLiteLLMUserKeyCache,
@@ -460,27 +464,12 @@ const preflightLiteLLM = async <S = never>(
     credentialKey = await deriveAnonymousCredentialKey(c.env, resolvedBaseUrl)
   } else {
     const callerValidation = await validateLiteLLMCaller(authorization, c.env)
-    if (callerValidation.status === 'invalid') {
+    if (callerValidation.status !== 'valid') {
       return {
         ok: false,
-        response: c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
-      }
-    }
-    if (callerValidation.status === 'forbidden') {
-      return {
-        ok: false,
-        response: c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
-      }
-    }
-    if (callerValidation.status === 'unavailable') {
-      return {
-        ok: false,
-        response: c.json(
-          edgeErrorResponseSchema.parse({
-            error: 'LiteLLM caller validation is temporarily unavailable.'
-          }),
-          503
-        )
+        response: callerValidationErrorResponse(c, callerValidation.status, {
+          unavailableMessage: 'LiteLLM caller validation is temporarily unavailable.'
+        })
       }
     }
 

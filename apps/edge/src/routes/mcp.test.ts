@@ -132,6 +132,19 @@ describe('POST /api/mcp/discover', () => {
     expect(mockConnect).not.toHaveBeenCalled()
   })
 
+  it('returns 403 for a caller outside GITHUB_ALLOWED_USERS, without connecting', async () => {
+    const res = await post(
+      '/api/mcp/discover',
+      { url: 'https://mcp.example.com/mcp' },
+      HEADERS,
+      // The validated identity is id 12345 / login nntin (see githubUserOk); neither is allowed.
+      { GITHUB_ALLOWED_USERS: 'someone-else' }
+    )
+    expect(res.status).toBe(403)
+    expect(edgeErrorResponseSchema.parse(await res.json())).toEqual({ error: 'Forbidden' })
+    expect(mockConnect).not.toHaveBeenCalled()
+  })
+
   it('returns 400 for a non-http(s) scheme', async () => {
     const res = await post('/api/mcp/discover', { url: 'ftp://mcp.example.com' })
     expect(res.status).toBe(400)
@@ -391,6 +404,19 @@ describe('POST /api/mcp/call', () => {
     expect(res.status).toBe(503)
     const body = edgeErrorResponseSchema.parse(await res.json())
     expect(body.error).toMatch(/validation is temporarily unavailable/i)
+    expect(mockConnect).not.toHaveBeenCalled()
+  })
+
+  it('returns 403 for a caller outside GITHUB_ALLOWED_USERS, without connecting', async () => {
+    const res = await post(
+      '/api/mcp/call',
+      { url: 'https://mcp.example.com/mcp', toolName: 'get_weather', arguments: {} },
+      HEADERS,
+      // The validated identity is id 12345 / login nntin (see githubUserOk); neither is allowed.
+      { GITHUB_ALLOWED_USERS: 'someone-else' }
+    )
+    expect(res.status).toBe(403)
+    expect(edgeErrorResponseSchema.parse(await res.json())).toEqual({ error: 'Forbidden' })
     expect(mockConnect).not.toHaveBeenCalled()
   })
 

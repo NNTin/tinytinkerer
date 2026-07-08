@@ -1,3 +1,5 @@
+import type { Context, TypedResponse } from 'hono'
+import { edgeErrorResponseSchema } from '@tinytinkerer/contracts'
 import { fetchWithTimeout } from './fetch'
 import type { Bindings } from './bindings'
 import { deriveCredentialKey } from './rate-limit'
@@ -111,4 +113,34 @@ export const validateLiteLLMCaller = async (
   }
   if (response.status === 401 || response.status === 403) return { status: 'invalid' }
   return { status: 'unavailable' }
+}
+
+/**
+ * The one client-facing mapping from a failed {@link validateLiteLLMCaller}
+ * result to an HTTP response — shared by the mcp/search/models routes so the
+ * status codes and copy cannot drift per endpoint (issue #366). Discrete
+ * per-status `TypedResponse` members (not a single union-status
+ * `TypedResponse`) so the return stays assignable to each route's generated
+ * typed-response union — see the comment on `PreflightErrorResponse` in
+ * models.ts. `unavailableMessage` exists because the models routes
+ * historically use LiteLLM-specific 503 copy that existing tests pin.
+ */
+export const callerValidationErrorResponse = (
+  c: Context<{ Bindings: Bindings }>,
+  status: Exclude<CallerValidationResult['status'], 'valid'>,
+  {
+    unavailableMessage = 'Caller validation is temporarily unavailable.'
+  }: { unavailableMessage?: string } = {}
+):
+  | TypedResponse<{ error: string }, 401, 'json'>
+  | TypedResponse<{ error: string }, 403, 'json'>
+  | TypedResponse<{ error: string }, 503, 'json'> => {
+  switch (status) {
+    case 'invalid':
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
+    case 'forbidden':
+      return c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
+    case 'unavailable':
+      return c.json(edgeErrorResponseSchema.parse({ error: unavailableMessage }), 503)
+  }
 }
