@@ -25,6 +25,7 @@ import {
   type WidgetDims,
   type WidgetLayout
 } from './layout-geometry'
+import { usePointerDrag } from './use-pointer-drag'
 
 // The floating, movable/resizable chat window shared by the widget app and the
 // canvas app's overlay. It owns the window chrome and the standalone layout state
@@ -186,6 +187,9 @@ type DragState = {
   moved: boolean
   // Drag started from the minimized launcher (which doubles as a restore button).
   fromLauncher: boolean
+  // The live snap edge, mutated during the drag (mirrors `moved`) so the pointerup
+  // handler can read the final value without a separate ref.
+  snapEdge: SnapEdge | null
 }
 
 export const FloatingLayout = ({
@@ -212,23 +216,12 @@ export const FloatingLayout = ({
   const [isDragging, setIsDragging] = useState(false)
   const [liveMessage, setLiveMessage] = useState('')
   const [snapEdge, setSnapEdge] = useState<SnapEdge | null>(null)
-  const dragRef = useRef<DragState | null>(null)
-  const resizeRef = useRef<{ startX: number; startY: number; startLayout: WidgetLayout } | null>(
-    null
-  )
-  // Mirrors of drag-loop inputs that the once-bound window handlers read: the live
-  // snap edge, the current onDock, and a one-shot flag that suppresses the launcher's
-  // restore click after a real drag (so dragging the minimized widget never restores).
-  const snapEdgeRef = useRef<SnapEdge | null>(null)
-  const onDockRef = useRef<FloatingLayoutProps['onDock']>(onDock)
+  // One-shot flag that suppresses the launcher's restore click after a real drag (so
+  // dragging the minimized widget never restores).
   const suppressLauncherClickRef = useRef(false)
 
   const isMinimized = layout.minimized
   const themeStyle = shellThemeToCssVars(config.theme)
-
-  useEffect(() => {
-    onDockRef.current = onDock
-  }, [onDock])
 
   useEffect(() => {
     document.body.dataset.widgetViewMode = 'standalone'
@@ -237,22 +230,107 @@ export const FloatingLayout = ({
     }
   }, [])
 
+  const { begin: beginDragGesture } = usePointerDrag<DragState>(true, {
+    onMove: (drag, event) => {
+      if (
+        !drag.moved &&
+        (Math.abs(event.clientX - drag.startX) > DRAG_CLICK_THRESHOLD ||
+          Math.abs(event.clientY - drag.startY) > DRAG_CLICK_THRESHOLD)
+      ) {
+        drag.moved = true
+      }
+      setLayout(
+        clampLayout(
+          {
+            ...drag.startLayout,
+            x: drag.startLayout.x + (event.clientX - drag.startX),
+            y: drag.startLayout.y + (event.clientY - drag.startY)
+          },
+          dims
+        )
+      )
+
+      // Snap preview only for a normal (non-minimized) window drag when docking is
+      // offered — dragging the minimized launcher just repositions it. A zone hit
+      // arms only after deliberate travel toward that edge (#336): proximity alone
+      // would dock on a click or an along-the-edge slide.
+      const candidate =
+        !drag.fromLauncher && onDock
+          ? detectSnapEdge(
+              { x: event.clientX, y: event.clientY },
+              { width: window.innerWidth, height: window.innerHeight }
+            )
+          : null
+      const edge =
+        candidate &&
+        isDeliberateSnap(
+          { x: drag.startX, y: drag.startY },
+          { x: event.clientX, y: event.clientY },
+          candidate
+        )
+          ? candidate
+          : null
+      if (edge !== drag.snapEdge) {
+        drag.snapEdge = edge
+        setSnapEdge(edge)
+      }
+    },
+    onEnd: (drag) => {
+      setIsDragging(false)
+      setSnapEdge(null)
+
+      // Released in a snap zone → morph into the docked web mode for that edge. A
+      // sub-threshold press is a click, never a dock (#336).
+      if (!drag.fromLauncher && drag.moved && drag.snapEdge && onDock) {
+        onDock(drag.snapEdge)
+        return
+      }
+      // A dragged launcher must not fire its restore click on release.
+      if (drag.fromLauncher && drag.moved) {
+        suppressLauncherClickRef.current = true
+      }
+    },
+    // A browser-aborted gesture (touch takeover, pointer reclaim) reverts to the
+    // pre-drag state instead of committing the most consequential outcome (#336) —
+    // in particular it must never dock.
+    onCancel: (drag) => {
+      setIsDragging(false)
+      setSnapEdge(null)
+      setLayout(clampLayout(drag.startLayout, dims))
+    }
+  })
+
+  const { begin: beginResizeGesture } = usePointerDrag<{
+    startX: number
+    startY: number
+    startLayout: WidgetLayout
+  }>(true, {
+    onMove: (start, event) =>
+      setLayout(
+        clampLayout(
+          {
+            ...start.startLayout,
+            width: start.startLayout.width + (event.clientX - start.startX),
+            height: start.startLayout.height + (event.clientY - start.startY)
+          },
+          dims
+        )
+      ),
+    onCancel: (start) => setLayout(clampLayout(start.startLayout, dims))
+  })
+
   const beginDrag = (event: ReactPointerEvent<HTMLButtonElement>, fromLauncher: boolean) => {
-    dragRef.current = {
+    // Capture the pointer so the drag keeps tracking even when the cursor leaves the
+    // window — including over a sandboxed iframe beneath (the canvas overlay) or past
+    // the viewport edge (#323: "moving the widget from below to top loses the drag").
+    beginDragGesture(event, {
       startX: event.clientX,
       startY: event.clientY,
       startLayout: layout,
       moved: false,
-      fromLauncher
-    }
-    // Capture the pointer so the drag keeps tracking even when the cursor leaves the
-    // window — including over a sandboxed iframe beneath (the canvas overlay) or past
-    // the viewport edge (#323: "moving the widget from below to top loses the drag").
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId)
-    } catch {
-      // jsdom / unsupported: the window listeners still receive the events.
-    }
+      fromLauncher,
+      snapEdge: null
+    })
     setIsDragging(true)
   }
 
@@ -337,129 +415,18 @@ export const FloatingLayout = ({
     saveStandaloneLayout(storageKey, layout)
   }, [layout, storageKey])
 
+  // Viewport resize only; drag/resize gestures are owned by usePointerDrag above.
+  // The handler closes over the current `dims` via setLayout's updater, matching the
+  // widget's original single-bind behavior.
   useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      const drag = dragRef.current
-      if (drag) {
-        if (
-          !drag.moved &&
-          (Math.abs(event.clientX - drag.startX) > DRAG_CLICK_THRESHOLD ||
-            Math.abs(event.clientY - drag.startY) > DRAG_CLICK_THRESHOLD)
-        ) {
-          drag.moved = true
-        }
-        setLayout(
-          clampLayout(
-            {
-              ...drag.startLayout,
-              x: drag.startLayout.x + (event.clientX - drag.startX),
-              y: drag.startLayout.y + (event.clientY - drag.startY)
-            },
-            dims
-          )
-        )
-
-        // Snap preview only for a normal (non-minimized) window drag when docking is
-        // offered — dragging the minimized launcher just repositions it. A zone hit
-        // arms only after deliberate travel toward that edge (#336): proximity alone
-        // would dock on a click or an along-the-edge slide.
-        const candidate =
-          !drag.fromLauncher && onDockRef.current
-            ? detectSnapEdge(
-                { x: event.clientX, y: event.clientY },
-                { width: window.innerWidth, height: window.innerHeight }
-              )
-            : null
-        const edge =
-          candidate &&
-          isDeliberateSnap(
-            { x: drag.startX, y: drag.startY },
-            { x: event.clientX, y: event.clientY },
-            candidate
-          )
-            ? candidate
-            : null
-        if (edge !== snapEdgeRef.current) {
-          snapEdgeRef.current = edge
-          setSnapEdge(edge)
-        }
-      }
-
-      if (resizeRef.current) {
-        const { startX, startY, startLayout } = resizeRef.current
-        setLayout(
-          clampLayout(
-            {
-              ...startLayout,
-              width: startLayout.width + (event.clientX - startX),
-              height: startLayout.height + (event.clientY - startY)
-            },
-            dims
-          )
-        )
-      }
-    }
-
-    const handlePointerUp = () => {
-      const drag = dragRef.current
-      const edge = snapEdgeRef.current
-      dragRef.current = null
-      resizeRef.current = null
-      setIsDragging(false)
-      snapEdgeRef.current = null
-      setSnapEdge(null)
-
-      if (!drag) {
-        return
-      }
-      // Released in a snap zone → morph into the docked web mode for that edge. A
-      // sub-threshold press is a click, never a dock (#336).
-      if (!drag.fromLauncher && drag.moved && edge && onDockRef.current) {
-        onDockRef.current(edge)
-        return
-      }
-      // A dragged launcher must not fire its restore click on release.
-      if (drag.fromLauncher && drag.moved) {
-        suppressLauncherClickRef.current = true
-      }
-    }
-
-    // A browser-aborted gesture (touch takeover, pointer reclaim) reverts to the
-    // pre-drag state instead of committing the most consequential outcome (#336) —
-    // in particular it must never dock.
-    const handlePointerCancel = () => {
-      const drag = dragRef.current
-      const resize = resizeRef.current
-      dragRef.current = null
-      resizeRef.current = null
-      setIsDragging(false)
-      snapEdgeRef.current = null
-      setSnapEdge(null)
-
-      const startLayout = drag?.startLayout ?? resize?.startLayout
-      if (startLayout) {
-        setLayout(clampLayout(startLayout, dims))
-      }
-    }
-
     const handleResize = () => {
       setLayout((currentLayout) => clampLayout(currentLayout, dims))
     }
 
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', handlePointerUp)
-    window.addEventListener('pointercancel', handlePointerCancel)
     window.addEventListener('resize', handleResize)
-
     return () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', handlePointerUp)
-      window.removeEventListener('pointercancel', handlePointerCancel)
       window.removeEventListener('resize', handleResize)
     }
-    // Bind once; the handlers close over the current `dims` via setLayout's updater
-    // and read live drag inputs through refs, matching the widget's original
-    // single-bind behavior.
   }, [])
 
   // Visually-hidden live region announcing keyboard move/resize (C1).
@@ -513,18 +480,13 @@ export const FloatingLayout = ({
             className="widget-shell-resize"
             aria-label="Resize widget. Use arrow keys to resize, Shift with arrow keys to move."
             title="Resize widget (arrow keys resize, Shift+arrows move)"
-            onPointerDown={(event) => {
-              resizeRef.current = {
+            onPointerDown={(event) =>
+              beginResizeGesture(event, {
                 startX: event.clientX,
                 startY: event.clientY,
                 startLayout: layout
-              }
-              try {
-                event.currentTarget.setPointerCapture(event.pointerId)
-              } catch {
-                // jsdom / unsupported: window listeners still receive the events.
-              }
-            }}
+              })
+            }
             onKeyDown={handleResizeKeyDown}
           />
         }
