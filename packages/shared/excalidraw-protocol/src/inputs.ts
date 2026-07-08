@@ -73,6 +73,22 @@ const pagingShape = {
   detail: z.enum(EXCALIDRAW_DETAIL_LEVELS).default('standard')
 }
 
+// Paging guard shared by every verb that spreads `pagingShape`: resuming past
+// the first page requires the scene version the caller paged from, so a scene
+// change mid-pagination is rejected instead of silently skewing pages.
+type PagedInput = z.output<z.ZodObject<typeof pagingShape>>
+
+const withPagingGuard = <Schema extends z.ZodType<PagedInput>>(schema: Schema): Schema =>
+  schema.superRefine((input, ctx) => {
+    if (input.offset > 0 && input.expectedSceneVersion === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expectedSceneVersion'],
+        message: 'Required after offset 0.'
+      })
+    }
+  })
+
 export const drawElementSchema = z.object({
   id: elementIdSchema
     .optional()
@@ -181,67 +197,46 @@ export const drawInputSchema = z
     }
   })
 
-export const searchInputSchema = z
-  .object({
-    query: z
-      .string()
-      .trim()
-      .min(1)
-      .optional()
-      .describe(
-        'Case-insensitive text matched against element id, type, text, label, or frame name.'
-      ),
-    types: z
-      .array(z.string().min(1))
-      .min(1)
-      .max(20)
-      .refine((types) => new Set(types).size === types.length, 'Element types must be unique.')
-      .optional(),
-    scope: z.enum(['all', 'selection', 'viewport']).default('all'),
-    ...pagingShape
-  })
-  .strict()
-  .superRefine((input, ctx) => {
-    if (input.offset > 0 && input.expectedSceneVersion === undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['expectedSceneVersion'],
-        message: 'Required after offset 0.'
-      })
-    }
-  })
+export const searchInputSchema = withPagingGuard(
+  z
+    .object({
+      query: z
+        .string()
+        .trim()
+        .min(1)
+        .optional()
+        .describe(
+          'Case-insensitive text matched against element id, type, text, label, or frame name.'
+        ),
+      types: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(20)
+        .refine((types) => new Set(types).size === types.length, 'Element types must be unique.')
+        .optional(),
+      scope: z.enum(['all', 'selection', 'viewport']).default('all'),
+      ...pagingShape
+    })
+    .strict()
+)
 
-export const inspectInputSchema = z
-  .object({
-    elementIds: uniqueElementIdsSchema.optional(),
-    ...pagingShape
-  })
-  .strict()
-  .superRefine((input, ctx) => {
-    if (input.offset > 0 && input.expectedSceneVersion === undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['expectedSceneVersion'],
-        message: 'Required after offset 0.'
-      })
-    }
-  })
+export const inspectInputSchema = withPagingGuard(
+  z
+    .object({
+      elementIds: uniqueElementIdsSchema.optional(),
+      ...pagingShape
+    })
+    .strict()
+)
 
-export const readInputSchema = z
-  .object({
-    elementIds: uniqueElementIdsSchema,
-    ...pagingShape
-  })
-  .strict()
-  .superRefine((input, ctx) => {
-    if (input.offset > 0 && input.expectedSceneVersion === undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['expectedSceneVersion'],
-        message: 'Required after offset 0.'
-      })
-    }
-  })
+export const readInputSchema = withPagingGuard(
+  z
+    .object({
+      elementIds: uniqueElementIdsSchema,
+      ...pagingShape
+    })
+    .strict()
+)
 
 export const editChangesSchema = z
   .object({
@@ -558,23 +553,16 @@ export const bindInputSchema = z
     'Provide a start and/or end binding change.'
   )
 
-export const auditInputSchema = z
-  .object({
-    connectorIds: uniqueElementIdsSchema
-      .optional()
-      .describe('Connector ids to audit. Omit to audit every connector in the scene.'),
-    ...pagingShape
-  })
-  .strict()
-  .superRefine((input, ctx) => {
-    if (input.offset > 0 && input.expectedSceneVersion === undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['expectedSceneVersion'],
-        message: 'Required after offset 0.'
-      })
-    }
-  })
+export const auditInputSchema = withPagingGuard(
+  z
+    .object({
+      connectorIds: uniqueElementIdsSchema
+        .optional()
+        .describe('Connector ids to audit. Omit to audit every connector in the scene.'),
+      ...pagingShape
+    })
+    .strict()
+)
 
 // Layout helper verbs. `snap`/`place`/`arrange` are writes that reposition
 // elements (carrying labels/frame children and re-anchoring bound connectors);
@@ -681,30 +669,23 @@ export const arrangeInputSchema = z
   })
   .strict()
 
-export const surveyInputSchema = z
-  .object({
-    elementIds: uniqueElementIdsSchema
-      .optional()
-      .describe('Limit the survey to these elements. Omit to survey the whole scene.'),
-    checks: z
-      .array(z.enum(['overlap', 'label', 'arrow']))
-      .min(1)
-      .max(3)
-      .refine((checks) => new Set(checks).size === checks.length, 'Checks must be unique.')
-      .optional()
-      .describe('Which checks to run. Defaults to all: overlap, label, arrow.'),
-    ...pagingShape
-  })
-  .strict()
-  .superRefine((input, ctx) => {
-    if (input.offset > 0 && input.expectedSceneVersion === undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['expectedSceneVersion'],
-        message: 'Required after offset 0.'
-      })
-    }
-  })
+export const surveyInputSchema = withPagingGuard(
+  z
+    .object({
+      elementIds: uniqueElementIdsSchema
+        .optional()
+        .describe('Limit the survey to these elements. Omit to survey the whole scene.'),
+      checks: z
+        .array(z.enum(['overlap', 'label', 'arrow']))
+        .min(1)
+        .max(3)
+        .refine((checks) => new Set(checks).size === checks.length, 'Checks must be unique.')
+        .optional()
+        .describe('Which checks to run. Defaults to all: overlap, label, arrow.'),
+      ...pagingShape
+    })
+    .strict()
+)
 // Diagram-semantics verbs. `preset` inserts a ready-made diagram scaffold
 // (network / flowchart / UML / wireframe) and `icon` inserts one or more
 // infrastructure glyphs (router, laptop, phone, cloud, server, printer) as
@@ -893,6 +874,11 @@ export const isAllowedLibraryUrl = (url: string): boolean => {
 // the upstream component).
 export const excalidrawLibraryImportSchema = z.object({ content: z.string().min(1) }).strict()
 
+// OBJECT-ROOT INVARIANT: every schema in this map is forwarded verbatim as a
+// tool's `function.parameters`, so it must convert to an object-root JSON schema
+// (no top-level union/array). Enforced fail-fast by `toolInputJsonSchema` in
+// packages/shared/contracts/src/tool-schema.ts and re-asserted per verb in
+// tests/protocol.test.ts ('renders an object-root JSON schema for every verb').
 export const excalidrawVerbInputSchemas = {
   draw: drawInputSchema,
   search: searchInputSchema,

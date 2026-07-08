@@ -372,6 +372,27 @@ describe('excalidraw protocol', () => {
     expect(surveyInputSchema.safeParse({ offset: 1 }).success).toBe(false)
   })
 
+  it('applies the shared paging guard identically to every paged verb', () => {
+    const pagedVerbs = [
+      { schema: searchInputSchema, base: {} },
+      { schema: inspectInputSchema, base: {} },
+      { schema: readInputSchema, base: { elementIds: ['shape-1'] } },
+      { schema: auditInputSchema, base: {} },
+      { schema: surveyInputSchema, base: {} }
+    ]
+    for (const { schema, base } of pagedVerbs) {
+      const rejected = schema.safeParse({ ...base, offset: 1 })
+      expect(rejected.success).toBe(false)
+      if (!rejected.success) {
+        expect(rejected.error.issues).toMatchObject([
+          { code: 'custom', path: ['expectedSceneVersion'], message: 'Required after offset 0.' }
+        ])
+      }
+      expect(schema.safeParse({ ...base, offset: 1, expectedSceneVersion: 4 }).success).toBe(true)
+      expect(schema.safeParse({ ...base }).success).toBe(true)
+    }
+  })
+
   it('validates the diagram-semantics preset and icon verbs', () => {
     // preset: a flat object (object root, not a top-level union — model function-call
     // APIs reject a union root), origin defaults, opt-in version guard, and a
@@ -446,6 +467,12 @@ describe('excalidraw protocol', () => {
     // which OpenAI/ChatGPT-compatible APIs require to have an object root — a
     // top-level union/`anyOf` (e.g. a bare `z.discriminatedUnion`) is rejected. This
     // guards every verb, including `preset`, which is a flat object for this reason.
+    // Counterpart: the same invariant is enforced fail-fast by `toolInputJsonSchema`
+    // in packages/shared/contracts/src/tool-schema.ts. Keep the `z.toJSONSchema`
+    // options below in sync with it — this test cannot import the real guard
+    // (check-boundaries.mjs limits app-protocol packages to app-bridge + local
+    // modules), so drifted options would validate a conversion the descriptor
+    // path no longer uses.
     for (const [verb, schema] of Object.entries(excalidrawVerbInputSchemas)) {
       const json = z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'input' }) as Record<
         string,
