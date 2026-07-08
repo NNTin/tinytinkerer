@@ -17,8 +17,10 @@ export type AppBridgeHandle = {
   // failure). Subsequent requests reject with `reason`.
   setUnavailable(reason: string): void
   getStatus(): AppBridgeStatus
-  // Forward a verb to the app. Used by the always-on appTools.
-  request(verb: string, payload?: unknown): Promise<unknown>
+  // Forward a verb to the app. Used by the always-on appTools. `options.timeoutMs`
+  // is forwarded to the bridge client, overriding its default for this request only
+  // — a human-in-the-loop verb passes a longer timeout so it can outlive the wait.
+  request(verb: string, payload?: unknown, options?: { timeoutMs?: number }): Promise<unknown>
 }
 
 export const createAppBridgeHandle = (): AppBridgeHandle => {
@@ -40,7 +42,7 @@ export const createAppBridgeHandle = (): AppBridgeHandle => {
     getStatus() {
       return status
     },
-    request(verb, payload) {
+    request(verb, payload, options) {
       if (status === 'unavailable') {
         return Promise.reject(new Error(`app-harness: app is unavailable — ${unavailableReason}`))
       }
@@ -49,7 +51,9 @@ export const createAppBridgeHandle = (): AppBridgeHandle => {
           new Error(`app-harness: cannot run "${verb}" before the app finishes loading`)
         )
       }
-      return client.request(verb, payload)
+      return options !== undefined
+        ? client.request(verb, payload, options)
+        : client.request(verb, payload)
     }
   }
 }

@@ -13,19 +13,23 @@ import {
   EXCALIDRAW_DETAIL_LEVELS,
   EXCALIDRAW_ICON_TYPES,
   EXCALIDRAW_PRESET_KINDS,
+  EXCALIDRAW_PREVIEWABLE_VERBS,
   excalidrawLibraryImportSchema,
   excalidrawSnapshotSchema,
   groupInputSchema,
   iconInputSchema,
   inspectInputSchema,
   orderInputSchema,
+  pickInputSchema,
   placeInputSchema,
   presetInputSchema,
+  previewInputSchema,
   readInputSchema,
   searchInputSchema,
   snapInputSchema,
   stackInputSchema,
   surveyInputSchema,
+  thumbnailInputSchema,
   transformInputSchema
 } from './inputs'
 
@@ -541,6 +545,74 @@ const presetResultSchema = z
   })
   .strict()
 
+// Safer-iterative-workflow results. `preview` reports a dry-run patch summary
+// (see the rationale on the input schemas): `sceneVersion` is the CURRENT
+// (pre-apply) version, and `changes` is bounded like every other budgeted read.
+const patchChangeSchema = z
+  .object({
+    op: z.enum(['add', 'update', 'delete']),
+    id: z.string(),
+    type: z.string(),
+    // Display name; absent when the element has none.
+    label: z.string().optional(),
+    // The element's current version; absent for op: 'add'.
+    version: z.number().int().nonnegative().optional()
+  })
+  .strict()
+const previewResultSchema = z
+  .object({
+    ok: z.literal(true),
+    verb: z.enum(EXCALIDRAW_PREVIEWABLE_VERBS),
+    wouldChange: z.boolean(),
+    sceneVersion: z.number().int().nonnegative(),
+    summary: z
+      .object({
+        adds: z.number().int().nonnegative(),
+        updates: z.number().int().nonnegative(),
+        deletes: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative()
+      })
+      .strict(),
+    changes: z.array(patchChangeSchema),
+    truncation: truncationSchema
+  })
+  .strict()
+
+// `thumbnail` renders a byte-budgeted PNG snapshot. Intentionally no truncation
+// object: an image cannot be trimmed like a record list, so over-budget is a
+// hard error instead of a silently smaller result.
+const thumbnailResultSchema = z
+  .object({
+    ok: z.literal(true),
+    dataUrl: z.string().startsWith('data:image/png'),
+    mimeType: z.literal('image/png'),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    // dataUrl string length; enforced <= the thumbnail result budget.
+    bytes: z.number().int().nonnegative(),
+    elementCount: z.number().int().positive(),
+    missingIds: z.array(z.string()),
+    sceneVersion: z.number().int().nonnegative()
+  })
+  .strict()
+
+// `pick` is the interactive/selection read: `current` reports the live
+// selection now; `interactive` waits for the user's next settled selection
+// (or times out) — see the input schema for the HITL rationale.
+const pickResultSchema = z
+  .object({
+    ok: z.literal(true),
+    mode: z.enum(['current', 'interactive']),
+    timedOut: z.boolean(),
+    detail: z.enum(EXCALIDRAW_DETAIL_LEVELS),
+    sceneVersion: z.number().int().nonnegative(),
+    selectedCount: z.number().int().nonnegative(),
+    selection: selectionSchema,
+    elements: z.array(readElementSchema),
+    truncation: truncationSchema
+  })
+  .strict()
+
 const snapshotRestoreResultSchema = z
   .object({ ok: z.literal(true), restored: z.number().int().nonnegative() })
   .strict()
@@ -588,7 +660,10 @@ export const excalidrawVerbContracts = {
   arrange: { inputSchema: arrangeInputSchema, resultSchema: arrangeResultSchema },
   survey: { inputSchema: surveyInputSchema, resultSchema: surveyResultSchema },
   preset: { inputSchema: presetInputSchema, resultSchema: presetResultSchema },
-  icon: { inputSchema: iconInputSchema, resultSchema: iconResultSchema }
+  icon: { inputSchema: iconInputSchema, resultSchema: iconResultSchema },
+  preview: { inputSchema: previewInputSchema, resultSchema: previewResultSchema },
+  thumbnail: { inputSchema: thumbnailInputSchema, resultSchema: thumbnailResultSchema },
+  pick: { inputSchema: pickInputSchema, resultSchema: pickResultSchema }
 } as const
 
 export type EditableField = z.infer<typeof editableFieldSchema>
@@ -607,3 +682,7 @@ export type LayoutFinding = z.infer<typeof layoutFindingSchema>
 export type PresetResult = z.infer<typeof presetResultSchema>
 export type IconResult = z.infer<typeof iconResultSchema>
 export type IconPlacement = z.infer<typeof iconPlacementSchema>
+export type PreviewResult = z.infer<typeof previewResultSchema>
+export type PatchChange = z.infer<typeof patchChangeSchema>
+export type ThumbnailResult = z.infer<typeof thumbnailResultSchema>
+export type PickResult = z.infer<typeof pickResultSchema>

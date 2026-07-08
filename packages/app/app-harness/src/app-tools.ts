@@ -10,6 +10,13 @@ import type { AppBridgeHandle } from './bridge-handle'
 export type VerbDefinition = {
   description: string
   schema: Tool<unknown, unknown>['schema']
+  // A verb that blocks on a human (issue #85, e.g. `pick`'s interactive mode)
+  // declares BOTH of these: `awaitsHumanInput` so the runtime governs it with the
+  // human-input timeout budget instead of the short machine default, and
+  // `requestTimeoutMs` so the underlying bridge request can outlive the wait too
+  // (the runtime budget alone doesn't help if the bridge times out first).
+  awaitsHumanInput?: boolean
+  requestTimeoutMs?: number
 }
 
 export type AppToolsFromVerbsOptions = {
@@ -30,5 +37,9 @@ export const appToolsFromVerbs = ({
     id: verb,
     description: definition.description,
     schema: definition.schema,
-    execute: (input: unknown) => handle.request(verb, input)
+    ...(definition.awaitsHumanInput ? { awaitsHumanInput: true } : {}),
+    execute: (input: unknown) =>
+      definition.requestTimeoutMs !== undefined
+        ? handle.request(verb, input, { timeoutMs: definition.requestTimeoutMs })
+        : handle.request(verb, input)
   }))

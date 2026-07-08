@@ -349,6 +349,40 @@ describe('app-bridge client/server round-trip', () => {
     await assertion
   })
 
+  it('overrides the client-level timeout for a single request', async () => {
+    vi.useFakeTimers()
+    // A transport that drops everything — no response ever arrives, so only the
+    // timeout (client default or per-request override) can settle the request.
+    const deadTransport: BridgeTransport = {
+      post: () => {},
+      subscribe: () => () => {}
+    }
+    const client = createBridgeClient(deadTransport, {
+      protocolVersion: VERSION,
+      appProtocolVersion: VERSION,
+      sessionNonce: NONCE,
+      timeoutMs: 60_000
+    })
+
+    // A short override times out well before the 60s client default would.
+    const shortPending = client.request('pick', {}, { timeoutMs: 500 })
+    const shortAssertion = expect(shortPending).rejects.toThrow(/timed out after 500ms/)
+    await vi.advanceTimersByTimeAsync(500)
+    await shortAssertion
+
+    // A long override outlives what the (much shorter, hypothetically) client
+    // default would allow — advancing past a short window must not settle it.
+    const longPending = client.request('pick', {}, { timeoutMs: 120_000 })
+    let longSettled = false
+    void longPending.catch(() => {
+      longSettled = true
+    })
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(longSettled).toBe(false)
+    await vi.advanceTimersByTimeAsync(60_000)
+    await expect(longPending).rejects.toThrow(/timed out after 120000ms/)
+  })
+
   it('rejects in-flight requests when disposed', async () => {
     const deadTransport: BridgeTransport = {
       post: () => {},

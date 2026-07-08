@@ -4,8 +4,9 @@ export const EXCALIDRAW_APP_ID = 'excalidraw'
 // generic app-bridge envelope version. Bumped to 5 for the persistence snapshot
 // restore contract (host-replayed scene on reload), then to 6 for the connectors
 // & bindings and layout-helper verbs, then to 7 for the diagram-semantics verbs
-// (`preset` + `icon`).
-export const EXCALIDRAW_PROTOCOL_VERSION = 7
+// (`preset` + `icon`), then to 8 for the safer-iterative-workflow verbs
+// (`preview`, `thumbnail`, `pick`).
+export const EXCALIDRAW_PROTOCOL_VERSION = 8
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
 export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
@@ -45,7 +46,10 @@ export const EXCALIDRAW_PAYLOAD_BUDGETS = Object.freeze({
   arrange: { request: 16 * 1_024, result: 64 * 1_024 },
   survey: { request: 16 * 1_024, result: 64 * 1_024 },
   preset: { request: 16 * 1_024, result: 64 * 1_024 },
-  icon: { request: 16 * 1_024, result: 64 * 1_024 }
+  icon: { request: 16 * 1_024, result: 64 * 1_024 },
+  preview: { request: 64 * 1_024, result: 32 * 1_024 },
+  thumbnail: { request: 4 * 1_024, result: 128 * 1_024 },
+  pick: { request: 4 * 1_024, result: 64 * 1_024 }
 })
 
 const colorSchema = z
@@ -823,6 +827,109 @@ export const presetInputSchema = z
       })
   })
 
+// Safer-iterative-workflow verbs. `preview` dry-runs any mutating verb (validates
+// and executes its real behavior against a capture wrapper that suppresses the
+// commit, then diffs before/after into a compact patch summary) so the model can
+// see what a write would do before committing to it; the versioned input IS the
+// staged plan, and applying is just calling the target verb with the same input.
+// `thumbnail` renders an on-demand, byte-budgeted PNG snapshot for visual
+// verification. `pick` is the interactive/selection read: `current` returns the
+// live selection now, `interactive` prompts the user (toast) and waits for their
+// next settled selection, reusing the issue-#85 human-input-tool machinery.
+
+// Exactly the mutating verbs — reads have nothing to dry-run, and `preview`
+// cannot preview itself (there is no commit to suppress for a dry-run).
+export const EXCALIDRAW_PREVIEWABLE_VERBS = [
+  'draw',
+  'edit',
+  'clear',
+  'group',
+  'duplicate',
+  'delete',
+  'align',
+  'distribute',
+  'stack',
+  'order',
+  'transform',
+  'bind',
+  'snap',
+  'place',
+  'arrange',
+  'preset',
+  'icon'
+] as const
+
+export const previewInputSchema = z
+  .object({
+    verb: z.enum(EXCALIDRAW_PREVIEWABLE_VERBS).describe('The mutating verb to dry-run.'),
+    input: z
+      .record(z.string(), z.unknown())
+      .describe(
+        "The exact input you would pass to that verb. It is validated against the verb's own schema and runs the verb's real checks (versions, locks, relationships) without committing."
+      )
+  })
+  .strict()
+
+export const thumbnailInputSchema = z
+  .object({
+    elementIds: uniqueElementIdsSchema
+      .optional()
+      .describe('Limit the snapshot to these elements. Omit to capture the whole scene.'),
+    maxDimension: z
+      .number()
+      .int()
+      .min(64)
+      .max(1024)
+      .default(512)
+      .describe('Longest edge of the exported image in pixels; the export is scaled to fit.'),
+    background: z
+      .boolean()
+      .default(true)
+      .describe('Include the canvas background color. false exports a transparent background.'),
+    expectedSceneVersion: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe(
+        'Scene version from a prior read/inspect. When provided, the snapshot is rejected if the scene changed since (version-checked).'
+      )
+  })
+  .strict()
+
+// The bridge request for an interactive pick must outlive the wait the iframe
+// does for the user; the canvas derives its per-request timeout from this so
+// the two budgets cannot drift apart.
+export const EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS = 120
+
+export const pickInputSchema = z
+  .object({
+    mode: z
+      .enum(['current', 'interactive'])
+      .default('current')
+      .describe(
+        'current: return the live canvas selection now. interactive: prompt the user (toast) and wait for their next selection.'
+      ),
+    prompt: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe(
+        'interactive only: the toast message shown to the user. Defaults to "Select element(s) on the canvas".'
+      ),
+    timeoutSeconds: z
+      .number()
+      .int()
+      .min(5)
+      .max(EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS)
+      .default(60)
+      .describe('interactive only: how long to wait for the user before returning timedOut:true.'),
+    detail: z.enum(EXCALIDRAW_DETAIL_LEVELS).default('standard')
+  })
+  .strict()
+
 // Schema version for a persisted scene snapshot. The `version` is a literal in the
 // schema below so a snapshot written by an older/newer build fails validation and
 // the harness falls back to an empty scene instead of feeding the canvas a shape it
@@ -901,7 +1008,10 @@ export const excalidrawVerbInputSchemas = {
   arrange: arrangeInputSchema,
   survey: surveyInputSchema,
   preset: presetInputSchema,
-  icon: iconInputSchema
+  icon: iconInputSchema,
+  preview: previewInputSchema,
+  thumbnail: thumbnailInputSchema,
+  pick: pickInputSchema
 } as const
 
 export const EXCALIDRAW_VERBS = Object.freeze(
@@ -935,5 +1045,9 @@ export type PresetInput = z.infer<typeof presetInputSchema>
 export type IconInput = z.infer<typeof iconInputSchema>
 export type IconType = (typeof EXCALIDRAW_ICON_TYPES)[number]
 export type PresetKind = (typeof EXCALIDRAW_PRESET_KINDS)[number]
+export type PreviewInput = z.infer<typeof previewInputSchema>
+export type ThumbnailInput = z.infer<typeof thumbnailInputSchema>
+export type PickInput = z.infer<typeof pickInputSchema>
+export type PreviewableVerb = (typeof EXCALIDRAW_PREVIEWABLE_VERBS)[number]
 export type ExcalidrawSnapshot = z.infer<typeof excalidrawSnapshotSchema>
 export type ExcalidrawLibraryImport = z.infer<typeof excalidrawLibraryImportSchema>

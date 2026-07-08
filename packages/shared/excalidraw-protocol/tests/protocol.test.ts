@@ -19,6 +19,8 @@ import {
   EXCALIDRAW_DEFAULT_BINDING_GAP,
   EXCALIDRAW_ICON_LIMIT,
   EXCALIDRAW_LIBRARY_IMPORT_VERB,
+  EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS,
+  EXCALIDRAW_PREVIEWABLE_VERBS,
   EXCALIDRAW_PROTOCOL_VERSION,
   EXCALIDRAW_SNAPSHOT_VERSION,
   EXCALIDRAW_VERBS,
@@ -27,14 +29,17 @@ import {
   groupInputSchema,
   inspectInputSchema,
   orderInputSchema,
+  pickInputSchema,
   placeInputSchema,
   presetInputSchema,
+  previewInputSchema,
   readInputSchema,
   readElementSchema,
   searchInputSchema,
   snapInputSchema,
   stackInputSchema,
   surveyInputSchema,
+  thumbnailInputSchema,
   transformInputSchema
 } from '../src/index'
 
@@ -462,6 +467,43 @@ describe('excalidraw protocol', () => {
     ).toBe(true)
   })
 
+  it('validates the safer-iterative-workflow verbs', () => {
+    // preview: accepts a valid nested verb + input, rejects a non-previewable
+    // (read) verb name outright.
+    expect(
+      previewInputSchema.safeParse({
+        verb: 'edit',
+        input: { edits: [{ id: 'shape-1', expectedVersion: 1, changes: { x: 10 } }] }
+      }).success
+    ).toBe(true)
+    expect(previewInputSchema.safeParse({ verb: 'read', input: {} }).success).toBe(false)
+    expect(previewInputSchema.safeParse({ verb: 'preview', input: {} }).success).toBe(false)
+    expect(EXCALIDRAW_PREVIEWABLE_VERBS).not.toContain('search')
+    expect(EXCALIDRAW_PREVIEWABLE_VERBS).not.toContain('preview')
+
+    // thumbnail: defaults maxDimension/background, bounds maxDimension to [64, 1024].
+    expect(thumbnailInputSchema.parse({})).toMatchObject({ maxDimension: 512, background: true })
+    expect(thumbnailInputSchema.safeParse({ maxDimension: 32 }).success).toBe(false)
+    expect(thumbnailInputSchema.safeParse({ maxDimension: 2048 }).success).toBe(false)
+    expect(thumbnailInputSchema.safeParse({ elementIds: [] }).success).toBe(false)
+
+    // pick: defaults mode/timeout/detail, bounds the prompt and timeout.
+    expect(pickInputSchema.parse({})).toEqual({
+      mode: 'current',
+      timeoutSeconds: 60,
+      detail: 'standard'
+    })
+    expect(pickInputSchema.safeParse({ prompt: '' }).success).toBe(false)
+    expect(pickInputSchema.safeParse({ timeoutSeconds: 4 }).success).toBe(false)
+    expect(
+      pickInputSchema.safeParse({ timeoutSeconds: EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS + 1 }).success
+    ).toBe(false)
+    expect(
+      pickInputSchema.safeParse({ mode: 'interactive', prompt: 'Select a box', timeoutSeconds: 30 })
+        .success
+    ).toBe(true)
+  })
+
   it('renders an object-root JSON schema for every verb (model function-call safe)', () => {
     // Native tool calling forwards a verb's input schema as `function.parameters`,
     // which OpenAI/ChatGPT-compatible APIs require to have an object root — a
@@ -484,7 +526,7 @@ describe('excalidraw protocol', () => {
   })
 
   it('uses an independently owned app contract version', () => {
-    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(7)
+    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(8)
   })
 
   it('defines input and result contracts for every advertised verb', () => {
@@ -511,7 +553,10 @@ describe('excalidraw protocol', () => {
       'arrange',
       'survey',
       'preset',
-      'icon'
+      'icon',
+      'preview',
+      'thumbnail',
+      'pick'
     ])
     expect(
       excalidrawVerbContracts.draw.resultSchema.safeParse({
