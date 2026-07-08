@@ -25,7 +25,6 @@ export type ChatAppProps = {
   side?: 'left' | 'right'
   resizable?: boolean
   fill?: boolean
-  inspectorSlot?: ReactNode
   installSlot?: ReactNode
   inspectorPanelSupported?: boolean
   settingsFallback?: ReactNode
@@ -73,7 +72,6 @@ export const ChatApp = ({
   side = 'right',
   resizable = false,
   fill = false,
-  inspectorSlot,
   installSlot,
   inspectorPanelSupported,
   settingsFallback,
@@ -136,7 +134,6 @@ export const ChatApp = ({
         <DockedChatSurface
           LoadingComponent={LoadingComponent}
           sizeVariant={sizeVariant}
-          inspectorSlot={inspectorSlot}
           installSlot={installSlot}
           settingsFallback={settingsFallback}
           {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
@@ -159,7 +156,6 @@ export const ChatApp = ({
       <FloatingChatSurface
         LoadingComponent={LoadingComponent}
         framed={framed}
-        inspectorSlot={inspectorSlot}
         {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
       />
     </FloatingLayout>

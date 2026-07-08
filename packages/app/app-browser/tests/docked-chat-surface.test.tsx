@@ -117,8 +117,27 @@ vi.mock('../src/context-gauge.js', () => ({
 }))
 
 vi.mock('../src/lazy-browser-settings-modal.js', () => ({
-  LazyBrowserSettingsModal: ({ open }: { open: boolean }) =>
-    open ? <div role="dialog" aria-label="Settings" /> : null
+  LazyBrowserSettingsModal: ({
+    open,
+    inspectorPanelSupported
+  }: {
+    open: boolean
+    inspectorPanelSupported?: boolean
+  }) =>
+    open ? (
+      <div
+        role="dialog"
+        aria-label="Settings"
+        data-inspector-supported={inspectorPanelSupported ? 'true' : 'false'}
+      />
+    ) : null
+}))
+
+// The real ContextInspectorSlot renders nothing unless an inspector plugin is
+// enabled and something has been captured (covered by context-inspector.test.tsx);
+// here we only assert the surface renders it when inspectorPanelSupported is set.
+vi.mock('../src/context-inspector.js', () => ({
+  ContextInspectorSlot: () => <div data-testid="inspector" />
 }))
 
 import { DockedChatSurface } from '../src/chat-shell/docked-chat-surface.js'
@@ -183,16 +202,20 @@ describe('DockedChatSurface', () => {
     expect(await screen.findByRole('dialog', { name: 'Settings' })).toBeInTheDocument()
   })
 
-  it('renders the inspector slot only when provided', () => {
+  it('renders the inspector slot only when supported', () => {
     const { rerender } = render(<DockedChatSurface LoadingComponent={Loading} />)
     expect(screen.queryByTestId('inspector')).toBeNull()
-    rerender(
-      <DockedChatSurface
-        LoadingComponent={Loading}
-        inspectorSlot={<div data-testid="inspector" />}
-      />
-    )
+    rerender(<DockedChatSurface LoadingComponent={Loading} inspectorPanelSupported />)
     expect(screen.getByTestId('inspector')).toBeInTheDocument()
+  })
+
+  it('forwards inspectorPanelSupported into the settings modal', async () => {
+    render(<DockedChatSurface LoadingComponent={Loading} inspectorPanelSupported />)
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(await screen.findByRole('dialog', { name: 'Settings' })).toHaveAttribute(
+      'data-inspector-supported',
+      'true'
+    )
   })
 
   it('renders the install slot when provided', () => {

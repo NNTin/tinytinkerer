@@ -22,7 +22,10 @@ const CanvasPage = (): React.JSX.Element => {
       persistenceKey="tinytinkerer:canvas-scene:v1"
       chat={{
         storageKey: 'tinytinkerer:canvas-layout:v2',
-        LoadingComponent: CanvasChatLoading
+        LoadingComponent: CanvasChatLoading,
+        // Opts the canvas shell into the developer context inspector (#393): enables
+        // the Settings toggle and renders the viewer button in the composer.
+        inspectorPanelSupported: true
       }}
     />
   )

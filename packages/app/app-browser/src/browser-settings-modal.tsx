@@ -589,12 +589,12 @@ export const McpServerList = () => {
 
 // A plugin that contributes an inspector panel (manifest `inspectorDescriptor`)
 // renders a developer surface hosted only by shells that opt in via
-// `inspectorPanelSupported` (the web and widget shells today), so its toggle is
-// disabled on shells that do not (the mobile shell). Keyed on the capability — not a
-// hard-coded plugin id — so the settings UI names no concrete plugin (and any future
-// inspector-contributing plugin gets the same treatment).
+// `inspectorPanelSupported` (the web, widget, and canvas shells today), so its
+// toggle is disabled on shells that do not (the mobile shell). Keyed on the
+// capability — not a hard-coded plugin id — so the settings UI names no concrete
+// plugin (and any future inspector-contributing plugin gets the same treatment).
 const INSPECTOR_UNSUPPORTED_TOOLTIP =
-  'The context inspector is only available in the web and widget apps. Open it there to inspect the model context.'
+  'The context inspector is not available in this app. Open the web app to inspect the model context.'
 
 // One declared plugin setting, rendered generically from the manifest (issue #85):
 // an `enum` is a labelled dropdown (same markup as the model picker), a `boolean`
@@ -916,10 +916,10 @@ export type SettingsPanelProps = {
   // slide-over contained within the embedding shell, so it never covers the host
   // page (honors the embedded-shell guidance in docs/ui-ux-concept.md).
   presentation?: SettingsPanelPresentation
-  // Whether this shell hosts the developer context-inspector panel. The web and
-  // widget shells pass `true`; the mobile shell leaves it `false`, which disables
-  // the inspector plugin's toggle (with an explanatory tooltip). Defaults to
-  // `false` so a new shell that forgets to opt in is safe.
+  // Whether this shell hosts the developer context-inspector panel. The web,
+  // widget, and canvas shells pass `true`; the mobile shell leaves it `false`,
+  // which disables the inspector plugin's toggle (with an explanatory tooltip).
+  // Defaults to `false` so a new shell that forgets to opt in is safe.
   inspectorPanelSupported?: boolean
 }
 

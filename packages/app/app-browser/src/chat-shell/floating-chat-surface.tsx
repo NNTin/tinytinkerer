@@ -1,8 +1,9 @@
-import { Suspense, useState, type ComponentType, type ReactNode } from 'react'
+import { Suspense, useState, type ComponentType } from 'react'
 // Icons come straight from the external react-icons (not @tinytinkerer/ui): the
 // boundary check forbids app-browser depending on the ui package (see turn-chrome's
 // local-primitive precedent), and react-icons is the same source ui re-exports.
 import { FaArrowUp, FaGear, FaGithub, FaRotateLeft, FaStop } from 'react-icons/fa6'
+import { ContextInspectorSlot } from '../context-inspector'
 import { ConversationEmptyState } from '../conversation-empty-state'
 import { HumanPromptComposerDock } from '../human-prompt-composer-dock'
 import { JumpToLatestButton } from '../jump-to-latest'
@@ -27,11 +28,9 @@ export type FloatingChatSurfaceProps = {
   // shells supply their own glass frame, so they pass `false`.
   framed?: boolean
   // Whether this shell hosts the developer context-inspector: enables the
-  // inspector plugin's toggle in Settings. Forwarded to the inline settings panel.
+  // inspector plugin's toggle in Settings AND renders the viewer button (below) in
+  // the composer's left action row. Forwarded to the inline settings panel.
   inspectorPanelSupported?: boolean
-  // Optional context-inspector button (its icon comes from @tinytinkerer/ui, which
-  // app-browser cannot import), rendered in the composer's left action row.
-  inspectorSlot?: ReactNode
 }
 
 // The compact chat body shared by every floating layout (the widget app and the
@@ -41,8 +40,7 @@ export type FloatingChatSurfaceProps = {
 export const FloatingChatSurface = ({
   LoadingComponent,
   framed = true,
-  inspectorPanelSupported,
-  inspectorSlot
+  inspectorPanelSupported
 }: FloatingChatSurfaceProps) => {
   const {
     isBooting,
@@ -172,9 +170,10 @@ export const FloatingChatSurface = ({
               >
                 <FaRotateLeft className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
-              {/* Context inspector (developer): supplied by the widget page. Renders
-                  nothing until an inspector plugin is enabled and context captured. */}
-              {inspectorSlot}
+              {/* Context inspector (developer): rendered when the shell opts in via
+                  inspectorPanelSupported. Renders nothing until an inspector plugin
+                  is enabled and a request has been captured. */}
+              {inspectorPanelSupported ? <ContextInspectorSlot /> : null}
             </div>
             {/* Right: microphone, stop/send */}
             <div className="flex items-center gap-1.5">

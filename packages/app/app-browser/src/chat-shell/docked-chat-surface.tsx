@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 // web/mobile body renders identically without pulling in ui.
 import { FaArrowUp, FaGear, FaGithub, FaRotateLeft, FaStop } from 'react-icons/fa6'
 import { ContextGaugeSlot } from '../context-gauge'
+import { ContextInspectorSlot } from '../context-inspector'
 import { ConversationEmptyState } from '../conversation-empty-state'
 import { HumanPromptComposerDock } from '../human-prompt-composer-dock'
 import { JumpToLatestButton } from '../jump-to-latest'
@@ -106,12 +107,11 @@ const VARIANTS: Record<DockedSizeVariant, VariantConfig> = {
 export type DockedChatSurfaceProps = {
   LoadingComponent: ChatLoadingComponent
   sizeVariant?: DockedSizeVariant
-  // Developer context inspector (web + widget shells) — passed in by the app page
-  // because its trigger icon comes from @tinytinkerer/ui, which app-browser cannot import.
-  inspectorSlot?: ReactNode
-  // Install banner (mobile PWA only), likewise supplied by the app page.
+  // Install banner (mobile PWA only), supplied by the app page.
   installSlot?: ReactNode
-  // Whether the settings modal exposes the inspector panel (web).
+  // Whether this shell hosts the developer context-inspector: enables the inspector
+  // plugin's toggle in Settings AND renders the viewer button (below) in the
+  // composer's left action row.
   inspectorPanelSupported?: boolean
   // Per-shell Suspense fallback while the settings modal chunk loads.
   settingsFallback?: ReactNode
@@ -124,7 +124,6 @@ export type DockedChatSurfaceProps = {
 export const DockedChatSurface = ({
   LoadingComponent,
   sizeVariant = 'comfortable',
-  inspectorSlot,
   installSlot,
   inspectorPanelSupported,
   settingsFallback
@@ -323,8 +322,10 @@ export const DockedChatSurface = ({
                   model reports usage against a known context window) */}
               <ContextGaugeSlot className="text-stone-500" />
 
-              {/* Context inspector (developer): supplied by the web page only. */}
-              {inspectorSlot}
+              {/* Context inspector (developer): rendered when the shell opts in via
+                  inspectorPanelSupported. Renders nothing until an inspector plugin
+                  is enabled and a request has been captured. */}
+              {inspectorPanelSupported ? <ContextInspectorSlot /> : null}
             </div>
 
             {/* Right: microphone, stop/send */}

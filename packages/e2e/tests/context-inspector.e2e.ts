@@ -8,14 +8,14 @@ import {
   SYNTHESIS_ANSWER,
   type LiteLLMMock
 } from '../fixtures/mock-litellm'
-import { dismissFirstLoad } from '../fixtures/first-load'
+import { dismissFirstLoad, requireShellPort } from '../fixtures/first-load'
 
 // Real-browser verification of the Context inspector plugin (GitHub issue #270).
 // The plugin contributes a developer panel showing the EXACT chat request the
 // client forwards to the provider each model call — the messages array (system
 // prompt + history + tool observations), the model, and stream options. It is off
-// by default, available in the web and widget shells, and captures nothing until
-// enabled. jsdom unit tests cover
+// by default, available in the web, widget, and canvas shells, and captures nothing
+// until enabled. jsdom unit tests cover
 // the payload→view mapping and the store ring buffer in isolation; this spec proves
 // the end-to-end wiring: capture is armed only when enabled, and what the panel
 // shows equals what the edge forwarded (the mock's `requestBodies()`).
@@ -27,6 +27,11 @@ import { dismissFirstLoad } from '../fixtures/first-load'
 const TOGGLE = '[data-testid="context-inspector-toggle"]'
 const PANEL = '[data-testid="context-inspector-panel"]'
 const RESPONSE = '[data-testid="context-inspector-response"]'
+
+// The canvas shell's URL. fixtures/canvas.ts's `openCanvas` is not usable here: it
+// aborts **/api/** routes to keep the whiteboard isolated from the chat backend,
+// which would kill the chat mock this spec needs.
+const CANVAS_URL = `http://localhost:${requireShellPort('E2E_PORT_CANVAS')}/canvas/`
 
 const sendMessageAndAwaitReply = async (page: Page, prompt: string): Promise<void> => {
   await page.getByPlaceholder('Ask anything').fill(prompt)
@@ -158,5 +163,49 @@ test.describe('context-inspector plugin (#270)', () => {
     // and thus any captured payload surface — never appeared.
     expect(mock.requestBodies().length).toBeGreaterThan(0)
     await expect(page.locator(TOGGLE)).toHaveCount(0)
+  })
+})
+
+// #393: the canvas shell's floating chat never passed inspectorPanelSupported, so the
+// plugin's Settings toggle was permanently disabled there and no viewer button ever
+// appeared, even though the underlying floating surface is the same shared body the
+// widget shell already exercises above. This closes the canvas gap end-to-end: enable
+// the plugin in the canvas shell's inline settings, drive a real turn through its
+// floating composer, and prove the panel shows exactly what was forwarded.
+test.describe('context-inspector plugin in the canvas shell (#393)', () => {
+  test('enabled: the panel shows the exact forwarded context after a turn', async ({ page }) => {
+    const mock = await installChatMock(page)
+    await page.goto(CANVAS_URL)
+    await enableContextInspectorPlugin(page)
+
+    // No capture, no toggle, before any request has been forwarded.
+    await expect(page.locator(TOGGLE)).toHaveCount(0)
+
+    // Drive a turn through the canvas shell's floating composer (mirrors
+    // widget-morph.e2e.ts's floating-composer driving).
+    const composer = page.locator('textarea').first()
+    await composer.fill('Inspect the exact context for this turn.')
+    await composer.press('Enter')
+    await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
+
+    // A request was forwarded → the developer toggle appears. Open the panel.
+    const toggle = page.locator(TOGGLE)
+    await expect(toggle).toBeVisible()
+    await toggle.click()
+
+    const panel = page.locator(PANEL)
+    await expect(panel).toBeVisible()
+
+    // The panel reflects EXACTLY what the edge forwarded for the latest call.
+    const messages = lastForwardedMessages(mock)
+    expect(messages.length).toBeGreaterThan(0)
+    for (const message of messages) {
+      await expect(panel).toContainText(message.content.slice(0, 60))
+    }
+    // The system prompt is present and called out as a system message.
+    expect(messages.some((m) => m.role === 'system')).toBe(true)
+
+    // The paired response is captured and shown too (the synthesized answer).
+    await expect(panel.locator(RESPONSE)).toContainText(SYNTHESIS_ANSWER)
   })
 })

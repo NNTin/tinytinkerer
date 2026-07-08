@@ -155,6 +155,13 @@ vi.mock('../src/shell-theme.js', () => ({
   shellThemeToCssVars: () => ({})
 }))
 
+// The real ContextInspectorSlot renders nothing unless an inspector plugin is
+// enabled and something has been captured (covered by context-inspector.test.tsx);
+// here we only assert the surface renders it when inspectorPanelSupported is set.
+vi.mock('../src/context-inspector.js', () => ({
+  ContextInspectorSlot: () => <div data-testid="floating-inspector-slot" />
+}))
+
 import { FloatingChatSurface } from '../src/chat-shell/floating-chat-surface.js'
 import { FloatingLayout } from '../src/chat-shell/floating-layout.js'
 
@@ -491,12 +498,7 @@ describe('FloatingLayout', () => {
 describe('FloatingChatSurface inspector wiring', () => {
   it('renders the inspector slot and enables inspector support in the inline settings', () => {
     render(
-      <FloatingChatSurface
-        LoadingComponent={Loading}
-        framed={false}
-        inspectorPanelSupported
-        inspectorSlot={<span data-testid="floating-inspector-slot" />}
-      />
+      <FloatingChatSurface LoadingComponent={Loading} framed={false} inspectorPanelSupported />
     )
 
     // The viewer button slot is rendered in the composer's left action row.

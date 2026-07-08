@@ -12,8 +12,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   ChatApp: (props: Record<string, unknown>) => {
     captured.props = props
     return <div data-chat-app="true" />
-  },
-  ContextInspectorSlot: () => <div data-inspector-slot="true" />
+  }
 }))
 
 import { ShellChatPage } from './chat-surface'
@@ -37,7 +36,7 @@ describe('ShellChatPage', () => {
     expect(captured.props?.sizeVariant).toBe('comfortable')
     expect(captured.props?.storageKey).toBe('tinytinkerer:web-layout:v1')
     expect(captured.props?.inspectorPanelSupported).toBe(true)
-    expect(captured.props?.inspectorSlot).toBeTruthy()
+    expect(captured.props?.inspectorSlot).toBeUndefined()
     expect(captured.props?.settingsFallback).toBeTruthy()
     expect(captured.props?.installSlot).toBeUndefined()
   })
@@ -52,6 +51,7 @@ describe('ShellChatPage', () => {
     expect(captured.props?.initialMinimized).toBe(false)
     expect(captured.props?.storageKey).toBe('tinytinkerer:widget-layout:v1')
     expect(captured.props?.inspectorPanelSupported).toBe(true)
+    expect(captured.props?.inspectorSlot).toBeUndefined()
     expect(captured.props?.installSlot).toBeUndefined()
   })
 

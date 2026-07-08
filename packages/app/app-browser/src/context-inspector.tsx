@@ -1,6 +1,10 @@
 import { isPluginEnabled } from '@tinytinkerer/app-core'
 import type { InspectorEntry, InspectorSummarizer } from '@tinytinkerer/contracts'
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
+// Icons come straight from react-icons (not @tinytinkerer/ui): app-browser must not
+// depend on the ui package (see floating-chat-surface's boundary comment) — react-icons
+// is the same source ui re-exports.
+import { FaReceipt } from 'react-icons/fa6'
 import { useInspectorStore, useSettingsStore } from './app'
 import { useModels } from './models'
 import { usePluginModules } from './plugins/use-plugin-modules'
@@ -50,15 +54,15 @@ export const useContextInspector = (): ContextInspectorData => {
 
 // Convenience wrapper: a small developer button that opens the context inspector,
 // or renders nothing when no inspector plugin is enabled or nothing has been
-// captured yet. Drop it next to the composer (web app only). Mirrors
-// ContextGaugeSlot's "resolve view-model, render or hide" shape.
+// captured yet. Any shell that opts in via `inspectorPanelSupported` renders this
+// next to its composer (see floating/docked-chat-surface). Mirrors ContextGaugeSlot's
+// "resolve view-model, render or hide" shape.
 //
-// `icon` lets the host supply a glyph (the web app passes its FaReceipt from the
-// UI package, which app-browser cannot import directly). When omitted the button
-// falls back to a plain "Context" text label so the slot still works standalone.
+// `icon` and `className` are optional overrides; the default icon/style below make
+// the slot fully self-contained so no host needs to supply a glyph.
 export const ContextInspectorSlot = ({
   className,
-  icon
+  icon = <FaReceipt className="h-4 w-4" aria-hidden="true" />
 }: {
   className?: string
   icon?: ReactNode
@@ -94,12 +98,10 @@ export const ContextInspectorSlot = ({
         onClick={() => setOpen(true)}
         className={
           className ??
-          (icon
-            ? 'flex h-9 w-9 items-center justify-center rounded-md border border-stone-300 bg-white text-stone-600 transition-colors hover:border-stone-400 hover:bg-stone-50 hover:text-stone-800'
-            : 'inline-flex items-center gap-1 rounded-md border border-stone-200 bg-white px-2 py-1 text-xs text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50')
+          'flex h-9 w-9 items-center justify-center rounded-md border border-stone-300 bg-white text-stone-600 transition-colors hover:border-stone-400 hover:bg-stone-50 hover:text-stone-800'
         }
       >
-        {icon ?? 'Context'}
+        {icon}
       </button>
       {open && view ? (
         <Suspense fallback={null}>

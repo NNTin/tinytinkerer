@@ -31,8 +31,15 @@ vi.mock('../src/chat-shell/floating-chat-surface.js', () => ({
   }
 }))
 
+const capturedDocked = vi.hoisted(() => ({
+  props: undefined as Record<string, unknown> | undefined
+}))
+
 vi.mock('../src/chat-shell/docked-chat-surface.js', () => ({
-  DockedChatSurface: () => <div data-testid="docked-body" />
+  DockedChatSurface: (props: Record<string, unknown>) => {
+    capturedDocked.props = props
+    return <div data-testid="docked-body" />
+  }
 }))
 
 import { ChatApp } from '../src/chat-shell/chat-app.js'
@@ -51,6 +58,7 @@ afterEach(() => {
 beforeEach(() => {
   window.localStorage.clear()
   capturedFloating.props = undefined
+  capturedDocked.props = undefined
 })
 
 describe('ChatApp', () => {
@@ -60,19 +68,18 @@ describe('ChatApp', () => {
     expect(screen.queryByTestId('floating-body')).toBeNull()
   })
 
-  it('threads the inspector props into the floating body (so the widget can enable it)', () => {
-    const slot = <span data-testid="inspector-slot" />
+  it('threads inspectorPanelSupported into the floating body (so the widget can enable it)', () => {
     render(
-      <ChatApp
-        mode="floating"
-        storageKey="k"
-        LoadingComponent={Loading}
-        inspectorPanelSupported
-        inspectorSlot={slot}
-      />
+      <ChatApp mode="floating" storageKey="k" LoadingComponent={Loading} inspectorPanelSupported />
     )
     expect(capturedFloating.props?.inspectorPanelSupported).toBe(true)
-    expect(capturedFloating.props?.inspectorSlot).toBe(slot)
+  })
+
+  it('threads inspectorPanelSupported into the docked body (so web/canvas can enable it)', () => {
+    render(
+      <ChatApp mode="sidebar" storageKey="k" LoadingComponent={Loading} inspectorPanelSupported />
+    )
+    expect(capturedDocked.props?.inspectorPanelSupported).toBe(true)
   })
 
   it('morphs floating -> sidebar -> floating via the dock/undock toggle', () => {
