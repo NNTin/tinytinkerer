@@ -114,8 +114,9 @@ These are additive; no existing export changed signature:
 - `TurnChrome`, `TurnActions`, `deriveTurnStatus` — shared assistant-message
   boundary with copy/collapse/regenerate actions and the live status line
   (C3/B1/C2).
-- `ConversationEmptyState`, `useStarterPrompts`, `deriveStarterPrompts` — data
-  -driven onboarding (B3).
+- `ConversationEmptyState`, `useStarterPrompts` — data-driven onboarding (B3).
+  (`deriveStarterPrompts` is the pure helper behind the hook; it stays internal
+  to `conversation-empty-state.tsx` and is not exported.)
 - `SettingsPanel` (+ `SettingsPanelProps`, `SettingsPanelPresentation`) and
   `LazySettingsPanel` — the tabbed settings surface with `presentation="modal"`
   (web/mobile) or `"inline"` (widget) (B2). `BrowserSettingsModal` is retained

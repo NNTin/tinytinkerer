@@ -14,11 +14,13 @@ const UPDATE_INTERVAL_MS = 60 * 60 * 1000
  * `sw.js` on its own and keeps serving the stale precached build. We trigger the
  * check ourselves on foreground and on an hourly interval.
  *
- * Uniform across all shells: where the build emitted no service worker (web and
- * widget configure `vite-plugin-pwa` with `disable: true`), `registerSW`
- * resolves to a no-op and this function does nothing observable. Only mobile
- * ships a service worker today; whether a shell is installable is a per-app vite
- * config choice, not a code-level branch.
+ * The single shell build always emits the mobile PWA's service worker
+ * (`apps/shell/vite.config.ts` — no `disable: true` variant exists). The runtime
+ * gate is the ONLY thing keeping the SW off `/web/` and `/widget/`:
+ * `createBrowserShellRoot` calls this function solely for presentations that set
+ * `registerServiceWorker` (today only mobile), so the mobile SW never leaks onto
+ * the other same-origin paths (see docs/ARCHITECTURE.md). Calling this from
+ * another presentation would register the service worker for that path too.
  *
  * No-op in environments without service worker support.
  */

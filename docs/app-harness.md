@@ -73,7 +73,7 @@ flowchart TB
   model[Chat model]
 
   subgraph shell["apps/canvas — parent window"]
-    chat["ChatApp / FloatingChatSurface<br/>from app-browser"]
+    chat["ChatApp<br/>from app-browser"]
     tools["draw / search / inspect / read / edit / clear<br/>group / duplicate / delete / align<br/>distribute / stack / order / transform<br/>bind / audit"]
     handle["AppBridgeHandle"]
     client["app-bridge client"]
@@ -615,9 +615,11 @@ holding a stale bridge client.
 - chat configuration.
 
 `HarnessShell` places `AppFrame` as the stage layer and the shared `ChatApp` —
-pinned to the floating layout (`morphable=false`), rendering `FloatingChatSurface`
-— as a click-through overlay. The whiteboard remains directly interactive while
-chat is visible.
+starting in the floating layout — as a click-through overlay, so the whiteboard
+remains directly interactive while chat is visible. The chat is morphable (#324):
+dragging it to a viewport edge docks it into the resizable sidebar split, and the
+harness shrinks the iframe into the space the docked panel leaves so the app and
+chat sit side by side.
 
 ### Two build graphs
 
@@ -648,10 +650,10 @@ parent-window application graph. Bundle regression tests enforce that separation
 chat behavior and which parts exist only for app hosting.
 
 Both widget and canvas call `createBrowserShellRoot` from `app-browser`, use hash
-routing, provide a boot screen, and ultimately render the shared `ChatApp`
-(`FloatingChatSurface`). The widget endpoint is morphable — its floating window
-can dock into the sidebar layout and back in place — while canvas pins the
-floating layout (`morphable=false`).
+routing, provide a boot screen, and ultimately render the shared `ChatApp`. Both
+are morphable — the floating window can dock into the resizable sidebar layout
+and back in place. In canvas the harness additionally shrinks the iframe into the
+region the docked panel leaves free.
 
 The difference is that widget passes no `appTools` and renders the chat surface
 directly:
@@ -661,7 +663,7 @@ flowchart LR
   subgraph widget["apps/shell"]
     widgetMain["createBrowserShellRoot"]
     widgetPage["WidgetPage"]
-    widgetChat["ChatApp (FloatingChatSurface)"]
+    widgetChat["ChatApp (floating or docked)"]
     widgetMain --> widgetPage --> widgetChat
   end
 
@@ -669,7 +671,7 @@ flowchart LR
     canvasMain["createBrowserShellRoot<br/>with appTools"]
     canvasPage["CanvasPage"]
     harnessShell["HarnessShell"]
-    canvasChat["ChatApp (FloatingChatSurface)"]
+    canvasChat["ChatApp (floating or docked)"]
     appFrame["AppFrame"]
     canvasMain --> canvasPage --> harnessShell
     harnessShell --> canvasChat

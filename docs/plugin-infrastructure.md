@@ -100,12 +100,24 @@ class PluginCaptureError extends Error {
 // validates it with `isPluginModule` before trusting it.
 // A pure, React-free view-model a tool's owner produces from its raw output so the
 // host can render a consistent activity summary without any per-tool branching.
+type ActivityViewSection =
+  | { kind: 'text'; label: string; value: string } // plain label/value row
+  | { kind: 'code'; label: string; language: string; code: string } // read-only, syntax-highlighted
+  | { kind: 'json'; label: string; value: unknown } // serialized dump
+type ActivityStatus = 'ok' | 'error' | 'warn' | 'unknown'
+
 type ActivityView = {
   title: string // collapsed-summary heading
-  status?: 'ok' | 'error' | 'warn' // drives the row's status styling
-  sections: { label: string; value: string }[] // label/value rows shown on expand
+  status?: ActivityStatus // drives the row's status styling
+  sections: ActivityViewSection[] // sections shown on expand
+  report?: PluginReport // optional report the host forwards to its capture sink
 }
-type ActivitySummarizer = (output: unknown) => ActivityView
+// May receive the call's raw input (to present arguments) and may be async
+// (to lazy-load a formatter).
+type ActivitySummarizer = (
+  output: unknown,
+  input?: Record<string, unknown>
+) => ActivityView | Promise<ActivityView>
 
 type PluginToolDescriptor = {
   id: string
@@ -544,11 +556,12 @@ Settings Modal toggle (app-browser/browser-settings-modal.tsx)
   `manifest.toolDescriptors` to the planner tool descriptors, so the model can name and invoke
   them (e.g. `send_feedback`). Descriptors travel with the plugin — the host hard-codes none.
 - **Activity presentation:** a tool's owner may attach an `ActivitySummarizer` to its
-  `PluginToolDescriptor.summarizeActivity` — a pure, React-free `(output) => ActivityView` mapper
-  keyed by tool id. The host's turn-activity panel (`turn-activity-panel.tsx`) carries **zero**
-  per-tool branches: it builds a `Map<toolId, ActivitySummarizer>` from the discovered manifests
-  (`surfaces.tsx`), resolves one per completed tool, and feeds the result to a single generic
-  renderer (`title` + status styling collapsed, `sections` as label/value rows on expand).
+  `PluginToolDescriptor.summarizeActivity` — a pure, React-free
+  `(output, input?) => ActivityView | Promise<ActivityView>` mapper keyed by tool id. The host's
+  turn-activity panel (`turn-activity-panel.tsx`) carries **zero** per-tool branches: it builds a
+  `Map<toolId, ActivitySummarizer>` from the discovered manifests (`surfaces.tsx`), resolves one
+  per completed tool, and feeds the result to a single generic renderer (`title` + status styling
+  collapsed, `sections` rendered by `kind` — text, code, or json — on expand).
   Summarizers should set `status` when the outcome is known; omitted status renders as the
   neutral `unknown` cue, not as success. Tools without a summarizer get a neutral default:
   title = tool label; `(no output)` only when output is genuinely empty; otherwise the host shows

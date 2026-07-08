@@ -257,16 +257,16 @@ The LLM planner sees the `get_current_weather` tool descriptor and generates a p
 
 The tool call flows through the edge proxy to the remote MCP server, and the result is included in the synthesis prompt.
 
-### What Tool History shows
+### What the turn activity panel shows
 
-In the chat page's **Tool History** panel, the call appears as:
+The call appears in the chat page's turn activity panel like any other tool call:
 
 ```
-▶  get_current_weather
-   Clear sky, 22°C in Berlin.
+▶  [My Weather Server] get_current_weather
+   Output: Clear sky, 22°C in Berlin.
 ```
 
-Web search results keep their existing richer format; MCP results show the tool name and the first 120 characters of the text content.
+MCP presentation is owned by `summarizeMcpActivity` (`packages/app/app-browser/src/runtime/mcp-tool.ts`): it maps the result to the generic `ActivityView` — the host-resolved `[server] tool` title, `ok`/`error` status, and the full text content (no truncation) as an `Output` (or `Error`) section. Web search and every other tool flow through the same generic activity renderer (`turn-activity-panel.tsx`); there is no MCP-specific UI beyond this summarizer.
 
 ---
 

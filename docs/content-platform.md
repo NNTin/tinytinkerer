@@ -39,7 +39,7 @@ Out of scope:
 
 ## Package Model
 
-The content platform is split into ten packages: five foundational (`content-core`, `content-react`, `content-markdown`, `content-mermaid`, `content-wireframe`) and five additional specialized renderers (`content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`). All specialized renderers follow the same shape — each owns one `ReactNodeRendererPlugin` and depends only on `content-react`.
+The content platform is split into ten packages: three foundational (`content-core`, `content-react`, `content-markdown`) under `packages/content/`, and seven specialized renderers (`content-mermaid`, `content-wireframe`, `content-image`, `content-code`, `content-callout`, `content-link-card`, `content-table`) under `packages/content/renderers/`. All specialized renderers follow the same shape — each owns one `ReactNodeRendererPlugin` and depends only on `content-react`.
 
 ### `@tinytinkerer/content-core`
 
@@ -68,12 +68,12 @@ Owns:
 
 - `NodeRendererPlugin` / `ReactNodeRendererPlugin` and the runtime execution policy types
 - `createReactContentRuntime` — builds a `ContentRuntime<ReactNode>` with default plugins pre-registered
-- default React plugins (paragraph, heading, list, blockquote, thematic-break, code-block, table, image)
+- default React plugins (paragraph, heading, list, blockquote, thematic-break, code-block — image and table are not defaults; they live in `content-image` / `content-table`)
 - React inline-node renderer (text, emphasis, strong, strikethrough, code, link, image, break)
 - shared copy and preview/code interaction chrome (`PreviewCodeFrame`, `CodeBlockFallback`)
 - React-side fallback policy (Suspense + RendererBoundary wrap)
 - `ContentDocumentRenderer`
-- `ContentDocumentContent` — React adapter that normalizes a semantic `ContentDocument`, builds a runtime, and renders it
+- `ContentDocumentContent` — React adapter that builds a runtime and renders an already-normalized semantic `ContentDocument` (it does not re-normalize; normalization is producer-owned)
 - re-exports of the content-core AST types and stable-ID helpers (`computeNodeId`, `hashContent`, `assignNodeIds`, `NodeId`, the full AST node-type set) and the React plugin/runtime types (`ReactContentRuntime`, `ReactContentPlugin`, `ReactNodeRendererPlugin`, `ContentNodeRendererProps`) so downstream content packages depend only on `content-react`
 - re-exports of the runtime policy/failure types needed by downstream content packages
 
@@ -245,7 +245,7 @@ Rules:
 
 - `ContentNode` is the canonical shared content model. All consumers — including non-content callers — use the canonical `ContentDocument` boundary directly.
 - `@tinytinkerer/contracts` owns the canonical `ContentDocument` schema and types directly. The schema declares strict interfaces for each node variant (`?: T` optionals, `readonly` child arrays), builds a recursive `z.discriminatedUnion` with `z.lazy`, and bridges schema → interface with a single `as z.ZodType<…>` cast per recursive schema. See `docs/ARCHITECTURE.md#coding-conventions` for the rationale.
-- Every block, list-item, and inline node may carry an optional `id`. Markdown parsing assigns deterministic, prefix-stable block IDs via `computeNodeId`; hand-constructed documents may omit `id`, and the shared `assignNodeIds()` helper normalizes the full document before React rendering.
+- Every block, list-item, and inline node may carry an optional `id` in the schema, but rendering requires one on every node. Markdown parsing assigns deterministic, prefix-stable block IDs via `computeNodeId`; producers of hand-constructed documents must call the shared `assignNodeIds()` helper at the build site — `ContentDocumentContent` does not re-normalize.
 - `ChoicePromptNode` remains an extension point and does not require interactive behavior yet.
 - Shared runtime layers now treat assistant output as structured `{ source, content }` snapshots at the chat-event boundary; parser/runtime internals still operate on the semantic AST.
 
@@ -338,7 +338,7 @@ The current rendering split is:
 
 - `content-markdown` parses raw markdown into the semantic `ContentDocument`, assigning stable block IDs and then normalizing any remaining block/list-item/inline ids through `assignNodeIds()`.
 - `content-markdown` exposes `markdownSourcePlugin`, `parseMarkdownContent()`, and `createMarkdownContentSession()` for parser-side snapshot streaming.
-- `content-react` provides `createReactContentRuntime`, which returns a `ContentRuntime<ReactNode>` with default React plugins pre-registered (paragraph, heading, list, blockquote, thematic break, code block). Image and table no longer ship a default — they are owned by `content-image` and `content-table` and must be registered explicitly. `ContentDocumentContent` normalizes hand-built documents through `assignNodeIds()` and then delegates to `ContentDocumentRenderer`, which assumes a canonical document and wraps each rendered block in a runtime-backed preparation boundary plus `<Suspense>` + a class-based `RendererBoundary` so lazy plugins and thrown render errors degrade gracefully. `content-react` also re-exports the content-core AST types, the stable-ID helpers, `renderInline`, `tableToMarkdown`, `useCopyButtonState`, and the runtime `RenderContext` so downstream content packages can drop direct `content-core` imports.
+- `content-react` provides `createReactContentRuntime`, which returns a `ContentRuntime<ReactNode>` with default React plugins pre-registered (paragraph, heading, list, blockquote, thematic break, code block). Image and table no longer ship a default — they are owned by `content-image` and `content-table` and must be registered explicitly. `ContentDocumentContent` requires an already-normalized document (producers of hand-built documents call `assignNodeIds()` at the build site; it does not re-normalize) and delegates to `ContentDocumentRenderer`, which assumes a canonical document and wraps each rendered block in a runtime-backed preparation boundary plus `<Suspense>` + a class-based `RendererBoundary` so lazy plugins and thrown render errors degrade gracefully. `content-react` also re-exports the content-core AST types, the stable-ID helpers, `renderInline`, `tableToMarkdown`, `useCopyButtonState`, and the runtime `RenderContext` so downstream content packages can drop direct `content-core` imports.
 - `content-react` also exports `REACT_SSR_EXECUTION_POLICY`, which blocks lazy, client-only, and DOM-required plugins so SSR falls back deterministically to code rendering.
 - `content-mermaid` and `content-wireframe` each export typed `NodeRendererPlugin<'codeBlock'>` singletons plus `createMermaidPlugin()` / `createWireframePlugin()` factory helpers for runtime-scoped plugin instances.
 - `app-browser` owns browser-side composition, but runtime construction and default plugin registration stay inside the content platform.
@@ -378,14 +378,14 @@ New rich-content kinds (executable widgets, embeds, citation cards, specialized 
 
 Decide which case applies before adding a package:
 
-1. **Specialized rendering for an existing AST node** — e.g., a richer `ImageNode` viewer or a custom `CodeBlockNode` specialization like Mermaid/wireframe. The block type already exists in `content-core` and usually has a default plugin in `content-react`. The new package only needs to ship a plugin that overrides the default through `priority` + `matches(node)`.
-2. **A new AST node type** — e.g., a media embed, executable widget, or interactive `ChoicePromptNode`. The node variant has to be added to `content-core`, taught to the parser in `content-markdown`, and rendered by a new plugin package.
+1. **Specialized rendering for an existing AST node** — e.g., a richer `ImageNode` viewer or a custom `CodeBlockNode` specialization like Mermaid/wireframe. The block type already exists in the canonical content model (`@tinytinkerer/contracts`) and usually has a default plugin in `content-react`. The new package only needs to ship a plugin that overrides the default through `priority` + `matches(node)`.
+2. **A new AST node type** — e.g., a media embed, executable widget, or interactive `ChoicePromptNode`. The node variant has to be added to the canonical model in `@tinytinkerer/contracts`, taught to the parser in `content-markdown`, and rendered by a new plugin package.
 
 ### Steps
 
-1. **(Scenario 2 only) Add the node type.** Append the new variant to the relevant union in `content-core` (`BlockNode` or `InlineNode`) and re-export it from `content-react/src/index.tsx`. No package downstream of `content-react` should import the type from `content-core` directly.
+1. **(Scenario 2 only) Add the node type.** Append the new variant to the relevant union in `@tinytinkerer/contracts` (`BlockNode` or `InlineNode` in `packages/shared/contracts/src/content.ts`); `content-core` re-exports the canonical types, and `content-react/src/index.tsx` re-exports them in turn. No package downstream of `content-react` should import the type from `content-core` directly.
 2. **(Scenario 2 only, markdown-sourced nodes) Extend the parser.** Add a mapping rule in `content-markdown` that emits the new node. Use `computeNodeId(type, digest, occurrence)` (re-exported by `content-react`) to assign stable IDs, then let `assignNodeIds()` fill any remaining gaps.
-3. **Create `packages/content-<name>/`** with:
+3. **Create `packages/content/renderers/content-<name>/`** with:
    - `package.json` whose only workspace dep is `@tinytinkerer/content-react` (plus a `react` peer dep and any third-party runtime libs).
    - `tsconfig.json` extending the workspace base.
    - `src/index.tsx` exporting the plugin and (optionally) the renderer component.
@@ -397,9 +397,9 @@ Decide which case applies before adding a package:
    - `load()` (optional): lazy-load the heavy runtime. `content-react` calls this during `prepareNode()`; Mermaid does this with dynamic `<script>` injection so the runtime never lands in the main entry chunk.
    - `render(node, ctx)`: return a `ReactNode`. Use `ctx.renderBlock` to recurse into child blocks. Reuse `PreviewCodeFrame`, `CodeBlockFallback`, and other chrome from `content-react`.
    - `fallback(node, failure)`: return a safe fallback (typically `<CodeBlockFallback>`). The runtime's `wrap` already adds the preparation boundary, `<Suspense>`, and an error boundary on top.
-5. **Tests.** Add `packages/content-<name>/tests/` covering the success, lazy-loading, and failure paths. Plugin-shape tests can render the renderer component directly; integration tests can pass the plugin via the `plugins` prop of `ContentDocumentContent`.
+5. **Tests.** Add `packages/content/renderers/content-<name>/tests/` covering the success, lazy-loading, and failure paths. Plugin-shape tests can render the renderer component directly; integration tests can pass the plugin via the `plugins` prop of `ContentDocumentContent`.
 6. **Boundary rules.** Extend `scripts/check-boundaries.mjs`: the new package's allowed deps are itself and `@tinytinkerer/content-react`, and `app-browser` must be allowed to depend on the new package if it should be wired into the assistant surface.
-7. **Compose.** Add the plugin to the stable `assistantPlugins` array in `packages/app-browser/src/assistant-content.tsx`, and add the workspace dep to `packages/app-browser/package.json`. Apps and shells do not need to change.
+7. **Compose.** Add the plugin to the stable `assistantPlugins` array in `packages/app/app-browser/src/assistant-content.tsx`, and add the workspace dep to `packages/app/app-browser/package.json`. Apps and shells do not need to change.
 8. **Docs.** Update the package list and the dependency diagram in this document (and `docs/ARCHITECTURE.md` if the new package changes the platform's external surface).
 
 ### What stays the same
