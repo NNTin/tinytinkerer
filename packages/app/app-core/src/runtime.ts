@@ -9,17 +9,16 @@ import {
 import type {
   AgentRuntimeBase,
   AgentHookContribution,
+  ConversationMessage as AgentConversationMessage,
   CreateAssistantContentSession,
-  DecisionChunk,
   ExecutionContext as AgentExecutionContext,
   ModelProvider as AgentModelProvider,
   ProviderCallOptions as AgentProviderCallOptions,
   RuntimeErrorReporter,
-  SynthesisChunk,
   Tool as AgentTool,
   ToolInvocation as AgentToolInvocation
 } from '@tinytinkerer/agent-core'
-import type { AgentType, ExecutionPlan, PlanStep, ReActDecision } from '@tinytinkerer/contracts'
+import type { AgentType, PlanStep } from '@tinytinkerer/contracts'
 import type { ChatRuntime } from './ports'
 
 export type {
@@ -76,49 +75,22 @@ export type {
   DomReader
 } from '@tinytinkerer/agent-core'
 
-export type ConversationMessage = {
-  role: 'user' | 'assistant'
-  content: string
-}
+// Re-exported through the app-core boundary so the host (app-browser) consumes
+// the agent-core shapes directly, mirroring how the other runtime types are
+// surfaced here. These are the agent-core types as-is; do not duplicate their
+// shapes here.
+export type ConversationMessage = AgentConversationMessage
 
 // Re-exported through the app-core boundary so the host (app-browser) builds
 // native tool-call messages from the structured record, mirroring how the other
 // runtime types are surfaced here. See agent-core's ToolInvocation.
 export type ToolInvocation = AgentToolInvocation
 
-export type ExecutionContext = {
-  prompt: string
-  history: ConversationMessage[]
-  plan: ExecutionPlan
-  notes: string[]
-  toolResults: Record<string, unknown>
-  toolInvocations: ToolInvocation[]
-}
+export type ExecutionContext = AgentExecutionContext
 
-export type ProviderCallOptions = {
-  signal?: AbortSignal
-}
+export type ProviderCallOptions = AgentProviderCallOptions
 
-export interface ModelProvider {
-  plan(
-    prompt: string,
-    history: ConversationMessage[],
-    options?: ProviderCallOptions
-  ): Promise<ExecutionPlan>
-  execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions): Promise<string>
-  synthesize(
-    context: ExecutionContext,
-    options?: ProviderCallOptions
-  ): AsyncIterable<SynthesisChunk>
-  decideNextAction?(
-    context: ExecutionContext,
-    options?: ProviderCallOptions
-  ): Promise<ReActDecision>
-  streamDecision?(
-    context: ExecutionContext,
-    options?: ProviderCallOptions
-  ): AsyncIterable<DecisionChunk>
-}
+export type ModelProvider = AgentModelProvider
 
 export type Tool<Input, Output> = AgentTool<Input, Output>
 
@@ -216,21 +188,17 @@ const toAgentError = (error: unknown): unknown =>
       })
     : error
 
-const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => ({
-  async plan(prompt: string, history: ConversationMessage[], options?: AgentProviderCallOptions) {
+const createProviderAdapter = (provider: ModelProvider): ModelProvider => ({
+  async plan(prompt: string, history: ConversationMessage[], options?: ProviderCallOptions) {
     try {
       return await provider.plan(prompt, history, options)
     } catch (error) {
       throw toAgentError(error)
     }
   },
-  async execute(
-    step: PlanStep,
-    context: AgentExecutionContext,
-    options?: AgentProviderCallOptions
-  ) {
+  async execute(step: PlanStep, context: ExecutionContext, options?: ProviderCallOptions) {
     try {
-      return await provider.execute(step, toExecutionContext(context), options)
+      return await provider.execute(step, context, options)
     } catch (error) {
       throw toAgentError(error)
     }
@@ -239,9 +207,9 @@ const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => (
   // implements it, so the adapter mirrors the provider's capabilities exactly.
   ...(provider.decideNextAction
     ? {
-        async decideNextAction(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
+        async decideNextAction(context: ExecutionContext, options?: ProviderCallOptions) {
           try {
-            return await provider.decideNextAction!(toExecutionContext(context), options)
+            return await provider.decideNextAction!(context, options)
           } catch (error) {
             throw toAgentError(error)
           }
@@ -250,29 +218,20 @@ const createProviderAdapter = (provider: ModelProvider): AgentModelProvider => (
     : {}),
   ...(provider.streamDecision
     ? {
-        async *streamDecision(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
+        async *streamDecision(context: ExecutionContext, options?: ProviderCallOptions) {
           try {
-            yield* provider.streamDecision!(toExecutionContext(context), options)
+            yield* provider.streamDecision!(context, options)
           } catch (error) {
             throw toAgentError(error)
           }
         }
       }
     : {}),
-  async *synthesize(context: AgentExecutionContext, options?: AgentProviderCallOptions) {
+  async *synthesize(context: ExecutionContext, options?: ProviderCallOptions) {
     try {
-      yield* provider.synthesize(toExecutionContext(context), options)
+      yield* provider.synthesize(context, options)
     } catch (error) {
       throw toAgentError(error)
     }
   }
-})
-
-const toExecutionContext = (context: AgentExecutionContext): ExecutionContext => ({
-  prompt: context.prompt,
-  history: context.history,
-  plan: context.plan,
-  notes: context.notes,
-  toolResults: context.toolResults,
-  toolInvocations: context.toolInvocations
 })
