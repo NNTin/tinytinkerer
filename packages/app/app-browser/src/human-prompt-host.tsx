@@ -9,7 +9,7 @@ import { type PendingHumanPrompt } from './human-prompt-bridge'
 import { useHumanPromptPresentation } from './human-prompt-presentation'
 import { loadPluginModules } from './plugins/registry'
 import { useResolvedPluginView } from './resolved-plugin-view'
-import { useDialogFocus } from './use-dialog-focus'
+import { useDialogFocus, useDialogEscape } from './use-dialog-focus'
 
 // The host's human-in-the-loop MODAL (issue #85) — one of two presentations for a
 // HumanPromptView (the other is the composer dock). It renders the head-of-queue
@@ -126,7 +126,7 @@ const InputContextView = ({
 // action buttons, the optional free-text answer, and the explicit dismiss ("Skip").
 // Escape also dismisses. Both the modal and the composer dock render this; only the
 // chrome around it (overlay vs docked bar) differs. The presentation gate guarantees
-// only one is mounted for a given prompt, so only one Escape listener is active.
+// only one is mounted for a given prompt, so only one useDialogEscape listener is active.
 export const HumanPromptControls = ({ pending }: { pending: PendingHumanPrompt }) => {
   const { view, resolve } = pending
 
@@ -137,15 +137,7 @@ export const HumanPromptControls = ({ pending }: { pending: PendingHumanPrompt }
     setCustomText('')
   }, [pending.id])
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        resolve({ kind: 'dismissed' })
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [resolve])
+  useDialogEscape(true, () => resolve({ kind: 'dismissed' }))
 
   const trimmedCustom = customText.trim()
 
