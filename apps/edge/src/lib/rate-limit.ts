@@ -3,6 +3,14 @@ import {
   rateLimitPayloadSchema,
   type RateLimitPayload
 } from '@tinytinkerer/contracts'
+import { ExpiringMap } from './expiring-map'
+import {
+  deleteDurable,
+  numericHeader,
+  readDurable,
+  remainingMaxAgeSeconds,
+  writeDurable
+} from './durable-cache'
 
 export { parseRetryAfterMs }
 
@@ -103,28 +111,37 @@ export const deriveCredentialKey = async (
   }
 }
 
-// In-memory mirror keyed by the credential scope.
-const backoffUntilMsByScope = new Map<string, number>()
+// In-memory mirror keyed by the credential scope. Expired entries are actively
+// evicted — the key space is one entry per unique credential, so a plain Map
+// would grow for the isolate's lifetime (issue #343). The stored value IS the
+// until-timestamp, which doubles as its own expiresAtMs.
+const backoffUntilMsByScope = new ExpiringMap<string, number>()
 
 /** Remaining in-memory backoff in ms (0 when cleared / never set). */
 export const getModelsBackoffMs = (
   nowMs = Date.now(),
   credentialKey: CredentialKey = SHARED_CREDENTIAL_KEY
 ): number => {
-  const backoffUntilMs = backoffUntilMsByScope.get(credentialKey) ?? 0
+  const backoffUntilMs = backoffUntilMsByScope.get(credentialKey, nowMs) ?? 0
   return backoffUntilMs > nowMs ? backoffUntilMs - nowMs : 0
 }
 
-/** Extend the in-memory backoff window to cover the upstream-advertised delay. */
+/**
+ * Extend the in-memory backoff window to cover the upstream-advertised delay
+ * and return the resulting absolute until-timestamp, so {@link recordBackoff}
+ * can reuse it without a second lookup.
+ */
 export const recordModelsBackoff = (
   retryAfterMs: number,
   nowMs = Date.now(),
   credentialKey: CredentialKey = SHARED_CREDENTIAL_KEY
-): void => {
-  backoffUntilMsByScope.set(
-    credentialKey,
-    Math.max(backoffUntilMsByScope.get(credentialKey) ?? 0, nowMs + retryAfterMs)
+): number => {
+  const untilMs = Math.max(
+    backoffUntilMsByScope.get(credentialKey, nowMs) ?? 0,
+    nowMs + retryAfterMs
   )
+  backoffUntilMsByScope.set(credentialKey, untilMs, untilMs, nowMs)
+  return untilMs
 }
 
 /** Clear the in-memory backoff after a confirmed successful upstream response. */
@@ -136,12 +153,15 @@ export const clearModelsBackoff = (credentialKey?: CredentialKey): void => {
   backoffUntilMsByScope.clear()
 }
 
+/** Entry count of the in-memory mirror (tests only — observes #343 eviction). */
+export const modelsBackoffCacheSize = (): number => backoffUntilMsByScope.size
+
 // --- Durable, colo-wide backoff window (Workers Cache API) --------------------
 //
-// Mirrors lib/models-cache.ts: `caches.default` persists across requests and
-// isolates within a Cloudflare colo, and is absent under vitest/Node, where
-// every function below degrades to the in-memory mirror so tests stay
-// synchronous and hermetic.
+// Mirrors lib/models-cache.ts via ./durable-cache: `caches.default` persists
+// across requests and isolates within a Cloudflare colo, and is absent under
+// vitest/Node, where every function below degrades to the in-memory mirror so
+// tests stay synchronous and hermetic.
 
 // Scoped per credential so a window opened for one LiteLLM deployment is not
 // honoured for a different one (issue #146). The literal `litellm` path segment
@@ -150,20 +170,10 @@ const backoffCacheKey = (credentialKey: CredentialKey): string =>
   `https://models-backoff.tiny.nntin.xyz/litellm/${credentialKey}/window`
 const BACKOFF_UNTIL_HEADER = 'x-models-backoff-until'
 
-const cacheStore = (): Cache | undefined =>
-  (globalThis as { caches?: { default?: Cache } }).caches?.default
-
-const readDurableBackoffUntilMs = async (credentialKey: CredentialKey): Promise<number> => {
-  const store = cacheStore()
-  if (!store) return 0
-  try {
-    const hit = await store.match(backoffCacheKey(credentialKey))
-    if (!hit) return 0
-    return Number(hit.headers.get(BACKOFF_UNTIL_HEADER) ?? '0')
-  } catch {
-    return 0
-  }
-}
+const readDurableBackoffUntilMs = async (credentialKey: CredentialKey): Promise<number> =>
+  (await readDurable(backoffCacheKey(credentialKey), (hit) =>
+    numericHeader(hit, BACKOFF_UNTIL_HEADER)
+  )) ?? 0
 
 /**
  * Remaining backoff in ms across BOTH layers. Reads the durable window, folds it
@@ -188,22 +198,11 @@ export const recordBackoff = async (
   nowMs = Date.now(),
   credentialKey: CredentialKey = SHARED_CREDENTIAL_KEY
 ): Promise<void> => {
-  recordModelsBackoff(retryAfterMs, nowMs, credentialKey)
-  const store = cacheStore()
-  if (!store) return
-  try {
-    const untilMs = backoffUntilMsByScope.get(credentialKey) ?? 0
-    const response = new Response('', {
-      headers: {
-        // Auto-evict the entry once the window elapses.
-        'cache-control': `max-age=${Math.max(1, Math.ceil((untilMs - nowMs) / 1000))}`,
-        [BACKOFF_UNTIL_HEADER]: String(untilMs)
-      }
-    })
-    await store.put(backoffCacheKey(credentialKey), response)
-  } catch {
-    // Best-effort: a write failure just means the next isolate may re-probe once.
-  }
+  const untilMs = recordModelsBackoff(retryAfterMs, nowMs, credentialKey)
+  await writeDurable(backoffCacheKey(credentialKey), {
+    maxAgeSeconds: remainingMaxAgeSeconds(untilMs, nowMs),
+    headers: { [BACKOFF_UNTIL_HEADER]: String(untilMs) }
+  })
 }
 
 /** Clear the backoff in both layers after a confirmed successful upstream response. */
@@ -211,11 +210,5 @@ export const clearBackoff = async (
   credentialKey: CredentialKey = SHARED_CREDENTIAL_KEY
 ): Promise<void> => {
   clearModelsBackoff(credentialKey)
-  const store = cacheStore()
-  if (!store) return
-  try {
-    await store.delete(backoffCacheKey(credentialKey))
-  } catch {
-    // Best-effort.
-  }
+  await deleteDurable(backoffCacheKey(credentialKey))
 }

@@ -2154,6 +2154,53 @@ describe('edge routes', () => {
     })
   })
 
+  // A 400/422 upstream body is not always JSON (e.g. a plain-text or HTML error
+  // page from a proxy in front of LiteLLM). extractUpstreamErrorMessage must
+  // still surface it verbatim rather than falling through to the generic
+  // status-mapped message.
+  it('surfaces a non-JSON LiteLLM bad-request body verbatim', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = toRequestUrl(input)
+        if (url === GITHUB_USER_URL) {
+          return Promise.resolve(githubUserOk())
+        }
+        if (isLiteLLMKeyManagementUrl(url)) {
+          return Promise.resolve(litellmKeyManagementOk(input, init))
+        }
+        return Promise.resolve(
+          new Response('upstream exploded (plain text)', {
+            status: 400,
+            headers: { 'content-type': 'text/plain' }
+          })
+        )
+      })
+    )
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer github-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          model: 'openai/gpt-4.1-mini',
+          stream: false,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      LITELLM_ENV
+    )
+
+    expect(response.status).toBe(400)
+    expect(edgeErrorResponseSchema.parse(await response.json())).toEqual({
+      error: 'upstream exploded (plain text)'
+    })
+  })
+
   it('echoes an allowlisted origin for standard responses and preflight', async () => {
     const env = {
       ALLOWED_ORIGINS: 'http://localhost:3111, https://tiny.nntin.xyz'

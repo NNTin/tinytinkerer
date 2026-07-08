@@ -1,4 +1,5 @@
 import type { ModelEntry } from '@tinytinkerer/contracts'
+import { numericHeader, readDurable, writeDurable } from './durable-cache'
 
 /**
  * Durable, colo-wide cache for the LiteLLM model catalogue.
@@ -42,12 +43,6 @@ const CACHED_AT_HEADER = 'x-models-cached-at'
 
 export type CachedModels = { models: ModelEntry[]; ageMs: number }
 
-// Cloudflare exposes a non-standard default cache at `caches.default`. The DOM
-// `CacheStorage` lib type (and we don't pull in @cloudflare/workers-types)
-// doesn't declare it, so reach it through a narrow cast and feature-detect.
-const cacheStore = (): Cache | undefined =>
-  (globalThis as { caches?: { default?: Cache } }).caches?.default
-
 /** Whether a cached entry of the given age can be served without a refetch. */
 export const isFresh = (ageMs: number): boolean => ageMs <= FRESH_TTL_MS
 
@@ -55,21 +50,13 @@ export const isFresh = (ageMs: number): boolean => ageMs <= FRESH_TTL_MS
 export const readCachedModels = async (
   nowMs = Date.now(),
   scope = ''
-): Promise<CachedModels | undefined> => {
-  const store = cacheStore()
-  if (!store) return undefined
-
-  try {
-    const hit = await store.match(cacheKeyForScope(scope))
-    if (!hit) return undefined
-    const cachedAt = Number(hit.headers.get(CACHED_AT_HEADER) ?? '0')
+): Promise<CachedModels | undefined> =>
+  readDurable(cacheKeyForScope(scope), async (hit) => {
+    const cachedAt = numericHeader(hit, CACHED_AT_HEADER)
+    if (cachedAt === undefined) return undefined
     const models = (await hit.json()) as ModelEntry[]
     return { models, ageMs: Math.max(0, nowMs - cachedAt) }
-  } catch {
-    // A malformed/partial cache entry must never break the request.
-    return undefined
-  }
-}
+  })
 
 /** Store the catalogue so subsequent requests (and isolates) skip the upstream fetch. */
 export const writeCachedModels = async (
@@ -77,21 +64,13 @@ export const writeCachedModels = async (
   nowMs = Date.now(),
   scope = ''
 ): Promise<void> => {
-  const store = cacheStore()
-  if (!store || models.length === 0) return
+  if (models.length === 0) return
 
-  try {
-    const response = new Response(JSON.stringify(models), {
-      headers: {
-        'content-type': 'application/json',
-        // The Cache API evicts on max-age, so keep entries for the stale window;
-        // freshness is judged separately from the stored timestamp.
-        'cache-control': `max-age=${Math.ceil(STALE_TTL_MS / 1000)}`,
-        [CACHED_AT_HEADER]: String(nowMs)
-      }
-    })
-    await store.put(cacheKeyForScope(scope), response)
-  } catch {
-    // Caching is best-effort; a write failure just means the next request refetches.
-  }
+  await writeDurable(cacheKeyForScope(scope), {
+    // The Cache API evicts on max-age, so keep entries for the stale window;
+    // freshness is judged separately from the stored timestamp.
+    maxAgeSeconds: Math.ceil(STALE_TTL_MS / 1000),
+    headers: { 'content-type': 'application/json', [CACHED_AT_HEADER]: String(nowMs) },
+    body: JSON.stringify(models)
+  })
 }

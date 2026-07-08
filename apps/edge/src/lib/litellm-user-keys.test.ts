@@ -3,6 +3,7 @@ import { setCaptureMessageSink, type CaptureMessageSink } from '@tinytinkerer/se
 import {
   clearLiteLLMUserKeyCache,
   deriveLiteLLMUserCredentialKey,
+  provisionedMarkerCacheSize,
   requireLiteLLMUserKeyConfiguration,
   resolveAnonymousLiteLLMKey,
   resolveLiteLLMUserKey
@@ -10,6 +11,11 @@ import {
 import type { Bindings } from './bindings.js'
 import type { CallerIdentity } from './caller-validation.js'
 import { makeCacheMock } from '../test/cache-mock.js'
+import { SWEEP_EVERY_N_SETS } from './expiring-map.js'
+
+// Mirrors the module's own (unexported) PROVISIONED_TTL_MS — how long a
+// provisioned marker is trusted before re-checking LiteLLM.
+const PROVISIONED_TTL_MS = 10 * 60_000
 
 const BASE_URL = 'https://litellm.labs.lair.nntin.xyz'
 const IDENTITY: CallerIdentity = { id: '12345', login: 'nntin' }
@@ -100,6 +106,7 @@ describe('litellm-user-keys', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    vi.useRealTimers()
     void clearLiteLLMUserKeyCache()
   })
 
@@ -454,6 +461,30 @@ describe('litellm-user-keys', () => {
     vi.stubGlobal('fetch', fetchSpy)
 
     await expect(resolveLiteLLMUserKey(CONFIGURED_ENV, BASE_URL, IDENTITY)).resolves.toBeUndefined()
+  })
+
+  it('reclaims an expired provisioned marker from the in-memory mirror via the amortized sweep (issue #343)', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2024-01-01T00:00:00.000Z'))
+    const fetchSpy = keyManagementStub({})
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await resolveLiteLLMUserKey(CONFIGURED_ENV, BASE_URL, IDENTITY)
+    expect(provisionedMarkerCacheSize()).toBe(1)
+
+    // Advance past the marker TTL: the entry is expired but nothing has read
+    // (or swept) it yet.
+    vi.setSystemTime(new Date(Date.now() + PROVISIONED_TTL_MS + 1))
+
+    // A flood of distinct users after expiry: the original marker's key is
+    // never touched again, so only the amortized sweep-on-write reclaims it.
+    for (let i = 0; i < SWEEP_EVERY_N_SETS; i++) {
+      await resolveLiteLLMUserKey(CONFIGURED_ENV, BASE_URL, {
+        id: `flood-${i}`,
+        login: `flood-${i}`
+      })
+    }
+    expect(provisionedMarkerCacheSize()).toBe(SWEEP_EVERY_N_SETS)
   })
 
   it('clearLiteLLMUserKeyCache drops the durable marker so the next resolve re-provisions', async () => {

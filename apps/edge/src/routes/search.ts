@@ -8,7 +8,7 @@ import {
 import { z } from 'zod'
 import type { Bindings } from '../lib/bindings'
 import { fetchWithTimeout } from '../lib/fetch'
-import { validateLiteLLMCaller } from '../lib/caller-validation'
+import { callerValidationErrorResponse, validateLiteLLMCaller } from '../lib/caller-validation'
 import { searchRoute } from '../openapi/routes'
 
 const tavilyResultItemSchema = z.object({
@@ -62,19 +62,8 @@ export const registerSearchRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) =
     // caller's GitHub identity before spending it — a merely present
     // Authorization header is not enough (mirrors the models routes).
     const callerValidation = await validateLiteLLMCaller(authorization, c.env)
-    if (callerValidation.status === 'invalid') {
-      return c.json(edgeErrorResponseSchema.parse({ error: 'Unauthorized' }), 401)
-    }
-    if (callerValidation.status === 'forbidden') {
-      return c.json(edgeErrorResponseSchema.parse({ error: 'Forbidden' }), 403)
-    }
-    if (callerValidation.status === 'unavailable') {
-      return c.json(
-        edgeErrorResponseSchema.parse({
-          error: 'Caller validation is temporarily unavailable.'
-        }),
-        503
-      )
+    if (callerValidation.status !== 'valid') {
+      return callerValidationErrorResponse(c, callerValidation.status)
     }
 
     const response = await fetchWithTimeout(

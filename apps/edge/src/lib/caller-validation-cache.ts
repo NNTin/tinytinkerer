@@ -1,6 +1,7 @@
 import { SHARED_CREDENTIAL_KEY, type CredentialKey } from './rate-limit'
 import type { CallerIdentity } from './caller-validation'
 import { ExpiringMap } from './expiring-map'
+import { numericHeader, readDurable, writeDurable } from './durable-cache'
 
 /**
  * Short-TTL cache for SUCCESSFUL caller validations (issue #177).
@@ -20,9 +21,10 @@ import { ExpiringMap } from './expiring-map'
  * model routes can resolve per-user LiteLLM keys without re-probing GitHub on
  * every ReAct step.
  *
- * Mirrors the two-layer pattern of ./rate-limit: a per-isolate in-memory map
- * (cheap, synchronous) plus a durable colo-wide entry in the Workers Cache API,
- * which is absent under vitest/Node where the in-memory layer alone applies.
+ * Uses the shared two-layer pattern from ./durable-cache: a per-isolate
+ * in-memory map (cheap, synchronous) plus a durable colo-wide entry in the
+ * Workers Cache API, which is absent under vitest/Node where the in-memory
+ * layer alone applies.
  */
 
 /** How long a successful validation is trusted before re-probing GitHub. */
@@ -38,9 +40,6 @@ const cacheKeyForCredential = (credentialKey: CredentialKey): string =>
 // unique credential would otherwise accumulate for the isolate's lifetime
 // (issue #343).
 const validCallerByCredential = new ExpiringMap<CredentialKey, CallerIdentity>()
-
-const cacheStore = (): Cache | undefined =>
-  (globalThis as { caches?: { default?: Cache } }).caches?.default
 
 /**
  * Whether this credential passed validation within the TTL. Reads the durable
@@ -58,21 +57,14 @@ export const readCachedCallerValidation = async (
   const inMemory = validCallerByCredential.get(credentialKey, nowMs)
   if (inMemory) return inMemory
 
-  const store = cacheStore()
-  if (!store) return undefined
-  try {
-    const hit = await store.match(cacheKeyForCredential(credentialKey))
-    if (!hit) return undefined
-    const untilMs = Number(hit.headers.get(VALIDATED_UNTIL_HEADER) ?? '0')
-    if (untilMs <= nowMs) return undefined
+  return readDurable(cacheKeyForCredential(credentialKey), async (hit) => {
+    const untilMs = numericHeader(hit, VALIDATED_UNTIL_HEADER)
+    if (untilMs === undefined || untilMs <= nowMs) return undefined
     const identity = (await hit.json()) as CallerIdentity
     if (!identity.id || !identity.login) return undefined
     validCallerByCredential.set(credentialKey, identity, untilMs, nowMs)
     return identity
-  } catch {
-    // A malformed cache entry must never break the request — just re-probe.
-    return undefined
-  }
+  })
 }
 
 /** Record a successful validation in both layers for {@link VALID_TTL_MS}. */
@@ -86,21 +78,11 @@ export const writeCachedCallerValidation = async (
   const untilMs = nowMs + VALID_TTL_MS
   validCallerByCredential.set(credentialKey, identity, untilMs, nowMs)
 
-  const store = cacheStore()
-  if (!store) return
-  try {
-    const response = new Response(JSON.stringify(identity), {
-      headers: {
-        'content-type': 'application/json',
-        // Auto-evict the entry once the TTL elapses.
-        'cache-control': `max-age=${Math.ceil(VALID_TTL_MS / 1000)}`,
-        [VALIDATED_UNTIL_HEADER]: String(untilMs)
-      }
-    })
-    await store.put(cacheKeyForCredential(credentialKey), response)
-  } catch {
-    // Best-effort: a write failure just means the next call re-probes once.
-  }
+  await writeDurable(cacheKeyForCredential(credentialKey), {
+    maxAgeSeconds: Math.ceil(VALID_TTL_MS / 1000),
+    headers: { 'content-type': 'application/json', [VALIDATED_UNTIL_HEADER]: String(untilMs) },
+    body: JSON.stringify(identity)
+  })
 }
 
 /** Reset the in-memory mirror (tests only — module state leaks across cases). */

@@ -5,6 +5,7 @@ import {
   deriveCredentialKey,
   getActiveBackoffMs,
   getModelsBackoffMs,
+  modelsBackoffCacheSize,
   parseRetryAfterMs,
   rateLimitResponseFromMs,
   recordBackoff,
@@ -12,6 +13,7 @@ import {
   SHARED_CREDENTIAL_KEY,
   toRateLimitResponse
 } from './rate-limit.js'
+import { SWEEP_EVERY_N_SETS } from './expiring-map.js'
 
 describe('parseRetryAfterMs', () => {
   afterEach(() => {
@@ -179,6 +181,34 @@ describe('credential-scoped backoff window (issue #146)', () => {
 
     expect(getModelsBackoffMs(nowMs, 'cred-a')).toBe(0)
     expect(getModelsBackoffMs(nowMs, 'cred-b')).toBe(60_000)
+  })
+})
+
+describe('models backoff in-memory mirror eviction (issue #343)', () => {
+  afterEach(() => {
+    clearModelsBackoff()
+  })
+
+  it('evicts an expired scope from the in-memory mirror on read', () => {
+    const nowMs = 1_000_000
+    recordModelsBackoff(60_000, nowMs, 'cred-a')
+    expect(modelsBackoffCacheSize()).toBe(1)
+
+    expect(getModelsBackoffMs(nowMs + 60_001, 'cred-a')).toBe(0)
+    expect(modelsBackoffCacheSize()).toBe(0)
+  })
+
+  it('reclaims an expired scope via the amortized sweep on write, even when never read again', () => {
+    const nowMs = 1_000_000
+    recordModelsBackoff(60_000, nowMs, 'cred-a')
+
+    // A credential-diverse flood after cred-a's window elapsed: cred-a's key is
+    // never touched again, so only the amortized sweep on write reclaims it.
+    const floodMs = nowMs + 60_001
+    for (let i = 0; i < SWEEP_EVERY_N_SETS; i++) {
+      recordModelsBackoff(60_000, floodMs, `flood-${i}`)
+    }
+    expect(modelsBackoffCacheSize()).toBe(SWEEP_EVERY_N_SETS)
   })
 })
 
