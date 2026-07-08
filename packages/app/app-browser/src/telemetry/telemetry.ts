@@ -1,12 +1,12 @@
 import type { PreferencesStore } from '@tinytinkerer/app-core'
 import {
+  applyCaptureOptionsToScope,
   scrubBreadcrumb,
   scrubEvent,
   setCaptureExceptionSink,
   setCaptureMessageSink,
   type TelemetryCaptureOptions
 } from '@tinytinkerer/sentry-telemetry'
-import type { Scope } from '@sentry/react'
 import { getOrCreateInstallId } from './install-id'
 
 // Re-exported so existing `./telemetry` importers keep a stable path; the
@@ -166,29 +166,6 @@ export const setTelemetryGitHubId = (value: string | null): void => {
   }
 }
 
-// Applies the SDK-agnostic capture options (level, tags, contexts, fingerprint)
-// onto a Sentry scope. Shared by the exception and message dispatchers.
-const applyCaptureOptions = (scope: Scope, options: TelemetryCaptureOptions): void => {
-  if (options.level) {
-    scope.setLevel(options.level)
-  }
-  if (options.tags) {
-    for (const [key, value] of Object.entries(options.tags)) {
-      if (value !== undefined) {
-        scope.setTag(key, String(value))
-      }
-    }
-  }
-  if (options.contexts) {
-    for (const [key, value] of Object.entries(options.contexts)) {
-      scope.setContext(key, value)
-    }
-  }
-  if (options.fingerprint) {
-    scope.setFingerprint(options.fingerprint)
-  }
-}
-
 // Browser capture sink registered with @tinytinkerer/sentry-telemetry once the
 // @sentry/react SDK is initialized. Maps the SDK-agnostic capture options onto a
 // Sentry scope. The package's `captureTelemetryException` dispatches here.
@@ -197,7 +174,7 @@ const dispatchToSentry = (error: Error, options: TelemetryCaptureOptions): void 
     return
   }
   sentry.withScope((scope) => {
-    applyCaptureOptions(scope, options)
+    applyCaptureOptionsToScope(scope, options)
     sentry?.captureException(error)
   })
 }
@@ -210,7 +187,7 @@ const dispatchMessageToSentry = (message: string, options: TelemetryCaptureOptio
     return
   }
   sentry.withScope((scope) => {
-    applyCaptureOptions(scope, options)
+    applyCaptureOptionsToScope(scope, options)
     sentry?.captureMessage(message)
   })
 }

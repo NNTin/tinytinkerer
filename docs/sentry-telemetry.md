@@ -38,11 +38,15 @@ lazy-load discipline is preserved.
   telemetry that should surface as an informational message (via Sentry's `captureMessage`)
   rather than an error issue. The plugin Feedback flow uses it for `info`-level reports. The
   shared `TelemetryLevel` is `'info' | 'warning' | 'error'`.
+- **`scope.ts` — the capture-options mapper.** `applyCaptureOptionsToScope` maps
+  `TelemetryCaptureOptions` (`level`, `tags`, `contexts`, `fingerprint`) onto a live Sentry
+  scope. Previously hand-duplicated in the browser and edge dispatchers; now called by both.
 
 ## How each runtime wires it
 
-Each app registers one sink that maps the SDK-agnostic `{ level, tags, contexts }` onto its
-own Sentry scope:
+Each app registers one sink that hands its live Sentry scope to the shared
+`applyCaptureOptionsToScope` (`scope.ts`), which maps the SDK-agnostic
+`{ level, tags, contexts, fingerprint }` onto it:
 
 - **Browser** — `packages/app/app-browser/src/telemetry/telemetry.ts` registers its
   `@sentry/react` sinks once the SDK initializes — an exception sink (`captureException`) and a
@@ -65,5 +69,9 @@ own Sentry scope:
 ## Dependency boundaries
 
 `sentry-telemetry` is a leaf: it may import only `@sentry/core` (external) and its own local
-modules. `@tinytinkerer/edge` and `@tinytinkerer/app-browser` may depend on it. These rules are
-enforced by `scripts/check-boundaries.mjs`.
+modules. `@tinytinkerer/edge` and `@tinytinkerer/app-browser` may depend on it. Within that
+constraint, the leaf may ship pure, dependency-free helpers that operate on caller-supplied
+Sentry-shaped objects via type-only `@sentry/core` imports — the scrubbers (`scrub.ts`) and the
+scope mapper (`scope.ts`) are the two instances today. It must never import `@sentry/*` runtime
+code or add a runtime dependency on any Sentry SDK. These rules are enforced by
+`scripts/check-boundaries.mjs`.
