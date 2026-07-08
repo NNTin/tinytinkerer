@@ -1,12 +1,12 @@
 import { useEffect, useRef, type RefObject } from 'react'
 
-// Shared focus manager for the shell's aria-modal dialogs (the settings modal and
-// the human-prompt modal). aria-modal only tells assistive tech the rest of the
-// page is inert — it does not move focus. This hook covers the WCAG 2.4.3/2.1.2
-// obligations that remain: initial focus into the dialog when it opens, a
-// Tab/Shift+Tab trap at the dialog boundaries, and restoration of focus to the
-// previously focused element on close. Escape handling stays with each dialog's
-// existing listener.
+// Shared keyboard/focus managers for the shell's aria-modal dialogs (the settings
+// modal and the human-prompt modal). aria-modal only tells assistive tech the rest
+// of the page is inert — it does not move focus or handle keys. useDialogFocus
+// covers the WCAG 2.4.3/2.1.2 obligations: initial focus into the dialog when it
+// opens, a Tab/Shift+Tab trap at the dialog boundaries, and restoration of focus
+// to the previously focused element on close. useDialogEscape is its sibling for
+// the dialog-dismiss key, so both dialogs encode the Escape decision once (#374).
 
 const getFocusable = (container: HTMLElement): HTMLElement[] =>
   Array.from(
@@ -90,4 +90,31 @@ export const useDialogFocus = (
   }, [active, options.focusKey])
 
   return containerRef
+}
+
+// Escape-to-dismiss for a dialog. Listens on window while `active` (matching the
+// dialogs' original per-dialog listeners) so dismissal works wherever focus sits.
+// If a dialog ever stacks on another, both instances will fire on one Escape —
+// the scoping/stopPropagation fix would then be made here, once.
+export const useDialogEscape = (active: boolean, onDismiss: () => void): void => {
+  // Latest-callback ref so callers may pass inline closures without rebinding the
+  // window listener every render.
+  const onDismissRef = useRef(onDismiss)
+
+  useEffect(() => {
+    onDismissRef.current = onDismiss
+  })
+
+  useEffect(() => {
+    if (!active) {
+      return
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onDismissRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [active])
 }

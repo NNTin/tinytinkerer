@@ -77,6 +77,25 @@ describe('SidebarLayout', () => {
     expect(JSON.parse(window.localStorage.getItem('test:sb') ?? '{}')).toEqual({ width: 470 })
   })
 
+  it('reverts an aborted divider drag instead of committing the mid-drag size (#371)', () => {
+    const { container } = render(
+      <SidebarLayout storageKey="test:sb" resizable defaultWidth={420}>
+        <div />
+      </SidebarLayout>
+    )
+    const panel = container.querySelector('.sidebar-panel') as HTMLElement
+    expect(panel.style.width).toBe('420px')
+
+    const handle = screen.getByRole('separator', { name: 'Resize sidebar' })
+    fireEvent.pointerDown(handle, { clientX: 500 })
+    fireEvent.pointerMove(window, { clientX: 450 })
+    expect(panel.style.width).toBe('470px')
+
+    fireEvent.pointerCancel(window)
+    expect(panel.style.width).toBe('420px')
+    expect(JSON.parse(window.localStorage.getItem('test:sb') ?? '{}')).toEqual({ width: 420 })
+  })
+
   it('restores a persisted width on mount, re-clamped to the viewport', () => {
     window.localStorage.setItem('test:sb', JSON.stringify({ width: 480 }))
     const { container } = render(

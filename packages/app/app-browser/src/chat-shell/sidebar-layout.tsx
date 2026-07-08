@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode
@@ -15,6 +14,7 @@ import {
   updatePersisted,
   type SnapEdge
 } from './layout-geometry'
+import { usePointerDrag } from './use-pointer-drag'
 
 // The docked chat layout: a full-height (or full-width) panel that holds the shared
 // chat body. On the /web and /mobile endpoints it fills the viewport (children center
@@ -91,7 +91,6 @@ export const SidebarLayout = ({
         })
       : defaultWidth
   )
-  const resizeRef = useRef<{ startX: number; startY: number; startSize: number } | null>(null)
   const [liveMessage, setLiveMessage] = useState('')
 
   useEffect(() => {
@@ -99,12 +98,13 @@ export const SidebarLayout = ({
     updatePersisted(storageKey, { [sizeKey]: size })
   }, [isDocked, storageKey, sizeKey, size])
 
-  useEffect(() => {
-    if (!isDocked) return
-
-    const handlePointerMove = (event: PointerEvent) => {
-      if (!resizeRef.current) return
-      const { startX, startY, startSize } = resizeRef.current
+  const { begin: beginResize } = usePointerDrag<{
+    startX: number
+    startY: number
+    startSize: number
+  }>(isDocked, {
+    onMove: (start, event) => {
+      const { startX, startY, startSize } = start
       // Dragging the inner edge grows the panel toward the viewport centre: a
       // right/bottom-docked panel grows as the pointer moves in (left/up), a
       // left/top-docked panel grows as it moves the other way.
@@ -117,25 +117,26 @@ export const SidebarLayout = ({
               ? startY - event.clientY
               : event.clientY - startY
       setSize(clampSize(startSize + delta, axisExtent(), { min: minWidth, maxFraction }))
+    },
+    // #336: a browser-aborted divider drag reverts to the pre-drag size instead of
+    // committing (and re-persisting) whatever size the abort left.
+    onCancel: (start) => {
+      setSize(clampSize(start.startSize, axisExtent(), { min: minWidth, maxFraction }))
     }
-    const handlePointerUp = () => {
-      resizeRef.current = null
-    }
+  })
+
+  useEffect(() => {
+    if (!isDocked) return
+
     const handleResize = () => {
       setSize((current) => clampSize(current, axisExtent(), { min: minWidth, maxFraction }))
     }
 
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', handlePointerUp)
-    window.addEventListener('pointercancel', handlePointerUp)
     window.addEventListener('resize', handleResize)
     return () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', handlePointerUp)
-      window.removeEventListener('pointercancel', handlePointerUp)
       window.removeEventListener('resize', handleResize)
     }
-  }, [isDocked, dockEdge, minWidth, maxFraction, vertical])
+  }, [isDocked, minWidth, maxFraction, vertical])
 
   const maxSize = () =>
     clampSize(Number.MAX_SAFE_INTEGER, axisExtent(), { min: minWidth, maxFraction })
@@ -216,18 +217,9 @@ export const SidebarLayout = ({
           aria-valuenow={size}
           aria-label="Resize sidebar"
           title="Resize sidebar (arrow keys resize, Home/End for min/max)"
-          onPointerDown={(event) => {
-            resizeRef.current = {
-              startX: event.clientX,
-              startY: event.clientY,
-              startSize: size
-            }
-            try {
-              event.currentTarget.setPointerCapture(event.pointerId)
-            } catch {
-              // jsdom / unsupported: window listeners still receive the events.
-            }
-          }}
+          onPointerDown={(event) =>
+            beginResize(event, { startX: event.clientX, startY: event.clientY, startSize: size })
+          }
           onKeyDown={handleResizeKeyDown}
         />
         <span role="status" aria-live="polite" className="sr-only">

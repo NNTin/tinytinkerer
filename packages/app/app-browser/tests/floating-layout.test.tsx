@@ -464,6 +464,28 @@ describe('FloatingLayout', () => {
     expect(shell.style.left).toBe(startLeft)
     expect(shell.style.top).toBe(startTop)
   })
+
+  it('reverts an aborted resize instead of committing the mid-drag size (#371)', () => {
+    const { container } = renderStandalone()
+
+    const shell = container.querySelector('.widget-floating-shell') as HTMLElement
+    const startWidth = shell.style.width
+    const startHeight = shell.style.height
+
+    const resizeHandle = screen.getByRole('button', {
+      name: 'Resize widget. Use arrow keys to resize, Shift with arrow keys to move.'
+    })
+    fireEvent.pointerDown(resizeHandle, { clientX: 300, clientY: 300, pointerId: 20 })
+    fireEvent.pointerMove(window, { clientX: 340, clientY: 360 })
+    expect(shell.style.width).not.toBe(startWidth)
+    expect(shell.style.height).not.toBe(startHeight)
+
+    // The browser reclaims the pointer mid-resize: revert to the pre-drag size,
+    // never commit the mid-drag dimensions (#336 policy, applied to resize too).
+    fireEvent.pointerCancel(window)
+    expect(shell.style.width).toBe(startWidth)
+    expect(shell.style.height).toBe(startHeight)
+  })
 })
 
 describe('FloatingChatSurface inspector wiring', () => {

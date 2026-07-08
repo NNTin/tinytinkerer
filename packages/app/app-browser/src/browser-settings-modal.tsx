@@ -14,7 +14,7 @@ import {
 import { MarkdownDocument } from './markdown-document'
 import { useSettingsSurfaceController } from './surfaces'
 import { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
-import { useDialogFocus } from './use-dialog-focus'
+import { useDialogFocus, useDialogEscape } from './use-dialog-focus'
 
 const GitHubMark = () => (
   <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4" aria-hidden="true">
@@ -936,18 +936,9 @@ export const SettingsPanel = ({
   // slide-over is non-modal and keeps the embedding shell's tab order.
   const dialogRef = useDialogFocus(open && presentation === 'modal')
 
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onOpenChange(false)
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [open, onOpenChange])
+  // Escape dismisses in both presentations (the inline slide-over too), unlike the
+  // modal-only focus management above.
+  useDialogEscape(open, () => onOpenChange(false))
 
   if (!open) {
     return null

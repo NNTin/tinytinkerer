@@ -2,7 +2,7 @@ import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 // Icons come straight from react-icons (not @tinytinkerer/ui): app-browser must not
 // depend on the ui package. These are the same glyphs ui re-exports, so the merged
 // web/mobile body renders identically without pulling in ui.
-import { FaArrowUp, FaGear, FaGithub, FaMicrophone, FaRotateLeft, FaStop } from 'react-icons/fa6'
+import { FaArrowUp, FaGear, FaGithub, FaRotateLeft, FaStop } from 'react-icons/fa6'
 import { ContextGaugeSlot } from '../context-gauge'
 import { ConversationEmptyState } from '../conversation-empty-state'
 import { HumanPromptComposerDock } from '../human-prompt-composer-dock'
@@ -12,6 +12,7 @@ import { TurnActivityPanel } from '../turn-activity-panel'
 import { TurnChrome } from '../turn-chrome'
 import { useChatComposer, useChatSurfaceController } from '../surfaces'
 import { useStickToBottom } from '../use-stick-to-bottom'
+import { SpeechToggleButton } from './speech-toggle-button'
 import { surfaceButtonClass } from './surface-button'
 import type { ChatLoadingComponent } from './floating-chat-surface'
 
@@ -328,29 +329,12 @@ export const DockedChatSurface = ({
 
             {/* Right: microphone, stop/send */}
             <div className="flex items-center gap-2">
-              {speech.visible ? (
-                <button
-                  type="button"
-                  aria-label={speech.available ? 'Voice input' : 'Voice input unavailable'}
-                  aria-pressed={speech.listening}
-                  title={
-                    !speech.available
-                      ? 'Voice input is not available in this browser'
-                      : speech.listening
-                        ? 'Stop voice input'
-                        : 'Dictate with the Web Speech API'
-                  }
-                  disabled={!speech.available}
-                  onClick={() => void speech.toggle()}
-                  className={`${iconButtonBase} disabled:cursor-not-allowed disabled:opacity-50 ${
-                    speech.listening
-                      ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
-                      : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800'
-                  }`}
-                >
-                  <FaMicrophone className="h-4 w-4" aria-hidden="true" />
-                </button>
-              ) : null}
+              <SpeechToggleButton
+                speech={speech}
+                className={iconButtonBase}
+                idleClassName="border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800"
+                iconClassName="h-4 w-4"
+              />
 
               {isRetryPending && isCoolingDown ? (
                 <button
