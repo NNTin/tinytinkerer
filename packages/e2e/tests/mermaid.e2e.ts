@@ -1,12 +1,12 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import {
   installChatMock,
-  dismissTelemetryDialog,
   GATE_SENTINEL,
   installStreamGate,
   releaseStreamGate,
   sendMessage
 } from '../fixtures/mock-litellm'
+import { dismissFirstLoad } from '../fixtures/first-load'
 
 // Real-browser verification of the Mermaid content renderer (GitHub issue #248).
 // The content-mermaid renderer turns a ```mermaid fenced block into an actual SVG
@@ -95,17 +95,6 @@ const MERMAID_INVALID = [
   '',
   'End of message.'
 ].join('\n')
-
-// Clears the first-load dialogs so the composer is usable, without touching any
-// Settings toggle (mermaid needs no plugin enabled).
-const dismissFirstLoad = async (page: Page): Promise<void> => {
-  await dismissTelemetryDialog(page)
-  const settings = page.getByRole('dialog', { name: 'Settings' })
-  if (await settings.isVisible().catch(() => false)) {
-    await settings.getByRole('button', { name: 'Close settings' }).click()
-    await expect(settings).toBeHidden()
-  }
-}
 
 test.describe('mermaid diagram rendering (#248)', () => {
   test('valid: a streamed mermaid block renders a real SVG, with no broken SVG mid-stream', async ({

@@ -1,12 +1,12 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import {
   installChatMock,
-  dismissTelemetryDialog,
   sendMessage,
   installStreamGate,
   releaseStreamGate,
   GATE_SENTINEL
 } from '../fixtures/mock-litellm'
+import { dismissFirstLoad } from '../fixtures/first-load'
 
 // Real-browser coverage of the markdown rendering capabilities jsdom cannot exercise
 // (GitHub issue #249): sticky table headers + CSV download, the image lightbox,
@@ -47,17 +47,6 @@ const SVG_PARTIAL_PERCENT_URI =
 // shared DOMPurify pass before the inline SVG reaches the DOM.
 const SVG_RAW_URI =
   'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" onload="window.__ttXss = 1"><script>window.__ttXss = 2</script><rect width="20" height="20" fill="green"/></svg>'
-
-// Clears the first-load dialogs so the composer is usable, without touching any
-// Settings toggle (these renderers need no plugin enabled).
-const dismissFirstLoad = async (page: Page): Promise<void> => {
-  await dismissTelemetryDialog(page)
-  const settings = page.getByRole('dialog', { name: 'Settings' })
-  if (await settings.isVisible().catch(() => false)) {
-    await settings.getByRole('button', { name: 'Close settings' }).click()
-    await expect(settings).toBeHidden()
-  }
-}
 
 test.describe('markdown renderers (#249)', () => {
   test('tables: sticky header, CSV download, and graceful mid-stream partial', async ({ page }) => {

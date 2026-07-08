@@ -1,17 +1,12 @@
-import { expect, type FrameLocator, type Locator, type Page } from '@playwright/test'
+import { type FrameLocator, type Locator, type Page } from '@playwright/test'
+import { dismissFirstLoad, requireShellPort } from './first-load'
 
 // Helpers for driving the canvas shell's embedded Excalidraw whiteboard. Unlike the
 // chat specs these do NOT touch mock-litellm (no chat backend is needed — the
 // whiteboard is independent), so this fixture stays self-contained and never pulls the
-// in-process edge worker.
-
-const requireShellPort = (name: string): string => {
-  const value = process.env[name]
-  if (!value) {
-    throw new Error(`${name} must be set. Run through \`pnpm --filter @tinytinkerer/e2e e2e\`.`)
-  }
-  return value
-}
+// in-process edge worker. The shared first-load dialog + shell-port helpers come from
+// './first-load', which is equally self-contained (only `@playwright/test`), so pulling
+// them in does not compromise that isolation.
 
 export const CANVAS_URL = `http://localhost:${requireShellPort('E2E_PORT_CANVAS')}/canvas/`
 // The parent-origin localStorage key the harness persists the scene snapshot under
@@ -68,28 +63,6 @@ export const LIBRARY_FILE = JSON.stringify({
 })
 
 type Box = { x: number; y: number; width: number; height: number }
-
-// First-load dialogs: decline telemetry (persisted, so it only appears once), then
-// best-effort close a Settings modal if the shell opened one. `timeout` bounds the wait
-// for the telemetry dialog — generous on first load, short after a reload (where the
-// choice is already persisted and the dialog will not reappear).
-export const dismissFirstLoad = async (page: Page, timeout = 15_000): Promise<void> => {
-  const decline = page.getByRole('button', { name: 'Continue without' })
-  await decline.waitFor({ state: 'visible', timeout }).catch(() => undefined)
-  if (await decline.isVisible().catch(() => false)) {
-    await decline.click()
-    await expect(page.getByRole('dialog', { name: 'Telemetry' })).toBeHidden()
-  }
-  const settings = page.getByRole('dialog', { name: 'Settings' })
-  if (await settings.isVisible().catch(() => false)) {
-    await page
-      .getByRole('button', { name: 'Close settings' })
-      .first()
-      .click()
-      .catch(() => undefined)
-    await settings.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined)
-  }
-}
 
 // Collapse the floating chat so it stops overlaying the centre of the canvas — needed
 // before interacting with Excalidraw's centred modals (e.g. the export dialog), which

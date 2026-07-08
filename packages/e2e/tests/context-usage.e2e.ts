@@ -2,10 +2,10 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   installChatMock,
   enableContextUsagePlugin,
-  dismissTelemetryDialog,
   MOCK_CONTEXT_PERCENT,
   SYNTHESIS_ANSWER
 } from '../fixtures/mock-litellm'
+import { dismissFirstLoad } from '../fixtures/first-load'
 
 // Real-browser verification of the Context usage gauge plugin (GitHub issue #264).
 // The plugin contributes a persistent SVG gauge near the composer showing what
@@ -57,12 +57,7 @@ test.describe('context-usage gauge plugin (#264)', () => {
     await page.goto('/web/')
 
     // Leave the plugin DISABLED (its default): just clear the first-load dialogs.
-    await dismissTelemetryDialog(page)
-    const settings = page.getByRole('dialog', { name: 'Settings' })
-    if (await settings.isVisible().catch(() => false)) {
-      await settings.getByRole('button', { name: 'Close settings' }).click()
-      await expect(settings).toBeHidden()
-    }
+    await dismissFirstLoad(page)
 
     await sendMessageAndAwaitReply(page)
 

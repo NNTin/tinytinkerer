@@ -2,9 +2,9 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   installChatMock,
   enableEventLoggerPlugin,
-  dismissTelemetryDialog,
   SYNTHESIS_ANSWER
 } from '../fixtures/mock-litellm'
+import { dismissFirstLoad } from '../fixtures/first-load'
 
 // Real-browser verification of the Event Logger plugin (GitHub issue #246). The
 // plugin registers a `chat.event` observer that logs `[event-logger] chat.event →
@@ -69,12 +69,7 @@ test.describe('event-logger plugin console logging (#246)', () => {
 
     // Leave the plugin DISABLED (its default): just clear the first-load dialogs so
     // the composer is usable, without touching the Settings toggle.
-    await dismissTelemetryDialog(page)
-    const settings = page.getByRole('dialog', { name: 'Settings' })
-    if (await settings.isVisible().catch(() => false)) {
-      await settings.getByRole('button', { name: 'Close settings' }).click()
-      await expect(settings).toBeHidden()
-    }
+    await dismissFirstLoad(page)
 
     await sendMessageAndAwaitReply(page)
 

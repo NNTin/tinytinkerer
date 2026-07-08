@@ -1,11 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
-import {
-  installChatMock,
-  enablePlugin,
-  dismissTelemetryDialog,
-  SYNTHESIS_ANSWER
-} from '../fixtures/mock-litellm'
+import { installChatMock, enablePlugin, SYNTHESIS_ANSWER } from '../fixtures/mock-litellm'
 import { discoverPlugins, type DiscoveredPlugin } from '../fixtures/discover-plugins'
+import { dismissFirstLoad } from '../fixtures/first-load'
 
 // =============================================================================
 // Plugin matrix: the SAME baseline conversation under DIFFERENT plugin
@@ -71,18 +67,6 @@ const buildMatrix = (plugins: DiscoveredPlugin[]): MatrixConfig[] => {
   ]
 }
 
-// Clears the first-load dialogs (telemetry consent + an auto-opened Settings
-// modal) WITHOUT toggling anything — the "defaults" path, where no plugin is
-// enabled. enablePlugin already does this when a config does enable plugins.
-const clearFirstLoadDialogs = async (page: Page): Promise<void> => {
-  await dismissTelemetryDialog(page)
-  const settings = page.getByRole('dialog', { name: 'Settings' })
-  if (await settings.isVisible().catch(() => false)) {
-    await settings.getByRole('button', { name: 'Close settings' }).click()
-    await expect(settings).toBeHidden()
-  }
-}
-
 // The generic, plugin-AGNOSTIC baseline: a plain chat turn with no tool use, so
 // it completes regardless of which plugins are on (the NO-TOOL chat mock answers
 // directly and synthesizes — see fixtures/mock-litellm.ts). The reply rendering
@@ -108,7 +92,11 @@ test.describe('plugin matrix: baseline conversation under plugin configs (#268)'
       await page.goto('/web/')
 
       if (config.labels.length === 0) {
-        await clearFirstLoadDialogs(page)
+        // Clear the first-load dialogs (telemetry consent + an auto-opened Settings
+        // modal) WITHOUT toggling anything — the "defaults" path, where no plugin
+        // is enabled. enablePlugin already does this when a config does enable
+        // plugins.
+        await dismissFirstLoad(page)
       } else {
         for (const label of config.labels) {
           await enablePlugin(page, label)

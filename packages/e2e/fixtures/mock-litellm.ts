@@ -8,6 +8,7 @@ import { SENTINEL_HOST } from './snippets'
 // are not under test. Importing from fixtures/ keeps it outside the boundary
 // checker's src/ + tests/ scan, which is intentional — this is test wiring.
 import { app as edgeApp } from '../../../apps/edge/src/index'
+import { dismissTelemetryDialog } from './first-load'
 
 // A syntactically-valid https base URL that passes the edge's base-URL policy but
 // is never really contacted: the edge's outbound calls to it are intercepted by a
@@ -641,24 +642,6 @@ export const installChatMock = (
   page: Page,
   answer: string = SYNTHESIS_ANSWER
 ): Promise<LiteLLMMock> => installMock(page, '', 'no-tool', answer)
-
-// A telemetry-consent dialog auto-opens on first load and its overlay intercepts
-// clicks. Decline it (keeps the run clean; telemetry no-ops in dev anyway).
-const telemetryHandledPages = new WeakSet<Page>()
-
-export const dismissTelemetryDialog = async (page: Page): Promise<void> => {
-  if (telemetryHandledPages.has(page)) return
-
-  // The dialog appears after hydration (a beat after navigation), so wait for it
-  // rather than racing the check.
-  const decline = page.getByRole('button', { name: 'Continue without' })
-  await decline.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => undefined)
-  if (await decline.isVisible().catch(() => false)) {
-    await decline.click()
-    await expect(page.getByRole('dialog', { name: 'Telemetry' })).toBeHidden()
-  }
-  telemetryHandledPages.add(page)
-}
 
 // Opens Settings, enables the plugin whose Settings label is `label` (plugins are
 // off by default), and closes the modal. The toggle's <input> is visually hidden
