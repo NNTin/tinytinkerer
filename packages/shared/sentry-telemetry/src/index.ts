@@ -9,6 +9,7 @@ export {
   type TelemetryLevel
 } from './capture'
 export { scrubBreadcrumb, scrubEvent, stripUrlQuery } from './scrub'
+export { applyCaptureOptionsToScope } from './scope'
 export {
   captureRequestIssue,
   fetchWithTelemetry,

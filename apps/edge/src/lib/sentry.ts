@@ -1,30 +1,10 @@
 import * as Sentry from '@sentry/cloudflare'
 import {
+  applyCaptureOptionsToScope,
   setCaptureExceptionSink,
   setCaptureMessageSink,
   type TelemetryCaptureOptions
 } from '@tinytinkerer/sentry-telemetry'
-
-const applyScope = (scope: Sentry.Scope, options: TelemetryCaptureOptions): void => {
-  if (options.level) {
-    scope.setLevel(options.level)
-  }
-  if (options.tags) {
-    for (const [key, value] of Object.entries(options.tags)) {
-      if (value !== undefined) {
-        scope.setTag(key, String(value))
-      }
-    }
-  }
-  if (options.contexts) {
-    for (const [key, value] of Object.entries(options.contexts)) {
-      scope.setContext(key, value)
-    }
-  }
-  if (options.fingerprint) {
-    scope.setFingerprint(options.fingerprint)
-  }
-}
 
 // Edge capture sink for the shared request-telemetry engine. Maps the
 // SDK-agnostic capture options onto a @sentry/cloudflare scope. Registered at
@@ -32,7 +12,7 @@ const applyScope = (scope: Sentry.Scope, options: TelemetryCaptureOptions): void
 // configured (no DSN), since captureException is then inert.
 const dispatchToSentry = (error: Error, options: TelemetryCaptureOptions): void => {
   Sentry.withScope((scope) => {
-    applyScope(scope, options)
+    applyCaptureOptionsToScope(scope, options)
     Sentry.captureException(error)
   })
 }
@@ -44,7 +24,7 @@ const dispatchToSentry = (error: Error, options: TelemetryCaptureOptions): void 
 // exemplified was retired with the LiteLLM-sole-provider migration in 6bae243.)
 const dispatchMessageToSentry = (message: string, options: TelemetryCaptureOptions): void => {
   Sentry.withScope((scope) => {
-    applyScope(scope, options)
+    applyCaptureOptionsToScope(scope, options)
     Sentry.captureMessage(message, options.level ?? 'info')
   })
 }
