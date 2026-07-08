@@ -4,6 +4,8 @@ import type { Bindings } from './bindings'
 import type { CallerIdentity } from './caller-validation'
 import { fetchWithTimeout } from './fetch'
 import { deriveCredentialKey, type CredentialKey } from './rate-limit'
+import { ExpiringMap } from './expiring-map'
+import { deleteDurable, numericHeader, readDurable, writeDurable } from './durable-cache'
 
 const DEFAULT_USER_MAX_BUDGET_USD = 1
 const DEFAULT_USER_BUDGET_DURATION = '30d'
@@ -64,10 +66,11 @@ type ExpectedKeyConfig = {
 
 type KeyInfo = z.infer<typeof keyInfoResponseSchema>['info'][number]
 
-const cacheStore = (): Cache | undefined =>
-  (globalThis as { caches?: { default?: Cache } }).caches?.default
-
-const provisionedUntilByScope = new Map<string, number>()
+// In-memory mirror: `${credentialKey}:${fingerprint}` -> provisioned-until
+// timestamp, which doubles as its own expiresAtMs. Expired entries are
+// actively evicted — one entry per unique credential+fingerprint would
+// otherwise accumulate for the isolate's lifetime (issue #343).
+const provisionedUntilByScope = new ExpiringMap<string, number>()
 
 export const clearLiteLLMUserKeyCache = async (credentialKey?: CredentialKey): Promise<void> => {
   // Drop BOTH layers. Clearing only the in-memory mirror is a no-op for
@@ -78,19 +81,14 @@ export const clearLiteLLMUserKeyCache = async (credentialKey?: CredentialKey): P
   // is a colon-free hash, so the scope splits on the first ':' into
   // credentialKey + fingerprint — exactly the inputs the durable cache key
   // needs.
-  const store = cacheStore()
   const deletions: Promise<unknown>[] = []
   for (const scope of [...provisionedUntilByScope.keys()]) {
     const separator = scope.indexOf(':')
     const scopeCredential = scope.slice(0, separator)
     if (credentialKey && scopeCredential !== credentialKey) continue
     provisionedUntilByScope.delete(scope)
-    if (store) {
-      const fingerprint = scope.slice(separator + 1)
-      deletions.push(
-        store.delete(provisionedCacheKey(scopeCredential, fingerprint)).catch(() => undefined)
-      )
-    }
+    const fingerprint = scope.slice(separator + 1)
+    deletions.push(deleteDurable(provisionedCacheKey(scopeCredential, fingerprint)))
   }
   await Promise.all(deletions)
 }
@@ -106,21 +104,14 @@ const readProvisionedMarker = async (
   nowMs = Date.now()
 ): Promise<boolean> => {
   const scope = `${credentialKey}:${fingerprint}`
-  const inMemoryUntil = provisionedUntilByScope.get(scope) ?? 0
-  if (inMemoryUntil > nowMs) return true
+  if (provisionedUntilByScope.get(scope, nowMs) !== undefined) return true
 
-  const store = cacheStore()
-  if (!store) return false
-  try {
-    const hit = await store.match(provisionedCacheKey(credentialKey, fingerprint))
-    if (!hit) return false
-    const untilMs = Number(hit.headers.get(PROVISIONED_UNTIL_HEADER) ?? '0')
-    if (untilMs <= nowMs) return false
-    provisionedUntilByScope.set(scope, untilMs)
-    return true
-  } catch {
-    return false
-  }
+  const untilMs = await readDurable(provisionedCacheKey(credentialKey, fingerprint), (hit) =>
+    numericHeader(hit, PROVISIONED_UNTIL_HEADER)
+  )
+  if (untilMs === undefined || untilMs <= nowMs) return false
+  provisionedUntilByScope.set(scope, untilMs, untilMs, nowMs)
+  return true
 }
 
 const writeProvisionedMarker = async (
@@ -129,24 +120,16 @@ const writeProvisionedMarker = async (
   nowMs = Date.now()
 ): Promise<void> => {
   const untilMs = nowMs + PROVISIONED_TTL_MS
-  provisionedUntilByScope.set(`${credentialKey}:${fingerprint}`, untilMs)
+  provisionedUntilByScope.set(`${credentialKey}:${fingerprint}`, untilMs, untilMs, nowMs)
 
-  const store = cacheStore()
-  if (!store) return
-  try {
-    await store.put(
-      provisionedCacheKey(credentialKey, fingerprint),
-      new Response('', {
-        headers: {
-          'cache-control': `max-age=${Math.ceil(PROVISIONED_TTL_MS / 1000)}`,
-          [PROVISIONED_UNTIL_HEADER]: String(untilMs)
-        }
-      })
-    )
-  } catch {
-    // Best-effort: a failed marker write only means the next request re-checks LiteLLM.
-  }
+  await writeDurable(provisionedCacheKey(credentialKey, fingerprint), {
+    maxAgeSeconds: Math.ceil(PROVISIONED_TTL_MS / 1000),
+    headers: { [PROVISIONED_UNTIL_HEADER]: String(untilMs) }
+  })
 }
+
+/** Entry count of the in-memory mirror (tests only — observes #343 eviction). */
+export const provisionedMarkerCacheSize = (): number => provisionedUntilByScope.size
 
 const toPositiveNumber = (raw: string | undefined, fallback: number): number => {
   if (raw === undefined || raw.trim() === '') return fallback

@@ -66,4 +66,12 @@ export class ExpiringMap<K, V> {
   get size(): number {
     return this.entries.size
   }
+
+  /**
+   * Keys currently in the map. May include not-yet-swept expired keys —
+   * callers that delete per-key (e.g. clearLiteLLMUserKeyCache) tolerate that.
+   */
+  keys(): IterableIterator<K> {
+    return this.entries.keys()
+  }
 }

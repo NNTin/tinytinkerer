@@ -3,6 +3,7 @@ import { edgeErrorResponseSchema } from '@tinytinkerer/contracts'
 import type { Bindings } from './bindings'
 import { deriveCredentialKey, SHARED_CREDENTIAL_KEY } from './rate-limit'
 import { ExpiringMap } from './expiring-map'
+import { numericHeader, readDurable, remainingMaxAgeSeconds, writeDurable } from './durable-cache'
 
 /**
  * Inbound (caller-facing) request throttling for the edge worker.
@@ -51,46 +52,23 @@ const bucketCacheKey = (bucket: string): string =>
 const COUNT_HEADER = 'x-inbound-rate-count'
 const RESET_AT_HEADER = 'x-inbound-rate-reset-at'
 
-const cacheStore = (): Cache | undefined =>
-  (globalThis as { caches?: { default?: Cache } }).caches?.default
-
-const readDurableWindow = async (bucket: string): Promise<WindowState | undefined> => {
-  const store = cacheStore()
-  if (!store) return undefined
-  try {
-    const hit = await store.match(bucketCacheKey(bucket))
-    if (!hit) return undefined
-    const count = Number(hit.headers.get(COUNT_HEADER) ?? '0')
-    const resetAtMs = Number(hit.headers.get(RESET_AT_HEADER) ?? '0')
-    if (!Number.isFinite(count) || !Number.isFinite(resetAtMs)) return undefined
+const readDurableWindow = async (bucket: string): Promise<WindowState | undefined> =>
+  readDurable(bucketCacheKey(bucket), (hit) => {
+    const count = numericHeader(hit, COUNT_HEADER)
+    const resetAtMs = numericHeader(hit, RESET_AT_HEADER)
+    if (count === undefined || resetAtMs === undefined) return undefined
     return { count, resetAtMs }
-  } catch {
-    // A malformed cache entry must never break the request — count in memory only.
-    return undefined
-  }
-}
+  })
 
 const writeDurableWindow = async (
   bucket: string,
   window: WindowState,
   nowMs: number
-): Promise<void> => {
-  const store = cacheStore()
-  if (!store) return
-  try {
-    const response = new Response('', {
-      headers: {
-        // Auto-evict the entry once the window elapses.
-        'cache-control': `max-age=${Math.max(1, Math.ceil((window.resetAtMs - nowMs) / 1000))}`,
-        [COUNT_HEADER]: String(window.count),
-        [RESET_AT_HEADER]: String(window.resetAtMs)
-      }
-    })
-    await store.put(bucketCacheKey(bucket), response)
-  } catch {
-    // Best-effort: a write failure just means another isolate undercounts.
-  }
-}
+): Promise<void> =>
+  writeDurable(bucketCacheKey(bucket), {
+    maxAgeSeconds: remainingMaxAgeSeconds(window.resetAtMs, nowMs),
+    headers: { [COUNT_HEADER]: String(window.count), [RESET_AT_HEADER]: String(window.resetAtMs) }
+  })
 
 export type InboundRateLimitResult = { limited: false } | { limited: true; retryAfterMs: number }
 
