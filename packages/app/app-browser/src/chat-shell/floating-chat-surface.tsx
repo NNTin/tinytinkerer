@@ -2,7 +2,7 @@ import { Suspense, useState, type ComponentType, type ReactNode } from 'react'
 // Icons come straight from the external react-icons (not @tinytinkerer/ui): the
 // boundary check forbids app-browser depending on the ui package (see turn-chrome's
 // local-primitive precedent), and react-icons is the same source ui re-exports.
-import { FaArrowUp, FaGear, FaGithub, FaMicrophone, FaRotateLeft, FaStop } from 'react-icons/fa6'
+import { FaArrowUp, FaGear, FaGithub, FaRotateLeft, FaStop } from 'react-icons/fa6'
 import { ConversationEmptyState } from '../conversation-empty-state'
 import { HumanPromptComposerDock } from '../human-prompt-composer-dock'
 import { JumpToLatestButton } from '../jump-to-latest'
@@ -14,6 +14,7 @@ import {
   useSettingsSurfaceController
 } from '../surfaces'
 import { useStickToBottom } from '../use-stick-to-bottom'
+import { SpeechToggleButton } from './speech-toggle-button'
 import { surfaceButtonClass } from './surface-button'
 
 // The compact-session loading/error view, supplied by the host app so each shell
@@ -177,29 +178,12 @@ export const FloatingChatSurface = ({
             </div>
             {/* Right: microphone, stop/send */}
             <div className="flex items-center gap-1.5">
-              {speech.visible ? (
-                <button
-                  type="button"
-                  aria-label={speech.available ? 'Voice input' : 'Voice input unavailable'}
-                  aria-pressed={speech.listening}
-                  title={
-                    !speech.available
-                      ? 'Voice input is not available in this browser'
-                      : speech.listening
-                        ? 'Stop voice input'
-                        : 'Dictate with the Web Speech API'
-                  }
-                  disabled={!speech.available}
-                  onClick={() => void speech.toggle()}
-                  className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                    speech.listening
-                      ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
-                      : 'border-[var(--widget-border)] bg-[var(--panel)] text-[var(--widget-muted)] hover:border-[var(--border)] hover:bg-[var(--panel-hover)] hover:text-[var(--widget-text)]'
-                  }`}
-                >
-                  <FaMicrophone className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-              ) : null}
+              <SpeechToggleButton
+                speech={speech}
+                className="flex h-8 w-8 items-center justify-center rounded-md border transition-colors"
+                idleClassName="border-[var(--widget-border)] bg-[var(--panel)] text-[var(--widget-muted)] hover:border-[var(--border)] hover:bg-[var(--panel-hover)] hover:text-[var(--widget-text)]"
+                iconClassName="h-3.5 w-3.5"
+              />
               {isRetryPending && isCoolingDown ? (
                 <button
                   type="button"
