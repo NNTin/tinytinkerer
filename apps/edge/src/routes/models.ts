@@ -161,26 +161,19 @@ const extractUpstreamErrorMessage = (rawText: string): string | undefined => {
   const raw = rawText.trim()
   if (!raw) return undefined
 
-  try {
-    const body = JSON.parse(raw) as unknown
-    if (typeof body === 'object' && body !== null) {
-      const record = body as Record<string, unknown>
-      const nestedError = record.error
-      if (typeof nestedError === 'object' && nestedError !== null) {
-        const errorRecord = nestedError as Record<string, unknown>
-        const nestedMessage = textValue(errorRecord.message) ?? textValue(errorRecord.detail)
-        if (nestedMessage) return nestedMessage
-      }
-      const message =
-        textValue(record.error) ?? textValue(record.message) ?? textValue(record.detail)
-      if (message) return message
-    }
-  } catch {
-    const message = textValue(raw)
-    if (message) return message
-  }
+  const parsed = safeJsonParse(raw)
+  // A non-JSON upstream body (an HTML error page, plain text) is surfaced as-is.
+  if (!parsed.ok) return textValue(raw)
 
-  return undefined
+  if (typeof parsed.value !== 'object' || parsed.value === null) return undefined
+  const record = parsed.value as Record<string, unknown>
+  const nestedError = record.error
+  if (typeof nestedError === 'object' && nestedError !== null) {
+    const errorRecord = nestedError as Record<string, unknown>
+    const nestedMessage = textValue(errorRecord.message) ?? textValue(errorRecord.detail)
+    if (nestedMessage) return nestedMessage
+  }
+  return textValue(record.error) ?? textValue(record.message) ?? textValue(record.detail)
 }
 
 // Defense-in-depth: never let a credential survive into a client-visible error
