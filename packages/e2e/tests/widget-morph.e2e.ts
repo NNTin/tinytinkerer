@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test'
-import { installChatMock, dismissTelemetryDialog } from '../fixtures/mock-litellm'
+import { test, expect } from '@playwright/test'
+import { installChatMock } from '../fixtures/mock-litellm'
+import { requireShellPort, dismissFirstLoad } from '../fixtures/first-load'
 
 // Real-browser verification of the widget↔sidebar morph shipped in #325: the widget
 // shell is the shared ChatApp in its floating layout, and (being morphable) exposes
@@ -11,28 +12,10 @@ import { installChatMock, dismissTelemetryDialog } from '../fixtures/mock-litell
 // Runs against the widget shell only (its own origin/port, like the other specs).
 // Only LiteLLM is mocked; the answer streams as small SSE deltas from the real edge.
 
-const requireShellPort = (name: string): string => {
-  const value = process.env[name]
-  if (!value) {
-    throw new Error(`${name} must be set. Run through \`pnpm --filter @tinytinkerer/e2e e2e\`.`)
-  }
-  return value
-}
-
 const WIDGET_URL = `http://localhost:${requireShellPort('E2E_PORT_WIDGET')}/widget/`
 
 const ANSWER = 'Morph answer: this conversation outlives the layout swap.'
 const PROMPT = 'Morph continuity check.'
-
-// Closes the first-load telemetry + settings dialogs so the composer is usable.
-const dismissFirstLoad = async (page: Page): Promise<void> => {
-  await dismissTelemetryDialog(page)
-  const settings = page.getByRole('dialog', { name: 'Settings' })
-  if (await settings.isVisible().catch(() => false)) {
-    await settings.getByRole('button', { name: 'Close settings' }).click()
-    await expect(settings).toBeHidden()
-  }
-}
 
 test.describe('widget↔sidebar morph (#325)', () => {
   test('dock/undock swaps the layout while the conversation persists', async ({ page }) => {

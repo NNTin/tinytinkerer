@@ -4,11 +4,11 @@ import {
   installNarratedToolMock,
   enableCodeExecPlugin,
   enableReasoningActivity,
-  dismissTelemetryDialog,
   runSnippetViaChat,
   REACT_FINAL_REASONING,
   SYNTHESIS_ANSWER
 } from '../fixtures/mock-litellm'
+import { dismissFirstLoad } from '../fixtures/first-load'
 
 // Real-browser verification of the ReAct decision timeline (GitHub issue #273).
 // With the Reasoning & Activity timeline enabled, each ReAct step must surface the
@@ -86,12 +86,7 @@ test.describe('ReAct decision timeline (#273)', () => {
     // The decisions are projected from persisted step events, so they survive a
     // reload (no new model request is made — the turns load from IndexedDB).
     await page.reload()
-    await dismissTelemetryDialog(page)
-    const settings = page.getByRole('dialog', { name: 'Settings' })
-    if (await settings.isVisible().catch(() => false)) {
-      await settings.getByRole('button', { name: 'Close settings' }).click()
-      await expect(settings).toBeHidden()
-    }
+    await dismissFirstLoad(page)
     await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
 
     await assertDecisionRows(await expandTimeline(page))

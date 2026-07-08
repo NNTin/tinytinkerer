@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
-import { installChatMock, dismissTelemetryDialog } from '../fixtures/mock-litellm'
+import { installChatMock } from '../fixtures/mock-litellm'
+import { requireShellPort, dismissFirstLoad, closeSettingsIfOpen } from '../fixtures/first-load'
 
 // Real-browser verification that conversations persist to IndexedDB (Dexie) and are
 // RESTORED on reload, across all three product shells — web (/web/), widget
@@ -19,14 +20,6 @@ import { installChatMock, dismissTelemetryDialog } from '../fixtures/mock-litell
 // answer streams as small SSE deltas. The agent answers directly (no tool), so this
 // uses the no-tool chat mock with a per-test answer. See packages/e2e/README.md.
 
-const requireShellPort = (name: string): string => {
-  const value = process.env[name]
-  if (!value) {
-    throw new Error(`${name} must be set. Run through \`pnpm --filter @tinytinkerer/e2e e2e\`.`)
-  }
-  return value
-}
-
 // One shared origin, three paths (E2E_PORT_WIDGET / E2E_PORT_MOBILE alias E2E_PORT) →
 // one shared IndexedDB across the endpoints.
 const SHELLS = [
@@ -38,27 +31,6 @@ const SHELLS = [
 // A plain-prose answer that is easy to assert by its text after a reload (the DOM
 // signal that the assistant turn was restored from storage, not re-fetched).
 const ANSWER = 'Stored answer: this conversation was persisted to IndexedDB.'
-
-// Closes the first-load dialogs so the composer is usable, without touching any
-// Settings toggle (persistence needs no plugin). Shared across all three shells.
-const dismissFirstLoad = async (page: Page): Promise<void> => {
-  await dismissTelemetryDialog(page)
-  const settings = page.getByRole('dialog', { name: 'Settings' })
-  if (await settings.isVisible().catch(() => false)) {
-    await settings.getByRole('button', { name: 'Close settings' }).click()
-    await expect(settings).toBeHidden()
-  }
-}
-
-// Closes a Settings dialog if one is open (used after reload, where the telemetry
-// choice is already persisted so only Settings might reappear).
-const closeSettingsIfOpen = async (page: Page): Promise<void> => {
-  const settings = page.getByRole('dialog', { name: 'Settings' })
-  if (await settings.isVisible().catch(() => false)) {
-    await settings.getByRole('button', { name: 'Close settings' }).click()
-    await expect(settings).toBeHidden()
-  }
-}
 
 // Shell-agnostic send: each shell's composer is a single <textarea> wired to
 // Enter-to-send (the placeholder text differs per shell, so target the textarea

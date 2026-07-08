@@ -3,10 +3,10 @@ import {
   installLiteLLMMock,
   enableCodeExecPlugin,
   enableReasoningActivity,
-  dismissTelemetryDialog,
   runSnippetViaChat,
   SYNTHESIS_ANSWER
 } from '../fixtures/mock-litellm'
+import { dismissFirstLoad } from '../fixtures/first-load'
 
 // Real-browser verification of the run_javascript activity timeline (GitHub issue
 // #277). With the Reasoning & Activity timeline enabled, a run_javascript turn must:
@@ -82,12 +82,7 @@ test.describe('run_javascript activity timeline (#277)', () => {
     // activity entry (including the code block) survives a reload with no new model
     // request — the turns load from IndexedDB.
     await page.reload()
-    await dismissTelemetryDialog(page)
-    const settings = page.getByRole('dialog', { name: 'Settings' })
-    if (await settings.isVisible().catch(() => false)) {
-      await settings.getByRole('button', { name: 'Close settings' }).click()
-      await expect(settings).toBeHidden()
-    }
+    await dismissFirstLoad(page)
     await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
 
     await assertActivityEntry(await expandTimeline(page))

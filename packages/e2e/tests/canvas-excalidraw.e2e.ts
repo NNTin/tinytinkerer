@@ -5,7 +5,6 @@ import {
   LIBRARY_CHANNEL,
   LIBRARY_FILE,
   SNAPSHOT_KEY,
-  dismissFirstLoad,
   drawRectangle,
   minimizeChat,
   openCanvas,
@@ -13,6 +12,7 @@ import {
   readSnapshot,
   waitForCanvasReady
 } from '../fixtures/canvas'
+import { dismissFirstLoad } from '../fixtures/first-load'
 
 // Real-browser coverage of the fundamental Excalidraw canvas features fixed in #317:
 // the sandboxed iframe's export (downloads), popups (libraries browser), and clipboard

@@ -5,10 +5,10 @@ import {
   enableContextInspectorPlugin,
   enableCodeExecPlugin,
   runSnippetViaChat,
-  dismissTelemetryDialog,
   SYNTHESIS_ANSWER,
   type LiteLLMMock
 } from '../fixtures/mock-litellm'
+import { dismissFirstLoad } from '../fixtures/first-load'
 
 // Real-browser verification of the Context inspector plugin (GitHub issue #270).
 // The plugin contributes a developer panel showing the EXACT chat request the
@@ -150,12 +150,7 @@ test.describe('context-inspector plugin (#270)', () => {
     await page.goto('/web/')
 
     // Leave the plugin DISABLED (its default): just clear the first-load dialogs.
-    await dismissTelemetryDialog(page)
-    const settings = page.getByRole('dialog', { name: 'Settings' })
-    if (await settings.isVisible().catch(() => false)) {
-      await settings.getByRole('button', { name: 'Close settings' }).click()
-      await expect(settings).toBeHidden()
-    }
+    await dismissFirstLoad(page)
 
     await sendMessageAndAwaitReply(page, 'This run must not be captured.')
 

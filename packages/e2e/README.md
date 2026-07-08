@@ -34,6 +34,8 @@ no secrets and makes no real network calls.
   (it needs ACAO headers for the sandboxed iframe). Each is `--strictPort`.
 - `fixtures/mock-litellm.ts` — pipes `/api/*` through the real edge worker and mocks
   the LiteLLM upstream it calls; plus the shared UI helpers.
+- `fixtures/first-load.ts` — shared first-load dialog dismissal + shell-port env
+  helpers, dependency-free so canvas specs can use it without pulling the edge worker.
 - `fixtures/snippets.ts` — adversarial inputs used by the current suite.
 - `reporters/bail-warning.ts` — a Playwright reporter (CI only) that emits a job
   **warning** listing the tests a `maxFailures` bail skipped, since those run nothing and
