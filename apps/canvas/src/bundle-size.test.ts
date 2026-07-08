@@ -51,15 +51,19 @@ beforeAll(async () => {
 }, 90_000)
 
 describe('canvas bundle regression guard', () => {
-  it('keeps the twenty-two-tool startup entry below 85 kB', () => {
+  it('keeps the twenty-two-tool startup entry below 90 kB', () => {
     const entry = shellChunks.find((chunk) => chunk.facadeModuleId?.endsWith('/canvas/index.html'))
     expect(entry).toBeDefined()
     // Raised 84 → 85 kB when the shared chat surface gained always-loaded turn
     // reconciliation + memoization (#340): a deliberate perf feature that stops
-    // the whole conversation re-rendering per streamed delta. The startup entry
-    // sat right at the old round-number budget, so the small addition tipped it;
+    // the whole conversation re-rendering per streamed delta.
+    // Raised 85 → 90 kB when the boot/loading panel moved into the shared
+    // @tinytinkerer/app-browser LoadingStatusPanel (#370): the startup entry now
+    // carries all four presentation variants' chrome (~4.6 kB raw, ~1.5 kB
+    // gzipped) so the panel — including the boot-failure Reload affordance —
+    // has one implementation instead of five drifting copies.
     // Excalidraw and the heavy graph are still guarded out by the tests below.
-    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(85)
+    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(90)
   })
 
   it('keeps Excalidraw outside the canvas startup graph', () => {
