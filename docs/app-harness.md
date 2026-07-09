@@ -222,7 +222,7 @@ This is the only shared source of truth for the Excalidraw vocabulary:
 | `survey`     | read  | Report layout health (overlaps, label overflow, unreadable connectors)         |
 | `preset`     | write | Insert a network/flowchart/UML/wireframe diagram scaffold (grouped, connected) |
 | `icon`       | write | Insert infrastructure icon glyphs (router/laptop/phone/cloud/server/printer)   |
-| `preview`    | read  | Dry-run any mutating verb and return a compact patch summary without a commit  |
+| `preview`    | read  | Dry-run any mutating verb: rendered image of the result plus a patch summary   |
 | `thumbnail`  | read  | Render a byte-budgeted PNG snapshot of the scene (or scoped elements)          |
 | `pick`       | read  | Report the live selection now, or prompt the user and wait for their selection |
 
@@ -403,29 +403,43 @@ flowchart LR
 `preview`, `thumbnail`, and `pick` close the loop between proposing a change, verifying
 it, and grounding it in what the user actually means.
 
-- `preview` is a **stateless dry-run** of any mutating verb. There is no staged-mutation
-  token or state held in the iframe — staged state would go stale on any concurrent user
-  edit and duplicate `mutation.ts`'s lifecycle. Instead, the versioned input **is** the
-  staged plan: `preview` validates `input` against the target verb's own schema, then runs
-  that verb's **real executor** — same validation, same geometry, same stale-version, lock,
-  and relationship guards — against a capture proxy over the imperative API that records
-  what `updateScene` would have committed instead of committing it (and no-ops
-  `scrollToContent`, so a dry-run never moves the viewport either). The captured elements
-  are diffed against the current scene by id and object identity (executors return the same
-  object for elements they didn't touch; a pure z-reorder — same id set, changed array
-  position — is reported as an update too) into a compact **patch summary**:
-  `wouldChange`, add/update/delete counts, and a bounded `changes` list of
-  `{ op, id, type, label?, version? }` entries. The summary counts come from the full diff
-  and never shrink; only trailing `changes` entries are trimmed to the result budget.
-  Applying is simply calling the target verb itself with the same input — its
-  `expectedVersion`/`expectedSceneVersion` checks make apply-after-preview safe by
-  construction.
-- `thumbnail` renders an on-demand PNG snapshot (`exportToCanvas`) of the whole scene or
-  scoped `elementIds`, scaled to `maxDimension`, and returns it as a base64 data URL for
-  visual verification. Unlike the record-list reads it has a **hard byte budget** rather
-  than truncation metadata: an image cannot be "trimmed", so an over-budget export is an
-  actionable error (lower `maxDimension` or narrow `elementIds`), never a silently degraded
-  result.
+- `preview` is a **stateless dry-run** of any mutating verb that returns a **rendered image
+  of the hypothetical result** alongside a patch summary — "what would this look like" gets
+  pixels, not just a diff. There is no staged-mutation token or state held in the iframe —
+  staged state would go stale on any concurrent user edit and duplicate `mutation.ts`'s
+  lifecycle. Instead, the versioned input **is** the staged plan: `preview` validates `input`
+  against the target verb's own schema, then runs that verb's **real executor** — same
+  validation, same geometry, same stale-version, lock, and relationship guards — against a
+  hardened capture proxy over the imperative API that records what `updateScene` would have
+  committed instead of committing it (and no-ops `scrollToContent`, so a dry-run never moves
+  the viewport either). The proxy delegates every other property to the real target — evaluated
+  and, for functions, **bound** against the real object rather than the proxy — so a real
+  `ExcalidrawImperativeAPI`'s methods (which may read private instance state via `this`) behave
+  identically to a live call. The captured elements are diffed against the current scene by id
+  and object identity (executors return the same object for elements they didn't touch; a pure
+  z-reorder — same id set, changed array position — is reported as an update too) into a
+  compact **patch summary**: `wouldChange`, add/update/delete counts, and a bounded `changes`
+  list of `{ op, id, type, label?, version? }` entries. The captured (never-committed)
+  `after` scene is also rendered to a PNG via the same shared `renderScenePng` helper
+  `thumbnail` uses — called against the **real** api, never the proxy, since exporting is a
+  pure read. Rendering **degrades instead of erroring**: `render:false` (an explicit opt-out)
+  yields `thumbnailReason: 'not-requested'`; nothing would change yields `'no-change'`; an
+  empty result scene (e.g. `clear`) yields `'empty-result'`; a render that doesn't fit
+  alongside the summary under the result budget is dropped with `'over-budget'` (the image is
+  the preferred payload when trimming, so `changes` — not the image — gets cut first); a
+  successful render yields `'rendered'` with the `thumbnail` object populated. The summary
+  counts come from the full diff and never shrink; only trailing `changes` entries are
+  trimmed to make room. Applying is simply calling the target verb itself with the same
+  input — its `expectedVersion`/`expectedSceneVersion` checks make apply-after-preview safe
+  by construction.
+- `thumbnail` renders an on-demand PNG snapshot of the whole scene or scoped `elementIds`,
+  scaled to `maxDimension`, and returns it as a base64 data URL for visual verification. It
+  shares its export path (`exportToCanvas`, `api.getFiles()`, background color handling) with
+  `preview`'s visual via the `renderScenePng` helper in `thumbnail.ts`. Unlike the record-list
+  reads it has a **hard byte budget** rather than truncation metadata: an image cannot be
+  "trimmed", so an over-budget export is an actionable error (lower `maxDimension` or narrow
+  `elementIds`), never a silently degraded result — `preview`'s visual, by contrast, degrades
+  to `null` with a reason rather than ever failing the dry-run over an image.
 - `pick` is the interactive/selection read, one verb with two modes. `current` reports the
   live canvas selection now; `interactive` is the human-in-the-loop flow — it shows an
   in-canvas toast prompt and resolves with the user's next **settled** selection change (a
@@ -444,13 +458,17 @@ flowchart LR
   plan["versioned verb input<br/>= the staged plan"]
   dryRun["preview<br/>real executor + capture proxy"]
   patch["patch summary<br/>adds / updates / deletes"]
+  render["renderScenePng<br/>hypothetical after-scene"]
+  visual["thumbnail: PNG or null + reason"]
   apply["apply = call the verb itself<br/>version checks re-run"]
-  snapshot["thumbnail<br/>budgeted PNG data URL"]
+  snapshot["thumbnail verb<br/>budgeted PNG data URL"]
   pickVerb["pick<br/>current | interactive"]
   user["user selection<br/>toast + settle debounce"]
 
   plan --> dryRun --> patch --> apply
+  dryRun --> render --> visual
   apply --> snapshot
+  render -.-> snapshot
   pickVerb --> user --> plan
 ```
 
@@ -520,7 +538,7 @@ retrieve omitted detail with `read`.
 | `draw`      |         64 KiB |        64 KiB |
 | `edit`      |         64 KiB |        64 KiB |
 | `clear`     |          1 KiB |         1 KiB |
-| `preview`   |         64 KiB |        32 KiB |
+| `preview`   |         64 KiB |       160 KiB |
 | `thumbnail` |          4 KiB |       128 KiB |
 | `pick`      |          4 KiB |        64 KiB |
 
@@ -603,6 +621,7 @@ flowchart LR
   preview --> layout
   preview --> presets
   preview --> payload
+  preview --> thumbnail
   bridge --> thumbnail --> api
   thumbnail --> query
   thumbnail --> payload
@@ -647,11 +666,16 @@ The modules translate the stable model vocabulary into Excalidraw operations:
   and the executor mints collision-free ids/group ids, version-checks the scene, and reuses
   `create.ts`'s `drawFromSkeletons` to convert + commit in one atomic, undoable update;
 - `preview` (in `preview.ts`) dry-runs any mutating verb: it parses the nested input with
-  that verb's own schema, runs the verb's real executor against a capture proxy that
-  suppresses the single `updateScene` commit, and diffs before/after into a compact patch
-  summary — no staged state, nothing committed;
+  that verb's own schema, runs the verb's real executor against a hardened capture proxy
+  (delegated properties bound to the real target, not the proxy) that suppresses the single
+  `updateScene` commit, and diffs before/after into a compact patch summary — no staged
+  state, nothing committed. It also renders the captured (unapplied) `after` scene to a PNG
+  via `thumbnail.ts`'s shared `renderScenePng`, degrading to `null` with a reason instead of
+  failing the dry-run over an image;
 - `thumbnail` (in `thumbnail.ts`) exports the scene (or scoped elements) to a PNG data URL
-  via `exportToCanvas`, version-checked and hard-capped by its result byte budget;
+  via the shared `renderScenePng` (which owns the `exportToCanvas` call, `api.getFiles()`, and
+  background color handling — also used by `preview`'s visual), version-checked and
+  hard-capped by its own result byte budget;
 - `pick` (in `pick.ts`) reads the live selection, or — in interactive mode — shows a toast
   (`api.setToast`), subscribes to `api.onChange`, and resolves with the user's next settled
   selection as normalized records (or `timedOut: true`);

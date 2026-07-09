@@ -90,6 +90,9 @@ describe('canvas app tools', () => {
       tools.find((tool) => tool.id === 'preview')?.schema.safeParse({ verb: 'read', input: {} })
         .success
     ).toBe(false)
+    expect(
+      tools.find((tool) => tool.id === 'preview')?.schema.parse({ verb: 'clear', input: {} })
+    ).toMatchObject({ render: true, maxDimension: 512 })
     expect(tools.find((tool) => tool.id === 'pick')?.schema.parse({})).toEqual({
       mode: 'current',
       timeoutSeconds: 60,

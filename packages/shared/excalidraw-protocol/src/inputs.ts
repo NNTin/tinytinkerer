@@ -47,7 +47,10 @@ export const EXCALIDRAW_PAYLOAD_BUDGETS = Object.freeze({
   survey: { request: 16 * 1_024, result: 64 * 1_024 },
   preset: { request: 16 * 1_024, result: 64 * 1_024 },
   icon: { request: 16 * 1_024, result: 64 * 1_024 },
-  preview: { request: 64 * 1_024, result: 32 * 1_024 },
+  // 32 KiB → 160 KiB: the result may now carry an optional rendered PNG of the
+  // hypothetical (unapplied) scene alongside the patch summary — thumbnail's
+  // own image budget is 128 KiB, so this leaves headroom for the summary too.
+  preview: { request: 64 * 1_024, result: 160 * 1_024 },
   thumbnail: { request: 4 * 1_024, result: 128 * 1_024 },
   pick: { request: 4 * 1_024, result: 64 * 1_024 }
 })
@@ -859,6 +862,24 @@ export const EXCALIDRAW_PREVIEWABLE_VERBS = [
   'icon'
 ] as const
 
+// Shared bounds for the exported-image "longest edge" dimension, reused by
+// `preview`'s optional render and `thumbnail`'s snapshot so the two schemas
+// can't drift apart — both ultimately render through the same
+// `renderScenePng` helper in excalidraw-app.
+export const EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS = {
+  min: 64,
+  max: 1024,
+  default: 512
+} as const
+
+const maxDimensionSchema = z
+  .number()
+  .int()
+  .min(EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.min)
+  .max(EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.max)
+  .default(EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.default)
+  .describe('Longest edge of the exported image in pixels; the export is scaled to fit.')
+
 export const previewInputSchema = z
   .object({
     verb: z.enum(EXCALIDRAW_PREVIEWABLE_VERBS).describe('The mutating verb to dry-run.'),
@@ -866,7 +887,14 @@ export const previewInputSchema = z
       .record(z.string(), z.unknown())
       .describe(
         "The exact input you would pass to that verb. It is validated against the verb's own schema and runs the verb's real checks (versions, locks, relationships) without committing."
-      )
+      ),
+    render: z
+      .boolean()
+      .default(true)
+      .describe(
+        'Render a PNG of the hypothetical (unapplied) result alongside the patch summary. Set false for a summary-only, faster dry-run.'
+      ),
+    maxDimension: maxDimensionSchema
   })
   .strict()
 
@@ -875,13 +903,7 @@ export const thumbnailInputSchema = z
     elementIds: uniqueElementIdsSchema
       .optional()
       .describe('Limit the snapshot to these elements. Omit to capture the whole scene.'),
-    maxDimension: z
-      .number()
-      .int()
-      .min(64)
-      .max(1024)
-      .default(512)
-      .describe('Longest edge of the exported image in pixels; the export is scaled to fit.'),
+    maxDimension: maxDimensionSchema,
     background: z
       .boolean()
       .default(true)

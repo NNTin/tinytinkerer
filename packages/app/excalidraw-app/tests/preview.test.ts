@@ -1,12 +1,37 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { exportToCanvas as exportToCanvasImport } from '@excalidraw/excalidraw'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { EXCALIDRAW_PAYLOAD_BUDGETS } from '@tinytinkerer/excalidraw-protocol'
 import { createExcalidrawHandlers } from '../src/bridge'
 
+// Re-typed the same way thumbnail.test.ts does (see its comment): the real
+// `exportToCanvas` type resolves to `any` here, so re-type the mocked binding
+// once for a type-safe `mockResolvedValueOnce` in the over-budget test below.
+type FakeCanvas = { width: number; height: number; toDataURL: (mimeType?: string) => string }
+type FakeExportOpts = {
+  elements: unknown[]
+  appState?: { exportBackground?: boolean; viewBackgroundColor?: string }
+  files: unknown
+  maxWidthOrHeight?: number
+}
+const exportToCanvas = vi.mocked(
+  exportToCanvasImport as unknown as (opts: FakeExportOpts) => Promise<FakeCanvas>
+)
+
+// This mock is shared module-wide (unlike the per-test `fakeApi`/`statefulApi`
+// instances), so its call history must be cleared between tests — otherwise
+// an earlier test's renders leak into a later `not.toHaveBeenCalled()`
+// assertion.
+beforeEach(() => {
+  exportToCanvas.mockClear()
+})
+
 // preview dispatches into the REAL executors (create/edit/structure/binding/
 // layout/presets), so this mock has to cover everything those modules import
 // from '@excalidraw/excalidraw' — mirrors bridge.test.ts's/structure.test.ts's
-// mock exactly.
+// mock exactly. `exportToCanvas` is added on top of that for the visual render
+// (see thumbnail.test.ts for why this is a full manual mock rather than
+// `importOriginal`).
 vi.mock('@excalidraw/excalidraw', () => ({
   CaptureUpdateAction: { IMMEDIATELY: 'immediately' },
   convertToExcalidrawElements: (elements: Array<Record<string, unknown>>) =>
@@ -42,7 +67,14 @@ vi.mock('@excalidraw/excalidraw', () => ({
       ([key, value]) => JSON.stringify(element[key]) !== JSON.stringify(value)
     )
     return changed ? { ...element, ...updates, version: element.version + 1 } : element
-  }
+  },
+  exportToCanvas: vi.fn(() =>
+    Promise.resolve({
+      width: 128,
+      height: 96,
+      toDataURL: () => 'data:image/png;base64,...'
+    })
+  )
 }))
 
 const rect = (id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -137,6 +169,9 @@ const fakeApi = (
       editingGroupId: null,
       ...state
     })),
+    // The visual render (default render:true) calls `getFiles` on the REAL
+    // api, not the capture proxy — see `renderScenePng`.
+    getFiles: vi.fn(() => ({})),
     updateScene: vi.fn(),
     scrollToContent: vi.fn()
   }) as unknown as ExcalidrawImperativeAPI
@@ -156,6 +191,7 @@ const statefulApi = (initial: unknown[]): ExcalidrawImperativeAPI => {
       selectedGroupIds: {},
       editingGroupId: null
     })),
+    getFiles: vi.fn(() => ({})),
     updateScene: vi.fn((sceneData: { elements?: unknown[] }) => {
       if (sceneData.elements) scene = sceneData.elements
     }),
@@ -170,6 +206,14 @@ type PreviewResult = {
   sceneVersion: number
   summary: { adds: number; updates: number; deletes: number; total: number }
   changes: Array<{ op: string; id: string; type: string; label?: string; version?: number }>
+  thumbnail: {
+    dataUrl: string
+    mimeType: string
+    width: number
+    height: number
+    bytes: number
+  } | null
+  thumbnailReason: 'rendered' | 'not-requested' | 'no-change' | 'empty-result' | 'over-budget'
   truncation: { truncated: boolean; fields: string[]; omittedElements: number }
 }
 
@@ -364,20 +408,157 @@ describe('preview: apply-after-preview', () => {
   })
 })
 
-describe('preview: budget trimming', () => {
-  it('drops trailing changes past the byte budget but keeps the full summary counts', async () => {
-    // A single new element with a huge id blows the 32KB result budget on its
-    // own; trimToBudget drops it to an empty `changes` array while the summary
-    // (computed from the full diff) still reports the real count.
-    const hugeId = 'x'.repeat(40_000)
-    const api = fakeApi([])
+describe('preview: visual render', () => {
+  it('renders a thumbnail of the hypothetical recolor and still does not call the real updateScene', async () => {
+    const elements = [rect('box', { version: 1 })]
+    const api = fakeApi(elements)
 
     const result = await run(api, {
-      verb: 'draw',
-      input: { elements: [{ id: hugeId, type: 'rectangle', x: 0, y: 0 }] }
+      verb: 'edit',
+      input: { edits: [{ id: 'box', expectedVersion: 1, changes: { strokeColor: '#ffc9c9' } }] }
     })
 
-    expect(result.summary).toMatchObject({ adds: 1, updates: 0, deletes: 0, total: 1 })
+    expect(result.wouldChange).toBe(true)
+    expect(result.thumbnailReason).toBe('rendered')
+    expect(result.thumbnail).toMatchObject({
+      dataUrl: 'data:image/png;base64,...',
+      mimeType: 'image/png',
+      width: 128,
+      height: 96
+    })
+    expect(api.updateScene).not.toHaveBeenCalled()
+  })
+
+  it('returns null/not-requested when render:false', async () => {
+    const elements = [rect('box', { version: 1 })]
+    const api = fakeApi(elements)
+
+    const result = await run(api, {
+      verb: 'edit',
+      input: { edits: [{ id: 'box', expectedVersion: 1, changes: { strokeColor: '#ffc9c9' } }] },
+      render: false
+    })
+
+    expect(result.wouldChange).toBe(true)
+    expect(result.thumbnail).toBeNull()
+    expect(result.thumbnailReason).toBe('not-requested')
+    expect(exportToCanvas).not.toHaveBeenCalled()
+  })
+
+  it('returns null/no-change for a no-op edit (same value as current)', async () => {
+    const elements = [rect('box', { version: 1, locked: false })]
+    const api = fakeApi(elements)
+
+    const result = await run(api, {
+      verb: 'edit',
+      input: { edits: [{ id: 'box', expectedVersion: 1, changes: { locked: false } }] }
+    })
+
+    expect(result.wouldChange).toBe(false)
+    expect(result.thumbnail).toBeNull()
+    expect(result.thumbnailReason).toBe('no-change')
+    expect(exportToCanvas).not.toHaveBeenCalled()
+  })
+
+  it('returns null/empty-result for a clear that empties the scene', async () => {
+    const elements = [rect('a'), rect('b', { x: 200 })]
+    const api = fakeApi(elements)
+
+    const result = await run(api, { verb: 'clear', input: {} })
+
+    expect(result.wouldChange).toBe(true)
+    expect(result.thumbnail).toBeNull()
+    expect(result.thumbnailReason).toBe('empty-result')
+    expect(exportToCanvas).not.toHaveBeenCalled()
+  })
+
+  it('drops an oversized rendered image with over-budget, keeping the summary', async () => {
+    const elements = [rect('box', { version: 1 })]
+    const api = fakeApi(elements)
+    const oversizedDataUrl = `data:image/png;base64,${'A'.repeat(EXCALIDRAW_PAYLOAD_BUDGETS.preview.result)}`
+    exportToCanvas.mockResolvedValueOnce({
+      width: 512,
+      height: 512,
+      toDataURL: () => oversizedDataUrl
+    })
+
+    const result = await run(api, {
+      verb: 'edit',
+      input: { edits: [{ id: 'box', expectedVersion: 1, changes: { strokeColor: '#ffc9c9' } }] }
+    })
+
+    expect(result.thumbnail).toBeNull()
+    expect(result.thumbnailReason).toBe('over-budget')
+    expect(result.summary).toMatchObject({ adds: 0, updates: 1, deletes: 0, total: 1 })
+    expect(result.wouldChange).toBe(true)
+    expect(result.truncation.truncated).toBe(true)
+    const bytes = new TextEncoder().encode(JSON.stringify(result)).byteLength
+    expect(bytes).toBeLessThanOrEqual(EXCALIDRAW_PAYLOAD_BUDGETS.preview.result)
+  })
+})
+
+describe('preview: capture proxy this-safety', () => {
+  it('binds delegated api methods to the real target, not the proxy, for a class instance with a #private field', async () => {
+    // A real ExcalidrawImperativeAPI is a class instance and may carry private
+    // fields/methods that read `this`. Reading a private field off a Proxy
+    // wrapping the instance throws ("Cannot read private member ... from an
+    // object whose class did not declare it") unless the delegated method is
+    // invoked with `this` bound to the real target — exactly what the
+    // hardened `buildCapture` get trap now guarantees. The plain-object
+    // `fakeApi`/`statefulApi` fakes used elsewhere in this file can't exercise
+    // this at all, since object literals have no private fields.
+    class RealApi {
+      #elements: unknown[]
+      constructor(elements: unknown[]) {
+        this.#elements = elements
+      }
+      getSceneElements() {
+        return this.#elements
+      }
+      getAppState() {
+        return { selectedElementIds: {}, selectedGroupIds: {}, editingGroupId: null }
+      }
+      getFiles() {
+        return {}
+      }
+      updateScene(sceneData: { elements?: unknown[] }) {
+        if (sceneData.elements) this.#elements = sceneData.elements
+      }
+      scrollToContent() {}
+    }
+
+    const elements = [rect('a', { version: 1 })]
+    const api = new RealApi(elements) as unknown as ExcalidrawImperativeAPI
+
+    const result = await run(api, {
+      verb: 'edit',
+      input: { edits: [{ id: 'a', expectedVersion: 1, changes: { x: 50 } }] }
+    })
+
+    expect(result.wouldChange).toBe(true)
+    expect(result.summary).toMatchObject({ adds: 0, updates: 1, deletes: 0, total: 1 })
+  })
+})
+
+describe('preview: budget trimming', () => {
+  it('drops trailing changes past the byte budget but keeps the full summary counts', async () => {
+    // `clear` always commits an empty array and has no per-record result
+    // budget of its own (unlike every other previewable verb, which caps its
+    // own returned element records well under preview's 160KB), so a huge
+    // pre-existing element id can freely blow PREVIEW's own result budget in
+    // the delete-changes list without first tripping the wrapped verb's own
+    // (smaller) budget. trimToBudget drops the changes to an empty array
+    // while the summary (computed from the full diff) still reports the real
+    // count.
+    const hugeId = 'x'.repeat(200_000)
+    const elements = [rect(hugeId, { version: 1 })]
+    const api = fakeApi(elements)
+
+    const result = await run(api, { verb: 'clear', input: {} })
+
+    expect(result.summary).toMatchObject({ adds: 0, updates: 0, deletes: 1, total: 1 })
+    expect(result.wouldChange).toBe(true)
+    expect(result.thumbnailReason).toBe('empty-result')
     expect(result.changes).toHaveLength(0)
     expect(result.truncation.truncated).toBe(true)
     expect(result.truncation.omittedElements).toBe(1)

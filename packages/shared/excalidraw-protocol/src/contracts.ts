@@ -548,6 +548,9 @@ const presetResultSchema = z
 // Safer-iterative-workflow results. `preview` reports a dry-run patch summary
 // (see the rationale on the input schemas): `sceneVersion` is the CURRENT
 // (pre-apply) version, and `changes` is bounded like every other budgeted read.
+// It also renders a visual of the hypothetical (unapplied) result — `thumbnail`
+// plus `thumbnailReason` — degrading to `null` with a reason rather than ever
+// failing the dry-run over an image.
 const patchChangeSchema = z
   .object({
     op: z.enum(['add', 'update', 'delete']),
@@ -559,6 +562,31 @@ const patchChangeSchema = z
     version: z.number().int().nonnegative().optional()
   })
   .strict()
+// The rendered hypothetical (unapplied) scene, when one was produced — same
+// shape as thumbnail's image fields (minus the scene-level metadata `thumbnail`
+// itself doesn't need), so `renderScenePng` in excalidraw-app can back both.
+// `null` whenever no image was rendered; `thumbnailReason` says why: the
+// caller opted out (`not-requested`), nothing would change (`no-change`), the
+// result scene is empty e.g. `clear` (`empty-result`), a render was actually
+// dropped for exceeding the result budget (`over-budget`), or it's present
+// (`rendered`).
+const previewThumbnailSchema = z
+  .object({
+    dataUrl: z.string().startsWith('data:image/png'),
+    mimeType: z.literal('image/png'),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    bytes: z.number().int().nonnegative()
+  })
+  .strict()
+  .nullable()
+const previewThumbnailReasonSchema = z.enum([
+  'rendered',
+  'not-requested',
+  'no-change',
+  'empty-result',
+  'over-budget'
+])
 const previewResultSchema = z
   .object({
     ok: z.literal(true),
@@ -574,6 +602,8 @@ const previewResultSchema = z
       })
       .strict(),
     changes: z.array(patchChangeSchema),
+    thumbnail: previewThumbnailSchema,
+    thumbnailReason: previewThumbnailReasonSchema,
     truncation: truncationSchema
   })
   .strict()

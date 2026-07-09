@@ -5,7 +5,12 @@ import {
   EXCALIDRAW_PAYLOAD_BUDGETS,
   excalidrawVerbInputSchemas
 } from '@tinytinkerer/excalidraw-protocol'
-import type { PatchChange, PreviewableVerb, PreviewInput } from '@tinytinkerer/excalidraw-protocol'
+import type {
+  PatchChange,
+  PreviewableVerb,
+  PreviewInput,
+  PreviewResult
+} from '@tinytinkerer/excalidraw-protocol'
 import { executeBind } from './binding'
 import { executeClear, executeDraw } from './create'
 import { executeEdit } from './edit'
@@ -24,6 +29,7 @@ import {
   executeStack,
   executeTransform
 } from './structure'
+import { renderScenePng } from './thumbnail'
 
 // `preview` dry-runs any other mutating verb (see the rationale on the input
 // schema): it runs the target verb's REAL executor — same validation, same
@@ -31,7 +37,10 @@ import {
 // committed instead of committing it, then diffs before/after into a compact
 // patch summary. No staged-mutation state is held anywhere; the versioned input
 // the caller passes IS the staged plan, and "apply" is just calling the target
-// verb again with that same input.
+// verb again with that same input. It also renders a visual of the
+// hypothetical (unapplied) result — a non-destructive picture of what the
+// scene would look like after the change, shared with `thumbnail` via
+// `renderScenePng` — alongside the patch summary.
 
 // Thin dispatch table over the real executors. The cast on each input is safe
 // because the caller's `input.input` was parsed against that verb's own schema
@@ -60,10 +69,16 @@ const dispatch: Record<PreviewableVerb, (api: ExcalidrawImperativeAPI, input: ne
 // elements it would have committed instead of committing them, and
 // `scrollToContent` is a no-op (a dry-run must not move the viewport either).
 // Every other property (getSceneElements, getAppState, getFiles, ...) delegates
-// straight through via `Reflect.get`, so the executor's real reads — and its
-// real validation (stale versions, locks, relationship guards) — behave exactly
-// as they would for a real apply; only the single commit choke-point is
-// suppressed.
+// straight through, so the executor's real reads — and its real validation
+// (stale versions, locks, relationship guards) — behave exactly as they would
+// for a real apply; only the single commit choke-point is suppressed.
+//
+// Hardened `this`: both the `Reflect.get` receiver and any function value
+// returned are bound to `target` (the real api), never `receiver`/the proxy.
+// A real `ExcalidrawImperativeAPI` is a class instance that can carry private
+// fields and methods reading `this` — calling such a method with
+// `this === proxy` would throw or misbehave (plain-object test fakes don't
+// exercise this; a class instance does).
 const buildCapture = (
   api: ExcalidrawImperativeAPI
 ): {
@@ -72,13 +87,16 @@ const buildCapture = (
 } => {
   let captured: readonly OrderedExcalidrawElement[] | null = null
   const handler: ProxyHandler<ExcalidrawImperativeAPI> = {
-    get(target, prop, receiver): unknown {
+    get(target, prop): unknown {
       if (prop === 'updateScene')
         return (sceneData: { elements?: readonly OrderedExcalidrawElement[] }) => {
           if (sceneData.elements) captured = sceneData.elements
         }
       if (prop === 'scrollToContent') return () => {}
-      return Reflect.get(target, prop, receiver)
+      const value: unknown = Reflect.get(target, prop, target)
+      return typeof value === 'function'
+        ? (value as (...args: unknown[]) => unknown).bind(target)
+        : value
     }
   }
   const proxy = new Proxy(api, handler)
@@ -148,6 +166,9 @@ const buildChanges = (
   return { changes: [...adds, ...updates, ...deletes], fields }
 }
 
+type PreviewThumbnail = PreviewResult['thumbnail']
+type PreviewThumbnailReason = PreviewResult['thumbnailReason']
+
 export const executePreview = async (api: ExcalidrawImperativeAPI, input: PreviewInput) => {
   assertRequestBudget('preview', input)
   const schema = excalidrawVerbInputSchemas[input.verb]
@@ -176,32 +197,74 @@ export const executePreview = async (api: ExcalidrawImperativeAPI, input: Previe
     deletes: changes.filter((change) => change.op === 'delete').length,
     total: changes.length
   }
+  const wouldChange = summary.total > 0
 
-  // Mirror `boundedResult`'s build-a-candidate pattern (no page): summary counts
-  // are computed from the full diff and never shrink; trimming only drops
-  // trailing `changes` entries.
-  return trimToBudget(
-    (count) => {
-      const trimmed = changes.slice(0, count)
-      const candidate = {
-        ok: true as const,
-        verb: input.verb,
-        wouldChange: summary.total > 0,
-        sceneVersion,
-        summary,
-        changes: trimmed,
-        truncation: {
-          truncated: fields.length > 0 || trimmed.length < changes.length,
-          fields: [...new Set(fields)],
-          omittedElements: changes.length - trimmed.length,
-          serializedBytes: 0,
-          budgetBytes: EXCALIDRAW_PAYLOAD_BUDGETS.preview.result
-        }
+  // Degrade ladder for the visual: render:false is the caller opting out;
+  // !wouldChange and an empty result scene (e.g. `clear`) are cases where an
+  // image wouldn't show anything meaningful; otherwise render the hypothetical
+  // `after` scene against the REAL api (not the capture proxy — exportToCanvas
+  // is a pure read over the given elements, so this cannot commit anything).
+  let thumbnail: PreviewThumbnail = null
+  let thumbnailReason: PreviewThumbnailReason
+  if (!input.render) {
+    thumbnailReason = 'not-requested'
+  } else if (!wouldChange) {
+    thumbnailReason = 'no-change'
+  } else if (after.length === 0) {
+    thumbnailReason = 'empty-result'
+  } else {
+    thumbnail = await renderScenePng(api, after, {
+      maxDimension: input.maxDimension,
+      background: true
+    })
+    thumbnailReason = 'rendered'
+  }
+
+  const budget = EXCALIDRAW_PAYLOAD_BUDGETS.preview.result
+
+  // Mirror `boundedResult`'s build-a-candidate pattern (no page): summary
+  // counts are computed from the full diff and never shrink; trimming prefers
+  // keeping the image and drops trailing `changes` entries around it.
+  const buildCandidate = (
+    changeCount: number,
+    image: PreviewThumbnail,
+    reason: PreviewThumbnailReason
+  ) => {
+    const trimmed = changes.slice(0, changeCount)
+    const candidate = {
+      ok: true as const,
+      verb: input.verb,
+      wouldChange,
+      sceneVersion,
+      summary,
+      changes: trimmed,
+      thumbnail: image,
+      thumbnailReason: reason,
+      truncation: {
+        truncated: fields.length > 0 || trimmed.length < changes.length || reason === 'over-budget',
+        fields: [...new Set(fields)],
+        omittedElements: changes.length - trimmed.length,
+        serializedBytes: 0,
+        budgetBytes: budget
       }
-      settleSerializedBytes(candidate)
-      return candidate
-    },
+    }
+    settleSerializedBytes(candidate)
+    return candidate
+  }
+
+  // The image is the preferred payload: check whether it fits alongside the
+  // summary alone (zero changes) before trimming anything. If even that
+  // overflows, drop the image (keeping the summary) and fall through to
+  // trimming `changes` as usual.
+  const zeroChangesWithImage = buildCandidate(0, thumbnail, thumbnailReason)
+  if (zeroChangesWithImage.truncation.serializedBytes > budget && thumbnail !== null) {
+    thumbnail = null
+    thumbnailReason = 'over-budget'
+  }
+
+  return trimToBudget(
+    (count) => buildCandidate(count, thumbnail, thumbnailReason),
     changes.length,
-    EXCALIDRAW_PAYLOAD_BUDGETS.preview.result
+    budget
   )
 }

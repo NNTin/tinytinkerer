@@ -184,9 +184,11 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
         description:
           'Preview an Excalidraw mutation without applying it: dry-runs the given verb with the ' +
           'exact input you would pass it, running the same validation and version checks, and ' +
-          'returns a compact patch summary (add/update/delete counts plus affected ids and ' +
-          'labels). Nothing is committed — to apply, call the target verb itself with the same ' +
-          'input.',
+          'returns a rendered image of the proposed result (a non-destructive picture of what ' +
+          'the scene would look like after the change) alongside a compact patch summary ' +
+          '(add/update/delete counts plus affected ids and labels), scaled to maxDimension. ' +
+          'Nothing is committed — to apply, call the target verb itself with the same input. ' +
+          'Set render:false to skip the image for a faster, summary-only dry-run.',
         schema: excalidrawVerbInputSchemas.preview
       },
       thumbnail: {

@@ -20,6 +20,48 @@ type ExportToCanvas = (opts: {
   maxWidthOrHeight?: number
 }) => Promise<HTMLCanvasElement>
 
+export type RenderedScenePng = {
+  dataUrl: string
+  mimeType: 'image/png'
+  width: number
+  height: number
+  bytes: number
+}
+
+// Shared export path for `thumbnail` and `preview`'s visual: renders the given
+// elements (an arbitrary array — the live scene, a scoped subset, or a
+// captured, never-committed hypothetical scene) to an offscreen PNG via
+// `exportToCanvas`, scaled to `maxDimension`. Returns `null` for an empty
+// `elements` array (nothing to render) instead of calling into
+// `exportToCanvas` with nothing.
+export const renderScenePng = async (
+  api: ExcalidrawImperativeAPI,
+  elements: readonly ExcalidrawElement[],
+  options: { maxDimension: number; background: boolean }
+): Promise<RenderedScenePng | null> => {
+  if (elements.length === 0) return null
+  const state = api.getAppState()
+  // Cast (rather than rebind at module scope) so the property access happens
+  // here, only when a render is actually requested — see the note above.
+  const canvas = await (exportToCanvasUntyped as ExportToCanvas)({
+    elements,
+    appState: {
+      exportBackground: options.background,
+      viewBackgroundColor: state.viewBackgroundColor
+    },
+    files: api.getFiles(),
+    maxWidthOrHeight: options.maxDimension
+  })
+  const dataUrl = canvas.toDataURL('image/png')
+  return {
+    dataUrl,
+    mimeType: 'image/png',
+    width: canvas.width,
+    height: canvas.height,
+    bytes: dataUrl.length
+  }
+}
+
 // `thumbnail` renders a byte-budgeted PNG snapshot for visual verification. It is
 // on-demand only (no staged state): an over-budget export is an actionable error
 // instead of a silently trimmed result, since an image cannot be "trimmed" like a
@@ -37,34 +79,27 @@ export const executeThumbnail = async (api: ExcalidrawImperativeAPI, input: Thum
   if (scoped.length === 0)
     throw new Error('thumbnail: nothing to export (empty scene or no matching elements)')
 
-  const state = api.getAppState()
-  // Cast (rather than rebind at module scope) so the property access happens
-  // here, only when a thumbnail is actually requested — see the note above.
-  const canvas = await (exportToCanvasUntyped as ExportToCanvas)({
-    elements: scoped,
-    appState: {
-      exportBackground: input.background,
-      viewBackgroundColor: state.viewBackgroundColor
-    },
-    files: api.getFiles(),
-    maxWidthOrHeight: input.maxDimension
-  })
-  const dataUrl = canvas.toDataURL('image/png')
+  // `scoped.length > 0` was just asserted above, so `renderScenePng` cannot
+  // return null here.
+  const rendered = (await renderScenePng(api, scoped, {
+    maxDimension: input.maxDimension,
+    background: input.background
+  }))!
   const result = {
     ok: true as const,
-    dataUrl,
-    mimeType: 'image/png' as const,
-    width: canvas.width,
-    height: canvas.height,
-    bytes: dataUrl.length,
+    dataUrl: rendered.dataUrl,
+    mimeType: rendered.mimeType,
+    width: rendered.width,
+    height: rendered.height,
+    bytes: rendered.bytes,
     elementCount: scoped.length,
     missingIds,
     sceneVersion
   }
-  const bytes = serializedUtf8Bytes(result)
-  if (bytes > EXCALIDRAW_PAYLOAD_BUDGETS.thumbnail.result)
+  const resultBytes = serializedUtf8Bytes(result)
+  if (resultBytes > EXCALIDRAW_PAYLOAD_BUDGETS.thumbnail.result)
     throw new Error(
-      `thumbnail: result is ${bytes} bytes; maximum is ${EXCALIDRAW_PAYLOAD_BUDGETS.thumbnail.result} bytes — lower maxDimension or scope elementIds`
+      `thumbnail: result is ${resultBytes} bytes; maximum is ${EXCALIDRAW_PAYLOAD_BUDGETS.thumbnail.result} bytes — lower maxDimension or scope elementIds`
     )
   return result
 }

@@ -19,10 +19,12 @@ import {
   EXCALIDRAW_DEFAULT_BINDING_GAP,
   EXCALIDRAW_ICON_LIMIT,
   EXCALIDRAW_LIBRARY_IMPORT_VERB,
+  EXCALIDRAW_PAYLOAD_BUDGETS,
   EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS,
   EXCALIDRAW_PREVIEWABLE_VERBS,
   EXCALIDRAW_PROTOCOL_VERSION,
   EXCALIDRAW_SNAPSHOT_VERSION,
+  EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS,
   EXCALIDRAW_VERBS,
   iconInputSchema,
   isAllowedLibraryUrl,
@@ -469,22 +471,120 @@ describe('excalidraw protocol', () => {
 
   it('validates the safer-iterative-workflow verbs', () => {
     // preview: accepts a valid nested verb + input, rejects a non-previewable
-    // (read) verb name outright.
+    // (read) verb name outright. Defaults render:true and maxDimension:512,
+    // sharing the same [64, 1024] bounds as thumbnail so the two can't drift.
     expect(
-      previewInputSchema.safeParse({
+      previewInputSchema.parse({
         verb: 'edit',
         input: { edits: [{ id: 'shape-1', expectedVersion: 1, changes: { x: 10 } }] }
-      }).success
-    ).toBe(true)
+      })
+    ).toMatchObject({
+      render: true,
+      maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.default
+    })
     expect(previewInputSchema.safeParse({ verb: 'read', input: {} }).success).toBe(false)
     expect(previewInputSchema.safeParse({ verb: 'preview', input: {} }).success).toBe(false)
+    expect(
+      previewInputSchema.safeParse({
+        verb: 'clear',
+        input: {},
+        render: false,
+        maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.min
+      }).success
+    ).toBe(true)
+    expect(
+      previewInputSchema.safeParse({
+        verb: 'clear',
+        input: {},
+        maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.min - 1
+      }).success
+    ).toBe(false)
+    expect(
+      previewInputSchema.safeParse({
+        verb: 'clear',
+        input: {},
+        maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.max + 1
+      }).success
+    ).toBe(false)
     expect(EXCALIDRAW_PREVIEWABLE_VERBS).not.toContain('search')
     expect(EXCALIDRAW_PREVIEWABLE_VERBS).not.toContain('preview')
 
-    // thumbnail: defaults maxDimension/background, bounds maxDimension to [64, 1024].
-    expect(thumbnailInputSchema.parse({})).toMatchObject({ maxDimension: 512, background: true })
-    expect(thumbnailInputSchema.safeParse({ maxDimension: 32 }).success).toBe(false)
-    expect(thumbnailInputSchema.safeParse({ maxDimension: 2048 }).success).toBe(false)
+    // preview's result budget was raised to carry an optional rendered image
+    // alongside the patch summary; it now sits above thumbnail's own image
+    // budget so the summary has headroom too.
+    expect(EXCALIDRAW_PAYLOAD_BUDGETS.preview.result).toBe(160 * 1_024)
+    expect(EXCALIDRAW_PAYLOAD_BUDGETS.preview.result).toBeGreaterThan(
+      EXCALIDRAW_PAYLOAD_BUDGETS.thumbnail.result
+    )
+
+    // preview's result accepts a null thumbnail (with a reason) as well as a
+    // populated one, mirroring thumbnail's own image fields.
+    const previewBase = {
+      ok: true as const,
+      verb: 'edit' as const,
+      wouldChange: true,
+      sceneVersion: 3,
+      summary: { adds: 0, updates: 1, deletes: 0, total: 1 },
+      changes: [{ op: 'update' as const, id: 'shape-1', type: 'rectangle', version: 1 }],
+      truncation: {
+        truncated: false,
+        fields: [],
+        omittedElements: 0,
+        serializedBytes: 10,
+        budgetBytes: EXCALIDRAW_PAYLOAD_BUDGETS.preview.result
+      }
+    }
+    expect(
+      excalidrawVerbContracts.preview.resultSchema.safeParse({
+        ...previewBase,
+        thumbnail: null,
+        thumbnailReason: 'not-requested'
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.preview.resultSchema.safeParse({
+        ...previewBase,
+        thumbnail: {
+          dataUrl: 'data:image/png;base64,AAA',
+          mimeType: 'image/png',
+          width: 128,
+          height: 96,
+          bytes: 26
+        },
+        thumbnailReason: 'rendered'
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.preview.resultSchema.safeParse({
+        ...previewBase,
+        thumbnail: { dataUrl: 'not-a-png', mimeType: 'image/png', width: 1, height: 1, bytes: 0 },
+        thumbnailReason: 'rendered'
+      }).success
+    ).toBe(false)
+    expect(
+      excalidrawVerbContracts.preview.resultSchema.safeParse({
+        ...previewBase,
+        thumbnail: null,
+        thumbnailReason: 'not-a-real-reason'
+      }).success
+    ).toBe(false)
+
+    // thumbnail: defaults maxDimension/background, bounds maxDimension to
+    // the same [64, 1024] range preview reuses.
+    expect(thumbnailInputSchema.parse({})).toMatchObject({
+      maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.default,
+      background: true
+    })
+    expect(
+      thumbnailInputSchema.safeParse({
+        maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.min - 1
+      }).success
+    ).toBe(false)
+    expect(
+      thumbnailInputSchema.safeParse({
+        maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.max + 1
+      }).success
+    ).toBe(false)
     expect(thumbnailInputSchema.safeParse({ elementIds: [] }).success).toBe(false)
 
     // pick: defaults mode/timeout/detail, bounds the prompt and timeout.
