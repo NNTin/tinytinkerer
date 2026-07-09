@@ -51,7 +51,7 @@ beforeAll(async () => {
 }, 90_000)
 
 describe('canvas bundle regression guard', () => {
-  it('keeps the twenty-two-tool startup entry below 90 kB', () => {
+  it('keeps the twenty-five-tool startup entry below 92 kB', () => {
     const entry = shellChunks.find((chunk) => chunk.facadeModuleId?.endsWith('/canvas/index.html'))
     expect(entry).toBeDefined()
     // Raised 84 → 85 kB when the shared chat surface gained always-loaded turn
@@ -62,8 +62,12 @@ describe('canvas bundle regression guard', () => {
     // carries all four presentation variants' chrome (~4.6 kB raw, ~1.5 kB
     // gzipped) so the panel — including the boot-failure Reload affordance —
     // has one implementation instead of five drifting copies.
+    // Raised 90 → 92 kB when the safer-workflow verbs landed (#318, 2026-07):
+    // the startup entry now carries three more tool descriptions plus the
+    // preview/thumbnail/pick input schemas (~1.4 kB raw) so the model can call
+    // them; the verbs' behavior stays in the iframe graph.
     // Excalidraw and the heavy graph are still guarded out by the tests below.
-    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(90)
+    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(92)
   })
 
   it('keeps Excalidraw outside the canvas startup graph', () => {

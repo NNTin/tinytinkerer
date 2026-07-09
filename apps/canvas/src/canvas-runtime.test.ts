@@ -34,7 +34,10 @@ describe('canvas app tools', () => {
       'arrange',
       'survey',
       'preset',
-      'icon'
+      'icon',
+      'preview',
+      'thumbnail',
+      'pick'
     ])
     expect(
       tools.find((tool) => tool.id === 'draw')?.schema.safeParse({ elements: [] }).success
@@ -74,6 +77,37 @@ describe('canvas app tools', () => {
     expect(
       tools.find((tool) => tool.id === 'arrange')?.schema.safeParse({ elements: [] }).success
     ).toBe(false)
+    // the safer-workflow verbs consume the shared schemas too
+    expect(
+      tools
+        .find((tool) => tool.id === 'preview')
+        ?.schema.safeParse({
+          verb: 'edit',
+          input: { edits: [{ id: 'a', expectedVersion: 1, changes: { x: 10 } }] }
+        }).success
+    ).toBe(true)
+    expect(
+      tools.find((tool) => tool.id === 'preview')?.schema.safeParse({ verb: 'read', input: {} })
+        .success
+    ).toBe(false)
+    expect(tools.find((tool) => tool.id === 'pick')?.schema.parse({})).toEqual({
+      mode: 'current',
+      timeoutSeconds: 60,
+      detail: 'standard'
+    })
+  })
+
+  it('marks only pick as awaiting human input, with a bridge timeout that outlives the wait', async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true })
+    const tools = createCanvasAppTools(handle(request))
+    const pick = tools.find((tool) => tool.id === 'pick')
+    expect(pick?.awaitsHumanInput).toBe(true)
+    expect(tools.find((tool) => tool.id === 'preview')?.awaitsHumanInput).toBeUndefined()
+    expect(tools.find((tool) => tool.id === 'thumbnail')?.awaitsHumanInput).toBeUndefined()
+
+    const parsed = pick?.schema.parse({ mode: 'interactive' })
+    await expect(pick?.execute(parsed)).resolves.toEqual({ ok: true })
+    expect(request).toHaveBeenCalledWith('pick', parsed, { timeoutMs: 130_000 })
   })
 
   it('forwards validated tool input to the bridge handle', async () => {

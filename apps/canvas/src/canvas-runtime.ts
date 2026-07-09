@@ -1,6 +1,9 @@
 import { appToolsFromVerbs, createAppBridgeHandle } from '@tinytinkerer/app-harness'
 import type { AppBridgeHandle } from '@tinytinkerer/app-harness'
-import { excalidrawVerbInputSchemas } from '@tinytinkerer/excalidraw-protocol'
+import {
+  EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS,
+  excalidrawVerbInputSchemas
+} from '@tinytinkerer/excalidraw-protocol'
 
 export const canvasBridgeHandle = createAppBridgeHandle()
 
@@ -176,6 +179,36 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
           'Excalidraw glyph (never fetched from an external library), reusable as a building block for ' +
           'diagrams. Appends by default; one atomic, undoable, version-checked insert.',
         schema: excalidrawVerbInputSchemas.icon
+      },
+      preview: {
+        description:
+          'Preview an Excalidraw mutation without applying it: dry-runs the given verb with the ' +
+          'exact input you would pass it, running the same validation and version checks, and ' +
+          'returns a compact patch summary (add/update/delete counts plus affected ids and ' +
+          'labels). Nothing is committed — to apply, call the target verb itself with the same ' +
+          'input.',
+        schema: excalidrawVerbInputSchemas.preview
+      },
+      thumbnail: {
+        description:
+          'Render a small PNG snapshot of the Excalidraw scene (or specific elementIds) as a ' +
+          'base64 data URL for visual verification, scaled to maxDimension. On-demand and ' +
+          'byte-budgeted: lower maxDimension or narrow elementIds if the result exceeds the ' +
+          'budget.',
+        schema: excalidrawVerbInputSchemas.thumbnail
+      },
+      pick: {
+        description:
+          'Read the user\'s live Excalidraw selection (mode "current"), or ask the user to ' +
+          'select element(s) on the canvas (mode "interactive": shows a toast prompt and waits ' +
+          "for the next settled selection, up to timeoutSeconds; timedOut:true when they don't). " +
+          'Returns normalized element records with versions so the selection can be edited ' +
+          'immediately.',
+        schema: excalidrawVerbInputSchemas.pick,
+        awaitsHumanInput: true,
+        // Must outlive the worst-case in-iframe wait; the runtime's human-input
+        // budget (300s) still bounds the tool.
+        requestTimeoutMs: (EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS + 10) * 1000
       }
     }
   })

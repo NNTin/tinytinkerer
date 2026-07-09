@@ -74,7 +74,7 @@ flowchart TB
 
   subgraph shell["apps/canvas — parent window"]
     chat["ChatApp<br/>from app-browser"]
-    tools["draw / search / inspect / read / edit / clear<br/>group / duplicate / delete / align<br/>distribute / stack / order / transform<br/>bind / audit"]
+    tools["draw / search / inspect / read / edit / clear<br/>group / duplicate / delete / align<br/>distribute / stack / order / transform<br/>bind / audit / snap / place / arrange / survey<br/>preset / icon / preview / thumbnail / pick"]
     handle["AppBridgeHandle"]
     client["app-bridge client"]
     frame["AppFrame"]
@@ -140,6 +140,12 @@ on this interface rather than directly on `window`. Production uses:
 
 Tests can substitute an in-memory transport while exercising the same correlation,
 validation, error, and timeout behavior.
+
+Requests time out after a client-level default, and `request(verb, payload, options)`
+accepts a per-request `timeoutMs` override. This is a generic capability: a
+human-in-the-loop verb (one that blocks on the user, such as Excalidraw's interactive
+`pick`) passes a longer per-request timeout so its bridge request can outlive the
+machine default without loosening the timeout for every other verb.
 
 Every wire message contains the generic `protocolVersion` and `sessionNonce`.
 `protocolVersion` is `APP_BRIDGE_PROTOCOL_VERSION`; it changes only when the envelope
@@ -216,6 +222,9 @@ This is the only shared source of truth for the Excalidraw vocabulary:
 | `survey`     | read  | Report layout health (overlaps, label overflow, unreadable connectors)         |
 | `preset`     | write | Insert a network/flowchart/UML/wireframe diagram scaffold (grouped, connected) |
 | `icon`       | write | Insert infrastructure icon glyphs (router/laptop/phone/cloud/server/printer)   |
+| `preview`    | read  | Dry-run any mutating verb and return a compact patch summary without a commit  |
+| `thumbnail`  | read  | Render a byte-budgeted PNG snapshot of the scene (or scoped elements)          |
+| `pick`       | read  | Report the live selection now, or prompt the user and wait for their selection |
 
 The two diagram-semantics verbs (`preset` and `icon`) turn intent into a ready-made,
 grouped scaffold. `preset` inserts a network topology (star / internet-edge), a flowchart
@@ -389,6 +398,62 @@ flowchart LR
   surveyInput --> findings --> fixes
 ```
 
+### Safer iterative workflows
+
+`preview`, `thumbnail`, and `pick` close the loop between proposing a change, verifying
+it, and grounding it in what the user actually means.
+
+- `preview` is a **stateless dry-run** of any mutating verb. There is no staged-mutation
+  token or state held in the iframe — staged state would go stale on any concurrent user
+  edit and duplicate `mutation.ts`'s lifecycle. Instead, the versioned input **is** the
+  staged plan: `preview` validates `input` against the target verb's own schema, then runs
+  that verb's **real executor** — same validation, same geometry, same stale-version, lock,
+  and relationship guards — against a capture proxy over the imperative API that records
+  what `updateScene` would have committed instead of committing it (and no-ops
+  `scrollToContent`, so a dry-run never moves the viewport either). The captured elements
+  are diffed against the current scene by id and object identity (executors return the same
+  object for elements they didn't touch; a pure z-reorder — same id set, changed array
+  position — is reported as an update too) into a compact **patch summary**:
+  `wouldChange`, add/update/delete counts, and a bounded `changes` list of
+  `{ op, id, type, label?, version? }` entries. The summary counts come from the full diff
+  and never shrink; only trailing `changes` entries are trimmed to the result budget.
+  Applying is simply calling the target verb itself with the same input — its
+  `expectedVersion`/`expectedSceneVersion` checks make apply-after-preview safe by
+  construction.
+- `thumbnail` renders an on-demand PNG snapshot (`exportToCanvas`) of the whole scene or
+  scoped `elementIds`, scaled to `maxDimension`, and returns it as a base64 data URL for
+  visual verification. Unlike the record-list reads it has a **hard byte budget** rather
+  than truncation metadata: an image cannot be "trimmed", so an over-budget export is an
+  actionable error (lower `maxDimension` or narrow `elementIds`), never a silently degraded
+  result.
+- `pick` is the interactive/selection read, one verb with two modes. `current` reports the
+  live canvas selection now; `interactive` is the human-in-the-loop flow — it shows an
+  in-canvas toast prompt and resolves with the user's next **settled** selection change (a
+  marquee drag emits a stream of selection events, so the selection must be stable for a
+  short debounce before it counts), or `timedOut: true` after `timeoutSeconds`. Stale ids
+  pointing at deleted elements are silently dropped, and the selected elements come back as
+  normalized, versioned records so they can be edited immediately. Instead of inventing a
+  second HITL path, `pick` reuses the issue-#85 machinery: the canvas tool declares
+  `awaitsHumanInput` so the runtime governs it with the human-input budget, and sets a
+  per-request bridge timeout (derived from `EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS`, the
+  generic app-bridge override described earlier) so the underlying request outlives the
+  wait too.
+
+```mermaid
+flowchart LR
+  plan["versioned verb input<br/>= the staged plan"]
+  dryRun["preview<br/>real executor + capture proxy"]
+  patch["patch summary<br/>adds / updates / deletes"]
+  apply["apply = call the verb itself<br/>version checks re-run"]
+  snapshot["thumbnail<br/>budgeted PNG data URL"]
+  pickVerb["pick<br/>current | interactive"]
+  user["user selection<br/>toast + settle debounce"]
+
+  plan --> dryRun --> patch --> apply
+  apply --> snapshot
+  pickVerb --> user --> plan
+```
+
 ### Normalized element union and edit capabilities
 
 `read` returns a strict discriminated union on `kind`, not a record containing several
@@ -447,14 +512,17 @@ they fit and report both omissions and field truncations. Edit receipts (`id` an
 `version`) are always retained even when detailed edited records are omitted; callers
 retrieve omitted detail with `read`.
 
-| Verb      | Request budget | Result budget |
-| --------- | -------------: | ------------: |
-| `search`  |          8 KiB |        16 KiB |
-| `inspect` |         16 KiB |        32 KiB |
-| `read`    |         16 KiB |        64 KiB |
-| `draw`    |         64 KiB |        64 KiB |
-| `edit`    |         64 KiB |        64 KiB |
-| `clear`   |          1 KiB |         1 KiB |
+| Verb        | Request budget | Result budget |
+| ----------- | -------------: | ------------: |
+| `search`    |          8 KiB |        16 KiB |
+| `inspect`   |         16 KiB |        32 KiB |
+| `read`      |         16 KiB |        64 KiB |
+| `draw`      |         64 KiB |        64 KiB |
+| `edit`      |         64 KiB |        64 KiB |
+| `clear`     |          1 KiB |         1 KiB |
+| `preview`   |         64 KiB |        32 KiB |
+| `thumbnail` |          4 KiB |       128 KiB |
+| `pick`      |          4 KiB |        64 KiB |
 
 ```mermaid
 flowchart LR
@@ -496,6 +564,9 @@ flowchart LR
   structure["structure.ts<br/>group, duplicate, delete,<br/>align, distribute, stack,<br/>order, transform"]
   binding["binding.ts<br/>bind, audit"]
   layout["layout.ts<br/>snap, place, arrange,<br/>survey"]
+  preview["preview.ts<br/>dry-run any mutating verb,<br/>capture proxy, patch summary"]
+  thumbnail["thumbnail.ts<br/>budgeted PNG snapshot,<br/>exportToCanvas"]
+  pick["pick.ts<br/>current/interactive selection,<br/>toast + settle debounce"]
   geometry["geometry.ts<br/>box math, edge anchors,<br/>connector reflow"]
   mutation["mutation.ts<br/>shared receipts, budget-bounded<br/>records, commitWrite"]
   ids["ids.ts<br/>stable id minting"]
@@ -524,6 +595,20 @@ flowchart LR
   layout --> structure
   layout --> mutation
   layout --> geometry
+  bridge --> preview --> api
+  preview --> create
+  preview --> edit
+  preview --> structure
+  preview --> binding
+  preview --> layout
+  preview --> presets
+  preview --> payload
+  bridge --> thumbnail --> api
+  thumbnail --> query
+  thumbnail --> payload
+  bridge --> pick --> api
+  pick --> normalization
+  pick --> payload
   geometry --> normalization
   create --> ids
   mutation --> normalization
@@ -561,6 +646,15 @@ The modules translate the stable model vocabulary into Excalidraw operations:
   the six infrastructure icon factories encode each glyph locally (no runtime library fetch),
   and the executor mints collision-free ids/group ids, version-checks the scene, and reuses
   `create.ts`'s `drawFromSkeletons` to convert + commit in one atomic, undoable update;
+- `preview` (in `preview.ts`) dry-runs any mutating verb: it parses the nested input with
+  that verb's own schema, runs the verb's real executor against a capture proxy that
+  suppresses the single `updateScene` commit, and diffs before/after into a compact patch
+  summary — no staged state, nothing committed;
+- `thumbnail` (in `thumbnail.ts`) exports the scene (or scoped elements) to a PNG data URL
+  via `exportToCanvas`, version-checked and hard-capped by its result byte budget;
+- `pick` (in `pick.ts`) reads the live selection, or — in interactive mode — shows a toast
+  (`api.setToast`), subscribes to `api.onChange`, and resolves with the user's next settled
+  selection as normalized records (or `timedOut: true`);
 - `geometry.ts` is the shared, verb-agnostic geometry: the axis-aligned box math, the
   deterministic connector edge-anchor policy, and `reflowBoundConnectors` (re-anchoring
   connectors bound to a moved/resized shape). `structure`, `binding`, and `layout` all
