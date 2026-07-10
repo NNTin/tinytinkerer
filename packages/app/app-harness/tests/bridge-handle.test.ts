@@ -25,6 +25,16 @@ describe('createAppBridgeHandle', () => {
     expect(request).toHaveBeenCalledWith('draw', { n: 1 })
   })
 
+  it('forwards a per-request timeout override to the client', async () => {
+    const handle = createAppBridgeHandle()
+    const request = vi.fn().mockResolvedValue('ok')
+    handle.setClient(fakeClient(request))
+    await expect(
+      handle.request('pick', { mode: 'interactive' }, { timeoutMs: 130_000 })
+    ).resolves.toBe('ok')
+    expect(request).toHaveBeenCalledWith('pick', { mode: 'interactive' }, { timeoutMs: 130_000 })
+  })
+
   it('returns to pending when the client is cleared (teardown)', async () => {
     const handle = createAppBridgeHandle()
     handle.setClient(fakeClient())

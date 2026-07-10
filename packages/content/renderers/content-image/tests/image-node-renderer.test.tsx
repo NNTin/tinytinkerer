@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
+import { ContentDocumentContent, type ContentDocument } from '@tinytinkerer/content-react'
 import { createImagePlugin, ImageNodeRenderer, imagePlugin } from '../src/index.js'
 
 afterEach(() => {
@@ -194,5 +195,56 @@ describe('ImageNodeRenderer', () => {
     const downloadLink = screen.getByRole('link', { name: 'Download' })
     expect(downloadLink).toHaveAttribute('href', 'https://example.com/cat.png')
     expect(downloadLink).toHaveAttribute('download', 'cat.png')
+  })
+
+  // `media:<callId>#<index>` handles (see @tinytinkerer/contracts `mediaRefFor`) carry
+  // no bytes themselves — they must be resolved via the host's `resolveMediaUrl`
+  // (threaded through content-react's `ContentRenderOptions`), so these go through
+  // `ContentDocumentContent` rather than mounting `ImageNodeRenderer` directly, the
+  // way the un-networked tests above do.
+  const mediaRefDocument = (url: string, alt: string): ContentDocument => ({
+    nodes: [{ type: 'image', id: 'img-1', url, alt }]
+  })
+
+  it('resolves a media: ref to its data URL and renders it as the <img> src', () => {
+    render(
+      <ContentDocumentContent
+        document={mediaRefDocument('media:call-1#0', 'A chart')}
+        plugins={[imagePlugin]}
+        renderOptions={{
+          resolveMediaUrl: (ref) =>
+            ref === 'media:call-1#0' ? 'data:image/png;base64,abcd' : undefined
+        }}
+      />
+    )
+
+    const img = screen.getByRole('img', { name: 'A chart' })
+    expect(img).toHaveAttribute('src', 'data:image/png;base64,abcd')
+  })
+
+  it('renders a graceful fallback (no <img>) when the media: ref does not resolve', () => {
+    const { container } = render(
+      <ContentDocumentContent
+        document={mediaRefDocument('media:call-1#0', 'A chart')}
+        plugins={[imagePlugin]}
+        renderOptions={{ resolveMediaUrl: () => undefined }}
+      />
+    )
+
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByText(/A chart/)).toBeInTheDocument()
+    expect(screen.getByText(/image unavailable/i)).toBeInTheDocument()
+  })
+
+  it('renders a graceful fallback when no resolveMediaUrl is wired at all', () => {
+    const { container } = render(
+      <ContentDocumentContent
+        document={mediaRefDocument('media:call-1#0', 'A chart')}
+        plugins={[imagePlugin]}
+      />
+    )
+
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByText(/image unavailable/i)).toBeInTheDocument()
   })
 })

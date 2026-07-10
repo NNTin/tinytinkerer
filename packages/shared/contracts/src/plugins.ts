@@ -92,6 +92,61 @@ export type ChoicePromptResult = z.infer<typeof choicePromptResultSchema>
 export const pluginActivationStateSchema = z.record(z.string(), z.boolean())
 export type PluginActivationState = z.infer<typeof pluginActivationStateSchema>
 
+// A display-only image a tool may attach to its result; the host renders it and,
+// on the inference path, substitutes a text description + handle so the base64
+// never reaches the model. `dataUrl` carries the actual image bytes; `description`
+// is what the model sees in its place. `.strict()` so an extra/misspelled key
+// fails validation instead of silently riding along unrendered.
+export const toolResultImageMediaSchema = z
+  .object({
+    kind: z.literal('image'),
+    dataUrl: z.string().startsWith('data:image/'),
+    mimeType: z.string(),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    description: z.string()
+  })
+  .strict()
+export type ToolResultImageMedia = z.infer<typeof toolResultImageMediaSchema>
+
+// The single canonical ref-builder for a piece of tool-result media, shared by
+// both the model-serialization path (which substitutes this handle for the
+// base64) and the UI media registry (which resolves it back to the image) — so
+// the two sides cannot drift on the ref format.
+export const mediaRefFor = (callId: string, index: number): string => `media:${callId}#${index}`
+
+// The one place that splits a tool result into its display-only media and the
+// rest of the payload. Structural and defensive: `output` is untrusted tool
+// output, so this never throws — anything that isn't an object with a `media`
+// array passes through unchanged with no media extracted, and each element of a
+// `media` array is validated independently so one malformed entry doesn't drop
+// the rest.
+export const partitionToolResultMedia = (
+  output: unknown
+): { rest: unknown; media: ToolResultImageMedia[] } => {
+  if (
+    typeof output !== 'object' ||
+    output === null ||
+    Array.isArray(output) ||
+    !('media' in output) ||
+    !Array.isArray(output.media)
+  ) {
+    return { rest: output, media: [] }
+  }
+
+  const media: ToolResultImageMedia[] = []
+  for (const candidate of (output as { media: unknown[] }).media) {
+    const parsed = toolResultImageMediaSchema.safeParse(candidate)
+    if (parsed.success) {
+      media.push(parsed.data)
+    }
+  }
+
+  const rest: Record<string, unknown> = { ...(output as Record<string, unknown>) }
+  delete rest.media
+  return { rest, media }
+}
+
 // Persisted per-plugin CONFIGURATION — a map of pluginId -> (settingKey -> value),
 // the first per-plugin config beyond on/off (issue #85 presentation modes). A plugin
 // declares its settings via `PluginManifest.settingsDescriptor`; the host renders,
@@ -431,16 +486,20 @@ export interface AgentPlugin {
 // drive both surfaces with the same generic renderer: a `text` section is a plain
 // label/value row (the default, untrusted output rendered as text — never HTML); a
 // `code` section is shown read-only with syntax highlighting in the named language;
-// a `json` section is shown as a serialized dump. Lives in the contract layer so
-// plugins ship data, never a component.
+// a `json` section is shown as a serialized dump; an `image` section is rendered
+// from a data URL — tool output is still untrusted, but a data URL in an `<img
+// src>` is inert (it cannot execute script), unlike `html`/`text`. Lives in the
+// contract layer so plugins ship data, never a component.
 export type ActivityViewSection =
   | { kind: 'text'; label: string; value: string }
   | { kind: 'code'; label: string; language: string; code: string }
   | { kind: 'json'; label: string; value: unknown }
+  | { kind: 'image'; label: string; dataUrl: string; alt: string; width?: number; height?: number }
 
 export type ActivityTextSection = Extract<ActivityViewSection, { kind: 'text' }>
 export type ActivityCodeSection = Extract<ActivityViewSection, { kind: 'code' }>
 export type ActivityJsonSection = Extract<ActivityViewSection, { kind: 'json' }>
+export type ActivityImageSection = Extract<ActivityViewSection, { kind: 'image' }>
 
 export type ActivityStatus = 'ok' | 'error' | 'warn' | 'unknown'
 

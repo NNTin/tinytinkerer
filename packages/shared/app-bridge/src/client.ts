@@ -55,8 +55,10 @@ export type BridgeClient = {
   // match; rejects on mismatch. Requests should await this first.
   readonly ready: Promise<BridgeHandshake>
   // Invoke a verb on the app. Resolves with the verb's result or rejects on the
-  // app's error, a request timeout, or a transport failure.
-  request(verb: string, payload?: unknown): Promise<unknown>
+  // app's error, a request timeout, or a transport failure. `options.timeoutMs`
+  // overrides the client-level default for this request only — human-in-the-loop
+  // verbs may pass a longer per-request timeout so they can outlive it.
+  request(verb: string, payload?: unknown, options?: { timeoutMs?: number }): Promise<unknown>
   // Subscribe to an app event verb (e.g. "scene-changed"). Returns an unsubscribe.
   on(verb: string, handler: (payload: unknown) => void): () => void
   // Tear down: stop listening, clear timers, reject any in-flight requests.
@@ -203,13 +205,18 @@ export const createBridgeClient = (
     // The app side may not be reachable yet; the startup `ready` path still applies.
   }
 
-  const request = (verb: string, payload?: unknown): Promise<unknown> =>
+  const request = (
+    verb: string,
+    payload?: unknown,
+    requestOptions?: { timeoutMs?: number }
+  ): Promise<unknown> =>
     new Promise<unknown>((resolve, reject) => {
       const id = generateId()
+      const requestTimeoutMs = requestOptions?.timeoutMs ?? timeoutMs
       const timer = setTimeout(() => {
         pending.delete(id)
-        reject(new Error(`app-bridge: request "${verb}" timed out after ${timeoutMs}ms`))
-      }, timeoutMs)
+        reject(new Error(`app-bridge: request "${verb}" timed out after ${requestTimeoutMs}ms`))
+      }, requestTimeoutMs)
       pending.set(id, { resolve, reject, timer })
       try {
         transport.post({

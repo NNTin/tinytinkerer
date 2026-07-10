@@ -4,7 +4,11 @@ import type {
   TurnActivity,
   TurnActivityItem
 } from '@tinytinkerer/app-core'
-import { boundedJson, type ReActDecisionKind } from '@tinytinkerer/contracts'
+import {
+  boundedJson,
+  partitionToolResultMedia,
+  type ReActDecisionKind
+} from '@tinytinkerer/contracts'
 import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
 import { memo, useEffect, useState } from 'react'
 import { useResolvedPluginView } from './resolved-plugin-view'
@@ -104,12 +108,34 @@ const isEmptyOutput = (output: unknown): boolean =>
 // It cannot assume any output shape, so it names the tool and either says there was
 // no output or — so a tool's result is never silently dropped from the timeline —
 // renders the raw output as a json section (the panel bounds the serialized size).
-const neutralView = (label: string, output: unknown): ActivityView => ({
-  title: label,
-  sections: isEmptyOutput(output)
-    ? [{ kind: 'text', label: '', value: '(no output)' }]
-    : [{ kind: 'json', label: 'Output', value: output }]
-})
+// Generic across every tool (no tool-id branching): `partitionToolResultMedia` is
+// structural, so any tool whose output carries a `media` array gets those images
+// rendered as real `image` sections first, with whatever remains of the payload
+// still shown as a json dump right after — a tool's result is never silently
+// dropped from the timeline just because it also has images.
+const neutralView = (label: string, output: unknown): ActivityView => {
+  if (isEmptyOutput(output)) {
+    return { title: label, sections: [{ kind: 'text', label: '', value: '(no output)' }] }
+  }
+
+  const { rest, media } = partitionToolResultMedia(output)
+  if (media.length === 0) {
+    return { title: label, sections: [{ kind: 'json', label: 'Output', value: output }] }
+  }
+
+  const sections: ActivityView['sections'] = media.map((item) => ({
+    kind: 'image',
+    label: 'Image',
+    dataUrl: item.dataUrl,
+    alt: item.description,
+    width: item.width,
+    height: item.height
+  }))
+  if (!isEmptyOutput(rest)) {
+    sections.push({ kind: 'json', label: 'Output', value: rest })
+  }
+  return { title: label, sections }
+}
 
 const statusStyles: Record<
   NonNullable<ActivityView['status']>,
@@ -155,7 +181,10 @@ const statusStyles: Record<
 // shown as plain text — never HTML — with newlines preserved so multi-line values
 // like console logs read correctly); `code` is a read-only, syntax-highlighted
 // CodeMirror block (the same renderer the permission modal uses); `json` is a
-// serialized dump. Mirrors the permission modal's section renderer.
+// serialized dump; `image` is a real, bounded `<img>` rendered from the section's
+// persisted `dataUrl` — a guaranteed render, unlike the model-elected `media:` ref
+// resolution in the chat transcript (content-image's ImageNodeRenderer). Mirrors
+// the permission modal's section renderer.
 const ActivitySectionEntry = ({ section }: { section: ActivityView['sections'][number] }) => {
   if (section.kind === 'code') {
     return (
@@ -179,6 +208,24 @@ const ActivitySectionEntry = ({ section }: { section: ActivityView['sections'][n
       </div>
     )
   }
+  if (section.kind === 'image') {
+    return (
+      <div>
+        {section.label ? <span className="text-[var(--muted)]">{section.label}</span> : null}
+        <img
+          src={section.dataUrl}
+          alt={section.alt}
+          loading="lazy"
+          decoding="async"
+          className="mt-1 block max-h-72 max-w-full rounded-md border border-stone-200 object-contain"
+        />
+      </div>
+    )
+  }
+  // Only `text` sections remain here: a data URL in the `image` branch's `<img
+  // src>` is inert (it cannot execute script), so it is safe despite carrying
+  // untrusted tool output — but text/json values are still rendered as plain
+  // text, never HTML.
   return (
     <div>
       {section.label ? <span className="text-[var(--muted)]">{section.label}: </span> : null}

@@ -74,7 +74,7 @@ flowchart TB
 
   subgraph shell["apps/canvas — parent window"]
     chat["ChatApp<br/>from app-browser"]
-    tools["draw / search / inspect / read / edit / clear<br/>group / duplicate / delete / align<br/>distribute / stack / order / transform<br/>bind / audit"]
+    tools["draw / search / inspect / read / edit / clear<br/>group / duplicate / delete / align<br/>distribute / stack / order / transform<br/>bind / audit / snap / place / arrange / survey<br/>preset / icon / preview / thumbnail / pick"]
     handle["AppBridgeHandle"]
     client["app-bridge client"]
     frame["AppFrame"]
@@ -140,6 +140,12 @@ on this interface rather than directly on `window`. Production uses:
 
 Tests can substitute an in-memory transport while exercising the same correlation,
 validation, error, and timeout behavior.
+
+Requests time out after a client-level default, and `request(verb, payload, options)`
+accepts a per-request `timeoutMs` override. This is a generic capability: a
+human-in-the-loop verb (one that blocks on the user, such as Excalidraw's interactive
+`pick`) passes a longer per-request timeout so its bridge request can outlive the
+machine default without loosening the timeout for every other verb.
 
 Every wire message contains the generic `protocolVersion` and `sessionNonce`.
 `protocolVersion` is `APP_BRIDGE_PROTOCOL_VERSION`; it changes only when the envelope
@@ -216,6 +222,9 @@ This is the only shared source of truth for the Excalidraw vocabulary:
 | `survey`     | read  | Report layout health (overlaps, label overflow, unreadable connectors)         |
 | `preset`     | write | Insert a network/flowchart/UML/wireframe diagram scaffold (grouped, connected) |
 | `icon`       | write | Insert infrastructure icon glyphs (router/laptop/phone/cloud/server/printer)   |
+| `preview`    | read  | Dry-run any mutating verb: rendered image of the result plus a patch summary   |
+| `thumbnail`  | read  | Render a byte-budgeted PNG snapshot of the scene (or scoped elements)          |
+| `pick`       | read  | Report the live selection now, or prompt the user and wait for their selection |
 
 The two diagram-semantics verbs (`preset` and `icon`) turn intent into a ready-made,
 grouped scaffold. `preset` inserts a network topology (star / internet-edge), a flowchart
@@ -389,6 +398,168 @@ flowchart LR
   surveyInput --> findings --> fixes
 ```
 
+### Safer iterative workflows
+
+`preview`, `thumbnail`, and `pick` close the loop between proposing a change, verifying
+it, and grounding it in what the user actually means.
+
+- `preview` is a **stateless dry-run** of any mutating verb that returns a **rendered image
+  of the hypothetical result** alongside a patch summary — "what would this look like" gets
+  pixels, not just a diff. There is no staged-mutation token or state held in the iframe —
+  staged state would go stale on any concurrent user edit and duplicate `mutation.ts`'s
+  lifecycle. Instead, the versioned input **is** the staged plan: `preview` validates `input`
+  against the target verb's own schema, then runs that verb's **real executor** — same
+  validation, same geometry, same stale-version, lock, and relationship guards — against a
+  hardened capture proxy over the imperative API that records what `updateScene` would have
+  committed instead of committing it (and no-ops `scrollToContent`, so a dry-run never moves
+  the viewport either). The proxy delegates every other property to the real target — evaluated
+  and, for functions, **bound** against the real object rather than the proxy — so a real
+  `ExcalidrawImperativeAPI`'s methods (which may read private instance state via `this`) behave
+  identically to a live call. The captured elements are diffed against the current scene by id
+  and object identity (executors return the same object for elements they didn't touch; a pure
+  z-reorder — same id set, changed array position — is reported as an update too) into a
+  compact **patch summary**: `wouldChange`, add/update/delete counts, and a bounded `changes`
+  list of `{ op, id, type, label?, version? }` entries. The captured (never-committed)
+  `after` scene is also rendered to a PNG via the same shared `renderScenePng` helper
+  `thumbnail` uses — called against the **real** api, never the proxy, since exporting is a
+  pure read. Rendering **degrades instead of erroring**: `render:false` (an explicit opt-out)
+  yields `thumbnailReason: 'not-requested'`; nothing would change yields `'no-change'`; an
+  empty result scene (e.g. `clear`) yields `'empty-result'`; a render that doesn't fit
+  alongside the summary under the result budget is dropped with `'over-budget'` (the image is
+  the preferred payload when trimming, so `changes` — not the image — gets cut first); a
+  successful render yields `'rendered'` with the result's `media` array populated by one
+  display-only image item, its `description` built by `describePreview` (see "Tool-result
+  media" below). The summary counts come from the full diff and never shrink; only trailing
+  `changes` entries are trimmed to make room. Applying is simply calling the target verb
+  itself with the same input — its `expectedVersion`/`expectedSceneVersion` checks make
+  apply-after-preview safe by construction.
+- `thumbnail` renders an on-demand PNG snapshot of the whole scene or scoped `elementIds`,
+  scaled to `maxDimension`, and returns it as a display-only `media` item (see "Tool-result
+  media" below) for visual verification. It shares its export path (`exportToCanvas`,
+  `api.getFiles()`, background color handling) with `preview`'s visual via the
+  `renderScenePng` helper in `thumbnail.ts`. Unlike the record-list reads it has a **hard byte
+  budget** rather than truncation metadata: an image cannot be "trimmed", so an over-budget
+  export is an actionable error (lower `maxDimension` or narrow `elementIds`), never a
+  silently degraded result — `preview`'s visual, by contrast, degrades to an empty `media`
+  array with a `thumbnailReason` rather than ever failing the dry-run over an image.
+- `pick` is the interactive/selection read, one verb with two modes. `current` reports the
+  live canvas selection now; `interactive` is the human-in-the-loop flow — it shows an
+  in-canvas toast prompt and resolves with the user's next **settled** selection change (a
+  marquee drag emits a stream of selection events, so the selection must be stable for a
+  short debounce before it counts), or `timedOut: true` after `timeoutSeconds`. Stale ids
+  pointing at deleted elements are silently dropped, and the selected elements come back as
+  normalized, versioned records so they can be edited immediately. Instead of inventing a
+  second HITL path, `pick` reuses the issue-#85 machinery: the canvas tool declares
+  `awaitsHumanInput` so the runtime governs it with the human-input budget, and sets a
+  per-request bridge timeout (derived from `EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS`, the
+  generic app-bridge override described earlier) so the underlying request outlives the
+  wait too.
+
+```mermaid
+flowchart LR
+  plan["versioned verb input<br/>= the staged plan"]
+  dryRun["preview<br/>real executor + capture proxy"]
+  patch["patch summary<br/>adds / updates / deletes"]
+  render["renderScenePng<br/>hypothetical after-scene"]
+  visual["media[] + thumbnailReason"]
+  apply["apply = call the verb itself<br/>version checks re-run"]
+  snapshot["thumbnail verb<br/>budgeted PNG media item"]
+  pickVerb["pick<br/>current | interactive"]
+  user["user selection<br/>toast + settle debounce"]
+
+  plan --> dryRun --> patch --> apply
+  dryRun --> render --> visual
+  apply --> snapshot
+  render -.-> snapshot
+  pickVerb --> user --> plan
+```
+
+### Tool-result media: the generic convention
+
+`preview` and `thumbnail` are the first consumers of a convention that is otherwise entirely
+app-agnostic: any tool result — Excalidraw or not — may carry a top-level
+`media: ToolResultImageMedia[]`, each item `{ kind: 'image', dataUrl, mimeType, width, height,
+description }`. This lives in `@tinytinkerer/contracts` (`toolResultImageMediaSchema`), not in
+`excalidraw-protocol`, because the problem it solves is generic: a tool result that inlines a
+base64 PNG bloats every model request (the whole result, base64 included, gets
+JSON-stringified into the tool message) and never rendered as a picture anyway. The convention
+splits the heavy pixels from the light text so each can travel its own path.
+
+Two helpers, shared by every producer and consumer so they cannot drift on the wire format:
+
+- `partitionToolResultMedia(output) => { rest, media }` is the one structural split. It never
+  throws — non-object output, a missing/non-array `media` field, or a malformed item all
+  degrade to "no media found" rather than breaking the caller — so it is safe to call
+  uniformly over arbitrary, untrusted tool output.
+- `mediaRefFor(callId, index) => "media:<callId>#<index>"` mints the one canonical handle
+  format. Both sides that need to agree on a ref — the inference path minting it for the
+  model, and the UI registry resolving it back to pixels — import this single function.
+
+**Inference path (token savings).** `serializeToolResult`
+(`packages/app/app-browser/src/runtime/tool-calling.ts`) partitions media out of every tool
+result before it becomes `tool` message content: the model receives `{ ...rest, media: [{
+mediaRef, description, width, height, mimeType }] }` per image — the base64 `dataUrl` never
+reaches a chat request. `serializeToolNote` (`packages/app/agent-core/src/runtime/agent-runtime-base.ts`)
+applies the same reduction to the ReAct note trail, collapsing each media item to its
+`description` string. The system prompt tells the model it may show an image to the user by
+embedding `![caption](<mediaRef>)` in its reply, rather than pasting raw image data.
+
+**Activity panel render (guaranteed).** `neutralView`/`ActivitySectionEntry`
+(`packages/app/app-browser/src/turn-activity-panel.tsx`) partition the output the same way and
+render each media item as a real `image` `ActivityViewSection` — a bounded `<img>` sourced
+from the persisted `dataUrl` — with anything left of the payload still shown as its usual
+`json` section right after. This is generic across every tool (no tool-id branching), and
+because tool output is persisted to IndexedDB via the `agent.tool.completed` event (`dataUrl`
+included), the render survives a reload.
+
+**Transcript render (model-elected).** If the model instead embeds
+`![caption](media:<callId>#<index>)`, that handle has to survive markdown parsing and then
+resolve to a real image at render time. `sanitizeImageUrl` (`content-markdown`) whitelists the
+`media:` scheme alongside `https:` and `data:image/` so the ref isn't stripped;
+`ContentRenderOptions.resolveMediaUrl` (`content-react`) is the seam a host injects a resolver
+into; content-image's `ImageNodeRenderer` calls it before falling back to raw-SVG handling, and
+renders gracefully if the ref doesn't resolve. The resolver
+(`buildMediaRegistry`/`useResolveMediaUrl` in `packages/app/app-browser/src/media-registry.ts`)
+is derived from the conversation's persisted `agent.tool.completed` events rather than a
+separate cache: it re-runs `partitionToolResultMedia` over each event's output and keys the
+result `mediaRefFor(stepId, i)` — the SAME ref the inference path minted, because a
+tool-completed event's `stepId` equals the `callId` `serializeToolResult` used. One registry,
+derived straight from persisted events, so a ref resolves identically live and after reload.
+
+```mermaid
+flowchart LR
+  output["Tool output<br/>{ ..., media: [...] }"]
+  partition["partitionToolResultMedia"]
+  rest["rest (light JSON)"]
+  mediaArr["media[] (dataUrl + description)"]
+  modelMsg["tool message to model<br/>rest + mediaRef/description/width/height/mimeType"]
+  activityImg["activity panel<br/>guaranteed &lt;img&gt; from dataUrl"]
+  persisted["agent.tool.completed event<br/>persisted, IndexedDB"]
+  registry["buildMediaRegistry<br/>keyed mediaRefFor(stepId, i)"]
+  modelReply["model reply<br/>![caption](media:&lt;ref&gt;)"]
+  sanitize["sanitizeImageUrl<br/>allows media: scheme"]
+  resolve["resolveMediaUrl(ref)"]
+  transcriptImg["transcript &lt;img&gt;<br/>model-elected"]
+
+  output --> partition --> rest --> modelMsg
+  partition --> mediaArr --> modelMsg
+  mediaArr --> activityImg
+  mediaArr --> persisted --> registry
+  modelMsg --> modelReply --> sanitize --> resolve
+  registry --> resolve --> transcriptImg
+```
+
+`preview` and `thumbnail` build their `description` deterministically rather than calling a
+model to caption the image: `describeScene`/`describePreview`
+(`packages/app/excalidraw-app/src/describe.ts`) count element types and quote a few display
+labels, bounded to ~240 bytes. `excalidraw-protocol` cannot import `@tinytinkerer/contracts`
+(app-protocol packages may depend only on `@tinytinkerer/app-bridge`), so it mirrors
+`toolResultImageMediaSchema` locally as `previewMediaSchema` instead. The reshape does not
+change the byte budgets below: `thumbnail`'s 128 KiB result budget is still a hard error over
+budget (an image can't be trimmed), and `preview`'s 160 KiB result budget still prefers the
+image when trimming — it drops to `media: []` with `thumbnailReason: 'over-budget'` before the
+rendered picture is ever cut.
+
 ### Normalized element union and edit capabilities
 
 `read` returns a strict discriminated union on `kind`, not a record containing several
@@ -447,14 +618,49 @@ they fit and report both omissions and field truncations. Edit receipts (`id` an
 `version`) are always retained even when detailed edited records are omitted; callers
 retrieve omitted detail with `read`.
 
-| Verb      | Request budget | Result budget |
-| --------- | -------------: | ------------: |
-| `search`  |          8 KiB |        16 KiB |
-| `inspect` |         16 KiB |        32 KiB |
-| `read`    |         16 KiB |        64 KiB |
-| `draw`    |         64 KiB |        64 KiB |
-| `edit`    |         64 KiB |        64 KiB |
-| `clear`   |          1 KiB |         1 KiB |
+### Field projection (`fields`)
+
+`pick` and `read` additionally accept an optional `fields` array (from
+`ELEMENT_PROJECTION_FIELDS`/`elementFieldSchema`) that narrows each element record to
+identity — `id`, `type`, `kind`, always included and not listed in the enum — plus
+only the requested keys. Omitting `fields` returns today's full record, byte-for-byte
+unchanged; this is the default because most existing callers rely on it. A selection
+of ~10 elements easily exceeds `pick`'s 64 KiB result budget once every record carries
+`style` (7 fields) and `capabilities` (an `editableFields` array plus
+`restrictions`) — `fields: ['x', 'y', 'width', 'height']` gets back just the geometry
+that a layout decision needs, so the whole selection fits.
+
+`fields` is orthogonal to `detail`: `detail` still governs which type-specific blocks
+get built and how far their strings/arrays are truncated (as above); `fields` then
+narrows which of the built keys make it into the record. A field the record doesn't
+have (e.g. `text` on a shape) is silently skipped rather than sent as `undefined`.
+Every result echoes the applied projection back as `fields`; it is absent when the
+caller didn't project. Truncation reporting is projection-aware too: a truncated
+`text.text` on a record whose projection excludes `text` is not reported, since that
+data was never sent.
+
+`search` and `inspect` don't need `fields` — they're already bespoke, compact records
+(a handful of scalar fields, not the full normalized union), not a case of a caller
+wanting a subset of a verbose default. Extending the same projection to mutation
+receipts (`edit` and the structural verbs echo budget-bounded `elements` alongside
+their receipts) is a natural follow-up, not yet implemented.
+
+| Verb        | Request budget | Result budget |
+| ----------- | -------------: | ------------: |
+| `search`    |          8 KiB |        16 KiB |
+| `inspect`   |         16 KiB |        32 KiB |
+| `read`      |         16 KiB |        64 KiB |
+| `draw`      |         64 KiB |        64 KiB |
+| `edit`      |         64 KiB |        64 KiB |
+| `clear`     |          1 KiB |         1 KiB |
+| `preview`   |         64 KiB |       160 KiB |
+| `thumbnail` |          4 KiB |       128 KiB |
+| `pick`      |          4 KiB |        64 KiB |
+
+`preview` and `thumbnail`'s result budgets are unchanged by the tool-result media convention
+above — the reshape moves the image into `media` instead of a flat `dataUrl`/nested
+`thumbnail` field, but the byte accounting and the "image preferred, cut last" trimming order
+are the same as before.
 
 ```mermaid
 flowchart LR
@@ -496,6 +702,10 @@ flowchart LR
   structure["structure.ts<br/>group, duplicate, delete,<br/>align, distribute, stack,<br/>order, transform"]
   binding["binding.ts<br/>bind, audit"]
   layout["layout.ts<br/>snap, place, arrange,<br/>survey"]
+  preview["preview.ts<br/>dry-run any mutating verb,<br/>capture proxy, patch summary"]
+  thumbnail["thumbnail.ts<br/>budgeted PNG snapshot,<br/>renderScenePng, exportToCanvas"]
+  describe["describe.ts<br/>describeScene, describePreview,<br/>deterministic media descriptions"]
+  pick["pick.ts<br/>current/interactive selection,<br/>toast + settle debounce"]
   geometry["geometry.ts<br/>box math, edge anchors,<br/>connector reflow"]
   mutation["mutation.ts<br/>shared receipts, budget-bounded<br/>records, commitWrite"]
   ids["ids.ts<br/>stable id minting"]
@@ -524,6 +734,25 @@ flowchart LR
   layout --> structure
   layout --> mutation
   layout --> geometry
+  bridge --> preview --> api
+  preview --> create
+  preview --> edit
+  preview --> structure
+  preview --> binding
+  preview --> layout
+  preview --> presets
+  preview --> payload
+  preview --> thumbnail
+  preview --> describe
+  bridge --> thumbnail --> api
+  thumbnail --> query
+  thumbnail --> payload
+  thumbnail --> describe
+  describe --> normalization
+  describe --> payload
+  bridge --> pick --> api
+  pick --> normalization
+  pick --> payload
   geometry --> normalization
   create --> ids
   mutation --> normalization
@@ -561,6 +790,27 @@ The modules translate the stable model vocabulary into Excalidraw operations:
   the six infrastructure icon factories encode each glyph locally (no runtime library fetch),
   and the executor mints collision-free ids/group ids, version-checks the scene, and reuses
   `create.ts`'s `drawFromSkeletons` to convert + commit in one atomic, undoable update;
+- `preview` (in `preview.ts`) dry-runs any mutating verb: it parses the nested input with
+  that verb's own schema, runs the verb's real executor against a hardened capture proxy
+  (delegated properties bound to the real target, not the proxy) that suppresses the single
+  `updateScene` commit, and diffs before/after into a compact patch summary — no staged
+  state, nothing committed. It also renders the captured (unapplied) `after` scene to a PNG
+  via `thumbnail.ts`'s shared `renderScenePng`, attaching it as a display-only `media` item
+  described by `describe.ts`'s `describePreview`, and degrading to an empty `media` array
+  with a `thumbnailReason` instead of failing the dry-run over an image;
+- `thumbnail` (in `thumbnail.ts`) exports the scene (or scoped elements) to a PNG data URL
+  via the shared `renderScenePng` (which owns the `exportToCanvas` call, `api.getFiles()`, and
+  background color handling — also used by `preview`'s visual), returns it as a display-only
+  `media` item described by `describe.ts`'s `describeScene`, and is version-checked and
+  hard-capped by its own result byte budget;
+- `describe.ts` builds the deterministic, LLM-free `description` text `thumbnail` and
+  `preview` attach to their rendered image: `describeScene` counts element types (and quotes
+  a few display labels) for `thumbnail`, `describePreview` reports the patch-summary counts
+  for `preview`'s hypothetical image, and both are bounded to a short byte budget (see "Tool-
+  result media: the generic convention" above);
+- `pick` (in `pick.ts`) reads the live selection, or — in interactive mode — shows a toast
+  (`api.setToast`), subscribes to `api.onChange`, and resolves with the user's next settled
+  selection as normalized records (or `timedOut: true`);
 - `geometry.ts` is the shared, verb-agnostic geometry: the axis-aligned box math, the
   deterministic connector edge-anchor policy, and `reflowBoundConnectors` (re-anchoring
   connectors bound to a moved/resized shape). `structure`, `binding`, and `layout` all

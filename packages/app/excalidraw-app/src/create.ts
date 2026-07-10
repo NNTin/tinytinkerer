@@ -19,10 +19,23 @@ const skeleton = (element: DrawElement): Record<string, unknown> => {
   }
   if (element.type === 'text') return { ...base, type: 'text', text: element.text ?? '' }
   const linear = element.type === 'arrow' || element.type === 'line'
-  const width = element.width ?? 120
-  const height = element.height ?? (linear ? 0 : 80)
+  const rawWidth = element.width ?? 120
+  const rawHeight = element.height ?? (linear ? 0 : 80)
+  // A negative width/height means the element was drawn toward smaller
+  // coordinates. Linear elements (line/arrow) encode that direction in the
+  // points delta below, so the sign is kept. For shapes a negative extent just
+  // means "drawn from the opposite corner": normalize to Excalidraw's canonical
+  // positive width/height with the origin shifted to the top-left, so it renders
+  // identically to a right/downward-drawn shape (Excalidraw's own
+  // drag-from-any-corner semantics).
+  const width = linear ? rawWidth : Math.abs(rawWidth)
+  const height = linear ? rawHeight : Math.abs(rawHeight)
+  const x = !linear && rawWidth < 0 ? element.x + rawWidth : element.x
+  const y = !linear && rawHeight < 0 ? element.y + rawHeight : element.y
   return {
     ...base,
+    x,
+    y,
     type: element.type,
     width,
     height,

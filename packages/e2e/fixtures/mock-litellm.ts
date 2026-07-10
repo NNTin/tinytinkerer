@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, type Locator, type Page, type Route } from '@playwright/test'
 import { SENTINEL_HOST } from './snippets'
 // The REAL edge Hono worker, exercised in-process: every /api/* request the app
@@ -9,6 +12,85 @@ import { SENTINEL_HOST } from './snippets'
 // checker's src/ + tests/ scan, which is intentional — this is test wiring.
 import { app as edgeApp } from '../../../apps/edge/src/index'
 import { dismissTelemetryDialog } from './first-load'
+
+// =============================================================================
+// Captured-stream replay (see installReplayMock further below and
+// .agent/skills/e2e-testing/SKILL.md). A fixture is produced by
+// capture-llm-stream.mjs driving a live PR preview/dev deployment: one fixture
+// = one conversation, `exchanges` its successful chat completions in order
+// (ReAct decide/act turns, then a final synthesis turn per user prompt).
+// `request` is the compact, secret-free digest the capture tool recorded at
+// capture time (never headers/cookies/keys) — used here ONLY to drift-check
+// replay ordering, never to reconstruct a request. `sse` is the verbatim
+// response body text the live model produced.
+// =============================================================================
+
+export type CapturedExchange = {
+  request: {
+    /** First 60 chars of the request's system message. */
+    systemPrefix: string
+    /** Count of `role: 'tool'` messages already folded into the request. */
+    toolResultCount: number
+    /** Ordered, distinct `media:<uuid>#<n>` refs found in the request's `tool` contents. */
+    mediaRefs: string[]
+    /** First 200 chars of the last `role: 'user'` message's content. */
+    lastUserText: string
+  }
+  /** The verbatim SSE response body text captured for this exchange. */
+  sse: string
+}
+
+export type CapturedFixture = {
+  meta: {
+    tool: string
+    capturedAt: string
+    baseUrl: string
+    shell: string
+    scenario: string
+    settings: string[]
+    prompts: string[]
+    rateLimited: number
+  }
+  exchanges: CapturedExchange[]
+}
+
+// Mirrors capture-llm-stream.mjs's scenario JSON schema (see its --help) — one
+// key selects the step kind. Kept here (not re-derived per spec) so a test
+// importing `loadScenario` replays the EXACT captured prompts/steps rather
+// than retyping them (capture and replay must line up — see the workflow doc).
+export type ScenarioStep =
+  | { prompt: string; await?: boolean }
+  | { waitToast: true }
+  | { waitText: string }
+  | { clickCanvas: 'center' | { x: number; y: number } }
+  | { press: string }
+  | { sleepMs: number }
+  | { settle: true }
+
+export type Scenario = {
+  name: string
+  shell: string
+  settings: string[]
+  steps: ScenarioStep[]
+}
+
+// `packages/e2e/fixtures/captures`, resolved from this file — the same
+// `import.meta.url`-relative pattern discover-plugins.ts uses, so this needs no
+// tsconfig/JSON-import wiring and works identically under `tsc` and the
+// Playwright test runner.
+const CAPTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'captures')
+
+/** Loads a committed capture fixture by name (packages/e2e/fixtures/captures/<name>.json). */
+export const loadCapture = (name: string): CapturedFixture =>
+  JSON.parse(readFileSync(join(CAPTURES_DIR, `${name}.json`), 'utf8')) as CapturedFixture
+
+/**
+ * Loads a capture's scenario definition (captures/scenarios/<name>.json) — the
+ * single source of truth for the prompts/steps a spec must reproduce to stay in
+ * lockstep with the fixture it replays.
+ */
+export const loadScenario = (name: string): Scenario =>
+  JSON.parse(readFileSync(join(CAPTURES_DIR, 'scenarios', `${name}.json`), 'utf8')) as Scenario
 
 // A syntactically-valid https base URL that passes the edge's base-URL policy but
 // is never really contacted: the edge's outbound calls to it are intercepted by a
@@ -89,8 +171,22 @@ export type LiteLLMMock = {
    * blocked in the renderer and never reaches the route — a real egress oracle.
    */
   sentinelHits: () => string[]
+  /**
+   * 'replay' mode only: the most recent loud drift-check failure message (see
+   * installReplayMock / mockChatCompletionReplay) — naming the exchange index
+   * and expected vs actual request shape — or `undefined` if replay has served
+   * every request cleanly so far. `undefined` always for every other mode. A
+   * spec/debugger reads this to see WHY a run stalled instead of only a
+   * generic poll timeout.
+   */
+  replayError: () => string | undefined
 }
 
+// The wire shape of a native OpenAI-style tool call — used by the synthesized
+// run_javascript/ask_user calls the 'tool'/'ask' modes issue below. Not
+// exported: only mock-litellm.ts itself builds one now that replay (real
+// captured tool_calls) has replaced the scripted mode that used to let a spec
+// build its own.
 type ToolCall = {
   id: string
   type: 'function'
@@ -162,6 +258,38 @@ const parseChoiceResultFromBody = (body: LiteLLMRequestBody): ChoiceResult | und
       }
     } catch {
       /* a tool result that is not JSON (e.g. an "Error: …" message) */
+    }
+  }
+  return undefined
+}
+
+// Generalizes parseChoiceResultFromBody to an ARBITRARY tool name (issue: canvas
+// preview/thumbnail/pick e2e): correlate by the given wire function name — find
+// the assistant tool-call turn(s) that called it, take the id(s) the runtime
+// assigned, then read the matching `tool` result turn's content. Unlike
+// parseChoiceResultFromBody (which owns the `kind` field as ask_user's
+// signature), this has no output-shape assumption to key off, so it must key by
+// name instead; a run that calls the same tool more than once would need a
+// smarter correlation, but every run this suite drives (scripted or replayed)
+// calls a given tool at most once. Returns the parsed JSON, the raw string
+// (for a non-JSON "Error: …" result), or `undefined` if that tool has not
+// produced a result yet.
+const toolResultByNameFromBody = (body: LiteLLMRequestBody, toolName: string): unknown => {
+  const messages = Array.isArray(body.messages) ? body.messages : []
+  const callIds = new Set<string>()
+  for (const message of messages) {
+    if (message.role !== 'assistant' || !Array.isArray(message.tool_calls)) continue
+    for (const call of message.tool_calls) {
+      if (call.function.name === toolName) callIds.add(call.id)
+    }
+  }
+  for (const message of messages) {
+    if (message.role !== 'tool' || typeof message.tool_call_id !== 'string') continue
+    if (!callIds.has(message.tool_call_id) || typeof message.content !== 'string') continue
+    try {
+      return JSON.parse(message.content) as unknown
+    } catch {
+      return message.content
     }
   }
   return undefined
@@ -302,7 +430,13 @@ export const SYNTHESIS_ANSWER = 'Done — the sandbox finished executing the req
 //   • 'no-tool' — finish immediately with no action, so a plain chat completes and
 //                 synthesizes WITHOUT needing the code-exec tool (for suites where
 //                 that tool stays disabled, e.g. the event-logger spec).
-type ChatMode = 'tool' | 'ask' | 'no-tool'
+//   • 'replay'  — serve a CAPTURED fixture's real exchanges verbatim, in order
+//                 (see installReplayMock / mockChatCompletionReplay below).
+//                 Unlike the other (synthesized) modes, the model's tool calls
+//                 AND its final prose are real inference output, not invented
+//                 here — the canvas verb suite replays REAL captured streams
+//                 instead of hand-building tool_calls.
+type ChatMode = 'tool' | 'ask' | 'no-tool' | 'replay'
 
 // Per-run state, captured as the edge forwards chat requests to the LiteLLM mock.
 type UpstreamState = {
@@ -310,6 +444,7 @@ type UpstreamState = {
   mode: ChatMode
   // The synthesized final-answer content the mock streams back (per-test, so a
   // spec can stream e.g. a ```mermaid block instead of the default sentence).
+  // Unused in 'replay' mode (the answer comes from the fixture instead).
   answer: string
   // Optional: when set, the ACTION turn narrates this rationale as ordinary
   // content before its tool call (models a model that explains its action). When
@@ -319,6 +454,13 @@ type UpstreamState = {
   actions: number
   provisionedKeys: Set<string>
   upstreamCalls: UpstreamCall[]
+  // 'replay' mode only (see installReplayMock / mockChatCompletionReplay): the
+  // fixture being replayed and a per-run cursor into its exchanges — each
+  // chat-completion request consumes exactly the next one. Unused (fixture
+  // undefined, cursor stays 0) for every other mode.
+  fixture?: CapturedFixture
+  replayCursor: number
+  replayError?: string
 }
 
 // The CONTENT-DRIVEN model behaviour, keyed off the request's system prompt so it
@@ -327,20 +469,175 @@ type UpstreamState = {
 // drove the old in-page mock now drives the mocked LiteLLM upstream.
 const streamHeaders = { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' }
 
+const MEDIA_REF_RE = /media:[0-9a-f-]+#\d+/g
+
+// Ordered, distinct `media:<uuid>#<n>` refs found across a request's folded-
+// back `tool` messages — mirrors capture-llm-stream.mjs's own digestRequest, so
+// pairing this against a captured exchange's `request.mediaRefs` (built the
+// same way, at capture time) lines up position-for-position.
+const distinctMediaRefsInBody = (messages: ChatMessage[]): string[] => {
+  const seen = new Set<string>()
+  const refs: string[] = []
+  for (const message of messages) {
+    if (message.role !== 'tool' || typeof message.content !== 'string') continue
+    for (const match of message.content.matchAll(MEDIA_REF_RE)) {
+      if (!seen.has(match[0])) {
+        seen.add(match[0])
+        refs.push(match[0])
+      }
+    }
+  }
+  return refs
+}
+
+// Pairs the captured exchange's mediaRefs (position i = the i-th distinct ref
+// the model saw at capture time) with THIS run's distinct refs (the runtime
+// mints its own step uuids per session, so the captured ones can never match
+// directly) — same order, same count. Empty when the exchange carries no media
+// (the common case), which makes applyMediaRekey below a no-op.
+const buildMediaRefMap = (capturedRefs: string[], messages: ChatMessage[]): Map<string, string> => {
+  const currentRefs = distinctMediaRefsInBody(messages)
+  const map = new Map<string, string>()
+  capturedRefs.forEach((oldRef, index) => {
+    const newRef = currentRefs[index]
+    if (newRef) map.set(oldRef, newRef)
+  })
+  return map
+}
+
+// The one normalization replay applies to an otherwise byte-verbatim captured
+// SSE body: re-key media handles so they match THIS run's step uuids. A ref can
+// be split across SSE deltas (the model streams token-by-token), so the swap
+// has to happen over the reassembled text, not per-chunk:
+//   1. parse every `data: ` event's JSON, concatenating each
+//      `choices[0].delta.content` piece (recording its length);
+//   2. do the string replacement over the FULL concatenation (old/new refs are
+//      both uuid v4 — equal length — so this can never shift an offset);
+//   3. re-slice the result at the recorded lengths to get the new per-event
+//      pieces;
+//   4. splice each CHANGED piece back into its own event's raw text via a
+//      targeted string replace, so every other byte of the stream (ids,
+//      whitespace, non-content deltas, usage chunks) survives untouched — no
+//      JSON.stringify of a whole event, which could reformat bytes the
+//      capture never had.
+// A no-op (returns `sse` unchanged) when the map is empty.
+const applyMediaRekey = (sse: string, refMap: Map<string, string>): string => {
+  if (refMap.size === 0) return sse
+
+  const events = sse.split('\n\n')
+  const contentEventIndexes: number[] = []
+  const pieces: string[] = []
+  events.forEach((event, index) => {
+    if (!event.startsWith('data: ') || event === 'data: [DONE]') return
+    let parsed: { choices?: Array<{ delta?: { content?: unknown } }> }
+    try {
+      parsed = JSON.parse(event.slice('data: '.length)) as typeof parsed
+    } catch {
+      return
+    }
+    const content = parsed.choices?.[0]?.delta?.content
+    if (typeof content === 'string') {
+      contentEventIndexes.push(index)
+      pieces.push(content)
+    }
+  })
+  if (pieces.length === 0) return sse
+
+  let concatenated = pieces.join('')
+  for (const [oldRef, newRef] of refMap) {
+    concatenated = concatenated.split(oldRef).join(newRef)
+  }
+
+  let offset = 0
+  const rekeyedEvents = [...events]
+  contentEventIndexes.forEach((eventIndex, pieceIndex) => {
+    const oldPiece = pieces[pieceIndex]!
+    const newPiece = concatenated.slice(offset, offset + oldPiece.length)
+    offset += oldPiece.length
+    if (newPiece !== oldPiece) {
+      // JSON.stringify escapes a media ref exactly as the capture would have
+      // (its uuid/hyphen/digit characters need no escaping either side), so
+      // this locates and replaces ONLY the content field's quoted value
+      // within the otherwise-untouched raw event.
+      rekeyedEvents[eventIndex] = rekeyedEvents[eventIndex]!.replace(
+        JSON.stringify(oldPiece),
+        JSON.stringify(newPiece)
+      )
+    }
+  })
+  return rekeyedEvents.join('\n\n')
+}
+
+// Loud, debuggable replay failure: a 500 whose JSON body names the exchange
+// index and the expected-vs-actual mismatch. Also stashed on `state` so a
+// spec/debugger can read it back via the mock's `replayError()` accessor
+// instead of only seeing a generic downstream poll timeout.
+const replayFailure = (state: UpstreamState, message: string): Response => {
+  state.replayError = message
+  return new Response(JSON.stringify({ error: message }), {
+    status: 500,
+    headers: { 'content-type': 'application/json' }
+  })
+}
+
+// 'replay' mode: serve the fixture's exchanges in order, one per chat-completion
+// request, byte-verbatim except the media-ref rekey (see applyMediaRekey). A
+// per-run cursor (state.replayCursor) tracks which exchange is next. Before
+// serving, drift-check the request against what the capture recorded for that
+// position: its system message must start with the exchange's `systemPrefix`
+// AND its folded-back `tool`-message count must equal `toolResultCount`. A
+// mismatch — or running out of exchanges — means the runtime is making
+// different requests than the capture (the pipeline or the scenario changed);
+// fail loudly rather than silently serving the wrong exchange.
+const mockChatCompletionReplay = (body: LiteLLMRequestBody, state: UpstreamState): Response => {
+  const fixture = state.fixture
+  if (!fixture) return replayFailure(state, 'replay mode installed with no fixture')
+
+  const exchange = fixture.exchanges[state.replayCursor]
+  if (!exchange) {
+    return replayFailure(
+      state,
+      `replay: request #${state.replayCursor} has no captured exchange — the fixture only has ${fixture.exchanges.length}`
+    )
+  }
+
+  const messages = Array.isArray(body.messages) ? body.messages : []
+  const system = messages.find((m) => m.role === 'system')?.content ?? ''
+  const toolResultCount = messages.filter((m) => m.role === 'tool').length
+  const { systemPrefix, toolResultCount: expectedToolResultCount } = exchange.request
+  if (!system.startsWith(systemPrefix) || toolResultCount !== expectedToolResultCount) {
+    return replayFailure(
+      state,
+      `replay drift at exchange #${state.replayCursor}: expected systemPrefix ` +
+        `${JSON.stringify(systemPrefix)} and toolResultCount ${expectedToolResultCount}, got ` +
+        `systemPrefix ${JSON.stringify(system.slice(0, 60))} and toolResultCount ${toolResultCount}`
+    )
+  }
+
+  state.replayCursor += 1
+  const refMap = buildMediaRefMap(exchange.request.mediaRefs, messages)
+  return new Response(applyMediaRekey(exchange.sse, refMap), {
+    status: 200,
+    headers: streamHeaders
+  })
+}
+
 const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Response => {
   state.bodies.push(JSON.stringify(body))
+  if (state.mode === 'replay') return mockChatCompletionReplay(body, state)
   const messages = Array.isArray(body.messages) ? body.messages : []
   const system = messages.find((m) => m.role === 'system')?.content ?? ''
 
   if (system.startsWith('You are a ReAct agent')) {
     // Native tool calling (issue #276): the model now emits a real tool_call to
     // act, and answers with content to finish. In 'no-tool' mode there is no tool
-    // to drive, so finish on the first decision. The deterministic signal to stop
-    // acting in 'tool' mode is a `tool` result turn already present in the request
-    // (covers both a completed sandbox run and a blocked/failed tool, each of
-    // which the runtime replays as a `role: 'tool'` message).
-    const hasToolResult = messages.some((m) => m.role === 'tool')
-    if (state.mode === 'no-tool' || hasToolResult) {
+    // to drive, so finish on the first decision. Every other mode finishes as
+    // soon as ANY `tool` result turn is present (covers both a completed run and
+    // a blocked/failed tool, each of which the runtime replays as a
+    // `role: 'tool'` message).
+    const toolResultCount = messages.filter((m) => m.role === 'tool').length
+    const shouldFinish = state.mode === 'no-tool' || toolResultCount > 0
+    if (shouldFinish) {
       // Finish: answer with content and NO tool_calls (like a non-reasoning model);
       // its rationale IS the content. streamDecision treats the absence of a tool
       // call as the `final` decision and surfaces the content as the think text.
@@ -363,11 +660,12 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
       })
     }
 
-    // Act: issue a single native run_javascript tool call. By default with NO
-    // content preamble — how a non-reasoning model actually behaves on a tool turn
-    // (only the tool call, no prose), so the timeline renders just the decision
-    // badge. When the spec opted into narration, the rationale is emitted as
-    // ordinary content first and shows as the step's thought (issue #276).
+    // Act: issue the single run_javascript/ask_user call for that mode. By
+    // default with NO content preamble — how a non-reasoning model actually
+    // behaves on a tool turn (only the tool call, no prose), so the timeline
+    // renders just the decision badge. When the spec opted into narration, the
+    // rationale is emitted as ordinary content first and shows as the step's
+    // thought (issue #276).
     state.actions += 1
     const toolCall = state.mode === 'ask' ? askUserToolCall() : runJavascriptToolCall(state.code)
     if (body.stream === true) {
@@ -395,7 +693,7 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
 
   // Planner (plan-execute / hybrid): still a structured JSON ExecutionPlan — the
   // planner runs before any tool I/O, so it is untouched by the native tool-call
-  // switch. Synthesis (any other system prompt): stream the final answer.
+  // switch. Synthesis (any other system prompt): stream the fixed final answer.
   const content = system.startsWith('You are a planning assistant') ? PLAN : state.answer
 
   if (body.stream === true) {
@@ -544,6 +842,56 @@ const pipeToEdge = async (route: Route): Promise<void> => {
   await route.fulfill({ status: edgeResponse.status, headers: responseHeaders, body: payload })
 }
 
+// Shared edge-route wiring, used by every install* helper below (replay
+// included): fulfils the exfiltration sentinel host with 200 and records any
+// hit (a real egress oracle — see sandbox-isolation.e2e.ts), and pipes every
+// /api/** + /health request through the real edge worker.
+const installEdgeRoutes = async (page: Page): Promise<{ sentinelHits: string[] }> => {
+  const sentinelHits: string[] = []
+  await page.route(`**${SENTINEL_HOST}**`, (route) => {
+    sentinelHits.push(route.request().url())
+    return route.fulfill({ status: 200, contentType: 'text/plain', body: 'LEAK' })
+  })
+  await page.route('**/api/**', (route) => pipeToEdge(route))
+  await page.route('**/health', (route) => pipeToEdge(route))
+  return { sentinelHits }
+}
+
+// Builds the LiteLLMMock accessor object every install* helper returns, closing
+// over the same per-run `state` the mocked upstream mutates as requests land.
+const buildMockHandle = (state: UpstreamState, sentinelHits: string[]): LiteLLMMock => ({
+  requestBodies: () => state.bodies,
+  sandboxResult: () => {
+    for (let i = state.bodies.length - 1; i >= 0; i -= 1) {
+      const raw = state.bodies[i]
+      if (!raw) continue
+      try {
+        const result = parseSandboxResultFromBody(JSON.parse(raw) as LiteLLMRequestBody)
+        if (result) return result
+      } catch {
+        /* a non-JSON body never carries a tool result */
+      }
+    }
+    return undefined
+  },
+  actionCount: () => state.actions,
+  choiceResult: () => {
+    for (let i = state.bodies.length - 1; i >= 0; i -= 1) {
+      const raw = state.bodies[i]
+      if (!raw) continue
+      try {
+        const result = parseChoiceResultFromBody(JSON.parse(raw) as LiteLLMRequestBody)
+        if (result) return result
+      } catch {
+        /* a non-JSON body never carries a tool result */
+      }
+    }
+    return undefined
+  },
+  sentinelHits: () => sentinelHits,
+  replayError: () => state.replayError
+})
+
 const installMock = async (
   page: Page,
   code: string,
@@ -560,55 +908,12 @@ const installMock = async (
     bodies: [],
     actions: 0,
     provisionedKeys: new Set(knownProvisionedKeys),
-    upstreamCalls: []
+    upstreamCalls: [],
+    replayCursor: 0
   }
   activeUpstream = state
-  const sentinelHits: string[] = []
-
-  // Exfiltration sentinel: fulfil any request to the sentinel host with 200 and
-  // record it. The sandbox's CSP blocks such a request in the renderer before it
-  // reaches this route, so a hit means the sandbox actually leaked — a real egress
-  // oracle, not a tautology (the sentinel host alone never resolves).
-  await page.route(`**${SENTINEL_HOST}**`, (route) => {
-    sentinelHits.push(route.request().url())
-    return route.fulfill({ status: 200, contentType: 'text/plain', body: 'LEAK' })
-  })
-
-  // Drive every edge route through the real edge worker.
-  await page.route('**/api/**', (route) => pipeToEdge(route))
-  await page.route('**/health', (route) => pipeToEdge(route))
-
-  return {
-    requestBodies: () => state.bodies,
-    sandboxResult: () => {
-      for (let i = state.bodies.length - 1; i >= 0; i -= 1) {
-        const raw = state.bodies[i]
-        if (!raw) continue
-        try {
-          const result = parseSandboxResultFromBody(JSON.parse(raw) as LiteLLMRequestBody)
-          if (result) return result
-        } catch {
-          /* a non-JSON body never carries a tool result */
-        }
-      }
-      return undefined
-    },
-    actionCount: () => state.actions,
-    choiceResult: () => {
-      for (let i = state.bodies.length - 1; i >= 0; i -= 1) {
-        const raw = state.bodies[i]
-        if (!raw) continue
-        try {
-          const result = parseChoiceResultFromBody(JSON.parse(raw) as LiteLLMRequestBody)
-          if (result) return result
-        } catch {
-          /* a non-JSON body never carries a tool result */
-        }
-      }
-      return undefined
-    },
-    sentinelHits: () => sentinelHits
-  }
+  const { sentinelHits } = await installEdgeRoutes(page)
+  return buildMockHandle(state, sentinelHits)
 }
 
 // The sandbox suite's mock: the model issues a single `run_javascript` action so a
@@ -642,6 +947,172 @@ export const installChatMock = (
   page: Page,
   answer: string = SYNTHESIS_ANSWER
 ): Promise<LiteLLMMock> => installMock(page, '', 'no-tool', answer)
+
+// A REPLAY mock (see .agent/skills/e2e-testing/SKILL.md): serves a captured
+// fixture's real exchanges verbatim, in order, one per chat-completion request
+// (see mockChatCompletionReplay). Unlike every other install* helper, the
+// model's tool calls AND its final prose are real inference output — nothing
+// here is invented — so the canvas verb suite replays actual model behaviour
+// end to end instead of hand-building tool_calls.
+export const installReplayMock = async (
+  page: Page,
+  fixture: CapturedFixture
+): Promise<LiteLLMMock> => {
+  installLiteLLMUpstream()
+  const state: UpstreamState = {
+    code: '',
+    mode: 'replay',
+    answer: '',
+    bodies: [],
+    actions: 0,
+    provisionedKeys: new Set(knownProvisionedKeys),
+    upstreamCalls: [],
+    fixture,
+    replayCursor: 0
+  }
+  activeUpstream = state
+  const { sentinelHits } = await installEdgeRoutes(page)
+  return buildMockHandle(state, sentinelHits)
+}
+
+// Generalizes sandboxResult/choiceResult to an ARBITRARY tool name (see
+// toolResultByNameFromBody): the parsed JSON (or raw string, for a non-JSON
+// "Error: …" result) of the most recent folded-back `tool` result produced by a
+// call to `toolName`, or `undefined` if it has not run yet. Scans the mock's
+// captured request bodies most-recent-first, mirroring sandboxResult/
+// choiceResult so all three share the same "poll until folded back" idiom.
+export const toolResultFor = (mock: LiteLLMMock, toolName: string): unknown => {
+  const bodies = mock.requestBodies()
+  for (let i = bodies.length - 1; i >= 0; i -= 1) {
+    const raw = bodies[i]
+    if (!raw) continue
+    try {
+      const result = toolResultByNameFromBody(JSON.parse(raw) as LiteLLMRequestBody, toolName)
+      if (result !== undefined) return result
+    } catch {
+      /* a non-JSON body never carries a tool result */
+    }
+  }
+  return undefined
+}
+
+// Concatenates a captured exchange's streamed `content` deltas back into the
+// full answer text — the inverse of how a real model (or sseStream) emits it
+// token by token. Ignores tool-call deltas, usage/[DONE] events, and any line
+// that fails to parse (an SSE comment is never a `data: ` line).
+const concatenateSseContent = (sse: string): string => {
+  let content = ''
+  for (const event of sse.split('\n\n')) {
+    if (!event.startsWith('data: ') || event === 'data: [DONE]') continue
+    try {
+      const parsed = JSON.parse(event.slice('data: '.length)) as {
+        choices?: Array<{ delta?: { content?: unknown } }>
+      }
+      const piece = parsed.choices?.[0]?.delta?.content
+      if (typeof piece === 'string') content += piece
+    } catch {
+      /* not a `data: ` JSON event */
+    }
+  }
+  return content
+}
+
+/**
+ * A stable, safe-to-assert-on substring of a captured exchange's synthesized
+ * answer — lets a spec wait on "the run has visibly finished" without
+ * hardcoding model prose. Captured content is byte-verbatim from the live
+ * pipeline and carries MOJIBAKE wherever the model used a non-ASCII character
+ * (e.g. `'â€"'` for an em-dash), so a naive substring can straddle one and
+ * never match the rendered DOM. This instead:
+ *   - drops markdown image syntax (`![alt](ref)`) — it renders as an `<img>`,
+ *     not text, and its ref is re-keyed anyway (see applyMediaRekey);
+ *   - unwraps inline-code backticks and leading list markers (`- `) — the
+ *     markdown renderer strips both, leaving only their inner text in the DOM;
+ *   - keeps only lines that are printable ASCII throughout, so the fragment
+ *     can never straddle a mojibake run;
+ * then returns the LONGEST such line (more text = a more specific match, less
+ * likely to also match some unrelated earlier UI text).
+ *
+ * `exchangeIndex` defaults to the fixture's LAST exchange — the final
+ * synthesis turn, whose content is what actually renders in the transcript
+ * (the ReAct final DECISION turn earlier in the fixture carries similar but
+ * not identical prose — the runtime re-synthesizes for display).
+ */
+export const finalAnswerFragment = (fixture: CapturedFixture, exchangeIndex?: number): string => {
+  const index = exchangeIndex ?? fixture.exchanges.length - 1
+  const exchange = fixture.exchanges[index]
+  if (!exchange) {
+    throw new Error(`finalAnswerFragment: fixture has no exchange at index ${index}`)
+  }
+  const content = concatenateSseContent(exchange.sse).replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+  const candidates = content
+    .split('\n')
+    .map((line) =>
+      line
+        .replace(/^[-*]\s+/, '')
+        .replace(/`/g, '')
+        .trim()
+    )
+    .filter((line) => line.length >= 20 && /^[\x20-\x7E]*$/.test(line))
+    .sort((a, b) => b.length - a.length)
+  const fragment = candidates[0]
+  if (!fragment) {
+    throw new Error(
+      `finalAnswerFragment: exchange #${index}'s content has no line that is both printable-` +
+        `ASCII-only and long enough to anchor on`
+    )
+  }
+  return fragment
+}
+
+// Accumulates a captured exchange's streamed tool-call deltas back into
+// `{ name, arguments }` pairs (index-keyed — the same cross-delta accumulation
+// the real streaming client does), reassembling arguments split across
+// multiple deltas.
+const parseToolCallsFromSse = (sse: string): Array<{ name: string; arguments: string }> => {
+  const calls = new Map<number, { name: string; arguments: string }>()
+  for (const event of sse.split('\n\n')) {
+    if (!event.startsWith('data: ') || event === 'data: [DONE]') continue
+    let parsed: {
+      choices?: Array<{
+        delta?: {
+          tool_calls?: Array<{ index?: number; function?: { name?: string; arguments?: string } }>
+        }
+      }>
+    }
+    try {
+      parsed = JSON.parse(event.slice('data: '.length)) as typeof parsed
+    } catch {
+      continue
+    }
+    for (const call of parsed.choices?.[0]?.delta?.tool_calls ?? []) {
+      const index = call.index ?? 0
+      const existing = calls.get(index) ?? { name: '', arguments: '' }
+      if (call.function?.name) existing.name = call.function.name
+      if (call.function?.arguments) existing.arguments += call.function.arguments
+      calls.set(index, existing)
+    }
+  }
+  return [...calls.values()]
+}
+
+/**
+ * The parsed `arguments` of the first captured tool call to `toolName`,
+ * scanning the fixture's exchanges in order — lets a spec assert on exactly
+ * what the model asked for (e.g. an interactive pick's toast prompt) without
+ * hardcoding captured model behaviour. `undefined` if the fixture never calls
+ * that tool.
+ */
+export const capturedToolCallArgs = (
+  fixture: CapturedFixture,
+  toolName: string
+): Record<string, unknown> | undefined => {
+  for (const exchange of fixture.exchanges) {
+    const call = parseToolCallsFromSse(exchange.sse).find((c) => c.name === toolName)
+    if (call) return JSON.parse(call.arguments) as Record<string, unknown>
+  }
+  return undefined
+}
 
 // Opens Settings, enables the plugin whose Settings label is `label` (plugins are
 // off by default), and closes the modal. The toggle's <input> is visually hidden

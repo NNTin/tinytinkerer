@@ -18,7 +18,41 @@ describe('ToolRegistry output validation', () => {
     registry.register(tool)
 
     await expect(registry.run('double', { n: 3 })).resolves.toBe(6)
-    await expect(registry.run('double', { n: 'oops' })).rejects.toThrow()
+    await expect(registry.run('double', { n: 'oops' })).rejects.toThrow(/^invalid input: /)
+    await expect(registry.run('double', { n: 'oops' })).rejects.toThrow(/expected number/)
+  })
+
+  it('names the offending path when an array element fails an enum check', async () => {
+    const registry = new ToolRegistry()
+    const tool: Tool<{ fields: Array<'a' | 'style'> }, unknown> = {
+      id: 'project',
+      description: 'projects fields',
+      schema: z.object({ fields: z.array(z.enum(['a', 'style'])) }),
+      execute: (input) => Promise.resolve(input)
+    }
+    registry.register(tool)
+
+    await expect(registry.run('project', { fields: ['a', 'strokeColor'] })).rejects.toThrow(
+      /fields\[1\]/
+    )
+    await expect(registry.run('project', { fields: ['a', 'strokeColor'] })).rejects.toThrow(
+      /"style"/
+    )
+  })
+
+  it('propagates a non-Zod error thrown by execute unchanged', async () => {
+    const registry = new ToolRegistry()
+    const tool: Tool<unknown, unknown> = {
+      id: 'boom',
+      description: 'throws a plain error',
+      schema: z.unknown(),
+      execute: () => {
+        throw new Error('boom')
+      }
+    }
+    registry.register(tool)
+
+    await expect(registry.run('boom', {})).rejects.toThrow(/^boom$/)
   })
 
   it('returns the parsed output when an outputSchema is declared', async () => {
@@ -47,7 +81,7 @@ describe('ToolRegistry output validation', () => {
     }
     registry.register(tool)
 
-    await expect(registry.run('bad-output', {})).rejects.toThrow()
+    await expect(registry.run('bad-output', {})).rejects.toThrow(/^invalid output: /)
   })
 
   it('returns the raw output unchanged when no outputSchema is declared', async () => {

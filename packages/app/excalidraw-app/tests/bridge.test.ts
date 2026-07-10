@@ -183,7 +183,10 @@ describe('Excalidraw bridge handlers', () => {
       'arrange',
       'survey',
       'preset',
-      'icon'
+      'icon',
+      'preview',
+      'thumbnail',
+      'pick'
     ])
   })
 
@@ -304,6 +307,38 @@ describe('Excalidraw bridge handlers', () => {
         [0, 0],
         [0, 120]
       ]
+    })
+  })
+
+  it('keeps a negative extent as direction for lines and normalizes it for shapes', async () => {
+    const api = fakeApi()
+    await run(api, 'draw', {
+      elements: [
+        // A stick-figure left arm: a line drawn down-and-left. The sign is the
+        // direction, so x/y stay put and the points delta is negative.
+        { id: 'armL', type: 'line', x: 268, y: 276, width: -28, height: 24 },
+        // A box drawn from its bottom-right corner: negative extent normalizes
+        // to a positive width/height with the origin shifted to the top-left.
+        { id: 'box', type: 'rectangle', x: 200, y: 200, width: -120, height: -80 }
+      ]
+    })
+    const update = vi.mocked(api.updateScene).mock.calls[0]?.[0]
+    const elements = update?.elements as unknown as ReadonlyArray<Record<string, unknown>>
+    expect(elements.find((element) => element.id === 'armL')).toMatchObject({
+      x: 268,
+      y: 276,
+      width: -28,
+      height: 24,
+      points: [
+        [0, 0],
+        [-28, 24]
+      ]
+    })
+    expect(elements.find((element) => element.id === 'box')).toMatchObject({
+      x: 80,
+      y: 120,
+      width: 120,
+      height: 80
     })
   })
 
@@ -500,6 +535,61 @@ describe('Excalidraw bridge handlers', () => {
     expect(result.truncation.omittedElements).toBeGreaterThan(0)
     expect(result.truncation.serializedBytes).toBe(actualBytes)
     expect(actualBytes).toBeLessThanOrEqual(64 * 1_024)
+  })
+
+  it('projects read elements down to id/type/kind plus the requested fields', async () => {
+    const api = fakeApi([baseElement('a'), baseElement('b', { x: 200 })])
+
+    const result = (await run(api, 'read', {
+      elementIds: ['a', 'b'],
+      fields: ['x', 'y', 'width', 'height']
+    })) as { elements: Array<Record<string, unknown>>; fields?: string[] }
+
+    expect(result.fields).toEqual(['x', 'y', 'width', 'height'])
+    for (const element of result.elements) {
+      expect(Object.keys(element).sort()).toEqual(
+        ['height', 'id', 'kind', 'type', 'width', 'x', 'y'].sort()
+      )
+    }
+    expect(result.elements[0]).not.toHaveProperty('style')
+    expect(result.elements[0]).not.toHaveProperty('capabilities')
+  })
+
+  it('leaves unfiltered read records full and omits fields from the result', async () => {
+    const api = fakeApi([baseElement('a')])
+
+    const result = (await run(api, 'read', { elementIds: ['a'] })) as {
+      elements: Array<Record<string, unknown>>
+      fields?: string[]
+    }
+
+    expect(result.fields).toBeUndefined()
+    expect(result.elements[0]).toHaveProperty('style')
+    expect(result.elements[0]).toHaveProperty('capabilities')
+  })
+
+  it('fits a ~10-element read fully when filtered, though the unfiltered result truncates it', async () => {
+    // Same shape as the paged-budget test above: each element's link is under
+    // the per-field 8,192-byte cap, but ten of them together blow the 64 KiB
+    // read budget. Projecting away `link` shrinks every record enough to fit.
+    const elements = Array.from({ length: 10 }, (_, index) =>
+      baseElement(`heavy-${index}`, { link: 'x'.repeat(8_000) })
+    )
+    const elementIds = elements.map((element) => String(element.id))
+
+    const unfiltered = (await run(fakeApi(elements), 'read', {
+      elementIds,
+      limit: 10
+    })) as { truncation: { omittedElements: number } }
+    expect(unfiltered.truncation.omittedElements).toBeGreaterThan(0)
+
+    const filtered = (await run(fakeApi(elements), 'read', {
+      elementIds,
+      limit: 10,
+      fields: ['x', 'y', 'width', 'height']
+    })) as { elements: unknown[]; truncation: { omittedElements: number } }
+    expect(filtered.truncation.omittedElements).toBe(0)
+    expect(filtered.elements).toHaveLength(10)
   })
 
   it('applies a versioned edit batch atomically as one undoable update', async () => {

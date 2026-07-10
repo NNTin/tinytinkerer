@@ -51,7 +51,7 @@ beforeAll(async () => {
 }, 90_000)
 
 describe('canvas bundle regression guard', () => {
-  it('keeps the twenty-two-tool startup entry below 90 kB', () => {
+  it('keeps the twenty-five-tool startup entry below 94 kB', () => {
     const entry = shellChunks.find((chunk) => chunk.facadeModuleId?.endsWith('/canvas/index.html'))
     expect(entry).toBeDefined()
     // Raised 84 → 85 kB when the shared chat surface gained always-loaded turn
@@ -62,8 +62,20 @@ describe('canvas bundle regression guard', () => {
     // carries all four presentation variants' chrome (~4.6 kB raw, ~1.5 kB
     // gzipped) so the panel — including the boot-failure Reload affordance —
     // has one implementation instead of five drifting copies.
+    // Raised 90 → 92 kB when the safer-workflow verbs landed (#318, 2026-07):
+    // the startup entry now carries three more tool descriptions plus the
+    // preview/thumbnail/pick input schemas (~1.4 kB raw) so the model can call
+    // them; the verbs' behavior stays in the iframe graph.
+    // Raised 92 → 93 kB (2026-07-09): the preview/thumbnail tool descriptions
+    // grew a sentence explaining the `media` handle + `![caption](<mediaRef>)`
+    // embed convention now that their rendered image travels as display-only
+    // media instead of an inline base64 field.
+    // Raised 93 → 94 kB (2026-07-10): pick/read gained an optional `fields`
+    // projection (id/type/kind plus only the requested keys, for large
+    // selections) — the enum, the two schemas' extra property, and the two tool
+    // descriptions' extra sentence add a little over 400 bytes raw.
     // Excalidraw and the heavy graph are still guarded out by the tests below.
-    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(90)
+    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(94)
   })
 
   it('keeps Excalidraw outside the canvas startup graph', () => {

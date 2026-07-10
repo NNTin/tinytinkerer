@@ -90,6 +90,18 @@ export default tseslint.config(
       'no-restricted-globals': 'off'
     }
   },
+  {
+    // Agent skill tools are plain Node ESM scripts outside every tsconfig, so the
+    // project service cannot type them — turn off type-aware linting there (the
+    // untyped recommended rules still apply). They also legitimately use raw
+    // fetch: they run under Node against local/live services, where the
+    // browser-side fetchWithTelemetry wrapper does not exist.
+    files: ['.agent/skills/*/tools/*.mjs'],
+    extends: [tseslint.configs.disableTypeChecked],
+    rules: {
+      'no-restricted-globals': 'off'
+    }
+  },
   // Must be LAST: turns off any ESLint rules that would conflict with Prettier
   // so the two never fight. ESLint owns code-quality rules; Prettier owns
   // formatting. See docs/ARCHITECTURE.md#enforcement.

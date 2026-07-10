@@ -1,4 +1,5 @@
 import type { ChatMessage, ChatToolDefinition, ChatToolCall } from '@tinytinkerer/contracts'
+import { mediaRefFor, partitionToolResultMedia } from '@tinytinkerer/contracts'
 import type { ToolInvocation } from '@tinytinkerer/app-core'
 import type { PlannerToolDescriptor } from './mcp-planner'
 
@@ -92,12 +93,35 @@ export { parseToolCallArguments } from '@tinytinkerer/contracts'
 // non-serializable values) so the model receives structured, parseable results.
 // Per-message clamping to the edge ceiling happens centrally in
 // modelsChatRequestBody, so this does not truncate here.
-const serializeToolResult = (outcome: ToolInvocation['outcome']): string => {
+//
+// Image-bearing output gets one extra step first: `partitionToolResultMedia`
+// strips each media item's base64 `dataUrl` out of the payload, and the model
+// gets a compact `{ mediaRef, description, width, height, mimeType }` handle in
+// its place — a short ref plus a text description rather than the base64 blob.
+// This is the seam that was bloating every DECIDE/SYNTHESIZE request with
+// inline image data; the UI resolves the same `mediaRef` back to the actual
+// image via its own media registry, keyed off the same partitioned array (the
+// enumeration index below MUST line up with that array, not the raw output).
+const serializeToolResult = (outcome: ToolInvocation['outcome'], callId: string): string => {
   if (!outcome.ok) {
     return `Error: ${outcome.error}`
   }
   try {
-    return JSON.stringify(outcome.output) ?? String(outcome.output)
+    const { rest, media } = partitionToolResultMedia(outcome.output)
+    if (media.length === 0) {
+      return JSON.stringify(outcome.output) ?? String(outcome.output)
+    }
+    const modelOutput = {
+      ...(rest as Record<string, unknown>),
+      media: media.map((item, index) => ({
+        mediaRef: mediaRefFor(callId, index),
+        description: item.description,
+        width: item.width,
+        height: item.height,
+        mimeType: item.mimeType
+      }))
+    }
+    return JSON.stringify(modelOutput) ?? String(outcome.output)
   } catch {
     return String(outcome.output)
   }
@@ -127,7 +151,7 @@ export const toolInvocationsToMessages = (
     messages.push({
       role: 'tool',
       tool_call_id: invocation.callId,
-      content: serializeToolResult(invocation.outcome)
+      content: serializeToolResult(invocation.outcome, invocation.callId)
     })
   }
   return messages

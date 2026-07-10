@@ -34,12 +34,28 @@ describe('canvas app tools', () => {
       'arrange',
       'survey',
       'preset',
-      'icon'
+      'icon',
+      'preview',
+      'thumbnail',
+      'pick'
     ])
     expect(
       tools.find((tool) => tool.id === 'draw')?.schema.safeParse({ elements: [] }).success
     ).toBe(false)
     expect(tools.find((tool) => tool.id === 'read')?.schema.safeParse({}).success).toBe(false)
+    // `fields` is optional on read, both omitted (full records) and provided (a
+    // lean projection).
+    expect(
+      tools.find((tool) => tool.id === 'read')?.schema.safeParse({ elementIds: ['a'] }).success
+    ).toBe(true)
+    expect(
+      tools
+        .find((tool) => tool.id === 'read')
+        ?.schema.safeParse({
+          elementIds: ['a'],
+          fields: ['x', 'y']
+        }).success
+    ).toBe(true)
     // structural verbs consume the shared schemas, e.g. transform requires versioned edits
     expect(
       tools.find((tool) => tool.id === 'transform')?.schema.safeParse({ elements: [] }).success
@@ -74,6 +90,44 @@ describe('canvas app tools', () => {
     expect(
       tools.find((tool) => tool.id === 'arrange')?.schema.safeParse({ elements: [] }).success
     ).toBe(false)
+    // the safer-workflow verbs consume the shared schemas too
+    expect(
+      tools
+        .find((tool) => tool.id === 'preview')
+        ?.schema.safeParse({
+          verb: 'edit',
+          input: { edits: [{ id: 'a', expectedVersion: 1, changes: { x: 10 } }] }
+        }).success
+    ).toBe(true)
+    expect(
+      tools.find((tool) => tool.id === 'preview')?.schema.safeParse({ verb: 'read', input: {} })
+        .success
+    ).toBe(false)
+    expect(
+      tools.find((tool) => tool.id === 'preview')?.schema.parse({ verb: 'clear', input: {} })
+    ).toMatchObject({ render: true, maxDimension: 512 })
+    expect(tools.find((tool) => tool.id === 'pick')?.schema.parse({})).toEqual({
+      mode: 'current',
+      timeoutSeconds: 60,
+      detail: 'standard'
+    })
+    // `fields` is optional on pick too.
+    expect(
+      tools.find((tool) => tool.id === 'pick')?.schema.parse({ fields: ['x', 'y'] })
+    ).toMatchObject({ fields: ['x', 'y'] })
+  })
+
+  it('marks only pick as awaiting human input, with a bridge timeout that outlives the wait', async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true })
+    const tools = createCanvasAppTools(handle(request))
+    const pick = tools.find((tool) => tool.id === 'pick')
+    expect(pick?.awaitsHumanInput).toBe(true)
+    expect(tools.find((tool) => tool.id === 'preview')?.awaitsHumanInput).toBeUndefined()
+    expect(tools.find((tool) => tool.id === 'thumbnail')?.awaitsHumanInput).toBeUndefined()
+
+    const parsed = pick?.schema.parse({ mode: 'interactive' })
+    await expect(pick?.execute(parsed)).resolves.toEqual({ ok: true })
+    expect(request).toHaveBeenCalledWith('pick', parsed, { timeoutMs: 130_000 })
   })
 
   it('forwards validated tool input to the bridge handle', async () => {

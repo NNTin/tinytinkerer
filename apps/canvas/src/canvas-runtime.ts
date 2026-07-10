@@ -1,6 +1,9 @@
 import { appToolsFromVerbs, createAppBridgeHandle } from '@tinytinkerer/app-harness'
 import type { AppBridgeHandle } from '@tinytinkerer/app-harness'
-import { excalidrawVerbInputSchemas } from '@tinytinkerer/excalidraw-protocol'
+import {
+  EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS,
+  excalidrawVerbInputSchemas
+} from '@tinytinkerer/excalidraw-protocol'
 
 export const canvasBridgeHandle = createAppBridgeHandle()
 
@@ -38,7 +41,11 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
       read: {
         description:
           'Read normalized full content for specific Excalidraw element ids after search and ' +
-          'inspect. Returns exact geometry, styles, text, bindings, and versions required by edit.',
+          'inspect. Returns exact geometry, styles, text, bindings, and versions required by edit. ' +
+          "Pass fields (e.g. ['x','y','width','height']) to get back only those keys per element " +
+          'plus id/type/kind, keeping the result compact when a selection is large and only part ' +
+          'of each element matters; include version if you plan to edit afterwards. Omit fields ' +
+          'for full records.',
         schema: excalidrawVerbInputSchemas.read
       },
       edit: {
@@ -176,6 +183,44 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
           'Excalidraw glyph (never fetched from an external library), reusable as a building block for ' +
           'diagrams. Appends by default; one atomic, undoable, version-checked insert.',
         schema: excalidrawVerbInputSchemas.icon
+      },
+      preview: {
+        description:
+          'Preview an Excalidraw mutation without applying it: dry-runs the given verb with the ' +
+          'exact input you would pass it, running the same validation and version checks, and ' +
+          'returns a rendered image of the proposed result (a non-destructive picture of what ' +
+          'the scene would look like after the change) alongside a compact patch summary ' +
+          '(add/update/delete counts plus affected ids and labels), scaled to maxDimension. The ' +
+          'image comes back as a media handle, not raw base64 — to show it to the user, embed it ' +
+          'in your reply as ![caption](<the mediaRef>). Nothing is committed — to apply, call ' +
+          'the target verb itself with the same input. Set render:false to skip the image for a ' +
+          'faster, summary-only dry-run.',
+        schema: excalidrawVerbInputSchemas.preview
+      },
+      thumbnail: {
+        description:
+          'Render a small PNG snapshot of the Excalidraw scene (or specific elementIds) for ' +
+          'visual verification, scaled to maxDimension. The image comes back as a media handle, ' +
+          'not raw base64 — to show it to the user, embed it in your reply as ' +
+          '![caption](<the mediaRef>). On-demand and byte-budgeted: lower maxDimension or narrow ' +
+          'elementIds if the result exceeds the budget.',
+        schema: excalidrawVerbInputSchemas.thumbnail
+      },
+      pick: {
+        description:
+          'Read the user\'s live Excalidraw selection (mode "current"), or ask the user to ' +
+          'select element(s) on the canvas (mode "interactive": shows a toast prompt and waits ' +
+          "for the next settled selection, up to timeoutSeconds; timedOut:true when they don't). " +
+          'Returns normalized element records with versions so the selection can be edited ' +
+          'immediately. detail controls how much of each record comes back (summary/standard/' +
+          "full); fields (e.g. ['x','y','width','height']) additionally narrows each record to " +
+          'just id/type/kind plus the requested keys, keeping a large selection compact. Omit ' +
+          'fields for full records.',
+        schema: excalidrawVerbInputSchemas.pick,
+        awaitsHumanInput: true,
+        // Must outlive the worst-case in-iframe wait; the runtime's human-input
+        // budget (300s) still bounds the tool.
+        requestTimeoutMs: (EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS + 10) * 1000
       }
     }
   })

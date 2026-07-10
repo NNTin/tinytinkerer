@@ -7,7 +7,9 @@ import type {
 import { EXCALIDRAW_FIELD_LIMITS } from '@tinytinkerer/excalidraw-protocol'
 import type {
   EditableField,
+  ElementField,
   EditRestriction,
+  ProjectedElement,
   ReadElement,
   ReadInput
 } from '@tinytinkerer/excalidraw-protocol'
@@ -368,3 +370,36 @@ export const normalizeElement = (
     truncatedFields
   }
 }
+
+// Projects an already-normalized record (the `element` a `normalizeElement` call
+// returned) down to identity (`id`/`type`/`kind`, always included) plus only the
+// requested `fields`. One projection path, applied after normalization — it never
+// re-derives anything from the live Excalidraw element, so `detail`'s truncation
+// caps still apply to whatever `fields` happens to keep. A key a caller asked for
+// that the record doesn't have (e.g. `text` on a shape) is silently skipped rather
+// than added as `undefined`, so the result stays a clean, minimal record. Lives
+// here (next to `normalizeElement`) rather than in `mutation.ts` because `pick`/
+// `read` are the first two callers; `mutation.ts`'s `attachBoundedRecords` can
+// adopt the same helper for edit/structural-verb receipts later.
+export const projectElement = (
+  record: ReadElement,
+  fields: readonly ElementField[]
+): ProjectedElement => {
+  const projected: Record<string, unknown> = { id: record.id, type: record.type, kind: record.kind }
+  const source = record as unknown as Record<string, unknown>
+  for (const field of fields) {
+    if (field in source) projected[field] = source[field]
+  }
+  return projected as ProjectedElement
+}
+
+// Whether a truncated-field path (e.g. "text.text", "linear.points", "groupIds")
+// survives a `fields` projection: it does when its top-level segment (before any
+// dot) is one of the requested fields. Callers use this to drop truncation reports
+// for blocks a projection excludes — a truncated `text.text` on a record whose
+// projection doesn't include `text` would otherwise report truncation on data the
+// caller never actually receives.
+export const truncationSurvivesProjection = (
+  path: string,
+  fields: readonly ElementField[]
+): boolean => fields.includes(path.split('.')[0] as ElementField)

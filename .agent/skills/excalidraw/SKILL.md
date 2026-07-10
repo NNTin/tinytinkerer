@@ -30,7 +30,7 @@ to extend the verb ladder, change contracts/handlers/tool wiring, touch the ifra
 rendering bugs — without breaking package ownership or bundle isolation.
 
 The integration exists today: a sandboxed Excalidraw iframe talks to the chat shell over a generic,
-versioned `postMessage` bridge, and the assistant drives it through **22 verbs**. Everything below describes
+versioned `postMessage` bridge, and the assistant drives it through **25 verbs**. Everything below describes
 the real, implemented system — not a plan.
 
 ## When to use
@@ -96,6 +96,16 @@ behavior → `ExcalidrawImperativeAPI` → result (validated against protocol re
     `stack`, `order`, `transform`).
   - `binding.ts` — the connector binding verbs (`bind`, `audit`).
   - `layout.ts` — the layout verbs (`snap`, `place`, `arrange`, `survey`).
+  - `preview.ts` — the `preview` verb: dry-run of any mutating verb via a hardened,
+    commit-suppressing capture proxy, diffed into a compact patch summary plus a rendered
+    visual of the hypothetical result, attached as display-only `media`.
+  - `thumbnail.ts` — the `thumbnail` verb: byte-budgeted PNG snapshot via `exportToCanvas`,
+    shared with `preview`'s visual through `renderScenePng`, returned as display-only `media`.
+  - `describe.ts` — deterministic, LLM-free `description` text for `thumbnail`/`preview`'s
+    `media` image (element type counts + a few labels for `thumbnail`, patch-summary counts
+    for `preview`), bounded to a short byte budget.
+  - `pick.ts` — the `pick` verb: live-selection read plus the interactive (toast + settled
+    selection) human-in-the-loop mode.
   - `geometry.ts` — shared, verb-agnostic geometry: box math, the edge-anchor policy, and
     `reflowBoundConnectors` (used by `transform`'s `reflowConnectors` and the layout writes). Consumed by
     `structure`/`binding`/`layout`; depends only on `normalization`, so no import cycle with the verbs.
@@ -123,7 +133,7 @@ tests fail.
 2. **One verb = touch all five seams.** Add an entry to `excalidrawVerbInputSchemas` (`inputs.ts`) and
    `excalidrawVerbContracts` (`contracts.ts`); an `execute*` in the owning `excalidraw-app` module; a
    `defineBridgeVerb` line in `bridge.ts`; a description in `canvas-runtime.ts`; and update the canvas bundle
-   test's tool-count guard (currently "twenty-two-tool startup entry" + size budget in
+   test's tool-count guard (currently "twenty-five-tool startup entry" + size budget in
    `apps/canvas/src/bundle-size.test.ts`).
 3. **Mutations are atomic, undoable, version-checked.** validate → preflight versions + relationship safety
    → exactly **one** `api.updateScene({ ..., captureUpdate: CaptureUpdateAction.IMMEDIATELY })`. Reject
@@ -136,38 +146,45 @@ tests fail.
    `truncation`. Requests over budget fail before behavior runs; results drop trailing records and report
    omissions. `read`'s discriminated union and per-element `capabilities` must match what `edit` enforces —
    any advertised `editableField` must be honored by `edit`, computed from the same capability logic.
-5. **Versioning.** Bump `EXCALIDRAW_PROTOCOL_VERSION` (currently **7**) for any incompatible app-contract
+   `pick`/`read` also take an optional `fields` projection, orthogonal to `detail`: e.g.
+   `{ elementIds: [...], fields: ['x', 'y', 'width', 'height'] }` returns each element as just
+   `{ id, type, kind, x, y, width, height }` instead of the full record (`style`, `capabilities`, etc.),
+   which matters once a selection is large enough to blow the result budget on fields the caller doesn't need.
+5. **Versioning.** Bump `EXCALIDRAW_PROTOCOL_VERSION` (currently **8**) for any incompatible app-contract
    change (verb names, required inputs, result shapes, normalized variants, budgets, semantics). Do **not**
    bump `APP_BRIDGE_PROTOCOL_VERSION` unless the generic envelope changes.
 6. **Serializable & model-friendly.** Zod schemas are the wire source of truth. Never expose raw Excalidraw
    seeds, nonces, React state, functions, DOM objects, or module instances.
 
-## Current verbs (22)
+## Current verbs (25)
 
-| Verb         | Dir.  | Module         | Focus                                                                                 |
-| ------------ | ----- | -------------- | ------------------------------------------------------------------------------------- |
-| `draw`       | WRITE | `create.ts`    | Element skeletons, stable ids, post-layout connectors, one undoable update            |
-| `clear`      | WRITE | `create.ts`    | Undoable `updateScene({ elements: [] })`                                              |
-| `search`     | READ  | `query.ts`     | Capped candidates by query, type, selection, or viewport                              |
-| `inspect`    | READ  | `query.ts`     | Compact scene/viewport/selection/grouping/z-order/locking/relationships               |
-| `read`       | READ  | `query.ts`     | Budgeted normalized discriminated records, capabilities, versions, pagination         |
-| `edit`       | WRITE | `edit.ts`      | Atomic, version-checked, invariant-safe field patches with receipts                   |
-| `group`      | WRITE | `structure.ts` | Group/ungroup by id or selection, carrying bound labels; contiguous z-order           |
-| `duplicate`  | WRITE | `structure.ts` | Copy by id with offset, fresh ids, remapped groups/labels/intra-set bindings          |
-| `delete`     | WRITE | `structure.ts` | Delete by id; rejects relationship crossings unless `includeRelated`                  |
-| `align`      | WRITE | `structure.ts` | Align ≥2 elements to a shared edge/center on x or y                                   |
-| `distribute` | WRITE | `structure.ts` | Equalize gaps between ≥3 elements along an axis, ends fixed                           |
-| `stack`      | WRITE | `structure.ts` | Lay out in order with a configurable gap and cross-axis alignment                     |
-| `order`      | WRITE | `structure.ts` | Reorder z-layers: front/back, forward/backward (array reorder → fractional resync)    |
-| `transform`  | WRITE | `structure.ts` | Relationship-aware move/resize by id + expected version; opt-in `reflowConnectors`    |
-| `bind`       | WRITE | `binding.ts`   | (Re)bind/detach a connector endpoint to a target + anchor; re-anchors, syncs bounds   |
-| `audit`      | READ  | `binding.ts`   | Connector binding health: unbound/ok/stale/detached/ambiguous + safe repair hints     |
-| `snap`       | WRITE | `layout.ts`    | Snap top-left (and optionally size) to the grid; carries relationships, reflows       |
-| `place`      | WRITE | `layout.ts`    | Position a cluster relative to an anchor element/group (below/above/left/right/over)  |
-| `arrange`    | WRITE | `layout.ts`    | Auto-layout into a row-major grid or an evenly spaced circle                          |
-| `survey`     | READ  | `layout.ts`    | Layout health: element overlaps, label overflow, unreadable connectors + fixes        |
-| `preset`     | WRITE | `presets.ts`   | Insert a network/flowchart/UML/wireframe scaffold: grouped nodes + labeled connectors |
-| `icon`       | WRITE | `presets.ts`   | Insert router/laptop/phone/cloud/server/printer glyphs as grouped, labeled shapes     |
+| Verb         | Dir.                      | Module         | Focus                                                                                                              |
+| ------------ | ------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `draw`       | WRITE                     | `create.ts`    | Element skeletons, stable ids, post-layout connectors, one undoable update                                         |
+| `clear`      | WRITE                     | `create.ts`    | Undoable `updateScene({ elements: [] })`                                                                           |
+| `search`     | READ                      | `query.ts`     | Capped candidates by query, type, selection, or viewport                                                           |
+| `inspect`    | READ                      | `query.ts`     | Compact scene/viewport/selection/grouping/z-order/locking/relationships                                            |
+| `read`       | READ                      | `query.ts`     | Budgeted normalized discriminated records, capabilities, versions, pagination; optional `fields` projection        |
+| `edit`       | WRITE                     | `edit.ts`      | Atomic, version-checked, invariant-safe field patches with receipts                                                |
+| `group`      | WRITE                     | `structure.ts` | Group/ungroup by id or selection, carrying bound labels; contiguous z-order                                        |
+| `duplicate`  | WRITE                     | `structure.ts` | Copy by id with offset, fresh ids, remapped groups/labels/intra-set bindings                                       |
+| `delete`     | WRITE                     | `structure.ts` | Delete by id; rejects relationship crossings unless `includeRelated`                                               |
+| `align`      | WRITE                     | `structure.ts` | Align ≥2 elements to a shared edge/center on x or y                                                                |
+| `distribute` | WRITE                     | `structure.ts` | Equalize gaps between ≥3 elements along an axis, ends fixed                                                        |
+| `stack`      | WRITE                     | `structure.ts` | Lay out in order with a configurable gap and cross-axis alignment                                                  |
+| `order`      | WRITE                     | `structure.ts` | Reorder z-layers: front/back, forward/backward (array reorder → fractional resync)                                 |
+| `transform`  | WRITE                     | `structure.ts` | Relationship-aware move/resize by id + expected version; opt-in `reflowConnectors`                                 |
+| `bind`       | WRITE                     | `binding.ts`   | (Re)bind/detach a connector endpoint to a target + anchor; re-anchors, syncs bounds                                |
+| `audit`      | READ                      | `binding.ts`   | Connector binding health: unbound/ok/stale/detached/ambiguous + safe repair hints                                  |
+| `snap`       | WRITE                     | `layout.ts`    | Snap top-left (and optionally size) to the grid; carries relationships, reflows                                    |
+| `place`      | WRITE                     | `layout.ts`    | Position a cluster relative to an anchor element/group (below/above/left/right/over)                               |
+| `arrange`    | WRITE                     | `layout.ts`    | Auto-layout into a row-major grid or an evenly spaced circle                                                       |
+| `survey`     | READ                      | `layout.ts`    | Layout health: element overlaps, label overflow, unreadable connectors + fixes                                     |
+| `preset`     | WRITE                     | `presets.ts`   | Insert a network/flowchart/UML/wireframe scaffold: grouped nodes + labeled connectors                              |
+| `icon`       | WRITE                     | `presets.ts`   | Insert router/laptop/phone/cloud/server/printer glyphs as grouped, labeled shapes                                  |
+| `preview`    | READ (dry-run of a write) | `preview.ts`   | Dry-run any mutating verb (real validation, commit suppressed) → `media` visual + patch summary                    |
+| `thumbnail`  | READ                      | `thumbnail.ts` | On-demand, byte-budgeted PNG snapshot of the scene or scoped elements, as `media`                                  |
+| `pick`       | READ                      | `pick.ts`      | Live selection now, or interactive toast-prompted wait for the user's next selection; optional `fields` projection |
 
 The 8 structural verbs share `mutation.ts` (receipts + budget trimming, also used by `edit`) and `ids.ts`
 (also used by `create`). Each commits exactly one atomic, undoable `updateScene`. `delete` additionally
@@ -195,24 +212,55 @@ mints collision-free element/group ids, version-checks against the current scene
 post-layout connector anchoring + one atomic, undoable `updateScene`) to commit. Each node/icon is placed
 in its own group; the network preset composes the same icon factories `icon` exposes directly.
 
+The safer-workflow verbs `preview`, `thumbnail`, and `pick` live in `preview.ts`, `thumbnail.ts`, and
+`pick.ts`. `preview` is a stateless dry-run of any mutating verb: it parses the nested input with that
+verb's own schema, runs the verb's real executor (same version/lock/relationship checks) against a
+hardened capture proxy — delegated properties are bound to the real target, never the proxy, so a real
+`ExcalidrawImperativeAPI`'s methods behave identically whether called through the proxy or directly — that
+suppresses the single `updateScene` commit, and diffs before/after — by id, object identity, and
+z-position — into a budget-trimmed patch summary. It also renders the captured (never-committed) `after`
+scene to a PNG, via the same `renderScenePng` helper `thumbnail` uses, called against the real api, and
+attaches it to the result's `media` array as a display-only image (`kind: 'image'`, `dataUrl`, `mimeType`,
+`width`, `height`, and a `description` built by `describe.ts`'s `describePreview`); this degrades to an
+empty `media` array with a `thumbnailReason` (`not-requested`/`no-change`/`empty-result`/`over-budget`)
+instead of ever failing the dry-run over an image, and the image is preferred over the `changes` list when
+trimming to the result budget. Applying is just calling the target verb with the same input, so the
+versioned input is the staged plan and no staged state exists. `thumbnail` exports the scene (or scoped
+`elementIds`) to a PNG via the shared `renderScenePng` (which owns the `exportToCanvas` call) and returns it
+the same way — one `media` item with a `describeScene` description — under a hard result-byte budget: over
+budget is an actionable error, never a trimmed image. Neither verb ever puts the base64 `dataUrl` in front
+of the model: `serializeToolResult` (`app-browser`) strips it to a `{ mediaRef, description, width, height,
+mimeType }` handle before the result reaches a chat request, and the model shows the picture to the user by
+embedding `![caption](<mediaRef>)`, which the chat transcript resolves back to the real image (see
+`docs/app-harness.md`'s "Tool-result media" section for the full inference/render split — this convention
+is generic, defined in `@tinytinkerer/contracts`, not `excalidraw-protocol`). `pick` reads the
+live selection (`current`) or waits for the user's next settled selection (`interactive`: `api.setToast`
+prompt + `api.onChange` with a settle debounce); its canvas tool declares `awaitsHumanInput` and a
+per-request bridge timeout derived from `EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS`, reusing the issue-#85
+human-input machinery instead of a second HITL path.
+
 ## Upstream `@excalidraw/excalidraw` API map
 
 Pinned at `0.18.1`. Only `excalidraw-app` may call these. **Authoritative source for exact signatures =
 the installed pinned type declarations**, not the clone (see "Verifying upstream APIs" below). Don't guess.
 
-| Symbol                                         | R/W         | Used in                               | Purpose                                 |
-| ---------------------------------------------- | ----------- | ------------------------------------- | --------------------------------------- |
-| `Excalidraw`, `ExcalidrawImperativeAPI`        | —           | `index.tsx`, all                      | Mount component; imperative handle      |
-| `api.getSceneElements()`                       | READ        | `query`, `edit`, `structure`          | Current ordered, non-deleted elements   |
-| `api.getAppState()`                            | READ        | `query`                               | Viewport, selection, theme, grid        |
-| `getVisibleSceneBounds(appState)`              | READ        | `query`                               | Viewport bounds                         |
-| `getCommonBounds(elements)`                    | READ        | `query`, `normalization`, `structure` | Bounding box for layout/align/normalize |
-| `hashElementsVersion(elements)`                | READ        | `normalization`                       | Scene version hash                      |
-| `convertToExcalidrawElements(skeletons)`       | write-prep  | `create`                              | Skeletons → full elements               |
-| `newElementWith(element, patch)`               | write-prep  | `structure`                           | Immutable element clone with updates    |
-| `api.updateScene({ elements, captureUpdate })` | WRITE       | `create`, `edit`, `structure`         | **The one atomic commit** per verb      |
-| `CaptureUpdateAction.IMMEDIATELY`              | WRITE       | `create`, `edit`, `structure`         | Marks the update as one undo checkpoint |
-| `api.scrollToContent()`                        | WRITE(view) | `create`                              | Reveal newly drawn content              |
+| Symbol                                         | R/W              | Used in                                                       | Purpose                                                                                                                   |
+| ---------------------------------------------- | ---------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `Excalidraw`, `ExcalidrawImperativeAPI`        | —                | `index.tsx`, all                                              | Mount component; imperative handle                                                                                        |
+| `api.getSceneElements()`                       | READ             | `query`, `edit`, `structure`                                  | Current ordered, non-deleted elements                                                                                     |
+| `api.getAppState()`                            | READ             | `query`                                                       | Viewport, selection, theme, grid                                                                                          |
+| `api.getFiles()`                               | READ             | `thumbnail`                                                   | Binary files (images) for the export                                                                                      |
+| `exportToCanvas(opts)`                         | READ             | `thumbnail` (shared `renderScenePng`, also used by `preview`) | Render elements to an offscreen canvas (a `@excalidraw/utils` re-export; type it locally against the pinned declarations) |
+| `api.setToast(...)` / `api.setToast(null)`     | WRITE(view)      | `pick`                                                        | Show/dismiss the interactive-pick prompt                                                                                  |
+| `api.onChange(handler)`                        | READ (subscribe) | `pick`                                                        | Observe selection changes until settled                                                                                   |
+| `getVisibleSceneBounds(appState)`              | READ             | `query`                                                       | Viewport bounds                                                                                                           |
+| `getCommonBounds(elements)`                    | READ             | `query`, `normalization`, `structure`                         | Bounding box for layout/align/normalize                                                                                   |
+| `hashElementsVersion(elements)`                | READ             | `normalization`                                               | Scene version hash                                                                                                        |
+| `convertToExcalidrawElements(skeletons)`       | write-prep       | `create`                                                      | Skeletons → full elements                                                                                                 |
+| `newElementWith(element, patch)`               | write-prep       | `structure`                                                   | Immutable element clone with updates                                                                                      |
+| `api.updateScene({ elements, captureUpdate })` | WRITE            | `create`, `edit`, `structure`                                 | **The one atomic commit** per verb                                                                                        |
+| `CaptureUpdateAction.IMMEDIATELY`              | WRITE            | `create`, `edit`, `structure`                                 | Marks the update as one undo checkpoint                                                                                   |
+| `api.scrollToContent()`                        | WRITE(view)      | `create`                                                      | Reveal newly drawn content                                                                                                |
 
 Every write funnels through exactly one `api.updateScene(..., { captureUpdate: CaptureUpdateAction.IMMEDIATELY })`,
 so a successful batch is one user-visible undo step and a failed batch changes nothing.

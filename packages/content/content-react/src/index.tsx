@@ -144,6 +144,14 @@ type RendererBoundaryState = {
 export type ContentRenderOptions = {
   codeBlockPersistenceScopeId?: string
   showCodeBlockFullscreenButton?: boolean
+  // Resolves a `media:<callId>#<index>` handle (a tool-result image the model
+  // referenced by ref instead of a real URL) to its actual data URL. Returns
+  // `undefined` when the ref cannot be resolved (unknown conversation, dropped
+  // event, etc.) so the image renderer can fall back gracefully instead of
+  // mounting a broken `<img src="media:...">`. Absent entirely for hosts that
+  // don't wire a media registry (e.g. non-chat embeds), which behaves the same
+  // as always returning `undefined`.
+  resolveMediaUrl?: (ref: string) => string | undefined
 }
 
 const ContentRenderOptionsContext = createContext<ContentRenderOptions>({})
@@ -151,6 +159,7 @@ const ContentRenderOptionsContext = createContext<ContentRenderOptions>({})
 export type ResolvedContentRenderOptions = {
   codeBlockPersistenceScopeId?: string
   showCodeBlockFullscreenButton: boolean
+  resolveMediaUrl?: (ref: string) => string | undefined
 }
 
 export const useContentRenderOptions = (): ResolvedContentRenderOptions => {
@@ -159,7 +168,8 @@ export const useContentRenderOptions = (): ResolvedContentRenderOptions => {
     ...(raw.codeBlockPersistenceScopeId
       ? { codeBlockPersistenceScopeId: raw.codeBlockPersistenceScopeId }
       : {}),
-    showCodeBlockFullscreenButton: raw.showCodeBlockFullscreenButton ?? true
+    showCodeBlockFullscreenButton: raw.showCodeBlockFullscreenButton ?? true,
+    ...(raw.resolveMediaUrl ? { resolveMediaUrl: raw.resolveMediaUrl } : {})
   }
 }
 

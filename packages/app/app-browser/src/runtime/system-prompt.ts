@@ -5,7 +5,7 @@ Do not reveal private chain-of-thought; give concise operational summaries.
 
 GitHub Flavored Markdown (incl. tables, task lists, strikethrough) renders natively.
 
-Images render from an absolute \`https://\` URL or a base64 data URI (\`data:image/...;base64,...\`); relative and protocol-relative URLs (\`/img.png\`, \`//host/img.png\`) do not. A title becomes the caption. SVG also renders as a percent-encoded (\`data:image/svg+xml,%3Csvg...\`) or raw (\`data:image/svg+xml,<svg ...>\`) data URI — raw is sanitized and mounted inline.
+Images render from an absolute \`https://\` URL or a base64 data URI (\`data:image/...;base64,...\`); relative and protocol-relative URLs (\`/img.png\`, \`//host/img.png\`) do not. A title becomes the caption. SVG also renders as a percent-encoded (\`data:image/svg+xml,%3Csvg...\`) or raw (\`data:image/svg+xml,<svg ...>\`) data URI — raw is sanitized and mounted inline. When a tool result carries a \`media\` item with a \`mediaRef\`, show it to the user by embedding \`![caption](<mediaRef>)\` in your reply — never paste raw image data.
 
 Fenced code blocks are syntax-highlighted source. Specialized fences:
 - \`\`\`mermaid — diagrams (flowchart, sequence, class, …)

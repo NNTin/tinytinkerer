@@ -243,6 +243,27 @@ describe('parseMarkdownContent', () => {
     })
   })
 
+  it('preserves a media: ref as a standalone image node (resolved to a data URL at render time)', () => {
+    expect(stripIds(parseMarkdownContent('![chart](media:call-1#0)'))).toEqual({
+      nodes: [{ type: 'image', url: 'media:call-1#0', alt: 'chart' }]
+    })
+  })
+
+  it('preserves a media: ref as an inline image node', () => {
+    expect(stripIds(parseMarkdownContent('Inline ![icon](media:call-1#0) image'))).toEqual({
+      nodes: [
+        {
+          type: 'paragraph',
+          children: [
+            { type: 'text', value: 'Inline ' },
+            { type: 'imageInline', url: 'media:call-1#0', alt: 'icon' },
+            { type: 'text', value: ' image' }
+          ]
+        }
+      ]
+    })
+  })
+
   it('preserves a raw SVG data URI as a standalone image node (survives parsing)', () => {
     const raw =
       'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>'

@@ -13,7 +13,9 @@ import {
   displayNameFor,
   elementMap,
   normalizeElement,
-  sceneVersionOf
+  projectElement,
+  sceneVersionOf,
+  truncationSurvivesProjection
 } from './normalization'
 
 export const assertRequestBudget = (
@@ -26,7 +28,11 @@ export const assertRequestBudget = (
     throw new Error(`${verb}: request payload is ${size} bytes; maximum is ${budget} bytes`)
 }
 
-const checkSceneVersion = (expected: number | undefined, actual: number, verb: string): void => {
+export const checkSceneVersion = (
+  expected: number | undefined,
+  actual: number,
+  verb: string
+): void => {
   if (expected !== undefined && expected !== actual) {
     throw new Error(
       `${verb}: scene changed (expected scene version ${expected}, current version ${actual}); restart pagination from offset 0`
@@ -266,8 +272,15 @@ export const executeRead = (api: ExcalidrawImperativeAPI, input: ReadInput) => {
   const fields: string[] = []
   const output = requested.slice(input.offset, input.offset + input.limit).map(({ index }) => {
     const normalized = normalizeElement(elements[index]!, index, elements, input.detail)
-    fields.push(...normalized.truncatedFields.map((field) => `${normalized.element.id}.${field}`))
-    return normalized.element
+    // Only report truncation for fields that survive the projection — a truncated
+    // `text.text` on a record whose projection excludes `text` was never sent.
+    const truncatedFields = input.fields
+      ? normalized.truncatedFields.filter((field) =>
+          truncationSurvivesProjection(field, input.fields!)
+        )
+      : normalized.truncatedFields
+    fields.push(...truncatedFields.map((field) => `${normalized.element.id}.${field}`))
+    return input.fields ? projectElement(normalized.element, input.fields) : normalized.element
   })
   return boundedResult(
     {
@@ -276,7 +289,8 @@ export const executeRead = (api: ExcalidrawImperativeAPI, input: ReadInput) => {
       sceneVersion,
       missingIds: input.elementIds.filter((id) => !byId.has(id)),
       page: makePage(input.offset, input.limit, output.length, requested.length),
-      elements: output
+      elements: output,
+      ...(input.fields ? { fields: input.fields } : {})
     },
     EXCALIDRAW_PAYLOAD_BUDGETS.read.result,
     fields

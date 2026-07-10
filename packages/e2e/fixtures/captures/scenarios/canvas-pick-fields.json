@@ -1,0 +1,11 @@
+{
+  "name": "canvas-pick-fields",
+  "shell": "/canvas/",
+  "settings": [],
+  "steps": [
+    { "prompt": "Draw a red rectangle and a blue ellipse side by side." },
+    { "clickCanvas": { "x": 700, "y": 700 } },
+    { "press": "Control+a" },
+    { "prompt": "Use the pick tool to tell me exactly what I currently have selected." }
+  ]
+}

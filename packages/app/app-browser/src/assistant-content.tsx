@@ -21,6 +21,7 @@ import { imagePlugin } from '@tinytinkerer/content-image'
 import { linkCardPlugin } from '@tinytinkerer/content-link-card'
 import { tablePlugin } from '@tinytinkerer/content-table'
 import { useOptionalBrowserApp } from './app'
+import { useResolveMediaUrl } from './media-registry'
 
 export type AssistantContentProps = {
   content: ContentDocument
@@ -183,12 +184,17 @@ export const AssistantContent = ({
   turnId
 }: AssistantContentProps) => {
   const showCodeBlockFullscreenButton = useShowCodeBlockFullscreenButton()
+  // Resolves the model's `media:<ref>` markdown image handles (see
+  // content-image's ImageNodeRenderer) to their real data URLs, backed by the
+  // conversation's persisted `agent.tool.completed` events.
+  const resolveMediaUrl = useResolveMediaUrl()
   const renderOptions = useMemo<ContentRenderOptions>(
     () => ({
       ...(turnId ? { codeBlockPersistenceScopeId: turnId } : {}),
-      showCodeBlockFullscreenButton
+      showCodeBlockFullscreenButton,
+      resolveMediaUrl
     }),
-    [turnId, showCodeBlockFullscreenButton]
+    [turnId, showCodeBlockFullscreenButton, resolveMediaUrl]
   )
 
   return (

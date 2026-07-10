@@ -10,22 +10,27 @@ import {
   drawInputSchema,
   duplicateInputSchema,
   editInputSchema,
+  elementFieldSchema,
   EXCALIDRAW_DETAIL_LEVELS,
   EXCALIDRAW_ICON_TYPES,
   EXCALIDRAW_PRESET_KINDS,
+  EXCALIDRAW_PREVIEWABLE_VERBS,
   excalidrawLibraryImportSchema,
   excalidrawSnapshotSchema,
   groupInputSchema,
   iconInputSchema,
   inspectInputSchema,
   orderInputSchema,
+  pickInputSchema,
   placeInputSchema,
   presetInputSchema,
+  previewInputSchema,
   readInputSchema,
   searchInputSchema,
   snapInputSchema,
   stackInputSchema,
   surveyInputSchema,
+  thumbnailInputSchema,
   transformInputSchema
 } from './inputs'
 
@@ -121,25 +126,28 @@ const shapeElementSchema = z
     type: z.enum(['rectangle', 'ellipse', 'diamond'])
   })
   .strict()
+// Kind-block sub-schemas, named (not inlined) so `projectedElementSchema` below can
+// reuse the exact same shapes as the discriminated-union variants instead of
+// re-describing them and risking drift.
+const textBlockSchema = z
+  .object({
+    text: z.string(),
+    originalText: z.string(),
+    fontSize: z.number(),
+    fontFamily: z.number(),
+    textAlign: z.string(),
+    verticalAlign: z.string(),
+    containerId: z.string().nullable(),
+    autoResize: z.boolean(),
+    lineHeight: z.number()
+  })
+  .strict()
 const textElementSchema = z
   .object({
     ...commonShape,
     kind: z.literal('text'),
     type: z.literal('text'),
-    text: z
-      .object({
-        text: z.string(),
-        originalText: z.string(),
-        fontSize: z.number(),
-        fontFamily: z.number(),
-        textAlign: z.string(),
-        verticalAlign: z.string(),
-        containerId: z.string().nullable(),
-        autoResize: z.boolean(),
-        lineHeight: z.number()
-      })
-      .strict()
-      .optional()
+    text: textBlockSchema.optional()
   })
   .strict()
 const linearShape = {
@@ -150,12 +158,13 @@ const linearShape = {
   endArrowhead: z.string().nullable(),
   elbowed: z.boolean().optional()
 }
+const linearBlockSchema = z.object(linearShape).strict()
 const lineElementSchema = z
   .object({
     ...commonShape,
     kind: z.literal('line'),
     type: z.literal('line'),
-    linear: z.object(linearShape).strict().optional()
+    linear: linearBlockSchema.optional()
   })
   .strict()
 const arrowElementSchema = z
@@ -163,7 +172,14 @@ const arrowElementSchema = z
     ...commonShape,
     kind: z.literal('arrow'),
     type: z.literal('arrow'),
-    linear: z.object(linearShape).strict().optional()
+    linear: linearBlockSchema.optional()
+  })
+  .strict()
+const freeDrawBlockSchema = z
+  .object({
+    points: z.array(pointSchema),
+    pressures: z.array(z.number()),
+    simulatePressure: z.boolean()
   })
   .strict()
 const freeDrawElementSchema = z
@@ -171,14 +187,25 @@ const freeDrawElementSchema = z
     ...commonShape,
     kind: z.literal('freeDraw'),
     type: z.literal('freedraw'),
-    freeDraw: z
+    freeDraw: freeDrawBlockSchema.optional()
+  })
+  .strict()
+const imageBlockSchema = z
+  .object({
+    fileId: z.string().nullable(),
+    status: z.string(),
+    scale: pointSchema,
+    crop: z
       .object({
-        points: z.array(pointSchema),
-        pressures: z.array(z.number()),
-        simulatePressure: z.boolean()
+        x: z.number(),
+        y: z.number(),
+        width: z.number(),
+        height: z.number(),
+        naturalWidth: z.number(),
+        naturalHeight: z.number()
       })
       .strict()
-      .optional()
+      .nullable()
   })
   .strict()
 const imageElementSchema = z
@@ -186,25 +213,7 @@ const imageElementSchema = z
     ...commonShape,
     kind: z.literal('image'),
     type: z.literal('image'),
-    image: z
-      .object({
-        fileId: z.string().nullable(),
-        status: z.string(),
-        scale: pointSchema,
-        crop: z
-          .object({
-            x: z.number(),
-            y: z.number(),
-            width: z.number(),
-            height: z.number(),
-            naturalWidth: z.number(),
-            naturalHeight: z.number()
-          })
-          .strict()
-          .nullable()
-      })
-      .strict()
-      .optional()
+    image: imageBlockSchema.optional()
   })
   .strict()
 const frameElementSchema = z
@@ -241,6 +250,50 @@ export const readElementSchema = z.discriminatedUnion('kind', [
   embedElementSchema,
   unsupportedElementSchema
 ])
+
+// The lean shape `pick`/`read`'s optional `fields` projection returns: identity
+// (`id`/`type`/`kind`) is always present, and every other selectable key is optional
+// and reuses the exact same sub-schemas as the full `readElementSchema` variants
+// above, so a projected record validates against the same wire types as a full one —
+// just with most keys missing. `kind` spans every variant's discriminant literal
+// since a projected record no longer discriminates a single specific shape.
+export const projectedElementSchema = z
+  .object({
+    id: z.string(),
+    type: z.string(),
+    kind: z.enum([
+      'shape',
+      'text',
+      'line',
+      'arrow',
+      'freeDraw',
+      'image',
+      'frame',
+      'embed',
+      'unsupported'
+    ]),
+    version: z.number().int().nonnegative().optional(),
+    zIndex: z.number().int().nonnegative().optional(),
+    x: z.number().optional(),
+    y: z.number().optional(),
+    width: z.number().optional(),
+    height: z.number().optional(),
+    angleDegrees: z.number().optional(),
+    style: elementStyleSchema.optional(),
+    locked: z.boolean().optional(),
+    groupIds: z.array(z.string()).optional(),
+    frameId: z.string().nullable().optional(),
+    link: z.string().nullable().optional(),
+    boundElements: z.array(boundElementSchema).optional(),
+    label: labelSchema.optional(),
+    capabilities: capabilitiesSchema.optional(),
+    text: textBlockSchema.optional(),
+    linear: linearBlockSchema.optional(),
+    freeDraw: freeDrawBlockSchema.optional(),
+    image: imageBlockSchema.optional(),
+    frameName: z.string().nullable().optional()
+  })
+  .strict()
 
 const truncationSchema = z
   .object({
@@ -351,7 +404,12 @@ const inspectResultSchema = z
 export const readResultSchema = z
   .object({
     ok: z.literal(true),
-    elements: z.array(readElementSchema),
+    // readElementSchema first: a full (unprojected) record must resolve to it, not
+    // the structurally looser projectedElementSchema, so downstream consumers keep
+    // getting the discriminated-union shape when `fields` was omitted.
+    elements: z.array(z.union([readElementSchema, projectedElementSchema])),
+    // Echo of the applied `fields` projection; absent when the caller didn't project.
+    fields: z.array(elementFieldSchema).optional(),
     missingIds: z.array(z.string()),
     ...pageResultShape
   })
@@ -541,6 +599,107 @@ const presetResultSchema = z
   })
   .strict()
 
+// Safer-iterative-workflow results. `preview` reports a dry-run patch summary
+// (see the rationale on the input schemas): `sceneVersion` is the CURRENT
+// (pre-apply) version, and `changes` is bounded like every other budgeted read.
+// It also renders a visual of the hypothetical (unapplied) result as display-only
+// `media` — an empty array (with `thumbnailReason` explaining why) rather than
+// ever failing the dry-run over an image.
+const patchChangeSchema = z
+  .object({
+    op: z.enum(['add', 'update', 'delete']),
+    id: z.string(),
+    type: z.string(),
+    // Display name; absent when the element has none.
+    label: z.string().optional(),
+    // The element's current version; absent for op: 'add'.
+    version: z.number().int().nonnegative().optional()
+  })
+  .strict()
+
+// A display-only image `preview`/`thumbnail` attach to their result: the host
+// renders it and, on the inference path, substitutes a text `description` +
+// handle so the base64 `dataUrl` never reaches the model (see
+// @tinytinkerer/contracts' toolResultImageMediaSchema / partitionToolResultMedia).
+// Mirrored locally rather than imported: app-protocol packages may depend only on
+// @tinytinkerer/app-bridge (scripts/check-boundaries.mjs), so this package cannot
+// take a dependency on @tinytinkerer/contracts.
+// keep in sync with @tinytinkerer/contracts toolResultImageMediaSchema
+const previewMediaSchema = z
+  .object({
+    kind: z.literal('image'),
+    dataUrl: z.string().startsWith('data:image/'),
+    mimeType: z.string(),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    description: z.string()
+  })
+  .strict()
+// Why `media` is empty (or not) for a `preview` result: the caller opted out
+// (`not-requested`), nothing would change (`no-change`), the result scene is
+// empty e.g. `clear` (`empty-result`), a render was actually dropped for
+// exceeding the result budget (`over-budget`), or it's present (`rendered`).
+const previewThumbnailReasonSchema = z.enum([
+  'rendered',
+  'not-requested',
+  'no-change',
+  'empty-result',
+  'over-budget'
+])
+const previewResultSchema = z
+  .object({
+    ok: z.literal(true),
+    verb: z.enum(EXCALIDRAW_PREVIEWABLE_VERBS),
+    wouldChange: z.boolean(),
+    sceneVersion: z.number().int().nonnegative(),
+    summary: z
+      .object({
+        adds: z.number().int().nonnegative(),
+        updates: z.number().int().nonnegative(),
+        deletes: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative()
+      })
+      .strict(),
+    changes: z.array(patchChangeSchema),
+    media: z.array(previewMediaSchema),
+    thumbnailReason: previewThumbnailReasonSchema,
+    truncation: truncationSchema
+  })
+  .strict()
+
+// `thumbnail` renders a byte-budgeted PNG snapshot as display-only `media`.
+// Intentionally no truncation object: an image cannot be trimmed like a record
+// list, so over-budget is a hard error instead of a silently smaller result.
+const thumbnailResultSchema = z
+  .object({
+    ok: z.literal(true),
+    media: z.array(previewMediaSchema),
+    elementCount: z.number().int().positive(),
+    missingIds: z.array(z.string()),
+    sceneVersion: z.number().int().nonnegative()
+  })
+  .strict()
+
+// `pick` is the interactive/selection read: `current` reports the live
+// selection now; `interactive` waits for the user's next settled selection
+// (or times out) — see the input schema for the HITL rationale.
+const pickResultSchema = z
+  .object({
+    ok: z.literal(true),
+    mode: z.enum(['current', 'interactive']),
+    timedOut: z.boolean(),
+    detail: z.enum(EXCALIDRAW_DETAIL_LEVELS),
+    sceneVersion: z.number().int().nonnegative(),
+    selectedCount: z.number().int().nonnegative(),
+    selection: selectionSchema,
+    // readElementSchema first: see readResultSchema above for why.
+    elements: z.array(z.union([readElementSchema, projectedElementSchema])),
+    // Echo of the applied `fields` projection; absent when the caller didn't project.
+    fields: z.array(elementFieldSchema).optional(),
+    truncation: truncationSchema
+  })
+  .strict()
+
 const snapshotRestoreResultSchema = z
   .object({ ok: z.literal(true), restored: z.number().int().nonnegative() })
   .strict()
@@ -588,12 +747,16 @@ export const excalidrawVerbContracts = {
   arrange: { inputSchema: arrangeInputSchema, resultSchema: arrangeResultSchema },
   survey: { inputSchema: surveyInputSchema, resultSchema: surveyResultSchema },
   preset: { inputSchema: presetInputSchema, resultSchema: presetResultSchema },
-  icon: { inputSchema: iconInputSchema, resultSchema: iconResultSchema }
+  icon: { inputSchema: iconInputSchema, resultSchema: iconResultSchema },
+  preview: { inputSchema: previewInputSchema, resultSchema: previewResultSchema },
+  thumbnail: { inputSchema: thumbnailInputSchema, resultSchema: thumbnailResultSchema },
+  pick: { inputSchema: pickInputSchema, resultSchema: pickResultSchema }
 } as const
 
 export type EditableField = z.infer<typeof editableFieldSchema>
 export type EditRestriction = z.infer<typeof editRestrictionSchema>
 export type ReadElement = z.infer<typeof readElementSchema>
+export type ProjectedElement = z.infer<typeof projectedElementSchema>
 export type ReadResult = z.infer<typeof readResultSchema>
 export type MutationResult = z.infer<typeof alignResultSchema>
 export type GroupResult = z.infer<typeof groupResultSchema>
@@ -607,3 +770,7 @@ export type LayoutFinding = z.infer<typeof layoutFindingSchema>
 export type PresetResult = z.infer<typeof presetResultSchema>
 export type IconResult = z.infer<typeof iconResultSchema>
 export type IconPlacement = z.infer<typeof iconPlacementSchema>
+export type PreviewResult = z.infer<typeof previewResultSchema>
+export type PatchChange = z.infer<typeof patchChangeSchema>
+export type ThumbnailResult = z.infer<typeof thumbnailResultSchema>
+export type PickResult = z.infer<typeof pickResultSchema>

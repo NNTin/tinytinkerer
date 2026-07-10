@@ -4,11 +4,50 @@ export const EXCALIDRAW_APP_ID = 'excalidraw'
 // generic app-bridge envelope version. Bumped to 5 for the persistence snapshot
 // restore contract (host-replayed scene on reload), then to 6 for the connectors
 // & bindings and layout-helper verbs, then to 7 for the diagram-semantics verbs
-// (`preset` + `icon`).
-export const EXCALIDRAW_PROTOCOL_VERSION = 7
+// (`preset` + `icon`), then to 8 for the safer-iterative-workflow verbs
+// (`preview`, `thumbnail`, `pick`).
+export const EXCALIDRAW_PROTOCOL_VERSION = 8
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
 export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
+
+// Selectable keys for `pick`/`read`'s optional `fields` projection. Identity
+// (`id`/`type`/`kind`) is always returned and deliberately excluded from this list —
+// a caller can never project it away. Mirrors `commonShape` in contracts.ts (minus
+// the identity keys) plus the per-kind detail blocks (`text`/`linear`/`freeDraw`/
+// `image`/`frameName`); kept in sync by the protocol.test.ts sync guard.
+export const ELEMENT_PROJECTION_FIELDS = [
+  'version',
+  'zIndex',
+  'x',
+  'y',
+  'width',
+  'height',
+  'angleDegrees',
+  'style',
+  'locked',
+  'groupIds',
+  'frameId',
+  'link',
+  'boundElements',
+  'label',
+  'capabilities',
+  'text',
+  'linear',
+  'freeDraw',
+  'image',
+  'frameName'
+] as const
+export const elementFieldSchema = z
+  .enum(ELEMENT_PROJECTION_FIELDS)
+  .describe(
+    'A projectable element field. Identity keys id/type/kind are always included and are ' +
+      'not listed here. Include "version" if you plan to edit the elements afterwards — ' +
+      'mutations are version-checked. Styling properties (strokeColor, backgroundColor, ' +
+      'fillStyle, strokeWidth, strokeStyle, roughness, opacity) are not separate fields — ' +
+      'request "style" to get them all.'
+  )
+export type ElementField = (typeof ELEMENT_PROJECTION_FIELDS)[number]
 // Default distance a bound connector endpoint keeps from its target's edge. Kept
 // here (not imported from Excalidraw) so the wire vocabulary stays side-effect
 // free; the iframe owns the exact anchoring math.
@@ -45,7 +84,13 @@ export const EXCALIDRAW_PAYLOAD_BUDGETS = Object.freeze({
   arrange: { request: 16 * 1_024, result: 64 * 1_024 },
   survey: { request: 16 * 1_024, result: 64 * 1_024 },
   preset: { request: 16 * 1_024, result: 64 * 1_024 },
-  icon: { request: 16 * 1_024, result: 64 * 1_024 }
+  icon: { request: 16 * 1_024, result: 64 * 1_024 },
+  // 32 KiB → 160 KiB: the result may now carry an optional rendered PNG of the
+  // hypothetical (unapplied) scene alongside the patch summary — thumbnail's
+  // own image budget is 128 KiB, so this leaves headroom for the summary too.
+  preview: { request: 64 * 1_024, result: 160 * 1_024 },
+  thumbnail: { request: 4 * 1_024, result: 128 * 1_024 },
+  pick: { request: 4 * 1_024, result: 64 * 1_024 }
 })
 
 const colorSchema = z
@@ -100,8 +145,20 @@ export const drawElementSchema = z.object({
     .describe('The kind of element to draw.'),
   x: z.number().finite().describe('Left position in canvas coordinates.'),
   y: z.number().finite().describe('Top position in canvas coordinates.'),
-  width: z.number().finite().nonnegative().optional().describe('Width in pixels.'),
-  height: z.number().finite().nonnegative().optional().describe('Height in pixels.'),
+  width: z
+    .number()
+    .finite()
+    .optional()
+    .describe(
+      'Width in pixels. May be negative for a line/arrow drawn leftward (the endpoint sits left of x); for shapes a negative width just draws from the opposite corner.'
+    ),
+  height: z
+    .number()
+    .finite()
+    .optional()
+    .describe(
+      'Height in pixels. May be negative for a line/arrow drawn upward (the endpoint sits above y); for shapes a negative height just draws from the opposite corner.'
+    ),
   text: z.string().optional().describe('Text content, or an optional centered label for a shape.'),
   strokeColor: colorSchema.optional(),
   backgroundColor: colorSchema.optional()
@@ -229,10 +286,22 @@ export const inspectInputSchema = withPagingGuard(
     .strict()
 )
 
+// `fields` is orthogonal to `detail`: `detail` still governs which type-specific
+// blocks (text/points caps, etc.) get built and how far their strings/arrays are
+// truncated; `fields` then narrows which of the built keys make it into the
+// record. Omit `fields` for today's full records, byte-for-byte unchanged.
+const fieldsProjectionField = z
+  .array(elementFieldSchema)
+  .min(1)
+  .max(ELEMENT_PROJECTION_FIELDS.length)
+  .optional()
+  .describe('Return only these fields per element (plus id/type/kind). Omit for full records.')
+
 export const readInputSchema = withPagingGuard(
   z
     .object({
       elementIds: uniqueElementIdsSchema,
+      fields: fieldsProjectionField,
       ...pagingShape
     })
     .strict()
@@ -823,6 +892,129 @@ export const presetInputSchema = z
       })
   })
 
+// Safer-iterative-workflow verbs. `preview` dry-runs any mutating verb (validates
+// and executes its real behavior against a capture wrapper that suppresses the
+// commit, then diffs before/after into a compact patch summary) so the model can
+// see what a write would do before committing to it; the versioned input IS the
+// staged plan, and applying is just calling the target verb with the same input.
+// `thumbnail` renders an on-demand, byte-budgeted PNG snapshot for visual
+// verification. `pick` is the interactive/selection read: `current` returns the
+// live selection now, `interactive` prompts the user (toast) and waits for their
+// next settled selection, reusing the issue-#85 human-input-tool machinery.
+
+// Exactly the mutating verbs — reads have nothing to dry-run, and `preview`
+// cannot preview itself (there is no commit to suppress for a dry-run).
+export const EXCALIDRAW_PREVIEWABLE_VERBS = [
+  'draw',
+  'edit',
+  'clear',
+  'group',
+  'duplicate',
+  'delete',
+  'align',
+  'distribute',
+  'stack',
+  'order',
+  'transform',
+  'bind',
+  'snap',
+  'place',
+  'arrange',
+  'preset',
+  'icon'
+] as const
+
+// Shared bounds for the exported-image "longest edge" dimension, reused by
+// `preview`'s optional render and `thumbnail`'s snapshot so the two schemas
+// can't drift apart — both ultimately render through the same
+// `renderScenePng` helper in excalidraw-app.
+export const EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS = {
+  min: 64,
+  max: 1024,
+  default: 512
+} as const
+
+const maxDimensionSchema = z
+  .number()
+  .int()
+  .min(EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.min)
+  .max(EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.max)
+  .default(EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.default)
+  .describe('Longest edge of the exported image in pixels; the export is scaled to fit.')
+
+export const previewInputSchema = z
+  .object({
+    verb: z.enum(EXCALIDRAW_PREVIEWABLE_VERBS).describe('The mutating verb to dry-run.'),
+    input: z
+      .record(z.string(), z.unknown())
+      .describe(
+        "The exact input you would pass to that verb. It is validated against the verb's own schema and runs the verb's real checks (versions, locks, relationships) without committing."
+      ),
+    render: z
+      .boolean()
+      .default(true)
+      .describe(
+        'Render a PNG of the hypothetical (unapplied) result alongside the patch summary. Set false for a summary-only, faster dry-run.'
+      ),
+    maxDimension: maxDimensionSchema
+  })
+  .strict()
+
+export const thumbnailInputSchema = z
+  .object({
+    elementIds: uniqueElementIdsSchema
+      .optional()
+      .describe('Limit the snapshot to these elements. Omit to capture the whole scene.'),
+    maxDimension: maxDimensionSchema,
+    background: z
+      .boolean()
+      .default(true)
+      .describe('Include the canvas background color. false exports a transparent background.'),
+    expectedSceneVersion: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe(
+        'Scene version from a prior read/inspect. When provided, the snapshot is rejected if the scene changed since (version-checked).'
+      )
+  })
+  .strict()
+
+// The bridge request for an interactive pick must outlive the wait the iframe
+// does for the user; the canvas derives its per-request timeout from this so
+// the two budgets cannot drift apart.
+export const EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS = 120
+
+export const pickInputSchema = z
+  .object({
+    mode: z
+      .enum(['current', 'interactive'])
+      .default('current')
+      .describe(
+        'current: return the live canvas selection now. interactive: prompt the user (toast) and wait for their next selection.'
+      ),
+    prompt: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe(
+        'interactive only: the toast message shown to the user. Defaults to "Select element(s) on the canvas".'
+      ),
+    timeoutSeconds: z
+      .number()
+      .int()
+      .min(5)
+      .max(EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS)
+      .default(60)
+      .describe('interactive only: how long to wait for the user before returning timedOut:true.'),
+    detail: z.enum(EXCALIDRAW_DETAIL_LEVELS).default('standard'),
+    fields: fieldsProjectionField
+  })
+  .strict()
+
 // Schema version for a persisted scene snapshot. The `version` is a literal in the
 // schema below so a snapshot written by an older/newer build fails validation and
 // the harness falls back to an empty scene instead of feeding the canvas a shape it
@@ -901,7 +1093,10 @@ export const excalidrawVerbInputSchemas = {
   arrange: arrangeInputSchema,
   survey: surveyInputSchema,
   preset: presetInputSchema,
-  icon: iconInputSchema
+  icon: iconInputSchema,
+  preview: previewInputSchema,
+  thumbnail: thumbnailInputSchema,
+  pick: pickInputSchema
 } as const
 
 export const EXCALIDRAW_VERBS = Object.freeze(
@@ -935,5 +1130,9 @@ export type PresetInput = z.infer<typeof presetInputSchema>
 export type IconInput = z.infer<typeof iconInputSchema>
 export type IconType = (typeof EXCALIDRAW_ICON_TYPES)[number]
 export type PresetKind = (typeof EXCALIDRAW_PRESET_KINDS)[number]
+export type PreviewInput = z.infer<typeof previewInputSchema>
+export type ThumbnailInput = z.infer<typeof thumbnailInputSchema>
+export type PickInput = z.infer<typeof pickInputSchema>
+export type PreviewableVerb = (typeof EXCALIDRAW_PREVIEWABLE_VERBS)[number]
 export type ExcalidrawSnapshot = z.infer<typeof excalidrawSnapshotSchema>
 export type ExcalidrawLibraryImport = z.infer<typeof excalidrawLibraryImportSchema>

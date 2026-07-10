@@ -401,6 +401,86 @@ describe('TurnActivityPanel generic ActivityView rendering', () => {
     expect(screen.getByText('(no output)')).toBeInTheDocument()
   })
 
+  it('neutral default: renders media-bearing output as image sections plus a json section for the rest', () => {
+    const output = {
+      media: [
+        {
+          kind: 'image',
+          dataUrl: 'data:image/png;base64,abcd',
+          mimeType: 'image/png',
+          width: 10,
+          height: 10,
+          description: 'A chart'
+        }
+      ],
+      summary: 'ok'
+    }
+
+    const { container } = render(
+      <TurnActivityPanel
+        activity={completedTool('mystery-tool', output)}
+        isLive
+        serverNameById={new Map()}
+      />
+    )
+
+    expect(screen.getByText('mystery-tool')).toBeInTheDocument()
+    // The media item renders as a real, bounded <img> (guaranteed render), not
+    // a json dump — labeled like the other section kinds.
+    expect(screen.getByText('Image')).toBeInTheDocument()
+    const img = screen.getByRole('img', { name: 'A chart' })
+    expect(img).toHaveAttribute('src', 'data:image/png;base64,abcd')
+    expect(img).toHaveAttribute('loading', 'lazy')
+    // The rest of the payload (media stripped out) is still shown, so the
+    // tool's result is never silently dropped from the timeline.
+    expect(screen.getByText('Output:')).toBeInTheDocument()
+    const pre = container.querySelector('pre')
+    expect(pre?.textContent).toContain('"summary": "ok"')
+    expect(pre?.textContent).not.toContain('dataUrl')
+  })
+
+  it('neutral default: omits the json section when media is the only content', () => {
+    const output = {
+      media: [
+        {
+          kind: 'image',
+          dataUrl: 'data:image/png;base64,abcd',
+          mimeType: 'image/png',
+          width: 10,
+          height: 10,
+          description: 'A chart'
+        }
+      ]
+    }
+
+    const { container } = render(
+      <TurnActivityPanel
+        activity={completedTool('mystery-tool', output)}
+        isLive
+        serverNameById={new Map()}
+      />
+    )
+
+    expect(screen.getByRole('img', { name: 'A chart' })).toBeInTheDocument()
+    expect(container.querySelector('pre')).toBeNull()
+    expect(screen.queryByText('Output:')).not.toBeInTheDocument()
+  })
+
+  it('neutral default: a media-less output is unaffected by the media-partitioning path', () => {
+    const { container } = render(
+      <TurnActivityPanel
+        activity={completedTool('mystery-tool', { some: 'data' })}
+        isLive
+        serverNameById={new Map()}
+      />
+    )
+
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByText('Output:')).toBeInTheDocument()
+    const pre = container.querySelector('pre')
+    expect(pre?.textContent).toContain('"some": "data"')
+  })
+
   it('neutral default: renders the raw output as a json section for non-empty output', () => {
     const { container } = render(
       <TurnActivityPanel
