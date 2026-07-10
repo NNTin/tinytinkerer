@@ -58,6 +58,11 @@ const createIdAllocator = (counts: Map<string, number>): IdAllocator => ({
 const sanitizeImageUrl = (url: string): string => {
   if (/^https?:/i.test(url)) return url
   if (/^data:image\//i.test(url)) return url
+  // A `media:<callId>#<index>` handle (see @tinytinkerer/contracts `mediaRefFor`):
+  // the model embeds this in place of a real URL for tool-result images, and it
+  // is resolved to the actual data URL at render time via `resolveMediaUrl`
+  // (content-react's `ContentRenderOptions`) — so the ref must survive here.
+  if (/^media:/i.test(url)) return url
   return ''
 }
 

@@ -1,4 +1,8 @@
-import type { ChatEvent, ReActDecision } from '@tinytinkerer/contracts'
+import {
+  partitionToolResultMedia,
+  type ChatEvent,
+  type ReActDecision
+} from '@tinytinkerer/contracts'
 import { isRateLimitError, type RateLimitError } from '../errors/rate-limit-error'
 import { createEvent } from '../events/create-event'
 import type {
@@ -105,7 +109,19 @@ const MAX_NOTE_CHARS = 2_000
 const serializeToolNote = (toolId: string, output: unknown): string => {
   let serialized: string
   try {
-    serialized = JSON.stringify(output) ?? String(output)
+    // Strip any image media's base64 `dataUrl` before it can fill the note (and
+    // thus every subsequent model call's context) with garbage. A note has no
+    // ref-resolution consumer — unlike the tool message built in
+    // `toolInvocationsToMessages`, nothing here ever turns a `mediaRef` back
+    // into an image — so there is no need to mint one; keeping each item's
+    // `description` is enough for the model to know an image was produced
+    // without paying for the pixels.
+    const { rest, media } = partitionToolResultMedia(output)
+    const noted =
+      media.length > 0
+        ? { ...(rest as Record<string, unknown>), media: media.map((item) => item.description) }
+        : output
+    serialized = JSON.stringify(noted) ?? String(noted)
   } catch {
     serialized = String(output)
   }

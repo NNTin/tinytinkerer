@@ -4,6 +4,7 @@ import {
   isRawSvgDataUri,
   rawSvgMarkupFromDataUri,
   sanitizeSvgMarkup,
+  useContentRenderOptions,
   type ContentNodeRendererProps,
   type ImageNode,
   type ReactNodeRendererPlugin
@@ -32,20 +33,37 @@ const filenameFromUrl = (url: string): string => {
   }
 }
 
+// A `media:<callId>#<index>` handle (see @tinytinkerer/contracts `mediaRefFor`):
+// the model embeds this in place of a real URL for a tool-result image. It
+// carries no bytes itself, so it must be resolved to a real data URL via the
+// host's `resolveMediaUrl` before anything can render.
+const isMediaRef = (url: string): boolean => /^media:/i.test(url)
+
 export const ImageNodeRenderer = ({ node }: ContentNodeRendererProps<ImageNode>) => {
   const [open, setOpen] = useState(false)
   const [zoomed, setZoomed] = useState(false)
   const caption = captionFor(node)
+  const { resolveMediaUrl } = useContentRenderOptions()
+
+  // Resolve a `media:` ref to its real data URL BEFORE any of the raw-SVG
+  // detection below, so a resolved PNG/JPEG data URL flows through the normal
+  // `<img>` path exactly like any other data URL. An unresolved ref (no host
+  // wiring, dropped conversation, unknown index, …) renders a graceful
+  // fallback instead of a broken `<img src="media:...">`.
+  const mediaRef = isMediaRef(node.url)
+  const resolvedUrl = mediaRef ? resolveMediaUrl?.(node.url) : node.url
+  const effectiveUrl = resolvedUrl ?? ''
+  const unresolvedMediaRef = mediaRef && !resolvedUrl
 
   // A raw `data:image/svg+xml,<svg …>` data URI can't ride in an `<img src>` (the
   // unencoded markup/spaces break it), so render it as sanitized inline SVG instead.
-  const rawSvg = isRawSvgDataUri(node.url)
+  const rawSvg = !unresolvedMediaRef && isRawSvgDataUri(effectiveUrl)
   // For the lightbox links (Open/Download) a raw data URI with literal `<…>` is not a
   // valid URL; re-encode the sanitized markup so those links still resolve safely.
   const linkUrl = useMemo(() => {
-    if (!rawSvg) return node.url
-    return `${SVG_DATA_URI_PREFIX}${encodeURIComponent(sanitizeSvgMarkup(rawSvgMarkupFromDataUri(node.url)))}`
-  }, [rawSvg, node.url])
+    if (!rawSvg) return effectiveUrl
+    return `${SVG_DATA_URI_PREFIX}${encodeURIComponent(sanitizeSvgMarkup(rawSvgMarkupFromDataUri(effectiveUrl)))}`
+  }, [rawSvg, effectiveUrl])
 
   const handleOpen = useCallback(() => {
     setZoomed(false)
@@ -79,6 +97,20 @@ export const ImageNodeRenderer = ({ node }: ContentNodeRendererProps<ImageNode>)
     }
   }, [open, handleClose])
 
+  // The ref never resolved (no host media registry wired, the conversation/tool
+  // event it points at is gone, or the index is out of range): there is no real
+  // URL to show, so render the caption/alt text rather than a broken `<img
+  // src="media:...">`. No lightbox — there is nothing to open or download.
+  if (unresolvedMediaRef) {
+    return (
+      <figure data-tt-image="" data-tt-image-unavailable="" className="my-3">
+        <span className="text-sm italic text-stone-400">
+          🖼 {node.alt || 'Image'} (image unavailable)
+        </span>
+      </figure>
+    )
+  }
+
   return (
     <figure data-tt-image="" className="my-3 flex max-w-full flex-col items-center gap-1">
       <button
@@ -89,12 +121,12 @@ export const ImageNodeRenderer = ({ node }: ContentNodeRendererProps<ImageNode>)
       >
         {rawSvg ? (
           <InlineSvg
-            markup={rawSvgMarkupFromDataUri(node.url)}
+            markup={rawSvgMarkupFromDataUri(effectiveUrl)}
             className="block max-h-[420px] max-w-full overflow-hidden [&>svg]:block [&>svg]:max-h-[420px] [&>svg]:max-w-full"
           />
         ) : (
           <img
-            src={node.url}
+            src={effectiveUrl}
             alt={node.alt}
             title={node.title}
             loading="lazy"
@@ -135,7 +167,7 @@ export const ImageNodeRenderer = ({ node }: ContentNodeRendererProps<ImageNode>)
             </a>
             <a
               href={linkUrl}
-              download={rawSvg ? 'image.svg' : filenameFromUrl(node.url)}
+              download={rawSvg ? 'image.svg' : filenameFromUrl(effectiveUrl)}
               className="rounded bg-white/10 px-2 py-1 text-xs font-medium hover:bg-white/20"
             >
               Download
@@ -155,7 +187,7 @@ export const ImageNodeRenderer = ({ node }: ContentNodeRendererProps<ImageNode>)
           >
             {rawSvg ? (
               <InlineSvg
-                markup={rawSvgMarkupFromDataUri(node.url)}
+                markup={rawSvgMarkupFromDataUri(effectiveUrl)}
                 className={
                   zoomed
                     ? '[&>svg]:max-w-none [&>svg]:cursor-zoom-out'
@@ -164,7 +196,7 @@ export const ImageNodeRenderer = ({ node }: ContentNodeRendererProps<ImageNode>)
               />
             ) : (
               <img
-                src={node.url}
+                src={effectiveUrl}
                 alt={node.alt}
                 title={node.title}
                 className={

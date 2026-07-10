@@ -3,6 +3,7 @@ import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { BinaryFiles, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { EXCALIDRAW_PAYLOAD_BUDGETS } from '@tinytinkerer/excalidraw-protocol'
 import type { ThumbnailInput } from '@tinytinkerer/excalidraw-protocol'
+import { describeScene } from './describe'
 import { elementMap, sceneVersionOf } from './normalization'
 import { serializedUtf8Bytes } from './payload'
 import { assertRequestBudget, checkSceneVersion } from './query'
@@ -87,11 +88,16 @@ export const executeThumbnail = async (api: ExcalidrawImperativeAPI, input: Thum
   }))!
   const result = {
     ok: true as const,
-    dataUrl: rendered.dataUrl,
-    mimeType: rendered.mimeType,
-    width: rendered.width,
-    height: rendered.height,
-    bytes: rendered.bytes,
+    media: [
+      {
+        kind: 'image' as const,
+        dataUrl: rendered.dataUrl,
+        mimeType: rendered.mimeType,
+        width: rendered.width,
+        height: rendered.height,
+        description: describeScene(scoped, { width: rendered.width, height: rendered.height })
+      }
+    ],
     elementCount: scoped.length,
     missingIds,
     sceneVersion

@@ -51,7 +51,7 @@ beforeAll(async () => {
 }, 90_000)
 
 describe('canvas bundle regression guard', () => {
-  it('keeps the twenty-five-tool startup entry below 92 kB', () => {
+  it('keeps the twenty-five-tool startup entry below 93 kB', () => {
     const entry = shellChunks.find((chunk) => chunk.facadeModuleId?.endsWith('/canvas/index.html'))
     expect(entry).toBeDefined()
     // Raised 84 → 85 kB when the shared chat surface gained always-loaded turn
@@ -66,8 +66,12 @@ describe('canvas bundle regression guard', () => {
     // the startup entry now carries three more tool descriptions plus the
     // preview/thumbnail/pick input schemas (~1.4 kB raw) so the model can call
     // them; the verbs' behavior stays in the iframe graph.
+    // Raised 92 → 93 kB (2026-07-09): the preview/thumbnail tool descriptions
+    // grew a sentence explaining the `media` handle + `![caption](<mediaRef>)`
+    // embed convention now that their rendered image travels as display-only
+    // media instead of an inline base64 field.
     // Excalidraw and the heavy graph are still guarded out by the tests below.
-    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(92)
+    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(93)
   })
 
   it('keeps Excalidraw outside the canvas startup graph', () => {

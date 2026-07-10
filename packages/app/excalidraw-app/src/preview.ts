@@ -13,6 +13,7 @@ import type {
 } from '@tinytinkerer/excalidraw-protocol'
 import { executeBind } from './binding'
 import { executeClear, executeDraw } from './create'
+import { describePreview } from './describe'
 import { executeEdit } from './edit'
 import { executeArrange, executePlace, executeSnap } from './layout'
 import { displayNameFor, elementMap, sceneVersionOf } from './normalization'
@@ -166,7 +167,7 @@ const buildChanges = (
   return { changes: [...adds, ...updates, ...deletes], fields }
 }
 
-type PreviewThumbnail = PreviewResult['thumbnail']
+type PreviewMedia = PreviewResult['media'][number]
 type PreviewThumbnailReason = PreviewResult['thumbnailReason']
 
 export const executePreview = async (api: ExcalidrawImperativeAPI, input: PreviewInput) => {
@@ -204,7 +205,7 @@ export const executePreview = async (api: ExcalidrawImperativeAPI, input: Previe
   // image wouldn't show anything meaningful; otherwise render the hypothetical
   // `after` scene against the REAL api (not the capture proxy — exportToCanvas
   // is a pure read over the given elements, so this cannot commit anything).
-  let thumbnail: PreviewThumbnail = null
+  let media: PreviewMedia[] = []
   let thumbnailReason: PreviewThumbnailReason
   if (!input.render) {
     thumbnailReason = 'not-requested'
@@ -213,10 +214,25 @@ export const executePreview = async (api: ExcalidrawImperativeAPI, input: Previe
   } else if (after.length === 0) {
     thumbnailReason = 'empty-result'
   } else {
-    thumbnail = await renderScenePng(api, after, {
+    // `after.length > 0` was just checked above, so `renderScenePng` cannot
+    // return null here.
+    const rendered = (await renderScenePng(api, after, {
       maxDimension: input.maxDimension,
       background: true
-    })
+    }))!
+    media = [
+      {
+        kind: 'image',
+        dataUrl: rendered.dataUrl,
+        mimeType: rendered.mimeType,
+        width: rendered.width,
+        height: rendered.height,
+        description: describePreview(input.verb, summary, {
+          width: rendered.width,
+          height: rendered.height
+        })
+      }
+    ]
     thumbnailReason = 'rendered'
   }
 
@@ -227,7 +243,7 @@ export const executePreview = async (api: ExcalidrawImperativeAPI, input: Previe
   // keeping the image and drops trailing `changes` entries around it.
   const buildCandidate = (
     changeCount: number,
-    image: PreviewThumbnail,
+    imageMedia: PreviewMedia[],
     reason: PreviewThumbnailReason
   ) => {
     const trimmed = changes.slice(0, changeCount)
@@ -238,7 +254,7 @@ export const executePreview = async (api: ExcalidrawImperativeAPI, input: Previe
       sceneVersion,
       summary,
       changes: trimmed,
-      thumbnail: image,
+      media: imageMedia,
       thumbnailReason: reason,
       truncation: {
         truncated: fields.length > 0 || trimmed.length < changes.length || reason === 'over-budget',
@@ -256,14 +272,14 @@ export const executePreview = async (api: ExcalidrawImperativeAPI, input: Previe
   // summary alone (zero changes) before trimming anything. If even that
   // overflows, drop the image (keeping the summary) and fall through to
   // trimming `changes` as usual.
-  const zeroChangesWithImage = buildCandidate(0, thumbnail, thumbnailReason)
-  if (zeroChangesWithImage.truncation.serializedBytes > budget && thumbnail !== null) {
-    thumbnail = null
+  const zeroChangesWithImage = buildCandidate(0, media, thumbnailReason)
+  if (zeroChangesWithImage.truncation.serializedBytes > budget && media.length > 0) {
+    media = []
     thumbnailReason = 'over-budget'
   }
 
   return trimToBudget(
-    (count) => buildCandidate(count, thumbnail, thumbnailReason),
+    (count) => buildCandidate(count, media, thumbnailReason),
     changes.length,
     budget
   )

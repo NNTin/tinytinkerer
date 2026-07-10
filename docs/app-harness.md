@@ -427,19 +427,21 @@ it, and grounding it in what the user actually means.
   empty result scene (e.g. `clear`) yields `'empty-result'`; a render that doesn't fit
   alongside the summary under the result budget is dropped with `'over-budget'` (the image is
   the preferred payload when trimming, so `changes` — not the image — gets cut first); a
-  successful render yields `'rendered'` with the `thumbnail` object populated. The summary
-  counts come from the full diff and never shrink; only trailing `changes` entries are
-  trimmed to make room. Applying is simply calling the target verb itself with the same
-  input — its `expectedVersion`/`expectedSceneVersion` checks make apply-after-preview safe
-  by construction.
+  successful render yields `'rendered'` with the result's `media` array populated by one
+  display-only image item, its `description` built by `describePreview` (see "Tool-result
+  media" below). The summary counts come from the full diff and never shrink; only trailing
+  `changes` entries are trimmed to make room. Applying is simply calling the target verb
+  itself with the same input — its `expectedVersion`/`expectedSceneVersion` checks make
+  apply-after-preview safe by construction.
 - `thumbnail` renders an on-demand PNG snapshot of the whole scene or scoped `elementIds`,
-  scaled to `maxDimension`, and returns it as a base64 data URL for visual verification. It
-  shares its export path (`exportToCanvas`, `api.getFiles()`, background color handling) with
-  `preview`'s visual via the `renderScenePng` helper in `thumbnail.ts`. Unlike the record-list
-  reads it has a **hard byte budget** rather than truncation metadata: an image cannot be
-  "trimmed", so an over-budget export is an actionable error (lower `maxDimension` or narrow
-  `elementIds`), never a silently degraded result — `preview`'s visual, by contrast, degrades
-  to `null` with a reason rather than ever failing the dry-run over an image.
+  scaled to `maxDimension`, and returns it as a display-only `media` item (see "Tool-result
+  media" below) for visual verification. It shares its export path (`exportToCanvas`,
+  `api.getFiles()`, background color handling) with `preview`'s visual via the
+  `renderScenePng` helper in `thumbnail.ts`. Unlike the record-list reads it has a **hard byte
+  budget** rather than truncation metadata: an image cannot be "trimmed", so an over-budget
+  export is an actionable error (lower `maxDimension` or narrow `elementIds`), never a
+  silently degraded result — `preview`'s visual, by contrast, degrades to an empty `media`
+  array with a `thumbnailReason` rather than ever failing the dry-run over an image.
 - `pick` is the interactive/selection read, one verb with two modes. `current` reports the
   live canvas selection now; `interactive` is the human-in-the-loop flow — it shows an
   in-canvas toast prompt and resolves with the user's next **settled** selection change (a
@@ -459,9 +461,9 @@ flowchart LR
   dryRun["preview<br/>real executor + capture proxy"]
   patch["patch summary<br/>adds / updates / deletes"]
   render["renderScenePng<br/>hypothetical after-scene"]
-  visual["thumbnail: PNG or null + reason"]
+  visual["media[] + thumbnailReason"]
   apply["apply = call the verb itself<br/>version checks re-run"]
-  snapshot["thumbnail verb<br/>budgeted PNG data URL"]
+  snapshot["thumbnail verb<br/>budgeted PNG media item"]
   pickVerb["pick<br/>current | interactive"]
   user["user selection<br/>toast + settle debounce"]
 
@@ -471,6 +473,92 @@ flowchart LR
   render -.-> snapshot
   pickVerb --> user --> plan
 ```
+
+### Tool-result media: the generic convention
+
+`preview` and `thumbnail` are the first consumers of a convention that is otherwise entirely
+app-agnostic: any tool result — Excalidraw or not — may carry a top-level
+`media: ToolResultImageMedia[]`, each item `{ kind: 'image', dataUrl, mimeType, width, height,
+description }`. This lives in `@tinytinkerer/contracts` (`toolResultImageMediaSchema`), not in
+`excalidraw-protocol`, because the problem it solves is generic: a tool result that inlines a
+base64 PNG bloats every model request (the whole result, base64 included, gets
+JSON-stringified into the tool message) and never rendered as a picture anyway. The convention
+splits the heavy pixels from the light text so each can travel its own path.
+
+Two helpers, shared by every producer and consumer so they cannot drift on the wire format:
+
+- `partitionToolResultMedia(output) => { rest, media }` is the one structural split. It never
+  throws — non-object output, a missing/non-array `media` field, or a malformed item all
+  degrade to "no media found" rather than breaking the caller — so it is safe to call
+  uniformly over arbitrary, untrusted tool output.
+- `mediaRefFor(callId, index) => "media:<callId>#<index>"` mints the one canonical handle
+  format. Both sides that need to agree on a ref — the inference path minting it for the
+  model, and the UI registry resolving it back to pixels — import this single function.
+
+**Inference path (token savings).** `serializeToolResult`
+(`packages/app/app-browser/src/runtime/tool-calling.ts`) partitions media out of every tool
+result before it becomes `tool` message content: the model receives `{ ...rest, media: [{
+mediaRef, description, width, height, mimeType }] }` per image — the base64 `dataUrl` never
+reaches a chat request. `serializeToolNote` (`packages/app/agent-core/src/runtime/agent-runtime-base.ts`)
+applies the same reduction to the ReAct note trail, collapsing each media item to its
+`description` string. The system prompt tells the model it may show an image to the user by
+embedding `![caption](<mediaRef>)` in its reply, rather than pasting raw image data.
+
+**Activity panel render (guaranteed).** `neutralView`/`ActivitySectionEntry`
+(`packages/app/app-browser/src/turn-activity-panel.tsx`) partition the output the same way and
+render each media item as a real `image` `ActivityViewSection` — a bounded `<img>` sourced
+from the persisted `dataUrl` — with anything left of the payload still shown as its usual
+`json` section right after. This is generic across every tool (no tool-id branching), and
+because tool output is persisted to IndexedDB via the `agent.tool.completed` event (`dataUrl`
+included), the render survives a reload.
+
+**Transcript render (model-elected).** If the model instead embeds
+`![caption](media:<callId>#<index>)`, that handle has to survive markdown parsing and then
+resolve to a real image at render time. `sanitizeImageUrl` (`content-markdown`) whitelists the
+`media:` scheme alongside `https:` and `data:image/` so the ref isn't stripped;
+`ContentRenderOptions.resolveMediaUrl` (`content-react`) is the seam a host injects a resolver
+into; content-image's `ImageNodeRenderer` calls it before falling back to raw-SVG handling, and
+renders gracefully if the ref doesn't resolve. The resolver
+(`buildMediaRegistry`/`useResolveMediaUrl` in `packages/app/app-browser/src/media-registry.ts`)
+is derived from the conversation's persisted `agent.tool.completed` events rather than a
+separate cache: it re-runs `partitionToolResultMedia` over each event's output and keys the
+result `mediaRefFor(stepId, i)` — the SAME ref the inference path minted, because a
+tool-completed event's `stepId` equals the `callId` `serializeToolResult` used. One registry,
+derived straight from persisted events, so a ref resolves identically live and after reload.
+
+```mermaid
+flowchart LR
+  output["Tool output<br/>{ ..., media: [...] }"]
+  partition["partitionToolResultMedia"]
+  rest["rest (light JSON)"]
+  mediaArr["media[] (dataUrl + description)"]
+  modelMsg["tool message to model<br/>rest + mediaRef/description/width/height/mimeType"]
+  activityImg["activity panel<br/>guaranteed &lt;img&gt; from dataUrl"]
+  persisted["agent.tool.completed event<br/>persisted, IndexedDB"]
+  registry["buildMediaRegistry<br/>keyed mediaRefFor(stepId, i)"]
+  modelReply["model reply<br/>![caption](media:&lt;ref&gt;)"]
+  sanitize["sanitizeImageUrl<br/>allows media: scheme"]
+  resolve["resolveMediaUrl(ref)"]
+  transcriptImg["transcript &lt;img&gt;<br/>model-elected"]
+
+  output --> partition --> rest --> modelMsg
+  partition --> mediaArr --> modelMsg
+  mediaArr --> activityImg
+  mediaArr --> persisted --> registry
+  modelMsg --> modelReply --> sanitize --> resolve
+  registry --> resolve --> transcriptImg
+```
+
+`preview` and `thumbnail` build their `description` deterministically rather than calling a
+model to caption the image: `describeScene`/`describePreview`
+(`packages/app/excalidraw-app/src/describe.ts`) count element types and quote a few display
+labels, bounded to ~240 bytes. `excalidraw-protocol` cannot import `@tinytinkerer/contracts`
+(app-protocol packages may depend only on `@tinytinkerer/app-bridge`), so it mirrors
+`toolResultImageMediaSchema` locally as `previewMediaSchema` instead. The reshape does not
+change the byte budgets below: `thumbnail`'s 128 KiB result budget is still a hard error over
+budget (an image can't be trimmed), and `preview`'s 160 KiB result budget still prefers the
+image when trimming — it drops to `media: []` with `thumbnailReason: 'over-budget'` before the
+rendered picture is ever cut.
 
 ### Normalized element union and edit capabilities
 
@@ -542,6 +630,11 @@ retrieve omitted detail with `read`.
 | `thumbnail` |          4 KiB |       128 KiB |
 | `pick`      |          4 KiB |        64 KiB |
 
+`preview` and `thumbnail`'s result budgets are unchanged by the tool-result media convention
+above — the reshape moves the image into `media` instead of a flat `dataUrl`/nested
+`thumbnail` field, but the byte accounting and the "image preferred, cut last" trimming order
+are the same as before.
+
 ```mermaid
 flowchart LR
   input["Model tool input"]
@@ -583,7 +676,8 @@ flowchart LR
   binding["binding.ts<br/>bind, audit"]
   layout["layout.ts<br/>snap, place, arrange,<br/>survey"]
   preview["preview.ts<br/>dry-run any mutating verb,<br/>capture proxy, patch summary"]
-  thumbnail["thumbnail.ts<br/>budgeted PNG snapshot,<br/>exportToCanvas"]
+  thumbnail["thumbnail.ts<br/>budgeted PNG snapshot,<br/>renderScenePng, exportToCanvas"]
+  describe["describe.ts<br/>describeScene, describePreview,<br/>deterministic media descriptions"]
   pick["pick.ts<br/>current/interactive selection,<br/>toast + settle debounce"]
   geometry["geometry.ts<br/>box math, edge anchors,<br/>connector reflow"]
   mutation["mutation.ts<br/>shared receipts, budget-bounded<br/>records, commitWrite"]
@@ -622,9 +716,13 @@ flowchart LR
   preview --> presets
   preview --> payload
   preview --> thumbnail
+  preview --> describe
   bridge --> thumbnail --> api
   thumbnail --> query
   thumbnail --> payload
+  thumbnail --> describe
+  describe --> normalization
+  describe --> payload
   bridge --> pick --> api
   pick --> normalization
   pick --> payload
@@ -670,12 +768,19 @@ The modules translate the stable model vocabulary into Excalidraw operations:
   (delegated properties bound to the real target, not the proxy) that suppresses the single
   `updateScene` commit, and diffs before/after into a compact patch summary — no staged
   state, nothing committed. It also renders the captured (unapplied) `after` scene to a PNG
-  via `thumbnail.ts`'s shared `renderScenePng`, degrading to `null` with a reason instead of
-  failing the dry-run over an image;
+  via `thumbnail.ts`'s shared `renderScenePng`, attaching it as a display-only `media` item
+  described by `describe.ts`'s `describePreview`, and degrading to an empty `media` array
+  with a `thumbnailReason` instead of failing the dry-run over an image;
 - `thumbnail` (in `thumbnail.ts`) exports the scene (or scoped elements) to a PNG data URL
   via the shared `renderScenePng` (which owns the `exportToCanvas` call, `api.getFiles()`, and
-  background color handling — also used by `preview`'s visual), version-checked and
+  background color handling — also used by `preview`'s visual), returns it as a display-only
+  `media` item described by `describe.ts`'s `describeScene`, and is version-checked and
   hard-capped by its own result byte budget;
+- `describe.ts` builds the deterministic, LLM-free `description` text `thumbnail` and
+  `preview` attach to their rendered image: `describeScene` counts element types (and quotes
+  a few display labels) for `thumbnail`, `describePreview` reports the patch-summary counts
+  for `preview`'s hypothetical image, and both are bounded to a short byte budget (see "Tool-
+  result media: the generic convention" above);
 - `pick` (in `pick.ts`) reads the live selection, or — in interactive mode — shows a toast
   (`api.setToast`), subscribes to `api.onChange`, and resolves with the user's next settled
   selection as normalized records (or `timedOut: true`);

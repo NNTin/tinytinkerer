@@ -186,17 +186,20 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
           'exact input you would pass it, running the same validation and version checks, and ' +
           'returns a rendered image of the proposed result (a non-destructive picture of what ' +
           'the scene would look like after the change) alongside a compact patch summary ' +
-          '(add/update/delete counts plus affected ids and labels), scaled to maxDimension. ' +
-          'Nothing is committed — to apply, call the target verb itself with the same input. ' +
-          'Set render:false to skip the image for a faster, summary-only dry-run.',
+          '(add/update/delete counts plus affected ids and labels), scaled to maxDimension. The ' +
+          'image comes back as a media handle, not raw base64 — to show it to the user, embed it ' +
+          'in your reply as ![caption](<the mediaRef>). Nothing is committed — to apply, call ' +
+          'the target verb itself with the same input. Set render:false to skip the image for a ' +
+          'faster, summary-only dry-run.',
         schema: excalidrawVerbInputSchemas.preview
       },
       thumbnail: {
         description:
-          'Render a small PNG snapshot of the Excalidraw scene (or specific elementIds) as a ' +
-          'base64 data URL for visual verification, scaled to maxDimension. On-demand and ' +
-          'byte-budgeted: lower maxDimension or narrow elementIds if the result exceeds the ' +
-          'budget.',
+          'Render a small PNG snapshot of the Excalidraw scene (or specific elementIds) for ' +
+          'visual verification, scaled to maxDimension. The image comes back as a media handle, ' +
+          'not raw base64 — to show it to the user, embed it in your reply as ' +
+          '![caption](<the mediaRef>). On-demand and byte-budgeted: lower maxDimension or narrow ' +
+          'elementIds if the result exceeds the budget.',
         schema: excalidrawVerbInputSchemas.thumbnail
       },
       pick: {

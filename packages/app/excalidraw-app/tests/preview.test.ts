@@ -206,13 +206,14 @@ type PreviewResult = {
   sceneVersion: number
   summary: { adds: number; updates: number; deletes: number; total: number }
   changes: Array<{ op: string; id: string; type: string; label?: string; version?: number }>
-  thumbnail: {
+  media: Array<{
+    kind: 'image'
     dataUrl: string
     mimeType: string
     width: number
     height: number
-    bytes: number
-  } | null
+    description: string
+  }>
   thumbnailReason: 'rendered' | 'not-requested' | 'no-change' | 'empty-result' | 'over-budget'
   truncation: { truncated: boolean; fields: string[]; omittedElements: number }
 }
@@ -420,12 +421,15 @@ describe('preview: visual render', () => {
 
     expect(result.wouldChange).toBe(true)
     expect(result.thumbnailReason).toBe('rendered')
-    expect(result.thumbnail).toMatchObject({
+    expect(result.media).toHaveLength(1)
+    expect(result.media[0]).toMatchObject({
+      kind: 'image',
       dataUrl: 'data:image/png;base64,...',
       mimeType: 'image/png',
       width: 128,
       height: 96
     })
+    expect(result.media[0]!.description.length).toBeGreaterThan(0)
     expect(api.updateScene).not.toHaveBeenCalled()
   })
 
@@ -440,7 +444,7 @@ describe('preview: visual render', () => {
     })
 
     expect(result.wouldChange).toBe(true)
-    expect(result.thumbnail).toBeNull()
+    expect(result.media).toEqual([])
     expect(result.thumbnailReason).toBe('not-requested')
     expect(exportToCanvas).not.toHaveBeenCalled()
   })
@@ -455,7 +459,7 @@ describe('preview: visual render', () => {
     })
 
     expect(result.wouldChange).toBe(false)
-    expect(result.thumbnail).toBeNull()
+    expect(result.media).toEqual([])
     expect(result.thumbnailReason).toBe('no-change')
     expect(exportToCanvas).not.toHaveBeenCalled()
   })
@@ -467,7 +471,7 @@ describe('preview: visual render', () => {
     const result = await run(api, { verb: 'clear', input: {} })
 
     expect(result.wouldChange).toBe(true)
-    expect(result.thumbnail).toBeNull()
+    expect(result.media).toEqual([])
     expect(result.thumbnailReason).toBe('empty-result')
     expect(exportToCanvas).not.toHaveBeenCalled()
   })
@@ -487,7 +491,7 @@ describe('preview: visual render', () => {
       input: { edits: [{ id: 'box', expectedVersion: 1, changes: { strokeColor: '#ffc9c9' } }] }
     })
 
-    expect(result.thumbnail).toBeNull()
+    expect(result.media).toEqual([])
     expect(result.thumbnailReason).toBe('over-budget')
     expect(result.summary).toMatchObject({ adds: 0, updates: 1, deletes: 0, total: 1 })
     expect(result.wouldChange).toBe(true)

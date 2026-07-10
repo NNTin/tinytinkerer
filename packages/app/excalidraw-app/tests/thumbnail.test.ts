@@ -100,15 +100,19 @@ describe('thumbnail: whole-scene export', () => {
     })
     expect(result).toMatchObject({
       ok: true,
-      dataUrl: 'data:image/png;base64,AAA',
-      mimeType: 'image/png',
-      width: 512,
-      height: 384,
       elementCount: 2,
       missingIds: [],
       sceneVersion: sceneVersion(elements)
     })
-    expect(result.bytes).toBe('data:image/png;base64,AAA'.length)
+    expect(result.media).toHaveLength(1)
+    expect(result.media[0]).toMatchObject({
+      kind: 'image',
+      dataUrl: 'data:image/png;base64,AAA',
+      mimeType: 'image/png',
+      width: 512,
+      height: 384
+    })
+    expect(result.media[0]!.description.length).toBeGreaterThan(0)
   })
 })
 

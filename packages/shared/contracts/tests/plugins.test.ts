@@ -3,8 +3,11 @@ import {
   boundedJson,
   boundedPreview,
   feedbackInputSchema,
+  mediaRefFor,
+  partitionToolResultMedia,
   pluginActivationStateSchema,
-  pluginConfigStateSchema
+  pluginConfigStateSchema,
+  toolResultImageMediaSchema
 } from '../src/index.js'
 
 describe('feedbackInputSchema', () => {
@@ -82,6 +85,75 @@ describe('boundedPreview', () => {
     const cyclic: Record<string, unknown> = {}
     cyclic.self = cyclic
     expect(boundedPreview(cyclic, 20)).toBe('[object Object]')
+  })
+})
+
+describe('toolResultImageMediaSchema', () => {
+  const validImage = {
+    kind: 'image' as const,
+    dataUrl: 'data:image/png;base64,abcd',
+    mimeType: 'image/png',
+    width: 100,
+    height: 50,
+    description: 'A screenshot'
+  }
+
+  it('accepts a valid image', () => {
+    expect(toolResultImageMediaSchema.parse(validImage)).toEqual(validImage)
+  })
+
+  it('rejects a dataUrl that is not a data:image/ URL', () => {
+    expect(
+      toolResultImageMediaSchema.safeParse({ ...validImage, dataUrl: 'https://example.com/x.png' })
+        .success
+    ).toBe(false)
+  })
+
+  it('rejects a missing field', () => {
+    const withoutDescription: Record<string, unknown> = { ...validImage }
+    delete withoutDescription.description
+    expect(toolResultImageMediaSchema.safeParse(withoutDescription).success).toBe(false)
+  })
+})
+
+describe('mediaRefFor', () => {
+  it('builds the canonical media ref', () => {
+    expect(mediaRefFor('abc', 0)).toBe('media:abc#0')
+  })
+})
+
+describe('partitionToolResultMedia', () => {
+  const validImage = {
+    kind: 'image' as const,
+    dataUrl: 'data:image/png;base64,abcd',
+    mimeType: 'image/png',
+    width: 100,
+    height: 50,
+    description: 'A screenshot'
+  }
+
+  it('extracts a valid media array and strips the media key from rest', () => {
+    const result = partitionToolResultMedia({ text: 'hello', media: [validImage] })
+    expect(result.media).toEqual([validImage])
+    expect(result.rest).toEqual({ text: 'hello' })
+  })
+
+  it('drops a malformed media entry', () => {
+    const result = partitionToolResultMedia({
+      media: [validImage, { kind: 'image', dataUrl: 'not-a-data-url' }]
+    })
+    expect(result.media).toEqual([validImage])
+  })
+
+  it('returns no media for a plain object with no media key', () => {
+    const input = { text: 'hello' }
+    expect(partitionToolResultMedia(input)).toEqual({ rest: input, media: [] })
+  })
+
+  it('never throws and passes non-object input through unchanged', () => {
+    for (const input of ['a string', 42, null, ['array', 'input']]) {
+      expect(partitionToolResultMedia(input)).toEqual({ rest: input, media: [] })
+    }
   })
 })
 

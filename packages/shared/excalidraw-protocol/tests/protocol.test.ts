@@ -517,8 +517,9 @@ describe('excalidraw protocol', () => {
       EXCALIDRAW_PAYLOAD_BUDGETS.thumbnail.result
     )
 
-    // preview's result accepts a null thumbnail (with a reason) as well as a
-    // populated one, mirroring thumbnail's own image fields.
+    // preview's result carries the rendered image (if any) as display-only
+    // `media`: an empty array (with a reason) when nothing was rendered, or a
+    // populated one mirroring thumbnail's own image media.
     const previewBase = {
       ok: true as const,
       verb: 'edit' as const,
@@ -537,35 +538,55 @@ describe('excalidraw protocol', () => {
     expect(
       excalidrawVerbContracts.preview.resultSchema.safeParse({
         ...previewBase,
-        thumbnail: null,
+        media: [],
         thumbnailReason: 'not-requested'
       }).success
     ).toBe(true)
     expect(
       excalidrawVerbContracts.preview.resultSchema.safeParse({
         ...previewBase,
-        thumbnail: {
-          dataUrl: 'data:image/png;base64,AAA',
-          mimeType: 'image/png',
-          width: 128,
-          height: 96,
-          bytes: 26
-        },
+        media: [
+          {
+            kind: 'image',
+            dataUrl: 'data:image/png;base64,AAA',
+            mimeType: 'image/png',
+            width: 128,
+            height: 96,
+            description: 'Preview of edit: 0 added, 1 updated, 0 deleted; 128×96px.'
+          }
+        ],
         thumbnailReason: 'rendered'
       }).success
     ).toBe(true)
     expect(
       excalidrawVerbContracts.preview.resultSchema.safeParse({
         ...previewBase,
-        thumbnail: { dataUrl: 'not-a-png', mimeType: 'image/png', width: 1, height: 1, bytes: 0 },
+        media: [
+          {
+            kind: 'image',
+            dataUrl: 'not-a-png',
+            mimeType: 'image/png',
+            width: 1,
+            height: 1,
+            description: ''
+          }
+        ],
         thumbnailReason: 'rendered'
       }).success
     ).toBe(false)
     expect(
       excalidrawVerbContracts.preview.resultSchema.safeParse({
         ...previewBase,
-        thumbnail: null,
+        media: [],
         thumbnailReason: 'not-a-real-reason'
+      }).success
+    ).toBe(false)
+    // Rejects the OLD nested-thumbnail shape this schema replaced.
+    expect(
+      excalidrawVerbContracts.preview.resultSchema.safeParse({
+        ...previewBase,
+        thumbnail: null,
+        thumbnailReason: 'not-requested'
       }).success
     ).toBe(false)
 
@@ -586,6 +607,46 @@ describe('excalidraw protocol', () => {
       }).success
     ).toBe(false)
     expect(thumbnailInputSchema.safeParse({ elementIds: [] }).success).toBe(false)
+
+    // thumbnail's result carries its rendered image as display-only `media`
+    // (not flat dataUrl/mimeType/width/height/bytes fields).
+    const thumbnailBase = {
+      ok: true as const,
+      elementCount: 2,
+      missingIds: [],
+      sceneVersion: 3
+    }
+    expect(
+      excalidrawVerbContracts.thumbnail.resultSchema.safeParse({
+        ...thumbnailBase,
+        media: [
+          {
+            kind: 'image',
+            dataUrl: 'data:image/png;base64,AAA',
+            mimeType: 'image/png',
+            width: 512,
+            height: 384,
+            description: 'PNG of 2 elements; 512×384px.'
+          }
+        ]
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.thumbnail.resultSchema.safeParse({ ...thumbnailBase, media: [] })
+        .success
+    ).toBe(true)
+    // Rejects the OLD flat dataUrl/mimeType/width/height/bytes shape this
+    // schema replaced.
+    expect(
+      excalidrawVerbContracts.thumbnail.resultSchema.safeParse({
+        ...thumbnailBase,
+        dataUrl: 'data:image/png;base64,AAA',
+        mimeType: 'image/png',
+        width: 512,
+        height: 384,
+        bytes: 26
+      }).success
+    ).toBe(false)
 
     // pick: defaults mode/timeout/detail, bounds the prompt and timeout.
     expect(pickInputSchema.parse({})).toEqual({

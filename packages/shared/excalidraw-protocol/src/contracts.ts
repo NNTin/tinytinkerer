@@ -548,9 +548,9 @@ const presetResultSchema = z
 // Safer-iterative-workflow results. `preview` reports a dry-run patch summary
 // (see the rationale on the input schemas): `sceneVersion` is the CURRENT
 // (pre-apply) version, and `changes` is bounded like every other budgeted read.
-// It also renders a visual of the hypothetical (unapplied) result — `thumbnail`
-// plus `thumbnailReason` — degrading to `null` with a reason rather than ever
-// failing the dry-run over an image.
+// It also renders a visual of the hypothetical (unapplied) result as display-only
+// `media` — an empty array (with `thumbnailReason` explaining why) rather than
+// ever failing the dry-run over an image.
 const patchChangeSchema = z
   .object({
     op: z.enum(['add', 'update', 'delete']),
@@ -562,24 +562,29 @@ const patchChangeSchema = z
     version: z.number().int().nonnegative().optional()
   })
   .strict()
-// The rendered hypothetical (unapplied) scene, when one was produced — same
-// shape as thumbnail's image fields (minus the scene-level metadata `thumbnail`
-// itself doesn't need), so `renderScenePng` in excalidraw-app can back both.
-// `null` whenever no image was rendered; `thumbnailReason` says why: the
-// caller opted out (`not-requested`), nothing would change (`no-change`), the
-// result scene is empty e.g. `clear` (`empty-result`), a render was actually
-// dropped for exceeding the result budget (`over-budget`), or it's present
-// (`rendered`).
-const previewThumbnailSchema = z
+
+// A display-only image `preview`/`thumbnail` attach to their result: the host
+// renders it and, on the inference path, substitutes a text `description` +
+// handle so the base64 `dataUrl` never reaches the model (see
+// @tinytinkerer/contracts' toolResultImageMediaSchema / partitionToolResultMedia).
+// Mirrored locally rather than imported: app-protocol packages may depend only on
+// @tinytinkerer/app-bridge (scripts/check-boundaries.mjs), so this package cannot
+// take a dependency on @tinytinkerer/contracts.
+// keep in sync with @tinytinkerer/contracts toolResultImageMediaSchema
+const previewMediaSchema = z
   .object({
-    dataUrl: z.string().startsWith('data:image/png'),
-    mimeType: z.literal('image/png'),
+    kind: z.literal('image'),
+    dataUrl: z.string().startsWith('data:image/'),
+    mimeType: z.string(),
     width: z.number().int().positive(),
     height: z.number().int().positive(),
-    bytes: z.number().int().nonnegative()
+    description: z.string()
   })
   .strict()
-  .nullable()
+// Why `media` is empty (or not) for a `preview` result: the caller opted out
+// (`not-requested`), nothing would change (`no-change`), the result scene is
+// empty e.g. `clear` (`empty-result`), a render was actually dropped for
+// exceeding the result budget (`over-budget`), or it's present (`rendered`).
 const previewThumbnailReasonSchema = z.enum([
   'rendered',
   'not-requested',
@@ -602,24 +607,19 @@ const previewResultSchema = z
       })
       .strict(),
     changes: z.array(patchChangeSchema),
-    thumbnail: previewThumbnailSchema,
+    media: z.array(previewMediaSchema),
     thumbnailReason: previewThumbnailReasonSchema,
     truncation: truncationSchema
   })
   .strict()
 
-// `thumbnail` renders a byte-budgeted PNG snapshot. Intentionally no truncation
-// object: an image cannot be trimmed like a record list, so over-budget is a
-// hard error instead of a silently smaller result.
+// `thumbnail` renders a byte-budgeted PNG snapshot as display-only `media`.
+// Intentionally no truncation object: an image cannot be trimmed like a record
+// list, so over-budget is a hard error instead of a silently smaller result.
 const thumbnailResultSchema = z
   .object({
     ok: z.literal(true),
-    dataUrl: z.string().startsWith('data:image/png'),
-    mimeType: z.literal('image/png'),
-    width: z.number().int().positive(),
-    height: z.number().int().positive(),
-    // dataUrl string length; enforced <= the thumbnail result budget.
-    bytes: z.number().int().nonnegative(),
+    media: z.array(previewMediaSchema),
     elementCount: z.number().int().positive(),
     missingIds: z.array(z.string()),
     sceneVersion: z.number().int().nonnegative()

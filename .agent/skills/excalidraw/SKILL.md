@@ -98,9 +98,12 @@ behavior → `ExcalidrawImperativeAPI` → result (validated against protocol re
   - `layout.ts` — the layout verbs (`snap`, `place`, `arrange`, `survey`).
   - `preview.ts` — the `preview` verb: dry-run of any mutating verb via a hardened,
     commit-suppressing capture proxy, diffed into a compact patch summary plus a rendered
-    visual of the hypothetical result.
+    visual of the hypothetical result, attached as display-only `media`.
   - `thumbnail.ts` — the `thumbnail` verb: byte-budgeted PNG snapshot via `exportToCanvas`,
-    shared with `preview`'s visual through `renderScenePng`.
+    shared with `preview`'s visual through `renderScenePng`, returned as display-only `media`.
+  - `describe.ts` — deterministic, LLM-free `description` text for `thumbnail`/`preview`'s
+    `media` image (element type counts + a few labels for `thumbnail`, patch-summary counts
+    for `preview`), bounded to a short byte budget.
   - `pick.ts` — the `pick` verb: live-selection read plus the interactive (toast + settled
     selection) human-in-the-loop mode.
   - `geometry.ts` — shared, verb-agnostic geometry: box math, the edge-anchor policy, and
@@ -151,33 +154,33 @@ tests fail.
 
 ## Current verbs (25)
 
-| Verb         | Dir.                      | Module         | Focus                                                                                   |
-| ------------ | ------------------------- | -------------- | --------------------------------------------------------------------------------------- |
-| `draw`       | WRITE                     | `create.ts`    | Element skeletons, stable ids, post-layout connectors, one undoable update              |
-| `clear`      | WRITE                     | `create.ts`    | Undoable `updateScene({ elements: [] })`                                                |
-| `search`     | READ                      | `query.ts`     | Capped candidates by query, type, selection, or viewport                                |
-| `inspect`    | READ                      | `query.ts`     | Compact scene/viewport/selection/grouping/z-order/locking/relationships                 |
-| `read`       | READ                      | `query.ts`     | Budgeted normalized discriminated records, capabilities, versions, pagination           |
-| `edit`       | WRITE                     | `edit.ts`      | Atomic, version-checked, invariant-safe field patches with receipts                     |
-| `group`      | WRITE                     | `structure.ts` | Group/ungroup by id or selection, carrying bound labels; contiguous z-order             |
-| `duplicate`  | WRITE                     | `structure.ts` | Copy by id with offset, fresh ids, remapped groups/labels/intra-set bindings            |
-| `delete`     | WRITE                     | `structure.ts` | Delete by id; rejects relationship crossings unless `includeRelated`                    |
-| `align`      | WRITE                     | `structure.ts` | Align ≥2 elements to a shared edge/center on x or y                                     |
-| `distribute` | WRITE                     | `structure.ts` | Equalize gaps between ≥3 elements along an axis, ends fixed                             |
-| `stack`      | WRITE                     | `structure.ts` | Lay out in order with a configurable gap and cross-axis alignment                       |
-| `order`      | WRITE                     | `structure.ts` | Reorder z-layers: front/back, forward/backward (array reorder → fractional resync)      |
-| `transform`  | WRITE                     | `structure.ts` | Relationship-aware move/resize by id + expected version; opt-in `reflowConnectors`      |
-| `bind`       | WRITE                     | `binding.ts`   | (Re)bind/detach a connector endpoint to a target + anchor; re-anchors, syncs bounds     |
-| `audit`      | READ                      | `binding.ts`   | Connector binding health: unbound/ok/stale/detached/ambiguous + safe repair hints       |
-| `snap`       | WRITE                     | `layout.ts`    | Snap top-left (and optionally size) to the grid; carries relationships, reflows         |
-| `place`      | WRITE                     | `layout.ts`    | Position a cluster relative to an anchor element/group (below/above/left/right/over)    |
-| `arrange`    | WRITE                     | `layout.ts`    | Auto-layout into a row-major grid or an evenly spaced circle                            |
-| `survey`     | READ                      | `layout.ts`    | Layout health: element overlaps, label overflow, unreadable connectors + fixes          |
-| `preset`     | WRITE                     | `presets.ts`   | Insert a network/flowchart/UML/wireframe scaffold: grouped nodes + labeled connectors   |
-| `icon`       | WRITE                     | `presets.ts`   | Insert router/laptop/phone/cloud/server/printer glyphs as grouped, labeled shapes       |
-| `preview`    | READ (dry-run of a write) | `preview.ts`   | Dry-run any mutating verb (real validation, commit suppressed) → visual + patch summary |
-| `thumbnail`  | READ                      | `thumbnail.ts` | On-demand, byte-budgeted PNG snapshot of the scene or scoped elements                   |
-| `pick`       | READ                      | `pick.ts`      | Live selection now, or interactive toast-prompted wait for the user's next selection    |
+| Verb         | Dir.                      | Module         | Focus                                                                                           |
+| ------------ | ------------------------- | -------------- | ----------------------------------------------------------------------------------------------- |
+| `draw`       | WRITE                     | `create.ts`    | Element skeletons, stable ids, post-layout connectors, one undoable update                      |
+| `clear`      | WRITE                     | `create.ts`    | Undoable `updateScene({ elements: [] })`                                                        |
+| `search`     | READ                      | `query.ts`     | Capped candidates by query, type, selection, or viewport                                        |
+| `inspect`    | READ                      | `query.ts`     | Compact scene/viewport/selection/grouping/z-order/locking/relationships                         |
+| `read`       | READ                      | `query.ts`     | Budgeted normalized discriminated records, capabilities, versions, pagination                   |
+| `edit`       | WRITE                     | `edit.ts`      | Atomic, version-checked, invariant-safe field patches with receipts                             |
+| `group`      | WRITE                     | `structure.ts` | Group/ungroup by id or selection, carrying bound labels; contiguous z-order                     |
+| `duplicate`  | WRITE                     | `structure.ts` | Copy by id with offset, fresh ids, remapped groups/labels/intra-set bindings                    |
+| `delete`     | WRITE                     | `structure.ts` | Delete by id; rejects relationship crossings unless `includeRelated`                            |
+| `align`      | WRITE                     | `structure.ts` | Align ≥2 elements to a shared edge/center on x or y                                             |
+| `distribute` | WRITE                     | `structure.ts` | Equalize gaps between ≥3 elements along an axis, ends fixed                                     |
+| `stack`      | WRITE                     | `structure.ts` | Lay out in order with a configurable gap and cross-axis alignment                               |
+| `order`      | WRITE                     | `structure.ts` | Reorder z-layers: front/back, forward/backward (array reorder → fractional resync)              |
+| `transform`  | WRITE                     | `structure.ts` | Relationship-aware move/resize by id + expected version; opt-in `reflowConnectors`              |
+| `bind`       | WRITE                     | `binding.ts`   | (Re)bind/detach a connector endpoint to a target + anchor; re-anchors, syncs bounds             |
+| `audit`      | READ                      | `binding.ts`   | Connector binding health: unbound/ok/stale/detached/ambiguous + safe repair hints               |
+| `snap`       | WRITE                     | `layout.ts`    | Snap top-left (and optionally size) to the grid; carries relationships, reflows                 |
+| `place`      | WRITE                     | `layout.ts`    | Position a cluster relative to an anchor element/group (below/above/left/right/over)            |
+| `arrange`    | WRITE                     | `layout.ts`    | Auto-layout into a row-major grid or an evenly spaced circle                                    |
+| `survey`     | READ                      | `layout.ts`    | Layout health: element overlaps, label overflow, unreadable connectors + fixes                  |
+| `preset`     | WRITE                     | `presets.ts`   | Insert a network/flowchart/UML/wireframe scaffold: grouped nodes + labeled connectors           |
+| `icon`       | WRITE                     | `presets.ts`   | Insert router/laptop/phone/cloud/server/printer glyphs as grouped, labeled shapes               |
+| `preview`    | READ (dry-run of a write) | `preview.ts`   | Dry-run any mutating verb (real validation, commit suppressed) → `media` visual + patch summary |
+| `thumbnail`  | READ                      | `thumbnail.ts` | On-demand, byte-budgeted PNG snapshot of the scene or scoped elements, as `media`               |
+| `pick`       | READ                      | `pick.ts`      | Live selection now, or interactive toast-prompted wait for the user's next selection            |
 
 The 8 structural verbs share `mutation.ts` (receipts + budget trimming, also used by `edit`) and `ids.ts`
 (also used by `create`). Each commits exactly one atomic, undoable `updateScene`. `delete` additionally
@@ -212,13 +215,21 @@ hardened capture proxy — delegated properties are bound to the real target, ne
 `ExcalidrawImperativeAPI`'s methods behave identically whether called through the proxy or directly — that
 suppresses the single `updateScene` commit, and diffs before/after — by id, object identity, and
 z-position — into a budget-trimmed patch summary. It also renders the captured (never-committed) `after`
-scene to a PNG, via the same `renderScenePng` helper `thumbnail` uses, called against the real api; this
-degrades to `null` with a `thumbnailReason` (`not-requested`/`no-change`/`empty-result`/`over-budget`)
+scene to a PNG, via the same `renderScenePng` helper `thumbnail` uses, called against the real api, and
+attaches it to the result's `media` array as a display-only image (`kind: 'image'`, `dataUrl`, `mimeType`,
+`width`, `height`, and a `description` built by `describe.ts`'s `describePreview`); this degrades to an
+empty `media` array with a `thumbnailReason` (`not-requested`/`no-change`/`empty-result`/`over-budget`)
 instead of ever failing the dry-run over an image, and the image is preferred over the `changes` list when
 trimming to the result budget. Applying is just calling the target verb with the same input, so the
 versioned input is the staged plan and no staged state exists. `thumbnail` exports the scene (or scoped
-`elementIds`) to a PNG data URL via the shared `renderScenePng` (which owns the `exportToCanvas` call) with
-a hard result-byte budget — over budget is an actionable error, never a trimmed image. `pick` reads the
+`elementIds`) to a PNG via the shared `renderScenePng` (which owns the `exportToCanvas` call) and returns it
+the same way — one `media` item with a `describeScene` description — under a hard result-byte budget: over
+budget is an actionable error, never a trimmed image. Neither verb ever puts the base64 `dataUrl` in front
+of the model: `serializeToolResult` (`app-browser`) strips it to a `{ mediaRef, description, width, height,
+mimeType }` handle before the result reaches a chat request, and the model shows the picture to the user by
+embedding `![caption](<mediaRef>)`, which the chat transcript resolves back to the real image (see
+`docs/app-harness.md`'s "Tool-result media" section for the full inference/render split — this convention
+is generic, defined in `@tinytinkerer/contracts`, not `excalidraw-protocol`). `pick` reads the
 live selection (`current`) or waits for the user's next settled selection (`interactive`: `api.setToast`
 prompt + `api.onChange` with a settle debounce); its canvas tool declares `awaitsHumanInput` and a
 per-request bridge timeout derived from `EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS`, reusing the issue-#85
