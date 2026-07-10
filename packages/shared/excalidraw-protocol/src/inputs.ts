@@ -43,7 +43,9 @@ export const elementFieldSchema = z
   .describe(
     'A projectable element field. Identity keys id/type/kind are always included and are ' +
       'not listed here. Include "version" if you plan to edit the elements afterwards — ' +
-      'mutations are version-checked.'
+      'mutations are version-checked. Styling properties (strokeColor, backgroundColor, ' +
+      'fillStyle, strokeWidth, strokeStyle, roughness, opacity) are not separate fields — ' +
+      'request "style" to get them all.'
   )
 export type ElementField = (typeof ELEMENT_PROJECTION_FIELDS)[number]
 // Default distance a bound connector endpoint keeps from its target's edge. Kept
