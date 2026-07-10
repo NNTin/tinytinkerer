@@ -1,0 +1,17 @@
+{
+  "name": "canvas-pick-interactive",
+  "shell": "/canvas/",
+  "settings": ["Show reasoning & activity"],
+  "steps": [
+    {
+      "prompt": "Draw one large red rectangle with a solid light-red fill in the middle of the canvas."
+    },
+    {
+      "prompt": "Use the pick tool in interactive mode to ask me to select a shape, then describe what I selected.",
+      "await": false
+    },
+    { "waitToast": true },
+    { "clickCanvas": "center" },
+    { "settle": true }
+  ]
+}

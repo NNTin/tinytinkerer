@@ -1,0 +1,11 @@
+{
+  "name": "canvas-preview",
+  "shell": "/canvas/",
+  "settings": ["Show reasoning & activity"],
+  "steps": [
+    { "prompt": "Draw a single red rectangle." },
+    {
+      "prompt": "Preview — without applying — adding a green diamond at x=400 y=200, and show me the preview image."
+    }
+  ]
+}

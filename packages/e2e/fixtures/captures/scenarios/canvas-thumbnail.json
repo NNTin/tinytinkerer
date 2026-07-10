@@ -1,0 +1,10 @@
+{
+  "name": "canvas-thumbnail",
+  "shell": "/canvas/",
+  "settings": ["Show reasoning & activity"],
+  "steps": [
+    {
+      "prompt": "Draw a red rectangle and a blue ellipse side by side, then take a thumbnail of the canvas and show it to me."
+    }
+  ]
+}

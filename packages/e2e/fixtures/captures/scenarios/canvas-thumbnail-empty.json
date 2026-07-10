@@ -1,0 +1,6 @@
+{
+  "name": "canvas-thumbnail-empty",
+  "shell": "/canvas/",
+  "settings": ["Show reasoning & activity"],
+  "steps": [{ "prompt": "Take a thumbnail of the canvas." }]
+}
