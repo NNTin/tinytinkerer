@@ -91,7 +91,9 @@ export type LiteLLMMock = {
   sentinelHits: () => string[]
 }
 
-type ToolCall = {
+// Exported so a scripted run's script (see installScriptedToolMock) and the
+// specs that build one (via scriptedToolCall) share this exact wire shape.
+export type ToolCall = {
   id: string
   type: 'function'
   function: { name: string; arguments: string }
@@ -162,6 +164,37 @@ const parseChoiceResultFromBody = (body: LiteLLMRequestBody): ChoiceResult | und
       }
     } catch {
       /* a tool result that is not JSON (e.g. an "Error: …" message) */
+    }
+  }
+  return undefined
+}
+
+// Generalizes parseChoiceResultFromBody to an ARBITRARY tool name (issue: canvas
+// preview/thumbnail/pick e2e): correlate by the given wire function name — find
+// the assistant tool-call turn(s) that called it, take the id(s) the runtime
+// assigned, then read the matching `tool` result turn's content. Unlike
+// parseChoiceResultFromBody (which owns the `kind` field as ask_user's
+// signature), this has no output-shape assumption to key off, so it must key by
+// name instead; a run that calls the same tool more than once would need a
+// smarter correlation, but every scripted run here calls a given tool at most
+// once. Returns the parsed JSON, the raw string (for a non-JSON "Error: …"
+// result), or `undefined` if that tool has not produced a result yet.
+const toolResultByNameFromBody = (body: LiteLLMRequestBody, toolName: string): unknown => {
+  const messages = Array.isArray(body.messages) ? body.messages : []
+  const callIds = new Set<string>()
+  for (const message of messages) {
+    if (message.role !== 'assistant' || !Array.isArray(message.tool_calls)) continue
+    for (const call of message.tool_calls) {
+      if (call.function.name === toolName) callIds.add(call.id)
+    }
+  }
+  for (const message of messages) {
+    if (message.role !== 'tool' || typeof message.tool_call_id !== 'string') continue
+    if (!callIds.has(message.tool_call_id) || typeof message.content !== 'string') continue
+    try {
+      return JSON.parse(message.content) as unknown
+    } catch {
+      return message.content
     }
   }
   return undefined
@@ -296,13 +329,19 @@ const PLAN = JSON.stringify({
 export const SYNTHESIS_ANSWER = 'Done — the sandbox finished executing the requested snippet.'
 
 // How the mocked model resolves a ReAct decision:
-//   • 'tool'    — issue a single `run_javascript` action (the sandbox suite path).
-//   • 'ask'     — issue a single `ask_user` action (the choice-prompt suite path,
-//                 issue #85), so a real-browser HITL poll is driven.
-//   • 'no-tool' — finish immediately with no action, so a plain chat completes and
-//                 synthesizes WITHOUT needing the code-exec tool (for suites where
-//                 that tool stays disabled, e.g. the event-logger spec).
-type ChatMode = 'tool' | 'ask' | 'no-tool'
+//   • 'tool'     — issue a single `run_javascript` action (the sandbox suite path).
+//   • 'ask'      — issue a single `ask_user` action (the choice-prompt suite path,
+//                  issue #85), so a real-browser HITL poll is driven.
+//   • 'no-tool'  — finish immediately with no action, so a plain chat completes and
+//                  synthesizes WITHOUT needing the code-exec tool (for suites where
+//                  that tool stays disabled, e.g. the event-logger spec).
+//   • 'scripted' — issue the given per-run `script` of tool calls, ONE PER ReAct
+//                  decision turn, in order; finish once every scripted call has a
+//                  folded-back `tool` result. Lets a spec replay a captured
+//                  sequence of REAL tool_call arguments (e.g. the canvas
+//                  preview/thumbnail/pick verbs) instead of a single hardcoded
+//                  tool, and — unlike the other modes — supports MULTI-STEP runs.
+type ChatMode = 'tool' | 'ask' | 'no-tool' | 'scripted'
 
 // Per-run state, captured as the edge forwards chat requests to the LiteLLM mock.
 type UpstreamState = {
@@ -310,11 +349,19 @@ type UpstreamState = {
   mode: ChatMode
   // The synthesized final-answer content the mock streams back (per-test, so a
   // spec can stream e.g. a ```mermaid block instead of the default sentence).
+  // A literal `{{mediaRef}}` placeholder is substituted for the first mediaRef
+  // found in the request's folded-back `tool` results (see resolveAnswer) —
+  // lets a scripted spec assert the transcript image actually resolves through
+  // the media registry, mirroring what a real model does when it embeds a tool
+  // result's image handle in its reply.
   answer: string
   // Optional: when set, the ACTION turn narrates this rationale as ordinary
   // content before its tool call (models a model that explains its action). When
   // undefined the action turn is silent — the realistic non-reasoning default.
   actionReasoning?: string
+  // 'scripted' mode only: the tool calls to issue in order, one per ReAct
+  // decision turn. Empty for every other mode.
+  script: ToolCall[]
   bodies: string[]
   actions: number
   provisionedKeys: Set<string>
@@ -327,6 +374,36 @@ type UpstreamState = {
 // drove the old in-page mock now drives the mocked LiteLLM upstream.
 const streamHeaders = { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' }
 
+// Scans a request body's folded-back `tool` result messages (in order) for the
+// first `media[].mediaRef` handle — mirrors how the runtime folds an image-
+// bearing tool output back as a compact ref (tool-calling.ts's
+// serializeToolResult). Backs the `{{mediaRef}}` answer template below.
+const firstMediaRefFromBody = (body: LiteLLMRequestBody): string | undefined => {
+  const messages = Array.isArray(body.messages) ? body.messages : []
+  for (const message of messages) {
+    if (message.role !== 'tool' || typeof message.content !== 'string') continue
+    try {
+      const parsed = JSON.parse(message.content) as { media?: Array<{ mediaRef?: unknown }> }
+      const ref = parsed?.media?.[0]?.mediaRef
+      if (typeof ref === 'string') return ref
+    } catch {
+      /* a tool result that is not JSON (e.g. an "Error: …" message) carries no media */
+    }
+  }
+  return undefined
+}
+
+// Answer-as-template: a literal `{{mediaRef}}` placeholder in the synthesized
+// answer is substituted for the first mediaRef found in the request's tool
+// results, mirroring how a REAL model embeds a tool's image handle
+// (`![caption](<mediaRef>)`) in its reply — verified against the captured PR
+// preview traffic this suite's scripted specs replay. A no-op for every answer
+// that carries no placeholder, i.e. every non-scripted mock.
+const resolveAnswer = (answer: string, body: LiteLLMRequestBody): string =>
+  answer.includes('{{mediaRef}}')
+    ? answer.replaceAll('{{mediaRef}}', firstMediaRefFromBody(body) ?? '')
+    : answer
+
 const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Response => {
   state.bodies.push(JSON.stringify(body))
   const messages = Array.isArray(body.messages) ? body.messages : []
@@ -335,12 +412,16 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
   if (system.startsWith('You are a ReAct agent')) {
     // Native tool calling (issue #276): the model now emits a real tool_call to
     // act, and answers with content to finish. In 'no-tool' mode there is no tool
-    // to drive, so finish on the first decision. The deterministic signal to stop
-    // acting in 'tool' mode is a `tool` result turn already present in the request
-    // (covers both a completed sandbox run and a blocked/failed tool, each of
-    // which the runtime replays as a `role: 'tool'` message).
-    const hasToolResult = messages.some((m) => m.role === 'tool')
-    if (state.mode === 'no-tool' || hasToolResult) {
+    // to drive, so finish on the first decision. In 'scripted' mode, finish once
+    // every scripted call has a folded-back result. Every other mode finishes as
+    // soon as ANY `tool` result turn is present (covers both a completed run and
+    // a blocked/failed tool, each of which the runtime replays as a
+    // `role: 'tool'` message).
+    const toolResultCount = messages.filter((m) => m.role === 'tool').length
+    const shouldFinish =
+      state.mode === 'no-tool' ||
+      (state.mode === 'scripted' ? toolResultCount >= state.script.length : toolResultCount > 0)
+    if (shouldFinish) {
       // Finish: answer with content and NO tool_calls (like a non-reasoning model);
       // its rationale IS the content. streamDecision treats the absence of a tool
       // call as the `final` decision and surfaces the content as the think text.
@@ -363,13 +444,22 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
       })
     }
 
-    // Act: issue a single native run_javascript tool call. By default with NO
-    // content preamble — how a non-reasoning model actually behaves on a tool turn
-    // (only the tool call, no prose), so the timeline renders just the decision
-    // badge. When the spec opted into narration, the rationale is emitted as
-    // ordinary content first and shows as the step's thought (issue #276).
+    // Act: issue the next native tool call — the single run_javascript/ask_user
+    // call for those modes, or the next entry of the script for 'scripted' (index
+    // by how many `tool` results are already in the request, so each ReAct
+    // decision turn advances exactly one step through the script). By default
+    // with NO content preamble — how a non-reasoning model actually behaves on a
+    // tool turn (only the tool call, no prose), so the timeline renders just the
+    // decision badge. When the spec opted into narration, the rationale is
+    // emitted as ordinary content first and shows as the step's thought (issue
+    // #276).
     state.actions += 1
-    const toolCall = state.mode === 'ask' ? askUserToolCall() : runJavascriptToolCall(state.code)
+    const toolCall =
+      state.mode === 'ask'
+        ? askUserToolCall()
+        : state.mode === 'scripted'
+          ? state.script[toolResultCount]!
+          : runJavascriptToolCall(state.code)
     if (body.stream === true) {
       return new Response(sseToolCallStream(toolCall, state.actionReasoning), {
         status: 200,
@@ -395,8 +485,11 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
 
   // Planner (plan-execute / hybrid): still a structured JSON ExecutionPlan — the
   // planner runs before any tool I/O, so it is untouched by the native tool-call
-  // switch. Synthesis (any other system prompt): stream the final answer.
-  const content = system.startsWith('You are a planning assistant') ? PLAN : state.answer
+  // switch. Synthesis (any other system prompt): stream the final answer
+  // (template-resolved — see resolveAnswer).
+  const content = system.startsWith('You are a planning assistant')
+    ? PLAN
+    : resolveAnswer(state.answer, body)
 
   if (body.stream === true) {
     // Emit a usage chunk only when the client opted in (synthesize does, the
@@ -549,7 +642,8 @@ const installMock = async (
   code: string,
   mode: ChatMode,
   answer: string,
-  actionReasoning?: string
+  actionReasoning?: string,
+  script: ToolCall[] = []
 ): Promise<LiteLLMMock> => {
   installLiteLLMUpstream()
   const state: UpstreamState = {
@@ -557,6 +651,7 @@ const installMock = async (
     mode,
     answer,
     ...(actionReasoning !== undefined ? { actionReasoning } : {}),
+    script,
     bodies: [],
     actions: 0,
     provisionedKeys: new Set(knownProvisionedKeys),
@@ -642,6 +737,56 @@ export const installChatMock = (
   page: Page,
   answer: string = SYNTHESIS_ANSWER
 ): Promise<LiteLLMMock> => installMock(page, '', 'no-tool', answer)
+
+// A SCRIPTED mock: the model issues the given tool calls in order, one per ReAct
+// decision turn, then finishes once every one has a folded-back result (see
+// installMock's 'scripted' mode). Lets a spec replay a captured sequence of REAL
+// tool_call arguments — e.g. the canvas preview/thumbnail/pick verbs — instead of
+// the single hardcoded run_javascript/ask_user call the other install* mocks
+// drive. `answer` defaults to SYNTHESIS_ANSWER and may carry a `{{mediaRef}}`
+// placeholder (see resolveAnswer) so a spec can assert an image-bearing tool
+// result actually resolves through the media registry.
+export const installScriptedToolMock = (
+  page: Page,
+  script: ToolCall[],
+  answer: string = SYNTHESIS_ANSWER
+): Promise<LiteLLMMock> => installMock(page, '', 'scripted', answer, undefined, script)
+
+// Builds one scripted tool call for installScriptedToolMock's script. The id is
+// auto-incremented per call and otherwise inert: the runtime assigns its OWN id
+// to the executed call when it replays the turn (issue #276, same note as
+// ASK_USER_CALL_ID above), so a script only needs to get the function name and
+// arguments right.
+let scriptedCallSeq = 0
+export const scriptedToolCall = (name: string, args: Record<string, unknown>): ToolCall => {
+  scriptedCallSeq += 1
+  return {
+    id: `call_scripted_${scriptedCallSeq}`,
+    type: 'function',
+    function: { name, arguments: JSON.stringify(args) }
+  }
+}
+
+// Generalizes sandboxResult/choiceResult to an ARBITRARY tool name (see
+// toolResultByNameFromBody): the parsed JSON (or raw string, for a non-JSON
+// "Error: …" result) of the most recent folded-back `tool` result produced by a
+// call to `toolName`, or `undefined` if it has not run yet. Scans the mock's
+// captured request bodies most-recent-first, mirroring sandboxResult/
+// choiceResult so all three share the same "poll until folded back" idiom.
+export const toolResultFor = (mock: LiteLLMMock, toolName: string): unknown => {
+  const bodies = mock.requestBodies()
+  for (let i = bodies.length - 1; i >= 0; i -= 1) {
+    const raw = bodies[i]
+    if (!raw) continue
+    try {
+      const result = toolResultByNameFromBody(JSON.parse(raw) as LiteLLMRequestBody, toolName)
+      if (result !== undefined) return result
+    } catch {
+      /* a non-JSON body never carries a tool result */
+    }
+  }
+  return undefined
+}
 
 // Opens Settings, enables the plugin whose Settings label is `label` (plugins are
 // off by default), and closes the modal. The toggle's <input> is visually hidden
