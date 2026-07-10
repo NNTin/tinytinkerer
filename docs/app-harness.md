@@ -618,6 +618,33 @@ they fit and report both omissions and field truncations. Edit receipts (`id` an
 `version`) are always retained even when detailed edited records are omitted; callers
 retrieve omitted detail with `read`.
 
+### Field projection (`fields`)
+
+`pick` and `read` additionally accept an optional `fields` array (from
+`ELEMENT_PROJECTION_FIELDS`/`elementFieldSchema`) that narrows each element record to
+identity — `id`, `type`, `kind`, always included and not listed in the enum — plus
+only the requested keys. Omitting `fields` returns today's full record, byte-for-byte
+unchanged; this is the default because most existing callers rely on it. A selection
+of ~10 elements easily exceeds `pick`'s 64 KiB result budget once every record carries
+`style` (7 fields) and `capabilities` (an `editableFields` array plus
+`restrictions`) — `fields: ['x', 'y', 'width', 'height']` gets back just the geometry
+that a layout decision needs, so the whole selection fits.
+
+`fields` is orthogonal to `detail`: `detail` still governs which type-specific blocks
+get built and how far their strings/arrays are truncated (as above); `fields` then
+narrows which of the built keys make it into the record. A field the record doesn't
+have (e.g. `text` on a shape) is silently skipped rather than sent as `undefined`.
+Every result echoes the applied projection back as `fields`; it is absent when the
+caller didn't project. Truncation reporting is projection-aware too: a truncated
+`text.text` on a record whose projection excludes `text` is not reported, since that
+data was never sent.
+
+`search` and `inspect` don't need `fields` — they're already bespoke, compact records
+(a handful of scalar fields, not the full normalized union), not a case of a caller
+wanting a subset of a verbose default. Extending the same projection to mutation
+receipts (`edit` and the structural verbs echo budget-bounded `elements` alongside
+their receipts) is a natural follow-up, not yet implemented.
+
 | Verb        | Request budget | Result budget |
 | ----------- | -------------: | ------------: |
 | `search`    |          8 KiB |        16 KiB |

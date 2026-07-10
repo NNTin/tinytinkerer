@@ -97,6 +97,60 @@ describe('pick: current mode', () => {
   })
 })
 
+describe('pick: fields projection', () => {
+  it('projects each element down to id/type/kind plus the requested fields', async () => {
+    const elements = [rect('a'), rect('b', { x: 200 })]
+    const { api } = fakeApi(elements, { a: true, b: true })
+
+    const result = await executePick(
+      api,
+      input({ mode: 'current', fields: ['x', 'y', 'width', 'height'] })
+    )
+
+    expect(result.fields).toEqual(['x', 'y', 'width', 'height'])
+    for (const element of result.elements) {
+      expect(Object.keys(element).sort()).toEqual(
+        ['height', 'id', 'kind', 'type', 'width', 'x', 'y'].sort()
+      )
+    }
+    expect(result.elements[0]).not.toHaveProperty('style')
+    expect(result.elements[0]).not.toHaveProperty('capabilities')
+  })
+
+  it('leaves unfiltered records full and omits fields from the result', async () => {
+    const elements = [rect('a')]
+    const { api } = fakeApi(elements, { a: true })
+
+    const result = await executePick(api, input({ mode: 'current' }))
+
+    expect(result).not.toHaveProperty('fields')
+    expect(result.elements[0]).toHaveProperty('style')
+    expect(result.elements[0]).toHaveProperty('capabilities')
+  })
+
+  it('fits a ~10-element selection fully when filtered, though the unfiltered result truncates it', async () => {
+    // Each element's link is under the per-field 8,192-byte cap (so no single
+    // field is truncated) but ten of them together blow the 64 KiB pick budget,
+    // so the unfiltered result drops trailing elements. Projecting away `link`
+    // shrinks every record enough that all ten fit.
+    const elements = Array.from({ length: 10 }, (_, index) =>
+      rect(`heavy-${index}`, { link: 'x'.repeat(8_000) })
+    )
+    const selection = Object.fromEntries(elements.map((element) => [String(element.id), true]))
+    const { api } = fakeApi(elements, selection)
+
+    const unfiltered = await executePick(api, input({ mode: 'current' }))
+    expect(unfiltered.truncation.omittedElements).toBeGreaterThan(0)
+
+    const filtered = await executePick(
+      api,
+      input({ mode: 'current', fields: ['x', 'y', 'width', 'height'] })
+    )
+    expect(filtered.truncation.omittedElements).toBe(0)
+    expect(filtered.elements).toHaveLength(10)
+  })
+})
+
 describe('pick: interactive mode', () => {
   beforeEach(() => {
     vi.useFakeTimers()

@@ -51,7 +51,7 @@ beforeAll(async () => {
 }, 90_000)
 
 describe('canvas bundle regression guard', () => {
-  it('keeps the twenty-five-tool startup entry below 93 kB', () => {
+  it('keeps the twenty-five-tool startup entry below 94 kB', () => {
     const entry = shellChunks.find((chunk) => chunk.facadeModuleId?.endsWith('/canvas/index.html'))
     expect(entry).toBeDefined()
     // Raised 84 → 85 kB when the shared chat surface gained always-loaded turn
@@ -70,8 +70,12 @@ describe('canvas bundle regression guard', () => {
     // grew a sentence explaining the `media` handle + `![caption](<mediaRef>)`
     // embed convention now that their rendered image travels as display-only
     // media instead of an inline base64 field.
+    // Raised 93 → 94 kB (2026-07-10): pick/read gained an optional `fields`
+    // projection (id/type/kind plus only the requested keys, for large
+    // selections) — the enum, the two schemas' extra property, and the two tool
+    // descriptions' extra sentence add a little over 400 bytes raw.
     // Excalidraw and the heavy graph are still guarded out by the tests below.
-    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(93)
+    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(94)
   })
 
   it('keeps Excalidraw outside the canvas startup graph', () => {

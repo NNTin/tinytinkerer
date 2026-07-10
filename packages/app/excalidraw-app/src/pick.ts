@@ -5,7 +5,12 @@ import {
   EXCALIDRAW_PAYLOAD_BUDGETS
 } from '@tinytinkerer/excalidraw-protocol'
 import type { PickInput } from '@tinytinkerer/excalidraw-protocol'
-import { normalizeElement, sceneVersionOf } from './normalization'
+import {
+  normalizeElement,
+  projectElement,
+  sceneVersionOf,
+  truncationSurvivesProjection
+} from './normalization'
 import { settleSerializedBytes, trimToBudget } from './payload'
 import { assertRequestBudget } from './query'
 
@@ -42,12 +47,20 @@ const buildResult = (api: ExcalidrawImperativeAPI, input: PickInput, timedOut: b
   const indices = new Map(elements.map((element, index) => [element.id, index]))
   // Bespoke record build (not attachBoundedRecords, which is hardwired to
   // 'standard' detail): normalize the capped, live selected elements at the
-  // caller's requested detail level.
+  // caller's requested detail level, then project down to `input.fields` if the
+  // caller asked for a lean projection.
   const all = cappedIds.map((id) => {
     const index = indices.get(id)!
     const normalized = normalizeElement(elements[index]!, index, elements, input.detail)
-    fields.push(...normalized.truncatedFields.map((field) => `${normalized.element.id}.${field}`))
-    return normalized.element
+    // Only report truncation for fields that survive the projection — a truncated
+    // `text.text` on a record whose projection excludes `text` was never sent.
+    const truncatedFields = input.fields
+      ? normalized.truncatedFields.filter((field) =>
+          truncationSurvivesProjection(field, input.fields!)
+        )
+      : normalized.truncatedFields
+    fields.push(...truncatedFields.map((field) => `${normalized.element.id}.${field}`))
+    return input.fields ? projectElement(normalized.element, input.fields) : normalized.element
   })
 
   const base = {
@@ -61,7 +74,8 @@ const buildResult = (api: ExcalidrawImperativeAPI, input: PickInput, timedOut: b
       elementIds: cappedIds,
       groupIds: Object.keys(state.selectedGroupIds),
       editingGroupId: state.editingGroupId
-    }
+    },
+    ...(input.fields ? { fields: input.fields } : {})
   }
 
   return trimToBudget(

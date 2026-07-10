@@ -537,6 +537,61 @@ describe('Excalidraw bridge handlers', () => {
     expect(actualBytes).toBeLessThanOrEqual(64 * 1_024)
   })
 
+  it('projects read elements down to id/type/kind plus the requested fields', async () => {
+    const api = fakeApi([baseElement('a'), baseElement('b', { x: 200 })])
+
+    const result = (await run(api, 'read', {
+      elementIds: ['a', 'b'],
+      fields: ['x', 'y', 'width', 'height']
+    })) as { elements: Array<Record<string, unknown>>; fields?: string[] }
+
+    expect(result.fields).toEqual(['x', 'y', 'width', 'height'])
+    for (const element of result.elements) {
+      expect(Object.keys(element).sort()).toEqual(
+        ['height', 'id', 'kind', 'type', 'width', 'x', 'y'].sort()
+      )
+    }
+    expect(result.elements[0]).not.toHaveProperty('style')
+    expect(result.elements[0]).not.toHaveProperty('capabilities')
+  })
+
+  it('leaves unfiltered read records full and omits fields from the result', async () => {
+    const api = fakeApi([baseElement('a')])
+
+    const result = (await run(api, 'read', { elementIds: ['a'] })) as {
+      elements: Array<Record<string, unknown>>
+      fields?: string[]
+    }
+
+    expect(result.fields).toBeUndefined()
+    expect(result.elements[0]).toHaveProperty('style')
+    expect(result.elements[0]).toHaveProperty('capabilities')
+  })
+
+  it('fits a ~10-element read fully when filtered, though the unfiltered result truncates it', async () => {
+    // Same shape as the paged-budget test above: each element's link is under
+    // the per-field 8,192-byte cap, but ten of them together blow the 64 KiB
+    // read budget. Projecting away `link` shrinks every record enough to fit.
+    const elements = Array.from({ length: 10 }, (_, index) =>
+      baseElement(`heavy-${index}`, { link: 'x'.repeat(8_000) })
+    )
+    const elementIds = elements.map((element) => String(element.id))
+
+    const unfiltered = (await run(fakeApi(elements), 'read', {
+      elementIds,
+      limit: 10
+    })) as { truncation: { omittedElements: number } }
+    expect(unfiltered.truncation.omittedElements).toBeGreaterThan(0)
+
+    const filtered = (await run(fakeApi(elements), 'read', {
+      elementIds,
+      limit: 10,
+      fields: ['x', 'y', 'width', 'height']
+    })) as { elements: unknown[]; truncation: { omittedElements: number } }
+    expect(filtered.truncation.omittedElements).toBe(0)
+    expect(filtered.elements).toHaveLength(10)
+  })
+
   it('applies a versioned edit batch atomically as one undoable update', async () => {
     const first = baseElement('first', { version: 2 })
     const second = baseElement('second', { type: 'ellipse', x: 200, version: 5 })

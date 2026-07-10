@@ -10,6 +10,7 @@ import {
   drawInputSchema,
   duplicateInputSchema,
   editInputSchema,
+  elementFieldSchema,
   EXCALIDRAW_DETAIL_LEVELS,
   EXCALIDRAW_ICON_TYPES,
   EXCALIDRAW_PRESET_KINDS,
@@ -125,25 +126,28 @@ const shapeElementSchema = z
     type: z.enum(['rectangle', 'ellipse', 'diamond'])
   })
   .strict()
+// Kind-block sub-schemas, named (not inlined) so `projectedElementSchema` below can
+// reuse the exact same shapes as the discriminated-union variants instead of
+// re-describing them and risking drift.
+const textBlockSchema = z
+  .object({
+    text: z.string(),
+    originalText: z.string(),
+    fontSize: z.number(),
+    fontFamily: z.number(),
+    textAlign: z.string(),
+    verticalAlign: z.string(),
+    containerId: z.string().nullable(),
+    autoResize: z.boolean(),
+    lineHeight: z.number()
+  })
+  .strict()
 const textElementSchema = z
   .object({
     ...commonShape,
     kind: z.literal('text'),
     type: z.literal('text'),
-    text: z
-      .object({
-        text: z.string(),
-        originalText: z.string(),
-        fontSize: z.number(),
-        fontFamily: z.number(),
-        textAlign: z.string(),
-        verticalAlign: z.string(),
-        containerId: z.string().nullable(),
-        autoResize: z.boolean(),
-        lineHeight: z.number()
-      })
-      .strict()
-      .optional()
+    text: textBlockSchema.optional()
   })
   .strict()
 const linearShape = {
@@ -154,12 +158,13 @@ const linearShape = {
   endArrowhead: z.string().nullable(),
   elbowed: z.boolean().optional()
 }
+const linearBlockSchema = z.object(linearShape).strict()
 const lineElementSchema = z
   .object({
     ...commonShape,
     kind: z.literal('line'),
     type: z.literal('line'),
-    linear: z.object(linearShape).strict().optional()
+    linear: linearBlockSchema.optional()
   })
   .strict()
 const arrowElementSchema = z
@@ -167,7 +172,14 @@ const arrowElementSchema = z
     ...commonShape,
     kind: z.literal('arrow'),
     type: z.literal('arrow'),
-    linear: z.object(linearShape).strict().optional()
+    linear: linearBlockSchema.optional()
+  })
+  .strict()
+const freeDrawBlockSchema = z
+  .object({
+    points: z.array(pointSchema),
+    pressures: z.array(z.number()),
+    simulatePressure: z.boolean()
   })
   .strict()
 const freeDrawElementSchema = z
@@ -175,14 +187,25 @@ const freeDrawElementSchema = z
     ...commonShape,
     kind: z.literal('freeDraw'),
     type: z.literal('freedraw'),
-    freeDraw: z
+    freeDraw: freeDrawBlockSchema.optional()
+  })
+  .strict()
+const imageBlockSchema = z
+  .object({
+    fileId: z.string().nullable(),
+    status: z.string(),
+    scale: pointSchema,
+    crop: z
       .object({
-        points: z.array(pointSchema),
-        pressures: z.array(z.number()),
-        simulatePressure: z.boolean()
+        x: z.number(),
+        y: z.number(),
+        width: z.number(),
+        height: z.number(),
+        naturalWidth: z.number(),
+        naturalHeight: z.number()
       })
       .strict()
-      .optional()
+      .nullable()
   })
   .strict()
 const imageElementSchema = z
@@ -190,25 +213,7 @@ const imageElementSchema = z
     ...commonShape,
     kind: z.literal('image'),
     type: z.literal('image'),
-    image: z
-      .object({
-        fileId: z.string().nullable(),
-        status: z.string(),
-        scale: pointSchema,
-        crop: z
-          .object({
-            x: z.number(),
-            y: z.number(),
-            width: z.number(),
-            height: z.number(),
-            naturalWidth: z.number(),
-            naturalHeight: z.number()
-          })
-          .strict()
-          .nullable()
-      })
-      .strict()
-      .optional()
+    image: imageBlockSchema.optional()
   })
   .strict()
 const frameElementSchema = z
@@ -245,6 +250,50 @@ export const readElementSchema = z.discriminatedUnion('kind', [
   embedElementSchema,
   unsupportedElementSchema
 ])
+
+// The lean shape `pick`/`read`'s optional `fields` projection returns: identity
+// (`id`/`type`/`kind`) is always present, and every other selectable key is optional
+// and reuses the exact same sub-schemas as the full `readElementSchema` variants
+// above, so a projected record validates against the same wire types as a full one —
+// just with most keys missing. `kind` spans every variant's discriminant literal
+// since a projected record no longer discriminates a single specific shape.
+export const projectedElementSchema = z
+  .object({
+    id: z.string(),
+    type: z.string(),
+    kind: z.enum([
+      'shape',
+      'text',
+      'line',
+      'arrow',
+      'freeDraw',
+      'image',
+      'frame',
+      'embed',
+      'unsupported'
+    ]),
+    version: z.number().int().nonnegative().optional(),
+    zIndex: z.number().int().nonnegative().optional(),
+    x: z.number().optional(),
+    y: z.number().optional(),
+    width: z.number().optional(),
+    height: z.number().optional(),
+    angleDegrees: z.number().optional(),
+    style: elementStyleSchema.optional(),
+    locked: z.boolean().optional(),
+    groupIds: z.array(z.string()).optional(),
+    frameId: z.string().nullable().optional(),
+    link: z.string().nullable().optional(),
+    boundElements: z.array(boundElementSchema).optional(),
+    label: labelSchema.optional(),
+    capabilities: capabilitiesSchema.optional(),
+    text: textBlockSchema.optional(),
+    linear: linearBlockSchema.optional(),
+    freeDraw: freeDrawBlockSchema.optional(),
+    image: imageBlockSchema.optional(),
+    frameName: z.string().nullable().optional()
+  })
+  .strict()
 
 const truncationSchema = z
   .object({
@@ -355,7 +404,12 @@ const inspectResultSchema = z
 export const readResultSchema = z
   .object({
     ok: z.literal(true),
-    elements: z.array(readElementSchema),
+    // readElementSchema first: a full (unprojected) record must resolve to it, not
+    // the structurally looser projectedElementSchema, so downstream consumers keep
+    // getting the discriminated-union shape when `fields` was omitted.
+    elements: z.array(z.union([readElementSchema, projectedElementSchema])),
+    // Echo of the applied `fields` projection; absent when the caller didn't project.
+    fields: z.array(elementFieldSchema).optional(),
     missingIds: z.array(z.string()),
     ...pageResultShape
   })
@@ -638,7 +692,10 @@ const pickResultSchema = z
     sceneVersion: z.number().int().nonnegative(),
     selectedCount: z.number().int().nonnegative(),
     selection: selectionSchema,
-    elements: z.array(readElementSchema),
+    // readElementSchema first: see readResultSchema above for why.
+    elements: z.array(z.union([readElementSchema, projectedElementSchema])),
+    // Echo of the applied `fields` projection; absent when the caller didn't project.
+    fields: z.array(elementFieldSchema).optional(),
     truncation: truncationSchema
   })
   .strict()
@@ -699,6 +756,7 @@ export const excalidrawVerbContracts = {
 export type EditableField = z.infer<typeof editableFieldSchema>
 export type EditRestriction = z.infer<typeof editRestrictionSchema>
 export type ReadElement = z.infer<typeof readElementSchema>
+export type ProjectedElement = z.infer<typeof projectedElementSchema>
 export type ReadResult = z.infer<typeof readResultSchema>
 export type MutationResult = z.infer<typeof alignResultSchema>
 export type GroupResult = z.infer<typeof groupResultSchema>

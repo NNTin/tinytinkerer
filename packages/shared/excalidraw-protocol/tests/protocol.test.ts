@@ -11,11 +11,13 @@ import {
   drawInputSchema,
   duplicateInputSchema,
   editInputSchema,
+  elementFieldSchema,
   excalidrawLibraryImportContract,
   excalidrawSnapshotRestoreContract,
   excalidrawSnapshotSchema,
   excalidrawVerbContracts,
   excalidrawVerbInputSchemas,
+  ELEMENT_PROJECTION_FIELDS,
   EXCALIDRAW_DEFAULT_BINDING_GAP,
   EXCALIDRAW_ICON_LIMIT,
   EXCALIDRAW_LIBRARY_IMPORT_VERB,
@@ -35,6 +37,7 @@ import {
   placeInputSchema,
   presetInputSchema,
   previewInputSchema,
+  projectedElementSchema,
   readInputSchema,
   readElementSchema,
   searchInputSchema,
@@ -679,6 +682,28 @@ describe('excalidraw protocol', () => {
     ).toBe(true)
   })
 
+  it('accepts an optional fields projection on pick/read, rejecting empty/unknown fields', () => {
+    // `fields` is orthogonal to `detail`: both are accepted together, and neither
+    // implies the other.
+    expect(
+      pickInputSchema.parse({ detail: 'full', fields: ['x', 'y', 'width', 'height'] })
+    ).toMatchObject({ detail: 'full', fields: ['x', 'y', 'width', 'height'] })
+    expect(pickInputSchema.safeParse({ fields: [] }).success).toBe(false)
+    expect(pickInputSchema.safeParse({ fields: ['bogus'] }).success).toBe(false)
+
+    expect(
+      readInputSchema.parse({ elementIds: ['a'], fields: ['x', 'y', 'width', 'height'] })
+    ).toMatchObject({ fields: ['x', 'y', 'width', 'height'] })
+    expect(readInputSchema.safeParse({ elementIds: ['a'], fields: [] }).success).toBe(false)
+    expect(readInputSchema.safeParse({ elementIds: ['a'], fields: ['bogus'] }).success).toBe(false)
+    // Omitting fields altogether still parses — today's full-record default.
+    expect(readInputSchema.safeParse({ elementIds: ['a'] }).success).toBe(true)
+
+    expect(elementFieldSchema.safeParse('id').success).toBe(false)
+    expect(elementFieldSchema.safeParse('type').success).toBe(false)
+    expect(elementFieldSchema.safeParse('kind').success).toBe(false)
+  })
+
   it('renders an object-root JSON schema for every verb (model function-call safe)', () => {
     // Native tool calling forwards a verb's input schema as `function.parameters`,
     // which OpenAI/ChatGPT-compatible APIs require to have an object root — a
@@ -933,5 +958,128 @@ describe('excalidraw protocol', () => {
         unsupportedType: 'laser'
       }).success
     ).toBe(true)
+  })
+
+  it('parses a fields-projected pick/read result alongside a full unfiltered one', () => {
+    const fullShapeElement = {
+      id: 'a',
+      type: 'rectangle',
+      kind: 'shape' as const,
+      version: 1,
+      zIndex: 0,
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      angleDegrees: 0,
+      style: {
+        strokeColor: '#000',
+        backgroundColor: 'transparent',
+        fillStyle: 'solid',
+        strokeWidth: 1,
+        strokeStyle: 'solid',
+        roughness: 1,
+        opacity: 100
+      },
+      locked: false,
+      groupIds: [],
+      frameId: null,
+      link: null,
+      boundElements: [],
+      capabilities: { editableFields: ['locked'], requiresUnlock: false, restrictions: [] }
+    }
+    // The lean shape a `fields: ['x', 'y']` projection returns: identity
+    // (id/type/kind) plus only the requested keys — no style/capabilities.
+    const projectedShapeElement = { id: 'a', type: 'rectangle', kind: 'shape' as const, x: 0, y: 0 }
+    expect(projectedElementSchema.safeParse(projectedShapeElement).success).toBe(true)
+    // A projection can never re-add id/type/kind as anything but identity, and
+    // strict() rejects a key outside ELEMENT_PROJECTION_FIELDS + identity.
+    expect(projectedElementSchema.safeParse({ ...projectedShapeElement, bogus: 1 }).success).toBe(
+      false
+    )
+
+    const truncationBase = {
+      truncated: false,
+      fields: [],
+      omittedElements: 0,
+      serializedBytes: 10,
+      budgetBytes: EXCALIDRAW_PAYLOAD_BUDGETS.read.result
+    }
+    // Unfiltered: no `fields` echo, full discriminated-union records.
+    expect(
+      excalidrawVerbContracts.read.resultSchema.safeParse({
+        ok: true,
+        detail: 'standard',
+        sceneVersion: 3,
+        missingIds: [],
+        page: { offset: 0, limit: 20, returned: 1, total: 1, nextOffset: null },
+        elements: [fullShapeElement],
+        truncation: truncationBase
+      }).success
+    ).toBe(true)
+    // Filtered: `fields` echoes the applied projection, records are lean.
+    expect(
+      excalidrawVerbContracts.read.resultSchema.safeParse({
+        ok: true,
+        detail: 'standard',
+        sceneVersion: 3,
+        missingIds: [],
+        page: { offset: 0, limit: 20, returned: 1, total: 1, nextOffset: null },
+        elements: [projectedShapeElement],
+        fields: ['x', 'y'],
+        truncation: truncationBase
+      }).success
+    ).toBe(true)
+
+    const pickTruncationBase = {
+      ...truncationBase,
+      budgetBytes: EXCALIDRAW_PAYLOAD_BUDGETS.pick.result
+    }
+    const pickBase = {
+      ok: true,
+      mode: 'current' as const,
+      timedOut: false,
+      detail: 'standard' as const,
+      sceneVersion: 3,
+      selectedCount: 1,
+      selection: { elementIds: ['a'], groupIds: [], editingGroupId: null }
+    }
+    expect(
+      excalidrawVerbContracts.pick.resultSchema.safeParse({
+        ...pickBase,
+        elements: [fullShapeElement],
+        truncation: pickTruncationBase
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.pick.resultSchema.safeParse({
+        ...pickBase,
+        elements: [projectedShapeElement],
+        fields: ['x', 'y'],
+        truncation: pickTruncationBase
+      }).success
+    ).toBe(true)
+  })
+
+  it('keeps ELEMENT_PROJECTION_FIELDS in sync with the readElementSchema variants', () => {
+    // Identity keys are always included and deliberately excluded from the
+    // projectable-fields enum — a caller can never project them away.
+    expect(ELEMENT_PROJECTION_FIELDS).not.toContain('id')
+    expect(ELEMENT_PROJECTION_FIELDS).not.toContain('type')
+    expect(ELEMENT_PROJECTION_FIELDS).not.toContain('kind')
+
+    // Every projectable field must be a real top-level key on at least one
+    // readElementSchema variant, so `fields` can never request a field that no
+    // normalized record could ever carry.
+    const variantKeys = new Set<string>()
+    for (const variant of readElementSchema.options) {
+      for (const key of Object.keys(variant.shape)) variantKeys.add(key)
+    }
+    for (const field of ELEMENT_PROJECTION_FIELDS) {
+      expect(
+        variantKeys.has(field),
+        `ELEMENT_PROJECTION_FIELDS entry "${field}" is not a top-level key of any readElementSchema variant`
+      ).toBe(true)
+    }
   })
 })

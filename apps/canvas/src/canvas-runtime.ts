@@ -41,7 +41,11 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
       read: {
         description:
           'Read normalized full content for specific Excalidraw element ids after search and ' +
-          'inspect. Returns exact geometry, styles, text, bindings, and versions required by edit.',
+          'inspect. Returns exact geometry, styles, text, bindings, and versions required by edit. ' +
+          "Pass fields (e.g. ['x','y','width','height']) to get back only those keys per element " +
+          'plus id/type/kind, keeping the result compact when a selection is large and only part ' +
+          'of each element matters; include version if you plan to edit afterwards. Omit fields ' +
+          'for full records.',
         schema: excalidrawVerbInputSchemas.read
       },
       edit: {
@@ -208,7 +212,10 @@ export const createCanvasAppTools = (handle: AppBridgeHandle = canvasBridgeHandl
           'select element(s) on the canvas (mode "interactive": shows a toast prompt and waits ' +
           "for the next settled selection, up to timeoutSeconds; timedOut:true when they don't). " +
           'Returns normalized element records with versions so the selection can be edited ' +
-          'immediately.',
+          'immediately. detail controls how much of each record comes back (summary/standard/' +
+          "full); fields (e.g. ['x','y','width','height']) additionally narrows each record to " +
+          'just id/type/kind plus the requested keys, keeping a large selection compact. Omit ' +
+          'fields for full records.',
         schema: excalidrawVerbInputSchemas.pick,
         awaitsHumanInput: true,
         // Must outlive the worst-case in-iframe wait; the runtime's human-input

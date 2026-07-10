@@ -43,6 +43,19 @@ describe('canvas app tools', () => {
       tools.find((tool) => tool.id === 'draw')?.schema.safeParse({ elements: [] }).success
     ).toBe(false)
     expect(tools.find((tool) => tool.id === 'read')?.schema.safeParse({}).success).toBe(false)
+    // `fields` is optional on read, both omitted (full records) and provided (a
+    // lean projection).
+    expect(
+      tools.find((tool) => tool.id === 'read')?.schema.safeParse({ elementIds: ['a'] }).success
+    ).toBe(true)
+    expect(
+      tools
+        .find((tool) => tool.id === 'read')
+        ?.schema.safeParse({
+          elementIds: ['a'],
+          fields: ['x', 'y']
+        }).success
+    ).toBe(true)
     // structural verbs consume the shared schemas, e.g. transform requires versioned edits
     expect(
       tools.find((tool) => tool.id === 'transform')?.schema.safeParse({ elements: [] }).success
@@ -98,6 +111,10 @@ describe('canvas app tools', () => {
       timeoutSeconds: 60,
       detail: 'standard'
     })
+    // `fields` is optional on pick too.
+    expect(
+      tools.find((tool) => tool.id === 'pick')?.schema.parse({ fields: ['x', 'y'] })
+    ).toMatchObject({ fields: ['x', 'y'] })
   })
 
   it('marks only pick as awaiting human input, with a bridge timeout that outlives the wait', async () => {

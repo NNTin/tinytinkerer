@@ -10,6 +10,42 @@ export const EXCALIDRAW_PROTOCOL_VERSION = 8
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
 export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
+
+// Selectable keys for `pick`/`read`'s optional `fields` projection. Identity
+// (`id`/`type`/`kind`) is always returned and deliberately excluded from this list —
+// a caller can never project it away. Mirrors `commonShape` in contracts.ts (minus
+// the identity keys) plus the per-kind detail blocks (`text`/`linear`/`freeDraw`/
+// `image`/`frameName`); kept in sync by the protocol.test.ts sync guard.
+export const ELEMENT_PROJECTION_FIELDS = [
+  'version',
+  'zIndex',
+  'x',
+  'y',
+  'width',
+  'height',
+  'angleDegrees',
+  'style',
+  'locked',
+  'groupIds',
+  'frameId',
+  'link',
+  'boundElements',
+  'label',
+  'capabilities',
+  'text',
+  'linear',
+  'freeDraw',
+  'image',
+  'frameName'
+] as const
+export const elementFieldSchema = z
+  .enum(ELEMENT_PROJECTION_FIELDS)
+  .describe(
+    'A projectable element field. Identity keys id/type/kind are always included and are ' +
+      'not listed here. Include "version" if you plan to edit the elements afterwards — ' +
+      'mutations are version-checked.'
+  )
+export type ElementField = (typeof ELEMENT_PROJECTION_FIELDS)[number]
 // Default distance a bound connector endpoint keeps from its target's edge. Kept
 // here (not imported from Excalidraw) so the wire vocabulary stays side-effect
 // free; the iframe owns the exact anchoring math.
@@ -248,10 +284,22 @@ export const inspectInputSchema = withPagingGuard(
     .strict()
 )
 
+// `fields` is orthogonal to `detail`: `detail` still governs which type-specific
+// blocks (text/points caps, etc.) get built and how far their strings/arrays are
+// truncated; `fields` then narrows which of the built keys make it into the
+// record. Omit `fields` for today's full records, byte-for-byte unchanged.
+const fieldsProjectionField = z
+  .array(elementFieldSchema)
+  .min(1)
+  .max(ELEMENT_PROJECTION_FIELDS.length)
+  .optional()
+  .describe('Return only these fields per element (plus id/type/kind). Omit for full records.')
+
 export const readInputSchema = withPagingGuard(
   z
     .object({
       elementIds: uniqueElementIdsSchema,
+      fields: fieldsProjectionField,
       ...pagingShape
     })
     .strict()
@@ -960,7 +1008,8 @@ export const pickInputSchema = z
       .max(EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS)
       .default(60)
       .describe('interactive only: how long to wait for the user before returning timedOut:true.'),
-    detail: z.enum(EXCALIDRAW_DETAIL_LEVELS).default('standard')
+    detail: z.enum(EXCALIDRAW_DETAIL_LEVELS).default('standard'),
+    fields: fieldsProjectionField
   })
   .strict()
 
