@@ -36,6 +36,29 @@ describe('contracts', () => {
     expect(event.type).toBe('assistant.done')
   })
 
+  it('parses agent.tool.failed with each kind, omitted (legacy), and rejects an invalid kind', () => {
+    const base = {
+      id: '1',
+      timestamp: new Date().toISOString(),
+      type: 'agent.tool.failed' as const,
+      payload: { stepId: 'step-1', toolId: 'preview', error: 'boom' }
+    }
+
+    for (const kind of ['blocked', 'timeout', 'execution'] as const) {
+      const event = chatEventSchema.parse({ ...base, payload: { ...base.payload, kind } })
+      expect(event.type).toBe('agent.tool.failed')
+      expect(event.payload).toMatchObject({ kind })
+    }
+
+    const legacy = chatEventSchema.parse(base)
+    expect(legacy.type).toBe('agent.tool.failed')
+    expect(legacy.payload).not.toHaveProperty('kind')
+
+    expect(() =>
+      chatEventSchema.parse({ ...base, payload: { ...base.payload, kind: 'bogus' } })
+    ).toThrow()
+  })
+
   it('accepts an optional monotonic seq on chat events (legacy events omit it)', () => {
     const base = {
       id: '1',

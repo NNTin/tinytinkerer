@@ -322,9 +322,22 @@ export const agentToolCompletedEventSchema = eventBaseSchema(
   'agent.tool.completed',
   z.object({ stepId: z.string(), toolId: z.string(), output: z.unknown() })
 )
+// `kind` taxonomy for a tool failure, used by telemetry to decide whether a
+// failure is a bug worth paging (Sentry) or a by-design outcome that never was
+// one: `blocked` — the runtime's own policy or a `tool.beforeExecute` gate
+// refused to run the tool (a user/permission decision, never captured);
+// `timeout` — the tool's execution budget elapsed (captured at 'warning');
+// `execution` — the tool itself threw (captured at 'error'). Optional so
+// events persisted before this taxonomy existed still parse (they predate all
+// three kinds and are treated as `execution` by the telemetry hook).
 export const agentToolFailedEventSchema = eventBaseSchema(
   'agent.tool.failed',
-  z.object({ stepId: z.string(), toolId: z.string(), error: z.string() })
+  z.object({
+    stepId: z.string(),
+    toolId: z.string(),
+    error: z.string(),
+    kind: z.enum(['blocked', 'timeout', 'execution']).optional()
+  })
 )
 // Token usage for the most recent model call. `promptTokens` is the input-side
 // token count the context-usage gauge compares against the model's context

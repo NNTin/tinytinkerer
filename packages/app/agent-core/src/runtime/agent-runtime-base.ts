@@ -246,7 +246,7 @@ export abstract class AgentRuntimeBase {
 
     if (this.maxToolCallsPerStep < 1) {
       const error = 'Tool calls disabled by runtime policy'
-      yield createEvent('agent.tool.failed', { stepId, toolId, error })
+      yield createEvent('agent.tool.failed', { stepId, toolId, error, kind: 'blocked' })
       return { ok: false, error }
     }
 
@@ -274,7 +274,7 @@ export abstract class AgentRuntimeBase {
     )
     if (!gate.allow) {
       const error = `Tool execution blocked: ${gate.reason}`
-      yield createEvent('agent.tool.failed', { stepId, toolId, error })
+      yield createEvent('agent.tool.failed', { stepId, toolId, error, kind: 'blocked' })
       return { ok: false, error }
     }
 
@@ -288,7 +288,8 @@ export abstract class AgentRuntimeBase {
       return { ok: true, output }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Tool execution failed'
-      yield createEvent('agent.tool.failed', { stepId, toolId, error: message })
+      const kind = error instanceof RuntimeTimeoutError ? 'timeout' : 'execution'
+      yield createEvent('agent.tool.failed', { stepId, toolId, error: message, kind })
       return { ok: false, error: message }
     }
   }

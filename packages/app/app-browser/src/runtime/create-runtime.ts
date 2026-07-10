@@ -32,6 +32,7 @@ import {
   type RequestTelemetryMetadata
 } from '../telemetry/request-telemetry'
 import { requestHumanInput } from '../human-prompt-bridge'
+import { createToolFailureTelemetryHook } from './tool-failure-telemetry'
 
 // The code-exec plugin's tool id — the ONE host↔plugin coupling the plugin system
 // deliberately keeps (documented in docs/plugin-infrastructure.md as the dom-snapshot
@@ -108,6 +109,11 @@ export const createRuntime = (options: {
 
   const tools: Tool<unknown, unknown>[] = []
   const hooks: AgentHookContribution[] = []
+  // A tool failure is swallowed into a `{ ok: false }` observation for the model
+  // (see AgentRuntimeBase.executeToolStep) — it never throws out to a caller —
+  // so this observer is the only path a genuine tool bug takes to Sentry.
+  // `blocked` outcomes (policy/gate denials) are deliberately skipped inside it.
+  hooks.push(createToolFailureTelemetryHook())
   const allToolDescriptors: PlannerToolDescriptor[] = []
   const registeredToolIds = new Set<string>()
 

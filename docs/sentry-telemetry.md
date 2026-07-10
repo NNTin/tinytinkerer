@@ -66,6 +66,50 @@ Each app registers one sink that hands its live Sentry scope to the shared
   4xx/5xx and network failures with the same `request_area` / `http_status` / `failure_kind`
   tags as the browser.
 
+## Tool failures
+
+A tool failure never throws out to a caller of `run()` — `AgentRuntimeBase.executeToolStep`
+(`packages/app/agent-core/src/runtime/agent-runtime-base.ts`) folds every outcome into an
+`agent.tool.failed` event and a `{ ok: false }` observation the model reads and moves on from.
+Without a dedicated path that would make a genuine tool bug (e.g. a Zod validation error inside a
+verb's `execute`) invisible outside the transcript. `agentToolFailedEventSchema`
+(`packages/shared/contracts/src/index.ts`) carries an optional `kind` that classifies the outcome:
+
+- **`blocked`** — the runtime's own policy (`maxToolCallsPerStep < 1`) or a `tool.beforeExecute`
+  gate (e.g. the Permissions plugin's deny) refused to run the tool. A user/policy decision, not a
+  bug. **Never captured.**
+- **`timeout`** — the tool's execution budget (`toolTimeoutMs`, or `humanInputTimeoutMs` for an
+  `awaitsHumanInput` tool) elapsed. Captured at **`warning`**.
+- **`execution`** — the tool's own `execute` threw. Captured at **`error`**.
+- **omitted** — an event persisted before this taxonomy existed. Treated as `execution` (captured
+  at `error`) by the telemetry hook below, since it predates all three kinds.
+
+`createToolFailureTelemetryHook` (`packages/app/app-browser/src/runtime/tool-failure-telemetry.ts`)
+is a `chat.event` observer hook — the same `AgentHookContribution` mechanism a plugin uses (see
+[plugin-infrastructure.md](./plugin-infrastructure.md)) — pushed onto `create-runtime.ts`'s hooks
+array unconditionally, so it runs for every chat run. It tracks each tool call's `input` from its
+`agent.tool.started` event (dropped again on `agent.tool.completed`/`agent.tool.failed`, capped at
+50 in-flight entries as a leak guard) and, on a non-`blocked` `agent.tool.failed`, calls
+`captureTelemetryException` with:
+
+- `level`: `'warning'` for `timeout`, otherwise `'error'`.
+- `tags`: `{ source: 'tool', tool: toolId }`, plus `reason: 'timeout'` for a timeout.
+- `fingerprint`: `['tool-failure', toolId, fingerprintMessage(error)]` — every capture here shares
+  the same synthetic-stack frame (a `new Error(...)` built by the hook), so without this explicit
+  fingerprint Sentry would conflate unrelated tools/failures into one issue (same rationale as the
+  request-telemetry fingerprint above).
+- `contexts.tool`: `{ stepId, input: boundedPreview(input, 2048) }` when the `started` event was
+  observed — the failing input is what makes a tool bug diagnosable. Consent gating and
+  `beforeSend` scrubbing (`scrub.ts`) still apply downstream, same as any other capture.
+
+**A `PluginCaptureError` thrown by a plugin tool now produces two Sentry captures**, not one: the
+plugin's own structured report still goes through `host.capture` (`fingerprint: ['plugin',
+pluginId, kind]`, see [plugin-infrastructure.md](./plugin-infrastructure.md#routing-into-sentry-app-browser)),
+and the rethrow that reaches `agent.tool.failed` now also trips this generic tool-failure capture
+(`fingerprint: ['tool-failure', toolId, ...]`). The two fingerprints never collide, so this shows
+up as two distinct issues — intentional: one is the plugin's own diagnostic view, the other is the
+uniform "a tool failed" signal every tool (plugin or not) gets.
+
 ## Dependency boundaries
 
 `sentry-telemetry` is a leaf: it may import only `@sentry/core` (external) and its own local

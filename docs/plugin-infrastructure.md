@@ -215,6 +215,11 @@ informational Sentry _message_ (via `captureMessage`), not an error issue with a
 trace. It is then surfaced to the runtime as a graceful tool failure. There is intentionally no
 backend.
 
+That final `agent.tool.failed` also reaches `createToolFailureTelemetryHook`, which independently
+captures a generic, `error`-level "tool failed" exception under its own `tool-failure` fingerprint
+— so a `PluginCaptureError` throw now produces two Sentry entries, not one. See
+[sentry-telemetry.md § Tool failures](./sentry-telemetry.md#tool-failures).
+
 ## The Web search plugin (`@tinytinkerer/plugin-web-search`)
 
 The Tavily web-search tool ships as its own plugin package at
