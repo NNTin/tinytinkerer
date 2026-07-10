@@ -7,6 +7,7 @@ import { ConversationEmptyState } from '../conversation-empty-state'
 import { HumanPromptComposerDock } from '../human-prompt-composer-dock'
 import { JumpToLatestButton } from '../jump-to-latest'
 import { LazySettingsPanel } from '../lazy-browser-settings-modal'
+import { TurnActivityPanel } from '../turn-activity-panel'
 import { TurnChrome } from '../turn-chrome'
 import {
   useChatComposer,
@@ -50,8 +51,10 @@ export const FloatingChatSurface = ({
     events,
     turns,
     serverNameById,
+    resolveActivitySummarizer,
     isRunning,
     isRetryPending,
+    showReasoningActivity,
     submitLabel,
     isCoolingDown,
     submitPrompt,
@@ -96,6 +99,14 @@ export const FloatingChatSurface = ({
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] leading-4 text-amber-800">
                       {turn.notice.message}
                     </div>
+                  ) : null}
+                  {showReasoningActivity ? (
+                    <TurnActivityPanel
+                      activity={turn.activity}
+                      isLive={isRunning && index === turns.length - 1}
+                      serverNameById={serverNameById}
+                      resolveSummarizer={resolveActivitySummarizer}
+                    />
                   ) : null}
                   <TurnChrome
                     turn={turn}
