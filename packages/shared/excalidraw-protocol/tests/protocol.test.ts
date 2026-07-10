@@ -83,6 +83,20 @@ describe('excalidraw protocol', () => {
     ).toBe(false)
   })
 
+  it('accepts a negative width/height (a line/arrow drawn left/up, or a shape from the far corner)', () => {
+    // A leftward stick-figure arm and a box drawn from its bottom-right corner —
+    // both legitimate geometry the model expresses with a negative extent. The
+    // sign is only rejected for non-finite values, not for direction.
+    expect(
+      drawInputSchema.safeParse({
+        elements: [
+          { type: 'line', x: 268, y: 276, width: -28, height: 24 },
+          { type: 'rectangle', x: 200, y: 200, width: -120, height: -80 }
+        ]
+      }).success
+    ).toBe(true)
+  })
+
   it('defaults and bounds candidate search', () => {
     expect(searchInputSchema.parse({})).toEqual({
       scope: 'all',

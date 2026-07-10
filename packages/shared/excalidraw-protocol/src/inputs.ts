@@ -107,8 +107,20 @@ export const drawElementSchema = z.object({
     .describe('The kind of element to draw.'),
   x: z.number().finite().describe('Left position in canvas coordinates.'),
   y: z.number().finite().describe('Top position in canvas coordinates.'),
-  width: z.number().finite().nonnegative().optional().describe('Width in pixels.'),
-  height: z.number().finite().nonnegative().optional().describe('Height in pixels.'),
+  width: z
+    .number()
+    .finite()
+    .optional()
+    .describe(
+      'Width in pixels. May be negative for a line/arrow drawn leftward (the endpoint sits left of x); for shapes a negative width just draws from the opposite corner.'
+    ),
+  height: z
+    .number()
+    .finite()
+    .optional()
+    .describe(
+      'Height in pixels. May be negative for a line/arrow drawn upward (the endpoint sits above y); for shapes a negative height just draws from the opposite corner.'
+    ),
   text: z.string().optional().describe('Text content, or an optional centered label for a shape.'),
   strokeColor: colorSchema.optional(),
   backgroundColor: colorSchema.optional()

@@ -310,6 +310,38 @@ describe('Excalidraw bridge handlers', () => {
     })
   })
 
+  it('keeps a negative extent as direction for lines and normalizes it for shapes', async () => {
+    const api = fakeApi()
+    await run(api, 'draw', {
+      elements: [
+        // A stick-figure left arm: a line drawn down-and-left. The sign is the
+        // direction, so x/y stay put and the points delta is negative.
+        { id: 'armL', type: 'line', x: 268, y: 276, width: -28, height: 24 },
+        // A box drawn from its bottom-right corner: negative extent normalizes
+        // to a positive width/height with the origin shifted to the top-left.
+        { id: 'box', type: 'rectangle', x: 200, y: 200, width: -120, height: -80 }
+      ]
+    })
+    const update = vi.mocked(api.updateScene).mock.calls[0]?.[0]
+    const elements = update?.elements as unknown as ReadonlyArray<Record<string, unknown>>
+    expect(elements.find((element) => element.id === 'armL')).toMatchObject({
+      x: 268,
+      y: 276,
+      width: -28,
+      height: 24,
+      points: [
+        [0, 0],
+        [-28, 24]
+      ]
+    })
+    expect(elements.find((element) => element.id === 'box')).toMatchObject({
+      x: 80,
+      y: 120,
+      width: 120,
+      height: 80
+    })
+  })
+
   it('searches compact candidates by label, type, selection, and viewport', async () => {
     const router = baseElement('router', {
       boundElements: [{ id: 'router-label', type: 'text' }]
