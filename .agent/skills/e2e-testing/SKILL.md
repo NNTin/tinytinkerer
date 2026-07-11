@@ -69,6 +69,10 @@ app-bridge, sandboxed app iframe, media handling, UI) against real model behavio
     wait for text — enough to drive human-in-the-loop tools like interactive `pick`).
   - Rate-limit patience is built in: a 429'd exchange is recorded as skipped and the tool keeps
     waiting for the client's automatic retry instead of failing or re-prompting.
+  - Byte fidelity depends on the target declaring `charset=utf-8` on the SSE response — without
+    it, Chromium's CDP body-read falls back to windows-1252 and mojibakes non-ASCII content
+    (issue #401). The tool checks the response `content-type` and aborts the capture rather than
+    write a corrupted fixture if the charset is missing.
 
 ## Constraints
 
