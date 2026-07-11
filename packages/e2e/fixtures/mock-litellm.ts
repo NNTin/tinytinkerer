@@ -1178,6 +1178,16 @@ export const enablePlugin = async (page: Page, label: string): Promise<void> => 
 export const enableCodeExecPlugin = (page: Page): Promise<void> =>
   enablePlugin(page, 'Code execution (run_javascript tool)')
 
+// The Tool tree plugin (compose-area tool picker, issue #400), enabled via its
+// Settings label (exactly `manifest.label`).
+export const enableToolTreePlugin = (page: Page): Promise<void> =>
+  enablePlugin(page, 'Tool picker (tree view)')
+
+// The Browser state plugin (read_dom tool), enabled via its Settings label (exactly
+// `manifest.label`).
+export const enableBrowserStatePlugin = (page: Page): Promise<void> =>
+  enablePlugin(page, 'Browser state (read_dom tool)')
+
 // The Event Logger plugin (its observer logs every chat event to the console),
 // enabled via its Settings label (exactly `manifest.label`).
 export const enableEventLoggerPlugin = (page: Page): Promise<void> =>
