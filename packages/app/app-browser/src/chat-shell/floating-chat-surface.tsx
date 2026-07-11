@@ -8,6 +8,7 @@ import { ConversationEmptyState } from '../conversation-empty-state'
 import { HumanPromptComposerDock } from '../human-prompt-composer-dock'
 import { JumpToLatestButton } from '../jump-to-latest'
 import { LazySettingsPanel } from '../lazy-browser-settings-modal'
+import { ToolTreeSlot } from '../tool-tree'
 import { TurnActivityPanel } from '../turn-activity-panel'
 import { TurnChrome } from '../turn-chrome'
 import {
@@ -181,6 +182,10 @@ export const FloatingChatSurface = ({
               >
                 <FaRotateLeft className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
+              {/* Tool picker (issue #400): unlike the inspector below, this works on
+                  every shell — it is not gated on inspectorPanelSupported. Renders
+                  nothing until a tool-tree plugin is enabled. */}
+              <ToolTreeSlot />
               {/* Context inspector (developer): rendered when the shell opts in via
                   inspectorPanelSupported. Renders nothing until an inspector plugin
                   is enabled and a request has been captured. */}

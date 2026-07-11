@@ -29,6 +29,13 @@ type SettingsActions = {
   setTelemetryEnabled: (enabled: boolean) => Promise<void>
   setPluginEnabled: (pluginId: string, enabled: boolean) => Promise<void>
   setPluginSetting: (pluginId: string, key: string, value: string | boolean) => Promise<void>
+  // Apply a tool-tree selection change for one plugin (issue #400). `toolIds` is
+  // the plugin's full CURRENT tool id list (for normalization/GC);
+  // `disabledToolIds` is the desired denylist for that plugin after this change.
+  setPluginToolSelection: (
+    plugin: { id: string; toolIds: string[] },
+    disabledToolIds: string[]
+  ) => Promise<void>
 }
 
 export type SettingsState = CoreSettingsState & {
@@ -164,5 +171,25 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       }
       await persistPluginConfig(shell.preferences, nextConfig)
       set({ pluginConfig: nextConfig })
+    },
+    setPluginToolSelection: async (plugin, disabledToolIds) => {
+      // Route every caller through app-core's ONE policy chokepoint
+      // (applyPluginToolSelection) so the "unchecking every tool disables the
+      // plugin, and its denylist entry is cleared" invariant lives in one place,
+      // not re-implemented per caller.
+      const { applyPluginToolSelection, persistPluginToolDisablement, persistPluginActivation } =
+        await loadCoreModule()
+      const current = get()
+      const result = applyPluginToolSelection(
+        { activation: current.pluginActivation, disabledTools: current.pluginDisabledTools },
+        plugin,
+        disabledToolIds
+      )
+      await persistPluginToolDisablement(shell.preferences, result.disabledTools)
+      set({ pluginDisabledTools: result.disabledTools })
+      if (result.pluginDisabled) {
+        await persistPluginActivation(shell.preferences, result.activation)
+        set({ pluginActivation: result.activation })
+      }
     }
   }))

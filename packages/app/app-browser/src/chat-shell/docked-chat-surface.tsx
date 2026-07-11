@@ -9,6 +9,7 @@ import { ConversationEmptyState } from '../conversation-empty-state'
 import { HumanPromptComposerDock } from '../human-prompt-composer-dock'
 import { JumpToLatestButton } from '../jump-to-latest'
 import { LazyBrowserSettingsModal } from '../lazy-browser-settings-modal'
+import { ToolTreeSlot } from '../tool-tree'
 import { TurnActivityPanel } from '../turn-activity-panel'
 import { TurnChrome } from '../turn-chrome'
 import { useChatComposer, useChatSurfaceController } from '../surfaces'
@@ -321,6 +322,11 @@ export const DockedChatSurface = ({
               {/* Context-usage gauge (hidden unless the plugin is enabled and the
                   model reports usage against a known context window) */}
               <ContextGaugeSlot className="text-stone-500" />
+
+              {/* Tool picker (issue #400): unlike the inspector below, this works on
+                  every shell — it is not gated on inspectorPanelSupported. Renders
+                  nothing until a tool-tree plugin is enabled. */}
+              <ToolTreeSlot />
 
               {/* Context inspector (developer): rendered when the shell opts in via
                   inspectorPanelSupported. Renders nothing until an inspector plugin

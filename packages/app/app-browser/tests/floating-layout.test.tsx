@@ -162,6 +162,13 @@ vi.mock('../src/context-inspector.js', () => ({
   ContextInspectorSlot: () => <div data-testid="floating-inspector-slot" />
 }))
 
+// The real ToolTreeSlot needs a full BrowserApp context (settings store + plugin
+// discovery) covered separately by tool-tree.test.tsx; here it's an unconditional
+// slot (issue #400), so stub it to a no-op rather than mounting a live one.
+vi.mock('../src/tool-tree.js', () => ({
+  ToolTreeSlot: () => null
+}))
+
 import { FloatingChatSurface } from '../src/chat-shell/floating-chat-surface.js'
 import { FloatingLayout } from '../src/chat-shell/floating-layout.js'
 

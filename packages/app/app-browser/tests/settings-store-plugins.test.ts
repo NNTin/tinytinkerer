@@ -85,6 +85,49 @@ describe('settings-store plugin config', () => {
   })
 })
 
+describe('settings-store plugin tool selection (issue #400)', () => {
+  it('persists a narrowed tool denylist without touching plugin activation', async () => {
+    const store = createSettingsStore(makeShell(preferences))
+    await store.getState().setPluginEnabled('multi-tool', true)
+
+    await store
+      .getState()
+      .setPluginToolSelection({ id: 'multi-tool', toolIds: ['a', 'b', 'c'] }, ['b'])
+
+    expect(store.getState().pluginDisabledTools).toEqual({ 'multi-tool': ['b'] })
+    expect(preferences.store.get('settings_plugins_disabled_tools')).toBe(
+      JSON.stringify({ 'multi-tool': ['b'] })
+    )
+    // Activation is untouched by a partial selection.
+    expect(store.getState().pluginActivation).toEqual({ 'multi-tool': true })
+  })
+
+  it('disabling every tool of a plugin flips its activation off and clears the entry', async () => {
+    const store = createSettingsStore(makeShell(preferences))
+    await store.getState().setPluginEnabled('multi-tool', true)
+    await store.getState().setPluginToolSelection({ id: 'multi-tool', toolIds: ['a', 'b'] }, ['a'])
+
+    await store
+      .getState()
+      .setPluginToolSelection({ id: 'multi-tool', toolIds: ['a', 'b'] }, ['a', 'b'])
+
+    expect(store.getState().pluginDisabledTools).toEqual({})
+    expect(store.getState().pluginActivation).toEqual({ 'multi-tool': false })
+    expect(preferences.store.get('settings_plugins_activation')).toBe(
+      JSON.stringify({ 'multi-tool': false })
+    )
+  })
+
+  it('re-enabling all tools deletes the denylist entry', async () => {
+    const store = createSettingsStore(makeShell(preferences))
+    await store.getState().setPluginToolSelection({ id: 'multi-tool', toolIds: ['a', 'b'] }, ['a'])
+    expect(store.getState().pluginDisabledTools).toEqual({ 'multi-tool': ['a'] })
+
+    await store.getState().setPluginToolSelection({ id: 'multi-tool', toolIds: ['a', 'b'] }, [])
+    expect(store.getState().pluginDisabledTools).toEqual({})
+  })
+})
+
 describe('resolvePluginSetting', () => {
   const manifest = {
     id: 'choice-prompt',

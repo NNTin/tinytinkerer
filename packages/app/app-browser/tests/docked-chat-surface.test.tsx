@@ -140,6 +140,13 @@ vi.mock('../src/context-inspector.js', () => ({
   ContextInspectorSlot: () => <div data-testid="inspector" />
 }))
 
+// The real ToolTreeSlot needs a full BrowserApp context (settings store + plugin
+// discovery) covered separately by tool-tree.test.tsx; here it's an unconditional
+// slot (issue #400), so stub it to a no-op rather than mounting a live one.
+vi.mock('../src/tool-tree.js', () => ({
+  ToolTreeSlot: () => null
+}))
+
 import { DockedChatSurface } from '../src/chat-shell/docked-chat-surface.js'
 
 const Loading = ({ error }: { error?: string }) => <div data-loading="true">{error}</div>
