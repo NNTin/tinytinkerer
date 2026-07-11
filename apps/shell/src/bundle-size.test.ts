@@ -87,12 +87,16 @@ describe('shell bundle regression guard', () => {
     expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(65)
   })
 
-  it('keeps the lazy chat route chunk under 55 kB', () => {
+  it('keeps the lazy chat route chunk under 57 kB', () => {
     // The chat route imports the shared ChatApp (both layout shells + bodies) so the
     // widget↔sidebar morph happens in-place. Still lazy (split from the entry).
+    // Raised 55 → 57 kB (2026-07-11): the tool picker's compose-area slot +
+    // useToolTree hook (issue #400) are eager in both chat surfaces by design —
+    // the button must render whenever the tool-tree plugin is enabled — while
+    // the checkbox-tree panel itself stays in its own lazy chunk.
     const chunk = chunks.find((entry) => entry.fileName.includes('chat-surface'))
     expect(chunk, 'No chat route chunk found in build output').toBeDefined()
-    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(55)
+    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(57)
   })
 
   it('keeps every non-vendor JS chunk under 120 kB', () => {
