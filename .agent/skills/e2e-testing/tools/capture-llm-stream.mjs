@@ -247,6 +247,23 @@ const main = async () => {
       lastChatActivity = Date.now()
       return
     }
+    // Playwright decodes resp.text() via CDP Network.getResponseBody, which falls
+    // back to windows-1252 for a charset-less body — so a deployment that streams
+    // SSE without an explicit charset silently mojibakes any non-ASCII content we
+    // capture here (issue #401). Refuse to capture rather than write a corrupt
+    // fixture. Scoped to SSE responses: non-streaming chat calls (e.g. the MCP
+    // planner's stream:false decide) return application/json, which is not
+    // affected by the windows-1252 fallback.
+    const contentType = resp.headers()['content-type'] ?? ''
+    if (/text\/event-stream/i.test(contentType) && !/charset=utf-8/i.test(contentType)) {
+      await fatal(
+        `chat response content-type is "${contentType}" (no charset=utf-8) — the target ` +
+          `deployment streams SSE without an explicit charset, so CDP-based capture would ` +
+          `mojibake non-ASCII bytes (Chromium's windows-1252 fallback, issue #401). Deploy the ` +
+          `#401 edge fix (text/event-stream; charset=utf-8) to this target before capturing.`
+      )
+      return
+    }
     let sse
     try {
       sse = await resp.text()

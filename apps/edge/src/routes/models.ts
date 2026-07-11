@@ -646,8 +646,12 @@ export const registerModelRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) =>
     await clearBackoff(credentialKey)
 
     if (useStream && response.body) {
+      // SSE is UTF-8 by spec, but the explicit charset here is load-bearing:
+      // without it, DevTools/CDP-based consumers (e.g. our e2e capture tool)
+      // decode the body with Chromium's windows-1252 fallback and corrupt
+      // non-ASCII content such as em-dashes (issue #401).
       const headers = new Headers({
-        'Content-Type': 'text/event-stream',
+        'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache',
         'X-Accel-Buffering': 'no'
       })
