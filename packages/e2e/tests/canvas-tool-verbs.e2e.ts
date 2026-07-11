@@ -84,18 +84,21 @@ test.describe('canvas tool verbs: preview / thumbnail / pick', () => {
     // chained them itself) — the model draws for real through the bridge.
     await sendCanvasMessage(page, promptText(scenario, 0))
 
+    // 4 elements, not 2: the captured draw labels both shapes ('Red
+    // Rectangle' / 'Blue Ellipse'), and Excalidraw materializes each label as
+    // a bound text element alongside its container.
     await expect
       .poll(() => toolResultFor(mock, 'thumbnail'), {
         timeout: 30_000,
         message: 'thumbnail result was never folded back into a model request'
       })
-      .toMatchObject({ ok: true, elementCount: 2, missingIds: [] })
+      .toMatchObject({ ok: true, elementCount: 4, missingIds: [] })
 
-    // The model-driven draw landed for real: the persisted snapshot has the 2
+    // The model-driven draw landed for real: the persisted snapshot has the 4
     // elements the thumbnail result also reports.
     await expect
       .poll(async () => (await readSnapshot(page))?.elements?.length, { timeout: 10_000 })
-      .toBe(2)
+      .toBe(4)
 
     const result = toolResultFor(mock, 'thumbnail') as {
       media?: Array<{ mediaRef?: string }>
@@ -214,7 +217,7 @@ test.describe('canvas tool verbs: preview / thumbnail / pick', () => {
       .click({ position: { x: 700, y: 700 }, force: true })
     await page.keyboard.press('Control+a')
 
-    // Turn 2: the model calls pick(mode: 'current', detail: 'full', fields: [...all 17]).
+    // Turn 2: the model calls pick(mode: 'current', detail: 'full').
     // Step index 3, not 1 — this scenario's steps are
     // [prompt, clickCanvas, press, prompt] (see captures/scenarios/canvas-pick-fields.json).
     await sendCanvasMessage(page, promptText(scenario, 3))
@@ -229,11 +232,11 @@ test.describe('canvas tool verbs: preview / thumbnail / pick', () => {
     const result = toolResultFor(mock, 'pick') as { elements?: Array<Record<string, unknown>> }
     expect(result.elements).toHaveLength(2)
     for (const element of result.elements ?? []) {
-      // Identity (id/type/kind) is always included; `detail: 'full'` + the
-      // model's all-17-field request means style + geometry survive too. A
-      // robust SUBSET check (not an exact key list — the model asked for many
-      // fields, several of which a plain rectangle/ellipse doesn't carry, e.g.
-      // `text`/`linear`/`image`, and are silently skipped by the projection).
+      // Identity (id/type/kind) is always included; `detail: 'full'` with no
+      // `fields` projection returns the whole normalized element, so style +
+      // geometry survive too. A robust SUBSET check (not an exact key list —
+      // the full normalization carries more keys than the spec cares about,
+      // e.g. `capabilities`/`zIndex`).
       expect(Object.keys(element)).toEqual(
         expect.arrayContaining(['id', 'type', 'kind', 'x', 'y', 'width', 'height', 'style'])
       )

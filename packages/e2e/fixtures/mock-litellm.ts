@@ -1021,15 +1021,15 @@ const concatenateSseContent = (sse: string): string => {
  * A stable, safe-to-assert-on substring of a captured exchange's synthesized
  * answer — lets a spec wait on "the run has visibly finished" without
  * hardcoding model prose. Captured content is byte-verbatim from the live
- * pipeline and carries MOJIBAKE wherever the model used a non-ASCII character
- * (e.g. `'â€"'` for an em-dash), so a naive substring can straddle one and
- * never match the rendered DOM. This instead:
+ * pipeline — correctly-encoded UTF-8 since #401 fixed the capture tool's CDP
+ * decode path (typographic characters like `—`/`’` are common in model prose
+ * and render in the DOM exactly as captured). This:
  *   - drops markdown image syntax (`![alt](ref)`) — it renders as an `<img>`,
  *     not text, and its ref is re-keyed anyway (see applyMediaRekey);
  *   - unwraps inline-code backticks and leading list markers (`- `) — the
  *     markdown renderer strips both, leaving only their inner text in the DOM;
- *   - keeps only lines that are printable ASCII throughout, so the fragment
- *     can never straddle a mojibake run;
+ *   - keeps only lines free of control characters (a line broken by a stray
+ *     control byte would never match the rendered DOM);
  * then returns the LONGEST such line (more text = a more specific match, less
  * likely to also match some unrelated earlier UI text).
  *
@@ -1053,7 +1053,7 @@ export const finalAnswerFragment = (fixture: CapturedFixture, exchangeIndex?: nu
         .replace(/`/g, '')
         .trim()
     )
-    .filter((line) => line.length >= 20 && /^[\x20-\x7E]*$/.test(line))
+    .filter((line) => line.length >= 20 && !/[\p{Cc}\p{Cf}]/u.test(line))
     .sort((a, b) => b.length - a.length)
   const fragment = candidates[0]
   if (!fragment) {
