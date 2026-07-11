@@ -33,6 +33,7 @@ export const createBrowserRuntimeFactory = (options: {
         mcpServers: settings.mcpServers,
         mcpDiscovery: settings.mcpDiscovery,
         pluginActivation: settings.pluginActivation,
+        pluginDisabledTools: settings.pluginDisabledTools,
         pluginRuntime,
         ...(options.captureForwardedRequest
           ? { captureForwardedRequest: options.captureForwardedRequest }

@@ -1,6 +1,7 @@
 import {
   createChatRuntime,
   isPluginEnabled,
+  isPluginToolEnabled,
   isRuntimeTimeoutError,
   PluginRegistry,
   type AgentHookContribution,
@@ -14,7 +15,8 @@ import type {
   AgentType,
   McpDiscoveryResult,
   McpServerConfig,
-  PluginActivationState
+  PluginActivationState,
+  PluginToolDisablementState
 } from '@tinytinkerer/contracts'
 import { LiteLLMProvider } from './litellm-provider'
 import type { PlannerToolDescriptor } from './mcp-planner'
@@ -85,6 +87,11 @@ export const createRuntime = (options: {
   mcpServers?: McpServerConfig[]
   mcpDiscovery?: Record<string, McpDiscoveryResult>
   pluginActivation?: PluginActivationState
+  // Per-tool denylist for an enabled plugin (issue #400). Filtered at
+  // registration time in `collectContributions` below, so a disabled tool never
+  // registers and — because `allToolDescriptors` only surfaces descriptors for
+  // tools that actually registered — its descriptor never reaches the planner.
+  pluginDisabledTools?: PluginToolDisablementState
   // Plugin modules the host discovered dynamically; only those whose id is
   // active in settings contribute tools and planner descriptors.
   pluginModules?: PluginModule[]
@@ -271,7 +278,16 @@ export const createRuntime = (options: {
       readDom: domReader
     }
     const addedPluginToolIds = new Set<string>()
-    const contributions = pluginRuntime.registry.collectContributions(activePluginIds, pluginHost)
+    // Descriptor filtering falls out for free: `allToolDescriptors` below only
+    // gets an entry for a tool id present in `addedPluginToolIds`, and a tool
+    // this filter rejects is never pushed into the registry's contributions —
+    // so a disabled tool's descriptor never reaches the planner/model.
+    const disabledTools = options.pluginDisabledTools ?? {}
+    const contributions = pluginRuntime.registry.collectContributions(
+      activePluginIds,
+      pluginHost,
+      (pluginId, toolId) => isPluginToolEnabled(disabledTools, pluginId, toolId)
+    )
     hooks.push(...contributions.hooks)
     for (const tool of contributions.tools) {
       if (addTool(tool)) {

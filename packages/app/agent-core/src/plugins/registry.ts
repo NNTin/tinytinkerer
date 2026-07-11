@@ -36,14 +36,26 @@ export class PluginRegistry {
     return this.collect(activeIds, host, false).tools
   }
 
-  collectContributions(activeIds: ReadonlySet<string>, host: PluginHost): PluginContributions {
-    return this.collect(activeIds, host, true)
+  // `isToolEnabled` is REGISTRATION-time filtering (issue #400): a tool it
+  // rejects is never pushed into `tools`, so it never becomes an entry in
+  // `addedPluginToolIds` downstream (app-browser create-runtime) — which means
+  // it never gets a planner descriptor and the model never sees it, for free.
+  // Optional (not app-core's `isPluginToolEnabled` called directly) because
+  // agent-core must not import app-core: the caller closes over its own
+  // disabledTools state and hands in a plain function.
+  collectContributions(
+    activeIds: ReadonlySet<string>,
+    host: PluginHost,
+    isToolEnabled?: (pluginId: string, toolId: string) => boolean
+  ): PluginContributions {
+    return this.collect(activeIds, host, true, isToolEnabled)
   }
 
   private collect(
     activeIds: ReadonlySet<string>,
     host: PluginHost,
-    includeHooks: boolean
+    includeHooks: boolean,
+    isToolEnabled?: (pluginId: string, toolId: string) => boolean
   ): PluginContributions {
     // Deactivate plugins that were active on a previous call but no longer are.
     for (const id of [...this.activated]) {
@@ -76,6 +88,13 @@ export class PluginRegistry {
       }
 
       for (const tool of pluginTools) {
+        // Scoped per plugin (plugin.id, not tool.id alone): two plugins may
+        // legitimately register the same tool id, and a user disabling that
+        // name under plugin A must not suppress plugin B's identically-named
+        // tool.
+        if (isToolEnabled && !isToolEnabled(plugin.id, tool.id)) {
+          continue
+        }
         tools.push(wrapToolCapture(tool, host))
       }
 

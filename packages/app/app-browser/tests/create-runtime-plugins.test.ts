@@ -46,6 +46,81 @@ const pluginModule = (options: {
   })
 })
 
+// A plugin contributing more than one tool, for per-tool disablement tests
+// (issue #400) — `pluginModule` above only ever builds a single-tool plugin.
+const multiToolPluginModule = (options: {
+  manifestId: string
+  toolIds: string[]
+}): PluginModule => ({
+  manifest: {
+    id: options.manifestId,
+    label: options.manifestId,
+    description: 'plugin',
+    toolDescriptors: options.toolIds.map((toolId) => ({
+      id: toolId,
+      description: `${toolId} descriptor`,
+      schema: z.object({}).passthrough()
+    }))
+  },
+  createPlugin: () => ({
+    id: options.manifestId,
+    createTools: () => options.toolIds.map((toolId) => testTool(toolId))
+  })
+})
+
+// Shared fetch stub for the per-tool-disablement tests below: captures every
+// request body (so the advertised `tools` array can be inspected) and answers
+// the non-streaming planner call with a trivial no-op plan, mirroring the
+// boilerplate the other tests in this file each set up inline.
+const stubPlannerFetch = (): Array<{
+  messages?: Array<{ content: string }>
+  stream?: boolean
+  tools?: Array<{ function: { name: string; description?: string } }>
+}> => {
+  const requestBodies: Array<{
+    messages?: Array<{ content: string }>
+    stream?: boolean
+    tools?: Array<{ function: { name: string; description?: string } }>
+  }> = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+        messages?: Array<{ content: string }>
+        stream?: boolean
+        tools?: Array<{ function: { name: string; description?: string } }>
+      }
+      requestBodies.push(body)
+      if (body.stream === false) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      complexity: 'low',
+                      steps: [{ id: 'understand', summary: 'u', toolCall: null }]
+                    })
+                  }
+                }
+              ]
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        )
+      }
+      return Promise.resolve(
+        new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      )
+    })
+  )
+  return requestBodies
+}
+
 const hookPluginModule = (id: string, hook: AgentHookContribution): PluginModule => ({
   manifest: {
     id,
@@ -560,5 +635,79 @@ describe('plugin runtime contributions', () => {
     // (invalid/forbidden caller) still hits fetchWithTelemetry and stays captured.
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     vi.unstubAllGlobals()
+  })
+
+  // Per-tool enablement (issue #400): pluginDisabledTools filters at
+  // REGISTRATION time (create-runtime.ts wires it into
+  // registry.collectContributions), and descriptor exposure falls out of that
+  // for free — a tool that never registers can never earn a descriptor entry
+  // in allToolDescriptors, so asserting on the advertised `tools` array proves
+  // both that the model never sees it AND that it never registered.
+  describe('per-tool disablement (issue #400)', () => {
+    it('does not advertise a tool disabled via pluginDisabledTools', async () => {
+      const requestBodies = stubPlannerFetch()
+
+      const runtime = createRuntime({
+        baseUrl: 'http://edge.local',
+        getToken: () => 'token',
+        getModel: () => 'openai/gpt-4.1-mini',
+        pluginActivation: { 'web-search': true },
+        pluginDisabledTools: { 'web-search': ['deep_search'] },
+        pluginModules: [pluginModule({ manifestId: 'web-search', toolId: 'deep_search' })]
+      })
+
+      await runRuntime(runtime)
+
+      const advertisedTools = requestBodies[0]?.tools ?? []
+      expect(advertisedTools.find((t) => t.function.name === 'deep_search')).toBeUndefined()
+
+      vi.unstubAllGlobals()
+    })
+
+    it('a stale/unknown disabled tool name changes nothing', async () => {
+      const requestBodies = stubPlannerFetch()
+
+      const runtime = createRuntime({
+        baseUrl: 'http://edge.local',
+        getToken: () => 'token',
+        getModel: () => 'openai/gpt-4.1-mini',
+        pluginActivation: { 'web-search': true },
+        // 'renamed_tool' does not match the plugin's actual tool id ('deep_search'),
+        // e.g. left over from an older plugin version — it must not suppress the
+        // current tool.
+        pluginDisabledTools: { 'web-search': ['renamed_tool'] },
+        pluginModules: [pluginModule({ manifestId: 'web-search', toolId: 'deep_search' })]
+      })
+
+      await runRuntime(runtime)
+
+      const advertisedTools = requestBodies[0]?.tools ?? []
+      expect(advertisedTools.find((t) => t.function.name === 'deep_search')).toBeDefined()
+
+      vi.unstubAllGlobals()
+    })
+
+    it('a multi-tool plugin keeps its remaining tool + descriptor when one tool is disabled', async () => {
+      const requestBodies = stubPlannerFetch()
+
+      const runtime = createRuntime({
+        baseUrl: 'http://edge.local',
+        getToken: () => 'token',
+        getModel: () => 'openai/gpt-4.1-mini',
+        pluginActivation: { multi: true },
+        pluginDisabledTools: { multi: ['tool_a'] },
+        pluginModules: [
+          multiToolPluginModule({ manifestId: 'multi', toolIds: ['tool_a', 'tool_b'] })
+        ]
+      })
+
+      await runRuntime(runtime)
+
+      const advertisedTools = requestBodies[0]?.tools ?? []
+      expect(advertisedTools.find((t) => t.function.name === 'tool_a')).toBeUndefined()
+      expect(advertisedTools.find((t) => t.function.name === 'tool_b')).toBeDefined()
+
+      vi.unstubAllGlobals()
+    })
   })
 })

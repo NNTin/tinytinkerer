@@ -11,12 +11,14 @@ import {
   mcpServerConfigSchema,
   pluginActivationStateSchema,
   pluginConfigStateSchema,
+  pluginToolDisablementStateSchema,
   type AgentType,
   type McpDiscoveryResult,
   type McpServerConfig,
   type PluginActivationState,
   type PluginConfigState,
-  type PluginSettingsDescriptor
+  type PluginSettingsDescriptor,
+  type PluginToolDisablementState
 } from '@tinytinkerer/contracts'
 
 const DEFAULT_AGENT_TYPE: AgentType = 'react'
@@ -32,7 +34,8 @@ export const SETTINGS_KEYS = {
   mcpDiscovery: 'settings_mcp_discovery',
   telemetryEnabled: 'settings_telemetry_enabled',
   pluginActivation: 'settings_plugins_activation',
-  pluginConfig: 'settings_plugins_config'
+  pluginConfig: 'settings_plugins_config',
+  pluginDisabledTools: 'settings_plugins_disabled_tools'
 } as const
 
 export type SettingsState = {
@@ -48,6 +51,7 @@ export type SettingsState = {
   telemetryEnabled: boolean
   pluginActivation: PluginActivationState
   pluginConfig: PluginConfigState
+  pluginDisabledTools: PluginToolDisablementState
 }
 
 const parseBool = (value: string | undefined, fallback: boolean): boolean => {
@@ -73,7 +77,8 @@ export const defaultSettingsState = (): SettingsState => ({
   mcpDiscovery: {},
   telemetryEnabled: false,
   pluginActivation: {},
-  pluginConfig: {}
+  pluginConfig: {},
+  pluginDisabledTools: {}
 })
 
 export const loadSettingsState = async (preferences: PreferencesStore): Promise<SettingsState> => {
@@ -88,7 +93,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     mcpDiscoveryRaw,
     telemetryEnabled,
     pluginActivationRaw,
-    pluginConfigRaw
+    pluginConfigRaw,
+    pluginDisabledToolsRaw
   ] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
     preferences.get(SETTINGS_KEYS.litellmBaseUrl),
@@ -100,7 +106,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     preferences.get(SETTINGS_KEYS.mcpDiscovery),
     preferences.get(SETTINGS_KEYS.telemetryEnabled),
     preferences.get(SETTINGS_KEYS.pluginActivation),
-    preferences.get(SETTINGS_KEYS.pluginConfig)
+    preferences.get(SETTINGS_KEYS.pluginConfig),
+    preferences.get(SETTINGS_KEYS.pluginDisabledTools)
   ])
 
   return {
@@ -115,7 +122,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     mcpDiscovery: parseMcpDiscovery(mcpDiscoveryRaw),
     telemetryEnabled: parseBool(telemetryEnabled, false),
     pluginActivation: parsePluginActivation(pluginActivationRaw),
-    pluginConfig: parsePluginConfig(pluginConfigRaw)
+    pluginConfig: parsePluginConfig(pluginConfigRaw),
+    pluginDisabledTools: parsePluginToolDisablement(pluginDisabledToolsRaw)
   }
 }
 
@@ -145,6 +153,107 @@ export const isPluginEnabled = (
   activation: PluginActivationState,
   manifest: { id: string; defaultEnabled?: boolean }
 ): boolean => activation[manifest.id] ?? manifest.defaultEnabled ?? false
+
+// Per-tool disablement for an enabled plugin (issue #400). Same shape/flow as
+// activation: parse a validated map of pluginId -> disabled tool ids on load;
+// persist the whole map on every change.
+const parsePluginToolDisablement = (raw: string | undefined): PluginToolDisablementState => {
+  if (!raw) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    const result = pluginToolDisablementStateSchema.safeParse(parsed)
+    return result.success ? result.data : {}
+  } catch {
+    return {}
+  }
+}
+
+export const persistPluginToolDisablement = async (
+  preferences: PreferencesStore,
+  disabledTools: PluginToolDisablementState
+): Promise<void> => {
+  await preferences.set(SETTINGS_KEYS.pluginDisabledTools, JSON.stringify(disabledTools))
+}
+
+// Whether one tool of an (already-enabled) plugin is active: mirrors
+// `isPluginEnabled`'s "absent = on" default, but for the denylist shape — a
+// missing plugin key, a missing tool name, or an empty array all mean enabled.
+// Does NOT consult plugin activation itself: callers gate on `isPluginEnabled`
+// separately (a tool of a disabled plugin never reaches this check).
+export const isPluginToolEnabled = (
+  disabledTools: PluginToolDisablementState,
+  pluginId: string,
+  toolId: string
+): boolean => !(disabledTools[pluginId]?.includes(toolId) ?? false)
+
+// Result of applying one tree-selection change (issue #400): the new
+// disabledTools map, the new activation map (only ever touched to flip the
+// plugin itself off), and whether that flip happened — the settings UI uses
+// `pluginDisabled` to reflect the plugin's own toggle without re-deriving it.
+export type PluginToolSelectionResult = {
+  disabledTools: PluginToolDisablementState
+  activation: PluginActivationState
+  pluginDisabled: boolean
+}
+
+// The ONE policy chokepoint for turning a user's tool-tree selection into
+// persisted state (issue #400) — every caller (settings UI today, anything
+// else later) must route a selection change through here so the invariants
+// below hold everywhere, not just where someone remembered them.
+//
+// `disabledToolIds` is normalized first: intersected with the plugin's CURRENT
+// `toolIds` and de-duplicated. Intersecting is what garbage-collects a stale
+// tool name left over from an older version of the plugin (a renamed/removed
+// tool can never appear in the persisted entry again once this runs).
+//
+// - All of the plugin's tools end up disabled (and it has at least one tool):
+//   delete its disabledTools entry and flip plugin ACTIVATION off instead.
+//   Disabling every tool IS disabling the plugin, and clearing the entry means
+//   a later re-enable comes back with every tool checked, not silently
+//   pre-disabled from a stale selection (documented decision).
+// - None end up disabled: delete the entry — absence already means "all
+//   enabled", so an explicit empty array would just be a redundant encoding of
+//   the same fact.
+// - Otherwise: store the normalized ids, ordered to match `plugin.toolIds` (not
+//   the caller's array order) so the persisted array is deterministic across
+//   equivalent selections.
+// - A plugin with zero declared tools is a no-op: any stale entry for it is
+//   dropped, activation is left untouched, and `pluginDisabled` is false —
+//   there is no tool to disable and nothing to fall back on.
+//
+// Pure: always returns fresh objects, never mutates `current`.
+export const applyPluginToolSelection = (
+  current: { activation: PluginActivationState; disabledTools: PluginToolDisablementState },
+  plugin: { id: string; toolIds: readonly string[] },
+  disabledToolIds: readonly string[]
+): PluginToolSelectionResult => {
+  const disabledTools = { ...current.disabledTools }
+
+  if (plugin.toolIds.length === 0) {
+    delete disabledTools[plugin.id]
+    return { disabledTools, activation: current.activation, pluginDisabled: false }
+  }
+
+  const requested = new Set(disabledToolIds)
+  const normalized = plugin.toolIds.filter((toolId) => requested.has(toolId))
+
+  if (normalized.length === plugin.toolIds.length) {
+    delete disabledTools[plugin.id]
+    return {
+      disabledTools,
+      activation: { ...current.activation, [plugin.id]: false },
+      pluginDisabled: true
+    }
+  }
+
+  if (normalized.length === 0) {
+    delete disabledTools[plugin.id]
+  } else {
+    disabledTools[plugin.id] = normalized
+  }
+
+  return { disabledTools, activation: current.activation, pluginDisabled: false }
+}
 
 // Per-plugin CONFIGURATION (issue #85). Same shape/flow as activation: parse a
 // validated map of pluginId -> (settingKey -> value) on load; persist the whole map

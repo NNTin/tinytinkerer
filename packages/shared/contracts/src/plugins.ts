@@ -3,7 +3,11 @@ import type { ChatEvent } from './index'
 // Host↔plugin presentation view-models live in their own module to keep this file
 // focused; PluginManifest references the two descriptor types below. See
 // ./plugin-views for why these boundary view-models live in contracts.
-import type { PluginStatusDescriptor, PluginInspectorDescriptor } from './plugin-views'
+import type {
+  PluginStatusDescriptor,
+  PluginInspectorDescriptor,
+  PluginToolTreeDescriptor
+} from './plugin-views'
 
 // Plugin contracts — schemas, inferred types, and the plugin SDK (the plugin
 // contract) shared by the agent-core plugin runtime, the plugin packages,
@@ -158,6 +162,22 @@ export const pluginConfigStateSchema = z.record(
   z.record(z.string(), z.union([z.string(), z.boolean()]))
 )
 export type PluginConfigState = z.infer<typeof pluginConfigStateSchema>
+
+// Persisted per-tool DISABLEMENT for an enabled plugin (issue #400): a map of
+// pluginId -> the DISABLED tool ids of that plugin. Deliberately a DENYLIST, not
+// an allowlist: absence of the plugin's key, absence of a tool's name in its
+// array, or absence of the whole entry all mean "enabled" — so a plugin update
+// that ADDS a tool ships it enabled: activating a plugin means all of its tools
+// unless the user has explicitly narrowed them. A stale tool name (from a plugin
+// version that has since renamed/removed it) simply matches nothing at
+// filter time and is garbage-collected the next time the entry is written — see
+// `applyPluginToolSelection` in app-core, the one policy chokepoint for changing
+// this state. Invariant: an entry here never lists ALL of a plugin's current
+// tool ids — disabling every tool is expressed by turning the PLUGIN off
+// (`pluginActivationStateSchema`) instead, so this map and plugin activation
+// never encode the same fact two ways.
+export const pluginToolDisablementStateSchema = z.record(z.string(), z.array(z.string()))
+export type PluginToolDisablementState = z.infer<typeof pluginToolDisablementStateSchema>
 
 // =============================================================================
 // Tool interface — the pure tool contract.
@@ -726,6 +746,10 @@ export type PluginManifest = {
   // one per plugin: a pure mapper the host resolves to render its generic request
   // inspector. See PluginInspectorDescriptor.
   inspectorDescriptor?: PluginInspectorDescriptor
+  // Compose-area tool-picker contribution (the 'tool-tree' capability, issue #400).
+  // At most one per plugin: a pure mapper the host resolves to render its generic
+  // tool tree. See PluginToolTreeDescriptor.
+  toolTreeDescriptor?: PluginToolTreeDescriptor
   // Default activation when the user has no stored preference. Plugins are
   // off by default (`undefined`/`false`); a plugin that should ship enabled
   // out-of-the-box (e.g. web search) sets this to `true`. An explicit user

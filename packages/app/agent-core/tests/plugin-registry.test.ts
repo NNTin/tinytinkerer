@@ -34,8 +34,8 @@ describe('PluginRegistry', () => {
   it('collects tools only for active plugins', () => {
     const host: PluginHost = { capture: vi.fn() }
     const registry = new PluginRegistry()
-    registry.register(plugin('a', [echoTool('a:tool', async () => 'a')]))
-    registry.register(plugin('b', [echoTool('b:tool', async () => 'b')]))
+    registry.register(plugin('a', [echoTool('a:tool', () => Promise.resolve('a'))]))
+    registry.register(plugin('b', [echoTool('b:tool', () => Promise.resolve('b'))]))
 
     const tools = registry.collectTools(new Set(['a']), host)
 
@@ -56,9 +56,7 @@ describe('PluginRegistry', () => {
     const registry = new PluginRegistry()
     registry.register(
       plugin('a', [
-        echoTool('a:tool', async () => {
-          throw new PluginCaptureError(report, 'not implemented')
-        })
+        echoTool('a:tool', () => Promise.reject(new PluginCaptureError(report, 'not implemented')))
       ])
     )
 
@@ -72,13 +70,7 @@ describe('PluginRegistry', () => {
     const capture = vi.fn()
     const host: PluginHost = { capture }
     const registry = new PluginRegistry()
-    registry.register(
-      plugin('a', [
-        echoTool('a:tool', async () => {
-          throw new Error('boom')
-        })
-      ])
-    )
+    registry.register(plugin('a', [echoTool('a:tool', () => Promise.reject(new Error('boom')))]))
 
     const [tool] = registry.collectTools(new Set(['a']), host)
 
@@ -126,11 +118,59 @@ describe('PluginRegistry', () => {
         throw new Error('construction failed')
       }
     })
-    registry.register(plugin('good', [echoTool('good:tool', async () => 'ok')]))
+    registry.register(plugin('good', [echoTool('good:tool', () => Promise.resolve('ok'))]))
 
     const tools = registry.collectTools(new Set(['bad', 'good']), host)
 
     expect(tools.map((t) => t.id)).toEqual(['good:tool'])
+  })
+
+  it('omitting the tool filter keeps prior behavior (all active-plugin tools registered)', () => {
+    const host: PluginHost = { capture: vi.fn() }
+    const registry = new PluginRegistry()
+    registry.register(plugin('a', [echoTool('a:tool', () => Promise.resolve('a'))]))
+
+    const contributions = registry.collectContributions(new Set(['a']), host)
+
+    expect(contributions.tools.map((t) => t.id)).toEqual(['a:tool'])
+  })
+
+  it('the tool filter skips only the named tool of the named plugin', () => {
+    const host: PluginHost = { capture: vi.fn() }
+    const registry = new PluginRegistry()
+    registry.register(
+      plugin('a', [
+        echoTool('search', () => Promise.resolve('a')),
+        echoTool('other', () => Promise.resolve('a'))
+      ])
+    )
+
+    const contributions = registry.collectContributions(
+      new Set(['a']),
+      host,
+      (pluginId, toolId) => !(pluginId === 'a' && toolId === 'search')
+    )
+
+    expect(contributions.tools.map((t) => t.id)).toEqual(['other'])
+  })
+
+  it('a disabled tool id for one plugin does not affect another plugin registering the same tool id', () => {
+    const host: PluginHost = { capture: vi.fn() }
+    const registry = new PluginRegistry()
+    registry.register(plugin('a', [echoTool('search', () => Promise.resolve('a'))]))
+    registry.register(plugin('b', [echoTool('search', () => Promise.resolve('b'))]))
+
+    const contributions = registry.collectContributions(
+      new Set(['a', 'b']),
+      host,
+      (pluginId, toolId) => !(pluginId === 'a' && toolId === 'search')
+    )
+
+    // Plugin a's 'search' is filtered out; plugin b's identically-named 'search'
+    // still registers. (`addTool`-style dedup happens downstream in app-browser,
+    // not here — the registry itself just returns both contributed tools.)
+    expect(contributions.tools.map((t) => t.id)).toEqual(['search'])
+    expect(contributions.tools).toHaveLength(1)
   })
 
   it('collects hooks only for active plugins', () => {
@@ -180,9 +220,7 @@ describe('PluginRegistry', () => {
     const registry = new PluginRegistry()
     registry.register(
       plugin('a', [
-        echoTool('a:tool', async () => {
-          throw new PluginCaptureError(report, 'not implemented')
-        })
+        echoTool('a:tool', () => Promise.reject(new PluginCaptureError(report, 'not implemented')))
       ])
     )
 
@@ -195,9 +233,9 @@ describe('PluginRegistry', () => {
 describe('ToolRegistry', () => {
   it('rejects duplicate tool ids instead of replacing the existing tool', () => {
     const registry = new ToolRegistry()
-    registry.register(echoTool('tool', async () => 'first'))
+    registry.register(echoTool('tool', () => Promise.resolve('first')))
 
-    expect(() => registry.register(echoTool('tool', async () => 'second'))).toThrow(
+    expect(() => registry.register(echoTool('tool', () => Promise.resolve('second')))).toThrow(
       'Tool already registered: tool'
     )
   })

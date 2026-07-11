@@ -228,3 +228,76 @@ export type PluginInspectorDescriptor = {
   id: string
   summarizeRequest: InspectorSummarizer
 }
+
+// === Tool tree contribution (the 'tool-tree' capability) ==========================
+// A compose-area tool picker (issue #400): a button next to the composer that opens
+// the registered tools of every ENABLED plugin as a tree — plugin → tools — with a
+// checkbox per tool (and a tri-state checkbox per plugin) so the assistant can be
+// narrowed to a subset of tools without leaving the conversation. Like the status
+// gauge and the inspector, it follows "plugins ship data, never components": the
+// plugin exposes a pure mapper turning host-supplied tree data into a React-free
+// view-model the host's single generic tree renderer draws. No React/DOM in the
+// plugin (enforced by scripts/check-boundaries.mjs).
+//
+// The host PRODUCES ToolTreeInput — one entry per enabled plugin, each carrying its
+// declared `toolDescriptors` and the CURRENT per-tool enablement (from
+// pluginToolDisablementState via isPluginToolEnabled) — and RENDERS the ToolTreeView
+// the plugin returns. The plugin only maps input → view: sorting, tri-state
+// derivation, and counts. It never decides which plugins/tools are eligible — that
+// is host policy (see useToolTree in app-browser).
+
+// One tool of one plugin as fed to the summarizer: the declared id/description plus
+// whether it is CURRENTLY enabled (denylist absence, per isPluginToolEnabled).
+export type ToolTreeToolInput = { id: string; description: string; enabled: boolean }
+
+// One enabled plugin's tools as fed to the summarizer. `label` is the plugin's
+// manifest label (what the tree groups by), not its id.
+export type ToolTreePluginInput = { id: string; label: string; tools: ToolTreeToolInput[] }
+
+// The full tree the host hands the summarizer: every enabled plugin that has at
+// least one declared tool (a plugin with none is excluded by the host — nothing to
+// check).
+export type ToolTreeInput = { plugins: ToolTreePluginInput[] }
+
+// Tri-state checkbox value for a plugin row: 'all'/'none' when every/no tool is
+// enabled, 'some' for a partial selection. 'none' keeps the type total but is not
+// normally reachable in a host-produced tree — all-unchecked flips the PLUGIN off
+// (see applyPluginToolSelection in app-core), so the host's input usually omits
+// such a plugin entirely rather than sending it with every tool disabled.
+export type ToolTreeChecked = 'all' | 'some' | 'none'
+
+// One tool row in the rendered tree.
+export type ToolTreeToolNode = { id: string; description: string; checked: boolean }
+
+// One plugin row in the rendered tree: its tri-state checkbox plus the enabled/total
+// tool counts the host shows alongside the label (e.g. "2 of 5 tools").
+export type ToolTreePluginNode = {
+  id: string
+  label: string
+  checked: ToolTreeChecked
+  enabledCount: number
+  toolCount: number
+  tools: ToolTreeToolNode[]
+}
+
+// React-free view-model the tool-tree plugin produces from ToolTreeInput. Totals
+// mirror the per-plugin counts, summed, so the host can show an overall "X of Y
+// tools enabled" without re-deriving it.
+export type ToolTreeView = {
+  plugins: ToolTreePluginNode[]
+  enabledCount: number
+  toolCount: number
+}
+
+// Pure mapper a tool-tree plugin exposes: host-supplied tree data → ToolTreeView.
+// Product-agnostic (no React/DOM/window) — it only transforms data (sorting,
+// tri-state, counts).
+export type ToolTreeSummarizer = (input: ToolTreeInput) => ToolTreeView
+
+// Manifest descriptor for the tool-tree contribution, mirroring
+// PluginInspectorDescriptor. The host resolves `summarizeToolTree` from the active
+// plugin's manifest and feeds its single generic tree renderer.
+export type PluginToolTreeDescriptor = {
+  id: string
+  summarizeToolTree: ToolTreeSummarizer
+}

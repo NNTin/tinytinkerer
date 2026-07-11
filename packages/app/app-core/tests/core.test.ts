@@ -8,6 +8,7 @@ import type {
 } from '@tinytinkerer/contracts'
 import {
   activeCooldown,
+  applyPluginToolSelection,
   applyRateLimitEvent,
   buildConversationHistory,
   buildTurns,
@@ -19,6 +20,7 @@ import {
   defaultSettingsState,
   inferPlan,
   initializeChatState,
+  isPluginToolEnabled,
   LITELLM_DEPLOYMENT_DEFAULT,
   loadCooldown,
   loadSettingsState,
@@ -26,6 +28,7 @@ import {
   normalizeSelectedModel,
   persistBooleanPreference,
   persistLiteLLMBaseUrl,
+  persistPluginToolDisablement,
   persistSelectedModel,
   rateLimitCooldownKey,
   isPluginEnabled,
@@ -608,6 +611,162 @@ describe('app-core helpers', () => {
       isPluginEnabled({ 'web-search': false }, { id: 'web-search', defaultEnabled: true })
     ).toBe(false)
     expect(isPluginEnabled({ feedback: true }, { id: 'feedback' })).toBe(true)
+  })
+
+  it('defaults plugin tool disablement to an empty map when no preference is stored', async () => {
+    const state = await loadSettingsState({
+      get: () => Promise.resolve(undefined),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.pluginDisabledTools).toEqual({})
+    expect(defaultSettingsState().pluginDisabledTools).toEqual({})
+  })
+
+  it('hydrates plugin tool disablement from the stored preference key', async () => {
+    const state = await loadSettingsState({
+      get: (key) =>
+        Promise.resolve(
+          key === SETTINGS_KEYS.pluginDisabledTools
+            ? JSON.stringify({ 'web-search': ['deep_search'] })
+            : undefined
+        ),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.pluginDisabledTools).toEqual({ 'web-search': ['deep_search'] })
+  })
+
+  it('ignores malformed plugin tool disablement JSON', async () => {
+    const state = await loadSettingsState({
+      get: (key) =>
+        Promise.resolve(key === SETTINGS_KEYS.pluginDisabledTools ? '{ not json' : undefined),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.pluginDisabledTools).toEqual({})
+  })
+
+  it('ignores plugin tool disablement of the wrong shape', async () => {
+    const state = await loadSettingsState({
+      get: (key) =>
+        Promise.resolve(
+          key === SETTINGS_KEYS.pluginDisabledTools
+            ? JSON.stringify({ 'web-search': 'deep_search' })
+            : undefined
+        ),
+      set: () => Promise.resolve()
+    })
+
+    expect(state.pluginDisabledTools).toEqual({})
+  })
+
+  it('persistPluginToolDisablement round-trips through the preferences store', async () => {
+    const stored = new Map<string, string>()
+    const preferences = {
+      get: (key: string) => Promise.resolve(stored.get(key)),
+      set: (key: string, value: string) => {
+        stored.set(key, value)
+        return Promise.resolve()
+      }
+    }
+
+    await persistPluginToolDisablement(preferences, { 'web-search': ['deep_search'] })
+    const state = await loadSettingsState(preferences)
+
+    expect(state.pluginDisabledTools).toEqual({ 'web-search': ['deep_search'] })
+  })
+
+  it('isPluginToolEnabled treats absence — of the plugin key, the tool name, or both — as enabled', () => {
+    expect(isPluginToolEnabled({}, 'web-search', 'deep_search')).toBe(true)
+    expect(isPluginToolEnabled({ 'web-search': [] }, 'web-search', 'deep_search')).toBe(true)
+    expect(isPluginToolEnabled({ 'web-search': ['other_tool'] }, 'web-search', 'deep_search')).toBe(
+      true
+    )
+    expect(
+      isPluginToolEnabled({ 'web-search': ['deep_search'] }, 'web-search', 'deep_search')
+    ).toBe(false)
+  })
+
+  describe('applyPluginToolSelection', () => {
+    const plugin = { id: 'web-search', toolIds: ['search', 'deep_search'] as const }
+
+    it('stores the normalized array on a partial disable', () => {
+      const result = applyPluginToolSelection({ activation: {}, disabledTools: {} }, plugin, [
+        'deep_search'
+      ])
+
+      expect(result.disabledTools).toEqual({ 'web-search': ['deep_search'] })
+      expect(result.activation).toEqual({})
+      expect(result.pluginDisabled).toBe(false)
+    })
+
+    it('stores the normalized array ordered by plugin.toolIds, not the requested order', () => {
+      const threeTool = { id: 'web-search', toolIds: ['a', 'b', 'c'] as const }
+      const result = applyPluginToolSelection({ activation: {}, disabledTools: {} }, threeTool, [
+        'c',
+        'a'
+      ])
+
+      expect(result.disabledTools).toEqual({ 'web-search': ['a', 'c'] })
+    })
+
+    it('deletes the entry when the selection is empty (absence = all enabled)', () => {
+      const result = applyPluginToolSelection(
+        { activation: {}, disabledTools: { 'web-search': ['deep_search'] } },
+        plugin,
+        []
+      )
+
+      expect(result.disabledTools).toEqual({})
+      expect(result.pluginDisabled).toBe(false)
+    })
+
+    it('disabling every tool deletes the entry and disables the plugin itself', () => {
+      const result = applyPluginToolSelection(
+        { activation: { 'web-search': true }, disabledTools: {} },
+        plugin,
+        ['search', 'deep_search']
+      )
+
+      expect(result.disabledTools).toEqual({})
+      expect(result.activation).toEqual({ 'web-search': false })
+      expect(result.pluginDisabled).toBe(true)
+    })
+
+    it('drops stale tool names that no longer exist on the plugin', () => {
+      const result = applyPluginToolSelection({ activation: {}, disabledTools: {} }, plugin, [
+        'deep_search',
+        'removed_tool'
+      ])
+
+      expect(result.disabledTools).toEqual({ 'web-search': ['deep_search'] })
+    })
+
+    it('does not mutate the input activation/disabledTools objects', () => {
+      const current = {
+        activation: { 'web-search': true },
+        disabledTools: { 'web-search': ['search'] }
+      }
+
+      applyPluginToolSelection(current, plugin, ['deep_search'])
+
+      expect(current.activation).toEqual({ 'web-search': true })
+      expect(current.disabledTools).toEqual({ 'web-search': ['search'] })
+    })
+
+    it('is a no-op for a plugin with zero declared tools, dropping any stale entry', () => {
+      const zeroToolPlugin = { id: 'no-tools', toolIds: [] as const }
+      const result = applyPluginToolSelection(
+        { activation: { 'no-tools': true }, disabledTools: { 'no-tools': ['ghost'] } },
+        zeroToolPlugin,
+        ['ghost']
+      )
+
+      expect(result.disabledTools).toEqual({})
+      expect(result.activation).toEqual({ 'no-tools': true })
+      expect(result.pluginDisabled).toBe(false)
+    })
   })
 
   it('defaults reasoning & activity to false when no preference is stored', async () => {
