@@ -2306,4 +2306,68 @@ describe('edge routes', () => {
     expect(response.headers.get('Vary')).toBe('Origin')
     await expect(response.text()).resolves.toContain('data: {"id":"stream"}')
   })
+
+  // Regression for #401: CDP-based consumers (e.g. the e2e capture tool) decode a
+  // charset-less "text/event-stream" body with Chromium's windows-1252 fallback,
+  // corrupting multi-byte UTF-8 content into mojibake. The edge must declare
+  // charset=utf-8 and must pass the upstream bytes through byte-for-byte, even
+  // when a multi-byte character's bytes land in different upstream chunks.
+  it('declares charset=utf-8 and passes streamed UTF-8 bytes through verbatim, split mid-character (#401)', async () => {
+    const sseText =
+      'data: {"choices":[{"delta":{"content":"em—dash café"}}]}\n\n' +
+      'data: {"choices":[{"delta":{"content":"right’quote"}}]}\n\n'
+    const sseBytes = new TextEncoder().encode(sseText)
+
+    // Split the stream in the middle of the em-dash's UTF-8 encoding (E2 80 94)
+    // to reproduce the classic multi-byte-across-chunks corruption trigger.
+    const emDashStart = sseText.indexOf('—')
+    const emDashByteOffset = new TextEncoder().encode(sseText.slice(0, emDashStart)).length
+    const splitPoint = emDashByteOffset + 1
+
+    const firstChunk = sseBytes.slice(0, splitPoint)
+    const secondChunk = sseBytes.slice(splitPoint)
+
+    vi.stubGlobal(
+      'fetch',
+      withCallerValidation(() =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(firstChunk)
+                controller.enqueue(secondChunk)
+                controller.close()
+              }
+            }),
+            {
+              status: 200,
+              headers: { 'content-type': 'text/event-stream' }
+            }
+          )
+        )
+      )
+    )
+
+    const response = await app.fetch(
+      new Request('http://localhost/api/models/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer test-token'
+        },
+        body: JSON.stringify({
+          provider: 'litellm',
+          model: 'openai/gpt-4.1-mini',
+          stream: true,
+          messages: [{ role: 'user', content: 'hello' }]
+        })
+      }),
+      LITELLM_ENV
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('text/event-stream; charset=utf-8')
+    const responseBytes = new Uint8Array(await response.arrayBuffer())
+    expect(Array.from(responseBytes)).toEqual(Array.from(sseBytes))
+  })
 })
