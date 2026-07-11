@@ -575,6 +575,41 @@ Settings Modal toggle (app-browser/browser-settings-modal.tsx)
   tool layer (`runtime/mcp-tool.ts`, `summarizeMcpActivity` keyed by the `mcp:*` id pattern), not
   the panel. Output is untrusted: the host renders every `ActivityView` value as text, never HTML.
 
+## Per-tool enablement & the Tool picker plugin (`@tinytinkerer/plugin-tool-tree`)
+
+Activation is per-plugin; issue #400 adds a second, finer axis: a user can keep a plugin
+enabled but disable individual tools it contributes. The state and its invariants:
+
+- **State shape:** `PluginToolDisablementState = Record<pluginId, disabledToolIds[]>` in
+  `contracts` — a **denylist**. Absence (of the key, the entry, or a tool's name) means
+  _enabled_, so the feature is backward compatible and a plugin update that adds a tool ships it
+  enabled. A stale tool name from an older plugin version matches nothing at filter time and is
+  garbage-collected the next time that plugin's entry is written.
+- **Persistence key:** `settings_plugins_disabled_tools`, parsed/persisted in
+  `app-core/settings.ts` exactly like activation.
+- **Filter point:** registration time. `create-runtime.ts` passes
+  `(pluginId, toolId) => isPluginToolEnabled(disabledTools, pluginId, toolId)` into
+  `PluginRegistry.collectContributions`; a rejected tool is never registered, and — because
+  planner descriptors are only surfaced for tools that actually registered — its descriptor
+  never reaches the model. The filter is scoped per plugin so a disabled name under one plugin
+  cannot suppress another plugin's identically-named tool. Nothing is rejected at call time.
+- **The one policy chokepoint:** `applyPluginToolSelection` (app-core). Every selection change
+  routes through it: it normalizes against the plugin's _current_ tool ids (the GC above), and
+  when a change disables **all** of a plugin's tools it deletes the denylist entry and flips the
+  plugin's **activation** off instead — disabling every tool _is_ disabling the plugin, and the
+  cleared entry means a later re-enable comes back with every tool checked. The invariant: the
+  denylist never encodes "all tools disabled" alongside an enabled plugin.
+
+The user-facing surface is itself a plugin, `@tinytinkerer/plugin-tool-tree` (id `tool-tree`,
+label "Tool picker (tree view)", off by default). Like the context inspector it contributes no
+tools and no hooks — only a manifest descriptor (`toolTreeDescriptor`) carrying a pure
+`summarizeToolTree` mapper. The host (`app-browser/src/tool-tree.tsx`) renders a compose-area
+button when a plugin contributing the descriptor is enabled, builds the `ToolTreeInput` (every
+_enabled_ plugin with ≥1 declared tool — a plugin with none has nothing to check and never
+appears — plus the current per-tool enablement), and renders the returned `ToolTreeView` as a
+checkbox tree whose changes call the settings store's `setPluginToolSelection`. MCP tools have
+their own enablement (per server) and are out of the tree's scope.
+
 ## Dynamic discovery (`app-browser`)
 
 `app-browser/src/plugins/registry.ts` is the **only** module aware of where plugins live, and it
