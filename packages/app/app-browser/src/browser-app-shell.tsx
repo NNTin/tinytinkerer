@@ -4,7 +4,7 @@ import { AppBrowserProvider } from './app'
 import type { BrowserApp } from './app'
 import { AppErrorBoundary } from './app-error-boundary'
 import { useBrowserAppBootstrap } from './bootstrap'
-import { KonamiCheatCode } from './konami/konami-cheat-code'
+import { LazyKonamiCheatCode } from './konami/lazy-konami-cheat-code'
 import { LazyHumanPromptHost } from './lazy-human-prompt-host'
 import { LazyPrivacyPolicyUpdateGate } from './telemetry/lazy-privacy-update-gate'
 import { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
@@ -61,15 +61,19 @@ export const BrowserAppShell = ({
                   <LazyTelemetryConsentGate />
                 </Suspense>
                 {/* The Konami cheat code listener (issue #399): renders nothing until the
-                    ten-key sequence completes. A static import is fine — the component
-                    itself is tiny; its preset/animation modules are what's lazy (see
-                    konami-cheat-code.tsx). Document-level and single-instance like its
-                    siblings above: every surface (apps/shell's web/mobile/widget
-                    presentations, apps/canvas, and apps/host's root composition) renders
-                    exactly one BrowserAppShell with mountGlobals — apps/host/src/main.tsx
-                    passes it explicitly, and createBrowserShellRoot.tsx (used by
-                    apps/shell and apps/canvas) omits the prop, which defaults to true. */}
-                <KonamiCheatCode />
+                    ten-key sequence completes. Lazy like its siblings so the recognizer
+                    code-splits out of every shell's entry chunk (the canvas entry sits
+                    within ~1 kB of its bundle-size guard); the chunk still loads right
+                    after boot so the key listener is armed from the start. Document-level
+                    and single-instance like its siblings above: every surface (apps/shell's
+                    web/mobile/widget presentations, apps/canvas, and apps/host's root
+                    composition) renders exactly one BrowserAppShell with mountGlobals —
+                    apps/host/src/main.tsx passes it explicitly, and createBrowserShellRoot.tsx
+                    (used by apps/shell and apps/canvas) omits the prop, which defaults to
+                    true. */}
+                <Suspense fallback={null}>
+                  <LazyKonamiCheatCode />
+                </Suspense>
               </>
             ) : null}
           </QueryClientProvider>
