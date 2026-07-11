@@ -53,6 +53,50 @@ const toolTreeModule: PluginModule = {
   createPlugin: () => ({ id: 'tool-tree' })
 }
 
+// A LOSSY summarizer — regression coverage for issue #400 review F3 (the view is
+// DISPLAY-ONLY): it drops 'web_fetch' entirely from the rendered tree, the way a
+// real summarizer might for presentation (e.g. a "featured tools" grouping).
+// Toggling a tool that IS rendered must never touch the omitted one.
+const lossySummarizeToolTree = (input: ToolTreeInput): ToolTreeView => {
+  const plugins = input.plugins
+    .filter((plugin) => plugin.tools.length > 0)
+    .map((plugin) => {
+      const tools = plugin.tools
+        .filter((tool) => tool.id !== 'web_fetch')
+        .map((tool) => ({ id: tool.id, description: tool.description, checked: tool.enabled }))
+      const enabledCount = tools.filter((tool) => tool.checked).length
+      const checked =
+        enabledCount === tools.length
+          ? ('all' as const)
+          : enabledCount === 0
+            ? ('none' as const)
+            : ('some' as const)
+      return {
+        id: plugin.id,
+        label: plugin.label,
+        checked,
+        enabledCount,
+        toolCount: tools.length,
+        tools
+      }
+    })
+  return {
+    plugins,
+    enabledCount: plugins.reduce((sum, p) => sum + p.enabledCount, 0),
+    toolCount: plugins.reduce((sum, p) => sum + p.toolCount, 0)
+  }
+}
+
+const lossyToolTreeModule: PluginModule = {
+  manifest: {
+    id: 'tool-tree',
+    label: 'Tool picker (tree view)',
+    description: 'tool tree',
+    toolTreeDescriptor: { id: 'tool-tree', summarizeToolTree: lossySummarizeToolTree }
+  },
+  createPlugin: () => ({ id: 'tool-tree' })
+}
+
 const webSearchModule: PluginModule = {
   manifest: {
     id: 'web-search',
@@ -236,6 +280,32 @@ describe('ToolTreeSlot', () => {
     fireEvent.click(await screen.findByTestId('tool-tree-toggle'))
     const panel = await screen.findByTestId('tool-tree-panel')
     expect(panel.textContent).toContain('No enabled plugins contribute tools.')
+  })
+
+  // Issue #400 review, F3: the panel must derive policy (the denylist it sends
+  // to setPluginToolSelection) from HOST STATE (toolIdsByPlugin +
+  // pluginDisabledTools), never from the rendered `view` — a summarizer is free
+  // to be lossy for presentation. With a summarizer that omits 'web_fetch' from
+  // the tree entirely, unchecking the ONE tool that IS rendered must persist a
+  // denylist containing ONLY that tool; the omitted tool must not be swept in
+  // (re-enabled/disabled) as a side effect.
+  it('a LOSSY summarizer omitting a tool never touches that tool when a different one is toggled', async () => {
+    pluginModules = [lossyToolTreeModule, webSearchModule]
+    fakeSettingsStore = makeFakeSettingsStore({ 'tool-tree': true, 'web-search': true })
+
+    render(<ToolTreeSlot />)
+    fireEvent.click(await screen.findByTestId('tool-tree-toggle'))
+
+    // 'web_fetch' is omitted by the lossy summarizer — never rendered.
+    expect(screen.queryByTestId('tool-tree-tool-web_fetch')).toBeNull()
+
+    fireEvent.click(await screen.findByTestId('tool-tree-tool-web_search'))
+
+    await waitFor(() =>
+      expect(fakeSettingsStore.getState().pluginDisabledTools).toEqual({
+        'web-search': ['web_search']
+      })
+    )
   })
 })
 

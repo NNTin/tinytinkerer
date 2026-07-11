@@ -32,6 +32,7 @@ import {
   persistSelectedModel,
   rateLimitCooldownKey,
   isPluginEnabled,
+  reconcilePluginToolDisablement,
   SETTINGS_KEYS,
   validateLiteLLMBaseUrl
 } from '../src/index.js'
@@ -766,6 +767,93 @@ describe('app-core helpers', () => {
       expect(result.disabledTools).toEqual({})
       expect(result.activation).toEqual({ 'no-tools': true })
       expect(result.pluginDisabled).toBe(false)
+    })
+  })
+
+  // Discovery-time reconciliation (issue #400 review, F2/F3): re-runs every
+  // discovered plugin's STORED denylist entry through applyPluginToolSelection,
+  // healing the "all tools disabled, plugin still enabled" ghost state a plugin
+  // update can silently create between sessions.
+  describe('reconcilePluginToolDisablement', () => {
+    it('is a no-op (changed: false) when no stored entry needs healing', () => {
+      const current = {
+        activation: { 'web-search': true },
+        disabledTools: { 'web-search': ['deep_search'] }
+      }
+      const result = reconcilePluginToolDisablement(current, [
+        { id: 'web-search', toolIds: ['search', 'deep_search'] }
+      ])
+
+      expect(result.changed).toBe(false)
+      expect(result.disabledTools).toEqual({ 'web-search': ['deep_search'] })
+      expect(result.activation).toEqual({ 'web-search': true })
+    })
+
+    it('GCs a stale tool name left over from an older plugin version', () => {
+      const current = {
+        activation: { 'web-search': true },
+        disabledTools: { 'web-search': ['deep_search', 'removed_tool'] }
+      }
+      const result = reconcilePluginToolDisablement(current, [
+        { id: 'web-search', toolIds: ['search', 'deep_search'] }
+      ])
+
+      expect(result.changed).toBe(true)
+      expect(result.disabledTools).toEqual({ 'web-search': ['deep_search'] })
+    })
+
+    it('heals an entry that now covers ALL current tools: flips activation off and clears it', () => {
+      // A plugin update removed 'b' and 'c'; the stored entry (from when the
+      // plugin had 3 tools) now covers the plugin's only remaining tool.
+      const current = {
+        activation: { multi: true },
+        disabledTools: { multi: ['a'] }
+      }
+      const result = reconcilePluginToolDisablement(current, [{ id: 'multi', toolIds: ['a'] }])
+
+      expect(result.changed).toBe(true)
+      expect(result.disabledTools).toEqual({})
+      expect(result.activation).toEqual({ multi: false })
+    })
+
+    it('leaves an entry for a plugin NOT in the discovered list untouched (may come back)', () => {
+      const current = {
+        activation: { gone: true },
+        disabledTools: { gone: ['x'] }
+      }
+      const result = reconcilePluginToolDisablement(current, [{ id: 'other', toolIds: ['z'] }])
+
+      expect(result.changed).toBe(false)
+      expect(result.disabledTools).toEqual({ gone: ['x'] })
+      expect(result.activation).toEqual({ gone: true })
+    })
+
+    it('does not mutate the input activation/disabledTools objects', () => {
+      const current = {
+        activation: { multi: true },
+        disabledTools: { multi: ['a'] }
+      }
+      reconcilePluginToolDisablement(current, [{ id: 'multi', toolIds: ['a'] }])
+
+      expect(current.activation).toEqual({ multi: true })
+      expect(current.disabledTools).toEqual({ multi: ['a'] })
+    })
+
+    it('folds multiple plugins in one pass, each independently', () => {
+      const current = {
+        activation: { a: true, b: true },
+        disabledTools: { a: ['x', 'stale'], b: ['y'] }
+      }
+      const result = reconcilePluginToolDisablement(current, [
+        { id: 'a', toolIds: ['x'] }, // 'stale' GC'd, 'x' still partial-ish but covers all → heals
+        { id: 'b', toolIds: ['y', 'z'] } // 'y' still a partial selection, unaffected
+      ])
+
+      expect(result.changed).toBe(true)
+      // 'a': stored ['x','stale'] normalizes to ['x'], which covers plugin a's
+      // only current tool — heals to activation off, entry cleared.
+      expect(result.disabledTools).toEqual({ b: ['y'] })
+      expect(result.activation).toEqual({ a: false, b: true })
     })
   })
 

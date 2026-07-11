@@ -502,6 +502,86 @@ describe('plugin runtime contributions', () => {
     vi.unstubAllGlobals()
   })
 
+  // Descriptor↔createTools lockstep (issue #400 review, F1): the warning fires
+  // synchronously during createRuntime() — collectContributions already ran and
+  // addedPluginToolIds is populated before createChatRuntime is built — so
+  // neither of these tests needs to stub fetch or drive the runtime.
+  describe('descriptor↔createTools lockstep (issue #400 review, F1)', () => {
+    it('warns when a contributed tool has no matching descriptor in any active manifest', () => {
+      const messageSink = vi.fn()
+      setCaptureMessageSink(messageSink)
+
+      const undeclaredModule: PluginModule = {
+        manifest: {
+          id: 'undeclared-plugin',
+          label: 'undeclared-plugin',
+          description: 'plugin that contributes an undeclared tool'
+          // No toolDescriptors: createTools below contributes a tool id that
+          // never appears in any active manifest's toolDescriptors.
+        },
+        createPlugin: () => ({
+          id: 'undeclared-plugin',
+          createTools: () => [testTool('ghost_tool')]
+        })
+      }
+
+      createRuntime({
+        baseUrl: 'http://edge.local',
+        getToken: () => 'token',
+        getModel: () => 'openai/gpt-4.1-mini',
+        pluginActivation: { 'undeclared-plugin': true },
+        pluginModules: [undeclaredModule]
+      })
+
+      expect(messageSink).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'plugin tool "ghost_tool" is not declared in any active manifest\'s toolDescriptors'
+        ),
+        expect.objectContaining({ level: 'warning' })
+      )
+
+      setCaptureMessageSink(null)
+    })
+
+    it('does not warn for a capability-gated plugin that declares a descriptor but contributes no tool', () => {
+      const messageSink = vi.fn()
+      setCaptureMessageSink(messageSink)
+
+      const gatedModule: PluginModule = {
+        manifest: {
+          id: 'gated-plugin',
+          label: 'gated-plugin',
+          description: 'plugin whose tool needs an unavailable capability',
+          toolDescriptors: [
+            {
+              id: 'gated_tool',
+              description: 'gated tool descriptor',
+              schema: z.object({}).passthrough()
+            }
+          ]
+        },
+        createPlugin: () => ({
+          id: 'gated-plugin',
+          // Capability gating (e.g. no sandbox available) legitimately
+          // contributes FEWER tools than declared — never a reason to warn.
+          createTools: () => []
+        })
+      }
+
+      createRuntime({
+        baseUrl: 'http://edge.local',
+        getToken: () => 'token',
+        getModel: () => 'openai/gpt-4.1-mini',
+        pluginActivation: { 'gated-plugin': true },
+        pluginModules: [gatedModule]
+      })
+
+      expect(messageSink).not.toHaveBeenCalled()
+
+      setCaptureMessageSink(null)
+    })
+  })
+
   it('fires deactivate when a persistent plugin runtime sees a plugin turn off', () => {
     const activate = vi.fn()
     const deactivate = vi.fn()

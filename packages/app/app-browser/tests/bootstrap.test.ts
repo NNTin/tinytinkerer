@@ -18,6 +18,10 @@ const authInitialize = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const chatInitialize = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const settingsInitialize = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const statusInitialize = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+// Discovery-time reconciliation (issue #400 review, F2/F3) fires from
+// initializeBrowserApp right after settings hydrate — this mocked store needs
+// the action too, or the fire-and-forget call throws an unhandled rejection.
+const reconcilePluginTools = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 
 vi.mock('@tinytinkerer/brand-assets', () => ({
   TINYTINKERER_BRAND: {
@@ -57,7 +61,7 @@ vi.mock('../src/stores/chat-store.js', () => ({
 
 vi.mock('../src/stores/settings-store.js', () => ({
   createSettingsStore: vi.fn(() => ({
-    getState: () => ({ initialize: settingsInitialize })
+    getState: () => ({ initialize: settingsInitialize, reconcilePluginTools })
   }))
 }))
 
@@ -65,6 +69,13 @@ vi.mock('../src/stores/status-store.js', () => ({
   createStatusStore: vi.fn(() => ({
     getState: () => ({ initialize: statusInitialize })
   }))
+}))
+
+// Discovery is exercised by tool-tree.test.tsx and create-runtime tests; this
+// bootstrap test only needs to prove initializeBrowserApp doesn't crash before
+// hydration completes, so it stubs discovery to an empty plugin set.
+vi.mock('../src/plugins/registry.js', () => ({
+  loadPluginModules: vi.fn().mockResolvedValue([])
 }))
 
 import { bootstrapBrowserShell } from '../src/initialize.js'

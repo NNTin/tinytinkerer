@@ -30,6 +30,7 @@ import {
 } from './telemetry/telemetry'
 import type { ContentRenderErrorInfo } from '@tinytinkerer/content-react'
 import type { Tool } from '@tinytinkerer/app-core'
+import { loadPluginModules } from './plugins/registry'
 
 export type BrowserApp = {
   shell: BrowserShell
@@ -43,6 +44,15 @@ export type BrowserApp = {
 }
 
 const BrowserAppContext = createContext<BrowserApp | undefined>(undefined)
+
+// Guards the discovery-time reconciliation sweep below (issue #400 review,
+// F2/F3) to at most once per BrowserApp instance — a WeakSet keyed on the app
+// object rather than a plain module-level boolean because a test file can
+// construct multiple BrowserApp instances in the same module scope, and each is
+// its own "session". React StrictMode double-invokes the bootstrap effect that
+// calls `initializeBrowserApp`, so without this guard the sweep would fire twice
+// per real session too.
+const reconciledPluginTools = new WeakSet<BrowserApp>()
 
 const browserAppError = (): Error =>
   new Error(
@@ -153,6 +163,31 @@ export const initializeBrowserApp = async (
     app.stores.auth.getState().initialize(),
     app.stores.settings.getState().initialize()
   ])
+  // Discovery-time reconciliation (issue #400 review, F2/F3) needs BOTH
+  // discovered plugin manifests AND hydrated settings — this is the one spot in
+  // the browser bootstrap where they're guaranteed to have met: settings just
+  // finished hydrating above, and `loadPluginModules()` is the same cached
+  // discovery every other host surface (usePluginModules, chat-store) already
+  // shares, so this adds no second discovery path. Fire-and-forget: unlike
+  // auth/settings hydration, nothing later in this function (or the UI-ready
+  // gate that awaits it) depends on the sweep, and it must not add startup
+  // latency. Guarded by `reconciledPluginTools` so it runs at most once per
+  // session even under StrictMode's double effect invocation.
+  if (!reconciledPluginTools.has(app)) {
+    reconciledPluginTools.add(app)
+    void loadPluginModules()
+      .then((modules) => {
+        const plugins = modules.map((mod) => ({
+          id: mod.manifest.id,
+          toolIds: (mod.manifest.toolDescriptors ?? []).map((descriptor) => descriptor.id)
+        }))
+        return app.stores.settings.getState().reconcilePluginTools(plugins)
+      })
+      // Best-effort: a failed sweep (e.g. a preferences write error) must not
+      // become an unhandled rejection at bootstrap — the stored state stays as
+      // it was and is healed by the next write or the next session's sweep.
+      .catch(() => {})
+  }
   // Restore Sentry for returning users who previously opted in.
   if (app.stores.settings.getState().telemetryEnabled) {
     await setTelemetryConsent(true)

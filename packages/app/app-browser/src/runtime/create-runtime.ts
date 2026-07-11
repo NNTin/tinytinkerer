@@ -319,6 +319,34 @@ export const createRuntime = (options: {
         }
       }
     }
+    // Descriptor↔createTools lockstep (issue #400 review, F1): a plugin's
+    // `toolDescriptors` must enumerate every tool id its `createTools` can
+    // contribute — an id that registers but was never declared has no
+    // toolIdsByPlugin entry, so it is invisible to the tool picker (useToolTree)
+    // and can never be disabled (issue #400). Attribution per-plugin isn't
+    // available here without deeper changes — `collectContributions` above
+    // merges every active plugin's tools into one list before this point — so
+    // this checks each contributed id against the UNION of every active
+    // manifest's declared descriptor ids instead: a tool declared by ANY active
+    // manifest is visible/disable-able, so only an id absent from the WHOLE
+    // union is actually undeclared. The inverse (declared but not contributed)
+    // is deliberately NOT warned about: capability gating (e.g. no sandbox
+    // available) legitimately contributes fewer tools than declared.
+    const declaredToolIds = new Set(
+      activePluginModules.flatMap((mod) => (mod.manifest.toolDescriptors ?? []).map((d) => d.id))
+    )
+    for (const toolId of addedPluginToolIds) {
+      if (!declaredToolIds.has(toolId)) {
+        captureTelemetryMessage(
+          `plugin tool "${toolId}" is not declared in any active manifest's toolDescriptors: it is invisible to the tool picker and cannot be disabled (issue #400)`,
+          {
+            level: 'warning',
+            tags: { tool: toolId },
+            fingerprint: ['plugin-tool-undeclared', toolId]
+          }
+        )
+      }
+    }
   }
 
   // App-local tools (e.g. a harness shell's app-specific verbs). Registered

@@ -172,10 +172,16 @@ export type PluginConfigState = z.infer<typeof pluginConfigStateSchema>
 // version that has since renamed/removed it) simply matches nothing at
 // filter time and is garbage-collected the next time the entry is written — see
 // `applyPluginToolSelection` in app-core, the one policy chokepoint for changing
-// this state. Invariant: an entry here never lists ALL of a plugin's current
-// tool ids — disabling every tool is expressed by turning the PLUGIN off
+// this state. Invariant (maintained ON WRITE by that chokepoint, and
+// re-established at discovery time by `reconcilePluginToolDisablement` — issue
+// #400 review): an entry here should never list ALL of a plugin's current tool
+// ids — disabling every tool is expressed by turning the PLUGIN off
 // (`pluginActivationStateSchema`) instead, so this map and plugin activation
-// never encode the same fact two ways.
+// don't encode the same fact two ways. It is NOT an invariant a reader may
+// assume holds at all times: a plugin update landing between writes (a tool
+// renamed/removed) can transiently leave a stored entry covering every current
+// tool until the next write or reconciliation sweep heals it — readers
+// (`isPluginToolEnabled`, the tool tree's 'none' state) already tolerate this.
 export const pluginToolDisablementStateSchema = z.record(z.string(), z.array(z.string()))
 export type PluginToolDisablementState = z.infer<typeof pluginToolDisablementStateSchema>
 

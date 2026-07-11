@@ -592,13 +592,25 @@ enabled but disable individual tools it contributes. The state and its invariant
   `PluginRegistry.collectContributions`; a rejected tool is never registered, and — because
   planner descriptors are only surfaced for tools that actually registered — its descriptor
   never reaches the model. The filter is scoped per plugin so a disabled name under one plugin
-  cannot suppress another plugin's identically-named tool. Nothing is rejected at call time.
+  cannot suppress another plugin's identically-named tool. Nothing is rejected at call time. The
+  runtime itself is rebuilt **per chat run** (see `chat-store` → `createBrowserRuntimeFactory`),
+  so a selection change made in the tool picker takes effect on the **next** prompt — a run
+  already in flight keeps the tool set it was built with.
 - **The one policy chokepoint:** `applyPluginToolSelection` (app-core). Every selection change
   routes through it: it normalizes against the plugin's _current_ tool ids (the GC above), and
   when a change disables **all** of a plugin's tools it deletes the denylist entry and flips the
   plugin's **activation** off instead — disabling every tool _is_ disabling the plugin, and the
-  cleared entry means a later re-enable comes back with every tool checked. The invariant: the
-  denylist never encodes "all tools disabled" alongside an enabled plugin.
+  cleared entry means a later re-enable comes back with every tool checked. The invariant (the
+  denylist never encodes "all tools disabled" alongside an enabled plugin) is **maintained on
+  every write** that goes through the chokepoint, and **re-established at discovery time** by
+  `reconcilePluginToolDisablement` (app-core) — a plugin update landing between sessions (a tool
+  renamed/removed) can otherwise leave a stored entry that, against the plugin's new tool list,
+  transiently covers every current tool while the plugin is still marked active. The settings
+  store's `reconcilePluginTools` action calls it once per session (wired in `app.ts`,
+  `initializeBrowserApp`, right after settings hydrate and plugin discovery resolve) and persists
+  only when something actually changed. Readers must still tolerate a transiently-total entry
+  between a stale write and the next reconciliation sweep — `isPluginToolEnabled` and the tool
+  tree's `'none'` tri-state already do.
 
 The user-facing surface is itself a plugin, `@tinytinkerer/plugin-tool-tree` (id `tool-tree`,
 label "Tool picker (tree view)", off by default). Like the context inspector it contributes no
@@ -607,8 +619,20 @@ tools and no hooks — only a manifest descriptor (`toolTreeDescriptor`) carryin
 button when a plugin contributing the descriptor is enabled, builds the `ToolTreeInput` (every
 _enabled_ plugin with ≥1 declared tool — a plugin with none has nothing to check and never
 appears — plus the current per-tool enablement), and renders the returned `ToolTreeView` as a
-checkbox tree whose changes call the settings store's `setPluginToolSelection`. MCP tools have
-their own enablement (per server) and are out of the tree's scope.
+checkbox tree whose changes call the settings store's `setPluginToolSelection`. The panel derives
+every toggle's denylist from **host state** (`pluginDisabledTools` + the full per-plugin tool id
+list), never from the rendered view — a summarizer's view is display-only and may be lossy
+(filter/reorder) for presentation without corrupting persisted state. MCP tools have their own
+enablement (per server), and app-local `appTools` are always-on by design with no activation
+surface at all (see `create-runtime.ts`) — both are out of the tree's scope.
+
+The tool picker sits at the **outer edge** of the manifest-descriptor pattern: a descriptor plugin
+earns its keep by owning some **domain mapping** (how to present a captured request, how to read a
+gauge). The tool tree's mapper only sorts/derives tri-state/counts — it owns no domain knowledge —
+and it is kept as a plugin anyway for consistency with the other descriptor contributions and for
+the free opt-in toggle activation already gives every plugin. The next host affordance that has no
+domain mapping of its own should be a plain host feature + host setting, not a plugin — don't take
+the tool tree as precedent for "any host UI element is a plugin."
 
 ## Dynamic discovery (`app-browser`)
 
@@ -716,3 +740,12 @@ explicitly via a single tool-id literal; nothing else in `create-runtime.ts` nam
 
 That's it — the host discovers it via `import.meta.glob`, shows its toggle, and wires its tools
 when active. No `app-browser` dependency, registration, or descriptor edits are needed.
+
+**The descriptor↔createTools lockstep (issue #400 review, F1):** a plugin's `toolDescriptors` MUST
+enumerate every tool id its `createTools` can ever contribute. Capability gating may contribute
+FEWER tools than declared at runtime (e.g. no sandbox available) — that's expected and unwarned —
+but it may never contribute a tool id, or a variant of one, that isn't declared. An undeclared
+contributed tool is invisible to the planner (no descriptor, so the model never sees it) AND to the
+tool picker (`toolIdsByPlugin` has no entry for it, so it can never be disabled). `create-runtime.ts`
+checks this after collecting contributions and reports a violation to telemetry
+(`plugin-tool-undeclared` fingerprint) rather than letting it fail silently.

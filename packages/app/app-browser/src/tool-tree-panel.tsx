@@ -35,34 +35,47 @@ const IndeterminateCheckbox = ({
 
 export type ToolTreePanelProps = {
   view: ToolTreeView
-  // Full current tool id list per plugin, keyed by plugin id — needed to build the
-  // "uncheck everything" denylist for the plugin-level checkbox, since a checked
-  // tree node only ever lists the tools it currently has (see useToolTree).
+  // Full current tool id list per plugin, keyed by plugin id (see useToolTree) —
+  // the POLICY source of truth for every toggle below, deliberately independent
+  // of `view`: `view` is a summarizer's presentation of the same data and may be
+  // lossy (filter/reorder), so building a denylist from it could silently
+  // corrupt tool ids the summarizer chose not to render.
   toolIdsByPlugin: Record<string, string[]>
   onClose: () => void
 }
 
 export const ToolTreePanel = ({ view, toolIdsByPlugin, onClose }: ToolTreePanelProps) => {
   const setPluginToolSelection = useSettingsStore((state) => state.setPluginToolSelection)
+  const pluginDisabledTools = useSettingsStore((state) => state.pluginDisabledTools)
 
-  // The tool tree's own `checked` flags ARE the current denylist, inverted — no
-  // need to re-read pluginDisabledTools from the store. Unchecking every tool of a
-  // plugin disables that plugin (the app-core policy chokepoint,
-  // applyPluginToolSelection), so the row simply disappears from `view` on the next
-  // render — intended, per the issue.
+  // The view (`ToolTreePluginNode`/`ToolTreeToolNode`) is DISPLAY-ONLY (issue
+  // #400 review, F3): a summarizer maps host input to it for PRESENTATION —
+  // sorting, tri-state, counts — and is free to be lossy (filter/reorder/omit)
+  // without corrupting persisted state, because the policy math below never
+  // reads it. `currentDisabled` is instead computed from HOST STATE
+  // (pluginDisabledTools, intersected with the plugin's full current tool id
+  // list from toolIdsByPlugin) — the same source of truth useToolTree built the
+  // view from — so a summarizer that drops a tool from the rendered tree can
+  // never cause that tool to be silently re-enabled or disabled as a side effect
+  // of toggling a DIFFERENT tool.
   const toggleTool = (plugin: ToolTreePluginNode, toolId: string, nextChecked: boolean): void => {
-    const currentDisabled = plugin.tools.filter((tool) => !tool.checked).map((tool) => tool.id)
+    const toolIds = toolIdsByPlugin[plugin.id] ?? []
+    const currentDisabled = toolIds.filter(
+      (id) => pluginDisabledTools[plugin.id]?.includes(id) ?? false
+    )
     const nextDisabled = nextChecked
       ? currentDisabled.filter((id) => id !== toolId)
       : [...currentDisabled, toolId]
-    void setPluginToolSelection(
-      { id: plugin.id, toolIds: toolIdsByPlugin[plugin.id] ?? plugin.tools.map((t) => t.id) },
-      nextDisabled
-    )
+    void setPluginToolSelection({ id: plugin.id, toolIds }, nextDisabled)
   }
 
   const togglePlugin = (plugin: ToolTreePluginNode, nextChecked: boolean): void => {
-    const toolIds = toolIdsByPlugin[plugin.id] ?? plugin.tools.map((t) => t.id)
+    // toolIdsByPlugin lacking the plugin is a host bug, not something to paper
+    // over with a view-derived fallback: an empty array is a no-op at the
+    // chokepoint (applyPluginToolSelection treats zero toolIds as a no-op), which
+    // is the correct failure mode — do nothing rather than guess at tool ids from
+    // the (possibly lossy) view.
+    const toolIds = toolIdsByPlugin[plugin.id] ?? []
     const nextDisabled = nextChecked ? [] : toolIds
     void setPluginToolSelection({ id: plugin.id, toolIds }, nextDisabled)
   }
@@ -87,6 +100,12 @@ export const ToolTreePanel = ({ view, toolIdsByPlugin, onClose }: ToolTreePanelP
             <h2 className="text-sm font-semibold text-stone-900">Tools</h2>
             <p className="truncate text-xs text-[var(--muted)]">
               {view.enabledCount} of {view.toolCount} tools enabled
+            </p>
+            {/* The runtime is rebuilt per chat run (issue #400 review, F5/F9): a
+                selection change here takes effect on the NEXT prompt, not the one
+                already in flight — see create-runtime.ts / chat-store. */}
+            <p className="truncate text-xs text-[var(--muted)]">
+              Changes apply from your next message.
             </p>
           </div>
           <button

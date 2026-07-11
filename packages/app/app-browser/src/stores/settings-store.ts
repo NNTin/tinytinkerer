@@ -36,6 +36,11 @@ type SettingsActions = {
     plugin: { id: string; toolIds: string[] },
     disabledToolIds: string[]
   ) => Promise<void>
+  // Discovery-time sweep (issue #400 review, F2/F3): re-validate every stored
+  // denylist entry against the CURRENT set of discovered plugins/tool ids. Wired
+  // to run once per session where plugin discovery meets hydrated settings (see
+  // app.ts, initializeBrowserApp) — never called on every render.
+  reconcilePluginTools: (plugins: { id: string; toolIds: string[] }[]) => Promise<void>
 }
 
 export type SettingsState = CoreSettingsState & {
@@ -185,11 +190,46 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
         plugin,
         disabledToolIds
       )
-      await persistPluginToolDisablement(shell.preferences, result.disabledTools)
-      set({ pluginDisabledTools: result.disabledTools })
+      // Activation-first when the change disables the plugin (issue #400 review,
+      // F4): the two writes encode ONE user decision ("turn this plugin off"). If
+      // the second write is lost mid-flight, activation-first leaves the plugin
+      // OFF with a stale denylist entry — harmless, since absence semantics are
+      // unaffected and discovery-time reconciliation (reconcilePluginToolDisablement)
+      // sweeps it up later. The old denylist-first order failed the other way: a
+      // lost activation write left the plugin fully re-armed with every tool
+      // enabled — the inverse of what the user asked for.
       if (result.pluginDisabled) {
         await persistPluginActivation(shell.preferences, result.activation)
         set({ pluginActivation: result.activation })
       }
+      await persistPluginToolDisablement(shell.preferences, result.disabledTools)
+      set({ pluginDisabledTools: result.disabledTools })
+    },
+    reconcilePluginTools: async (plugins) => {
+      // Discovery-time reconciliation (issue #400 review, F2/F3): re-run every
+      // plugin's STORED denylist entry through the same policy chokepoint,
+      // healing the "all tools disabled, plugin still enabled" ghost state a
+      // plugin update can silently create (see reconcilePluginToolDisablement in
+      // app-core). Only persists when something actually changed.
+      const {
+        reconcilePluginToolDisablement,
+        persistPluginActivation,
+        persistPluginToolDisablement
+      } = await loadCoreModule()
+      const current = get()
+      const result = reconcilePluginToolDisablement(
+        { activation: current.pluginActivation, disabledTools: current.pluginDisabledTools },
+        plugins
+      )
+      if (!result.changed) {
+        return
+      }
+      // Same activation-first order as setPluginToolSelection above, same
+      // rationale: a lost second write should leave a plugin OFF with a stale
+      // entry, not fully re-armed.
+      await persistPluginActivation(shell.preferences, result.activation)
+      set({ pluginActivation: result.activation })
+      await persistPluginToolDisablement(shell.preferences, result.disabledTools)
+      set({ pluginDisabledTools: result.disabledTools })
     }
   }))

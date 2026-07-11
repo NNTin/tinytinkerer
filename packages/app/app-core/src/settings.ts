@@ -255,6 +255,85 @@ export const applyPluginToolSelection = (
   return { disabledTools, activation: current.activation, pluginDisabled: false }
 }
 
+// Structural equality for the two small maps below — reconciliation must decide
+// `changed` by VALUE, not by the fresh-object references applyPluginToolSelection
+// always returns (even when it round-trips a selection unchanged).
+const activationEqual = (a: PluginActivationState, b: PluginActivationState): boolean => {
+  const aKeys = Object.keys(a)
+  if (aKeys.length !== Object.keys(b).length) return false
+  return aKeys.every((key) => a[key] === b[key])
+}
+
+const disabledToolsEqual = (
+  a: PluginToolDisablementState,
+  b: PluginToolDisablementState
+): boolean => {
+  const aKeys = Object.keys(a)
+  if (aKeys.length !== Object.keys(b).length) return false
+  return aKeys.every((key) => {
+    const av = a[key]
+    const bv = b[key]
+    return (
+      av !== undefined &&
+      bv !== undefined &&
+      av.length === bv.length &&
+      av.every((id, index) => id === bv[index])
+    )
+  })
+}
+
+// Discovery-time reconciliation (issue #400 review, F2/F3): the chokepoint above
+// keeps the "denylist never lists ALL of a plugin's current tools" invariant on
+// every WRITE that goes through it, but a plugin update landing between writes
+// (a tool renamed/removed while the app was closed) can silently create exactly
+// that ghost state — a stored entry that, against the plugin's NEW tool list, now
+// covers every tool while the plugin itself is still marked active. Nothing
+// re-validates a stored entry until the user happens to touch that plugin's tree
+// again. This sweep re-runs every plugin's STORED entry through the SAME
+// `applyPluginToolSelection` policy the UI uses, so the healing logic is not
+// duplicated: stale tool names are GC'd, and an entry that now covers every
+// current tool flips that plugin's activation off and clears the entry — exactly
+// what would have happened had the user made that edit themselves.
+//
+// Only plugins present in `plugins` (i.e. currently discovered) are touched — an
+// entry for an undiscovered/uninstalled plugin is left alone, because the plugin
+// may simply come back (its package temporarily failed to load, or the workspace
+// doesn't include it in this build) and there is nothing to validate its stored
+// tool ids against.
+//
+// `changed` is computed structurally (see the two `*Equal` helpers above), not by
+// reference — `applyPluginToolSelection` always returns fresh objects even for a
+// no-op selection, so reference comparison would report a spurious change on
+// every call and defeat the "only persist when needed" point of this function.
+//
+// Pure: never mutates `current`; each fold step feeds the PREVIOUS step's output
+// forward, never the original `current`.
+export const reconcilePluginToolDisablement = (
+  current: { activation: PluginActivationState; disabledTools: PluginToolDisablementState },
+  plugins: readonly { id: string; toolIds: readonly string[] }[]
+): {
+  activation: PluginActivationState
+  disabledTools: PluginToolDisablementState
+  changed: boolean
+} => {
+  let activation = current.activation
+  let disabledTools = current.disabledTools
+
+  for (const plugin of plugins) {
+    const stored = current.disabledTools[plugin.id]
+    if (!stored) continue
+    const result = applyPluginToolSelection({ activation, disabledTools }, plugin, stored)
+    activation = result.activation
+    disabledTools = result.disabledTools
+  }
+
+  const changed =
+    !activationEqual(activation, current.activation) ||
+    !disabledToolsEqual(disabledTools, current.disabledTools)
+
+  return { activation, disabledTools, changed }
+}
+
 // Per-plugin CONFIGURATION (issue #85). Same shape/flow as activation: parse a
 // validated map of pluginId -> (settingKey -> value) on load; persist the whole map
 // on every change.

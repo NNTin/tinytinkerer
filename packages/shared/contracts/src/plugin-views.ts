@@ -263,7 +263,12 @@ export type ToolTreeInput = { plugins: ToolTreePluginInput[] }
 // enabled, 'some' for a partial selection. 'none' keeps the type total but is not
 // normally reachable in a host-produced tree — all-unchecked flips the PLUGIN off
 // (see applyPluginToolSelection in app-core), so the host's input usually omits
-// such a plugin entirely rather than sending it with every tool disabled.
+// such a plugin entirely rather than sending it with every tool disabled. It CAN
+// transiently occur: a plugin update that removes tools can leave a stored
+// denylist entry covering every current tool while the plugin is still marked
+// active, until the discovery-time reconciliation sweep
+// (`reconcilePluginToolDisablement`, issue #400 review) heals it on the next
+// session.
 export type ToolTreeChecked = 'all' | 'some' | 'none'
 
 // One tool row in the rendered tree.
