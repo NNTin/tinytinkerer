@@ -116,15 +116,26 @@ This installs all three engines. To iterate on just one, target a project:
 pnpm --filter @tinytinkerer/e2e e2e -- --project=firefox   # or chromium / webkit
 ```
 
-Build the composed host once (it builds the shell + canvas + root and composes the
-`apps/host/dist` the suite serves), then run:
+The suite serves a **static** prebuilt `apps/host/dist` via `vite preview` — it never
+builds it. So a local run **auto-builds** that dist first: `scripts/e2e.mjs` composes
+the host through turbo (rebuilding shell + canvas + root, then composing) before
+Playwright starts, so you can just run:
 
 ```bash
-pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices
-TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build \
-  --filter=@tinytinkerer/host
 pnpm --filter @tinytinkerer/e2e e2e
 ```
+
+Turbo's cache makes the build a fast no-op when nothing changed. It is skipped in CI
+(a dedicated job builds the shells and the shards download that artifact) and can be
+skipped locally with `E2E_SKIP_BUILD=1` when you deliberately serve a prebuilt dist.
+
+> ⚠️ Do **not** build the served dist with `pnpm --filter @tinytinkerer/host build`.
+> That runs only host's own `vite build && build-pages.mjs`, which **re-copies**
+> `apps/shell/dist` / `apps/canvas/dist` into the composed output **without rebuilding
+> them** — it finishes in ~1s and looks like a full build but serves **stale** endpoint
+> bundles, so `/web/` specs assert against outdated code and fail confusingly. Always
+> build through turbo (which the auto-build above does):
+> `TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build --filter=@tinytinkerer/host`.
 
 > Pin `E2E_PORT` (and optionally `E2E_PORT_CANVAS`) to fix the ports; otherwise the
 > wrapper picks a random base port and derives canvas from it. The three browser
