@@ -97,6 +97,13 @@
   padding: 4px;
   overflow: hidden;
 }
+.app-dock-panel[data-drop-target='true'] {
+  outline: 3px solid #2563eb;
+  outline-offset: -6px;
+}
+.app-dock-panel[data-drop-target='true'] > header {
+  background: #dbeafe;
+}
 .app-dock-panel > header {
   height: 32px;
   display: flex;

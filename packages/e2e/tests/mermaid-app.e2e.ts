@@ -24,6 +24,16 @@ test('edits, previews, diagnoses, and rearranges the Mermaid workspace', async (
 
   await page.getByLabel('Layout').selectOption('c')
   await expect(page.locator('.app-dock-canvas')).toHaveAttribute('data-layout', 'c')
+
+  await page
+    .locator('[data-panel-drag-handle="preview"]')
+    .dragTo(page.locator('[data-panel-id="assistant"]'))
+  await expect(page.getByLabel('Layout')).toHaveValue('custom')
+  await expect(page.locator('.app-dock-canvas')).toHaveAttribute('data-layout', 'custom')
+  const previewBox = await page.locator('[data-panel-id="preview"]').boundingBox()
+  const assistantBox = await page.locator('[data-panel-id="assistant"]').boundingBox()
+  expect(previewBox?.x ?? 0).toBeGreaterThan(assistantBox?.x ?? 0)
+
   const separator = page.getByRole('separator', { name: 'Resize workspace 1' })
   const before = Number(await separator.getAttribute('aria-valuenow'))
   await separator.press('ArrowRight')

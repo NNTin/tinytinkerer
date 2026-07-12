@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 
 export type DockablePanel = { id: string; title: string; content: ReactNode }
 export type DockableLayoutPreset = 'a' | 'b' | 'c' | 'd'
+type ActiveLayout = DockableLayoutPreset | 'custom'
 export type DockablePanelLayoutProps = {
   panels: [DockablePanel, DockablePanel, DockablePanel]
   storageKey: string
@@ -9,9 +10,14 @@ export type DockablePanelLayoutProps = {
   className?: string
 }
 type LayoutState = {
-  preset: DockableLayoutPreset
+  preset: ActiveLayout
   assignments: Record<DockableLayoutPreset, string[]>
   sizes: Record<DockableLayoutPreset, [number, number]>
+  custom?: {
+    basePreset: DockableLayoutPreset
+    assignments: string[]
+    sizes: [number, number]
+  }
 }
 const LABELS: Record<DockableLayoutPreset, string> = {
   a: 'A · Split workspace',
@@ -43,13 +49,46 @@ const loadState = (
   const fallback = fallbackState(panels, preset)
   try {
     const parsed = JSON.parse(window.localStorage.getItem(key) ?? 'null') as LayoutState | null
-    if (!parsed || !(parsed.preset in LABELS)) return fallback
+    if (!parsed || (parsed.preset !== 'custom' && !(parsed.preset in LABELS))) return fallback
     const ids = new Set(panels.map((panel) => panel.id))
     for (const name of Object.keys(LABELS) as DockableLayoutPreset[]) {
       const values = parsed.assignments?.[name]
       if (!values || values.length !== 3 || values.some((id) => !ids.has(id))) return fallback
     }
-    return parsed
+    if (parsed.preset === 'custom') {
+      const custom = parsed.custom
+      if (
+        !custom ||
+        !(custom.basePreset in LABELS) ||
+        custom.assignments.length !== 3 ||
+        custom.assignments.some((id) => !ids.has(id))
+      ) {
+        return fallback
+      }
+      return { ...fallback, preset: 'custom', custom }
+    }
+
+    // Layouts persisted by the pre-custom implementation may have modified a
+    // named preset in place. Preserve that work, but correctly identify it as
+    // custom instead of claiming it is still the canonical preset.
+    const canonical = fallback.assignments[parsed.preset]
+    const defaultSizes = fallback.sizes[parsed.preset]
+    const storedAssignments = parsed.assignments[parsed.preset]
+    const storedSizes = parsed.sizes[parsed.preset]
+    const differs =
+      storedAssignments.some((id, index) => id !== canonical[index]) ||
+      storedSizes.some((value, index) => value !== defaultSizes[index])
+    return differs
+      ? {
+          ...fallback,
+          preset: 'custom',
+          custom: {
+            basePreset: parsed.preset,
+            assignments: [...storedAssignments],
+            sizes: [...storedSizes]
+          }
+        }
+      : fallback
   } catch {
     return fallback
   }
@@ -131,6 +170,8 @@ export const DockablePanelLayout = ({
   const [state, setState] = useState(() => loadState(panels, storageKey, defaultPreset))
   const [narrow, setNarrow] = useState(() => window.innerWidth < 720)
   const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+  const draggedIdRef = useRef<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const resize = () => setNarrow(window.innerWidth < 720)
@@ -144,31 +185,90 @@ export const DockablePanelLayout = ({
       /* optional */
     }
   }, [state, storageKey])
-  const activePreset = narrow ? 'narrow' : state.preset
-  const ids = narrow ? assignmentsFor(panels).d : state.assignments[state.preset]
-  const layout = geometry(activePreset, narrow ? [34, 67] : state.sizes[state.preset])
+  const basePreset =
+    state.preset === 'custom' ? (state.custom?.basePreset ?? defaultPreset) : state.preset
+  const activeLayout = narrow ? 'narrow' : state.preset
+  const ids = narrow
+    ? assignmentsFor(panels).d
+    : state.preset === 'custom'
+      ? (state.custom?.assignments ?? state.assignments[basePreset])
+      : state.assignments[state.preset]
+  const activeSizes =
+    state.preset === 'custom'
+      ? (state.custom?.sizes ?? state.sizes[basePreset])
+      : state.sizes[state.preset]
+  const layout = geometry(narrow ? 'narrow' : basePreset, narrow ? [34, 67] : activeSizes)
   const byId = useMemo(() => new Map(panels.map((panel) => [panel.id, panel])), [panels])
   const swap = (sourceId: string, targetId: string) => {
     if (narrow || sourceId === targetId) return
     setState((current) => {
-      const next = [...current.assignments[current.preset]]
+      const currentPreset =
+        current.preset === 'custom' ? (current.custom?.basePreset ?? defaultPreset) : current.preset
+      const next = [
+        ...(current.preset === 'custom'
+          ? (current.custom?.assignments ?? current.assignments[currentPreset])
+          : current.assignments[currentPreset])
+      ]
       const source = next.indexOf(sourceId)
       const target = next.indexOf(targetId)
       if (source < 0 || target < 0) return current
       const held = next[source] ?? ''
       next[source] = next[target] ?? ''
       next[target] = held
-      return { ...current, assignments: { ...current.assignments, [current.preset]: next } }
+      return {
+        ...current,
+        preset: 'custom',
+        custom: {
+          basePreset: currentPreset,
+          assignments: next,
+          sizes:
+            current.preset === 'custom'
+              ? (current.custom?.sizes ?? current.sizes[currentPreset])
+              : current.sizes[currentPreset]
+        }
+      }
     })
   }
   const updateSize = (index: 0 | 1, value: number) =>
+    setState((current) => {
+      const currentPreset =
+        current.preset === 'custom' ? (current.custom?.basePreset ?? defaultPreset) : current.preset
+      const currentSizes =
+        current.preset === 'custom'
+          ? (current.custom?.sizes ?? current.sizes[currentPreset])
+          : current.sizes[currentPreset]
+      return {
+        ...current,
+        preset: 'custom',
+        custom: {
+          basePreset: currentPreset,
+          assignments:
+            current.preset === 'custom'
+              ? (current.custom?.assignments ?? current.assignments[currentPreset])
+              : current.assignments[currentPreset],
+          sizes: clamp(currentPreset, currentSizes, index, value)
+        }
+      }
+    })
+
+  const choosePreset = (preset: DockableLayoutPreset) => {
+    const defaults = fallbackState(panels, preset)
     setState((current) => ({
       ...current,
-      sizes: {
-        ...current.sizes,
-        [current.preset]: clamp(current.preset, current.sizes[current.preset], index, value)
-      }
+      preset,
+      assignments: {
+        ...current.assignments,
+        [preset]: defaults.assignments[preset]
+      },
+      sizes: { ...current.sizes, [preset]: defaults.sizes[preset] }
     }))
+  }
+
+  const finishDrag = () => {
+    draggedIdRef.current = null
+    setDraggedId(null)
+    setDropTargetId(null)
+  }
   const beginResize = (event: React.PointerEvent<HTMLButtonElement>, separator: Separator) => {
     event.currentTarget.setPointerCapture(event.pointerId)
     const move = (moveEvent: PointerEvent) => {
@@ -198,13 +298,9 @@ export const DockablePanelLayout = ({
           Layout{' '}
           <select
             value={state.preset}
-            onChange={(event) =>
-              setState((current) => ({
-                ...current,
-                preset: event.target.value as DockableLayoutPreset
-              }))
-            }
+            onChange={(event) => choosePreset(event.target.value as DockableLayoutPreset)}
           >
+            {state.preset === 'custom' ? <option value="custom">Custom</option> : null}
             {(Object.keys(LABELS) as DockableLayoutPreset[]).map((preset) => (
               <option key={preset} value={preset}>
                 {LABELS[preset]}
@@ -216,7 +312,12 @@ export const DockablePanelLayout = ({
           Reset layout
         </button>
       </div>
-      <div ref={rootRef} className="app-dock-canvas" data-layout={activePreset}>
+      <div
+        ref={rootRef}
+        className="app-dock-canvas"
+        data-layout={activeLayout}
+        data-layout-base={basePreset}
+      >
         {ids.map((id, index) => {
           const panel = byId.get(id)
           const rect = layout.rects[index]
@@ -233,19 +334,41 @@ export const DockablePanelLayout = ({
               className="app-dock-panel"
               style={style}
               aria-label={panel.title}
+              data-panel-id={panel.id}
+              data-drop-target={dropTargetId === panel.id ? 'true' : 'false'}
+              onDragEnter={(event) => {
+                event.preventDefault()
+                if (draggedIdRef.current && draggedIdRef.current !== panel.id) {
+                  setDropTargetId(panel.id)
+                }
+              }}
+              onDragOver={(event) => {
+                event.preventDefault()
+                event.dataTransfer.dropEffect = 'move'
+              }}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  setDropTargetId((current) => (current === panel.id ? null : current))
+                }
+              }}
+              onDrop={(event) => {
+                event.preventDefault()
+                const sourceId =
+                  event.dataTransfer.getData('text/plain') || draggedIdRef.current || draggedId
+                if (sourceId) swap(sourceId, panel.id)
+                finishDrag()
+              }}
             >
               <header
                 draggable={!narrow}
+                data-panel-drag-handle={panel.id}
                 onDragStart={(event) => {
+                  draggedIdRef.current = panel.id
                   setDraggedId(panel.id)
+                  event.dataTransfer.setData('text/plain', panel.id)
                   event.dataTransfer.effectAllowed = 'move'
                 }}
-                onDragEnd={() => setDraggedId(null)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => {
-                  if (draggedId) swap(draggedId, panel.id)
-                  setDraggedId(null)
-                }}
+                onDragEnd={finishDrag}
               >
                 <span className="app-dock-grip" aria-hidden="true">
                   ⠿
@@ -258,6 +381,7 @@ export const DockablePanelLayout = ({
                     value={panel.id}
                     onChange={(event) => swap(panel.id, event.target.value)}
                     disabled={narrow}
+                    draggable={false}
                   >
                     {ids.map((targetId, targetIndex) => (
                       <option key={targetId} value={targetId}>

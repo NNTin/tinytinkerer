@@ -26,6 +26,7 @@ describe('DockablePanelLayout', () => {
     expect(separator).toHaveAttribute('aria-valuenow', '32')
     fireEvent.keyDown(separator, { key: 'ArrowRight' })
     expect(separator).toHaveAttribute('aria-valuenow', '34')
+    expect(screen.getByLabelText('Layout')).toHaveValue('custom')
   })
 
   it('moves a panel with the accessible position selector', () => {
@@ -37,10 +38,34 @@ describe('DockablePanelLayout', () => {
     ])
     const movePreview = screen.getByLabelText('Move Preview')
     fireEvent.change(movePreview, { target: { value: 'editor' } })
+    expect(screen.getByLabelText('Layout')).toHaveValue('custom')
     expect(screen.getAllByRole('region').map((node) => node.getAttribute('aria-label'))).toEqual([
       'Editor',
       'Preview',
       'Assistant'
+    ])
+  })
+
+  it('swaps panels when a header is dropped anywhere on another panel', () => {
+    render(<DockablePanelLayout panels={[...panels]} storageKey="dock-test" />)
+    const data = new Map<string, string>()
+    const dataTransfer = {
+      effectAllowed: 'none',
+      dropEffect: 'none',
+      setData: (type: string, value: string) => data.set(type, value),
+      getData: (type: string) => data.get(type) ?? ''
+    }
+    fireEvent.dragStart(document.querySelector('[data-panel-drag-handle="preview"]')!, {
+      dataTransfer
+    })
+    fireEvent.dragOver(screen.getByRole('region', { name: 'Assistant' }), { dataTransfer })
+    fireEvent.drop(screen.getByRole('region', { name: 'Assistant' }), { dataTransfer })
+
+    expect(screen.getByLabelText('Layout')).toHaveValue('custom')
+    expect(screen.getAllByRole('region').map((node) => node.getAttribute('aria-label'))).toEqual([
+      'Assistant',
+      'Editor',
+      'Preview'
     ])
   })
 })
