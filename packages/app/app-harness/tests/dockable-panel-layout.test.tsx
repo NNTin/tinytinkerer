@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DockablePanelLayout } from '../src/dockable-panel-layout'
 
 const panels = [
@@ -66,6 +66,39 @@ describe('DockablePanelLayout', () => {
       'Assistant',
       'Editor',
       'Preview'
+    ])
+  })
+
+  it('does not pass an internal panel drop to the target panel content', () => {
+    const contentDrop = vi.fn()
+    render(
+      <DockablePanelLayout
+        panels={[
+          { id: 'editor', title: 'Editor', content: <div onDrop={contentDrop}>editor body</div> },
+          panels[1],
+          panels[2]
+        ]}
+        storageKey="dock-test"
+      />
+    )
+    const data = new Map<string, string>()
+    const dataTransfer = {
+      effectAllowed: 'none',
+      dropEffect: 'none',
+      setData: (type: string, value: string) => data.set(type, value),
+      getData: (type: string) => data.get(type) ?? ''
+    }
+    fireEvent.dragStart(document.querySelector('[data-panel-drag-handle="preview"]')!, {
+      dataTransfer
+    })
+    fireEvent.drop(screen.getByText('editor body'), { dataTransfer })
+
+    expect(contentDrop).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Layout')).toHaveValue('custom')
+    expect(screen.getAllByRole('region').map((node) => node.getAttribute('aria-label'))).toEqual([
+      'Editor',
+      'Preview',
+      'Assistant'
     ])
   })
 })

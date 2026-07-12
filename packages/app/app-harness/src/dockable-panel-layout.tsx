@@ -25,6 +25,7 @@ const LABELS: Record<DockableLayoutPreset, string> = {
   c: 'C · Three columns',
   d: 'D · Assistant first'
 }
+const PANEL_DRAG_TYPE = 'application/x-tinytinkerer-panel-id'
 const assignmentsFor = (panels: DockablePanel[]): LayoutState['assignments'] => {
   const editor = panels.find((panel) => panel.id === 'editor')?.id ?? panels[0]?.id ?? ''
   const preview = panels.find((panel) => panel.id === 'preview')?.id ?? panels[1]?.id ?? ''
@@ -336,13 +337,14 @@ export const DockablePanelLayout = ({
               aria-label={panel.title}
               data-panel-id={panel.id}
               data-drop-target={dropTargetId === panel.id ? 'true' : 'false'}
-              onDragEnter={(event) => {
-                event.preventDefault()
+              onDragEnterCapture={(event) => {
                 if (draggedIdRef.current && draggedIdRef.current !== panel.id) {
+                  event.preventDefault()
                   setDropTargetId(panel.id)
                 }
               }}
-              onDragOver={(event) => {
+              onDragOverCapture={(event) => {
+                if (!draggedIdRef.current) return
                 event.preventDefault()
                 event.dataTransfer.dropEffect = 'move'
               }}
@@ -351,10 +353,12 @@ export const DockablePanelLayout = ({
                   setDropTargetId((current) => (current === panel.id ? null : current))
                 }
               }}
-              onDrop={(event) => {
+              onDropCapture={(event) => {
+                if (!draggedIdRef.current) return
                 event.preventDefault()
+                event.stopPropagation()
                 const sourceId =
-                  event.dataTransfer.getData('text/plain') || draggedIdRef.current || draggedId
+                  event.dataTransfer.getData(PANEL_DRAG_TYPE) || draggedIdRef.current || draggedId
                 if (sourceId) swap(sourceId, panel.id)
                 finishDrag()
               }}
@@ -365,7 +369,7 @@ export const DockablePanelLayout = ({
                 onDragStart={(event) => {
                   draggedIdRef.current = panel.id
                   setDraggedId(panel.id)
-                  event.dataTransfer.setData('text/plain', panel.id)
+                  event.dataTransfer.setData(PANEL_DRAG_TYPE, panel.id)
                   event.dataTransfer.effectAllowed = 'move'
                 }}
                 onDragEnd={finishDrag}
