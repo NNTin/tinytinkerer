@@ -33,7 +33,7 @@ export const createIdeAppTools = (): Tool<unknown, unknown>[] => [
   {
     id: 'apply_file_changes',
     description:
-      'Atomically create, replace, exact-edit, move, or delete IDE files. Existing files require the revision returned by read_files; conflicts reject the whole batch.',
+      'Atomically create, replace, exact-edit, move, or delete IDE files. Existing files require the revision returned by the latest read_files call; conflicts reject the whole batch, so re-read affected files and recompute changes before retrying.',
     schema: applyFileChangesInputSchema,
     execute: (input) => ideControllerHandle.request('applyFileChanges', input)
   },

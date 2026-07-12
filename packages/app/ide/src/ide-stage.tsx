@@ -11,14 +11,12 @@ import { ideControllerHandle, type IdeController } from './controller'
 import type { ApplyFileChangesInput } from './contracts'
 import { buildIdeFileTree, type IdeFileTreeNode } from './file-tree'
 import { loadIdeWorkspace, saveIdeWorkspace, type PersistedIdeWorkspace } from './workspace-db'
+import { applyWorkspaceChanges, getIdeFileRevision, type FileSnapshot } from './workspace-changes'
 
-type FileSnapshot = Record<string, string>
 type HistoryEntry = { files: FileSnapshot; deletedPaths: string[] }
 
 const toCodes = (files: Record<string, { code: string }>): FileSnapshot =>
   Object.fromEntries(Object.entries(files).map(([path, file]) => [path, file.code]))
-
-const countOccurrences = (value: string, search: string): number => value.split(search).length - 1
 
 const displayLog = (value: unknown): string => {
   try {
@@ -202,7 +200,7 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
             .sort()
             .map((path) => ({
               path,
-              revision: revisionsRef.current[path] ?? 0,
+              revision: getIdeFileRevision(revisionsRef.current, path),
               bytes: new TextEncoder().encode(files[path] ?? '').byteLength
             })),
           runtime: { status: stateRef.current.status, error: stateRef.current.error ?? null }
@@ -233,79 +231,36 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
         return {
           files: paths.map((path) => {
             if (!(path in files)) throw new Error(`File does not exist: ${path}`)
-            return { path, content: files[path], revision: revisionsRef.current[path] ?? 0 }
+            return {
+              path,
+              content: files[path],
+              revision: getIdeFileRevision(revisionsRef.current, path)
+            }
           })
         }
       },
       applyFileChanges({ changes }: ApplyFileChangesInput) {
         const before = currentCodes()
-        const next = { ...before }
-        const nextDeleted = new Set(deletedRef.current)
-        const touched = new Set<string>()
-
-        for (const change of changes) {
-          const actualRevision = revisionsRef.current[change.path]
-          if (change.kind === 'create') {
-            if (change.path in next) throw new Error(`File already exists: ${change.path}`)
-            next[change.path] = change.content
-            nextDeleted.delete(change.path)
-            touched.add(change.path)
-            continue
-          }
-          if (!(change.path in next)) throw new Error(`File does not exist: ${change.path}`)
-          if (actualRevision !== change.expectedRevision) {
-            throw new Error(
-              `Revision conflict for ${change.path}: expected ${change.expectedRevision}, received ${actualRevision ?? 0}`
-            )
-          }
-          if (change.kind === 'replace') {
-            next[change.path] = change.content
-            touched.add(change.path)
-          } else if (change.kind === 'edit') {
-            const occurrences = countOccurrences(next[change.path] ?? '', change.oldText)
-            if (occurrences === 0) throw new Error(`Text was not found in ${change.path}`)
-            if (occurrences > 1 && !change.replaceAll) {
-              throw new Error(
-                `Text is ambiguous in ${change.path}; set replaceAll to edit every match`
-              )
-            }
-            next[change.path] = change.replaceAll
-              ? (next[change.path] ?? '').split(change.oldText).join(change.newText)
-              : (next[change.path] ?? '').replace(change.oldText, change.newText)
-            touched.add(change.path)
-          } else if (change.kind === 'move') {
-            if (change.destination in next) {
-              throw new Error(`Destination already exists: ${change.destination}`)
-            }
-            next[change.destination] = next[change.path] ?? ''
-            delete next[change.path]
-            nextDeleted.add(change.path)
-            nextDeleted.delete(change.destination)
-            touched.add(change.path)
-            touched.add(change.destination)
-          } else {
-            delete next[change.path]
-            nextDeleted.add(change.path)
-            touched.add(change.path)
-          }
-        }
+        const result = applyWorkspaceChanges(
+          {
+            files: before,
+            revisions: revisionsRef.current,
+            deletedPaths: deletedRef.current
+          },
+          { changes }
+        )
 
         historyRef.current.push({ files: before, deletedPaths: [...deletedRef.current] })
         if (historyRef.current.length > 20) historyRef.current.shift()
         workspaceRevisionRef.current += 1
-        const nextRevisions = { ...revisionsRef.current }
-        for (const path of touched) {
-          if (path in next) nextRevisions[path] = (nextRevisions[path] ?? 0) + 1
-          else delete nextRevisions[path]
-        }
-        revisionsRef.current = nextRevisions
-        installSnapshot(next, nextDeleted)
+        revisionsRef.current = result.revisions
+        installSnapshot(result.files, result.deletedPaths)
         return Promise.resolve({
           workspaceRevision: workspaceRevisionRef.current,
-          changes: [...touched].map((path) => ({
+          changes: result.touchedPaths.map((path) => ({
             path,
-            deleted: !(path in next),
-            revision: nextRevisions[path]
+            deleted: !(path in result.files),
+            revision: result.revisions[path]
           }))
         })
       },
