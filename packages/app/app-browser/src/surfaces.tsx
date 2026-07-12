@@ -38,7 +38,7 @@ import { startStatusPolling } from './status'
 import { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 import { createEdgeFetch } from './runtime/edge-fetch'
 import { parseJsonWithTelemetry, parseWithTelemetry } from './telemetry/request-telemetry'
-import { markOAuthCallbackHandled } from './telemetry/oauth-callback-watchdog'
+import { markOAuthCallbackHandled } from './telemetry/oauth-callback-handled'
 
 export type ChatSurfaceController = {
   isBooting: boolean

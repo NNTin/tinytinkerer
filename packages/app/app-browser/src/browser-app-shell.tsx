@@ -51,7 +51,9 @@ export const BrowserAppShell = ({
   // Dynamically imported so the watchdog and its telemetry/URL helpers stay out
   // of every shell's startup entry chunk (the bundle-size guard keeps that entry
   // lean); a 10s boot-time backstop has no reason to load synchronously, and the
-  // import resolves long before the window elapses.
+  // import resolves long before the window elapses. The eager callback path only
+  // needs the flag setter, which lives in the tiny ./telemetry/oauth-callback-handled
+  // module — so this stays the module's ONLY importer and Rollup can split it out.
   useEffect(() => {
     if (!ready) {
       return undefined

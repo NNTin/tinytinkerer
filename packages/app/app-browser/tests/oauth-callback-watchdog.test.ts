@@ -10,9 +10,11 @@ import type { CaptureExceptionSink } from '@tinytinkerer/sentry-telemetry'
 // carrying an OAuth code and fires a Sentry capture if nothing marks itself
 // "handled" (and no token appears) within the window.
 //
-// The module holds a `handled` singleton, so each test re-imports it fresh via
-// vi.resetModules() rather than exposing a test-only reset export (this
-// codebase avoids test-only exports where a plain re-import will do). Because
+// A sibling module (./oauth-callback-handled) holds the `handled` singleton, so
+// each test re-imports it fresh via vi.resetModules() rather than exposing a
+// test-only reset export (this codebase avoids test-only exports where a plain
+// re-import will do). The watchdog imports that flag module statically, so both
+// resolve to the same fresh instance when re-imported after the reset. Because
 // resetModules() also invalidates the already-loaded @tinytinkerer/sentry-telemetry
 // instance, the sink must be (re-)registered AFTER the reset, against the same
 // fresh instance the watchdog's import chain will resolve to — registering it
@@ -33,7 +35,12 @@ const loadWatchdog = async () => {
   vi.resetModules()
   const { setCaptureExceptionSink } = await import('@tinytinkerer/sentry-telemetry')
   setCaptureExceptionSink(sink)
-  return import('../src/telemetry/oauth-callback-watchdog.js')
+  const watchdog = await import('../src/telemetry/oauth-callback-watchdog.js')
+  // markOAuthCallbackHandled moved to the sibling flag module the watchdog reads;
+  // import it in the SAME post-reset cycle so it flips the very `handled` singleton
+  // this freshly-loaded watchdog checks.
+  const { markOAuthCallbackHandled } = await import('../src/telemetry/oauth-callback-handled.js')
+  return { ...watchdog, markOAuthCallbackHandled }
 }
 
 beforeEach(() => {

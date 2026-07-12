@@ -1,4 +1,4 @@
-import { HumanPromptControls } from './human-prompt-host'
+import { HumanPromptControls } from './human-prompt-controls'
 import { useHumanPromptPresentation } from './human-prompt-presentation'
 
 // The composer-docked presentation of a human prompt (issue #85): instead of a

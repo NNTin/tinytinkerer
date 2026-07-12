@@ -1,19 +1,8 @@
 import { urlHasOAuthCode } from '../oauth-callback-url'
+import { wasOAuthCallbackHandled } from './oauth-callback-handled'
 import { captureTelemetryException } from './telemetry'
 
 const WATCHDOG_DELAY_MS = 10_000
-
-// Set by the callback controller (useGitHubOAuthCallbackController) the moment
-// it mounts and starts handling the OAuth response — regardless of whether that
-// handling ultimately succeeds or fails, both of which already have their own
-// Sentry captures (issue #409, auth.ts's captureOAuthCallbackFailure). This flag
-// exists purely to distinguish "a handler ran" from "no handler ran at all",
-// which is the failure mode this watchdog exists to catch.
-let handled = false
-
-export const markOAuthCallbackHandled = (): void => {
-  handled = true
-}
 
 /**
  * Backstop for the class of bug that motivated this watchdog: a shell can serve
@@ -41,7 +30,7 @@ export const armOAuthCallbackWatchdog = (getToken: () => string | null): (() => 
   }
 
   const timeoutId = setTimeout(() => {
-    if (handled || getToken() != null) {
+    if (wasOAuthCallbackHandled() || getToken() != null) {
       return
     }
 
