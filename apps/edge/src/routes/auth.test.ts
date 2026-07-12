@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { githubExchangeResponseSchema } from '@tinytinkerer/contracts'
+import { setCaptureExceptionSink, type CaptureExceptionSink } from '@tinytinkerer/sentry-telemetry'
 import app from '../index.js'
 import { clearInboundRateLimits } from '../lib/inbound-rate-limit.js'
 
@@ -217,5 +218,99 @@ describe('POST /auth/github/exchange', () => {
     expect(githubExchangeResponseSchema.parse(await res.json())).toEqual({
       error: 'OAuth exchange failed'
     })
+  })
+})
+
+// GitHub returns OAuth errors (incorrect_client_credentials, bad_verification_code)
+// with an HTTP 200 body, which the shared http_error telemetry hook (only fires on
+// !response.ok) cannot see — so login failures were sent to the client and dropped
+// with no Sentry signal (issue #409). These assert the explicit capture the handler
+// now emits, with the OAuth step, provider error code/description, and status — and
+// that it never leaks the client secret, the auth code, or a token.
+describe('Sentry capture on OAuth exchange failure (issue #409)', () => {
+  const sink = vi.fn<CaptureExceptionSink>()
+
+  beforeEach(() => {
+    sink.mockReset()
+    setCaptureExceptionSink(sink)
+  })
+
+  afterEach(() => {
+    // Restore the edge's real sink (registered at module load by ../lib/sentry).
+    setCaptureExceptionSink(null)
+  })
+
+  const oauthCapture = () =>
+    sink.mock.calls.find(([, options]) => options.contexts?.oauth !== undefined)
+
+  it('captures incorrect_client_credentials with the code, description, and status — once', async () => {
+    stubGitHub(
+      JSON.stringify({
+        error: 'incorrect_client_credentials',
+        error_description: 'The client_id and/or client_secret passed are incorrect.'
+      })
+    )
+
+    const res = await exchange(ENV)
+    expect(res.status).toBe(400)
+
+    // GitHub reports this with HTTP 200, so the http_error hook stays silent and
+    // this is the *only* capture — no duplicate event for one failure.
+    expect(sink).toHaveBeenCalledTimes(1)
+    const call = oauthCapture()
+    if (!call) throw new Error('expected an OAuth exchange capture')
+    const [error, options] = call
+    expect(options.level).toBe('error')
+    expect(options.tags).toMatchObject({
+      source: 'oauth',
+      oauth_step: 'github_token_exchange',
+      oauth_error: 'incorrect_client_credentials',
+      http_status: 200
+    })
+    expect(options.contexts?.oauth).toMatchObject({
+      step: 'github_token_exchange',
+      error_code: 'incorrect_client_credentials',
+      error_description: 'The client_id and/or client_secret passed are incorrect.',
+      http_status: 200
+    })
+    expect(options.fingerprint).toEqual(['oauth-exchange', 'incorrect_client_credentials'])
+
+    // Never leak the client secret, the authorization code, or a token.
+    const serialized = JSON.stringify({ message: error.message, options })
+    expect(serialized).not.toContain('test-client-secret')
+    expect(serialized).not.toContain(VALID_CODE)
+    expect(serialized).not.toContain('gho_')
+  })
+
+  it('fingerprints bad_verification_code separately from a bad secret', async () => {
+    stubGitHub(JSON.stringify({ error: 'bad_verification_code' }))
+    await exchange(ENV)
+    expect(oauthCapture()?.[1].fingerprint).toEqual(['oauth-exchange', 'bad_verification_code'])
+  })
+
+  it('captures a 200 body missing both access_token and error', async () => {
+    stubGitHub('{}')
+    await exchange(ENV)
+    expect(oauthCapture()?.[1].contexts?.oauth).toMatchObject({
+      reason: 'missing_access_token',
+      http_status: 200
+    })
+  })
+
+  it('captures a non-JSON 200 body (proxy error page during a GitHub incident)', async () => {
+    stubGitHub('<html>ok</html>', 200, 'text/html')
+    await exchange(ENV)
+    expect(oauthCapture()?.[1].contexts?.oauth).toMatchObject({
+      reason: 'non_json_upstream_body',
+      http_status: 200
+    })
+  })
+
+  it('does not double-capture a non-ok status (already seen by the http_error hook)', async () => {
+    // A non-ok status without a usable OAuth error is captured once, by the shared
+    // http_error hook — the handler must not add a second OAuth capture for it.
+    stubGitHub('{}', 500)
+    await exchange(ENV)
+    expect(oauthCapture()).toBeUndefined()
   })
 })

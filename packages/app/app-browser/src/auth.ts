@@ -1,7 +1,7 @@
 import { EDGE_ROUTE_PATHS, githubExchangeResponseSchema } from '@tinytinkerer/contracts'
 import type { BrowserApp } from './app'
 import type { BrowserShell } from './shell'
-import { getTelemetryHeaders } from './telemetry/telemetry'
+import { captureTelemetryException, getTelemetryHeaders } from './telemetry/telemetry'
 import {
   fetchWithTelemetry,
   parseJsonWithTelemetry,
@@ -144,6 +144,31 @@ const exchangeCode = async (shell: BrowserShell, code: string): Promise<string> 
   return data.accessToken
 }
 
+type OAuthCallbackStep = 'missing_code' | 'state_validation' | 'code_exchange'
+
+// Sentry capture for a client-side GitHub OAuth callback failure. Complements
+// the edge capture (issue #409): the `missing_code` and `state_validation` steps
+// throw before any network call, so they never reach the edge and would
+// otherwise be invisible; `code_exchange` records the login attempt's failure
+// with the reason the edge relayed. NEVER include the authorization code — only
+// the step and the (already user-safe) error message are attached. Consent
+// gating and `beforeSend` scrubbing still apply downstream (see
+// docs/sentry-telemetry.md).
+const captureOAuthCallbackFailure = (step: OAuthCallbackStep, error: unknown): void => {
+  const message = error instanceof Error ? error.message : String(error)
+  captureTelemetryException(
+    error instanceof Error ? error : new Error(`GitHub OAuth callback failed: ${step}`),
+    {
+      level: 'error',
+      tags: { source: 'oauth', oauth_step: step },
+      contexts: { oauth: { step, message } },
+      // Each step is a distinct failure mode; without an explicit fingerprint the
+      // shared synthetic frame would conflate them into a single Sentry issue.
+      fingerprint: ['oauth-callback', step]
+    }
+  )
+}
+
 export const completeGitHubOAuthCallback = async (
   app: BrowserApp,
   options: {
@@ -152,17 +177,22 @@ export const completeGitHubOAuthCallback = async (
   }
 ): Promise<void> => {
   if (!options.code) {
-    throw new Error('No authorization code received from GitHub.')
+    const error = new Error('No authorization code received from GitHub.')
+    captureOAuthCallbackFailure('missing_code', error)
+    throw error
   }
 
   if (!validateOAuthState(app.shell, options.state)) {
-    throw new Error('Authentication failed. Please try signing in again.')
+    const error = new Error('Authentication failed. Please try signing in again.')
+    captureOAuthCallbackFailure('state_validation', error)
+    throw error
   }
 
   try {
     const token = await exchangeCode(app.shell, options.code)
     await app.stores.auth.getState().setToken(token)
   } catch (error) {
+    captureOAuthCallbackFailure('code_exchange', error)
     if (error instanceof Error) {
       throw new Error(error.message || 'Authentication failed. Please try again.', { cause: error })
     }
