@@ -98,6 +98,19 @@ describe('auth helpers', () => {
     expect(sessionStorage.getItem('oauth_state')).toBeNull()
   })
 
+  it('remembers the current top-level document as the return url when not embedded', () => {
+    // Non-embedded surfaces (/, /web, /widget, /mobile opened directly) must
+    // return to the exact page the user started on after the callback completes
+    // at the origin root — otherwise login strands them on `/`.
+    const app = createAuthApp()
+    const href = 'http://localhost:3111/web/'
+    vi.stubGlobal('location', { ...window.location, href, assign: vi.fn() })
+
+    startGitHubOAuth(app.shell)
+
+    expect(sessionStorage.getItem('tinytinkerer-test:oauth_return_url')).toBe(href)
+  })
+
   it('escapes iframe oauth to the top-level tab and remembers the host return url', () => {
     const app = createAuthApp()
     const topAssignSpy = stubEmbeddedContext()

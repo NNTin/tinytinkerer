@@ -76,11 +76,17 @@ const navigateForOAuth = (url: string): void => {
 }
 
 export const startGitHubOAuth = (shell: BrowserShell): void => {
-  if (isEmbeddedContext()) {
-    const returnUrl = getTopLevelHref()
-    if (returnUrl) {
-      sessionStorage.setItem(oauthReturnUrlKey(shell), returnUrl)
-    }
+  // Remember exactly where the user started so the callback can return them to
+  // that surface (/, /web, /widget, /mobile, …). The callback is handled by
+  // whichever surface owns the redirect_uri's path — for the shells' relative
+  // base that resolves to the origin root (apps/host), so WITHOUT this every
+  // login would strand the user on `/` regardless of where they clicked "Sign
+  // in with GitHub". In an embedded context the top-level page is the real
+  // return target (the iframe only escaped to it); otherwise it is this
+  // document. Consumed once, on success, by completeGitHubOAuthCallback's caller.
+  const returnUrl = isEmbeddedContext() ? getTopLevelHref() : window.location.href
+  if (returnUrl) {
+    sessionStorage.setItem(oauthReturnUrlKey(shell), returnUrl)
   }
 
   navigateForOAuth(createGitHubLoginUrl(shell))

@@ -113,9 +113,23 @@ export const resolveBrowserShellConfig = (
 export const resolveBrowserShellBootstrapConfig = (
   options: BrowserShellBootstrapOptions
 ): BrowserShellConfig => {
+  // Resolve the callback against the origin as a URL rather than string-joining
+  // `origin + baseUrl`. The browser shells share ONE build served at /web/,
+  // /widget/, /mobile/ and therefore ship with a RELATIVE Vite base (`./`), so
+  // the old concatenation produced `https://host./#/auth/callback` — a
+  // trailing-dot host that only "worked" because the real domain normalized it
+  // back to the root, and an outright *invalid URL* on `http://localhost:PORT`
+  // (the `:PORT.` is an illegal port). `new URL('./', origin)` resolves both
+  // `./` and `/` to the origin root, and a genuine sub-path base (e.g. a deploy
+  // prefix `/pr-1/`) to that path — always a well-formed URL. The callback lands
+  // on whichever surface owns that path (the origin root is apps/host), and the
+  // stored return URL (see startGitHubOAuth) sends the user back to the exact
+  // surface they started from.
   const githubRedirectUri =
     options.githubRedirectUri ??
-    (options.githubClientId ? `${options.origin}${options.baseUrl}#/auth/callback` : undefined)
+    (options.githubClientId
+      ? `${new URL(options.baseUrl, options.origin).href}#/auth/callback`
+      : undefined)
 
   return {
     edgeBaseUrl: options.edgeBaseUrl ?? DEFAULT_CONFIG.edgeBaseUrl,
