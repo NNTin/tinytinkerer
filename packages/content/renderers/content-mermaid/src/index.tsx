@@ -9,13 +9,13 @@ import {
   type ReactNodeRendererPlugin
 } from '@tinytinkerer/content-react'
 
-type MermaidRenderResult = {
+export type MermaidRenderResult = {
   svg: string
 }
 
-type MermaidParseResult = boolean | { diagramType: string } | undefined
+export type MermaidParseResult = boolean | { diagramType: string } | undefined
 
-type MermaidApi = {
+export type MermaidApi = {
   initialize: (config: Record<string, unknown>) => void
   parse?: (
     code: string,
@@ -50,7 +50,7 @@ const initializeMermaid = (mermaid: MermaidApi): MermaidApi => {
   return mermaid
 }
 
-const loadMermaid = (): Promise<MermaidApi> => {
+export const loadMermaidRuntime = (): Promise<MermaidApi> => {
   const existingMermaid = window.mermaid
   if (existingMermaid) {
     return Promise.resolve(initializeMermaid(existingMermaid))
@@ -81,6 +81,43 @@ const loadMermaid = (): Promise<MermaidApi> => {
   })
 
   return mermaidPromise
+}
+
+export type MermaidDiagnostic = { message: string; line?: number; column?: number }
+
+export const toMermaidDiagnostic = (error: unknown): MermaidDiagnostic => {
+  const message = error instanceof Error ? error.message : String(error)
+  const lineMatch = message.match(/line\s+(\d+)/i)
+  const columnMatch = message.match(/column\s+(\d+)/i)
+  return {
+    message,
+    ...(lineMatch?.[1] ? { line: Number(lineMatch[1]) } : {}),
+    ...(columnMatch?.[1] ? { column: Number(columnMatch[1]) } : {})
+  }
+}
+
+export const renderMermaidSource = async (code: string, id: string): Promise<{ svg: string }> => {
+  const mermaid = await loadMermaidRuntime()
+  if (typeof mermaid.parse === 'function') {
+    const parsed = await mermaid.parse(code)
+    if (parsed === false) throw new Error('Invalid Mermaid syntax')
+  }
+  const result = await mermaid.render(id, code)
+  return { svg: sanitizeSvgMarkup(result.svg) }
+}
+
+export const validateMermaidSource = async (code: string): Promise<MermaidDiagnostic | null> => {
+  if (code.trim().length === 0) return null
+  try {
+    const mermaid = await loadMermaidRuntime()
+    if (typeof mermaid.parse === 'function') {
+      const parsed = await mermaid.parse(code)
+      if (parsed === false) return { message: 'Invalid Mermaid syntax' }
+    }
+    return null
+  } catch (error) {
+    return toMermaidDiagnostic(error)
+  }
 }
 
 export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlockNode>) => {
@@ -174,7 +211,7 @@ export const createMermaidPlugin = (): ReactNodeRendererPlugin<'codeBlock'> => {
     priority: 50,
     requirements: { lazy: true, clientOnly: true, needsDom: true },
     matches: (node) => node.language === 'mermaid',
-    load: () => loadMermaid().then(() => undefined),
+    load: () => loadMermaidRuntime().then(() => undefined),
     render: (node) => <MermaidNodeRenderer node={node} />,
     fallback: (node) => <CodeBlockFallback code={node.code} language={node.language ?? 'mermaid'} />
   }

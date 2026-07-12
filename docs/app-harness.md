@@ -11,10 +11,17 @@ TinyTinkerer has three related browser-shell shapes:
 1. **Chat-only shells**, such as `apps/shell`, render the shared chat surface directly.
 2. **App harness shells**, currently `apps/canvas`, render the same chat surface over an
    isolated iframe application and give the assistant app-specific tools.
-3. **Integrated app shells**, currently `apps/ide`, reuse the harness's dock-aware
-   `AppStageShell` with a trusted React stage rather than an opaque iframe. The IDE
-   can persist its virtual workspace in IndexedDB directly; project execution remains
-   isolated in Sandpack's cross-origin runtime.
+3. **Integrated app shells**, currently `apps/ide` and `apps/mermaid`, use trusted React
+   stages rather than opaque iframes. The IDE reuses `AppStageShell`; Mermaid uses the
+   harness's `DockablePanelLayout` so editor, preview, and pinned chat can be reordered
+   and resized. Both persist their virtual workspaces in IndexedDB. IDE project execution
+   remains isolated in Sandpack's cross-origin runtime; Mermaid renders only SVG that has
+   passed Mermaid's strict mode and the shared SVG sanitizer.
+
+The IDE and Mermaid also share `@tinytinkerer/file-tools`. It owns the canonical
+`read_files` / `apply_file_changes` contracts, injected tool factory, revision checks,
+and atomic file-change engine. Each stage supplies storage and app-specific diagnostics;
+the Mermaid stage exposes `/diagram.mmd` and returns parse diagnostics with tool receipts.
 
 Excalidraw is the first iframe application. The architecture deliberately separates:
 

@@ -17,4 +17,11 @@ export type { HarnessShellProps } from './harness-shell'
 export { AppStageShell } from './app-stage-shell'
 export type { AppStageShellProps } from './app-stage-shell'
 
+export { DockablePanelLayout } from './dockable-panel-layout'
+export type {
+  DockableLayoutPreset,
+  DockablePanel,
+  DockablePanelLayoutProps
+} from './dockable-panel-layout'
+
 export { resolveEmbeddedAppUrl } from './app-url'

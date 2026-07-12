@@ -9,6 +9,16 @@ const baseFillers = [
 ]
 
 describe('deriveStarterPrompts (B3)', () => {
+  it('puts app-owned prompts before capability and generic suggestions', () => {
+    const prompts = deriveStarterPrompts({
+      appStarterPrompts: ['Create a Mermaid flowchart.'],
+      manifests: [],
+      pluginActivation: {},
+      hasEnabledMcpServer: false
+    })
+    expect(prompts[0]).toBe('Create a Mermaid flowchart.')
+  })
+
   it('returns only the neutral fillers when nothing is enabled', () => {
     expect(
       deriveStarterPrompts({ manifests: [], pluginActivation: {}, hasEnabledMcpServer: false })

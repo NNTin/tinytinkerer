@@ -1,4 +1,4 @@
-import type { ApplyFileChangesInput } from './contracts'
+import type { ApplyFileChangesInput } from '@tinytinkerer/file-tools'
 
 export type IdeController = {
   inspectWorkspace(): unknown

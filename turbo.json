@@ -19,7 +19,8 @@
       "dependsOn": [
         "@tinytinkerer/shell#build",
         "@tinytinkerer/canvas#build",
-        "@tinytinkerer/ide-shell#build"
+        "@tinytinkerer/ide-shell#build",
+        "@tinytinkerer/mermaid-shell#build"
       ],
       "outputs": ["dist/**", "dist-root/**"],
       "env": [

@@ -30,6 +30,8 @@ export type CreateBrowserShellRootOptions = {
   // named group here; web/mobile/widget omit it. Threaded straight to
   // createBrowserApp → chat store → runtime, and surfaced in the tool picker.
   appToolGroup?: AppToolGroup
+  // Optional app-specific empty-state suggestions (for example Mermaid recipes).
+  starterPrompts?: readonly string[]
   // Whether to register the service worker for this page load. Defaults to true
   // (a shell that ships no SW no-ops, so this stays a no-op for canvas/host). The
   // single path-routed browser shell is ONE build served at /web/, /widget/, and
@@ -63,6 +65,7 @@ export const createBrowserShellRoot = ({
   router,
   BootScreen,
   appToolGroup,
+  starterPrompts,
   registerServiceWorker = true
 }: CreateBrowserShellRootOptions): void => {
   // Shell-agnostic embedding contract: every shell reads the same window key.
@@ -88,7 +91,10 @@ export const createBrowserShellRoot = ({
     buildHash: __BUILD_HASH__
   })
 
-  const browserApp = createBrowserApp(browserConfig, appToolGroup ? { appToolGroup } : {})
+  const browserApp = createBrowserApp(browserConfig, {
+    ...(appToolGroup ? { appToolGroup } : {}),
+    ...(starterPrompts ? { starterPrompts } : {})
+  })
 
   // Register the service worker and start update checks independently of the
   // React render, so a shell that ships one (the mobile presentation) stays

@@ -11,6 +11,7 @@ import { join } from 'node:path'
 export const HOSTED_APP_SPECS = Object.freeze([
   { slug: 'canvas', label: 'Canvas', mountPath: '/canvas/', source: 'canvas' },
   { slug: 'ide', label: 'IDE', mountPath: '/ide/', source: 'ide' },
+  { slug: 'mermaid', label: 'Mermaid', mountPath: '/mermaid/', source: 'mermaid' },
   { slug: 'mobile', label: 'Mobile', mountPath: '/mobile/', source: 'shell' },
   { slug: 'widget', label: 'Widget', mountPath: '/widget/', source: 'shell' },
   { slug: 'web', label: 'Web', mountPath: '/web/', source: 'shell' },
