@@ -36,6 +36,14 @@ type SettingsActions = {
     plugin: { id: string; toolIds: string[] },
     disabledToolIds: string[]
   ) => Promise<void>
+  // Apply a tool-tree selection change for one APP tool group (issue #400
+  // follow-up). Same call shape as setPluginToolSelection, but routes through the
+  // app-tool policy (applyAppToolSelection): no activation is touched, and
+  // disabling every tool is a persisted state that keeps the group in the picker.
+  setAppToolSelection: (
+    group: { id: string; toolIds: string[] },
+    disabledToolIds: string[]
+  ) => Promise<void>
   // Discovery-time sweep (issue #400 review, F2/F3): re-validate every stored
   // denylist entry against the CURRENT set of discovered plugins/tool ids. Wired
   // to run once per session where plugin discovery meets hydrated settings (see
@@ -204,6 +212,16 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       }
       await persistPluginToolDisablement(shell.preferences, result.disabledTools)
       set({ pluginDisabledTools: result.disabledTools })
+    },
+    setAppToolSelection: async (group, disabledToolIds) => {
+      // App tools have no activation surface, so this is a single write through
+      // the app-tool chokepoint (applyAppToolSelection): unlike a plugin, disabling
+      // every tool does NOT deactivate anything — the normalized denylist (possibly
+      // covering every tool) is simply persisted and the group stays in the picker.
+      const { applyAppToolSelection, persistAppToolDisablement } = await loadCoreModule()
+      const next = applyAppToolSelection(get().appToolDisablement, group, disabledToolIds)
+      await persistAppToolDisablement(shell.preferences, next)
+      set({ appToolDisablement: next })
     },
     reconcilePluginTools: async (plugins) => {
       // Discovery-time reconciliation (issue #400 review, F2/F3): re-run every

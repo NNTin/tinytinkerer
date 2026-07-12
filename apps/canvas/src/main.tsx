@@ -9,5 +9,9 @@ import './index.css'
 createBrowserShellRoot({
   router,
   BootScreen: CanvasBootScreen,
-  appTools: createCanvasAppTools()
+  // The canvas contributes its Excalidraw verbs as one always-on tool group. The
+  // group id keys its per-tool disablement in the tool picker (issue #400); the
+  // label is what the picker shows. Excalidraw itself is always present, so this
+  // group has no activation toggle — unchecking every verb keeps it in the picker.
+  appToolGroup: { id: 'canvas', label: 'Canvas', tools: createCanvasAppTools() }
 })

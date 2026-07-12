@@ -1,4 +1,5 @@
-import type { ChatRuntimeFactory, PluginModule, Tool } from '@tinytinkerer/app-core'
+import type { ChatRuntimeFactory, PluginModule } from '@tinytinkerer/app-core'
+import type { AppToolGroup } from '../app-tool-group'
 import type { BrowserShell } from '../shell'
 import type { AuthStore } from '../stores/auth-store'
 import type { SettingsStore } from '../stores/settings-store'
@@ -15,9 +16,9 @@ export const createBrowserRuntimeFactory = (options: {
   // Optional client-only capture sink for the context-inspector plugin (#270).
   // createRuntime only forwards it to the provider when that plugin is enabled.
   captureForwardedRequest?: ForwardedRequestSink
-  // App-local, always-on tools injected by the host app (e.g. a harness shell's
-  // app-specific verbs). Forwarded verbatim to createRuntime; omitted by web/mobile.
-  appTools?: Tool<unknown, unknown>[]
+  // The host app's always-on tool group (e.g. a harness shell's app-specific
+  // verbs). Forwarded verbatim to createRuntime; omitted by web/mobile.
+  appToolGroup?: AppToolGroup
 }): ChatRuntimeFactory => {
   const pluginRuntime = createPluginRuntime(options.pluginModules ?? [])
 
@@ -34,11 +35,12 @@ export const createBrowserRuntimeFactory = (options: {
         mcpDiscovery: settings.mcpDiscovery,
         pluginActivation: settings.pluginActivation,
         pluginDisabledTools: settings.pluginDisabledTools,
+        appToolDisablement: settings.appToolDisablement,
         pluginRuntime,
         ...(options.captureForwardedRequest
           ? { captureForwardedRequest: options.captureForwardedRequest }
           : {}),
-        ...(options.appTools ? { appTools: options.appTools } : {})
+        ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {})
       })
     }
   }

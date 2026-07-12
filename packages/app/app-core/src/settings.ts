@@ -35,7 +35,8 @@ export const SETTINGS_KEYS = {
   telemetryEnabled: 'settings_telemetry_enabled',
   pluginActivation: 'settings_plugins_activation',
   pluginConfig: 'settings_plugins_config',
-  pluginDisabledTools: 'settings_plugins_disabled_tools'
+  pluginDisabledTools: 'settings_plugins_disabled_tools',
+  appDisabledTools: 'settings_apps_disabled_tools'
 } as const
 
 export type SettingsState = {
@@ -52,6 +53,11 @@ export type SettingsState = {
   pluginActivation: PluginActivationState
   pluginConfig: PluginConfigState
   pluginDisabledTools: PluginToolDisablementState
+  // Per-tool disablement for an APP's always-on tools (issue #400 follow-up),
+  // keyed by app group id. Same shape as pluginDisabledTools but a separate key
+  // and policy (see applyAppToolSelection) — an app has no activation toggle, so
+  // disabling every tool keeps the group visible instead of removing it.
+  appToolDisablement: PluginToolDisablementState
 }
 
 const parseBool = (value: string | undefined, fallback: boolean): boolean => {
@@ -78,7 +84,8 @@ export const defaultSettingsState = (): SettingsState => ({
   telemetryEnabled: false,
   pluginActivation: {},
   pluginConfig: {},
-  pluginDisabledTools: {}
+  pluginDisabledTools: {},
+  appToolDisablement: {}
 })
 
 export const loadSettingsState = async (preferences: PreferencesStore): Promise<SettingsState> => {
@@ -94,7 +101,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     telemetryEnabled,
     pluginActivationRaw,
     pluginConfigRaw,
-    pluginDisabledToolsRaw
+    pluginDisabledToolsRaw,
+    appDisabledToolsRaw
   ] = await Promise.all([
     preferences.get(SETTINGS_KEYS.selectedModel),
     preferences.get(SETTINGS_KEYS.litellmBaseUrl),
@@ -107,7 +115,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     preferences.get(SETTINGS_KEYS.telemetryEnabled),
     preferences.get(SETTINGS_KEYS.pluginActivation),
     preferences.get(SETTINGS_KEYS.pluginConfig),
-    preferences.get(SETTINGS_KEYS.pluginDisabledTools)
+    preferences.get(SETTINGS_KEYS.pluginDisabledTools),
+    preferences.get(SETTINGS_KEYS.appDisabledTools)
   ])
 
   return {
@@ -123,7 +132,8 @@ export const loadSettingsState = async (preferences: PreferencesStore): Promise<
     telemetryEnabled: parseBool(telemetryEnabled, false),
     pluginActivation: parsePluginActivation(pluginActivationRaw),
     pluginConfig: parsePluginConfig(pluginConfigRaw),
-    pluginDisabledTools: parsePluginToolDisablement(pluginDisabledToolsRaw)
+    pluginDisabledTools: parseToolDisablementState(pluginDisabledToolsRaw),
+    appToolDisablement: parseToolDisablementState(appDisabledToolsRaw)
   }
 }
 
@@ -154,10 +164,11 @@ export const isPluginEnabled = (
   manifest: { id: string; defaultEnabled?: boolean }
 ): boolean => activation[manifest.id] ?? manifest.defaultEnabled ?? false
 
-// Per-tool disablement for an enabled plugin (issue #400). Same shape/flow as
-// activation: parse a validated map of pluginId -> disabled tool ids on load;
-// persist the whole map on every change.
-const parsePluginToolDisablement = (raw: string | undefined): PluginToolDisablementState => {
+// Per-tool disablement (issue #400). Same shape/flow as activation: parse a
+// validated map of ownerId -> disabled tool ids on load; persist the whole map on
+// every change. The "owner" is a plugin (pluginDisabledTools) or an app group
+// (appToolDisablement) — the on-disk shape is identical, so one parser serves both.
+const parseToolDisablementState = (raw: string | undefined): PluginToolDisablementState => {
   if (!raw) return {}
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -173,6 +184,13 @@ export const persistPluginToolDisablement = async (
   disabledTools: PluginToolDisablementState
 ): Promise<void> => {
   await preferences.set(SETTINGS_KEYS.pluginDisabledTools, JSON.stringify(disabledTools))
+}
+
+export const persistAppToolDisablement = async (
+  preferences: PreferencesStore,
+  disabledTools: PluginToolDisablementState
+): Promise<void> => {
+  await preferences.set(SETTINGS_KEYS.appDisabledTools, JSON.stringify(disabledTools))
 }
 
 // Whether one tool of an (already-enabled) plugin is active: mirrors
@@ -253,6 +271,49 @@ export const applyPluginToolSelection = (
   }
 
   return { disabledTools, activation: current.activation, pluginDisabled: false }
+}
+
+// The policy chokepoint for an APP tool group's tree selection (issue #400
+// follow-up) — the counterpart to applyPluginToolSelection for tools an app
+// contributes to its own runtime (e.g. the canvas shell's Excalidraw verbs).
+//
+// An app is NOT a plugin: it has no activation toggle because it is intrinsic to
+// the shell (Excalidraw is always present on the canvas). So this deliberately
+// does NOT reuse applyPluginToolSelection, whose all-disabled branch DEACTIVATES
+// the owner and drops it from the tree — the opposite of what an app group needs.
+// Here disabling every tool is a legitimate, persisted state: the group stays in
+// the picker with every tool unchecked, and the app itself keeps running.
+//
+// `disabledToolIds` is normalized: intersected with the group's CURRENT `toolIds`
+// (this GCs a renamed/removed verb the way applyPluginToolSelection does) and
+// ordered to match `toolIds` so the persisted array is deterministic.
+// - None disabled: delete the entry — absence already means "all enabled".
+// - Otherwise (including ALL of them): store the normalized ids.
+// - A group with zero tools is a no-op that just drops any stale entry.
+//
+// Pure: always returns a fresh object, never mutates `current`.
+export const applyAppToolSelection = (
+  current: PluginToolDisablementState,
+  group: { id: string; toolIds: readonly string[] },
+  disabledToolIds: readonly string[]
+): PluginToolDisablementState => {
+  const next = { ...current }
+
+  if (group.toolIds.length === 0) {
+    delete next[group.id]
+    return next
+  }
+
+  const requested = new Set(disabledToolIds)
+  const normalized = group.toolIds.filter((toolId) => requested.has(toolId))
+
+  if (normalized.length === 0) {
+    delete next[group.id]
+  } else {
+    next[group.id] = normalized
+  }
+
+  return next
 }
 
 // Structural equality for the two small maps below — reconciliation must decide

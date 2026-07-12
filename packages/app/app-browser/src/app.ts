@@ -29,8 +29,10 @@ import {
   setTelemetryConsent
 } from './telemetry/telemetry'
 import type { ContentRenderErrorInfo } from '@tinytinkerer/content-react'
-import type { Tool } from '@tinytinkerer/app-core'
+import type { AppToolGroup } from './app-tool-group'
 import { loadPluginModules } from './plugins/registry'
+
+export type { AppToolGroup } from './app-tool-group'
 
 export type BrowserApp = {
   shell: BrowserShell
@@ -41,6 +43,10 @@ export type BrowserApp = {
     status: StatusStore
     inspector: InspectorStore
   }
+  // The app's own tool group, if any (absent for web/widget/mobile). Held here so
+  // the tool picker (useToolTree) can read it from context — the same group the
+  // chat store forwards to the runtime.
+  appToolGroup?: AppToolGroup
 }
 
 const BrowserAppContext = createContext<BrowserApp | undefined>(undefined)
@@ -70,9 +76,10 @@ const requireBrowserApp = (app: BrowserApp | undefined): BrowserApp => {
 export const createBrowserApp = (
   config: BrowserShellConfig,
   options: {
-    // App-local, always-on chat tools (e.g. a harness shell's app-specific
-    // verbs). Threaded down to the chat store / runtime; absent for web/widget/mobile.
-    appTools?: Tool<unknown, unknown>[]
+    // The app's always-on tool group (e.g. a harness shell's app-specific verbs).
+    // Threaded down to the chat store / runtime AND held on the app for the tool
+    // picker; absent for web/widget/mobile.
+    appToolGroup?: AppToolGroup
   } = {}
 ): BrowserApp => {
   const shell = createBrowserShell(config)
@@ -85,7 +92,7 @@ export const createBrowserApp = (
     authStore: auth,
     settingsStore: settings,
     inspectorStore: inspector,
-    ...(options.appTools ? { appTools: options.appTools } : {})
+    ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {})
   })
 
   const app: BrowserApp = {
@@ -96,7 +103,8 @@ export const createBrowserApp = (
       settings,
       status,
       inspector
-    }
+    },
+    ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {})
   }
 
   return app

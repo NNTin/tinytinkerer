@@ -8,6 +8,7 @@ import type {
 } from '@tinytinkerer/contracts'
 import {
   activeCooldown,
+  applyAppToolSelection,
   applyPluginToolSelection,
   applyRateLimitEvent,
   buildConversationHistory,
@@ -28,6 +29,7 @@ import {
   normalizeSelectedModel,
   persistBooleanPreference,
   persistLiteLLMBaseUrl,
+  persistAppToolDisablement,
   persistPluginToolDisablement,
   persistSelectedModel,
   rateLimitCooldownKey,
@@ -678,6 +680,28 @@ describe('app-core helpers', () => {
     expect(state.pluginDisabledTools).toEqual({ 'web-search': ['deep_search'] })
   })
 
+  it('defaults app tool disablement to an empty map, and round-trips through the store', async () => {
+    expect(defaultSettingsState().appToolDisablement).toEqual({})
+
+    const stored = new Map<string, string>()
+    const preferences = {
+      get: (key: string) => Promise.resolve(stored.get(key)),
+      set: (key: string, value: string) => {
+        stored.set(key, value)
+        return Promise.resolve()
+      }
+    }
+
+    await persistAppToolDisablement(preferences, { canvas: ['draw'] })
+    const state = await loadSettingsState(preferences)
+
+    // App tool disablement is stored under its OWN key, independent of the plugin
+    // denylist — so the plugin map stays empty.
+    expect(state.appToolDisablement).toEqual({ canvas: ['draw'] })
+    expect(state.pluginDisabledTools).toEqual({})
+    expect(stored.has(SETTINGS_KEYS.appDisabledTools)).toBe(true)
+  })
+
   it('isPluginToolEnabled treats absence — of the plugin key, the tool name, or both — as enabled', () => {
     expect(isPluginToolEnabled({}, 'web-search', 'deep_search')).toBe(true)
     expect(isPluginToolEnabled({ 'web-search': [] }, 'web-search', 'deep_search')).toBe(true)
@@ -767,6 +791,48 @@ describe('app-core helpers', () => {
       expect(result.disabledTools).toEqual({})
       expect(result.activation).toEqual({ 'no-tools': true })
       expect(result.pluginDisabled).toBe(false)
+    })
+  })
+
+  // The app-tool counterpart to applyPluginToolSelection (issue #400 follow-up):
+  // an app has no activation toggle, so disabling every tool is a persisted state
+  // that keeps the group visible — NOT a signal to deactivate/remove it.
+  describe('applyAppToolSelection', () => {
+    const group = { id: 'canvas', toolIds: ['draw', 'search', 'inspect'] as const }
+
+    it('stores the normalized array, ordered by group.toolIds, on a partial disable', () => {
+      const result = applyAppToolSelection({}, group, ['inspect', 'draw'])
+      expect(result).toEqual({ canvas: ['draw', 'inspect'] })
+    })
+
+    it('deletes the entry when nothing is disabled (absence = all enabled)', () => {
+      const result = applyAppToolSelection({ canvas: ['draw'] }, group, [])
+      expect(result).toEqual({})
+    })
+
+    it('KEEPS the full array when every tool is disabled — the group stays visible, no activation', () => {
+      // This is the crux of the app-tool policy: unlike a plugin, all-disabled is a
+      // stable stored state, so the group is never dropped from the picker.
+      const result = applyAppToolSelection({}, group, ['draw', 'search', 'inspect'])
+      expect(result).toEqual({ canvas: ['draw', 'search', 'inspect'] })
+    })
+
+    it('GCs stale tool names that no longer exist on the group', () => {
+      const result = applyAppToolSelection({}, group, ['draw', 'removed_verb'])
+      expect(result).toEqual({ canvas: ['draw'] })
+    })
+
+    it('is a no-op for a group with zero tools, dropping any stale entry', () => {
+      const result = applyAppToolSelection({ empty: ['ghost'] }, { id: 'empty', toolIds: [] }, [
+        'ghost'
+      ])
+      expect(result).toEqual({})
+    })
+
+    it('does not mutate the input map', () => {
+      const current = { canvas: ['draw'] }
+      applyAppToolSelection(current, group, ['search'])
+      expect(current).toEqual({ canvas: ['draw'] })
     })
   })
 

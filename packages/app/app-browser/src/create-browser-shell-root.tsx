@@ -1,12 +1,11 @@
 import type { ComponentProps, ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router-dom'
-import { createBrowserApp } from './app'
+import { createBrowserApp, type AppToolGroup } from './app'
 import { BrowserAppShell } from './browser-app-shell'
 import { resolveBrowserShellBootstrapConfig } from './config'
 import { registerPwa } from './register-pwa'
 import type { BrowserShellConfig } from './config'
-import type { Tool } from '@tinytinkerer/app-core'
 
 declare global {
   interface Window {
@@ -25,12 +24,12 @@ export type BrowserShellBootScreenProps = { error?: string }
 export type CreateBrowserShellRootOptions = {
   router: ShellRouter
   BootScreen: ComponentType<BrowserShellBootScreenProps>
-  // App-local, always-on chat tools the app contributes to its own runtime (the
+  // The app's always-on tool group the app contributes to its own runtime (the
   // only per-app runtime input — there is still no shell id or onInit hook). A
-  // harness shell (e.g. the canvas shell) passes its app-specific verbs
-  // here; web/mobile/widget omit it. Threaded straight to createBrowserApp → chat
-  // store → runtime.
-  appTools?: Tool<unknown, unknown>[]
+  // harness shell (e.g. the canvas shell) passes its app-specific verbs as one
+  // named group here; web/mobile/widget omit it. Threaded straight to
+  // createBrowserApp → chat store → runtime, and surfaced in the tool picker.
+  appToolGroup?: AppToolGroup
   // Whether to register the service worker for this page load. Defaults to true
   // (a shell that ships no SW no-ops, so this stays a no-op for canvas/host). The
   // single path-routed browser shell is ONE build served at /web/, /widget/, and
@@ -63,7 +62,7 @@ const readEnvValue = (key: string): string | undefined => {
 export const createBrowserShellRoot = ({
   router,
   BootScreen,
-  appTools,
+  appToolGroup,
   registerServiceWorker = true
 }: CreateBrowserShellRootOptions): void => {
   // Shell-agnostic embedding contract: every shell reads the same window key.
@@ -89,7 +88,7 @@ export const createBrowserShellRoot = ({
     buildHash: __BUILD_HASH__
   })
 
-  const browserApp = createBrowserApp(browserConfig, appTools ? { appTools } : {})
+  const browserApp = createBrowserApp(browserConfig, appToolGroup ? { appToolGroup } : {})
 
   // Register the service worker and start update checks independently of the
   // React render, so a shell that ships one (the mobile presentation) stays

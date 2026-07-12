@@ -396,7 +396,7 @@ describe('plugin runtime contributions', () => {
       baseUrl: 'http://edge.local',
       getToken: () => 'token',
       getModel: () => 'openai/gpt-4.1-mini',
-      appTools: [drawTool]
+      appToolGroup: { id: 'canvas', label: 'Canvas', tools: [drawTool] }
     })
 
     await runRuntime(runtime)
@@ -408,6 +408,74 @@ describe('plugin runtime contributions', () => {
     const drawn = advertisedTools.find((t) => t.function.name === 'draw_on_canvas')
     expect(drawn?.function.description).toBe('Draw shapes on the Excalidraw canvas.')
     expect(JSON.stringify(drawn?.function.parameters)).toContain('"shapeKind"')
+    vi.unstubAllGlobals()
+  })
+
+  it('filters out an app tool the user disabled in the picker (appToolDisablement)', async () => {
+    // Issue #400 follow-up: an app tool whose id is in the group's
+    // appToolDisablement entry is skipped at registration, so it never advertises
+    // to the model — the same filtering plugin tools get. The group's other tools
+    // still advertise; the app itself is unaffected (no activation).
+    const requestBodies: Array<{
+      stream?: boolean
+      tools?: Array<{ function: { name: string } }>
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+          stream?: boolean
+          tools?: Array<{ function: { name: string } }>
+        }
+        requestBodies.push(body)
+        if (body.stream === false) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        complexity: 'low',
+                        steps: [{ id: 'understand', summary: 'u', toolCall: null }]
+                      })
+                    }
+                  }
+                ]
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } }
+            )
+          )
+        }
+        return Promise.resolve(
+          new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' }
+          })
+        )
+      })
+    )
+
+    const tool = (id: string): Tool<Record<string, unknown>, unknown> => ({
+      id,
+      description: `${id} tool`,
+      schema: z.object({}).passthrough(),
+      execute: () => Promise.resolve({ ok: true })
+    })
+
+    const runtime = createRuntime({
+      baseUrl: 'http://edge.local',
+      getToken: () => 'token',
+      getModel: () => 'openai/gpt-4.1-mini',
+      appToolGroup: { id: 'canvas', label: 'Canvas', tools: [tool('draw'), tool('erase')] },
+      appToolDisablement: { canvas: ['draw'] }
+    })
+
+    await runRuntime(runtime)
+
+    const advertised = (requestBodies[0]?.tools ?? []).map((t) => t.function.name)
+    expect(advertised).toContain('erase')
+    expect(advertised).not.toContain('draw')
     vi.unstubAllGlobals()
   })
 
@@ -472,14 +540,18 @@ describe('plugin runtime contributions', () => {
           descriptorDescription: 'plugin owns this id'
         })
       ],
-      appTools: [
-        {
-          id: 'shared_id',
-          description: 'app override should be dropped',
-          schema: z.object({}).passthrough(),
-          execute: () => Promise.resolve('ok')
-        }
-      ]
+      appToolGroup: {
+        id: 'canvas',
+        label: 'Canvas',
+        tools: [
+          {
+            id: 'shared_id',
+            description: 'app override should be dropped',
+            schema: z.object({}).passthrough(),
+            execute: () => Promise.resolve('ok')
+          }
+        ]
+      }
     })
 
     await runRuntime(runtime)

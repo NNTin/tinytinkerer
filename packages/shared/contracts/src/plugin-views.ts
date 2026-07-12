@@ -246,27 +246,33 @@ export type PluginInspectorDescriptor = {
 // derivation, and counts. It never decides which plugins/tools are eligible — that
 // is host policy (see useToolTree in app-browser).
 
-// One tool of one plugin as fed to the summarizer: the declared id/description plus
+// One tool of one owner as fed to the summarizer: the declared id/description plus
 // whether it is CURRENTLY enabled (denylist absence, per isPluginToolEnabled).
 export type ToolTreeToolInput = { id: string; description: string; enabled: boolean }
 
-// One enabled plugin's tools as fed to the summarizer. `label` is the plugin's
-// manifest label (what the tree groups by), not its id.
+// One tool owner's tools as fed to the summarizer. An owner is an enabled plugin
+// or the app's own tool group (issue #400 follow-up) — both are structurally
+// identical here; the summarizer treats them the same. `label` is the owner's
+// user-facing name (what the tree groups by), not its id.
 export type ToolTreePluginInput = { id: string; label: string; tools: ToolTreeToolInput[] }
 
-// The full tree the host hands the summarizer: every enabled plugin that has at
-// least one declared tool (a plugin with none is excluded by the host — nothing to
-// check).
+// The full tree the host hands the summarizer: one entry per tool owner that has at
+// least one tool — every enabled plugin with declared tools, plus the app's own
+// tool group when present (an owner with no tools is excluded by the host — nothing
+// to check). The field stays named `plugins` for back-compat with existing
+// summarizers even though an entry may be an app group.
 export type ToolTreeInput = { plugins: ToolTreePluginInput[] }
 
-// Tri-state checkbox value for a plugin row: 'all'/'none' when every/no tool is
-// enabled, 'some' for a partial selection. 'none' keeps the type total but is not
-// normally reachable in a host-produced tree — all-unchecked flips the PLUGIN off
-// (see applyPluginToolSelection in app-core), so the host's input usually omits
-// such a plugin entirely rather than sending it with every tool disabled. It CAN
-// transiently occur: a plugin update that removes tools can leave a stored
-// denylist entry covering every current tool while the plugin is still marked
-// active, until the discovery-time reconciliation sweep
+// Tri-state checkbox value for a group row: 'all'/'none' when every/no tool is
+// enabled, 'some' for a partial selection. 'none' is a normal, stable state for an
+// APP tool group (issue #400 follow-up): an app has no activation toggle, so
+// unchecking every one of its tools keeps the group visible with 'none'. For a
+// PLUGIN it is not normally reachable — all-unchecked flips the plugin off (see
+// applyPluginToolSelection in app-core), so the host's input usually omits such a
+// plugin entirely rather than sending it with every tool disabled. It CAN still
+// occur transiently for a plugin: a plugin update that removes tools can leave a
+// stored denylist entry covering every current tool while the plugin is still
+// marked active, until the discovery-time reconciliation sweep
 // (`reconcilePluginToolDisablement`, issue #400 review) heals it on the next
 // session.
 export type ToolTreeChecked = 'all' | 'some' | 'none'

@@ -35,49 +35,67 @@ const IndeterminateCheckbox = ({
 
 export type ToolTreePanelProps = {
   view: ToolTreeView
-  // Full current tool id list per plugin, keyed by plugin id (see useToolTree) —
-  // the POLICY source of truth for every toggle below, deliberately independent
-  // of `view`: `view` is a summarizer's presentation of the same data and may be
-  // lossy (filter/reorder), so building a denylist from it could silently
-  // corrupt tool ids the summarizer chose not to render.
+  // Full current tool id list per owner (plugin or app group), keyed by id (see
+  // useToolTree) — the POLICY source of truth for every toggle below, deliberately
+  // independent of `view`: `view` is a summarizer's presentation of the same data
+  // and may be lossy (filter/reorder), so building a denylist from it could
+  // silently corrupt tool ids the summarizer chose not to render.
   toolIdsByPlugin: Record<string, string[]>
+  // Ids in `view` that are APP groups rather than plugins (issue #400 follow-up).
+  // A toggle on one of these routes through setAppToolSelection — no activation
+  // flip, and the group stays visible when every tool is unchecked. Defaults to
+  // none, so a tree of only plugins behaves exactly as before.
+  appGroupIds?: string[]
   onClose: () => void
 }
 
-export const ToolTreePanel = ({ view, toolIdsByPlugin, onClose }: ToolTreePanelProps) => {
+export const ToolTreePanel = ({
+  view,
+  toolIdsByPlugin,
+  appGroupIds = [],
+  onClose
+}: ToolTreePanelProps) => {
   const setPluginToolSelection = useSettingsStore((state) => state.setPluginToolSelection)
+  const setAppToolSelection = useSettingsStore((state) => state.setAppToolSelection)
   const pluginDisabledTools = useSettingsStore((state) => state.pluginDisabledTools)
+  const appToolDisablement = useSettingsStore((state) => state.appToolDisablement)
 
-  // The view (`ToolTreePluginNode`/`ToolTreeToolNode`) is DISPLAY-ONLY (issue
-  // #400 review, F3): a summarizer maps host input to it for PRESENTATION —
-  // sorting, tri-state, counts — and is free to be lossy (filter/reorder/omit)
-  // without corrupting persisted state, because the policy math below never
-  // reads it. `currentDisabled` is instead computed from HOST STATE
-  // (pluginDisabledTools, intersected with the plugin's full current tool id
-  // list from toolIdsByPlugin) — the same source of truth useToolTree built the
-  // view from — so a summarizer that drops a tool from the rendered tree can
-  // never cause that tool to be silently re-enabled or disabled as a side effect
-  // of toggling a DIFFERENT tool.
+  // Resolve which persistence path a row uses. An app group's disablement lives in
+  // its own denylist (appToolDisablement) and never touches activation, so
+  // disabling every tool keeps the group in the tree; a plugin routes through the
+  // activation-coupled chokepoint (applyPluginToolSelection). `disabled` is the
+  // group's/plugin's CURRENT denylist, read from HOST STATE — never from `view`,
+  // which is DISPLAY-ONLY (issue #400 review, F3) and may be lossy.
+  const ownerPolicy = (id: string) => {
+    const isAppGroup = appGroupIds.includes(id)
+    const denylist = isAppGroup ? (appToolDisablement ?? {}) : pluginDisabledTools
+    const toolIds = toolIdsByPlugin[id] ?? []
+    const disabled = toolIds.filter((toolId) => denylist[id]?.includes(toolId) ?? false)
+    const apply = (nextDisabled: string[]): void => {
+      if (isAppGroup) {
+        void setAppToolSelection({ id, toolIds }, nextDisabled)
+      } else {
+        void setPluginToolSelection({ id, toolIds }, nextDisabled)
+      }
+    }
+    return { toolIds, disabled, apply }
+  }
+
   const toggleTool = (plugin: ToolTreePluginNode, toolId: string, nextChecked: boolean): void => {
-    const toolIds = toolIdsByPlugin[plugin.id] ?? []
-    const currentDisabled = toolIds.filter(
-      (id) => pluginDisabledTools[plugin.id]?.includes(id) ?? false
-    )
+    const { disabled, apply } = ownerPolicy(plugin.id)
     const nextDisabled = nextChecked
-      ? currentDisabled.filter((id) => id !== toolId)
-      : [...currentDisabled, toolId]
-    void setPluginToolSelection({ id: plugin.id, toolIds }, nextDisabled)
+      ? disabled.filter((id) => id !== toolId)
+      : [...disabled, toolId]
+    apply(nextDisabled)
   }
 
   const togglePlugin = (plugin: ToolTreePluginNode, nextChecked: boolean): void => {
-    // toolIdsByPlugin lacking the plugin is a host bug, not something to paper
-    // over with a view-derived fallback: an empty array is a no-op at the
-    // chokepoint (applyPluginToolSelection treats zero toolIds as a no-op), which
-    // is the correct failure mode — do nothing rather than guess at tool ids from
-    // the (possibly lossy) view.
-    const toolIds = toolIdsByPlugin[plugin.id] ?? []
-    const nextDisabled = nextChecked ? [] : toolIds
-    void setPluginToolSelection({ id: plugin.id, toolIds }, nextDisabled)
+    // toolIdsByPlugin lacking the owner is a host bug, not something to paper over
+    // with a view-derived fallback: an empty array is a no-op at both chokepoints,
+    // which is the correct failure mode — do nothing rather than guess at tool ids
+    // from the (possibly lossy) view.
+    const { toolIds, apply } = ownerPolicy(plugin.id)
+    apply(nextChecked ? [] : toolIds)
   }
 
   return (
@@ -160,7 +178,10 @@ export const ToolTreePanel = ({ view, toolIdsByPlugin, onClose }: ToolTreePanelP
                         <span className="block truncate font-mono text-xs text-stone-800">
                           {tool.id}
                         </span>
-                        <span className="block truncate text-xs text-stone-500">
+                        {/* Full description, wrapping to as many lines as needed —
+                            never truncated (issue #400 follow-up). break-words so a
+                            long unbroken token still wraps instead of overflowing. */}
+                        <span className="block whitespace-normal break-words text-xs text-stone-500">
                           {tool.description}
                         </span>
                       </span>

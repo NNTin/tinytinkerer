@@ -618,13 +618,30 @@ tools and no hooks — only a manifest descriptor (`toolTreeDescriptor`) carryin
 `summarizeToolTree` mapper. The host (`app-browser/src/tool-tree.tsx`) renders a compose-area
 button when a plugin contributing the descriptor is enabled, builds the `ToolTreeInput` (every
 _enabled_ plugin with ≥1 declared tool — a plugin with none has nothing to check and never
-appears — plus the current per-tool enablement), and renders the returned `ToolTreeView` as a
-checkbox tree whose changes call the settings store's `setPluginToolSelection`. The panel derives
-every toggle's denylist from **host state** (`pluginDisabledTools` + the full per-plugin tool id
-list), never from the rendered view — a summarizer's view is display-only and may be lossy
+appears — plus the app's own tool group, plus the current per-tool enablement), and renders the
+returned `ToolTreeView` as a checkbox tree whose changes call the settings store's
+`setPluginToolSelection` or `setAppToolSelection`. The panel derives every toggle's denylist from
+**host state** (`pluginDisabledTools` / `appToolDisablement` + the full per-owner tool id list),
+never from the rendered view — a summarizer's view is display-only and may be lossy
 (filter/reorder) for presentation without corrupting persisted state. MCP tools have their own
-enablement (per server), and app-local `appTools` are always-on by design with no activation
-surface at all (see `create-runtime.ts`) — both are out of the tree's scope.
+enablement (per server) and stay out of the tree's scope.
+
+**App tools in the picker (issue #400 follow-up).** An app's always-on tools (e.g. the canvas
+shell's Excalidraw verbs) are shown in the same tree as one **app tool group** — `AppToolGroup =
+{ id, label, tools }`, passed to `createBrowserShellRoot({ appToolGroup })` and held on the
+`BrowserApp` so `useToolTree` can read it. They participate in per-tool disablement, but under a
+**separate axis** from plugins because an app has **no activation toggle** — it is intrinsic to
+the shell (Excalidraw is always present). So they get their own denylist
+(`appToolDisablement`, key `settings_apps_disabled_tools`) and their own chokepoint,
+`applyAppToolSelection` (app-core): it normalizes/GCs exactly like the plugin one, but disabling
+**every** tool is a _persisted, stable_ state — the group stays visible in the picker with every
+box unchecked and nothing is deactivated (contrast `applyPluginToolSelection`, whose all-disabled
+branch flips the plugin off and drops it from the tree). Because there is no activation to
+desync, `setAppToolSelection` is a single write and needs no discovery-time reconciliation. The
+runtime filters app tools at registration in `create-runtime.ts`'s app-tool loop, mirroring the
+plugin filter. `useToolTree` returns `appGroupIds` so the panel routes each toggle to the correct
+chokepoint. The tree's `'none'` tri-state — noted as barely-reachable for plugins — is a normal
+resting state for an app group.
 
 The tool picker sits at the **outer edge** of the manifest-descriptor pattern: a descriptor plugin
 earns its keep by owning some **domain mapping** (how to present a captured request, how to read a

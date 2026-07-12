@@ -5,7 +5,7 @@ import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
 // depend on the ui package (see floating-chat-surface's boundary comment) — react-icons
 // is the same source ui re-exports.
 import { FaListCheck } from 'react-icons/fa6'
-import { useSettingsStore } from './app'
+import { useBrowserApp, useSettingsStore } from './app'
 import { usePluginModules } from './plugins/use-plugin-modules'
 
 // The panel is lazy-loaded so it stays out of the eagerly-loaded chat route chunk
@@ -20,12 +20,20 @@ type ToolTreeData = {
   // plugin is enabled (slot stays hidden).
   summarizer: ToolTreeSummarizer | null
   // The host-built input: every ENABLED plugin with at least one declared tool
-  // (issue #400 — a plugin with none has nothing to check).
+  // (issue #400 — a plugin with none has nothing to check), PLUS the app's own
+  // tool group if it has any tools (issue #400 follow-up). Both are structurally
+  // identical in the tree; they differ only in how a toggle persists (see
+  // appGroupIds).
   input: ToolTreeInput
-  // Full current tool id list per plugin, keyed by plugin id — what
-  // setPluginToolSelection needs to normalize a selection change. Mirrors `input`
-  // but keeps every declared tool id even if the input above later changes shape.
+  // Full current tool id list per owner (plugin OR app group), keyed by id — what
+  // setPluginToolSelection / setAppToolSelection need to normalize a selection
+  // change. Mirrors `input` but keeps every declared tool id even if the input
+  // above later changes shape.
   toolIdsByPlugin: Record<string, string[]>
+  // Ids in the tree that are APP groups, not plugins (issue #400 follow-up). The
+  // panel routes a toggle on one of these through setAppToolSelection (no
+  // activation, stays visible when all-unchecked) instead of the plugin chokepoint.
+  appGroupIds: string[]
 }
 
 // Resolve the active tool-tree plugin's mapper (first ENABLED plugin that
@@ -35,7 +43,9 @@ type ToolTreeData = {
 export const useToolTree = (): ToolTreeData => {
   const pluginActivation = useSettingsStore((state) => state.pluginActivation)
   const pluginDisabledTools = useSettingsStore((state) => state.pluginDisabledTools)
+  const appToolDisablement = useSettingsStore((state) => state.appToolDisablement)
   const pluginModules = usePluginModules()
+  const appToolGroup = useBrowserApp().appToolGroup
 
   const summarizer = useMemo<ToolTreeSummarizer | null>(() => {
     const active = pluginModules.find(
@@ -44,14 +54,14 @@ export const useToolTree = (): ToolTreeData => {
     return active?.manifest.toolTreeDescriptor?.summarizeToolTree ?? null
   }, [pluginModules, pluginActivation])
 
-  const { input, toolIdsByPlugin } = useMemo(() => {
+  const { input, toolIdsByPlugin, appGroupIds } = useMemo(() => {
     const enabledToolPlugins = pluginModules.filter(
       (mod) =>
         isPluginEnabled(pluginActivation, mod.manifest) &&
         (mod.manifest.toolDescriptors?.length ?? 0) > 0
     )
 
-    const plugins = enabledToolPlugins.map((mod) => ({
+    const pluginNodes = enabledToolPlugins.map((mod) => ({
       id: mod.manifest.id,
       label: mod.manifest.label,
       tools: (mod.manifest.toolDescriptors ?? []).map((tool) => ({
@@ -61,17 +71,37 @@ export const useToolTree = (): ToolTreeData => {
       }))
     }))
 
-    const ids = Object.fromEntries(
+    const ids: Record<string, string[]> = Object.fromEntries(
       enabledToolPlugins.map((mod) => [
         mod.manifest.id,
         (mod.manifest.toolDescriptors ?? []).map((tool) => tool.id)
       ])
     )
 
-    return { input: { plugins }, toolIdsByPlugin: ids }
-  }, [pluginModules, pluginActivation, pluginDisabledTools])
+    // The app's own tool group (issue #400 follow-up) joins the tree as one more
+    // node, always shown when it has ≥1 tool. Unlike a plugin it has no activation
+    // gate — even with every tool disabled it stays visible (the app is intrinsic
+    // to the shell), so it is added unconditionally here; the all-unchecked =
+    // still-visible behavior falls out because its tools always exist.
+    const appGroupIds: string[] = []
+    if (appToolGroup && appToolGroup.tools.length > 0) {
+      pluginNodes.push({
+        id: appToolGroup.id,
+        label: appToolGroup.label,
+        tools: appToolGroup.tools.map((tool) => ({
+          id: tool.id,
+          description: tool.description,
+          enabled: isPluginToolEnabled(appToolDisablement, appToolGroup.id, tool.id)
+        }))
+      })
+      ids[appToolGroup.id] = appToolGroup.tools.map((tool) => tool.id)
+      appGroupIds.push(appToolGroup.id)
+    }
 
-  return { summarizer, input, toolIdsByPlugin }
+    return { input: { plugins: pluginNodes }, toolIdsByPlugin: ids, appGroupIds }
+  }, [pluginModules, pluginActivation, pluginDisabledTools, appToolGroup, appToolDisablement])
+
+  return { summarizer, input, toolIdsByPlugin, appGroupIds }
 }
 
 // Convenience wrapper: a compose-area button that opens the tool tree, or renders
@@ -89,7 +119,7 @@ export const ToolTreeSlot = ({
   className?: string
   icon?: ReactNode
 }) => {
-  const { summarizer, input, toolIdsByPlugin } = useToolTree()
+  const { summarizer, input, toolIdsByPlugin, appGroupIds } = useToolTree()
   const [open, setOpen] = useState(false)
 
   const view = useMemo(() => (summarizer ? summarizer(input) : null), [summarizer, input])
@@ -118,6 +148,7 @@ export const ToolTreeSlot = ({
           <LazyToolTreePanel
             view={view}
             toolIdsByPlugin={toolIdsByPlugin}
+            appGroupIds={appGroupIds}
             onClose={() => setOpen(false)}
           />
         </Suspense>

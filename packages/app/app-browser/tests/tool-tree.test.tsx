@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import type { PluginModule, ToolTreeInput, ToolTreeView } from '@tinytinkerer/contracts'
-import { applyPluginToolSelection } from '@tinytinkerer/app-core'
+import { applyAppToolSelection, applyPluginToolSelection } from '@tinytinkerer/app-core'
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
 
@@ -138,19 +138,26 @@ let pluginModules: PluginModule[] = []
 type FakeSettingsState = {
   pluginActivation: Record<string, boolean>
   pluginDisabledTools: Record<string, string[]>
+  appToolDisablement: Record<string, string[]>
   setPluginToolSelection: (
     plugin: { id: string; toolIds: string[] },
+    disabledToolIds: string[]
+  ) => Promise<void>
+  setAppToolSelection: (
+    group: { id: string; toolIds: string[] },
     disabledToolIds: string[]
   ) => Promise<void>
 }
 
 const makeFakeSettingsStore = (
   pluginActivation: Record<string, boolean>,
-  pluginDisabledTools: Record<string, string[]> = {}
+  pluginDisabledTools: Record<string, string[]> = {},
+  appToolDisablement: Record<string, string[]> = {}
 ) =>
   createStore<FakeSettingsState>((set, get) => ({
     pluginActivation,
     pluginDisabledTools,
+    appToolDisablement,
     setPluginToolSelection: (plugin, disabledToolIds) => {
       const current = get()
       const result = applyPluginToolSelection(
@@ -163,14 +170,25 @@ const makeFakeSettingsStore = (
         ...(result.pluginDisabled ? { pluginActivation: result.activation } : {})
       })
       return Promise.resolve()
+    },
+    setAppToolSelection: (group, disabledToolIds) => {
+      const next = applyAppToolSelection(get().appToolDisablement, group, disabledToolIds)
+      set({ appToolDisablement: next })
+      return Promise.resolve()
     }
   }))
 
 let fakeSettingsStore = makeFakeSettingsStore({})
+// The app tool group the fake useBrowserApp exposes; individual tests set it before
+// rendering. Undefined = a shell with no app tools (web/widget/mobile).
+let fakeAppToolGroup:
+  | { id: string; label: string; tools: { id: string; description: string }[] }
+  | undefined
 
 vi.mock('../src/app.js', () => ({
   useSettingsStore: <T,>(selector: (state: FakeSettingsState) => T): T =>
-    useStore(fakeSettingsStore, selector)
+    useStore(fakeSettingsStore, selector),
+  useBrowserApp: () => ({ appToolGroup: fakeAppToolGroup })
 }))
 
 vi.mock('../src/plugins/registry.js', () => ({
@@ -183,6 +201,7 @@ import { renderHook } from '@testing-library/react'
 
 afterEach(() => {
   cleanup()
+  fakeAppToolGroup = undefined
 })
 
 describe('ToolTreeSlot', () => {
@@ -309,6 +328,84 @@ describe('ToolTreeSlot', () => {
   })
 })
 
+// Issue #400 follow-up: an app's always-on tools (e.g. the canvas Excalidraw
+// verbs) appear in the SAME picker as plugin tools, but with a distinct policy —
+// no activation toggle, so unchecking every tool keeps the group visible.
+describe('app tool group', () => {
+  const canvasGroup = {
+    id: 'canvas',
+    label: 'Canvas',
+    tools: [
+      { id: 'draw', description: 'Draw shapes' },
+      { id: 'search', description: 'Find elements' }
+    ]
+  }
+
+  it('shows the app group beside enabled plugins', async () => {
+    pluginModules = [toolTreeModule, webSearchModule]
+    fakeSettingsStore = makeFakeSettingsStore({ 'tool-tree': true, 'web-search': true })
+    fakeAppToolGroup = canvasGroup
+
+    render(<ToolTreeSlot />)
+    fireEvent.click(await screen.findByTestId('tool-tree-toggle'))
+
+    expect(await screen.findByTestId('tool-tree-plugin-canvas')).toBeTruthy()
+    expect(screen.getByTestId('tool-tree-tool-draw')).toHaveProperty('checked', true)
+    expect(screen.getByTestId('tool-tree-plugin-web-search')).toBeTruthy()
+  })
+
+  it('shows the app group even when the tool-tree plugin is the only enabled plugin', async () => {
+    pluginModules = [toolTreeModule]
+    fakeSettingsStore = makeFakeSettingsStore({ 'tool-tree': true })
+    fakeAppToolGroup = canvasGroup
+
+    render(<ToolTreeSlot />)
+    fireEvent.click(await screen.findByTestId('tool-tree-toggle'))
+
+    expect(await screen.findByTestId('tool-tree-plugin-canvas')).toBeTruthy()
+  })
+
+  it('unchecking an app tool persists to appToolDisablement, not pluginDisabledTools', async () => {
+    pluginModules = [toolTreeModule]
+    fakeSettingsStore = makeFakeSettingsStore({ 'tool-tree': true })
+    fakeAppToolGroup = canvasGroup
+
+    render(<ToolTreeSlot />)
+    fireEvent.click(await screen.findByTestId('tool-tree-toggle'))
+    fireEvent.click(await screen.findByTestId('tool-tree-tool-draw'))
+
+    await waitFor(() =>
+      expect(fakeSettingsStore.getState().appToolDisablement).toEqual({ canvas: ['draw'] })
+    )
+    // The plugin denylist and plugin activation are untouched — app tools are a
+    // separate namespace with no activation.
+    expect(fakeSettingsStore.getState().pluginDisabledTools).toEqual({})
+    expect(fakeSettingsStore.getState().pluginActivation).toEqual({ 'tool-tree': true })
+  })
+
+  it('unchecking ALL app tools keeps the group visible (no activation flip)', async () => {
+    pluginModules = [toolTreeModule]
+    fakeSettingsStore = makeFakeSettingsStore({ 'tool-tree': true })
+    fakeAppToolGroup = canvasGroup
+
+    render(<ToolTreeSlot />)
+    fireEvent.click(await screen.findByTestId('tool-tree-toggle'))
+    // The group-level checkbox unchecks every tool at once.
+    fireEvent.click(await screen.findByTestId('tool-tree-plugin-canvas'))
+
+    await waitFor(() =>
+      expect(fakeSettingsStore.getState().appToolDisablement).toEqual({
+        canvas: ['draw', 'search']
+      })
+    )
+    // Unlike a plugin, the group stays in the tree with every tool unchecked.
+    expect(screen.getByTestId('tool-tree-plugin-canvas')).toBeTruthy()
+    expect(screen.getByTestId('tool-tree-tool-draw')).toHaveProperty('checked', false)
+    // No activation entry was created for the app group.
+    expect(fakeSettingsStore.getState().pluginActivation).toEqual({ 'tool-tree': true })
+  })
+})
+
 describe('useToolTree', () => {
   it('resolves the summarizer and builds input from enabled tool plugins', async () => {
     pluginModules = [toolTreeModule, webSearchModule]
@@ -318,6 +415,22 @@ describe('useToolTree', () => {
     await waitFor(() => expect(result.current.summarizer).not.toBeNull())
     expect(result.current.input.plugins).toHaveLength(1)
     expect(result.current.toolIdsByPlugin['web-search']).toEqual(['web_search', 'web_fetch'])
+    expect(result.current.appGroupIds).toEqual([])
+  })
+
+  it('includes the app group in input and appGroupIds when one is present', async () => {
+    pluginModules = [toolTreeModule]
+    fakeSettingsStore = makeFakeSettingsStore({ 'tool-tree': true })
+    fakeAppToolGroup = {
+      id: 'canvas',
+      label: 'Canvas',
+      tools: [{ id: 'draw', description: 'Draw shapes' }]
+    }
+
+    const { result } = renderHook(() => useToolTree())
+    await waitFor(() => expect(result.current.appGroupIds).toEqual(['canvas']))
+    expect(result.current.toolIdsByPlugin['canvas']).toEqual(['draw'])
+    expect(result.current.input.plugins.some((p) => p.id === 'canvas')).toBe(true)
   })
 })
 

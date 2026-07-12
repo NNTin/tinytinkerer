@@ -21,6 +21,7 @@ import type {
 import { LiteLLMProvider } from './litellm-provider'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch, type ForwardedRequestSink } from './edge-fetch'
+import type { AppToolGroup } from '../app-tool-group'
 import { createMcpTool } from './mcp-tool'
 import { createSandboxExecutor } from '../sandbox-executor'
 import { createDomReader, type DomSnapshotNode } from '../dom-reader'
@@ -103,14 +104,21 @@ export const createRuntime = (options: {
   // Only wired into the provider when that plugin is enabled (see below), so a
   // disabled inspector never captures or retains the forwarded payload.
   captureForwardedRequest?: ForwardedRequestSink
-  // App-local tools an app injects into its own runtime (e.g. a harness shell's
-  // app-specific verbs that drive an iframe app). Unlike plugins these are NOT
-  // discovered from `packages/plugins/*` and are not globally shared — only the
-  // app that passes them gets them, and they are always-on (intrinsic to the
-  // app), so there is no activation/settings surface. Their planner descriptor
-  // is derived from the tool's own Zod `schema`, the same canonical path plugin
-  // tool descriptors use (issue #287).
-  appTools?: Tool<unknown, unknown>[]
+  // The app's always-on tool group an app injects into its own runtime (e.g. a
+  // harness shell's app-specific verbs that drive an iframe app). Unlike plugins
+  // these are NOT discovered from `packages/plugins/*` and are not globally shared
+  // — only the app that passes them gets them, and the app itself is always-on
+  // (intrinsic to the shell), so there is no ACTIVATION surface. Individual tools
+  // CAN still be disabled via the tool picker (issue #400 follow-up), keyed by the
+  // group id in `appToolDisablement` below. Their planner descriptor is derived
+  // from the tool's own Zod `schema`, the same canonical path plugin tool
+  // descriptors use (issue #287).
+  appToolGroup?: AppToolGroup
+  // Per-tool denylist for the app tool group (issue #400 follow-up), keyed by the
+  // group id. Mirrors `pluginDisabledTools` but for app tools: a disabled app tool
+  // is skipped at registration below, so it never registers and its descriptor
+  // never reaches the planner. Absence means all of the group's tools are enabled.
+  appToolDisablement?: PluginToolDisablementState
 }) => {
   const edgeFetch = createEdgeFetch(options.baseUrl, options.getToken)
 
@@ -351,9 +359,20 @@ export const createRuntime = (options: {
 
   // App-local tools (e.g. a harness shell's app-specific verbs). Registered
   // after MCP + plugins so an app tool cannot silently shadow a plugin tool with
-  // the same id (addTool dedupes, first writer wins). Always-on: each registered
-  // app tool surfaces a planner descriptor derived from its own Zod `schema`.
-  for (const tool of options.appTools ?? []) {
+  // the same id (addTool dedupes, first writer wins). Each registered app tool
+  // surfaces a planner descriptor derived from its own Zod `schema`.
+  //
+  // Per-tool disablement (issue #400 follow-up): a tool the user unchecked in the
+  // tool picker (its id is in the group's `appToolDisablement` entry) is skipped
+  // here, so it never registers and its descriptor never reaches the planner —
+  // exactly how plugin tools are filtered in collectContributions above. The app
+  // itself keeps running regardless (there is no activation to flip).
+  const appToolGroup = options.appToolGroup
+  const appToolDisablement = options.appToolDisablement ?? {}
+  for (const tool of appToolGroup?.tools ?? []) {
+    if (!isPluginToolEnabled(appToolDisablement, appToolGroup!.id, tool.id)) {
+      continue
+    }
     if (addTool(tool)) {
       allToolDescriptors.push({
         id: tool.id,

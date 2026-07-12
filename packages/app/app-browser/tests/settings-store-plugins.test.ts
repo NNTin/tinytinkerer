@@ -155,6 +155,47 @@ describe('settings-store plugin tool selection (issue #400)', () => {
   })
 })
 
+describe('settings-store setAppToolSelection (issue #400 follow-up)', () => {
+  it('persists an app-tool denylist under the app key, with no activation write', async () => {
+    const store = createSettingsStore(makeShell(preferences))
+
+    await store
+      .getState()
+      .setAppToolSelection({ id: 'canvas', toolIds: ['draw', 'search'] }, ['draw'])
+
+    expect(store.getState().appToolDisablement).toEqual({ canvas: ['draw'] })
+    expect(preferences.store.get('settings_apps_disabled_tools')).toBe(
+      JSON.stringify({ canvas: ['draw'] })
+    )
+    // An app group has no activation surface, so nothing is written there.
+    expect(preferences.store.has('settings_plugins_activation')).toBe(false)
+    expect(store.getState().pluginActivation).toEqual({})
+  })
+
+  it('KEEPS every tool when all are disabled — the group stays, activation untouched', async () => {
+    const store = createSettingsStore(makeShell(preferences))
+
+    await store
+      .getState()
+      .setAppToolSelection({ id: 'canvas', toolIds: ['draw', 'search'] }, ['draw', 'search'])
+
+    // Unlike setPluginToolSelection, all-disabled is a persisted state, not a
+    // deactivation — the denylist keeps every id and no activation entry appears.
+    expect(store.getState().appToolDisablement).toEqual({ canvas: ['draw', 'search'] })
+    expect(store.getState().pluginActivation).toEqual({})
+  })
+
+  it('deletes the entry when the selection clears (absence = all enabled)', async () => {
+    const store = createSettingsStore(makeShell(preferences))
+
+    await store.getState().setAppToolSelection({ id: 'canvas', toolIds: ['draw'] }, ['draw'])
+    expect(store.getState().appToolDisablement).toEqual({ canvas: ['draw'] })
+
+    await store.getState().setAppToolSelection({ id: 'canvas', toolIds: ['draw'] }, [])
+    expect(store.getState().appToolDisablement).toEqual({})
+  })
+})
+
 describe('settings-store reconcilePluginTools (issue #400 review, F2/F3)', () => {
   it('does nothing when no stored entry needs healing', async () => {
     const store = createSettingsStore(makeShell(preferences))
