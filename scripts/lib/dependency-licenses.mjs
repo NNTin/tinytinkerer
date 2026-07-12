@@ -15,7 +15,12 @@ const LICENSE_OVERRIDES = {
   // khroma@2.1.0 ships no `license` field in its package.json, so pnpm reports it
   // as Unknown. Its repository declares MIT.
   // https://github.com/fabiospampinato/khroma#readme
-  'khroma@2.1.0': 'MIT'
+  'khroma@2.1.0': 'MIT',
+  // These CodeSandbox import helper releases omit or misreport their metadata,
+  // but each published tarball includes the LGPL v3 text in LICENSE.
+  'codesandbox-import-util-types@1.3.7': 'LGPL-3.0-only',
+  'codesandbox-import-util-types@2.2.3': 'LGPL-3.0-only',
+  'codesandbox-import-utils@1.3.8': 'LGPL-3.0-only'
 }
 
 /**

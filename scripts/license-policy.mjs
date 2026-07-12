@@ -23,6 +23,7 @@ const LICENSE_POLICY = {
     'BSD-2-Clause',
     'BSD-3-Clause',
     'CC0-1.0',
+    'W3C-20150513',
     'Zlib'
   ],
   warn: ['LGPL', 'MPL-2.0', 'Unlicense'],

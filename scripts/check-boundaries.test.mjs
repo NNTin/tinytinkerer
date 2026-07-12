@@ -155,6 +155,36 @@ test('iframe app packages may be consumed only by their declaring harness shell'
   )
 })
 
+test('integrated shells may import only their declared trusted stage package', async (t) => {
+  const result = await withFixture(t, {
+    'packages/ide/package.json': pkg('@tinytinkerer/ide'),
+    'packages/other/package.json': pkg('@tinytinkerer/other'),
+    'apps/ide/package.json': pkg('@tinytinkerer/ide-shell', {
+      tinytinkerer: {
+        architectureRole: 'integrated-shell',
+        stagePackage: '@tinytinkerer/ide'
+      }
+    }),
+    'apps/ide/src/good.ts': "import { stage } from '@tinytinkerer/ide'\n",
+    'apps/ide/src/bad.ts': "import { other } from '@tinytinkerer/other'\n"
+  })
+
+  assert.equal(result.code, 1)
+  assert.match(result.stderr, /integrated shells may depend only/)
+  assert.ok(!result.stderr.includes('good.ts'), 'declared stage package must be allowed')
+})
+
+test('integrated shells require a workspace stage package', async (t) => {
+  const result = await withFixture(t, {
+    'apps/ide/package.json': pkg('@tinytinkerer/ide-shell', {
+      tinytinkerer: { architectureRole: 'integrated-shell' }
+    })
+  })
+
+  assert.equal(result.code, 1)
+  assert.match(result.stderr, /integrated-shell must declare a workspace stagePackage/)
+})
+
 test('PRODUCT_AGNOSTIC_SOURCE_RULES apply to plugin packages, with word-boundary negatives passing', async (t) => {
   const result = await withFixture(t, {
     'packages/plugins/plugin-demo/package.json': pkg('@tinytinkerer/plugin-demo'),

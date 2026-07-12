@@ -7,9 +7,10 @@ import { join } from 'node:path'
 // `source` is the apps/<source> package that provides the build. The three browser
 // endpoints (web/widget/mobile) are ONE source — the single `apps/shell` build,
 // served at all three mount paths and morphing between presentations at runtime.
-// `canvas` and the root `host` app are their own sources.
+// `canvas`, `ide`, and the root `host` app are their own sources.
 export const HOSTED_APP_SPECS = Object.freeze([
   { slug: 'canvas', label: 'Canvas', mountPath: '/canvas/', source: 'canvas' },
+  { slug: 'ide', label: 'IDE', mountPath: '/ide/', source: 'ide' },
   { slug: 'mobile', label: 'Mobile', mountPath: '/mobile/', source: 'shell' },
   { slug: 'widget', label: 'Widget', mountPath: '/widget/', source: 'shell' },
   { slug: 'web', label: 'Web', mountPath: '/web/', source: 'shell' },

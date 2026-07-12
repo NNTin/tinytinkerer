@@ -26,6 +26,9 @@ The deployed and local host serves the frontend entrypoints:
 - `/web/`, `/widget/`, and `/mobile/` are ONE build — the single `apps/shell` browser shell — served at all three paths. The shell selects its presentation at runtime from the URL path (`resolvePresentation`), so `/web/` renders the docked comfortable sidebar, `/widget/` the floating (morphable) window, and `/mobile/` the docked mobile sidebar. Being one origin, the three endpoints share one session (auth + conversation history), while each keeps its own layout geometry.
 - `/canvas/` renders the thin Excalidraw harness shell and owns its internal
   `/canvas/excalidraw-app/` iframe entry.
+- `/ide/` renders the browser-first IDE as a trusted in-process stage beside the
+  shared chat. Project files live in IndexedDB and execute in Sandpack's
+  cross-origin React/TypeScript runtime; the IDE never uses the OS file system.
 
 There is no longer a separate `apps/web`, `apps/widget`, or `apps/mobile` package: after `#325` collapsed all shared behavior onto one `ChatApp` with pluggable layouts, the three shells were only a different prop bundle over that surface, so they became one `apps/shell` build with a per-presentation descriptor table (`apps/shell/src/presentations.tsx`). Only the mobile presentation registers the PWA service worker (its `/mobile/` scope must not leak onto the same-origin `/web` and `/widget`; the gate is `createBrowserShellRoot`'s `registerServiceWorker`). The shell builds with a relative base (`base: './'`) so one build serves correctly at every path.
 
@@ -45,6 +48,9 @@ Beyond the chat shells, the host also serves **harness apps**: a chat assistant 
 
 - a thin **harness shell** (e.g. `/canvas/`) — the chat overlay plus a sandboxed `<AppFrame>`; carries no third-party dependencies.
 - an **iframe app package and page entry** (e.g. `@tinytinkerer/excalidraw-app` at `/canvas/excalidraw-app/`) — a first-party wrapper that mounts the third-party component and answers the bridge; owns all heavy/third-party dependencies in a separate entry graph, off the chat shell's startup graph.
+- an **integrated shell** (currently `/ide/`) — the same dock-aware chat
+  composition around a declared trusted stage package. Untrusted project code must
+  remain behind the stage's own cross-origin execution boundary.
 
 The shell drives the app over a shared, versioned, Zod-typed `postMessage` protocol (`@tinytinkerer/app-bridge`), hosted by `@tinytinkerer/app-harness`. Adding the next app is "new iframe app page + thin harness shell + declare its verbs," not a bespoke integration. See [app-harness.md](./app-harness.md).
 
@@ -407,7 +413,7 @@ This means TinyTinkerer has two different kinds of sharing:
 
 `apps/host` is the local dev environment, the composed deployment surface for the frontends, and the root `/` React app itself.
 
-Its host-owned app inventory in `apps/host/src/app-definitions.mjs` is shared by dev serving, redirects, production composition, and host tests. Each `HOSTED_APP_SPECS` entry carries a `source` (the `apps/<source>` build that provides it): `web`, `widget`, and `mobile` all source the single `apps/shell` build; `canvas` its own; and a `{ slug: 'host', mountPath: '/', source: 'host' }` entry sorted **last** (its `/` matches every path, so the `/<slug>/` mounts are matched first). In dev each mount runs its own Vite server rooted at its `source` with `base` pinned to the mount path (so the shell's relative-base build resolves under `/web/`, `/widget/`, `/mobile/`). `build-pages.mjs` seeds `apps/host/dist` from the root app's `dist-root` build, then copies each mount's `source` `dist` into `dist/<slug>/` — the one `apps/shell/dist` lands at `dist/web`, `dist/widget`, and `dist/mobile`. Turbo's static build edges remain explicit (`@tinytinkerer/host#build` depends on `shell` + `canvas`).
+Its host-owned app inventory in `apps/host/src/app-definitions.mjs` is shared by dev serving, redirects, production composition, and host tests. Each `HOSTED_APP_SPECS` entry carries a `source` (the `apps/<source>` build that provides it): `web`, `widget`, and `mobile` all source the single `apps/shell` build; `canvas` and `ide` use their own builds; and a `{ slug: 'host', mountPath: '/', source: 'host' }` entry sorted **last** (its `/` matches every path, so the `/<slug>/` mounts are matched first). In dev each mount runs its own Vite server rooted at its `source` with `base` pinned to the mount path (so the shell's relative-base build resolves under `/web/`, `/widget/`, `/mobile/`). `build-pages.mjs` seeds `apps/host/dist` from the root app's `dist-root` build, then copies each mount's `source` `dist` into `dist/<slug>/` — the one `apps/shell/dist` lands at `dist/web`, `dist/widget`, and `dist/mobile`. Turbo's static build edges remain explicit (`@tinytinkerer/host#build` depends on `shell`, `canvas`, and `ide-shell`).
 
 It is allowed to own:
 

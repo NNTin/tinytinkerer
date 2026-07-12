@@ -6,11 +6,15 @@ Do NOT delete above lines.
 
 # Multi-app harness
 
-TinyTinkerer has two related browser-shell shapes:
+TinyTinkerer has three related browser-shell shapes:
 
 1. **Chat-only shells**, such as `apps/shell`, render the shared chat surface directly.
 2. **App harness shells**, currently `apps/canvas`, render the same chat surface over an
    isolated iframe application and give the assistant app-specific tools.
+3. **Integrated app shells**, currently `apps/ide`, reuse the harness's dock-aware
+   `AppStageShell` with a trusted React stage rather than an opaque iframe. The IDE
+   can persist its virtual workspace in IndexedDB directly; project execution remains
+   isolated in Sandpack's cross-origin runtime.
 
 Excalidraw is the first iframe application. The architecture deliberately separates:
 

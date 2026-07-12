@@ -16,7 +16,11 @@
       ]
     },
     "@tinytinkerer/host#build": {
-      "dependsOn": ["@tinytinkerer/shell#build", "@tinytinkerer/canvas#build"],
+      "dependsOn": [
+        "@tinytinkerer/shell#build",
+        "@tinytinkerer/canvas#build",
+        "@tinytinkerer/ide-shell#build"
+      ],
       "outputs": ["dist/**", "dist-root/**"],
       "env": [
         "TINYTINKERER_SKIP_BRAND_ASSET_GENERATION",

@@ -93,4 +93,8 @@ onlyBuiltDependencies:
 # --with-deps chromium) in CI and locally, so the lifecycle script is intentionally
 # blocked here rather than run at install time. See packages/e2e/README.md.
 ignoredBuiltDependencies:
+  # Transitive through @codesandbox/sandpack-react. Its postinstall only probes
+  # optional ES feature support; the browser bundle builds and runs without it,
+  # so keep installs scriptless rather than executing third-party lifecycle code.
+  - es5-ext
   - playwright

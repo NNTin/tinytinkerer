@@ -9,6 +9,7 @@ const APP_ARCHITECTURE_ROLES = new Set([
   'browser-shell',
   'edge-service',
   'harness-shell',
+  'integrated-shell',
   'host-compositor'
 ])
 const PACKAGE_ARCHITECTURE_ROLES = new Set(['app-protocol', 'iframe-app'])
@@ -295,6 +296,24 @@ function validateArchitectureMetadata(pkg) {
   }
 
   const requiresProtocol = metadata.architectureRole === 'harness-shell'
+  if (metadata.architectureRole === 'integrated-shell') {
+    const stagePkg = workspaceByName.get(metadata.stagePackage)
+    if (!stagePkg || stagePkg.kind !== 'package') {
+      errors.push(
+        `${relative(rootDir, pkg.dir)}/package.json: integrated-shell must declare a workspace stagePackage`
+      )
+    }
+    if (
+      metadata.protocolPackage !== undefined ||
+      metadata.iframeAppPackage !== undefined ||
+      metadata.iframeEntry !== undefined
+    ) {
+      errors.push(
+        `${relative(rootDir, pkg.dir)}/package.json: integrated-shell must not declare harness protocol/iframe metadata`
+      )
+    }
+    return
+  }
   if (!requiresProtocol) {
     if (
       metadata.protocolPackage !== undefined ||
@@ -475,6 +494,21 @@ function validateBoundary(sourcePkg, target, filePath) {
     if (!allowed.has(targetPkg.name)) {
       errors.push(
         `${sourceLabel}: harness shells may depend only on app-browser, app-harness, ui, their app-owned protocol package, and local modules (${targetPkg.name})`
+      )
+    }
+  }
+
+  if (architecture?.architectureRole === 'integrated-shell') {
+    const allowed = new Set([
+      sourcePkg.name,
+      '@tinytinkerer/app-browser',
+      '@tinytinkerer/app-harness',
+      '@tinytinkerer/ui',
+      architecture.stagePackage
+    ])
+    if (!allowed.has(targetPkg.name)) {
+      errors.push(
+        `${sourceLabel}: integrated shells may depend only on app-browser, app-harness, ui, their declared stage package, and local modules (${targetPkg.name})`
       )
     }
   }
