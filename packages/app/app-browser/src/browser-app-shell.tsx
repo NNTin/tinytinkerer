@@ -1,4 +1,11 @@
-import { StrictMode, Suspense, useState, type ComponentType, type ReactNode } from 'react'
+import {
+  StrictMode,
+  Suspense,
+  useEffect,
+  useState,
+  type ComponentType,
+  type ReactNode
+} from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppBrowserProvider } from './app'
 import type { BrowserApp } from './app'
@@ -6,6 +13,7 @@ import { AppErrorBoundary } from './app-error-boundary'
 import { useBrowserAppBootstrap } from './bootstrap'
 import { LazyKonamiCheatCode } from './konami/lazy-konami-cheat-code'
 import { LazyHumanPromptHost } from './lazy-human-prompt-host'
+import { armOAuthCallbackWatchdog } from './telemetry/oauth-callback-watchdog'
 import { LazyPrivacyPolicyUpdateGate } from './telemetry/lazy-privacy-update-gate'
 import { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
 import type { BrowserShellConfig } from './config'
@@ -36,6 +44,17 @@ export const BrowserAppShell = ({
 }: BrowserAppShellProps) => {
   const [queryClient] = useState(() => new QueryClient())
   const { ready, error } = useBrowserAppBootstrap(app, config)
+
+  // Arm the OAuth callback watchdog once boot is ready (issue #409 follow-up):
+  // it is a backstop for a callback URL that no route/controller ever picks up
+  // (the bug that motivated it — apps/host's root had no '/auth/callback' route
+  // at all), so it must not fire while the app itself is still booting.
+  useEffect(() => {
+    if (!ready) {
+      return undefined
+    }
+    return armOAuthCallbackWatchdog(() => app.stores.auth.getState().token)
+  }, [ready, app])
 
   if (!ready) {
     return <BootScreen {...(error ? { error } : {})} />
