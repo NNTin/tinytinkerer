@@ -8,12 +8,14 @@ export type IdeController = {
   inspectRuntime(input: { maxLogs: number }): unknown
   restartRuntime(): Promise<unknown>
   undoLastChange(): Promise<boolean>
+  redoLastChange(): Promise<boolean>
 }
 
 export type IdeControllerHandle = {
   setController(controller: IdeController | null): void
   request(method: keyof IdeController, input?: unknown): Promise<unknown>
   undoLastChange(): Promise<boolean>
+  redoLastChange(): Promise<boolean>
 }
 
 export const createIdeControllerHandle = (): IdeControllerHandle => {
@@ -33,6 +35,9 @@ export const createIdeControllerHandle = (): IdeControllerHandle => {
     },
     async undoLastChange() {
       return controller ? controller.undoLastChange() : false
+    },
+    async redoLastChange() {
+      return controller ? controller.redoLastChange() : false
     }
   }
 }

@@ -112,6 +112,8 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
   )
   const [storageError, setStorageError] = useState('')
   const [narrow, setNarrow] = useState(() => window.innerWidth < 860)
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
 
   const stateRef = useRef(sandpack)
   stateRef.current = sandpack
@@ -123,6 +125,7 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
   const workspaceRevisionRef = useRef(persisted?.workspaceRevision ?? 0)
   const lastCodesRef = useRef<FileSnapshot>(toCodes(sandpack.files))
   const historyRef = useRef<HistoryEntry[]>([])
+  const redoHistoryRef = useRef<HistoryEntry[]>([])
   const controllerRef = useRef<IdeController | null>(null)
 
   useEffect(() => {
@@ -152,6 +155,10 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
       else revisionsRef.current[path] = (revisionsRef.current[path] ?? 0) + 1
     }
     if (anyChanged) workspaceRevisionRef.current += 1
+    if (anyChanged && redoHistoryRef.current.length > 0) {
+      redoHistoryRef.current = []
+      setCanRedo(false)
+    }
     lastCodesRef.current = current
   }, [sandpack.files])
 
@@ -186,6 +193,19 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
       )
       for (const path of toDelete) stateRef.current.deleteFile(path)
       setDeletedPaths(new Set(deleted))
+    }
+    const restoreHistoryEntry = (entry: HistoryEntry) => {
+      const current = currentCodes()
+      workspaceRevisionRef.current += 1
+      const paths = new Set([...Object.keys(current), ...Object.keys(entry.files)])
+      for (const path of paths) {
+        if (path in entry.files) {
+          revisionsRef.current[path] = getIdeFileRevision(revisionsRef.current, path) + 1
+        } else {
+          delete revisionsRef.current[path]
+        }
+      }
+      installSnapshot(entry.files, new Set(entry.deletedPaths))
     }
 
     const value: IdeController = {
@@ -252,6 +272,9 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
 
         historyRef.current.push({ files: before, deletedPaths: [...deletedRef.current] })
         if (historyRef.current.length > 20) historyRef.current.shift()
+        redoHistoryRef.current = []
+        setCanUndo(true)
+        setCanRedo(false)
         workspaceRevisionRef.current += 1
         revisionsRef.current = result.revisions
         installSnapshot(result.files, result.deletedPaths)
@@ -278,17 +301,23 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
       undoLastChange() {
         const previous = historyRef.current.pop()
         if (!previous) return Promise.resolve(false)
-        const current = currentCodes()
-        workspaceRevisionRef.current += 1
-        const paths = new Set([...Object.keys(current), ...Object.keys(previous.files)])
-        for (const path of paths) {
-          if (path in previous.files) {
-            revisionsRef.current[path] = (revisionsRef.current[path] ?? 0) + 1
-          } else {
-            delete revisionsRef.current[path]
-          }
-        }
-        installSnapshot(previous.files, new Set(previous.deletedPaths))
+        redoHistoryRef.current.push({
+          files: currentCodes(),
+          deletedPaths: [...deletedRef.current]
+        })
+        restoreHistoryEntry(previous)
+        setCanUndo(historyRef.current.length > 0)
+        setCanRedo(true)
+        return Promise.resolve(true)
+      },
+      redoLastChange() {
+        const next = redoHistoryRef.current.pop()
+        if (!next) return Promise.resolve(false)
+        historyRef.current.push({ files: currentCodes(), deletedPaths: [...deletedRef.current] })
+        if (historyRef.current.length > 20) historyRef.current.shift()
+        restoreHistoryEntry(next)
+        setCanUndo(true)
+        setCanRedo(redoHistoryRef.current.length > 0)
         return Promise.resolve(true)
       }
     }
@@ -371,10 +400,26 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
         <strong>TinyTinkerer IDE</strong>
         <div className="ide-header-actions">
           {storageError ? <span className="ide-storage-error">{storageError}</span> : null}
-          <button type="button" onClick={() => void controllerRef.current?.undoLastChange()}>
-            Undo agent change
+          <button
+            type="button"
+            className="ide-history-button"
+            aria-label="Undo agent change"
+            title="Undo agent change"
+            disabled={!canUndo}
+            onClick={() => void controllerRef.current?.undoLastChange()}
+          >
+            <span aria-hidden="true">↶</span>
           </button>
-          <span>Browser-first · IndexedDB only</span>
+          <button
+            type="button"
+            className="ide-history-button"
+            aria-label="Redo agent change"
+            title="Redo agent change"
+            disabled={!canRedo}
+            onClick={() => void controllerRef.current?.redoLastChange()}
+          >
+            <span aria-hidden="true">↷</span>
+          </button>
         </div>
       </header>
       <div className="ide-body">

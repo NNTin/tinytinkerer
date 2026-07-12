@@ -3,6 +3,7 @@ import { createIdeControllerHandle, type IdeController } from '../src/controller
 
 const inspectWorkspace = vi.fn(() => ({ ok: true }))
 const undoLastChange = vi.fn(() => Promise.resolve(true))
+const redoLastChange = vi.fn(() => Promise.resolve(true))
 
 const controller = (): IdeController => ({
   inspectWorkspace,
@@ -11,7 +12,8 @@ const controller = (): IdeController => ({
   applyFileChanges: vi.fn(() => Promise.resolve({ changes: [] })),
   inspectRuntime: vi.fn(() => ({ status: 'idle' })),
   restartRuntime: vi.fn(() => Promise.resolve({ restarted: true })),
-  undoLastChange
+  undoLastChange,
+  redoLastChange
 })
 
 describe('IDE controller handle', () => {
@@ -20,13 +22,15 @@ describe('IDE controller handle', () => {
     await expect(handle.request('inspectWorkspace')).rejects.toThrow(/still loading/)
   })
 
-  it('routes requests and undo to the mounted controller', async () => {
+  it('routes requests, undo, and redo to the mounted controller', async () => {
     const handle = createIdeControllerHandle()
     const target = controller()
     handle.setController(target)
     await expect(handle.request('inspectWorkspace', {})).resolves.toEqual({ ok: true })
     await expect(handle.undoLastChange()).resolves.toBe(true)
+    await expect(handle.redoLastChange()).resolves.toBe(true)
     expect(inspectWorkspace).toHaveBeenCalledOnce()
     expect(undoLastChange).toHaveBeenCalledOnce()
+    expect(redoLastChange).toHaveBeenCalledOnce()
   })
 })
