@@ -82,7 +82,7 @@
   overflow: auto;
   padding: 4px 0 12px;
 }
-.ide-file-tree button {
+.ide-tree-row {
   border: 0;
   width: 100%;
   text-align: left;
@@ -95,16 +95,28 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ide-file-tree button:hover {
+.ide-tree-row:hover {
   background: #e6dbc4;
 }
-.ide-file-tree button.active {
+.ide-tree-row.active {
   background: #d9e8e0;
   color: #244c3c;
   font-weight: 600;
 }
-.ide-file-tree button span {
+.ide-tree-row span {
   margin-right: 6px;
+}
+.ide-tree-directory {
+  font-weight: 600;
+}
+.ide-tree-directory-group {
+  display: contents;
+}
+.ide-tree-row .ide-tree-disclosure {
+  display: inline-block;
+  width: 10px;
+  margin-right: 3px;
+  color: #635d50;
 }
 .ide-workspace {
   flex: 1;

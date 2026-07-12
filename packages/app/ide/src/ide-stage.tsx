@@ -9,6 +9,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ideControllerHandle, type IdeController } from './controller'
 import type { ApplyFileChangesInput } from './contracts'
+import { buildIdeFileTree, type IdeFileTreeNode } from './file-tree'
 import { loadIdeWorkspace, saveIdeWorkspace, type PersistedIdeWorkspace } from './workspace-db'
 
 type FileSnapshot = Record<string, string>
@@ -27,6 +28,79 @@ const displayLog = (value: unknown): string => {
   }
 }
 
+type FileTreeProps = {
+  nodes: IdeFileTreeNode[]
+  activeFile: string
+  collapsedDirectories: ReadonlySet<string>
+  forceExpanded: boolean
+  depth?: number
+  onToggleDirectory: (path: string) => void
+  onOpenFile: (path: string) => void
+}
+
+const FileTree = ({
+  nodes,
+  activeFile,
+  collapsedDirectories,
+  forceExpanded,
+  depth = 0,
+  onToggleDirectory,
+  onOpenFile
+}: FileTreeProps): React.JSX.Element => (
+  <>
+    {nodes.map((node) => {
+      if (node.kind === 'file') {
+        return (
+          <button
+            type="button"
+            key={node.path}
+            className={`ide-tree-row ide-tree-file${node.path === activeFile ? ' active' : ''}`}
+            style={{ paddingLeft: `${12 + depth * 14}px` }}
+            data-ide-tree-kind="file"
+            data-path={node.path}
+            onClick={() => onOpenFile(node.path)}
+          >
+            <span aria-hidden="true">▱</span>
+            {node.name}
+          </button>
+        )
+      }
+
+      const expanded = forceExpanded || !collapsedDirectories.has(node.path)
+      return (
+        <div className="ide-tree-directory-group" key={node.path}>
+          <button
+            type="button"
+            className="ide-tree-row ide-tree-directory"
+            style={{ paddingLeft: `${12 + depth * 14}px` }}
+            aria-expanded={expanded}
+            data-ide-tree-kind="directory"
+            data-path={node.path}
+            onClick={() => onToggleDirectory(node.path)}
+          >
+            <span className="ide-tree-disclosure" aria-hidden="true">
+              {expanded ? '▾' : '▸'}
+            </span>
+            <span aria-hidden="true">▰</span>
+            {node.name}
+          </button>
+          {expanded ? (
+            <FileTree
+              nodes={node.children}
+              activeFile={activeFile}
+              collapsedDirectories={collapsedDirectories}
+              forceExpanded={forceExpanded}
+              depth={depth + 1}
+              onToggleDirectory={onToggleDirectory}
+              onOpenFile={onOpenFile}
+            />
+          ) : null}
+        </div>
+      )
+    })}
+  </>
+)
+
 const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) => {
   const { sandpack, dispatch } = useSandpack()
   const consoleState = useSandpackConsole({
@@ -34,6 +108,7 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
     maxMessageCount: 200
   })
   const [filter, setFilter] = useState('')
+  const [collapsedDirectories, setCollapsedDirectories] = useState<Set<string>>(() => new Set())
   const [deletedPaths, setDeletedPaths] = useState<Set<string>>(
     () => new Set(persisted?.deletedPaths ?? [])
   )
@@ -271,9 +346,22 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
     return () => ideControllerHandle.setController(null)
   }, [controller])
 
-  const files = Object.keys(sandpack.files)
-    .filter((path) => path.toLocaleLowerCase().includes(filter.toLocaleLowerCase()))
-    .sort()
+  const fileTree = useMemo(() => {
+    const needle = filter.trim().toLocaleLowerCase()
+    const paths = Object.keys(sandpack.files).filter(
+      (path) => needle.length === 0 || path.toLocaleLowerCase().includes(needle)
+    )
+    return buildIdeFileTree(paths)
+  }, [filter, sandpack.files])
+
+  const toggleDirectory = (path: string) => {
+    setCollapsedDirectories((current) => {
+      const next = new Set(current)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
 
   const createFile = () => {
     const raw = window.prompt('New file path', '/src/new-file.ts')
@@ -357,18 +445,14 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
             onChange={(event) => setFilter(event.target.value)}
           />
           <nav className="ide-file-tree" aria-label="Workspace files">
-            {files.map((path) => (
-              <button
-                type="button"
-                key={path}
-                className={path === sandpack.activeFile ? 'active' : ''}
-                style={{ paddingLeft: `${12 + Math.max(0, path.split('/').length - 2) * 12}px` }}
-                onClick={() => sandpack.openFile(path)}
-              >
-                <span aria-hidden="true">▱</span>
-                {path.split('/').at(-1)}
-              </button>
-            ))}
+            <FileTree
+              nodes={fileTree}
+              activeFile={sandpack.activeFile}
+              collapsedDirectories={collapsedDirectories}
+              forceExpanded={filter.trim().length > 0}
+              onToggleDirectory={toggleDirectory}
+              onOpenFile={sandpack.openFile}
+            />
           </nav>
         </aside>
         <section className="ide-workspace">
