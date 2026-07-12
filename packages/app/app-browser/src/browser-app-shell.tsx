@@ -13,7 +13,6 @@ import { AppErrorBoundary } from './app-error-boundary'
 import { useBrowserAppBootstrap } from './bootstrap'
 import { LazyKonamiCheatCode } from './konami/lazy-konami-cheat-code'
 import { LazyHumanPromptHost } from './lazy-human-prompt-host'
-import { armOAuthCallbackWatchdog } from './telemetry/oauth-callback-watchdog'
 import { LazyPrivacyPolicyUpdateGate } from './telemetry/lazy-privacy-update-gate'
 import { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
 import type { BrowserShellConfig } from './config'
@@ -49,11 +48,26 @@ export const BrowserAppShell = ({
   // it is a backstop for a callback URL that no route/controller ever picks up
   // (the bug that motivated it — apps/host's root had no '/auth/callback' route
   // at all), so it must not fire while the app itself is still booting.
+  // Dynamically imported so the watchdog and its telemetry/URL helpers stay out
+  // of every shell's startup entry chunk (the bundle-size guard keeps that entry
+  // lean); a 10s boot-time backstop has no reason to load synchronously, and the
+  // import resolves long before the window elapses.
   useEffect(() => {
     if (!ready) {
       return undefined
     }
-    return armOAuthCallbackWatchdog(() => app.stores.auth.getState().token)
+    let disposed = false
+    let cleanup: (() => void) | undefined
+    void import('./telemetry/oauth-callback-watchdog').then(({ armOAuthCallbackWatchdog }) => {
+      if (disposed) {
+        return
+      }
+      cleanup = armOAuthCallbackWatchdog(() => app.stores.auth.getState().token)
+    })
+    return () => {
+      disposed = true
+      cleanup?.()
+    }
   }, [ready, app])
 
   if (!ready) {
