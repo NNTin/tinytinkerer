@@ -4,6 +4,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { AppToolGroup } from '../app-tool-group'
 import type { BrowserShell } from '../shell'
 import { loadCoreModule } from '../core-module'
+import { loadPluginModules } from '../plugins/registry'
 import type { AuthStore } from './auth-store'
 import type { SettingsStore } from './settings-store'
 import type { InspectorStore } from './inspector-store'
@@ -91,7 +92,6 @@ export const createChatStore = (options: {
   const getRuntimeFactory = async (): Promise<ChatRuntimeFactory> => {
     runtimeFactoryPromise ??= (async () => {
       const { createBrowserRuntimeFactory } = await import('../runtime/get-runtime')
-      const { loadPluginModules } = await import('../plugins/registry')
       const pluginModules = await loadPluginModules()
       return createBrowserRuntimeFactory({
         shell: options.shell,
