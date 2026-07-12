@@ -29,6 +29,9 @@ The deployed and local host serves the frontend entrypoints:
 - `/ide/` renders the browser-first IDE as a trusted in-process stage beside the
   shared chat. Project files live in IndexedDB and execute in Sandpack's
   cross-origin React/TypeScript runtime; the IDE never uses the OS file system.
+- `/mermaid/` renders a trusted, dockable Mermaid editor/preview/chat workspace.
+  Its revision-safe `/diagram.mmd` file lives in IndexedDB and rendered SVG is
+  sanitized before entering the document.
 
 There is no longer a separate `apps/web`, `apps/widget`, or `apps/mobile` package: after `#325` collapsed all shared behavior onto one `ChatApp` with pluggable layouts, the three shells were only a different prop bundle over that surface, so they became one `apps/shell` build with a per-presentation descriptor table (`apps/shell/src/presentations.tsx`). Only the mobile presentation registers the PWA service worker (its `/mobile/` scope must not leak onto the same-origin `/web` and `/widget`; the gate is `createBrowserShellRoot`'s `registerServiceWorker`). The shell builds with a relative base (`base: './'`) so one build serves correctly at every path.
 
@@ -48,9 +51,10 @@ Beyond the chat shells, the host also serves **harness apps**: a chat assistant 
 
 - a thin **harness shell** (e.g. `/canvas/`) — the chat overlay plus a sandboxed `<AppFrame>`; carries no third-party dependencies.
 - an **iframe app package and page entry** (e.g. `@tinytinkerer/excalidraw-app` at `/canvas/excalidraw-app/`) — a first-party wrapper that mounts the third-party component and answers the bridge; owns all heavy/third-party dependencies in a separate entry graph, off the chat shell's startup graph.
-- an **integrated shell** (currently `/ide/`) — the same dock-aware chat
-  composition around a declared trusted stage package. Untrusted project code must
-  remain behind the stage's own cross-origin execution boundary.
+- an **integrated shell** (currently `/ide/` and `/mermaid/`) — shared chat
+  composition around a declared trusted stage package. A stage can use the
+  overlay-style `AppStageShell` or `DockablePanelLayout`; untrusted executable code
+  must remain behind the stage's own cross-origin execution boundary.
 
 The shell drives the app over a shared, versioned, Zod-typed `postMessage` protocol (`@tinytinkerer/app-bridge`), hosted by `@tinytinkerer/app-harness`. Adding the next app is "new iframe app page + thin harness shell + declare its verbs," not a bespoke integration. See [app-harness.md](./app-harness.md).
 
@@ -294,6 +298,7 @@ These conventions are gated in CI, not left to reviewers:
 | `packages/app-browser`                  | shared browser composition boundary                    | browser adapters, shell bootstrap config, OAuth helpers, shell-facing hooks and components, shared browser styles, the always-on `appTools` seam on `createBrowserShellRoot`                                                                                                                        | app-specific layout, app-owned screens                                                                                           |
 | `packages/app-bridge`                   | iframe ↔ harness wire contract (leaf)                  | the Zod message envelope (`req`/`res`/`event`/`ready`/`hello`), request/response correlation + timeouts, the session-nonce trust model, and the transport-agnostic `createBridgeClient` / `createBridgeServer` + DOM `postMessage` adapters                                                         | any app-specific verb knowledge, React, browser product logic                                                                    |
 | `packages/app-harness`                  | iframe-app hosting boundary                            | `<AppFrame>` (sandboxed iframe host + ready/version handshake + lifecycle), `createAppBridgeHandle`, `appToolsFromVerbs` (verbs → appTools), `<HarnessShell>` (frame + chat overlay), harness layout styles                                                                                         | app domain logic, third-party app deps                                                                                           |
+| `packages/file-tools`                   | shared virtual-file tool boundary                      | `read_files` / `apply_file_changes` schemas and factory, revisions, atomic file changes, common receipts and diagnostics                                                                                                                                                                            | browser storage, editor UI, app-specific validation                                                                              |
 | `packages/<app>-protocol`               | app-owned bridge contract                              | Zod input/result contracts, inferred types, app identity, and advertised verb names                                                                                                                                                                                                                 | iframe runtime logic, chat UI, third-party app code                                                                              |
 | `apps/<app>` harness shell              | thin per-app chat shell                                | the `<AppFrame>` target (app page URL), the app's verb→tool declarations, sandbox/origin wiring, route + boot screen                                                                                                                                                                                | app domain logic, third-party npm deps, a parallel tool path                                                                     |
 | `packages/app/<app>-app` iframe package | embedded third-party app runtime                       | the first-party wrapper that mounts the third-party component and implements the bridge **server** (verb handlers); owns ALL heavy/third-party deps, its iframe entry graph, and its license/advisory allow-list                                                                                    | the chat runtime, `app-browser`/`app-core`/`agent-core`, harness chat UI                                                         |

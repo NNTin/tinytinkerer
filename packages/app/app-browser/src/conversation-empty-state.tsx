@@ -2,6 +2,7 @@ import { isPluginEnabled } from '@tinytinkerer/app-core'
 import type { PluginManifest } from '@tinytinkerer/contracts'
 import { useMemo } from 'react'
 import { useSettingsStore } from './app'
+import { useBrowserApp } from './app'
 import { usePluginModules } from './plugins/use-plugin-modules'
 
 // Capability-neutral fillers shown when few (or no) plugins contribute starters.
@@ -32,11 +33,14 @@ const MCP_STARTER_PROMPT = 'Help me automate a workflow.'
  * (manifests + the server-enabled flag) — never a concrete plugin id.
  */
 export const deriveStarterPrompts = (input: {
+  appStarterPrompts?: readonly string[]
   manifests: readonly Pick<PluginManifest, 'id' | 'defaultEnabled' | 'starterPrompt'>[]
   pluginActivation: Record<string, boolean>
   hasEnabledMcpServer: boolean
 }): string[] => {
   const ordered: string[] = []
+
+  ordered.push(...(input.appStarterPrompts ?? []))
 
   for (const manifest of input.manifests) {
     if (manifest.starterPrompt && isPluginEnabled(input.pluginActivation, manifest)) {
@@ -58,6 +62,7 @@ export const deriveStarterPrompts = (input: {
  * derived from enabled plugins and MCP servers via {@link deriveStarterPrompts}.
  */
 export const useStarterPrompts = (): string[] => {
+  const appStarterPrompts = useBrowserApp().starterPrompts
   const pluginModules = usePluginModules()
   const pluginActivation = useSettingsStore((state) => state.pluginActivation)
   const mcpServers = useSettingsStore((state) => state.mcpServers)
@@ -66,10 +71,11 @@ export const useStarterPrompts = (): string[] => {
     () =>
       deriveStarterPrompts({
         manifests: pluginModules.map((mod) => mod.manifest),
+        ...(appStarterPrompts ? { appStarterPrompts } : {}),
         pluginActivation,
         hasEnabledMcpServer: mcpServers.some((server) => server.enabled)
       }),
-    [pluginModules, pluginActivation, mcpServers]
+    [appStarterPrompts, pluginModules, pluginActivation, mcpServers]
   )
 }
 

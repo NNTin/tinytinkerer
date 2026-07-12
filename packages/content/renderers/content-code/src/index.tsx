@@ -190,6 +190,35 @@ const useCodeMirrorEditor = ({ value, onChange, language, editable }: UseEditorA
   return containerRef
 }
 
+export type CodeMirrorEditorProps = {
+  value: string
+  onChange: (next: string) => void
+  language?: string
+  editable?: boolean
+  className?: string
+  ariaLabel?: string
+}
+
+// Controlled CodeMirror surface shared by chat code blocks and trusted app stages.
+// Persistence and domain state intentionally stay with the caller.
+export const CodeMirrorEditor = ({
+  value,
+  onChange,
+  language,
+  editable = true,
+  className = 'tt-code-editor',
+  ariaLabel
+}: CodeMirrorEditorProps) => {
+  const editorRef = useCodeMirrorEditor({ value, onChange, language, editable })
+  return (
+    <div
+      ref={editorRef}
+      className={className}
+      {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}
+    />
+  )
+}
+
 // A bare, read-only CodeMirror surface for rendering code OUTSIDE the markdown
 // code-fence pipeline (e.g. a permission prompt that wants to show a tool's code
 // argument with syntax highlighting). It reuses the same `useCodeMirrorEditor`
@@ -206,8 +235,15 @@ export type ReadOnlyCodeViewProps = {
 const noop = (): void => {}
 
 export const ReadOnlyCodeView = ({ value, language, className }: ReadOnlyCodeViewProps) => {
-  const editorRef = useCodeMirrorEditor({ value, onChange: noop, language, editable: false })
-  return <div ref={editorRef} className={className ?? 'tt-code-editor'} />
+  return (
+    <CodeMirrorEditor
+      value={value}
+      onChange={noop}
+      {...(language !== undefined ? { language } : {})}
+      editable={false}
+      className={className ?? 'tt-code-editor'}
+    />
+  )
 }
 
 const useBodyScrollLock = (active: boolean): void => {

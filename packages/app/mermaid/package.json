@@ -1,5 +1,5 @@
 {
-  "name": "@tinytinkerer/ide",
+  "name": "@tinytinkerer/mermaid",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -22,10 +22,11 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@codesandbox/sandpack-react": "1.20.9",
+    "@tinytinkerer/app-harness": "workspace:*",
+    "@tinytinkerer/content-code": "workspace:*",
+    "@tinytinkerer/content-mermaid": "workspace:*",
     "@tinytinkerer/file-tools": "workspace:*",
-    "dexie": "4.4.3",
-    "zod": "4.4.3"
+    "dexie": "4.4.3"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -37,6 +38,7 @@
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "typescript": "6.0.3",
+    "vite": "8.0.14",
     "vitest": "4.1.7"
   }
 }

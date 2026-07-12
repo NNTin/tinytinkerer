@@ -47,6 +47,8 @@ export type BrowserApp = {
   // the tool picker (useToolTree) can read it from context — the same group the
   // chat store forwards to the runtime.
   appToolGroup?: AppToolGroup
+  // App-owned cold-start prompts shown before plugin/MCP/generic suggestions.
+  starterPrompts?: readonly string[]
 }
 
 const BrowserAppContext = createContext<BrowserApp | undefined>(undefined)
@@ -80,6 +82,7 @@ export const createBrowserApp = (
     // Threaded down to the chat store / runtime AND held on the app for the tool
     // picker; absent for web/widget/mobile.
     appToolGroup?: AppToolGroup
+    starterPrompts?: readonly string[]
   } = {}
 ): BrowserApp => {
   const shell = createBrowserShell(config)
@@ -104,7 +107,8 @@ export const createBrowserApp = (
       status,
       inspector
     },
-    ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {})
+    ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
+    ...(options.starterPrompts ? { starterPrompts: options.starterPrompts } : {})
   }
 
   return app

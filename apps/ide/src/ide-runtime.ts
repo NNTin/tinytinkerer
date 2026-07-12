@@ -1,10 +1,9 @@
 import type { Tool } from '@tinytinkerer/app-browser'
 import {
-  applyFileChangesInputSchema,
+  createFileTools,
   ideControllerHandle,
   inspectRuntimeInputSchema,
   inspectWorkspaceInputSchema,
-  readFilesInputSchema,
   restartRuntimeInputSchema,
   searchFilesInputSchema
 } from '@tinytinkerer/ide'
@@ -23,20 +22,18 @@ export const createIdeAppTools = (): Tool<unknown, unknown>[] => [
     schema: searchFilesInputSchema,
     execute: (input) => ideControllerHandle.request('searchFiles', input)
   },
-  {
-    id: 'read_files',
-    description:
-      'Read exact IDE file contents and revisions. Read before applying versioned edits.',
-    schema: readFilesInputSchema,
-    execute: (input) => ideControllerHandle.request('readFiles', input)
-  },
-  {
-    id: 'apply_file_changes',
-    description:
-      'Atomically create, replace, exact-edit, move, or delete IDE files. Existing files require the revision returned by the latest read_files call; conflicts reject the whole batch, so re-read affected files and recompute changes before retrying.',
-    schema: applyFileChangesInputSchema,
-    execute: (input) => ideControllerHandle.request('applyFileChanges', input)
-  },
+  ...createFileTools(
+    {
+      readFiles: (input) => ideControllerHandle.request('readFiles', input),
+      applyFileChanges: (input) => ideControllerHandle.request('applyFileChanges', input)
+    },
+    {
+      readDescription:
+        'Read exact IDE file contents and revisions. Read before applying versioned edits.',
+      applyDescription:
+        'Atomically create, replace, exact-edit, move, or delete IDE files. Existing files require the revision returned by the latest read_files call; conflicts reject the whole batch, so re-read affected files and recompute changes before retrying.'
+    }
+  ),
   {
     id: 'inspect_runtime',
     description:
