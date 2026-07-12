@@ -50,6 +50,7 @@ const KONAMI_PLUGIN_IDS = [
   'context-inspector',
   'context-usage',
   'event-logger',
+  'tool-tree',
   'web-search'
 ]
 
@@ -61,11 +62,11 @@ beforeEach(() => {
 })
 
 describe('applyKonamiPreset', () => {
-  it('has exactly 9 entries', () => {
-    expect(KONAMI_PRESET).toHaveLength(9)
+  it('has exactly 10 entries', () => {
+    expect(KONAMI_PRESET).toHaveLength(10)
   })
 
-  it('flips all three core settings on and enables all six plugins', async () => {
+  it('flips all three core settings on and enables all seven plugins', async () => {
     const store = createSettingsStore(makeShell(preferences))
 
     await applyKonamiPreset(store)

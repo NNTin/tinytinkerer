@@ -61,5 +61,6 @@ export const KONAMI_PRESET: readonly KonamiPresetEntry[] = [
   { kind: 'plugin', pluginId: 'context-inspector', enabled: true },
   { kind: 'plugin', pluginId: 'context-usage', enabled: true },
   { kind: 'plugin', pluginId: 'event-logger', enabled: true },
+  { kind: 'plugin', pluginId: 'tool-tree', enabled: true },
   { kind: 'plugin', pluginId: 'web-search', enabled: true }
 ]

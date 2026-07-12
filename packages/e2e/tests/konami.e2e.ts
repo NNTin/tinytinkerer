@@ -27,7 +27,7 @@ const KONAMI_KEYS = [
   'a'
 ]
 
-// The nine Settings toggles the preset flips on, by their exact accessible
+// The ten Settings toggles the preset flips on, by their exact accessible
 // label (manifest `label` for plugins; the ToggleRow `label` prop for the two
 // Interface prefs and the Telemetry toggle).
 const CORE_TOGGLE_LABELS = [
@@ -41,6 +41,7 @@ const PLUGIN_TOGGLE_LABELS = [
   'Context inspector (developer)',
   'Context usage gauge',
   'Event Logger (developer console)',
+  'Tool picker (tree view)',
   'Web search (Tavily)'
 ]
 
@@ -107,7 +108,7 @@ test.describe('Konami cheat code (#399)', () => {
       timeout: 15_000
     })
 
-    // The preset applied: open Settings once and confirm each of the nine
+    // The preset applied: open Settings once and confirm each of the ten
     // toggles is checked, without ever clicking one.
     const allLabels = [...CORE_TOGGLE_LABELS, ...PLUGIN_TOGGLE_LABELS]
     await assertTogglesChecked(page, allLabels)
