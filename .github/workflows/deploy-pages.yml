@@ -472,6 +472,7 @@ jobs:
                 `- Mobile: ${previewUrl}/mobile/`,
                 `- Widget: ${previewUrl}/widget/`,
                 `- Canvas: ${previewUrl}/canvas/`,
+                `- IDE: ${previewUrl}/ide/`,
                 `- Test report: ${previewUrl}/test-report/`,
                 '',
                 `Preview: ${previewUrl}`,
@@ -490,7 +491,7 @@ jobs:
                 '',
                 '> [!WARNING]',
                 '> The tinytinkerer **app build failed**, so the full preview ' +
-                  '(Web / Mobile / Widget / Canvas) is unavailable ' +
+                  '(Web / Mobile / Widget / Canvas / IDE) is unavailable ' +
                   'for this commit. ' +
                   'Only the Allure **test report** was published. See the ' +
                   'failing CI / E2E checks for the build & test failures.',
