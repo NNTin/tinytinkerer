@@ -8,6 +8,9 @@ export type DockablePanelLayoutProps = {
   storageKey: string
   defaultPreset?: DockableLayoutPreset
   className?: string
+  // Toolbar heading for this workspace. The layout is app-agnostic, so the label
+  // is supplied by the consumer rather than hard-coded.
+  title?: string
 }
 type LayoutState = {
   preset: ActiveLayout
@@ -166,7 +169,8 @@ export const DockablePanelLayout = ({
   panels,
   storageKey,
   defaultPreset = 'a',
-  className
+  className,
+  title = 'Workspace'
 }: DockablePanelLayoutProps) => {
   const [state, setState] = useState(() => loadState(panels, storageKey, defaultPreset))
   const [narrow, setNarrow] = useState(() => window.innerWidth < 720)
@@ -294,7 +298,7 @@ export const DockablePanelLayout = ({
   return (
     <div className={['app-dock-workspace', className].filter(Boolean).join(' ')}>
       <div className="app-dock-toolbar">
-        <strong>Mermaid workspace</strong>
+        <strong>{title}</strong>
         <label>
           Layout{' '}
           <select

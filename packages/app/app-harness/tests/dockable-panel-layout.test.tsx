@@ -16,6 +16,15 @@ afterEach(() => {
 })
 
 describe('DockablePanelLayout', () => {
+  it('renders the supplied workspace title and defaults when omitted', () => {
+    const { rerender } = render(
+      <DockablePanelLayout panels={[...panels]} storageKey="dock-test" title="Mermaid workspace" />
+    )
+    expect(screen.getByText('Mermaid workspace')).toBeInTheDocument()
+    rerender(<DockablePanelLayout panels={[...panels]} storageKey="dock-test" />)
+    expect(screen.getByText('Workspace')).toBeInTheDocument()
+  })
+
   it('switches presets and resizes splitters from the keyboard', () => {
     const { container } = render(
       <DockablePanelLayout panels={[...panels]} storageKey="dock-test" />

@@ -226,6 +226,7 @@ export const MermaidStage = ({
   return (
     <main className="mermaid-root" aria-label="TinyTinkerer Mermaid">
       <DockablePanelLayout
+        title="Mermaid workspace"
         storageKey="tinytinkerer:mermaid-layout:v1"
         panels={[
           { id: 'editor', title: 'CodeMirror editor', content: editor },
