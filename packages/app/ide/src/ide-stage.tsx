@@ -397,7 +397,7 @@ const Workspace = ({ persisted }: { persisted: PersistedIdeWorkspace | null }) =
   return (
     <main className="ide-root" aria-label="TinyTinkerer IDE">
       <header className="ide-header">
-        <strong>TinyTinkerer IDE</strong>
+        <strong title="Browser-first · IndexedDB only">TinyTinkerer IDE</strong>
         <div className="ide-header-actions">
           {storageError ? <span className="ide-storage-error">{storageError}</span> : null}
           <button

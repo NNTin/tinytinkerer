@@ -40,4 +40,13 @@ test.describe('IDE history controls', () => {
     await expect(file(page, '/App.tsx')).toHaveCount(0)
     await expect(redo).toBeDisabled()
   })
+
+  test('exposes the browser-storage details from the IDE title tooltip', async ({ page }) => {
+    await openIde(page)
+
+    await expect(page.getByText('TinyTinkerer IDE', { exact: true })).toHaveAttribute(
+      'title',
+      'Browser-first · IndexedDB only'
+    )
+  })
 })
