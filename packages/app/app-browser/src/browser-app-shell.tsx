@@ -1,4 +1,11 @@
-import { StrictMode, Suspense, useState, type ComponentType, type ReactNode } from 'react'
+import {
+  StrictMode,
+  Suspense,
+  useEffect,
+  useState,
+  type ComponentType,
+  type ReactNode
+} from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppBrowserProvider } from './app'
 import type { BrowserApp } from './app'
@@ -36,6 +43,32 @@ export const BrowserAppShell = ({
 }: BrowserAppShellProps) => {
   const [queryClient] = useState(() => new QueryClient())
   const { ready, error } = useBrowserAppBootstrap(app, config)
+
+  // Arm the OAuth callback watchdog once boot is ready (issue #409 follow-up):
+  // it is a backstop for a callback URL that no route/controller ever picks up
+  // (the bug that motivated it — apps/host's root had no '/auth/callback' route
+  // at all), so it must not fire while the app itself is still booting.
+  // Dynamically imported so the watchdog and its telemetry/URL helpers stay out
+  // of every shell's startup entry chunk (the bundle-size guard keeps that entry
+  // lean); a 10s boot-time backstop has no reason to load synchronously, and the
+  // import resolves long before the window elapses.
+  useEffect(() => {
+    if (!ready) {
+      return undefined
+    }
+    let disposed = false
+    let cleanup: (() => void) | undefined
+    void import('./telemetry/oauth-callback-watchdog').then(({ armOAuthCallbackWatchdog }) => {
+      if (disposed) {
+        return
+      }
+      cleanup = armOAuthCallbackWatchdog(() => app.stores.auth.getState().token)
+    })
+    return () => {
+      disposed = true
+      cleanup?.()
+    }
+  }, [ready, app])
 
   if (!ready) {
     return <BootScreen {...(error ? { error } : {})} />

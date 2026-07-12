@@ -4,8 +4,9 @@ import {
   resolveBrowserShellBootstrapConfig
 } from '@tinytinkerer/app-browser'
 import { createRoot } from 'react-dom/client'
+import { RouterProvider } from 'react-router-dom'
 import { RootBootScreen } from './loading-screen'
-import { RootComposition } from './root-composition'
+import { hostRouter } from './router'
 import '@tinytinkerer/app-browser/styles.css'
 import './index.css'
 
@@ -30,8 +31,12 @@ const config = resolveBrowserShellBootstrapConfig({
 
 const browserApp = createBrowserApp(config)
 
+// The RouterProvider renders INSIDE BrowserAppShell (not the other way around):
+// RootComposition and the OAuth callback page both consume the app context
+// BrowserAppShell provides, so they must be its descendants, same as
+// createBrowserShellRoot wires the shell/canvas routers.
 createRoot(document.getElementById('root')!).render(
   <BrowserAppShell app={browserApp} config={config} BootScreen={RootBootScreen} mountGlobals>
-    <RootComposition />
+    <RouterProvider router={hostRouter} />
   </BrowserAppShell>
 )

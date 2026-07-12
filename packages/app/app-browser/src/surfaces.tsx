@@ -33,10 +33,12 @@ import { useAuthStore, useBrowserApp, useChatStore, useSettingsStore, useStatusS
 import { formatCooldown, useChatCooldown, useGitHubOAuth } from './hooks'
 import { useGitHubUser } from './github-user'
 import { useModels, type ModelEntry } from './models'
+import { readOAuthCallbackParams } from './oauth-callback-url'
 import { startStatusPolling } from './status'
 import { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 import { createEdgeFetch } from './runtime/edge-fetch'
 import { parseJsonWithTelemetry, parseWithTelemetry } from './telemetry/request-telemetry'
+import { markOAuthCallbackHandled } from './telemetry/oauth-callback-watchdog'
 
 export type ChatSurfaceController = {
   isBooting: boolean
@@ -467,12 +469,22 @@ export const useGitHubOAuthCallbackController = (
   const handleCompleteWithoutReturnUrl = useEffectEvent(onCompleteWithoutReturnUrl)
 
   useEffect(() => {
+    // Mark the OAuth callback watchdog (armed at boot on any URL carrying an
+    // OAuth code) as handled the moment this controller mounts — before reading
+    // params or awaiting the exchange — so a mounted controller always defuses
+    // the "no handler ran" backstop, regardless of whether the exchange itself
+    // later succeeds or fails (those outcomes have their own captures).
+    markOAuthCallbackHandled()
+
     let isDisposed = false
-    const params = new URLSearchParams(window.location.search)
+    // The redirect_uri every shell registers is hash-routed ('…/#/auth/callback'),
+    // so GitHub's code/state can land in the hash fragment's query part rather
+    // than window.location.search — see oauth-callback-url.ts.
+    const params = readOAuthCallbackParams()
 
     completeGitHubOAuthCallback({
-      code: params.get('code'),
-      state: params.get('state')
+      code: params.code,
+      state: params.state
     })
       .then(() => {
         if (isDisposed) {
