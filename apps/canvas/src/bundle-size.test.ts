@@ -16,7 +16,6 @@ type OutputChunk = {
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 let shellChunks: OutputChunk[] = []
-let iframeChunks: OutputChunk[] = []
 let callbackChunks: OutputChunk[] = []
 
 const outputChunks = (result: Awaited<ReturnType<typeof build>>): OutputChunk[] => {
@@ -33,12 +32,6 @@ beforeAll(async () => {
     mode: 'production',
     build: { write: false, minify: 'esbuild', sourcemap: false }
   })
-  const iframeResult = await build({
-    configFile: resolve(root, 'vite.excalidraw.config.ts'),
-    logLevel: 'silent',
-    mode: 'production',
-    build: { write: false, minify: 'esbuild', sourcemap: false }
-  })
   const callbackResult = await build({
     configFile: resolve(root, 'vite.callback.config.ts'),
     logLevel: 'silent',
@@ -46,12 +39,11 @@ beforeAll(async () => {
     build: { write: false, minify: 'esbuild', sourcemap: false }
   })
   shellChunks = outputChunks(shellResult)
-  iframeChunks = outputChunks(iframeResult)
   callbackChunks = outputChunks(callbackResult)
 }, 90_000)
 
 describe('canvas bundle regression guard', () => {
-  it('keeps the twenty-five-tool startup entry below 97 kB', () => {
+  it('keeps the twenty-five-tool startup entry below 99 kB', () => {
     const entry = shellChunks.find((chunk) => chunk.facadeModuleId?.endsWith('/canvas/index.html'))
     expect(entry).toBeDefined()
     // Raised 84 → 85 kB when the shared chat surface gained always-loaded turn
@@ -65,7 +57,7 @@ describe('canvas bundle regression guard', () => {
     // Raised 90 → 92 kB when the safer-workflow verbs landed (#318, 2026-07):
     // the startup entry now carries three more tool descriptions plus the
     // preview/thumbnail/pick input schemas (~1.4 kB raw) so the model can call
-    // them; the verbs' behavior stays in the iframe graph.
+    // them; the verbs' behavior stays in the lazy canvas-stage graph.
     // Raised 92 → 93 kB (2026-07-09): the preview/thumbnail tool descriptions
     // grew a sentence explaining the `media` handle + `![caption](<mediaRef>)`
     // embed convention now that their rendered image travels as display-only
@@ -83,8 +75,10 @@ describe('canvas bundle regression guard', () => {
     // where discovery meets hydrated settings, before the first runtime build.
     // The tool picker itself (slot + panel) contributes nothing here: it lives
     // in the lazily-loaded chat-surface graph.
-    // Excalidraw and the heavy graph are still guarded out by the tests below.
-    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(97)
+    // Raised 97 → 99 kB for the integrated canvas stage: the lightweight
+    // in-process controller handle and package-local lazy-stage loader now live in
+    // startup, while Excalidraw and the domain controller remain guarded below.
+    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(99)
   })
 
   it('keeps Excalidraw outside the canvas startup graph', () => {
@@ -106,15 +100,21 @@ describe('canvas bundle regression guard', () => {
     expect(excalidrawModules).toEqual([])
   })
 
-  it('emits a dedicated, bounded Excalidraw iframe graph', () => {
-    const entry = iframeChunks.find((chunk) =>
-      chunk.facadeModuleId?.endsWith('/excalidraw-app/index.html')
+  it('emits a dedicated, bounded lazy Excalidraw graph', () => {
+    const stage = shellChunks.find((chunk) =>
+      (chunk.moduleIds ?? []).some((id) => id.endsWith('/packages/app/canvas/src/canvas-stage.tsx'))
     )
-    const vendor = iframeChunks.find((chunk) => chunk.fileName.includes('excalidraw-vendor'))
+    const excalidrawChunks = shellChunks.filter((chunk) =>
+      (chunk.moduleIds ?? []).some(
+        (id) => id.includes('node_modules/@excalidraw/') || id.includes('node_modules/roughjs/')
+      )
+    )
 
-    expect(entry).toBeDefined()
-    expect(vendor).toBeDefined()
-    expect((vendor?.code?.length ?? 0) / 1024).toBeLessThan(5120)
+    expect(stage).toBeDefined()
+    expect(excalidrawChunks.length).toBeGreaterThan(0)
+    expect(
+      excalidrawChunks.reduce((bytes, chunk) => bytes + (chunk.code?.length ?? 0), 0) / 1024
+    ).toBeLessThan(5120)
   })
 
   it('keeps the library-callback relay free of Excalidraw and React', () => {

@@ -80,12 +80,9 @@ importers:
       '@tinytinkerer/app-shell':
         specifier: workspace:*
         version: link:../../packages/app/app-shell
-      '@tinytinkerer/excalidraw-app':
+      '@tinytinkerer/canvas':
         specifier: workspace:*
-        version: link:../../packages/app/excalidraw-app
-      '@tinytinkerer/excalidraw-protocol':
-        specifier: workspace:*
-        version: link:../../packages/shared/excalidraw-protocol
+        version: link:../../packages/app/canvas
       react:
         specifier: 19.2.6
         version: 19.2.6
@@ -542,18 +539,24 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
-  packages/app/excalidraw-app:
+  packages/app/canvas:
     dependencies:
       '@excalidraw/excalidraw':
         specifier: 0.18.1
         version: 0.18.1(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@tinytinkerer/app-bridge':
+      '@tinytinkerer/app-shell':
         specifier: workspace:*
-        version: link:../../shared/app-bridge
-      '@tinytinkerer/excalidraw-protocol':
-        specifier: workspace:*
-        version: link:../../shared/excalidraw-protocol
+        version: link:../app-shell
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
     devDependencies:
+      '@testing-library/jest-dom':
+        specifier: 6.9.1
+        version: 6.9.1
+      '@testing-library/react':
+        specifier: 16.3.2
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@types/react':
         specifier: 19.2.15
         version: 19.2.15
@@ -569,6 +572,12 @@ importers:
       react-dom:
         specifier: 19.2.6
         version: 19.2.6(react@19.2.6)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vite:
+        specifier: 8.0.14
+        version: 8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.3)(yaml@2.9.0)
       vitest:
         specifier: 4.1.7
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@25.9.1)(jsdom@29.1.1)(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.3)(yaml@2.9.0))
@@ -1099,12 +1108,6 @@ importers:
         version: 4.4.3
 
   packages/shared/contracts:
-    dependencies:
-      zod:
-        specifier: 4.4.3
-        version: 4.4.3
-
-  packages/shared/excalidraw-protocol:
     dependencies:
       zod:
         specifier: 4.4.3

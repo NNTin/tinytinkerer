@@ -18,7 +18,7 @@
     "@tinytinkerer/host#build": {
       "dependsOn": [
         "@tinytinkerer/shell#build",
-        "@tinytinkerer/canvas#build",
+        "@tinytinkerer/canvas-shell#build",
         "@tinytinkerer/ide-shell#build",
         "@tinytinkerer/mermaid-shell#build"
       ],

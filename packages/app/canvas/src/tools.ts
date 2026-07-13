@@ -1,0 +1,222 @@
+import { createStageTools } from '@tinytinkerer/app-shell'
+import { canvasControllerHandle, type CanvasController } from './controller-handle'
+import { excalidrawVerbInputSchemas } from './inputs'
+
+// Shared concurrency note for the structural verbs (stored once, reused by each
+// description). Explicit operands are versioned by default.
+const versionedExplicit =
+  'Pass versioned element refs ({id, expectedVersion}) and expectedSceneVersion from a prior read. Atomic and undoable.'
+const versionedOperands = `${versionedExplicit} Omit elements to operate on the current selection instead.`
+
+export const createCanvasAppTools = (
+  handle: {
+    request(method: keyof CanvasController, input?: unknown): Promise<unknown>
+  } = canvasControllerHandle
+) =>
+  createStageTools({
+    handle,
+    methods: {
+      draw: {
+        description:
+          'Draw shapes, text, arrows, or lines on the visible Excalidraw whiteboard. Use canvas ' +
+          'coordinates in pixels. For diagrams, prefer declarative connectors with element ids: ' +
+          'horizontal links use one shared rowY and vertical trunks use one shared trunkX, computed ' +
+          'after node layout so connector endpoints stay aligned. New elements append by default; ' +
+          'use replace:true to start fresh.',
+        schema: excalidrawVerbInputSchemas.draw
+      },
+      search: {
+        description:
+          'Find Excalidraw element candidates before inspecting them. Search by text, id, or type ' +
+          'across the full scene, the current selection, or the visible viewport.',
+        schema: excalidrawVerbInputSchemas.search
+      },
+      inspect: {
+        description:
+          'Inspect the Excalidraw scene, viewport, zoom, selection, and structure. Optionally pass ' +
+          'candidate element ids from search to get compact grouping and relationship summaries.',
+        schema: excalidrawVerbInputSchemas.inspect
+      },
+      read: {
+        description:
+          'Read normalized full content for specific Excalidraw element ids after search and ' +
+          'inspect. Returns exact geometry, styles, text, bindings, and versions required by edit. ' +
+          "Pass fields (e.g. ['x','y','width','height']) to get back only those keys per element " +
+          'plus id/type/kind, keeping the result compact when a selection is large and only part ' +
+          'of each element matters; include version if you plan to edit afterwards. Omit fields ' +
+          'for full records.',
+        schema: excalidrawVerbInputSchemas.read
+      },
+      edit: {
+        description:
+          'Safely edit existing Excalidraw elements by id and expected version from read. Batches ' +
+          'are atomic and undoable; relationship-sensitive geometry changes are rejected.',
+        schema: excalidrawVerbInputSchemas.edit
+      },
+      clear: {
+        description: 'Remove every element from the visible Excalidraw whiteboard.',
+        schema: excalidrawVerbInputSchemas.clear
+      },
+      group: {
+        description:
+          'Group or ungroup Excalidraw elements. Grouping encloses two or more in one new group ' +
+          'and carries their bound labels; ungrouping removes the outermost group. ' +
+          versionedOperands,
+        schema: excalidrawVerbInputSchemas.group
+      },
+      duplicate: {
+        description:
+          'Duplicate Excalidraw elements, offset by a configurable delta. Bound labels, groups, ' +
+          'and intra-selection bindings are copied with fresh ids so the copy is independent; ' +
+          'returns the source-to-new id map. ' +
+          versionedExplicit,
+        schema: excalidrawVerbInputSchemas.duplicate
+      },
+      delete: {
+        description:
+          'Delete Excalidraw elements. By default a delete that would cross a relationship ' +
+          '(cascade a bound label or frame child, or detach a connector) is rejected; set ' +
+          'includeRelated:true to allow the cascade. ' +
+          versionedExplicit,
+        schema: excalidrawVerbInputSchemas.delete
+      },
+      align: {
+        description:
+          'Align two or more Excalidraw elements to a shared edge or center on the x or y axis. ' +
+          'Labels and frame children move with their parent. ' +
+          versionedOperands,
+        schema: excalidrawVerbInputSchemas.align
+      },
+      distribute: {
+        description:
+          'Evenly distribute three or more Excalidraw elements along the x or y axis, keeping the ' +
+          'outermost two fixed and equalizing the gaps between the rest. ' +
+          versionedOperands,
+        schema: excalidrawVerbInputSchemas.distribute
+      },
+      stack: {
+        description:
+          'Stack Excalidraw elements horizontally or vertically in order with a configurable gap, ' +
+          'anchored at the first element, with optional cross-axis alignment. ' +
+          versionedOperands,
+        schema: excalidrawVerbInputSchemas.stack
+      },
+      order: {
+        description:
+          'Reorder Excalidraw layers: bring elements to front/back or step them forward/backward ' +
+          'in the z-stack. Bound labels keep their order above their container. ' +
+          versionedOperands,
+        schema: excalidrawVerbInputSchemas.order
+      },
+      transform: {
+        description:
+          'Move or resize existing Excalidraw elements by id and expected version while respecting ' +
+          'relationships: labels and frame children follow, connectors move only when both ends do, ' +
+          'and edits that would distort a binding are rejected. Pass reflowConnectors:true to let ' +
+          'connectors bound to a moved or resized shape follow their endpoints instead. Atomic and ' +
+          'undoable.',
+        schema: excalidrawVerbInputSchemas.transform
+      },
+      bind: {
+        description:
+          'Bind, rebind, or detach an Excalidraw connector endpoint. Attach a start and/or end to a ' +
+          'target shape with an optional anchor (focus -1..1 along the facing edge, plus a gap), or ' +
+          'detach to free an endpoint. The connector is re-anchored so it stays readable, and target ' +
+          'boundElements are kept in sync. ' +
+          versionedExplicit,
+        schema: excalidrawVerbInputSchemas.bind
+      },
+      audit: {
+        description:
+          'Audit Excalidraw connector bindings without changing anything. Reports each endpoint as ' +
+          'unbound, ok, stale, detached, or ambiguous and suggests safe repairs (rebind or detach via ' +
+          'the bind verb). Pass connectorIds to scope it, or omit to audit every connector. Budgeted, ' +
+          'paginated, and detail-aware.',
+        schema: excalidrawVerbInputSchemas.audit
+      },
+      snap: {
+        description:
+          'Snap Excalidraw elements to the grid: round their top-left (and optionally width/height ' +
+          'with snapSize) to the nearest grid multiple. Uses the scene grid size unless gridSize is ' +
+          'given. Labels and frame children follow, and bound connectors re-anchor. ' +
+          versionedOperands,
+        schema: excalidrawVerbInputSchemas.snap
+      },
+      place: {
+        description:
+          'Place Excalidraw elements relative to an anchor element or group: below, above, left-of, ' +
+          'right-of, or center-over it, with a gap and cross-axis alignment. The elements move as one ' +
+          'cluster preserving their arrangement; bound connectors re-anchor. ' +
+          versionedExplicit,
+        schema: excalidrawVerbInputSchemas.place
+      },
+      arrange: {
+        description:
+          'Auto-layout Excalidraw elements into a common arrangement that align/distribute/stack do ' +
+          'not cover: a row-major grid (columns/rows + gaps) or an evenly spaced circle. Elements are ' +
+          'laid out in the given order; bound connectors re-anchor. ' +
+          versionedExplicit,
+        schema: excalidrawVerbInputSchemas.arrange
+      },
+      survey: {
+        description:
+          'Survey Excalidraw layout health without changing anything. Reports element overlaps, bound ' +
+          'labels that overflow their container, and connectors too short to read, each with a ' +
+          'suggested fix. Pass elementIds and/or checks to scope it. Budgeted, paginated, and ' +
+          'detail-aware.',
+        schema: excalidrawVerbInputSchemas.survey
+      },
+      preset: {
+        description:
+          'Insert a ready-made Excalidraw diagram scaffold at x,y: a network topology (star or ' +
+          'internet-edge), a flowchart (linear or decision), a UML diagram (class, sequence, or ' +
+          'use-case), or a wireframe (screen or modal). Nodes are grouped and connected with labeled ' +
+          'connectors; every shape is encoded locally so it works offline. Appends by default (use ' +
+          'replace:true to start fresh) as one atomic, undoable, version-checked insert.',
+        schema: excalidrawVerbInputSchemas.preset
+      },
+      icon: {
+        description:
+          'Insert infrastructure icons — router, laptop, phone, cloud/internet, server, or printer — ' +
+          'as grouped, labeled shape elements at the given canvas coordinates. Each icon is a local ' +
+          'Excalidraw glyph (never fetched from an external library), reusable as a building block for ' +
+          'diagrams. Appends by default; one atomic, undoable, version-checked insert.',
+        schema: excalidrawVerbInputSchemas.icon
+      },
+      preview: {
+        description:
+          'Preview an Excalidraw mutation without applying it: dry-runs the given verb with the ' +
+          'exact input you would pass it, running the same validation and version checks, and ' +
+          'returns a rendered image of the proposed result (a non-destructive picture of what ' +
+          'the scene would look like after the change) alongside a compact patch summary ' +
+          '(add/update/delete counts plus affected ids and labels), scaled to maxDimension. The ' +
+          'image comes back as a media handle, not raw base64 — to show it to the user, embed it ' +
+          'in your reply as ![caption](<the mediaRef>). Nothing is committed — to apply, call ' +
+          'the target verb itself with the same input. Set render:false to skip the image for a ' +
+          'faster, summary-only dry-run.',
+        schema: excalidrawVerbInputSchemas.preview
+      },
+      thumbnail: {
+        description:
+          'Render a small PNG snapshot of the Excalidraw scene (or specific elementIds) for ' +
+          'visual verification, scaled to maxDimension. The image comes back as a media handle, ' +
+          'not raw base64 — to show it to the user, embed it in your reply as ' +
+          '![caption](<the mediaRef>). On-demand and byte-budgeted: lower maxDimension or narrow ' +
+          'elementIds if the result exceeds the budget.',
+        schema: excalidrawVerbInputSchemas.thumbnail
+      },
+      pick: {
+        description:
+          'Read the user\'s live Excalidraw selection (mode "current"), or ask the user to ' +
+          'select element(s) on the canvas (mode "interactive": shows a toast prompt and waits ' +
+          "for the next settled selection, up to timeoutSeconds; timedOut:true when they don't). " +
+          'Returns normalized element records with versions so the selection can be edited ' +
+          'immediately. detail controls how much of each record comes back (summary/standard/' +
+          "full); fields (e.g. ['x','y','width','height']) additionally narrows each record to " +
+          'just id/type/kind plus the requested keys, keeping a large selection compact. Omit ' +
+          'fields for full records.',
+        schema: excalidrawVerbInputSchemas.pick,
+        awaitsHumanInput: true
+      }
+    }
+  })

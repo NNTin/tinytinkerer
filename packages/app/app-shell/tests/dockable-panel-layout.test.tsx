@@ -143,4 +143,32 @@ describe('DockablePanelLayout', () => {
       '30'
     )
   })
+
+  it('restores a persisted two-panel layout', () => {
+    const twoPanels = [
+      { id: 'canvas', title: 'Canvas', content: <div>canvas body</div> },
+      { id: 'assistant', title: 'Assistant', content: <div>assistant body</div> }
+    ] as const
+    window.localStorage.setItem(
+      'dock-test',
+      JSON.stringify({
+        preset: 'c',
+        assignments: {
+          a: ['canvas', 'assistant'],
+          b: ['canvas', 'assistant'],
+          c: ['assistant', 'canvas'],
+          d: ['assistant', 'canvas']
+        },
+        sizes: { a: [70, 0], b: [70, 0], c: [30, 0], d: [30, 0] }
+      })
+    )
+
+    render(<DockablePanelLayout panels={[...twoPanels]} storageKey="dock-test" />)
+
+    expect(screen.getByLabelText('Layout')).toHaveValue('c')
+    expect(screen.getAllByRole('region').map((node) => node.getAttribute('aria-label'))).toEqual([
+      'Assistant',
+      'Canvas'
+    ])
+  })
 })

@@ -5,7 +5,7 @@ export const CanvasBootScreen = ({ error }: { error?: string }) => (
     variant="widget"
     eyebrow="Canvas Boot"
     title="Loading tinytinkerer"
-    message="Starting the chat shell and isolated whiteboard."
+    message="Starting the integrated canvas workspace."
     {...(error ? { error } : {})}
   />
 )
@@ -15,7 +15,7 @@ export const CanvasRouteLoading = () => (
     variant="widget"
     eyebrow="Route Loading"
     title="Opening the canvas"
-    message="Preparing the whiteboard harness."
+    message="Preparing the whiteboard stage."
   />
 )
 

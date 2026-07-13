@@ -1,0 +1,1087 @@
+import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
+import {
+  excalidrawLibraryImportContract,
+  excalidrawSnapshotRestoreContract,
+  excalidrawVerbContracts,
+  projectedElementSchema,
+  readElementSchema
+} from '../src/contracts'
+import {
+  alignInputSchema,
+  arrangeInputSchema,
+  auditInputSchema,
+  bindInputSchema,
+  clearInputSchema,
+  deleteInputSchema,
+  distributeInputSchema,
+  drawInputSchema,
+  duplicateInputSchema,
+  editInputSchema,
+  elementFieldSchema,
+  excalidrawSnapshotSchema,
+  excalidrawVerbInputSchemas,
+  ELEMENT_PROJECTION_FIELDS,
+  EXCALIDRAW_DEFAULT_BINDING_GAP,
+  EXCALIDRAW_ICON_LIMIT,
+  EXCALIDRAW_LIBRARY_IMPORT_VERB,
+  EXCALIDRAW_PAYLOAD_BUDGETS,
+  EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS,
+  EXCALIDRAW_PREVIEWABLE_VERBS,
+  EXCALIDRAW_PROTOCOL_VERSION,
+  EXCALIDRAW_SNAPSHOT_VERSION,
+  EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS,
+  EXCALIDRAW_VERBS,
+  iconInputSchema,
+  isAllowedLibraryUrl,
+  groupInputSchema,
+  inspectInputSchema,
+  orderInputSchema,
+  pickInputSchema,
+  placeInputSchema,
+  presetInputSchema,
+  previewInputSchema,
+  readInputSchema,
+  searchInputSchema,
+  snapInputSchema,
+  stackInputSchema,
+  surveyInputSchema,
+  thumbnailInputSchema,
+  transformInputSchema
+} from '../src/inputs'
+
+describe('excalidraw protocol', () => {
+  it('accepts the model-facing draw vocabulary', () => {
+    expect(
+      drawInputSchema.parse({
+        elements: [
+          { id: 'start', type: 'rectangle', x: 10, y: 20, width: 120, height: 80, text: 'Start' },
+          { type: 'arrow', x: 130, y: 60, strokeColor: '#111' }
+        ],
+        connectors: [
+          {
+            id: 'start-to-end',
+            from: { elementId: 'start', side: 'right' },
+            to: { x: 240, y: 60 },
+            routing: 'horizontal',
+            rowY: 60
+          }
+        ],
+        replace: true
+      })
+    ).toMatchObject({ replace: true, connectors: [{ id: 'start-to-end', routing: 'horizontal' }] })
+  })
+
+  it('rejects empty, unknown, and malformed draw elements', () => {
+    expect(drawInputSchema.safeParse({ elements: [] }).success).toBe(false)
+    expect(drawInputSchema.safeParse({ elements: [{ type: 'image', x: 0, y: 0 }] }).success).toBe(
+      false
+    )
+    expect(
+      drawInputSchema.safeParse({ elements: [{ type: 'text', x: Number.NaN, y: 0 }] }).success
+    ).toBe(false)
+    expect(
+      drawInputSchema.safeParse({
+        elements: [{ id: 'same', type: 'rectangle', x: 0, y: 0 }],
+        connectors: [{ id: 'same', from: { x: 0, y: 0 }, to: { x: 10, y: 0 } }]
+      }).success
+    ).toBe(false)
+  })
+
+  it('accepts a negative width/height (a line/arrow drawn left/up, or a shape from the far corner)', () => {
+    // A leftward stick-figure arm and a box drawn from its bottom-right corner —
+    // both legitimate geometry the model expresses with a negative extent. The
+    // sign is only rejected for non-finite values, not for direction.
+    expect(
+      drawInputSchema.safeParse({
+        elements: [
+          { type: 'line', x: 268, y: 276, width: -28, height: 24 },
+          { type: 'rectangle', x: 200, y: 200, width: -120, height: -80 }
+        ]
+      }).success
+    ).toBe(true)
+  })
+
+  it('defaults and bounds candidate search', () => {
+    expect(searchInputSchema.parse({})).toEqual({
+      scope: 'all',
+      offset: 0,
+      limit: 20,
+      detail: 'standard'
+    })
+    expect(
+      searchInputSchema.parse({
+        query: 'router',
+        types: ['rectangle', 'text'],
+        scope: 'viewport',
+        limit: 10
+      })
+    ).toMatchObject({ query: 'router', scope: 'viewport', limit: 10 })
+    expect(searchInputSchema.safeParse({ limit: 51 }).success).toBe(false)
+    expect(searchInputSchema.safeParse({ types: ['text', 'text'] }).success).toBe(false)
+  })
+
+  it('supports scene inspection and requires ids for full reads', () => {
+    expect(inspectInputSchema.safeParse({}).success).toBe(true)
+    expect(inspectInputSchema.safeParse({ elementIds: ['shape-1'] }).success).toBe(true)
+    expect(inspectInputSchema.safeParse({ elementIds: [] }).success).toBe(false)
+    expect(readInputSchema.safeParse({ elementIds: ['shape-1'] }).success).toBe(true)
+    expect(readInputSchema.safeParse({}).success).toBe(false)
+    expect(readInputSchema.safeParse({ elementIds: ['shape-1', 'shape-1'] }).success).toBe(false)
+    expect(readInputSchema.safeParse({ elementIds: ['shape-1'], offset: 1 }).success).toBe(false)
+    expect(
+      readInputSchema.parse({
+        elementIds: ['shape-1'],
+        offset: 1,
+        expectedSceneVersion: 7,
+        detail: 'full'
+      })
+    ).toMatchObject({ offset: 1, expectedSceneVersion: 7, detail: 'full' })
+  })
+
+  it('requires versioned, unique, non-empty edit patches', () => {
+    expect(
+      editInputSchema.parse({
+        edits: [
+          {
+            id: 'shape-1',
+            expectedVersion: 3,
+            changes: { x: 100, strokeColor: '#111', locked: false }
+          }
+        ]
+      })
+    ).toMatchObject({ edits: [{ id: 'shape-1', expectedVersion: 3 }] })
+
+    expect(
+      editInputSchema.safeParse({
+        edits: [{ id: 'shape-1', expectedVersion: 3, changes: {} }]
+      }).success
+    ).toBe(false)
+    expect(
+      editInputSchema.safeParse({
+        edits: [
+          { id: 'shape-1', expectedVersion: 3, changes: { opacity: 50 } },
+          { id: 'shape-1', expectedVersion: 3, changes: { opacity: 75 } }
+        ]
+      }).success
+    ).toBe(false)
+    expect(
+      editInputSchema.safeParse({
+        edits: [{ id: 'shape-1', expectedVersion: 3, changes: { opacity: 101 } }]
+      }).success
+    ).toBe(false)
+  })
+
+  it('requires clear payloads to be empty objects', () => {
+    expect(clearInputSchema.safeParse({}).success).toBe(true)
+    expect(clearInputSchema.safeParse({ extra: true }).success).toBe(false)
+  })
+
+  it('defaults and validates structural editing verbs', () => {
+    // Selection fallback: omitting `elements` stays valid and un-versioned.
+    expect(groupInputSchema.parse({ operation: 'group' })).toEqual({ operation: 'group' })
+    expect(groupInputSchema.safeParse({ operation: 'merge' }).success).toBe(false)
+    expect(alignInputSchema.parse({ axis: 'y', position: 'center' })).toEqual({
+      axis: 'y',
+      position: 'center'
+    })
+    expect(stackInputSchema.parse({ direction: 'horizontal' })).toMatchObject({
+      spacing: 20,
+      align: 'center'
+    })
+    expect(orderInputSchema.safeParse({ operation: 'front' }).success).toBe(true)
+    expect(orderInputSchema.safeParse({ operation: 'sideways' }).success).toBe(false)
+    expect(distributeInputSchema.safeParse({ axis: 'z' }).success).toBe(false)
+    // duplicate/delete are always explicit + versioned.
+    expect(
+      duplicateInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        expectedSceneVersion: 5
+      })
+    ).toMatchObject({ offset: { x: 10, y: 10 } })
+    expect(duplicateInputSchema.safeParse({ elements: [], expectedSceneVersion: 5 }).success).toBe(
+      false
+    )
+    expect(
+      duplicateInputSchema.safeParse({ elements: [{ id: 'a', expectedVersion: 1 }] }).success
+    ).toBe(false)
+    expect(
+      deleteInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        expectedSceneVersion: 5
+      })
+    ).toMatchObject({ includeRelated: false })
+    expect(
+      deleteInputSchema.safeParse({
+        elements: [
+          { id: 'a', expectedVersion: 1 },
+          { id: 'a', expectedVersion: 2 }
+        ],
+        expectedSceneVersion: 5
+      }).success
+    ).toBe(false)
+  })
+
+  it('versions explicit structural operands by default', () => {
+    // Explicit elements require a per-element expectedVersion AND expectedSceneVersion.
+    expect(
+      alignInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        axis: 'x',
+        position: 'start'
+      }).success
+    ).toBe(false)
+    expect(
+      alignInputSchema.safeParse({
+        elements: [{ id: 'a' }],
+        axis: 'x',
+        position: 'start',
+        expectedSceneVersion: 3
+      }).success
+    ).toBe(false)
+    expect(
+      alignInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        axis: 'x',
+        position: 'start',
+        expectedSceneVersion: 3
+      }).success
+    ).toBe(true)
+    // single-element explicit align is allowed by the schema (handled as a no-op)
+    expect(
+      orderInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        operation: 'front'
+      }).success
+    ).toBe(false)
+  })
+
+  it('requires versioned, non-empty transform geometry changes', () => {
+    expect(
+      transformInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 2, move: { dx: 5, dy: -5 } }]
+      })
+    ).toMatchObject({ elements: [{ id: 'a', expectedVersion: 2 }] })
+    expect(
+      transformInputSchema.safeParse({ elements: [{ id: 'a', expectedVersion: 2 }] }).success
+    ).toBe(false)
+    expect(
+      transformInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 2, resize: {} }]
+      }).success
+    ).toBe(false)
+    expect(
+      transformInputSchema.safeParse({
+        elements: [
+          { id: 'a', expectedVersion: 1, move: { dx: 1, dy: 1 } },
+          { id: 'a', expectedVersion: 1, move: { dx: 2, dy: 2 } }
+        ]
+      }).success
+    ).toBe(false)
+  })
+
+  it('defaults transform reflow off and accepts the opt-in', () => {
+    expect(
+      transformInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 2, move: { dx: 5, dy: -5 } }]
+      })
+    ).toMatchObject({ reflowConnectors: false })
+    expect(
+      transformInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 2, resize: { width: 50 } }],
+        reflowConnectors: true
+      })
+    ).toMatchObject({ reflowConnectors: true })
+  })
+
+  it('validates connector bind input and anchor defaults', () => {
+    // Attaching defaults the anchor to a centered, gapped edge.
+    expect(
+      bindInputSchema.parse({
+        connector: { id: 'link', expectedVersion: 3 },
+        start: { action: 'attach', target: { id: 'box', expectedVersion: 1 } },
+        expectedSceneVersion: 9
+      })
+    ).toMatchObject({
+      start: { action: 'attach', anchor: { focus: 0, gap: EXCALIDRAW_DEFAULT_BINDING_GAP } }
+    })
+    // Detach needs no target.
+    expect(
+      bindInputSchema.safeParse({
+        connector: { id: 'link', expectedVersion: 3 },
+        end: { action: 'detach' },
+        expectedSceneVersion: 9
+      }).success
+    ).toBe(true)
+    // At least one endpoint change is required.
+    expect(
+      bindInputSchema.safeParse({
+        connector: { id: 'link', expectedVersion: 3 },
+        expectedSceneVersion: 9
+      }).success
+    ).toBe(false)
+    // focus is clamped to [-1, 1].
+    expect(
+      bindInputSchema.safeParse({
+        connector: { id: 'link', expectedVersion: 3 },
+        start: {
+          action: 'attach',
+          target: { id: 'box', expectedVersion: 1 },
+          anchor: { focus: 2 }
+        },
+        expectedSceneVersion: 9
+      }).success
+    ).toBe(false)
+    // Unknown action is rejected.
+    expect(
+      bindInputSchema.safeParse({
+        connector: { id: 'link', expectedVersion: 3 },
+        start: { action: 'move' },
+        expectedSceneVersion: 9
+      }).success
+    ).toBe(false)
+  })
+
+  it('validates connector audit paging', () => {
+    expect(auditInputSchema.parse({})).toMatchObject({ offset: 0, limit: 20, detail: 'standard' })
+    expect(auditInputSchema.safeParse({ connectorIds: ['a', 'a'] }).success).toBe(false)
+    expect(auditInputSchema.safeParse({ offset: 1 }).success).toBe(false)
+    expect(auditInputSchema.safeParse({ offset: 1, expectedSceneVersion: 4 }).success).toBe(true)
+  })
+
+  it('validates the layout helper verbs', () => {
+    // snap: selection fallback stays valid; gridSize must be positive.
+    expect(snapInputSchema.parse({})).toMatchObject({ snapSize: false })
+    expect(snapInputSchema.safeParse({ gridSize: 0 }).success).toBe(false)
+    expect(
+      snapInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        gridSize: 10
+      }).success
+    ).toBe(false) // explicit elements need expectedSceneVersion
+    // place: defaults gap/align; requires anchor + relation + versioned elements.
+    expect(
+      placeInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        anchor: { elementId: 'box' },
+        relation: 'below',
+        expectedSceneVersion: 4
+      })
+    ).toMatchObject({ gap: 20, align: 'center' })
+    expect(
+      placeInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        anchor: { groupId: 'g1' },
+        relation: 'sideways',
+        expectedSceneVersion: 4
+      }).success
+    ).toBe(false)
+    // arrange: discriminated grid/circle layout.
+    expect(
+      arrangeInputSchema.parse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        layout: { pattern: 'grid', columns: 2 },
+        expectedSceneVersion: 4
+      })
+    ).toMatchObject({ layout: { pattern: 'grid', gapX: 20, gapY: 20 } })
+    expect(
+      arrangeInputSchema.safeParse({
+        elements: [{ id: 'a', expectedVersion: 1 }],
+        layout: { pattern: 'spiral' },
+        expectedSceneVersion: 4
+      }).success
+    ).toBe(false)
+    // survey: paging + unique checks.
+    expect(surveyInputSchema.parse({})).toMatchObject({ offset: 0, limit: 20, detail: 'standard' })
+    expect(surveyInputSchema.safeParse({ checks: ['overlap', 'overlap'] }).success).toBe(false)
+    expect(surveyInputSchema.safeParse({ checks: [] }).success).toBe(false)
+    expect(surveyInputSchema.safeParse({ offset: 1 }).success).toBe(false)
+  })
+
+  it('applies the shared paging guard identically to every paged verb', () => {
+    const pagedVerbs = [
+      { schema: searchInputSchema, base: {} },
+      { schema: inspectInputSchema, base: {} },
+      { schema: readInputSchema, base: { elementIds: ['shape-1'] } },
+      { schema: auditInputSchema, base: {} },
+      { schema: surveyInputSchema, base: {} }
+    ]
+    for (const { schema, base } of pagedVerbs) {
+      const rejected = schema.safeParse({ ...base, offset: 1 })
+      expect(rejected.success).toBe(false)
+      if (!rejected.success) {
+        expect(rejected.error.issues).toMatchObject([
+          { code: 'custom', path: ['expectedSceneVersion'], message: 'Required after offset 0.' }
+        ])
+      }
+      expect(schema.safeParse({ ...base, offset: 1, expectedSceneVersion: 4 }).success).toBe(true)
+      expect(schema.safeParse({ ...base }).success).toBe(true)
+    }
+  })
+
+  it('validates the diagram-semantics preset and icon verbs', () => {
+    // preset: a flat object (object root, not a top-level union — model function-call
+    // APIs reject a union root), origin defaults, opt-in version guard, and a
+    // superRefine that enforces the kind→variant pairing (variant is optional).
+    const parsedNetwork = presetInputSchema.parse({ kind: 'network' })
+    expect(parsedNetwork).toMatchObject({ kind: 'network', x: 0, y: 0, replace: false })
+    expect(parsedNetwork.variant).toBeUndefined()
+    expect(
+      presetInputSchema.parse({
+        kind: 'flowchart',
+        variant: 'decision',
+        x: 40,
+        expectedSceneVersion: 3
+      })
+    ).toMatchObject({ kind: 'flowchart', variant: 'decision', x: 40, expectedSceneVersion: 3 })
+    expect(presetInputSchema.safeParse({ kind: 'uml', variant: 'sequence' }).success).toBe(true)
+    expect(presetInputSchema.safeParse({ kind: 'wireframe', variant: 'modal' }).success).toBe(true)
+    // unknown kind / unknown variant are rejected.
+    expect(presetInputSchema.safeParse({ kind: 'mindmap' }).success).toBe(false)
+    expect(presetInputSchema.safeParse({ kind: 'network', variant: 'mesh' }).success).toBe(false)
+    // a variant valid for another kind is rejected for this kind.
+    expect(presetInputSchema.safeParse({ kind: 'network', variant: 'linear' }).success).toBe(false)
+
+    // icon: requires at least one placed icon, rejects unknown types, caps the batch.
+    expect(iconInputSchema.parse({ icons: [{ type: 'router', x: 0, y: 0 }] })).toMatchObject({
+      replace: false,
+      icons: [{ type: 'router' }]
+    })
+    expect(iconInputSchema.safeParse({ icons: [] }).success).toBe(false)
+    expect(iconInputSchema.safeParse({ icons: [{ type: 'satellite', x: 0, y: 0 }] }).success).toBe(
+      false
+    )
+    expect(
+      iconInputSchema.safeParse({
+        icons: Array.from({ length: EXCALIDRAW_ICON_LIMIT + 1 }, () => ({
+          type: 'server' as const,
+          x: 0,
+          y: 0
+        }))
+      }).success
+    ).toBe(false)
+    // insertion result contracts round-trip.
+    expect(
+      excalidrawVerbContracts.preset.resultSchema.safeParse({
+        ok: true,
+        drawn: 6,
+        replaced: false,
+        sceneVersion: 12,
+        groupIds: ['g1'],
+        createdIds: ['a', 'b'],
+        connectors: [],
+        kind: 'flowchart',
+        variant: 'linear'
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.icon.resultSchema.safeParse({
+        ok: true,
+        drawn: 4,
+        replaced: false,
+        sceneVersion: 3,
+        groupIds: ['g1'],
+        createdIds: ['a'],
+        connectors: [],
+        icons: [{ type: 'router', label: 'Router', groupId: 'g1', elementIds: ['a'] }]
+      }).success
+    ).toBe(true)
+  })
+
+  it('validates the safer-iterative-workflow verbs', () => {
+    // preview: accepts a valid nested verb + input, rejects a non-previewable
+    // (read) verb name outright. Defaults render:true and maxDimension:512,
+    // sharing the same [64, 1024] bounds as thumbnail so the two can't drift.
+    expect(
+      previewInputSchema.parse({
+        verb: 'edit',
+        input: { edits: [{ id: 'shape-1', expectedVersion: 1, changes: { x: 10 } }] }
+      })
+    ).toMatchObject({
+      render: true,
+      maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.default
+    })
+    expect(previewInputSchema.safeParse({ verb: 'read', input: {} }).success).toBe(false)
+    expect(previewInputSchema.safeParse({ verb: 'preview', input: {} }).success).toBe(false)
+    expect(
+      previewInputSchema.safeParse({
+        verb: 'clear',
+        input: {},
+        render: false,
+        maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.min
+      }).success
+    ).toBe(true)
+    expect(
+      previewInputSchema.safeParse({
+        verb: 'clear',
+        input: {},
+        maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.min - 1
+      }).success
+    ).toBe(false)
+    expect(
+      previewInputSchema.safeParse({
+        verb: 'clear',
+        input: {},
+        maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.max + 1
+      }).success
+    ).toBe(false)
+    expect(EXCALIDRAW_PREVIEWABLE_VERBS).not.toContain('search')
+    expect(EXCALIDRAW_PREVIEWABLE_VERBS).not.toContain('preview')
+
+    // preview's result budget was raised to carry an optional rendered image
+    // alongside the patch summary; it now sits above thumbnail's own image
+    // budget so the summary has headroom too.
+    expect(EXCALIDRAW_PAYLOAD_BUDGETS.preview.result).toBe(160 * 1_024)
+    expect(EXCALIDRAW_PAYLOAD_BUDGETS.preview.result).toBeGreaterThan(
+      EXCALIDRAW_PAYLOAD_BUDGETS.thumbnail.result
+    )
+
+    // preview's result carries the rendered image (if any) as display-only
+    // `media`: an empty array (with a reason) when nothing was rendered, or a
+    // populated one mirroring thumbnail's own image media.
+    const previewBase = {
+      ok: true as const,
+      verb: 'edit' as const,
+      wouldChange: true,
+      sceneVersion: 3,
+      summary: { adds: 0, updates: 1, deletes: 0, total: 1 },
+      changes: [{ op: 'update' as const, id: 'shape-1', type: 'rectangle', version: 1 }],
+      truncation: {
+        truncated: false,
+        fields: [],
+        omittedElements: 0,
+        serializedBytes: 10,
+        budgetBytes: EXCALIDRAW_PAYLOAD_BUDGETS.preview.result
+      }
+    }
+    expect(
+      excalidrawVerbContracts.preview.resultSchema.safeParse({
+        ...previewBase,
+        media: [],
+        thumbnailReason: 'not-requested'
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.preview.resultSchema.safeParse({
+        ...previewBase,
+        media: [
+          {
+            kind: 'image',
+            dataUrl: 'data:image/png;base64,AAA',
+            mimeType: 'image/png',
+            width: 128,
+            height: 96,
+            description: 'Preview of edit: 0 added, 1 updated, 0 deleted; 128×96px.'
+          }
+        ],
+        thumbnailReason: 'rendered'
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.preview.resultSchema.safeParse({
+        ...previewBase,
+        media: [
+          {
+            kind: 'image',
+            dataUrl: 'not-a-png',
+            mimeType: 'image/png',
+            width: 1,
+            height: 1,
+            description: ''
+          }
+        ],
+        thumbnailReason: 'rendered'
+      }).success
+    ).toBe(false)
+    expect(
+      excalidrawVerbContracts.preview.resultSchema.safeParse({
+        ...previewBase,
+        media: [],
+        thumbnailReason: 'not-a-real-reason'
+      }).success
+    ).toBe(false)
+    // Rejects the OLD nested-thumbnail shape this schema replaced.
+    expect(
+      excalidrawVerbContracts.preview.resultSchema.safeParse({
+        ...previewBase,
+        thumbnail: null,
+        thumbnailReason: 'not-requested'
+      }).success
+    ).toBe(false)
+
+    // thumbnail: defaults maxDimension/background, bounds maxDimension to
+    // the same [64, 1024] range preview reuses.
+    expect(thumbnailInputSchema.parse({})).toMatchObject({
+      maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.default,
+      background: true
+    })
+    expect(
+      thumbnailInputSchema.safeParse({
+        maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.min - 1
+      }).success
+    ).toBe(false)
+    expect(
+      thumbnailInputSchema.safeParse({
+        maxDimension: EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS.max + 1
+      }).success
+    ).toBe(false)
+    expect(thumbnailInputSchema.safeParse({ elementIds: [] }).success).toBe(false)
+
+    // thumbnail's result carries its rendered image as display-only `media`
+    // (not flat dataUrl/mimeType/width/height/bytes fields).
+    const thumbnailBase = {
+      ok: true as const,
+      elementCount: 2,
+      missingIds: [],
+      sceneVersion: 3
+    }
+    expect(
+      excalidrawVerbContracts.thumbnail.resultSchema.safeParse({
+        ...thumbnailBase,
+        media: [
+          {
+            kind: 'image',
+            dataUrl: 'data:image/png;base64,AAA',
+            mimeType: 'image/png',
+            width: 512,
+            height: 384,
+            description: 'PNG of 2 elements; 512×384px.'
+          }
+        ]
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.thumbnail.resultSchema.safeParse({ ...thumbnailBase, media: [] })
+        .success
+    ).toBe(true)
+    // Rejects the OLD flat dataUrl/mimeType/width/height/bytes shape this
+    // schema replaced.
+    expect(
+      excalidrawVerbContracts.thumbnail.resultSchema.safeParse({
+        ...thumbnailBase,
+        dataUrl: 'data:image/png;base64,AAA',
+        mimeType: 'image/png',
+        width: 512,
+        height: 384,
+        bytes: 26
+      }).success
+    ).toBe(false)
+
+    // pick: defaults mode/timeout/detail, bounds the prompt and timeout.
+    expect(pickInputSchema.parse({})).toEqual({
+      mode: 'current',
+      timeoutSeconds: 60,
+      detail: 'standard'
+    })
+    expect(pickInputSchema.safeParse({ prompt: '' }).success).toBe(false)
+    expect(pickInputSchema.safeParse({ timeoutSeconds: 4 }).success).toBe(false)
+    expect(
+      pickInputSchema.safeParse({ timeoutSeconds: EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS + 1 }).success
+    ).toBe(false)
+    expect(
+      pickInputSchema.safeParse({ mode: 'interactive', prompt: 'Select a box', timeoutSeconds: 30 })
+        .success
+    ).toBe(true)
+  })
+
+  it('accepts an optional fields projection on pick/read, rejecting empty/unknown fields', () => {
+    // `fields` is orthogonal to `detail`: both are accepted together, and neither
+    // implies the other.
+    expect(
+      pickInputSchema.parse({ detail: 'full', fields: ['x', 'y', 'width', 'height'] })
+    ).toMatchObject({ detail: 'full', fields: ['x', 'y', 'width', 'height'] })
+    expect(pickInputSchema.safeParse({ fields: [] }).success).toBe(false)
+    expect(pickInputSchema.safeParse({ fields: ['bogus'] }).success).toBe(false)
+
+    expect(
+      readInputSchema.parse({ elementIds: ['a'], fields: ['x', 'y', 'width', 'height'] })
+    ).toMatchObject({ fields: ['x', 'y', 'width', 'height'] })
+    expect(readInputSchema.safeParse({ elementIds: ['a'], fields: [] }).success).toBe(false)
+    expect(readInputSchema.safeParse({ elementIds: ['a'], fields: ['bogus'] }).success).toBe(false)
+    // Omitting fields altogether still parses — today's full-record default.
+    expect(readInputSchema.safeParse({ elementIds: ['a'] }).success).toBe(true)
+
+    expect(elementFieldSchema.safeParse('id').success).toBe(false)
+    expect(elementFieldSchema.safeParse('type').success).toBe(false)
+    expect(elementFieldSchema.safeParse('kind').success).toBe(false)
+  })
+
+  it('renders an object-root JSON schema for every verb (model function-call safe)', () => {
+    // Native tool calling forwards a verb's input schema as `function.parameters`,
+    // which OpenAI/ChatGPT-compatible APIs require to have an object root — a
+    // top-level union/`anyOf` (e.g. a bare `z.discriminatedUnion`) is rejected. This
+    // guards every verb, including `preset`, which is a flat object for this reason.
+    // Counterpart: the same invariant is enforced fail-fast by `toolInputJsonSchema`
+    // in packages/shared/contracts/src/tool-schema.ts. Keep the `z.toJSONSchema`
+    // options below in sync with it — this test cannot import the real guard
+    // (check-boundaries.mjs limits app-protocol packages to app-bridge + local
+    // modules), so drifted options would validate a conversion the descriptor
+    // path no longer uses.
+    for (const [verb, schema] of Object.entries(excalidrawVerbInputSchemas)) {
+      const json = z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'input' }) as Record<
+        string,
+        unknown
+      >
+      expect(json.type, `${verb} must have an object root`).toBe('object')
+      expect('anyOf' in json, `${verb} must not have a top-level union`).toBe(false)
+    }
+  })
+
+  it('uses an independently owned app contract version', () => {
+    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(8)
+  })
+
+  it('defines input and result contracts for every advertised verb', () => {
+    expect(Object.keys(excalidrawVerbContracts)).toEqual(EXCALIDRAW_VERBS)
+    expect(EXCALIDRAW_VERBS).toEqual([
+      'draw',
+      'search',
+      'inspect',
+      'read',
+      'edit',
+      'clear',
+      'group',
+      'duplicate',
+      'delete',
+      'align',
+      'distribute',
+      'stack',
+      'order',
+      'transform',
+      'bind',
+      'audit',
+      'snap',
+      'place',
+      'arrange',
+      'survey',
+      'preset',
+      'icon',
+      'preview',
+      'thumbnail',
+      'pick'
+    ])
+    expect(
+      excalidrawVerbContracts.draw.resultSchema.safeParse({
+        ok: true,
+        drawn: 2,
+        replaced: false,
+        connectors: []
+      }).success
+    ).toBe(true)
+    expect(excalidrawVerbContracts.clear.resultSchema.safeParse({ ok: false }).success).toBe(false)
+    expect(
+      excalidrawVerbContracts.bind.resultSchema.safeParse({
+        ok: true,
+        updated: 2,
+        sceneVersion: 7,
+        receipts: [{ id: 'link', version: 2 }],
+        elements: [],
+        truncation: {
+          truncated: false,
+          fields: [],
+          omittedElements: 0,
+          serializedBytes: 10,
+          budgetBytes: 65536
+        },
+        connectorId: 'link',
+        start: { bound: true, targetId: 'box', focus: 0, gap: 4 },
+        end: { bound: false, targetId: null, focus: null, gap: null }
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.audit.resultSchema.safeParse({
+        ok: true,
+        detail: 'standard',
+        sceneVersion: 7,
+        connectors: [
+          {
+            id: 'link',
+            type: 'arrow',
+            version: 2,
+            start: { bound: true, targetId: 'box', status: 'ok', focus: 0, gap: 4 },
+            end: { bound: false, targetId: null, status: 'unbound', focus: null, gap: null },
+            issues: [],
+            repairs: []
+          }
+        ],
+        healthy: 1,
+        flagged: 0,
+        missingIds: [],
+        page: { offset: 0, limit: 20, returned: 1, total: 1, nextOffset: null },
+        truncation: {
+          truncated: false,
+          fields: [],
+          omittedElements: 0,
+          serializedBytes: 10,
+          budgetBytes: 65536
+        }
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.survey.resultSchema.safeParse({
+        ok: true,
+        detail: 'standard',
+        sceneVersion: 7,
+        findings: [
+          {
+            kind: 'overlap',
+            elementIds: ['a', 'b'],
+            message: 'elements "a" and "b" overlap',
+            suggestion: 'separate them or snap them to a grid'
+          }
+        ],
+        overlaps: 1,
+        labelIssues: 0,
+        arrowIssues: 0,
+        missingIds: [],
+        page: { offset: 0, limit: 20, returned: 1, total: 1, nextOffset: null },
+        truncation: {
+          truncated: false,
+          fields: [],
+          omittedElements: 0,
+          serializedBytes: 10,
+          budgetBytes: 65536
+        }
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.arrange.resultSchema.safeParse({
+        ok: true,
+        updated: 3,
+        sceneVersion: 9,
+        receipts: [{ id: 'a', version: 2 }],
+        elements: [],
+        truncation: {
+          truncated: false,
+          fields: [],
+          omittedElements: 0,
+          serializedBytes: 10,
+          budgetBytes: 65536
+        }
+      }).success
+    ).toBe(true)
+  })
+
+  it('version-guards the persistence snapshot and keeps restore out of the verb set', () => {
+    // The restore contract is intentionally not part of the model-facing verb set.
+    expect(EXCALIDRAW_VERBS).not.toContain('app:restore')
+    expect(
+      excalidrawSnapshotSchema.safeParse({
+        version: EXCALIDRAW_SNAPSHOT_VERSION,
+        elements: [{ id: 'a', type: 'rectangle' }],
+        appState: { scrollX: 1, zoom: { value: 1 } }
+      }).success
+    ).toBe(true)
+    // A snapshot from another schema version fails closed (harness → empty scene).
+    expect(excalidrawSnapshotSchema.safeParse({ version: 999, elements: [] }).success).toBe(false)
+    expect(
+      excalidrawSnapshotRestoreContract.resultSchema.safeParse({ ok: true, restored: 3 }).success
+    ).toBe(true)
+    expect(
+      excalidrawSnapshotRestoreContract.inputSchema.safeParse({
+        version: EXCALIDRAW_SNAPSHOT_VERSION,
+        elements: []
+      }).success
+    ).toBe(true)
+    // Imported library items round-trip through the snapshot.
+    expect(
+      excalidrawSnapshotSchema.safeParse({
+        version: EXCALIDRAW_SNAPSHOT_VERSION,
+        elements: [],
+        libraryItems: [{ id: 'lib-1' }]
+      }).success
+    ).toBe(true)
+  })
+
+  it('defines the library import system verb outside the model-facing set', () => {
+    expect(EXCALIDRAW_VERBS).not.toContain(EXCALIDRAW_LIBRARY_IMPORT_VERB)
+    expect(
+      excalidrawLibraryImportContract.inputSchema.safeParse({ content: '{"libraryItems":[]}' })
+        .success
+    ).toBe(true)
+    // Empty content is rejected at the wire.
+    expect(excalidrawLibraryImportContract.inputSchema.safeParse({ content: '' }).success).toBe(
+      false
+    )
+    expect(
+      excalidrawLibraryImportContract.resultSchema.safeParse({ ok: true, imported: 2 }).success
+    ).toBe(true)
+  })
+
+  it('allow-lists only https excalidraw.com library URLs', () => {
+    expect(isAllowedLibraryUrl('https://libraries.excalidraw.com/x.excalidrawlib')).toBe(true)
+    expect(isAllowedLibraryUrl('https://excalidraw.com/x.excalidrawlib')).toBe(true)
+    expect(isAllowedLibraryUrl('http://libraries.excalidraw.com/x.excalidrawlib')).toBe(false)
+    expect(isAllowedLibraryUrl('https://evil.example.com/x.excalidrawlib')).toBe(false)
+    // No substring/suffix spoofing of the host.
+    expect(isAllowedLibraryUrl('https://excalidraw.com.evil.example/x')).toBe(false)
+    expect(isAllowedLibraryUrl('not a url')).toBe(false)
+  })
+
+  it('rejects impossible discriminated element records', () => {
+    const common = {
+      id: 'a',
+      version: 1,
+      zIndex: 0,
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      angleDegrees: 0,
+      style: {
+        strokeColor: '#000',
+        backgroundColor: 'transparent',
+        fillStyle: 'solid',
+        strokeWidth: 1,
+        strokeStyle: 'solid',
+        roughness: 1,
+        opacity: 100
+      },
+      locked: false,
+      groupIds: [],
+      frameId: null,
+      link: null,
+      boundElements: [],
+      capabilities: { editableFields: ['locked'], requiresUnlock: false, restrictions: [] }
+    }
+    expect(
+      readElementSchema.safeParse({
+        ...common,
+        kind: 'text',
+        type: 'text',
+        linear: { points: [], startBinding: null, endBinding: null }
+      }).success
+    ).toBe(false)
+    expect(
+      readElementSchema.safeParse({
+        ...common,
+        kind: 'unsupported',
+        type: 'laser',
+        unsupportedType: 'laser'
+      }).success
+    ).toBe(true)
+  })
+
+  it('parses a fields-projected pick/read result alongside a full unfiltered one', () => {
+    const fullShapeElement = {
+      id: 'a',
+      type: 'rectangle',
+      kind: 'shape' as const,
+      version: 1,
+      zIndex: 0,
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      angleDegrees: 0,
+      style: {
+        strokeColor: '#000',
+        backgroundColor: 'transparent',
+        fillStyle: 'solid',
+        strokeWidth: 1,
+        strokeStyle: 'solid',
+        roughness: 1,
+        opacity: 100
+      },
+      locked: false,
+      groupIds: [],
+      frameId: null,
+      link: null,
+      boundElements: [],
+      capabilities: { editableFields: ['locked'], requiresUnlock: false, restrictions: [] }
+    }
+    // The lean shape a `fields: ['x', 'y']` projection returns: identity
+    // (id/type/kind) plus only the requested keys — no style/capabilities.
+    const projectedShapeElement = { id: 'a', type: 'rectangle', kind: 'shape' as const, x: 0, y: 0 }
+    expect(projectedElementSchema.safeParse(projectedShapeElement).success).toBe(true)
+    // A projection can never re-add id/type/kind as anything but identity, and
+    // strict() rejects a key outside ELEMENT_PROJECTION_FIELDS + identity.
+    expect(projectedElementSchema.safeParse({ ...projectedShapeElement, bogus: 1 }).success).toBe(
+      false
+    )
+
+    const truncationBase = {
+      truncated: false,
+      fields: [],
+      omittedElements: 0,
+      serializedBytes: 10,
+      budgetBytes: EXCALIDRAW_PAYLOAD_BUDGETS.read.result
+    }
+    // Unfiltered: no `fields` echo, full discriminated-union records.
+    expect(
+      excalidrawVerbContracts.read.resultSchema.safeParse({
+        ok: true,
+        detail: 'standard',
+        sceneVersion: 3,
+        missingIds: [],
+        page: { offset: 0, limit: 20, returned: 1, total: 1, nextOffset: null },
+        elements: [fullShapeElement],
+        truncation: truncationBase
+      }).success
+    ).toBe(true)
+    // Filtered: `fields` echoes the applied projection, records are lean.
+    expect(
+      excalidrawVerbContracts.read.resultSchema.safeParse({
+        ok: true,
+        detail: 'standard',
+        sceneVersion: 3,
+        missingIds: [],
+        page: { offset: 0, limit: 20, returned: 1, total: 1, nextOffset: null },
+        elements: [projectedShapeElement],
+        fields: ['x', 'y'],
+        truncation: truncationBase
+      }).success
+    ).toBe(true)
+
+    const pickTruncationBase = {
+      ...truncationBase,
+      budgetBytes: EXCALIDRAW_PAYLOAD_BUDGETS.pick.result
+    }
+    const pickBase = {
+      ok: true,
+      mode: 'current' as const,
+      timedOut: false,
+      detail: 'standard' as const,
+      sceneVersion: 3,
+      selectedCount: 1,
+      selection: { elementIds: ['a'], groupIds: [], editingGroupId: null }
+    }
+    expect(
+      excalidrawVerbContracts.pick.resultSchema.safeParse({
+        ...pickBase,
+        elements: [fullShapeElement],
+        truncation: pickTruncationBase
+      }).success
+    ).toBe(true)
+    expect(
+      excalidrawVerbContracts.pick.resultSchema.safeParse({
+        ...pickBase,
+        elements: [projectedShapeElement],
+        fields: ['x', 'y'],
+        truncation: pickTruncationBase
+      }).success
+    ).toBe(true)
+  })
+
+  it('keeps ELEMENT_PROJECTION_FIELDS in sync with the readElementSchema variants', () => {
+    // Identity keys are always included and deliberately excluded from the
+    // projectable-fields enum — a caller can never project them away.
+    expect(ELEMENT_PROJECTION_FIELDS).not.toContain('id')
+    expect(ELEMENT_PROJECTION_FIELDS).not.toContain('type')
+    expect(ELEMENT_PROJECTION_FIELDS).not.toContain('kind')
+
+    // Every projectable field must be a real top-level key on at least one
+    // readElementSchema variant, so `fields` can never request a field that no
+    // normalized record could ever carry.
+    const variantKeys = new Set<string>()
+    for (const variant of readElementSchema.options) {
+      for (const key of Object.keys(variant.shape)) variantKeys.add(key)
+    }
+    for (const field of ELEMENT_PROJECTION_FIELDS) {
+      expect(
+        variantKeys.has(field),
+        `ELEMENT_PROJECTION_FIELDS entry "${field}" is not a top-level key of any readElementSchema variant`
+      ).toBe(true)
+    }
+  })
+})

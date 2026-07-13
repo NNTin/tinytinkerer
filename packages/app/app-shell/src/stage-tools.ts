@@ -1,7 +1,7 @@
 import type { Tool } from '@tinytinkerer/app-browser'
 
-export type StageToolRequestHandle = {
-  request(method: string, input?: unknown): Promise<unknown>
+export type StageToolRequestHandle<TMethod extends string = string> = {
+  request(method: TMethod, input?: unknown): Promise<unknown>
 }
 
 export type StageToolDefinition = {
@@ -10,19 +10,21 @@ export type StageToolDefinition = {
   awaitsHumanInput?: boolean
 }
 
-export type CreateStageToolsOptions = {
-  handle: StageToolRequestHandle
-  methods: Record<string, StageToolDefinition>
+export type CreateStageToolsOptions<TMethod extends string = string> = {
+  handle: StageToolRequestHandle<TMethod>
+  methods: Record<TMethod, StageToolDefinition>
 }
 
-export const createStageTools = ({
+export const createStageTools = <TMethod extends string>({
   handle,
   methods
-}: CreateStageToolsOptions): Tool<unknown, unknown>[] =>
-  Object.entries(methods).map(([method, definition]) => ({
-    id: method,
-    description: definition.description,
-    schema: definition.schema,
-    ...(definition.awaitsHumanInput ? { awaitsHumanInput: true } : {}),
-    execute: (input: unknown) => handle.request(method, input)
-  }))
+}: CreateStageToolsOptions<TMethod>): Tool<unknown, unknown>[] =>
+  (Object.entries(methods) as Array<[TMethod, StageToolDefinition]>).map(
+    ([method, definition]) => ({
+      id: method,
+      description: definition.description,
+      schema: definition.schema,
+      ...(definition.awaitsHumanInput ? { awaitsHumanInput: true } : {}),
+      execute: (input: unknown) => handle.request(method, input)
+    })
+  )

@@ -5,5 +5,5 @@
     "jsx": "react-jsx",
     "types": ["vite/client"]
   },
-  "include": ["src", "excalidraw-app/main.tsx", "library-callback/main.ts"]
+  "include": ["src", "library-callback/main.ts"]
 }

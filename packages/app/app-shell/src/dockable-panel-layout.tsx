@@ -73,15 +73,26 @@ const loadState = (
     const ids = new Set(panels.map((panel) => panel.id))
     for (const name of Object.keys(LABELS) as DockableLayoutPreset[]) {
       const values = parsed.assignments?.[name]
-      if (!values || values.length !== 3 || values.some((id) => !ids.has(id))) return fallback
+      const sizes = parsed.sizes?.[name]
+      if (
+        !values ||
+        values.length !== panels.length ||
+        values.some((id) => !ids.has(id)) ||
+        !sizes ||
+        sizes.length !== 2 ||
+        sizes.some((value) => typeof value !== 'number' || !Number.isFinite(value))
+      )
+        return fallback
     }
     if (parsed.preset === 'custom') {
       const custom = parsed.custom
       if (
         !custom ||
         !(custom.basePreset in LABELS) ||
-        custom.assignments.length !== 3 ||
-        custom.assignments.some((id) => !ids.has(id))
+        custom.assignments.length !== panels.length ||
+        custom.assignments.some((id) => !ids.has(id)) ||
+        custom.sizes.length !== 2 ||
+        custom.sizes.some((value) => typeof value !== 'number' || !Number.isFinite(value))
       ) {
         return fallback
       }
@@ -108,7 +119,7 @@ const loadState = (
             sizes: [...storedSizes]
           }
         }
-      : fallback
+      : { ...fallback, preset: parsed.preset }
   } catch {
     return fallback
   }
