@@ -9,14 +9,11 @@ type AllureLabel = { name: string; value: string }
 type AllureTestResult = { labels: AllureLabel[] }
 
 // Per-run port. The package's `e2e` script sets E2E_PORT for the shared deployed
-// origin before invoking Playwright, and CI pins it explicitly. Do not generate a fallback here:
-// this config is evaluated by more than one Playwright process, so an in-config random
-// value can make the web servers and test workers disagree on their base URLs.
-const requirePort = (name: string): number => {
-  const raw = process.env[name]
-  if (!raw) {
-    throw new Error(`${name} must be set. Run through \`pnpm --filter @tinytinkerer/e2e e2e\`.`)
-  }
+// origin before invoking Playwright, and CI pins it explicitly. Static-analysis tools
+// also load this config without running the wrapper, so use one deterministic fallback
+// rather than throwing or generating a value that could differ between processes.
+const resolvePort = (name: string, fallback: number): number => {
+  const raw = process.env[name] ?? String(fallback)
   const port = Number(raw)
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error(`${name} must be a valid TCP port, got ${raw}`)
@@ -27,7 +24,7 @@ const requirePort = (name: string): number => {
 // Every browser endpoint is served from the composed apps/host/dist origin, matching
 // production. IndexedDB and authentication state are therefore shared across mount
 // paths while each app retains its own database namespace where needed.
-const webPort = requirePort('E2E_PORT')
+const webPort = resolvePort('E2E_PORT', 43_117)
 
 // Bail-fast budget. A single root cause typically reds many tests at once, and with
 // `retries: 1` each failure runs twice — so a fully-reddened shard burns CI minutes

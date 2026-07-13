@@ -3,7 +3,7 @@ import { EXCALIDRAW_LIBRARY_CHANNEL } from '@tinytinkerer/canvas/library-channel
 // Same-origin relay for Excalidraw library imports. libraries.excalidraw.com sends the
 // "Add to Excalidraw" round-trip to this page (a new tab) as
 // `…/canvas/library-callback/#addLibrary=<url>&token=<token>`, because the canvas stage
-// itself is cannot receive that navigation itself. This page reads
+// cannot receive that navigation itself. This page reads
 // the params and hands them to the live canvas tab over a same-origin BroadcastChannel,
 // which imports the library through the live Excalidraw API. It then closes itself.
 

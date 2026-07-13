@@ -121,13 +121,13 @@ jobs:
       - name: Install browsers (Chromium + Firefox + WebKit, + OS deps)
         run: pnpm --filter @tinytinkerer/e2e exec playwright install --with-deps chromium firefox webkit
 
-      # Restore the prebuilt shells into apps/<shell>/dist where `vite preview`
-      # expects them (the artifact root is `apps/`).
+      # upload-artifact stores the contents of the single uploaded directory at the
+      # artifact root, so restore them directly where `vite preview` expects them.
       - name: Download built shells
         uses: actions/download-artifact@v7
         with:
           name: shells-dist
-          path: apps
+          path: apps/host/dist
 
       # `maxFailures` (playwright.config.ts) bails this shard once a few tests fail so a
       # single cascading root cause doesn't run the whole reddened shard. It is PER SHARD,
