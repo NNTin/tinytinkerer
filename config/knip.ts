@@ -60,6 +60,11 @@ const config: KnipConfig = {
     enumMembers: 'warn'
   },
   workspaces: {
+    '.': {
+      // Executed by the Pixel Agents preparation script with the pinned upstream
+      // checkout's tsx binary, so there is deliberately no static import edge.
+      entry: ['scripts/build-pixel-agents-assets.mjs']
+    },
     'apps/edge': {
       // workerd is the Cloudflare Workers runtime binary. It is spawned as a CLI
       // (miniflare/wrangler dev and the scriptless-install smoke test run the

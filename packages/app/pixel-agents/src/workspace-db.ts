@@ -1,7 +1,7 @@
 import { createWorkspaceStore, type WorkspaceStore } from '@tinytinkerer/app-shell'
 import type { PixelAgentMeta } from './protocol'
 
-export const PIXEL_AGENTS_DATABASE_NAME = 'tinytinkerer-pixel-agents'
+const PIXEL_AGENTS_DATABASE_NAME = 'tinytinkerer-pixel-agents'
 
 export type PixelAgentsWorkspaceRecord = {
   id: 'default'
@@ -10,7 +10,7 @@ export type PixelAgentsWorkspaceRecord = {
   updatedAt: string
 }
 
-export const pixelAgentsWorkspaceStore = createWorkspaceStore<PixelAgentsWorkspaceRecord>(
+const pixelAgentsWorkspaceStore = createWorkspaceStore<PixelAgentsWorkspaceRecord>(
   PIXEL_AGENTS_DATABASE_NAME
 )
 

@@ -53,7 +53,7 @@ export type PixelClientMessage =
       seats: Record<string, { palette: number; hueShift: number; seatId: string | null }>
     }
 
-export type PixelClientEnvelope = {
+type PixelClientEnvelope = {
   channel: typeof PIXEL_AGENTS_BRIDGE_CHANNEL
   direction: 'client'
   payload: string
