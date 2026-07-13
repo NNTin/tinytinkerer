@@ -504,6 +504,9 @@ importers:
       '@tinytinkerer/app-browser':
         specifier: workspace:*
         version: link:../app-browser
+      dexie:
+        specifier: 4.4.3
+        version: 4.4.3
     devDependencies:
       '@testing-library/jest-dom':
         specifier: 6.9.1
@@ -575,12 +578,12 @@ importers:
       '@codesandbox/sandpack-react':
         specifier: 1.20.9
         version: 1.20.9(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@tinytinkerer/app-shell':
+        specifier: workspace:*
+        version: link:../app-shell
       '@tinytinkerer/file-tools':
         specifier: workspace:*
         version: link:../../shared/file-tools
-      dexie:
-        specifier: 4.4.3
-        version: 4.4.3
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -600,6 +603,9 @@ importers:
       typescript:
         specifier: 6.0.3
         version: 6.0.3
+      vite:
+        specifier: 8.0.14
+        version: 8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.3)(yaml@2.9.0)
       vitest:
         specifier: 4.1.7
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@25.9.1)(jsdom@29.1.1)(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.3)(yaml@2.9.0))
@@ -618,9 +624,6 @@ importers:
       '@tinytinkerer/file-tools':
         specifier: workspace:*
         version: link:../../shared/file-tools
-      dexie:
-        specifier: 4.4.3
-        version: 4.4.3
     devDependencies:
       '@types/react':
         specifier: 19.2.15

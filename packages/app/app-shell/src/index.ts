@@ -25,3 +25,19 @@ export type {
 } from './dockable-panel-layout'
 
 export { resolveEmbeddedAppUrl } from './app-url'
+
+export { createStageControllerHandle } from './stage-controller'
+export type { StageControllerHandle } from './stage-controller'
+
+export { createWorkspaceStore } from './workspace-store'
+export type { WorkspaceRecord, WorkspaceStore } from './workspace-store'
+
+export { createStageTools } from './stage-tools'
+export type {
+  CreateStageToolsOptions,
+  StageToolDefinition,
+  StageToolRequestHandle
+} from './stage-tools'
+
+export { useRequestAssistantAction } from './assistant-action'
+export type { RequestAssistantAction } from './assistant-action'

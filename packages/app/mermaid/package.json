@@ -25,8 +25,7 @@
     "@tinytinkerer/app-shell": "workspace:*",
     "@tinytinkerer/content-code": "workspace:*",
     "@tinytinkerer/content-mermaid": "workspace:*",
-    "@tinytinkerer/file-tools": "workspace:*",
-    "dexie": "4.4.3"
+    "@tinytinkerer/file-tools": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.0.0",

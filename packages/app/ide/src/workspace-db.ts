@@ -1,4 +1,4 @@
-import Dexie, { type EntityTable } from 'dexie'
+import { createWorkspaceStore } from '@tinytinkerer/app-shell'
 
 export type PersistedIdeWorkspace = {
   id: 'default'
@@ -11,26 +11,8 @@ export type PersistedIdeWorkspace = {
   updatedAt: string
 }
 
-class IdeDatabase extends Dexie {
-  workspaces!: EntityTable<PersistedIdeWorkspace, 'id'>
+const workspaceStore = createWorkspaceStore<PersistedIdeWorkspace>('tinytinkerer-ide')
 
-  constructor() {
-    super('tinytinkerer-ide')
-    this.version(1).stores({ workspaces: 'id,updatedAt' })
-  }
-}
-
-let database: IdeDatabase | undefined
-const getDatabase = (): IdeDatabase => (database ??= new IdeDatabase())
-
-export const loadIdeWorkspace = async (): Promise<PersistedIdeWorkspace | null> => {
-  try {
-    return (await getDatabase().workspaces.get('default')) ?? null
-  } catch {
-    return null
-  }
-}
-
-export const saveIdeWorkspace = async (workspace: PersistedIdeWorkspace): Promise<void> => {
-  await getDatabase().workspaces.put(workspace)
-}
+export const loadIdeWorkspace = (): Promise<PersistedIdeWorkspace | null> => workspaceStore.load()
+export const saveIdeWorkspace = (workspace: PersistedIdeWorkspace): Promise<void> =>
+  workspaceStore.save(workspace)

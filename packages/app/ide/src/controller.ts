@@ -1,3 +1,4 @@
+import { createStageControllerHandle } from '@tinytinkerer/app-shell'
 import type { ApplyFileChangesInput } from '@tinytinkerer/file-tools'
 
 export type IdeController = {
@@ -19,25 +20,21 @@ export type IdeControllerHandle = {
 }
 
 export const createIdeControllerHandle = (): IdeControllerHandle => {
-  let controller: IdeController | null = null
+  const stageHandle = createStageControllerHandle<IdeController>('IDE is still loading')
+  let mounted = false
   return {
     setController(next) {
-      controller = next
+      mounted = next !== null
+      stageHandle.setController(next)
     },
     request(method, input) {
-      if (!controller) return Promise.reject(new Error('IDE is still loading'))
-      const member = controller[method] as (value?: unknown) => unknown
-      try {
-        return Promise.resolve(member.call(controller, input))
-      } catch (error) {
-        return Promise.reject(error instanceof Error ? error : new Error(String(error)))
-      }
+      return stageHandle.request(method, input)
     },
     async undoLastChange() {
-      return controller ? controller.undoLastChange() : false
+      return mounted ? ((await stageHandle.request('undoLastChange')) as boolean) : false
     },
     async redoLastChange() {
-      return controller ? controller.redoLastChange() : false
+      return mounted ? ((await stageHandle.request('redoLastChange')) as boolean) : false
     }
   }
 }

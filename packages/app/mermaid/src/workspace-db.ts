@@ -1,4 +1,4 @@
-import Dexie, { type EntityTable } from 'dexie'
+import { createWorkspaceStore } from '@tinytinkerer/app-shell'
 
 export type PersistedMermaidWorkspace = {
   id: 'default'
@@ -8,22 +8,9 @@ export type PersistedMermaidWorkspace = {
   updatedAt: string
 }
 
-class MermaidDatabase extends Dexie {
-  workspaces!: EntityTable<PersistedMermaidWorkspace, 'id'>
-  constructor() {
-    super('tinytinkerer-mermaid')
-    this.version(1).stores({ workspaces: 'id,updatedAt' })
-  }
-}
-let database: MermaidDatabase | undefined
-const getDatabase = () => (database ??= new MermaidDatabase())
-export const loadMermaidWorkspace = async (): Promise<PersistedMermaidWorkspace | null> => {
-  try {
-    return (await getDatabase().workspaces.get('default')) ?? null
-  } catch {
-    return null
-  }
-}
-export const saveMermaidWorkspace = async (workspace: PersistedMermaidWorkspace): Promise<void> => {
-  await getDatabase().workspaces.put(workspace)
-}
+const workspaceStore = createWorkspaceStore<PersistedMermaidWorkspace>('tinytinkerer-mermaid')
+
+export const loadMermaidWorkspace = (): Promise<PersistedMermaidWorkspace | null> =>
+  workspaceStore.load()
+export const saveMermaidWorkspace = (workspace: PersistedMermaidWorkspace): Promise<void> =>
+  workspaceStore.save(workspace)

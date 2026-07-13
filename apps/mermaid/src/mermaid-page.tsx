@@ -1,12 +1,13 @@
-import { ChatApp, useBrowserApp } from '@tinytinkerer/app-browser'
+import { ChatApp } from '@tinytinkerer/app-browser'
+import { useRequestAssistantAction } from '@tinytinkerer/app-shell'
 import { MermaidStage } from '@tinytinkerer/mermaid'
 import { MermaidChatLoading } from './app/loading-screen'
 
 const MermaidPage = (): React.JSX.Element => {
-  const app = useBrowserApp()
+  const requestAssistantAction = useRequestAssistantAction()
   return (
     <MermaidStage
-      onRequestAssistantFix={(prompt) => app.stores.chat.getState().sendPrompt(prompt)}
+      onRequestAssistantFix={requestAssistantAction}
       assistant={
         <ChatApp
           mode="sidebar"

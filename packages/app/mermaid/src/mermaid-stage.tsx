@@ -1,4 +1,4 @@
-import { DockablePanelLayout } from '@tinytinkerer/app-shell'
+import { DockablePanelLayout, type RequestAssistantAction } from '@tinytinkerer/app-shell'
 import { CodeMirrorEditor } from '@tinytinkerer/content-code'
 import {
   renderMermaidSource,
@@ -25,7 +25,7 @@ const DEFAULT_SOURCE = `flowchart TD
 
 export type MermaidStageProps = {
   assistant: ReactNode
-  onRequestAssistantFix?: (prompt: string) => void | Promise<void>
+  onRequestAssistantFix?: RequestAssistantAction
 }
 
 const diagnosticFor = (
