@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatEvent } from '@tinytinkerer/contracts'
-import { messagesForChatEvent, messagesForUnseenChatEvents, pixelToolName } from '../src/activity'
+import { messagesForChatEvent, pixelToolName } from '../src/activity'
 
 const event = (
   value: Partial<ChatEvent> & Pick<ChatEvent, 'id' | 'type' | 'payload'>
@@ -51,13 +51,26 @@ describe('Pixel Agents activity projection', () => {
     expect(pixelToolName('mermaid.apply')).toBe('Write')
   })
 
-  it('does not replay events that were already projected', () => {
-    const completed = event({
-      id: 'done',
-      type: 'agent.tool.completed',
-      payload: { stepId: 's1', toolId: 'canvas.search', output: {} }
-    })
-    const seen = new Set<string>(['done'])
-    expect(messagesForUnseenChatEvents([completed], seen)).toEqual([])
+  it('maps run lifecycle events to a status pair', () => {
+    expect(
+      messagesForChatEvent(
+        event({ id: 'start', type: 'agent.run.started', payload: { agentType: 'react' } })
+      )
+    ).toEqual([
+      { type: 'agentToolsClear', id: 1 },
+      { type: 'agentStatus', id: 1, status: 'active' }
+    ])
+    expect(
+      messagesForChatEvent(event({ id: 'end', type: 'agent.run.completed', payload: { steps: 3 } }))
+    ).toEqual([
+      { type: 'agentToolsClear', id: 1 },
+      { type: 'agentStatus', id: 1, status: 'waiting', awaitingInput: false }
+    ])
+  })
+
+  it('ignores event types with no Pixel Agents projection', () => {
+    expect(
+      messagesForChatEvent(event({ id: 'msg', type: 'user.message', payload: { text: 'hi' } }))
+    ).toEqual([])
   })
 })

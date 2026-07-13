@@ -25,3 +25,6 @@ export type {
 
 export { useRequestAssistantAction } from './assistant-action'
 export type { RequestAssistantAction } from './assistant-action'
+
+export { useLiveChatActivity } from './live-chat-activity'
+export type { UseLiveChatActivityOptions } from './live-chat-activity'

@@ -28,6 +28,13 @@ export default defineConfig(() => {
     build: {
       ...shared.build,
       outDir: 'dist-root'
+    },
+    // e2e (and any local `vite preview`) serve the composed dist from this config.
+    // The Pixel Agents mount's sandboxed iframe has an opaque origin, so its asset
+    // fetches carry `Origin: null`; production (GitHub Pages) already answers with
+    // ACAO '*', so dev/preview must match it here.
+    preview: {
+      headers: { 'Access-Control-Allow-Origin': '*' }
     }
   }
 })

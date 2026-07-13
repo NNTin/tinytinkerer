@@ -23,7 +23,8 @@
   },
   "dependencies": {
     "@tinytinkerer/app-shell": "workspace:*",
-    "@tinytinkerer/contracts": "workspace:*"
+    "@tinytinkerer/contracts": "workspace:*",
+    "zod": "4.4.3"
   },
   "peerDependencies": {
     "react": "^19.0.0",

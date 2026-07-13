@@ -21,18 +21,109 @@ const bootstrap = parsePixelAgentsBootstrap({
   defaultLayout: { version: 1 }
 })
 
+const envelope = (payload: string): unknown => ({
+  channel: PIXEL_AGENTS_BRIDGE_CHANNEL,
+  direction: 'client',
+  payload
+})
+
 describe('Pixel Agents bridge protocol', () => {
   it('rejects malformed and wrong-channel envelopes', () => {
     expect(
       parsePixelClientEnvelope({ channel: 'other', direction: 'client', payload: '{}' })
     ).toBeNull()
+    expect(parsePixelClientEnvelope(envelope('{bad'))).toBeNull()
+  })
+
+  it('never throws on a malformed client envelope, returning null instead', () => {
+    expect(parsePixelClientEnvelope(null)).toBeNull()
+    expect(parsePixelClientEnvelope('not an object')).toBeNull()
+    expect(parsePixelClientEnvelope({ channel: PIXEL_AGENTS_BRIDGE_CHANNEL })).toBeNull()
+    expect(parsePixelClientEnvelope(envelope('null'))).toBeNull()
+    expect(parsePixelClientEnvelope(envelope('{"type":"unknownMessage"}'))).toBeNull()
+  })
+
+  it('parses a webviewReady message', () => {
+    expect(parsePixelClientEnvelope(envelope('{"type":"webviewReady"}'))).toEqual({
+      type: 'webviewReady'
+    })
+  })
+
+  it('passes an arbitrary saveLayout layout through verbatim', () => {
     expect(
-      parsePixelClientEnvelope({
-        channel: PIXEL_AGENTS_BRIDGE_CHANNEL,
-        direction: 'client',
-        payload: '{bad'
-      })
+      parsePixelClientEnvelope(
+        envelope(JSON.stringify({ type: 'saveLayout', layout: { rooms: [{ x: 1 }] } }))
+      )
+    ).toEqual({ type: 'saveLayout', layout: { rooms: [{ x: 1 }] } })
+    expect(
+      parsePixelClientEnvelope(envelope(JSON.stringify({ type: 'saveLayout', layout: 'nope' })))
     ).toBeNull()
+  })
+
+  it('accepts a saveAgentSeats message with a nullable seatId', () => {
+    expect(
+      parsePixelClientEnvelope(
+        envelope(
+          JSON.stringify({
+            type: 'saveAgentSeats',
+            seats: { '1': { palette: 2, hueShift: 10, seatId: null } }
+          })
+        )
+      )
+    ).toEqual({
+      type: 'saveAgentSeats',
+      seats: { '1': { palette: 2, hueShift: 10, seatId: null } }
+    })
+    expect(
+      parsePixelClientEnvelope(
+        envelope(
+          JSON.stringify({
+            type: 'saveAgentSeats',
+            seats: { '1': { palette: 2, hueShift: 10, seatId: 'desk-a' } }
+          })
+        )
+      )
+    ).toEqual({
+      type: 'saveAgentSeats',
+      seats: { '1': { palette: 2, hueShift: 10, seatId: 'desk-a' } }
+    })
+  })
+
+  it('rejects saveAgentSeats when any seat record is unknown-shaped', () => {
+    expect(
+      parsePixelClientEnvelope(
+        envelope(
+          JSON.stringify({
+            type: 'saveAgentSeats',
+            seats: { '1': { palette: '2', hueShift: 10, seatId: null } }
+          })
+        )
+      )
+    ).toBeNull()
+    expect(
+      parsePixelClientEnvelope(
+        envelope(
+          JSON.stringify({
+            type: 'saveAgentSeats',
+            seats: { '1': { palette: 2, hueShift: 10, seatId: 42 } }
+          })
+        )
+      )
+    ).toBeNull()
+  })
+
+  it('throws Unsupported for a wrong or missing integration version', () => {
+    expect(() => parsePixelAgentsBootstrap(null)).toThrow('Unsupported Pixel Agents bootstrap data')
+    expect(() => parsePixelAgentsBootstrap({ integrationVersion: 2 })).toThrow(
+      'Unsupported Pixel Agents bootstrap data'
+    )
+    expect(() => parsePixelAgentsBootstrap({})).toThrow('Unsupported Pixel Agents bootstrap data')
+  })
+
+  it('throws Invalid for a shape violation once the version matches', () => {
+    expect(() =>
+      parsePixelAgentsBootstrap({ integrationVersion: 1, upstream: { commit: 'a' } })
+    ).toThrow('Invalid Pixel Agents bootstrap data')
   })
 
   it('loads the agent before the layout so upstream can assign a desk', () => {

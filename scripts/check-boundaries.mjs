@@ -456,10 +456,16 @@ function validateBoundary(sourcePkg, target, filePath) {
   }
 
   if (sourcePkg.name === '@tinytinkerer/app-shell') {
-    const allowed = new Set(['@tinytinkerer/app-shell', '@tinytinkerer/app-browser'])
+    // contracts is allowed for shared chat-log data shapes (e.g. ChatEvent, for
+    // useLiveChatActivity) — generic data contracts, not a concrete stage.
+    const allowed = new Set([
+      '@tinytinkerer/app-shell',
+      '@tinytinkerer/app-browser',
+      '@tinytinkerer/contracts'
+    ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: app-shell may import only app-browser and app-shell-local modules (${targetPkg.name})`
+        `${sourceLabel}: app-shell may import only app-browser, contracts, and app-shell-local modules (${targetPkg.name})`
       )
     }
   }

@@ -1,4 +1,9 @@
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 /**
  * Corrected licenses for packages whose published metadata is missing or wrong,
@@ -75,9 +80,33 @@ export const collectDependencyLicenses = () => {
     }
   }
 
+  // The Pixel Agents webview ships as a separately compiled bundle (built from
+  // an external repo by scripts/prepare-pixel-agents.mjs), not as pnpm-installed
+  // packages, so pnpm's lockfile — and therefore the loop above — is structurally
+  // blind to it and everything it embeds. Without this, the SBOM, notices, and
+  // license-policy gate would all silently omit shipped third-party code.
+  for (const dep of collectPixelAgentsThirdPartyEntries()) {
+    const key = `${dep.name}@${dep.version}`
+    if (byKey.has(key)) continue
+    byKey.set(key, {
+      name: dep.name,
+      version: dep.version,
+      license: dep.license,
+      author: dep.author ?? '',
+      homepage: dep.homepage ?? '',
+      description: dep.description ?? ''
+    })
+  }
+
   return [...byKey.values()].sort(
     (a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version)
   )
+}
+
+/** Read the committed Pixel Agents third-party supplement (see config/pixel-agents-third-party.json). */
+const collectPixelAgentsThirdPartyEntries = () => {
+  const manifestPath = join(rootDir, 'config', 'pixel-agents-third-party.json')
+  return JSON.parse(readFileSync(manifestPath, 'utf8'))
 }
 
 /** Collapse pnpm's "Unknown" sentinel and blank values to a single token. */

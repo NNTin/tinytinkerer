@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { DockablePanelLayout } from '@tinytinkerer/app-shell'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { DockablePanelLayout, useLiveChatActivity } from '@tinytinkerer/app-shell'
 import type { ChatEvent } from '@tinytinkerer/contracts'
-import { messagesForUnseenChatEvents } from './activity'
+import { messagesForChatEvent } from './activity'
 import {
+  PIXEL_AGENT_ID,
   PIXEL_AGENTS_BRIDGE_CHANNEL,
   createPixelBootstrapMessages,
   parsePixelAgentsBootstrap,
@@ -22,18 +23,6 @@ const upstreamUrl = (path: string): string => new URL(`upstream/${path}`, docume
 const hasCompletedRun = (events: readonly ChatEvent[]): boolean =>
   events.some((event) => event.type === 'agent.run.completed')
 
-const seedSeenEvents = (events: readonly ChatEvent[], isRunning: boolean): Set<string> => {
-  if (!isRunning) return new Set(events.map((event) => event.id))
-  let runStart = -1
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (events[index]?.type === 'agent.run.started') {
-      runStart = index
-      break
-    }
-  }
-  return new Set(events.slice(0, runStart + 1).map((event) => event.id))
-}
-
 export const PixelAgentsWorkspace = ({
   assistant,
   events,
@@ -42,10 +31,7 @@ export const PixelAgentsWorkspace = ({
   const frameRef = useRef<HTMLIFrameElement>(null)
   const eventsRef = useRef(events)
   const isRunningRef = useRef(isRunning)
-  const readyRef = useRef(false)
   const bootstrappingRef = useRef(false)
-  const seenEventsRef = useRef<Set<string>>(new Set())
-  const wasRunningRef = useRef(isRunning)
   const workspaceRef = useRef<Pick<PixelAgentsWorkspaceRecord, 'layout' | 'agentMeta'>>({
     layout: null,
     agentMeta: {}
@@ -54,14 +40,20 @@ export const PixelAgentsWorkspace = ({
   const [pixelAgentsUrl, setPixelAgentsUrl] = useState<string | undefined>()
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
   const [storageError, setStorageError] = useState<string | null>(null)
+  // Gates useLiveChatActivity below: activity only starts once the bootstrap
+  // handshake has posted the initial office state, replacing the old readyRef.
+  const [activityEnabled, setActivityEnabled] = useState(false)
 
   eventsRef.current = events
   isRunningRef.current = isRunning
 
   const postToPixelAgents = useCallback((message: PixelServerMessage): void => {
+    // The sandboxed frame has an opaque origin that can't be named as a
+    // postMessage targetOrigin; delivery is already pinned to it via
+    // contentWindow, and the payload is only visualization data.
     frameRef.current?.contentWindow?.postMessage(
       { channel: PIXEL_AGENTS_BRIDGE_CHANNEL, direction: 'server', message },
-      window.location.origin
+      '*'
     )
   }, [])
 
@@ -91,7 +83,9 @@ export const PixelAgentsWorkspace = ({
     const handleMessage = (event: MessageEvent<unknown>): void => {
       if (
         event.source !== frameRef.current?.contentWindow ||
-        event.origin !== window.location.origin
+        // A sandboxed (opaque-origin) frame serializes its origin as the literal
+        // string "null"; the contentWindow check above is what pins identity.
+        event.origin !== 'null'
       )
         return
       const message = parsePixelClientEnvelope(event.data)
@@ -132,8 +126,6 @@ export const PixelAgentsWorkspace = ({
           }
           const currentEvents = eventsRef.current
           const currentlyRunning = isRunningRef.current
-          seenEventsRef.current = seedSeenEvents(currentEvents, currentlyRunning)
-          wasRunningRef.current = currentlyRunning
           postMany(
             createPixelBootstrapMessages(
               bootstrap,
@@ -143,10 +135,7 @@ export const PixelAgentsWorkspace = ({
               !hasCompletedRun(currentEvents)
             )
           )
-          readyRef.current = true
-          if (currentlyRunning) {
-            postMany(messagesForUnseenChatEvents(currentEvents, seenEventsRef.current))
-          }
+          setActivityEnabled(true)
           setBootstrapError(null)
         })
         .catch((error: unknown) => {
@@ -161,32 +150,29 @@ export const PixelAgentsWorkspace = ({
     window.addEventListener('message', handleMessage)
     // Do not navigate the iframe until its parent listener is installed. This closes
     // the fast-cache race where the upstream webview could send webviewReady first.
-    setPixelAgentsUrl(upstreamUrl('index.html'))
+    // The sandboxed frame can't read our origin itself (it's opaque there), so it
+    // rides in once as a query parameter; the bridge uses it as its outbound
+    // postMessage targetOrigin.
+    const src = new URL(upstreamUrl('index.html'))
+    src.searchParams.set('tinytinkerer-parent-origin', window.location.origin)
+    setPixelAgentsUrl(src.href)
     return () => window.removeEventListener('message', handleMessage)
   }, [persistWorkspace, postMany])
 
-  useEffect(() => {
-    if (!readyRef.current) return
-
-    if (isRunning && !wasRunningRef.current) {
-      seenEventsRef.current = seedSeenEvents(events, true)
+  useLiveChatActivity(events, isRunning, {
+    enabled: activityEnabled,
+    onRunStarted: () =>
       postMany([
-        { type: 'agentToolsClear', id: 1 },
-        { type: 'agentStatus', id: 1, status: 'active' }
-      ])
-    }
-
-    if (isRunning) {
-      postMany(messagesForUnseenChatEvents(events, seenEventsRef.current))
-    } else if (wasRunningRef.current) {
+        { type: 'agentToolsClear', id: PIXEL_AGENT_ID },
+        { type: 'agentStatus', id: PIXEL_AGENT_ID, status: 'active' }
+      ]),
+    onRunEnded: () =>
       postMany([
-        { type: 'agentToolsClear', id: 1 },
-        { type: 'agentStatus', id: 1, status: 'waiting', awaitingInput: false }
-      ])
-      seenEventsRef.current = new Set(events.map((event) => event.id))
-    }
-    wasRunningRef.current = isRunning
-  }, [events, isRunning, postMany])
+        { type: 'agentToolsClear', id: PIXEL_AGENT_ID },
+        { type: 'agentStatus', id: PIXEL_AGENT_ID, status: 'waiting', awaitingInput: false }
+      ]),
+    onLiveEvents: (liveEvents) => postMany(liveEvents.flatMap(messagesForChatEvent))
+  })
 
   const pixelAgents = (
     <div className="pixel-agents-frame-shell">
@@ -203,17 +189,14 @@ export const PixelAgentsWorkspace = ({
           {storageError}
         </p>
       ) : null}
-      <iframe ref={frameRef} src={pixelAgentsUrl} title="Pixel Agents office" />
-      <div className="pixel-agents-credit">
-        Visualization by{' '}
-        <a href="https://github.com/pixel-agents-hq/pixel-agents/" target="_blank" rel="noreferrer">
-          Pixel Agents
-        </a>
-        {' · '}
-        <a href={upstreamUrl('PIXEL_AGENTS_LICENSE.txt')} target="_blank" rel="noreferrer">
-          MIT License
-        </a>
-      </div>
+      {/* The third-party bundle must not share TinyTinkerer's origin (IndexedDB,
+          auth, parent DOM); everything it needs arrives over the postMessage bridge. */}
+      <iframe
+        ref={frameRef}
+        src={pixelAgentsUrl}
+        title="Pixel Agents office"
+        sandbox="allow-scripts"
+      />
     </div>
   )
 

@@ -12,7 +12,14 @@ export default defineConfig({
     buildInfo: getBuildInfo(),
     plugins: [react(), tailwindcss(), VitePWA({ disable: true })],
     sentryVitePlugin,
-    server: { host: 'localhost' }
+    server: {
+      host: 'localhost',
+      // The stage embeds the upstream distribution in a sandboxed ('allow-scripts')
+      // iframe, so its module-entry and font fetches carry `Origin: null`. Vite dev's
+      // default CORS handling doesn't admit that origin. These are public static
+      // assets, so ACAO '*' is never credentialed.
+      headers: { 'Access-Control-Allow-Origin': '*' }
+    }
   }),
   publicDir: 'generated'
 })

@@ -3,6 +3,14 @@ export const PIXEL_AGENTS_BRIDGE_CHANNEL = 'tinytinkerer:pixel-agents:v1'
 export const renderPixelAgentsBridge = () => `(() => {
   const channel = ${JSON.stringify(PIXEL_AGENTS_BRIDGE_CHANNEL)}
   const sockets = new Set()
+  // The parent embeds this document in a sandboxed ('allow-scripts', no
+  // 'allow-same-origin') iframe, so it is served from an opaque origin here — the
+  // parent's real origin cannot be read from location and cannot be named as a
+  // postMessage targetOrigin. The parent instead passes its own origin once as a
+  // query parameter when it navigates the frame. Absent that (e.g. this distribution
+  // opened standalone, outside TinyTinkerer), fail closed: drop outbound messages
+  // rather than guess an origin.
+  const parentOrigin = new URLSearchParams(location.search).get('tinytinkerer-parent-origin')
 
   class TinyTinkererWebSocket {
     static CONNECTING = 0
@@ -29,9 +37,10 @@ export const renderPixelAgentsBridge = () => `(() => {
       if (this.readyState !== TinyTinkererWebSocket.OPEN) {
         throw new DOMException('WebSocket is not open', 'InvalidStateError')
       }
+      if (!parentOrigin) return
       window.parent.postMessage(
         { channel, direction: 'client', payload: String(payload) },
-        window.location.origin
+        parentOrigin
       )
     }
 
@@ -45,7 +54,11 @@ export const renderPixelAgentsBridge = () => `(() => {
   }
 
   window.addEventListener('message', (event) => {
-    if (event.source !== window.parent || event.origin !== window.location.origin) return
+    // location.origin is the opaque string "null" inside this sandboxed frame, and
+    // the parent's real origin isn't statically knowable here, so identity is
+    // checked by window reference (the only thing an opaque origin can't spoof)
+    // rather than by origin string.
+    if (event.source !== window.parent) return
     const envelope = event.data
     if (
       !envelope ||

@@ -553,6 +553,9 @@ importers:
       '@tinytinkerer/app-browser':
         specifier: workspace:*
         version: link:../app-browser
+      '@tinytinkerer/contracts':
+        specifier: workspace:*
+        version: link:../../shared/contracts
       dexie:
         specifier: 4.4.3
         version: 4.4.3
@@ -716,6 +719,9 @@ importers:
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../../shared/contracts
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/react':
         specifier: 19.2.15

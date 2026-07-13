@@ -55,10 +55,13 @@ Tool-enabled stages call a stable in-process controller handle. Input and result
 the controller boundary, but there is no serialized transport, secondary document, or duplicated
 runtime. Passive stages may instead observe shared chat events without contributing tools. Heavy
 stage code remains behind package-local lazy imports so the chat/bootstrap graph stays small.
-Pixel Agents deliberately embeds its separately built third-party browser
-distribution in an iframe and adapts its WebSocket protocol to a same-origin `postMessage` bridge;
-it does not create a second chat runtime or backend. Other third-party executable content that is
-not trusted still owns an explicit isolation boundary (for example Sandpack execution and the
+Pixel Agents deliberately embeds its separately built third-party browser distribution in a
+sandboxed (`allow-scripts`) iframe and adapts its WebSocket protocol to a `postMessage` bridge; it
+does not create a second chat runtime or backend. The sandbox gives the distribution an opaque
+origin, an explicit isolation boundary consistent with the rule that third-party executable content
+owns one — the bridge authenticates messages by window identity, not by origin, since an opaque
+origin can't be named or compared as a string. Other third-party executable content that is not
+trusted still owns an explicit isolation boundary (for example Sandpack execution and the
 code-execution sandbox); trusted first-party UI does not gain an iframe merely for package
 separation.
 

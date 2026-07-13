@@ -1,8 +1,13 @@
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
+import {
+  assertBundleConformance,
+  assertThirdPartyManifest
+} from './check-pixel-agents-conformance.mjs'
 import { injectPixelAgentsBridge, renderPixelAgentsBridge } from './pixel-agents-bridge.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
@@ -20,6 +25,66 @@ if (
 }
 
 const destination = join(workspaceRoot, 'apps', 'pixel-agents', 'generated', 'upstream')
+const stampPath = join(destination, 'TINYTINKERER_UPSTREAM.json')
+
+// The stamp also covers our own scripts (not just the upstream pin): a change
+// to the bridge shim, the asset builder, or the conformance gate itself must
+// re-run prepare even though the pinned commit didn't move.
+const CONFORMANCE_SCRIPT_PATH = join(workspaceRoot, 'scripts', 'check-pixel-agents-conformance.mjs')
+const STAMPED_SCRIPT_PATHS = [
+  join(workspaceRoot, 'scripts', 'prepare-pixel-agents.mjs'),
+  join(workspaceRoot, 'scripts', 'pixel-agents-bridge.mjs'),
+  join(workspaceRoot, 'scripts', 'build-pixel-agents-assets.mjs'),
+  CONFORMANCE_SCRIPT_PATH
+]
+
+const computeScriptsHash = async () => {
+  const hash = createHash('sha256')
+  for (const path of STAMPED_SCRIPT_PATHS) {
+    hash.update(await readFile(path))
+  }
+  return hash.digest('hex')
+}
+
+const expectedStamp = {
+  repository: lock.repository,
+  commit: lock.commit,
+  scriptsHash: await computeScriptsHash()
+}
+
+const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+
+// The stamp alone is not proof the staged output survived (a partial clean can
+// delete artifacts but keep the stamp), so the skip also requires the files
+// every consumer depends on.
+const stagedArtifactsPresent = async () => {
+  const required = ['index.html', 'tinytinkerer-bridge.js', 'tinytinkerer-bootstrap.json']
+  const checks = await Promise.all(
+    required.map((name) =>
+      readFile(join(destination, name)).then(
+        () => true,
+        () => false
+      )
+    )
+  )
+  return checks.every(Boolean)
+}
+
+if (process.env.TINYTINKERER_PIXEL_AGENTS_FORCE !== '1') {
+  const existingStamp = await readFile(stampPath, 'utf8')
+    .then((text) => JSON.parse(text))
+    .catch(() => null)
+
+  if (
+    existingStamp &&
+    deepEqual(existingStamp, expectedStamp) &&
+    (await stagedArtifactsPresent())
+  ) {
+    console.log(`Pixel Agents ${lock.commit} is up to date, skipping prepare`)
+    process.exit(0)
+  }
+}
+
 const checkout = await mkdtemp(join(tmpdir(), 'tinytinkerer-pixel-agents-'))
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
@@ -73,7 +138,6 @@ try {
   const index = await readFile(indexPath, 'utf8')
   await writeFile(indexPath, injectPixelAgentsBridge(index))
   await writeFile(join(destination, 'tinytinkerer-bridge.js'), renderPixelAgentsBridge())
-  await cp(join(checkout, 'LICENSE'), join(destination, 'PIXEL_AGENTS_LICENSE.txt'))
 
   const tsx = join(
     checkout,
@@ -92,10 +156,26 @@ try {
     { cwd: checkout }
   )
 
-  await writeFile(
-    join(destination, 'TINYTINKERER_UPSTREAM.json'),
-    JSON.stringify({ repository: lock.repository, commit: lock.commit }, null, 2) + '\n'
+  // Guards the hand-mirrored couplings to upstream internals (message protocol,
+  // WebSocket handler shape, hidden-button titles, e2e test hooks) before we
+  // ever consider this prepare successful — a silent drift here breaks the
+  // visualization at runtime instead of failing here, at build time.
+  const assetsDir = join(destination, 'assets')
+  const assetFiles = (await readdir(assetsDir)).filter((name) => name.endsWith('.js'))
+  let bundleSource = ''
+  for (const name of assetFiles) {
+    bundleSource += await readFile(join(assetsDir, name), 'utf8')
+  }
+  assertBundleConformance(bundleSource)
+
+  const thirdPartyManifest = JSON.parse(
+    await readFile(join(workspaceRoot, 'config', 'pixel-agents-third-party.json'), 'utf8')
   )
+  await assertThirdPartyManifest(checkout, thirdPartyManifest)
+
+  // Written LAST, only after every step above (including the conformance gate)
+  // succeeded: a failed run must never leave a valid "up to date" stamp behind.
+  await writeFile(stampPath, JSON.stringify(expectedStamp, null, 2) + '\n')
   console.log(`Prepared Pixel Agents ${lock.commit} in ${destination}`)
 } finally {
   await rm(checkout, { recursive: true, force: true })

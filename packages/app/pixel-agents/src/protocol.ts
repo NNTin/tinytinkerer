@@ -1,11 +1,14 @@
+import { z } from 'zod'
+
 export const PIXEL_AGENTS_BRIDGE_CHANNEL = 'tinytinkerer:pixel-agents:v1'
 export const PIXEL_AGENT_ID = 1
 
-export type PixelAgentMeta = {
-  palette?: number
-  hueShift?: number
-  seatId?: string
-}
+export const pixelAgentMetaSchema = z.object({
+  palette: z.number().optional(),
+  hueShift: z.number().optional(),
+  seatId: z.string().optional()
+})
+export type PixelAgentMeta = z.infer<typeof pixelAgentMetaSchema>
 
 export type PixelServerMessage =
   | { type: 'providerCapabilities'; readingTools: string[]; subagentToolNames: string[] }
@@ -45,102 +48,79 @@ export type PixelServerMessage =
   | { type: 'agentToolDone'; id: number; toolId: string }
   | { type: 'agentToolsClear'; id: number }
 
-export type PixelClientMessage =
-  | { type: 'webviewReady' }
-  | { type: 'saveLayout'; layout: Record<string, unknown> }
-  | {
-      type: 'saveAgentSeats'
-      seats: Record<string, { palette: number; hueShift: number; seatId: string | null }>
-    }
+// `saveAgentSeats` seats are keyed by the upstream's own agent id; unknown-shaped
+// entries reject the whole message rather than silently dropping just that seat.
+const seatRecordSchema = z.object({
+  palette: z.number(),
+  hueShift: z.number(),
+  seatId: z.string().nullable()
+})
 
-type PixelClientEnvelope = {
-  channel: typeof PIXEL_AGENTS_BRIDGE_CHANNEL
-  direction: 'client'
-  payload: string
-}
+const pixelClientMessageSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('webviewReady') }),
+  z.object({
+    type: z.literal('saveLayout'),
+    // Opaque passthrough: the upstream layout shape is not this bridge's concern.
+    layout: z.record(z.string(), z.unknown())
+  }),
+  z.object({
+    type: z.literal('saveAgentSeats'),
+    seats: z.record(z.string(), seatRecordSchema)
+  })
+])
+export type PixelClientMessage = z.infer<typeof pixelClientMessageSchema>
+
+const pixelClientEnvelopeSchema = z.object({
+  channel: z.literal(PIXEL_AGENTS_BRIDGE_CHANNEL),
+  direction: z.literal('client'),
+  payload: z.string()
+})
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 
 export const parsePixelClientEnvelope = (value: unknown): PixelClientMessage | null => {
-  if (!value || typeof value !== 'object') return null
-  const envelope = value as Partial<PixelClientEnvelope>
-  if (
-    envelope.channel !== PIXEL_AGENTS_BRIDGE_CHANNEL ||
-    envelope.direction !== 'client' ||
-    typeof envelope.payload !== 'string'
-  )
-    return null
+  const envelope = pixelClientEnvelopeSchema.safeParse(value)
+  if (!envelope.success) return null
+  let payload: unknown
   try {
-    const message: unknown = JSON.parse(envelope.payload)
-    if (!isRecord(message)) return null
-    if (message.type === 'webviewReady') return { type: 'webviewReady' }
-    if (message.type === 'saveLayout' && isRecord(message.layout)) {
-      return { type: 'saveLayout', layout: message.layout }
-    }
-    if (message.type === 'saveAgentSeats' && isRecord(message.seats)) {
-      const seats: Record<string, { palette: number; hueShift: number; seatId: string | null }> = {}
-      for (const [id, value] of Object.entries(message.seats)) {
-        if (
-          !isRecord(value) ||
-          typeof value.palette !== 'number' ||
-          typeof value.hueShift !== 'number' ||
-          (value.seatId !== null && typeof value.seatId !== 'string')
-        )
-          return null
-        seats[id] = {
-          palette: value.palette,
-          hueShift: value.hueShift,
-          seatId: value.seatId
-        }
-      }
-      return { type: 'saveAgentSeats', seats }
-    }
-    return null
+    payload = JSON.parse(envelope.data.payload)
   } catch {
     return null
   }
+  const message = pixelClientMessageSchema.safeParse(payload)
+  return message.success ? message.data : null
 }
 
-export type PixelAgentsBootstrap = {
-  integrationVersion: 1
-  upstream: { commit: string; version: string }
-  assets: {
-    characters: unknown[]
-    pets: unknown[]
-    petNames: string[]
-    floors: unknown[]
-    walls: unknown[]
-    furnitureCatalog: unknown[]
-    furnitureSprites: Record<string, unknown>
-  }
-  defaultLayout: Record<string, unknown> | null
-}
+const pixelAgentsBootstrapSchema = z.object({
+  integrationVersion: z.literal(1),
+  upstream: z.object({ commit: z.string(), version: z.string() }),
+  assets: z.object({
+    // Opaque passthrough asset arrays: these are pre-decoded upstream sprite/tile
+    // data this bridge never inspects, only forwards.
+    characters: z.array(z.unknown()),
+    pets: z.array(z.unknown()),
+    petNames: z.array(z.string()),
+    floors: z.array(z.unknown()),
+    walls: z.array(z.unknown()),
+    furnitureCatalog: z.array(z.unknown()),
+    furnitureSprites: z.record(z.string(), z.unknown())
+  }),
+  defaultLayout: z.record(z.string(), z.unknown()).nullable()
+})
+export type PixelAgentsBootstrap = z.infer<typeof pixelAgentsBootstrapSchema>
 
 export const parsePixelAgentsBootstrap = (value: unknown): PixelAgentsBootstrap => {
+  // Checked ahead of the full shape parse so a missing/wrong integration version
+  // gets its own distinct, more actionable error message.
   if (!isRecord(value) || value.integrationVersion !== 1) {
     throw new Error('Unsupported Pixel Agents bootstrap data')
   }
-  const upstream = value.upstream
-  const assets = value.assets
-  if (
-    !isRecord(upstream) ||
-    typeof upstream.commit !== 'string' ||
-    typeof upstream.version !== 'string' ||
-    !isRecord(assets) ||
-    !Array.isArray(assets.characters) ||
-    !Array.isArray(assets.pets) ||
-    !Array.isArray(assets.petNames) ||
-    !assets.petNames.every((name) => typeof name === 'string') ||
-    !Array.isArray(assets.floors) ||
-    !Array.isArray(assets.walls) ||
-    !Array.isArray(assets.furnitureCatalog) ||
-    !isRecord(assets.furnitureSprites) ||
-    (value.defaultLayout !== null && !isRecord(value.defaultLayout))
-  ) {
+  const result = pixelAgentsBootstrapSchema.safeParse(value)
+  if (!result.success) {
     throw new Error('Invalid Pixel Agents bootstrap data')
   }
-  return value as PixelAgentsBootstrap
+  return result.data
 }
 
 export const createPixelBootstrapMessages = (

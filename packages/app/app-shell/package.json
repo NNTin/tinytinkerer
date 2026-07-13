@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@tinytinkerer/app-browser": "workspace:*",
+    "@tinytinkerer/contracts": "workspace:*",
     "dexie": "4.4.3"
   },
   "peerDependencies": {

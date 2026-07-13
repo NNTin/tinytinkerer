@@ -8,8 +8,9 @@ Update it when the stage/controller/dock contract changes.
 Canvas, IDE, Mermaid, and Pixel Agents are application workspaces embedded in the TinyTinkerer
 product. Their stage shell and assistant render in the same React document. Pixel Agents is the
 one visualization-specific exception inside a stage: its pinned, CI-built browser distribution
-runs in an iframe and receives activity through a narrow same-origin bridge; chat still has one
-TinyTinkerer runtime and no backend transport.
+runs in a sandboxed iframe (an opaque-origin isolation boundary) and receives activity through a
+narrow bridge that authenticates by window identity; chat still has one TinyTinkerer runtime and no
+backend transport.
 
 ## Ownership
 
@@ -90,18 +91,57 @@ appearance in `tinytinkerer-pixel-agents`.
 ## Pixel Agents distribution bridge
 
 TinyTinkerer does not vendor or submodule Pixel Agents source. `config/pixel-agents-upstream.json`
-pins the canonical repository to a reviewed full commit SHA. The Pixel Agents shell build checks
-out exactly that commit in a temporary directory, installs only its browser workspace with
-lifecycle scripts disabled, builds the browser distribution, generates pre-decoded asset JSON,
-and stages the result as ignored build input. The composed output includes the upstream MIT
-license and an attribution link.
+pins an NNTin-controlled mirror of the canonical repository (not the canonical repository itself)
+to a reviewed full commit SHA, so the pinned SHA can never become unreachable out from under the
+build. The Pixel Agents shell build checks out exactly that commit in a temporary directory,
+installs only its browser workspace with lifecycle scripts disabled, builds the browser
+distribution, and generates pre-decoded asset JSON.
+
+`prepare-pixel-agents.mjs` is idempotent: it stamps the prepared output with the pinned repository,
+commit, and a hash of its own scripts, and skips the clone-and-build entirely when the destination
+already matches that stamp — `pnpm dev` does not pay the ~16 s network/build cost on every start.
+Set `TINYTINKERER_PIXEL_AGENTS_FORCE=1` to force a full re-prepare. The stamp is written last, only
+after the build and the conformance gate below succeed, so a failed run never leaves a valid stamp.
+
+Before the stamp is written, `scripts/check-pixel-agents-conformance.mjs` re-verifies the hand-mirrored
+assumptions this integration hard-codes about upstream internals: the message protocol strings
+`packages/app/pixel-agents/src/protocol.ts` mirrors, the on-handler-only WebSocket shape
+`scripts/pixel-agents-bridge.mjs` shims, the button titles its injected CSS hides by, and the test
+hooks `packages/e2e/tests/pixel-agents.e2e.ts` drives. If upstream drifts at the pinned commit, this
+gate fails the _build_ loudly instead of letting the visualization break silently at runtime. The
+upstream project and its bundled production dependencies (currently react, react-dom, and
+scheduler) are listed in the generated `THIRD_PARTY_NOTICES` and the Settings dialog's Credits
+entry, sourced from the committed `config/pixel-agents-third-party.json` supplement (see
+`scripts/lib/dependency-licenses.mjs`) because pnpm's own lockfile cannot see a separately compiled
+bundle.
+
+### Bumping the pin
+
+1. Sync the NNTin mirror from the canonical repository.
+2. Update `config/pixel-agents-upstream.json` with the new commit SHA.
+3. Run `pnpm prepare:pixel-agents` — the conformance gate fails loudly on any drift.
+4. If the webview's production dependency closure changed, update
+   `config/pixel-agents-third-party.json` after reviewing each new/changed package's license.
+5. Review the upstream diff between the old and new pinned commits.
 
 The injected browser bridge replaces the upstream standalone WebSocket transport before its
-module entry executes. It accepts only same-origin, same-window messages on a versioned channel.
-The host creates one stable agent, maps live TinyTinkerer run/step/tool events to Pixel Agents
-status messages, and deliberately seeds the seen-event set so persisted chat history is never
-replayed as fresh activity. Office layout and agent-seat messages flow back to IndexedDB. Terminal,
-session, and filesystem controls are hidden; zoom and layout editing remain available.
+module entry executes. The iframe is sandboxed (`allow-scripts`, no `allow-same-origin`), so it
+runs at an opaque origin: it cannot reach TinyTinkerer's own origin (conversation IndexedDB, auth,
+parent DOM), and neither side can check the other's origin string, since the sandboxed side's
+`location.origin` is the literal `"null"` and the parent's real origin isn't statically knowable
+inside the frame. The bridge instead validates the parent by window identity
+(`event.source === window.parent`) on a versioned channel. Outbound client messages are pinned to
+the embedding TinyTinkerer origin via a `tinytinkerer-parent-origin` query parameter the parent
+appends when it navigates the frame; if that parameter is absent the bridge drops the message
+rather than guess a target. The upstream distribution's own assets (module entry, fonts) are then
+cross-origin (`Origin: null`) requests from the frame's perspective — GitHub Pages answers with
+`access-control-allow-origin: *` in production, and dev/preview set the same header explicitly,
+since these are public static assets and ACAO `*` is never credentialed. The host creates one
+stable agent and maps live TinyTinkerer run/step/tool events to Pixel Agents status messages via
+`@tinytinkerer/app-shell`'s shared `useLiveChatActivity` hook, which deliberately seeds the
+seen-event set so persisted chat history is never replayed as fresh activity. Office layout and
+agent-seat messages flow back to IndexedDB. Terminal, session, and
+filesystem controls are hidden; zoom and layout editing remain available.
 
 ## Loading and bundle boundaries
 

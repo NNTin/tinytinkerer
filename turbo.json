@@ -1,11 +1,5 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": [
-    "config/pixel-agents-upstream.json",
-    "scripts/build-pixel-agents-assets.mjs",
-    "scripts/pixel-agents-bridge.mjs",
-    "scripts/prepare-pixel-agents.mjs"
-  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -19,6 +13,29 @@
         "VITE_SENTRY_DSN",
         "VITE_SENTRY_ENVIRONMENT",
         "SENTRY_AUTH_TOKEN"
+      ]
+    },
+    "@tinytinkerer/pixel-agents-shell#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "env": [
+        "TINYTINKERER_SKIP_BRAND_ASSET_GENERATION",
+        "TINYTINKERER_DEPLOY_BASE",
+        "TINYTINKERER_TEST_REPORT_DIR",
+        "GIT_SHA",
+        "VITE_EDGE_URL",
+        "VITE_SENTRY_DSN",
+        "VITE_SENTRY_ENVIRONMENT",
+        "SENTRY_AUTH_TOKEN"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/config/pixel-agents-upstream.json",
+        "$TURBO_ROOT$/config/pixel-agents-third-party.json",
+        "$TURBO_ROOT$/scripts/prepare-pixel-agents.mjs",
+        "$TURBO_ROOT$/scripts/pixel-agents-bridge.mjs",
+        "$TURBO_ROOT$/scripts/build-pixel-agents-assets.mjs",
+        "$TURBO_ROOT$/scripts/check-pixel-agents-conformance.mjs"
       ]
     },
     "@tinytinkerer/host#build": {

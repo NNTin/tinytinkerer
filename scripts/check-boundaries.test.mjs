@@ -237,15 +237,30 @@ test('edge-service apps may import only contracts, sentry-telemetry, and edge-lo
   )
 })
 
-test('app-shell may import only app-browser and local modules', async (t) => {
+test('app-shell may import only app-browser, contracts, and local modules', async (t) => {
   const result = await withFixture(t, {
-    'packages/contracts/package.json': pkg('@tinytinkerer/contracts'),
+    'packages/app-core/package.json': pkg('@tinytinkerer/app-core'),
     'packages/app-shell/package.json': pkg('@tinytinkerer/app-shell'),
-    'packages/app-shell/src/index.ts': "import { x } from '@tinytinkerer/contracts'\n"
+    'packages/app-shell/src/index.ts': "import { x } from '@tinytinkerer/app-core'\n"
   })
 
   assert.equal(result.code, 1)
-  assert.match(result.stderr, /app-shell may import only app-browser and app-shell-local modules/)
+  assert.match(
+    result.stderr,
+    /app-shell may import only app-browser, contracts, and app-shell-local modules/
+  )
+})
+
+test('app-shell importing contracts passes', async (t) => {
+  const result = await withFixture(t, {
+    'packages/contracts/package.json': pkg('@tinytinkerer/contracts'),
+    'packages/app-shell/package.json': pkg('@tinytinkerer/app-shell'),
+    'packages/app-shell/src/index.ts':
+      "import type { ChatEvent } from '@tinytinkerer/contracts'\n\nexport type { ChatEvent }\n"
+  })
+
+  assert.equal(result.code, 0)
+  assert.equal(result.stdout.trim(), 'Boundary checks passed.')
 })
 
 test('app-shell importing app-browser passes', async (t) => {

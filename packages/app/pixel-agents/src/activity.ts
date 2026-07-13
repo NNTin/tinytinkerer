@@ -75,16 +75,3 @@ export const messagesForChatEvent = (event: ChatEvent): PixelServerMessage[] => 
       return []
   }
 }
-
-export const messagesForUnseenChatEvents = (
-  events: readonly ChatEvent[],
-  seen: Set<string>
-): PixelServerMessage[] => {
-  const messages: PixelServerMessage[] = []
-  for (const event of events) {
-    if (seen.has(event.id)) continue
-    seen.add(event.id)
-    messages.push(...messagesForChatEvent(event))
-  }
-  return messages
-}

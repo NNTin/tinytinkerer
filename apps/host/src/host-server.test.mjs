@@ -276,6 +276,9 @@ describe('host server', () => {
     expect(body).toContain('<title>tinytinkerer pixel agents</title>')
     expect(body).toContain('src="/pixel-agents/@vite/client"')
     expect(body).toContain('src="/pixel-agents/src/main.tsx"')
+    // The sandboxed office iframe fetches its module entry and fonts with
+    // `Origin: null`; the mount's dev server must answer with ACAO '*'.
+    expect(response.headers.get('access-control-allow-origin')).toBe('*')
   })
 
   it('serves the mobile manifest through the unified host', async () => {
