@@ -11,7 +11,8 @@ const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 // WHY THIS EXISTS: the Playwright webServer serves a STATIC prebuilt apps/host/dist
 // via `vite preview` (see playwright.config.ts); the suite itself never builds it.
 // That dist is a COMPOSITION — apps/host/src/build-pages.mjs copies apps/shell/dist
-// into /web/, /widget/, /mobile/ and apps/canvas/dist into /canvas/. Two traps make
+// into /web/, /widget/, and /mobile/, then copies each integrated stage (including
+// Canvas and Pixel Agents) under its own route. Two traps make
 // a stale dist easy to serve, and both produce specs that fail against OUTDATED
 // bundles with confusing errors unrelated to the change under test (e.g. a /web/
 // spec that never sees code added since the shell was last built):
@@ -19,10 +20,10 @@ const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 //      old dist.
 //   2. Running `pnpm --filter @tinytinkerer/host build`, which runs ONLY host's own
 //      `vite build && build-pages.mjs`: it RE-COPIES whatever apps/shell/dist and
-//      apps/canvas/dist already exist WITHOUT rebuilding them. It looks like a full
+//      integrated-stage dist directories already exist WITHOUT rebuilding them. It looks like a full
 //      build (and finishes in ~1s) but composes stale endpoint bundles.
 // The correct build is `turbo run build --filter=@tinytinkerer/host`, whose task
-// graph rebuilds shell + canvas + root FIRST, then composes. Doing it here means a
+// graph rebuilds the shell + integrated stages + root FIRST, then composes. Doing it here means a
 // plain `pnpm --filter @tinytinkerer/e2e e2e` can never serve a stale dist. Turbo's
 // cache makes it a fast no-op when nothing changed.
 //

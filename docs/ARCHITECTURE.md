@@ -7,8 +7,9 @@ Do NOT delete above lines.
 # Architecture
 
 This document describes the current TinyTinkerer architecture. Browser presentations and
-application workspaces share one host origin and one browser assembly layer. IDE, Mermaid, and
-Canvas are trusted, integrated stages: their UI and assistant render in the same React document.
+application workspaces share one host origin and one browser assembly layer. IDE, Mermaid, Canvas,
+and Pixel Agents are integrated stages: their shell UI and assistant render in the same React
+document.
 
 See also:
 
@@ -30,10 +31,13 @@ The host composes production builds under one origin:
 - `/canvas/` renders Excalidraw and the assistant as two dockable, in-process panels.
 - `/ide/` renders the browser IDE and assistant through the same dock workspace contract.
 - `/mermaid/` renders editor, sanitized preview, and assistant as three dockable panels.
+- `/pixel-agents/` renders a pinned Pixel Agents office visualization and the assistant as two
+  dockable panels.
 
 Only mobile registers the `/mobile/`-scoped PWA service worker. Same-origin chat presentations
 share authentication and conversation IndexedDB data. Application stages use app-owned workspace
-namespaces (`tinytinkerer-canvas`, `tinytinkerer-ide`, and `tinytinkerer-mermaid`).
+namespaces (`tinytinkerer-canvas`, `tinytinkerer-ide`, `tinytinkerer-mermaid`, and
+`tinytinkerer-pixel-agents`).
 
 `/health`, `/api/*`, and `/auth/github/exchange` are shared edge-facing routes and are proxied by
 the development host.
@@ -43,17 +47,20 @@ the development host.
 Each integrated application has three deliberately small layers:
 
 1. `apps/<app>` owns routing, app-specific loading copy, and top-level composition.
-2. `packages/app/<app>` owns the trusted stage, its domain schemas/controllers, tools, and
-   persistence.
+2. `packages/app/<app>` owns the trusted stage, its domain integration, and persistence.
 3. `@tinytinkerer/app-shell` supplies generic controller indirection, schema-to-tool adaptation,
    IndexedDB workspace storage, assistant actions, and two/three-panel docking.
 
-Tools call a stable in-process controller handle. Input and result Zod schemas remain enforced at
+Tool-enabled stages call a stable in-process controller handle. Input and result Zod schemas remain enforced at
 the controller boundary, but there is no serialized transport, secondary document, or duplicated
-runtime. Heavy stage code remains behind package-local lazy imports so the chat/bootstrap graph
-stays small. Third-party executable content that is not trusted still owns an explicit isolation
-boundary (for example Sandpack execution and the code-execution sandbox); trusted first-party UI
-does not gain an iframe merely for package separation.
+runtime. Passive stages may instead observe shared chat events without contributing tools. Heavy
+stage code remains behind package-local lazy imports so the chat/bootstrap graph stays small.
+Pixel Agents deliberately embeds its separately built third-party browser
+distribution in an iframe and adapts its WebSocket protocol to a same-origin `postMessage` bridge;
+it does not create a second chat runtime or backend. Other third-party executable content that is
+not trusted still owns an explicit isolation boundary (for example Sandpack execution and the
+code-execution sandbox); trusted first-party UI does not gain an iframe merely for package
+separation.
 
 See [app-shell.md](./app-shell.md) for the application-stage contract.
 
@@ -67,6 +74,7 @@ flowchart LR
     canvasShell["@tinytinkerer/canvas-shell"]
     ideShell["@tinytinkerer/ide-shell"]
     mermaidShell["@tinytinkerer/mermaid-shell"]
+    pixelAgentsShell["@tinytinkerer/pixel-agents-shell"]
     edge["@tinytinkerer/edge"]
   end
 
@@ -79,6 +87,7 @@ flowchart LR
     canvas["@tinytinkerer/canvas<br/>Excalidraw stage"]
     ide["@tinytinkerer/ide<br/>browser IDE stage"]
     mermaid["@tinytinkerer/mermaid<br/>diagram stage"]
+    pixelAgents["@tinytinkerer/pixel-agents<br/>activity visualization stage"]
   end
 
   contracts["@tinytinkerer/contracts"]
@@ -91,6 +100,7 @@ flowchart LR
   host --> canvasShell
   host --> ideShell
   host --> mermaidShell
+  host --> pixelAgentsShell
   shell --> appbrowser
   canvasShell --> appbrowser
   canvasShell --> appshell
@@ -101,9 +111,13 @@ flowchart LR
   mermaidShell --> appbrowser
   mermaidShell --> appshell
   mermaidShell --> mermaid
+  pixelAgentsShell --> appbrowser
+  pixelAgentsShell --> appshell
+  pixelAgentsShell --> pixelAgents
   canvas --> appshell
   ide --> appshell
   mermaid --> appshell
+  pixelAgents --> appshell
   appbrowser --> appcore
   appbrowser --> content
   appbrowser -. "dynamic discovery" .-> plugins
@@ -191,24 +205,25 @@ These conventions are gated in CI, not left to reviewers:
 
 ## Layers
 
-| Layer                                      | Purpose                           | Owns                                                                                                  | Must not own                                           |
-| ------------------------------------------ | --------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `apps/host`                                | frontend composition              | development routing, production bundle composition, root app                                          | feature runtimes                                       |
-| `apps/shell`                               | web/widget/mobile browser shell   | route-selected presentation and shell-only UX                                                         | shared product behavior                                |
-| `apps/canvas`, `apps/ide`, `apps/mermaid`  | integrated shell assemblies       | routes, loading copy, stage + assistant composition                                                   | stage domain logic, duplicate runtime wiring           |
-| `apps/edge`                                | stateless backend boundary        | HTTP routes and upstream transport                                                                    | browser state or UI                                    |
-| `packages/app-browser`                     | shared browser assembly           | browser runtime, chat surfaces, auth, settings, shared routing/loading helpers                        | app-owned domain behavior                              |
-| `packages/app-shell`                       | integrated-stage infrastructure   | stable controller handles, tool adaptation, workspace store, assistant actions, 2/3-panel dock layout | concrete stage logic or third-party stage dependencies |
-| `packages/app/canvas`                      | Canvas stage                      | Excalidraw UI/API, schemas, controllers/tools, library relay, `tinytinkerer-canvas` persistence       | shell routing or chat runtime                          |
-| `packages/app/ide`, `packages/app/mermaid` | trusted application stages        | stage UI, schemas/controllers/tools, app-owned IndexedDB data                                         | deploy routing or duplicated assistant runtime         |
-| `packages/app-core`                        | headless product logic            | state, orchestration, projections, ports                                                              | React or browser APIs                                  |
-| `packages/agent-core`                      | runtime abstractions              | agent runtime, tool registry, plugin hooks                                                            | product-specific UI                                    |
-| `packages/contracts`                       | foundational contracts            | canonical shared schemas and inferred types                                                           | browser implementation                                 |
-| `packages/content-*`                       | assistant content platform        | parsing, content AST behavior, React rendering plugins                                                | app composition                                        |
-| `packages/plugins/*`                       | dynamically discovered extensions | plugin manifests and product-agnostic capabilities                                                    | browser/runtime imports                                |
-| `packages/brand-assets`                    | shared brand metadata             | icons, manifest and theme definitions                                                                 | DOM mutation                                           |
-| `packages/sentry-telemetry`                | SDK-agnostic telemetry            | scrubbers, fetch capture, sink indirection                                                            | runtime SDK initialization                             |
-| `packages/ui`                              | presentation primitives           | small visual atoms                                                                                    | orchestration or persistence                           |
+| Layer                                                          | Purpose                           | Owns                                                                                                  | Must not own                                           |
+| -------------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `apps/host`                                                    | frontend composition              | development routing, production bundle composition, root app                                          | feature runtimes                                       |
+| `apps/shell`                                                   | web/widget/mobile browser shell   | route-selected presentation and shell-only UX                                                         | shared product behavior                                |
+| `apps/canvas`, `apps/ide`, `apps/mermaid`, `apps/pixel-agents` | integrated shell assemblies       | routes, loading copy, stage + assistant composition                                                   | stage domain logic, duplicate runtime wiring           |
+| `apps/edge`                                                    | stateless backend boundary        | HTTP routes and upstream transport                                                                    | browser state or UI                                    |
+| `packages/app-browser`                                         | shared browser assembly           | browser runtime, chat surfaces, auth, settings, shared routing/loading helpers                        | app-owned domain behavior                              |
+| `packages/app-shell`                                           | integrated-stage infrastructure   | stable controller handles, tool adaptation, workspace store, assistant actions, 2/3-panel dock layout | concrete stage logic or third-party stage dependencies |
+| `packages/app/canvas`                                          | Canvas stage                      | Excalidraw UI/API, schemas, controllers/tools, library relay, `tinytinkerer-canvas` persistence       | shell routing or chat runtime                          |
+| `packages/app/ide`, `packages/app/mermaid`                     | trusted application stages        | stage UI, schemas/controllers/tools, app-owned IndexedDB data                                         | deploy routing or duplicated assistant runtime         |
+| `packages/app/pixel-agents`                                    | agent activity visualization      | pinned iframe bridge, event projection, office/agent IndexedDB data                                   | chat execution or backend services                     |
+| `packages/app-core`                                            | headless product logic            | state, orchestration, projections, ports                                                              | React or browser APIs                                  |
+| `packages/agent-core`                                          | runtime abstractions              | agent runtime, tool registry, plugin hooks                                                            | product-specific UI                                    |
+| `packages/contracts`                                           | foundational contracts            | canonical shared schemas and inferred types                                                           | browser implementation                                 |
+| `packages/content-*`                                           | assistant content platform        | parsing, content AST behavior, React rendering plugins                                                | app composition                                        |
+| `packages/plugins/*`                                           | dynamically discovered extensions | plugin manifests and product-agnostic capabilities                                                    | browser/runtime imports                                |
+| `packages/brand-assets`                                        | shared brand metadata             | icons, manifest and theme definitions                                                                 | DOM mutation                                           |
+| `packages/sentry-telemetry`                                    | SDK-agnostic telemetry            | scrubbers, fetch capture, sink indirection                                                            | runtime SDK initialization                             |
+| `packages/ui`                                                  | presentation primitives           | small visual atoms                                                                                    | orchestration or persistence                           |
 
 ## Dependency Rules
 
@@ -320,7 +335,7 @@ This means TinyTinkerer has two different kinds of sharing:
 
 `apps/host` is the local dev environment, the composed deployment surface for the frontends, and the root `/` React app itself.
 
-Its host-owned app inventory in `apps/host/src/app-definitions.mjs` is shared by dev serving, redirects, production composition, and host tests. Each `HOSTED_APP_SPECS` entry carries a `source` (the `apps/<source>` build that provides it): `web`, `widget`, and `mobile` all source the single `apps/shell` build; `canvas`, `ide`, and `mermaid` use their own builds; and a `{ slug: 'host', mountPath: '/', source: 'host' }` entry sorted **last** (its `/` matches every path, so the `/<slug>/` mounts are matched first). In dev each mount runs its own Vite server rooted at its `source` with `base` pinned to the mount path (so the shell's relative-base build resolves under `/web/`, `/widget/`, `/mobile/`). `build-pages.mjs` seeds `apps/host/dist` from the root app's `dist-root` build, then copies each mount's `source` `dist` into `dist/<slug>/` — the one `apps/shell/dist` lands at `dist/web`, `dist/widget`, and `dist/mobile`. Turbo's static build edges remain explicit (`@tinytinkerer/host#build` depends on `shell`, `canvas-shell`, `ide-shell`, and `mermaid-shell`).
+Its host-owned app inventory in `apps/host/src/app-definitions.mjs` is shared by dev serving, redirects, production composition, and host tests. Each `HOSTED_APP_SPECS` entry carries a `source` (the `apps/<source>` build that provides it): `web`, `widget`, and `mobile` all source the single `apps/shell` build; `canvas`, `ide`, `mermaid`, and `pixel-agents` use their own builds; and a `{ slug: 'host', mountPath: '/', source: 'host' }` entry sorted **last** (its `/` matches every path, so the `/<slug>/` mounts are matched first). In dev each mount runs its own Vite server rooted at its `source` with `base` pinned to the mount path (so the shell's relative-base build resolves under `/web/`, `/widget/`, `/mobile/`). `build-pages.mjs` seeds `apps/host/dist` from the root app's `dist-root` build, then copies each mount's `source` `dist` into `dist/<slug>/` — the one `apps/shell/dist` lands at `dist/web`, `dist/widget`, and `dist/mobile`. Turbo's static build edges remain explicit (`@tinytinkerer/host#build` also depends on `pixel-agents-shell`).
 
 It is allowed to own:
 

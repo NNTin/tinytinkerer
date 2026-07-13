@@ -45,11 +45,11 @@ jobs:
             turbo-${{ github.workflow }}-e2e-shells-
 
       # Build the composed host (generates brand/privacy/notices first). host#build
-      # builds the single shell + canvas + the root app and composes them into
-      # apps/host/dist (the deploy surface with /web/, /widget/, /mobile/, /canvas/).
+      # builds the single shell + integrated stages + the root app and composes them into
+      # apps/host/dist (including /web/, /widget/, /mobile/, and /pixel-agents/).
       # The e2e suite serves that composed dist so the three browser endpoints share one
-      # origin exactly as deployed, including the integrated canvas app.
-      - name: Build composed host (shell + canvas + root)
+      # origin exactly as deployed, including the integrated applications.
+      - name: Build composed host
         run: |
           pnpm generate:brand-assets
           pnpm generate:privacy-policy

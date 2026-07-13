@@ -206,6 +206,9 @@ describe('host server', () => {
     const widgetResponse = await fetch(`${sharedHostServer.url}/widget`, { redirect: 'manual' })
     const mobileResponse = await fetch(`${sharedHostServer.url}/mobile`, { redirect: 'manual' })
     const canvasResponse = await fetch(`${sharedHostServer.url}/canvas`, { redirect: 'manual' })
+    const pixelAgentsResponse = await fetch(`${sharedHostServer.url}/pixel-agents`, {
+      redirect: 'manual'
+    })
 
     expect(webResponse.status).toBe(301)
     expect(webResponse.headers.get('location')).toBe('/web/')
@@ -215,6 +218,8 @@ describe('host server', () => {
     expect(mobileResponse.headers.get('location')).toBe('/mobile/')
     expect(canvasResponse.status).toBe(301)
     expect(canvasResponse.headers.get('location')).toBe('/canvas/')
+    expect(pixelAgentsResponse.status).toBe(301)
+    expect(pixelAgentsResponse.headers.get('location')).toBe('/pixel-agents/')
   })
 
   it('serves the shell from /web/ with the web base path intact', async () => {
@@ -257,6 +262,20 @@ describe('host server', () => {
     expect(canvasBody).toContain('<title>tinytinkerer canvas</title>')
     expect(canvasBody).toContain('src="/canvas/@vite/client"')
     expect(canvasBody).toContain('src="/canvas/src/main.tsx"')
+  })
+
+  it('serves the integrated Pixel Agents application inside its mount', async () => {
+    if (!sharedHostServer) {
+      throw new Error('Expected the shared host server to be available.')
+    }
+
+    const response = await fetch(`${sharedHostServer.url}/pixel-agents/`)
+    const body = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('<title>tinytinkerer pixel agents</title>')
+    expect(body).toContain('src="/pixel-agents/@vite/client"')
+    expect(body).toContain('src="/pixel-agents/src/main.tsx"')
   })
 
   it('serves the mobile manifest through the unified host', async () => {

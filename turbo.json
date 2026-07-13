@@ -1,5 +1,11 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    "config/pixel-agents-upstream.json",
+    "scripts/build-pixel-agents-assets.mjs",
+    "scripts/pixel-agents-bridge.mjs",
+    "scripts/prepare-pixel-agents.mjs"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -20,7 +26,8 @@
         "@tinytinkerer/shell#build",
         "@tinytinkerer/canvas-shell#build",
         "@tinytinkerer/ide-shell#build",
-        "@tinytinkerer/mermaid-shell#build"
+        "@tinytinkerer/mermaid-shell#build",
+        "@tinytinkerer/pixel-agents-shell#build"
       ],
       "outputs": ["dist/**", "dist-root/**"],
       "env": [

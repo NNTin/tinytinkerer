@@ -27,6 +27,11 @@ export const TINYTINKERER_CREDITS: readonly BrandCredit[] = [
     href: 'https://mermaid.js.org/'
   },
   {
+    name: 'Pixel Agents',
+    thanks: 'Thanks for bringing agent activity to life as a pixel office.',
+    href: 'https://github.com/pixel-agents-hq/pixel-agents/'
+  },
+  {
     name: 'React',
     thanks: 'Thanks for providing the foundation of the application.',
     href: 'https://react.dev/'

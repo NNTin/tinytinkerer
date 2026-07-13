@@ -7,10 +7,10 @@ worker**, end to end in a real browser.
 
 The suite mocks **only LiteLLM** (the upstream model provider). Everything else is
 real: the production build of the single browser shell (`@tinytinkerer/shell`, served
-from the composed `apps/host/dist` at `/web/`, `/widget/`, `/mobile/`) plus
-`@tinytinkerer/canvas`, all served from that composed origin, and the actual edge Hono worker — driven in-process via
-`app.fetch`, so its routing, validation, CORS, anonymous-tier key provisioning, and the
-chat proxy are all covered.
+from the composed `apps/host/dist` at `/web/`, `/widget/`, `/mobile/`) plus the integrated
+stages (including Canvas and Pixel Agents), all served from that composed origin, and the actual
+edge Hono worker — driven in-process via `app.fetch`, so its routing, validation, CORS,
+anonymous-tier key provisioning, and the chat proxy are all covered.
 
 Runs are **anonymous** (no GitHub auth) and **rate limiting is disabled** — neither
 auth nor rate limiting is under test. Because only LiteLLM is mocked, the suite needs
@@ -29,8 +29,8 @@ no secrets and makes no real network calls.
   guarantees are engine-sensitive (Blink / Gecko / WebKit) and cross-engine coverage
   is the point of issue #245. Every other spec stays Chromium-only — out of scope for
   #245. One `vite preview --strictPort` server serves the composed `apps/host/dist`,
-  including `/web/`, `/widget/`, `/mobile/`, `/canvas/`, `/ide/`, `/mermaid/`, and the
-  root app.
+  including `/web/`, `/widget/`, `/mobile/`, `/canvas/`, `/ide/`, `/mermaid/`,
+  `/pixel-agents/`, and the root app.
 - `fixtures/mock-litellm.ts` — pipes `/api/*` through the real edge worker and mocks
   the LiteLLM upstream it calls; plus the shared UI helpers.
 - `fixtures/first-load.ts` — shared first-load dialog dismissal + shell-port env

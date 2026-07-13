@@ -155,7 +155,7 @@ export default defineConfig({
     }
   ],
   // Serve the composed production surface from one origin. The host dist includes
-  // /web/, /widget/, /mobile/, /canvas/, /ide/, and /mermaid/.
+  // /web/, /widget/, /mobile/, /canvas/, /ide/, /mermaid/, and /pixel-agents/.
   webServer: {
     command: `pnpm --filter @tinytinkerer/host exec vite preview --outDir dist --port ${webPort} --strictPort`,
     url: baseURL,

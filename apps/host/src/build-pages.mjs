@@ -30,8 +30,8 @@ for (const { slug, source } of HOSTED_APP_SPECS) {
   }
   const target = join(hostDistDir, slug)
   await mkdir(target, { recursive: true })
-  // The web/widget/mobile mounts all copy from the single apps/shell build; canvas
-  // copies from its own build. `source` maps the mount slug to its build package.
+  // The web/widget/mobile mounts all copy from the single apps/shell build; integrated
+  // apps copy their own builds. `source` maps the mount slug to its build package.
   await cp(join(workspaceRoot, 'apps', source, 'dist'), target, { recursive: true })
 }
 

@@ -5,18 +5,20 @@ Update it when the stage/controller/dock contract changes.
 
 # Integrated Application Shells
 
-Canvas, IDE, and Mermaid are application workspaces embedded in the TinyTinkerer product. They
-render as trusted React stages in the same document as their assistant. There is no application
-iframe transport or second runtime.
+Canvas, IDE, Mermaid, and Pixel Agents are application workspaces embedded in the TinyTinkerer
+product. Their stage shell and assistant render in the same React document. Pixel Agents is the
+one visualization-specific exception inside a stage: its pinned, CI-built browser distribution
+runs in an iframe and receives activity through a narrow same-origin bridge; chat still has one
+TinyTinkerer runtime and no backend transport.
 
 ## Ownership
 
-| Boundary                    | Responsibility                                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `apps/<app>`                | Hash routes, app-local loading copy, browser boot, and composing stage + assistant                     |
-| `packages/app/<app>`        | Stage UI, app domain, Zod contracts, controller methods, model-facing tools, and app-owned persistence |
-| `@tinytinkerer/app-shell`   | Generic controller handle, tool adapter, workspace store, assistant action hook, and dock layout       |
-| `@tinytinkerer/app-browser` | Shared browser runtime, chat surfaces, OAuth callback route, and common loading/router factories       |
+| Boundary                    | Responsibility                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------ |
+| `apps/<app>`                | Hash routes, app-local loading copy, browser boot, and composing stage + assistant               |
+| `packages/app/<app>`        | Stage UI, app domain integration, optional model-facing tools, and app-owned persistence         |
+| `@tinytinkerer/app-shell`   | Generic controller handle, tool adapter, workspace store, assistant action hook, and dock layout |
+| `@tinytinkerer/app-browser` | Shared browser runtime, chat surfaces, OAuth callback route, and common loading/router factories |
 
 This direction is intentional: generic infrastructure never imports a concrete stage. An
 `integrated-shell` app declares its one stage package in `package.json`, and the boundary checker
@@ -56,6 +58,7 @@ registry is required.
 - Canvas: Canvas + Assistant.
 - IDE: Editor + Preview + Assistant.
 - Mermaid: Editor + Preview + Assistant.
+- Pixel Agents: animated office + Assistant.
 
 It owns named presets, persisted sizes/assignments, accessible pointer and keyboard separators,
 panel swapping, a custom-state marker, reset, and a narrow stacked layout. Consumers supply panel
@@ -80,7 +83,25 @@ the IndexedDB write succeeds; if IndexedDB is unavailable it remains available f
 Invalid legacy data is discarded. Subsequent changes are debounced and written directly to the
 workspace store.
 
-IDE and Mermaid use the same store abstraction with app-owned schemas and namespaces.
+IDE, Mermaid, and Pixel Agents use the same store abstraction with app-owned schemas and
+namespaces. Pixel Agents stores its office layout and the persistent assistant agent's seat and
+appearance in `tinytinkerer-pixel-agents`.
+
+## Pixel Agents distribution bridge
+
+TinyTinkerer does not vendor or submodule Pixel Agents source. `config/pixel-agents-upstream.json`
+pins the canonical repository to a reviewed full commit SHA. The Pixel Agents shell build checks
+out exactly that commit in a temporary directory, installs only its browser workspace with
+lifecycle scripts disabled, builds the browser distribution, generates pre-decoded asset JSON,
+and stages the result as ignored build input. The composed output includes the upstream MIT
+license and an attribution link.
+
+The injected browser bridge replaces the upstream standalone WebSocket transport before its
+module entry executes. It accepts only same-origin, same-window messages on a versioned channel.
+The host creates one stable agent, maps live TinyTinkerer run/step/tool events to Pixel Agents
+status messages, and deliberately seeds the seen-event set so persisted chat history is never
+replayed as fresh activity. Office layout and agent-seat messages flow back to IndexedDB. Terminal,
+session, and filesystem controls are hidden; zoom and layout editing remain available.
 
 ## Loading and bundle boundaries
 
@@ -98,10 +119,10 @@ and calls the in-process Excalidraw API. The callback does not load React or Exc
 
 ## Adding an integrated app
 
-1. Create `packages/app/<app>` with stage props, a stable controller handle, schema-validated
-   controller methods, tools, and app-owned persistence.
+1. Create `packages/app/<app>` with stage props and app-owned persistence. Add a stable controller
+   handle, schema-validated methods, and tools when the assistant can mutate the stage.
 2. Compose the stage and `ChatApp` in `apps/<app>`.
 3. Declare `tinytinkerer.architectureRole: integrated-shell` and `stagePackage`.
 4. Use the shared router/loading factories and `DockablePanelLayout` or `AppStageShell`.
 5. Add the mount to the host build inventory and verify startup/lazy bundle budgets.
-6. Test real tool calls through chat/controller integration; do not expose a test-only global.
+6. Test live chat integration (and real tool calls when present); do not expose a test-only global.
