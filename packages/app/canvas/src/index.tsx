@@ -7,7 +7,7 @@ const CanvasWorkspace = lazy(() =>
 
 // Keep the stage implementation behind a package-local lazy boundary. The shell
 // imports this same entry at startup to register tools; loading Excalidraw only when
-// the canvas route renders preserves a fast chat bootstrap without an iframe build.
+// the canvas route renders preserves a fast chat bootstrap while keeping one integrated document.
 export const CanvasStage = (props: CanvasStageProps): React.JSX.Element => (
   <Suspense fallback={<div className="canvas-loading">Opening canvas…</div>}>
     <CanvasWorkspace {...props} />

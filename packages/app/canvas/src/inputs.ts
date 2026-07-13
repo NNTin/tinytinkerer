@@ -1,13 +1,6 @@
 import { z } from 'zod'
 export { EXCALIDRAW_LIBRARY_CHANNEL } from './library-channel'
 
-export const EXCALIDRAW_APP_ID = 'excalidraw'
-// generic app-bridge envelope version. Bumped to 5 for the persistence snapshot
-// restore contract (host-replayed scene on reload), then to 6 for the connectors
-// & bindings and layout-helper verbs, then to 7 for the diagram-semantics verbs
-// (`preset` + `icon`), then to 8 for the safer-iterative-workflow verbs
-// (`preview`, `thumbnail`, `pick`).
-export const EXCALIDRAW_PROTOCOL_VERSION = 8
 export const EXCALIDRAW_ELEMENT_LIMIT = 50
 export const EXCALIDRAW_SEARCH_DEFAULT_LIMIT = 20
 export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
@@ -16,7 +9,7 @@ export const EXCALIDRAW_DETAIL_LEVELS = ['summary', 'standard', 'full'] as const
 // (`id`/`type`/`kind`) is always returned and deliberately excluded from this list —
 // a caller can never project it away. Mirrors `commonShape` in contracts.ts (minus
 // the identity keys) plus the per-kind detail blocks (`text`/`linear`/`freeDraw`/
-// `image`/`frameName`); kept in sync by the protocol.test.ts sync guard.
+// `image`/`frameName`); kept in sync by the contracts test guard.
 export const ELEMENT_PROJECTION_FIELDS = [
   'version',
   'zIndex',
@@ -50,8 +43,8 @@ export const elementFieldSchema = z
   )
 export type ElementField = (typeof ELEMENT_PROJECTION_FIELDS)[number]
 // Default distance a bound connector endpoint keeps from its target's edge. Kept
-// here (not imported from Excalidraw) so the wire vocabulary stays side-effect
-// free; the iframe owns the exact anchoring math.
+// here (not imported from Excalidraw) so the schema vocabulary stays side-effect
+// free and the stage owns the exact anchoring math.
 export const EXCALIDRAW_DEFAULT_BINDING_GAP = 4
 
 export const EXCALIDRAW_FIELD_LIMITS = Object.freeze({
@@ -220,7 +213,7 @@ export const drawInputSchema = z
       .max(EXCALIDRAW_ELEMENT_LIMIT)
       .default([])
       .describe(
-        'Declarative post-layout connectors. The iframe computes endpoints from final node bounds so same-row links stay horizontal and trunks stay vertical.'
+        'Declarative post-layout connectors. The canvas controller computes endpoints from final node bounds so same-row links stay horizontal and trunks stay vertical.'
       ),
     replace: z
       .boolean()
@@ -566,7 +559,7 @@ export const transformInputSchema = z
 
 // Where a connector endpoint attaches on its target. `focus` is the perpendicular
 // offset along the chosen edge (-1..1, 0 centers it) and `gap` is the distance the
-// endpoint keeps from the edge. The iframe picks the facing edge deterministically
+// endpoint keeps from the edge. The canvas controller picks the facing edge deterministically
 // from the opposite endpoint, so the connector stays readable after move/resize.
 const bindingAnchorSchema = z
   .object({
@@ -762,7 +755,7 @@ export const surveyInputSchema = withPagingGuard(
 // grouped, labeled shape elements. Both are fully offline: every glyph is encoded
 // locally as Excalidraw element skeletons — nothing is fetched from
 // libraries.excalidraw.com (or anywhere) at runtime, so they work inside the
-// sandboxed iframe. Insertion is atomic and undoable (one scene update) and
+// integrated stage. Insertion is atomic and undoable (one scene update) and
 // version-checked via the optional `expectedSceneVersion` (rejects if the scene
 // drifted since the caller read it).
 
@@ -928,7 +921,7 @@ export const EXCALIDRAW_PREVIEWABLE_VERBS = [
 // Shared bounds for the exported-image "longest edge" dimension, reused by
 // `preview`'s optional render and `thumbnail`'s snapshot so the two schemas
 // can't drift apart — both ultimately render through the same
-// `renderScenePng` helper in excalidraw-app.
+// canvas `renderScenePng` helper.
 export const EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS = {
   min: 64,
   max: 1024,
@@ -982,7 +975,7 @@ export const thumbnailInputSchema = z
   })
   .strict()
 
-// The bridge request for an interactive pick must outlive the wait the iframe
+// An interactive pick request must outlive the wait the canvas
 // does for the user; the canvas derives its per-request timeout from this so
 // the two budgets cannot drift apart.
 export const EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS = 120
@@ -1018,7 +1011,7 @@ export const pickInputSchema = z
 
 // Schema version for a persisted scene snapshot. The `version` is a literal in the
 // schema below so a snapshot written by an older/newer build fails validation and
-// the harness falls back to an empty scene instead of feeding the canvas a shape it
+// the stage falls back to an empty scene instead of feeding the canvas a shape it
 // can no longer interpret. Bump this only when the snapshot payload shape changes.
 export const EXCALIDRAW_SNAPSHOT_VERSION = 1
 
@@ -1036,12 +1029,6 @@ export const excalidrawSnapshotSchema = z
   })
   .strict()
 
-// Reserved system verb (not model-facing): the canvas shell calls this to push a
-// library, fetched by its same-origin callback relay, into the sandboxed iframe. The
-// iframe cannot receive the libraries.excalidraw.com round-trip directly (opaque
-// origin + nonce), so the shell relays the `.excalidrawlib` content over the bridge.
-export const EXCALIDRAW_LIBRARY_IMPORT_VERB = 'excalidraw:import-library'
-
 // Allow only official Excalidraw library URLs to be fetched by the relay, mirroring
 // Excalidraw's own default `validateLibraryUrl` allow-list. Guards the shell against
 // being pointed at an arbitrary origin via a crafted `addLibrary` parameter.
@@ -1057,16 +1044,11 @@ export const isAllowedLibraryUrl = (url: string): boolean => {
   }
 }
 
-// Input for the library import system verb: the raw `.excalidrawlib` JSON text, which
-// the iframe hands to Excalidraw's own Blob loader (so parsing/normalization stays in
-// the upstream component).
-export const excalidrawLibraryImportSchema = z.object({ content: z.string().min(1) }).strict()
-
 // OBJECT-ROOT INVARIANT: every schema in this map is forwarded verbatim as a
 // tool's `function.parameters`, so it must convert to an object-root JSON schema
 // (no top-level union/array). Enforced fail-fast by `toolInputJsonSchema` in
 // packages/shared/contracts/src/tool-schema.ts and re-asserted per verb in
-// tests/protocol.test.ts ('renders an object-root JSON schema for every verb').
+// tests/contracts.test.ts ('renders an object-root JSON schema for every verb').
 export const excalidrawVerbInputSchemas = {
   draw: drawInputSchema,
   search: searchInputSchema,
@@ -1131,4 +1113,3 @@ export type ThumbnailInput = z.infer<typeof thumbnailInputSchema>
 export type PickInput = z.infer<typeof pickInputSchema>
 export type PreviewableVerb = (typeof EXCALIDRAW_PREVIEWABLE_VERBS)[number]
 export type ExcalidrawSnapshot = z.infer<typeof excalidrawSnapshotSchema>
-export type ExcalidrawLibraryImport = z.infer<typeof excalidrawLibraryImportSchema>

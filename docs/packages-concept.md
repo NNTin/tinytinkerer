@@ -32,9 +32,8 @@ When shared code appears, place it according to what kind of thing it is:
 
 - headless product logic -> `packages/app-core`
 - browser-specific shared logic, shell-facing hooks, shared browser components, bootstrap helpers, and shared browser styles -> `packages/app-browser`
-- product-agnostic iframe transport and hosting -> `packages/app-bridge` / `packages/app-shell`
-- isolated third-party iframe runtime used by one harness -> `packages/app/<app>-app`
-- app-specific bridge input/result contracts -> `packages/shared/<app>-protocol`
+- shared integrated-stage infrastructure -> `packages/app/app-shell`
+- application stage UI, schemas, tools, and persistence -> `packages/app/<app>`
 - stateless visual atoms and primitives -> `packages/ui`
 - assistant-content parsing, AST, rendering, and specialized content runtimes -> `packages/content-*`
 - foundational shared schemas and types -> `packages/contracts`
@@ -154,14 +153,19 @@ Must not own:
 - product-specific controller logic
 - persistence logic
 
-### App harness packages
+### Integrated application packages
 
-- `app-bridge` owns the product-agnostic, versioned transport, correlation, timeouts, handshake capability checks, and schema-bound verb execution.
-- `app-shell` owns sandboxed iframe lifecycle, bridge handles, verb-to-tool adaptation, shared harness layout, and deployment-safe embedded app URL resolution.
-- An `<app>-app` package owns one harness's third-party iframe runtime and is imported only by that harness's declared secondary entry.
-- Each `<app>-protocol` package owns only that app's Zod input/result contracts, inferred types, identity, and advertised verb names.
+- `app-shell` owns stable in-process controller handles, schema-to-tool adaptation, the shared
+  workspace store, assistant actions, and the app-agnostic two/three-panel dock layout.
+- Each `packages/app/<app>` package owns its trusted stage, third-party UI dependency, app domain
+  schemas/controllers, model-facing tools, and persistence namespace.
+- Each thin `apps/<app>` package owns routes, loading copy, browser boot, and stage/assistant
+  composition. Its manifest declares the stage package so boundary checks prevent drift.
+- `app-browser` owns the shared OAuth callback, router factory, and loading-screen factory used by
+  these deployable shells.
 
-The harness shell and iframe app declare architecture-role metadata in their manifests. This lets the boundary checker apply the generic layer rules to every future app without learning concrete package names.
+Calls are schema-validated at an in-process controller boundary. Isolation is reserved for
+untrusted executable content, not used as a substitute for package or lazy-chunk boundaries.
 
 ### `packages/content-*`
 
@@ -228,9 +232,8 @@ Introduce a new package only when all of the following are true:
 - the feature would otherwise create duplicated logic or duplicated policy
 - the feature has a clear ownership boundary
 
-An isolated iframe runtime is the deliberate single-consumer exception: the package boundary
-keeps third-party code, bridge handlers, and compliance ownership out of the deployable shell,
-while the shell owns the route and build entry.
+A substantial application stage may be a single-consumer package when that boundary cleanly owns
+its third-party dependency, domain, tools, persistence, tests, and lazy bundle.
 
 Do not create a package for trivial wrappers or one-off helpers. The point is to prevent meaningful duplication, not to atomize the repo.
 

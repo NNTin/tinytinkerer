@@ -16,7 +16,7 @@ export const createBrowserRuntimeFactory = (options: {
   // Optional client-only capture sink for the context-inspector plugin (#270).
   // createRuntime only forwards it to the provider when that plugin is enabled.
   captureForwardedRequest?: ForwardedRequestSink
-  // The host app's always-on tool group (e.g. a harness shell's app-specific
+  // The host app's always-on tool group (e.g. an integrated shell's stage
   // verbs). Forwarded verbatim to createRuntime; omitted by web/mobile.
   appToolGroup?: AppToolGroup
 }): ChatRuntimeFactory => {

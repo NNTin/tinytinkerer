@@ -13,8 +13,8 @@ const normalizeError = (error: unknown): Error =>
   error instanceof Error ? error : new Error(String(error))
 
 // Stable in-process indirection between tools created during shell bootstrap and a
-// stage controller that mounts later. This is the trusted-stage equivalent of the
-// iframe bridge handle, without transport or serialization concerns.
+// stage controller that mounts later. The controller is trusted and in-process; this
+// seam avoids transport and serialization concerns while keeping tool setup stable.
 export const createStageControllerHandle = <TController extends object>(
   loadingMessage: string
 ): StageControllerHandle<TController> => {

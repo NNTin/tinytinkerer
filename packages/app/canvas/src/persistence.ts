@@ -1,4 +1,3 @@
-import { CaptureUpdateAction } from '@excalidraw/excalidraw'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { EXCALIDRAW_SNAPSHOT_VERSION } from './inputs'
 import type { ExcalidrawSnapshot } from './inputs'
@@ -25,8 +24,7 @@ const PERSISTED_APP_STATE_KEYS = [
 export type LibraryItemsGetter = () => readonly unknown[]
 
 // Snapshot the live scene: non-deleted elements plus the curated view state, and any
-// imported library items. The app owns this serialization (the harness only persists
-// the opaque result).
+// imported library items. The canvas package owns serialization and persistence.
 export const serializeScene = (
   api: ExcalidrawImperativeAPI,
   getLibraryItems?: LibraryItemsGetter
@@ -45,34 +43,6 @@ export const serializeScene = (
       ? { libraryItems: libraryItems as unknown as ExcalidrawSnapshot['libraryItems'] }
       : {})
   }
-}
-
-type UpdateSceneInput = Parameters<ExcalidrawImperativeAPI['updateScene']>[0]
-type UpdateLibraryInput = Parameters<ExcalidrawImperativeAPI['updateLibrary']>[0]
-
-// Apply a validated snapshot to the canvas on reload. The snapshot is already
-// version-guarded by the wire contract, so a malformed/old payload never reaches
-// here — it is rejected at the bridge and the canvas stays empty (fails safe).
-export const applySnapshot = (
-  api: ExcalidrawImperativeAPI,
-  snapshot: ExcalidrawSnapshot
-): { ok: true; restored: number } => {
-  api.updateScene({
-    elements: snapshot.elements as unknown as UpdateSceneInput['elements'],
-    ...(snapshot.appState
-      ? { appState: snapshot.appState as unknown as UpdateSceneInput['appState'] }
-      : {}),
-    // Hydration, not a user action — keep the restore out of the undo history.
-    captureUpdate: CaptureUpdateAction.NEVER
-  })
-  if (snapshot.libraryItems && snapshot.libraryItems.length > 0) {
-    // Library has its own store; replace it with the persisted set (fire-and-forget).
-    void api.updateLibrary({
-      libraryItems: snapshot.libraryItems as unknown as UpdateLibraryInput['libraryItems'],
-      merge: false
-    })
-  }
-  return { ok: true, restored: snapshot.elements.length }
 }
 
 // A debounced scene snapshotter. `save()` schedules a snapshot to `emit`; it is wired

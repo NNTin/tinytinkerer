@@ -1,6 +1,6 @@
 // Shared chunk policy for every chat-bearing browser shell. Bundle budgets rely
 // on these names, so keep the classification in one place rather than letting
-// web/mobile/widget/harness shells drift independently.
+// browser and integrated app shells drift independently.
 export const browserShellManualChunks = (id) => {
   if (
     id.includes('node_modules/react/') ||

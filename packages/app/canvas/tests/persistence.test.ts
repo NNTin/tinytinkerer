@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
-import { applySnapshot, createScenePersistence, serializeScene } from '../src/persistence'
-
-vi.mock('@excalidraw/excalidraw', () => ({
-  CaptureUpdateAction: { IMMEDIATELY: 'immediately', NEVER: 'never' }
-}))
+import { createScenePersistence, serializeScene } from '../src/persistence'
 
 const fakeApi = (
   elements: unknown[] = [],
@@ -69,35 +65,6 @@ describe('excalidraw scene persistence', () => {
     expect(snapshot.libraryItems).toEqual([{ id: 'lib-1' }])
     // An empty library is omitted entirely.
     expect(serializeScene(fakeApi(), () => [])).not.toHaveProperty('libraryItems')
-  })
-
-  it('applies a snapshot without polluting the undo history', () => {
-    const api = fakeApi()
-    const result = applySnapshot(api, {
-      version: 1,
-      elements: [{ id: 'a' }, { id: 'b' }],
-      appState: { scrollX: 1 }
-    })
-    expect(result).toEqual({ ok: true, restored: 2 })
-    expect(api.updateScene).toHaveBeenCalledWith({
-      elements: [{ id: 'a' }, { id: 'b' }],
-      appState: { scrollX: 1 },
-      captureUpdate: 'never'
-    })
-    expect(api.updateLibrary).not.toHaveBeenCalled()
-  })
-
-  it('restores persisted library items on apply', () => {
-    const api = fakeApi()
-    applySnapshot(api, {
-      version: 1,
-      elements: [],
-      libraryItems: [{ id: 'lib-1' }, { id: 'lib-2' }]
-    })
-    expect(api.updateLibrary).toHaveBeenCalledWith({
-      libraryItems: [{ id: 'lib-1' }, { id: 'lib-2' }],
-      merge: false
-    })
   })
 
   it('emits at most one debounced snapshot per quiet window', () => {

@@ -15,8 +15,6 @@ import {
   EXCALIDRAW_ICON_TYPES,
   EXCALIDRAW_PRESET_KINDS,
   EXCALIDRAW_PREVIEWABLE_VERBS,
-  excalidrawLibraryImportSchema,
-  excalidrawSnapshotSchema,
   groupInputSchema,
   iconInputSchema,
   inspectInputSchema,
@@ -254,7 +252,7 @@ export const readElementSchema = z.discriminatedUnion('kind', [
 // The lean shape `pick`/`read`'s optional `fields` projection returns: identity
 // (`id`/`type`/`kind`) is always present, and every other selectable key is optional
 // and reuses the exact same sub-schemas as the full `readElementSchema` variants
-// above, so a projected record validates against the same wire types as a full one —
+// above, so a projected record validates against the same schema types as a full one —
 // just with most keys missing. `kind` spans every variant's discriminant literal
 // since a projected record no longer discriminates a single specific shape.
 export const projectedElementSchema = z
@@ -621,9 +619,8 @@ const patchChangeSchema = z
 // renders it and, on the inference path, substitutes a text `description` +
 // handle so the base64 `dataUrl` never reaches the model (see
 // @tinytinkerer/contracts' toolResultImageMediaSchema / partitionToolResultMedia).
-// Mirrored locally rather than imported: app-protocol packages may depend only on
-// @tinytinkerer/app-bridge (scripts/check-boundaries.mjs), so this package cannot
-// take a dependency on @tinytinkerer/contracts.
+// Mirrored locally to keep the canvas domain independent from chat presentation
+// contracts. Keep the shapes synchronized with @tinytinkerer/contracts.
 // keep in sync with @tinytinkerer/contracts toolResultImageMediaSchema
 const previewMediaSchema = z
   .object({
@@ -699,31 +696,6 @@ const pickResultSchema = z
     truncation: truncationSchema
   })
   .strict()
-
-const snapshotRestoreResultSchema = z
-  .object({ ok: z.literal(true), restored: z.number().int().nonnegative() })
-  .strict()
-
-// Contract for the reserved `app:restore` system verb (see APP_SNAPSHOT_RESTORE_VERB
-// in app-bridge). It is intentionally NOT part of excalidrawVerbContracts / the
-// model-facing verb set: the harness calls it on reload to replay a persisted scene,
-// not the model. Validating the input here version-guards the snapshot at the wire.
-export const excalidrawSnapshotRestoreContract = {
-  inputSchema: excalidrawSnapshotSchema,
-  resultSchema: snapshotRestoreResultSchema
-}
-
-const libraryImportResultSchema = z
-  .object({ ok: z.literal(true), imported: z.number().int().nonnegative() })
-  .strict()
-
-// Contract for the reserved `excalidraw:import-library` system verb. Like the restore
-// contract it is intentionally NOT part of excalidrawVerbContracts / the model-facing
-// verb set: the canvas shell calls it from its library relay, not the model.
-export const excalidrawLibraryImportContract = {
-  inputSchema: excalidrawLibraryImportSchema,
-  resultSchema: libraryImportResultSchema
-}
 
 export const excalidrawVerbContracts = {
   draw: { inputSchema: drawInputSchema, resultSchema: drawResultSchema },

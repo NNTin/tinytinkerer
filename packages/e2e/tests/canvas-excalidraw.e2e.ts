@@ -1,12 +1,9 @@
-import { test, expect, type FrameLocator, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 import {
-  CANVAS_FRAME,
   CANVAS_URL,
   LIBRARY_CHANNEL,
   LIBRARY_FILE,
-  SNAPSHOT_KEY,
   drawRectangle,
-  minimizeChat,
   openCanvas,
   postLibraryMessage,
   readSnapshot,
@@ -15,9 +12,8 @@ import {
 import { dismissFirstLoad } from '../fixtures/first-load'
 
 // Real-browser coverage of the fundamental Excalidraw canvas features fixed in #317:
-// the sandboxed iframe's export (downloads), popups (libraries browser), and clipboard
-// capabilities, the same-origin library-import relay, and scene persistence across a
-// reload. These features cannot run in the jsdom unit tests — they need a real download
+// the integrated Excalidraw stage's downloads, popups, library relay, and IndexedDB
+// persistence across a reload. These features cannot run in the jsdom unit tests — they need a real download
 // event, a real popup, a real BroadcastChannel, and a real reload.
 
 test.use({ viewport: { width: 1280, height: 800 } })
@@ -32,13 +28,16 @@ const sceneElementCount = async (page: Page): Promise<number> =>
 // download fires. Closes the dialog afterwards so a second export starts clean.
 const exportImage = async (
   page: Page,
-  frame: FrameLocator,
+  canvas: Locator,
   label: string,
   extension: RegExp
 ): Promise<void> => {
-  await frame.locator('[data-testid="main-menu-trigger"]').click()
-  await frame.locator('[data-testid="image-export-button"]').click()
-  const dialog = frame.locator('.ImageExportModal')
+  await canvas.locator('[data-testid="main-menu-trigger"]').click()
+  await canvas.locator('[data-testid="image-export-button"]').click()
+  // Excalidraw portals dialogs to the document root, outside the dock panel.
+  const dialog = page
+    .getByRole('dialog')
+    .filter({ has: page.getByRole('heading', { name: 'Export image' }) })
   await expect(dialog).toBeVisible()
   const download = page.waitForEvent('download')
   await dialog.getByRole('button', { name: label }).click()
@@ -48,32 +47,26 @@ const exportImage = async (
 }
 
 test.describe('canvas Excalidraw features (#317)', () => {
-  test('sandboxes the iframe with exactly the capabilities its features need', async ({ page }) => {
-    await openCanvas(page)
-    const iframe = page.locator(CANVAS_FRAME)
-    const sandbox = await iframe.getAttribute('sandbox')
-    // Downloads (export), popups + escape (external links), but deliberately NOT
-    // allow-same-origin — that would collapse the opaque origin and defeat isolation.
-    expect(sandbox).toBe(
-      'allow-scripts allow-downloads allow-popups allow-popups-to-escape-sandbox'
-    )
-    expect(sandbox ?? '').not.toContain('allow-same-origin')
-    // Permissions Policy delegation for the Clipboard API (copy/paste).
-    expect(await iframe.getAttribute('allow')).toBe('clipboard-write; clipboard-read')
+  test('mounts Excalidraw directly beside the assistant without an app iframe', async ({
+    page
+  }) => {
+    const { canvas } = await openCanvas(page)
+    await expect(canvas.locator('.excalidraw')).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Assistant' })).toBeVisible()
+    await expect(canvas.locator('iframe')).toHaveCount(0)
   })
 
   test('exports the scene as a PNG and an SVG download', async ({ page }) => {
-    const { frame, box } = await openCanvas(page)
+    const { canvas, box } = await openCanvas(page)
     // Draw a shape so there is real content to export (empty scenes can't be exported).
-    await drawRectangle(page, frame, box)
-    // The export dialog is centred; collapse the chat so it doesn't overlay the buttons.
-    await minimizeChat(page)
-    await exportImage(page, frame, 'Export to PNG', /\.png$/)
-    await exportImage(page, frame, 'Export to SVG', /\.svg$/)
+    await drawRectangle(page, canvas, box)
+    await expect.poll(() => sceneElementCount(page), { timeout: 10_000 }).toBeGreaterThanOrEqual(1)
+    await exportImage(page, canvas, 'Export to PNG', /\.png$/)
+    await exportImage(page, canvas, 'Export to SVG', /\.svg$/)
   })
 
   test('opens the Excalidraw libraries browser in a popup', async ({ page, context }) => {
-    const { frame } = await openCanvas(page)
+    const { canvas } = await openCanvas(page)
     // Stub the external library site so the popup loads instantly and hermetically.
     await context.route(
       (url) => url.host === 'libraries.excalidraw.com',
@@ -84,10 +77,10 @@ test.describe('canvas Excalidraw features (#317)', () => {
           body: '<!doctype html><title>stub</title>'
         })
     )
-    await frame.locator('[title="Library"]').first().click()
+    await canvas.locator('[title="Library"]').first().click()
     const [popup] = await Promise.all([
       context.waitForEvent('page'),
-      frame.locator('a.library-menu-browse-button').click()
+      canvas.locator('a.library-menu-browse-button').click()
     ])
     await popup.waitForLoadState('domcontentloaded').catch(() => undefined)
     expect(new URL(popup.url()).host).toBe('libraries.excalidraw.com')
@@ -105,9 +98,8 @@ test.describe('canvas Excalidraw features (#317)', () => {
 
     await postLibraryMessage(page, { libraryUrl, idToken: 'tok' })
 
-    // The relay fetched the library and forwarded it into the iframe via updateLibrary,
-    // which opens the library sidebar and adds the item.
-    const panel = page.frameLocator(CANVAS_FRAME).locator('[data-testid="library"]')
+    // The relay fetched the library and applied it to the in-process Excalidraw API.
+    const panel = page.locator('[data-testid="library"]')
     await expect(panel.locator('.library-unit__dragger').first()).toBeVisible({ timeout: 15_000 })
     expect(fetched).toBe(true)
     // And onLibraryChange persisted the imported library into the scene snapshot.
@@ -164,19 +156,15 @@ test.describe('canvas Excalidraw features (#317)', () => {
   })
 
   test('restores the scene after a full page reload', async ({ page }) => {
-    const { frame, box } = await openCanvas(page)
-    await page.evaluate((key) => localStorage.removeItem(key), SNAPSHOT_KEY)
-
-    await drawRectangle(page, frame, box)
+    const { canvas, box } = await openCanvas(page)
+    await drawRectangle(page, canvas, box)
     await expect.poll(() => sceneElementCount(page), { timeout: 10_000 }).toBeGreaterThanOrEqual(1)
 
     await page.reload()
     await dismissFirstLoad(page, 4_000)
     await waitForCanvasReady(page)
 
-    // The harness replayed the persisted snapshot into the iframe on reload. Had restore
-    // produced an empty scene, the reloaded iframe's own onChange would have overwritten
-    // the snapshot back to zero elements.
+    // The integrated stage loaded its IndexedDB snapshot as Excalidraw initial data.
     await expect.poll(() => sceneElementCount(page), { timeout: 10_000 }).toBeGreaterThanOrEqual(1)
   })
 })

@@ -26,7 +26,7 @@ export type CreateBrowserShellRootOptions = {
   BootScreen: ComponentType<BrowserShellBootScreenProps>
   // The app's always-on tool group the app contributes to its own runtime (the
   // only per-app runtime input — there is still no shell id or onInit hook). A
-  // harness shell (e.g. the canvas shell) passes its app-specific verbs as one
+  // integrated shell (for example Canvas) passes its stage tools as one
   // named group here; web/mobile/widget omit it. Threaded straight to
   // createBrowserApp → chat store → runtime, and surfaced in the tool picker.
   appToolGroup?: AppToolGroup

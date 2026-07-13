@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { CaptureUpdateAction } from '@excalidraw/excalidraw'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import type { PresetInput } from '../src/inputs'
-import { createExcalidrawHandlers } from '../src/controller'
+import { createCanvasHandlers } from '../src/controller'
 import { __presetInternals } from '../src/presets'
 
 vi.mock('@excalidraw/excalidraw', () => ({
@@ -49,7 +49,7 @@ const fakeApi = (elements: unknown[] = []): ExcalidrawImperativeAPI =>
   }) as unknown as ExcalidrawImperativeAPI
 
 const run = (api: ExcalidrawImperativeAPI, verb: string, payload: unknown): Promise<unknown> => {
-  const registration = createExcalidrawHandlers(api)[verb]
+  const registration = createCanvasHandlers(api)[verb]
   if (!registration || typeof registration === 'function')
     throw new Error(`Missing schema-bound handler: ${verb}`)
   const input = registration.inputSchema.parse(payload)

@@ -245,31 +245,18 @@ describe('host server', () => {
     expect(body).toContain('src="/widget/src/main.tsx"')
   })
 
-  it('serves the Excalidraw iframe entry inside the canvas mount', async () => {
+  it('serves the integrated canvas application inside the canvas mount', async () => {
     if (!sharedHostServer) {
       throw new Error('Expected the shared host server to be available.')
     }
 
     const canvasResponse = await fetch(`${sharedHostServer.url}/canvas/`)
     const canvasBody = await canvasResponse.text()
-    const excalidrawResponse = await fetch(`${sharedHostServer.url}/canvas/excalidraw-app/`)
-    const excalidrawBody = await excalidrawResponse.text()
 
     expect(canvasResponse.status).toBe(200)
+    expect(canvasBody).toContain('<title>tinytinkerer canvas</title>')
     expect(canvasBody).toContain('src="/canvas/@vite/client"')
     expect(canvasBody).toContain('src="/canvas/src/main.tsx"')
-    expect(excalidrawResponse.status).toBe(200)
-    expect(excalidrawBody).toContain('src="/canvas/@vite/client"')
-    expect(excalidrawBody).toContain('src="./main.tsx"')
-
-    // The sandboxed Excalidraw sub-app is only reachable under /canvas/. A
-    // top-level /excalidraw-app/ no longer 404s (the root app is the catch-all '/'
-    // mount) but must fall through to the root composition, never the sub-app.
-    const standaloneResponse = await fetch(`${sharedHostServer.url}/excalidraw-app/`)
-    const standaloneBody = await standaloneResponse.text()
-    expect(standaloneResponse.status).toBe(200)
-    expect(standaloneBody).toContain('<div id="root"')
-    expect(standaloneBody).not.toContain('src="./main.tsx"')
   })
 
   it('serves the mobile manifest through the unified host', async () => {

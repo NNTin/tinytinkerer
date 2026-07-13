@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CaptureUpdateAction } from '@excalidraw/excalidraw'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
-import { createExcalidrawHandlers } from '../src/controller'
+import { createCanvasHandlers } from '../src/controller'
 
 vi.mock('@excalidraw/excalidraw', () => ({
   CaptureUpdateAction: { IMMEDIATELY: 'immediately' },
@@ -132,7 +132,7 @@ type Verb =
   | 'transform'
 
 const run = (api: ExcalidrawImperativeAPI, verb: Verb, payload: unknown): Promise<unknown> => {
-  const registration = createExcalidrawHandlers(api)[verb]
+  const registration = createCanvasHandlers(api)[verb]
   if (!registration || typeof registration === 'function')
     throw new Error(`Missing schema-bound handler: ${verb}`)
   const input = registration.inputSchema.parse(payload)

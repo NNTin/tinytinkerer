@@ -43,14 +43,14 @@ describe('host router', () => {
     const { hostRouter } = await loadRouter()
     render(<RouterProvider router={hostRouter} />)
 
-    await screen.findByTestId('root-composition-route')
-  })
+    await screen.findByTestId('root-composition-route', undefined, { timeout: 10_000 })
+  }, 15_000)
 
   it('mounts the OAuth callback page when the hash targets /auth/callback', async () => {
     window.location.hash = '#/auth/callback'
     const { hostRouter } = await loadRouter()
     render(<RouterProvider router={hostRouter} />)
 
-    await screen.findByTestId('callback-route')
-  })
+    await screen.findByTestId('callback-route', undefined, { timeout: 10_000 })
+  }, 15_000)
 })

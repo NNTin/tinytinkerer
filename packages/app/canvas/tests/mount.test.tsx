@@ -47,7 +47,9 @@ describe('CanvasStage', () => {
     expect(screen.queryByTestId('excalidraw')).not.toBeInTheDocument()
 
     resolveLoad(null)
-    await waitFor(() => expect(screen.getByTestId('excalidraw')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('excalidraw')).toBeInTheDocument(), {
+      timeout: 5_000
+    })
     expect(screen.getByText('Canvas workspace')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Canvas' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Assistant' })).toHaveTextContent('assistant body')

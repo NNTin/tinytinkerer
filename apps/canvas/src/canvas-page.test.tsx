@@ -16,6 +16,11 @@ vi.mock('@tinytinkerer/canvas', () => ({
 }))
 
 vi.mock('@tinytinkerer/app-browser', () => ({
+  createAppLoadingScreens: () => ({
+    BootScreen: () => null,
+    RouteLoading: () => null,
+    ChatLoading: () => null
+  }),
   ChatApp: (props: Record<string, unknown>) => {
     captured.chatProps = props
     return <div data-testid="canvas-chat" />

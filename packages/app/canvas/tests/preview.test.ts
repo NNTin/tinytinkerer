@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { exportToCanvas as exportToCanvasImport } from '@excalidraw/excalidraw'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { EXCALIDRAW_PAYLOAD_BUDGETS } from '../src/inputs'
-import { createExcalidrawHandlers } from '../src/controller'
+import { createCanvasHandlers } from '../src/controller'
 
 // Re-typed the same way thumbnail.test.ts does (see its comment): the real
 // `exportToCanvas` type resolves to `any` here, so re-type the mocked binding
@@ -28,7 +28,7 @@ beforeEach(() => {
 
 // preview dispatches into the REAL executors (create/edit/structure/binding/
 // layout/presets), so this mock has to cover everything those modules import
-// from '@excalidraw/excalidraw' — mirrors bridge.test.ts's/structure.test.ts's
+// from '@excalidraw/excalidraw' — mirrors controller.test.ts's/structure.test.ts's
 // mock exactly. `exportToCanvas` is added on top of that for the visual render
 // (see thumbnail.test.ts for why this is a full manual mock rather than
 // `importOriginal`).
@@ -219,7 +219,7 @@ type PreviewResult = {
 }
 
 const run = (api: ExcalidrawImperativeAPI, payload: unknown): Promise<PreviewResult> => {
-  const registration = createExcalidrawHandlers(api).preview
+  const registration = createCanvasHandlers(api).preview
   if (!registration || typeof registration === 'function')
     throw new Error('Missing schema-bound handler: preview')
   const input = registration.inputSchema.parse(payload)
@@ -233,7 +233,7 @@ const runVerb = (
   verb: string,
   payload: unknown
 ): Promise<unknown> => {
-  const registration = createExcalidrawHandlers(api)[verb]
+  const registration = createCanvasHandlers(api)[verb]
   if (!registration || typeof registration === 'function')
     throw new Error(`Missing schema-bound handler: ${verb}`)
   const input = registration.inputSchema.parse(payload)

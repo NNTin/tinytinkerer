@@ -436,7 +436,7 @@ export const SYNTHESIS_ANSWER = 'Done — the sandbox finished executing the req
 //                 AND its final prose are real inference output, not invented
 //                 here — the canvas verb suite replays REAL captured streams
 //                 instead of hand-building tool_calls.
-type ChatMode = 'tool' | 'ask' | 'no-tool' | 'replay'
+type ChatMode = 'tool' | 'ask' | 'custom-tool' | 'no-tool' | 'replay'
 
 // Per-run state, captured as the edge forwards chat requests to the LiteLLM mock.
 type UpstreamState = {
@@ -450,6 +450,7 @@ type UpstreamState = {
   // content before its tool call (models a model that explains its action). When
   // undefined the action turn is silent — the realistic non-reasoning default.
   actionReasoning?: string
+  customToolCall?: ToolCall
   bodies: string[]
   actions: number
   provisionedKeys: Set<string>
@@ -667,7 +668,12 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
     // rationale is emitted as ordinary content first and shows as the step's
     // thought (issue #276).
     state.actions += 1
-    const toolCall = state.mode === 'ask' ? askUserToolCall() : runJavascriptToolCall(state.code)
+    const toolCall =
+      state.mode === 'ask'
+        ? askUserToolCall()
+        : state.mode === 'custom-tool' && state.customToolCall
+          ? state.customToolCall
+          : runJavascriptToolCall(state.code)
     if (body.stream === true) {
       return new Response(sseToolCallStream(toolCall, state.actionReasoning), {
         status: 200,
@@ -897,7 +903,8 @@ const installMock = async (
   code: string,
   mode: ChatMode,
   answer: string,
-  actionReasoning?: string
+  actionReasoning?: string,
+  customToolCall?: ToolCall
 ): Promise<LiteLLMMock> => {
   installLiteLLMUpstream()
   const state: UpstreamState = {
@@ -905,6 +912,7 @@ const installMock = async (
     mode,
     answer,
     ...(actionReasoning !== undefined ? { actionReasoning } : {}),
+    ...(customToolCall ? { customToolCall } : {}),
     bodies: [],
     actions: 0,
     provisionedKeys: new Set(knownProvisionedKeys),
@@ -930,6 +938,21 @@ export const installNarratedToolMock = (
   code: string,
   actionReasoning: string
 ): Promise<LiteLLMMock> => installMock(page, code, 'tool', SYNTHESIS_ANSWER, actionReasoning)
+
+// Deterministic native tool call for app-owned tool integration tests. It drives the
+// same ReAct/runtime/tool-registry path as provider output without exposing a test-only
+// controller hook in the application.
+export const installAppToolMock = (
+  page: Page,
+  toolName: string,
+  input: unknown,
+  answer: string = SYNTHESIS_ANSWER
+): Promise<LiteLLMMock> =>
+  installMock(page, '', 'custom-tool', answer, undefined, {
+    id: `call_${toolName}_1`,
+    type: 'function',
+    function: { name: toolName, arguments: JSON.stringify(input) }
+  })
 
 // The choice-prompt suite's mock (issue #85): the model issues a single `ask_user`
 // action so a real-browser HITL poll is driven and its answer folds back. The action

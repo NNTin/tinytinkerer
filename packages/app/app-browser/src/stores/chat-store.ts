@@ -40,7 +40,7 @@ export const createChatStore = (options: {
   // the runtime factory, which arms capture only while the inspector plugin is on.
   // Optional so tests can omit it; the app always provides it.
   inspectorStore?: InspectorStore
-  // The host app's always-on tool group (e.g. a harness shell's app-specific
+  // The host app's always-on tool group (e.g. an integrated shell's stage
   // verbs). Forwarded to the runtime factory; absent for web/widget/mobile.
   appToolGroup?: AppToolGroup
 }): ChatStore => {

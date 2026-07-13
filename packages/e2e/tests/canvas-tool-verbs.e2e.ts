@@ -1,5 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
-import { CANVAS_FRAME, minimizeChat, readSnapshot } from '../fixtures/canvas'
+import { canvasStage, readSnapshot } from '../fixtures/canvas'
 import { openCanvasWithChat, sendCanvasMessage } from '../fixtures/canvas-chat'
 import {
   capturedToolCallArgs,
@@ -16,20 +16,20 @@ import {
 // `{mediaRef, description, width, height, mimeType}` handles in model context;
 // the UI resolves `![…](media:…)` back to data URLs). Coverage before this spec
 // was unit tests + hermetic canvas e2e (no chat) — nothing proved the full loop:
-// model tool_call → agent runtime → tool registry → app-bridge → sandboxed
-// Excalidraw iframe → media handling → UI. A real regression already slipped
+// model tool call → agent runtime → tool registry → in-process canvas controller →
+// Excalidraw API → media handling → UI. A real regression already slipped
 // through this gap and was only caught by Sentry in a live preview
 // (TINYTINKERER-FRONTEND-1C).
 //
 // Only LiteLLM inference is mocked (fixtures/canvas-chat.ts's
 // openCanvasWithChat, backed by mock-litellm.ts's 'replay' mode): the edge
-// worker, the bridge, the sandboxed Excalidraw iframe, the tool registry, and
-// the media pipeline are all real — and so is the MODEL. Each test replays a
+// worker, canvas controller, Excalidraw stage, tool registry, and media pipeline are
+// all real — and so is the MODEL. Each test replays a
 // fixture captured verbatim from real inference against a live PR preview (see
 // packages/e2e/fixtures/captures/*.json + .agent/skills/e2e-testing/SKILL.md):
 // the drawing, the verb calls, and the final prose are all real captured
 // tokens, not hand-built tool_calls — the model drives every scene mutation
-// for real, through the real bridge, exactly as it did at capture time.
+// for real, through the integrated controller, exactly as it did at capture time.
 
 test.use({ viewport: { width: 1280, height: 800 } })
 
@@ -81,7 +81,7 @@ test.describe('canvas tool verbs: preview / thumbnail / pick', () => {
     await enableReasoningActivity(page)
 
     // One prompt drives BOTH the draw and the thumbnail (the captured model
-    // chained them itself) — the model draws for real through the bridge.
+    // chained them itself) — the model draws for real through the controller.
     await sendCanvasMessage(page, promptText(scenario, 0))
 
     // 4 elements, not 2: the captured draw labels both shapes ('Red
@@ -167,7 +167,7 @@ test.describe('canvas tool verbs: preview / thumbnail / pick', () => {
 
     // The core safety guarantee: the dry-run committed NOTHING to the real
     // scene. Anchor on the run's final answer first: readSnapshot reads the
-    // harness's persisted snapshot, written on a debounced (600ms) `onChange`,
+    // workspace's persisted snapshot, written on a debounced (600ms) `onChange`,
     // so a read taken right after the fold-back could still see the
     // pre-commit snapshot and pass vacuously. By the time the synthesized
     // answer renders, a wrongful commit's debounced write would have landed —
@@ -184,7 +184,7 @@ test.describe('canvas tool verbs: preview / thumbnail / pick', () => {
     await expect(panel.locator('img[src^="data:image/png"]')).toBeVisible()
   })
 
-  test('pick current + fields projection: a real in-iframe selection round-trips with the requested detail', async ({
+  test('pick current + fields projection: a real selection round-trips with the requested detail', async ({
     page
   }) => {
     const { mock, scenario } = await openCanvasWithChat(page, 'canvas-pick-fields')
@@ -203,18 +203,13 @@ test.describe('canvas tool verbs: preview / thumbnail / pick', () => {
       .poll(async () => (await readSnapshot(page))?.elements?.length, { timeout: 10_000 })
       .toBe(2)
 
-    // A real user selection, driven inside the sandboxed iframe: click the
-    // canvas (to focus it) then select-all — mirrors the scenario's own
-    // clickCanvas({x:700,y:700}) + press(Control+a) steps. The floating chat
-    // widget overlays that part of the canvas, so minimize it first (exactly
-    // like capture-llm-stream.mjs's clickCanvas step does) or the click never
-    // reaches the canvas and Control+a has nothing focused to act on.
-    await minimizeChat(page)
-    const frame = page.frameLocator(CANVAS_FRAME)
-    await frame
+    // Focus the directly mounted canvas and select all, mirroring the captured
+    // scenario's clickCanvas + Control+a steps.
+    const canvas = canvasStage(page)
+    await canvas
       .locator('.excalidraw__canvas')
       .first()
-      .click({ position: { x: 700, y: 700 }, force: true })
+      .click({ position: { x: 500, y: 500 }, force: true })
     await page.keyboard.press('Control+a')
 
     // Turn 2: the model calls pick(mode: 'current', detail: 'full').
@@ -245,7 +240,7 @@ test.describe('canvas tool verbs: preview / thumbnail / pick', () => {
     }
   })
 
-  test('pick interactive: the in-iframe toast blocks the run, then a real click resolves it', async ({
+  test('pick interactive: the canvas toast blocks the run, then a real click resolves it', async ({
     page
   }) => {
     const { mock, fixture, scenario } = await openCanvasWithChat(page, 'canvas-pick-interactive')
@@ -277,22 +272,17 @@ test.describe('canvas tool verbs: preview / thumbnail / pick', () => {
     // out of the fixture rather than hardcoded.
     const pickArgs = capturedToolCallArgs(fixture, 'pick') as { prompt?: string } | undefined
     expect(pickArgs?.prompt, 'fixture never captured a pick tool call').toBeTruthy()
-    const toast = page.frameLocator(CANVAS_FRAME).locator('.Toast__message')
+    const toast = canvasStage(page).locator('.Toast__message')
     await expect(toast).toBeVisible({ timeout: 30_000 })
     await expect(toast).toContainText(pickArgs!.prompt!)
 
     // Genuinely blocking: the pick has not resolved while only the toast shows.
     expect(toolResultFor(mock, 'pick')).toBeUndefined()
 
-    // Collapse the floating chat so it stops overlaying the canvas, then click
-    // the drawn element for real (a real pointer click, not a bridge call).
-    // `draw` scrolls-to-fit its new content, which for one shape well within
-    // the viewport centers it at zoom 100% — so the iframe's own center, not
-    // the element's scene x/y, is where it lands on screen.
-    await minimizeChat(page)
-    const iframe = page.locator(CANVAS_FRAME)
-    const box = await iframe.boundingBox()
-    if (!box) throw new Error('canvas iframe has no bounding box')
+    // Click the drawn element through the real integrated canvas. `draw` scrolls to
+    // fit the new content, so the stage center is where the element lands on screen.
+    const box = await canvasStage(page).boundingBox()
+    if (!box) throw new Error('canvas stage has no bounding box')
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
 
     await expect

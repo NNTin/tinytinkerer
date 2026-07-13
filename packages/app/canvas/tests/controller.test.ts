@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CaptureUpdateAction } from '@excalidraw/excalidraw'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
-import { createExcalidrawHandlers } from '../src/controller'
+import { createCanvasHandlers } from '../src/controller'
 
 vi.mock('@excalidraw/excalidraw', () => ({
   CaptureUpdateAction: { IMMEDIATELY: 'immediately' },
@@ -149,7 +149,7 @@ type Verb =
   | 'transform'
 
 const run = (api: ExcalidrawImperativeAPI, verb: Verb, payload: unknown): Promise<unknown> => {
-  const registration = createExcalidrawHandlers(api)[verb]
+  const registration = createCanvasHandlers(api)[verb]
   if (!registration) throw new Error(`Missing Excalidraw handler: ${verb}`)
   const input = registration.inputSchema.parse(payload)
   return Promise.resolve()
@@ -157,9 +157,9 @@ const run = (api: ExcalidrawImperativeAPI, verb: Verb, payload: unknown): Promis
     .then((result) => registration.resultSchema.parse(result))
 }
 
-describe('Excalidraw bridge handlers', () => {
+describe('Canvas controller handlers', () => {
   it('binds every advertised verb to a schema-validated handler', () => {
-    const handlers = createExcalidrawHandlers(fakeApi())
+    const handlers = createCanvasHandlers(fakeApi())
     expect(Object.keys(handlers)).toEqual([
       'draw',
       'search',

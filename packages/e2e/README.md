@@ -8,7 +8,7 @@ worker**, end to end in a real browser.
 The suite mocks **only LiteLLM** (the upstream model provider). Everything else is
 real: the production build of the single browser shell (`@tinytinkerer/shell`, served
 from the composed `apps/host/dist` at `/web/`, `/widget/`, `/mobile/`) plus
-`@tinytinkerer/canvas`, and the actual edge Hono worker — driven in-process via
+`@tinytinkerer/canvas`, all served from that composed origin, and the actual edge Hono worker — driven in-process via
 `app.fetch`, so its routing, validation, CORS, anonymous-tier key provisioning, and the
 chat proxy are all covered.
 
@@ -20,18 +20,17 @@ no secrets and makes no real network calls.
 
 - `scripts/e2e.mjs` — chooses the per-run ports before Playwright starts, so the
   servers and workers share the same base URLs. The three browser endpoints share ONE
-  origin: `E2E_PORT` (and its aliases `E2E_PORT_WIDGET` / `E2E_PORT_MOBILE`, kept for the
-  specs that build per-endpoint URLs). Canvas has its own origin `E2E_PORT_CANVAS`
-  (base `+3` locally, pinned explicitly in CI), so parallel git worktrees don't collide.
+  origin: `E2E_PORT` (and its aliases `E2E_PORT_WIDGET` / `E2E_PORT_MOBILE`, kept for
+  specs that build per-endpoint URLs). Canvas is mounted at `/canvas/` on that origin,
+  so parallel git worktrees need only one generated port.
 - `playwright.config.ts` — three browser projects: `chromium`, `firefox`, `webkit`.
   Chromium runs the whole suite; `firefox` + `webkit` are restricted (via per-project
   `testMatch`) to **just** `sandbox-isolation.e2e.ts`, because the sandbox-isolation
   guarantees are engine-sensitive (Blink / Gecko / WebKit) and cross-engine coverage
   is the point of issue #245. Every other spec stays Chromium-only — out of scope for
-  #245. The `webServer` is an array of two `vite preview` servers: the composed
-  `apps/host/dist` (the single shell build fanned to `/web/`, `/widget/`, `/mobile/`,
-  plus the root app) on one origin, and the canvas shell (`/canvas/`) on its own origin
-  (it needs ACAO headers for the sandboxed iframe). Each is `--strictPort`.
+  #245. One `vite preview --strictPort` server serves the composed `apps/host/dist`,
+  including `/web/`, `/widget/`, `/mobile/`, `/canvas/`, `/ide/`, `/mermaid/`, and the
+  root app.
 - `fixtures/mock-litellm.ts` — pipes `/api/*` through the real edge worker and mocks
   the LiteLLM upstream it calls; plus the shared UI helpers.
 - `fixtures/first-load.ts` — shared first-load dialog dismissal + shell-port env
@@ -56,15 +55,15 @@ no secrets and makes no real network calls.
   is restored on reload across all three endpoints (web/widget/mobile), and asserts the
   shared-session behaviour described below.
 
-### Single-origin topology and the shared IndexedDB namespace
+### Single-origin topology and IndexedDB namespaces
 
-`chat-persistence.e2e.ts` drives all three browser endpoints, which are ONE build served
-from ONE origin (the composed `apps/host/dist`) at different paths — matching production.
-All three default to the **same** Dexie database name (`storageNamespace` =
+`chat-persistence.e2e.ts` drives the browser endpoints, and canvas feature tests use
+`/canvas/`; all are built and served from ONE origin (the composed `apps/host/dist`) at different paths — matching production.
+Web, widget, and mobile default to the **same** Dexie database name (`storageNamespace` =
 `tinytinkerer`) and, being same-origin, **share** one IndexedDB: a conversation created
 under `/web/` **is** visible from `/widget/`, so signing in / a conversation on one
-endpoint carries to the others. The spec asserts this directly. (A distinct-origin
-topology would instead isolate them.) Build the composed host before a run (see below);
+endpoint carries to the others. The spec asserts this directly. Canvas deliberately uses the separate
+`tinytinkerer-canvas` database in the same origin. Build the composed host before a run (see below);
 CI builds it and pins the shared port.
 
 ### Observing a mid-stream render
@@ -137,9 +136,8 @@ skipped locally with `E2E_SKIP_BUILD=1` when you deliberately serve a prebuilt d
 > build through turbo (which the auto-build above does):
 > `TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build --filter=@tinytinkerer/host`.
 
-> Pin `E2E_PORT` (and optionally `E2E_PORT_CANVAS`) to fix the ports; otherwise the
-> wrapper picks a random base port and derives canvas from it. The three browser
-> endpoints share `E2E_PORT` (one origin).
+> Pin `E2E_PORT` to fix the shared origin's port; otherwise the wrapper picks a random
+> port. Every endpoint, including canvas, uses that origin.
 
 > On a headless box without root (e.g. some WSL2 setups) where
 > `playwright install --with-deps` cannot install the OS libraries, download the

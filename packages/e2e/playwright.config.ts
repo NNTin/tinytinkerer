@@ -8,9 +8,8 @@ import { defineConfig, devices } from '@playwright/test'
 type AllureLabel = { name: string; value: string }
 type AllureTestResult = { labels: AllureLabel[] }
 
-// Per-run ports. The package's `e2e` script sets E2E_PORT (the shared browser origin,
-// which E2E_PORT_WIDGET / E2E_PORT_MOBILE alias) and E2E_PORT_CANVAS once before
-// invoking Playwright, and CI pins them explicitly. Do not generate a fallback here:
+// Per-run port. The package's `e2e` script sets E2E_PORT for the shared deployed
+// origin before invoking Playwright, and CI pins it explicitly. Do not generate a fallback here:
 // this config is evaluated by more than one Playwright process, so an in-config random
 // value can make the web servers and test workers disagree on their base URLs.
 const requirePort = (name: string): number => {
@@ -25,15 +24,10 @@ const requirePort = (name: string): number => {
   return port
 }
 
-// The three browser endpoints (/web/, /widget/, /mobile/) are ONE build served from
-// ONE origin — the composed apps/host/dist — matching production. Tests navigate to
-// the same origin, different path; the app's edge calls use absolute paths (/api/...)
-// which the in-page mock intercepts regardless of path. Because IndexedDB is
-// origin-scoped, the three endpoints now SHARE the default `tinytinkerer` database
-// (one session across them — see tests/chat-persistence.e2e.ts). Canvas keeps its own
-// origin (it serves the sandboxed Excalidraw iframe with its own ACAO headers).
+// Every browser endpoint is served from the composed apps/host/dist origin, matching
+// production. IndexedDB and authentication state are therefore shared across mount
+// paths while each app retains its own database namespace where needed.
 const webPort = requirePort('E2E_PORT')
-const canvasPort = requirePort('E2E_PORT_CANVAS')
 
 // Bail-fast budget. A single root cause typically reds many tests at once, and with
 // `retries: 1` each failure runs twice — so a fully-reddened shard burns CI minutes
@@ -64,7 +58,6 @@ const resolveMaxFailures = (): number => {
 
 // Same origin (webPort), different path — one shell build serves all three.
 const baseURL = `http://localhost:${webPort}/web/`
-const canvasURL = `http://localhost:${canvasPort}/canvas/`
 
 // The app under test is the standalone web shell built for production (so the
 // minified SANDBOX_SRCDOC + worker bootstrap are exercised, not just the dev
@@ -164,37 +157,14 @@ export default defineConfig({
       use: { ...devices['Desktop Safari'] }
     }
   ],
-  // Two origins. The first serves the COMPOSED apps/host/dist — the single shell build
-  // fanned out to /web/, /widget/, /mobile/ (plus the root app) exactly as deployed —
-  // so all three browser endpoints share one origin and one session. The second serves
-  // the canvas shell separately (it needs its own origin + ACAO headers for the
-  // sandboxed Excalidraw iframe). Both dists must be built first: `turbo run build
-  // --filter @tinytinkerer/host` builds the shell, canvas, and root and composes them;
-  // CI and the README do this before invoking the suite. reuseExistingServer is only
-  // enabled when the package wrapper generated the local random ports; in CI, or when a
-  // caller pins ports, always start fresh so stale output cannot be served silently.
-  webServer: [
-    {
-      // The composed deploy surface: apps/host/dist has /web/, /widget/, /mobile/, and
-      // /canvas/ subdirs plus the root app, all at base '/'. `vite preview --outDir dist`
-      // serves that directory, so the three browser endpoints are one origin.
-      command: `pnpm --filter @tinytinkerer/host exec vite preview --outDir dist --port ${webPort} --strictPort`,
-      url: baseURL,
-      reuseExistingServer: !process.env.CI && process.env.E2E_PORT_GENERATED === '1',
-      timeout: 120_000,
-      stdout: 'pipe',
-      stderr: 'pipe'
-    },
-    {
-      // The canvas shell hosts the sandboxed Excalidraw iframe. Its `vite preview` sends
-      // Access-Control-Allow-Origin (apps/canvas/vite.config.ts preview.headers) so the
-      // opaque-origin iframe can load its ES-module assets, matching production.
-      command: `pnpm --filter @tinytinkerer/canvas exec vite preview --port ${canvasPort} --strictPort`,
-      url: canvasURL,
-      reuseExistingServer: !process.env.CI && process.env.E2E_PORT_GENERATED === '1',
-      timeout: 120_000,
-      stdout: 'pipe',
-      stderr: 'pipe'
-    }
-  ]
+  // Serve the composed production surface from one origin. The host dist includes
+  // /web/, /widget/, /mobile/, /canvas/, /ide/, and /mermaid/.
+  webServer: {
+    command: `pnpm --filter @tinytinkerer/host exec vite preview --outDir dist --port ${webPort} --strictPort`,
+    url: baseURL,
+    reuseExistingServer: !process.env.CI && process.env.E2E_PORT_GENERATED === '1',
+    timeout: 120_000,
+    stdout: 'pipe',
+    stderr: 'pipe'
+  }
 })

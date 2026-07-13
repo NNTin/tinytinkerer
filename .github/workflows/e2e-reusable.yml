@@ -48,8 +48,7 @@ jobs:
       # builds the single shell + canvas + the root app and composes them into
       # apps/host/dist (the deploy surface with /web/, /widget/, /mobile/, /canvas/).
       # The e2e suite serves that composed dist so the three browser endpoints share one
-      # origin exactly as deployed (chat-persistence #250), plus apps/canvas/dist for the
-      # separate canvas origin (canvas Excalidraw features #317).
+      # origin exactly as deployed, including the integrated canvas app.
       - name: Build composed host (shell + canvas + root)
         run: |
           pnpm generate:brand-assets
@@ -58,16 +57,12 @@ jobs:
           TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build \
             --filter=@tinytinkerer/host
 
-      # Common ancestor of the paths is `apps/`, so the artifact stores `host/dist`
-      # (the composed browser origin) and `canvas/dist` (the separate canvas origin);
-      # the shards download it into `apps`.
+      # The composed host dist is the complete browser surface served by every shard.
       - name: Upload built shells
         uses: actions/upload-artifact@v6
         with:
           name: shells-dist
-          path: |
-            apps/host/dist
-            apps/canvas/dist
+          path: apps/host/dist
           if-no-files-found: error
           retention-days: 1
 
@@ -85,11 +80,9 @@ jobs:
         shard: [1, 2, 3]
     env:
       # Pin the per-run ports so the webServer URLs are deterministic in CI. The three
-      # browser endpoints (web / widget / mobile) share ONE origin (E2E_PORT); the e2e
-      # wrapper aliases E2E_PORT_WIDGET / E2E_PORT_MOBILE to it. Canvas keeps its own
-      # origin. Shards run on separate runners, so the fixed ports never collide.
+      # endpoints share ONE origin (E2E_PORT). Shards run on separate runners, so the
+      # fixed port never collides.
       E2E_PORT: 43117
-      E2E_PORT_CANVAS: 43120
       # The merged report combines all shards by test, so the shard boundary is
       # otherwise invisible. playwright.config.ts reads this to tag every test in this
       # shard's process with `shard-<n>`, keeping the merged report filterable by shard

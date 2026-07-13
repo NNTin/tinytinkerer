@@ -321,7 +321,7 @@ export const FloatingLayout = ({
 
   const beginDrag = (event: ReactPointerEvent<HTMLButtonElement>, fromLauncher: boolean) => {
     // Capture the pointer so the drag keeps tracking even when the cursor leaves the
-    // window — including over a sandboxed iframe beneath (the canvas overlay) or past
+    // window or other content beneath it, or past
     // the viewport edge (#323: "moving the widget from below to top loses the drag").
     beginDragGesture(event, {
       startX: event.clientX,

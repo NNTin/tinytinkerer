@@ -22,7 +22,6 @@
     "typecheck": "pnpm -w generate:privacy-policy && tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tinytinkerer/app-bridge": "workspace:*",
     "@tinytinkerer/app-browser": "workspace:*",
     "dexie": "4.4.3"
   },

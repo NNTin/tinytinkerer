@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import {
-  excalidrawLibraryImportContract,
-  excalidrawSnapshotRestoreContract,
   excalidrawVerbContracts,
   projectedElementSchema,
   readElementSchema
@@ -24,11 +22,9 @@ import {
   ELEMENT_PROJECTION_FIELDS,
   EXCALIDRAW_DEFAULT_BINDING_GAP,
   EXCALIDRAW_ICON_LIMIT,
-  EXCALIDRAW_LIBRARY_IMPORT_VERB,
   EXCALIDRAW_PAYLOAD_BUDGETS,
   EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS,
   EXCALIDRAW_PREVIEWABLE_VERBS,
-  EXCALIDRAW_PROTOCOL_VERSION,
   EXCALIDRAW_SNAPSHOT_VERSION,
   EXCALIDRAW_THUMBNAIL_MAX_DIMENSION_BOUNDS,
   EXCALIDRAW_VERBS,
@@ -50,7 +46,7 @@ import {
   transformInputSchema
 } from '../src/inputs'
 
-describe('excalidraw protocol', () => {
+describe('canvas contracts', () => {
   it('accepts the model-facing draw vocabulary', () => {
     expect(
       drawInputSchema.parse({
@@ -714,9 +710,8 @@ describe('excalidraw protocol', () => {
     // Counterpart: the same invariant is enforced fail-fast by `toolInputJsonSchema`
     // in packages/shared/contracts/src/tool-schema.ts. Keep the `z.toJSONSchema`
     // options below in sync with it — this test cannot import the real guard
-    // (check-boundaries.mjs limits app-protocol packages to app-bridge + local
-    // modules), so drifted options would validate a conversion the descriptor
-    // path no longer uses.
+    // so drifted conversion options would validate a shape the descriptor path no
+    // longer uses.
     for (const [verb, schema] of Object.entries(excalidrawVerbInputSchemas)) {
       const json = z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'input' }) as Record<
         string,
@@ -725,10 +720,6 @@ describe('excalidraw protocol', () => {
       expect(json.type, `${verb} must have an object root`).toBe('object')
       expect('anyOf' in json, `${verb} must not have a top-level union`).toBe(false)
     }
-  })
-
-  it('uses an independently owned app contract version', () => {
-    expect(EXCALIDRAW_PROTOCOL_VERSION).toBe(8)
   })
 
   it('defines input and result contracts for every advertised verb', () => {
@@ -872,17 +863,8 @@ describe('excalidraw protocol', () => {
         appState: { scrollX: 1, zoom: { value: 1 } }
       }).success
     ).toBe(true)
-    // A snapshot from another schema version fails closed (harness → empty scene).
+    // A snapshot from another schema version fails closed to an empty scene.
     expect(excalidrawSnapshotSchema.safeParse({ version: 999, elements: [] }).success).toBe(false)
-    expect(
-      excalidrawSnapshotRestoreContract.resultSchema.safeParse({ ok: true, restored: 3 }).success
-    ).toBe(true)
-    expect(
-      excalidrawSnapshotRestoreContract.inputSchema.safeParse({
-        version: EXCALIDRAW_SNAPSHOT_VERSION,
-        elements: []
-      }).success
-    ).toBe(true)
     // Imported library items round-trip through the snapshot.
     expect(
       excalidrawSnapshotSchema.safeParse({
@@ -890,21 +872,6 @@ describe('excalidraw protocol', () => {
         elements: [],
         libraryItems: [{ id: 'lib-1' }]
       }).success
-    ).toBe(true)
-  })
-
-  it('defines the library import system verb outside the model-facing set', () => {
-    expect(EXCALIDRAW_VERBS).not.toContain(EXCALIDRAW_LIBRARY_IMPORT_VERB)
-    expect(
-      excalidrawLibraryImportContract.inputSchema.safeParse({ content: '{"libraryItems":[]}' })
-        .success
-    ).toBe(true)
-    // Empty content is rejected at the wire.
-    expect(excalidrawLibraryImportContract.inputSchema.safeParse({ content: '' }).success).toBe(
-      false
-    )
-    expect(
-      excalidrawLibraryImportContract.resultSchema.safeParse({ ok: true, imported: 2 }).success
     ).toBe(true)
   })
 

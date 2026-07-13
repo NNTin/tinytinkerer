@@ -8,7 +8,7 @@ const handle = (request = vi.fn().mockResolvedValue({ ok: true })) =>
   }) as { request(method: keyof CanvasController, input?: unknown): Promise<unknown> }
 
 describe('canvas app tools', () => {
-  it('exposes only the protocol-backed Excalidraw verbs', () => {
+  it('exposes only the schema-validated canvas verbs', () => {
     const tools = createCanvasAppTools(handle())
     expect(tools.map((tool) => tool.id)).toEqual([
       'draw',
@@ -128,7 +128,7 @@ describe('canvas app tools', () => {
     expect(request).toHaveBeenCalledWith('pick', parsed)
   })
 
-  it('forwards validated tool input to the bridge handle', async () => {
+  it('forwards validated tool input to the controller handle', async () => {
     const request = vi.fn().mockResolvedValue({ ok: true, drawn: 1 })
     const draw = createCanvasAppTools(handle(request)).find((tool) => tool.id === 'draw')
     const input = { elements: [{ type: 'rectangle' as const, x: 0, y: 0 }] }

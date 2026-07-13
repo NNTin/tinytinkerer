@@ -124,37 +124,6 @@ test('apps must declare architecture metadata, and the role must be valid', asyn
   assert.match(result.stderr, /invalid tinytinkerer\.architectureRole/)
 })
 
-test('iframe app packages may be consumed only by their declaring harness shell', async (t) => {
-  const result = await withFixture(t, {
-    'packages/foo-protocol/package.json': pkg('@tinytinkerer/foo-protocol', {
-      tinytinkerer: { architectureRole: 'app-protocol' }
-    }),
-    'packages/foo-iframe-app/package.json': pkg('@tinytinkerer/foo-iframe-app', {
-      tinytinkerer: {
-        architectureRole: 'iframe-app',
-        protocolPackage: '@tinytinkerer/foo-protocol'
-      }
-    }),
-    'apps/foo-harness/package.json': pkg('@tinytinkerer/foo-harness', {
-      tinytinkerer: {
-        architectureRole: 'harness-shell',
-        protocolPackage: '@tinytinkerer/foo-protocol',
-        iframeAppPackage: '@tinytinkerer/foo-iframe-app',
-        iframeEntry: 'src/iframe-entry.ts'
-      }
-    }),
-    'apps/foo-harness/src/iframe-entry.ts': '// declared iframe entry, no imports needed\n',
-    'packages/other-package/package.json': pkg('@tinytinkerer/other-package'),
-    'packages/other-package/src/index.ts': "import { x } from '@tinytinkerer/foo-iframe-app'\n"
-  })
-
-  assert.equal(result.code, 1)
-  assert.match(
-    result.stderr,
-    /iframe app packages may be consumed only by their declaring harness shell/
-  )
-})
-
 test('integrated shells may import only their declared trusted stage package', async (t) => {
   const result = await withFixture(t, {
     'packages/ide/package.json': pkg('@tinytinkerer/ide'),
@@ -268,32 +237,7 @@ test('edge-service apps may import only contracts, sentry-telemetry, and edge-lo
   )
 })
 
-test('app-bridge is a leaf: importing a per-app protocol package is rejected', async (t) => {
-  const result = await withFixture(t, {
-    'packages/excalidraw-protocol/package.json': pkg('@tinytinkerer/excalidraw-protocol', {
-      tinytinkerer: { architectureRole: 'app-protocol' }
-    }),
-    'packages/app-bridge/package.json': pkg('@tinytinkerer/app-bridge'),
-    'packages/app-bridge/src/index.ts':
-      "import { schema } from '@tinytinkerer/excalidraw-protocol'\n"
-  })
-
-  assert.equal(result.code, 1)
-  assert.match(result.stderr, /app-bridge is a leaf/)
-})
-
-test('app-bridge importing only local modules passes', async (t) => {
-  const result = await withFixture(t, {
-    'packages/app-bridge/package.json': pkg('@tinytinkerer/app-bridge'),
-    'packages/app-bridge/src/index.ts': "export { defineBridgeVerb } from './verbs'\n",
-    'packages/app-bridge/src/verbs.ts': 'export const defineBridgeVerb = () => undefined\n'
-  })
-
-  assert.equal(result.code, 0)
-  assert.equal(result.stdout.trim(), 'Boundary checks passed.')
-})
-
-test('app-shell may import only app-browser, app-bridge, and local modules', async (t) => {
+test('app-shell may import only app-browser and local modules', async (t) => {
   const result = await withFixture(t, {
     'packages/contracts/package.json': pkg('@tinytinkerer/contracts'),
     'packages/app-shell/package.json': pkg('@tinytinkerer/app-shell'),
@@ -301,19 +245,15 @@ test('app-shell may import only app-browser, app-bridge, and local modules', asy
   })
 
   assert.equal(result.code, 1)
-  assert.match(
-    result.stderr,
-    /app-shell may import only app-browser, app-bridge, and app-shell-local modules/
-  )
+  assert.match(result.stderr, /app-shell may import only app-browser and app-shell-local modules/)
 })
 
-test('app-shell importing app-browser and app-bridge passes', async (t) => {
+test('app-shell importing app-browser passes', async (t) => {
   const result = await withFixture(t, {
     'packages/app-browser/package.json': pkg('@tinytinkerer/app-browser'),
-    'packages/app-bridge/package.json': pkg('@tinytinkerer/app-bridge'),
     'packages/app-shell/package.json': pkg('@tinytinkerer/app-shell'),
     'packages/app-shell/src/index.ts':
-      "import { ChatApp } from '@tinytinkerer/app-browser'\nimport { defineBridgeVerb } from '@tinytinkerer/app-bridge'\n\nexport const use = () => [ChatApp, defineBridgeVerb]\n"
+      "import { ChatApp } from '@tinytinkerer/app-browser'\n\nexport const use = () => ChatApp\n"
   })
 
   assert.equal(result.code, 0)

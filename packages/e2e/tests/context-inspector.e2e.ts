@@ -28,10 +28,10 @@ const TOGGLE = '[data-testid="context-inspector-toggle"]'
 const PANEL = '[data-testid="context-inspector-panel"]'
 const RESPONSE = '[data-testid="context-inspector-response"]'
 
-// The canvas shell's URL. fixtures/canvas.ts's `openCanvas` is not usable here: it
+// The integrated canvas URL. fixtures/canvas.ts's `openCanvas` is not usable here: it
 // aborts **/api/** routes to keep the whiteboard isolated from the chat backend,
 // which would kill the chat mock this spec needs.
-const CANVAS_URL = `http://localhost:${requireShellPort('E2E_PORT_CANVAS')}/canvas/`
+const CANVAS_URL = `http://localhost:${requireShellPort('E2E_PORT')}/canvas/`
 
 const sendMessageAndAwaitReply = async (page: Page, prompt: string): Promise<void> => {
   await page.getByPlaceholder('Ask anything').fill(prompt)
@@ -166,12 +166,12 @@ test.describe('context-inspector plugin (#270)', () => {
   })
 })
 
-// #393: the canvas shell's floating chat never passed inspectorPanelSupported, so the
+// #393: the canvas shell's assistant never passed inspectorPanelSupported, so the
 // plugin's Settings toggle was permanently disabled there and no viewer button ever
 // appeared, even though the underlying floating surface is the same shared body the
 // widget shell already exercises above. This closes the canvas gap end-to-end: enable
-// the plugin in the canvas shell's inline settings, drive a real turn through its
-// floating composer, and prove the panel shows exactly what was forwarded.
+// the plugin in the canvas shell's assistant settings, drive a real turn through its
+// assistant composer, and prove the panel shows exactly what was forwarded.
 test.describe('context-inspector plugin in the canvas shell (#393)', () => {
   test('enabled: the panel shows the exact forwarded context after a turn', async ({ page }) => {
     const mock = await installChatMock(page)
@@ -181,7 +181,7 @@ test.describe('context-inspector plugin in the canvas shell (#393)', () => {
     // No capture, no toggle, before any request has been forwarded.
     await expect(page.locator(TOGGLE)).toHaveCount(0)
 
-    // Drive a turn through the canvas shell's floating composer (mirrors
+    // Drive a turn through the canvas shell's assistant composer (mirrors
     // widget-morph.e2e.ts's floating-composer driving).
     const composer = page.locator('textarea').first()
     await composer.fill('Inspect the exact context for this turn.')

@@ -28,7 +28,7 @@ const insetForPanel = (panel: HTMLElement): CSSProperties => {
 const insetSignature = (inset: CSSProperties): string =>
   `${inset.top ?? ''}|${inset.right ?? ''}|${inset.bottom ?? ''}|${inset.left ?? ''}`
 
-// Generic app/chat composition for iframe-backed apps and trusted in-process stages.
+// Generic composition for a trusted in-process application stage and assistant.
 export const AppStageShell = ({
   children,
   chat,
@@ -66,11 +66,11 @@ export const AppStageShell = ({
   }, [])
 
   return (
-    <div className={['app-harness-stage', className].filter(Boolean).join(' ')}>
-      <div className="app-harness-frame-region" style={stageInset}>
+    <div className={['app-stage-shell', className].filter(Boolean).join(' ')}>
+      <div className="app-stage-region" style={stageInset}>
         {children}
       </div>
-      <div className="app-harness-chat" ref={chatRef}>
+      <div className="app-stage-chat" ref={chatRef}>
         <ChatApp {...chat} mode={initialChatMode} />
       </div>
     </div>

@@ -92,7 +92,7 @@
 }
 
 /* The widget's floating stage as a click-through overlay over the whole root stage
-   (mirrors the canvas harness overlay), so the panes beneath stay interactive. */
+   (matches other floating assistant overlays), so the panes beneath stay interactive. */
 .widget-stage.root-widget-overlay {
   position: absolute;
   inset: 0;

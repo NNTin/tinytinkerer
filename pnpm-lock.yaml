@@ -495,9 +495,6 @@ importers:
 
   packages/app/app-shell:
     dependencies:
-      '@tinytinkerer/app-bridge':
-        specifier: workspace:*
-        version: link:../../shared/app-bridge
       '@tinytinkerer/app-browser':
         specifier: workspace:*
         version: link:../app-browser
@@ -1100,12 +1097,6 @@ importers:
       '@tinytinkerer/contracts':
         specifier: workspace:*
         version: link:../../shared/contracts
-
-  packages/shared/app-bridge:
-    dependencies:
-      zod:
-        specifier: 4.4.3
-        version: 4.4.3
 
   packages/shared/contracts:
     dependencies:

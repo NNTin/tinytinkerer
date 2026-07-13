@@ -45,7 +45,7 @@ const browserStorage = (): Storage | undefined => {
 }
 
 // Load the IndexedDB workspace first. On the first integrated-stage startup, migrate
-// the previous harness localStorage snapshot. The old key is removed only after the
+// the previous localStorage snapshot. The old key is removed only after the
 // IndexedDB write succeeds, so quota/availability failures never destroy user data.
 export const loadCanvasSnapshot = async (
   store: WorkspaceStore<CanvasWorkspaceRecord> = canvasWorkspaceStore,

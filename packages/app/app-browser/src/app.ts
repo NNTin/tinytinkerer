@@ -78,7 +78,7 @@ const requireBrowserApp = (app: BrowserApp | undefined): BrowserApp => {
 export const createBrowserApp = (
   config: BrowserShellConfig,
   options: {
-    // The app's always-on tool group (e.g. a harness shell's app-specific verbs).
+    // The app's always-on tool group (e.g. an integrated shell's stage tools).
     // Threaded down to the chat store / runtime AND held on the app for the tool
     // picker; absent for web/widget/mobile.
     appToolGroup?: AppToolGroup

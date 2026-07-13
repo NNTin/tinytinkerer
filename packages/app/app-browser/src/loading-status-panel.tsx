@@ -2,7 +2,7 @@ import type { LoadingScreenProps } from './loading-screen-types'
 
 // The single boot/route/chat "loading status" panel shared by every browser
 // shell (apps/shell's web/widget/mobile presentations, apps/host's root
-// compositor, and apps/canvas's harness shell). Previously each app kept its
+// compositor, and the integrated application shells). Previously each app kept its
 // own copy-pasted card + error/idle chrome, which let apps/canvas's copy drift
 // and lose its "Startup failed" + Reload affordance (#370). Each app now
 // supplies only the per-variant chrome via `variant`, plus copy via
