@@ -117,7 +117,7 @@ behavior → `ExcalidrawImperativeAPI` → result (validated against protocol re
 - `apps/canvas` (role `harness-shell`) owns the deployable shell, iframe URL, app id/version wiring, and the
   model-facing verb descriptions in `src/canvas-runtime.ts`. It imports Excalidraw **contracts** but **never**
   `@excalidraw/excalidraw` and never reimplements behavior.
-- `packages/shared/app-bridge` and `packages/app/app-harness` are generic. They must not know Excalidraw verb
+- `packages/shared/app-bridge` and `packages/app/app-shell` are generic. They must not know Excalidraw verb
   names, schemas, element kinds, or behavior.
 - `apps/widget` is a chat-only sibling: no Excalidraw protocol/bridge/harness dependency.
 

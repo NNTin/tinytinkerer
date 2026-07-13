@@ -293,26 +293,26 @@ test('app-bridge importing only local modules passes', async (t) => {
   assert.equal(result.stdout.trim(), 'Boundary checks passed.')
 })
 
-test('app-harness may import only app-browser, app-bridge, and local modules', async (t) => {
+test('app-shell may import only app-browser, app-bridge, and local modules', async (t) => {
   const result = await withFixture(t, {
     'packages/contracts/package.json': pkg('@tinytinkerer/contracts'),
-    'packages/app-harness/package.json': pkg('@tinytinkerer/app-harness'),
-    'packages/app-harness/src/index.ts': "import { x } from '@tinytinkerer/contracts'\n"
+    'packages/app-shell/package.json': pkg('@tinytinkerer/app-shell'),
+    'packages/app-shell/src/index.ts': "import { x } from '@tinytinkerer/contracts'\n"
   })
 
   assert.equal(result.code, 1)
   assert.match(
     result.stderr,
-    /app-harness may import only app-browser, app-bridge, and app-harness-local modules/
+    /app-shell may import only app-browser, app-bridge, and app-shell-local modules/
   )
 })
 
-test('app-harness importing app-browser and app-bridge passes', async (t) => {
+test('app-shell importing app-browser and app-bridge passes', async (t) => {
   const result = await withFixture(t, {
     'packages/app-browser/package.json': pkg('@tinytinkerer/app-browser'),
     'packages/app-bridge/package.json': pkg('@tinytinkerer/app-bridge'),
-    'packages/app-harness/package.json': pkg('@tinytinkerer/app-harness'),
-    'packages/app-harness/src/index.ts':
+    'packages/app-shell/package.json': pkg('@tinytinkerer/app-shell'),
+    'packages/app-shell/src/index.ts':
       "import { ChatApp } from '@tinytinkerer/app-browser'\nimport { defineBridgeVerb } from '@tinytinkerer/app-bridge'\n\nexport const use = () => [ChatApp, defineBridgeVerb]\n"
   })
 

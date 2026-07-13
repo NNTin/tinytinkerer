@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { AppBridgeHandle } from '@tinytinkerer/app-harness'
+import type { AppBridgeHandle } from '@tinytinkerer/app-shell'
 import { createCanvasAppTools } from './canvas-runtime'
 
 const handle = (request = vi.fn().mockResolvedValue({ ok: true })): AppBridgeHandle => ({

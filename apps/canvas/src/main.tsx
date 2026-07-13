@@ -3,7 +3,7 @@ import { router } from './app/router'
 import { CanvasBootScreen } from './app/loading-screen'
 import { createCanvasAppTools } from './canvas-runtime'
 import '@tinytinkerer/app-browser/styles.css'
-import '@tinytinkerer/app-harness/styles.css'
+import '@tinytinkerer/app-shell/styles.css'
 import './index.css'
 
 createBrowserShellRoot({

@@ -4,7 +4,7 @@ import {
   EXCALIDRAW_LIBRARY_IMPORT_VERB,
   isAllowedLibraryUrl
 } from '@tinytinkerer/excalidraw-protocol'
-import type { AppBridgeHandle } from '@tinytinkerer/app-harness'
+import type { AppBridgeHandle } from '@tinytinkerer/app-shell'
 import { canvasBridgeHandle } from './canvas-runtime'
 
 type LibraryMessage = { libraryUrl?: unknown; idToken?: unknown }

@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@tinytinkerer/app-browser": "workspace:*",
-    "@tinytinkerer/app-harness": "workspace:*",
+    "@tinytinkerer/app-shell": "workspace:*",
     "@tinytinkerer/excalidraw-app": "workspace:*",
     "@tinytinkerer/excalidraw-protocol": "workspace:*",
     "react": "19.2.6",

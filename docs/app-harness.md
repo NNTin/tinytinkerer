@@ -47,7 +47,7 @@ flowchart LR
   canvasEntry["apps/canvas/excalidraw-app<br/>secondary HTML entry"]
 
   browser["@tinytinkerer/app-browser<br/>shared browser runtime and chat UI"]
-  harness["@tinytinkerer/app-harness<br/>iframe host and tool adapter"]
+  harness["@tinytinkerer/app-shell<br/>iframe host and tool adapter"]
   protocol["@tinytinkerer/excalidraw-protocol<br/>app-specific contracts"]
   bridge["@tinytinkerer/app-bridge<br/>generic wire protocol"]
   excalidrawApp["@tinytinkerer/excalidraw-app<br/>iframe implementation"]
@@ -115,7 +115,7 @@ flowchart TB
 | `packages/shared/app-bridge`          | Generic request/response/event transport    | Envelopes, correlation ids, bridge version, nonces, transports, timeouts | Excalidraw, React UI, model tool descriptions, app-specific verbs |
 | `packages/shared/excalidraw-protocol` | Excalidraw wire vocabulary                  | Verb names and Zod input/result schemas                                  | Excalidraw runtime code, iframe lifecycle, chat UI                |
 | `packages/app/excalidraw-app`         | Excalidraw iframe implementation            | Excalidraw component/API, protocol contracts, bridge server              | Chat runtime, canvas routing, model provider                      |
-| `packages/app/app-harness`            | Generic iframe/chat composition             | `AppFrame`, bridge client, stable bridge handle, verb-to-tool adaptation | Excalidraw-specific behavior or schemas                           |
+| `packages/app/app-shell`              | Generic iframe/chat composition             | `AppFrame`, bridge client, stable bridge handle, verb-to-tool adaptation | Excalidraw-specific behavior or schemas                           |
 | `apps/canvas`                         | Deployable Excalidraw shell and build owner | Tool descriptions, protocol metadata, iframe URL, shell routing          | Excalidraw domain behavior in the parent window                   |
 | `apps/shell`                          | Deployable chat-only shell                  | Shared chat UI and widget window mode (`?mode=minimized`)                | App bridge, Excalidraw protocol, iframe app                       |
 
@@ -123,11 +123,11 @@ These boundaries are intentional. For example:
 
 - `app-bridge` cannot import `excalidraw-protocol`; the generic layer must remain usable
   by a future non-Excalidraw app.
-- `app-harness` cannot hard-code Excalidraw verb names. It receives a record of verbs
+- `app-shell` cannot hard-code Excalidraw verb names. It receives a record of verbs
   and schemas from the shell.
 - `apps/canvas` can import Excalidraw **contracts**, but its parent-window source cannot
   import `@excalidraw/excalidraw`.
-- `apps/shell` does not import `app-harness`, `app-bridge`, or
+- `apps/shell` does not import `app-shell`, `app-bridge`, or
   `excalidraw-protocol`. Its relationship to canvas is reuse of the chat shell, not
   participation in the iframe protocol.
 
@@ -953,7 +953,7 @@ This distinction matters when adding features:
 
 - shared chat chrome, layout, composer, or model-runtime changes belong in
   `app-browser` and should work in widget and canvas;
-- iframe lifecycle or app-tool forwarding belongs in `app-harness`;
+- iframe lifecycle or app-tool forwarding belongs in `app-shell`;
 - Excalidraw tool schemas belong in `excalidraw-protocol`; and
 - Excalidraw API behavior belongs in `excalidraw-app`.
 
@@ -1147,5 +1147,5 @@ A new iframe app should follow the same division:
    startup graph.
 
 Do not copy the Excalidraw handler into the shell, add app-specific branches to
-`app-bridge` or `app-harness`, or make a chat-only shell such as widget depend on an
+`app-bridge` or `app-shell`, or make a chat-only shell such as widget depend on an
 iframe app.

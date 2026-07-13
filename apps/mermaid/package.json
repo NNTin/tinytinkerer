@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@tinytinkerer/app-browser": "workspace:*",
-    "@tinytinkerer/app-harness": "workspace:*",
+    "@tinytinkerer/app-shell": "workspace:*",
     "@tinytinkerer/mermaid": "workspace:*",
     "react": "19.2.6",
     "react-dom": "19.2.6",

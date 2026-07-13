@@ -1,4 +1,4 @@
-import { DockablePanelLayout } from '@tinytinkerer/app-harness'
+import { DockablePanelLayout } from '@tinytinkerer/app-shell'
 import { CodeMirrorEditor } from '@tinytinkerer/content-code'
 import {
   renderMermaidSource,

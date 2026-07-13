@@ -1,4 +1,4 @@
-import { HarnessShell, resolveEmbeddedAppUrl } from '@tinytinkerer/app-harness'
+import { HarnessShell, resolveEmbeddedAppUrl } from '@tinytinkerer/app-shell'
 import {
   EXCALIDRAW_APP_ID,
   EXCALIDRAW_PROTOCOL_VERSION,

@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // canvas page never passed `inspectorPanelSupported`, unlike the web/widget shells).
 const captured = vi.hoisted(() => ({ props: undefined as Record<string, unknown> | undefined }))
 
-vi.mock('@tinytinkerer/app-harness', () => ({
+vi.mock('@tinytinkerer/app-shell', () => ({
   HarnessShell: (props: Record<string, unknown>) => {
     captured.props = props
     return <div data-harness-shell="true" />

@@ -1,5 +1,5 @@
-import { appToolsFromVerbs, createAppBridgeHandle } from '@tinytinkerer/app-harness'
-import type { AppBridgeHandle } from '@tinytinkerer/app-harness'
+import { appToolsFromVerbs, createAppBridgeHandle } from '@tinytinkerer/app-shell'
+import type { AppBridgeHandle } from '@tinytinkerer/app-shell'
 import {
   EXCALIDRAW_PICK_MAX_TIMEOUT_SECONDS,
   excalidrawVerbInputSchemas

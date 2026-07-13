@@ -22,7 +22,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@tinytinkerer/app-harness": "workspace:*",
+    "@tinytinkerer/app-shell": "workspace:*",
     "@tinytinkerer/content-code": "workspace:*",
     "@tinytinkerer/content-mermaid": "workspace:*",
     "@tinytinkerer/file-tools": "workspace:*",

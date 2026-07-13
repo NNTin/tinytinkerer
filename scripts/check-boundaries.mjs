@@ -486,14 +486,14 @@ function validateBoundary(sourcePkg, target, filePath) {
     const allowed = new Set([
       sourcePkg.name,
       '@tinytinkerer/app-browser',
-      '@tinytinkerer/app-harness',
+      '@tinytinkerer/app-shell',
       '@tinytinkerer/ui',
       architecture.protocolPackage,
       architecture.iframeAppPackage
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: harness shells may depend only on app-browser, app-harness, ui, their app-owned protocol package, and local modules (${targetPkg.name})`
+        `${sourceLabel}: harness shells may depend only on app-browser, app-shell, ui, their app-owned protocol package, and local modules (${targetPkg.name})`
       )
     }
   }
@@ -502,13 +502,13 @@ function validateBoundary(sourcePkg, target, filePath) {
     const allowed = new Set([
       sourcePkg.name,
       '@tinytinkerer/app-browser',
-      '@tinytinkerer/app-harness',
+      '@tinytinkerer/app-shell',
       '@tinytinkerer/ui',
       architecture.stagePackage
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: integrated shells may depend only on app-browser, app-harness, ui, their declared stage package, and local modules (${targetPkg.name})`
+        `${sourceLabel}: integrated shells may depend only on app-browser, app-shell, ui, their declared stage package, and local modules (${targetPkg.name})`
       )
     }
   }
@@ -624,15 +624,15 @@ function validateBoundary(sourcePkg, target, filePath) {
     }
   }
 
-  if (sourcePkg.name === '@tinytinkerer/app-harness') {
+  if (sourcePkg.name === '@tinytinkerer/app-shell') {
     const allowed = new Set([
-      '@tinytinkerer/app-harness',
+      '@tinytinkerer/app-shell',
       '@tinytinkerer/app-browser',
       '@tinytinkerer/app-bridge'
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: app-harness may import only app-browser, app-bridge, and app-harness-local modules (it must not depend on any concrete iframe app) (${targetPkg.name})`
+        `${sourceLabel}: app-shell may import only app-browser, app-bridge, and app-shell-local modules (it must not depend on any concrete iframe app) (${targetPkg.name})`
       )
     }
   }

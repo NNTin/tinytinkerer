@@ -1,4 +1,4 @@
-import { AppStageShell } from '@tinytinkerer/app-harness'
+import { AppStageShell } from '@tinytinkerer/app-shell'
 import { IdeStage } from '@tinytinkerer/ide'
 import { IdeChatLoading } from './app/loading-screen'
 

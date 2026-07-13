@@ -77,9 +77,9 @@ importers:
       '@tinytinkerer/app-browser':
         specifier: workspace:*
         version: link:../../packages/app/app-browser
-      '@tinytinkerer/app-harness':
+      '@tinytinkerer/app-shell':
         specifier: workspace:*
-        version: link:../../packages/app/app-harness
+        version: link:../../packages/app/app-shell
       '@tinytinkerer/excalidraw-app':
         specifier: workspace:*
         version: link:../../packages/app/excalidraw-app
@@ -215,9 +215,9 @@ importers:
       '@tinytinkerer/app-browser':
         specifier: workspace:*
         version: link:../../packages/app/app-browser
-      '@tinytinkerer/app-harness':
+      '@tinytinkerer/app-shell':
         specifier: workspace:*
-        version: link:../../packages/app/app-harness
+        version: link:../../packages/app/app-shell
       '@tinytinkerer/ide':
         specifier: workspace:*
         version: link:../../packages/app/ide
@@ -264,9 +264,9 @@ importers:
       '@tinytinkerer/app-browser':
         specifier: workspace:*
         version: link:../../packages/app/app-browser
-      '@tinytinkerer/app-harness':
+      '@tinytinkerer/app-shell':
         specifier: workspace:*
-        version: link:../../packages/app/app-harness
+        version: link:../../packages/app/app-shell
       '@tinytinkerer/mermaid':
         specifier: workspace:*
         version: link:../../packages/app/mermaid
@@ -496,7 +496,7 @@ importers:
         specifier: workspace:*
         version: link:../../shared/contracts
 
-  packages/app/app-harness:
+  packages/app/app-shell:
     dependencies:
       '@tinytinkerer/app-bridge':
         specifier: workspace:*
@@ -606,9 +606,9 @@ importers:
 
   packages/app/mermaid:
     dependencies:
-      '@tinytinkerer/app-harness':
+      '@tinytinkerer/app-shell':
         specifier: workspace:*
-        version: link:../app-harness
+        version: link:../app-shell
       '@tinytinkerer/content-code':
         specifier: workspace:*
         version: link:../../content/renderers/content-code

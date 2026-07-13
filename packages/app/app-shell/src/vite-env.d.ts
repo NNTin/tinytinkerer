@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-// app-harness pulls in @tinytinkerer/app-browser source through its package
+// app-shell pulls in @tinytinkerer/app-browser source through its package
 // `exports`, so it needs the same Vite ambient types app-browser relies on
 // (import.meta.env / glob, the build-time defines, and `?url` module imports).
 // These mirror the apps' own vite-env.d.ts; TypeScript merges the identical

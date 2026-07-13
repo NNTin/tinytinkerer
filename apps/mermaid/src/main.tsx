@@ -3,7 +3,7 @@ import { createMermaidAppTools, MERMAID_STARTER_PROMPTS } from '@tinytinkerer/me
 import { router } from './app/router'
 import { MermaidBootScreen } from './app/loading-screen'
 import '@tinytinkerer/app-browser/styles.css'
-import '@tinytinkerer/app-harness/styles.css'
+import '@tinytinkerer/app-shell/styles.css'
 import '@tinytinkerer/mermaid/styles.css'
 import './index.css'
 
