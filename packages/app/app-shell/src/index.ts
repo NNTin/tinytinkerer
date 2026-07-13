@@ -21,7 +21,8 @@ export { DockablePanelLayout } from './dockable-panel-layout'
 export type {
   DockableLayoutPreset,
   DockablePanel,
-  DockablePanelLayoutProps
+  DockablePanelLayoutProps,
+  DockablePanels
 } from './dockable-panel-layout'
 
 export { resolveEmbeddedAppUrl } from './app-url'

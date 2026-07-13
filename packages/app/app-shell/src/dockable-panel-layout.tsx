@@ -3,8 +3,11 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 export type DockablePanel = { id: string; title: string; content: ReactNode }
 export type DockableLayoutPreset = 'a' | 'b' | 'c' | 'd'
 type ActiveLayout = DockableLayoutPreset | 'custom'
+export type DockablePanels =
+  | [DockablePanel, DockablePanel]
+  | [DockablePanel, DockablePanel, DockablePanel]
 export type DockablePanelLayoutProps = {
-  panels: [DockablePanel, DockablePanel, DockablePanel]
+  panels: DockablePanels
   storageKey: string
   defaultPreset?: DockableLayoutPreset
   className?: string
@@ -29,7 +32,17 @@ const LABELS: Record<DockableLayoutPreset, string> = {
   d: 'D · Assistant first'
 }
 const PANEL_DRAG_TYPE = 'application/x-tinytinkerer-panel-id'
-const assignmentsFor = (panels: DockablePanel[]): LayoutState['assignments'] => {
+const assignmentsFor = (panels: readonly DockablePanel[]): LayoutState['assignments'] => {
+  if (panels.length === 2) {
+    const primary = panels[0]?.id ?? ''
+    const secondary = panels[1]?.id ?? ''
+    return {
+      a: [primary, secondary],
+      b: [primary, secondary],
+      c: [secondary, primary],
+      d: [secondary, primary]
+    }
+  }
   const editor = panels.find((panel) => panel.id === 'editor')?.id ?? panels[0]?.id ?? ''
   const preview = panels.find((panel) => panel.id === 'preview')?.id ?? panels[1]?.id ?? ''
   const assistant = panels.find((panel) => panel.id === 'assistant')?.id ?? panels[2]?.id ?? ''
@@ -43,7 +56,10 @@ const assignmentsFor = (panels: DockablePanel[]): LayoutState['assignments'] => 
 const fallbackState = (panels: DockablePanel[], preset: DockableLayoutPreset): LayoutState => ({
   preset,
   assignments: assignmentsFor(panels),
-  sizes: { a: [58, 52], b: [46, 50], c: [32, 67], d: [42, 50] }
+  sizes:
+    panels.length === 2
+      ? { a: [70, 0], b: [70, 0], c: [30, 0], d: [30, 0] }
+      : { a: [58, 52], b: [46, 50], c: [32, 67], d: [42, 50] }
 })
 const loadState = (
   panels: DockablePanel[],
@@ -101,9 +117,30 @@ type Rect = { left: number; top: number; width: number; height: number }
 type Separator = { axis: 'x' | 'y'; value: number; start: number; length: number; index: 0 | 1 }
 const geometry = (
   preset: DockableLayoutPreset | 'narrow',
-  sizes: [number, number]
+  sizes: [number, number],
+  panelCount: 2 | 3
 ): { rects: Rect[]; separators: Separator[] } => {
   const [a, b] = sizes
+  if (panelCount === 2) {
+    const split = preset === 'narrow' ? 40 : a
+    if (preset === 'b' || preset === 'd' || preset === 'narrow') {
+      return {
+        rects: [
+          { left: 0, top: 0, width: 100, height: split },
+          { left: 0, top: split, width: 100, height: 100 - split }
+        ],
+        separators:
+          preset === 'narrow' ? [] : [{ axis: 'y', value: split, start: 0, length: 100, index: 0 }]
+      }
+    }
+    return {
+      rects: [
+        { left: 0, top: 0, width: split, height: 100 },
+        { left: split, top: 0, width: 100 - split, height: 100 }
+      ],
+      separators: [{ axis: 'x', value: split, start: 0, length: 100, index: 0 }]
+    }
+  }
   if (preset === 'narrow')
     return {
       rects: [
@@ -153,11 +190,12 @@ const clamp = (
   preset: DockableLayoutPreset,
   sizes: [number, number],
   index: 0 | 1,
-  value: number
+  value: number,
+  panelCount: 2 | 3
 ): [number, number] => {
   const next: [number, number] = [...sizes]
   next[index] =
-    preset === 'c'
+    panelCount === 3 && preset === 'c'
       ? index === 0
         ? Math.max(20, Math.min(value, next[1] - 20))
         : Math.max(next[0] + 20, Math.min(value, 80))
@@ -172,6 +210,7 @@ export const DockablePanelLayout = ({
   className,
   title = 'Workspace'
 }: DockablePanelLayoutProps) => {
+  const panelCount = panels.length
   const [state, setState] = useState(() => loadState(panels, storageKey, defaultPreset))
   const [narrow, setNarrow] = useState(() => window.innerWidth < 720)
   const [draggedId, setDraggedId] = useState<string | null>(null)
@@ -202,7 +241,11 @@ export const DockablePanelLayout = ({
     state.preset === 'custom'
       ? (state.custom?.sizes ?? state.sizes[basePreset])
       : state.sizes[state.preset]
-  const layout = geometry(narrow ? 'narrow' : basePreset, narrow ? [34, 67] : activeSizes)
+  const layout = geometry(
+    narrow ? 'narrow' : basePreset,
+    narrow ? [34, 67] : activeSizes,
+    panelCount
+  )
   const byId = useMemo(() => new Map(panels.map((panel) => [panel.id, panel])), [panels])
   const swap = (sourceId: string, targetId: string) => {
     if (narrow || sourceId === targetId) return
@@ -251,7 +294,7 @@ export const DockablePanelLayout = ({
             current.preset === 'custom'
               ? (current.custom?.assignments ?? current.assignments[currentPreset])
               : current.assignments[currentPreset],
-          sizes: clamp(currentPreset, currentSizes, index, value)
+          sizes: clamp(currentPreset, currentSizes, index, value, panelCount)
         }
       }
     })
@@ -308,7 +351,11 @@ export const DockablePanelLayout = ({
             {state.preset === 'custom' ? <option value="custom">Custom</option> : null}
             {(Object.keys(LABELS) as DockableLayoutPreset[]).map((preset) => (
               <option key={preset} value={preset}>
-                {LABELS[preset]}
+                {panelCount === 2
+                  ? `${preset.toUpperCase()} · ${
+                      preset === 'a' || preset === 'b' ? panels[0].title : panels[1].title
+                    } ${preset === 'a' || preset === 'c' ? 'left' : 'top'}`
+                  : LABELS[preset]}
               </option>
             ))}
           </select>

@@ -110,4 +110,37 @@ describe('DockablePanelLayout', () => {
       'Assistant'
     ])
   })
+
+  it('supports a resizable two-panel workspace with app-specific preset labels', () => {
+    const twoPanels = [
+      { id: 'canvas', title: 'Canvas', content: <div>canvas body</div> },
+      { id: 'assistant', title: 'Assistant', content: <div>assistant body</div> }
+    ] as const
+    const { container } = render(
+      <DockablePanelLayout panels={[...twoPanels]} storageKey="dock-test" />
+    )
+
+    expect(screen.getAllByRole('region').map((node) => node.getAttribute('aria-label'))).toEqual([
+      'Canvas',
+      'Assistant'
+    ])
+    expect(screen.getByRole('separator', { name: 'Resize workspace 1' })).toHaveAttribute(
+      'aria-valuenow',
+      '70'
+    )
+    expect(screen.queryByRole('separator', { name: 'Resize workspace 2' })).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'A · Canvas left' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'D · Assistant top' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Layout'), { target: { value: 'c' } })
+    expect(container.querySelector('.app-dock-canvas')).toHaveAttribute('data-layout', 'c')
+    expect(screen.getAllByRole('region').map((node) => node.getAttribute('aria-label'))).toEqual([
+      'Assistant',
+      'Canvas'
+    ])
+    expect(screen.getByRole('separator', { name: 'Resize workspace 1' })).toHaveAttribute(
+      'aria-valuenow',
+      '30'
+    )
+  })
 })
