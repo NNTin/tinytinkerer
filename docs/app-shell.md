@@ -115,6 +115,17 @@ entry, sourced from the committed `config/pixel-agents-third-party.json` supplem
 `scripts/lib/dependency-licenses.mjs`) because pnpm's own lockfile cannot see a separately compiled
 bundle.
 
+`prepare-pixel-agents.mjs` injects a second classic script, `tinytinkerer-animation-probe.js`
+(`scripts/pixel-agents-animation-probe.mjs`), immediately after the bridge and before the same
+module entry. It is e2e-only: it checks `window.__PIXEL_AGENTS_E2E` at install time and is a
+complete no-op — no prototype patch, no globals — everywhere else, including production. When
+active, it wraps `CanvasRenderingContext2D.prototype.drawImage` and `.fillRect` to record every
+office canvas draw into a bounded ring buffer (timestamp, a stable per-object sprite/canvas
+identity, source dimensions, and destination rectangle) and an aggregate spawn/despawn-effect
+count, exposed as `window.__ttAnimationProbe`. `packages/e2e/tests/pixel-agents.e2e.ts` uses it to
+assert the office character actually animates in response to live chat activity, not just that
+protocol messages were delivered.
+
 ### Bumping the pin
 
 1. Sync the NNTin mirror from the canonical repository.

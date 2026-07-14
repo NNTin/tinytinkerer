@@ -28,7 +28,20 @@ const REQUIRED_BUNDLE_STRINGS = [
   // through these test hooks; if upstream renames/removes them the suite breaks
   // silently rather than failing the build.
   '__pixelAgentsTestHooks',
-  '__PIXEL_AGENTS_E2E'
+  '__PIXEL_AGENTS_E2E',
+  // scripts/pixel-agents-animation-probe.mjs's consumer
+  // (packages/e2e/fixtures/pixel-agents.ts's selectPersistentAgent) calls this
+  // hook (testHooks.ts) to select the persistent agent without a canvas click.
+  // Without it, selection is a silent no-op (officeState.selectedAgentId never
+  // changes): no selection outline is ever drawn and the DOM overlay never
+  // renders, so calibrateCharacterSlot() and agentOverlayLocator() would both
+  // time out with nothing pointing at this hook as the cause.
+  'selectAgent',
+  // The data-testid value agentOverlayLocator() (packages/e2e/fixtures/pixel-agents.ts)
+  // locates the activity overlay by (ToolOverlay.tsx) — upstream's own e2e technique.
+  'agent-overlay',
+  // The data-agent-id attribute agentOverlayLocator() filters that overlay by.
+  'data-agent-id'
 ]
 
 // scripts/pixel-agents-bridge.mjs implements only the on* handler properties of

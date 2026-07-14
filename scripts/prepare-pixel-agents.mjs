@@ -8,6 +8,10 @@ import {
   assertBundleConformance,
   assertThirdPartyManifest
 } from './check-pixel-agents-conformance.mjs'
+import {
+  injectPixelAgentsAnimationProbe,
+  renderPixelAgentsAnimationProbe
+} from './pixel-agents-animation-probe.mjs'
 import { injectPixelAgentsBridge, renderPixelAgentsBridge } from './pixel-agents-bridge.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
@@ -34,6 +38,7 @@ const CONFORMANCE_SCRIPT_PATH = join(workspaceRoot, 'scripts', 'check-pixel-agen
 const STAMPED_SCRIPT_PATHS = [
   join(workspaceRoot, 'scripts', 'prepare-pixel-agents.mjs'),
   join(workspaceRoot, 'scripts', 'pixel-agents-bridge.mjs'),
+  join(workspaceRoot, 'scripts', 'pixel-agents-animation-probe.mjs'),
   join(workspaceRoot, 'scripts', 'build-pixel-agents-assets.mjs'),
   CONFORMANCE_SCRIPT_PATH
 ]
@@ -58,7 +63,12 @@ const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 // delete artifacts but keep the stamp), so the skip also requires the files
 // every consumer depends on.
 const stagedArtifactsPresent = async () => {
-  const required = ['index.html', 'tinytinkerer-bridge.js', 'tinytinkerer-bootstrap.json']
+  const required = [
+    'index.html',
+    'tinytinkerer-bridge.js',
+    'tinytinkerer-animation-probe.js',
+    'tinytinkerer-bootstrap.json'
+  ]
   const checks = await Promise.all(
     required.map((name) =>
       readFile(join(destination, name)).then(
@@ -136,8 +146,14 @@ try {
 
   const indexPath = join(destination, 'index.html')
   const index = await readFile(indexPath, 'utf8')
-  await writeFile(indexPath, injectPixelAgentsBridge(index))
+  // Chained AFTER the bridge injector so the final script order is
+  // bridge -> probe -> module entry (the probe's own test asserts this order).
+  await writeFile(indexPath, injectPixelAgentsAnimationProbe(injectPixelAgentsBridge(index)))
   await writeFile(join(destination, 'tinytinkerer-bridge.js'), renderPixelAgentsBridge())
+  await writeFile(
+    join(destination, 'tinytinkerer-animation-probe.js'),
+    renderPixelAgentsAnimationProbe()
+  )
 
   const tsx = join(
     checkout,

@@ -30,7 +30,7 @@
     "jscpd": "jscpd apps packages scripts --config config/jscpd.json",
     "knip": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && knip --config config/knip.ts",
     "lint": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 turbo run lint && node ./scripts/check-boundaries.mjs",
-    "test": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && turbo run test && pnpm compliance:test && pnpm check:advisory-allowlists && node --test scripts/browser-shell-chunks.test.mjs && node --test scripts/check-boundaries.test.mjs && node --test scripts/pixel-agents-bridge.test.mjs && node --test scripts/check-pixel-agents-conformance.test.mjs",
+    "test": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && turbo run test && pnpm compliance:test && pnpm check:advisory-allowlists && node --test scripts/browser-shell-chunks.test.mjs && node --test scripts/check-boundaries.test.mjs && node --test scripts/pixel-agents-bridge.test.mjs && node --test scripts/pixel-agents-animation-probe.test.mjs && node --test scripts/check-pixel-agents-conformance.test.mjs",
     "test:allure": "pnpm generate:brand-assets && pnpm generate:privacy-policy && pnpm generate:notices && TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 turbo run test -- --reporter=default --reporter=allure-vitest/reporter",
     "collect:allure-results": "node ./scripts/collect-allure-results.mjs",
     "metadata:allure": "node ./scripts/write-allure-metadata.mjs",

@@ -15,6 +15,7 @@ const COMPLETE_BUNDLE =
   'type:"agentStatus" type:"agentToolStart" type:"agentToolDone" type:"agentToolsClear" ' +
   'type:"webviewReady" type:"saveLayout" type:"saveAgentSeats" ' +
   'window.__pixelAgentsTestHooks=1 window.__PIXEL_AGENTS_E2E=1 ' +
+  'hooks.selectAgent=e "data-testid":"agent-overlay" "data-agent-id":t ' +
   'new WebSocket(e) t.onopen=n t.onmessage=r ' +
   'title:`Settings` title:`Close agent`'
 
@@ -35,6 +36,21 @@ test('assertBundleConformance names a missing WebSocket handler pattern', () => 
 test('assertBundleConformance names a missing button title pattern', () => {
   const bundle = COMPLETE_BUNDLE.replace('title:`Close agent`', '')
   assert.throws(() => assertBundleConformance(bundle), /Close agent/)
+})
+
+test('assertBundleConformance names a missing selectAgent test hook', () => {
+  const bundle = COMPLETE_BUNDLE.replace('hooks.selectAgent=e ', '')
+  assert.throws(() => assertBundleConformance(bundle), /string literal "selectAgent"/)
+})
+
+test('assertBundleConformance names a missing agent-overlay test id', () => {
+  const bundle = COMPLETE_BUNDLE.replace('"data-testid":"agent-overlay" ', '')
+  assert.throws(() => assertBundleConformance(bundle), /string literal "agent-overlay"/)
+})
+
+test('assertBundleConformance names a missing data-agent-id attribute', () => {
+  const bundle = COMPLETE_BUNDLE.replace('"data-agent-id":t ', '')
+  assert.throws(() => assertBundleConformance(bundle), /string literal "data-agent-id"/)
 })
 
 test('assertBundleConformance accepts single- and double-quoted title attributes', () => {

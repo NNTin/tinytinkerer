@@ -34,6 +34,7 @@
         "$TURBO_ROOT$/config/pixel-agents-third-party.json",
         "$TURBO_ROOT$/scripts/prepare-pixel-agents.mjs",
         "$TURBO_ROOT$/scripts/pixel-agents-bridge.mjs",
+        "$TURBO_ROOT$/scripts/pixel-agents-animation-probe.mjs",
         "$TURBO_ROOT$/scripts/build-pixel-agents-assets.mjs",
         "$TURBO_ROOT$/scripts/check-pixel-agents-conformance.mjs"
       ]
