@@ -187,12 +187,24 @@ test('a real captured canvas run is history, not office activity', async ({ page
     historyLog.filter((message) => message.type === 'agentStatus' && message.status === 'active')
   ).toEqual([])
 
-  // Phase 3 — the live side of the boundary. A fresh synthetic no-tool mock:
-  // the LiteLLM upstream is a module-level slot the new install reassigns, and
-  // the re-registered /api/** route shadows the earlier one (Playwright runs
-  // the newest matching handler; pipeToEdge always fulfills), so new chat
-  // requests are served by THIS mock. A new message must animate the office —
-  // proving history was suppressed by seeding, not by a dead pipeline.
+  // Phase 3 — the live side of the boundary. A fresh synthetic no-tool mock,
+  // deliberately NOT a capture replay: the mock-litellm replay drift check
+  // matches a captured exchange against THIS request's folded-back tool-result
+  // count at the same cursor position, but Phase 1's restored conversation has
+  // already folded its own (canvas) tool results back into context by the time
+  // this phase's live run starts — a fresh capture's exchange #0 expects
+  // toolResultCount 0 and would drift-fail immediately against a request that
+  // is really exchange #0 of a NEW turn appended after history. Capture-
+  // grounded live coverage for Pixel Agents therefore lives entirely in
+  // tests/pixel-agents.e2e.ts (a single fresh conversation, no restored
+  // history), and this phase only needs a plain live signal (something
+  // animates) — the synthetic mock is enough and keeps the drift check
+  // satisfiable. The LiteLLM upstream is a module-level slot the new install
+  // reassigns, and the re-registered /api/** route shadows the earlier one
+  // (Playwright runs the newest matching handler; pipeToEdge always
+  // fulfills), so new chat requests are served by THIS mock. A new message
+  // must animate the office — proving history was suppressed by seeding, not
+  // by a dead pipeline.
   const liveMock = await installChatMock(page)
   await sendMessage(page, 'Now do a live run in the office.')
   await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })

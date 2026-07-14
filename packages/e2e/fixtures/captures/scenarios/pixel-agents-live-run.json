@@ -1,0 +1,10 @@
+{
+  "name": "pixel-agents-live-run",
+  "shell": "/pixel-agents/",
+  "settings": ["Code execution (run_javascript tool)"],
+  "steps": [
+    {
+      "prompt": "Use the run_javascript tool to add 2 and 3, then tell me the result and briefly explain how you computed it."
+    }
+  ]
+}

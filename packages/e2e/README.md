@@ -53,7 +53,9 @@ no secrets and makes no real network calls.
   callouts, and link cards — each streamed as deltas so incremental parsing is covered;
   `chat-persistence.e2e.ts` verifies a conversation persists to IndexedDB (Dexie) and
   is restored on reload across all three endpoints (web/widget/mobile), and asserts the
-  shared-session behaviour described below.
+  shared-session behaviour described below. See `pixel-agents-testing.md` for the Pixel
+  Agents e2e suite (`pixel-agents.e2e.ts` / `pixel-agents-activity.e2e.ts`) architecture and
+  its LiteLLM mock interplay.
 
 ### Single-origin topology and IndexedDB namespaces
 

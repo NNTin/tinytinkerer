@@ -1,6 +1,15 @@
 import { expect, test } from '@playwright/test'
 import { dismissFirstLoad } from '../fixtures/first-load'
-import { installChatMock, sendMessage, SYNTHESIS_ANSWER } from '../fixtures/mock-litellm'
+import {
+  enableCodeExecPlugin,
+  finalAnswerFragment,
+  installReplayMock,
+  loadCapture,
+  loadScenario,
+  sendMessage,
+  toolResultFor,
+  type Scenario
+} from '../fixtures/mock-litellm'
 import {
   agentOverlayLocator,
   calibrateCharacterSlot,
@@ -19,11 +28,33 @@ import {
 
 test.use({ viewport: { width: 1280, height: 800 } })
 
+// A scenario's `steps` array is untyped-index-addressable JSON (see
+// mock-litellm.ts's loadScenario) — pulls the Nth step's prompt text so the
+// spec reuses the EXACT captured prompt rather than retyping it (capture and
+// replay must line up). Same helper as canvas-tool-verbs.e2e.ts /
+// pixel-agents-activity.e2e.ts.
+const promptText = (scenario: Scenario, index: number): string => {
+  const step = scenario.steps[index]
+  if (!step || !('prompt' in step)) {
+    throw new Error(`scenario step ${index} is not a prompt step`)
+  }
+  return step.prompt
+}
+
 test('shows the persistent assistant agent and maps a chat run into office activity', async ({
   page
 }) => {
   await enablePixelHooks(page)
-  await installChatMock(page)
+
+  // Capture-grounded live run (see .agent/skills/e2e-testing/SKILL.md and
+  // packages/e2e/pixel-agents-testing.md): the captured fixture's real model
+  // turn issues an actual `run_javascript` tool call — a genuine tool event is
+  // exactly what the office visualizes, so this replays REAL inference rather
+  // than the synthetic no-tool mock. Captured ON /pixel-agents/ (same-shell
+  // SOP rule) with the code-exec plugin enabled (see the scenario JSON).
+  const fixture = loadCapture('pixel-agents-live-run')
+  const scenario = loadScenario('pixel-agents-live-run')
+  const mock = await installReplayMock(page, fixture)
   await page.goto(PIXEL_AGENTS_URL)
   await dismissFirstLoad(page)
 
@@ -45,6 +76,11 @@ test('shows the persistent assistant agent and maps a chat run into office activ
   const frame = await waitForOfficeFrame(page)
   await expect.poll(() => characterIds(frame)).toEqual([1])
 
+  // Recreate the scenario's environment exactly (capture/replay must line up):
+  // the fixture was captured with this Settings toggle enabled so the model
+  // could issue a real run_javascript action.
+  await enableCodeExecPlugin(page)
+
   // Selecting BEFORE the run (not clicking) keeps the character's screen
   // position stable for calibrateCharacterSlot (see its own comment for why),
   // and resetting the probe right after scopes the draw log that T2 reads
@@ -52,7 +88,7 @@ test('shows the persistent assistant agent and maps a chat run into office activ
   await selectPersistentAgent(frame, 1)
   await resetAnimationProbe(frame)
 
-  await sendMessage(page, 'Show this assistant working in the office.')
+  await sendMessage(page, promptText(scenario, 0))
 
   // T1 (DOM overlay, upstream's own e2e technique): the overlay only renders
   // non-idle activity text once the agent is selected AND actually doing
@@ -62,7 +98,7 @@ test('shows the persistent assistant agent and maps a chat run into office activ
   // "×" close button next to the activity label while selected (observed at
   // runtime: e.g. "IdleTinyTinkerer×"), so this checks for the literal 'Idle'
   // substring rather than exact/whole-text equality — the exact activity word
-  // itself ('think'/'synthesize', per
+  // itself ('think'/'act'/'synthesize', per
   // packages/app/pixel-agents/src/activity.ts's humanize(stepKind)) is
   // deliberately NOT pinned, so this survives cosmetic wording changes to step
   // labels.
@@ -80,7 +116,24 @@ test('shows the persistent assistant agent and maps a chat run into office activ
     })
     .toBeGreaterThan(preRunTotals.drawImageCalls)
 
-  await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
+  // The fragment is derived from the fixture's captured synthesis (never
+  // hardcoded model prose); its rendering means the run fully settled.
+  await expect(page.getByText(finalAnswerFragment(fixture))).toBeVisible({ timeout: 30_000 })
+  expect(mock.replayError()).toBeUndefined()
+
+  // Both sides of the pipeline (per the skill): the model context folded back
+  // a REAL sandbox execution result for the captured run_javascript call...
+  await expect
+    .poll(() => toolResultFor(mock, 'run_javascript') !== undefined, {
+      timeout: 30_000,
+      message: 'the run_javascript result was never folded back into a model request'
+    })
+    .toBe(true)
+  const sandboxResult = toolResultFor(mock, 'run_javascript') as
+    | { ok?: boolean; result?: unknown; timedOut?: boolean }
+    | undefined
+  expect(sandboxResult?.ok).toBe(true)
+  expect(sandboxResult?.result).toBe(5)
 
   await expect
     .poll(async () => {
@@ -97,6 +150,17 @@ test('shows the persistent assistant agent and maps a chat run into office activ
     })
     .toEqual({ active: true, activity: true, waiting: true })
 
+  // ...and the office UI actually projected the REAL tool as its own
+  // agentToolStart entry (packages/app/pixel-agents/src/activity.ts maps
+  // agent.tool.* events to `${stepId}:${toolId}`; pixelToolName('run_javascript')
+  // classifies as 'Write' — it matches neither the Read nor the Bash pattern).
+  const fullLogForToolCheck = await readMessageLog(frame)
+  const runJavascriptStart = fullLogForToolCheck.find(
+    (message) => message.type === 'agentToolStart' && message.toolId?.endsWith(':run_javascript')
+  )
+  expect(runJavascriptStart, 'expected a real run_javascript agentToolStart entry').toBeDefined()
+  expect(runJavascriptStart?.toolName).toBe('Write')
+
   // T1: after the run settles, the overlay returns to the idle label (still
   // rendered alongside the folder name/close button — see the comment above).
   await expect
@@ -105,22 +169,38 @@ test('shows the persistent assistant agent and maps a chat run into office activ
 
   // T2(b)/(c): the ground-truth canvas signal that the character actually
   // animated in response to activity, not just that protocol messages were
-  // delivered. The synthetic no-tool run structurally produces a 'think' step
-  // (toolName 'Read') then a 'synthesize' step (toolName 'Write') — asserted
-  // explicitly, rather than assumed, so a future change to agent-runtime-base's
-  // step shape fails here with a clear message instead of a confusing
-  // "0 sprite identities" failure below.
+  // delivered. A ReAct run with a real tool call structurally produces a
+  // 'think' step (toolName 'Read') and at least one 'Write'-classified entry
+  // (the 'act' step wrapping the tool call, the run_javascript tool call
+  // itself, and the 'synthesize' step are ALL classified 'Write' —
+  // see stepToolName/pixelToolName) — asserted explicitly, rather than
+  // assumed, so a future change to agent-runtime-base's step shape or the
+  // activity classifier fails here with a clear message instead of a
+  // confusing "0 sprite identities" failure below. The split point is the
+  // LAST 'Write' entry — see the comment on writeStarts below for why.
   const fullLog = await readMessageLog(frame)
   const toolStarts = fullLog.filter((message) => message.type === 'agentToolStart')
   const readStart = toolStarts.find((message) => message.toolName === 'Read')
-  const writeStart = toolStarts.find((message) => message.toolName === 'Write')
+  // The LAST 'Write' entry, not the first: a tool-bearing run produces SEVERAL
+  // 'Write'-classified agentToolStart entries in sequence (the 'act' step
+  // wrapping the tool call, the run_javascript tool call itself, and finally
+  // the 'synthesize' step — see stepToolName/pixelToolName), and empirically
+  // (observed running this spec --repeat-each=20) the earliest ones land too
+  // close to run start for the character's sprite to have visibly transitioned
+  // yet, making the before/after windows below coincide on the same identity
+  // set ~half the time. The LAST entry is always the 'synthesize' step, the
+  // same single entry the original synthetic no-tool run relied on, so this
+  // keeps the split point at "the answer is being composed" regardless of how
+  // many earlier Write-classified steps a real tool call adds.
+  const writeStarts = toolStarts.filter((message) => message.toolName === 'Write')
+  const writeStart = writeStarts[writeStarts.length - 1]
   if (!readStart || !writeStart) {
     throw new Error(
-      "expected the synthetic no-tool run to produce both a 'Read' (think step) and a " +
-        "'Write' (synthesize step) agentToolStart entry in messageLog, got toolNames: " +
-        `${JSON.stringify(toolStarts.map((message) => message.toolName))}. The synthetic run's ` +
-        'step shape (packages/app/agent-core/src/runtime/agent-runtime-base.ts think/synthesize ' +
-        'steps) may have changed.'
+      "expected the replayed run to produce both a 'Read' (think step) and a 'Write' " +
+        '(act/tool/synthesize step) agentToolStart entry in messageLog, got toolNames: ' +
+        `${JSON.stringify(toolStarts.map((message) => message.toolName))}. Either the ` +
+        "runtime's step shape (packages/app/agent-core/src/runtime/agent-runtime-base.ts) or " +
+        'the activity classifier (packages/app/pixel-agents/src/activity.ts) may have changed.'
     )
   }
 
