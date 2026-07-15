@@ -93,20 +93,33 @@ const CreditsBody = () => (
   <div className="flex flex-col gap-4">
     <ul className="flex flex-col gap-3">
       {TINYTINKERER_CREDITS.map((credit) => (
-        <li key={credit.name} className="text-sm leading-relaxed text-stone-700">
-          {credit.href ? (
-            <a
-              href={credit.href}
-              target="_blank"
-              rel="noreferrer"
-              className="font-semibold text-stone-900 underline decoration-stone-300 underline-offset-2 hover:decoration-stone-500"
-            >
-              {credit.name}
-            </a>
-          ) : (
-            <span className="font-semibold text-stone-900">{credit.name}</span>
-          )}
-          <span className="text-stone-500"> — {credit.thanks}</span>
+        <li
+          key={credit.name}
+          className="flex items-start gap-2.5 text-sm leading-relaxed text-stone-700"
+        >
+          {credit.icon ? (
+            <img
+              src={credit.icon}
+              alt=""
+              aria-hidden="true"
+              className="mt-0.5 h-5 w-5 shrink-0 rounded-sm object-contain"
+            />
+          ) : null}
+          <span>
+            {credit.href ? (
+              <a
+                href={credit.href}
+                target="_blank"
+                rel="noreferrer"
+                className="font-semibold text-stone-900 underline decoration-stone-300 underline-offset-2 hover:decoration-stone-500"
+              >
+                {credit.name}
+              </a>
+            ) : (
+              <span className="font-semibold text-stone-900">{credit.name}</span>
+            )}
+            <span className="text-stone-500"> — {credit.thanks}</span>
+          </span>
         </li>
       ))}
     </ul>

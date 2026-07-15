@@ -52,6 +52,7 @@ describe('brand assets', () => {
     const names = TINYTINKERER_CREDITS.map((credit) => credit.name)
     expect(names).toContain('CodeMirror')
     expect(names).toContain('Cloudflare')
+    expect(names).toContain('Excalidraw')
     // The AI assistants are credited individually, each with its own note.
     expect(names).toContain('Claude')
     expect(names).toContain('Codex')
@@ -62,6 +63,14 @@ describe('brand assets', () => {
       if (credit.href !== undefined) {
         expect(credit.href).toMatch(/^https:\/\//)
       }
+    }
+  })
+
+  it('embeds an official icon for every credit', () => {
+    for (const credit of TINYTINKERER_CREDITS) {
+      expect(credit.icon, `icon for ${credit.name}`).toMatch(
+        /^data:image\/(svg\+xml|png);base64,[A-Za-z0-9+/]+=*$/
+      )
     }
   })
 
