@@ -46,7 +46,7 @@ Prefer blocking by default; scriptless CI installs remain mandatory. When a CI j
 ## 4. Audit and handle vulnerabilities
 
 ```
-pnpm audit --audit-level=moderate
+pnpm check:advisories
 ```
 
 - Direct vulnerable dependency: update the direct dependency.
@@ -58,7 +58,7 @@ pnpm audit --audit-level=moderate
 pnpm setup:workspace
 pnpm check:exact-dependencies
 pnpm check:install-scripts
-pnpm audit --audit-level=moderate
+pnpm check:advisories
 pnpm check:skill-readme
 pnpm build
 pnpm typecheck

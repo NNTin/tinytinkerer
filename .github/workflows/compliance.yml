@@ -7,7 +7,7 @@ name: Compliance
 # pushes to the long-lived branches.
 on:
   workflow_dispatch:
-  # Weekly run so `pnpm audit` catches newly-disclosed advisories against
+  # Weekly run so the advisory audit catches newly-disclosed advisories against
   # unchanged dependencies — the push/pull_request triggers below are path-filtered
   # to dependency files, so without this a fresh CVE would go unnoticed until the
   # next dependency change.
@@ -83,8 +83,12 @@ jobs:
       - name: Check advisory allow-list synchronization
         run: pnpm check:advisory-allowlists
 
+      # `pnpm audit` posts to npm's retired full-audit endpoint (410 since
+      # 2026-07; no released pnpm speaks the bulk protocol yet), so the audit
+      # runs through scripts/check-npm-advisories.mjs against the bulk advisory
+      # endpoint with the same moderate threshold and ignoreGhsas allow-list.
       - name: Audit dependencies
-        run: pnpm audit --audit-level=moderate
+        run: pnpm check:advisories
 
       - name: Generate SBOM (CycloneDX)
         run: pnpm compliance:sbom
