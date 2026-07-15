@@ -135,6 +135,15 @@ const createLazyPersistence = (
     },
     async clearConversationEvents(conversationId) {
       await (await loadPersistence()).conversations.clearConversationEvents(conversationId)
+    },
+    async listConversations() {
+      return (await loadPersistence()).conversations.listConversations()
+    },
+    async deleteConversation(conversationId) {
+      await (await loadPersistence()).conversations.deleteConversation(conversationId)
+    },
+    async updateConversationTitle(conversationId, title) {
+      await (await loadPersistence()).conversations.updateConversationTitle(conversationId, title)
     }
   }
 

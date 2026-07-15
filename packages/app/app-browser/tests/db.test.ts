@@ -141,4 +141,89 @@ describe('createBrowserPersistence conversations', () => {
     expect(tools).toHaveLength(1)
     expect(tools[0]).toMatchObject({ toolId: 'web-search', status: 'completed' })
   })
+
+  it('lists conversations most-recently-updated first, tie-breaking by id', async () => {
+    const { conversations } = createBrowserPersistence('test-db', null)
+    const a = await conversations.createConversation()
+    const b = await conversations.createConversation()
+    const c = await conversations.createConversation()
+
+    // Two conversations share the same updatedAt to exercise the tie-break.
+    await conversations.appendEvent({
+      conversationId: a.id,
+      id: 'evt-a',
+      timestamp: '2026-07-05T00:00:01.000Z',
+      seq: 0,
+      type: 'user.message',
+      payload: { text: 'a' }
+    })
+    await conversations.appendEvent({
+      conversationId: b.id,
+      id: 'evt-b',
+      timestamp: '2026-07-05T00:00:02.000Z',
+      seq: 0,
+      type: 'user.message',
+      payload: { text: 'b' }
+    })
+    await conversations.appendEvent({
+      conversationId: c.id,
+      id: 'evt-c',
+      timestamp: '2026-07-05T00:00:02.000Z',
+      seq: 0,
+      type: 'user.message',
+      payload: { text: 'c' }
+    })
+
+    const [tieFirst, tieSecond] = b.id < c.id ? [b, c] : [c, b]
+    const listed = await conversations.listConversations()
+
+    expect(listed.map((conversation) => conversation.id)).toEqual([tieFirst.id, tieSecond.id, a.id])
+  })
+
+  it('deletes a conversation and only its own events', async () => {
+    const { conversations } = createBrowserPersistence('test-db', null)
+    const keep = await conversations.createConversation()
+    const remove = await conversations.createConversation()
+
+    await conversations.appendEvent({
+      conversationId: keep.id,
+      id: 'evt-keep',
+      timestamp: '2026-07-05T00:00:00.000Z',
+      seq: 0,
+      type: 'user.message',
+      payload: { text: 'keep' }
+    })
+    await conversations.appendEvent({
+      conversationId: remove.id,
+      id: 'evt-remove',
+      timestamp: '2026-07-05T00:00:00.000Z',
+      seq: 0,
+      type: 'user.message',
+      payload: { text: 'remove' }
+    })
+
+    await conversations.deleteConversation(remove.id)
+
+    const remaining = await conversations.listConversations()
+    expect(remaining.map((conversation) => conversation.id)).toEqual([keep.id])
+    expect(await conversations.loadConversationEvents(remove.id)).toEqual([])
+    expect(await conversations.loadConversationEvents(keep.id)).toHaveLength(1)
+
+    // Deleting an unknown id is a no-op.
+    await expect(conversations.deleteConversation('missing')).resolves.toBeUndefined()
+  })
+
+  it('updates a conversation title without touching updatedAt', async () => {
+    const { conversations } = createBrowserPersistence('test-db', null)
+    const conversation = await conversations.createConversation()
+
+    await conversations.updateConversationTitle(conversation.id, 'Renamed')
+
+    const [listed] = await conversations.listConversations()
+    expect(listed?.title).toBe('Renamed')
+    expect(listed?.updatedAt).toBe(conversation.updatedAt)
+
+    // Updating an unknown id is a no-op.
+    await expect(conversations.updateConversationTitle('missing', 'Nope')).resolves.toBeUndefined()
+  })
 })

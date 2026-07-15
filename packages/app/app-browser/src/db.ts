@@ -203,6 +203,27 @@ export const createBrowserPersistence = (
     },
     async clearConversationEvents(conversationId) {
       await db.events.where('conversationId').equals(conversationId).delete()
+    },
+    async listConversations() {
+      // JS-side sort (like loadConversationEvents): conversation counts are
+      // small, and Dexie index tricks like .reverse() don't give a stable
+      // tie-break on id.
+      const all = await db.conversations.toArray()
+      return all.sort((a, b) => {
+        if (a.updatedAt !== b.updatedAt) {
+          return a.updatedAt < b.updatedAt ? 1 : -1
+        }
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+      })
+    },
+    async deleteConversation(conversationId) {
+      // Events first, so an interruption leaves at worst an empty
+      // conversation row (harmless) rather than orphaned events.
+      await db.events.where('conversationId').equals(conversationId).delete()
+      await db.conversations.delete(conversationId)
+    },
+    async updateConversationTitle(conversationId, title) {
+      await db.conversations.update(conversationId, { title })
     }
   }
 

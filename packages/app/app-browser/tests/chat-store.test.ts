@@ -37,7 +37,10 @@ const makeShell = (): BrowserShell =>
       getLatestConversation: vi.fn(),
       loadConversationEvents: vi.fn(),
       appendEvent: vi.fn(),
-      clearConversationEvents: vi.fn()
+      clearConversationEvents: vi.fn(),
+      listConversations: vi.fn(),
+      deleteConversation: vi.fn(),
+      updateConversationTitle: vi.fn()
     },
     preferences: {
       get: vi.fn(),
