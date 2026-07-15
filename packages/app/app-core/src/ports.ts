@@ -34,6 +34,13 @@ export interface ConversationRepository {
   loadConversationEvents(conversationId: string): Promise<PersistedEvent[]>
   appendEvent(event: PersistedEvent): Promise<void>
   clearConversationEvents(conversationId: string): Promise<void>
+  // All conversations, most recently updated first (ties broken by id).
+  listConversations(): Promise<Conversation[]>
+  // Removes the conversation's events and its conversation row. No-op for a missing id.
+  deleteConversation(conversationId: string): Promise<void>
+  // Sets title only; does not touch updatedAt, which tracks last conversation
+  // event time and must not be reordered by a rename. No-op for a missing id.
+  updateConversationTitle(conversationId: string, title: string): Promise<void>
 }
 
 export interface PreferencesStore {

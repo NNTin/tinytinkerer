@@ -1129,7 +1129,10 @@ describe('rate-limit cooldown', () => {
     createConversation: () => Promise.resolve(conversation),
     loadConversationEvents: () => Promise.resolve([]),
     appendEvent: () => Promise.resolve(),
-    clearConversationEvents: () => Promise.resolve()
+    clearConversationEvents: () => Promise.resolve(),
+    listConversations: () => Promise.resolve([conversation]),
+    deleteConversation: () => Promise.resolve(),
+    updateConversationTitle: () => Promise.resolve()
   })
 
   const waitingEvent = (retryAt: string) =>
