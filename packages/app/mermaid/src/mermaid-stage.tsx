@@ -11,11 +11,15 @@ import {
   type FileDiagnostic,
   type ReadFilesInput
 } from '@tinytinkerer/file-tools'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { mermaidControllerHandle, type MermaidController } from './controller'
 import { buildMermaidFixPrompt } from './fix-prompt'
 import { loadMermaidWorkspace, saveMermaidWorkspace } from './workspace-db'
 import { MERMAID_FILE_PATH } from './workspace-constants'
+
+// Keeps the export pipeline (SVG/PNG/clipboard rasterization) out of the
+// mermaid-page startup chunk budget guarded by apps/mermaid/src/bundle-size.test.ts.
+const ExportModal = lazy(() => import('./export-modal'))
 
 const DEFAULT_SOURCE = `flowchart TD
   Idea[New idea] --> Draft[Draft diagram]
@@ -41,6 +45,7 @@ export const MermaidStage = ({
   const [svg, setSvg] = useState<string | null>(null)
   const [diagnostic, setDiagnostic] = useState<FileDiagnostic | null>(null)
   const [storageError, setStorageError] = useState('')
+  const [exportOpen, setExportOpen] = useState(false)
   const sourceRef = useRef(source)
   sourceRef.current = source
   const revisionRef = useRef(0)
@@ -190,6 +195,15 @@ export const MermaidStage = ({
   )
   const preview = (
     <div className="mermaid-preview">
+      <div className="mermaid-preview-bar">
+        <button
+          type="button"
+          disabled={source.trim().length === 0}
+          onClick={() => setExportOpen(true)}
+        >
+          Export…
+        </button>
+      </div>
       {storageError ? <p className="mermaid-storage-error">{storageError}</p> : null}
       {diagnostic ? (
         <div className="mermaid-diagnostic" role="alert">
@@ -220,6 +234,11 @@ export const MermaidStage = ({
       </div>
       {diagnostic && svg ? (
         <span className="mermaid-stale-note">Showing the last valid preview.</span>
+      ) : null}
+      {exportOpen ? (
+        <Suspense fallback={null}>
+          <ExportModal source={source} onClose={() => setExportOpen(false)} />
+        </Suspense>
       ) : null}
     </div>
   )

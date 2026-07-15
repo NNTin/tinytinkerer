@@ -30,30 +30,54 @@ declare global {
   }
 }
 
+export type MermaidRenderTheme = 'default' | 'dark'
+
 let mermaidPromise: Promise<MermaidApi> | null = null
-let hasInitializedMermaid = false
+let appliedTheme: MermaidRenderTheme | null = null
 
 export const resetMermaidState = (): void => {
   mermaidPromise = null
-  hasInitializedMermaid = false
+  appliedTheme = null
 }
 
-const initializeMermaid = (mermaid: MermaidApi): MermaidApi => {
-  if (!hasInitializedMermaid) {
+// Mermaid's theme lives in global config, so switching themes between renders
+// (e.g. chat preview vs. export dialog) means re-initializing only when the
+// requested theme actually differs from what's currently applied.
+const applyMermaidConfig = (mermaid: MermaidApi, theme: MermaidRenderTheme): MermaidApi => {
+  if (appliedTheme !== theme) {
     mermaid.initialize({
       startOnLoad: false,
-      securityLevel: 'strict'
+      securityLevel: 'strict',
+      theme
     })
-    hasInitializedMermaid = true
+    appliedTheme = theme
   }
 
   return mermaid
 }
 
+// Serializes initialize+render pairs so a concurrent render can never observe
+// (or clobber) another render's theme mid-flight.
+let renderChain: Promise<unknown> = Promise.resolve()
+const withMermaidRenderLock = <T,>(task: () => Promise<T>): Promise<T> => {
+  const run = renderChain.then(task, task)
+  renderChain = run.then(
+    () => undefined,
+    () => undefined
+  )
+  return run
+}
+
+// Loading only guarantees the runtime is configured at least once; it must not
+// re-apply a theme, or a caller on this fast path would clobber the theme of a
+// render currently holding the lock.
+const ensureMermaidConfigured = (mermaid: MermaidApi): MermaidApi =>
+  appliedTheme === null ? applyMermaidConfig(mermaid, 'default') : mermaid
+
 export const loadMermaidRuntime = (): Promise<MermaidApi> => {
   const existingMermaid = window.mermaid
   if (existingMermaid) {
-    return Promise.resolve(initializeMermaid(existingMermaid))
+    return Promise.resolve(ensureMermaidConfigured(existingMermaid))
   }
 
   mermaidPromise ??= new Promise<MermaidApi>((resolve, reject) => {
@@ -68,7 +92,7 @@ export const loadMermaidRuntime = (): Promise<MermaidApi> => {
         return
       }
 
-      resolve(initializeMermaid(mermaid))
+      resolve(ensureMermaidConfigured(mermaid))
     }
     script.onerror = () => {
       reject(new Error('Failed to load Mermaid runtime'))
@@ -96,14 +120,21 @@ export const toMermaidDiagnostic = (error: unknown): MermaidDiagnostic => {
   }
 }
 
-export const renderMermaidSource = async (code: string, id: string): Promise<{ svg: string }> => {
+export const renderMermaidSource = async (
+  code: string,
+  id: string,
+  options: { theme?: MermaidRenderTheme } = {}
+): Promise<{ svg: string }> => {
   const mermaid = await loadMermaidRuntime()
-  if (typeof mermaid.parse === 'function') {
-    const parsed = await mermaid.parse(code)
-    if (parsed === false) throw new Error('Invalid Mermaid syntax')
-  }
-  const result = await mermaid.render(id, code)
-  return { svg: sanitizeSvgMarkup(result.svg) }
+  return withMermaidRenderLock(async () => {
+    applyMermaidConfig(mermaid, options.theme ?? 'default')
+    if (typeof mermaid.parse === 'function') {
+      const parsed = await mermaid.parse(code)
+      if (parsed === false) throw new Error('Invalid Mermaid syntax')
+    }
+    const result = await mermaid.render(id, code)
+    return { svg: sanitizeSvgMarkup(result.svg) }
+  })
 }
 
 export const validateMermaidSource = async (code: string): Promise<MermaidDiagnostic | null> => {
@@ -155,7 +186,10 @@ export const MermaidNodeRenderer = ({ node }: ContentNodeRendererProps<CodeBlock
           setFailed(false)
           return
         }
-        return mermaid.render(`tt-mermaid-${id}`, node.code).then((result) => {
+        return withMermaidRenderLock(() => {
+          applyMermaidConfig(mermaid, 'default')
+          return mermaid.render(`tt-mermaid-${id}`, node.code)
+        }).then((result) => {
           if (cancelled) {
             return
           }

@@ -103,3 +103,156 @@
   color: #9b2c2c;
   font-size: 12px;
 }
+.mermaid-preview-bar {
+  height: 30px;
+  flex: 0 0 30px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 10px;
+  border-bottom: 1px solid #ddd4c0;
+  background: #f7f2e8;
+  font-size: 11px;
+  color: #6b6252;
+}
+.mermaid-preview-bar button {
+  border: 1px solid #ddd4c0;
+  border-radius: 5px;
+  background: #fff;
+  color: #243447;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.mermaid-preview-bar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.mermaid-export-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(36, 52, 71, 0.5);
+  display: grid;
+  place-items: center;
+}
+.mermaid-export-dialog {
+  width: 92vw;
+  max-width: 720px;
+  max-height: 90vh;
+  overflow: auto;
+  border-radius: 10px;
+  background: #f6f1e5;
+  color: #243447;
+  border: 1px solid #ddd4c0;
+  padding: 20px;
+}
+.mermaid-export-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+.mermaid-export-preview {
+  padding: 32px;
+  background: repeating-conic-gradient(#e8e2d4 0% 25%, #ffffff 0% 50%) 0 0 / 16px 16px;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  max-height: 45vh;
+  border-radius: 6px;
+}
+.mermaid-export-frame {
+  outline: 1px dashed #9a8f78;
+  outline-offset: 0;
+  display: grid;
+  place-items: center;
+}
+.mermaid-export-frame svg,
+.mermaid-export-frame > div {
+  max-width: 100%;
+  max-height: 100%;
+}
+.mermaid-export-preview-note {
+  margin: 6px 0 14px;
+  font-size: 11px;
+  color: #766d5c;
+  text-align: center;
+}
+.mermaid-export-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.mermaid-export-format {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  border: 1px solid #ddd4c0;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+.mermaid-export-format legend {
+  padding: 0 4px;
+  font-size: 12px;
+  color: #6b6252;
+}
+.mermaid-export-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.mermaid-export-filename {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.mermaid-export-filename-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mermaid-export-filename-row input {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid #ddd4c0;
+  border-radius: 5px;
+  font-size: 13px;
+}
+.mermaid-export-extension {
+  color: #6b6252;
+  font-size: 12px;
+}
+.mermaid-export-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mermaid-export-status {
+  flex: 1;
+  font-size: 12px;
+  color: #2f7d4f;
+}
+.mermaid-export-error {
+  color: #8c2020;
+}
+.mermaid-export-footer button {
+  border: 1px solid #ddd4c0;
+  border-radius: 5px;
+  background: #fff;
+  color: #243447;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.mermaid-export-footer button.mermaid-export-primary {
+  border-color: #243447;
+  background: #243447;
+  color: #fff;
+}
+.mermaid-export-footer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

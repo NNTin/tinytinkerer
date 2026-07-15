@@ -91,6 +91,13 @@ const config: KnipConfig = {
       // dependencies even when plugin discovery sees only the .ts entries.
       entry: ['tests/**/*.test.{ts,tsx}']
     },
+    'packages/app/mermaid': {
+      // Same trap as canvas above: the export-modal React mount test is a .tsx
+      // entry the plugin discovery misses once the package carries its own
+      // vitest.config.ts, which would strand the test and its testing-library
+      // devDependencies as "unused".
+      entry: ['tests/**/*.test.{ts,tsx}']
+    },
     'packages/e2e': {
       // Playwright specs use the `*.e2e.ts` extension (kept distinct from vitest's
       // globs), which Knip's Playwright plugin does not match by default. Register

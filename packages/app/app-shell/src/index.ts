@@ -28,3 +28,7 @@ export type { RequestAssistantAction } from './assistant-action'
 
 export { useLiveChatActivity } from './live-chat-activity'
 export type { UseLiveChatActivityOptions } from './live-chat-activity'
+
+// Re-exported so integrated stages (e.g. the Mermaid export modal) reuse the
+// shared aria-modal keyboard/focus behavior instead of forking it.
+export { useDialogFocus, useDialogEscape } from '@tinytinkerer/app-browser'

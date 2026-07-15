@@ -13,6 +13,12 @@ coverage
 .vercel
 .wrangler
 
+# Playwright run artifacts — git-ignores them via packages/e2e/.gitignore, which
+# Prettier does not read (it only consults the root ignore files).
+test-results
+playwright-report
+blob-report
+
 # Generated source modules and directories (scripts/*generate*).
 # Examples: *.license.generated.ts, *.privacy-policy.generated.ts,
 # *.third-party-notices.generated.ts, packages/brand/brand-assets/assets/generated/.
