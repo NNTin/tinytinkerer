@@ -7,7 +7,10 @@ import type {
   McpServerConfig
 } from '@tinytinkerer/contracts'
 import {
+  ACTIVE_CONVERSATION_KEY,
+  activateConversationState,
   activeCooldown,
+  addConversationToState,
   applyAppToolSelection,
   applyPluginToolSelection,
   applyRateLimitEvent,
@@ -20,10 +23,15 @@ import {
   defaultChatState,
   defaultSettingsState,
   inferPlan,
-  initializeChatState,
+  initializeConversationsState,
   isPluginToolEnabled,
   LITELLM_DEPLOYMENT_DEFAULT,
+  loadActiveConversationId,
   loadCooldown,
+  patchConversationState,
+  persistActiveConversationId,
+  removeConversationFromState,
+  resolveActiveConversationId,
   loadSettingsState,
   normalizeLiteLLMBaseUrl,
   normalizeSelectedModel,
@@ -1189,7 +1197,7 @@ describe('rate-limit cooldown', () => {
     expect(await loadCooldown(prefs)).toBeUndefined()
   })
 
-  it('initializeChatState loads the stored cooldown and ignores legacy provider-scoped keys', async () => {
+  it('initializeConversationsState loads the stored cooldown and ignores legacy provider-scoped keys', async () => {
     const future = new Date(Date.now() + 60_000).toISOString()
     const baseUrl = 'https://litellm.example.com/'
     const prefs = makePreferences({
@@ -1204,8 +1212,262 @@ describe('rate-limit cooldown', () => {
     })
     const conversations = makeConversations()
 
-    const state = await initializeChatState(conversations, prefs, baseUrl)
+    const state = await initializeConversationsState(conversations, prefs, baseUrl)
     expect(state.cooldownUntil).toBe(future)
+  })
+})
+
+describe('multi-conversation state (issue #430)', () => {
+  const makePreferences = (initial: Record<string, string> = {}) => {
+    const store = new Map<string, string>(Object.entries(initial))
+    return {
+      get: (key: string) => Promise.resolve(store.get(key)),
+      set: (key: string, value: string) => {
+        store.set(key, value)
+        return Promise.resolve()
+      }
+    }
+  }
+
+  const conversation = (id: string, title = 'New conversation') => ({
+    id,
+    title,
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-02T00:00:00.000Z'
+  })
+
+  const persistedEvent = (conversationId: string, text: string) => ({
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    type: 'user.message' as const,
+    payload: { text },
+    conversationId
+  })
+
+  // Repository fake: `list` is most-recent-first (the repository contract);
+  // per-conversation events are keyed by id.
+  const makeConversations = (
+    list: ReturnType<typeof conversation>[],
+    eventsById: Record<string, ReturnType<typeof persistedEvent>[]> = {}
+  ) => {
+    const loadedIds: string[] = []
+    let created = 0
+    return {
+      repository: {
+        getLatestConversation: () => Promise.resolve(list[0]),
+        createConversation: () => {
+          created += 1
+          const fresh = conversation(`created-${created}`)
+          list.push(fresh)
+          return Promise.resolve(fresh)
+        },
+        loadConversationEvents: (conversationId: string) => {
+          loadedIds.push(conversationId)
+          return Promise.resolve(eventsById[conversationId] ?? [])
+        },
+        appendEvent: () => Promise.resolve(),
+        clearConversationEvents: () => Promise.resolve(),
+        listConversations: () => Promise.resolve([...list]),
+        deleteConversation: () => Promise.resolve(),
+        updateConversationTitle: () => Promise.resolve()
+      },
+      loadedIds
+    }
+  }
+
+  describe('resolveActiveConversationId', () => {
+    const list = [conversation('newest'), conversation('older')]
+
+    it('honors a stored id that still exists', () => {
+      expect(resolveActiveConversationId(list, 'older')).toBe('older')
+    })
+
+    it('falls back to the most recently updated conversation for a stale id', () => {
+      expect(resolveActiveConversationId(list, 'deleted-long-ago')).toBe('newest')
+    })
+
+    it('falls back to the most recently updated conversation when nothing is stored', () => {
+      expect(resolveActiveConversationId(list, undefined)).toBe('newest')
+    })
+
+    it('returns undefined for an empty list', () => {
+      expect(resolveActiveConversationId([], 'anything')).toBeUndefined()
+    })
+  })
+
+  describe('active conversation preference', () => {
+    it('round-trips through the preference key', async () => {
+      const prefs = makePreferences()
+      await persistActiveConversationId(prefs, 'conv-9')
+      expect(await prefs.get(ACTIVE_CONVERSATION_KEY)).toBe('conv-9')
+      expect(await loadActiveConversationId(prefs)).toBe('conv-9')
+    })
+
+    it('treats a missing or blank stored value as unset', async () => {
+      expect(await loadActiveConversationId(makePreferences())).toBeUndefined()
+      expect(
+        await loadActiveConversationId(makePreferences({ [ACTIVE_CONVERSATION_KEY]: '  ' }))
+      ).toBeUndefined()
+    })
+  })
+
+  describe('initializeConversationsState', () => {
+    it('lists all conversations but loads only the active one, most-recent-first', async () => {
+      const events = [persistedEvent('newest', 'hello')]
+      const { repository, loadedIds } = makeConversations(
+        [conversation('newest'), conversation('older')],
+        { newest: events }
+      )
+
+      const state = await initializeConversationsState(repository, makePreferences())
+
+      expect(state.conversationId).toBe('newest')
+      expect(state.conversationOrder).toEqual(['newest', 'older'])
+      expect(state.events).toEqual(events)
+      expect(loadedIds).toEqual(['newest'])
+      expect(state.conversations.newest).toMatchObject({ events, eventsLoaded: true })
+      // Non-active slices hydrate lazily on first activation.
+      expect(state.conversations.older).toMatchObject({ events: [], eventsLoaded: false })
+      expect(state.isRunning).toBe(false)
+      expect(state.isRetryPending).toBe(false)
+    })
+
+    it('creates a conversation when none exist', async () => {
+      const { repository } = makeConversations([])
+
+      const state = await initializeConversationsState(repository, makePreferences())
+
+      expect(state.conversationId).toBe('created-1')
+      expect(state.conversationOrder).toEqual(['created-1'])
+      expect(state.conversations['created-1']).toMatchObject({ eventsLoaded: true })
+    })
+
+    it('restores a valid stored active id', async () => {
+      const { repository, loadedIds } = makeConversations([
+        conversation('newest'),
+        conversation('older')
+      ])
+      const prefs = makePreferences({ [ACTIVE_CONVERSATION_KEY]: 'older' })
+
+      const state = await initializeConversationsState(repository, prefs)
+
+      expect(state.conversationId).toBe('older')
+      expect(loadedIds).toEqual(['older'])
+    })
+
+    it('ignores a stored id that no longer exists and falls back to the most recent', async () => {
+      const { repository } = makeConversations([conversation('newest'), conversation('older')])
+      const prefs = makePreferences({ [ACTIVE_CONVERSATION_KEY]: 'deleted' })
+
+      const state = await initializeConversationsState(repository, prefs)
+
+      expect(state.conversationId).toBe('newest')
+    })
+  })
+
+  describe('state patch helpers', () => {
+    const slice = (id: string, overrides: Record<string, unknown> = {}) => ({
+      id,
+      title: 'New conversation',
+      events: [] as ChatEvent[],
+      isRunning: false,
+      isRetryPending: false,
+      eventsLoaded: true,
+      ...overrides
+    })
+
+    const runningEvents = [
+      { id: 'e1', timestamp: '', type: 'user.message', payload: { text: 'hi' } }
+    ] as ChatEvent[]
+
+    const state = () => ({
+      conversationId: 'a',
+      events: [] as ChatEvent[],
+      isRunning: false,
+      isRetryPending: false,
+      conversations: {
+        a: slice('a'),
+        b: slice('b', { events: runningEvents, isRunning: true, isRetryPending: true })
+      },
+      conversationOrder: ['a', 'b']
+    })
+
+    it('patchConversationState updates the slice AND the mirrors for the active conversation', () => {
+      const current = state()
+      const patch = patchConversationState(current, 'a', { isRunning: true })
+
+      expect(patch.conversations?.a).toMatchObject({ isRunning: true })
+      expect(patch.isRunning).toBe(true)
+      expect(patch.events).toBe(current.conversations.a.events)
+      // The other slice keeps its object identity.
+      expect(patch.conversations?.b).toBe(current.conversations.b)
+    })
+
+    it('patchConversationState leaves the mirrors alone for a background conversation', () => {
+      const current = state()
+      const patch = patchConversationState(current, 'b', (slice) => ({
+        events: [...slice.events]
+      }))
+
+      expect(patch.conversations?.b?.events).toEqual(runningEvents)
+      expect(patch).not.toHaveProperty('events')
+      expect(patch).not.toHaveProperty('isRunning')
+      expect(patch.conversations?.a).toBe(current.conversations.a)
+    })
+
+    it('patchConversationState is an empty patch for an unknown id', () => {
+      expect(patchConversationState(state(), 'ghost', { isRunning: true })).toEqual({})
+    })
+
+    it('activateConversationState points the mirrors at the target slice', () => {
+      expect(activateConversationState(state(), 'b')).toEqual({
+        conversationId: 'b',
+        events: runningEvents,
+        isRunning: true,
+        isRetryPending: true
+      })
+    })
+
+    it('activateConversationState is an empty patch for an unknown id', () => {
+      expect(activateConversationState(state(), 'ghost')).toEqual({})
+    })
+
+    it('addConversationToState prepends an already-loaded empty slice and activates it', () => {
+      const current = state()
+      const patch = addConversationToState(current, conversation('fresh', 'Fresh'))
+
+      expect(patch.conversationId).toBe('fresh')
+      expect(patch.events).toEqual([])
+      expect(patch.conversationOrder).toEqual(['fresh', 'a', 'b'])
+      expect(patch.conversations?.fresh).toMatchObject({
+        title: 'Fresh',
+        events: [],
+        eventsLoaded: true
+      })
+      // Existing slices keep their object identity.
+      expect(patch.conversations?.a).toBe(current.conversations.a)
+      expect(patch.conversations?.b).toBe(current.conversations.b)
+    })
+
+    it('removeConversationFromState drops a background slice without touching the mirrors', () => {
+      const patch = removeConversationFromState(state(), 'b')
+
+      expect(patch.conversationOrder).toEqual(['a'])
+      expect(patch.conversations?.b).toBeUndefined()
+      expect(patch).not.toHaveProperty('conversationId')
+      expect(patch).not.toHaveProperty('events')
+    })
+
+    it('removeConversationFromState resets the mirrors when the active slice is removed', () => {
+      const patch = removeConversationFromState(state(), 'a')
+
+      expect(patch.conversationOrder).toEqual(['b'])
+      expect(patch.conversations?.a).toBeUndefined()
+      expect(patch.conversationId).toBeUndefined()
+      expect(patch.events).toEqual([])
+      expect(patch.isRunning).toBe(false)
+      expect(patch.isRetryPending).toBe(false)
+    })
   })
 })
 

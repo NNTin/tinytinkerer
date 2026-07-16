@@ -1,6 +1,6 @@
 import type { ChatEvent } from '@tinytinkerer/contracts'
 import { buildConversationHistory } from './history'
-import { activeCooldown } from './projections'
+import { activeCooldown, appendLiveChatEvent } from './projections'
 import type {
   ChatRuntimeFactory,
   Conversation,
@@ -27,8 +27,8 @@ export const rateLimitCooldownKey = (cooldownScope?: string): string => {
 
 /**
  * Read the active (non-expired) cooldown, or `undefined`. Shared by
- * {@link initializeChatState} and the chat store so send gating always
- * reflects the current cooldown.
+ * {@link initializeConversationsState} and the chat store so send gating
+ * always reflects the current cooldown.
  */
 export const loadCooldown = async (
   preferences: PreferencesStore,
@@ -52,24 +52,481 @@ export const defaultChatState = (): ChatStateSnapshot => ({
   cooldownUntil: undefined
 })
 
-export const initializeChatState = async (
+// One conversation's chat state, keyed by conversation id in the store (issue
+// #430). The store's top-level `events`/`isRunning`/`isRetryPending` are
+// mirrors of the ACTIVE slice; every slice mutation flows through the store's
+// single patch helper so the mirrors can never drift.
+export type ConversationSlice = {
+  id: string
+  title: string
+  events: ChatEvent[]
+  isRunning: boolean
+  isRetryPending: boolean
+  // Events loaded from the repository (lazily, on first activation). New
+  // conversations start `true` — there is nothing to load.
+  eventsLoaded: boolean
+}
+
+// The multi-conversation portion of the chat store's state. Structural subset
+// of the store's full state so these pure helpers stay React/zustand-free.
+export type ConversationsStateSnapshot = {
+  // The active conversation id.
+  conversationId: string | undefined
+  // Mirrors of the active conversation's slice.
+  events: ChatEvent[]
+  isRunning: boolean
+  isRetryPending: boolean
+  conversations: Record<string, ConversationSlice>
+  // Most-recently-updated first at initialization; new conversations are
+  // prepended, deleted ids removed. Not re-sorted on new events (issue #430).
+  conversationOrder: string[]
+}
+
+// Preference key remembering which conversation was active, so a reload
+// restores the conversation the user was looking at (issue #430). A stored id
+// that no longer exists is ignored — see resolveActiveConversationId.
+export const ACTIVE_CONVERSATION_KEY = 'active_conversation_id'
+
+export const loadActiveConversationId = async (
+  preferences: PreferencesStore
+): Promise<string | undefined> => {
+  const stored = await preferences.get(ACTIVE_CONVERSATION_KEY)
+  return stored?.trim() ? stored : undefined
+}
+
+export const persistActiveConversationId = async (
+  preferences: PreferencesStore,
+  conversationId: string
+): Promise<void> => {
+  await preferences.set(ACTIVE_CONVERSATION_KEY, conversationId)
+}
+
+/**
+ * The conversation to activate at startup: the stored preference when it still
+ * names an existing conversation, otherwise the most recently updated one
+ * (`conversationList` is most-recent-first per the repository contract).
+ */
+export const resolveActiveConversationId = (
+  conversationList: Conversation[],
+  storedId: string | undefined
+): string | undefined =>
+  storedId !== undefined && conversationList.some((entry) => entry.id === storedId)
+    ? storedId
+    : conversationList[0]?.id
+
+const conversationSlice = (
+  conversation: Conversation,
+  events: ChatEvent[],
+  eventsLoaded: boolean
+): ConversationSlice => ({
+  id: conversation.id,
+  title: conversation.title,
+  events,
+  isRunning: false,
+  isRetryPending: false,
+  eventsLoaded
+})
+
+export type ConversationsInitState = ConversationsStateSnapshot &
+  Pick<ChatStateSnapshot, 'cooldownUntil'>
+
+/**
+ * Multi-conversation successor of the old single-conversation initialization:
+ * enumerate all conversations (creating one when none exist), restore the
+ * active id from its preference (falling back to the most recently updated),
+ * and load ONLY the active conversation's events — the other slices hydrate
+ * lazily on first activation (`eventsLoaded: false`).
+ */
+export const initializeConversationsState = async (
   conversations: ConversationRepository,
   preferences: PreferencesStore,
   cooldownScope?: string
-): Promise<ChatStateSnapshot> => {
-  const conversation = await getLatestConversationOrCreate(conversations)
-  const storedEvents = await conversations.loadConversationEvents(conversation.id)
+): Promise<ConversationsInitState> => {
+  const listed = await conversations.listConversations()
+  const conversationList = listed.length > 0 ? listed : [await conversations.createConversation()]
+  const storedId = await loadActiveConversationId(preferences)
+  // conversationList is never empty here, so the resolved id always exists.
+  const activeConversationId = resolveActiveConversationId(conversationList, storedId) as string
+  const activeEvents = await conversations.loadConversationEvents(activeConversationId)
   const cooldownUntil = await loadCooldown(preferences, cooldownScope)
 
   if (!cooldownUntil) {
     await preferences.set(rateLimitCooldownKey(cooldownScope), '')
   }
 
+  const slices: Record<string, ConversationSlice> = {}
+  for (const conversation of conversationList) {
+    const isActive = conversation.id === activeConversationId
+    slices[conversation.id] = conversationSlice(
+      conversation,
+      isActive ? activeEvents : [],
+      isActive
+    )
+  }
+
   return {
-    ...defaultChatState(),
-    conversationId: conversation.id,
-    events: storedEvents,
+    conversationId: activeConversationId,
+    events: activeEvents,
+    isRunning: false,
+    isRetryPending: false,
+    conversations: slices,
+    conversationOrder: conversationList.map((conversation) => conversation.id),
     cooldownUntil
+  }
+}
+
+/**
+ * Patch making `conversationId` the active conversation and pointing the
+ * top-level mirrors at its slice. Empty patch for an unknown id — activation
+ * of a conversation that was deleted mid-flight must not corrupt the mirrors.
+ */
+export const activateConversationState = (
+  state: ConversationsStateSnapshot,
+  conversationId: string
+): Partial<ConversationsStateSnapshot> => {
+  const slice = state.conversations[conversationId]
+  if (!slice) {
+    return {}
+  }
+  return {
+    conversationId,
+    events: slice.events,
+    isRunning: slice.isRunning,
+    isRetryPending: slice.isRetryPending
+  }
+}
+
+/**
+ * Patch adding a freshly created conversation: empty slice (`eventsLoaded`
+ * true — it is new), prepended to the order, and made active.
+ */
+export const addConversationToState = (
+  state: ConversationsStateSnapshot,
+  conversation: Conversation
+): Partial<ConversationsStateSnapshot> => ({
+  conversationId: conversation.id,
+  events: [],
+  isRunning: false,
+  isRetryPending: false,
+  conversations: {
+    ...state.conversations,
+    [conversation.id]: conversationSlice(conversation, [], true)
+  },
+  conversationOrder: [conversation.id, ...state.conversationOrder]
+})
+
+/**
+ * Patch dropping a conversation's slice and order entry. When the removed
+ * conversation was active, the mirrors reset to a "nothing active" state — the
+ * store immediately activates the most recent remaining conversation (or
+ * creates a fresh one) afterwards.
+ */
+export const removeConversationFromState = (
+  state: ConversationsStateSnapshot,
+  conversationId: string
+): Partial<ConversationsStateSnapshot> => {
+  const conversations = { ...state.conversations }
+  delete conversations[conversationId]
+  const base = {
+    conversations,
+    conversationOrder: state.conversationOrder.filter((id) => id !== conversationId)
+  }
+  if (state.conversationId !== conversationId) {
+    return base
+  }
+  return {
+    ...base,
+    conversationId: undefined,
+    events: [],
+    isRunning: false,
+    isRetryPending: false
+  }
+}
+
+/**
+ * THE one place a conversation slice mutates: computes the patch that
+ * immutably replaces `conversations[conversationId]` (leaving every other
+ * slice's object identity untouched) and, iff that id is the active
+ * conversation at that moment, also updates the top-level mirrors. A run
+ * streaming into a backgrounded conversation therefore never touches what the
+ * surface renders. Empty patch for an unknown id (e.g. the tail of a deleted
+ * conversation's run).
+ */
+export const patchConversationState = (
+  state: ConversationsStateSnapshot,
+  conversationId: string,
+  patch:
+    | Partial<Omit<ConversationSlice, 'id'>>
+    | ((slice: ConversationSlice) => Partial<Omit<ConversationSlice, 'id'>>)
+): Partial<ConversationsStateSnapshot> => {
+  const slice = state.conversations[conversationId]
+  if (!slice) {
+    return {}
+  }
+  const next = { ...slice, ...(typeof patch === 'function' ? patch(slice) : patch) }
+  const conversations = { ...state.conversations, [conversationId]: next }
+  return state.conversationId === conversationId
+    ? {
+        conversations,
+        events: next.events,
+        isRunning: next.isRunning,
+        isRetryPending: next.isRetryPending
+      }
+    : { conversations }
+}
+
+/**
+ * The store-side hooks the conversation actions below need. The action bodies
+ * live here rather than in the chat store so they load with app-core's lazy
+ * chunk instead of every shell's tightly-budgeted entry chunk; the store passes
+ * thin adapters and keeps only synchronous orchestration.
+ */
+// The store state the actions see: the conversation slices plus the global
+// per-deployment cooldown (issue #179), which gates every conversation's sends.
+export type ConversationsStoreState = ConversationsStateSnapshot &
+  Pick<ChatStateSnapshot, 'cooldownUntil'>
+
+export type ConversationActionsContext = {
+  getState: () => ConversationsStoreState
+  setState: (patch: Partial<ConversationsStoreState>) => void
+  // The persistence ports the actions read/write. The browser shell object
+  // satisfies this structurally, so the store passes it through as-is.
+  shell: {
+    conversations: ConversationRepository
+    preferences: PreferencesStore
+  }
+  // Aborts the conversation's in-flight run and settles open human prompts —
+  // the store's shared abort path (issues #332/#85).
+  abortRun: (conversationId: string | undefined) => void
+}
+
+// Every slice mutation in the actions flows through patchConversationState so
+// the active-conversation mirrors can never drift. Synchronous read-then-write
+// is atomic here — JavaScript is single-threaded and nothing awaits in between.
+const patchSlice = (
+  context: ConversationActionsContext,
+  conversationId: string,
+  patch: Parameters<typeof patchConversationState>[2]
+): void => {
+  context.setState(patchConversationState(context.getState(), conversationId, patch))
+}
+
+/**
+ * Load a slice's persisted events on demand (first activation, or a send into
+ * a not-yet-viewed conversation). Loads at most once per slice.
+ */
+export const hydrateConversationSlice = async (
+  context: ConversationActionsContext,
+  conversationId: string
+): Promise<void> => {
+  const slice = context.getState().conversations[conversationId]
+  if (!slice || slice.eventsLoaded) {
+    return
+  }
+  const events = await context.shell.conversations.loadConversationEvents(conversationId)
+  patchSlice(context, conversationId, { events, eventsLoaded: true })
+}
+
+/**
+ * Make an existing conversation active, hydrating it first, and remember it as
+ * the active conversation. No-op for an unknown or already-active id.
+ */
+export const selectConversationAction = async (
+  context: ConversationActionsContext,
+  conversationId: string
+): Promise<void> => {
+  const state = context.getState()
+  if (!state.conversations[conversationId] || state.conversationId === conversationId) {
+    return
+  }
+  await hydrateConversationSlice(context, conversationId)
+  context.setState(activateConversationState(context.getState(), conversationId))
+  await persistActiveConversationId(context.shell.preferences, conversationId)
+}
+
+/**
+ * Create a fresh conversation, make it active, and remember it as active.
+ */
+export const startNewConversationAction = async (
+  context: ConversationActionsContext
+): Promise<void> => {
+  const conversation = await context.shell.conversations.createConversation()
+  context.setState(addConversationToState(context.getState(), conversation))
+  await persistActiveConversationId(context.shell.preferences, conversation.id)
+}
+
+/**
+ * Reset a conversation (the active one by default): abort its in-flight run
+ * BEFORE clearing (issue #332) — otherwise the run keeps appending and
+ * re-persisting its tail onto the conversation being emptied, resurrecting an
+ * orphaned assistant turn that survives reload — then clear its persisted
+ * events and its slice. Only the target's controller is aborted; runs in other
+ * conversations are untouched. Returns whether the ACTIVE conversation was
+ * reset, so the store can clear the (still global, issue #430 follow-up)
+ * inspector buffer exactly as before.
+ */
+export const resetConversationAction = async (
+  context: ConversationActionsContext,
+  conversationId?: string
+): Promise<boolean> => {
+  const targetId = conversationId ?? context.getState().conversationId
+  context.abortRun(targetId)
+  const events = await resetConversation(context.shell.conversations, targetId)
+  if (targetId) {
+    patchSlice(context, targetId, { events, eventsLoaded: true })
+  }
+  return Boolean(targetId) && targetId === context.getState().conversationId
+}
+
+// One in-flight (or mid-send, issue #334) run's mutable handle, kept in the
+// store's per-conversation closure map. The controller is assigned only after
+// the pre-run awaits resolve.
+export type ConversationRunHandle = {
+  controller?: AbortController
+}
+
+export type ConversationRunContext = ConversationActionsContext & {
+  // The cooldown scope (the LiteLLM deployment base URL, issue #179) lives in
+  // the settings store, and the runtime factory is browser-layer code — the
+  // store supplies both.
+  getCooldownScope: () => string | undefined
+  getRuntimeFactory: () => Promise<ChatRuntimeFactory>
+}
+
+/**
+ * The body of the store's sendPrompt past its synchronous latch/cap gate:
+ * resolve the target conversation (re-keying a pre-hydration placeholder latch
+ * onto the actual active id so later sends into that conversation still hit
+ * the latch, issue #334), gate via canSendPrompt (per-conversation run state +
+ * global cooldown), hydrate, run, and stream events into the run's OWN
+ * conversation slice (issue #430 — switching conversations mid-run leaves a
+ * background run streaming into its own slice; patchConversationState only
+ * touches the visible mirrors while that conversation is active). `execute` is
+ * the store's (injectable, test-mockable) executeChatPrompt.
+ */
+export const sendConversationPromptAction = async (
+  context: ConversationRunContext,
+  options: {
+    prompt: string
+    // The explicitly requested target, if any; defaults to the active one.
+    conversationId: string | undefined
+    // The key this send latched under, its run handle, and the store's live
+    // run map, so the placeholder key can be re-pointed at the resolved id.
+    runKey: string
+    run: ConversationRunHandle
+    activeRuns: Map<string, ConversationRunHandle>
+    execute: typeof executeChatPrompt
+  }
+): Promise<void> => {
+  const { prompt, run } = options
+  const conversationId = options.conversationId ?? context.getState().conversationId
+  if (!conversationId) {
+    return
+  }
+  if (conversationId !== options.runKey) {
+    // The pre-hydration placeholder resolved to the actual active id; re-key so
+    // later sends into this conversation hit the latch (issue #334).
+    if (options.activeRuns.has(conversationId)) {
+      return
+    }
+    options.activeRuns.delete(options.runKey)
+    options.activeRuns.set(conversationId, run)
+  }
+
+  const slice = context.getState().conversations[conversationId]
+  if (!slice) {
+    return
+  }
+  // canSendPrompt mixes per-conversation run state with the global cooldown;
+  // synthesize its snapshot from the target slice.
+  if (
+    !canSendPrompt({
+      conversationId,
+      events: slice.events,
+      isRunning: slice.isRunning,
+      isRetryPending: slice.isRetryPending,
+      cooldownUntil: context.getState().cooldownUntil
+    })
+  ) {
+    return
+  }
+
+  // A send into a never-activated conversation must build its history from the
+  // persisted events, not an unhydrated empty slice.
+  await hydrateConversationSlice(context, conversationId)
+
+  const runtimeFactory = await context.getRuntimeFactory()
+  const runController = new AbortController()
+  run.controller = runController
+  patchSlice(context, conversationId, { isRunning: true, isRetryPending: false })
+
+  // Cooldowns are scoped per LiteLLM deployment (issue #179).
+  const cooldownScope = context.getCooldownScope()
+
+  try {
+    await options.execute({
+      conversationId,
+      existingEvents: context.getState().conversations[conversationId]?.events ?? [],
+      prompt,
+      runtimeFactory,
+      conversations: context.shell.conversations,
+      preferences: context.shell.preferences,
+      ...(cooldownScope === undefined ? {} : { cooldownScope }),
+      signal: runController.signal,
+      onEvent: (event) => {
+        // Drop events from a run aborted mid-stream (e.g. by a reset) so its
+        // tail cannot land on the fresh conversation (issue #332), and collapse
+        // live-only stream snapshots so they don't accumulate without bound
+        // (issue #339).
+        if (runController.signal.aborted) {
+          return
+        }
+        patchSlice(context, conversationId, (current) => ({
+          events: appendLiveChatEvent(current.events, event)
+        }))
+      },
+      onRateLimitState: (rateLimitState) => {
+        // The cooldown is global per deployment; the retry flag belongs to this
+        // run's conversation.
+        context.setState({ cooldownUntil: rateLimitState.cooldownUntil })
+        patchSlice(context, conversationId, { isRetryPending: rateLimitState.isRetryPending })
+      }
+    })
+  } finally {
+    patchSlice(context, conversationId, { isRunning: false, isRetryPending: false })
+  }
+}
+
+/**
+ * Abort the conversation's run (same path as reset, issue #332), delete it
+ * from the repository, and drop its slice; when it was active, activate the
+ * most recent remaining conversation — hydrating it exactly like a
+ * user-initiated switch — or create a fresh one when none remain. No-op for an
+ * unknown id.
+ */
+export const deleteConversationAction = async (
+  context: ConversationActionsContext,
+  conversationId: string
+): Promise<void> => {
+  if (!context.getState().conversations[conversationId]) {
+    return
+  }
+  // Abort before the rows disappear so the doomed run stops streaming and
+  // persisting (issue #332).
+  context.abortRun(conversationId)
+  await context.shell.conversations.deleteConversation(conversationId)
+  const wasActive = context.getState().conversationId === conversationId
+  context.setState(removeConversationFromState(context.getState(), conversationId))
+  if (!wasActive) {
+    return
+  }
+  const nextId = context.getState().conversationOrder[0]
+  if (nextId) {
+    await selectConversationAction(context, nextId)
+  } else {
+    // The chat always has a conversation: recreate via the same path as the
+    // store's startNewConversation.
+    await startNewConversationAction(context)
   }
 }
 
@@ -227,8 +684,3 @@ export const resetConversation = async (
   await conversations.clearConversationEvents(conversationId)
   return []
 }
-
-const getLatestConversationOrCreate = async (
-  conversations: ConversationRepository
-): Promise<Conversation> =>
-  (await conversations.getLatestConversation()) ?? conversations.createConversation()
