@@ -41,6 +41,15 @@ const sendChat = async (page: Page, prompt: string): Promise<void> => {
   await composer.press('Enter')
 }
 
+// The transcript's user-turn bubble, scoped by the themed user-bubble background
+// token (which only the user bubble uses, so the selector survives palette
+// changes). A bare getByText(prompt) is ambiguous since the conversation
+// switcher (#430): its header trigger shows the active conversation's
+// auto-derived title, which for a short (≤48 char) prompt is the prompt text
+// verbatim.
+const promptBubble = (page: Page, prompt: string) =>
+  page.locator('[class*="user-bubble"]', { hasText: prompt })
+
 test.describe('chat history persistence across reload (#250)', () => {
   for (const shell of SHELLS) {
     test(`${shell.name}: a conversation is restored from IndexedDB after reload`, async ({
@@ -54,12 +63,8 @@ test.describe('chat history persistence across reload (#250)', () => {
       await sendChat(page, prompt)
 
       // The user bubble and the assistant content render for the live turn.
-      await expect(page.getByText(prompt)).toBeVisible({ timeout: 30_000 })
+      await expect(promptBubble(page, prompt)).toBeVisible({ timeout: 30_000 })
       await expect(page.getByText(ANSWER)).toBeVisible({ timeout: 30_000 })
-      // The user bubble carries the themed user-bubble background token
-      // (`bg-[var(--user-bubble)]`); match on the token name, which only the
-      // user bubble uses, so the selector survives palette changes.
-      await expect(page.locator('[class*="user-bubble"]', { hasText: prompt })).toBeVisible()
 
       // Reload in the SAME browser context — IndexedDB is preserved. The telemetry
       // choice is already persisted, so only a Settings dialog might reappear.
@@ -69,9 +74,8 @@ test.describe('chat history persistence across reload (#250)', () => {
       // The SAME conversation re-renders from storage: both the user turn and the
       // assistant answer come back, not an empty chat. This is the persistence proof
       // — no new chat request is made on reload; the turns are loaded from Dexie.
-      await expect(page.getByText(prompt)).toBeVisible({ timeout: 30_000 })
+      await expect(promptBubble(page, prompt)).toBeVisible({ timeout: 30_000 })
       await expect(page.getByText(ANSWER)).toBeVisible({ timeout: 30_000 })
-      await expect(page.locator('[class*="user-bubble"]', { hasText: prompt })).toBeVisible()
     })
   }
 
@@ -86,7 +90,7 @@ test.describe('chat history persistence across reload (#250)', () => {
     await page.goto(web.url)
     await dismissFirstLoad(page)
     await sendChat(page, prompt)
-    await expect(page.getByText(prompt)).toBeVisible({ timeout: 30_000 })
+    await expect(promptBubble(page, prompt)).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText(ANSWER)).toBeVisible({ timeout: 30_000 })
 
     // Navigate to the widget — the SAME origin (one build, one composed dist), a
@@ -96,7 +100,7 @@ test.describe('chat history persistence across reload (#250)', () => {
     // to the others. (Distinct-origin topology would instead isolate them.)
     await page.goto(widget.url)
     await dismissFirstLoad(page)
-    await expect(page.getByText(prompt)).toBeVisible({ timeout: 30_000 })
+    await expect(promptBubble(page, prompt)).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText(ANSWER)).toBeVisible({ timeout: 30_000 })
   })
 })

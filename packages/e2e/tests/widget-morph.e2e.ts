@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { installChatMock } from '../fixtures/mock-litellm'
 import { requireShellPort, dismissFirstLoad } from '../fixtures/first-load'
 
@@ -17,6 +17,13 @@ const WIDGET_URL = `http://localhost:${requireShellPort('E2E_PORT_WIDGET')}/widg
 const ANSWER = 'Morph answer: this conversation outlives the layout swap.'
 const PROMPT = 'Morph continuity check.'
 
+// The transcript's user-turn bubble, scoped by the themed user-bubble token
+// (mirrors chat-persistence.e2e.ts). A bare getByText(PROMPT) is ambiguous
+// since the conversation switcher (#430): its header trigger shows the active
+// conversation's auto-derived title, which for a short (≤48 char) prompt is
+// the prompt text verbatim.
+const promptBubble = (page: Page) => page.locator('[class*="user-bubble"]', { hasText: PROMPT })
+
 test.describe('widget↔sidebar morph (#325)', () => {
   test('dock/undock swaps the layout while the conversation persists', async ({ page }) => {
     await installChatMock(page, ANSWER)
@@ -27,7 +34,7 @@ test.describe('widget↔sidebar morph (#325)', () => {
     const composer = page.locator('textarea').first()
     await composer.fill(PROMPT)
     await composer.press('Enter')
-    await expect(page.getByText(PROMPT)).toBeVisible({ timeout: 30_000 })
+    await expect(promptBubble(page)).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText(ANSWER)).toBeVisible({ timeout: 30_000 })
 
     // The floating layout offers a dock button; docking morphs into the sidebar.
@@ -39,13 +46,13 @@ test.describe('widget↔sidebar morph (#325)', () => {
     // the SAME conversation is still on screen — the session survived the swap.
     await expect(page.getByRole('button', { name: 'Float chat' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Dock to sidebar' })).toHaveCount(0)
-    await expect(page.getByText(PROMPT)).toBeVisible()
+    await expect(promptBubble(page)).toBeVisible()
     await expect(page.getByText(ANSWER)).toBeVisible()
 
     // Undock back to the floating layout — again without losing the conversation.
     await page.getByRole('button', { name: 'Float chat' }).click()
     await expect(page.getByRole('button', { name: 'Dock to sidebar' })).toBeVisible()
-    await expect(page.getByText(PROMPT)).toBeVisible()
+    await expect(promptBubble(page)).toBeVisible()
     await expect(page.getByText(ANSWER)).toBeVisible()
   })
 })
@@ -66,7 +73,7 @@ test.describe('snap-to-web-mode (#324)', () => {
     const composer = page.locator('textarea').first()
     await composer.fill(PROMPT)
     await composer.press('Enter')
-    await expect(page.getByText(PROMPT)).toBeVisible({ timeout: 30_000 })
+    await expect(promptBubble(page)).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText(ANSWER)).toBeVisible({ timeout: 30_000 })
 
     const viewport = page.viewportSize()
@@ -96,13 +103,13 @@ test.describe('snap-to-web-mode (#324)', () => {
     await expect(page.getByRole('button', { name: 'Float chat' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Dock to sidebar' })).toHaveCount(0)
     await expect(page.locator('.widget-snap-preview')).toHaveCount(0)
-    await expect(page.getByText(PROMPT)).toBeVisible()
+    await expect(promptBubble(page)).toBeVisible()
     await expect(page.getByText(ANSWER)).toBeVisible()
 
     // Float it again — back to the floating widget, conversation intact.
     await page.getByRole('button', { name: 'Float chat' }).click()
     await expect(page.getByRole('button', { name: 'Dock to sidebar' })).toBeVisible()
-    await expect(page.getByText(PROMPT)).toBeVisible()
+    await expect(promptBubble(page)).toBeVisible()
     await expect(page.getByText(ANSWER)).toBeVisible()
   })
 })
