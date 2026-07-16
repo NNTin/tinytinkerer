@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { KEYWORD_PROMPT_SENTINEL } from '@tinytinkerer/contracts'
 import type {
   ContentDocument,
@@ -6,6 +6,7 @@ import type {
   McpDiscoveryResult,
   McpServerConfig
 } from '@tinytinkerer/contracts'
+import type { ConversationRunContext, ConversationSlice } from '../src/index.js'
 import {
   ACTIVE_CONVERSATION_KEY,
   activateConversationState,
@@ -18,10 +19,12 @@ import {
   buildTurns,
   canSendPrompt,
   compareEventOrder,
+  DEFAULT_CONVERSATION_TITLE,
   DEFAULT_MODEL,
   DEFAULT_MODEL_PROVIDER,
   defaultChatState,
   defaultSettingsState,
+  deriveConversationTitle,
   inferPlan,
   initializeConversationsState,
   isPluginToolEnabled,
@@ -43,6 +46,7 @@ import {
   rateLimitCooldownKey,
   isPluginEnabled,
   reconcilePluginToolDisablement,
+  sendConversationPromptAction,
   SETTINGS_KEYS,
   validateLiteLLMBaseUrl
 } from '../src/index.js'
@@ -1467,6 +1471,154 @@ describe('multi-conversation state (issue #430)', () => {
       expect(patch.events).toEqual([])
       expect(patch.isRunning).toBe(false)
       expect(patch.isRetryPending).toBe(false)
+    })
+  })
+
+  describe('deriveConversationTitle', () => {
+    it('trims leading/trailing whitespace', () => {
+      expect(deriveConversationTitle('  hello there  ')).toBe('hello there')
+    })
+
+    it('collapses internal whitespace, including newlines and tabs, to single spaces', () => {
+      expect(deriveConversationTitle('hello\n\tworld   again')).toBe('hello world again')
+    })
+
+    it('returns the collapsed text unchanged at or under the max length', () => {
+      const exact = 'a'.repeat(48)
+      expect(deriveConversationTitle(exact)).toBe(exact)
+    })
+
+    it('truncates past the max length and marks the cut with an ellipsis', () => {
+      const long = 'a'.repeat(60)
+      const title = deriveConversationTitle(long)
+      expect(title).toBe(`${'a'.repeat(48)}…`)
+      expect(title.length).toBe(49)
+    })
+
+    it('falls back to the default title for a blank prompt', () => {
+      expect(deriveConversationTitle('   ')).toBe(DEFAULT_CONVERSATION_TITLE)
+    })
+  })
+
+  describe('sendConversationPromptAction auto-title (issue #430)', () => {
+    const runSlice = (overrides: Partial<ConversationSlice> = {}): ConversationSlice => ({
+      id: 'a',
+      title: DEFAULT_CONVERSATION_TITLE,
+      events: [],
+      isRunning: false,
+      isRetryPending: false,
+      eventsLoaded: true,
+      ...overrides
+    })
+
+    // A minimal fake ConversationRunContext: `execute` (injected per call) does
+    // all the "running" work, so the runtime factory it receives is never
+    // actually invoked — a stub satisfying the type is enough.
+    const buildContext = (
+      initialConversations: Record<string, ConversationSlice>
+    ): {
+      context: ConversationRunContext
+      updateConversationTitle: ReturnType<typeof vi.fn>
+      getState: () => { conversations: Record<string, ConversationSlice> }
+    } => {
+      let conversations = initialConversations
+      const updateConversationTitle = vi.fn(() => Promise.resolve())
+      const context: ConversationRunContext = {
+        getState: () => ({
+          conversationId: 'a',
+          events: [],
+          isRunning: false,
+          isRetryPending: false,
+          conversations,
+          conversationOrder: Object.keys(conversations),
+          cooldownUntil: undefined
+        }),
+        setState: (patch) => {
+          if (patch.conversations) {
+            conversations = patch.conversations
+          }
+        },
+        shell: {
+          conversations: {
+            createConversation: () => Promise.reject(new Error('not used')),
+            getLatestConversation: () => Promise.reject(new Error('not used')),
+            loadConversationEvents: () => Promise.resolve([]),
+            appendEvent: () => Promise.resolve(),
+            clearConversationEvents: () => Promise.reject(new Error('not used')),
+            listConversations: () => Promise.reject(new Error('not used')),
+            deleteConversation: () => Promise.reject(new Error('not used')),
+            updateConversationTitle
+          },
+          preferences: makePreferences()
+        },
+        abortRun: vi.fn(),
+        getCooldownScope: () => undefined,
+        getRuntimeFactory: () =>
+          Promise.resolve({ create: () => ({ run: () => (async function* () {})() }) })
+      }
+      return { context, updateConversationTitle, getState: () => ({ conversations }) }
+    }
+
+    it('sets the title from the first prompt exactly once', async () => {
+      const { context, updateConversationTitle, getState } = buildContext({ a: runSlice() })
+
+      await sendConversationPromptAction(context, {
+        prompt: '  what   is the capital of   France?  ',
+        conversationId: 'a',
+        runKey: 'a',
+        run: {},
+        activeRuns: new Map(),
+        execute: () => Promise.resolve()
+      })
+
+      expect(updateConversationTitle).toHaveBeenCalledTimes(1)
+      expect(updateConversationTitle).toHaveBeenCalledWith('a', 'what is the capital of France?')
+      expect(getState().conversations.a?.title).toBe('what is the capital of France?')
+    })
+
+    it('does not touch the repository on a second send once the title is no longer the default', async () => {
+      const { context, updateConversationTitle } = buildContext({
+        a: runSlice({ title: 'Already renamed' })
+      })
+
+      await sendConversationPromptAction(context, {
+        prompt: 'another message',
+        conversationId: 'a',
+        runKey: 'a',
+        run: {},
+        activeRuns: new Map(),
+        execute: () => Promise.resolve()
+      })
+
+      expect(updateConversationTitle).not.toHaveBeenCalled()
+    })
+
+    it('awaits the title write before the run starts (delete-safety ordering)', async () => {
+      const order: string[] = []
+      const { context } = buildContext({ a: runSlice() })
+      // Override updateConversationTitle to record when it resolves, and
+      // execute to record when the run actually starts — if the title write
+      // were fire-and-forget, 'run-started' could be recorded before
+      // 'title-written' (or interleave with a concurrent delete's repository
+      // calls); awaiting it guarantees the ordering below.
+      context.shell.conversations.updateConversationTitle = vi.fn(() => {
+        order.push('title-written')
+        return Promise.resolve()
+      })
+
+      await sendConversationPromptAction(context, {
+        prompt: 'hello',
+        conversationId: 'a',
+        runKey: 'a',
+        run: {},
+        activeRuns: new Map(),
+        execute: () => {
+          order.push('run-started')
+          return Promise.resolve()
+        }
+      })
+
+      expect(order).toEqual(['title-written', 'run-started'])
     })
   })
 })

@@ -17,12 +17,22 @@ import {
   useSettingsSurfaceController
 } from '../surfaces'
 import { useStickToBottom } from '../use-stick-to-bottom'
+import { LazyConversationSwitcher } from './lazy-conversation-switcher'
 import { SpeechToggleButton } from './speech-toggle-button'
 import { surfaceButtonClass } from './surface-button'
 
 // The compact-session loading/error view, supplied by the host app so each shell
 // keeps its own boot copy and palette.
 export type ChatLoadingComponent = ComponentType<{ error?: string }>
+
+// Shared chrome for the composer's square header icon buttons (settings,
+// sign-in, reset) and their neutral hover state — one definition instead of the
+// three drifting copies this file used to carry (and the switcher trigger
+// reuses the hover half).
+const headerIconButton =
+  'flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-[var(--panel)] text-[var(--widget-muted)] transition-colors'
+const headerIconButtonHover =
+  'hover:border-[var(--border)] hover:bg-[var(--panel-hover)] hover:text-[var(--widget-text)]'
 
 export type FloatingChatSurfaceProps = {
   LoadingComponent: ChatLoadingComponent
@@ -61,7 +71,13 @@ export const FloatingChatSurface = ({
     canRerun,
     resetConversation,
     cancelRetry,
-    stop
+    stop,
+    conversations,
+    activeConversationId,
+    selectConversation,
+    startNewConversation,
+    deleteConversation,
+    sendRefusalNotice
   } = useChatSurfaceController()
   const { token } = useSettingsSurfaceController()
   const { prompt, setPrompt, speech, handleSubmit } = useChatComposer(submitPrompt)
@@ -158,7 +174,7 @@ export const FloatingChatSurface = ({
                 aria-label="Settings"
                 title="Settings"
                 onClick={() => setSettingsOpen(true)}
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-[var(--panel)] text-[var(--widget-muted)] transition-colors hover:border-[var(--border)] hover:bg-[var(--panel-hover)] hover:text-[var(--widget-text)]"
+                className={`${headerIconButton} ${headerIconButtonHover}`}
               >
                 <FaGear className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
@@ -168,7 +184,7 @@ export const FloatingChatSurface = ({
                   aria-label="Sign in with GitHub"
                   title="Sign in with GitHub"
                   onClick={() => setSettingsOpen(true)}
-                  className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-[var(--panel)] text-[var(--widget-muted)] transition-colors hover:border-[var(--border)] hover:bg-[var(--panel-hover)] hover:text-[var(--widget-text)]"
+                  className={`${headerIconButton} ${headerIconButtonHover}`}
                 >
                   <FaGithub className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
@@ -178,10 +194,22 @@ export const FloatingChatSurface = ({
                 aria-label="Reset conversation"
                 title="Reset conversation"
                 onClick={() => void resetConversation()}
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--widget-border)] bg-[var(--panel)] text-[var(--widget-muted)] transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
+                className={`${headerIconButton} hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700`}
               >
                 <FaRotateLeft className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
+              {/* Conversation switcher (issue #430): its own lazy chunk (see
+                  lazy-conversation-switcher.tsx) to keep this chunk's budget. */}
+              <Suspense fallback={null}>
+                <LazyConversationSwitcher
+                  conversations={conversations}
+                  activeConversationId={activeConversationId}
+                  selectConversation={selectConversation}
+                  startNewConversation={startNewConversation}
+                  deleteConversation={deleteConversation}
+                  triggerClassName={`flex h-8 items-center gap-1 rounded-md border border-[var(--widget-border)] bg-[var(--panel)] px-2 text-[11px] font-medium text-[var(--widget-muted)] transition-colors ${headerIconButtonHover}`}
+                />
+              </Suspense>
               {/* Tool picker (issue #400): unlike the inspector below, this works on
                   every shell — it is not gated on inspectorPanelSupported. Renders
                   nothing until a tool-tree plugin is enabled. */}
@@ -239,6 +267,11 @@ export const FloatingChatSurface = ({
           {speech.error ? (
             <p role="alert" className="mt-1.5 text-[11px] text-rose-600">
               {speech.error}
+            </p>
+          ) : null}
+          {sendRefusalNotice ? (
+            <p role="alert" className="mt-1.5 text-[11px] text-rose-600">
+              {sendRefusalNotice}
             </p>
           ) : null}
         </div>

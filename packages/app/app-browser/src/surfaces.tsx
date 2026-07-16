@@ -30,6 +30,7 @@ import { isMcpToolId, summarizeMcpActivity } from './runtime/mcp-tool'
 import { toolLabel, type ResolveActivitySummarizer } from './turn-activity-panel'
 import { useWebSpeechInput } from './web-speech'
 import { useAuthStore, useBrowserApp, useChatStore, useSettingsStore, useStatusStore } from './app'
+import { MAX_CONCURRENT_RUNS } from './stores/chat-store'
 import { formatCooldown, useChatCooldown, useGitHubOAuth } from './hooks'
 import { useGitHubUser } from './github-user'
 import { useModels, type ModelEntry } from './models'
@@ -39,6 +40,15 @@ import { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 import { createEdgeFetch } from './runtime/edge-fetch'
 import { parseJsonWithTelemetry, parseWithTelemetry } from './telemetry/request-telemetry'
 import { markOAuthCallbackHandled } from './telemetry/oauth-callback-handled'
+
+// A conversation row for the switcher (issue #430) — deliberately narrow (no
+// events), so building the list per render stays cheap regardless of how much
+// history a background conversation has accumulated.
+export type ConversationSummary = {
+  id: string
+  title: string
+  isRunning: boolean
+}
 
 export type ChatSurfaceController = {
   isBooting: boolean
@@ -71,6 +81,19 @@ export type ChatSurfaceController = {
   // Abort the in-flight generation. Surfaced as the "Stop" affordance whenever
   // `isRunning` is true.
   stop: () => void
+  // Conversation switcher data (issue #430): every conversation in display
+  // order, and which one is active. Deliberately excludes each conversation's
+  // events — the switcher only ever shows id/title/running state.
+  conversations: ConversationSummary[]
+  activeConversationId: string | undefined
+  selectConversation: (conversationId: string) => Promise<void>
+  startNewConversation: () => Promise<void>
+  deleteConversation: (conversationId: string) => Promise<void>
+  // Transient refusal notice (issue #430) set when submitPrompt refuses a send
+  // because MAX_CONCURRENT_RUNS is already running elsewhere. Clears on the
+  // next accepted submit, on switching the active conversation, and after a
+  // few seconds — see useChatSurfaceController.
+  sendRefusalNotice: string | null
 }
 
 export const useChatSurfaceController = (): ChatSurfaceController => {
@@ -90,6 +113,58 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const showReasoningActivity = useSettingsStore((state) => state.showReasoningActivity)
   const mcpServers = useSettingsStore((state) => state.mcpServers)
   const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
+
+  // Conversation switcher data (issue #430).
+  const activeConversationId = useChatStore((state) => state.conversationId)
+  const canStartRun = useChatStore((state) => state.canStartRun)
+  const selectConversation = useChatStore((state) => state.selectConversation)
+  const startNewConversation = useChatStore((state) => state.startNewConversation)
+  const deleteConversation = useChatStore((state) => state.deleteConversation)
+  // Selecting `state.conversations` directly would re-render this controller —
+  // and therefore the whole surface — on every streamed event of EVERY
+  // conversation, background or active (patchConversationState replaces the
+  // record's object identity on each patch). Instead the selector returns a
+  // JSON string built fresh from `conversations`/`conversationOrder` on every
+  // store change; zustand's subscription compares that return value across
+  // renders with Object.is, and two equal strings compare equal even as
+  // different instances, so a background conversation's stream — which leaves
+  // every id/title/isRunning triple unchanged — never forces a re-render here.
+  const conversationsSignature = useChatStore((state) =>
+    JSON.stringify(
+      state.conversationOrder.map((id) => {
+        const slice = state.conversations[id]
+        return [id, slice?.title ?? '', slice?.isRunning ?? false] as const
+      })
+    )
+  )
+  const conversations = useMemo<ConversationSummary[]>(
+    () =>
+      (JSON.parse(conversationsSignature) as [string, string, boolean][]).map(
+        ([id, title, isRunningFlag]) => ({ id, title, isRunning: isRunningFlag })
+      ),
+    [conversationsSignature]
+  )
+
+  // Transient cap-refusal notice (issue #430): set by submitPrompt below when
+  // canStartRun() refuses a send. Cleared on the next accepted submit, on
+  // switching conversations, and after a few seconds.
+  const [sendRefusalNotice, setSendRefusalNotice] = useState<string | null>(null)
+  const refusalTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearRefusalTimeout = () => {
+    if (refusalTimeoutRef.current !== null) {
+      clearTimeout(refusalTimeoutRef.current)
+      refusalTimeoutRef.current = null
+    }
+  }
+  // Unmount cleanup only — intentionally not in the conversation-switch effect
+  // below (that effect already calls clearRefusalTimeout itself).
+  useEffect(() => clearRefusalTimeout, [])
+  useEffect(() => {
+    setSendRefusalNotice(null)
+    clearRefusalTimeout()
+    // Only the conversation switch should clear the notice here; clearRefusalTimeout
+    // is stable (redefined per render but side-effect-free to call redundantly).
+  }, [activeConversationId])
 
   useEffect(() => {
     if (hydrated || initializeError) {
@@ -124,6 +199,17 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   // an unchanged turn is idempotent, so this stays correct under StrictMode's
   // double-invocation.
   const previousTurnsRef = useRef<Turn[]>([])
+  // Reset the reconciliation baseline on conversation switch (issue #430): the
+  // previous list otherwise belongs to a DIFFERENT conversation. Turn ids are
+  // event ids (globally unique), so cross-conversation identity reuse can't
+  // actually happen — this is a cleanliness reset, not a correctness fix —
+  // but starting a freshly-switched-to conversation from an empty baseline is
+  // clearer than reconciling against an unrelated conversation's turns.
+  const previousConversationIdRef = useRef(activeConversationId)
+  if (previousConversationIdRef.current !== activeConversationId) {
+    previousConversationIdRef.current = activeConversationId
+    previousTurnsRef.current = []
+  }
   const turns = useMemo(() => {
     const reconciled = reconcileTurns(previousTurnsRef.current, buildTurns(events))
     previousTurnsRef.current = reconciled
@@ -182,6 +268,26 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
       return false
     }
 
+    // Cap refusal (issue #430): MAX_CONCURRENT_RUNS conversations are already
+    // running/mid-send elsewhere. Refuse visibly instead of falling through to
+    // sendPrompt's silent no-op, and — matching the #206 clear-on-accept
+    // contract — return false so the composer does NOT clear the input.
+    if (!canStartRun()) {
+      clearRefusalTimeout()
+      setSendRefusalNotice(
+        `Parallel run limit reached (${MAX_CONCURRENT_RUNS}). Stop or wait for another conversation to finish.`
+      )
+      refusalTimeoutRef.current = setTimeout(() => {
+        setSendRefusalNotice(null)
+        refusalTimeoutRef.current = null
+      }, 6000)
+      return false
+    }
+    if (sendRefusalNotice) {
+      setSendRefusalNotice(null)
+      clearRefusalTimeout()
+    }
+
     // Kick off the send without awaiting the backend response so the caller can
     // clear the input immediately (issue #206). Errors continue to surface the
     // same way they did before — sendPrompt manages run state and emits
@@ -215,7 +321,13 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     canRerun: !isRunning && !isCoolingDown && turns.some((turn) => turn.userText.length > 0),
     resetConversation,
     cancelRetry,
-    stop
+    stop,
+    conversations,
+    activeConversationId,
+    selectConversation,
+    startNewConversation,
+    deleteConversation,
+    sendRefusalNotice
   }
 }
 

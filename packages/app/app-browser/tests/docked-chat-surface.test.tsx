@@ -23,7 +23,13 @@ const mockChatState = vi.hoisted(() => ({
   submitPrompt: vi.fn(() => true),
   resetConversation: vi.fn(),
   cancelRetry: vi.fn(),
-  stop: vi.fn()
+  stop: vi.fn(),
+  conversations: [{ id: 'a', title: 'New conversation', isRunning: false }],
+  activeConversationId: 'a',
+  selectConversation: vi.fn(() => Promise.resolve()),
+  startNewConversation: vi.fn(() => Promise.resolve()),
+  deleteConversation: vi.fn(() => Promise.resolve()),
+  sendRefusalNotice: null as string | null
 }))
 
 const mockSpeechState = vi.hoisted(() => ({
@@ -64,7 +70,13 @@ vi.mock('../src/surfaces.js', async () => {
       canRerun: false,
       resetConversation: mockChatState.resetConversation,
       cancelRetry: mockChatState.cancelRetry,
-      stop: mockChatState.stop
+      stop: mockChatState.stop,
+      conversations: mockChatState.conversations,
+      activeConversationId: mockChatState.activeConversationId,
+      selectConversation: mockChatState.selectConversation,
+      startNewConversation: mockChatState.startNewConversation,
+      deleteConversation: mockChatState.deleteConversation,
+      sendRefusalNotice: mockChatState.sendRefusalNotice
     })
   }
 })
@@ -167,6 +179,9 @@ beforeEach(() => {
   mockChatState.isRunning = false
   mockChatState.isCoolingDown = false
   mockChatState.submitPrompt.mockReturnValue(true)
+  mockChatState.conversations = [{ id: 'a', title: 'New conversation', isRunning: false }]
+  mockChatState.activeConversationId = 'a'
+  mockChatState.sendRefusalNotice = null
   mockSpeechState.visible = false
 })
 
@@ -248,6 +263,19 @@ describe('DockedChatSurface', () => {
 
     rerender(<DockedChatSurface LoadingComponent={Loading} sizeVariant="mobile" />)
     expect(screen.getByText('hello')).toHaveClass('wrap-anywhere')
+  })
+
+  it('renders the conversation switcher trigger next to the reset button (issue #430)', async () => {
+    render(<DockedChatSurface LoadingComponent={Loading} />)
+    // findByRole: the switcher loads in its own lazy chunk (bundle budget).
+    expect(await screen.findByRole('button', { name: /switch conversation/i })).toBeInTheDocument()
+  })
+
+  it('renders the cap-refusal notice when the controller exposes it (issue #430)', () => {
+    mockChatState.sendRefusalNotice =
+      'Parallel run limit reached (3). Stop or wait for another conversation to finish.'
+    render(<DockedChatSurface LoadingComponent={Loading} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(/parallel run limit reached/i)
   })
 
   it('shows the turn-count badge only in the mobile variant', () => {
