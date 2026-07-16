@@ -1,7 +1,6 @@
 import { z } from 'zod'
 
 export const PIXEL_AGENTS_BRIDGE_CHANNEL = 'tinytinkerer:pixel-agents:v1'
-export const PIXEL_AGENT_ID = 1
 
 export const pixelAgentMetaSchema = z.object({
   palette: z.number().optional(),
@@ -36,6 +35,15 @@ export type PixelServerMessage =
       hooksInfoShown: boolean
       externalAssetDirectories: string[]
     }
+  // One agent per conversation (issue #430): a new conversation announces
+  // itself dynamically instead of only ever appearing in the bootstrap
+  // `existingAgents` list. Shape matches the upstream `AgentCreated` message
+  // exactly (`core/src/messages.ts`); `folderName` carries the conversation
+  // title, mirroring `folderNames[agentId]` in `existingAgents`.
+  | { type: 'agentCreated'; id: number; folderName?: string }
+  // A deleted conversation's agent leaves the office. Matches upstream's
+  // `AgentClosed` exactly — no extra fields.
+  | { type: 'agentClosed'; id: number }
   | { type: 'agentSelected'; id: number }
   | { type: 'agentStatus'; id: number; status: 'active' | 'waiting'; awaitingInput?: boolean }
   | {
@@ -66,6 +74,27 @@ const pixelClientMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('saveAgentSeats'),
     seats: z.record(z.string(), seatRecordSchema)
+  }),
+  // Office toolbar "+ Agent": starts a new conversation. Upstream's shape
+  // carries an optional multi-workspace folder picker and a bypass-permissions
+  // flag (`core/src/messages.ts` `LaunchAgent`); we have exactly one
+  // TinyTinkerer "workspace" (the chat store), so both are accepted (never
+  // rejected) and simply ignored rather than validated against a meaning we
+  // don't have.
+  z.object({
+    type: z.literal('launchAgent'),
+    folderPath: z.string().optional(),
+    bypassPermissions: z.boolean().optional()
+  }),
+  // Clicking a character: make its conversation active in the assistant panel.
+  z.object({
+    type: z.literal('focusAgent'),
+    id: z.number()
+  }),
+  // The office's own "×" close affordance on a selected character.
+  z.object({
+    type: z.literal('closeAgent'),
+    id: z.number()
   })
 ])
 export type PixelClientMessage = z.infer<typeof pixelClientMessageSchema>
@@ -123,12 +152,28 @@ export const parsePixelAgentsBootstrap = (value: unknown): PixelAgentsBootstrap 
   return result.data
 }
 
+// One conversation's worth of bootstrap-time state (issue #430): the stage
+// resolves every current conversation to an agent number before calling this,
+// so by the time it runs there is no more conversation/store awareness here —
+// just the flat per-agent facts the office protocol wants.
+export type PixelBootstrapAgent = {
+  agentId: number
+  title: string
+  isRunning: boolean
+  awaitingInput: boolean
+}
+
 export const createPixelBootstrapMessages = (
   bootstrap: PixelAgentsBootstrap,
   layout: Record<string, unknown> | null,
-  agentMeta: PixelAgentMeta,
-  isRunning: boolean,
-  awaitingInput: boolean
+  agents: readonly PixelBootstrapAgent[],
+  agentMeta: Record<number, PixelAgentMeta>,
+  // The conversation the assistant panel currently shows, i.e. which office
+  // character upstream should highlight as selected. `undefined` when there is
+  // no active conversation yet (or it isn't one of `agents`, e.g. mid-delete) —
+  // no `agentSelected` message is emitted in that case, matching upstream's own
+  // "nothing selected" state.
+  activeAgentId: number | undefined
 ): PixelServerMessage[] => [
   { type: 'providerCapabilities', readingTools: ['Read'], subagentToolNames: [] },
   { type: 'characterSpritesLoaded', characters: bootstrap.assets.characters },
@@ -146,10 +191,10 @@ export const createPixelBootstrapMessages = (
   },
   {
     type: 'existingAgents',
-    agents: [PIXEL_AGENT_ID],
-    agentMeta: { [PIXEL_AGENT_ID]: agentMeta },
-    folderNames: { [PIXEL_AGENT_ID]: 'TinyTinkerer' },
-    externalAgents: { [PIXEL_AGENT_ID]: false }
+    agents: agents.map((agent) => agent.agentId),
+    agentMeta: Object.fromEntries(Object.entries(agentMeta)),
+    folderNames: Object.fromEntries(agents.map((agent) => [agent.agentId, agent.title])),
+    externalAgents: Object.fromEntries(agents.map((agent) => [agent.agentId, false]))
   },
   { type: 'layoutLoaded', layout: layout ?? bootstrap.defaultLayout },
   {
@@ -163,11 +208,13 @@ export const createPixelBootstrapMessages = (
     hooksInfoShown: true,
     externalAssetDirectories: []
   },
-  { type: 'agentSelected', id: PIXEL_AGENT_ID },
-  {
-    type: 'agentStatus',
-    id: PIXEL_AGENT_ID,
-    status: isRunning ? 'active' : 'waiting',
-    ...(!isRunning ? { awaitingInput } : {})
-  }
+  ...(activeAgentId !== undefined ? [{ type: 'agentSelected', id: activeAgentId } as const] : []),
+  ...agents.map(
+    (agent): PixelServerMessage => ({
+      type: 'agentStatus',
+      id: agent.agentId,
+      status: agent.isRunning ? 'active' : 'waiting',
+      ...(!agent.isRunning ? { awaitingInput: agent.awaitingInput } : {})
+    })
+  )
 ]

@@ -11,4 +11,8 @@ export const PixelAgentsStage = (props: PixelAgentsStageProps): React.JSX.Elemen
   </Suspense>
 )
 
-export type { PixelAgentsStageProps } from './stage-props'
+export type {
+  PixelAgentsConversation,
+  PixelAgentsStageActions,
+  PixelAgentsStageProps
+} from './stage-props'
