@@ -444,8 +444,12 @@ type UpstreamState = {
   mode: ChatMode
   // The synthesized final-answer content the mock streams back (per-test, so a
   // spec can stream e.g. a ```mermaid block instead of the default sentence).
-  // Unused in 'replay' mode (the answer comes from the fixture instead).
-  answer: string
+  // Unused in 'replay' mode (the answer comes from the fixture instead). Either
+  // a fixed string, or a resolver keyed off the request's latest user message
+  // (issue #430: installKeyedChatMock) so DIFFERENT conversations/prompts on
+  // the same page get DIFFERENT streamed answers — the seam the multi-
+  // conversation e2e suite uses to tell each conversation's stream apart.
+  answer: string | ((lastUserText: string) => string)
   // Optional: when set, the ACTION turn narrates this rationale as ordinary
   // content before its tool call (models a model that explains its action). When
   // undefined the action turn is silent — the realistic non-reasoning default.
@@ -469,6 +473,18 @@ type UpstreamState = {
 // synthesize). The edge forwards `messages` verbatim, so the same detection that
 // drove the old in-page mock now drives the mocked LiteLLM upstream.
 const streamHeaders = { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' }
+
+// The most recent `role: 'user'` message's content, or '' if none — the seam
+// installKeyedChatMock's resolver keys the streamed answer on (issue #430).
+const lastUserMessageText = (messages: ChatMessage[]): string => {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+    if (message?.role === 'user' && typeof message.content === 'string') {
+      return message.content
+    }
+  }
+  return ''
+}
 
 const MEDIA_REF_RE = /media:[0-9a-f-]+#\d+/g
 
@@ -699,8 +715,13 @@ const mockChatCompletion = (body: LiteLLMRequestBody, state: UpstreamState): Res
 
   // Planner (plan-execute / hybrid): still a structured JSON ExecutionPlan — the
   // planner runs before any tool I/O, so it is untouched by the native tool-call
-  // switch. Synthesis (any other system prompt): stream the fixed final answer.
-  const content = system.startsWith('You are a planning assistant') ? PLAN : state.answer
+  // switch. Synthesis (any other system prompt): stream the fixed (or resolved,
+  // see installKeyedChatMock) final answer.
+  const content = system.startsWith('You are a planning assistant')
+    ? PLAN
+    : typeof state.answer === 'function'
+      ? state.answer(lastUserMessageText(messages))
+      : state.answer
 
   if (body.stream === true) {
     // Emit a usage chunk only when the client opted in (synthesize does, the
@@ -902,7 +923,7 @@ const installMock = async (
   page: Page,
   code: string,
   mode: ChatMode,
-  answer: string,
+  answer: string | ((lastUserText: string) => string),
   actionReasoning?: string,
   customToolCall?: ToolCall
 ): Promise<LiteLLMMock> => {
@@ -970,6 +991,19 @@ export const installChatMock = (
   page: Page,
   answer: string = SYNTHESIS_ANSWER
 ): Promise<LiteLLMMock> => installMock(page, '', 'no-tool', answer)
+
+// Like installChatMock, but the streamed answer is RESOLVED per request from the
+// request's latest `role: 'user'` message instead of fixed (issue #430: the
+// multi-conversation switcher suite). One page can run several conversations
+// concurrently, each sending its own prompt; the edge forwards `messages`
+// verbatim, so keying the response off the latest user message is the natural
+// seam that lets a single mocked upstream answer each conversation distinctly
+// (e.g. embed a GATE_SENTINEL only in the prompts that must stay open) without
+// tracking which conversation a request "belongs" to.
+export const installKeyedChatMock = (
+  page: Page,
+  answerForPrompt: (lastUserText: string) => string
+): Promise<LiteLLMMock> => installMock(page, '', 'no-tool', answerForPrompt)
 
 // A REPLAY mock (see .agent/skills/e2e-testing/SKILL.md): serves a captured
 // fixture's real exchanges verbatim, in order, one per chat-completion request
