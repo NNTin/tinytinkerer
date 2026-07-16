@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie'
 import {
   compareEventOrder,
+  DEFAULT_CONVERSATION_TITLE,
   type AuthTokenStore,
   type Conversation,
   type ConversationRepository,
@@ -179,7 +180,7 @@ export const createBrowserPersistence = (
       const now = new Date().toISOString()
       const conversation: Conversation = {
         id: crypto.randomUUID(),
-        title: 'New conversation',
+        title: DEFAULT_CONVERSATION_TITLE,
         createdAt: now,
         updatedAt: now
       }

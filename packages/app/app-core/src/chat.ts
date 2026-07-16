@@ -52,6 +52,12 @@ export const defaultChatState = (): ChatStateSnapshot => ({
   cooldownUntil: undefined
 })
 
+// Title assigned to a brand-new conversation (issue #430). Auto-titling
+// (see sendConversationPromptAction) only overwrites a conversation whose
+// title is STILL this value, so a second send — or a future manual rename —
+// is left alone.
+export const DEFAULT_CONVERSATION_TITLE = 'New conversation'
+
 // One conversation's chat state, keyed by conversation id in the store (issue
 // #430). The store's top-level `events`/`isRunning`/`isRetryPending` are
 // mirrors of the ACTIVE slice; every slice mutation flows through the store's
@@ -393,6 +399,30 @@ export type ConversationRunContext = ConversationActionsContext & {
   getRuntimeFactory: () => Promise<ChatRuntimeFactory>
 }
 
+// Longest auto-derived title (issue #430), kept short so the switcher's
+// compact row stays scannable; a longer prompt is truncated with a trailing
+// ellipsis marking the cut.
+const TITLE_MAX_LENGTH = 48
+
+/**
+ * Derive a conversation title from a user's first prompt: trim, collapse
+ * internal whitespace (including newlines) to single spaces, and truncate to
+ * {@link TITLE_MAX_LENGTH} characters with a trailing ellipsis when the
+ * collapsed text is longer. Pure, so it is unit-testable without a store.
+ * Falls back to {@link DEFAULT_CONVERSATION_TITLE} for a blank prompt (not
+ * expected in practice — surfaces already refuse an empty send — but keeps
+ * this total rather than ever writing an empty title).
+ */
+export const deriveConversationTitle = (prompt: string): string => {
+  const collapsed = prompt.trim().replace(/\s+/g, ' ')
+  if (!collapsed) {
+    return DEFAULT_CONVERSATION_TITLE
+  }
+  return collapsed.length > TITLE_MAX_LENGTH
+    ? `${collapsed.slice(0, TITLE_MAX_LENGTH).trimEnd()}…`
+    : collapsed
+}
+
 /**
  * The body of the store's sendPrompt past its synchronous latch/cap gate:
  * resolve the target conversation (re-keying a pre-hydration placeholder latch
@@ -454,6 +484,19 @@ export const sendConversationPromptAction = async (
   // A send into a never-activated conversation must build its history from the
   // persisted events, not an unhydrated empty slice.
   await hydrateConversationSlice(context, conversationId)
+
+  // Auto-title from the first prompt (issue #430): only while the conversation
+  // still has its default title, so a second send — or a conversation someone
+  // already renamed — is left alone. Re-reads the slice's CURRENT title
+  // (rather than trusting the one read above, before the hydrate await) and
+  // the repository write is AWAITED — not fire-and-forget — so it is durably
+  // ordered before the run starts and cannot race a delete of this same
+  // conversation (one IndexedDB put either way).
+  if (context.getState().conversations[conversationId]?.title === DEFAULT_CONVERSATION_TITLE) {
+    const title = deriveConversationTitle(prompt)
+    await context.shell.conversations.updateConversationTitle(conversationId, title)
+    patchSlice(context, conversationId, { title })
+  }
 
   const runtimeFactory = await context.getRuntimeFactory()
   const runController = new AbortController()

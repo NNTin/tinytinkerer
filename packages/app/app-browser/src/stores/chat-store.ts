@@ -45,6 +45,15 @@ export type ChatState = {
   initialize: () => Promise<void>
   // Sends into `conversationId`, defaulting to the active conversation.
   sendPrompt: (prompt: string, conversationId?: string) => Promise<void>
+  // Synchronous mirror of sendPrompt's two SYNCHRONOUS gates only — the
+  // per-conversation re-entry latch (issue #334) and the MAX_CONCURRENT_RUNS
+  // cap (issue #430) — for a surface that needs a synchronous accept/refuse
+  // answer before sendPrompt's async work (module load, hydration) even
+  // starts, to satisfy the #206 clear-on-accept contract. Deliberately does
+  // NOT check isRunning/cooldown: those are already synchronously visible to
+  // surfaces via the store's own state, so duplicating them here would just
+  // create a second source of truth.
+  canStartRun: (conversationId?: string) => boolean
   // Re-run the latest user prompt as a fresh generation, preserving the existing
   // conversation history. No-op when there is no user turn yet or a run is
   // already in flight (gated by sendPrompt). Backs the "regenerate" action.
@@ -195,6 +204,10 @@ export const createChatStore = (options: {
       conversations: {},
       conversationOrder: [],
       initialize: () => ensureInitialized(set, get),
+      canStartRun: (conversationId) => {
+        const runKey = conversationId ?? get().conversationId ?? ''
+        return !activeRuns.has(runKey) && activeRuns.size < MAX_CONCURRENT_RUNS
+      },
       sendPrompt: async (prompt, conversationId) => {
         // Gate re-entry synchronously (issue #334), now per conversation: a
         // second send/regenerate into the SAME conversation that fires while

@@ -539,6 +539,72 @@ describe('createChatStore', () => {
     expect(store.getState().conversations.d?.isRunning).toBe(false)
   })
 
+  describe('canStartRun (issue #430)', () => {
+    it('mirrors sendPrompt: true with no runs in flight, false for a latched conversation, true for another', async () => {
+      captureRuns()
+
+      const store = createChatStore({
+        shell: makeShell(),
+        authStore: makeAuthStore(),
+        settingsStore: makeSettingsStore()
+      })
+      seedConversations(store, [{ id: 'a' }, { id: 'b' }])
+
+      expect(store.getState().canStartRun('a')).toBe(true)
+      expect(store.getState().canStartRun('b')).toBe(true)
+
+      void store.getState().sendPrompt('hello', 'a')
+      await vi.waitFor(() => expect(store.getState().conversations.a?.isRunning).toBe(true))
+
+      // 'a' is now latched (running); 'b' is untouched.
+      expect(store.getState().canStartRun('a')).toBe(false)
+      expect(store.getState().canStartRun('b')).toBe(true)
+    })
+
+    it('defaults to the active conversation when no id is passed', async () => {
+      captureRuns()
+
+      const store = createChatStore({
+        shell: makeShell(),
+        authStore: makeAuthStore(),
+        settingsStore: makeSettingsStore()
+      })
+      seedConversations(store, [{ id: 'a' }, { id: 'b' }], 'a')
+
+      expect(store.getState().canStartRun()).toBe(true)
+
+      void store.getState().sendPrompt('hello', 'a')
+      await vi.waitFor(() => expect(store.getState().conversations.a?.isRunning).toBe(true))
+
+      expect(store.getState().canStartRun()).toBe(false)
+    })
+
+    it('returns false for a conversation that would exceed MAX_CONCURRENT_RUNS, true for the ones already running', async () => {
+      captureRuns()
+
+      const store = createChatStore({
+        shell: makeShell(),
+        authStore: makeAuthStore(),
+        settingsStore: makeSettingsStore()
+      })
+      seedConversations(store, [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }])
+
+      void store.getState().sendPrompt('one', 'a')
+      void store.getState().sendPrompt('two', 'b')
+      void store.getState().sendPrompt('three', 'c')
+      await vi.waitFor(() =>
+        expect(['a', 'b', 'c'].every((id) => store.getState().conversations[id]?.isRunning)).toBe(
+          true
+        )
+      )
+
+      // The cap is already met by a/b/c; 'd' would exceed it.
+      expect(store.getState().canStartRun('d')).toBe(false)
+      // A latched (running) conversation refuses a re-send of itself too.
+      expect(store.getState().canStartRun('a')).toBe(false)
+    })
+  })
+
   it('selectConversation hydrates events from the repository exactly once', async () => {
     const shell = makeShell()
     const persisted = [persistedMessage('p1', 'from an earlier session', 'b')]

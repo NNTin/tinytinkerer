@@ -14,6 +14,7 @@ import { TurnActivityPanel } from '../turn-activity-panel'
 import { TurnChrome } from '../turn-chrome'
 import { useChatComposer, useChatSurfaceController } from '../surfaces'
 import { useStickToBottom } from '../use-stick-to-bottom'
+import { LazyConversationSwitcher } from './lazy-conversation-switcher'
 import { SpeechToggleButton } from './speech-toggle-button'
 import { surfaceButtonClass } from './surface-button'
 import type { ChatLoadingComponent } from './floating-chat-surface'
@@ -50,7 +51,15 @@ type VariantConfig = {
   settingsHasBg: boolean
   sendStopExtra: string
   cancelExtra: string
+  // The conversation switcher's trigger (issue #430): unlike the square
+  // iconButtonSize controls, it must fit a truncated title, so it carries its
+  // own height/radius/padding extras on top of the shared SWITCHER_TRIGGER_BASE.
+  switcherTrigger: string
 }
+
+// Shared chrome of the switcher trigger; VARIANTS supply only the sizing.
+const SWITCHER_TRIGGER_BASE =
+  'flex items-center gap-1.5 border border-stone-200 bg-white text-xs font-medium text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800'
 
 const VARIANTS: Record<DockedSizeVariant, VariantConfig> = {
   comfortable: {
@@ -76,7 +85,8 @@ const VARIANTS: Record<DockedSizeVariant, VariantConfig> = {
     iconButtonSize: 'h-9 w-9 rounded-md',
     settingsHasBg: false,
     sendStopExtra: 'h-9 min-w-9 px-2',
-    cancelExtra: 'h-9 px-3'
+    cancelExtra: 'h-9 px-3',
+    switcherTrigger: 'h-9 rounded-md px-2'
   },
   mobile: {
     main: 'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-[max(env(safe-area-inset-top),1rem)]',
@@ -101,7 +111,8 @@ const VARIANTS: Record<DockedSizeVariant, VariantConfig> = {
     iconButtonSize: 'h-10 w-10 rounded-full',
     settingsHasBg: true,
     sendStopExtra: 'h-10 min-w-10 rounded-full px-2',
-    cancelExtra: 'h-9 px-3 rounded-full'
+    cancelExtra: 'h-9 px-3 rounded-full',
+    switcherTrigger: 'h-10 rounded-full px-3'
   }
 }
 
@@ -147,7 +158,13 @@ export const DockedChatSurface = ({
     canRerun,
     resetConversation,
     cancelRetry,
-    stop
+    stop,
+    conversations,
+    activeConversationId,
+    selectConversation,
+    startNewConversation,
+    deleteConversation,
+    sendRefusalNotice
   } = useChatSurfaceController()
   const { prompt, setPrompt, speech, handleSubmit } = useChatComposer(submitPrompt)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -319,6 +336,19 @@ export const DockedChatSurface = ({
                 <FaRotateLeft className="h-4 w-4" aria-hidden="true" />
               </button>
 
+              {/* Conversation switcher (issue #430): its own lazy chunk (see
+                  lazy-conversation-switcher.tsx) to keep this chunk's budget. */}
+              <Suspense fallback={null}>
+                <LazyConversationSwitcher
+                  conversations={conversations}
+                  activeConversationId={activeConversationId}
+                  selectConversation={selectConversation}
+                  startNewConversation={startNewConversation}
+                  deleteConversation={deleteConversation}
+                  triggerClassName={`${SWITCHER_TRIGGER_BASE} ${v.switcherTrigger}`}
+                />
+              </Suspense>
+
               {/* Context-usage gauge (hidden unless the plugin is enabled and the
                   model reports usage against a known context window) */}
               <ContextGaugeSlot className="text-stone-500" />
@@ -384,6 +414,12 @@ export const DockedChatSurface = ({
           {speech.error ? (
             <p role="alert" className="mt-2 text-xs text-rose-600">
               {speech.error}
+            </p>
+          ) : null}
+
+          {sendRefusalNotice ? (
+            <p role="alert" className="mt-2 text-xs text-rose-600">
+              {sendRefusalNotice}
             </p>
           ) : null}
         </form>

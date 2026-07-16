@@ -34,7 +34,13 @@ const mockChatState = vi.hoisted(() => ({
   rerunLastPrompt: vi.fn(),
   resetConversation: vi.fn(),
   cancelRetry: vi.fn(),
-  stop: vi.fn()
+  stop: vi.fn(),
+  conversations: [{ id: 'a', title: 'New conversation', isRunning: false }],
+  activeConversationId: 'a',
+  selectConversation: vi.fn(() => Promise.resolve()),
+  startNewConversation: vi.fn(() => Promise.resolve()),
+  deleteConversation: vi.fn(() => Promise.resolve()),
+  sendRefusalNotice: null as string | null
 }))
 
 const mockSpeechState = vi.hoisted(() => ({
@@ -77,7 +83,13 @@ vi.mock('../src/surfaces.js', async () => {
       canRerun: false,
       resetConversation: mockChatState.resetConversation,
       cancelRetry: mockChatState.cancelRetry,
-      stop: mockChatState.stop
+      stop: mockChatState.stop,
+      conversations: mockChatState.conversations,
+      activeConversationId: mockChatState.activeConversationId,
+      selectConversation: mockChatState.selectConversation,
+      startNewConversation: mockChatState.startNewConversation,
+      deleteConversation: mockChatState.deleteConversation,
+      sendRefusalNotice: mockChatState.sendRefusalNotice
     }),
     useSettingsSurfaceController: () => ({ token: mockAuthState.token })
   }
