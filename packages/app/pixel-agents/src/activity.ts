@@ -1,5 +1,5 @@
 import type { ChatEvent } from '@tinytinkerer/contracts'
-import { PIXEL_AGENT_ID, type PixelServerMessage } from './protocol'
+import type { PixelServerMessage } from './protocol'
 
 const READ_TOOL_PATTERN =
   /(?:^|[.:/_-])(read|search|find|list|get|fetch|inspect|query|pick|preview|thumbnail|survey)(?:$|[.:/_-])/i
@@ -21,23 +21,26 @@ const humanize = (value: string): string =>
 const stepToolName = (kind: string): 'Read' | 'Write' =>
   ['plan', 'think', 'observe', 'replan'].includes(kind) ? 'Read' : 'Write'
 
-export const messagesForChatEvent = (event: ChatEvent): PixelServerMessage[] => {
+// Projects one chat event onto the Pixel Agents office, stamped with the id of
+// the agent representing ITS conversation (issue #430: one agent per
+// conversation, so the caller — not this module — knows which).
+export const messagesForChatEvent = (event: ChatEvent, agentId: number): PixelServerMessage[] => {
   switch (event.type) {
     case 'agent.run.started':
       return [
-        { type: 'agentToolsClear', id: PIXEL_AGENT_ID },
-        { type: 'agentStatus', id: PIXEL_AGENT_ID, status: 'active' }
+        { type: 'agentToolsClear', id: agentId },
+        { type: 'agentStatus', id: agentId, status: 'active' }
       ]
     case 'agent.run.completed':
       return [
-        { type: 'agentToolsClear', id: PIXEL_AGENT_ID },
-        { type: 'agentStatus', id: PIXEL_AGENT_ID, status: 'waiting', awaitingInput: false }
+        { type: 'agentToolsClear', id: agentId },
+        { type: 'agentStatus', id: agentId, status: 'waiting', awaitingInput: false }
       ]
     case 'agent.step.started':
       return [
         {
           type: 'agentToolStart',
-          id: PIXEL_AGENT_ID,
+          id: agentId,
           toolId: `step:${event.payload.stepId}`,
           status: event.payload.title || humanize(event.payload.kind),
           toolName: stepToolName(event.payload.kind)
@@ -48,7 +51,7 @@ export const messagesForChatEvent = (event: ChatEvent): PixelServerMessage[] => 
       return [
         {
           type: 'agentToolDone',
-          id: PIXEL_AGENT_ID,
+          id: agentId,
           toolId: `step:${event.payload.stepId}`
         }
       ]
@@ -56,7 +59,7 @@ export const messagesForChatEvent = (event: ChatEvent): PixelServerMessage[] => 
       return [
         {
           type: 'agentToolStart',
-          id: PIXEL_AGENT_ID,
+          id: agentId,
           toolId: `${event.payload.stepId}:${event.payload.toolId}`,
           status: humanize(event.payload.toolId) || 'Using a tool',
           toolName: pixelToolName(event.payload.toolId)
@@ -67,7 +70,7 @@ export const messagesForChatEvent = (event: ChatEvent): PixelServerMessage[] => 
       return [
         {
           type: 'agentToolDone',
-          id: PIXEL_AGENT_ID,
+          id: agentId,
           toolId: `${event.payload.stepId}:${event.payload.toolId}`
         }
       ]

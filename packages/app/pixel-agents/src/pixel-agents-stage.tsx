@@ -1,19 +1,22 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DockablePanelLayout, useLiveChatActivity } from '@tinytinkerer/app-shell'
 import type { ChatEvent } from '@tinytinkerer/contracts'
 import { messagesForChatEvent } from './activity'
 import {
-  PIXEL_AGENT_ID,
   PIXEL_AGENTS_BRIDGE_CHANNEL,
   createPixelBootstrapMessages,
   parsePixelAgentsBootstrap,
   parsePixelClientEnvelope,
   type PixelAgentMeta,
+  type PixelBootstrapAgent,
   type PixelServerMessage
 } from './protocol'
-import type { PixelAgentsStageProps } from './stage-props'
+import type { PixelAgentsConversation, PixelAgentsStageProps } from './stage-props'
 import {
+  adoptLegacySeat,
   loadPixelAgentsWorkspace,
+  resolveAgentNumber,
+  retireAgentNumber,
   savePixelAgentsWorkspace,
   type PixelAgentsWorkspaceRecord
 } from './workspace-db'
@@ -23,19 +26,99 @@ const upstreamUrl = (path: string): string => new URL(`upstream/${path}`, docume
 const hasCompletedRun = (events: readonly ChatEvent[]): boolean =>
   events.some((event) => event.type === 'agent.run.completed')
 
+// Whether an idle agent should show the office's awaiting-input state. An
+// UNHYDRATED conversation (events not yet loaded — after a reload, every
+// background conversation) must read as NOT awaiting: its empty events array
+// says nothing about whether a run ever completed, and marking every
+// backgrounded agent as awaiting input would be wrong in the common case.
+const isAwaitingInput = (conversation: PixelAgentsConversation): boolean =>
+  conversation.eventsLoaded && !hasCompletedRun(conversation.events)
+
+type WorkspaceMemo = Pick<
+  PixelAgentsWorkspaceRecord,
+  'layout' | 'agentMeta' | 'agentNumbers' | 'nextAgentNumber'
+>
+
+const EMPTY_WORKSPACE: WorkspaceMemo = {
+  layout: null,
+  agentMeta: {},
+  agentNumbers: {},
+  nextAgentNumber: 1
+}
+
+type ConversationActivityBridgeProps = {
+  conversation: PixelAgentsConversation
+  agentId: number
+  enabled: boolean
+  onMessages: (messages: readonly PixelServerMessage[]) => void
+}
+
+// `useLiveChatActivity` is a hook, so it can't be called in a loop: the stage
+// mounts one of these (non-rendering) per conversation, each wiring its own
+// hook instance to that conversation's events/isRunning and stamping every
+// projected message with ITS agent id (issue #430).
+//
+// Reset-while-idle needs no special handling here. A conversation that was
+// ever running already cleared its tool pills the moment its last run ended
+// (`agent.run.completed` -> `agentToolsClear`, or the abort path below), so by
+// the time it's idle there is nothing stale left to clear; a reset only wipes
+// `events`, which this hook does not react to on its own (its effect only
+// acts on an `isRunning` transition). And reset-WHILE-running is already
+// covered: `resetConversationAction` aborts the run first, which flips
+// `isRunning` false without ever appending a completion event — this hook's
+// existing `onRunEnded` branch (fed by that transition, not by any specific
+// event) fires exactly the same `agentToolsClear` + `agentStatus: waiting`
+// pair regardless of *why* the run ended. See workspace-db.ts and this
+// component's caller for the corresponding agent-number lifecycle.
+const ConversationActivityBridge = ({
+  conversation,
+  agentId,
+  enabled,
+  onMessages
+}: ConversationActivityBridgeProps): null => {
+  useLiveChatActivity(conversation.events, conversation.isRunning, {
+    enabled,
+    onRunStarted: () =>
+      onMessages([
+        { type: 'agentToolsClear', id: agentId },
+        { type: 'agentStatus', id: agentId, status: 'active' }
+      ]),
+    onRunEnded: () =>
+      onMessages([
+        { type: 'agentToolsClear', id: agentId },
+        { type: 'agentStatus', id: agentId, status: 'waiting', awaitingInput: false }
+      ]),
+    onLiveEvents: (liveEvents) =>
+      onMessages(liveEvents.flatMap((event) => messagesForChatEvent(event, agentId)))
+  })
+  return null
+}
+
 export const PixelAgentsWorkspace = ({
   assistant,
-  events,
-  isRunning
+  conversations,
+  activeConversationId,
+  actions
 }: PixelAgentsStageProps): React.JSX.Element => {
   const frameRef = useRef<HTMLIFrameElement>(null)
-  const eventsRef = useRef(events)
-  const isRunningRef = useRef(isRunning)
+  const conversationsRef = useRef(conversations)
+  const activeConversationIdRef = useRef(activeConversationId)
+  // Mirrored like the refs above so the mount effect below never re-runs (and
+  // so never re-navigates the iframe) just because a caller passes a fresh
+  // `actions` object identity on some unrelated re-render.
+  const actionsRef = useRef(actions)
   const bootstrappingRef = useRef(false)
-  const workspaceRef = useRef<Pick<PixelAgentsWorkspaceRecord, 'layout' | 'agentMeta'>>({
-    layout: null,
-    agentMeta: {}
-  })
+  // Imperative source of truth (always fresh, unlike React state, for reads
+  // inside the postMessage handler and the reconciliation effect below).
+  const workspaceRef = useRef<WorkspaceMemo>(EMPTY_WORKSPACE)
+  // Mirrors `workspaceRef.current.agentNumbers` in React state: the per-
+  // conversation activity bridges below are rendered from this, and a ref
+  // alone can't trigger the re-render a freshly assigned number needs.
+  const [agentNumbers, setAgentNumbers] = useState<Record<string, number>>({})
+  // De-dupes `agentSelected`: several state updates can resolve to the same
+  // agent id (e.g. an unrelated conversation being created also touches this
+  // effect's deps), and re-posting is visible office churn worth avoiding.
+  const lastSelectedAgentIdRef = useRef<number | undefined>(undefined)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const [pixelAgentsUrl, setPixelAgentsUrl] = useState<string | undefined>()
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
@@ -44,8 +127,9 @@ export const PixelAgentsWorkspace = ({
   // handshake has posted the initial office state, replacing the old readyRef.
   const [activityEnabled, setActivityEnabled] = useState(false)
 
-  eventsRef.current = events
-  isRunningRef.current = isRunning
+  conversationsRef.current = conversations
+  activeConversationIdRef.current = activeConversationId
+  actionsRef.current = actions
 
   const postToPixelAgents = useCallback((message: PixelServerMessage): void => {
     // The sandboxed frame has an opaque origin that can't be named as a
@@ -64,20 +148,29 @@ export const PixelAgentsWorkspace = ({
     [postToPixelAgents]
   )
 
-  const persistWorkspace = useCallback(
-    (update: Partial<Pick<PixelAgentsWorkspaceRecord, 'layout' | 'agentMeta'>>): void => {
-      workspaceRef.current = { ...workspaceRef.current, ...update }
-      const snapshot = workspaceRef.current
-      saveQueueRef.current = saveQueueRef.current
-        .catch(() => undefined)
-        .then(() => savePixelAgentsWorkspace(snapshot))
-        .then(
-          () => setStorageError(null),
-          () => setStorageError('Pixel Agents layout changes could not be saved in this browser.')
-        )
-    },
-    []
-  )
+  const persistWorkspace = useCallback((update: Partial<WorkspaceMemo>): void => {
+    workspaceRef.current = { ...workspaceRef.current, ...update }
+    if (update.agentNumbers) {
+      setAgentNumbers(update.agentNumbers)
+    }
+    const snapshot = workspaceRef.current
+    saveQueueRef.current = saveQueueRef.current
+      .catch(() => undefined)
+      .then(() => savePixelAgentsWorkspace(snapshot))
+      .then(
+        () => setStorageError(null),
+        () => setStorageError('Pixel Agents layout changes could not be saved in this browser.')
+      )
+  }, [])
+
+  // Reverse lookup for `focusAgent`/`closeAgent`, which name an agent NUMBER;
+  // the store's actions take a conversation id.
+  const conversationIdForAgent = useCallback((agentId: number): string | undefined => {
+    for (const [conversationId, id] of Object.entries(workspaceRef.current.agentNumbers)) {
+      if (id === agentId) return conversationId
+    }
+    return undefined
+  }, [])
 
   useLayoutEffect(() => {
     const handleMessage = (event: MessageEvent<unknown>): void => {
@@ -96,14 +189,48 @@ export const PixelAgentsWorkspace = ({
         return
       }
       if (message.type === 'saveAgentSeats') {
-        const seat = message.seats['1']
-        if (!seat) return
-        const agentMeta: PixelAgentMeta = {
-          palette: seat.palette,
-          hueShift: seat.hueShift,
-          ...(seat.seatId ? { seatId: seat.seatId } : {})
+        // Seats are keyed by agent NUMBER (issue #430: persist every entry,
+        // not just a hardcoded '1').
+        const nextAgentMeta: Record<number, PixelAgentMeta> = { ...workspaceRef.current.agentMeta }
+        for (const [key, seat] of Object.entries(message.seats)) {
+          const agentId = Number(key)
+          if (!Number.isInteger(agentId)) continue
+          nextAgentMeta[agentId] = {
+            palette: seat.palette,
+            hueShift: seat.hueShift,
+            ...(seat.seatId ? { seatId: seat.seatId } : {})
+          }
         }
-        persistWorkspace({ agentMeta })
+        persistWorkspace({ agentMeta: nextAgentMeta })
+        return
+      }
+      if (message.type === 'focusAgent') {
+        // Clicking a character: make its conversation active in the assistant
+        // panel. Unknown agent id (e.g. a stale message racing a delete) is a
+        // no-op.
+        const conversationId = conversationIdForAgent(message.id)
+        if (conversationId) actionsRef.current.selectConversation(conversationId)
+        return
+      }
+      if (message.type === 'launchAgent') {
+        // Office toolbar "+ Agent": start a new conversation. Upstream's
+        // folderPath/bypassPermissions have no meaning in a single-workspace
+        // chat store — see the protocol schema comment.
+        actionsRef.current.startNewConversation()
+        return
+      }
+      if (message.type === 'closeAgent') {
+        // The upstream webview only sends this from its own "×" button, which
+        // only renders on an ALREADY-selected character and stops the click
+        // from also re-triggering `focusAgent` (`office/components/
+        // ToolOverlay.tsx`: `isSelected && !isSub` gates the button,
+        // `e.stopPropagation()` on its click). That select-then-explicit-close
+        // two-step is upstream's own deliberate-interaction guard — the same
+        // shape as this app's header conversation switcher (arm-then-confirm,
+        // no `window.confirm`) — so `closeAgent` is honored directly here with
+        // no extra host-side confirmation.
+        const conversationId = conversationIdForAgent(message.id)
+        if (conversationId) actionsRef.current.deleteConversation(conversationId)
         return
       }
       if (message.type !== 'webviewReady' || bootstrappingRef.current) return
@@ -120,19 +247,56 @@ export const PixelAgentsWorkspace = ({
         loadPixelAgentsWorkspace()
       ])
         .then(([bootstrap, saved]) => {
-          workspaceRef.current = {
-            layout: saved?.layout ?? null,
-            agentMeta: saved?.agentMeta ?? {}
+          const currentConversations = conversationsRef.current
+          const currentActiveId = activeConversationIdRef.current
+          const layout = saved?.layout ?? null
+          const agentMeta = saved?.agentMeta ?? {}
+
+          // Adopt a freshly migrated legacy seat onto the oldest conversation
+          // (issue #430 decision #4 / plan section 5 — see workspace-db.ts).
+          let agentNumbersNext = adoptLegacySeat(
+            saved?.agentNumbers ?? {},
+            agentMeta,
+            currentConversations.map((conversation) => conversation.id)
+          )
+          let nextAgentNumberNext = saved?.nextAgentNumber ?? 1
+
+          const bootstrapAgents: PixelBootstrapAgent[] = []
+          for (const conversation of currentConversations) {
+            const assignment = resolveAgentNumber(
+              agentNumbersNext,
+              nextAgentNumberNext,
+              conversation.id
+            )
+            agentNumbersNext = assignment.agentNumbers
+            nextAgentNumberNext = assignment.nextAgentNumber
+            bootstrapAgents.push({
+              agentId: assignment.agentNumber,
+              title: conversation.title,
+              isRunning: conversation.isRunning,
+              awaitingInput: isAwaitingInput(conversation)
+            })
           }
-          const currentEvents = eventsRef.current
-          const currentlyRunning = isRunningRef.current
+
+          const activeAgentId =
+            currentActiveId !== undefined ? agentNumbersNext[currentActiveId] : undefined
+          lastSelectedAgentIdRef.current = activeAgentId
+
+          // Persist before posting: the reconciliation/selection effects read
+          // `workspaceRef.current` synchronously once this render commits.
+          persistWorkspace({
+            layout,
+            agentMeta,
+            agentNumbers: agentNumbersNext,
+            nextAgentNumber: nextAgentNumberNext
+          })
           postMany(
             createPixelBootstrapMessages(
               bootstrap,
-              workspaceRef.current.layout,
-              workspaceRef.current.agentMeta,
-              currentlyRunning,
-              !hasCompletedRun(currentEvents)
+              layout,
+              bootstrapAgents,
+              agentMeta,
+              activeAgentId
             )
           )
           setActivityEnabled(true)
@@ -157,22 +321,64 @@ export const PixelAgentsWorkspace = ({
     src.searchParams.set('tinytinkerer-parent-origin', window.location.origin)
     setPixelAgentsUrl(src.href)
     return () => window.removeEventListener('message', handleMessage)
-  }, [persistWorkspace, postMany])
+  }, [conversationIdForAgent, persistWorkspace, postMany])
 
-  useLiveChatActivity(events, isRunning, {
-    enabled: activityEnabled,
-    onRunStarted: () =>
+  // Reconcile the office's agent set against the current conversation list
+  // (issue #430): a conversation with no number yet is new -> assign one and
+  // announce `agentCreated`; a number with no matching conversation anymore
+  // was deleted -> announce `agentClosed` and retire it. Gated on
+  // `activityEnabled` so this never races the bootstrap handshake above (which
+  // already accounts for every conversation that existed at that point).
+  useEffect(() => {
+    if (!activityEnabled) return
+    const currentIds = new Set(conversations.map((conversation) => conversation.id))
+
+    for (const [conversationId, agentId] of Object.entries(workspaceRef.current.agentNumbers)) {
+      if (currentIds.has(conversationId)) continue
+      const retired = retireAgentNumber(
+        workspaceRef.current.agentNumbers,
+        workspaceRef.current.agentMeta,
+        conversationId
+      )
+      persistWorkspace({ agentNumbers: retired.agentNumbers, agentMeta: retired.agentMeta })
+      postToPixelAgents({ type: 'agentClosed', id: agentId })
+    }
+
+    for (const conversation of conversations) {
+      if (workspaceRef.current.agentNumbers[conversation.id] !== undefined) continue
+      const assignment = resolveAgentNumber(
+        workspaceRef.current.agentNumbers,
+        workspaceRef.current.nextAgentNumber,
+        conversation.id
+      )
+      persistWorkspace({
+        agentNumbers: assignment.agentNumbers,
+        nextAgentNumber: assignment.nextAgentNumber
+      })
       postMany([
-        { type: 'agentToolsClear', id: PIXEL_AGENT_ID },
-        { type: 'agentStatus', id: PIXEL_AGENT_ID, status: 'active' }
-      ]),
-    onRunEnded: () =>
-      postMany([
-        { type: 'agentToolsClear', id: PIXEL_AGENT_ID },
-        { type: 'agentStatus', id: PIXEL_AGENT_ID, status: 'waiting', awaitingInput: false }
-      ]),
-    onLiveEvents: (liveEvents) => postMany(liveEvents.flatMap(messagesForChatEvent))
-  })
+        { type: 'agentCreated', id: assignment.agentNumber, folderName: conversation.title },
+        {
+          type: 'agentStatus',
+          id: assignment.agentNumber,
+          status: conversation.isRunning ? 'active' : 'waiting',
+          ...(!conversation.isRunning ? { awaitingInput: isAwaitingInput(conversation) } : {})
+        }
+      ])
+    }
+  }, [conversations, activityEnabled, persistWorkspace, postMany, postToPixelAgents])
+
+  // Follow the active conversation: tell the office which character to select.
+  // Depends on `agentNumbers` (state, not the ref) so this re-runs once a
+  // brand-new active conversation's number lands from the reconciliation
+  // effect above (same commit's `conversations`-triggered run schedules that
+  // state update; this effect then re-fires on the following one).
+  useEffect(() => {
+    if (!activityEnabled || activeConversationId === undefined) return
+    const agentId = agentNumbers[activeConversationId]
+    if (agentId === undefined || agentId === lastSelectedAgentIdRef.current) return
+    lastSelectedAgentIdRef.current = agentId
+    postToPixelAgents({ type: 'agentSelected', id: agentId })
+  }, [activeConversationId, activityEnabled, agentNumbers, postToPixelAgents])
 
   const pixelAgents = (
     <div className="pixel-agents-frame-shell">
@@ -202,6 +408,21 @@ export const PixelAgentsWorkspace = ({
 
   return (
     <main className="pixel-agents-root" aria-label="TinyTinkerer Pixel Agents">
+      {conversations.map((conversation) => {
+        const agentId = agentNumbers[conversation.id]
+        // Not yet assigned (bootstrap/reconciliation hasn't reached it this
+        // tick): nothing to project until it has an agent id to stamp.
+        if (agentId === undefined) return null
+        return (
+          <ConversationActivityBridge
+            key={conversation.id}
+            conversation={conversation}
+            agentId={agentId}
+            enabled={activityEnabled}
+            onMessages={postMany}
+          />
+        )
+      })}
       <DockablePanelLayout
         title="Pixel Agents workspace"
         storageKey="tinytinkerer:pixel-agents-workspace-layout:v1"

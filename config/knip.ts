@@ -98,6 +98,12 @@ const config: KnipConfig = {
       // devDependencies as "unused".
       entry: ['tests/**/*.test.{ts,tsx}']
     },
+    'packages/app/pixel-agents': {
+      // Same reason as canvas above: the stage's React mount/reconciliation test
+      // (issue #430) sits alongside the package's plain .ts domain tests, so its
+      // test-only @testing-library/* dependencies need the same explicit entry.
+      entry: ['tests/**/*.test.{ts,tsx}']
+    },
     'packages/e2e': {
       // Playwright specs use the `*.e2e.ts` extension (kept distinct from vitest's
       // globs), which Knip's Playwright plugin does not match by default. Register
