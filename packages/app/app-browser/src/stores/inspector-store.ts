@@ -16,16 +16,22 @@ export const MAX_CAPTURED_REQUESTS = 20
 // A captured entry plus a stable host-internal id, so the response can be filled
 // in after the request resolves even as the ring buffer drops older entries (which
 // shifts array indices). The id is not part of the contract — the plugin mapper
-// only sees the `request`/`response` fields it needs.
-export type StoredInspectorEntry = InspectorEntry & { id: number }
+// only sees the `request`/`response` fields it needs. `conversationId` tags which
+// conversation's run captured it (issue #430); absent for a capture with no
+// conversation scope (e.g. a pre-multi-conversation caller).
+export type StoredInspectorEntry = InspectorEntry & { id: number; conversationId?: string }
 
 export type InspectorState = {
   entries: StoredInspectorEntry[]
-  // Records a forwarded request as a `pending` entry and returns its id so the
-  // caller can attach the response when it resolves.
-  capture: (request: InspectorRequestPayload) => number
+  // Records a forwarded request as a `pending` entry, tagged with the run's
+  // conversation id when known, and returns its id so the caller can attach the
+  // response when it resolves.
+  capture: (request: InspectorRequestPayload, conversationId?: string) => number
   setResponse: (id: number, response: InspectorResponse) => void
-  clear: () => void
+  // Removes entries whose `conversationId` matches (a per-conversation reset or
+  // delete, issue #430); `undefined` clears everything, preserving every caller
+  // that predates scoping.
+  clear: (conversationId?: string) => void
 }
 
 export type InspectorStore = StoreApi<InspectorState>
@@ -39,13 +45,18 @@ export const createInspectorStore = (): InspectorStore => {
   let nextId = 0
   return createStore<InspectorState>((set) => ({
     entries: [],
-    capture: (request) => {
+    capture: (request, conversationId) => {
       const id = nextId
       nextId += 1
       set((state) => {
         const next: StoredInspectorEntry[] = [
           ...state.entries,
-          { id, request, response: { status: 'pending' } }
+          {
+            id,
+            request,
+            response: { status: 'pending' },
+            ...(conversationId !== undefined ? { conversationId } : {})
+          }
         ]
         return {
           entries: next.length > MAX_CAPTURED_REQUESTS ? next.slice(-MAX_CAPTURED_REQUESTS) : next
@@ -57,6 +68,12 @@ export const createInspectorStore = (): InspectorStore => {
       set((state) => ({
         entries: state.entries.map((entry) => (entry.id === id ? { ...entry, response } : entry))
       })),
-    clear: () => set({ entries: [] })
+    clear: (conversationId) =>
+      set((state) => ({
+        entries:
+          conversationId === undefined
+            ? []
+            : state.entries.filter((entry) => entry.conversationId !== conversationId)
+      }))
   }))
 }

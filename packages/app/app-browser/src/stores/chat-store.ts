@@ -12,7 +12,7 @@ import { loadPluginModules } from '../plugins/registry'
 import type { AuthStore } from './auth-store'
 import type { SettingsStore } from './settings-store'
 import type { InspectorStore } from './inspector-store'
-import { resetAllHumanPrompts } from '../human-prompt-bridge'
+import { resetHumanPrompts } from '../human-prompt-bridge'
 
 // Defined in app-core next to the pure state helpers that construct slices, so
 // the construction logic stays out of every shell's entry chunk; re-exported
@@ -97,11 +97,13 @@ export const createChatStore = (options: {
     if (conversationId !== undefined) {
       activeRuns.get(conversationId)?.controller?.abort()
     }
-    // Settle every open human prompt (permission allow/deny, choice poll) so a Stop
-    // never leaves one hanging until the human-input timeout (issue #85). Generic —
-    // names no specific feature. No-op when nothing is pending. Still global
-    // across conversations for now; issue #430's follow-up PR scopes it.
-    resetAllHumanPrompts()
+    // Settle this conversation's open human prompts (permission allow/deny, choice
+    // poll) so a Stop never leaves one hanging until the human-input timeout (issue
+    // #85). Generic — names no specific feature. No-op when nothing is pending.
+    // Scoped per conversation (issue #430): stopping/resetting A never dismisses
+    // B's pending prompt. An unknown conversation id (the pre-hydration abort path)
+    // settles every prompt, matching the pre-#430 behavior for that edge case.
+    resetHumanPrompts(conversationId)
   }
 
   const ensureInitialized = async (set: ChatStore['setState'], get: ChatStore['getState']) => {
@@ -141,14 +143,15 @@ export const createChatStore = (options: {
         ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
         // The runtime arms this only while the inspector plugin is enabled, so a
         // disabled inspector captures (and retains) nothing. Records the request as
-        // a pending entry and returns an updater the chokepoint calls with the
-        // paired response outcome.
+        // a pending entry — tagged with the run's conversation id (issue #430),
+        // forwarded by createRuntime's wrapping — and returns an updater the
+        // chokepoint calls with the paired response outcome.
         ...(options.inspectorStore
           ? {
-              captureForwardedRequest: (request) => {
+              captureForwardedRequest: (request, conversationId) => {
                 const store = options.inspectorStore
                 if (!store) return
-                const id = store.getState().capture(request)
+                const id = store.getState().capture(request, conversationId)
                 return (response) => store.getState().setResponse(id, response)
               }
             }
@@ -265,14 +268,13 @@ export const createChatStore = (options: {
       resetConversation: (conversationId) =>
         withCore(async (core) => {
           // Abort-before-clear and per-conversation scoping live in the action
-          // (issue #332); it reports whether the ACTIVE conversation was reset.
-          if (await core.resetConversationAction(conversationActions, conversationId)) {
-            // Drop any captured inspector requests too: they belong to the
-            // conversation that was just reset, so the developer panel must
-            // start empty as well. Only for the active conversation — the
-            // inspector is one global buffer until issue #430's follow-up PR
-            // scopes it.
-            options.inspectorStore?.getState().clear()
+          // (issue #332); it resolves and reports the target id that was reset.
+          const targetId = await core.resetConversationAction(conversationActions, conversationId)
+          if (targetId) {
+            // Drop that conversation's captured inspector requests too (issue
+            // #430) — they belong to the run that was just reset, so the
+            // developer panel must not still show them for it.
+            options.inspectorStore?.getState().clear(targetId)
           }
         }),
       startNewConversation: () =>
@@ -280,7 +282,12 @@ export const createChatStore = (options: {
       selectConversation: (conversationId) =>
         withCore((core) => core.selectConversationAction(conversationActions, conversationId)),
       deleteConversation: (conversationId) =>
-        withCore((core) => core.deleteConversationAction(conversationActions, conversationId))
+        withCore(async (core) => {
+          await core.deleteConversationAction(conversationActions, conversationId)
+          // Drop the deleted conversation's captured inspector requests too (issue
+          // #430) — a no-op filter when it had none (e.g. an unknown id).
+          options.inspectorStore?.getState().clear(conversationId)
+        })
     }
   })
 

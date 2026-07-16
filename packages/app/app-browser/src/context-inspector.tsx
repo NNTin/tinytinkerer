@@ -5,7 +5,7 @@ import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
 // depend on the ui package (see floating-chat-surface's boundary comment) — react-icons
 // is the same source ui re-exports.
 import { FaReceipt } from 'react-icons/fa6'
-import { useInspectorStore, useSettingsStore } from './app'
+import { useChatStore, useInspectorStore, useSettingsStore } from './app'
 import { useModels } from './models'
 import { usePluginModules } from './plugins/use-plugin-modules'
 
@@ -33,7 +33,19 @@ type ContextInspectorData = {
 // Mirrors useContextGauge: the plugin owns the entry→view mapping; the host only
 // supplies data and renders the result.
 export const useContextInspector = (): ContextInspectorData => {
-  const entries = useInspectorStore((state) => state.entries)
+  const allEntries = useInspectorStore((state) => state.entries)
+  // Multi-conversation scoping (issue #430): show only the ACTIVE conversation's
+  // captures, plus any untagged ("legacy") entry a scopeless caller recorded — an
+  // entry captured with no conversation id must never disappear from the panel.
+  const activeConversationId = useChatStore((state) => state.conversationId)
+  const entries = useMemo(
+    () =>
+      allEntries.filter(
+        (entry) =>
+          entry.conversationId === undefined || entry.conversationId === activeConversationId
+      ),
+    [allEntries, activeConversationId]
+  )
   const pluginActivation = useSettingsStore((state) => state.pluginActivation)
   const selectedModel = useSettingsStore((state) => state.selectedModel)
   const { models } = useModels(selectedModel)

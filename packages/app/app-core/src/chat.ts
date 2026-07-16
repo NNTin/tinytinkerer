@@ -361,21 +361,21 @@ export const startNewConversationAction = async (
  * re-persisting its tail onto the conversation being emptied, resurrecting an
  * orphaned assistant turn that survives reload — then clear its persisted
  * events and its slice. Only the target's controller is aborted; runs in other
- * conversations are untouched. Returns whether the ACTIVE conversation was
- * reset, so the store can clear the (still global, issue #430 follow-up)
- * inspector buffer exactly as before.
+ * conversations are untouched. Returns the resolved target id (or `undefined`
+ * when there was none), so the store can clear THAT conversation's inspector
+ * entries (issue #430) without re-deriving which id was reset.
  */
 export const resetConversationAction = async (
   context: ConversationActionsContext,
   conversationId?: string
-): Promise<boolean> => {
+): Promise<string | undefined> => {
   const targetId = conversationId ?? context.getState().conversationId
   context.abortRun(targetId)
   const events = await resetConversation(context.shell.conversations, targetId)
   if (targetId) {
     patchSlice(context, targetId, { events, eventsLoaded: true })
   }
-  return Boolean(targetId) && targetId === context.getState().conversationId
+  return targetId
 }
 
 // One in-flight (or mid-send, issue #334) run's mutable handle, kept in the
@@ -595,9 +595,16 @@ export const runPrompt = (
   runtimeFactory: ChatRuntimeFactory,
   prompt: string,
   history: { role: 'user' | 'assistant'; content: string }[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  // The conversation this run belongs to (issue #430), forwarded into the
+  // factory's run-scoped context so host capabilities (human prompts, inspector
+  // capture) can be attributed to it. Optional so callers/fakes that predate
+  // scoping keep compiling.
+  conversationId?: string
 ): AsyncGenerator<ChatEvent> =>
-  runtimeFactory.create().run(prompt, signal ? { signal, history } : { history })
+  runtimeFactory
+    .create(conversationId ? { conversationId } : {})
+    .run(prompt, signal ? { signal, history } : { history })
 
 export const executeChatPrompt = async (options: {
   conversationId: string
@@ -646,7 +653,8 @@ export const executeChatPrompt = async (options: {
     options.runtimeFactory,
     options.prompt,
     history,
-    options.signal
+    options.signal,
+    options.conversationId
   )) {
     // Stop the instant the run is aborted (e.g. a mid-stream conversation
     // reset): no further events must be surfaced OR persisted, or the aborted

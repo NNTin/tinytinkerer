@@ -23,7 +23,10 @@ export const createBrowserRuntimeFactory = (options: {
   const pluginRuntime = createPluginRuntime(options.pluginModules ?? [])
 
   return {
-    create: () => {
+    // `context` carries the run-scoped conversation id (issue #430) the store
+    // resolves before starting the run; forwarded straight into createRuntime,
+    // which threads it into the human-prompt bridge and the inspector capture sink.
+    create: (context) => {
       const settings = options.settingsStore.getState()
       return createRuntime({
         baseUrl: options.shell.config.edgeBaseUrl,
@@ -40,7 +43,8 @@ export const createBrowserRuntimeFactory = (options: {
         ...(options.captureForwardedRequest
           ? { captureForwardedRequest: options.captureForwardedRequest }
           : {}),
-        ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {})
+        ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
+        ...(context?.conversationId ? { conversationId: context.conversationId } : {})
       })
     }
   }

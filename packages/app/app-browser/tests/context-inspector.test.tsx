@@ -48,6 +48,12 @@ vi.mock('../src/models.js', () => ({
 vi.mock('../src/app.js', () => ({
   useInspectorStore: (selector: (state: { entries: InspectorEntry[] }) => unknown) =>
     selector({ entries }),
+  // No test in this file exercises multi-conversation filtering (see
+  // chat-store.test.ts / inspector-store.test.ts for that); every entry here is
+  // untagged (conversationId undefined), which the panel always shows regardless
+  // of the active id, so a fixed stub is enough.
+  useChatStore: (selector: (state: { conversationId: string | undefined }) => unknown) =>
+    selector({ conversationId: undefined }),
   useSettingsStore: (
     selector: (state: {
       selectedModel: string

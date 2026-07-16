@@ -50,10 +50,45 @@ describe('createInspectorStore', () => {
     )
   })
 
-  it('clear() empties the buffer', () => {
+  it('clear() with no id empties the buffer', () => {
     const store = createInspectorStore()
     store.getState().capture(payload(1))
     store.getState().clear()
     expect(store.getState().entries).toEqual([])
+  })
+
+  // Multi-conversation scoping (issue #430).
+  describe('conversation scoping', () => {
+    it('capture tags an entry with the given conversation id, leaving it undefined when omitted', () => {
+      const store = createInspectorStore()
+      store.getState().capture(payload(1), 'conv-a')
+      store.getState().capture(payload(2))
+
+      const { entries } = store.getState()
+      expect(entries[0]?.conversationId).toBe('conv-a')
+      expect(entries[1]?.conversationId).toBeUndefined()
+    })
+
+    it("clear(id) removes only that conversation's entries, leaving others (tagged or not) intact", () => {
+      const store = createInspectorStore()
+      store.getState().capture(payload(1), 'conv-a')
+      store.getState().capture(payload(2), 'conv-b')
+      store.getState().capture(payload(3))
+
+      store.getState().clear('conv-a')
+
+      const { entries } = store.getState()
+      expect(entries.map((entry) => entry.conversationId)).toEqual(['conv-b', undefined])
+    })
+
+    it('clear() with no id still clears everything, including conversation-tagged entries', () => {
+      const store = createInspectorStore()
+      store.getState().capture(payload(1), 'conv-a')
+      store.getState().capture(payload(2), 'conv-b')
+
+      store.getState().clear()
+
+      expect(store.getState().entries).toEqual([])
+    })
   })
 })

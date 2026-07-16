@@ -123,7 +123,7 @@ const InputContextView = ({
 }
 
 export const HumanPromptHost = () => {
-  const { pending, presentation } = useHumanPromptPresentation()
+  const { pending, presentation, conversationLabel } = useHumanPromptPresentation()
   const summarizers = usePermissionSummarizers()
 
   // Focus management for the modal presentation (issue #353). `focusKey` re-enters
@@ -158,6 +158,11 @@ export const HumanPromptHost = () => {
         className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-xl outline-none"
       >
         <div className="border-b border-[var(--border)] px-6 py-4">
+          {conversationLabel ? (
+            <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+              {conversationLabel}
+            </p>
+          ) : null}
           <h2 className="text-base font-semibold text-[var(--text-strong)]">{view.title}</h2>
           {view.description ? (
             <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--text)]">

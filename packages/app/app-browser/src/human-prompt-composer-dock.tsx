@@ -13,7 +13,7 @@ import { useHumanPromptPresentation } from './human-prompt-presentation'
 // actions / free-text / Skip; dismissal (Skip / Escape / a host-forced settle on abort)
 // resolves `{ kind: 'dismissed' }` exactly like the modal.
 export const HumanPromptComposerDock = () => {
-  const { pending, presentation } = useHumanPromptPresentation()
+  const { pending, presentation, conversationLabel } = useHumanPromptPresentation()
 
   if (!pending || presentation !== 'composer') {
     return null
@@ -28,6 +28,11 @@ export const HumanPromptComposerDock = () => {
       className="mb-2 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--panel)] shadow-sm"
     >
       <div className="border-b border-[var(--border)] px-6 py-4">
+        {conversationLabel ? (
+          <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+            {conversationLabel}
+          </p>
+        ) : null}
         <h2 className="text-base font-semibold text-stone-900">{view.title}</h2>
         {view.description ? (
           <p className="mt-1 whitespace-pre-wrap text-sm text-stone-700">{view.description}</p>

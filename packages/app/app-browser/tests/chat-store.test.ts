@@ -1,11 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createStore } from 'zustand/vanilla'
-import type { ChatEvent } from '@tinytinkerer/contracts'
+import type { ChatEvent, HumanPromptView, InspectorRequestPayload } from '@tinytinkerer/contracts'
 import type { BrowserShell } from '../src/shell.js'
 import type { AuthStore } from '../src/stores/auth-store.js'
 import type { SettingsStore } from '../src/stores/settings-store.js'
 import type { PersistedEvent } from '@tinytinkerer/app-core'
 import type { ChatStore, ConversationSlice } from '../src/stores/chat-store.js'
+import { createInspectorStore } from '../src/stores/inspector-store.js'
+import { requestHumanInput, resetHumanPrompts } from '../src/human-prompt-bridge.js'
 
 const mockExecuteChatPrompt = vi.hoisted(() => vi.fn())
 const mockCanSendPrompt = vi.hoisted(() => vi.fn(() => true))
@@ -136,6 +138,31 @@ const persistedMessage = (id: string, text: string, conversationId: string) =>
 beforeEach(() => {
   vi.clearAllMocks()
   mockCanSendPrompt.mockReturnValue(true)
+})
+
+afterEach(() => {
+  // The human-prompt bridge is a real module-level singleton (issue #430 tests
+  // below use it directly); settle anything a failed assertion left pending so
+  // it cannot leak into a later test.
+  resetHumanPrompts()
+})
+
+const humanPromptView: HumanPromptView = {
+  role: 'alertdialog',
+  ariaLabel: 'Tool permission request',
+  title: 'Allow this tool to run?',
+  actions: [
+    { id: 'deny', label: 'Deny' },
+    { id: 'allow', label: 'Allow', tone: 'primary' }
+  ],
+  dismissLabel: 'Deny tool'
+}
+
+const inspectorPayload = (model: string): InspectorRequestPayload => ({
+  model,
+  stream: true,
+  messages: [{ role: 'user', content: 'hi' }],
+  capturedAt: new Date().toISOString()
 })
 
 describe('createChatStore', () => {
@@ -687,5 +714,70 @@ describe('createChatStore', () => {
     await store.getState().initialize()
 
     expect(store.getState().conversationId).toBe('newest')
+  })
+
+  it("resetConversation settles only the target conversation's human prompts, leaving another conversation's pending (issue #430)", async () => {
+    const store = createChatStore({
+      shell: makeShell(),
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }, { id: 'b' }])
+
+    const promptA = requestHumanInput(humanPromptView, 'a')
+    const promptB = requestHumanInput(humanPromptView, 'b')
+
+    await store.getState().resetConversation('a')
+
+    await expect(promptA).resolves.toEqual({ kind: 'dismissed' })
+
+    // B must still be pending: race it against an already-resolved sentinel —
+    // the sentinel wins iff B has not settled.
+    const pendingSentinel = Symbol('pending')
+    const raced = await Promise.race([promptB, Promise.resolve(pendingSentinel)])
+    expect(raced).toBe(pendingSentinel)
+  })
+
+  it("resetConversation clears only the target conversation's captured inspector entries (issue #430)", async () => {
+    mockExecuteChatPrompt.mockResolvedValue(undefined)
+    const inspectorStore = createInspectorStore()
+    const store = createChatStore({
+      shell: makeShell(),
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore(),
+      inspectorStore
+    })
+    seedConversations(store, [{ id: 'a' }, { id: 'b' }])
+
+    inspectorStore.getState().capture(inspectorPayload('model-a'), 'a')
+    inspectorStore.getState().capture(inspectorPayload('model-b'), 'b')
+
+    await store.getState().resetConversation('a')
+
+    const remaining = inspectorStore.getState().entries
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0]?.conversationId).toBe('b')
+  })
+
+  it("deleteConversation clears the deleted conversation's captured inspector entries (issue #430)", async () => {
+    const inspectorStore = createInspectorStore()
+    const shell = makeShell()
+    shell.conversations.deleteConversation = vi.fn(() => Promise.resolve())
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore(),
+      inspectorStore
+    })
+    seedConversations(store, [{ id: 'a' }, { id: 'b' }])
+
+    inspectorStore.getState().capture(inspectorPayload('model-a'), 'a')
+    inspectorStore.getState().capture(inspectorPayload('model-b'), 'b')
+
+    await store.getState().deleteConversation('a')
+
+    const remaining = inspectorStore.getState().entries
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0]?.conversationId).toBe('b')
   })
 })
