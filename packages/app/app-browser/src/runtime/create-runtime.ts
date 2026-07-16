@@ -119,8 +119,23 @@ export const createRuntime = (options: {
   // is skipped at registration below, so it never registers and its descriptor
   // never reaches the planner. Absence means all of the group's tools are enabled.
   appToolDisablement?: PluginToolDisablementState
+  // The conversation this runtime instance is running for (issue #430), forwarded
+  // by the factory's run-scoped `create(context)`. Threaded into the two host
+  // capabilities that used to be global singletons — the human-prompt bridge and
+  // the inspector capture sink — so a Stop/reset in one conversation can never
+  // touch another's pending prompt or captured entries. Absent for a headless or
+  // still-single-conversation caller; both capabilities degrade to their old
+  // (unscoped) behavior in that case.
+  conversationId?: string
 }) => {
   const edgeFetch = createEdgeFetch(options.baseUrl, options.getToken)
+
+  // Wrap the injected capture sink so every request THIS runtime forwards is
+  // tagged with its conversation (issue #430) — the provider below only ever
+  // calls it with the payload, so it stays entirely ignorant of the scope.
+  const captureForwardedRequest: ForwardedRequestSink | undefined = options.captureForwardedRequest
+    ? (payload) => options.captureForwardedRequest?.(payload, options.conversationId)
+    : undefined
 
   const tools: Tool<unknown, unknown>[] = []
   const hooks: AgentHookContribution[] = []
@@ -269,7 +284,9 @@ export const createRuntime = (options: {
       // human-prompt store and the mounted <HumanPromptHost /> resolves it with the
       // user's answer. The browser can prompt, so it always provides this; a headless
       // host omits it and such plugins degrade (a gate allows, a tool contributes none).
-      requestHumanInput,
+      // Tagged with this runtime's conversation id (issue #430) so a per-conversation
+      // Stop/reset settles only its own prompts.
+      requestHumanInput: (view) => requestHumanInput(view, options.conversationId),
       // Edge capability: a plugin tool that must reach the edge (web search) builds
       // against this. The browser always has an edge backend, so it always provides
       // it; request telemetry rides along inside the wrapped edgeFetch.
@@ -413,10 +430,11 @@ export const createRuntime = (options: {
       // Arm forwarded-request capture ONLY when an active plugin contributes an
       // inspectorDescriptor, so the full conversation payload is captured/retained
       // solely for the developer inspector and stays entirely client-side otherwise
-      // (#270). Gated on the manifest capability, not a hard-coded plugin id.
-      ...(options.captureForwardedRequest &&
+      // (#270). Gated on the manifest capability, not a hard-coded plugin id. Uses
+      // the conversation-tagging wrapper built above, not the raw injected sink.
+      ...(captureForwardedRequest &&
       activePluginModules.some((mod) => mod.manifest.inspectorDescriptor)
-        ? { onForwardRequest: options.captureForwardedRequest }
+        ? { onForwardRequest: captureForwardedRequest }
         : {})
     }),
     // Terminal runtime failures (e.g. a ReAct decision timeout, a provider/edge

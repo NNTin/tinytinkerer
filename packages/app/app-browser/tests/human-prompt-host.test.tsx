@@ -4,23 +4,33 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { HumanPromptView } from '@tinytinkerer/contracts'
 import { HumanPromptHost } from '../src/human-prompt-host.js'
-import { requestHumanInput, resetAllHumanPrompts } from '../src/human-prompt-bridge.js'
+import { requestHumanInput, resetHumanPrompts } from '../src/human-prompt-bridge.js'
 
 const forwardPluginReport = vi.hoisted(() => vi.fn())
 vi.mock('../src/telemetry/plugin-report', () => ({ forwardPluginReport }))
+
+// Conversation slices the modal reads for its conversation label (issue #430) — a
+// mutable module-level record so tests can opt into 2+ conversations. Empty by
+// default (single/no conversation), matching the pre-#430 behavior of every
+// existing test in this file: no label renders.
+let conversationSlices: Record<string, { title: string }> = {}
 
 // The modal resolves presentation from the settings store (per-plugin). With no stored
 // config every view defaults to `modal`, so these views (no `source`) render here.
 vi.mock('../src/app.js', () => ({
   useSettingsStore: (
     selector: (state: { pluginConfig: Record<string, Record<string, string | boolean>> }) => unknown
-  ) => selector({ pluginConfig: {} })
+  ) => selector({ pluginConfig: {} }),
+  useChatStore: (
+    selector: (state: { conversations: Record<string, { title: string }> }) => unknown
+  ) => selector({ conversations: conversationSlices })
 }))
 
 afterEach(() => {
-  resetAllHumanPrompts()
+  resetHumanPrompts()
   cleanup()
   forwardPluginReport.mockClear()
+  conversationSlices = {}
 })
 
 // The Choice-prompt poll: a `dialog` with options as actions, optional free text, and
@@ -164,9 +174,9 @@ describe('HumanPromptHost', () => {
     await expect(answer).resolves.toEqual({ kind: 'action', id: 'allow' })
   })
 
-  it('resetAllHumanPrompts settles every pending prompt as dismissed', async () => {
+  it('resetHumanPrompts() settles every pending prompt as dismissed', async () => {
     const answer = requestHumanInput(dialogView())
-    resetAllHumanPrompts()
+    resetHumanPrompts()
     await expect(answer).resolves.toEqual({ kind: 'dismissed' })
   })
 
@@ -243,5 +253,43 @@ describe('HumanPromptHost', () => {
 
     await waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('Second question'))
     void second
+  })
+
+  // Conversation label (issue #430): tells the user WHICH conversation a prompt
+  // belongs to once the store is juggling more than one.
+  describe('conversation label', () => {
+    it('renders the scoped conversation title when 2+ conversations exist', async () => {
+      conversationSlices = {
+        'conv-a': { title: 'Refactor the parser' },
+        'conv-b': { title: 'Draft release notes' }
+      }
+      render(<HumanPromptHost />)
+      void requestHumanInput(dialogView(), 'conv-a')
+
+      const dialog = await screen.findByRole('dialog')
+      expect(dialog).toHaveTextContent('Refactor the parser')
+    })
+
+    it('renders nothing extra with a single conversation, even when the prompt carries a scope', async () => {
+      conversationSlices = { 'conv-a': { title: 'Refactor the parser' } }
+      render(<HumanPromptHost />)
+      void requestHumanInput(dialogView(), 'conv-a')
+
+      const dialog = await screen.findByRole('dialog')
+      expect(dialog).not.toHaveTextContent('Refactor the parser')
+    })
+
+    it('renders nothing extra for an unscoped prompt, even with 2+ conversations', async () => {
+      conversationSlices = {
+        'conv-a': { title: 'Refactor the parser' },
+        'conv-b': { title: 'Draft release notes' }
+      }
+      render(<HumanPromptHost />)
+      void requestHumanInput(dialogView())
+
+      const dialog = await screen.findByRole('dialog')
+      expect(dialog).not.toHaveTextContent('Refactor the parser')
+      expect(dialog).not.toHaveTextContent('Draft release notes')
+    })
   })
 })

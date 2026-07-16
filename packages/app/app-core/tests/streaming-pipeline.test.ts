@@ -6,6 +6,7 @@ import {
   executeChatPrompt,
   reconcileTurns,
   turnsEquivalent,
+  type ChatRuntimeContext,
   type ChatRuntimeFactory,
   type ConversationRepository,
   type PreferencesStore
@@ -211,5 +212,39 @@ describe('executeChatPrompt — aborted run stops appending/persisting (issue #3
 
     expect(onEvent).not.toHaveBeenCalled()
     expect(appendEvent).not.toHaveBeenCalled()
+  })
+})
+
+describe('executeChatPrompt / runPrompt — conversation-scoped runtime context (issue #430)', () => {
+  it("passes the conversation id into the factory's create(context) so host capabilities (human prompts, inspector capture) can be attributed to it", async () => {
+    const contexts: (ChatRuntimeContext | undefined)[] = []
+    const runtimeFactory: ChatRuntimeFactory = {
+      create: (context) => {
+        contexts.push(context)
+        return {
+          run: async function* () {}
+        }
+      }
+    }
+    const conversations = {
+      appendEvent: vi.fn(() => Promise.resolve())
+    } as unknown as ConversationRepository
+    const preferences = {
+      get: vi.fn(() => Promise.resolve(undefined)),
+      set: vi.fn(() => Promise.resolve())
+    } as unknown as PreferencesStore
+
+    await executeChatPrompt({
+      conversationId: 'conv-42',
+      existingEvents: [],
+      prompt: 'hi',
+      runtimeFactory,
+      conversations,
+      preferences,
+      onEvent: vi.fn(),
+      onRateLimitState: vi.fn()
+    })
+
+    expect(contexts).toEqual([{ conversationId: 'conv-42' }])
   })
 })

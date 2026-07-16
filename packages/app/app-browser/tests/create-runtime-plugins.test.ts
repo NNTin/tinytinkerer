@@ -2,12 +2,22 @@ import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import type {
   AgentHookContribution,
+  HumanPromptView,
   PluginEdgeFetch,
+  PluginHost,
   PluginModule,
   Tool
 } from '@tinytinkerer/app-core'
 import { setCaptureMessageSink } from '@tinytinkerer/sentry-telemetry'
 import { createPluginRuntime, createRuntime } from '../src/runtime/create-runtime.js'
+
+// The runtime's requestHumanInput wraps the shared bridge (issue #430 test below):
+// mocking it here lets the test assert the wrapper forwards the runtime's
+// conversation id, without exercising the real modal/queue machinery.
+const mockRequestHumanInput = vi.hoisted(() => vi.fn(() => Promise.resolve({ kind: 'dismissed' })))
+vi.mock('../src/human-prompt-bridge.js', () => ({
+  requestHumanInput: mockRequestHumanInput
+}))
 
 const testTool = (id: string): Tool<unknown, unknown> => ({
   id,
@@ -861,5 +871,77 @@ describe('plugin runtime contributions', () => {
 
       vi.unstubAllGlobals()
     })
+  })
+
+  // Human-prompt scoping (issue #430): the host must attribute a plugin's prompt to
+  // the conversation the runtime was created for, so a Stop/reset in one
+  // conversation cannot settle another's pending prompt.
+  it("forwards the runtime's conversation id to the human-prompt bridge", () => {
+    let captured: PluginHost['requestHumanInput']
+    const module: PluginModule = {
+      manifest: { id: 'human-input-probe', label: 'human-input-probe', description: 'probe' },
+      createPlugin: () => ({
+        id: 'human-input-probe',
+        createTools: (host) => {
+          captured = host.requestHumanInput
+          return []
+        }
+      })
+    }
+
+    createRuntime({
+      baseUrl: 'http://edge.local',
+      getToken: () => 'token',
+      getModel: () => 'openai/gpt-4.1-mini',
+      pluginActivation: { 'human-input-probe': true },
+      pluginModules: [module],
+      conversationId: 'conv-xyz'
+    })
+
+    expect(captured).toBeDefined()
+    const view: HumanPromptView = {
+      role: 'dialog',
+      ariaLabel: 'a',
+      title: 't',
+      actions: [],
+      dismissLabel: 'd'
+    }
+    void captured!(view)
+
+    expect(mockRequestHumanInput).toHaveBeenCalledWith(view, 'conv-xyz')
+  })
+
+  it('forwards an undefined conversation id when the runtime is created without one', () => {
+    let captured: PluginHost['requestHumanInput']
+    const module: PluginModule = {
+      manifest: { id: 'human-input-probe-2', label: 'human-input-probe-2', description: 'probe' },
+      createPlugin: () => ({
+        id: 'human-input-probe-2',
+        createTools: (host) => {
+          captured = host.requestHumanInput
+          return []
+        }
+      })
+    }
+
+    createRuntime({
+      baseUrl: 'http://edge.local',
+      getToken: () => 'token',
+      getModel: () => 'openai/gpt-4.1-mini',
+      pluginActivation: { 'human-input-probe-2': true },
+      pluginModules: [module]
+    })
+
+    expect(captured).toBeDefined()
+    const view: HumanPromptView = {
+      role: 'dialog',
+      ariaLabel: 'a',
+      title: 't',
+      actions: [],
+      dismissLabel: 'd'
+    }
+    void captured!(view)
+
+    expect(mockRequestHumanInput).toHaveBeenCalledWith(view, undefined)
   })
 })

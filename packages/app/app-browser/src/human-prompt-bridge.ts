@@ -14,11 +14,15 @@ import type { HumanPromptView, HumanPromptResult } from '@tinytinkerer/app-core'
 
 // One queued human prompt: a stable id, the view the modal renders, and the resolve
 // that settles the Promise returned by `requestHumanInput`. Removed from the queue the
-// moment resolve is called, so the modal advances to the next.
+// moment resolve is called, so the modal advances to the next. `scope` is the
+// originating conversation id (issue #430), so a per-conversation Stop/reset can
+// settle only its own prompts; absent for a scopeless caller (e.g. a headless host,
+// or a test that calls `requestHumanInput` directly).
 export type PendingHumanPrompt = {
   id: string
   view: HumanPromptView
   resolve: (result: HumanPromptResult) => void
+  scope?: string
 }
 
 type HumanPromptState = { queue: PendingHumanPrompt[] }
@@ -31,8 +35,13 @@ const removeFromQueue = (id: string): void => {
 }
 
 // The injected PluginHost.requestHumanInput implementation: enqueue a view and return
-// a Promise the mounted modal resolves with the user's answer.
-export const requestHumanInput = (view: HumanPromptView): Promise<HumanPromptResult> =>
+// a Promise the mounted modal resolves with the user's answer. `scope` (the run's
+// conversation id, issue #430) tags the entry so a per-conversation reset settles
+// only its own prompts.
+export const requestHumanInput = (
+  view: HumanPromptView,
+  scope?: string
+): Promise<HumanPromptResult> =>
   new Promise<HumanPromptResult>((resolve) => {
     const id = `prompt-${(counter += 1)}`
     const entry: PendingHumanPrompt = {
@@ -41,7 +50,8 @@ export const requestHumanInput = (view: HumanPromptView): Promise<HumanPromptRes
       resolve: (result) => {
         removeFromQueue(id)
         resolve(result)
-      }
+      },
+      ...(scope !== undefined ? { scope } : {})
     }
     store.setState((state) => ({ queue: [...state.queue, entry] }))
   })
@@ -50,14 +60,23 @@ export const requestHumanInput = (view: HumanPromptView): Promise<HumanPromptRes
 export const useHumanPromptStore = <T>(selector: (state: HumanPromptState) => T): T =>
   useStore(store, selector)
 
-// Settle every open human prompt as `dismissed` and clear the queue. The chat-store
-// calls this when a run is aborted (Stop) or the conversation is reset, so neither a
-// permission prompt nor a choice poll outlives the run that raised it. Resolving (not
-// rejecting) means the awaiting gate/tool sees a normal "no answer" outcome — the
-// permissions gate maps it to deny, the choice tool to a dismissed result.
-export const resetAllHumanPrompts = (): void => {
+// Settle every open human prompt whose scope matches as `dismissed` and remove it from
+// the queue. The chat-store calls this when a run is aborted (Stop) or the conversation
+// is reset, so neither a permission prompt nor a choice poll outlives the run that
+// raised it — now scoped per conversation (issue #430), so stopping/resetting
+// conversation A never dismisses conversation B's pending prompt. `scope === undefined`
+// settles EVERY pending prompt regardless of its own scope, preserving the pre-#430
+// behavior for callers that abort before a conversation id is known (e.g. a
+// pre-hydration abort). Resolving (not rejecting) means the awaiting gate/tool sees a
+// normal "no answer" outcome — the permissions gate maps it to deny, the choice tool to
+// a dismissed result.
+export const resetHumanPrompts = (scope?: string): void => {
+  // Snapshot before resolving: each `entry.resolve` below removes ITS entry from
+  // the live queue as a side effect, so iterating the live array while mutating it
+  // would skip entries.
   for (const entry of store.getState().queue) {
-    entry.resolve({ kind: 'dismissed' })
+    if (scope === undefined || entry.scope === scope) {
+      entry.resolve({ kind: 'dismissed' })
+    }
   }
-  store.setState({ queue: [] })
 }

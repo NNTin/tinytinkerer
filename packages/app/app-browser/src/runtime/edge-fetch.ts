@@ -172,8 +172,16 @@ export const modelsChatRequestBody = (
 // It returns an updater the chokepoint calls once with the response outcome (or
 // nothing if the host does not want the response). Never throws into the request
 // path — capture is best-effort and side-effect-free for the model call.
+//
+// `conversationId` (issue #430) tags which conversation's run issued the request.
+// The chokepoint below (createModelsChatFetch) only ever calls this with the
+// payload — it stays ignorant of scoping; `createRuntime` wraps the injected sink
+// to append the id before handing THAT wrapper down as `onForwardRequest`, so the
+// second parameter only matters to the original (store-backed) sink the wrapper
+// closes over.
 export type ForwardedRequestSink = (
-  payload: InspectorRequestPayload
+  payload: InspectorRequestPayload,
+  conversationId?: string
 ) => ((response: InspectorResponse) => void) | void
 
 // Cap on captured response content so a long answer can't balloon the in-memory

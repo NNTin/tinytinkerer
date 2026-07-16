@@ -3,7 +3,7 @@ import {
   HUMAN_PROMPT_PRESENTATION_SETTING_KEY,
   type HumanPromptPresentation
 } from '@tinytinkerer/contracts'
-import { useSettingsStore } from './app'
+import { useChatStore, useSettingsStore } from './app'
 import { useHumanPromptStore, type PendingHumanPrompt } from './human-prompt-bridge'
 
 // Resolves the head-of-queue human prompt and WHERE the host should draw it (issue
@@ -17,9 +17,17 @@ import { useHumanPromptStore, type PendingHumanPrompt } from './human-prompt-bri
 export const useHumanPromptPresentation = (): {
   pending: PendingHumanPrompt | undefined
   presentation: HumanPromptPresentation
+  // The originating conversation's title (issue #430), so the renderer can tell the
+  // user WHICH conversation is asking. Only set when there is something to
+  // disambiguate: the store manages more than one conversation AND the prompt's
+  // scope still names one of them (a conversation deleted mid-prompt resolves to
+  // undefined, same as no scope). undefined with a single conversation, matching
+  // pre-#430 behavior exactly (nothing new renders).
+  conversationLabel: string | undefined
 } => {
   const pending = useHumanPromptStore((state) => state.queue[0])
   const pluginConfig = useSettingsStore((state) => state.pluginConfig)
+  const conversations = useChatStore((state) => state.conversations)
   const source = pending?.view.source
   const presentation = useMemo<HumanPromptPresentation>(() => {
     if (!source) return 'modal'
@@ -27,5 +35,10 @@ export const useHumanPromptPresentation = (): {
       ? 'composer'
       : 'modal'
   }, [source, pluginConfig])
-  return { pending, presentation }
+  const scope = pending?.scope
+  const conversationLabel = useMemo(() => {
+    if (!scope || Object.keys(conversations).length <= 1) return undefined
+    return conversations[scope]?.title
+  }, [scope, conversations])
+  return { pending, presentation, conversationLabel }
 }

@@ -4,18 +4,22 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { HumanPromptView } from '@tinytinkerer/contracts'
 import { HumanPromptComposerDock } from '../src/human-prompt-composer-dock.js'
-import { requestHumanInput, resetAllHumanPrompts } from '../src/human-prompt-bridge.js'
+import { requestHumanInput, resetHumanPrompts } from '../src/human-prompt-bridge.js'
 
 // The dock resolves presentation from the settings store. Map the choice-prompt source
-// to the `composer` presentation so a poll stamped with that source docks here.
+// to the `composer` presentation so a poll stamped with that source docks here. A single
+// conversation slice is enough here — the conversation label (issue #430) is exercised
+// in human-prompt-host.test.tsx.
 vi.mock('../src/app.js', () => ({
   useSettingsStore: (
     selector: (state: { pluginConfig: Record<string, Record<string, string | boolean>> }) => unknown
-  ) => selector({ pluginConfig: { 'choice-prompt': { presentation: 'composer' } } })
+  ) => selector({ pluginConfig: { 'choice-prompt': { presentation: 'composer' } } }),
+  useChatStore: (selector: (state: { conversations: Record<string, unknown> }) => unknown) =>
+    selector({ conversations: {} })
 }))
 
 afterEach(() => {
-  resetAllHumanPrompts()
+  resetHumanPrompts()
   cleanup()
 })
 

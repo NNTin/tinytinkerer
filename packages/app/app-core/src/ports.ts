@@ -78,6 +78,15 @@ export interface ChatRuntime {
   ): AsyncGenerator<ChatEvent>
 }
 
+// Run-scoped context handed to a factory at `create()` time (issue #430), so host
+// capabilities that are otherwise global singletons — the human-prompt bridge, the
+// context-inspector capture sink — can be attributed to the conversation that ran.
+// Optional: a factory/runtime that ignores it stays valid (e.g. a headless or
+// single-conversation host), so existing test fakes keep working unmodified.
+export type ChatRuntimeContext = {
+  conversationId?: string
+}
+
 export interface ChatRuntimeFactory {
-  create(): ChatRuntime
+  create(context?: ChatRuntimeContext): ChatRuntime
 }
