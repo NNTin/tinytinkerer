@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createStore } from 'zustand/vanilla'
+import type { ChatEvent } from '@tinytinkerer/contracts'
 import type { BrowserShell } from '../src/shell.js'
 import type { AuthStore } from '../src/stores/auth-store.js'
 import type { SettingsStore } from '../src/stores/settings-store.js'
+import type { PersistedEvent } from '@tinytinkerer/app-core'
+import type { ChatStore, ConversationSlice } from '../src/stores/chat-store.js'
 
 const mockExecuteChatPrompt = vi.hoisted(() => vi.fn())
 const mockCanSendPrompt = vi.hoisted(() => vi.fn(() => true))
@@ -21,8 +24,15 @@ vi.mock('../src/runtime/get-runtime.js', () => ({
   createBrowserRuntimeFactory: mockCreateBrowserRuntimeFactory
 }))
 
-const { createChatStore } = await import('../src/stores/chat-store.js')
-const { rateLimitCooldownKey } = await import('@tinytinkerer/app-core')
+const { createChatStore, MAX_CONCURRENT_RUNS } = await import('../src/stores/chat-store.js')
+const { ACTIVE_CONVERSATION_KEY, rateLimitCooldownKey } = await import('@tinytinkerer/app-core')
+
+const conversationRow = (id: string) => ({
+  id,
+  title: 'New conversation',
+  createdAt: '2026-07-01T00:00:00.000Z',
+  updatedAt: '2026-07-02T00:00:00.000Z'
+})
 
 const makeShell = (): BrowserShell =>
   ({
@@ -33,18 +43,18 @@ const makeShell = (): BrowserShell =>
       hostToken: null
     },
     conversations: {
-      createConversation: vi.fn(),
-      getLatestConversation: vi.fn(),
-      loadConversationEvents: vi.fn(),
-      appendEvent: vi.fn(),
-      clearConversationEvents: vi.fn(),
-      listConversations: vi.fn(),
-      deleteConversation: vi.fn(),
-      updateConversationTitle: vi.fn()
+      createConversation: vi.fn(() => Promise.resolve(conversationRow('created-1'))),
+      getLatestConversation: vi.fn(() => Promise.resolve(undefined)),
+      loadConversationEvents: vi.fn(() => Promise.resolve([])),
+      appendEvent: vi.fn(() => Promise.resolve()),
+      clearConversationEvents: vi.fn(() => Promise.resolve()),
+      listConversations: vi.fn(() => Promise.resolve([])),
+      deleteConversation: vi.fn(() => Promise.resolve()),
+      updateConversationTitle: vi.fn(() => Promise.resolve())
     },
     preferences: {
-      get: vi.fn(),
-      set: vi.fn()
+      get: vi.fn(() => Promise.resolve(undefined)),
+      set: vi.fn(() => Promise.resolve())
     },
     authTokens: {
       getStoredToken: vi.fn(),
@@ -66,6 +76,63 @@ const makeSettingsStore = (initial: { litellmBaseUrl?: string } = {}): SettingsS
     ...initial
   })) as unknown as SettingsStore
 
+// Seed hydrated multi-conversation state directly, bypassing initialize() (the
+// initialization path has its own tests below). The first id is active unless
+// overridden; every slice starts idle and already loaded unless specified.
+const seedConversations = (
+  store: ChatStore,
+  slices: { id: string; events?: ChatEvent[]; eventsLoaded?: boolean }[],
+  activeId = slices[0]?.id
+) => {
+  const conversations = Object.fromEntries(
+    slices.map((slice) => [
+      slice.id,
+      {
+        id: slice.id,
+        title: 'New conversation',
+        events: slice.events ?? [],
+        isRunning: false,
+        isRetryPending: false,
+        eventsLoaded: slice.eventsLoaded ?? true
+      } satisfies ConversationSlice
+    ])
+  )
+  store.setState({
+    hydrated: true,
+    conversationId: activeId,
+    conversations,
+    conversationOrder: slices.map((slice) => slice.id),
+    events: (activeId ? conversations[activeId]?.events : undefined) ?? [],
+    isRunning: false,
+    isRetryPending: false
+  })
+}
+
+type CapturedRun = {
+  conversationId: string
+  signal?: AbortSignal
+  onEvent: (event: unknown) => void
+}
+
+// executeChatPrompt never resolves, so every started run stays in flight for
+// the whole test while its options (target, signal, onEvent) are captured.
+const captureRuns = (): CapturedRun[] => {
+  const captured: CapturedRun[] = []
+  mockExecuteChatPrompt.mockImplementation(
+    (options: CapturedRun) =>
+      new Promise<void>(() => {
+        captured.push(options)
+      })
+  )
+  return captured
+}
+
+const userMessage = (id: string, text: string) =>
+  ({ id, type: 'user.message', payload: { text } }) as unknown as ChatEvent
+
+const persistedMessage = (id: string, text: string, conversationId: string) =>
+  ({ id, type: 'user.message', payload: { text }, conversationId }) as unknown as PersistedEvent
+
 beforeEach(() => {
   vi.clearAllMocks()
   mockCanSendPrompt.mockReturnValue(true)
@@ -81,12 +148,7 @@ describe('createChatStore', () => {
       settingsStore: makeSettingsStore()
     })
 
-    store.setState({
-      hydrated: true,
-      conversationId: 'conv-1',
-      isRunning: false,
-      isRetryPending: false
-    })
+    seedConversations(store, [{ id: 'conv-1' }])
 
     await store.getState().sendPrompt('hello')
 
@@ -114,12 +176,7 @@ describe('createChatStore', () => {
       settingsStore: makeSettingsStore()
     })
 
-    store.setState({
-      hydrated: true,
-      conversationId: 'conv-1',
-      isRunning: false,
-      isRetryPending: false
-    })
+    seedConversations(store, [{ id: 'conv-1' }])
 
     await store.getState().sendPrompt('hello')
 
@@ -137,12 +194,8 @@ describe('createChatStore', () => {
       settingsStore: makeSettingsStore()
     })
 
-    store.setState({
-      hydrated: true,
-      conversationId: 'conv-1',
-      isRunning: false,
-      isRetryPending: true
-    })
+    seedConversations(store, [{ id: 'conv-1' }])
+    store.setState({ isRetryPending: true })
 
     // sendPrompt propagates errors but the finally block still runs
     await expect(store.getState().sendPrompt('hello')).rejects.toThrow('unexpected')
@@ -160,12 +213,7 @@ describe('createChatStore', () => {
       settingsStore: makeSettingsStore({ litellmBaseUrl: 'https://litellm-b.example.com' })
     })
 
-    store.setState({
-      hydrated: true,
-      conversationId: 'conv-1',
-      isRunning: false,
-      isRetryPending: false
-    })
+    seedConversations(store, [{ id: 'conv-1' }])
 
     await store.getState().sendPrompt('hello')
 
@@ -215,7 +263,7 @@ describe('createChatStore', () => {
       authStore: makeAuthStore(),
       settingsStore: makeSettingsStore()
     })
-    store.setState({ hydrated: true, conversationId: 'conv-1' })
+    seedConversations(store, [{ id: 'conv-1' }])
 
     // Kick off a run that never resolves, then stop it.
     void store.getState().sendPrompt('hello')
@@ -234,18 +282,19 @@ describe('createChatStore', () => {
       authStore: makeAuthStore(),
       settingsStore: makeSettingsStore()
     })
-    store.setState({
-      hydrated: true,
-      conversationId: 'conv-1',
-      events: [
-        { id: 'e1', type: 'user.message', payload: { text: 'first question' } },
-        {
-          id: 'e2',
-          type: 'assistant.done',
-          payload: { source: 'an answer', content: { nodes: [] } }
-        }
-      ] as never
-    })
+    seedConversations(store, [
+      {
+        id: 'conv-1',
+        events: [
+          { id: 'e1', type: 'user.message', payload: { text: 'first question' } },
+          {
+            id: 'e2',
+            type: 'assistant.done',
+            payload: { source: 'an answer', content: { nodes: [] } }
+          }
+        ] as never
+      }
+    ])
 
     await store.getState().rerunLastPrompt()
 
@@ -262,7 +311,7 @@ describe('createChatStore', () => {
       authStore: makeAuthStore(),
       settingsStore: makeSettingsStore()
     })
-    store.setState({ hydrated: true, conversationId: 'conv-1', events: [] })
+    seedConversations(store, [{ id: 'conv-1' }])
 
     await store.getState().rerunLastPrompt()
 
@@ -283,7 +332,7 @@ describe('createChatStore', () => {
       authStore: makeAuthStore(),
       settingsStore: makeSettingsStore()
     })
-    store.setState({ hydrated: true, conversationId: 'conv-1' })
+    seedConversations(store, [{ id: 'conv-1' }])
 
     // Fire two sends back-to-back without awaiting the first — the race the
     // gate must close (Enter, then Regenerate while the module still loads).
@@ -313,7 +362,7 @@ describe('createChatStore', () => {
       authStore: makeAuthStore(),
       settingsStore: makeSettingsStore()
     })
-    store.setState({ hydrated: true, conversationId: 'conv-1' })
+    seedConversations(store, [{ id: 'conv-1' }])
 
     void store.getState().sendPrompt('hi')
     await vi.waitFor(() => expect(capturedSignal).toBeDefined())
@@ -350,5 +399,293 @@ describe('createChatStore', () => {
     // Give the (unwanted) async reload a chance to fire before asserting.
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(getPreference).not.toHaveBeenCalled()
+  })
+
+  it('keeps a background run streaming into its own slice across a switch (issue #430)', async () => {
+    const runs = captureRuns()
+    const store = createChatStore({
+      shell: makeShell(),
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }, { id: 'b' }])
+
+    void store.getState().sendPrompt('into a')
+    await vi.waitFor(() => expect(runs).toHaveLength(1))
+
+    await store.getState().selectConversation('b')
+    expect(store.getState().conversationId).toBe('b')
+    expect(store.getState().isRunning).toBe(false)
+
+    // The run keeps streaming into A's slice while B is displayed.
+    const streamed = userMessage('e-a', 'landed in a')
+    runs[0]?.onEvent(streamed)
+    expect(store.getState().events).toEqual([])
+    expect(store.getState().conversations.a?.events).toEqual([streamed])
+    expect(store.getState().conversations.a?.isRunning).toBe(true)
+
+    // Selecting A again surfaces its accumulated events and running state.
+    await store.getState().selectConversation('a')
+    expect(store.getState().events).toEqual([streamed])
+    expect(store.getState().isRunning).toBe(true)
+  })
+
+  it('resetConversation aborts only the target conversation and leaves others running (issue #332, per conversation)', async () => {
+    const runs = captureRuns()
+    const store = createChatStore({
+      shell: makeShell(),
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }, { id: 'b' }])
+
+    void store.getState().sendPrompt('into a')
+    void store.getState().sendPrompt('into b', 'b')
+    await vi.waitFor(() => expect(runs).toHaveLength(2))
+
+    await store.getState().resetConversation('a')
+
+    const runA = runs.find((run) => run.conversationId === 'a')
+    const runB = runs.find((run) => run.conversationId === 'b')
+    expect(runA?.signal?.aborted).toBe(true)
+    expect(runB?.signal?.aborted).toBe(false)
+
+    // A's aborted tail must not land...
+    runA?.onEvent(userMessage('late-a', 'orphan'))
+    expect(store.getState().conversations.a?.events).toEqual([])
+
+    // ...while B keeps streaming into its own intact slice.
+    const streamedB = userMessage('e-b', 'still running')
+    runB?.onEvent(streamedB)
+    expect(store.getState().conversations.b?.events).toEqual([streamedB])
+    expect(store.getState().conversations.b?.isRunning).toBe(true)
+  })
+
+  it('latches per conversation: a same-conversation double-send runs once, different conversations run concurrently (issue #334)', async () => {
+    let calls = 0
+    mockExecuteChatPrompt.mockImplementation(() => {
+      calls += 1
+      return new Promise<void>(() => {})
+    })
+
+    const store = createChatStore({
+      shell: makeShell(),
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }, { id: 'b' }])
+
+    // Two synchronous sends into the same conversation → one run.
+    void store.getState().sendPrompt('first', 'a')
+    void store.getState().sendPrompt('second', 'a')
+    await vi.waitFor(() => expect(calls).toBe(1))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(calls).toBe(1)
+
+    // A send into a different conversation starts an independent run.
+    void store.getState().sendPrompt('third', 'b')
+    await vi.waitFor(() => expect(calls).toBe(2))
+  })
+
+  it('silently refuses a send that would exceed MAX_CONCURRENT_RUNS', async () => {
+    let calls = 0
+    mockExecuteChatPrompt.mockImplementation(() => {
+      calls += 1
+      return new Promise<void>(() => {})
+    })
+
+    const store = createChatStore({
+      shell: makeShell(),
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }])
+
+    void store.getState().sendPrompt('one', 'a')
+    void store.getState().sendPrompt('two', 'b')
+    void store.getState().sendPrompt('three', 'c')
+    await vi.waitFor(() => expect(calls).toBe(MAX_CONCURRENT_RUNS))
+
+    // The fourth conversation's send no-ops without starting a run.
+    await store.getState().sendPrompt('overflow', 'd')
+    expect(calls).toBe(MAX_CONCURRENT_RUNS)
+    expect(store.getState().conversations.d?.isRunning).toBe(false)
+  })
+
+  it('selectConversation hydrates events from the repository exactly once', async () => {
+    const shell = makeShell()
+    const persisted = [persistedMessage('p1', 'from an earlier session', 'b')]
+    const loadConversationEvents = vi.fn(() => Promise.resolve(persisted))
+    shell.conversations.loadConversationEvents = loadConversationEvents
+
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }, { id: 'b', eventsLoaded: false }])
+
+    await store.getState().selectConversation('b')
+    expect(loadConversationEvents).toHaveBeenCalledTimes(1)
+    expect(loadConversationEvents).toHaveBeenCalledWith('b')
+    expect(store.getState().conversationId).toBe('b')
+    expect(store.getState().events).toEqual(persisted)
+
+    // A second activation reuses the already-loaded slice.
+    await store.getState().selectConversation('a')
+    await store.getState().selectConversation('b')
+    expect(loadConversationEvents).toHaveBeenCalledTimes(1)
+    expect(store.getState().events).toEqual(persisted)
+  })
+
+  it('persists the active conversation id on select and create', async () => {
+    const shell = makeShell()
+    shell.conversations.createConversation = vi.fn(() => Promise.resolve(conversationRow('fresh')))
+    const setPreference = vi.fn(() => Promise.resolve())
+    shell.preferences = { get: vi.fn(() => Promise.resolve(undefined)), set: setPreference }
+
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }, { id: 'b' }])
+
+    await store.getState().selectConversation('b')
+    expect(setPreference).toHaveBeenCalledWith(ACTIVE_CONVERSATION_KEY, 'b')
+
+    await store.getState().startNewConversation()
+    expect(setPreference).toHaveBeenCalledWith(ACTIVE_CONVERSATION_KEY, 'fresh')
+    expect(store.getState().conversationId).toBe('fresh')
+    expect(store.getState().conversationOrder).toEqual(['fresh', 'a', 'b'])
+    expect(store.getState().events).toEqual([])
+  })
+
+  it('deleteConversation aborts the running active target and activates the most recent remaining', async () => {
+    const runs = captureRuns()
+    const shell = makeShell()
+    const deleteConversation = vi.fn(() => Promise.resolve())
+    shell.conversations.deleteConversation = deleteConversation
+    const setPreference = vi.fn(() => Promise.resolve())
+    shell.preferences = { get: vi.fn(() => Promise.resolve(undefined)), set: setPreference }
+
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }, { id: 'b' }])
+
+    void store.getState().sendPrompt('into a')
+    await vi.waitFor(() => expect(runs).toHaveLength(1))
+
+    await store.getState().deleteConversation('a')
+
+    expect(runs[0]?.signal?.aborted).toBe(true)
+    expect(deleteConversation).toHaveBeenCalledWith('a')
+    expect(store.getState().conversations.a).toBeUndefined()
+    expect(store.getState().conversationOrder).toEqual(['b'])
+    expect(store.getState().conversationId).toBe('b')
+    expect(setPreference).toHaveBeenCalledWith(ACTIVE_CONVERSATION_KEY, 'b')
+  })
+
+  it('deleteConversation of the last conversation creates a fresh one', async () => {
+    const shell = makeShell()
+    const createConversation = vi.fn(() => Promise.resolve(conversationRow('fresh')))
+    shell.conversations.createConversation = createConversation
+    const deleteConversation = vi.fn(() => Promise.resolve())
+    shell.conversations.deleteConversation = deleteConversation
+    const setPreference = vi.fn(() => Promise.resolve())
+    shell.preferences = { get: vi.fn(() => Promise.resolve(undefined)), set: setPreference }
+
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }])
+
+    await store.getState().deleteConversation('a')
+
+    expect(deleteConversation).toHaveBeenCalledWith('a')
+    expect(createConversation).toHaveBeenCalledTimes(1)
+    expect(store.getState().conversationId).toBe('fresh')
+    expect(store.getState().conversationOrder).toEqual(['fresh'])
+    expect(setPreference).toHaveBeenCalledWith(ACTIVE_CONVERSATION_KEY, 'fresh')
+  })
+
+  it('deleteConversation is a no-op for an unknown id', async () => {
+    const shell = makeShell()
+    const deleteConversation = vi.fn(() => Promise.resolve())
+    shell.conversations.deleteConversation = deleteConversation
+
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }])
+
+    await store.getState().deleteConversation('ghost')
+
+    expect(deleteConversation).not.toHaveBeenCalled()
+    expect(store.getState().conversationId).toBe('a')
+    expect(store.getState().conversationOrder).toEqual(['a'])
+  })
+
+  it('initialize restores a valid stored active conversation id', async () => {
+    const shell = makeShell()
+    const persisted = [persistedMessage('p1', 'restored', 'older')]
+    shell.conversations.listConversations = vi.fn(() =>
+      Promise.resolve([conversationRow('newest'), conversationRow('older')])
+    )
+    const loadConversationEvents = vi.fn((id: string) =>
+      Promise.resolve(id === 'older' ? persisted : [])
+    )
+    shell.conversations.loadConversationEvents = loadConversationEvents
+    shell.preferences = {
+      get: vi.fn((key: string) =>
+        Promise.resolve(key === ACTIVE_CONVERSATION_KEY ? 'older' : undefined)
+      ),
+      set: vi.fn(() => Promise.resolve())
+    }
+
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+
+    await store.getState().initialize()
+
+    expect(store.getState().conversationId).toBe('older')
+    expect(store.getState().events).toEqual(persisted)
+    expect(store.getState().conversationOrder).toEqual(['newest', 'older'])
+    // Only the active conversation's events were loaded.
+    expect(loadConversationEvents).toHaveBeenCalledTimes(1)
+    expect(store.getState().conversations.newest?.eventsLoaded).toBe(false)
+  })
+
+  it('initialize falls back to the most recent conversation for a stale stored id', async () => {
+    const shell = makeShell()
+    shell.conversations.listConversations = vi.fn(() =>
+      Promise.resolve([conversationRow('newest'), conversationRow('older')])
+    )
+    shell.preferences = {
+      get: vi.fn((key: string) =>
+        Promise.resolve(key === ACTIVE_CONVERSATION_KEY ? 'deleted-long-ago' : undefined)
+      ),
+      set: vi.fn(() => Promise.resolve())
+    }
+
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+
+    await store.getState().initialize()
+
+    expect(store.getState().conversationId).toBe('newest')
   })
 })

@@ -1,5 +1,9 @@
 import type { ChatEvent } from '@tinytinkerer/contracts'
-import type { ChatRuntimeFactory } from '@tinytinkerer/app-core'
+import type {
+  ChatRuntimeFactory,
+  ConversationRunHandle,
+  ConversationSlice
+} from '@tinytinkerer/app-core'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { AppToolGroup } from '../app-tool-group'
 import type { BrowserShell } from '../shell'
@@ -10,24 +14,56 @@ import type { SettingsStore } from './settings-store'
 import type { InspectorStore } from './inspector-store'
 import { resetAllHumanPrompts } from '../human-prompt-bridge'
 
+// Defined in app-core next to the pure state helpers that construct slices, so
+// the construction logic stays out of every shell's entry chunk; re-exported
+// here because the slice is part of the store's public state shape.
+export type { ConversationSlice }
+
+// Client-side cap on parallel runs (issue #430): a send that would start a run
+// beyond this many concurrently running/mid-send conversations silently no-ops,
+// like the store's other send gates. A visible refusal notice ships with the
+// conversation switcher UI.
+export const MAX_CONCURRENT_RUNS = 3
+
 export type ChatState = {
   hydrated: boolean
+  // The active conversation id. `events`/`isRunning`/`isRetryPending` below are
+  // mirrors of the active conversation's slice, kept in lockstep by the store's
+  // single patch helper so every existing single-conversation consumer keeps
+  // reading the same fields it always has.
   conversationId: string | undefined
   events: ChatEvent[]
   isRunning: boolean
   isRetryPending: boolean
+  // Global per LiteLLM deployment (issue #179), NOT per conversation: a 429 is
+  // per credential/deployment, so one cooldown gates every conversation's sends.
   cooldownUntil: string | undefined
+  conversations: Record<string, ConversationSlice>
+  // Most-recently-updated first at initialization; new conversations are
+  // prepended, deleted ids removed. Not re-sorted on new events (issue #430).
+  conversationOrder: string[]
   initialize: () => Promise<void>
-  sendPrompt: (prompt: string) => Promise<void>
+  // Sends into `conversationId`, defaulting to the active conversation.
+  sendPrompt: (prompt: string, conversationId?: string) => Promise<void>
   // Re-run the latest user prompt as a fresh generation, preserving the existing
   // conversation history. No-op when there is no user turn yet or a run is
   // already in flight (gated by sendPrompt). Backs the "regenerate" action.
   rerunLastPrompt: () => Promise<void>
-  cancelRetry: () => void
+  cancelRetry: (conversationId?: string) => void
   // Abort the in-flight generation (the "Stop" affordance). Shares the single
-  // abort path with cancelRetry — both signal the same AbortController.
-  stop: () => void
-  resetConversation: () => Promise<void>
+  // abort path with cancelRetry — both signal the same AbortController. Targets
+  // the given conversation's run, defaulting to the active conversation.
+  stop: (conversationId?: string) => void
+  resetConversation: (conversationId?: string) => Promise<void>
+  // Create a fresh conversation, make it active, and remember it as active.
+  startNewConversation: () => Promise<void>
+  // Make an existing conversation active, lazily loading its events from the
+  // repository on first activation. No-op for an unknown or already-active id.
+  selectConversation: (conversationId: string) => Promise<void>
+  // Abort the conversation's run, delete it from the repository, and drop its
+  // slice; when it was active, activate the most recent remaining conversation
+  // or create a fresh one. No-op for an unknown id.
+  deleteConversation: (conversationId: string) => Promise<void>
 }
 
 export type ChatStore = StoreApi<ChatState>
@@ -44,23 +80,27 @@ export const createChatStore = (options: {
   // verbs). Forwarded to the runtime factory; absent for web/widget/mobile.
   appToolGroup?: AppToolGroup
 }): ChatStore => {
-  let activeRunController: AbortController | undefined
+  // Per-conversation run state (issue #430). An entry's presence is the
+  // synchronous re-entry latch that used to be the global `isSending` flag
+  // (issue #334): it is set before sendPrompt's first await and removed only
+  // after the run settles, so a second send into the SAME conversation during
+  // that window no-ops while sends into other conversations stay independent.
+  const activeRuns = new Map<string, ConversationRunHandle>()
   let initializePromise: Promise<void> | null = null
   let runtimeFactoryPromise: Promise<ChatRuntimeFactory> | null = null
-  // Synchronous re-entry latch for sendPrompt (issue #334). isRunning is only
-  // set true after sendPrompt's awaits resolve, so it cannot gate a second send
-  // that enters during those awaits; this closure flag, set before the first
-  // await, can.
-  let isSending = false
 
-  // Single abort path shared by `stop` (abort a live run) and `cancelRetry`
-  // (abort a queued auto-retry). Keeping one implementation avoids drift between
-  // the two affordances.
-  const abortActiveRun = () => {
-    activeRunController?.abort()
+  // Single abort path shared by `stop` (abort a live run), `cancelRetry` (abort
+  // a queued auto-retry), reset, and delete — now scoped to one conversation's
+  // controller (issue #332, per conversation). Keeping one implementation
+  // avoids drift between the affordances.
+  const abortConversationRun = (conversationId: string | undefined) => {
+    if (conversationId !== undefined) {
+      activeRuns.get(conversationId)?.controller?.abort()
+    }
     // Settle every open human prompt (permission allow/deny, choice poll) so a Stop
     // never leaves one hanging until the human-input timeout (issue #85). Generic —
-    // names no specific feature. No-op when nothing is pending.
+    // names no specific feature. No-op when nothing is pending. Still global
+    // across conversations for now; issue #430's follow-up PR scopes it.
     resetAllHumanPrompts()
   }
 
@@ -73,8 +113,8 @@ export const createChatStore = (options: {
     }
 
     initializePromise = loadCoreModule()
-      .then(async ({ initializeChatState }) => {
-        const state = await initializeChatState(
+      .then(async ({ initializeConversationsState }) => {
+        const state = await initializeConversationsState(
           options.shell.conversations,
           options.shell.preferences,
           // Cooldowns are scoped per LiteLLM deployment (issue #179).
@@ -118,115 +158,131 @@ export const createChatStore = (options: {
     return runtimeFactoryPromise
   }
 
-  const store = createStore<ChatState>((set, get) => ({
-    hydrated: false,
-    conversationId: undefined,
-    events: [],
-    isRunning: false,
-    isRetryPending: false,
-    cooldownUntil: undefined,
-    initialize: async () => {
+  const store = createStore<ChatState>((set, get) => {
+    // Adapters for app-core's conversation actions (send/select/create/reset/
+    // delete/hydrate): the bodies live in the lazily-loaded core chunk, keeping
+    // this entry-chunk file to synchronous orchestration. Every slice mutation
+    // flows through app-core's patchConversationState, the single helper that
+    // keeps the top-level active-conversation mirrors in lockstep.
+    const conversationActions = {
+      getState: get,
+      setState: set,
+      shell: options.shell,
+      abortRun: abortConversationRun,
+      // Cooldowns are scoped per LiteLLM deployment (issue #179).
+      getCooldownScope: () => options.settingsStore.getState().litellmBaseUrl,
+      getRuntimeFactory
+    }
+
+    // Shared trampoline: hydrate the store, then run an app-core action.
+    const withCore = async (
+      action: (core: Awaited<ReturnType<typeof loadCoreModule>>) => Promise<unknown>
+    ) => {
       await ensureInitialized(set, get)
-    },
-    sendPrompt: async (prompt) => {
-      // Gate re-entry synchronously (issue #334): a second send/regenerate that
-      // fires while the first is still resolving its awaits (module load, runtime
-      // factory) would otherwise read the not-yet-set isRunning flag and start a
-      // concurrent run against the same conversation.
-      if (isSending || get().isRunning) {
-        return
-      }
-      isSending = true
-      try {
-        await ensureInitialized(set, get)
-        const state = get()
-        const { canSendPrompt, executeChatPrompt, appendLiveChatEvent } = await loadCoreModule()
-        if (!canSendPrompt(state)) {
+      await action(await loadCoreModule())
+    }
+
+    return {
+      hydrated: false,
+      conversationId: undefined,
+      events: [],
+      isRunning: false,
+      isRetryPending: false,
+      cooldownUntil: undefined,
+      conversations: {},
+      conversationOrder: [],
+      initialize: () => ensureInitialized(set, get),
+      sendPrompt: async (prompt, conversationId) => {
+        // Gate re-entry synchronously (issue #334), now per conversation: a
+        // second send/regenerate into the SAME conversation that fires while
+        // the first is still resolving its awaits (module load, runtime
+        // factory) would otherwise start a concurrent run against it. Before
+        // hydration the active conversation id is unknown; such sends latch on
+        // the '' placeholder key (they all target the same conversation, and
+        // ids are UUIDs, so '' can never collide with a real one).
+        const runKey = conversationId ?? get().conversationId ?? ''
+        if (activeRuns.has(runKey)) {
           return
         }
-
-        const conversationId = state.conversationId
-        if (!conversationId) {
+        // Concurrency cap (issue #430): entries exist exactly while a
+        // conversation is running or mid-send, so the map size is the count.
+        if (activeRuns.size >= MAX_CONCURRENT_RUNS) {
           return
         }
-
-        const runtimeFactory = await getRuntimeFactory()
-        const runController = new AbortController()
-        activeRunController = runController
-        set({ isRunning: true, isRetryPending: false })
-
+        const run: ConversationRunHandle = {}
+        activeRuns.set(runKey, run)
         try {
-          await executeChatPrompt({
-            conversationId,
-            existingEvents: get().events,
+          await ensureInitialized(set, get)
+          const { executeChatPrompt, sendConversationPromptAction } = await loadCoreModule()
+          // Target resolution, gating (per-conversation run state + global
+          // cooldown), hydration, and streaming into the run's OWN conversation
+          // slice live in app-core — only this orchestration stays in the entry
+          // chunk. executeChatPrompt is injected so tests keep their mock seam.
+          await sendConversationPromptAction(conversationActions, {
             prompt,
-            runtimeFactory,
-            conversations: options.shell.conversations,
-            preferences: options.shell.preferences,
-            // Cooldowns are scoped per LiteLLM deployment (issue #179).
-            cooldownScope: options.settingsStore.getState().litellmBaseUrl,
-            signal: runController.signal,
-            onEvent: (event) => {
-              // Drop events from a run aborted mid-stream (e.g. by a reset) so its
-              // tail cannot land on the fresh conversation (issue #332), and
-              // collapse live-only stream snapshots so they don't accumulate
-              // without bound (issue #339).
-              if (runController.signal.aborted) {
-                return
-              }
-              set((currentState) => ({
-                events: appendLiveChatEvent(currentState.events, event)
-              }))
-            },
-            onRateLimitState: (rateLimitState) => {
-              set(rateLimitState)
-            }
+            conversationId,
+            runKey,
+            run,
+            activeRuns,
+            execute: executeChatPrompt
           })
         } finally {
-          if (activeRunController === runController) {
-            activeRunController = undefined
+          // The action may have re-keyed the entry from the pre-hydration
+          // placeholder onto the resolved conversation id; release whichever
+          // key currently holds this send's handle.
+          for (const [key, value] of activeRuns) {
+            if (value === run) {
+              activeRuns.delete(key)
+            }
           }
-
-          set({ isRunning: false, isRetryPending: false })
         }
-      } finally {
-        isSending = false
-      }
-    },
-    rerunLastPrompt: async () => {
-      await ensureInitialized(set, get)
-      const { latestUserPrompt } = await loadCoreModule()
-      const prompt = latestUserPrompt(get().events)
-      if (!prompt) {
-        return
-      }
-      // Reuse the normal send path: it re-checks the cooldown/running gate and
-      // appends a fresh generation, so history is preserved (issue: regenerate).
-      await get().sendPrompt(prompt)
-    },
-    cancelRetry: () => {
-      abortActiveRun()
-      set({ isRetryPending: false })
-    },
-    stop: () => {
-      abortActiveRun()
-    },
-    resetConversation: async () => {
-      await ensureInitialized(set, get)
-      // Abort any in-flight run BEFORE clearing (issue #332): otherwise the run
-      // keeps appending and re-persisting its tail onto the conversation we are
-      // about to empty, resurrecting an orphaned assistant turn that survives
-      // reload. abortActiveRun also settles every open human prompt (issue #85),
-      // which each belong to the conversation being cleared.
-      abortActiveRun()
-      const { resetConversation } = await loadCoreModule()
-      const events = await resetConversation(options.shell.conversations, get().conversationId)
-      set({ events })
-      // Drop any captured inspector requests too: they belong to the conversation
-      // that was just reset, so the developer panel must start empty as well.
-      options.inspectorStore?.getState().clear()
+      },
+      rerunLastPrompt: async () => {
+        await ensureInitialized(set, get)
+        const { latestUserPrompt } = await loadCoreModule()
+        const prompt = latestUserPrompt(get().events)
+        if (!prompt) {
+          return
+        }
+        // Reuse the normal send path: it re-checks the cooldown/running gate and
+        // appends a fresh generation, so history is preserved (issue: regenerate).
+        await get().sendPrompt(prompt)
+      },
+      cancelRetry: (conversationId) => {
+        const targetId = conversationId ?? get().conversationId
+        abortConversationRun(targetId)
+        if (targetId) {
+          // A pending retry implies a run already loaded app-core, so this
+          // settles on the already-resolved import promise immediately.
+          void loadCoreModule().then(({ patchConversationState }) => {
+            set((state) => patchConversationState(state, targetId, { isRetryPending: false }))
+          })
+        }
+      },
+      stop: (conversationId) => {
+        abortConversationRun(conversationId ?? get().conversationId)
+      },
+      resetConversation: (conversationId) =>
+        withCore(async (core) => {
+          // Abort-before-clear and per-conversation scoping live in the action
+          // (issue #332); it reports whether the ACTIVE conversation was reset.
+          if (await core.resetConversationAction(conversationActions, conversationId)) {
+            // Drop any captured inspector requests too: they belong to the
+            // conversation that was just reset, so the developer panel must
+            // start empty as well. Only for the active conversation — the
+            // inspector is one global buffer until issue #430's follow-up PR
+            // scopes it.
+            options.inspectorStore?.getState().clear()
+          }
+        }),
+      startNewConversation: () =>
+        withCore((core) => core.startNewConversationAction(conversationActions)),
+      selectConversation: (conversationId) =>
+        withCore((core) => core.selectConversationAction(conversationActions, conversationId)),
+      deleteConversation: (conversationId) =>
+        withCore((core) => core.deleteConversationAction(conversationActions, conversationId))
     }
-  }))
+  })
 
   // Cooldowns are scoped per LiteLLM deployment (issue #179). When the user
   // switches the base URL, reload that deployment's cooldown so send gating
