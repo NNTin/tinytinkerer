@@ -63,12 +63,30 @@ const pixelAgentsWorkspaceStore = createWorkspaceStore<StoredPixelAgentsWorkspac
   PIXEL_AGENTS_DATABASE_NAME
 )
 
+// The result of loading the workspace record. `migratedFromLegacy` is the ONLY
+// reliable signal that a pre-#430 record was just upgraded in memory (the
+// legacy shape is consumed right here): callers must use it — not any
+// property of `record` itself — to decide whether `adoptLegacySeat` may run.
+// Without this, an empty `agentNumbers` plus meta for agent 1 looks identical
+// whether it's a fresh migration or a modern record that simply had every
+// conversation deleted while agent 1's stale seat/meta lingered (retirement
+// drops the mapping entry but nothing forces `agentMeta` to empty in lockstep
+// in every path), and adopting in the latter case would re-issue a retired
+// number onto an unrelated conversation.
+export type LoadedPixelAgentsWorkspace = {
+  record: PixelAgentsWorkspaceRecord | null
+  migratedFromLegacy: boolean
+}
+
 export const loadPixelAgentsWorkspace = async (
   store: WorkspaceStore<StoredPixelAgentsWorkspaceRecord> = pixelAgentsWorkspaceStore
-): Promise<PixelAgentsWorkspaceRecord | null> => {
+): Promise<LoadedPixelAgentsWorkspace> => {
   const saved = await store.load()
-  if (!saved) return null
-  return isLegacyRecord(saved) ? migrateLegacyRecord(saved) : saved
+  if (!saved) return { record: null, migratedFromLegacy: false }
+  if (isLegacyRecord(saved)) {
+    return { record: migrateLegacyRecord(saved), migratedFromLegacy: true }
+  }
+  return { record: saved, migratedFromLegacy: false }
 }
 
 export const savePixelAgentsWorkspace = (
@@ -146,6 +164,15 @@ export const retireAgentNumber = (
 // A no-op (returns `agentNumbers` unchanged) once any conversation has already
 // been bound (this only ever fires once) or there is no conversation to adopt
 // onto.
+//
+// CALLERS MUST GATE this on `loadPixelAgentsWorkspace`'s `migratedFromLegacy`
+// flag, not merely on "agentNumbers is empty and agentMeta has key 1": a
+// modern (post-#430) record can reach that same shape if every conversation
+// gets deleted while a stale agent-1 seat lingers (retirement drops the
+// `agentNumbers` mapping entry, not necessarily `agentMeta` in the same
+// breath in every path) — calling this unconditionally would re-issue the
+// retired number 1 onto whatever unrelated conversation is created next,
+// violating the never-reuse invariant `retireAgentNumber` exists to uphold.
 export const adoptLegacySeat = (
   agentNumbers: Record<string, number>,
   agentMeta: Record<number, PixelAgentMeta>,

@@ -7,6 +7,7 @@ import type {
   McpServerConfig
 } from '@tinytinkerer/contracts'
 import type { ConversationRunContext, ConversationSlice } from '../src/index.js'
+import { ConversationRunRegistry } from '../src/run-registry.js'
 import {
   ACTIVE_CONVERSATION_KEY,
   activateConversationState,
@@ -1329,9 +1330,9 @@ describe('multi-conversation state (issue #430)', () => {
       expect(state.conversationOrder).toEqual(['newest', 'older'])
       expect(state.events).toEqual(events)
       expect(loadedIds).toEqual(['newest'])
-      expect(state.conversations.newest).toMatchObject({ events, eventsLoaded: true })
+      expect(state.conversations?.newest).toMatchObject({ events, eventsLoaded: true })
       // Non-active slices hydrate lazily on first activation.
-      expect(state.conversations.older).toMatchObject({ events: [], eventsLoaded: false })
+      expect(state.conversations?.older).toMatchObject({ events: [], eventsLoaded: false })
       expect(state.isRunning).toBe(false)
       expect(state.isRetryPending).toBe(false)
     })
@@ -1343,7 +1344,7 @@ describe('multi-conversation state (issue #430)', () => {
 
       expect(state.conversationId).toBe('created-1')
       expect(state.conversationOrder).toEqual(['created-1'])
-      expect(state.conversations['created-1']).toMatchObject({ eventsLoaded: true })
+      expect(state.conversations?.['created-1']).toMatchObject({ eventsLoaded: true })
     })
 
     it('restores a valid stored active id', async () => {
@@ -1538,6 +1539,7 @@ describe('multi-conversation state (issue #430)', () => {
             conversations = patch.conversations
           }
         },
+        setCooldownUntil: vi.fn(),
         shell: {
           conversations: {
             createConversation: () => Promise.reject(new Error('not used')),
@@ -1559,15 +1561,26 @@ describe('multi-conversation state (issue #430)', () => {
       return { context, updateConversationTitle, getState: () => ({ conversations }) }
     }
 
+    // A freshly acquired handle/registry pair for a `sendConversationPromptAction`
+    // call already latched under `key` — mirrors what the store's `sendPrompt`
+    // does before calling the action (issue #430 review: the run-latch protocol
+    // moved into ConversationRunRegistry).
+    const acquiredRun = (key: string) => {
+      const registry = new ConversationRunRegistry()
+      const handle = registry.tryAcquire(key)
+      if (!handle) {
+        throw new Error('unexpected: registry refused to latch a fresh key')
+      }
+      return { handle, registry }
+    }
+
     it('sets the title from the first prompt exactly once', async () => {
       const { context, updateConversationTitle, getState } = buildContext({ a: runSlice() })
 
       await sendConversationPromptAction(context, {
         prompt: '  what   is the capital of   France?  ',
         conversationId: 'a',
-        runKey: 'a',
-        run: {},
-        activeRuns: new Map(),
+        ...acquiredRun('a'),
         execute: () => Promise.resolve()
       })
 
@@ -1584,9 +1597,7 @@ describe('multi-conversation state (issue #430)', () => {
       await sendConversationPromptAction(context, {
         prompt: 'another message',
         conversationId: 'a',
-        runKey: 'a',
-        run: {},
-        activeRuns: new Map(),
+        ...acquiredRun('a'),
         execute: () => Promise.resolve()
       })
 
@@ -1609,9 +1620,7 @@ describe('multi-conversation state (issue #430)', () => {
       await sendConversationPromptAction(context, {
         prompt: 'hello',
         conversationId: 'a',
-        runKey: 'a',
-        run: {},
-        activeRuns: new Map(),
+        ...acquiredRun('a'),
         execute: () => {
           order.push('run-started')
           return Promise.resolve()

@@ -36,8 +36,24 @@ const chatState = vi.hoisted(() => {
   }
 })
 
+// surfaces.tsx defines its own useChatStoreWithEquality locally (issue #430
+// review: keeping the zustand/traditional import out of the eager app.ts), via
+// `useBrowserApp().stores.chat` + the real `useStoreWithEqualityFn`. So this
+// mock's `useBrowserApp` must return something shaped like a real StoreApi
+// (subscribe/getState/getInitialState) wrapping the same mutable `chatState`
+// the rest of this file drives — a no-op subscribe is fine since every test
+// below mutates `chatState` directly then forces a fresh render via
+// `act(() => rerender())`, and useSyncExternalStoreWithSelector re-reads the
+// snapshot on every render regardless of subscription notifications.
+const fakeChatStoreApi = {
+  getState: () => chatState,
+  getInitialState: () => chatState,
+  subscribe: () => () => undefined
+}
+
 vi.mock('../src/app.js', () => ({
   useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
+  useBrowserApp: () => ({ stores: { chat: fakeChatStoreApi } }),
   useAuthStore: (selector: (state: { token: string | null }) => unknown) =>
     selector({ token: null }),
   useSettingsStore: (
@@ -55,7 +71,7 @@ vi.mock('../src/plugins/use-plugin-modules.js', () => ({
   usePluginModules: () => []
 }))
 
-import { useChatSurfaceController } from '../src/surfaces.js'
+import { conversationSummariesEqual, useChatSurfaceController } from '../src/surfaces.js'
 
 beforeEach(() => {
   chatState.hydrated = true
@@ -162,5 +178,60 @@ describe('useChatSurfaceController conversation summaries (issue #430)', () => {
       { id: 'a', title: 'A', isRunning: false },
       { id: 'b', title: 'B', isRunning: true }
     ])
+  })
+})
+
+describe('conversationSummariesEqual (issue #430 review: typed equality selector)', () => {
+  // This is the render-skip mechanism itself: useChatSurfaceController wires
+  // it into useChatStoreWithEquality so a background conversation's stream —
+  // which produces a FRESH array every store change but leaves every
+  // id/title/isRunning triple unchanged — never forces a re-render.
+  it('treats a fresh array with identical entries as equal', () => {
+    const a = [{ id: 'a', title: 'A', isRunning: false }]
+    const b = [{ id: 'a', title: 'A', isRunning: false }]
+    expect(conversationSummariesEqual(a, b)).toBe(true)
+    expect(a).not.toBe(b)
+  })
+
+  it('treats the same reference as equal', () => {
+    const a = [{ id: 'a', title: 'A', isRunning: false }]
+    expect(conversationSummariesEqual(a, a)).toBe(true)
+  })
+
+  it('detects a changed isRunning flag (a background run starting/ending)', () => {
+    const a = [{ id: 'a', title: 'A', isRunning: false }]
+    const b = [{ id: 'a', title: 'A', isRunning: true }]
+    expect(conversationSummariesEqual(a, b)).toBe(false)
+  })
+
+  it('detects a changed title (auto-title-from-first-prompt)', () => {
+    const a = [{ id: 'a', title: 'New conversation', isRunning: false }]
+    const b = [{ id: 'a', title: 'What is the capital of France?', isRunning: false }]
+    expect(conversationSummariesEqual(a, b)).toBe(false)
+  })
+
+  it('detects a changed length (conversation created or deleted)', () => {
+    const a = [{ id: 'a', title: 'A', isRunning: false }]
+    const b = [
+      { id: 'a', title: 'A', isRunning: false },
+      { id: 'b', title: 'B', isRunning: false }
+    ]
+    expect(conversationSummariesEqual(a, b)).toBe(false)
+  })
+
+  it('detects a changed order', () => {
+    const a = [
+      { id: 'a', title: 'A', isRunning: false },
+      { id: 'b', title: 'B', isRunning: false }
+    ]
+    const b = [
+      { id: 'b', title: 'B', isRunning: false },
+      { id: 'a', title: 'A', isRunning: false }
+    ]
+    expect(conversationSummariesEqual(a, b)).toBe(false)
+  })
+
+  it('treats two empty lists as equal', () => {
+    expect(conversationSummariesEqual([], [])).toBe(true)
   })
 })

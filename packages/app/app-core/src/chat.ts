@@ -8,6 +8,7 @@ import type {
   PersistedEvent,
   PreferencesStore
 } from './ports'
+import type { ConversationRunHandle, ConversationRunRegistry } from './run-registry'
 
 // Cooldowns were once scoped per provider (issue #146: GitHub Models vs
 // OpenRouter drew on separate upstream quotas). The key is now scoped by a
@@ -133,21 +134,46 @@ const conversationSlice = (
   eventsLoaded
 })
 
-export type ConversationsInitState = ConversationsStateSnapshot &
-  Pick<ChatStateSnapshot, 'cooldownUntil'>
+// A type-only brand (issue #430 review — architecture hardening). The store's
+// top-level `conversationId`/`events`/`isRunning`/`isRetryPending` are mirrors
+// of `conversations[activeId]`'s slice, and NOTHING at runtime keeps them
+// consistent except the convention that every mutation flows through one of
+// `patchConversationState` / `activateConversationState` /
+// `addConversationToState` / `removeConversationFromState` (and initialization,
+// below) — comments were previously the only enforcement. `CONVERSATIONS_PATCH`
+// is `declare`d (never assigned, never read at runtime — it exists purely so
+// TypeScript can distinguish "a patch built by one of the mirror-safe helpers"
+// from "any old object shaped like one") so `ConversationActionsContext.setState`
+// can require the brand: a future action author who hand-rolls
+// `setState({ conversations: {...} })` gets a compile error instead of a
+// store that silently drifts. The brand is stripped by the `as` cast in
+// `brandPatch` below — every helper's RUNTIME return value is a plain object,
+// identical to what it returned before this brand was introduced.
+declare const CONVERSATIONS_PATCH: unique symbol
+
+export type ConversationsStatePatch = Partial<ConversationsStoreState> & {
+  readonly [CONVERSATIONS_PATCH]: true
+}
+
+const brandPatch = (patch: Partial<ConversationsStoreState>): ConversationsStatePatch =>
+  patch as ConversationsStatePatch
 
 /**
  * Multi-conversation successor of the old single-conversation initialization:
  * enumerate all conversations (creating one when none exist), restore the
  * active id from its preference (falling back to the most recently updated),
  * and load ONLY the active conversation's events — the other slices hydrate
- * lazily on first activation (`eventsLoaded: false`).
+ * lazily on first activation (`eventsLoaded: false`). Returns a branded patch
+ * (it already builds the full mirror-consistent shape) so it can be routed
+ * through `ConversationActionsContext.setState` like every other mutation;
+ * the store's own bootstrap additionally merges in `hydrated: true`, which is
+ * not a conversation field and stays outside this brand's contract.
  */
 export const initializeConversationsState = async (
   conversations: ConversationRepository,
   preferences: PreferencesStore,
   cooldownScope?: string
-): Promise<ConversationsInitState> => {
+): Promise<ConversationsStatePatch> => {
   const listed = await conversations.listConversations()
   const conversationList = listed.length > 0 ? listed : [await conversations.createConversation()]
   const storedId = await loadActiveConversationId(preferences)
@@ -170,7 +196,7 @@ export const initializeConversationsState = async (
     )
   }
 
-  return {
+  return brandPatch({
     conversationId: activeConversationId,
     events: activeEvents,
     isRunning: false,
@@ -178,7 +204,7 @@ export const initializeConversationsState = async (
     conversations: slices,
     conversationOrder: conversationList.map((conversation) => conversation.id),
     cooldownUntil
-  }
+  })
 }
 
 /**
@@ -189,17 +215,17 @@ export const initializeConversationsState = async (
 export const activateConversationState = (
   state: ConversationsStateSnapshot,
   conversationId: string
-): Partial<ConversationsStateSnapshot> => {
+): ConversationsStatePatch => {
   const slice = state.conversations[conversationId]
   if (!slice) {
-    return {}
+    return brandPatch({})
   }
-  return {
+  return brandPatch({
     conversationId,
     events: slice.events,
     isRunning: slice.isRunning,
     isRetryPending: slice.isRetryPending
-  }
+  })
 }
 
 /**
@@ -209,17 +235,18 @@ export const activateConversationState = (
 export const addConversationToState = (
   state: ConversationsStateSnapshot,
   conversation: Conversation
-): Partial<ConversationsStateSnapshot> => ({
-  conversationId: conversation.id,
-  events: [],
-  isRunning: false,
-  isRetryPending: false,
-  conversations: {
-    ...state.conversations,
-    [conversation.id]: conversationSlice(conversation, [], true)
-  },
-  conversationOrder: [conversation.id, ...state.conversationOrder]
-})
+): ConversationsStatePatch =>
+  brandPatch({
+    conversationId: conversation.id,
+    events: [],
+    isRunning: false,
+    isRetryPending: false,
+    conversations: {
+      ...state.conversations,
+      [conversation.id]: conversationSlice(conversation, [], true)
+    },
+    conversationOrder: [conversation.id, ...state.conversationOrder]
+  })
 
 /**
  * Patch dropping a conversation's slice and order entry. When the removed
@@ -230,7 +257,7 @@ export const addConversationToState = (
 export const removeConversationFromState = (
   state: ConversationsStateSnapshot,
   conversationId: string
-): Partial<ConversationsStateSnapshot> => {
+): ConversationsStatePatch => {
   const conversations = { ...state.conversations }
   delete conversations[conversationId]
   const base = {
@@ -238,15 +265,15 @@ export const removeConversationFromState = (
     conversationOrder: state.conversationOrder.filter((id) => id !== conversationId)
   }
   if (state.conversationId !== conversationId) {
-    return base
+    return brandPatch(base)
   }
-  return {
+  return brandPatch({
     ...base,
     conversationId: undefined,
     events: [],
     isRunning: false,
     isRetryPending: false
-  }
+  })
 }
 
 /**
@@ -264,21 +291,23 @@ export const patchConversationState = (
   patch:
     | Partial<Omit<ConversationSlice, 'id'>>
     | ((slice: ConversationSlice) => Partial<Omit<ConversationSlice, 'id'>>)
-): Partial<ConversationsStateSnapshot> => {
+): ConversationsStatePatch => {
   const slice = state.conversations[conversationId]
   if (!slice) {
-    return {}
+    return brandPatch({})
   }
   const next = { ...slice, ...(typeof patch === 'function' ? patch(slice) : patch) }
   const conversations = { ...state.conversations, [conversationId]: next }
-  return state.conversationId === conversationId
-    ? {
-        conversations,
-        events: next.events,
-        isRunning: next.isRunning,
-        isRetryPending: next.isRetryPending
-      }
-    : { conversations }
+  return brandPatch(
+    state.conversationId === conversationId
+      ? {
+          conversations,
+          events: next.events,
+          isRunning: next.isRunning,
+          isRetryPending: next.isRetryPending
+        }
+      : { conversations }
+  )
 }
 
 /**
@@ -294,7 +323,19 @@ export type ConversationsStoreState = ConversationsStateSnapshot &
 
 export type ConversationActionsContext = {
   getState: () => ConversationsStoreState
-  setState: (patch: Partial<ConversationsStoreState>) => void
+  // Narrowed to ONLY the branded patch shape (see CONVERSATIONS_PATCH above):
+  // action code can mutate conversation state exclusively via
+  // patchConversationState/activateConversationState/addConversationToState/
+  // removeConversationFromState/initializeConversationsState, never by
+  // hand-rolling a patch object.
+  setState: (patch: ConversationsStatePatch) => void
+  // Escape hatch for the ONE non-conversation field action code still writes
+  // directly: the global per-deployment cooldown (issue #179). It is not part
+  // of any conversation's mirror-protected slice, so it deliberately does NOT
+  // go through `setState`'s brand — kept as its own narrowly-named method
+  // (rather than a general unbranded-patch bypass) so it cannot be reached for
+  // anything mirror-related.
+  setCooldownUntil: (cooldownUntil: string | undefined) => void
   // The persistence ports the actions read/write. The browser shell object
   // satisfies this structurally, so the store passes it through as-is.
   shell: {
@@ -384,13 +425,6 @@ export const resetConversationAction = async (
   return targetId
 }
 
-// One in-flight (or mid-send, issue #334) run's mutable handle, kept in the
-// store's per-conversation closure map. The controller is assigned only after
-// the pre-run awaits resolve.
-export type ConversationRunHandle = {
-  controller?: AbortController
-}
-
 export type ConversationRunContext = ConversationActionsContext & {
   // The cooldown scope (the LiteLLM deployment base URL, issue #179) lives in
   // the settings store, and the runtime factory is browser-layer code — the
@@ -440,27 +474,26 @@ export const sendConversationPromptAction = async (
     prompt: string
     // The explicitly requested target, if any; defaults to the active one.
     conversationId: string | undefined
-    // The key this send latched under, its run handle, and the store's live
-    // run map, so the placeholder key can be re-pointed at the resolved id.
-    runKey: string
-    run: ConversationRunHandle
-    activeRuns: Map<string, ConversationRunHandle>
+    // The handle this send acquired (possibly under a pre-hydration
+    // placeholder key) and the registry that owns the run-latch protocol —
+    // see run-registry.ts. No raw run key / map plumbing here anymore; the
+    // re-key-on-resolve rule lives entirely in `registry.rekey`.
+    handle: ConversationRunHandle
+    registry: ConversationRunRegistry
     execute: typeof executeChatPrompt
   }
 ): Promise<void> => {
-  const { prompt, run } = options
+  const { prompt, handle } = options
   const conversationId = options.conversationId ?? context.getState().conversationId
   if (!conversationId) {
     return
   }
-  if (conversationId !== options.runKey) {
-    // The pre-hydration placeholder resolved to the actual active id; re-key so
-    // later sends into this conversation hit the latch (issue #334).
-    if (options.activeRuns.has(conversationId)) {
-      return
-    }
-    options.activeRuns.delete(options.runKey)
-    options.activeRuns.set(conversationId, run)
+  // Re-point the run's latch at the resolved conversation id (issue #334) — a
+  // no-op when it's already keyed there (the common, post-hydration case).
+  // `false` is the collision-yield case: another send already latched this
+  // conversation first, so THIS run must yield rather than clobber it.
+  if (!options.registry.rekey(handle, conversationId)) {
+    return
   }
 
   const slice = context.getState().conversations[conversationId]
@@ -500,7 +533,7 @@ export const sendConversationPromptAction = async (
 
   const runtimeFactory = await context.getRuntimeFactory()
   const runController = new AbortController()
-  run.controller = runController
+  handle.controller = runController
   patchSlice(context, conversationId, { isRunning: true, isRetryPending: false })
 
   // Cooldowns are scoped per LiteLLM deployment (issue #179).
@@ -531,7 +564,7 @@ export const sendConversationPromptAction = async (
       onRateLimitState: (rateLimitState) => {
         // The cooldown is global per deployment; the retry flag belongs to this
         // run's conversation.
-        context.setState({ cooldownUntil: rateLimitState.cooldownUntil })
+        context.setCooldownUntil(rateLimitState.cooldownUntil)
         patchSlice(context, conversationId, { isRetryPending: rateLimitState.isRetryPending })
       }
     })

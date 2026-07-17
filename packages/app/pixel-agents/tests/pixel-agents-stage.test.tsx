@@ -4,10 +4,10 @@ import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatEvent } from '@tinytinkerer/contracts'
 import type { PixelAgentsConversation, PixelAgentsStageActions } from '../src/stage-props'
-import type { PixelAgentsWorkspaceRecord } from '../src/workspace-db'
+import type { LoadedPixelAgentsWorkspace } from '../src/workspace-db'
 
 const workspace = vi.hoisted(() => ({
-  load: vi.fn<() => Promise<PixelAgentsWorkspaceRecord | null>>(),
+  load: vi.fn<() => Promise<LoadedPixelAgentsWorkspace>>(),
   save: vi.fn<(value: unknown) => Promise<void>>()
 }))
 
@@ -115,7 +115,7 @@ const postedMessages = (postSpy: PostMessageSpy): unknown[] =>
   postSpy.mock.calls.map((call) => (call[0] as { message: unknown }).message)
 
 beforeEach(() => {
-  workspace.load.mockReset().mockResolvedValue(null)
+  workspace.load.mockReset().mockResolvedValue({ record: null, migratedFromLegacy: false })
   workspace.save.mockReset().mockResolvedValue(undefined)
   vi.stubGlobal(
     'fetch',
@@ -211,12 +211,15 @@ describe('PixelAgentsWorkspace bootstrap', () => {
 
   it('adopts a legacy single-agent seat onto the oldest conversation', async () => {
     workspace.load.mockResolvedValue({
-      id: 'default',
-      layout: null,
-      agentMeta: { 1: { palette: 4, hueShift: 20 } },
-      agentNumbers: {},
-      nextAgentNumber: 2,
-      updatedAt: '2026-01-01T00:00:00.000Z'
+      record: {
+        id: 'default',
+        layout: null,
+        agentMeta: { 1: { palette: 4, hueShift: 20 } },
+        agentNumbers: {},
+        nextAgentNumber: 2,
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      },
+      migratedFromLegacy: true
     })
     // Most-recent-first, as the store's conversationOrder is: "conv-newest" was
     // created after "conv-oldest".
@@ -251,6 +254,54 @@ describe('PixelAgentsWorkspace bootstrap', () => {
       agentMeta: { '1': { palette: 4, hueShift: 20 } },
       folderNames: { '1': 'Oldest', '2': 'Newest' },
       externalAgents: { '1': false, '2': false }
+    })
+  })
+
+  it('does not adopt a stale agent-1 seat onto any conversation for a non-migrated record (issue #430 invariant)', async () => {
+    // Same shape as a freshly migrated record (empty agentNumbers, stale meta
+    // for agent 1) but `migratedFromLegacy: false` — e.g. a post-#430 user who
+    // deleted every conversation while agent 1's seat lingered. Adoption must
+    // NOT fire: retired number 1 must never land on an unrelated conversation.
+    workspace.load.mockResolvedValue({
+      record: {
+        id: 'default',
+        layout: null,
+        agentMeta: { 1: { palette: 4, hueShift: 20 } },
+        agentNumbers: {},
+        nextAgentNumber: 2,
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      },
+      migratedFromLegacy: false
+    })
+    const conversations = [
+      conversation({ id: 'conv-newest', title: 'Newest' }),
+      conversation({ id: 'conv-oldest', title: 'Oldest' })
+    ]
+    const { container } = renderStage({
+      conversations,
+      activeConversationId: 'conv-oldest',
+      actions: actions()
+    })
+    const iframe = container.querySelector('iframe')
+    if (!iframe?.contentWindow) throw new Error('iframe not mounted')
+    const postSpy = spyOnPostMessage(iframe)
+
+    await bootstrap(iframe, postSpy)
+
+    const messages = postedMessages(postSpy)
+    const existingAgents = messages.find(
+      (message): message is { type: 'existingAgents'; folderNames: Record<string, string> } =>
+        (message as { type: string }).type === 'existingAgents'
+    )
+    // Neither conversation gets the stale/retired number 1; both are freshly
+    // assigned starting at nextAgentNumber (2), leaving 1 unclaimed.
+    expect(existingAgents?.folderNames).toEqual({ '2': 'Newest', '3': 'Oldest' })
+    expect(messages).toContainEqual({
+      type: 'existingAgents',
+      agents: [2, 3],
+      agentMeta: { '1': { palette: 4, hueShift: 20 } },
+      folderNames: { '2': 'Newest', '3': 'Oldest' },
+      externalAgents: { '2': false, '3': false }
     })
   })
 })
@@ -438,6 +489,43 @@ describe('PixelAgentsWorkspace office-driven actions', () => {
         agentMeta: {
           1: { palette: 1, hueShift: 10, seatId: 'desk-1' },
           2: { palette: 2, hueShift: 20 }
+        }
+      })
+    )
+  })
+
+  it('drops saveAgentSeats entries for a number not currently assigned to any conversation (issue #430 invariant)', async () => {
+    // Only conv-a exists, so only agent number 1 is currently assigned. The
+    // sandboxed (untrusted) iframe is not to be trusted to only name assigned
+    // numbers — e.g. number 99 could be a stale/retired number from earlier
+    // create/delete churn, or simply malformed input.
+    const conversations = [conversation({ id: 'conv-a', title: 'First' })]
+    const { container } = renderStage({
+      conversations,
+      activeConversationId: 'conv-a',
+      actions: actions()
+    })
+    const iframe = container.querySelector('iframe')
+    if (!iframe?.contentWindow) throw new Error('iframe not mounted')
+    const postSpy = spyOnPostMessage(iframe)
+    await bootstrap(iframe, postSpy)
+    workspace.save.mockClear()
+
+    await act(async () => {
+      postFromOffice(iframe, {
+        type: 'saveAgentSeats',
+        seats: {
+          '1': { palette: 1, hueShift: 10, seatId: 'desk-1' },
+          '99': { palette: 9, hueShift: 90, seatId: null }
+        }
+      })
+      await Promise.resolve()
+    })
+
+    expect(workspace.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentMeta: {
+          1: { palette: 1, hueShift: 10, seatId: 'desk-1' }
         }
       })
     )

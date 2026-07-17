@@ -223,6 +223,14 @@ export const useAuthStore = <T>(selector: (state: AuthState) => T): T =>
 export const useChatStore = <T>(selector: (state: ChatState) => T): T =>
   useStore(useBrowserApp().stores.chat, selector)
 
+// NOTE: no `useChatStoreWithEquality` sibling lives here despite the naming
+// symmetry with the hooks above — see surfaces.tsx, which defines its own
+// (issue #430 review): this file is imported eagerly by every shell's entry
+// (`createBrowserApp`/`AppBrowserProvider`), so a real value import of
+// `zustand/traditional` here — needed only by the lazily-loaded chat
+// surface — would pull `useSyncExternalStoreWithSelector` into every entry
+// chunk for a hook nothing eager ever calls.
+
 export const useSettingsStore = <T>(selector: (state: SettingsState) => T): T =>
   useStore(useBrowserApp().stores.settings, selector)
 

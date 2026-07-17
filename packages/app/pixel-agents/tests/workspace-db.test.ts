@@ -37,10 +37,13 @@ describe('Pixel Agents workspace persistence', () => {
         nextAgentNumber: 2
       })
     )
-    await expect(loadPixelAgentsWorkspace(store)).resolves.toBeNull()
+    await expect(loadPixelAgentsWorkspace(store)).resolves.toEqual({
+      record: null,
+      migratedFromLegacy: false
+    })
   })
 
-  it('migrates a legacy single-agent record onto agent number 1', async () => {
+  it('migrates a legacy single-agent record onto agent number 1 and reports the migration', async () => {
     const store: WorkspaceStore<StoredPixelAgentsWorkspaceRecord> = {
       // The pre-#430 shape: a flat PixelAgentMeta and no `agentNumbers`/`nextAgentNumber`.
       load: vi.fn().mockResolvedValue({
@@ -55,16 +58,19 @@ describe('Pixel Agents workspace persistence', () => {
     const loaded = await loadPixelAgentsWorkspace(store)
 
     expect(loaded).toEqual({
-      id: 'default',
-      layout: { version: 1 },
-      agentMeta: { 1: { palette: 3, hueShift: 12, seatId: 'desk-1' } },
-      agentNumbers: {},
-      nextAgentNumber: 2,
-      updatedAt: '2026-01-01T00:00:00.000Z'
+      record: {
+        id: 'default',
+        layout: { version: 1 },
+        agentMeta: { 1: { palette: 3, hueShift: 12, seatId: 'desk-1' } },
+        agentNumbers: {},
+        nextAgentNumber: 2,
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      },
+      migratedFromLegacy: true
     })
   })
 
-  it('loads a current-shape record unchanged (no migration)', async () => {
+  it('loads a current-shape record unchanged and reports no migration', async () => {
     const current: PixelAgentsWorkspaceRecord = {
       id: 'default',
       layout: null,
@@ -78,7 +84,34 @@ describe('Pixel Agents workspace persistence', () => {
       save: vi.fn().mockResolvedValue(undefined)
     }
 
-    await expect(loadPixelAgentsWorkspace(store)).resolves.toEqual(current)
+    await expect(loadPixelAgentsWorkspace(store)).resolves.toEqual({
+      record: current,
+      migratedFromLegacy: false
+    })
+  })
+
+  it('reports no migration for a modern record even when agentNumbers is empty and agent 1 has stale meta (issue #430 invariant)', async () => {
+    // Shape-only lookalike of a fresh migration: a post-#430 user who deleted
+    // every conversation can end up here too (retirement drops the mapping
+    // entry, not necessarily the meta, in every path). Only `migratedFromLegacy`
+    // — not this shape — may gate `adoptLegacySeat`.
+    const current: PixelAgentsWorkspaceRecord = {
+      id: 'default',
+      layout: null,
+      agentMeta: { 1: { palette: 9 } },
+      agentNumbers: {},
+      nextAgentNumber: 4,
+      updatedAt: '2026-01-01T00:00:00.000Z'
+    }
+    const store: WorkspaceStore<PixelAgentsWorkspaceRecord> = {
+      load: vi.fn().mockResolvedValue(current),
+      save: vi.fn().mockResolvedValue(undefined)
+    }
+
+    await expect(loadPixelAgentsWorkspace(store)).resolves.toEqual({
+      record: current,
+      migratedFromLegacy: false
+    })
   })
 
   describe('resolveAgentNumber', () => {

@@ -190,11 +190,22 @@ export const PixelAgentsWorkspace = ({
       }
       if (message.type === 'saveAgentSeats') {
         // Seats are keyed by agent NUMBER (issue #430: persist every entry,
-        // not just a hardcoded '1').
+        // not just a hardcoded '1') — but only entries for numbers CURRENTLY
+        // assigned to a conversation. The sandboxed iframe is untrusted by this
+        // architecture's own isolation rationale, and it can name any integer
+        // key: without this filter a retired number (dropped from
+        // `agentNumbers` by `retireAgentNumber`, but not necessarily from
+        // `agentMeta` in the same breath) gets silently re-added here, growing
+        // `agentMeta` unboundedly across create/delete churn and re-posting the
+        // orphan in `existingAgents` on every future bootstrap. Numbers are
+        // always assigned (via `resolveAgentNumber`) before the office can ever
+        // learn about — and therefore seat — an agent, so no legitimate seat is
+        // dropped by this filter.
+        const assignedAgentIds = new Set(Object.values(workspaceRef.current.agentNumbers))
         const nextAgentMeta: Record<number, PixelAgentMeta> = { ...workspaceRef.current.agentMeta }
         for (const [key, seat] of Object.entries(message.seats)) {
           const agentId = Number(key)
-          if (!Number.isInteger(agentId)) continue
+          if (!Number.isInteger(agentId) || !assignedAgentIds.has(agentId)) continue
           nextAgentMeta[agentId] = {
             palette: seat.palette,
             hueShift: seat.hueShift,
@@ -246,7 +257,7 @@ export const PixelAgentsWorkspace = ({
         }),
         loadPixelAgentsWorkspace()
       ])
-        .then(([bootstrap, saved]) => {
+        .then(([bootstrap, { record: saved, migratedFromLegacy }]) => {
           const currentConversations = conversationsRef.current
           const currentActiveId = activeConversationIdRef.current
           const layout = saved?.layout ?? null
@@ -254,11 +265,17 @@ export const PixelAgentsWorkspace = ({
 
           // Adopt a freshly migrated legacy seat onto the oldest conversation
           // (issue #430 decision #4 / plan section 5 — see workspace-db.ts).
-          let agentNumbersNext = adoptLegacySeat(
-            saved?.agentNumbers ?? {},
-            agentMeta,
-            currentConversations.map((conversation) => conversation.id)
-          )
+          // Gated on the actual migration marker, NOT merely on the resulting
+          // shape (empty `agentNumbers` + meta for 1) — a modern record can
+          // reach that same shape after every conversation is deleted, and
+          // adopting then would re-issue a retired number (see workspace-db.ts).
+          let agentNumbersNext = migratedFromLegacy
+            ? adoptLegacySeat(
+                saved?.agentNumbers ?? {},
+                agentMeta,
+                currentConversations.map((conversation) => conversation.id)
+              )
+            : (saved?.agentNumbers ?? {})
           let nextAgentNumberNext = saved?.nextAgentNumber ?? 1
 
           const bootstrapAgents: PixelBootstrapAgent[] = []
