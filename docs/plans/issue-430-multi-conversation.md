@@ -342,3 +342,29 @@ package lint doesn't).
    clicking a character makes that conversation active in the assistant panel,
    closing a character deletes the conversation (with the same confirm guard as
    the header delete action).
+
+### Post-review amendments (2026-07-17)
+
+Recorded during the architecture-hardening pass (#430-6) that followed
+implementation, as a correction to decision #4 above:
+
+- **`launchAgent` has no reachable production UI today.** Decision #4 reads as
+  though the office toolbar's "+ Agent" button is a second, equally-live entry
+  point for starting a conversation alongside the header switcher. In practice,
+  upstream's "+ Agent" button (`webview-ui/src/components/BottomToolbar.tsx`)
+  only renders in a VS Code extension host context that this integration does
+  not provide — TinyTinkerer's embedding never surfaces that button, so
+  `launchAgent` is never actually sent by the bundled office UI we ship.
+  Conversation creation in production is switcher-only (the header "New
+  conversation" affordance from decision #1); `focusAgent` and `closeAgent`
+  ARE reachable (clicking/closing a character), since those affordances render
+  unconditionally.
+- **Why the code stays as-is.** `pixel-agents-stage.tsx` still accepts and
+  handles `launchAgent` (routing it to `startNewConversation`, same as the
+  switcher) — this is deliberate forward-compatibility, not dead code: it
+  costs one already-written, already-tested branch, matches upstream's
+  message contract exactly, and starts working for free the moment any future
+  embedding (or an upstream change) exposes the button. It is exercised by
+  `packages/e2e` coverage of the office-driven actions rather than by any
+  discoverable in-app control — see the acceptance site's comment in
+  `packages/app/pixel-agents/src/protocol.ts` for the pointer back here.

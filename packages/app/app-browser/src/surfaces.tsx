@@ -25,11 +25,13 @@ import {
   type Dispatch,
   type SetStateAction
 } from 'react'
+import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { usePluginModules } from './plugins/use-plugin-modules'
 import { isMcpToolId, summarizeMcpActivity } from './runtime/mcp-tool'
 import { toolLabel, type ResolveActivitySummarizer } from './turn-activity-panel'
 import { useWebSpeechInput } from './web-speech'
 import { useAuthStore, useBrowserApp, useChatStore, useSettingsStore, useStatusStore } from './app'
+import type { ChatState } from './stores/chat-store'
 import { MAX_CONCURRENT_RUNS } from './stores/chat-store'
 import { formatCooldown, useChatCooldown, useGitHubOAuth } from './hooks'
 import { useGitHubUser } from './github-user'
@@ -49,6 +51,52 @@ export type ConversationSummary = {
   title: string
   isRunning: boolean
 }
+
+// Element-wise equality for the switcher's conversation list (issue #430
+// review): backs the `useChatStoreWithEquality` selector below so a
+// background conversation's stream — which leaves every id/title/isRunning
+// triple unchanged — never forces useChatSurfaceController (and therefore the
+// whole surface) to re-render, even though the selector below builds a FRESH
+// array every time the store notifies (zustand's default `Object.is` would
+// treat that fresh array as a change on every event). Replaces a prior
+// JSON.stringify/parse round-trip with a typed, allocation-light comparison.
+export const conversationSummariesEqual = (
+  a: readonly ConversationSummary[],
+  b: readonly ConversationSummary[]
+): boolean => {
+  if (a === b) {
+    return true
+  }
+  if (a.length !== b.length) {
+    return false
+  }
+  return a.every((entry, index) => {
+    const other = b[index]
+    return (
+      other !== undefined &&
+      entry.id === other.id &&
+      entry.title === other.title &&
+      entry.isRunning === other.isRunning
+    )
+  })
+}
+
+// Equality-fn variant of useChatStore (issue #430 review), local to this
+// (lazily-loaded) module rather than a sibling in app.ts: a selector whose
+// derived value is a FRESH object/array every render (the conversation
+// summary list below) needs a custom equality check to avoid re-rendering on
+// every store change even when the derived value is unchanged — zustand's
+// default `Object.is` would treat every fresh array as a change.
+// `useStoreWithEqualityFn` (zustand/traditional) is the v5-era replacement
+// for the equality-fn third argument `useStore` dropped. app.ts is imported
+// eagerly by every shell's entry, so this stays out of it — a real value
+// import of `zustand/traditional` there would pull
+// `useSyncExternalStoreWithSelector` into every entry chunk for a hook
+// nothing eager ever calls; this surface module is already lazy-loaded.
+const useChatStoreWithEquality = <T,>(
+  selector: (state: ChatState) => T,
+  equalityFn: (a: T, b: T) => boolean
+): T => useStoreWithEqualityFn(useBrowserApp().stores.chat, selector, equalityFn)
 
 export type ChatSurfaceController = {
   isBooting: boolean
@@ -123,26 +171,19 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   // Selecting `state.conversations` directly would re-render this controller —
   // and therefore the whole surface — on every streamed event of EVERY
   // conversation, background or active (patchConversationState replaces the
-  // record's object identity on each patch). Instead the selector returns a
-  // JSON string built fresh from `conversations`/`conversationOrder` on every
-  // store change; zustand's subscription compares that return value across
-  // renders with Object.is, and two equal strings compare equal even as
-  // different instances, so a background conversation's stream — which leaves
-  // every id/title/isRunning triple unchanged — never forces a re-render here.
-  const conversationsSignature = useChatStore((state) =>
-    JSON.stringify(
+  // record's object identity on each patch). The selector below builds a
+  // fresh ConversationSummary[] on every store change; useChatStoreWithEquality
+  // compares successive results with `conversationSummariesEqual` (element-wise
+  // id/title/isRunning) instead of zustand's default Object.is, so a background
+  // conversation's stream — which leaves every triple unchanged — never forces
+  // a re-render here, and callers get a typed array with no parse step.
+  const conversations = useChatStoreWithEquality<ConversationSummary[]>(
+    (state) =>
       state.conversationOrder.map((id) => {
         const slice = state.conversations[id]
-        return [id, slice?.title ?? '', slice?.isRunning ?? false] as const
-      })
-    )
-  )
-  const conversations = useMemo<ConversationSummary[]>(
-    () =>
-      (JSON.parse(conversationsSignature) as [string, string, boolean][]).map(
-        ([id, title, isRunningFlag]) => ({ id, title, isRunning: isRunningFlag })
-      ),
-    [conversationsSignature]
+        return { id, title: slice?.title ?? '', isRunning: slice?.isRunning ?? false }
+      }),
+    conversationSummariesEqual
   )
 
   // Transient cap-refusal notice (issue #430): set by submitPrompt below when

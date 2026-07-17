@@ -1,9 +1,11 @@
 import type { ChatEvent } from '@tinytinkerer/contracts'
-import type {
-  ChatRuntimeFactory,
-  ConversationRunHandle,
-  ConversationSlice
-} from '@tinytinkerer/app-core'
+import type { ChatRuntimeFactory, ConversationSlice } from '@tinytinkerer/app-core'
+// A REAL (eager) value import, unlike the rest of this store's app-core usage
+// (which goes through `loadCoreModule()`'s lazy `import()`): the #334 latch
+// needs ConversationRunRegistry synchronously, before sendPrompt's first
+// await — see run-registry.ts's header. run-registry.ts is intentionally
+// tiny and dependency-free so this one eager need stays cheap.
+import { ConversationRunRegistry, MAX_CONCURRENT_RUNS } from '@tinytinkerer/app-core'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { AppToolGroup } from '../app-tool-group'
 import type { BrowserShell } from '../shell'
@@ -19,11 +21,12 @@ import { resetHumanPrompts } from '../human-prompt-bridge'
 // here because the slice is part of the store's public state shape.
 export type { ConversationSlice }
 
-// Client-side cap on parallel runs (issue #430): a send that would start a run
-// beyond this many concurrently running/mid-send conversations silently no-ops,
-// like the store's other send gates. A visible refusal notice ships with the
-// conversation switcher UI.
-export const MAX_CONCURRENT_RUNS = 3
+// The run-latch protocol (the pre-hydration '' placeholder key, re-key-on-
+// resolve, the release-by-identity scan, and the cap arithmetic) is owned by
+// ConversationRunRegistry in app-core (issue #430 review) — re-exported here
+// because MAX_CONCURRENT_RUNS is part of this store's public API (surfaces.tsx
+// and unit tests import it from this module).
+export { MAX_CONCURRENT_RUNS }
 
 export type ChatState = {
   hydrated: boolean
@@ -89,12 +92,14 @@ export const createChatStore = (options: {
   // verbs). Forwarded to the runtime factory; absent for web/widget/mobile.
   appToolGroup?: AppToolGroup
 }): ChatStore => {
-  // Per-conversation run state (issue #430). An entry's presence is the
-  // synchronous re-entry latch that used to be the global `isSending` flag
-  // (issue #334): it is set before sendPrompt's first await and removed only
-  // after the run settles, so a second send into the SAME conversation during
-  // that window no-ops while sends into other conversations stay independent.
-  const activeRuns = new Map<string, ConversationRunHandle>()
+  // Per-conversation run state (issue #430), owned by ConversationRunRegistry
+  // (app-core) — the synchronous re-entry latch (issue #334), the cap, and the
+  // re-key-on-resolve protocol all live there now. An entry's presence is the
+  // synchronous re-entry latch: it is set before sendPrompt's first await and
+  // removed only after the run settles, so a second send into the SAME
+  // conversation during that window no-ops while sends into other
+  // conversations stay independent.
+  const runRegistry = new ConversationRunRegistry(MAX_CONCURRENT_RUNS)
   let initializePromise: Promise<void> | null = null
   let runtimeFactoryPromise: Promise<ChatRuntimeFactory> | null = null
 
@@ -104,7 +109,7 @@ export const createChatStore = (options: {
   // avoids drift between the affordances.
   const abortConversationRun = (conversationId: string | undefined) => {
     if (conversationId !== undefined) {
-      activeRuns.get(conversationId)?.controller?.abort()
+      runRegistry.abort(conversationId)
     }
     // Settle this conversation's open human prompts (permission allow/deny, choice
     // poll) so a Stop never leaves one hanging until the human-input timeout (issue
@@ -179,6 +184,10 @@ export const createChatStore = (options: {
     const conversationActions = {
       getState: get,
       setState: set,
+      // The one non-conversation field action code writes directly (issue
+      // #430 review: ConversationActionsContext.setState is branded to
+      // conversation-mirror-safe patches only — see chat.ts).
+      setCooldownUntil: (cooldownUntil: string | undefined) => set({ cooldownUntil }),
       shell: options.shell,
       abortRun: abortConversationRun,
       // Cooldowns are scoped per LiteLLM deployment (issue #179).
@@ -206,7 +215,7 @@ export const createChatStore = (options: {
       initialize: () => ensureInitialized(set, get),
       canStartRun: (conversationId) => {
         const runKey = conversationId ?? get().conversationId ?? ''
-        return !activeRuns.has(runKey) && activeRuns.size < MAX_CONCURRENT_RUNS
+        return !runRegistry.has(runKey) && runRegistry.size < MAX_CONCURRENT_RUNS
       },
       sendPrompt: async (prompt, conversationId) => {
         // Gate re-entry synchronously (issue #334), now per conversation: a
@@ -216,17 +225,14 @@ export const createChatStore = (options: {
         // hydration the active conversation id is unknown; such sends latch on
         // the '' placeholder key (they all target the same conversation, and
         // ids are UUIDs, so '' can never collide with a real one).
+        // tryAcquire also enforces the concurrency cap (issue #430): entries
+        // exist exactly while a conversation is running or mid-send, so the
+        // registry's size is the count.
         const runKey = conversationId ?? get().conversationId ?? ''
-        if (activeRuns.has(runKey)) {
+        const handle = runRegistry.tryAcquire(runKey)
+        if (!handle) {
           return
         }
-        // Concurrency cap (issue #430): entries exist exactly while a
-        // conversation is running or mid-send, so the map size is the count.
-        if (activeRuns.size >= MAX_CONCURRENT_RUNS) {
-          return
-        }
-        const run: ConversationRunHandle = {}
-        activeRuns.set(runKey, run)
         try {
           await ensureInitialized(set, get)
           const { executeChatPrompt, sendConversationPromptAction } = await loadCoreModule()
@@ -237,20 +243,15 @@ export const createChatStore = (options: {
           await sendConversationPromptAction(conversationActions, {
             prompt,
             conversationId,
-            runKey,
-            run,
-            activeRuns,
+            handle,
+            registry: runRegistry,
             execute: executeChatPrompt
           })
         } finally {
-          // The action may have re-keyed the entry from the pre-hydration
-          // placeholder onto the resolved conversation id; release whichever
-          // key currently holds this send's handle.
-          for (const [key, value] of activeRuns) {
-            if (value === run) {
-              activeRuns.delete(key)
-            }
-          }
+          // The action may have re-keyed the handle (via registry.rekey) from
+          // the pre-hydration placeholder onto the resolved conversation id;
+          // release() finds whichever key currently holds it.
+          runRegistry.release(handle)
         }
       },
       rerunLastPrompt: async () => {

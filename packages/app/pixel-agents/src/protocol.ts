@@ -81,6 +81,15 @@ const pixelClientMessageSchema = z.discriminatedUnion('type', [
   // TinyTinkerer "workspace" (the chat store), so both are accepted (never
   // rejected) and simply ignored rather than validated against a meaning we
   // don't have.
+  //
+  // Do NOT remove this as "dead code": upstream's "+ Agent" button that sends
+  // it only renders in a VS Code extension host, which this integration does
+  // not provide, so in production this message is never actually sent —
+  // conversation creation is switcher-only today. Acceptance here is
+  // deliberate forward-compat (costs one already-tested branch, works for
+  // free the moment any embedding exposes the button) and is exercised by
+  // packages/e2e, not by any reachable in-app control. See "Post-review
+  // amendments" in docs/plans/issue-430-multi-conversation.md section 5.
   z.object({
     type: z.literal('launchAgent'),
     folderPath: z.string().optional(),
