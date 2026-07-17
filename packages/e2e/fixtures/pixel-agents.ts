@@ -1,9 +1,10 @@
 import { expect, type Frame, type Page } from '@playwright/test'
 import { requireShellPort } from './first-load'
 
-// Shared Pixel Agents e2e wiring, used by tests/pixel-agents.e2e.ts and
-// tests/pixel-agents-activity.e2e.ts. The office is a vendored third-party
-// bundle inside a sandboxed iframe: everything a spec can observe goes through
+// Shared Pixel Agents e2e wiring, used by tests/pixel-agents.e2e.ts,
+// tests/pixel-agents-activity.e2e.ts, and tests/pixel-agents-multi-agent.e2e.ts.
+// The office is a vendored third-party bundle inside a sandboxed iframe:
+// everything a spec can observe goes through
 // the upstream document's test hooks (`window.__pixelAgentsTestHooks`, gated on
 // `window.__PIXEL_AGENTS_E2E`) or the workspace's IndexedDB record, so the
 // hook plumbing, frame lookup, and DB reader live here once. Deliberately
@@ -24,14 +25,19 @@ export const PIXEL_AGENTS_URL = `http://localhost:${requireShellPort('E2E_PORT')
 // classification of the tool driving an agentToolStart entry into
 // 'Read' | 'Bash' | 'Write' (see packages/app/pixel-agents/src/activity.ts),
 // which the animation assertions use to correlate a sprite-class change with a
-// specific step. `selectAgent` sets officeState.selectedAgentId directly —
-// see selectPersistentAgent below for why the e2e suite drives selection
-// through this hook rather than a canvas click.
+// specific step. `id` is the AGENT number a per-agent message (agentStatus,
+// agentToolStart/Done/sClear, agentCreated/Closed/Selected) targets (issue
+// #430: one agent per conversation) — absent on the agent-agnostic bootstrap
+// messages (providerCapabilities, characterSpritesLoaded, …). `selectAgent`
+// sets officeState.selectedAgentId directly — see selectPersistentAgent below
+// for why the e2e suite drives selection through this hook rather than a
+// canvas click.
 export type PixelTestHooks = {
   getCharacters?: () => Array<{ id: number }>
   messageLog?: Array<{
     at: number
     type: string
+    id?: number
     status?: string
     toolId?: string
     toolName?: string
@@ -330,3 +336,171 @@ export const savedOfficeLayoutVersion = async (page: Page): Promise<number | nul
   const layout = await savedOfficeLayout(page)
   return typeof layout?.version === 'number' ? layout.version : null
 }
+
+// =============================================================================
+// Multi-agent office interaction (issue #430 PR 5): launchAgent/focusAgent/
+// closeAgent client messages, and non-pixel-hunting ways to trigger them from
+// inside the sandboxed office iframe. See tests/pixel-agents-multi-agent.e2e.ts
+// for which mechanism each interaction uses and why.
+//
+// scripts/pixel-agents-bridge.mjs's `installIntegrationStyle` hides upstream's
+// Settings button (host-owned concern). "Close agent" was hidden too until
+// issue #430 made each character one conversation — it is now a real,
+// user-clickable control whose select-then-close two-step is the deliberate-
+// interaction guard for deleting that conversation.
+// =============================================================================
+
+// Mirrors PIXEL_AGENTS_BRIDGE_CHANNEL (packages/app/pixel-agents/src/protocol.ts).
+// Inlined (not imported) for the same reason pixel-agents-activity.e2e.ts inlines
+// it: a value used inside a `frame.evaluate`/`addInitScript` callback is
+// serialized into the page and cannot close over an import.
+const BRIDGE_CHANNEL = 'tinytinkerer:pixel-agents:v1'
+
+// Dispatches a PixelClientMessage AS IF the upstream webview sent it: posted
+// from WITHIN the sandboxed iframe's own document (via `frame.evaluate`, never
+// `page.evaluate`) so `event.source` on the host's listener really is
+// `frameRef.current.contentWindow` and `event.origin` really is the sandboxed
+// frame's opaque `'null'` (see pixel-agents-stage.tsx's message handler) — a
+// top-level `page.evaluate` post could satisfy neither check.
+//
+// Reached for `launchAgent` only: upstream's own "+ Agent" toolbar button
+// renders exclusively in its VS Code extension host (gated on `typeof
+// acquireVsCodeApi === 'undefined'` in the vendored bundle — verified by
+// inspecting the built upstream bundle; confirmed absent from the live DOM in
+// this browser-embedded deployment), so there is no click — real or raw — that
+// can ever reach it here at all (unlike Settings/"Close agent", it isn't merely
+// CSS-hidden; the JSX branch itself never renders in browser mode).
+export const dispatchPixelClientMessage = (
+  frame: Frame,
+  message: Record<string, unknown>
+): Promise<void> =>
+  frame.evaluate(
+    (args) => {
+      window.parent.postMessage(
+        { channel: args.channel, direction: 'client', payload: JSON.stringify(args.message) },
+        '*'
+      )
+    },
+    { channel: BRIDGE_CHANNEL, message }
+  )
+
+// Investigated and ruled out as unnecessary: upstream's own e2e testing
+// accommodation — its in-app "What's new" changelog (Settings → the version
+// footer) literally lists a "Testing" section reading "Playwright e2e tests
+// with mock Claude CLI" — is a "Debug View" toggle in Settings that swaps the
+// whole canvas for a plain DOM list of every agent, each row a real click
+// sending `focusAgent`, no canvas coordinates involved. It works (confirmed
+// while building this file), but turned out redundant: a real click on the
+// character itself (clickCharacterToSelect below) ALSO sends `focusAgent`, so
+// there is no case here that needs the extra "open Settings, which needs its
+// own raw-click workaround (see this file's module comment), enable Debug
+// View, remember to leave it again" ceremony just to reach the same message.
+// Kept as a note (not code) in case a future spec needs it: reach the toggle
+// via `officeFrame.getByRole('button', { name: 'Debug View' })` after a raw
+// `.click()` on the Settings button, then `getByText('Agent #<n>', { exact:
+// true })` for a row.
+
+// Real click-to-select on the CANVAS itself: clicks the office at the live
+// position of `agentId`'s DOM overlay (the floating nameplate upstream renders
+// above each character, `pointer-events: none` while unselected so the click
+// passes through to the canvas beneath) offset down by the nameplate's own
+// height + a small margin — empirically the character's own hit-box starts
+// right where its nameplate ends. Re-reads the overlay's position fresh every
+// call (never a hardcoded pixel), so this tracks whatever camera/zoom/layout
+// state the office is currently in.
+//
+// This is a REAL click on the SAME code path a mouse click on a character
+// always was: it both sets `officeState.selectedAgentId` (what makes the
+// overlay's own "Close agent" button, pointer-events: none -> auto, appear —
+// see clickAgentOverlayCloseButton) AND sends `focusAgent` to the host
+// (verified empirically — clicking an agent moves the assistant panel to its
+// conversation), unconditionally on EITHER a select or a deselect. That last
+// part matters: clicking an ALREADY-selected agent's hit-box TOGGLES it off
+// (still sending `focusAgent` for it) rather than staying selected, so this
+// throws up front rather than polling forever for a selection that will never
+// (re-)arrive if `agentId` is already the selected character.
+//
+// Throws a descriptive error instead of silently no-op'ing if the expected
+// overlay never appears selected, so a future vendored-bundle change fails
+// loudly here rather than as a confusing downstream timeout.
+export const clickCharacterToSelect = async (
+  page: Page,
+  frame: Frame,
+  agentId: number
+): Promise<void> => {
+  const alreadySelected = await frame.evaluate(
+    (id) =>
+      document.querySelector<HTMLElement>(`[data-testid="agent-overlay"][data-agent-id="${id}"]`)
+        ?.style.pointerEvents === 'auto',
+    agentId
+  )
+  if (alreadySelected) {
+    throw new Error(
+      `clickCharacterToSelect: agent ${agentId} is already selected — clicking it again would ` +
+        'TOGGLE it off (upstream deselects an already-selected character on click), not keep it selected.'
+    )
+  }
+  const canvasLoc = page
+    .frameLocator('iframe[title="Pixel Agents office"]')
+    .locator('canvas')
+    .first()
+  const overlayPointerEvents = (): Promise<string | undefined> =>
+    frame.evaluate(
+      (id) =>
+        document.querySelector<HTMLElement>(`[data-testid="agent-overlay"][data-agent-id="${id}"]`)
+          ?.style.pointerEvents,
+      agentId
+    )
+
+  // Selecting a character can itself start a camera-follow pan (upstream sets
+  // `cameraFollowId` on select), which moves every OTHER character's overlay —
+  // including one this same call is about to click next, or was in the middle
+  // of moving when THIS call started (e.g. right after another agent was just
+  // created/selected). A single-shot click computed from a position read a
+  // moment earlier can therefore land on stale coordinates; retries re-read
+  // the overlay's position fresh each time, and skip a click entirely (no
+  // wasted attempt) while the computed point is off-canvas — mid-pan is the
+  // one time that can happen, since a settled camera always keeps every seated
+  // character within the visible office.
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const rect = await frame.evaluate((id) => {
+      const overlay = document.querySelector(`[data-testid="agent-overlay"][data-agent-id="${id}"]`)
+      const canvas = document.querySelector('canvas')
+      if (!overlay || !canvas) return null
+      const o = overlay.getBoundingClientRect()
+      const c = canvas.getBoundingClientRect()
+      const x = o.x + o.width / 2 - c.x
+      const y = o.y - c.y + o.height + 4
+      return { x, y, canvasWidth: c.width, canvasHeight: c.height }
+    }, agentId)
+    if (!rect) {
+      throw new Error(
+        `clickCharacterToSelect: no overlay/canvas found for agent ${agentId} — it may not exist yet.`
+      )
+    }
+    const onCanvas =
+      rect.x >= 0 && rect.x <= rect.canvasWidth && rect.y >= 0 && rect.y <= rect.canvasHeight
+    if (onCanvas) {
+      await canvasLoc.click({ position: { x: rect.x, y: rect.y } })
+      const selected = await overlayPointerEvents()
+        .then((value) => value === 'auto')
+        .catch(() => false)
+      if (selected) return
+    }
+    // Give a still-settling camera pan a moment before the next attempt reads
+    // a (hopefully now-stable) position.
+    await page.waitForTimeout(250)
+  }
+
+  throw new Error(
+    `clickCharacterToSelect: agent ${agentId}'s overlay never became selected (pointer-events: ` +
+      'auto) after several clicks at its freshly-recomputed hit-box. Either the office camera ' +
+      'never settled, or upstream changed the nameplate/hit-box layout this offset assumes.'
+  )
+}
+
+// The character overlay's own "Close agent" button, rendered (and, since issue
+// #430, actually visible/clickable) only once `clickCharacterToSelect` (or
+// equivalent) has made that agent the office's selected character.
+export const agentOverlayCloseButton = (page: Page, agentId: number) =>
+  agentOverlayLocator(page, agentId).getByTitle('Close agent')

@@ -94,14 +94,16 @@ test('shows the persistent assistant agent and maps a chat run into office activ
   // non-idle activity text once the agent is selected AND actually doing
   // something, so this must follow both selectPersistentAgent and
   // sendMessage — checking any earlier would just see the pre-run "Idle" text
-  // vacuously. The rendered panel also concatenates the folder name and the
-  // "×" close button next to the activity label while selected (observed at
-  // runtime: e.g. "IdleTinyTinkerer×"), so this checks for the literal 'Idle'
-  // substring rather than exact/whole-text equality — the exact activity word
-  // itself ('think'/'act'/'synthesize', per
-  // packages/app/pixel-agents/src/activity.ts's humanize(stepKind)) is
-  // deliberately NOT pinned, so this survives cosmetic wording changes to step
-  // labels.
+  // vacuously. The rendered panel also concatenates the conversation's title
+  // (issue #430: one office agent per conversation, folderName is the
+  // conversation's title — here the default "New conversation", since this
+  // spec never renames it) and the "×" close button next to the activity
+  // label while selected (observed at runtime: e.g. "IdleNew conversation×"),
+  // so this checks for the literal 'Idle' substring rather than exact/whole-
+  // text equality — the exact activity word itself ('think'/'act'/
+  // 'synthesize', per packages/app/pixel-agents/src/activity.ts's
+  // humanize(stepKind)) is deliberately NOT pinned, so this survives cosmetic
+  // wording changes to step labels (or to the conversation's title).
   await expect
     .poll(async () => (await agentOverlayLocator(page, 1).textContent())?.trim())
     .not.toContain('Idle')
