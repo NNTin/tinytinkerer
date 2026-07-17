@@ -80,8 +80,13 @@ export const renderPixelAgentsBridge = () => `(() => {
   const installIntegrationStyle = () => {
     const style = document.createElement('style')
     style.dataset.tinytinkererPixelAgents = 'true'
-    style.textContent =
-      'button[title="Settings"],button[title="Close agent"]{display:none!important}'
+    // Only Settings stays hidden: it manages upstream (VS Code extension)
+    // concerns the host owns here. "Close agent" was hidden too while the
+    // office showed one hardcoded agent, but since issue #430 each character
+    // is one conversation and the button's closeAgent message deletes it —
+    // upstream's select-then-close two-step is the deliberate-interaction
+    // guard for that.
+    style.textContent = 'button[title="Settings"]{display:none!important}'
     document.head.append(style)
   }
   if (document.readyState === 'loading') {
