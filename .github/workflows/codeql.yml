@@ -60,7 +60,7 @@ jobs:
         if: matrix.language == 'javascript-typescript'
         uses: pnpm/action-setup@v6
         with:
-          version: 10.16.1
+          version: 11.16.0
 
       - name: Set up Node.js
         if: matrix.language == 'javascript-typescript'
@@ -71,7 +71,7 @@ jobs:
 
       # The repo's `setup:workspace` script is the secure install: a frozen,
       # scriptless install followed by an explicit rebuild of only the allowlisted
-      # native binaries (onlyBuiltDependencies). See .agent/skills/pnpm-workspace.
+      # native binaries (allowBuilds). See .agent/skills/pnpm-workspace.
       - name: Install dependencies
         if: matrix.language == 'javascript-typescript'
         run: pnpm setup:workspace

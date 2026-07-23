@@ -12,9 +12,9 @@ const pnpmJson = (args) => {
   return output ? JSON.parse(output) : null
 }
 
-const getConfigArray = (name) => {
-  const value = pnpmJson(['config', 'get', name])
-  return Array.isArray(value) ? value : []
+const getAllowBuildsNames = () => {
+  const value = pnpmJson(['config', 'get', 'allowBuilds'])
+  return value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value) : []
 }
 
 const collectInstalledPackages = () => {
@@ -51,10 +51,7 @@ const collectInstalledPackages = () => {
   return [...packages.values()]
 }
 
-const reviewed = new Set([
-  ...getConfigArray('onlyBuiltDependencies'),
-  ...getConfigArray('ignoredBuiltDependencies')
-])
+const reviewed = new Set(getAllowBuildsNames())
 const found = []
 
 for (const pkg of collectInstalledPackages()) {
@@ -78,7 +75,7 @@ if (unreviewed.length > 0) {
     console.error(`  - ${pkg.name}@${pkg.version}: ${pkg.scripts.join(', ')}`)
   }
   console.error(
-    '\nReview each package, then add its package name to onlyBuiltDependencies (approved to run) or ignoredBuiltDependencies (blocked) in pnpm-workspace.yaml.'
+    '\nReview each package, then add its package name to allowBuilds in pnpm-workspace.yaml (true = approved to run, false = blocked).'
   )
   process.exit(1)
 }

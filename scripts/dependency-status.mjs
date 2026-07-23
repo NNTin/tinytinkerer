@@ -7,14 +7,7 @@ console.log('pnpm version:', run('pnpm', ['--version']))
 console.log('minimumReleaseAge:', run('pnpm', ['config', 'get', 'minimumReleaseAge']))
 console.log('saveExact:', run('pnpm', ['config', 'get', 'saveExact']))
 console.log('auditLevel:', run('pnpm', ['config', 'get', 'auditLevel']))
-console.log(
-  'onlyBuiltDependencies:',
-  run('pnpm', ['config', 'get', 'onlyBuiltDependencies', '--json'])
-)
-console.log(
-  'ignoredBuiltDependencies:',
-  run('pnpm', ['config', 'get', 'ignoredBuiltDependencies', '--json'])
-)
+console.log('allowBuilds:', run('pnpm', ['config', 'get', 'allowBuilds', '--json']))
 console.log(
   '\nOutdated direct dependencies (registry latest; the age gate may intentionally hold newer releases back):'
 )
