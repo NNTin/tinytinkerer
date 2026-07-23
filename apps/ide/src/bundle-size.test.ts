@@ -49,11 +49,17 @@ describe('IDE bundle regression guard', () => {
   })
 
   it('keeps the lazy IDE stage and CodeMirror vendor bounded', () => {
+    // Raised 280 → 282 kB (2026-07-23): the conversation switcher trigger and
+    // canStartRun wiring (issue #430) grow docked-chat-surface.tsx and
+    // floating-chat-surface.tsx, which this app folds into the single ide-page
+    // chunk rather than splitting into its own chat-surface chunk like the shell
+    // app does. Same real growth the shell app's chat-surface budget already
+    // absorbed; this app just had no dedicated chunk to isolate it in.
     const stage = chunks.find((chunk) => chunk.fileName.includes('ide-page'))
     const codeMirror = chunks.find((chunk) => chunk.fileName.includes('codemirror-vendor'))
     expect(stage).toBeDefined()
     expect(codeMirror).toBeDefined()
-    expect((stage?.code?.length ?? 0) / 1024).toBeLessThan(280)
+    expect((stage?.code?.length ?? 0) / 1024).toBeLessThan(282)
     expect((codeMirror?.code?.length ?? 0) / 1024).toBeLessThan(800)
   })
 })
