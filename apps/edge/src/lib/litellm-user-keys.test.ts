@@ -17,7 +17,7 @@ import { SWEEP_EVERY_N_SETS } from './expiring-map.js'
 // provisioned marker is trusted before re-checking LiteLLM.
 const PROVISIONED_TTL_MS = 10 * 60_000
 
-const BASE_URL = 'https://litellm.labs.lair.nntin.xyz'
+const BASE_URL = 'https://litellm.nntin.xyz'
 const IDENTITY: CallerIdentity = { id: '12345', login: 'nntin' }
 const OTHER_IDENTITY: CallerIdentity = { id: '67890', login: 'other-user' }
 

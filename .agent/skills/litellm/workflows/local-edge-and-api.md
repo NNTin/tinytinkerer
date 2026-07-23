@@ -107,7 +107,7 @@ after the run:
 tmp_env="$(mktemp)"
 chmod 600 "$tmp_env"
 {
-  printf 'LITELLM_BASE_URL=https://litellm.labs.lair.nntin.xyz\n'
+  printf 'LITELLM_BASE_URL=https://litellm.nntin.xyz\n'
   printf 'LITELLM_KEY_MANAGEMENT_API_KEY='
   docker exec litellm printenv LITELLM_MASTER_KEY
   printf 'LITELLM_USER_KEY_SECRET=local-litellm-%s\n' "$(date +%s)"
@@ -143,7 +143,7 @@ import crypto from 'node:crypto'
 import app from './apps/edge/src/index.ts'
 
 const env = {
-  LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz',
+  LITELLM_BASE_URL: 'https://litellm.nntin.xyz',
   LITELLM_KEY_MANAGEMENT_API_KEY: process.env.LITELLM_KEY_MANAGEMENT_API_KEY,
   LITELLM_USER_KEY_SECRET: `local-litellm-${crypto.randomUUID()}`
 }

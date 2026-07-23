@@ -30,7 +30,7 @@ const toRequestUrl = (input: RequestInfo | URL): string => {
 const LITELLM_ENV = {
   LITELLM_KEY_MANAGEMENT_API_KEY: 'litellm-management-key',
   LITELLM_USER_KEY_SECRET: 'litellm-user-key-secret',
-  LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/'
+  LITELLM_BASE_URL: 'https://litellm.nntin.xyz/'
 }
 const GITHUB_USER_URL = 'https://api.github.com/user'
 const githubUserOk = () =>
@@ -98,7 +98,7 @@ const githubProbeCalls = (
     ([input]) => toRequestUrl(input) === GITHUB_USER_URL
   )
 
-const DEFAULT_LITELLM_SCOPE = encodeURIComponent('https://litellm.labs.lair.nntin.xyz')
+const DEFAULT_LITELLM_SCOPE = encodeURIComponent('https://litellm.nntin.xyz')
 
 describe('edge routes', () => {
   afterEach(() => {
@@ -289,7 +289,7 @@ describe('edge routes', () => {
     expect(response.status).toBe(429)
     expect(response.headers.get('Retry-After')).toBe('120')
     const [chatCall] = upstreamCalls(fetchSpy)
-    expect(chatCall?.[0]).toBe('https://litellm.labs.lair.nntin.xyz/v1/chat/completions')
+    expect(chatCall?.[0]).toBe('https://litellm.nntin.xyz/v1/chat/completions')
     const headers = new Headers(chatCall?.[1]?.headers)
     expect(headers.get('authorization')).toMatch(/^Bearer sk-tt-/)
     const body = (await response.json()) as Record<string, unknown>
@@ -314,7 +314,7 @@ describe('edge routes', () => {
     [
       'the key-management key is missing',
       {
-        LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
+        LITELLM_BASE_URL: 'https://litellm.nntin.xyz/',
         LITELLM_USER_KEY_SECRET: 'litellm-user-key-secret'
       },
       'LiteLLM user key provisioning is not configured.'
@@ -322,7 +322,7 @@ describe('edge routes', () => {
     [
       'the user key secret is missing',
       {
-        LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
+        LITELLM_BASE_URL: 'https://litellm.nntin.xyz/',
         LITELLM_KEY_MANAGEMENT_API_KEY: 'litellm-management-key'
       },
       'LiteLLM user key provisioning is not configured.'
@@ -432,7 +432,7 @@ describe('edge routes', () => {
     [
       'the key-management key is missing',
       {
-        LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
+        LITELLM_BASE_URL: 'https://litellm.nntin.xyz/',
         LITELLM_USER_KEY_SECRET: 'litellm-user-key-secret'
       },
       'LiteLLM user key provisioning is not configured.'
@@ -440,7 +440,7 @@ describe('edge routes', () => {
     [
       'the user key secret is missing',
       {
-        LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
+        LITELLM_BASE_URL: 'https://litellm.nntin.xyz/',
         LITELLM_KEY_MANAGEMENT_API_KEY: 'litellm-management-key'
       },
       'LiteLLM user key provisioning is not configured.'
@@ -614,8 +614,8 @@ describe('edge routes', () => {
     // A cache miss makes two upstream calls: the catalogue plus the
     // best-effort /model/info mode lookup (issue #179).
     expect(upstreamCalls(fetchSpy)).toHaveLength(2)
-    expect(upstreamCalls(fetchSpy)[0]?.[0]).toBe('https://litellm.labs.lair.nntin.xyz/v1/models')
-    expect(upstreamCalls(fetchSpy)[1]?.[0]).toBe('https://litellm.labs.lair.nntin.xyz/model/info')
+    expect(upstreamCalls(fetchSpy)[0]?.[0]).toBe('https://litellm.nntin.xyz/v1/models')
+    expect(upstreamCalls(fetchSpy)[1]?.[0]).toBe('https://litellm.nntin.xyz/model/info')
     const headers = new Headers(upstreamCalls(fetchSpy)[0]?.[1]?.headers)
     expect(headers.get('authorization')).toMatch(/^Bearer sk-tt-/)
 
@@ -790,8 +790,8 @@ describe('edge routes', () => {
       ]
     })
     expect(githubProbeCalls(fetchSpy)).toHaveLength(1)
-    expect(upstreamRequests[0]?.input).toBe('https://litellm.labs.lair.nntin.xyz/v1/models')
-    expect(upstreamRequests[1]?.input).toBe('https://litellm.labs.lair.nntin.xyz/model/info')
+    expect(upstreamRequests[0]?.input).toBe('https://litellm.nntin.xyz/v1/models')
+    expect(upstreamRequests[1]?.input).toBe('https://litellm.nntin.xyz/model/info')
     expect(new Headers(githubProbeCalls(fetchSpy)[0]?.[1]?.headers).get('authorization')).toBe(
       'Bearer github-token'
     )
@@ -933,7 +933,7 @@ describe('edge routes', () => {
       }),
       {
         ...LITELLM_ENV,
-        LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
+        LITELLM_BASE_URL: 'https://litellm.nntin.xyz/',
         LITELLM_ALLOWED_BASE_URLS: 'https://litellm.example.com'
       }
     )
@@ -2143,7 +2143,7 @@ describe('edge routes', () => {
       }),
       {
         ...LITELLM_ENV,
-        LITELLM_BASE_URL: 'https://litellm.labs.lair.nntin.xyz/',
+        LITELLM_BASE_URL: 'https://litellm.nntin.xyz/',
         LITELLM_ALLOWED_BASE_URLS: 'https://litellm.example.com'
       }
     )

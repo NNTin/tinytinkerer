@@ -21,8 +21,8 @@
   // absent here.
   "vars": {
     "ALLOWED_ORIGINS": "http://localhost:3111,https://tiny.nntin.xyz",
-    "LITELLM_BASE_URL": "https://litellm.labs.lair.nntin.xyz/",
-    "LITELLM_ALLOWED_BASE_URLS": "https://litellm.labs.lair.nntin.xyz/",
+    "LITELLM_BASE_URL": "https://litellm.nntin.xyz/",
+    "LITELLM_ALLOWED_BASE_URLS": "https://litellm.nntin.xyz/",
     "LITELLM_USER_MAX_BUDGET_USD": "1",
     "LITELLM_USER_BUDGET_DURATION": "30d",
     "LITELLM_USER_RPM_LIMIT": "10",
@@ -48,8 +48,8 @@
       ],
       "vars": {
         "ALLOWED_ORIGINS": "http://localhost:3111,https://dev.tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz",
-        "LITELLM_BASE_URL": "https://litellm.labs.lair.nntin.xyz/",
-        "LITELLM_ALLOWED_BASE_URLS": "https://litellm.labs.lair.nntin.xyz/",
+        "LITELLM_BASE_URL": "https://litellm.nntin.xyz/",
+        "LITELLM_ALLOWED_BASE_URLS": "https://litellm.nntin.xyz/",
         "LITELLM_USER_MAX_BUDGET_USD": "1",
         "LITELLM_USER_BUDGET_DURATION": "30d",
         "LITELLM_USER_RPM_LIMIT": "10",
