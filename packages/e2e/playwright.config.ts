@@ -100,6 +100,10 @@ export default defineConfig({
         // otherwise vanish silently from the merged Allure report (they run no test, so
         // produce no result). See reporters/bail-warning.ts.
         ['./reporters/bail-warning.ts'],
+        // Emits a job WARNING listing tests that failed then passed on retry — the
+        // merged Allure report shows only their final (green) status. See
+        // reporters/flaky-warning.ts.
+        ['./reporters/flaky-warning.ts'],
         [
           'allure-playwright',
           {
