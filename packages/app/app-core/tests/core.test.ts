@@ -1160,7 +1160,7 @@ describe('rate-limit cooldown', () => {
   it('scopes the cooldown per LiteLLM deployment, mirroring the edge backoff (issue #179)', async () => {
     const prefs = makePreferences()
     const future = new Date(Date.now() + 60_000).toISOString()
-    const deploymentA = 'https://litellm.labs.lair.nntin.xyz/'
+    const deploymentA = 'https://litellm.nntin.xyz/'
     const deploymentB = 'https://litellm.example.com/'
 
     expect(rateLimitCooldownKey(deploymentA)).toBe(

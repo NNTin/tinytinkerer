@@ -72,7 +72,7 @@ All read secrets inside the containers and print only model IDs/statuses — nev
 
 ## Live service facts
 
-- Public LiteLLM host: `https://litellm.labs.lair.nntin.xyz`
+- Public LiteLLM host: `https://litellm.nntin.xyz`
 - Containers: `litellm` (proxy, port 4000, reads bind-mounted `/app/config.yaml` at startup only) and `litellm-db` (Postgres 16).
 - ChatGPT OAuth tokens: volume `litellm_chatgpt_auth` at `CHATGPT_TOKEN_DIR=/var/lib/litellm/chatgpt`.
 - tinytinkerer's shared virtual key alias: `tinytinkerer-edge-20260606213400` (table `LiteLLM_VerificationToken`; empty `models` array = unrestricted).

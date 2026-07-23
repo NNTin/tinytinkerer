@@ -8,7 +8,7 @@
 set -euo pipefail
 
 LITELLM_CONTAINER=litellm
-PUBLIC_BASE="https://litellm.labs.lair.nntin.xyz"
+PUBLIC_BASE="https://litellm.nntin.xyz"
 CHECK_PUBLIC=1
 
 while [[ $# -gt 0 ]]; do

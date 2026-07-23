@@ -13,7 +13,7 @@ import { clearModelsBackoff } from '../lib/rate-limit.js'
 // correctness/test rewrite of index.test.ts.
 
 const IDENTITY = { id: '12345', login: 'nntin' }
-const BASE_URL = 'https://litellm.labs.lair.nntin.xyz'
+const BASE_URL = 'https://litellm.nntin.xyz'
 const GITHUB_USER_URL = 'https://api.github.com/user'
 
 const envFor = (secret: string) => ({

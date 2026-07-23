@@ -17,7 +17,7 @@ Settled in PR for `TINYTINKERER-FRONTEND-S` + `TINYTINKERER-EDGE-7`.
 They correlate by **same `model` tag** (`openai/gpt-5`), **same release SHA**, and
 timestamps seconds apart (the frontend gives up first; the edge's own backstop
 timeout fires a few seconds later). The edge event's `request.*` context carries
-`origin: litellm`, `host: litellm.labs.lair.nntin.xyz`, `path: /v1/chat/completions`.
+`origin: litellm`, `host: litellm.nntin.xyz`, `path: /v1/chat/completions`.
 
 ## Why both fire (the cascade)
 
