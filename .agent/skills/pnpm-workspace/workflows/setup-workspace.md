@@ -2,7 +2,7 @@
 
 Install dependencies with the same supply-chain protections CI uses: a frozen,
 scriptless install followed by an explicit rebuild of only the reviewed native
-binaries (`onlyBuiltDependencies`).
+binaries (`allowBuilds` entries set to `true`).
 
 ```
 pnpm setup:workspace
@@ -20,7 +20,7 @@ pnpm install --frozen-lockfile --ignore-scripts && pnpm bootstrap:scriptless-ins
 - `--frozen-lockfile` installs exactly what the lockfile pins; it fails instead
   of silently drifting if `package.json` and the lockfile disagree.
 - `--ignore-scripts` blocks every dependency install lifecycle script.
-- `pnpm bootstrap:scriptless-install` then rebuilds only the allowlisted
-  packages in `onlyBuiltDependencies`, so no unreviewed code runs at install.
+- `pnpm bootstrap:scriptless-install` then rebuilds only the packages
+  `allowBuilds` sets to `true`, so no unreviewed code runs at install.
 
 To change dependencies after setup, follow `update-dependencies.md`.

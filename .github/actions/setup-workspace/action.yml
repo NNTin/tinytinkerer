@@ -31,7 +31,7 @@ runs:
         cache: pnpm
 
     # Secure full install: scriptless, then rebuild only the allowlisted native
-    # binaries (onlyBuiltDependencies). See .agent/skills/pnpm-workspace.
+    # binaries (allowBuilds). See .agent/skills/pnpm-workspace.
     - if: ${{ inputs.install == 'full' }}
       shell: bash
       run: pnpm setup:workspace

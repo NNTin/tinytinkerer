@@ -113,7 +113,7 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}-cfw
 
       # The `playwright` package's postinstall is blocked by the supply-chain
-      # policy (ignoredBuiltDependencies), so fetch browsers explicitly here. On a
+      # policy (allowBuilds: playwright: false), so fetch browsers explicitly here. On a
       # cache hit, still install the OS libraries (not part of the cached path).
       # WebKit on Linux needs extra system libraries; `--with-deps` pulls them in.
       # Every shard installs all three engines because Playwright's --shard splits

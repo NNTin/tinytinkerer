@@ -66,6 +66,22 @@ auditLevel: moderate
 #   - GHSA-f23m-r3pf-42rh (lodash-es prototype pollution)
 #   - GHSA-xxjr-mmjv-4gpg (lodash-es prototype pollution)
 #   - GHSA-mwcw-c2x4-8c55 (nanoid predictable output for non-integer size)
+#
+# GHSA-frvp-7c67-39w9 (@hono/node-server, Windows path traversal in serve-static):
+# apps/edge>@modelcontextprotocol/sdk>@hono/node-server, pulled in for the SDK's
+# optional Node HTTP transport, which this app never invokes (apps/edge runs on
+# Cloudflare Workers/workerd, not Node, and never imports @hono/node-server or
+# its serve-static middleware directly). The only fix is @hono/node-server@2.x,
+# a major rewrite the SDK itself still pins below (`^1.19.9` as of 1.29.0), so
+# forcing it would risk breaking the SDK's transport code for a Windows-only
+# path unreachable from our deployment. Re-check once the SDK bumps its own
+# @hono/node-server range.
+# GHSA-v2hh-gcrm-f6hx / GHSA-4c8g-83qw-93j6 (fast-uri host confusion):
+# commitlint>@commitlint/config-validator>ajv>fast-uri, dev-only (validates our
+# own local commitlint config, never processes untrusted input). The fix
+# (fast-uri@3.1.4) was published 2026-07-19, inside the 7-day age gate above;
+# jumping to fast-uri@4.x would also violate ajv's declared `^3.0.1` range.
+# Re-check once 3.1.4 clears the age gate (~2026-07-26).
 auditConfig:
   ignoreGhsas:
     - GHSA-gv7w-rqvm-qjhr
@@ -82,19 +98,39 @@ auditConfig:
     - GHSA-f23m-r3pf-42rh
     - GHSA-xxjr-mmjv-4gpg
     - GHSA-mwcw-c2x4-8c55
-onlyBuiltDependencies:
-  - '@sentry/cli'
-  - esbuild
-  - sharp
-  - workerd
-# Human-approved (2026-06-18): the `playwright` package ships a postinstall that
-# downloads browser binaries. We keep installs scriptless and fetch browsers
-# explicitly via `pnpm --filter @tinytinkerer/e2e e2e:install` (playwright install
-# --with-deps chromium) in CI and locally, so the lifecycle script is intentionally
-# blocked here rather than run at install time. See packages/e2e/README.md.
-ignoredBuiltDependencies:
-  # Transitive through @codesandbox/sandpack-react. Its postinstall only probes
-  # optional ES feature support; the browser bundle builds and runs without it,
-  # so keep installs scriptless rather than executing third-party lifecycle code.
-  - es5-ext
-  - playwright
+    - GHSA-frvp-7c67-39w9
+    - GHSA-v2hh-gcrm-f6hx
+    - GHSA-4c8g-83qw-93j6
+overrides:
+  # Transitive advisory fixes, all within semver ranges the direct dependents
+  # already declare (sass wants immutable ^4.0.0, cosmiconfig wants js-yaml
+  # ^4.1.0) — patched versions clear of the age gate above.
+  immutable: 4.3.9
+  js-yaml: 4.3.0
+  # Two independently-resolved major lines of brace-expansion (via different
+  # minimatch versions); each needs its own line's patch.
+  brace-expansion@2: 2.1.2
+  brace-expansion@5: 5.0.7
+  # apps/edge>wrangler>miniflare pins sharp ^0.34.5 (outside its own declared
+  # range, unlike the entries above) for local dev asset emulation only, never
+  # shipped to the deployed Worker. Forced up to match the root devDependency's
+  # already-verified 0.35.3 rather than carry two sharp builds.
+  sharp: 0.35.3
+# pnpm 11 replaced onlyBuiltDependencies/ignoredBuiltDependencies with a single
+# allowBuilds map (true = allowed to run install/postinstall scripts, false =
+# blocked). Human-approved (2026-06-18): the `playwright` package ships a
+# postinstall that downloads browser binaries. We keep installs scriptless and
+# fetch browsers explicitly via `pnpm --filter @tinytinkerer/e2e e2e:install`
+# (playwright install --with-deps chromium) in CI and locally, so its lifecycle
+# script is intentionally blocked here rather than run at install time. See
+# packages/e2e/README.md. `es5-ext` (transitive through
+# @codesandbox/sandpack-react) is blocked too — its postinstall only probes
+# optional ES feature support; the browser bundle builds and runs without it,
+# so keep installs scriptless rather than executing third-party lifecycle code.
+allowBuilds:
+  '@sentry/cli': true
+  esbuild: true
+  sharp: true
+  workerd: true
+  es5-ext: false
+  playwright: false

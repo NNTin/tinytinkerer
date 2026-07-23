@@ -21,3 +21,6 @@ allow-ghsas:
   - GHSA-f23m-r3pf-42rh
   - GHSA-xxjr-mmjv-4gpg
   - GHSA-mwcw-c2x4-8c55
+  - GHSA-frvp-7c67-39w9
+  - GHSA-v2hh-gcrm-f6hx
+  - GHSA-4c8g-83qw-93j6

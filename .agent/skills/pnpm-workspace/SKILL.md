@@ -52,7 +52,7 @@ Set up the pnpm workspace and keep its dependency updates deterministic, age-gat
 
 - Use `pnpm update -r --latest` from the repo root so all workspaces resolve together under the configured age gate.
 - Use scriptless CI installs (`pnpm install --frozen-lockfile --ignore-scripts`) and run `pnpm bootstrap:scriptless-install` only in jobs that need the reviewed native/CLI binaries.
-- Any dependency with `preinstall`, `install`, or `postinstall` must be reviewed and named in either `onlyBuiltDependencies` (approved to run by explicit bootstrap/rebuild steps) or `ignoredBuiltDependencies` (blocked) in `pnpm-workspace.yaml`.
+- Any dependency with `preinstall`, `install`, or `postinstall` must be reviewed and named in `allowBuilds` in `pnpm-workspace.yaml` (`true` = approved to run by explicit bootstrap/rebuild steps, `false` = blocked).
 - For `pnpm audit --audit-level=moderate`: update a direct dependency when possible; for unavoidable transitive-only findings, add a root `overrides` entry in `pnpm-workspace.yaml` with a GHSA/CVE comment explaining the override.
 
 ## Success criteria
