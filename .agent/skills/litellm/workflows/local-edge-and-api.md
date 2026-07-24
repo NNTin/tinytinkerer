@@ -125,12 +125,12 @@ rm -f "$tmp_env"
 In another shell:
 
 ```bash
-TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 \
-pnpm --filter @tinytinkerer/web dev --host 127.0.0.1 --port 3111
+pnpm exec turbo run dev --filter=@tinytinkerer/shell -- \
+  --host 127.0.0.1 --port 3111
 ```
 
-Do not pass an extra `--` before Vite flags; that makes Vite treat them as
-literal app args and it will fall back to its default port.
+Keep the single `--` shown above: it is Turbo's passthrough separator, so the
+following host and port flags reach Vite.
 
 ## 6. Fast Hono-level check without a browser
 

@@ -14,7 +14,7 @@
  *
  * IF A TEST FAILS
  * ---------------
- * 1. Run `pnpm --filter @tinytinkerer/shell build`.
+ * 1. Run `pnpm exec turbo run build --filter=@tinytinkerer/shell`.
  * 2. Identify which budget failed and trace the offending import chain. Common causes:
  *    importing app-core/agent-core/app-browser internals from eagerly-loaded modules;
  *    moving settings/persistence/auth/runtime into startup; importing specialized

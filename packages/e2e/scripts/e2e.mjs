@@ -33,13 +33,12 @@ const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 // E2E_SKIP_BUILD=1 to skip locally too when you deliberately serve a prebuilt dist.
 /**
  * @param {string[]} args - argv passed to `pnpm`
- * @param {Record<string, string>} [extraEnv] - env overrides for this step
  */
-const runOrExit = (args, extraEnv) => {
+const runOrExit = (args) => {
   const step = spawnSync(pnpm, args, {
     stdio: 'inherit',
     cwd: workspaceRoot,
-    env: { ...process.env, ...extraEnv }
+    env: process.env
   })
   if (step.status !== 0) {
     console.error(`\n[e2e] preflight build failed: pnpm ${args.join(' ')}`)
@@ -52,16 +51,11 @@ if (!process.env.CI && process.env.E2E_SKIP_BUILD !== '1') {
     '[e2e] Building composed host so the served apps/host/dist matches source ' +
       '(turbo cache makes this fast when nothing changed; set E2E_SKIP_BUILD=1 to skip).'
   )
-  // Regenerate the two gitignored source files the shell build imports (privacy
-  // policy + third-party notices). Fast, idempotent, offline. Brand assets are
-  // built by turbo's @tinytinkerer/brand-assets#build in the graph below, so the
-  // slow root generator stays skipped (TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1),
-  // matching the CI build step.
+  // Regenerate the privacy-policy source imported by app-browser. Brand assets,
+  // license text, and third-party notices are owned by the cacheable
+  // @tinytinkerer/brand-assets#generate task in the Turbo graph below.
   runOrExit(['run', 'generate:privacy-policy'])
-  runOrExit(['run', 'generate:notices'])
-  runOrExit(['exec', 'turbo', 'run', 'build', '--filter=@tinytinkerer/host'], {
-    TINYTINKERER_SKIP_BRAND_ASSET_GENERATION: '1'
-  })
+  runOrExit(['exec', 'turbo', 'run', 'build', '--filter=@tinytinkerer/host'])
 }
 
 // Every endpoint is served from the composed host origin. Allocate the port once,

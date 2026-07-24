@@ -63,10 +63,10 @@ jobs:
           restore-keys: |
             turbo-${{ github.workflow }}-${{ matrix.task.key }}-
 
-      - run: pnpm generate:brand-assets
       - run: pnpm generate:privacy-policy
-      - run: pnpm generate:notices
-      - run: TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 ${{ matrix.task.run }}
+      # Brand assets, license text, and notices are generated once through the
+      # cacheable @tinytinkerer/brand-assets#generate dependency in Turbo.
+      - run: ${{ matrix.task.run }}
 
       # Consolidate every package's allure-results into one directory even when a
       # test failed above (the failing shard already reds the run), so the merged

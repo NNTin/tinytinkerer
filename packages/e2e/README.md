@@ -136,7 +136,7 @@ skipped locally with `E2E_SKIP_BUILD=1` when you deliberately serve a prebuilt d
 > them** — it finishes in ~1s and looks like a full build but serves **stale** endpoint
 > bundles, so `/web/` specs assert against outdated code and fail confusingly. Always
 > build through turbo (which the auto-build above does):
-> `TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 pnpm exec turbo run build --filter=@tinytinkerer/host`.
+> `pnpm exec turbo run build --filter=@tinytinkerer/host`.
 
 > Pin `E2E_PORT` to fix the shared origin's port; otherwise the wrapper picks a random
 > port. Every endpoint, including canvas, uses that origin.

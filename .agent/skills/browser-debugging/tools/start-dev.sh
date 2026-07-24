@@ -53,15 +53,12 @@ if ! node -e "require('sharp')" >/dev/null 2>&1; then
   pnpm rebuild sharp esbuild workerd >/dev/null 2>&1 || true
 fi
 
-# 3. Generate brand assets once (the dev run skips them for speed).
-log "generating brand assets"
-node ./scripts/generate-brand-assets.mjs >/dev/null
-
-# 4. Start dev in the background.
+# 3. Start dev in the background. Turbo generates and caches the shared brand
+# assets before starting the persistent dev tasks.
 log "starting pnpm dev (logs: /tmp/tinytinkerer-dev.log)"
-TINYTINKERER_SKIP_BRAND_ASSET_GENERATION=1 nohup pnpm dev >/tmp/tinytinkerer-dev.log 2>&1 &
+nohup pnpm dev >/tmp/tinytinkerer-dev.log 2>&1 &
 
-# 5. Wait for both servers.
+# 4. Wait for both servers.
 for _ in $(seq 1 60); do
   if curl -sf -o /dev/null http://localhost:3111 2>/dev/null \
     && curl -sf -o /dev/null http://localhost:8787/health 2>/dev/null; then

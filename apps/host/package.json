@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "node ./src/host-server.mjs",
-    "build": "if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite build && node ./src/build-pages.mjs",
+    "build": "vite build && node ./src/build-pages.mjs",
     "lint": "eslint src",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",

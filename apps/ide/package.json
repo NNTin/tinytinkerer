@@ -8,8 +8,8 @@
     "stagePackage": "@tinytinkerer/ide"
   },
   "scripts": {
-    "dev": "if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite",
-    "build": "if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite build",
+    "dev": "vite",
+    "build": "vite build",
     "lint": "eslint src",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",

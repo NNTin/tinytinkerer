@@ -8,8 +8,8 @@
     "stagePackage": "@tinytinkerer/pixel-agents"
   },
   "scripts": {
-    "dev": "pnpm -w prepare:pixel-agents && if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite",
-    "build": "pnpm -w prepare:pixel-agents && if [ -z \"$TINYTINKERER_SKIP_BRAND_ASSET_GENERATION\" ]; then pnpm -w generate:brand-assets; fi && vite build",
+    "dev": "pnpm -w prepare:pixel-agents && vite",
+    "build": "pnpm -w prepare:pixel-agents && vite build",
     "lint": "eslint src",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
