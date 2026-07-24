@@ -363,13 +363,13 @@ const BRIDGE_CHANNEL = 'tinytinkerer:pixel-agents:v1'
 // frame's opaque `'null'` (see pixel-agents-stage.tsx's message handler) — a
 // top-level `page.evaluate` post could satisfy neither check.
 //
-// Reached for `launchAgent` only: upstream's own "+ Agent" toolbar button
-// renders exclusively in its VS Code extension host (gated on `typeof
-// acquireVsCodeApi === 'undefined'` in the vendored bundle — verified by
-// inspecting the built upstream bundle; confirmed absent from the live DOM in
-// this browser-embedded deployment), so there is no click — real or raw — that
-// can ever reach it here at all (unlike Settings/"Close agent", it isn't merely
-// CSS-hidden; the JSX branch itself never renders in browser mode).
+// Upstream's own "+ Agent" toolbar button (addAgentButton below) IS reachable
+// by a real click in this embedding (scripts/pixel-agents-bridge.mjs shims
+// `window.acquireVsCodeApi`), so this helper isn't needed just to trigger
+// `launchAgent` anymore. It stays useful for exercising message shapes no
+// real UI control in this embedding can produce — e.g. `launchAgent` with its
+// VS-Code-only `folderPath`/`bypassPermissions` fields set (the dropdown that
+// would set them is source-patched out; see pixel-agents-multi-agent.e2e.ts).
 export const dispatchPixelClientMessage = (
   frame: Frame,
   message: Record<string, unknown>
@@ -504,3 +504,13 @@ export const clickCharacterToSelect = async (
 // equivalent) has made that agent the office's selected character.
 export const agentOverlayCloseButton = (page: Page, agentId: number) =>
   agentOverlayLocator(page, agentId).getByTitle('Close agent')
+
+// Upstream's own "+ Agent" toolbar button (webview-ui/src/components/
+// BottomToolbar.tsx), rendered INSIDE the sandboxed office iframe — not a
+// TinyTinkerer-owned control, so (like agentOverlayLocator above) this is
+// scoped through frameLocator rather than a bare page.getByRole. It only
+// renders because scripts/pixel-agents-bridge.mjs shims
+// `window.acquireVsCodeApi`, making upstream treat this embedding as a VS
+// Code webview host.
+export const addAgentButton = (page: Page) =>
+  page.frameLocator('iframe[title="Pixel Agents office"]').getByRole('button', { name: '+ Agent' })

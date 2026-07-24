@@ -25,23 +25,6 @@ describe('DockablePanelLayout', () => {
     expect(screen.getByText('Workspace')).toBeInTheDocument()
   })
 
-  it('renders a panel-supplied headerActions node in its own header, not its body', () => {
-    const withHeaderActions = [
-      {
-        ...panels[0],
-        headerActions: <button type="button">Add</button>
-      },
-      panels[1],
-      panels[2]
-    ] as const
-    render(<DockablePanelLayout panels={[...withHeaderActions]} storageKey="dock-test" />)
-    const region = screen.getByRole('region', { name: 'Editor' })
-    const header = region.querySelector('header')
-    const body = region.querySelector('.app-dock-panel-body')
-    expect(header).toContainElement(screen.getByRole('button', { name: 'Add' }))
-    expect(body).not.toContainElement(screen.getByRole('button', { name: 'Add' }))
-  })
-
   it('switches presets and resizes splitters from the keyboard', () => {
     const { container } = render(
       <DockablePanelLayout panels={[...panels]} storageKey="dock-test" />

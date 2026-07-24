@@ -9,6 +9,7 @@ import {
   SYNTHESIS_ANSWER
 } from '../fixtures/mock-litellm'
 import {
+  addAgentButton,
   agentOverlayCloseButton,
   agentOverlayLocator,
   calibrateCharacterSlot,
@@ -42,10 +43,15 @@ import {
 //
 // Real clicks are used everywhere upstream/TinyTinkerer offers a reliably
 // scriptable one:
-//   - "+ Agent": a real click on TinyTinkerer's OWN button (addAgentButton
-//     below), rendered outside the sandboxed iframe in pixel-agents-stage.tsx.
-//     This calls actions.startNewConversation() directly — it does not send
-//     `launchAgent` at all.
+//   - "+ Agent": a real click on upstream's OWN toolbar button (addAgentButton,
+//     imported from fixtures/pixel-agents.ts), rendered INSIDE the sandboxed
+//     office iframe (webview-ui/src/components/BottomToolbar.tsx). It only
+//     renders because scripts/pixel-agents-bridge.mjs shims
+//     `window.acquireVsCodeApi`, which makes upstream treat this embedding as
+//     a VS Code webview host — flipping both its render gate and its message
+//     transport (WebSocketTransport -> PostMessageTransport). Clicking it
+//     sends a real `launchAgent` client message, handled by
+//     pixel-agents-stage.tsx exactly like any other office-driven action.
 //   - focusAgent: a real click on the character itself (clickCharacterToSelect
 //     in fixtures/pixel-agents.ts). Its own doc comment has the full story, but
 //     the short version: this is the exact code path upstream's own canvas
@@ -59,15 +65,14 @@ import {
 //     since issue #430 (pixel-agents-bridge.mjs now hides only Settings):
 //     select-then-close is the deliberate-interaction guard for deleting the
 //     conversation.
-//   - launchAgent itself is still tested separately (see "forward-compat
-//     launchAgent" below), but via the bridge's client envelope
-//     (dispatchPixelClientMessage), not a real click: upstream's OWN "+ Agent"
-//     toolbar button only renders in a VS Code extension host (verified by
-//     inspecting the built upstream bundle: gated on `typeof acquireVsCodeApi
-//     === 'undefined'`), so no click — real or raw — can ever reach IT in this
-//     browser-embedded deployment. TinyTinkerer's own "+ Agent" button (above)
-//     bypasses that message entirely; `launchAgent` remains accepted purely as
-//     forward-compat (see docs/plans/issue-430-multi-conversation.md).
+//   - launchAgent's VS-Code-only fields (folderPath/bypassPermissions) are
+//     exercised separately (see "upstream's launchAgent with extra fields"
+//     below) via the bridge's client envelope (dispatchPixelClientMessage),
+//     since no real UI control in this embedding ever sets them: the "Skip
+//     permissions mode" dropdown that would have is source-patched out at
+//     build time (scripts/pixel-agents-source-patch.mjs), and this
+//     integration never sends a multi-root `workspaceFolders` message, so the
+//     folder picker never renders either.
 
 test.use({ viewport: { width: 1280, height: 800 } })
 
@@ -79,8 +84,6 @@ test.use({ viewport: { width: 1280, height: 800 } })
 // recently.
 const sortedCharacterIds = (frame: Parameters<typeof characterIds>[0]): Promise<number[]> =>
   characterIds(frame).then((ids) => [...ids].sort((a, b) => a - b))
-
-const addAgentButton = (page: Page) => page.getByRole('button', { name: '+ Agent' })
 
 const createNewConversation = async (page: Page): Promise<void> => {
   await addAgentButton(page).click()
@@ -209,9 +212,8 @@ test.describe('Pixel Agents multi-agent office (#430)', () => {
       .poll(async () => (await agentOverlayLocator(page, 1).textContent())?.trim())
       .not.toContain('Idle')
 
-    // A second conversation, created through TinyTinkerer's own "+ Agent"
-    // button — a real conversation (not upstream's launchAgent affordance) —
-    // projects a second, INDEPENDENT office character.
+    // A second conversation, created through a real click on upstream's own
+    // "+ Agent" button — projects a second, INDEPENDENT office character.
     await createNewConversation(page)
     await expect.poll(() => sortedCharacterIds(frame)).toEqual([1, 2])
     await expect
@@ -280,7 +282,7 @@ test.describe('Pixel Agents multi-agent office (#430)', () => {
       .toContain('Idle')
   })
 
-  test('interactive office: +Agent, focusAgent, forward-compat launchAgent, and select-then-× close', async ({
+  test('interactive office: +Agent, focusAgent, launchAgent with extra fields, and select-then-× close', async ({
     page
   }) => {
     const PROMPT_ONE = 'Interactive office topic one message content.'
@@ -302,21 +304,28 @@ test.describe('Pixel Agents multi-agent office (#430)', () => {
 
     // Conversation one: the pre-existing default (agent 1).
     await sendAndAwaitAnswer(page, PROMPT_ONE, ANSWER_ONE)
-    // Conversation two, via TinyTinkerer's own "+ Agent" button (agent 2) —
-    // becomes active.
+    // Conversation two, via a real click on upstream's own "+ Agent" button
+    // (agent 2) — becomes active.
     await createNewConversation(page)
     await expect.poll(() => sortedCharacterIds(frame)).toEqual([1, 2])
     await sendAndAwaitAnswer(page, PROMPT_TWO, ANSWER_TWO)
 
-    // --- forward-compat: upstream's own launchAgent client message ----------
-    // No real click can reach upstream's OWN "+ Agent" button here (see the
-    // module comment) — dispatched as its webview would send it, verifying the
-    // bridge still honors the message even though nothing in this embedding's
-    // UI can trigger it.
-    await dispatchPixelClientMessage(frame, { type: 'launchAgent' })
+    // --- upstream's launchAgent with extra (VS-Code-only) fields ------------
+    // folderPath/bypassPermissions come from upstream's multi-root folder
+    // picker and "Skip permissions mode" dropdown — no real UI control in
+    // this embedding can set them (the picker never renders, since this
+    // integration never sends a `workspaceFolders` message; the dropdown is
+    // source-patched out). Dispatched directly, at the wire level, to prove
+    // the bridge safely ignores them (protocol.ts) rather than rejecting the
+    // message or crashing.
+    await dispatchPixelClientMessage(frame, {
+      type: 'launchAgent',
+      folderPath: '/not/a/real/workspace/folder',
+      bypassPermissions: true
+    })
     await expect.poll(() => sortedCharacterIds(frame)).toEqual([1, 2, 3])
     // The launched conversation is untitled (no message sent yet) and made
-    // active automatically, same as the "+ Agent" button.
+    // active automatically, same as a real "+ Agent" click.
     await expect.poll(() => lastSelectedAgentId(frame)).toBe(3)
 
     // --- clicking a character: focusAgent -> assistant panel follows --------

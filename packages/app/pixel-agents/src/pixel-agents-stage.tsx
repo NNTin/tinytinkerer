@@ -3,7 +3,6 @@ import { DockablePanelLayout, useLiveChatActivity } from '@tinytinkerer/app-shel
 import type { ChatEvent } from '@tinytinkerer/contracts'
 import { messagesForChatEvent } from './activity'
 import {
-  PIXEL_AGENTS_BRIDGE_CHANNEL,
   createPixelBootstrapMessages,
   parsePixelAgentsBootstrap,
   parsePixelClientEnvelope,
@@ -132,13 +131,17 @@ export const PixelAgentsWorkspace = ({
   actionsRef.current = actions
 
   const postToPixelAgents = useCallback((message: PixelServerMessage): void => {
-    // The sandboxed frame has an opaque origin that can't be named as a
-    // postMessage targetOrigin; delivery is already pinned to it via
-    // contentWindow, and the payload is only visualization data.
-    frameRef.current?.contentWindow?.postMessage(
-      { channel: PIXEL_AGENTS_BRIDGE_CHANNEL, direction: 'server', message },
-      '*'
-    )
+    // Sent RAW (not enveloped): upstream's own PostMessageTransport reads
+    // `event.data` directly as the ServerMessage (see
+    // `~/pixel-agents/webview-ui/src/transport/postMessageTransport.ts`) once
+    // the injected `acquireVsCodeApi` shim (`pixel-agents-bridge.mjs`) makes
+    // it the active transport. The iframe->host direction stays enveloped —
+    // that's written by our own shim, not upstream's code — so only this
+    // direction changed shape. The sandboxed frame has an opaque origin that
+    // can't be named as a postMessage targetOrigin; delivery is already
+    // pinned to it via contentWindow, and the payload is only visualization
+    // data.
+    frameRef.current?.contentWindow?.postMessage(message, '*')
   }, [])
 
   const postMany = useCallback(
@@ -423,26 +426,6 @@ export const PixelAgentsWorkspace = ({
     </div>
   )
 
-  // Upstream's own "+ Agent" button never mounts in this embedding (it only
-  // renders inside a VS Code extension host) and its click handler assumes
-  // VS Code-only workspace-folder state this integration doesn't have, so
-  // this is TinyTinkerer's own button, calling the action directly rather
-  // than round-tripping through the (still-accepted, forward-compat)
-  // `launchAgent` postMessage. Rendered in the PANEL HEADER, not overlaid on
-  // the canvas: an absolutely-positioned overlay over the iframe intercepts
-  // pointer events meant for whatever the office renders underneath it
-  // (confirmed at runtime — office e2e clicks failed with "button intercepts
-  // pointer events" once characters/furniture happened to render there).
-  const addAgentButton = (
-    <button
-      type="button"
-      className="pixel-agents-add-agent"
-      onClick={() => actions.startNewConversation()}
-    >
-      + Agent
-    </button>
-  )
-
   return (
     <main className="pixel-agents-root" aria-label="TinyTinkerer Pixel Agents">
       {conversations.map((conversation) => {
@@ -464,12 +447,7 @@ export const PixelAgentsWorkspace = ({
         title="Pixel Agents workspace"
         storageKey="tinytinkerer:pixel-agents-workspace-layout:v1"
         panels={[
-          {
-            id: 'pixel-agents',
-            title: 'Pixel Agents',
-            content: pixelAgents,
-            headerActions: addAgentButton
-          },
+          { id: 'pixel-agents', title: 'Pixel Agents', content: pixelAgents },
           { id: 'assistant', title: 'Assistant', content: assistant }
         ]}
       />

@@ -66,26 +66,3 @@
 .pixel-agents-storage-error {
   top: 44px;
 }
-
-/* TinyTinkerer's own "+ Agent" affordance (issue #430 follow-up): upstream's
-   native button never mounts in this embedding (it's conditionally rendered
-   only inside a VS Code extension host). Rendered in the "Pixel Agents" panel
-   HEADER (DockablePanelLayout's headerActions slot), not overlaid on the
-   canvas: an overlay positioned on top of the iframe intercepts pointer
-   events meant for whatever the office renders underneath it. */
-.pixel-agents-add-agent {
-  margin-left: 4px;
-  border: 1px solid #4a4a6a;
-  border-radius: 5px;
-  background: #35354f;
-  color: #f2f0ff;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.6;
-  cursor: pointer;
-}
-
-.pixel-agents-add-agent:hover {
-  background: #45456a;
-}

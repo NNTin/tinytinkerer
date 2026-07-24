@@ -111,8 +111,12 @@ const bootstrap = async (iframe: HTMLIFrameElement, postSpy: PostMessageSpy): Pr
   void postSpy
 }
 
+// Host -> iframe messages are posted RAW (not enveloped): upstream's own
+// PostMessageTransport reads `event.data` directly as the message once the
+// injected acquireVsCodeApi shim makes it the active transport (see
+// pixel-agents-stage.tsx's postToPixelAgents).
 const postedMessages = (postSpy: PostMessageSpy): unknown[] =>
-  postSpy.mock.calls.map((call) => (call[0] as { message: unknown }).message)
+  postSpy.mock.calls.map((call) => call[0])
 
 beforeEach(() => {
   workspace.load.mockReset().mockResolvedValue({ record: null, migratedFromLegacy: false })

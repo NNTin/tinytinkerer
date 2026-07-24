@@ -16,20 +16,31 @@ test('Pixel Agents bridge is injected before the upstream module entry', () => {
   )
 })
 
-test('Pixel Agents bridge scopes both directions to the same integration channel', () => {
+test('Pixel Agents bridge scopes outbound messages to the integration channel', () => {
   const bridge = renderPixelAgentsBridge()
   assert.match(bridge, new RegExp(PIXEL_AGENTS_BRIDGE_CHANNEL.replaceAll(':', '\\:')))
-  assert.match(bridge, /event\.source !== window\.parent/)
   assert.match(bridge, /direction: 'client'/)
-  assert.match(bridge, /envelope\.direction !== 'server'/)
 })
 
-test('Pixel Agents bridge inbound check is source-identity only, not origin', () => {
+test('Pixel Agents bridge shims acquireVsCodeApi instead of WebSocket', () => {
   const bridge = renderPixelAgentsBridge()
-  // The frame is sandboxed to an opaque origin, so location.origin is "null" and the
-  // parent's real origin can't be checked from inside; window identity is the only
-  // spoof-proof signal available here.
-  assert.doesNotMatch(bridge, /event\.origin/)
+  // Upstream feature-detects acquireVsCodeApi to pick its transport and to
+  // decide whether to render its native "+ Agent" button (BottomToolbar.tsx).
+  assert.match(bridge, /window\.acquireVsCodeApi = \(\) => \(/)
+  assert.match(bridge, /postMessage: \(message\) => \{/)
+  assert.match(bridge, /getState: \(\) => undefined/)
+  assert.match(bridge, /setState: \(\) => \{\}/)
+  assert.doesNotMatch(bridge, /window\.WebSocket/)
+})
+
+test('Pixel Agents bridge does not add an inbound listener of its own', () => {
+  const bridge = renderPixelAgentsBridge()
+  // Inbound (host -> iframe) messages are handled entirely by upstream's own
+  // PostMessageTransport, once acquireVsCodeApi makes it the active
+  // transport — the parent posts raw, unenveloped message objects directly,
+  // matching what it expects.
+  assert.doesNotMatch(bridge, /window\.addEventListener/)
+  assert.doesNotMatch(bridge, /envelope\.direction !== 'server'/)
 })
 
 test('Pixel Agents bridge sends outbound messages to the parent-origin query parameter', () => {
