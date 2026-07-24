@@ -9,12 +9,13 @@ import {
   SYNTHESIS_ANSWER
 } from '../fixtures/mock-litellm'
 import {
-  agentOverlayCloseButton,
+  addAgentButton,
   agentOverlayLocator,
   calibrateCharacterSlot,
   characterIds,
   characterSpriteIdsInWindow,
   clickCharacterToSelect,
+  closeSelectedAgentOverlay,
   dispatchPixelClientMessage,
   enablePixelHooks,
   PIXEL_AGENTS_URL,
@@ -25,16 +26,32 @@ import {
   waitForOfficeFrame
 } from '../fixtures/pixel-agents'
 
-// Multi-agent Pixel Agents coverage (issue #430 PR 5): one office character per
+// Multi-agent Pixel Agents coverage (issue #430 PR 5, updated by the
+// office-driven-conversation-management follow-up): one office character per
 // conversation, dynamic agentCreated/agentClosed, and the interactive office
 // (launchAgent/focusAgent/closeAgent). See packages/e2e/pixel-agents-testing.md
 // for the general layered-evidence approach this suite (and
 // tests/pixel-agents.e2e.ts / tests/pixel-agents-activity.e2e.ts) shares; this
 // file is specifically about what changes once there is more than one agent.
 //
-// Real clicks are used everywhere upstream offers a reliably scriptable one:
-//   - "New conversation" in the assistant panel's switcher (real DOM button —
-//     this is TinyTinkerer's own UI, not the vendored office).
+// The assistant panel's header conversation switcher has been REMOVED (the
+// office is now the only conversation-management surface in the whole
+// product, everywhere). This suite therefore reads "which conversation is
+// active" off the transcript itself (a prompt's user bubble being visible) and
+// off the office's own signals (message log, DOM overlay, character set)
+// rather than off a switcher trigger/listbox that no longer exists.
+//
+// Real clicks are used everywhere upstream/TinyTinkerer offers a reliably
+// scriptable one:
+//   - "+ Agent": a real click on upstream's OWN toolbar button (addAgentButton,
+//     imported from fixtures/pixel-agents.ts), rendered INSIDE the sandboxed
+//     office iframe (webview-ui/src/components/BottomToolbar.tsx). It only
+//     renders because scripts/pixel-agents-bridge.mjs shims
+//     `window.acquireVsCodeApi`, which makes upstream treat this embedding as
+//     a VS Code webview host — flipping both its render gate and its message
+//     transport (WebSocketTransport -> PostMessageTransport). Clicking it
+//     sends a real `launchAgent` client message, handled by
+//     pixel-agents-stage.tsx exactly like any other office-driven action.
 //   - focusAgent: a real click on the character itself (clickCharacterToSelect
 //     in fixtures/pixel-agents.ts). Its own doc comment has the full story, but
 //     the short version: this is the exact code path upstream's own canvas
@@ -48,18 +65,16 @@ import {
 //     since issue #430 (pixel-agents-bridge.mjs now hides only Settings):
 //     select-then-close is the deliberate-interaction guard for deleting the
 //     conversation.
-//   - launchAgent is the other exception: the vendored bundle only renders its
-//     "+ Agent" toolbar button in a VS Code extension host (verified by
-//     inspecting the built upstream bundle: gated on `typeof acquireVsCodeApi
-//     === 'undefined'`), so no click — real or raw — can ever reach it in this
-//     browser-embedded deployment (the JSX branch itself never renders). That
-//     interaction is driven via the bridge's client envelope
-//     (dispatchPixelClientMessage) instead — see its own doc comment.
+//   - launchAgent's VS-Code-only fields (folderPath/bypassPermissions) are
+//     exercised separately (see "upstream's launchAgent with extra fields"
+//     below) via the bridge's client envelope (dispatchPixelClientMessage),
+//     since no real UI control in this embedding ever sets them: the "Skip
+//     permissions mode" dropdown that would have is source-patched out at
+//     build time (scripts/pixel-agents-source-patch.mjs), and this
+//     integration never sends a multi-root `workspaceFolders` message, so the
+//     folder picker never renders either.
 
 test.use({ viewport: { width: 1280, height: 800 } })
-
-const switcherTrigger = (page: Page) => page.getByRole('button', { name: 'Switch conversation' })
-const switcherListbox = (page: Page) => page.getByRole('listbox', { name: 'Conversations' })
 
 // `characterIds`'s order is `getCharacters()`'s Map-insertion order, which
 // follows the STAGE's bootstrap iteration order over conversations — i.e.
@@ -70,59 +85,29 @@ const switcherListbox = (page: Page) => page.getByRole('listbox', { name: 'Conve
 const sortedCharacterIds = (frame: Parameters<typeof characterIds>[0]): Promise<number[]> =>
   characterIds(frame).then((ids) => [...ids].sort((a, b) => a - b))
 
-const openSwitcher = async (page: Page): Promise<void> => {
-  if (
-    await switcherListbox(page)
-      .isVisible()
-      .catch(() => false)
-  ) {
-    return
-  }
-  await switcherTrigger(page).click()
-  await expect(switcherListbox(page)).toBeVisible({ timeout: 15_000 })
-}
-
-const conversationOption = (page: Page, title: string) =>
-  switcherListbox(page).getByRole('option', { name: title, exact: true })
-
 const createNewConversation = async (page: Page): Promise<void> => {
-  await openSwitcher(page)
-  await switcherListbox(page).getByRole('button', { name: 'New conversation' }).click()
+  await addAgentButton(page).click()
 }
 
-const selectConversationByTitle = async (page: Page, title: string): Promise<void> => {
-  await openSwitcher(page)
-  await conversationOption(page, title).click()
-}
-
-// The switcher listbox is an absolutely positioned panel INSIDE the assistant
-// panel (not a full-page portal) that only closes on a pointerdown the host
-// document itself observes — a click inside the sandboxed office iframe is a
-// separate document and never bubbles up to that listener. Left open, its
-// panel can sit above the office iframe in stacking order and swallow clicks
-// meant for it. Close it explicitly (Escape, which its own useDialogEscape
-// handles) before any office-iframe interaction that follows an
-// openSwitcher/assertion block.
-const closeSwitcherIfOpen = async (page: Page): Promise<void> => {
-  if (
-    await switcherListbox(page)
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await page.keyboard.press('Escape')
-    await expect(switcherListbox(page)).toBeHidden()
-  }
-}
-
-// Mirrors chat-persistence.e2e.ts / multi-conversation.e2e.ts: scoped by the
-// themed user-bubble background token rather than a bare getByText, since an
-// untruncated prompt is byte-identical to its auto-derived switcher title.
+// Mirrors chat-persistence.e2e.ts: scoped by the themed user-bubble background
+// token rather than a bare getByText, since an untruncated prompt can collide
+// with other on-page text.
 const userBubble = (page: Page, text: string) =>
   page.locator('[class*="user-bubble"]', { hasText: text })
 
 const sendAndAwaitAnswer = async (page: Page, prompt: string, answer: string): Promise<void> => {
   await sendMessage(page, prompt)
   await expect(page.getByText(answer)).toBeVisible({ timeout: 30_000 })
+}
+
+// The most recent `agentSelected` message the office bridge posted — the
+// ground-truth signal for "which character does the host consider active"
+// now that there is no switcher trigger to read a title off of.
+const lastSelectedAgentId = async (
+  frame: Parameters<typeof readMessageLog>[0]
+): Promise<number | undefined> => {
+  const log = await readMessageLog(frame)
+  return [...log].reverse().find((message) => message.type === 'agentSelected')?.id
 }
 
 // "The answer is visible" is a live-store signal, not a persistence one (see
@@ -170,6 +155,28 @@ const chatDatabasePersisted = (
     { needle: fragment, count: conversationCount }
   )
 
+// Live conversation ROW count in the shared 'tinytinkerer' IndexedDB — the
+// replacement for what a switcher option count used to prove: that a delete
+// actually removed the conversation (not just its office seat).
+const conversationRowCount = (page: Page): Promise<number> =>
+  page.evaluate(
+    () =>
+      new Promise<number>((resolve, reject) => {
+        const open = indexedDB.open('tinytinkerer')
+        open.onerror = () => reject(open.error ?? new Error('Could not open the chat database'))
+        open.onsuccess = () => {
+          const database = open.result
+          const request = database.transaction('conversations').objectStore('conversations').count()
+          request.onerror = () =>
+            reject(request.error ?? new Error('Could not count conversations'))
+          request.onsuccess = () => {
+            resolve(request.result)
+            database.close()
+          }
+        }
+      })
+  )
+
 test.describe('Pixel Agents multi-agent office (#430)', () => {
   test('two conversations project two office characters; only the running one animates', async ({
     page
@@ -205,9 +212,8 @@ test.describe('Pixel Agents multi-agent office (#430)', () => {
       .poll(async () => (await agentOverlayLocator(page, 1).textContent())?.trim())
       .not.toContain('Idle')
 
-    // A second conversation, created through the assistant panel's own
-    // switcher — a real conversation (not a launchAgent office affordance) —
-    // projects a second, INDEPENDENT office character.
+    // A second conversation, created through a real click on upstream's own
+    // "+ Agent" button — projects a second, INDEPENDENT office character.
     await createNewConversation(page)
     await expect.poll(() => sortedCharacterIds(frame)).toEqual([1, 2])
     await expect
@@ -276,7 +282,9 @@ test.describe('Pixel Agents multi-agent office (#430)', () => {
       .toContain('Idle')
   })
 
-  test('interactive office: launchAgent, focusAgent, and select-then-× close', async ({ page }) => {
+  test('interactive office: +Agent, focusAgent, launchAgent with extra fields, and select-then-× close', async ({
+    page
+  }) => {
     const PROMPT_ONE = 'Interactive office topic one message content.'
     const ANSWER_ONE = 'Answer for interactive office topic one.'
     const PROMPT_TWO = 'Interactive office topic two message content.'
@@ -296,22 +304,29 @@ test.describe('Pixel Agents multi-agent office (#430)', () => {
 
     // Conversation one: the pre-existing default (agent 1).
     await sendAndAwaitAnswer(page, PROMPT_ONE, ANSWER_ONE)
-    // Conversation two, via the switcher (agent 2) — becomes active.
+    // Conversation two, via a real click on upstream's own "+ Agent" button
+    // (agent 2) — becomes active.
     await createNewConversation(page)
     await expect.poll(() => sortedCharacterIds(frame)).toEqual([1, 2])
     await sendAndAwaitAnswer(page, PROMPT_TWO, ANSWER_TWO)
 
-    // --- office toolbar's launchAgent affordance -----------------------------
-    // No real click can reach it here (see the module comment) — dispatched as
-    // upstream's own webview would send it.
-    await dispatchPixelClientMessage(frame, { type: 'launchAgent' })
+    // --- upstream's launchAgent with extra (VS-Code-only) fields ------------
+    // folderPath/bypassPermissions come from upstream's multi-root folder
+    // picker and "Skip permissions mode" dropdown — no real UI control in
+    // this embedding can set them (the picker never renders, since this
+    // integration never sends a `workspaceFolders` message; the dropdown is
+    // source-patched out). Dispatched directly, at the wire level, to prove
+    // the bridge safely ignores them (protocol.ts) rather than rejecting the
+    // message or crashing.
+    await dispatchPixelClientMessage(frame, {
+      type: 'launchAgent',
+      folderPath: '/not/a/real/workspace/folder',
+      bypassPermissions: true
+    })
     await expect.poll(() => sortedCharacterIds(frame)).toEqual([1, 2, 3])
-    await openSwitcher(page)
-    await expect(switcherListbox(page).getByRole('option')).toHaveCount(3)
     // The launched conversation is untitled (no message sent yet) and made
-    // active automatically, same as the switcher's own "New conversation".
-    await expect(conversationOption(page, PROMPT_TWO)).toHaveAttribute('aria-selected', 'false')
-    await closeSwitcherIfOpen(page)
+    // active automatically, same as a real "+ Agent" click.
+    await expect.poll(() => lastSelectedAgentId(frame)).toBe(3)
 
     // --- clicking a character: focusAgent -> assistant panel follows --------
     // A REAL click on agent 1's character (clickCharacterToSelect — see its own
@@ -320,36 +335,87 @@ test.describe('Pixel Agents multi-agent office (#430)', () => {
     // not assumed — see the module comment's correction), not just set the
     // office's own visual selection.
     await clickCharacterToSelect(page, frame, 1)
-    await expect(switcherTrigger(page)).toContainText(PROMPT_ONE)
     await expect(userBubble(page, PROMPT_ONE)).toBeVisible()
-    await openSwitcher(page)
-    await expect(conversationOption(page, PROMPT_ONE)).toHaveAttribute('aria-selected', 'true')
-    await expect(conversationOption(page, PROMPT_TWO)).toHaveAttribute('aria-selected', 'false')
-    await closeSwitcherIfOpen(page)
+    await expect.poll(() => lastSelectedAgentId(frame)).toBe(1)
 
     // --- upstream's own select-then-× close ----------------------------------
     // Select agent 3 (the just-launched, untitled conversation) with the SAME
     // real click, then a real click on its overlay's own "Close agent" button
     // (rendered and visible only once selected — issue #430 unhid it).
     // Selecting agent 3 also re-focuses it (per the correction above), so this
-    // exercises deleting the ACTIVE conversation, not a background one —
-    // multi-conversation.e2e.ts's delete suite already covers the background
-    // case generically; the agent-number bookkeeping this file cares about
-    // (agent 3 retired, never reissued) is identical either way.
+    // exercises deleting the ACTIVE conversation, not a background one.
+    // closeSelectedAgentOverlay (not a bare locator click): a stray selection
+    // flicker can still detach the Close button between resolving it and
+    // completing the click — see its own comment in fixtures/pixel-agents.ts.
     await clickCharacterToSelect(page, frame, 3)
-    await agentOverlayCloseButton(page, 3).click()
+    await closeSelectedAgentOverlay(page, frame, 3)
 
     await expect.poll(() => sortedCharacterIds(frame)).toEqual([1, 2])
-    await openSwitcher(page)
-    await expect(switcherListbox(page).getByRole('option')).toHaveCount(2)
     // The launched conversation is really gone (not just its office agent) —
-    // its untitled row doesn't linger under a stale title.
-    await expect(
-      switcherListbox(page).getByRole('option', { name: 'New conversation' })
-    ).toHaveCount(0)
-    // Both original conversations are intact, exactly one of them active.
-    await expect(conversationOption(page, PROMPT_ONE)).toHaveCount(1)
-    await expect(conversationOption(page, PROMPT_TWO)).toHaveCount(1)
+    // exactly two conversation rows remain in the shared database.
+    await expect.poll(() => conversationRowCount(page)).toBe(2)
+  })
+
+  test('reset isolation (#332, generalized): resetting the active office conversation clears it without touching another', async ({
+    page
+  }) => {
+    const PROMPT_RESET_A = 'Start the Reset-Isolation Alpha topic and hold streaming please.'
+    const ANSWER_RESET_A_PART1 = 'Reset Alpha streaming part one is here.'
+    const ANSWER_RESET_A_PART2 = 'Reset Alpha streaming part two should never appear.'
+    const ANSWER_RESET_A = `${ANSWER_RESET_A_PART1}${GATE_SENTINEL} ${ANSWER_RESET_A_PART2}`
+    const PROMPT_RESET_B = 'Start the Reset-Isolation Beta topic and finish immediately.'
+    const ANSWER_RESET_B = 'Reset Beta streaming completed without any gate.'
+
+    await enablePixelHooks(page)
+    await installKeyedChatMock(page, (lastUserText) => {
+      if (lastUserText.includes('Reset-Isolation Beta topic')) return ANSWER_RESET_B
+      if (lastUserText.includes('Reset-Isolation Alpha topic')) return ANSWER_RESET_A
+      return SYNTHESIS_ANSWER
+    })
+    await installStreamGate(page)
+    await page.goto(PIXEL_AGENTS_URL)
+    await dismissFirstLoad(page)
+
+    const frame = await waitForOfficeFrame(page)
+    await expect.poll(() => characterIds(frame)).toEqual([1])
+
+    // A (agent 1, the pre-existing default conversation) streams and holds at
+    // the gate.
+    await sendMessage(page, PROMPT_RESET_A)
+    await expect(page.getByText(ANSWER_RESET_A_PART1)).toBeVisible({ timeout: 30_000 })
+
+    // B (agent 2) is idle-with-history: a separate, already-completed
+    // conversation, created via the office's own "+ Agent" button.
+    await createNewConversation(page)
+    await expect.poll(() => sortedCharacterIds(frame)).toEqual([1, 2])
+    await sendAndAwaitAnswer(page, PROMPT_RESET_B, ANSWER_RESET_B)
+
+    // Switch back to A (still streaming, gated mid-answer) via a real
+    // character click.
+    await clickCharacterToSelect(page, frame, 1)
+    await expect(page.getByText(ANSWER_RESET_A_PART1)).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('button', { name: 'Stop generating' })).toBeVisible()
+
+    // Reset the ACTIVE (streaming) conversation: abort-before-clear (#332)
+    // empties it immediately.
+    await page.getByRole('button', { name: 'Reset conversation' }).click()
+    await expect(userBubble(page, PROMPT_RESET_A)).toHaveCount(0)
+    await expect(page.getByText(ANSWER_RESET_A_PART1)).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Send' })).toBeVisible()
+
+    // Release the gate the reset already made moot: no orphaned tail ever
+    // resurrects the aborted run's remaining content.
+    await releaseStreamGate(page)
+    await page.waitForTimeout(1500)
+    await expect(page.getByText(ANSWER_RESET_A_PART2)).toHaveCount(0)
+    await expect(userBubble(page, PROMPT_RESET_A)).toHaveCount(0)
+
+    // B was never touched by A's reset — both its own agent (2, still seated)
+    // and its transcript are intact once selected.
+    await expect.poll(() => sortedCharacterIds(frame)).toEqual([1, 2])
+    await clickCharacterToSelect(page, frame, 2)
+    await expect(userBubble(page, PROMPT_RESET_B)).toBeVisible()
+    await expect(page.getByText(ANSWER_RESET_B)).toBeVisible()
   })
 
   test('reload restores both agents with their seats and the active selection', async ({
@@ -380,7 +446,7 @@ test.describe('Pixel Agents multi-agent office (#430)', () => {
     // Make conversation one (agent 1) the active one again — a deliberate
     // choice, not "whichever was created last", so the restored SELECTION is
     // a genuine persistence signal rather than an accident of recency.
-    await selectConversationByTitle(page, PROMPT_ONE)
+    await clickCharacterToSelect(page, frame, 1)
     await expect(userBubble(page, PROMPT_ONE)).toBeVisible({ timeout: 30_000 })
 
     // Gate the reload on both conversation ROWS and both answers being fully
@@ -404,29 +470,16 @@ test.describe('Pixel Agents multi-agent office (#430)', () => {
     frame = await waitForOfficeFrame(page)
     // Both agent numbers return — never reused/reissued (workspace-db.ts's
     // monotonic nextAgentNumber) — proving the two office characters really
-    // are the SAME two conversations, not two fresh ones. Sorted (see
-    // sortedCharacterIds): conversation two's more recent updatedAt means it
-    // iterates first in the bootstrap handshake, so `getCharacters()`'s
-    // insertion order is [2, 1] here, not [1, 2] — an incidental ordering,
-    // not a persistence bug.
+    // are the SAME two conversations, not two fresh ones.
     await expect.poll(() => sortedCharacterIds(frame)).toEqual([1, 2])
 
     // The office's own bootstrap handshake re-selects agent 1 (conversation
     // one's persisted number), matching the restored active conversation.
-    await expect
-      .poll(() =>
-        readMessageLog(frame).then((log) =>
-          log.some((message) => message.type === 'agentSelected' && message.id === 1)
-        )
-      )
-      .toBe(true)
+    await expect.poll(() => lastSelectedAgentId(frame)).toBe(1)
 
-    // The host side agrees: the switcher shows both conversations, with
-    // conversation one's restored active state.
-    await expect(switcherTrigger(page)).toContainText(PROMPT_ONE, { timeout: 30_000 })
-    await openSwitcher(page)
-    await expect(switcherListbox(page).getByRole('option')).toHaveCount(2)
-    await expect(conversationOption(page, PROMPT_ONE)).toHaveAttribute('aria-selected', 'true')
-    await expect(conversationOption(page, PROMPT_TWO)).toHaveAttribute('aria-selected', 'false')
+    // The host side agrees: the assistant panel shows conversation one's
+    // transcript, and both conversation rows persisted.
+    await expect(userBubble(page, PROMPT_ONE)).toBeVisible({ timeout: 30_000 })
+    await expect.poll(() => conversationRowCount(page)).toBe(2)
   })
 })

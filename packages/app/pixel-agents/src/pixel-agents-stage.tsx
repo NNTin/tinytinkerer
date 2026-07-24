@@ -3,7 +3,6 @@ import { DockablePanelLayout, useLiveChatActivity } from '@tinytinkerer/app-shel
 import type { ChatEvent } from '@tinytinkerer/contracts'
 import { messagesForChatEvent } from './activity'
 import {
-  PIXEL_AGENTS_BRIDGE_CHANNEL,
   createPixelBootstrapMessages,
   parsePixelAgentsBootstrap,
   parsePixelClientEnvelope,
@@ -132,13 +131,17 @@ export const PixelAgentsWorkspace = ({
   actionsRef.current = actions
 
   const postToPixelAgents = useCallback((message: PixelServerMessage): void => {
-    // The sandboxed frame has an opaque origin that can't be named as a
-    // postMessage targetOrigin; delivery is already pinned to it via
-    // contentWindow, and the payload is only visualization data.
-    frameRef.current?.contentWindow?.postMessage(
-      { channel: PIXEL_AGENTS_BRIDGE_CHANNEL, direction: 'server', message },
-      '*'
-    )
+    // Sent RAW (not enveloped): upstream's own PostMessageTransport reads
+    // `event.data` directly as the ServerMessage (see
+    // `~/pixel-agents/webview-ui/src/transport/postMessageTransport.ts`) once
+    // the injected `acquireVsCodeApi` shim (`pixel-agents-bridge.mjs`) makes
+    // it the active transport. The iframe->host direction stays enveloped —
+    // that's written by our own shim, not upstream's code — so only this
+    // direction changed shape. The sandboxed frame has an opaque origin that
+    // can't be named as a postMessage targetOrigin; delivery is already
+    // pinned to it via contentWindow, and the payload is only visualization
+    // data.
+    frameRef.current?.contentWindow?.postMessage(message, '*')
   }, [])
 
   const postMany = useCallback(

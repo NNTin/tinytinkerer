@@ -17,7 +17,6 @@ import {
   useSettingsSurfaceController
 } from '../surfaces'
 import { useStickToBottom } from '../use-stick-to-bottom'
-import { LazyConversationSwitcher } from './lazy-conversation-switcher'
 import { SpeechToggleButton } from './speech-toggle-button'
 import { surfaceButtonClass } from './surface-button'
 
@@ -72,11 +71,6 @@ export const FloatingChatSurface = ({
     resetConversation,
     cancelRetry,
     stop,
-    conversations,
-    activeConversationId,
-    selectConversation,
-    startNewConversation,
-    deleteConversation,
     sendRefusalNotice
   } = useChatSurfaceController()
   const { token } = useSettingsSurfaceController()
@@ -198,18 +192,6 @@ export const FloatingChatSurface = ({
               >
                 <FaRotateLeft className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
-              {/* Conversation switcher (issue #430): its own lazy chunk (see
-                  lazy-conversation-switcher.tsx) to keep this chunk's budget. */}
-              <Suspense fallback={null}>
-                <LazyConversationSwitcher
-                  conversations={conversations}
-                  activeConversationId={activeConversationId}
-                  selectConversation={selectConversation}
-                  startNewConversation={startNewConversation}
-                  deleteConversation={deleteConversation}
-                  triggerClassName={`flex h-8 items-center gap-1 rounded-md border border-[var(--widget-border)] bg-[var(--panel)] px-2 text-[11px] font-medium text-[var(--widget-muted)] transition-colors ${headerIconButtonHover}`}
-                />
-              </Suspense>
               {/* Tool picker (issue #400): unlike the inspector below, this works on
                   every shell — it is not gated on inspectorPanelSupported. Renders
                   nothing until a tool-tree plugin is enabled. */}

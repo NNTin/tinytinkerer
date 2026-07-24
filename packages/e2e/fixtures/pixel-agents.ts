@@ -363,13 +363,13 @@ const BRIDGE_CHANNEL = 'tinytinkerer:pixel-agents:v1'
 // frame's opaque `'null'` (see pixel-agents-stage.tsx's message handler) — a
 // top-level `page.evaluate` post could satisfy neither check.
 //
-// Reached for `launchAgent` only: upstream's own "+ Agent" toolbar button
-// renders exclusively in its VS Code extension host (gated on `typeof
-// acquireVsCodeApi === 'undefined'` in the vendored bundle — verified by
-// inspecting the built upstream bundle; confirmed absent from the live DOM in
-// this browser-embedded deployment), so there is no click — real or raw — that
-// can ever reach it here at all (unlike Settings/"Close agent", it isn't merely
-// CSS-hidden; the JSX branch itself never renders in browser mode).
+// Upstream's own "+ Agent" toolbar button (addAgentButton below) IS reachable
+// by a real click in this embedding (scripts/pixel-agents-bridge.mjs shims
+// `window.acquireVsCodeApi`), so this helper isn't needed just to trigger
+// `launchAgent` anymore. It stays useful for exercising message shapes no
+// real UI control in this embedding can produce — e.g. `launchAgent` with its
+// VS-Code-only `folderPath`/`bypassPermissions` fields set (the dropdown that
+// would set them is source-patched out; see pixel-agents-multi-agent.e2e.ts).
 export const dispatchPixelClientMessage = (
   frame: Frame,
   message: Record<string, unknown>
@@ -482,13 +482,29 @@ export const clickCharacterToSelect = async (
       rect.x >= 0 && rect.x <= rect.canvasWidth && rect.y >= 0 && rect.y <= rect.canvasHeight
     if (onCanvas) {
       await canvasLoc.click({ position: { x: rect.x, y: rect.y } })
-      const selected = await overlayPointerEvents()
+      const selectedOnce = await overlayPointerEvents()
         .then((value) => value === 'auto')
         .catch(() => false)
-      if (selected) return
+      // A single truthy read is not enough: `officeState.selectedAgentId`'s
+      // synchronous mutation and its DOM reflection (this pointer-events
+      // style, and the "Close agent" button's own mount) can be caught
+      // mid-flicker by one read taken right at the click, then read false
+      // again a beat later — confirmed empirically as the cause of a 60s
+      // "element was detached, retrying" hang on a caller that clicks the
+      // overlay's "Close agent" button immediately after this returns.
+      // Requiring the SAME truthy result on a second read, a few animation
+      // frames later, closes that window before this function hands
+      // "selected" back to a caller.
+      if (selectedOnce) {
+        await page.waitForTimeout(150)
+        const selectedStill = await overlayPointerEvents()
+          .then((value) => value === 'auto')
+          .catch(() => false)
+        if (selectedStill) return
+      }
     }
-    // Give a still-settling camera pan a moment before the next attempt reads
-    // a (hopefully now-stable) position.
+    // Give a still-settling camera pan (or a selection flicker, see above) a
+    // moment before the next attempt reads a (hopefully now-stable) position.
     await page.waitForTimeout(250)
   }
 
@@ -504,3 +520,48 @@ export const clickCharacterToSelect = async (
 // equivalent) has made that agent the office's selected character.
 export const agentOverlayCloseButton = (page: Page, agentId: number) =>
   agentOverlayLocator(page, agentId).getByTitle('Close agent')
+
+// Clicks the ALREADY-selected character's "Close agent" button — bounded,
+// self-healing retries rather than a single `.click()`, because a stray
+// selection flicker (the same race `clickCharacterToSelect` above guards
+// against with its own stability re-check) can still detach this button's
+// DOM node between Playwright resolving the locator and completing the
+// click, which Playwright's own built-in actionability retry does not
+// recover from if the flicker recurs faster than it settles. On a detected
+// detach, re-checks whether `agentId` is still selected and, if the flicker
+// toggled it off, re-selects (mirroring clickCharacterToSelect's own
+// click-to-select path) before the next attempt.
+export const closeSelectedAgentOverlay = async (
+  page: Page,
+  frame: Frame,
+  agentId: number
+): Promise<void> => {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await agentOverlayCloseButton(page, agentId).click({ timeout: 10_000 })
+      return
+    } catch (error) {
+      lastError = error
+      const stillSelected = await frame.evaluate(
+        (id) =>
+          document.querySelector<HTMLElement>(
+            `[data-testid="agent-overlay"][data-agent-id="${id}"]`
+          )?.style.pointerEvents === 'auto',
+        agentId
+      )
+      if (!stillSelected) await clickCharacterToSelect(page, frame, agentId)
+    }
+  }
+  throw lastError
+}
+
+// Upstream's own "+ Agent" toolbar button (webview-ui/src/components/
+// BottomToolbar.tsx), rendered INSIDE the sandboxed office iframe — not a
+// TinyTinkerer-owned control, so (like agentOverlayLocator above) this is
+// scoped through frameLocator rather than a bare page.getByRole. It only
+// renders because scripts/pixel-agents-bridge.mjs shims
+// `window.acquireVsCodeApi`, making upstream treat this embedding as a VS
+// Code webview host.
+export const addAgentButton = (page: Page) =>
+  page.frameLocator('iframe[title="Pixel Agents office"]').getByRole('button', { name: '+ Agent' })

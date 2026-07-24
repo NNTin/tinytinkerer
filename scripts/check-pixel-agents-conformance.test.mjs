@@ -16,7 +16,7 @@ const COMPLETE_BUNDLE =
   'type:"webviewReady" type:"saveLayout" type:"saveAgentSeats" ' +
   'window.__pixelAgentsTestHooks=1 window.__PIXEL_AGENTS_E2E=1 ' +
   'hooks.selectAgent=e "data-testid":"agent-overlay" "data-agent-id":t ' +
-  'new WebSocket(e) t.onopen=n t.onmessage=r ' +
+  'typeof acquireVsCodeApi ' +
   'title:`Settings` title:`Close agent`'
 
 test('assertBundleConformance passes when every mirrored assumption is present', () => {
@@ -28,9 +28,9 @@ test('assertBundleConformance names each missing string literal', () => {
   assert.throws(() => assertBundleConformance(bundle), /string literal "agentStatus"/)
 })
 
-test('assertBundleConformance names a missing WebSocket handler pattern', () => {
-  const bundle = COMPLETE_BUNDLE.replace('t.onmessage=r', '')
-  assert.throws(() => assertBundleConformance(bundle), /\\\.onmessage/)
+test('assertBundleConformance names a missing acquireVsCodeApi feature-detection pattern', () => {
+  const bundle = COMPLETE_BUNDLE.replace('typeof acquireVsCodeApi ', '')
+  assert.throws(() => assertBundleConformance(bundle), /acquireVsCodeApi/)
 })
 
 test('assertBundleConformance names a missing button title pattern', () => {

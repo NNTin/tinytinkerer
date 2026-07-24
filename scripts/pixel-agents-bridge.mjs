@@ -2,7 +2,6 @@ export const PIXEL_AGENTS_BRIDGE_CHANNEL = 'tinytinkerer:pixel-agents:v1'
 
 export const renderPixelAgentsBridge = () => `(() => {
   const channel = ${JSON.stringify(PIXEL_AGENTS_BRIDGE_CHANNEL)}
-  const sockets = new Set()
   // The parent embeds this document in a sandboxed ('allow-scripts', no
   // 'allow-same-origin') iframe, so it is served from an opaque origin here — the
   // parent's real origin cannot be read from location and cannot be named as a
@@ -12,70 +11,30 @@ export const renderPixelAgentsBridge = () => `(() => {
   // rather than guess an origin.
   const parentOrigin = new URLSearchParams(location.search).get('tinytinkerer-parent-origin')
 
-  class TinyTinkererWebSocket {
-    static CONNECTING = 0
-    static OPEN = 1
-    static CLOSING = 2
-    static CLOSED = 3
-
-    constructor(url) {
-      this.url = String(url)
-      this.readyState = TinyTinkererWebSocket.CONNECTING
-      this.onopen = null
-      this.onmessage = null
-      this.onclose = null
-      this.onerror = null
-      sockets.add(this)
-      queueMicrotask(() => {
-        if (this.readyState !== TinyTinkererWebSocket.CONNECTING) return
-        this.readyState = TinyTinkererWebSocket.OPEN
-        this.onopen?.(new Event('open'))
-      })
-    }
-
-    send(payload) {
-      if (this.readyState !== TinyTinkererWebSocket.OPEN) {
-        throw new DOMException('WebSocket is not open', 'InvalidStateError')
-      }
+  // Upstream feature-detects a VS Code webview host via \`typeof acquireVsCodeApi\`
+  // (webview-ui/src/runtime.ts) to pick its message transport, and to decide
+  // whether to render its native "+ Agent" button (webview-ui/src/components/
+  // BottomToolbar.tsx). Defining this global makes upstream treat this
+  // embedding as a VS Code webview: outbound messages go through
+  // acquireVsCodeApi().postMessage(message) (below, called exactly once, at
+  // module load, from transport/index.ts), and inbound messages are handled
+  // entirely by upstream's own PostMessageTransport (a plain "message" event
+  // listener it installs itself) — so this bridge does not need to listen
+  // for inbound messages itself; the parent posts raw (unenveloped) message
+  // objects directly to this frame.
+  window.acquireVsCodeApi = () => ({
+    postMessage: (message) => {
       if (!parentOrigin) return
       window.parent.postMessage(
-        { channel, direction: 'client', payload: String(payload) },
+        { channel, direction: 'client', payload: JSON.stringify(message) },
         parentOrigin
       )
-    }
-
-    close() {
-      if (this.readyState === TinyTinkererWebSocket.CLOSED) return
-      this.readyState = TinyTinkererWebSocket.CLOSING
-      sockets.delete(this)
-      this.readyState = TinyTinkererWebSocket.CLOSED
-      this.onclose?.(new Event('close'))
-    }
-  }
-
-  window.addEventListener('message', (event) => {
-    // location.origin is the opaque string "null" inside this sandboxed frame, and
-    // the parent's real origin isn't statically knowable here, so identity is
-    // checked by window reference (the only thing an opaque origin can't spoof)
-    // rather than by origin string.
-    if (event.source !== window.parent) return
-    const envelope = event.data
-    if (
-      !envelope ||
-      typeof envelope !== 'object' ||
-      envelope.channel !== channel ||
-      envelope.direction !== 'server'
-    ) return
-
-    const data = JSON.stringify(envelope.message)
-    for (const socket of sockets) {
-      if (socket.readyState === TinyTinkererWebSocket.OPEN) {
-        socket.onmessage?.(new MessageEvent('message', { data }))
-      }
-    }
+    },
+    // Unused anywhere in webview-ui today (grepped); stubbed for forward-compat
+    // with the real VS Code webview API shape.
+    getState: () => undefined,
+    setState: () => {}
   })
-
-  window.WebSocket = TinyTinkererWebSocket
 
   const installIntegrationStyle = () => {
     const style = document.createElement('style')

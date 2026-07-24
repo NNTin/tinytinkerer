@@ -43,10 +43,8 @@ const sendChat = async (page: Page, prompt: string): Promise<void> => {
 
 // The transcript's user-turn bubble, scoped by the themed user-bubble background
 // token (which only the user bubble uses, so the selector survives palette
-// changes). A bare getByText(prompt) is ambiguous since the conversation
-// switcher (#430): its header trigger shows the active conversation's
-// auto-derived title, which for a short (≤48 char) prompt is the prompt text
-// verbatim.
+// changes) rather than a bare getByText, to stay robust to any other on-page
+// text that happens to match the prompt.
 const promptBubble = (page: Page, prompt: string) =>
   page.locator('[class*="user-bubble"]', { hasText: prompt })
 
@@ -59,6 +57,12 @@ test.describe('chat history persistence across reload (#250)', () => {
       await installChatMock(page, ANSWER)
       await page.goto(shell.url)
       await dismissFirstLoad(page)
+
+      // The header conversation switcher was removed (office-driven-conversation-
+      // management follow-up to issue #430): the Pixel Agents office is now the
+      // only conversation-management surface in the whole product, so this shell
+      // must never render it.
+      await expect(page.getByRole('button', { name: 'Switch conversation' })).toHaveCount(0)
 
       await sendChat(page, prompt)
 

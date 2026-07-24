@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
-export type DockablePanel = { id: string; title: string; content: ReactNode }
+export type DockablePanel = {
+  id: string
+  title: string
+  content: ReactNode
+}
 export type DockableLayoutPreset = 'a' | 'b' | 'c' | 'd'
 type ActiveLayout = DockableLayoutPreset | 'custom'
 export type DockablePanels =

@@ -43,12 +43,6 @@ import {
 // fixtures/canvas-chat.ts, and the live phase uses the synthetic no-tool chat
 // mock, exactly like the existing pixel-agents spec.
 
-// Mirrors PIXEL_AGENTS_BRIDGE_CHANNEL (packages/app/pixel-agents/src/protocol.ts):
-// the parent posts every PixelServerMessage to the sandboxed office iframe in
-// an envelope on this channel. Inlined because an addInitScript callback is
-// serialized into the page and cannot close over imports.
-const BRIDGE_CHANNEL = 'tinytinkerer:pixel-agents:v1'
-
 // A scenario's `steps` array is untyped-index-addressable JSON (see
 // mock-litellm.ts's loadScenario) — this pulls the Nth step's prompt text so
 // the spec reuses the EXACT captured prompt rather than retyping it (capture
@@ -66,22 +60,23 @@ const promptText = (scenario: Scenario, index: number): string => {
 // against the vendored upstream bundle's messageLog.push call). So the restore
 // assertion records the actual layout payloads itself: this passive listener
 // runs in every document the context boots (addInitScript reaches the
-// sandboxed office iframe too) and stashes each server-envelope layoutLoaded
-// layout. Pure observation — nothing is intercepted, altered, or answered.
+// sandboxed office iframe too) and stashes each layoutLoaded layout. Pure
+// observation — nothing is intercepted, altered, or answered.
+//
+// Host -> iframe messages are posted RAW (not enveloped): upstream's own
+// PostMessageTransport reads `event.data` directly as the message once the
+// injected acquireVsCodeApi shim makes it the active transport (see
+// pixel-agents-stage.tsx's postToPixelAgents), so `event.data` here already
+// IS the PixelServerMessage, with no channel/direction wrapper to check.
 const recordLayoutLoads = async (page: Page): Promise<void> => {
-  await page.addInitScript((channel) => {
+  await page.addInitScript(() => {
     window.addEventListener('message', (event: MessageEvent<unknown>) => {
-      const data = event.data as {
-        channel?: unknown
-        direction?: unknown
-        message?: { type?: unknown; layout?: unknown }
-      } | null
-      if (data?.channel !== channel || data.direction !== 'server') return
-      if (data.message?.type !== 'layoutLoaded') return
+      const data = event.data as { type?: unknown; layout?: unknown } | null
+      if (!data || typeof data !== 'object' || data.type !== 'layoutLoaded') return
       const target = window as unknown as { __ttLayoutLoads?: unknown[] }
-      ;(target.__ttLayoutLoads ??= []).push(data.message.layout)
+      ;(target.__ttLayoutLoads ??= []).push(data.layout)
     })
-  }, BRIDGE_CHANNEL)
+  })
 }
 
 const layoutLoads = (frame: Frame): Promise<unknown[]> =>

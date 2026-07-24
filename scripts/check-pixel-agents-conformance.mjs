@@ -44,14 +44,17 @@ const REQUIRED_BUNDLE_STRINGS = [
   'data-agent-id'
 ]
 
-// scripts/pixel-agents-bridge.mjs implements only the on* handler properties of
-// WebSocket (onopen/onmessage), not addEventListener. If upstream's webview
-// switches to addEventListener-style wiring, the injected shim goes silently
-// inert (no transport, no crash) instead of failing the build.
 const REQUIRED_BUNDLE_PATTERNS = [
-  { pattern: /new WebSocket\(/, description: 'a `new WebSocket(...)` construction' },
-  { pattern: /\.onopen\s*=/, description: 'a `.onopen =` assignment' },
-  { pattern: /\.onmessage\s*=/, description: 'a `.onmessage =` assignment' },
+  // scripts/pixel-agents-bridge.mjs shims `window.acquireVsCodeApi` so upstream
+  // treats this embedding as a VS Code webview host: it picks PostMessageTransport
+  // over WebSocketTransport, and BottomToolbar.tsx renders its native "+ Agent"
+  // button. If upstream stops feature-detecting this exact global (or renames it),
+  // the shim goes silently inert (button never renders, transport falls back to a
+  // WebSocket the bridge no longer serves) instead of failing the build.
+  {
+    pattern: /typeof acquireVsCodeApi/,
+    description: 'a `typeof acquireVsCodeApi` feature-detection check'
+  },
   // The injected CSS (scripts/pixel-agents-bridge.mjs) hides these buttons by
   // title attribute. The minifier emits them as template literals (title:`Settings`).
   {

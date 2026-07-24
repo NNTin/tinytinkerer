@@ -368,3 +368,69 @@ implementation, as a correction to decision #4 above:
   `packages/e2e` coverage of the office-driven actions rather than by any
   discoverable in-app control — see the acceptance site's comment in
   `packages/app/pixel-agents/src/protocol.ts` for the pointer back here.
+
+### Post-implementation update (2026-07-24)
+
+The header `ConversationSwitcher` described throughout this doc (Axis 4's
+"A + C together") has been **removed from every chat surface**, not just
+`apps/pixel-agents`. The office (character clicks, a new TinyTinkerer-owned
+`+ Agent` button, and the character "×") is now the sole conversation
+management surface across the whole product — every other app (`shell`,
+`ide`, `canvas`, `mermaid`) is read/reset-only against whichever conversation
+is currently active, relying on the shared same-origin IndexedDB
+(`storageNamespace: 'tinytinkerer'`) to stay in sync with what the office
+last selected.
+
+The new `+ Agent` button lives in `packages/app/pixel-agents/src/pixel-agents-stage.tsx`,
+rendered in TinyTinkerer's own chrome outside the sandboxed iframe, calling
+`actions.startNewConversation()` directly. It does **not** use the `launchAgent`
+bridge message — upstream's own native button (the reason `launchAgent` was
+kept as forward-compat, see above) turned out to never mount in this
+embedding at all (`{!isBrowserRuntime && (...)}` is a React conditional, not a
+CSS class, so it can't be revealed by the injected stylesheet the way
+"Settings" is hidden). `launchAgent` itself is untouched and still accepted,
+still exercised only by e2e.
+
+### Post-implementation update (2026-07-24, superseding the one above)
+
+TinyTinkerer's own `+ Agent` button (previous update) has been **removed**.
+Upstream's own native button now renders and is used instead — the "never
+mounts in this embedding" conclusion above held for the render gate in
+isolation, but a fuller investigation found the gate itself is just
+`typeof acquireVsCodeApi !== 'undefined'` (`~/pixel-agents/webview-ui/src/runtime.ts`),
+a plain global feature-detection check, not something structurally tied to
+running inside real VS Code.
+
+`scripts/pixel-agents-bridge.mjs`'s injected script now defines
+`window.acquireVsCodeApi` (replacing its previous `window.WebSocket` shim
+entirely — both flip the same `isBrowserRuntime` constant, which upstream
+also uses to choose its message transport, so only one shim can be active at
+a time). This makes upstream treat the embedding as a VS Code webview: its
+`+ Agent` button renders, and its transport switches from `WebSocketTransport`
+to `PostMessageTransport`. Concretely:
+
+- iframe -> host messages stay enveloped exactly as before (`{ channel,
+direction: 'client', payload }`) — that shape is written by our own shim's
+  `postMessage` implementation, not upstream's code, so `pixel-agents-stage.tsx`'s
+  inbound listener needed no changes.
+- host -> iframe messages are now sent RAW (unenveloped): upstream's
+  `PostMessageTransport.onMessage` reads `event.data` directly as the message,
+  with no envelope-unwrapping of its own. `postToPixelAgents` in
+  `pixel-agents-stage.tsx` was updated accordingly.
+- Clicking the button sends a real `launchAgent` client message (with 0-1
+  workspace folders, since this integration never sends a `workspaceFolders`
+  message, the click always goes straight to sending it — no folder-picker
+  dropdown ever appears), handled exactly as before by the already-existing,
+  already-tested `launchAgent` case in `pixel-agents-stage.tsx`.
+- The button's "Skip permissions mode" hover dropdown (sends `launchAgent`
+  with `bypassPermissions: true`, a field this single-workspace integration
+  has no meaning for) is removed via a new source-level patch
+  (`scripts/pixel-agents-source-patch.mjs`), applied to the freshly cloned
+  pinned commit before it's built — `Dropdown` fully unmounts rather than
+  CSS-hiding, and its items share generic classes with the legitimate
+  folder-picker dropdown, so this could not be done as a post-build CSS
+  injection the way "Settings" is hidden.
+
+`DockablePanelLayout`'s `headerActions` slot (added to host the previous
+button in the panel header, away from the iframe's hit-test area) was reverted
+— nothing else uses it.
