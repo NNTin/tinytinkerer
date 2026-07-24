@@ -420,20 +420,27 @@ export const PixelAgentsWorkspace = ({
         title="Pixel Agents office"
         sandbox="allow-scripts"
       />
-      {/* Upstream's own "+ Agent" button never mounts in this embedding (it only
-          renders inside a VS Code extension host) and its click handler assumes
-          VS Code-only workspace-folder state this integration doesn't have, so
-          this is TinyTinkerer's own button, calling the action directly rather
-          than round-tripping through the (still-accepted, forward-compat)
-          `launchAgent` postMessage. */}
-      <button
-        type="button"
-        className="pixel-agents-add-agent"
-        onClick={() => actions.startNewConversation()}
-      >
-        + Agent
-      </button>
     </div>
+  )
+
+  // Upstream's own "+ Agent" button never mounts in this embedding (it only
+  // renders inside a VS Code extension host) and its click handler assumes
+  // VS Code-only workspace-folder state this integration doesn't have, so
+  // this is TinyTinkerer's own button, calling the action directly rather
+  // than round-tripping through the (still-accepted, forward-compat)
+  // `launchAgent` postMessage. Rendered in the PANEL HEADER, not overlaid on
+  // the canvas: an absolutely-positioned overlay over the iframe intercepts
+  // pointer events meant for whatever the office renders underneath it
+  // (confirmed at runtime — office e2e clicks failed with "button intercepts
+  // pointer events" once characters/furniture happened to render there).
+  const addAgentButton = (
+    <button
+      type="button"
+      className="pixel-agents-add-agent"
+      onClick={() => actions.startNewConversation()}
+    >
+      + Agent
+    </button>
   )
 
   return (
@@ -457,7 +464,12 @@ export const PixelAgentsWorkspace = ({
         title="Pixel Agents workspace"
         storageKey="tinytinkerer:pixel-agents-workspace-layout:v1"
         panels={[
-          { id: 'pixel-agents', title: 'Pixel Agents', content: pixelAgents },
+          {
+            id: 'pixel-agents',
+            title: 'Pixel Agents',
+            content: pixelAgents,
+            headerActions: addAgentButton
+          },
           { id: 'assistant', title: 'Assistant', content: assistant }
         ]}
       />

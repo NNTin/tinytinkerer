@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
-export type DockablePanel = { id: string; title: string; content: ReactNode }
+export type DockablePanel = {
+  id: string
+  title: string
+  content: ReactNode
+  // Extra controls rendered in the panel's own header, next to its title (e.g.
+  // an "add" action) — kept OUT of `content`'s `app-dock-panel-body` because
+  // that area can be occupied by canvas/iframe content that would swallow
+  // pointer events meant for an overlaid control.
+  headerActions?: ReactNode
+}
 export type DockableLayoutPreset = 'a' | 'b' | 'c' | 'd'
 type ActiveLayout = DockableLayoutPreset | 'custom'
 export type DockablePanels =
@@ -440,6 +449,7 @@ export const DockablePanelLayout = ({
                   ⠿
                 </span>
                 <strong>{panel.title}</strong>
+                {panel.headerActions}
                 <label className="app-dock-move-label">
                   <span className="sr-only">Move {panel.title}</span>
                   <select
