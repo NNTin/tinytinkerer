@@ -24,3 +24,4 @@ allow-ghsas:
   - GHSA-frvp-7c67-39w9
   - GHSA-v2hh-gcrm-f6hx
   - GHSA-4c8g-83qw-93j6
+  - GHSA-qwww-vcr4-c8h2
