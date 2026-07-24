@@ -6,11 +6,21 @@ import type { ActivityView, TurnActivity } from '@tinytinkerer/app-core'
 import { TurnActivityPanel } from '../src/turn-activity-panel.js'
 
 const forwardPluginReport = vi.hoisted(() => vi.fn())
+type CaptureOptions = {
+  level?: string
+  tags?: Record<string, string>
+  fingerprint?: string[]
+}
+const captureTelemetryMessage = vi.hoisted(() =>
+  vi.fn<(message: string, options: CaptureOptions) => void>()
+)
 vi.mock('../src/telemetry/plugin-report', () => ({ forwardPluginReport }))
+vi.mock('../src/telemetry/telemetry', () => ({ captureTelemetryMessage }))
 
 afterEach(() => {
   cleanup()
   forwardPluginReport.mockClear()
+  captureTelemetryMessage.mockClear()
 })
 
 const activity = (items: TurnActivity['items']): TurnActivity => ({ items, reasoningText: '' })
@@ -352,6 +362,7 @@ describe('TurnActivityPanel generic ActivityView rendering', () => {
   it('renders untrusted text section values as text, never as HTML', () => {
     const view: ActivityView = {
       title: 'Tool',
+      status: 'ok',
       sections: [{ kind: 'text', label: 'Output', value: '<img src=x onerror=alert(1)>' }]
     }
     render(
@@ -368,9 +379,10 @@ describe('TurnActivityPanel generic ActivityView rendering', () => {
     expect(document.querySelector('img')).toBeNull()
   })
 
-  it('renders an omitted status as an unknown outcome cue', () => {
+  it('renders an explicit unknown status as the defensive outcome cue', () => {
     const view: ActivityView = {
       title: 'Tool',
+      status: 'unknown',
       sections: [{ kind: 'text', label: 'Output', value: 'done' }]
     }
     const { container } = render(
@@ -388,6 +400,61 @@ describe('TurnActivityPanel generic ActivityView rendering', () => {
     expect(container.querySelector('[data-activity-status="ok"]')).toBeNull()
   })
 
+  it('reports a settled owner-provided unknown status once', async () => {
+    const view: ActivityView = { title: 'Tool', status: 'unknown', sections: [] }
+    const { rerender } = render(
+      <TurnActivityPanel
+        activity={completedTool('whatever', {}, undefined, 'unknown-owner')}
+        isLive
+        serverNameById={new Map()}
+        resolveSummarizer={() => () => view}
+      />
+    )
+
+    await waitFor(() => expect(captureTelemetryMessage).toHaveBeenCalledTimes(1))
+    expect(captureTelemetryMessage.mock.calls[0]?.[0]).toBe(
+      'Tool activity resolved to unknown status: whatever'
+    )
+    expect(captureTelemetryMessage.mock.calls[0]?.[1]).toMatchObject({
+      level: 'warning',
+      tags: { tool: 'whatever', reason: 'explicit_unknown' }
+    })
+
+    rerender(
+      <TurnActivityPanel
+        activity={completedTool('whatever', {}, undefined, 'unknown-owner')}
+        isLive
+        serverNameById={new Map()}
+        resolveSummarizer={() => () => view}
+      />
+    )
+    expect(captureTelemetryMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not report the temporary fallback while an async summarizer resolves', async () => {
+    let resolveView: ((view: ActivityView) => void) | undefined
+    const pending = new Promise<ActivityView>((resolve) => {
+      resolveView = resolve
+    })
+    const { container } = render(
+      <TurnActivityPanel
+        activity={completedTool('async-tool', {})}
+        isLive
+        serverNameById={new Map()}
+        resolveSummarizer={() => () => pending}
+      />
+    )
+
+    expect(container.querySelector('[data-activity-resolution="pending"]')).toBeInTheDocument()
+    expect(container.querySelector('[data-activity-status="unknown"]')).toBeNull()
+    expect(captureTelemetryMessage).not.toHaveBeenCalled()
+    resolveView?.({ title: 'Async tool', status: 'ok', sections: [] })
+    await waitFor(() =>
+      expect(container.querySelector('[data-activity-status="ok"]')).toBeInTheDocument()
+    )
+    expect(captureTelemetryMessage).not.toHaveBeenCalled()
+  })
+
   it('neutral default: shows the tool label and "(no output)" for empty output', () => {
     render(
       <TurnActivityPanel
@@ -399,6 +466,24 @@ describe('TurnActivityPanel generic ActivityView rendering', () => {
 
     expect(screen.getByText('mystery-tool')).toBeInTheDocument()
     expect(screen.getByText('(no output)')).toBeInTheDocument()
+  })
+
+  it('reports a missing summarizer after the neutral fallback settles', async () => {
+    render(
+      <TurnActivityPanel
+        activity={completedTool('future-tool', { value: 1 }, undefined, 'future')}
+        isLive
+        serverNameById={new Map()}
+      />
+    )
+
+    await waitFor(() => expect(captureTelemetryMessage).toHaveBeenCalledTimes(1))
+    expect(captureTelemetryMessage.mock.calls[0]?.[0]).toBe(
+      'Tool activity resolved to unknown status: future-tool'
+    )
+    expect(captureTelemetryMessage.mock.calls[0]?.[1]).toMatchObject({
+      tags: { reason: 'missing_summarizer' }
+    })
   })
 
   it('neutral default: renders media-bearing output as image sections plus a json section for the rest', () => {

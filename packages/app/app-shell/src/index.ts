@@ -22,6 +22,13 @@ export type {
   StageToolDefinition,
   StageToolRequestHandle
 } from './stage-tools'
+export type {
+  ActivityStatus,
+  ActivitySummarizer,
+  ActivityView,
+  ActivityViewSection
+} from '@tinytinkerer/contracts'
+export { partitionToolResultMedia } from '@tinytinkerer/contracts'
 
 export { useRequestAssistantAction } from './assistant-action'
 export type { RequestAssistantAction } from './assistant-action'

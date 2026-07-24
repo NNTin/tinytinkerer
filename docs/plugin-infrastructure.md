@@ -108,7 +108,7 @@ type ActivityStatus = 'ok' | 'error' | 'warn' | 'unknown'
 
 type ActivityView = {
   title: string // collapsed-summary heading
-  status?: ActivityStatus // drives the row's status styling
+  status: ActivityStatus // required; drives the row's status styling
   sections: ActivityViewSection[] // sections shown on expand
   report?: PluginReport // optional report the host forwards to its capture sink
 }
@@ -564,11 +564,13 @@ Settings Modal toggle (app-browser/browser-settings-modal.tsx)
   `PluginToolDescriptor.summarizeActivity` — a pure, React-free
   `(output, input?) => ActivityView | Promise<ActivityView>` mapper keyed by tool id. The host's
   turn-activity panel (`turn-activity-panel.tsx`) carries **zero** per-tool branches: it builds a
-  `Map<toolId, ActivitySummarizer>` from the discovered manifests (`surfaces.tsx`), resolves one
-  per completed tool, and feeds the result to a single generic renderer (`title` + status styling
-  collapsed, `sections` rendered by `kind` — text, code, or json — on expand).
-  Summarizers should set `status` when the outcome is known; omitted status renders as the
-  neutral `unknown` cue, not as success. Tools without a summarizer get a neutral default:
+  `Map<toolId, ActivitySummarizer>` from the discovered manifests and from app-local `Tool`
+  instances (`surfaces.tsx`), resolves one per completed tool, and feeds the result to a single
+  generic renderer (`title` + status styling collapsed, `sections` rendered by `kind` — text,
+  code, or json — on expand).
+  Summarizers must set `status`; the contract makes it required so omission is a compile-time
+  error. Tools without a summarizer get a neutral `unknown` default and emit a deduplicated
+  warning telemetry message after resolution:
   title = tool label; `(no output)` only when output is genuinely empty; otherwise the host shows
   bounded raw JSON output. That fallback is for debuggability, not curation — plugin authors should
   ship `summarizeActivity` for sensitive or verbose outputs. MCP tools are summarized by the MCP

@@ -75,7 +75,11 @@ export const summarizeWebSearchActivity: ActivitySummarizer = (output): Activity
     })
   }
 
-  return { title: 'Web search', sections }
+  return {
+    title: 'Web search',
+    status: results.length > 0 ? 'ok' : 'warn',
+    sections
+  }
 }
 
 // Keywords that make the heuristic (no-LLM) fallback planner propose a web search.

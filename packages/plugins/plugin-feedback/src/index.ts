@@ -1,6 +1,8 @@
 import {
   feedbackInputSchema,
   PluginCaptureError,
+  type ActivitySummarizer,
+  type ActivityView,
   type AgentPlugin,
   type FeedbackInput,
   type PluginManifest,
@@ -11,6 +13,21 @@ import {
 // Stable id used as the activation key and capture tag. Must match the manifest
 // id surfaced in the Settings Modal.
 export const SEND_FEEDBACK_PLUGIN_ID = 'send-feedback'
+
+// The current tool rejects after forwarding feedback because there is no backend
+// yet, so new calls render as Failed rather than reaching this mapper. Keeping
+// the completed-call presentation with the descriptor ensures a future backend
+// success (and any persisted completion) has a proper outcome instead of
+// regressing to the host's unknown fallback.
+export const summarizeFeedbackActivity: ActivitySummarizer = (_output, input): ActivityView => {
+  const category =
+    input?.category === 'bug' || input?.category === 'idea' ? input.category : 'feedback'
+  return {
+    title: 'Sent feedback',
+    status: 'ok',
+    sections: [{ kind: 'text', label: 'Category', value: category }]
+  }
+}
 
 // UI + planner metadata for the host. The shape is the generic PluginManifest
 // contract from contracts; this plugin ships its own copy and tool descriptors.
@@ -32,7 +49,8 @@ export const feedbackPluginManifest: PluginManifest = {
       // Canonical schema (issue #287): the SAME Zod schema the tool validates against
       // (see createSendFeedbackTool). The host generates the planner-visible JSON
       // Schema from it; planner prose now lives on the schema's `.describe()` calls.
-      schema: feedbackInputSchema
+      schema: feedbackInputSchema,
+      summarizeActivity: summarizeFeedbackActivity
     }
   ]
 }

@@ -122,6 +122,12 @@ export type { Turn, TurnActivity, TurnActivityItem } from '@tinytinkerer/app-cor
 // The runtime tool contract, re-exported so an app can build app-local tools
 // (passed via createBrowserShellRoot's `appTools`) depending only on app-browser.
 export type { Tool } from '@tinytinkerer/app-core'
+export type {
+  ActivityStatus,
+  ActivitySummarizer,
+  ActivityView,
+  ActivityViewSection
+} from '@tinytinkerer/app-core'
 export { TurnActivityPanel, toolLabel } from './turn-activity-panel'
 export type { ResolveActivitySummarizer } from './turn-activity-panel'
 export type {

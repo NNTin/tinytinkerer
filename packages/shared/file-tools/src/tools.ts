@@ -5,6 +5,7 @@ import {
   type ApplyFileChangesInput,
   type ReadFilesInput
 } from './contracts'
+import { summarizeApplyFileChangesActivity, summarizeReadFilesActivity } from './activity'
 
 export type FileToolsHost = {
   readFiles(input: ReadFilesInput): unknown
@@ -26,6 +27,7 @@ export const createFileTools = (
       options.readDescription ??
       'Read exact file contents and revisions before applying versioned edits.',
     schema: readFilesInputSchema,
+    summarizeActivity: summarizeReadFilesActivity,
     execute: (input) => Promise.resolve(host.readFiles(input as ReadFilesInput))
   },
   {
@@ -34,6 +36,7 @@ export const createFileTools = (
       options.applyDescription ??
       'Atomically create, replace, exact-edit, move, or delete files. Existing files require the revision returned by read_files; conflicts reject the whole batch.',
     schema: applyFileChangesInputSchema,
+    summarizeActivity: summarizeApplyFileChangesActivity,
     execute: (input) => Promise.resolve(host.applyFileChanges(input as ApplyFileChangesInput))
   }
 ]

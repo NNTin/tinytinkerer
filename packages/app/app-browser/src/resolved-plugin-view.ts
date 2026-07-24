@@ -9,7 +9,15 @@ type ReportableView = {
 type ResolvedState<TView> = {
   key: string
   view: TView
+  pending: boolean
 }
+
+export type PluginViewResolution = 'resolved' | 'threw' | 'rejected'
+
+type ProducedView<TView> =
+  | { kind: 'resolved'; view: TView }
+  | { kind: 'pending'; promise: Promise<TView> }
+  | { kind: 'threw' }
 
 const isPromiseLike = <TView>(value: TView | Promise<TView>): value is Promise<TView> =>
   typeof (value as { then?: unknown }).then === 'function'
@@ -23,29 +31,41 @@ const reportKey = (viewKey: string, report: PluginReport): string =>
 export const useResolvedPluginView = <TView extends ReportableView>({
   viewKey,
   fallback,
-  resolveView
+  resolveView,
+  onSettled
 }: {
   viewKey: string
   fallback: TView
   resolveView: () => TView | Promise<TView>
-}): TView => {
+  // Called only after the owner resolution SETTLES. In particular, an async
+  // mapper's temporary fallback is not settled and must not be mistaken for a
+  // real `unknown` activity outcome.
+  onSettled?: (view: TView, resolution: PluginViewResolution) => void
+}): { view: TView; pending: boolean } => {
   const fallbackRef = useRef(fallback)
   fallbackRef.current = fallback
+  const onSettledRef = useRef(onSettled)
+  onSettledRef.current = onSettled
 
-  const produced = useMemo<TView | Promise<TView>>(() => {
+  const produced = useMemo<ProducedView<TView>>(() => {
     try {
-      return resolveView()
+      const value = resolveView()
+      return isPromiseLike(value)
+        ? { kind: 'pending', promise: value }
+        : { kind: 'resolved', view: value }
     } catch {
-      return fallbackRef.current
+      return { kind: 'threw' }
     }
   }, [viewKey])
 
-  const immediateView = isPromiseLike(produced) ? fallback : produced
+  const immediateView = produced.kind === 'resolved' ? produced.view : fallback
   const [state, setState] = useState<ResolvedState<TView>>(() => ({
     key: viewKey,
-    view: immediateView
+    view: immediateView,
+    pending: produced.kind === 'pending'
   }))
   const forwardedReports = useRef<Set<string>>(new Set())
+  const settledViews = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     let cancelled = false
@@ -60,25 +80,42 @@ export const useResolvedPluginView = <TView extends ReportableView>({
       forwardedReports.current.add(key)
       forwardPluginReport(view.report)
     }
+    const settleOnce = (view: TView, resolution: PluginViewResolution): void => {
+      const key = `${viewKey}:${resolution}`
+      if (settledViews.current.has(key)) {
+        return
+      }
+      settledViews.current.add(key)
+      onSettledRef.current?.(view, resolution)
+    }
 
-    if (!isPromiseLike(produced)) {
-      setState({ key: viewKey, view: produced })
-      forwardReportOnce(produced)
+    if (produced.kind === 'resolved') {
+      setState({ key: viewKey, view: produced.view, pending: false })
+      forwardReportOnce(produced.view)
+      settleOnce(produced.view, 'resolved')
       return
     }
 
-    setState({ key: viewKey, view: fallbackRef.current })
-    void produced
+    if (produced.kind === 'threw') {
+      setState({ key: viewKey, view: fallbackRef.current, pending: false })
+      settleOnce(fallbackRef.current, 'threw')
+      return
+    }
+
+    setState({ key: viewKey, view: fallbackRef.current, pending: true })
+    void produced.promise
       .then((resolved) => {
         if (cancelled) {
           return
         }
-        setState({ key: viewKey, view: resolved })
+        setState({ key: viewKey, view: resolved, pending: false })
         forwardReportOnce(resolved)
+        settleOnce(resolved, 'resolved')
       })
       .catch(() => {
         if (!cancelled) {
-          setState({ key: viewKey, view: fallbackRef.current })
+          setState({ key: viewKey, view: fallbackRef.current, pending: false })
+          settleOnce(fallbackRef.current, 'rejected')
         }
       })
 
@@ -87,5 +124,7 @@ export const useResolvedPluginView = <TView extends ReportableView>({
     }
   }, [produced, viewKey])
 
-  return state.key === viewKey ? state.view : immediateView
+  return state.key === viewKey
+    ? { view: state.view, pending: state.pending }
+    : { view: immediateView, pending: produced.kind === 'pending' }
 }

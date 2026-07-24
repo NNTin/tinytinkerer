@@ -78,7 +78,10 @@ describe('canvas bundle regression guard', () => {
     // Raised 97 → 99 kB for the integrated canvas stage: the lightweight
     // in-process controller handle and package-local lazy-stage loader now live in
     // startup, while Excalidraw and the domain controller remain guarded below.
-    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(99)
+    // Raised 99 → 100 kB for completed-call outcome routing (#419): startup
+    // carries only the lightweight per-tool async summary boundary; the Canvas
+    // outcome matrix itself remains in a separate lazy chunk.
+    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(100)
   })
 
   it('keeps Excalidraw outside the canvas startup graph', () => {

@@ -1,6 +1,20 @@
-import { createStageTools } from '@tinytinkerer/app-shell'
-import { canvasControllerHandle, type CanvasController } from './controller-handle'
+import { createStageTools, type ActivitySummarizer } from '@tinytinkerer/app-shell'
+import {
+  canvasControllerHandle,
+  type CanvasController,
+  type CanvasMethod
+} from './controller-handle'
 import { excalidrawVerbInputSchemas } from './inputs'
+
+// Activity rendering is part of the lazy chat surface, not shell startup. Keep
+// Canvas's outcome matrix in its own async chunk so adding curated summaries
+// does not make every user download them before opening chat.
+const lazyActivity =
+  (method: CanvasMethod): ActivitySummarizer =>
+  (output, input) =>
+    import('./activity').then(({ canvasActivitySummarizers }) =>
+      canvasActivitySummarizers[method](output, input)
+    )
 
 // Shared concurrency note for the structural verbs (stored once, reused by each
 // description). Explicit operands are versioned by default.
@@ -15,6 +29,7 @@ export const createCanvasAppTools = (
 ) =>
   createStageTools({
     handle,
+    summarizeActivity: lazyActivity,
     methods: {
       draw: {
         description:

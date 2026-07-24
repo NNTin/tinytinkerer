@@ -111,13 +111,11 @@ test.describe('canvas tool verbs: preview / thumbnail / pick', () => {
 
     const panel = await expandTimeline(page)
     await expect(panel.getByText('Using thumbnail')).toBeVisible()
-    await panel.getByText('thumbnail', { exact: true }).click()
-    // The canvas verbs ship no owner ActivitySummarizer, so the panel falls back
-    // to its neutral default — an "Unknown" outcome badge (neither ok/error/warn
-    // applies with no tool-specific knowledge) — but STILL renders the image
-    // section generically via partitionToolResultMedia, which is the real thing
-    // under test here.
-    await expect(panel.locator('[data-activity-status="unknown"]').first()).toBeVisible()
+    await panel.getByText('Rendered canvas thumbnail', { exact: true }).click()
+    // Canvas owns its outcome mapper: a complete thumbnail with no missing ids
+    // is explicitly OK, while the generic media partition still renders the
+    // persisted data URL as a real image section.
+    await expect(panel.locator('[data-activity-status="ok"]').first()).toBeVisible()
     await expect(panel.locator('img[src^="data:image/png"]')).toBeVisible()
 
     // Media-registry round-trip: the synthesized answer's embedded image
@@ -180,7 +178,7 @@ test.describe('canvas tool verbs: preview / thumbnail / pick', () => {
 
     const panel = await expandTimeline(page)
     await expect(panel.getByText('Using preview')).toBeVisible()
-    await panel.getByText('preview', { exact: true }).click()
+    await panel.getByText('Previewed canvas changes', { exact: true }).click()
     await expect(panel.locator('img[src^="data:image/png"]')).toBeVisible()
   })
 
