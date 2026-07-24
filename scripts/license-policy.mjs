@@ -13,20 +13,26 @@
  */
 const LICENSE_POLICY = {
   // CC0-1.0 and Zlib are permissive licenses used by Excalidraw's
-  // fractional-indexing and pako transitive dependencies.
+  // fractional-indexing and pako transitive dependencies. MIT-0, BlueOak, and
+  // Python-2.0 are permissive licenses used by Docusaurus build dependencies.
   allow: [
     '0BSD',
     'MIT',
+    'MIT-0',
     'ISC',
     'Apache-2.0',
     'BSD',
     'BSD-2-Clause',
     'BSD-3-Clause',
+    'BlueOak-1.0.0',
     'CC0-1.0',
+    'Python-2.0',
     'W3C-20150513',
     'Zlib'
   ],
-  warn: ['LGPL', 'MPL-2.0', 'Unlicense'],
+  // Creative Commons Attribution permits redistribution and modification but
+  // carries an explicit attribution obligation, so keep it visible in CI.
+  warn: ['CC-BY-4.0', 'LGPL', 'MPL-2.0', 'Unlicense'],
   block: ['GPL', 'GPL-2.0', 'GPL-3.0', 'AGPL', 'AGPL-3.0']
 }
 

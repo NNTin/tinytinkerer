@@ -131,6 +131,12 @@ overrides:
   # minimatch versions); each needs its own line's patch.
   brace-expansion@2: 2.1.2
   brace-expansion@5: 5.0.7
+  # Docusaurus 3.10.2's build and development toolchain still declares the
+  # vulnerable major lines. These targeted overrides keep unrelated consumers
+  # on their existing versions while forcing the first advisory-free releases.
+  'copy-webpack-plugin>serialize-javascript': 7.0.5
+  'css-minimizer-webpack-plugin>serialize-javascript': 7.0.5
+  'sockjs>uuid': 11.1.1
   # apps/edge>wrangler>miniflare pins sharp ^0.34.5 (outside its own declared
   # range, unlike the entries above) for local dev asset emulation only, never
   # shipped to the deployed Worker. Forced up to match the root devDependency's
