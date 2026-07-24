@@ -5,7 +5,8 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { createServer as createViteServer } from 'vite'
-import { createAppDefinitions, HOSTED_APP_SPECS } from './app-definitions.mjs'
+import { createAppDefinitions, DOCS_SITE_SPEC, HOSTED_APP_SPECS } from './app-definitions.mjs'
+import { createDocsDevProxy } from './docs-dev-proxy.mjs'
 
 /** @typedef {import('node:http').IncomingMessage} IncomingMessage */
 /** @typedef {import('node:http').ServerResponse} ServerResponse */
@@ -30,6 +31,7 @@ import { createAppDefinitions, HOSTED_APP_SPECS } from './app-definitions.mjs'
  * @property {number | undefined} [preferredPort]
  * @property {string | undefined} [rootDir]
  * @property {boolean | undefined} [disableDependencyOptimization]
+ * @property {string | undefined} [docsDevOrigin]
  */
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
@@ -144,12 +146,25 @@ const getEdgeProxyApp = (apps) => {
 
 /**
  * @param {HostAppDefinition[]} apps
+ * @param {ReturnType<typeof createDocsDevProxy>} docsProxy
  * @returns {(req: IncomingMessage, res: ServerResponse) => void}
  */
-const createRequestHandler = (apps) => (req, res) => {
+const createRequestHandler = (apps, docsProxy) => (req, res) => {
   try {
     const requestUrl = req.url ?? '/'
     const pathname = requestUrl.split('?')[0] ?? '/'
+
+    if (pathname === DOCS_SITE_SPEC.mountPath.slice(0, -1)) {
+      res.statusCode = 301
+      res.setHeader('Location', DOCS_SITE_SPEC.mountPath)
+      res.end()
+      return
+    }
+
+    if (pathname.startsWith(DOCS_SITE_SPEC.mountPath)) {
+      docsProxy.handleRequest(req, res)
+      return
+    }
 
     const appWithoutSlash = apps.find(
       (app) => app.mountPath !== '/' && app.mountPath.slice(0, -1) === pathname
@@ -240,7 +255,8 @@ export const createHostServer = async ({
   port,
   preferredPort = 3111,
   rootDir = workspaceRoot,
-  disableDependencyOptimization = false
+  disableDependencyOptimization = false,
+  docsDevOrigin = process.env.TINYTINKERER_DOCS_DEV_ORIGIN ?? DOCS_SITE_SPEC.devOrigin
 } = {}) => {
   const targetPort = port ?? preferredPort
 
@@ -257,6 +273,7 @@ export const createHostServer = async ({
 
   const apps = createAppDefinitions(rootDir)
   const httpServer = createHttpServer()
+  const docsProxy = createDocsDevProxy(docsDevOrigin)
 
   try {
     for (const app of apps) {
@@ -287,7 +304,13 @@ export const createHostServer = async ({
       app.server = await createViteServer(viteConfig)
     }
 
-    httpServer.on('request', createRequestHandler(apps))
+    httpServer.on('request', createRequestHandler(apps, docsProxy))
+    httpServer.on('upgrade', (req, socket, head) => {
+      const pathname = (req.url ?? '').split('?')[0]
+      if (pathname === DOCS_SITE_SPEC.webSocketPath) {
+        docsProxy.handleUpgrade(req, socket, head)
+      }
+    })
 
     await startListening(httpServer, { host, port, preferredPort })
   } catch (error) {
@@ -344,6 +367,7 @@ export const runHostServer = async ({ host = 'localhost', preferredPort = 3111 }
 
   console.log(`@tinytinkerer/host listening at ${hostServer.url}`)
   console.log(`  Composite: ${hostServer.url}/`)
+  console.log(`  ${DOCS_SITE_SPEC.label}: ${hostServer.url}${DOCS_SITE_SPEC.mountPath}`)
   for (const { label, mountPath } of HOSTED_APP_SPECS) {
     console.log(`  ${label}: ${hostServer.url}${mountPath}`)
   }

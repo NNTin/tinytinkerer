@@ -39,6 +39,12 @@
       "dependsOn": ["^build", "generate"],
       "outputs": []
     },
+    "@tinytinkerer/docs#build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/**"],
+      "outputs": ["build/**"],
+      "env": ["TINYTINKERER_DEPLOY_BASE"]
+    },
     "@tinytinkerer/pixel-agents-shell#build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
@@ -64,6 +70,7 @@
     },
     "@tinytinkerer/host#build": {
       "dependsOn": [
+        "@tinytinkerer/docs#build",
         "@tinytinkerer/shell#build",
         "@tinytinkerer/canvas-shell#build",
         "@tinytinkerer/ide-shell#build",
@@ -87,6 +94,7 @@
       "persistent": true,
       "env": [
         "TINYTINKERER_DEPLOY_BASE",
+        "TINYTINKERER_DOCS_DEV_ORIGIN",
         "GIT_SHA",
         "VITE_EDGE_URL",
         "VITE_SENTRY_DSN",

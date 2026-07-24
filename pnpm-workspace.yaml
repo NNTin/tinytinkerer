@@ -147,8 +147,12 @@ overrides:
 # @codesandbox/sandpack-react) is blocked too — its postinstall only probes
 # optional ES feature support; the browser bundle builds and runs without it,
 # so keep installs scriptless rather than executing third-party lifecycle code.
+# `core-js` is transitive through Docusaurus; its postinstall only prints a
+# funding banner and writes banner-throttling state to the OS temp directory,
+# neither of which is needed to build or run the documentation site.
 allowBuilds:
   '@sentry/cli': true
+  core-js: false
   esbuild: true
   sharp: true
   workerd: true

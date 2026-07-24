@@ -12,6 +12,7 @@ const restoreEnvironmentVariable = (name, value) => {
 }
 
 const cases = [
+  ['/repo/packages/brand/brand-assets/src/third-party-notices.generated.ts', 'notices-vendor'],
   ['/repo/node_modules/react/index.js', 'react-vendor'],
   ['/repo/node_modules/react-router/dist/index.js', 'react-vendor'],
   ['/repo/node_modules/zod/index.js', 'zod-vendor'],

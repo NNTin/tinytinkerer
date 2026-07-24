@@ -1,0 +1,35 @@
+{
+  "name": "@tinytinkerer/docs",
+  "version": "0.1.0",
+  "private": true,
+  "tinytinkerer": {
+    "architectureRole": "browser-shell"
+  },
+  "scripts": {
+    "dev": "docusaurus start --host 127.0.0.1 --port 3112 --no-open",
+    "start": "docusaurus start",
+    "build": "docusaurus build",
+    "lint": "eslint src tests docusaurus.config.ts sidebars.ts site-config.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@docusaurus/core": "3.10.2",
+    "@docusaurus/preset-classic": "3.10.2",
+    "@mdx-js/react": "3.1.1",
+    "prism-react-renderer": "2.4.1",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@docusaurus/module-type-aliases": "3.10.2",
+    "@docusaurus/plugin-content-docs": "3.10.2",
+    "@docusaurus/tsconfig": "3.10.2",
+    "@docusaurus/types": "3.10.2",
+    "@types/node": "25.9.1",
+    "@types/react": "19.2.15",
+    "@types/react-dom": "19.2.3",
+    "typescript": "6.0.3",
+    "vitest": "4.1.7"
+  }
+}

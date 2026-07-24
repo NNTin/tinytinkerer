@@ -2,6 +2,9 @@ node_modules
 .pnpm-store
 .turbo
 dist
+# Docusaurus emits its static site and generated runtime metadata here.
+build
+.docusaurus
 # The root composition app (apps/host) builds here before build-pages composes it
 # into apps/host/dist alongside the /<slug>/ shells. Build artifact, never versioned.
 dist-root
