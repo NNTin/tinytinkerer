@@ -462,7 +462,16 @@ export const clickCharacterToSelect = async (
   // wasted attempt) while the computed point is off-canvas — mid-pan is the
   // one time that can happen, since a settled camera always keeps every seated
   // character within the visible office.
-  for (let attempt = 0; attempt < 12; attempt++) {
+  //
+  // 20 attempts (raised from 12, alongside the click's own 1.5s timeout below):
+  // empirically, a still-settling camera can occasionally keep the target
+  // off-canvas for longer than 12 * 250ms (~3s) — observed causing this loop
+  // to exhaust and throw well before the test's own 60s timeout, on a run
+  // where the camera just hadn't settled yet. Worst case (every attempt both
+  // finds a point and has that click intercepted) is 20 * (1_500 + 250) =
+  // ~35s, still comfortably inside the test timeout alongside everything else
+  // a caller does before/after this call.
+  for (let attempt = 0; attempt < 20; attempt++) {
     const rect = await frame.evaluate((id) => {
       const overlay = document.querySelector(`[data-testid="agent-overlay"][data-agent-id="${id}"]`)
       const canvas = document.querySelector('canvas')
@@ -481,10 +490,28 @@ export const clickCharacterToSelect = async (
     const onCanvas =
       rect.x >= 0 && rect.x <= rect.canvasWidth && rect.y >= 0 && rect.y <= rect.canvasHeight
     if (onCanvas) {
-      await canvasLoc.click({ position: { x: rect.x, y: rect.y } })
-      const selectedOnce = await overlayPointerEvents()
-        .then((value) => value === 'auto')
+      // A short, explicit timeout here matters: with none, a single click()
+      // call inherits the whole TEST's timeout budget for its own internal
+      // actionability retries. If the computed point keeps landing on the
+      // still-settling overlay itself (its own nameplate can intercept the
+      // click meant to land just below it while a camera pan is still in
+      // progress — confirmed empirically via a captured "<span>Idle</span> ...
+      // subtree intercepts pointer events" trace that burned the full 60s test
+      // timeout on ONE stale position), that single call would keep retrying
+      // against the SAME stale coordinates for the entire test budget instead
+      // of returning control to this loop, which re-reads a fresh position
+      // every attempt. Failing fast here and letting the loop's up-to-20
+      // attempts each get a freshly-recomputed point is what actually makes
+      // the retry loop robust to a still-animating camera.
+      const clicked = await canvasLoc
+        .click({ position: { x: rect.x, y: rect.y }, timeout: 1_500 })
+        .then(() => true)
         .catch(() => false)
+      const selectedOnce =
+        clicked &&
+        (await overlayPointerEvents()
+          .then((value) => value === 'auto')
+          .catch(() => false))
       // A single truthy read is not enough: `officeState.selectedAgentId`'s
       // synchronous mutation and its DOM reflection (this pointer-events
       // style, and the "Close agent" button's own mount) can be caught

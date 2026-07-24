@@ -82,6 +82,23 @@ auditLevel: moderate
 # (fast-uri@3.1.4) was published 2026-07-19, inside the 7-day age gate above;
 # jumping to fast-uri@4.x would also violate ajv's declared `^3.0.1` range.
 # Re-check once 3.1.4 clears the age gate (~2026-07-26).
+# GHSA-qwww-vcr4-c8h2 (react-router, RSC mode CSRF bypass): apps/canvas,
+# apps/host, apps/ide, apps/mermaid, apps/pixel-agents, apps/shell all pin
+# react-router-dom@7.18.1 exact (saveExact above), which resolves the
+# vulnerable react-router@7.18.1. None of these apps use RSC mode (no
+# react-server usage anywhere in the tree) so the CSRF bypass path is not
+# reachable, but the fix is still only available in react-router@8.3.0
+# (published 2026-07-22, inside the 7-day age gate above) — and
+# react-router-dom itself has no 8.x release at all, so clearing this needs a
+# framework migration (react-router-dom -> the unified react-router package),
+# not a version bump. That's a human call, not something to do as a drive-by
+# CI fix. Re-check once 8.3.0 clears the age gate (~2026-07-29) and a
+# react-router-dom v8 (or the migration) is available.
+# GHSA-r28c-9q8g-f849 (postcss, path traversal via previous sourceMappingURL):
+# dev/build-only, transitive through vite (postcss: ^8.5.15) via vitest/
+# @tailwindcss-vite/allure-vitest — never bundled into a deployed app. Fixed
+# via the override below instead of suppression since the patch is within
+# vite's declared range and already clears the age gate.
 auditConfig:
   ignoreGhsas:
     - GHSA-gv7w-rqvm-qjhr
@@ -101,12 +118,15 @@ auditConfig:
     - GHSA-frvp-7c67-39w9
     - GHSA-v2hh-gcrm-f6hx
     - GHSA-4c8g-83qw-93j6
+    - GHSA-qwww-vcr4-c8h2
 overrides:
   # Transitive advisory fixes, all within semver ranges the direct dependents
   # already declare (sass wants immutable ^4.0.0, cosmiconfig wants js-yaml
-  # ^4.1.0) — patched versions clear of the age gate above.
+  # ^4.1.0, vite wants postcss ^8.5.15) — patched versions clear of the age
+  # gate above.
   immutable: 4.3.9
   js-yaml: 4.3.0
+  postcss: 8.5.18
   # Two independently-resolved major lines of brace-expansion (via different
   # minimatch versions); each needs its own line's patch.
   brace-expansion@2: 2.1.2
