@@ -14,19 +14,22 @@ export type StageToolDefinition = {
 export type CreateStageToolsOptions<TMethod extends string = string> = {
   handle: StageToolRequestHandle<TMethod>
   methods: Record<TMethod, StageToolDefinition>
+  summarizeActivity?: (method: TMethod) => ActivitySummarizer
 }
 
 export const createStageTools = <TMethod extends string>({
   handle,
-  methods
+  methods,
+  summarizeActivity
 }: CreateStageToolsOptions<TMethod>): Tool<unknown, unknown>[] =>
-  (Object.entries(methods) as Array<[TMethod, StageToolDefinition]>).map(
-    ([method, definition]) => ({
+  (Object.entries(methods) as Array<[TMethod, StageToolDefinition]>).map(([method, definition]) => {
+    const activity = definition.summarizeActivity ?? summarizeActivity?.(method)
+    return {
       id: method,
       description: definition.description,
       schema: definition.schema,
       ...(definition.awaitsHumanInput ? { awaitsHumanInput: true } : {}),
-      ...(definition.summarizeActivity ? { summarizeActivity: definition.summarizeActivity } : {}),
+      ...(activity ? { summarizeActivity: activity } : {}),
       execute: (input: unknown) => handle.request(method, input)
-    })
-  )
+    }
+  })

@@ -13,6 +13,16 @@ describe('canvas activity outcomes', () => {
     expect(tools.every((tool) => tool.summarizeActivity)).toBe(true)
   })
 
+  it('loads app-tool outcome summaries through the lazy activity boundary', async () => {
+    const draw = createCanvasAppTools({
+      request: () => Promise.resolve({ ok: true })
+    }).find((tool) => tool.id === 'draw')
+
+    await expect(draw?.summarizeActivity?.({ ...complete, drawn: 1 })).resolves.toMatchObject({
+      status: 'ok'
+    })
+  })
+
   it('classifies query misses, missing IDs, and partial results as warnings', () => {
     expect(canvasActivitySummarizers.search({ ...complete, matched: 2 })).toMatchObject({
       status: 'ok'

@@ -1,7 +1,20 @@
-import { createStageTools } from '@tinytinkerer/app-shell'
-import { canvasActivitySummarizers } from './activity'
-import { canvasControllerHandle, type CanvasController } from './controller-handle'
+import { createStageTools, type ActivitySummarizer } from '@tinytinkerer/app-shell'
+import {
+  canvasControllerHandle,
+  type CanvasController,
+  type CanvasMethod
+} from './controller-handle'
 import { excalidrawVerbInputSchemas } from './inputs'
+
+// Activity rendering is part of the lazy chat surface, not shell startup. Keep
+// Canvas's outcome matrix in its own async chunk so adding curated summaries
+// does not make every user download them before opening chat.
+const lazyActivity =
+  (method: CanvasMethod): ActivitySummarizer =>
+  (output, input) =>
+    import('./activity').then(({ canvasActivitySummarizers }) =>
+      canvasActivitySummarizers[method](output, input)
+    )
 
 // Shared concurrency note for the structural verbs (stored once, reused by each
 // description). Explicit operands are versioned by default.
@@ -16,6 +29,7 @@ export const createCanvasAppTools = (
 ) =>
   createStageTools({
     handle,
+    summarizeActivity: lazyActivity,
     methods: {
       draw: {
         description:
@@ -24,22 +38,19 @@ export const createCanvasAppTools = (
           'horizontal links use one shared rowY and vertical trunks use one shared trunkX, computed ' +
           'after node layout so connector endpoints stay aligned. New elements append by default; ' +
           'use replace:true to start fresh.',
-        schema: excalidrawVerbInputSchemas.draw,
-        summarizeActivity: canvasActivitySummarizers.draw
+        schema: excalidrawVerbInputSchemas.draw
       },
       search: {
         description:
           'Find Excalidraw element candidates before inspecting them. Search by text, id, or type ' +
           'across the full scene, the current selection, or the visible viewport.',
-        schema: excalidrawVerbInputSchemas.search,
-        summarizeActivity: canvasActivitySummarizers.search
+        schema: excalidrawVerbInputSchemas.search
       },
       inspect: {
         description:
           'Inspect the Excalidraw scene, viewport, zoom, selection, and structure. Optionally pass ' +
           'candidate element ids from search to get compact grouping and relationship summaries.',
-        schema: excalidrawVerbInputSchemas.inspect,
-        summarizeActivity: canvasActivitySummarizers.inspect
+        schema: excalidrawVerbInputSchemas.inspect
       },
       read: {
         description:
@@ -49,28 +60,24 @@ export const createCanvasAppTools = (
           'plus id/type/kind, keeping the result compact when a selection is large and only part ' +
           'of each element matters; include version if you plan to edit afterwards. Omit fields ' +
           'for full records.',
-        schema: excalidrawVerbInputSchemas.read,
-        summarizeActivity: canvasActivitySummarizers.read
+        schema: excalidrawVerbInputSchemas.read
       },
       edit: {
         description:
           'Safely edit existing Excalidraw elements by id and expected version from read. Batches ' +
           'are atomic and undoable; relationship-sensitive geometry changes are rejected.',
-        schema: excalidrawVerbInputSchemas.edit,
-        summarizeActivity: canvasActivitySummarizers.edit
+        schema: excalidrawVerbInputSchemas.edit
       },
       clear: {
         description: 'Remove every element from the visible Excalidraw whiteboard.',
-        schema: excalidrawVerbInputSchemas.clear,
-        summarizeActivity: canvasActivitySummarizers.clear
+        schema: excalidrawVerbInputSchemas.clear
       },
       group: {
         description:
           'Group or ungroup Excalidraw elements. Grouping encloses two or more in one new group ' +
           'and carries their bound labels; ungrouping removes the outermost group. ' +
           versionedOperands,
-        schema: excalidrawVerbInputSchemas.group,
-        summarizeActivity: canvasActivitySummarizers.group
+        schema: excalidrawVerbInputSchemas.group
       },
       duplicate: {
         description:
@@ -78,8 +85,7 @@ export const createCanvasAppTools = (
           'and intra-selection bindings are copied with fresh ids so the copy is independent; ' +
           'returns the source-to-new id map. ' +
           versionedExplicit,
-        schema: excalidrawVerbInputSchemas.duplicate,
-        summarizeActivity: canvasActivitySummarizers.duplicate
+        schema: excalidrawVerbInputSchemas.duplicate
       },
       delete: {
         description:
@@ -87,40 +93,35 @@ export const createCanvasAppTools = (
           '(cascade a bound label or frame child, or detach a connector) is rejected; set ' +
           'includeRelated:true to allow the cascade. ' +
           versionedExplicit,
-        schema: excalidrawVerbInputSchemas.delete,
-        summarizeActivity: canvasActivitySummarizers.delete
+        schema: excalidrawVerbInputSchemas.delete
       },
       align: {
         description:
           'Align two or more Excalidraw elements to a shared edge or center on the x or y axis. ' +
           'Labels and frame children move with their parent. ' +
           versionedOperands,
-        schema: excalidrawVerbInputSchemas.align,
-        summarizeActivity: canvasActivitySummarizers.align
+        schema: excalidrawVerbInputSchemas.align
       },
       distribute: {
         description:
           'Evenly distribute three or more Excalidraw elements along the x or y axis, keeping the ' +
           'outermost two fixed and equalizing the gaps between the rest. ' +
           versionedOperands,
-        schema: excalidrawVerbInputSchemas.distribute,
-        summarizeActivity: canvasActivitySummarizers.distribute
+        schema: excalidrawVerbInputSchemas.distribute
       },
       stack: {
         description:
           'Stack Excalidraw elements horizontally or vertically in order with a configurable gap, ' +
           'anchored at the first element, with optional cross-axis alignment. ' +
           versionedOperands,
-        schema: excalidrawVerbInputSchemas.stack,
-        summarizeActivity: canvasActivitySummarizers.stack
+        schema: excalidrawVerbInputSchemas.stack
       },
       order: {
         description:
           'Reorder Excalidraw layers: bring elements to front/back or step them forward/backward ' +
           'in the z-stack. Bound labels keep their order above their container. ' +
           versionedOperands,
-        schema: excalidrawVerbInputSchemas.order,
-        summarizeActivity: canvasActivitySummarizers.order
+        schema: excalidrawVerbInputSchemas.order
       },
       transform: {
         description:
@@ -129,8 +130,7 @@ export const createCanvasAppTools = (
           'and edits that would distort a binding are rejected. Pass reflowConnectors:true to let ' +
           'connectors bound to a moved or resized shape follow their endpoints instead. Atomic and ' +
           'undoable.',
-        schema: excalidrawVerbInputSchemas.transform,
-        summarizeActivity: canvasActivitySummarizers.transform
+        schema: excalidrawVerbInputSchemas.transform
       },
       bind: {
         description:
@@ -139,8 +139,7 @@ export const createCanvasAppTools = (
           'detach to free an endpoint. The connector is re-anchored so it stays readable, and target ' +
           'boundElements are kept in sync. ' +
           versionedExplicit,
-        schema: excalidrawVerbInputSchemas.bind,
-        summarizeActivity: canvasActivitySummarizers.bind
+        schema: excalidrawVerbInputSchemas.bind
       },
       audit: {
         description:
@@ -148,8 +147,7 @@ export const createCanvasAppTools = (
           'unbound, ok, stale, detached, or ambiguous and suggests safe repairs (rebind or detach via ' +
           'the bind verb). Pass connectorIds to scope it, or omit to audit every connector. Budgeted, ' +
           'paginated, and detail-aware.',
-        schema: excalidrawVerbInputSchemas.audit,
-        summarizeActivity: canvasActivitySummarizers.audit
+        schema: excalidrawVerbInputSchemas.audit
       },
       snap: {
         description:
@@ -157,8 +155,7 @@ export const createCanvasAppTools = (
           'with snapSize) to the nearest grid multiple. Uses the scene grid size unless gridSize is ' +
           'given. Labels and frame children follow, and bound connectors re-anchor. ' +
           versionedOperands,
-        schema: excalidrawVerbInputSchemas.snap,
-        summarizeActivity: canvasActivitySummarizers.snap
+        schema: excalidrawVerbInputSchemas.snap
       },
       place: {
         description:
@@ -166,8 +163,7 @@ export const createCanvasAppTools = (
           'right-of, or center-over it, with a gap and cross-axis alignment. The elements move as one ' +
           'cluster preserving their arrangement; bound connectors re-anchor. ' +
           versionedExplicit,
-        schema: excalidrawVerbInputSchemas.place,
-        summarizeActivity: canvasActivitySummarizers.place
+        schema: excalidrawVerbInputSchemas.place
       },
       arrange: {
         description:
@@ -175,8 +171,7 @@ export const createCanvasAppTools = (
           'not cover: a row-major grid (columns/rows + gaps) or an evenly spaced circle. Elements are ' +
           'laid out in the given order; bound connectors re-anchor. ' +
           versionedExplicit,
-        schema: excalidrawVerbInputSchemas.arrange,
-        summarizeActivity: canvasActivitySummarizers.arrange
+        schema: excalidrawVerbInputSchemas.arrange
       },
       survey: {
         description:
@@ -184,8 +179,7 @@ export const createCanvasAppTools = (
           'labels that overflow their container, and connectors too short to read, each with a ' +
           'suggested fix. Pass elementIds and/or checks to scope it. Budgeted, paginated, and ' +
           'detail-aware.',
-        schema: excalidrawVerbInputSchemas.survey,
-        summarizeActivity: canvasActivitySummarizers.survey
+        schema: excalidrawVerbInputSchemas.survey
       },
       preset: {
         description:
@@ -194,8 +188,7 @@ export const createCanvasAppTools = (
           'use-case), or a wireframe (screen or modal). Nodes are grouped and connected with labeled ' +
           'connectors; every shape is encoded locally so it works offline. Appends by default (use ' +
           'replace:true to start fresh) as one atomic, undoable, version-checked insert.',
-        schema: excalidrawVerbInputSchemas.preset,
-        summarizeActivity: canvasActivitySummarizers.preset
+        schema: excalidrawVerbInputSchemas.preset
       },
       icon: {
         description:
@@ -203,8 +196,7 @@ export const createCanvasAppTools = (
           'as grouped, labeled shape elements at the given canvas coordinates. Each icon is a local ' +
           'Excalidraw glyph (never fetched from an external library), reusable as a building block for ' +
           'diagrams. Appends by default; one atomic, undoable, version-checked insert.',
-        schema: excalidrawVerbInputSchemas.icon,
-        summarizeActivity: canvasActivitySummarizers.icon
+        schema: excalidrawVerbInputSchemas.icon
       },
       preview: {
         description:
@@ -217,8 +209,7 @@ export const createCanvasAppTools = (
           'in your reply as ![caption](<the mediaRef>). Nothing is committed — to apply, call ' +
           'the target verb itself with the same input. Set render:false to skip the image for a ' +
           'faster, summary-only dry-run.',
-        schema: excalidrawVerbInputSchemas.preview,
-        summarizeActivity: canvasActivitySummarizers.preview
+        schema: excalidrawVerbInputSchemas.preview
       },
       thumbnail: {
         description:
@@ -227,8 +218,7 @@ export const createCanvasAppTools = (
           'not raw base64 — to show it to the user, embed it in your reply as ' +
           '![caption](<the mediaRef>). On-demand and byte-budgeted: lower maxDimension or narrow ' +
           'elementIds if the result exceeds the budget.',
-        schema: excalidrawVerbInputSchemas.thumbnail,
-        summarizeActivity: canvasActivitySummarizers.thumbnail
+        schema: excalidrawVerbInputSchemas.thumbnail
       },
       pick: {
         description:
@@ -241,8 +231,7 @@ export const createCanvasAppTools = (
           'just id/type/kind plus the requested keys, keeping a large selection compact. Omit ' +
           'fields for full records.',
         schema: excalidrawVerbInputSchemas.pick,
-        awaitsHumanInput: true,
-        summarizeActivity: canvasActivitySummarizers.pick
+        awaitsHumanInput: true
       }
     }
   })
