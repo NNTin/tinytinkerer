@@ -4,5 +4,12 @@
     "baseUrl": ".",
     "ignoreDeprecations": "6.0"
   },
-  "include": ["src", "tests", "docusaurus.config.ts", "sidebars.ts", "site-config.ts"]
+  "include": [
+    "src",
+    "tests",
+    "docusaurus.config.ts",
+    "sidebars.ts",
+    "site-config.ts",
+    "vitest.config.ts"
+  ]
 }
