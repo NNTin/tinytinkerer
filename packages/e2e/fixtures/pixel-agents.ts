@@ -482,13 +482,29 @@ export const clickCharacterToSelect = async (
       rect.x >= 0 && rect.x <= rect.canvasWidth && rect.y >= 0 && rect.y <= rect.canvasHeight
     if (onCanvas) {
       await canvasLoc.click({ position: { x: rect.x, y: rect.y } })
-      const selected = await overlayPointerEvents()
+      const selectedOnce = await overlayPointerEvents()
         .then((value) => value === 'auto')
         .catch(() => false)
-      if (selected) return
+      // A single truthy read is not enough: `officeState.selectedAgentId`'s
+      // synchronous mutation and its DOM reflection (this pointer-events
+      // style, and the "Close agent" button's own mount) can be caught
+      // mid-flicker by one read taken right at the click, then read false
+      // again a beat later — confirmed empirically as the cause of a 60s
+      // "element was detached, retrying" hang on a caller that clicks the
+      // overlay's "Close agent" button immediately after this returns.
+      // Requiring the SAME truthy result on a second read, a few animation
+      // frames later, closes that window before this function hands
+      // "selected" back to a caller.
+      if (selectedOnce) {
+        await page.waitForTimeout(150)
+        const selectedStill = await overlayPointerEvents()
+          .then((value) => value === 'auto')
+          .catch(() => false)
+        if (selectedStill) return
+      }
     }
-    // Give a still-settling camera pan a moment before the next attempt reads
-    // a (hopefully now-stable) position.
+    // Give a still-settling camera pan (or a selection flicker, see above) a
+    // moment before the next attempt reads a (hopefully now-stable) position.
     await page.waitForTimeout(250)
   }
 
@@ -504,6 +520,41 @@ export const clickCharacterToSelect = async (
 // equivalent) has made that agent the office's selected character.
 export const agentOverlayCloseButton = (page: Page, agentId: number) =>
   agentOverlayLocator(page, agentId).getByTitle('Close agent')
+
+// Clicks the ALREADY-selected character's "Close agent" button — bounded,
+// self-healing retries rather than a single `.click()`, because a stray
+// selection flicker (the same race `clickCharacterToSelect` above guards
+// against with its own stability re-check) can still detach this button's
+// DOM node between Playwright resolving the locator and completing the
+// click, which Playwright's own built-in actionability retry does not
+// recover from if the flicker recurs faster than it settles. On a detected
+// detach, re-checks whether `agentId` is still selected and, if the flicker
+// toggled it off, re-selects (mirroring clickCharacterToSelect's own
+// click-to-select path) before the next attempt.
+export const closeSelectedAgentOverlay = async (
+  page: Page,
+  frame: Frame,
+  agentId: number
+): Promise<void> => {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await agentOverlayCloseButton(page, agentId).click({ timeout: 10_000 })
+      return
+    } catch (error) {
+      lastError = error
+      const stillSelected = await frame.evaluate(
+        (id) =>
+          document.querySelector<HTMLElement>(
+            `[data-testid="agent-overlay"][data-agent-id="${id}"]`
+          )?.style.pointerEvents === 'auto',
+        agentId
+      )
+      if (!stillSelected) await clickCharacterToSelect(page, frame, agentId)
+    }
+  }
+  throw lastError
+}
 
 // Upstream's own "+ Agent" toolbar button (webview-ui/src/components/
 // BottomToolbar.tsx), rendered INSIDE the sandboxed office iframe — not a

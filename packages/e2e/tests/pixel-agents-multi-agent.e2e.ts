@@ -10,12 +10,12 @@ import {
 } from '../fixtures/mock-litellm'
 import {
   addAgentButton,
-  agentOverlayCloseButton,
   agentOverlayLocator,
   calibrateCharacterSlot,
   characterIds,
   characterSpriteIdsInWindow,
   clickCharacterToSelect,
+  closeSelectedAgentOverlay,
   dispatchPixelClientMessage,
   enablePixelHooks,
   PIXEL_AGENTS_URL,
@@ -344,8 +344,11 @@ test.describe('Pixel Agents multi-agent office (#430)', () => {
     // (rendered and visible only once selected — issue #430 unhid it).
     // Selecting agent 3 also re-focuses it (per the correction above), so this
     // exercises deleting the ACTIVE conversation, not a background one.
+    // closeSelectedAgentOverlay (not a bare locator click): a stray selection
+    // flicker can still detach the Close button between resolving it and
+    // completing the click — see its own comment in fixtures/pixel-agents.ts.
     await clickCharacterToSelect(page, frame, 3)
-    await agentOverlayCloseButton(page, 3).click()
+    await closeSelectedAgentOverlay(page, frame, 3)
 
     await expect.poll(() => sortedCharacterIds(frame)).toEqual([1, 2])
     // The launched conversation is really gone (not just its office agent) —
