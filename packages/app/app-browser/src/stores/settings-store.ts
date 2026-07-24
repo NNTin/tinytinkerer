@@ -1,13 +1,10 @@
 import type { AgentType, McpDiscoveryResult, McpServerConfig } from '@tinytinkerer/contracts'
-import {
-  SETTINGS_KEYS,
-  defaultSettingsState,
-  type SettingsState as CoreSettingsState
-} from '@tinytinkerer/app-core'
+import type { SettingsState as CoreSettingsState } from '@tinytinkerer/app-core'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { BrowserShell } from '../shell'
 import { loadCoreModule } from '../core-module'
 import { setTelemetryConsent } from '../telemetry/telemetry'
+import { SETTINGS_KEYS, defaultSettingsState } from './settings-defaults'
 
 // The browser store layers UI-only state and actions onto the headless
 // app-core settings shape. The data fields and their storage keys live in

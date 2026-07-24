@@ -81,7 +81,15 @@ describe('canvas bundle regression guard', () => {
     // Raised 99 → 100 kB for completed-call outcome routing (#419): startup
     // carries only the lightweight per-tool async summary boundary; the Canvas
     // outcome matrix itself remains in a separate lazy chunk.
-    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(100)
+    // Raised 100 → 102 kB (2026-07-24, issue #441): app-browser's registry.ts,
+    // settings-store.ts, and chat-store.ts moved isPluginModule, SETTINGS_KEYS,
+    // defaultSettingsState, and ConversationRunRegistry/MAX_CONCURRENT_RUNS from
+    // static VALUE imports of `@tinytinkerer/app-core` to small entry-local
+    // duplicates, so every app-browser shell's entry no longer has a static edge
+    // into the merged ~123 kB app-core/agent-core/contracts chunk. Trading ~750
+    // bytes of duplicated code in the entry for no longer fetching that whole
+    // chunk eagerly is the point of the fix, not a regression.
+    expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(102)
   })
 
   it('keeps Excalidraw outside the canvas startup graph', () => {

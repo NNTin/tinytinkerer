@@ -479,7 +479,12 @@ export const sendConversationPromptAction = async (
     // see run-registry.ts. No raw run key / map plumbing here anymore; the
     // re-key-on-resolve rule lives entirely in `registry.rekey`.
     handle: ConversationRunHandle
-    registry: ConversationRunRegistry
+    // Structural, not the concrete class: app-browser's entry-safe duplicate
+    // of ConversationRunRegistry (issue #441, see its stores/run-registry.ts)
+    // is a separate class with private fields, so only a structural `rekey`
+    // shape — the one method this action actually calls — stays assignable
+    // from both that duplicate and this package's own instances.
+    registry: Pick<ConversationRunRegistry, 'rekey'>
     execute: typeof executeChatPrompt
   }
 ): Promise<void> => {

@@ -35,6 +35,7 @@ type OutputChunk = {
   fileName: string
   code?: string
   isEntry?: boolean
+  imports?: string[]
 }
 
 type OutputAsset = {
@@ -81,7 +82,7 @@ beforeAll(async () => {
 }, 30_000)
 
 describe('shell bundle regression guard', () => {
-  it('keeps the startup entry chunk under 66 kB', () => {
+  it('keeps the startup entry chunk under 68 kB', () => {
     // Raised 65 → 66 kB (2026-07-16): per-conversation scoping of the human-prompt
     // bridge and the inspector capture sink (issue #430, PR 3) adds a small,
     // unavoidable amount of real logic to three entry-chunk files (chat-store,
@@ -89,9 +90,34 @@ describe('shell bundle regression guard', () => {
     // scoped settle/clear, and the wiring between them. PR 2 already left this
     // budget with only ~70 bytes of headroom, so this modest addition (~200 bytes
     // minified) needed a small raise rather than a deeper refactor.
+    // Raised 66 → 68 kB (2026-07-24, issue #441): isPluginModule, SETTINGS_KEYS,
+    // defaultSettingsState, and ConversationRunRegistry/MAX_CONCURRENT_RUNS moved
+    // from static VALUE imports of `@tinytinkerer/app-core` to small entry-local
+    // duplicates (see plugins/is-plugin-module.ts, stores/settings-defaults.ts,
+    // stores/run-registry.ts) so the entry no longer has a static edge into the
+    // merged ~123 kB app-core/agent-core/contracts chunk (see the next test).
+    // Trading ~750 bytes of duplicated code in the entry for no longer fetching
+    // that whole chunk eagerly is the point of the fix, not a regression.
     const entry = chunks.find((chunk) => chunk.isEntry)
     expect(entry, 'No entry chunk found in build output').toBeDefined()
-    expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(66)
+    expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(68)
+  })
+
+  it('keeps the app-core chunk out of the entry chunk static import graph', () => {
+    // Regression guard for issue #441: three long-standing eager value imports
+    // (isPluginModule in plugins/registry.ts; SETTINGS_KEYS and
+    // defaultSettingsState in stores/settings-store.ts) used to statically pull
+    // `@tinytinkerer/app-core` into the entry — and manualChunks merges app-core
+    // with agent-core and contracts into one ~123 kB chunk (see
+    // scripts/browser-shell-chunks.mjs), so the browser fetched that whole chunk
+    // at startup even though core-module.ts's loadCoreModule() also loads it
+    // lazily. The byte-size budget above can't see this: chunk sizes are
+    // unchanged either way, only the import graph shows it. This asserts the
+    // entry chunk has no static `import ... from "./app-core-*.js"` edge.
+    const entry = chunks.find((chunk) => chunk.isEntry)
+    expect(entry, 'No entry chunk found in build output').toBeDefined()
+    const staticImports = entry!.imports ?? []
+    expect(staticImports.filter((fileName) => fileName.includes('app-core'))).toEqual([])
   })
 
   it('keeps the lazy chat route chunk under 57 kB', () => {

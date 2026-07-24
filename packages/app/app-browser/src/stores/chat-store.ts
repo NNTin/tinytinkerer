@@ -3,9 +3,10 @@ import type { ChatRuntimeFactory, ConversationSlice } from '@tinytinkerer/app-co
 // A REAL (eager) value import, unlike the rest of this store's app-core usage
 // (which goes through `loadCoreModule()`'s lazy `import()`): the #334 latch
 // needs ConversationRunRegistry synchronously, before sendPrompt's first
-// await — see run-registry.ts's header. run-registry.ts is intentionally
-// tiny and dependency-free so this one eager need stays cheap.
-import { ConversationRunRegistry, MAX_CONCURRENT_RUNS } from '@tinytinkerer/app-core'
+// await. Imported from this entry-safe local duplicate (issue #441), not
+// `@tinytinkerer/app-core`, so this one eager need stays cheap instead of
+// dragging that package's whole merged manualChunks bucket onto the entry.
+import { ConversationRunRegistry, MAX_CONCURRENT_RUNS } from './run-registry'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { AppToolGroup } from '../app-tool-group'
 import type { BrowserShell } from '../shell'
@@ -22,10 +23,11 @@ import { resetHumanPrompts } from '../human-prompt-bridge'
 export type { ConversationSlice }
 
 // The run-latch protocol (the pre-hydration '' placeholder key, re-key-on-
-// resolve, the release-by-identity scan, and the cap arithmetic) is owned by
-// ConversationRunRegistry in app-core (issue #430 review) — re-exported here
-// because MAX_CONCURRENT_RUNS is part of this store's public API (surfaces.tsx
-// and unit tests import it from this module).
+// resolve, the release-by-identity scan, and the cap arithmetic) is designed
+// in app-core's run-registry.ts (issue #430 review) and duplicated into this
+// store's entry-safe ./run-registry (issue #441) — re-exported here because
+// MAX_CONCURRENT_RUNS is part of this store's public API (surfaces.tsx and
+// unit tests import it from this module).
 export { MAX_CONCURRENT_RUNS }
 
 export type ChatState = {

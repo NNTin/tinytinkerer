@@ -1,4 +1,5 @@
-import { isPluginModule, type PluginModule } from '@tinytinkerer/app-core'
+import type { PluginModule } from '@tinytinkerer/app-core'
+import { isPluginModule } from './is-plugin-module'
 
 // Optional plugins are discovered from the workspace `packages/plugins/*`
 // directory at build time via Vite's import.meta.glob. This keeps app-browser
