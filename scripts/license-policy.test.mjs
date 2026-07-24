@@ -19,6 +19,7 @@ const cases = [
   ['Zlib', 'allow'],
   ['CC-BY-4.0', 'warn'],
   ['MPL-2.0', 'warn'],
+  ['EPL-2.0', 'warn'],
   ['Unlicense', 'warn'],
   ['LGPL-2.1-only', 'warn'],
   ['GPL-3.0', 'block'],
