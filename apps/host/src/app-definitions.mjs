@@ -1,5 +1,19 @@
 import { join } from 'node:path'
 
+// Docusaurus is built and served by its own toolchain, so it is deliberately
+// separate from the Vite app inventory below. Production composition copies its
+// static output into the host; local development reverse-proxies this mount to
+// the standalone Docusaurus dev server.
+export const DOCS_SITE_SPEC = Object.freeze({
+  slug: 'docs',
+  label: 'Docs',
+  mountPath: '/docs/',
+  source: 'docs',
+  outputDir: 'build',
+  devOrigin: 'http://127.0.0.1:3112',
+  webSocketPath: '/ws'
+})
+
 // The host-owned route/build inventory. Dev serving, production composition,
 // redirects, and host tests all consume this list so adding an app cannot leave
 // one hosting mode behind.

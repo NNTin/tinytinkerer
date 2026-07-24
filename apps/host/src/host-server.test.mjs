@@ -1,11 +1,13 @@
 // @ts-check
 
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { createServer as createHttpServer } from 'node:http'
+import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { HOSTED_APP_SPECS } from './app-definitions.mjs'
+import { DOCS_SITE_SPEC, HOSTED_APP_SPECS } from './app-definitions.mjs'
 import { createHostServer } from './host-server.mjs'
 
 /** @typedef {import('node:http').Server} HttpServer */
@@ -67,6 +69,90 @@ const startEdgeStub = async () =>
     server.listen(0, '127.0.0.1', () => {
       activeClosers.add(() => closeServer(server))
       resolve(server)
+    })
+  })
+
+/**
+ * @returns {Promise<HttpServer>}
+ */
+const startDocsStub = async () =>
+  new Promise((resolve, reject) => {
+    const server = createHttpServer((req, res) => {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+      res.setHeader('X-Docs-Proxy', 'ready')
+      res.end(`docs:${req.url}`)
+    })
+
+    server.on('upgrade', (req, socket) => {
+      const key = req.headers['sec-websocket-key']
+      if (!key) {
+        socket.destroy()
+        return
+      }
+      const accept = createHash('sha1')
+        .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+        .digest('base64')
+      socket.write(
+        [
+          'HTTP/1.1 101 Switching Protocols',
+          'Upgrade: websocket',
+          'Connection: Upgrade',
+          `Sec-WebSocket-Accept: ${accept}`,
+          '',
+          ''
+        ].join('\r\n')
+      )
+      // Keep the upgraded connection alive like webpack-dev-server and send a
+      // frame after the browser disconnects. The host proxy must close the
+      // upstream half instead of crashing with an unhandled EPIPE.
+      setTimeout(() => {
+        if (!socket.destroyed) {
+          socket.end(Buffer.from([0x81, 0x02, 0x6f, 0x6b]))
+        }
+      }, 25)
+    })
+
+    server.once('error', (error) => {
+      reject(error instanceof Error ? error : new Error(String(error)))
+    })
+    server.listen(0, '127.0.0.1', () => {
+      activeClosers.add(() => closeServer(server))
+      resolve(server)
+    })
+  })
+
+/**
+ * @param {string} hostUrl
+ * @returns {Promise<string>}
+ */
+const requestDocsWebSocketUpgrade = async (hostUrl) =>
+  new Promise((resolve, reject) => {
+    const url = new URL(hostUrl)
+    const hostname = url.hostname.replace(/^\[|\]$/g, '')
+    const socket = connect(Number(url.port), hostname)
+    let response = ''
+    socket.setEncoding('utf8')
+    socket.once('error', reject)
+    socket.on('data', (chunk) => {
+      response += String(chunk)
+      if (response.includes('\r\n\r\n')) {
+        socket.destroy()
+        resolve(response)
+      }
+    })
+    socket.once('connect', () => {
+      socket.write(
+        [
+          `GET ${DOCS_SITE_SPEC.webSocketPath} HTTP/1.1`,
+          `Host: ${url.host}`,
+          'Connection: Upgrade',
+          'Upgrade: websocket',
+          'Sec-WebSocket-Version: 13',
+          'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+          '',
+          ''
+        ].join('\r\n')
+      )
     })
   })
 
@@ -177,7 +263,16 @@ describe('host server', () => {
   })
 
   beforeAll(async () => {
-    sharedHostServer = await createHostServer({ port: 0, disableDependencyOptimization: true })
+    const docsStub = await startDocsStub()
+    const docsAddress = docsStub.address()
+    if (!docsAddress || typeof docsAddress === 'string') {
+      throw new Error('Expected the docs stub to listen on a TCP address.')
+    }
+    sharedHostServer = await createHostServer({
+      port: 0,
+      disableDependencyOptimization: true,
+      docsDevOrigin: `http://127.0.0.1:${docsAddress.port}`
+    })
     activeClosers.add(() => sharedHostServer?.close() ?? Promise.resolve())
   })
 
@@ -209,6 +304,7 @@ describe('host server', () => {
     const pixelAgentsResponse = await fetch(`${sharedHostServer.url}/pixel-agents`, {
       redirect: 'manual'
     })
+    const docsResponse = await fetch(`${sharedHostServer.url}/docs`, { redirect: 'manual' })
 
     expect(webResponse.status).toBe(301)
     expect(webResponse.headers.get('location')).toBe('/web/')
@@ -220,6 +316,34 @@ describe('host server', () => {
     expect(canvasResponse.headers.get('location')).toBe('/canvas/')
     expect(pixelAgentsResponse.status).toBe(301)
     expect(pixelAgentsResponse.headers.get('location')).toBe('/pixel-agents/')
+    expect(docsResponse.status).toBe(301)
+    expect(docsResponse.headers.get('location')).toBe('/docs/')
+  })
+
+  it('proxies documentation roots and deep links through the unified host', async () => {
+    if (!sharedHostServer) {
+      throw new Error('Expected the shared host server to be available.')
+    }
+
+    const rootResponse = await fetch(`${sharedHostServer.url}/docs/`)
+    const deepResponse = await fetch(`${sharedHostServer.url}/docs/ARCHITECTURE/?section=layers`)
+
+    expect(rootResponse.status).toBe(200)
+    expect(rootResponse.headers.get('x-docs-proxy')).toBe('ready')
+    await expect(rootResponse.text()).resolves.toBe('docs:/docs/')
+    expect(deepResponse.status).toBe(200)
+    await expect(deepResponse.text()).resolves.toBe('docs:/docs/ARCHITECTURE/?section=layers')
+  })
+
+  it('proxies the Docusaurus development websocket through the unified host', async () => {
+    if (!sharedHostServer) {
+      throw new Error('Expected the shared host server to be available.')
+    }
+
+    const response = await requestDocsWebSocketUpgrade(sharedHostServer.url)
+
+    expect(response).toContain('HTTP/1.1 101 Switching Protocols')
+    expect(response.toLowerCase()).toContain('upgrade: websocket')
   })
 
   it('serves the shell from /web/ with the web base path intact', async () => {

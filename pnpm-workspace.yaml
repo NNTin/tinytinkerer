@@ -99,6 +99,13 @@ auditLevel: moderate
 # @tailwindcss-vite/allure-vitest — never bundled into a deployed app. Fixed
 # via the override below instead of suppression since the patch is within
 # vite's declared range and already clears the age gate.
+# GHSA-mh99-v99m-4gvg (brace-expansion, unbounded expansion DoS): every released
+# major line used by the repository is affected, and the only patched release
+# (5.0.8, published 2026-07-23) is still inside the strict 7-day age gate.
+# All paths are development/build tooling through Docusaurus, ESLint, or
+# Workbox; brace expansion is not bundled into a deployed application. Re-check
+# once 5.0.8 clears the age gate (~2026-07-30), then consolidate the overrides
+# below on the patched release.
 auditConfig:
   ignoreGhsas:
     - GHSA-gv7w-rqvm-qjhr
@@ -119,6 +126,7 @@ auditConfig:
     - GHSA-v2hh-gcrm-f6hx
     - GHSA-4c8g-83qw-93j6
     - GHSA-qwww-vcr4-c8h2
+    - GHSA-mh99-v99m-4gvg
 overrides:
   # Transitive advisory fixes, all within semver ranges the direct dependents
   # already declare (sass wants immutable ^4.0.0, cosmiconfig wants js-yaml
@@ -131,6 +139,12 @@ overrides:
   # minimatch versions); each needs its own line's patch.
   brace-expansion@2: 2.1.2
   brace-expansion@5: 5.0.7
+  # Docusaurus 3.10.2's build and development toolchain still declares the
+  # vulnerable major lines. These targeted overrides keep unrelated consumers
+  # on their existing versions while forcing the first advisory-free releases.
+  'copy-webpack-plugin>serialize-javascript': 7.0.5
+  'css-minimizer-webpack-plugin>serialize-javascript': 7.0.5
+  'sockjs>uuid': 11.1.1
   # apps/edge>wrangler>miniflare pins sharp ^0.34.5 (outside its own declared
   # range, unlike the entries above) for local dev asset emulation only, never
   # shipped to the deployed Worker. Forced up to match the root devDependency's
@@ -147,8 +161,12 @@ overrides:
 # @codesandbox/sandpack-react) is blocked too — its postinstall only probes
 # optional ES feature support; the browser bundle builds and runs without it,
 # so keep installs scriptless rather than executing third-party lifecycle code.
+# `core-js` is transitive through Docusaurus; its postinstall only prints a
+# funding banner and writes banner-throttling state to the OS temp directory,
+# neither of which is needed to build or run the documentation site.
 allowBuilds:
   '@sentry/cli': true
+  core-js: false
   esbuild: true
   sharp: true
   workerd: true

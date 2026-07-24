@@ -21,6 +21,10 @@ const LICENSE_OVERRIDES = {
   // as Unknown. Its repository declares MIT.
   // https://github.com/fabiospampinato/khroma#readme
   'khroma@2.1.0': 'MIT',
+  // require-like@0.1.2 omits its license metadata, but the published tarball's
+  // License file contains the MIT license and its README identifies it as MIT.
+  // https://github.com/felixge/node-require-like/blob/v0.1.2/License
+  'require-like@0.1.2': 'MIT',
   // These CodeSandbox import helper releases omit or misreport their metadata,
   // but each published tarball includes the LGPL v3 text in LICENSE.
   'codesandbox-import-util-types@1.3.7': 'LGPL-3.0-only',

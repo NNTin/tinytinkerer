@@ -2,6 +2,11 @@
 // on these names, so keep the classification in one place rather than letting
 // browser and integrated app shells drift independently.
 export const browserShellManualChunks = (id) => {
+  // Attribution data grows with the production dependency tree. Keep it out
+  // of the interactive dialog chunk while preserving the existing lazy load.
+  if (id.includes('packages/brand/brand-assets/src/third-party-notices.generated.ts')) {
+    return 'notices-vendor'
+  }
   if (
     id.includes('node_modules/react/') ||
     id.includes('node_modules/react-dom/') ||

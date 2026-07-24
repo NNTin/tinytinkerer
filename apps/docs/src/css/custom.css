@@ -1,0 +1,49 @@
+:root {
+  --ifm-color-primary: #57534e;
+  --ifm-color-primary-dark: #44403c;
+  --ifm-color-primary-darker: #3f3a37;
+  --ifm-color-primary-darkest: #292524;
+  --ifm-color-primary-light: #78716c;
+  --ifm-color-primary-lighter: #a8a29e;
+  --ifm-color-primary-lightest: #d6d3d1;
+}
+
+.docs-platform-status {
+  align-items: center;
+  background: var(--ifm-color-emphasis-100);
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.75rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-block: 1.5rem;
+  padding: 1rem;
+}
+
+.docs-platform-status p {
+  margin: 0.25rem 0 0;
+}
+
+.docs-platform-status button {
+  background: var(--ifm-color-primary);
+  border: 0;
+  border-radius: 0.5rem;
+  color: white;
+  cursor: pointer;
+  flex: none;
+  font: inherit;
+  font-weight: 600;
+  padding: 0.65rem 0.9rem;
+}
+
+.docs-platform-status button:focus-visible {
+  outline: 3px solid var(--ifm-color-primary-lighter);
+  outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+  .docs-platform-status {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
