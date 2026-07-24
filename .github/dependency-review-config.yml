@@ -25,3 +25,4 @@ allow-ghsas:
   - GHSA-v2hh-gcrm-f6hx
   - GHSA-4c8g-83qw-93j6
   - GHSA-qwww-vcr4-c8h2
+  - GHSA-mh99-v99m-4gvg

@@ -99,6 +99,13 @@ auditLevel: moderate
 # @tailwindcss-vite/allure-vitest — never bundled into a deployed app. Fixed
 # via the override below instead of suppression since the patch is within
 # vite's declared range and already clears the age gate.
+# GHSA-mh99-v99m-4gvg (brace-expansion, unbounded expansion DoS): every released
+# major line used by the repository is affected, and the only patched release
+# (5.0.8, published 2026-07-23) is still inside the strict 7-day age gate.
+# All paths are development/build tooling through Docusaurus, ESLint, or
+# Workbox; brace expansion is not bundled into a deployed application. Re-check
+# once 5.0.8 clears the age gate (~2026-07-30), then consolidate the overrides
+# below on the patched release.
 auditConfig:
   ignoreGhsas:
     - GHSA-gv7w-rqvm-qjhr
@@ -119,6 +126,7 @@ auditConfig:
     - GHSA-v2hh-gcrm-f6hx
     - GHSA-4c8g-83qw-93j6
     - GHSA-qwww-vcr4-c8h2
+    - GHSA-mh99-v99m-4gvg
 overrides:
   # Transitive advisory fixes, all within semver ranges the direct dependents
   # already declare (sass wants immutable ^4.0.0, cosmiconfig wants js-yaml
