@@ -1,3 +1,7 @@
+---
+sidebar_position: 2
+---
+
 # LiteLLM Setup Guide
 
 tinytinkerer has exactly one model provider: a [LiteLLM proxy](https://docs.litellm.ai/docs/simple_proxy).
@@ -194,7 +198,7 @@ with `user_id=anonymous` on first request.
 Both key types use the same provisioning endpoints and the same HMAC derivation
 logic (derived from `LITELLM_USER_KEY_SECRET`).
 
-See [PRIVACY.md](PRIVACY.md) for the authenticated (per-user key) data-flow
+See [PRIVACY.md](../overview/PRIVACY.md) for the authenticated (per-user key) data-flow
 description. The anonymous path shares the same properties — no GitHub token is
 sent to LiteLLM, no conversation content is logged — but uses a shared virtual
 key rather than a per-user one. Keep those statements true for your own instance
@@ -284,7 +288,7 @@ Notes:
 - The proxy reads `config.yaml` **at startup only** — restart the container
   after changing the model list.
 - **Disable telemetry** (`telemetry: false`) to keep conversation content private
-  and maintain user privacy (see [PRIVACY.md](PRIVACY.md)).
+  and maintain user privacy (see [PRIVACY.md](../overview/PRIVACY.md)).
 - When a chat request arrives without an explicit model, the edge defaults to
   `chatgpt/gpt-5.4`. Either expose a model under that name or change
   `DEFAULT_LITELLM_MODEL` in `packages/shared/contracts/src/edge.ts`.

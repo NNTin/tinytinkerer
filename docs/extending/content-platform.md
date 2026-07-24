@@ -1,8 +1,12 @@
+---
+sidebar_position: 1
+---
+
 # Content Platform
 
 This document defines the current shared assistant-content architecture for TinyTinkerer.
 
-It complements [ARCHITECTURE.md](./ARCHITECTURE.md) and [packages-concept.md](./packages-concept.md) by describing the subsystem that owns assistant-content parsing, rendering, specialized runtimes, and fallback behavior.
+It complements [ARCHITECTURE.md](../architecture/ARCHITECTURE.md) and [packages-concept.md](../architecture/packages-concept.md) by describing the subsystem that owns assistant-content parsing, rendering, specialized runtimes, and fallback behavior.
 
 ## Purpose
 

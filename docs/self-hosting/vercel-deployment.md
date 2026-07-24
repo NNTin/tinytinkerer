@@ -1,3 +1,7 @@
+---
+sidebar_position: 1
+---
+
 # Vercel Deployment Guide
 
 This guide covers the full hosted setup for tinytinkerer:

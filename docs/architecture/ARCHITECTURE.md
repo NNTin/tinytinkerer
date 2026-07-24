@@ -1,3 +1,7 @@
+---
+title: Architecture
+---
+
 <!--
 This architecture document reflects the current implementation. This markdown file will reflect desired future architecture.
 If changes affecting the architecture are made docs/ARCHITECTURE.md should be updated.
@@ -6,6 +10,10 @@ Do NOT delete above lines.
 
 # Architecture
 
+This section is for **builders** who need the system-level map before making a structural change.
+Next step once you've read this: [Extending the Content & Runtime](../extending/index.md),
+[Plugins & Tools](../plugins-and-tools/index.md), or [Self-Hosting](../self-hosting/index.md).
+
 This document describes the current TinyTinkerer architecture. Browser presentations and
 application workspaces share one host origin and one browser assembly layer. IDE, Mermaid, Canvas,
 and Pixel Agents are integrated stages: their shell UI and assistant render in the same React
@@ -13,13 +21,13 @@ document.
 
 See also:
 
-- [app-shell.md](./app-shell.md)
-- [content-platform.md](./content-platform.md)
+- [app-shell.md](../extending/app-shell.md)
+- [content-platform.md](../extending/content-platform.md)
 - [packages-concept.md](./packages-concept.md)
 - [ui-ux-concept.md](./ui-ux-concept.md)
-- [mcp-integration.md](./mcp-integration.md)
+- [mcp-integration.md](../plugins-and-tools/mcp-integration.md)
 - [sentry-telemetry.md](./sentry-telemetry.md)
-- [plugin-infrastructure.md](./plugin-infrastructure.md)
+- [plugin-infrastructure.md](../plugins-and-tools/plugin-infrastructure.md)
 
 ## Route Model
 
@@ -65,7 +73,7 @@ trusted still owns an explicit isolation boundary (for example Sandpack executio
 code-execution sandbox); trusted first-party UI does not gain an iframe merely for package
 separation.
 
-See [app-shell.md](./app-shell.md) for the application-stage contract.
+See [app-shell.md](../extending/app-shell.md) for the application-stage contract.
 
 ## Monorepo Map
 
@@ -245,7 +253,7 @@ These conventions are gated in CI, not left to reviewers:
   only on `contracts` and local modules.
 - Plugin packages depend only on `contracts` and local modules. Host-only capabilities are
   injected through `PluginHost`.
-- Content packages follow the layering in [content-platform.md](./content-platform.md).
+- Content packages follow the layering in [content-platform.md](../extending/content-platform.md).
 - `brand-assets`, `sentry-telemetry`, and `contracts` remain leaf-oriented packages as enforced
   by `scripts/check-boundaries.mjs`.
 - Untrusted executable content uses a purpose-built sandbox. Package boundaries and lazy chunks
@@ -327,7 +335,7 @@ The injected config carries an optional `theme?: ShellThemeTokens`
 the embedded shell maps host colors onto its design tokens
 (`shellThemeToCssVars`) and visually blends into its host. This is
 host-adaptation, not a full dark mode; see
-[ux-modernization-migration.md](./ux-modernization-migration.md).
+[ux-modernization-migration.md](../updates/ux-modernization-migration.md).
 
 This means TinyTinkerer has two different kinds of sharing:
 

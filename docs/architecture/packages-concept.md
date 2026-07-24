@@ -1,3 +1,7 @@
+---
+sidebar_position: 2
+---
+
 # Packages Concept
 
 This document explains how TinyTinkerer should divide responsibility between apps and packages. The rule is simple: apps present shell-specific experiences, packages own reusable capability.
@@ -174,7 +178,7 @@ The content platform is ten packages with strict layering: three foundational pa
 - `content-core` owns stable-ID helpers and source-plugin contracts over the canonical content model from `contracts`; it may depend on `contracts` only.
 - `content-react` owns the React runtime implementation, the default React plugins (image and table are no longer defaults — they live in `content-image` / `content-table`), inline renderer, shared chrome (`PreviewCodeFrame`, `CodeBlockFallback`), and render-time preparation adapter (documents arrive already normalized by their producers); depends on `content-core` and `ui`.
 - `content-markdown` owns markdown parsing into the semantic AST and parser-only markdown sessions through `markdownSourcePlugin`; Mermaid and wireframe stay `codeBlock` specializations via `language`; depends directly on `content-core`.
-- The seven renderer packages (`content-callout`, `content-code`, `content-image`, `content-link-card`, `content-mermaid`, `content-table`, `content-wireframe`) each own one specialized renderer plugin and follow one shape: a `create*Plugin()` factory plus a singleton convenience export, each depending directly on `content-react` only. `content-image` and `content-table` replaced the former `content-react` defaults; `content-code` is the canonical editable code renderer; `content-callout` and `content-link-card` activate through `matches(node)` predicates. See [content-platform.md](./content-platform.md) for their behavior.
+- The seven renderer packages (`content-callout`, `content-code`, `content-image`, `content-link-card`, `content-mermaid`, `content-table`, `content-wireframe`) each own one specialized renderer plugin and follow one shape: a `create*Plugin()` factory plus a singleton convenience export, each depending directly on `content-react` only. `content-image` and `content-table` replaced the former `content-react` defaults; `content-code` is the canonical editable code renderer; `content-callout` and `content-link-card` activate through `matches(node)` predicates. See [content-platform.md](../extending/content-platform.md) for their behavior.
 
 Owns collectively:
 

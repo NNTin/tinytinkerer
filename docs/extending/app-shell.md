@@ -1,3 +1,8 @@
+---
+title: Integrated Application Shells
+sidebar_position: 2
+---
+
 <!--
 This document reflects the current integrated application-shell implementation.
 Update it when the stage/controller/dock contract changes.

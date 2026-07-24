@@ -1,4 +1,11 @@
+---
+title: Contributing
+---
+
 # Contributing
+
+This section is for anyone submitting a change: contribution terms, security disclosure, and
+commercial licensing. Read it in full before opening a pull request.
 
 Thank you for your interest in contributing to this project.
 

@@ -73,11 +73,9 @@ const config: KnipConfig = {
       ignoreDependencies: ['workerd']
     },
     'apps/docs': {
-      // Docusaurus loads the stylesheet from a string in its config, while the
-      // repository-level MDX source imports this component through the @site
-      // alias. Register both runtime entry points because Knip cannot follow
-      // either edge statically across the workspace boundary.
-      entry: ['src/components/documentation-platform-status.tsx', 'src/css/custom.css']
+      // Docusaurus loads the stylesheet from a string in its config, which Knip
+      // cannot follow statically across the workspace boundary.
+      entry: ['src/css/custom.css']
     },
     'apps/shell': {
       // Radix primitives kept for parity with the shared UI package; consumed by

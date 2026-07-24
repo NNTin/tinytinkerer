@@ -5,23 +5,27 @@ slug: /
 sidebar_position: 1
 ---
 
-import DocumentationPlatformStatus from '@site/src/components/documentation-platform-status'
-
 # TinyTinkerer documentation
 
 TinyTinkerer is a Rube Goldberg machine for human-computer conversation. These documents describe
-the product, its architecture, its extension points, and how to run it.
+the product, its architecture, its extension points, and how to run it — organized around two
+audiences: people **evaluating** TinyTinkerer, and **builders** extending or self-hosting it.
 
-<DocumentationPlatformStatus />
+## Evaluating TinyTinkerer
 
-## Start exploring
+- [Overview & Evaluation](./overview/index.md) — what TinyTinkerer is and what it can do.
+- [Privacy & Telemetry](./overview/PRIVACY.md) — what data leaves the machine and who can see it.
+- [Open TinyTinkerer](pathname:///) — try the running product directly.
 
-- [Architecture](./ARCHITECTURE.md) maps the monorepo, layers, and dependency rules.
-- [Plugin infrastructure](./plugin-infrastructure.md) explains how optional capabilities join the
-  agent runtime.
-- [Content platform](./content-platform.md) documents rich assistant-content parsing and rendering.
-- [Vercel deployment](./vercel-deployment.md) covers hosting the frontend and edge services.
-- [Contributing](./CONTRIBUTING.md) describes contribution and licensing terms.
+## Building with TinyTinkerer
 
-This landing page is intentionally small. The evaluator and builder information architecture will
-be expanded in follow-up documentation issues.
+- [Using TinyTinkerer](./using-tinytinkerer/index.md) — the product surface, day to day.
+- [Plugins & Tools](./plugins-and-tools/index.md) — give the assistant a new tool, or register an
+  MCP server.
+- [Extending the Content & Runtime](./extending/index.md) — add a content renderer or a new
+  integrated application workspace.
+- [Self-Hosting](./self-hosting/index.md) — run your own instance (Vercel, Cloudflare, LiteLLM).
+- [Architecture](./architecture/ARCHITECTURE.md) — the monorepo map, layers, and dependency rules.
+- [Contributing](./contributing/CONTRIBUTING.md) — contribution terms and security disclosure.
+
+Each section above links to a landing page that explains who it's for and where to go next.

@@ -3,7 +3,7 @@
 //
 // It mirrors the CI quality gates so problems are fixed locally before they reach
 // CI, keeping the ESLint/Prettier division of responsibility (see
-// docs/ARCHITECTURE.md#enforcement):
+// docs/architecture/ARCHITECTURE.md#enforcement):
 //
 //   - Prettier formats every staged file it understands. `--ignore-unknown` skips
 //     files Prettier has no parser for, and .prettierignore keeps it off generated

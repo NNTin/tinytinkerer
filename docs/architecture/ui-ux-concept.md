@@ -1,3 +1,7 @@
+---
+sidebar_position: 3
+---
+
 # UI/UX Concept
 
 This document records the design intent for the tinytinkerer frontend surfaces.

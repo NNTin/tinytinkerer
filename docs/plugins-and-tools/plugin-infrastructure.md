@@ -1,3 +1,7 @@
+---
+sidebar_position: 1
+---
+
 # Plugin Infrastructure
 
 TinyTinkerer supports optional **plugins** that contribute tools to the agent runtime. A plugin
@@ -32,11 +36,11 @@ importing the host.
 
 See also:
 
-- [ARCHITECTURE.md](./ARCHITECTURE.md)
-- [packages-concept.md](./packages-concept.md)
-- [sentry-telemetry.md](./sentry-telemetry.md)
+- [ARCHITECTURE.md](../architecture/ARCHITECTURE.md)
+- [packages-concept.md](../architecture/packages-concept.md)
+- [sentry-telemetry.md](../architecture/sentry-telemetry.md)
 - [mcp-integration.md](./mcp-integration.md) — the closest existing pattern (settings-gated tools)
-- [PRIVACY.md](./PRIVACY.md) — feedback content is sent via telemetry on purpose
+- [PRIVACY.md](../overview/PRIVACY.md) — feedback content is sent via telemetry on purpose
 
 ---
 
@@ -218,7 +222,7 @@ backend.
 That final `agent.tool.failed` also reaches `createToolFailureTelemetryHook`, which independently
 captures a generic, `error`-level "tool failed" exception under its own `tool-failure` fingerprint
 — so a `PluginCaptureError` throw now produces two Sentry entries, not one. See
-[sentry-telemetry.md § Tool failures](./sentry-telemetry.md#tool-failures).
+[sentry-telemetry.md § Tool failures](../architecture/sentry-telemetry.md#tool-failures).
 
 ## The Web search plugin (`@tinytinkerer/plugin-web-search`)
 
@@ -720,7 +724,7 @@ has registered its `@sentry/react` sinks — which only happens after the user g
 consent and only on deployed builds (never `development`). So a feedback submission is delivered
 only when **both** the plugin and telemetry are enabled; otherwise it silently no-ops while the
 tool still reports "not implemented". Feedback uses `info`, so it lands as an informational message
-rather than an error issue. See [sentry-telemetry.md](./sentry-telemetry.md) and [PRIVACY.md](./PRIVACY.md).
+rather than an error issue. See [sentry-telemetry.md](../architecture/sentry-telemetry.md) and [PRIVACY.md](../overview/PRIVACY.md).
 
 ## Dependency rules
 

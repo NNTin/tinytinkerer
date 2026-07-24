@@ -1,3 +1,8 @@
+---
+title: Privacy policy updated
+unlisted: true
+---
+
 ## Privacy policy updated
 
 TinyTinkerer added an optional **Browser state** plugin. It is off by default; you enable it in

@@ -10,6 +10,33 @@ Node to execute during static rendering, where it fails because Node's `require`
 `resolveWeak` method. The TypeScript Docusaurus configuration and application source still use
 ES modules.
 
+## Information architecture
+
+Docs live under one top-level category folder per audience journey: `overview`,
+`using-tinytinkerer`, `plugins-and-tools`, `extending`, `self-hosting`, `architecture`,
+`contributing`. Each has a `_category_.json` (`label` + `position`, controlling sidebar order)
+and an `index.md` landing page (`id: index`) that explains who the section is for and links to a
+next step — Docusaurus automatically uses a folder's `index.md` as that category's own sidebar
+link.
+
+Conventions for new docs:
+
+- Set `sidebar_position` in frontmatter when a folder has more than one content doc, so order is
+  explicit rather than alphabetical.
+- Docs that shouldn't appear in navigation (policy/update notices like `docs/updates/*`) get
+  `unlisted: true` in frontmatter instead of being left out of the build — they stay reachable by
+  direct URL, just out of the sidebar and search index.
+- `docs/overview/PRIVACY.md` and `docs/updates/PRIVACY-UPDATE.md` are also read verbatim by
+  `scripts/generate-privacy-policy.mjs` into the in-app privacy dialog. That script strips
+  frontmatter before embedding, but avoid adding content above the first heading in those two
+  files beyond frontmatter.
+- Breadcrumbs and prev/next pagination are on by default in the classic preset and derive from
+  this folder structure and `sidebar_position` — no per-doc configuration needed.
+- Link to other docs with relative paths (`../architecture/ARCHITECTURE.md`); `onBrokenLinks:
+'throw'` in `docusaurus.config.ts` fails the build on a broken one. A same-origin link that
+  leaves the docs router entirely (e.g. back to the product) needs the `pathname://` protocol
+  (see `docs/index.mdx`) so Docusaurus doesn't try to resolve it as a doc route.
+
 Run the documentation site through the unified root development command:
 
 ```sh

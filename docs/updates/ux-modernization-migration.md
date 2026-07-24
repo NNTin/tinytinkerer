@@ -1,3 +1,7 @@
+---
+unlisted: true
+---
+
 # UX Modernization — Migration Notes
 
 This change set upgrades the shared chat experience across the web, mobile, and

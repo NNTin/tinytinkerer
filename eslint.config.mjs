@@ -51,12 +51,12 @@ export default tseslint.config(
           selector:
             'TSPropertySignature[optional=true] > TSTypeAnnotation > TSUnionType > TSUndefinedKeyword',
           message:
-            'Optional properties already accept missing values under exactOptionalPropertyTypes. Drop `| undefined`. See docs/ARCHITECTURE.md#coding-conventions.'
+            'Optional properties already accept missing values under exactOptionalPropertyTypes. Drop `| undefined`. See docs/architecture/ARCHITECTURE.md#coding-conventions.'
         },
         {
           selector: 'TSPropertySignature[optional=true] > TSTypeAnnotation > TSUndefinedKeyword',
           message:
-            'Optional properties already accept missing values under exactOptionalPropertyTypes. Drop the explicit `undefined` type. See docs/ARCHITECTURE.md#coding-conventions.'
+            'Optional properties already accept missing values under exactOptionalPropertyTypes. Drop the explicit `undefined` type. See docs/architecture/ARCHITECTURE.md#coding-conventions.'
         }
       ]
     }
@@ -104,6 +104,6 @@ export default tseslint.config(
   },
   // Must be LAST: turns off any ESLint rules that would conflict with Prettier
   // so the two never fight. ESLint owns code-quality rules; Prettier owns
-  // formatting. See docs/ARCHITECTURE.md#enforcement.
+  // formatting. See docs/architecture/ARCHITECTURE.md#enforcement.
   prettier
 )

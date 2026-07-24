@@ -1,3 +1,7 @@
+---
+sidebar_position: 2
+---
+
 # MCP Integration
 
 TinyTinkerer supports per-user [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) servers. Users add remote MCP servers in Settings, the frontend discovers their tools, and those tools become available to the assistant during chat.
@@ -6,8 +10,8 @@ Only V1 scope is implemented: tool calling over Streamable HTTP. Resources, prom
 
 See also:
 
-- [ARCHITECTURE.md](./ARCHITECTURE.md)
-- [packages-concept.md](./packages-concept.md)
+- [ARCHITECTURE.md](../architecture/ARCHITECTURE.md)
+- [packages-concept.md](../architecture/packages-concept.md)
 
 ---
 

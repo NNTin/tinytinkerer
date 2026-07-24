@@ -1,3 +1,7 @@
+---
+sidebar_position: 4
+---
+
 # Sentry Telemetry (SDK-agnostic core)
 
 `@tinytinkerer/sentry-telemetry` (`packages/shared/sentry-telemetry`) is the shared
@@ -25,7 +29,7 @@ lazy-load discipline is preserved.
   query string, URL query, and auth/cookie headers; `scrubBreadcrumb` (wire as
   `beforeBreadcrumb`) drops non-error console crumbs and strips fetch/xhr URLs. Both are
   generic so the caller's concrete `Event`/`ErrorEvent` type flows through. Previously these
-  were hand-duplicated in the browser and edge `beforeSend`. See [PRIVACY.md](./PRIVACY.md).
+  were hand-duplicated in the browser and edge `beforeSend`. See [PRIVACY.md](../overview/PRIVACY.md).
 - **`request-telemetry.ts` — the request engine.** `fetchWithTelemetry`,
   `parseJsonWithTelemetry` / `tryParseJsonWithTelemetry`, `parseWithTelemetry`, and
   `captureRequestIssue`, plus the structured tags/contexts and the **accept** mechanism
@@ -86,7 +90,7 @@ verb's `execute`) invisible outside the transcript. `agentToolFailedEventSchema`
 
 `createToolFailureTelemetryHook` (`packages/app/app-browser/src/runtime/tool-failure-telemetry.ts`)
 is a `chat.event` observer hook — the same `AgentHookContribution` mechanism a plugin uses (see
-[plugin-infrastructure.md](./plugin-infrastructure.md)) — pushed onto `create-runtime.ts`'s hooks
+[plugin-infrastructure.md](../plugins-and-tools/plugin-infrastructure.md)) — pushed onto `create-runtime.ts`'s hooks
 array unconditionally, so it runs for every chat run. It tracks each tool call's `input` from its
 `agent.tool.started` event (dropped again on `agent.tool.completed`/`agent.tool.failed`, capped at
 50 in-flight entries as a leak guard) and, on a non-`blocked` `agent.tool.failed`, calls
@@ -104,7 +108,7 @@ array unconditionally, so it runs for every chat run. It tracks each tool call's
 
 **A `PluginCaptureError` thrown by a plugin tool now produces two Sentry captures**, not one: the
 plugin's own structured report still goes through `host.capture` (`fingerprint: ['plugin',
-pluginId, kind]`, see [plugin-infrastructure.md](./plugin-infrastructure.md#routing-into-sentry-app-browser)),
+pluginId, kind]`, see [plugin-infrastructure.md](../plugins-and-tools/plugin-infrastructure.md#routing-into-sentry-app-browser)),
 and the rethrow that reaches `agent.tool.failed` now also trips this generic tool-failure capture
 (`fingerprint: ['tool-failure', toolId, ...]`). The two fingerprints never collide, so this shows
 up as two distinct issues — intentional: one is the plugin's own diagnostic view, the other is the

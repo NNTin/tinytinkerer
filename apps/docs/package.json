@@ -9,7 +9,7 @@
     "dev": "docusaurus start --host 127.0.0.1 --port 3112 --no-open",
     "start": "docusaurus start",
     "build": "docusaurus build",
-    "lint": "eslint src tests docusaurus.config.ts sidebars.ts site-config.ts",
+    "lint": "eslint tests docusaurus.config.ts sidebars.ts site-config.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
