@@ -23,11 +23,6 @@ const mockChatState = vi.hoisted(() => ({
   resetConversation: vi.fn(),
   cancelRetry: vi.fn(),
   stop: vi.fn(),
-  conversations: [{ id: 'a', title: 'New conversation', isRunning: false }],
-  activeConversationId: 'a',
-  selectConversation: vi.fn(() => Promise.resolve()),
-  startNewConversation: vi.fn(() => Promise.resolve()),
-  deleteConversation: vi.fn(() => Promise.resolve()),
   sendRefusalNotice: null as string | null
 }))
 
@@ -69,11 +64,6 @@ vi.mock('../src/surfaces.js', async () => {
       resetConversation: mockChatState.resetConversation,
       cancelRetry: mockChatState.cancelRetry,
       stop: mockChatState.stop,
-      conversations: mockChatState.conversations,
-      activeConversationId: mockChatState.activeConversationId,
-      selectConversation: mockChatState.selectConversation,
-      startNewConversation: mockChatState.startNewConversation,
-      deleteConversation: mockChatState.deleteConversation,
       sendRefusalNotice: mockChatState.sendRefusalNotice
     }),
     useSettingsSurfaceController: () => ({
@@ -165,8 +155,6 @@ beforeEach(() => {
   mockChatState.isRunning = false
   mockChatState.isCoolingDown = false
   mockChatState.submitPrompt.mockReturnValue(true)
-  mockChatState.conversations = [{ id: 'a', title: 'New conversation', isRunning: false }]
-  mockChatState.activeConversationId = 'a'
   mockChatState.sendRefusalNotice = null
   mockSpeechState.visible = false
 })
@@ -186,10 +174,9 @@ describe('FloatingChatSurface', () => {
     expect(screen.queryByRole('heading', { name: /reasoning & activity/i })).toBeNull()
   })
 
-  it('renders the conversation switcher trigger next to the reset button (issue #430)', async () => {
+  it('does not render a conversation switcher (removed: office-driven conversation management)', () => {
     render(<FloatingChatSurface LoadingComponent={Loading} />)
-    // findByRole: the switcher loads in its own lazy chunk (bundle budget).
-    expect(await screen.findByRole('button', { name: /switch conversation/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /switch conversation/i })).toBeNull()
   })
 
   it('renders the cap-refusal notice when the controller exposes it (issue #430)', () => {

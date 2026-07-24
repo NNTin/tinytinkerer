@@ -420,6 +420,19 @@ export const PixelAgentsWorkspace = ({
         title="Pixel Agents office"
         sandbox="allow-scripts"
       />
+      {/* Upstream's own "+ Agent" button never mounts in this embedding (it only
+          renders inside a VS Code extension host) and its click handler assumes
+          VS Code-only workspace-folder state this integration doesn't have, so
+          this is TinyTinkerer's own button, calling the action directly rather
+          than round-tripping through the (still-accepted, forward-compat)
+          `launchAgent` postMessage. */}
+      <button
+        type="button"
+        className="pixel-agents-add-agent"
+        onClick={() => actions.startNewConversation()}
+      >
+        + Agent
+      </button>
     </div>
   )
 

@@ -66,3 +66,26 @@
 .pixel-agents-storage-error {
   top: 44px;
 }
+
+/* TinyTinkerer's own "+ Agent" affordance (issue #430 follow-up): upstream's
+   native button never mounts in this embedding (it's conditionally rendered
+   only inside a VS Code extension host), so this sits in the same bottom-left
+   corner upstream's own toolbar occupies, layered above the sandboxed iframe. */
+.pixel-agents-add-agent {
+  position: absolute;
+  z-index: 3;
+  bottom: 12px;
+  left: 12px;
+  border: 1px solid #4a4a6a;
+  border-radius: 6px;
+  background: #35354f;
+  color: #f2f0ff;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pixel-agents-add-agent:hover {
+  background: #45456a;
+}

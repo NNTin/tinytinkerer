@@ -25,13 +25,11 @@ import {
   type Dispatch,
   type SetStateAction
 } from 'react'
-import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { usePluginModules } from './plugins/use-plugin-modules'
 import { isMcpToolId, summarizeMcpActivity } from './runtime/mcp-tool'
 import { toolLabel, type ResolveActivitySummarizer } from './turn-activity-panel'
 import { useWebSpeechInput } from './web-speech'
 import { useAuthStore, useBrowserApp, useChatStore, useSettingsStore, useStatusStore } from './app'
-import type { ChatState } from './stores/chat-store'
 import { MAX_CONCURRENT_RUNS } from './stores/chat-store'
 import { formatCooldown, useChatCooldown, useGitHubOAuth } from './hooks'
 import { useGitHubUser } from './github-user'
@@ -42,61 +40,6 @@ import { OFFLINE_SYSTEM_STATUS } from './stores/status-store'
 import { createEdgeFetch } from './runtime/edge-fetch'
 import { parseJsonWithTelemetry, parseWithTelemetry } from './telemetry/request-telemetry'
 import { markOAuthCallbackHandled } from './telemetry/oauth-callback-handled'
-
-// A conversation row for the switcher (issue #430) — deliberately narrow (no
-// events), so building the list per render stays cheap regardless of how much
-// history a background conversation has accumulated.
-export type ConversationSummary = {
-  id: string
-  title: string
-  isRunning: boolean
-}
-
-// Element-wise equality for the switcher's conversation list (issue #430
-// review): backs the `useChatStoreWithEquality` selector below so a
-// background conversation's stream — which leaves every id/title/isRunning
-// triple unchanged — never forces useChatSurfaceController (and therefore the
-// whole surface) to re-render, even though the selector below builds a FRESH
-// array every time the store notifies (zustand's default `Object.is` would
-// treat that fresh array as a change on every event). Replaces a prior
-// JSON.stringify/parse round-trip with a typed, allocation-light comparison.
-export const conversationSummariesEqual = (
-  a: readonly ConversationSummary[],
-  b: readonly ConversationSummary[]
-): boolean => {
-  if (a === b) {
-    return true
-  }
-  if (a.length !== b.length) {
-    return false
-  }
-  return a.every((entry, index) => {
-    const other = b[index]
-    return (
-      other !== undefined &&
-      entry.id === other.id &&
-      entry.title === other.title &&
-      entry.isRunning === other.isRunning
-    )
-  })
-}
-
-// Equality-fn variant of useChatStore (issue #430 review), local to this
-// (lazily-loaded) module rather than a sibling in app.ts: a selector whose
-// derived value is a FRESH object/array every render (the conversation
-// summary list below) needs a custom equality check to avoid re-rendering on
-// every store change even when the derived value is unchanged — zustand's
-// default `Object.is` would treat every fresh array as a change.
-// `useStoreWithEqualityFn` (zustand/traditional) is the v5-era replacement
-// for the equality-fn third argument `useStore` dropped. app.ts is imported
-// eagerly by every shell's entry, so this stays out of it — a real value
-// import of `zustand/traditional` there would pull
-// `useSyncExternalStoreWithSelector` into every entry chunk for a hook
-// nothing eager ever calls; this surface module is already lazy-loaded.
-const useChatStoreWithEquality = <T,>(
-  selector: (state: ChatState) => T,
-  equalityFn: (a: T, b: T) => boolean
-): T => useStoreWithEqualityFn(useBrowserApp().stores.chat, selector, equalityFn)
 
 export type ChatSurfaceController = {
   isBooting: boolean
@@ -129,14 +72,6 @@ export type ChatSurfaceController = {
   // Abort the in-flight generation. Surfaced as the "Stop" affordance whenever
   // `isRunning` is true.
   stop: () => void
-  // Conversation switcher data (issue #430): every conversation in display
-  // order, and which one is active. Deliberately excludes each conversation's
-  // events — the switcher only ever shows id/title/running state.
-  conversations: ConversationSummary[]
-  activeConversationId: string | undefined
-  selectConversation: (conversationId: string) => Promise<void>
-  startNewConversation: () => Promise<void>
-  deleteConversation: (conversationId: string) => Promise<void>
   // Transient refusal notice (issue #430) set when submitPrompt refuses a send
   // because MAX_CONCURRENT_RUNS is already running elsewhere. Clears on the
   // next accepted submit, on switching the active conversation, and after a
@@ -162,29 +97,11 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const mcpServers = useSettingsStore((state) => state.mcpServers)
   const { cooldownRemainingMs, isCoolingDown } = useChatCooldown()
 
-  // Conversation switcher data (issue #430).
+  // Still tracked internally (below: clears the refusal notice and resets the
+  // turn-reconciliation baseline on conversation switch) even though it is no
+  // longer part of this hook's public return value.
   const activeConversationId = useChatStore((state) => state.conversationId)
   const canStartRun = useChatStore((state) => state.canStartRun)
-  const selectConversation = useChatStore((state) => state.selectConversation)
-  const startNewConversation = useChatStore((state) => state.startNewConversation)
-  const deleteConversation = useChatStore((state) => state.deleteConversation)
-  // Selecting `state.conversations` directly would re-render this controller —
-  // and therefore the whole surface — on every streamed event of EVERY
-  // conversation, background or active (patchConversationState replaces the
-  // record's object identity on each patch). The selector below builds a
-  // fresh ConversationSummary[] on every store change; useChatStoreWithEquality
-  // compares successive results with `conversationSummariesEqual` (element-wise
-  // id/title/isRunning) instead of zustand's default Object.is, so a background
-  // conversation's stream — which leaves every triple unchanged — never forces
-  // a re-render here, and callers get a typed array with no parse step.
-  const conversations = useChatStoreWithEquality<ConversationSummary[]>(
-    (state) =>
-      state.conversationOrder.map((id) => {
-        const slice = state.conversations[id]
-        return { id, title: slice?.title ?? '', isRunning: slice?.isRunning ?? false }
-      }),
-    conversationSummariesEqual
-  )
 
   // Transient cap-refusal notice (issue #430): set by submitPrompt below when
   // canStartRun() refuses a send. Cleared on the next accepted submit, on
@@ -363,11 +280,6 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     resetConversation,
     cancelRetry,
     stop,
-    conversations,
-    activeConversationId,
-    selectConversation,
-    startNewConversation,
-    deleteConversation,
     sendRefusalNotice
   }
 }

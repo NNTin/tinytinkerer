@@ -994,7 +994,8 @@ export const installChatMock = (
 
 // Like installChatMock, but the streamed answer is RESOLVED per request from the
 // request's latest `role: 'user'` message instead of fixed (issue #430: the
-// multi-conversation switcher suite). One page can run several conversations
+// Pixel Agents multi-agent suite, tests/pixel-agents-multi-agent.e2e.ts). One
+// page can run several conversations
 // concurrently, each sending its own prompt; the edge forwards `messages`
 // verbatim, so keying the response off the latest user message is the natural
 // seam that lets a single mocked upstream answer each conversation distinctly

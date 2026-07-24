@@ -368,3 +368,25 @@ implementation, as a correction to decision #4 above:
   `packages/e2e` coverage of the office-driven actions rather than by any
   discoverable in-app control — see the acceptance site's comment in
   `packages/app/pixel-agents/src/protocol.ts` for the pointer back here.
+
+### Post-implementation update (2026-07-24)
+
+The header `ConversationSwitcher` described throughout this doc (Axis 4's
+"A + C together") has been **removed from every chat surface**, not just
+`apps/pixel-agents`. The office (character clicks, a new TinyTinkerer-owned
+`+ Agent` button, and the character "×") is now the sole conversation
+management surface across the whole product — every other app (`shell`,
+`ide`, `canvas`, `mermaid`) is read/reset-only against whichever conversation
+is currently active, relying on the shared same-origin IndexedDB
+(`storageNamespace: 'tinytinkerer'`) to stay in sync with what the office
+last selected.
+
+The new `+ Agent` button lives in `packages/app/pixel-agents/src/pixel-agents-stage.tsx`,
+rendered in TinyTinkerer's own chrome outside the sandboxed iframe, calling
+`actions.startNewConversation()` directly. It does **not** use the `launchAgent`
+bridge message — upstream's own native button (the reason `launchAgent` was
+kept as forward-compat, see above) turned out to never mount in this
+embedding at all (`{!isBrowserRuntime && (...)}` is a React conditional, not a
+CSS class, so it can't be revealed by the injected stylesheet the way
+"Settings" is hidden). `launchAgent` itself is untouched and still accepted,
+still exercised only by e2e.
