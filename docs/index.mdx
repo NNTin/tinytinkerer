@@ -6,6 +6,7 @@ sidebar_position: 1
 ---
 
 import DocumentationPlatformStatus from '@site/src/components/documentation-platform-status'
+import LabContainer from '@site/src/components/lab-container'
 
 # TinyTinkerer documentation
 
@@ -25,3 +26,27 @@ the product, its architecture, its extension points, and how to run it.
 
 This landing page is intentionally small. The evaluator and builder information architecture will
 be expanded in follow-up documentation issues.
+
+## Interactive lab container
+
+Individual labs are tracked in separate issues, but every one of them renders inside this shared
+container, so its responsive, loading, warning, error, and fullscreen treatment is consistent
+across labs from day one:
+
+<LabContainer title="Preview lab" status="ready">
+  <p className="lab-container__placeholder">
+    Ready content, such as an embedded lab, renders here.
+  </p>
+</LabContainer>
+<LabContainer title="Preview lab" status="loading" />
+<LabContainer
+  title="Preview lab"
+  status="warning"
+  warningMessage="Sample data only — connect a live agent to see real traces."
+/>
+<LabContainer
+  title="Preview lab"
+  status="error"
+  errorMessage="Failed to load the lab bundle."
+  onRetry={() => undefined}
+/>

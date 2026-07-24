@@ -1,12 +1,195 @@
+/**
+ * TinyTinkerer brand theme for the /docs Docusaurus site.
+ *
+ * The palette mirrors the product's design tokens rather than inventing a new
+ * one: --ifm-color-primary is the app shell's --accent (#d97706, darkened to
+ * #b45309 here so link-weight text keeps AA contrast on a white background —
+ * see packages/app/app-browser/src/styles.css for the source tokens), and the
+ * light-mode background/panel colors match packages/brand/brand-assets'
+ * manifest.themeColor/backgroundColor. Dark mode has no product equivalent
+ * (the app shell is light-only today), so it extends the same warm, low-
+ * saturation family into a near-black brown rather than a cold slate/black.
+ */
+
 :root {
-  --ifm-color-primary: #57534e;
-  --ifm-color-primary-dark: #44403c;
-  --ifm-color-primary-darker: #3f3a37;
-  --ifm-color-primary-darkest: #292524;
-  --ifm-color-primary-light: #78716c;
-  --ifm-color-primary-lighter: #a8a29e;
-  --ifm-color-primary-lightest: #d6d3d1;
+  /* Amber accent scale (Tailwind amber, anchored on the product's #d97706). */
+  --ifm-color-primary: #b45309;
+  --ifm-color-primary-dark: #92400e;
+  --ifm-color-primary-darker: #7c3609;
+  --ifm-color-primary-darkest: #451a03;
+  --ifm-color-primary-light: #d97706;
+  --ifm-color-primary-lighter: #f59e0b;
+  --ifm-color-primary-lightest: #fbbf24;
+
+  --ifm-background-color: #fffaf5;
+  --ifm-background-surface-color: #ffffff;
+  --ifm-navbar-background-color: #f6f2ec;
+  --ifm-navbar-shadow: 0 1px 0 0 #dccdb9;
+  --ifm-footer-background-color: #2f2923;
+  --ifm-footer-color: #d6d3d1;
+  --ifm-footer-link-color: #f6f2ec;
+  --ifm-footer-link-hover-color: #fbbf24;
+  --ifm-footer-title-color: #ffffff;
+
+  --ifm-font-color-base: #2f2923;
+  --ifm-heading-color: #221b14;
+  --ifm-color-emphasis-100: #f6f2ec;
+  --ifm-color-emphasis-200: #efe7db;
+  --ifm-color-emphasis-300: #dccdb9;
+  --ifm-toc-border-color: #dccdb9;
+  --ifm-table-border-color: #e4d8c6;
+  --ifm-hr-border-color: #dccdb9;
+
+  --ifm-font-family-base:
+    Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --ifm-font-family-monospace:
+    ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --ifm-code-font-size: 0.85em;
+  --ifm-line-height-base: 1.65;
+  --ifm-global-radius: 0.75rem;
+  --ifm-alert-border-radius: 0.75rem;
+  --ifm-card-border-radius: 0.75rem;
+  --ifm-pre-border-radius: 0.75rem;
+
+  --docs-shadow-soft: 0 12px 32px rgba(47, 41, 35, 0.08);
+
+  /* Interactive lab container tokens (see src/components/lab-container). */
+  --lab-warning-bg: #fef3c7;
+  --lab-warning-border: #f59e0b;
+  --lab-warning-text: #78350f;
+  --lab-error-bg: #fee2e2;
+  --lab-error-border: #ef4444;
+  --lab-error-text: #7f1d1d;
 }
+
+[data-theme='dark'] {
+  --ifm-color-primary: #f59e0b;
+  --ifm-color-primary-dark: #d97706;
+  --ifm-color-primary-darker: #c2670a;
+  --ifm-color-primary-darkest: #92400e;
+  --ifm-color-primary-light: #fbbf24;
+  --ifm-color-primary-lighter: #fcd34d;
+  --ifm-color-primary-lightest: #fde68a;
+
+  --ifm-background-color: #1b140d;
+  --ifm-background-surface-color: #251c13;
+  --ifm-navbar-background-color: #211810;
+  --ifm-navbar-shadow: 0 1px 0 0 #3a2f22;
+  --ifm-footer-background-color: #150f0a;
+  --ifm-footer-color: #cbbfae;
+  --ifm-footer-link-color: #f6ead7;
+  --ifm-footer-link-hover-color: #fbbf24;
+  --ifm-footer-title-color: #ffffff;
+
+  --ifm-font-color-base: #ece3d6;
+  --ifm-heading-color: #fbead2;
+  --ifm-color-emphasis-100: #2a2016;
+  --ifm-color-emphasis-200: #332619;
+  --ifm-color-emphasis-300: #4a3c2c;
+  --ifm-toc-border-color: #3a2f22;
+  --ifm-table-border-color: #3a2f22;
+  --ifm-hr-border-color: #3a2f22;
+
+  --docs-shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.4);
+
+  --lab-warning-bg: #3a2b0a;
+  --lab-warning-border: #b45309;
+  --lab-warning-text: #fde68a;
+  --lab-error-bg: #3a1414;
+  --lab-error-border: #ef4444;
+  --lab-error-text: #fecaca;
+}
+
+/* Typography & long-form content ----------------------------------------- */
+
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  font-weight: 700;
+}
+
+.markdown > h2 {
+  margin-top: 2.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--ifm-hr-border-color);
+}
+
+.markdown a {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+
+/* Code blocks -------------------------------------------------------------- */
+
+div[class^='codeBlockContainer'] {
+  box-shadow: var(--docs-shadow-soft);
+}
+
+/* Admonitions --------------------------------------------------------------
+   Infima already themes admonitions off --ifm-color-* per type; this only
+   rounds and softens them to match the product's card language. */
+.theme-admonition {
+  border-radius: var(--ifm-alert-border-radius);
+  box-shadow: var(--docs-shadow-soft);
+}
+
+/* Tables --------------------------------------------------------------- */
+
+.markdown table {
+  display: table;
+  width: 100%;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: var(--docs-shadow-soft);
+}
+
+.markdown table thead tr {
+  background-color: var(--ifm-color-emphasis-100);
+}
+
+@media (max-width: 700px) {
+  .markdown table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+/* Mermaid diagrams ---------------------------------------------------------
+   Diagrams render at native SVG size; keep them from overflowing narrow
+   viewports and center them the way a figure would sit in long-form prose. */
+.docusaurus-mermaid-container {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  margin-block: 1.5rem;
+}
+
+.docusaurus-mermaid-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Navbar / sidebar polish --------------------------------------------------- */
+
+.navbar__logo img {
+  border-radius: 0.375rem;
+}
+
+.navbar-sidebar__brand .navbar__logo img {
+  border-radius: 0.375rem;
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  font-weight: 600;
+}
+
+/* Footer logo sits inline with the title column instead of stretching. */
+.footer__logo {
+  margin-bottom: 0.5rem;
+}
+
+/* Platform status demo card (docs/index.mdx) -------------------------------- */
 
 .docs-platform-status {
   align-items: center;
@@ -45,5 +228,194 @@
   .docs-platform-status {
     align-items: stretch;
     flex-direction: column;
+  }
+}
+
+/* Interactive lab containers -------------------------------------------------
+   Shared responsive/loading/warning/error/fullscreen treatment for the
+   MDX live-lab framework (tracked separately). See
+   src/components/lab-container.tsx. */
+
+.lab-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  background: var(--ifm-background-surface-color);
+  box-shadow: var(--docs-shadow-soft);
+  overflow: hidden;
+  margin-block: 1.5rem;
+}
+
+.lab-container__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid var(--ifm-color-emphasis-300);
+  background: var(--ifm-color-emphasis-100);
+}
+
+.lab-container__title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ifm-font-color-base);
+}
+
+.lab-container__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.lab-container__status {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ifm-color-emphasis-600, #6c675a);
+}
+
+.lab-container__fullscreen-toggle {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+}
+
+.lab-container__fullscreen-toggle:hover {
+  background: var(--ifm-color-emphasis-100);
+}
+
+.lab-container__fullscreen-toggle:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+.lab-container__body {
+  position: relative;
+  min-height: 16rem;
+  container-type: inline-size;
+}
+
+.lab-container__placeholder {
+  padding: 1.25rem;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .lab-container__body {
+    min-height: 12rem;
+  }
+}
+
+/* Loading: an accessible, reduced-motion-aware placeholder rather than a bare
+   spinner, so the container communicates state even before any lab content
+   framework renders into it. */
+.lab-container__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  height: 100%;
+  min-height: inherit;
+  color: var(--ifm-color-emphasis-600, #6c675a);
+  font-size: 0.9rem;
+}
+
+.lab-container__spinner {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  border: 2px solid var(--ifm-color-emphasis-300);
+  border-top-color: var(--ifm-color-primary);
+  animation: lab-container-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lab-container__spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+@keyframes lab-container-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.lab-container__banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin: 0.9rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.lab-container__banner--warning {
+  background: var(--lab-warning-bg);
+  border-color: var(--lab-warning-border);
+  color: var(--lab-warning-text);
+}
+
+.lab-container__banner--error {
+  background: var(--lab-error-bg);
+  border-color: var(--lab-error-border);
+  color: var(--lab-error-text);
+}
+
+.lab-container__banner-icon {
+  flex: none;
+  font-weight: 700;
+}
+
+.lab-container__retry {
+  margin-top: 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 0.3rem 0.6rem;
+}
+
+.lab-container__retry:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+/* Fullscreen: an in-page overlay rather than the Fullscreen API, so it keeps
+   working inside iframed/embedded docs previews. Mirrors the fullscreen code
+   editor pattern in packages/content/renderers/content-code (role=dialog,
+   aria-modal, Escape-to-close). */
+.lab-container--fullscreen {
+  position: fixed;
+  inset: 1rem;
+  z-index: var(--ifm-z-index-fixed);
+  margin: 0;
+  max-height: none;
+}
+
+.lab-container--fullscreen .lab-container__body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@media (max-width: 700px) {
+  .lab-container--fullscreen {
+    inset: 0.5rem;
   }
 }
