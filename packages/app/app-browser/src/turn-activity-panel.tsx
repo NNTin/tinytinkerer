@@ -11,7 +11,8 @@ import {
 } from '@tinytinkerer/contracts'
 import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
 import { memo, useEffect, useState } from 'react'
-import { useResolvedPluginView } from './resolved-plugin-view'
+import { useResolvedPluginView, type PluginViewResolution } from './resolved-plugin-view'
+import { captureTelemetryMessage } from './telemetry/telemetry'
 
 // Resolves the activity summarizer a tool's owner provides, keyed by tool id, or
 // `undefined` for tools that ship none (the host then uses a neutral default).
@@ -115,12 +116,20 @@ const isEmptyOutput = (output: unknown): boolean =>
 // dropped from the timeline just because it also has images.
 const neutralView = (label: string, output: unknown): ActivityView => {
   if (isEmptyOutput(output)) {
-    return { title: label, sections: [{ kind: 'text', label: '', value: '(no output)' }] }
+    return {
+      title: label,
+      status: 'unknown',
+      sections: [{ kind: 'text', label: '', value: '(no output)' }]
+    }
   }
 
   const { rest, media } = partitionToolResultMedia(output)
   if (media.length === 0) {
-    return { title: label, sections: [{ kind: 'json', label: 'Output', value: output }] }
+    return {
+      title: label,
+      status: 'unknown',
+      sections: [{ kind: 'json', label: 'Output', value: output }]
+    }
   }
 
   const sections: ActivityView['sections'] = media.map((item) => ({
@@ -134,7 +143,7 @@ const neutralView = (label: string, output: unknown): ActivityView => {
   if (!isEmptyOutput(rest)) {
     sections.push({ kind: 'json', label: 'Output', value: rest })
   }
-  return { title: label, sections }
+  return { title: label, status: 'unknown', sections }
 }
 
 const statusStyles: Record<
@@ -243,7 +252,15 @@ const MAX_JSON_CHARS = 4_000
 // resolved ActivityView and never branches on a tool id — each tool's owner (a
 // plugin, or the MCP layer) decides title/status/sections. text/json values are
 // rendered as plain text; tool output is untrusted and never injected as HTML.
-const ActivityViewEntry = ({ view }: { view: ActivityView }) => {
+const ActivityViewEntry = ({
+  view,
+  resolving = false
+}: {
+  view: ActivityView
+  resolving?: boolean
+}) => {
+  // Runtime defense for untyped/older third-party contributions. The contract
+  // requires status, but the renderer must not crash if a JS plugin omits it.
   const status = view.status ?? 'unknown'
   const styles = statusStyles[status]
   return (
@@ -255,13 +272,23 @@ const ActivityViewEntry = ({ view }: { view: ActivityView }) => {
           ▶
         </span>
         <span className="flex-1">{view.title}</span>
-        <span
-          data-activity-status={status}
-          className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${styles.badge}`}
-        >
-          <span aria-hidden>{styles.icon}</span>
-          {styles.label}
-        </span>
+        {resolving ? (
+          <span
+            data-activity-resolution="pending"
+            className="inline-flex shrink-0 items-center gap-1 rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-600"
+          >
+            <ThinkingDots />
+            Resolving
+          </span>
+        ) : (
+          <span
+            data-activity-status={status}
+            className={`inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${styles.badge}`}
+          >
+            <span aria-hidden>{styles.icon}</span>
+            {styles.label}
+          </span>
+        )}
       </summary>
       <div className={`space-y-1 border-t px-3 py-1.5 ${styles.body}`}>
         {view.sections.map((section, index) => (
@@ -290,14 +317,38 @@ const CompletedToolEntry = ({
 }) => {
   const summarizer = resolveSummarizer(item.toolId)
   const hasSummarizer = summarizer !== undefined
-  const view = useResolvedPluginView<ActivityView>({
+  const reportUnknown = (view: ActivityView, resolution: PluginViewResolution): void => {
+    if (view.status !== undefined && view.status !== 'unknown') {
+      return
+    }
+    const reason = !hasSummarizer
+      ? 'missing_summarizer'
+      : resolution === 'threw'
+        ? 'summarizer_threw'
+        : resolution === 'rejected'
+          ? 'summarizer_rejected'
+          : view.status === undefined
+            ? 'missing_status'
+            : 'explicit_unknown'
+    captureTelemetryMessage(`Tool activity resolved to unknown status: ${item.toolId}`, {
+      level: 'warning',
+      tags: {
+        area: 'tool-activity',
+        tool: item.toolId,
+        reason
+      },
+      fingerprint: ['tool-activity-unknown', reason, item.toolId]
+    })
+  }
+  const { view, pending } = useResolvedPluginView<ActivityView>({
     viewKey: `activity:${item.id}:${item.toolId}:${label}:${hasSummarizer ? 'owner' : 'neutral'}`,
-    fallback: { title: label, sections: [] },
+    fallback: { title: label, status: 'unknown', sections: [] },
     resolveView: () =>
-      summarizer ? summarizer(item.output, item.input) : neutralView(label, item.output)
+      summarizer ? summarizer(item.output, item.input) : neutralView(label, item.output),
+    onSettled: reportUnknown
   })
 
-  return <ActivityViewEntry view={view} />
+  return <ActivityViewEntry view={view} resolving={pending} />
 }
 
 const ToolEntry = ({

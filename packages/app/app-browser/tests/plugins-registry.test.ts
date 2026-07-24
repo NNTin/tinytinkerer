@@ -23,4 +23,14 @@ describe('loadPluginModules', () => {
     const second = await loadPluginModules()
     expect(first).toBe(second)
   })
+
+  it('requires every discovered plugin tool to define a completed-call outcome mapper', async () => {
+    const modules = await loadPluginModules()
+    const missing = modules.flatMap((mod) =>
+      (mod.manifest.toolDescriptors ?? [])
+        .filter((descriptor) => !descriptor.summarizeActivity)
+        .map((descriptor) => `${mod.manifest.id}:${descriptor.id}`)
+    )
+    expect(missing).toEqual([])
+  })
 })

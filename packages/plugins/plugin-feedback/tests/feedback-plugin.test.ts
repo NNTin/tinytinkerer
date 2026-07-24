@@ -5,7 +5,8 @@ import {
   FeedbackPendingError,
   SEND_FEEDBACK_PLUGIN_ID,
   feedbackPlugin,
-  feedbackPluginManifest
+  feedbackPluginManifest,
+  summarizeFeedbackActivity
 } from '../src/index'
 
 describe('feedbackPlugin', () => {
@@ -69,6 +70,18 @@ describe('feedbackPlugin', () => {
 
   it('exposes planner tool descriptors on the manifest', () => {
     expect(feedbackPluginManifest.toolDescriptors?.map((d) => d.id)).toEqual(['send_feedback'])
+    expect(feedbackPluginManifest.toolDescriptors?.[0]?.summarizeActivity).toBe(
+      summarizeFeedbackActivity
+    )
+  })
+
+  it('defines an OK presentation for a future completed feedback delivery', () => {
+    expect(
+      summarizeFeedbackActivity({ accepted: true }, { category: 'idea', message: 'Improve it' })
+    ).toMatchObject({
+      title: 'Sent feedback',
+      status: 'ok'
+    })
   })
 
   it('satisfies the PluginModule contract for dynamic discovery', () => {

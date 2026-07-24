@@ -106,7 +106,7 @@ const InputContextView = ({
     sections: [{ kind: 'json', label: 'Input', value: input }]
   }
   const hasSummarizer = summarizer !== undefined
-  const view = useResolvedPluginView<PermissionView>({
+  const { view } = useResolvedPluginView<PermissionView>({
     viewKey: `prompt:${promptId}:${toolId}:${hasSummarizer ? 'owner' : 'neutral'}`,
     fallback,
     resolveView: () => (summarizer ? summarizer(input) : fallback)

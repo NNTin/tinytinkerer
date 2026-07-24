@@ -1,4 +1,4 @@
-import type { Tool } from '@tinytinkerer/app-browser'
+import type { ActivitySummarizer, Tool } from '@tinytinkerer/app-browser'
 
 export type StageToolRequestHandle<TMethod extends string = string> = {
   request(method: TMethod, input?: unknown): Promise<unknown>
@@ -8,6 +8,7 @@ export type StageToolDefinition = {
   description: string
   schema: Tool<unknown, unknown>['schema']
   awaitsHumanInput?: boolean
+  summarizeActivity?: ActivitySummarizer
 }
 
 export type CreateStageToolsOptions<TMethod extends string = string> = {
@@ -25,6 +26,7 @@ export const createStageTools = <TMethod extends string>({
       description: definition.description,
       schema: definition.schema,
       ...(definition.awaitsHumanInput ? { awaitsHumanInput: true } : {}),
+      ...(definition.summarizeActivity ? { summarizeActivity: definition.summarizeActivity } : {}),
       execute: (input: unknown) => handle.request(method, input)
     })
   )

@@ -80,6 +80,7 @@ export type ChatSurfaceController = {
 }
 
 export const useChatSurfaceController = (): ChatSurfaceController => {
+  const appToolGroup = useBrowserApp().appToolGroup
   const [initializeError, setInitializeError] = useState<string | null>(null)
   const hydrated = useChatStore((state) => state.hydrated)
   const events = useChatStore((state) => state.events)
@@ -194,11 +195,21 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     }
     return map
   }, [pluginModules])
+  const appSummarizers = useMemo(
+    () =>
+      new Map(
+        (appToolGroup?.tools ?? []).flatMap((tool) =>
+          tool.summarizeActivity ? [[tool.id, tool.summarizeActivity] as const] : []
+        )
+      ),
+    [appToolGroup]
+  )
 
   // Resolve a tool's summarizer by id: a plugin descriptor's wins by exact id; an
   // `mcp:*` id falls back to the MCP layer's summarizer, bound here to the host's
-  // resolved `[server] tool` label (which needs serverNameById). Everything else
-  // gets no summarizer and the panel renders its neutral default.
+  // resolved `[server] tool` label (which needs serverNameById); app-local tools
+  // carry their summarizers on their concrete Tool instances. The order mirrors
+  // runtime registration precedence (plugins, MCP, app).
   const resolveActivitySummarizer = useMemo<ResolveActivitySummarizer>(
     () => (toolId) => {
       const pluginSummarizer = pluginSummarizers.get(toolId)
@@ -209,9 +220,9 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
         const title = toolLabel(toolId, serverNameById)
         return (output) => summarizeMcpActivity(title, output)
       }
-      return undefined
+      return appSummarizers.get(toolId)
     },
-    [pluginSummarizers, serverNameById]
+    [pluginSummarizers, appSummarizers, serverNameById]
   )
 
   const submitLabel = isCoolingDown

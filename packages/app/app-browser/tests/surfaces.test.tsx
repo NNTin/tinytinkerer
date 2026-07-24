@@ -36,8 +36,25 @@ const chatState = vi.hoisted(() => {
   }
 })
 
+const appTool = vi.hoisted(() => {
+  const summarizeActivity = vi.fn(() => ({
+    title: 'App tool',
+    status: 'ok' as const,
+    sections: []
+  }))
+  return {
+    summarizeActivity,
+    group: {
+      id: 'app',
+      label: 'App',
+      tools: [{ id: 'app-tool', summarizeActivity }]
+    }
+  }
+})
+
 vi.mock('../src/app.js', () => ({
   useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
+  useBrowserApp: () => ({ appToolGroup: appTool.group }),
   useAuthStore: (selector: (state: { token: string | null }) => unknown) =>
     selector({ token: null }),
   useSettingsStore: (
@@ -72,6 +89,13 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+})
+
+describe('useChatSurfaceController app-tool activity', () => {
+  it('resolves the summarizer carried by an app-local tool', () => {
+    const { result } = renderHook(() => useChatSurfaceController())
+    expect(result.current.resolveActivitySummarizer('app-tool')).toBe(appTool.summarizeActivity)
+  })
 })
 
 describe('useChatSurfaceController cap refusal (issue #430)', () => {

@@ -199,6 +199,13 @@ export interface Tool<Input, Output> {
   id: string
   description: string
   schema: ZodSchema<Input>
+  // Optional owner-provided presentation for completed calls. Plugin tools
+  // normally expose the same mapper from their manifest descriptor (so the host
+  // can discover it before activation); app-local tools travel to the host as
+  // concrete Tool instances, so carrying the mapper here gives those tools the
+  // same curated activity outcome path instead of the neutral `unknown`
+  // fallback.
+  summarizeActivity?: ActivitySummarizer
   // Optional output contract (issue #287). When present, the runtime
   // (ToolRegistry.run) parses the tool's result through it before returning, so
   // `agent.tool.completed.payload.output` is a VALIDATED structured payload by the
@@ -537,7 +544,11 @@ export type ActivityStatus = 'ok' | 'error' | 'warn' | 'unknown'
 // the contract layer so plugins ship data, never a component.
 export type ActivityView = {
   title: string
-  status?: ActivityStatus
+  // Required so an owner cannot accidentally turn a completed call into the
+  // host's defensive `unknown` state by omission. `unknown` remains available
+  // explicitly for the host fallback, legacy data, and malformed third-party
+  // contributions; those cases are reported to telemetry by the renderer.
+  status: ActivityStatus
   sections: ActivityViewSection[]
   // Optional structured report the host forwards to its capture sink (e.g. a
   // formatter failure the owner wants surfaced with repro context). The owner
