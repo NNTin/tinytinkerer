@@ -40,6 +40,8 @@ See also:
 - [packages-concept.md](../architecture/packages-concept.md)
 - [sentry-telemetry.md](../architecture/sentry-telemetry.md)
 - [mcp-integration.md](./mcp-integration.md) — the closest existing pattern (settings-gated tools)
+- [Plugin & tool-picker impact lab](./plugin-tool-picker-lab.mdx) — a live, hands-on demo of the
+  tool-tree picker described below
 - [PRIVACY.md](../overview/PRIVACY.md) — feedback content is sent via telemetry on purpose
 
 ---

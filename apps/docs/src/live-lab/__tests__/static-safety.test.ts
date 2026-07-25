@@ -27,6 +27,7 @@ const LIGHT_FILES = [
   'LabReset.tsx',
   'lab-session-context.ts',
   'index.ts',
+  'plugin-tool-picker/PluginToolPickerLab.tsx',
   '../theme/MDXComponents.tsx'
 ]
 
@@ -47,6 +48,11 @@ describe('live-lab bundle boundary', () => {
     expect(source).toMatch(/from ['"]@tinytinkerer\/app-browser['"]/)
   })
 
+  it('PluginToolPickerLab.tsx only reaches its content through React.lazy', () => {
+    const source = readSource('plugin-tool-picker/PluginToolPickerLab.tsx')
+    expect(source).toMatch(/lazy\(\(\) =>\s*\n?\s*import\(['"]\.\/PluginToolPickerLabContent['"]\)/)
+  })
+
   // lab-session-context.ts is deliberately excluded here: deriveLabSessionSnapshot
   // takes a `token: string | null` as an EXISTENCE check (has one or not) to decide
   // signed-out vs. ready, but the TYPES that reach these render-facing files
@@ -56,6 +62,7 @@ describe('live-lab bundle boundary', () => {
     'LiveLab.tsx',
     'LiveSessionGate.tsx',
     'LabReset.tsx',
+    'plugin-tool-picker/PluginToolPickerLab.tsx',
     '../theme/MDXComponents.tsx'
   ]
 

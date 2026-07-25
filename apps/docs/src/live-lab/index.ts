@@ -9,3 +9,5 @@ export type { LabSessionStatus, LabSessionSnapshot } from './lab-session-context
 export { DOCS_LAB_STORAGE_NAMESPACE } from './constants'
 export { PixelAgentsLab } from './pixel-agents'
 export type { PixelAgentsLabProps } from './pixel-agents'
+export { PluginToolPickerLab } from './plugin-tool-picker'
+export type { PluginToolPickerLabProps } from './plugin-tool-picker'

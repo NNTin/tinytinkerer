@@ -10,4 +10,9 @@ describe('swizzled MDXComponents', () => {
     expect(typeof components.LiveSessionGate).toBe('function')
     expect(typeof components.LabReset).toBe('function')
   })
+
+  it('registers PluginToolPickerLab as a global MDX component', async () => {
+    const { default: components } = await import('../MDXComponents')
+    expect(typeof components.PluginToolPickerLab).toBe('function')
+  })
 })

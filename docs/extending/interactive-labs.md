@@ -6,10 +6,10 @@ title: Interactive live labs (MDX framework)
 
 Docs pages can embed a live, working TinyTinkerer demo directly in their content via
 globally-registered MDX components — `LiveLab`, `LiveSessionGate`, `LabReset`, and the
-ready-made `PixelAgentsLab` — implemented in `apps/docs/src/live-lab/` and registered in
-`apps/docs/src/theme/MDXComponents.tsx`. This page documents the framework itself and its one
-built-in lab; the content of any OTHER specific lab built from the primitives below is out of
-scope here.
+ready-made `PixelAgentsLab`/`PluginToolPickerLab` — implemented in `apps/docs/src/live-lab/` and
+registered in `apps/docs/src/theme/MDXComponents.tsx`. This page documents the framework itself
+and its first built-in lab, `PixelAgentsLab`; the content of any OTHER specific lab built from the
+primitives below (including `PluginToolPickerLab`) lives on its own page and is out of scope here.
 
 ## Using it in an `.mdx` page
 
@@ -105,3 +105,6 @@ See also:
 - [Rich content renderer playground](./rich-content-playground.mdx) — a sibling MDX framework for
   a client-side-only demo (parsing and rendering, no backend session) built on the same
   `<BrowserOnly>` + `React.lazy` isolation pattern this page documents
+- [Plugin & tool-picker impact lab](../plugins-and-tools/plugin-tool-picker-lab.mdx) — a second
+  built-in lab, alongside `PixelAgentsLab`, that reuses the real production tool-tree picker
+  against this docs app's own `appToolGroup`
