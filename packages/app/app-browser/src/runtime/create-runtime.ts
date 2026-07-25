@@ -259,7 +259,17 @@ export const createRuntime = (options: {
   // on). Resolving against the discovered manifests keeps this fully generic: no
   // plugin id is special-cased here, and an undiscovered plugin is simply absent.
   const activation = options.pluginActivation ?? {}
-  const activePluginModules = [...pluginRuntime.modulesById.values()].filter((mod) =>
+  // `Array.from`, NOT `[...iterable]`: Docusaurus's default Babel preset runs
+  // `@babel/preset-env` with `loose: true`, whose spread transform downlevels
+  // `[...x]` to `[].concat(x)` — correct for real arrays, but for a Map's
+  // iterator (not itself an array) `.concat` appends the iterator as a single
+  // opaque element instead of its values, silently corrupting this into a
+  // one-element array containing the iterator object. That element then has no
+  // `.manifest`, and `isPluginEnabled` throws reading `.id` off `undefined` the
+  // moment ANY docs live-lab chat surface sends a prompt (issue: every send
+  // crashed). Vite-built surfaces (host/web/mobile) never hit this — only a
+  // webpack+Babel-loose bundle does — but `Array.from` is correct everywhere.
+  const activePluginModules = Array.from(pluginRuntime.modulesById.values()).filter((mod) =>
     isPluginEnabled(activation, mod.manifest)
   )
   const activePluginIds = new Set(activePluginModules.map((mod) => mod.manifest.id))

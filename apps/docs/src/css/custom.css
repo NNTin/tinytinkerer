@@ -664,6 +664,17 @@ div[class^='codeBlockContainer'] {
   overflow: hidden;
 }
 
+/* @tinytinkerer/pixel-agents's root is `height: 100%` all the way down to its
+   iframe (see packages/app/pixel-agents/src/styles.css) — it needs THIS
+   wrapper to have a definite (not just minimum) height, or the whole stage
+   renders at zero visible height inside a normal-flow MDX article. */
+.pixel-agents-lab__stage {
+  height: 20rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  overflow: hidden;
+}
+
 /* Execution trace lab (issue #454) --------------------------------------
    Mirrors the Pixel Agents lab's layout (switcher + graphical office/
    fallback), but the office's `assistant` pane is an ordered, expandable
@@ -679,6 +690,14 @@ div[class^='codeBlockContainer'] {
 
 .execution-trace-lab__fallback {
   min-height: 20rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  overflow: hidden;
+}
+
+/* See .pixel-agents-lab__stage's comment: same fix, same reason. */
+.execution-trace-lab__stage {
+  height: 20rem;
   border: 1px solid var(--ifm-color-emphasis-300);
   border-radius: var(--ifm-card-border-radius);
   overflow: hidden;
@@ -909,4 +928,112 @@ div[class^='codeBlockContainer'] {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--ifm-color-emphasis-600, #6c675a);
+}
+
+/* Plugin & tool-picker impact lab (issue #453) ---------------------------
+   Mirrors the Pixel Agents/execution-trace labs' box treatment (picker
+   summary, graphical office/fallback, before/after compare panel); this
+   block was missing entirely, so the lab rendered with no layout at all. */
+
+.plugin-tool-picker-lab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.plugin-tool-picker-lab__picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  background: var(--ifm-color-emphasis-100);
+}
+
+.plugin-tool-picker-lab__picker-summary p {
+  margin: 0 0 0.5rem;
+}
+
+.plugin-tool-picker-lab__tool-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.plugin-tool-picker-lab__fallback {
+  min-height: 20rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  overflow: hidden;
+}
+
+/* See .pixel-agents-lab__stage's comment: same fix, same reason. */
+.plugin-tool-picker-lab__stage {
+  height: 20rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  overflow: hidden;
+}
+
+.plugin-tool-picker-lab__compare {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+}
+
+.plugin-tool-picker-lab__compare textarea {
+  width: 100%;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  resize: vertical;
+}
+
+.plugin-tool-picker-lab__compare button {
+  align-self: flex-start;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-background-surface-color);
+  cursor: pointer;
+}
+
+.plugin-tool-picker-lab__compare button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.plugin-tool-picker-lab__compare-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--lab-warning-border);
+  background: var(--lab-warning-bg);
+  color: var(--lab-warning-text);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.plugin-tool-picker-lab__compare-confirm p {
+  margin: 0;
+  flex-basis: 100%;
+}
+
+.plugin-tool-picker-lab__compare-confirm button {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  cursor: pointer;
 }

@@ -24,7 +24,13 @@ export class PluginRegistry {
   }
 
   list(): AgentPlugin[] {
-    return [...this.plugins.values()]
+    // `Array.from`, not `[...this.plugins.values()]`: a Babel build with
+    // `@babel/preset-env`'s `loose: true` (Docusaurus's default client preset)
+    // downlevels array spread to `[].concat(x)`, which is only correct for real
+    // arrays — for a Map iterator it appends the iterator itself as one opaque
+    // element instead of the plugins it yields. `Array.from` is unambiguous
+    // under any bundler/target.
+    return Array.from(this.plugins.values())
   }
 
   // Build the tool set for the active plugins, wrapping execute so structured
@@ -58,7 +64,9 @@ export class PluginRegistry {
     isToolEnabled?: (pluginId: string, toolId: string) => boolean
   ): PluginContributions {
     // Deactivate plugins that were active on a previous call but no longer are.
-    for (const id of [...this.activated]) {
+    // `Array.from`, not `[...this.activated]` — see `list()`'s comment above;
+    // spreading a Set hits the same Babel-loose `.concat` corruption.
+    for (const id of Array.from(this.activated)) {
       if (!activeIds.has(id)) {
         this.activated.delete(id)
         runHook(() => this.plugins.get(id)?.deactivate?.())

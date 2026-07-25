@@ -54,7 +54,11 @@ export const deriveStarterPrompts = (input: {
 
   ordered.push(...BASE_STARTER_PROMPTS)
 
-  return [...new Set(ordered)]
+  // `Array.from`, not `[...new Set(ordered)]`: a Babel build with
+  // `@babel/preset-env`'s `loose: true` (Docusaurus's default client preset)
+  // downlevels spread to `[].concat(x)`, which silently mis-handles a Set
+  // (appends it as one opaque element instead of its deduped values).
+  return Array.from(new Set(ordered))
 }
 
 /**

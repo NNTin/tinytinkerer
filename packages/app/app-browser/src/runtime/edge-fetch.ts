@@ -265,7 +265,11 @@ const composeInspectorResponseContent = (
   const parts: string[] = []
   if (reasoning.trim().length > 0) parts.push(reasoning)
   if (content.trim().length > 0) parts.push(content)
-  for (const [, call] of [...toolCalls.entries()].sort(([a], [b]) => a - b)) {
+  // `Array.from`, not `[...toolCalls.entries()]`: a Babel build with
+  // `@babel/preset-env`'s `loose: true` (Docusaurus's default client preset)
+  // downlevels spread to `[].concat(x)`, which silently mis-handles a Map
+  // iterator (appends it as one opaque element instead of its entries).
+  for (const [, call] of Array.from(toolCalls.entries()).sort(([a], [b]) => a - b)) {
     if (call.name.length > 0) parts.push(`${call.name}(${call.args})`)
   }
   return parts.join('\n')

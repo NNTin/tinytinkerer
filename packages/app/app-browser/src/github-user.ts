@@ -77,7 +77,14 @@ const rememberRejectedToken = (token: string): void => {
   const persisted = readPersistedRejected()
   persisted.add(hash)
   try {
-    globalThis.localStorage?.setItem(REJECTED_TOKENS_STORAGE_KEY, JSON.stringify([...persisted]))
+    // `Array.from`, not `[...persisted]`: a Babel build with
+    // `@babel/preset-env`'s `loose: true` (Docusaurus's default client preset)
+    // downlevels spread to `[].concat(x)`, which silently mis-handles a Set
+    // (appends it as one opaque element instead of its values).
+    globalThis.localStorage?.setItem(
+      REJECTED_TOKENS_STORAGE_KEY,
+      JSON.stringify(Array.from(persisted))
+    )
   } catch {
     // Storage unavailable — the in-memory mirror still dedupes within this session.
   }

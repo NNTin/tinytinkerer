@@ -216,16 +216,22 @@ export const PluginToolPickerLabContent = (): React.JSX.Element => {
         onDelete={(conversationId) => void deleteConversation(conversationId)}
       />
       {canRunPixelAgents ? (
-        <PixelAgentsStage
-          conversations={conversations}
-          activeConversationId={activeConversationId}
-          actions={actions}
-          assistant={assistant}
-          resolveUpstreamUrl={resolveUpstreamUrl}
-          workspaceDatabaseName={DOCS_PIXEL_AGENTS_WORKSPACE_DATABASE}
-          dockLayoutStorageKey={DOCS_PIXEL_AGENTS_DOCK_LAYOUT_STORAGE_KEY}
-          onBootstrapError={handleBootstrapError}
-        />
+        // See PixelAgentsLabContent.tsx's identical wrapper for why this explicit
+        // height is required: @tinytinkerer/pixel-agents's root is `height: 100%`
+        // all the way down, which collapses to zero without a definite-height
+        // ancestor (a Docusaurus MDX article provides none on its own).
+        <div className="plugin-tool-picker-lab__stage">
+          <PixelAgentsStage
+            conversations={conversations}
+            activeConversationId={activeConversationId}
+            actions={actions}
+            assistant={assistant}
+            resolveUpstreamUrl={resolveUpstreamUrl}
+            workspaceDatabaseName={DOCS_PIXEL_AGENTS_WORKSPACE_DATABASE}
+            dockLayoutStorageKey={DOCS_PIXEL_AGENTS_DOCK_LAYOUT_STORAGE_KEY}
+            onBootstrapError={handleBootstrapError}
+          />
+        </div>
       ) : (
         <div className="plugin-tool-picker-lab__fallback">{assistant}</div>
       )}

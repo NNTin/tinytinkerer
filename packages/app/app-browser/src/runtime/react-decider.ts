@@ -210,7 +210,11 @@ export async function* streamDecision(
     }
   }
 
-  const firstCall = [...toolCalls.entries()]
+  // `Array.from`, not `[...toolCalls.entries()]`: a Babel build with
+  // `@babel/preset-env`'s `loose: true` (Docusaurus's default client preset)
+  // downlevels spread to `[].concat(x)`, which silently mis-handles a Map
+  // iterator (appends it as one opaque element instead of its entries).
+  const firstCall = Array.from(toolCalls.entries())
     .sort(([a], [b]) => a - b)
     .map(([, value]) => value)
     .find((value) => value.name.length > 0)

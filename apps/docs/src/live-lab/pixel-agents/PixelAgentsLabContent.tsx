@@ -108,16 +108,24 @@ export const PixelAgentsLabContent = (): React.JSX.Element => {
         onDelete={(conversationId) => void deleteConversation(conversationId)}
       />
       {canRunPixelAgents ? (
-        <PixelAgentsStage
-          conversations={conversations}
-          activeConversationId={activeConversationId}
-          actions={actions}
-          assistant={assistant}
-          resolveUpstreamUrl={resolveUpstreamUrl}
-          workspaceDatabaseName={DOCS_PIXEL_AGENTS_WORKSPACE_DATABASE}
-          dockLayoutStorageKey={DOCS_PIXEL_AGENTS_DOCK_LAYOUT_STORAGE_KEY}
-          onBootstrapError={handleBootstrapError}
-        />
+        // @tinytinkerer/pixel-agents's root (.pixel-agents-root/.pixel-agents-frame-shell)
+        // is `height: 100%` all the way down to its iframe — in the real product
+        // that resolves against apps/pixel-agents's own `html,body,#root { height: 100% }`
+        // chain, but a Docusaurus MDX article has no such definite-height ancestor, so
+        // without this wrapper's OWN explicit `height` the whole stage silently
+        // collapses to zero visible height (only the fallback branch below got sized).
+        <div className="pixel-agents-lab__stage">
+          <PixelAgentsStage
+            conversations={conversations}
+            activeConversationId={activeConversationId}
+            actions={actions}
+            assistant={assistant}
+            resolveUpstreamUrl={resolveUpstreamUrl}
+            workspaceDatabaseName={DOCS_PIXEL_AGENTS_WORKSPACE_DATABASE}
+            dockLayoutStorageKey={DOCS_PIXEL_AGENTS_DOCK_LAYOUT_STORAGE_KEY}
+            onBootstrapError={handleBootstrapError}
+          />
+        </div>
       ) : (
         <div className="pixel-agents-lab__fallback">{assistant}</div>
       )}
