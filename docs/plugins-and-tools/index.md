@@ -17,6 +17,8 @@ writing a plugin that ships with the runtime, or by pointing users at an externa
   built.
 - [MCP integration](./mcp-integration.md) — how per-user remote MCP servers are registered,
   discovered, and exposed to the assistant.
+- [Plugin & tool-picker impact lab](./plugin-tool-picker-lab.mdx) — try the real tool-tree picker
+  live, right in these docs.
 
 ## Next step
 

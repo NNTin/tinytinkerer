@@ -222,6 +222,20 @@ describe('ToolTreeSlot', () => {
     expect(await screen.findByTestId('tool-tree-toggle')).toBeTruthy()
   })
 
+  it('with a fallbackSummarizer, renders the button for an app group even with no plugin active', async () => {
+    pluginModules = []
+    fakeSettingsStore = makeFakeSettingsStore({})
+    fakeAppToolGroup = {
+      id: 'canvas',
+      label: 'Canvas',
+      tools: [{ id: 'draw', description: 'Draw shapes' }]
+    }
+
+    render(<ToolTreeSlot fallbackSummarizer={summarizeToolTree} />)
+    fireEvent.click(await screen.findByTestId('tool-tree-toggle'))
+    expect(await screen.findByTestId('tool-tree-plugin-canvas')).toBeTruthy()
+  })
+
   it('opening shows only ENABLED tool-plugins with correct checkbox states', async () => {
     pluginModules = [toolTreeModule, webSearchModule, codeExecModule, feedbackModule]
     fakeSettingsStore = makeFakeSettingsStore(
@@ -431,6 +445,56 @@ describe('useToolTree', () => {
     await waitFor(() => expect(result.current.appGroupIds).toEqual(['canvas']))
     expect(result.current.toolIdsByPlugin['canvas']).toEqual(['draw'])
     expect(result.current.input.plugins.some((p) => p.id === 'canvas')).toBe(true)
+  })
+
+  // issue #453: a host that can never discover a tool-tree-descriptor plugin
+  // (e.g. the docs build, whose plugin discovery is stubbed to always return
+  // []) still needs a working tree for its own appToolGroup.
+  it('falls back to the given summarizer when no plugin contributes one', async () => {
+    pluginModules = []
+    fakeSettingsStore = makeFakeSettingsStore({})
+    fakeAppToolGroup = {
+      id: 'canvas',
+      label: 'Canvas',
+      tools: [{ id: 'draw', description: 'Draw shapes' }]
+    }
+
+    const { result } = renderHook(() => useToolTree({ fallbackSummarizer: summarizeToolTree }))
+    await waitFor(() => expect(result.current.summarizer).not.toBeNull())
+    expect(result.current.summarizer).toBe(summarizeToolTree)
+  })
+
+  it('omitting fallbackSummarizer keeps prior behavior: summarizer stays null with no plugin', async () => {
+    pluginModules = []
+    fakeSettingsStore = makeFakeSettingsStore({})
+    fakeAppToolGroup = {
+      id: 'canvas',
+      label: 'Canvas',
+      tools: [{ id: 'draw', description: 'Draw shapes' }]
+    }
+
+    const { result } = renderHook(() => useToolTree())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(result.current.summarizer).toBeNull()
+  })
+
+  it('an ENABLED plugin summarizer still wins over the fallback', async () => {
+    pluginModules = [toolTreeModule]
+    fakeSettingsStore = makeFakeSettingsStore({ 'tool-tree': true })
+
+    const fallback: typeof summarizeToolTree = () => ({
+      plugins: [],
+      enabledCount: 0,
+      toolCount: 0
+    })
+    const { result } = renderHook(() => useToolTree({ fallbackSummarizer: fallback }))
+    // Waits for the RESOLVED value specifically — not just "not null" — because
+    // the fallback is non-null from the very first render (before the mocked
+    // async plugin discovery resolves), so a "not null" check alone can pass on
+    // that transient fallback value instead of the real plugin summarizer.
+    await waitFor(() => expect(result.current.summarizer).toBe(summarizeToolTree))
+    expect(result.current.summarizer).toBe(summarizeToolTree)
+    expect(result.current.summarizer).not.toBe(fallback)
   })
 })
 

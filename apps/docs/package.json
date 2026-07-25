@@ -26,7 +26,8 @@
     "@tinytinkerer/pixel-agents": "workspace:*",
     "prism-react-renderer": "2.4.1",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "3.10.2",

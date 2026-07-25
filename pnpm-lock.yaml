@@ -176,6 +176,9 @@ importers:
       react-dom:
         specifier: 19.2.6
         version: 19.2.6(react@19.2.6)
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
     devDependencies:
       '@docusaurus/module-type-aliases':
         specifier: 3.10.2

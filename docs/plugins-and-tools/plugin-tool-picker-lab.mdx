@@ -1,0 +1,109 @@
+---
+title: Plugin & tool-picker impact lab
+sidebar_position: 3
+---
+
+# Plugin & tool-picker impact lab
+
+The lab below lets you toggle individual tools on and off with the **real, production tool-tree
+picker** (`useToolTree`/`ToolTreeSlot` from `@tinytinkerer/app-browser`, unmodified) and then send
+a real prompt, so you can see exactly how a plugin/tool selection changes what the model is
+allowed to call.
+
+## What's live, and what isn't
+
+TinyTinkerer discovers optional plugins (`packages/plugins/*`) dynamically, at build time, via
+Vite's `import.meta.glob` — see [Plugin infrastructure](./plugin-infrastructure.md#dynamic-discovery-app-browser).
+This documentation site builds with webpack (Docusaurus), which has no equivalent of that
+build-time glob, **and** every package in this repo — this docs site included — is forbidden by
+`scripts/check-boundaries.mjs` from statically importing a concrete `@tinytinkerer/plugin-*`
+package (the whole point of dynamic discovery is that the host never names a plugin by module
+specifier). So a real, installed plugin's tools can never appear in this lab — that isn't a bug
+this page works around, it's the same constraint that keeps `app-browser` itself free of any
+plugin dependency.
+
+What **is** real: this docs site is its own small "app," and an app's own intrinsic, always-on
+tools — the same mechanism `apps/canvas` and `apps/mermaid` use for their stage tools (an
+`appToolGroup`, see [Per-tool enablement](./plugin-infrastructure.md#per-tool-enablement--the-tool-picker-plugin-tinytinkererplugin-tool-tree))
+— are not gated behind dynamic discovery at all. This lab ships three small demo tools
+(`lab_roll_dice`, `lab_explain_plugin_concept`, `lab_always_fails`) as its own `appToolGroup`, and
+that group flows through the **exact same runtime path** a plugin's tools would: the same
+`useToolTree` resolution, the same `ToolTreePanel` checkboxes, the same `setAppToolSelection`
+policy chokepoint, and the same per-run tool building the chat store performs for every message.
+Toggling a checkbox below and sending a message is not a simulation of that path — it **is** that
+path.
+
+## The concepts, and where to see each one
+
+- **Manifests & tool descriptors.** A plugin ships a `PluginManifest` with Settings-modal copy and
+  a `PluginToolDescriptor` per tool (id, planner description, canonical Zod schema). This lab's own
+  tools are described the same way; the always-visible list below the picker shows each tool's
+  real id, description, and current enabled state — the same fields a manifest's `toolDescriptors`
+  carry.
+- **Activation vs. per-tool enablement.** A _plugin_ has an on/off activation switch; disabling
+  every one of its tools flips that switch off (`applyPluginToolSelection`). An **app group** (this
+  lab's tools) has no activation switch — it is intrinsic to the docs app, so unchecking every tool
+  leaves the group visible with nothing enabled, exactly as Canvas's own tools would.
+- **Zero-tool plugins.** Not every plugin contributes tools — the context-usage gauge and context
+  inspector ship none, just a view-model mapper, and the tool-tree picker plugin itself ships none
+  either (see [Per-tool enablement](./plugin-infrastructure.md#per-tool-enablement--the-tool-picker-plugin-tinytinkererplugin-tool-tree)).
+  A zero-tool plugin has nothing to check and never appears in the tree — the host drops it before
+  the summarizer even sees it.
+- **Disabled plugins.** A disabled plugin's tools are absent from the runtime's tool list
+  entirely — not merely hidden — so the model never receives their planner descriptor and can never
+  call them. Uncheck a demo tool below, send a message, and open the accessible activity view: the
+  unchecked tool's id will not appear anywhere in that turn's advertised tools.
+- **Unavailable host capabilities.** A plugin tool that needs a capability the host doesn't provide
+  (`PluginHost.edgeFetch`, `executeSandboxedCode`, `readDom`, `requestHumanInput`) simply contributes
+  no tool at all when that capability is missing — e.g. the web-search plugin's `createTools`
+  returns `[]` without `edgeFetch`. This docs build not being able to discover any plugin at all is
+  the most extreme case of the same rule.
+- **Permission prompts.** The Permissions plugin is a `tool.beforeExecute` gate: enabling it makes
+  _every_ active tool pause for an Allow/Deny prompt through the one generic
+  `HumanPromptView`/`HumanPromptHost` surface (not a bespoke modal per tool) — see
+  [The Choice prompt plugin](./plugin-infrastructure.md#the-choice-prompt-plugin-tinytinkererplugin-choice-prompt)
+  for the same human-in-the-loop machinery used by a second, different plugin.
+- **Tool failures.** `lab_always_fails` always rejects, on purpose — send a message that invokes it
+  to see a real `agent.tool.failed` outcome rendered both by Pixel Agents and by the accessible
+  activity view, without waiting on a flaky network condition.
+- **Rate limits.** If the shared model deployment is cooling down, the lab shows the same
+  `rate-limited` state every live lab on this site uses (`LiveSessionGate`) — this isn't
+  lab-specific handling.
+
+## Try it
+
+<PluginToolPickerLab />
+
+Changes to the picker above apply starting with your **next** message — a run already in flight
+keeps the tool set it started with, exactly like the product's own picker.
+
+### Before/after comparison
+
+The comparison panel inside the lab sends one prompt **twice** — once with every demo tool
+enabled, once with your current selection — only after you explicitly confirm that this performs
+**two model calls** and may consume additional quota. Both runs land in their own conversation, so
+their events stay independent and you can switch between "Before" and "After" from the
+conversation list above the office.
+
+## What this reuses, and what's isolated
+
+- **The picker itself** is the unmodified `ToolTreeSlot`/`useToolTree` from `@tinytinkerer/app-browser`
+  (newly exported from its public surface for this lab — previously internal to the app). A
+  `fallbackSummarizer` (`genericToolTreeSummarizer`, also newly exported) lets `useToolTree` build a
+  tree from this lab's `appToolGroup` even though no tool-tree-descriptor plugin can ever be
+  discovered here; when a real plugin _is_ active, its own summarizer still wins.
+- **Conversations, tool selection, and model choice** live in this site's isolated
+  `tinytinkerer-docs-lab` session — see [Interactive live labs](../extending/interactive-labs.md) —
+  never the visitor's real TinyTinkerer settings.
+- **Rendering** reuses the same dual surface as the [Pixel Agents lab](../extending/interactive-labs.md#the-built-in-lab-pixelagentslab):
+  the animated office for a glanceable view, and the ordinary accessible `ChatApp` transcript
+  (plus the always-visible textual tool list above) so every acceptance here works with the Pixel
+  Agents visualization turned off — a narrow viewport, `prefers-reduced-motion`, or a bootstrap
+  failure all fall back to it automatically.
+
+See also:
+
+- [Plugin infrastructure](./plugin-infrastructure.md) — the full contract, registry, and dynamic
+  discovery this lab's prose above summarizes.
+- [Interactive live labs](../extending/interactive-labs.md) — the shared `LiveLab`/`LiveSessionGate`
+  framework and the Pixel Agents lab this page's rendering surface reuses.

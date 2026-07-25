@@ -19,6 +19,7 @@ import {
 import '@tinytinkerer/app-browser/styles.css'
 import { DOCS_LAB_STORAGE_NAMESPACE } from './constants'
 import { deriveLabSessionSnapshot, LabSessionContext } from './lab-session-context'
+import { pluginToolPickerDemoToolGroup } from './plugin-tool-picker/demo-tools'
 import type { DocsLabRuntimeConfig } from './runtime-config'
 import { useDocsLabRuntimeConfig } from './runtime-config'
 
@@ -57,7 +58,15 @@ const buildDocsLabApp = async (runtimeConfig: DocsLabRuntimeConfig): Promise<Doc
     buildHash: 'docs'
   })
 
-  return { app: createBrowserApp(config), config }
+  // The docs app's own intrinsic tool group (issue #453) — exactly the mechanism
+  // apps/canvas/apps/mermaid use for their real stage tools, not a simulation.
+  // Attached to the ONE shared docs-lab BrowserApp (see `sharedAppPromise` below),
+  // so it is available to every LiveLab on the page, same as any other app's
+  // always-on tools would be — there is no plugin here, so no activation gate.
+  return {
+    app: createBrowserApp(config, { appToolGroup: pluginToolPickerDemoToolGroup }),
+    config
+  }
 }
 
 export const ensureDocsLabApp = (runtimeConfig: DocsLabRuntimeConfig): Promise<DocsLabApp> => {

@@ -40,19 +40,33 @@ type ToolTreeData = {
 // contributes a toolTreeDescriptor wins) plus the host-built tree data. Mirrors
 // useContextInspector: the plugin owns the input→view mapping; the host only
 // supplies data and renders the result.
-export const useToolTree = (): ToolTreeData => {
+//
+// `fallbackSummarizer` is an opt-in escape hatch for a host that cannot rely on
+// plugin discovery to ever surface a tool-tree-descriptor plugin — e.g. a
+// Docusaurus/webpack docs build, where `import.meta.glob`-based plugin discovery
+// has no equivalent and plugin modules are always `[]` (see
+// apps/docs/src/live-lab/plugin-registry-stub.ts). Such a host may still have a
+// real `appToolGroup` worth picking tools from, so it can pass
+// `genericToolTreeSummarizer` (this package's own product-agnostic mapper) to get
+// a working tree without waiting on a plugin that can never be discovered.
+// Omitted (the default), this behaves exactly as before: `summarizer` stays
+// `null` — and the slot stays hidden — until an enabled plugin contributes one.
+export const useToolTree = (options?: {
+  fallbackSummarizer?: ToolTreeSummarizer
+}): ToolTreeData => {
   const pluginActivation = useSettingsStore((state) => state.pluginActivation)
   const pluginDisabledTools = useSettingsStore((state) => state.pluginDisabledTools)
   const appToolDisablement = useSettingsStore((state) => state.appToolDisablement)
   const pluginModules = usePluginModules()
   const appToolGroup = useBrowserApp().appToolGroup
+  const fallbackSummarizer = options?.fallbackSummarizer ?? null
 
   const summarizer = useMemo<ToolTreeSummarizer | null>(() => {
     const active = pluginModules.find(
       (mod) => mod.manifest.toolTreeDescriptor && isPluginEnabled(pluginActivation, mod.manifest)
     )
-    return active?.manifest.toolTreeDescriptor?.summarizeToolTree ?? null
-  }, [pluginModules, pluginActivation])
+    return active?.manifest.toolTreeDescriptor?.summarizeToolTree ?? fallbackSummarizer
+  }, [pluginModules, pluginActivation, fallbackSummarizer])
 
   const { input, toolIdsByPlugin, appGroupIds } = useMemo(() => {
     const enabledToolPlugins = pluginModules.filter(
@@ -114,12 +128,19 @@ export const useToolTree = (): ToolTreeData => {
 // the slot fully self-contained so no host needs to supply a glyph.
 export const ToolTreeSlot = ({
   className,
-  icon = <FaListCheck className="h-4 w-4" aria-hidden="true" />
+  icon = <FaListCheck className="h-4 w-4" aria-hidden="true" />,
+  fallbackSummarizer
 }: {
   className?: string
   icon?: ReactNode
+  // See useToolTree's `fallbackSummarizer` — passed straight through so a host
+  // that can never discover a tool-tree-descriptor plugin can still offer the
+  // slot for its own `appToolGroup`.
+  fallbackSummarizer?: ToolTreeSummarizer
 }) => {
-  const { summarizer, input, toolIdsByPlugin, appGroupIds } = useToolTree()
+  const { summarizer, input, toolIdsByPlugin, appGroupIds } = useToolTree(
+    fallbackSummarizer ? { fallbackSummarizer } : undefined
+  )
   const [open, setOpen] = useState(false)
 
   const view = useMemo(() => (summarizer ? summarizer(input) : null), [summarizer, input])
