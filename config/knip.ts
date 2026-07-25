@@ -73,9 +73,22 @@ const config: KnipConfig = {
       ignoreDependencies: ['workerd']
     },
     'apps/docs': {
-      // Docusaurus loads the stylesheet from a string in its config, which Knip
-      // cannot follow statically across the workspace boundary.
-      entry: ['src/css/custom.css']
+      // Docusaurus loads the stylesheet from a string in its config, while the
+      // repository-level MDX source imports this component through the @site
+      // alias. Register both runtime entry points because Knip cannot follow
+      // either edge statically across the workspace boundary.
+      entry: ['src/components/lab-container.tsx', 'src/css/custom.css'],
+      // Knip's Docusaurus plugin resolves a scoped theme's package name by
+      // assuming the `@scope/docusaurus-theme-x` convention (it special-cases
+      // names that already contain "theme-", which @docusaurus/theme-mermaid
+      // does). @easyops-cn/docusaurus-search-local doesn't follow that
+      // convention, so it's both misreported as unused (the real name) and as
+      // unlisted (the plugin's incorrectly guessed name below, which is not a
+      // real package).
+      ignoreDependencies: [
+        '@easyops-cn/docusaurus-search-local',
+        '@easyops-cn/docusaurus-theme-docusaurus-search-local'
+      ]
     },
     'apps/shell': {
       // Radix primitives kept for parity with the shared UI package; consumed by

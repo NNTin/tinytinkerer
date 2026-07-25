@@ -32,7 +32,9 @@ const LICENSE_POLICY = {
   ],
   // Creative Commons Attribution permits redistribution and modification but
   // carries an explicit attribution obligation, so keep it visible in CI.
-  warn: ['CC-BY-4.0', 'LGPL', 'MPL-2.0', 'Unlicense'],
+  // EPL-2.0 (elkjs, a transitive dependency of @mermaid-js/layout-elk) is a
+  // weak/file-level copyleft license in the same tolerance tier as MPL-2.0.
+  warn: ['CC-BY-4.0', 'EPL-2.0', 'LGPL', 'MPL-2.0', 'Unlicense'],
   block: ['GPL', 'GPL-2.0', 'GPL-3.0', 'AGPL', 'AGPL-3.0']
 }
 

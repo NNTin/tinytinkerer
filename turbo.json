@@ -40,7 +40,7 @@
       "outputs": []
     },
     "@tinytinkerer/docs#build": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "@tinytinkerer/brand-assets#generate"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/**"],
       "outputs": ["build/**"],
       "env": ["TINYTINKERER_DEPLOY_BASE"]

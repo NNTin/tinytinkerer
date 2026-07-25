@@ -5,6 +5,8 @@ slug: /
 sidebar_position: 1
 ---
 
+import LabContainer from '@site/src/components/lab-container'
+
 # TinyTinkerer documentation
 
 TinyTinkerer is a Rube Goldberg machine for human-computer conversation. These documents describe
@@ -29,3 +31,27 @@ audiences: people **evaluating** TinyTinkerer, and **builders** extending or sel
 - [Contributing](./contributing/CONTRIBUTING.md) — contribution terms and security disclosure.
 
 Each section above links to a landing page that explains who it's for and where to go next.
+
+## Interactive lab container
+
+Individual labs are tracked in separate issues, but every one of them renders inside this shared
+container, so its responsive, loading, warning, error, and fullscreen treatment is consistent
+across labs from day one:
+
+<LabContainer title="Preview lab" status="ready">
+  <p className="lab-container__placeholder">
+    Ready content, such as an embedded lab, renders here.
+  </p>
+</LabContainer>
+<LabContainer title="Preview lab" status="loading" />
+<LabContainer
+  title="Preview lab"
+  status="warning"
+  warningMessage="Sample data only — connect a live agent to see real traces."
+/>
+<LabContainer
+  title="Preview lab"
+  status="error"
+  errorMessage="Failed to load the lab bundle."
+  onRetry={() => undefined}
+/>
