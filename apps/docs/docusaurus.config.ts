@@ -190,9 +190,9 @@ const config: Config = {
           title: 'Documentation',
           items: [
             { label: 'Get started', to: '/' },
-            { label: 'Architecture', to: '/ARCHITECTURE' },
-            { label: 'Contributing', to: '/CONTRIBUTING' },
-            { label: 'Privacy', to: '/PRIVACY' }
+            { label: 'Architecture', to: '/architecture' },
+            { label: 'Contributing', to: '/contributing' },
+            { label: 'Privacy', to: '/overview/PRIVACY' }
           ]
         },
         {
