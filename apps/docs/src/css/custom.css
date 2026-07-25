@@ -377,3 +377,172 @@ div[class^='codeBlockContainer'] {
     inset: 0.5rem;
   }
 }
+
+/* Rich content playground -----------------------------------------------
+   Renders inside a <LabContainer>; see src/playground/client-runtime.tsx.
+   Panes sit side by side above 780px and stack below it so the source
+   textarea, preview, and AST panel all stay full-width and reachable by
+   keyboard on mobile widths (issue #455 acceptance criteria). */
+
+.rich-content-playground {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.rich-content-playground__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.rich-content-playground__field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.rich-content-playground__field select {
+  font: inherit;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.4rem;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+}
+
+.rich-content-playground__toolbar button {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.4rem;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+}
+
+.rich-content-playground__toolbar button:hover {
+  background: var(--ifm-color-emphasis-100);
+}
+
+.rich-content-playground__toolbar button:focus-visible,
+.rich-content-playground__field select:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+.rich-content-playground__description {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-600, #6c675a);
+}
+
+.rich-content-playground__panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+@media (max-width: 780px) {
+  .rich-content-playground__panes {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rich-content-playground__pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.rich-content-playground__pane-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ifm-color-emphasis-600, #6c675a);
+}
+
+.rich-content-playground__source {
+  width: 100%;
+  min-height: 18rem;
+  resize: vertical;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  padding: 0.75rem;
+}
+
+.rich-content-playground__source:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+.rich-content-playground__preview {
+  min-height: 18rem;
+  overflow: auto;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-background-surface-color);
+  padding: 0.75rem;
+}
+
+.rich-content-playground__ast {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.rich-content-playground__ast summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.rich-content-playground__ast summary:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+.rich-content-playground__ast-list,
+.rich-content-playground__ast-list ul {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+  line-height: 1.7;
+}
+
+.rich-content-playground__ast-list ul {
+  border-left: 1px dashed var(--ifm-color-emphasis-300);
+}
+
+.rich-content-playground__ast-detail {
+  color: var(--ifm-color-emphasis-600, #6c675a);
+}
+
+.rich-content-playground__ast-plugin {
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--ifm-color-emphasis-100);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.rich-content-playground__ast-plugin--fallback {
+  background: var(--lab-warning-bg);
+  color: var(--lab-warning-text);
+}

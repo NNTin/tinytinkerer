@@ -60,3 +60,6 @@ See also:
 - [content-platform.md](./content-platform.md)
 - [PRIVACY.md](../overview/PRIVACY.md) — telemetry/consent behavior is reused unchanged
   (`BrowserAppShell`'s consent gates run inside the docs session too)
+- [Rich content renderer playground](./rich-content-playground.mdx) — a sibling MDX framework for
+  a client-side-only demo (parsing and rendering, no backend session) built on the same
+  `<BrowserOnly>` + `React.lazy` isolation pattern this page documents

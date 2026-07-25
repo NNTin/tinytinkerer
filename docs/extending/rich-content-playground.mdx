@@ -1,0 +1,46 @@
+---
+title: Rich content renderer playground
+---
+
+# Rich content renderer playground
+
+The playground below runs the **real** content platform — `@tinytinkerer/content-markdown`'s
+parser, the React content runtime, and every specialized renderer plugin (Mermaid, wireframe,
+code, callout, link card, table, image) — against markdown you edit yourself. It never calls a
+model or the network: editing the source re-parses locally and re-renders immediately.
+
+Pick a curated example above the editor, or write your own markdown. The "Semantic document
+(AST)" panel shows the parsed `ContentDocument` alongside the renderer plugin that will handle
+each block, so you can connect source syntax to runtime behavior. The "malformed" examples
+(invalid Mermaid, an empty wireframe, an unrecognized language, and a demo renderer that always
+throws) show how the same runtime contains failures instead of breaking the page.
+
+<RichContentPlayground />
+
+## What this reuses
+
+- **Parsing and rendering** go through the exact same `parsePlaygroundMarkdown` /
+  `ContentPlaygroundPreview` facade `@tinytinkerer/app-browser` exposes for this purpose — the
+  same specialized plugins the product's chat surface registers via `AssistantContent`, plus one
+  playground-only plugin that always throws, to demonstrate the runtime's error containment.
+- **Chrome**: `PreviewCodeFrame`'s copy/preview/code controls and fullscreen behavior come free
+  with each specialized renderer, since the playground renders through the real plugins. The
+  playground's own copy-source button reuses the same `useCopyButtonState` hook.
+- **Isolation and lazy-loading** follow the same pattern as the [interactive live
+  labs](./interactive-labs.md) framework: the parser, runtime, and every specialized renderer
+  bundle load only on a page that actually contains `<RichContentPlayground>`, behind Docusaurus's
+  `<BrowserOnly>` and a `React.lazy` boundary. Unlike the live labs, this playground never touches
+  auth, a live backend, or IndexedDB — it is pure client-side parsing and rendering.
+
+## Sharing an example
+
+Selecting a curated example updates the page's `?example=` query parameter, so a link to a
+specific example is shareable. Free-form edits you make in the source panel are never written to
+the URL — only the id of the last curated example you selected.
+
+See also:
+
+- [Content platform](./content-platform.md) — the package boundaries and plugin contract this
+  playground renders through.
+- [Interactive live labs](./interactive-labs.md) — the sibling MDX framework for embedding a live,
+  backend-connected demo.

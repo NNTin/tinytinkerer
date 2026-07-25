@@ -156,7 +156,11 @@ const wireframePlugin = createLazyCodeBlockPlugin({
     import('@tinytinkerer/content-wireframe').then((module) => module.wireframePlugin)
 })
 
-const assistantPlugins = [
+// Exported so hosts that need the exact same plugin set outside a live
+// conversation (e.g. the docs rich-content playground, see
+// content-playground.tsx) can register it on their own runtime without
+// duplicating this composition.
+export const assistantContentPlugins = [
   mermaidPlugin,
   wireframePlugin,
   codePlugin,
@@ -208,7 +212,7 @@ export const AssistantContent = ({
     <ContentDocumentContent
       document={content}
       isStreaming={isStreaming}
-      plugins={assistantPlugins}
+      plugins={assistantContentPlugins}
       renderOptions={renderOptions}
       {...(className ? { className } : {})}
     />

@@ -19,6 +19,9 @@ new integrated application workspace alongside Canvas, the IDE, Mermaid, and Pix
   `packages/app/<app>`.
 - [Interactive live labs](./interactive-labs.md) — the MDX framework for embedding a live,
   working TinyTinkerer demo directly in a docs page.
+- [Rich content renderer playground](./rich-content-playground.mdx) — edit markdown and see it
+  parsed and rendered through the real content platform, with the semantic document and selected
+  renderer plugin shown alongside it.
 
 ## Next step
 

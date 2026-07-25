@@ -25,6 +25,21 @@ export {
 } from './app'
 export type { BrowserApp } from './app'
 export type { AssistantContentProps } from './assistant-content'
+export { assistantContentPlugins } from './assistant-content'
+export {
+  ContentPlaygroundPreview,
+  PLAYGROUND_ERROR_DEMO_LANGUAGE,
+  parsePlaygroundMarkdown,
+  playgroundContentPlugins,
+  resolvePlaygroundNodePlugin,
+  useCopyButtonState
+} from './content-playground'
+export type {
+  ContentDocument,
+  ContentNode,
+  ContentPlaygroundPreviewProps,
+  PlaygroundPluginResolution
+} from './content-playground'
 export type {
   BrowserAuthMode,
   BrowserShellBootstrapOptions,

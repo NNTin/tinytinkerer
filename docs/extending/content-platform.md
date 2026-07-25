@@ -424,6 +424,8 @@ Most specialized renderers reuse the shared chrome from `content-react`:
 
 Because the chrome and runtime mechanics live in `content-react`, a new plugin package usually stays small: it contributes the rendering logic and the `NodeRendererPlugin` shape, not new chrome.
 
+Once a plugin is wired into `assistant-content.tsx`'s `assistantContentPlugins`, the [rich content renderer playground](./rich-content-playground.mdx) exercises it against real markdown — it renders through that exact plugin composition and shows the semantic document and the plugin each block resolves to.
+
 ## App Responsibilities
 
 Apps still own:
