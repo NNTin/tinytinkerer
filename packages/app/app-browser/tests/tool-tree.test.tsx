@@ -488,7 +488,11 @@ describe('useToolTree', () => {
       toolCount: 0
     })
     const { result } = renderHook(() => useToolTree({ fallbackSummarizer: fallback }))
-    await waitFor(() => expect(result.current.summarizer).not.toBeNull())
+    // Waits for the RESOLVED value specifically — not just "not null" — because
+    // the fallback is non-null from the very first render (before the mocked
+    // async plugin discovery resolves), so a "not null" check alone can pass on
+    // that transient fallback value instead of the real plugin summarizer.
+    await waitFor(() => expect(result.current.summarizer).toBe(summarizeToolTree))
     expect(result.current.summarizer).toBe(summarizeToolTree)
     expect(result.current.summarizer).not.toBe(fallback)
   })
