@@ -5,16 +5,12 @@ unlisted: true
 
 ## Privacy policy updated
 
-TinyTinkerer added an optional **Browser state** plugin. It is off by default; you enable it in
-Settings → Plugins.
+The documentation site (`/docs/`) now embeds **interactive live labs** — working, embedded copies
+of TinyTinkerer used to demonstrate real features. A lab reuses your existing sign-in read-only,
+sends chat messages through the exact same edge/LiteLLM/model-provider path your real conversations
+already take, and stores its own conversations in an isolated browser database separate from your
+real ones.
 
-When enabled, it gives the assistant a `read_dom` tool that can read the page you are currently
-viewing — through narrow CSS-selector queries, never the whole page at once — so it can answer
-questions about what is on screen and debug rendering issues. Whatever it reads is sent to the
-model provider as part of that chat turn, the same path your conversation already takes. The tool
-can surface content that is on the page but that you have not yet sent as a message, and the host
-redacts editable content (inputs, text areas, password values, drop-down selections, and rich-text
-editors) before returning, so text you have typed but not sent is not included.
-
-If the plugin is disabled, the `read_dom` tool is not available and no page content is read. See
-the new "Browser state plugin (read_dom)" section of the privacy policy for details.
+No new category of data is collected — a lab behaves like the product itself for every data flow
+already described above. See the new "Interactive documentation labs" section of the privacy
+policy for details.

@@ -1,0 +1,109 @@
+---
+id: index
+title: Using TinyTinkerer
+sidebar_label: Using TinyTinkerer
+description: The evaluator's tour of the shell experiences and capabilities, ending in a guided live trial.
+---
+
+# Using TinyTinkerer
+
+This page is the middle of the **evaluator path**: [product concept](../overview/index.md) →
+**shell experiences and capabilities (here)** → [privacy](../overview/PRIVACY.md) →
+[plugins & tools](../plugins-and-tools/index.md) → the **guided live trial** at the bottom of this
+page. None of it requires reading an architecture document first — that material exists for
+builders and is linked only as optional depth.
+
+It doubles as the day-to-day map for anyone who already has access and wants to use the product:
+chatting, working in the integrated application workspaces, and configuring plugins and MCP
+servers from Settings.
+
+## Shell experiences
+
+TinyTinkerer's chat runs on one shared browser runtime with several presentations, all sharing the
+same sign-in and conversation data when served from the same origin:
+
+- **Web** — the full chat page.
+- **Widget** — the same chat surface embeddable as a floating window on another site.
+- **Mobile** — an installable PWA version of the same shell.
+- **Integrated application workspaces** — Canvas (an Excalidraw whiteboard), a browser IDE, Mermaid
+  diagramming, and Pixel Agents (an animated pixel-art office) each dock the assistant alongside a
+  working surface in the same document, so the assistant can read and drive the workspace through
+  tools instead of talking about it from a separate window.
+
+You don't need to know how these are built to evaluate them — [Open TinyTinkerer](pathname:///) and
+click between them. Builders who want the routing and layer boundaries behind this should read the
+[Route Model](../architecture/ARCHITECTURE.md#route-model) section of Architecture.
+
+## Supported capabilities
+
+- **One model provider, many models.** Every chat request goes through a single
+  [LiteLLM](https://docs.litellm.ai/docs/) proxy the deployment operator configures, so any model
+  exposed there is available from the model picker with no code changes.
+- **Optional GitHub sign-in.** Unauthenticated use works out of the box against a shared,
+  rate-limited key; signing in gets you your own budget and rate limits. See
+  [Privacy & Telemetry](../overview/PRIVACY.md) for exactly what that shares.
+- **Plugins and tools.** The assistant can be given tools — web search, code execution, reading
+  the current page, a human-in-the-loop question, and more — each toggled per-user in Settings. See
+  [Plugins & Tools](../plugins-and-tools/index.md).
+- **MCP servers.** You can register your own remote [Model Context Protocol](https://modelcontextprotocol.io/)
+  server in Settings and its tools become available the same way. See
+  [MCP integration](../plugins-and-tools/mcp-integration.md).
+- **Rich assistant output.** Responses render through a real content platform, not raw markdown
+  text: tables, code blocks, Mermaid diagrams, callouts, link previews, and images all get
+  dedicated, interactive rendering. See [Content platform](../extending/content-platform.md) if you
+  want the mechanics.
+- **Voice input.** An opt-in dictation toggle in Settings → Privacy, described in
+  [Privacy & Telemetry](../overview/PRIVACY.md#voice-input-web-speech-api).
+
+## Settings, in one place
+
+Settings (gear icon in the chat surface) is where every capability above is turned on or off:
+model choice and LiteLLM base URL, plugin activation and per-tool enablement, MCP server
+registration, telemetry consent, and voice input. Nothing here requires a redeploy — every toggle
+is a per-user preference.
+
+## Guided live trial
+
+**Learning objective:** see a real TinyTinkerer conversation run end-to-end, driven by your own
+prompt, without reading any of the internals first.
+
+The lab below is a genuine, isolated instance of the product — the same chat runtime, the same
+model provider, the same tool-calling loop — running against its own separate conversation storage
+so nothing you do here touches a real deployment's data. It reuses your sign-in read-only if
+you're already signed in elsewhere on this site; otherwise it offers its own sign-in, or you can
+try it signed out against the shared anonymous key.
+
+<PixelAgentsLab title="Try TinyTinkerer" />
+
+**What you should see.** Type a message and send it. A character appears in the animated office
+and its state changes as the run progresses — active while the model is thinking, showing a tool
+icon if it calls one, then settling once the response streams back. If your viewport is narrow, you
+have `prefers-reduced-motion` set, or the office's asset bundle fails to load, the same information
+is available instead as a plain, always-present list of conversations and their status — nothing
+here depends on the animation to be usable.
+
+**Why it behaves that way.** The office and the accessible list are two views of the exact same
+event stream the production chat surface renders; neither is a simulation built for this page. If
+the shared model deployment is cooling down you'll see a `rate-limited` state instead of a response
+— that's the same shared quota every visitor draws from, not a bug in the lab. Every conversation
+you create here lives only in this browser's isolated docs session; **Reset lab session** at the
+bottom clears it without touching a real TinyTinkerer account.
+
+Two more labs go deeper once you're ready for builder-level detail: the
+[live agent execution trace lab](../extending/execution-trace.mdx) narrates the same kind of run
+step by step (planning, tool calls, synthesis), and the
+[plugin & tool-picker impact lab](../plugins-and-tools/plugin-tool-picker-lab.mdx) lets you see
+exactly how enabling or disabling a tool changes what the model is allowed to call.
+
+## Next step
+
+If TinyTinkerer fits your use case, read [Privacy & Telemetry](../overview/PRIVACY.md) if you
+haven't already, then decide which builder path to start on:
+
+- [Plugins & Tools](../plugins-and-tools/index.md) — give the assistant a new tool, or an MCP
+  server.
+- [Extending the Content & Runtime](../extending/index.md) — add a content renderer, or a new
+  integrated application workspace.
+- [Self-Hosting](../self-hosting/index.md) — run your own instance.
+- [Architecture](../architecture/ARCHITECTURE.md) — the system-level map, if you want it before
+  making a structural change.

@@ -15,13 +15,16 @@ package, so a plugin package depends **only** on `contracts`. `agent-core` owns 
 _runtime_ (the `PluginRegistry`, the hook runners, and the `ToolRegistry`) and re-exports the
 contract so its public surface is unchanged for existing consumers (`app-core`, `app-browser`).
 
-The repo currently ships nine plugins under `packages/plugins/*`: **Feedback**
+The repo currently ships ten plugins under `packages/plugins/*`: **Feedback**
 (`send_feedback`), **Event logger** (a `chat.event` observer hook), **Permissions** (a
 `tool.beforeExecute` gate), **Web search** (the Tavily `web-search` tool), **Code execution**
 (the `run_javascript` sandbox tool), **Browser state** (the `read_dom` page-reading tool),
 **Choice prompt** (the `ask_user` human-in-the-loop tool), **Context usage** (a status plugin —
-the `statusDescriptor` context-window gauge), and **Context inspector** (an inspector plugin —
-the `inspectorDescriptor` developer panel showing the exact forwarded LLM request). A plugin
+the `statusDescriptor` context-window gauge), **Context inspector** (an inspector plugin —
+the `inspectorDescriptor` developer panel showing the exact forwarded LLM request), and
+**Tool picker** (a tool-tree plugin — the `toolTreeDescriptor` compose-area picker described
+under [Per-tool enablement](#per-tool-enablement--the-tool-picker-plugin-tinytinkererplugin-tool-tree)
+below). A plugin
 contributes tools and/or hooks — or, like the two context plugins, neither: just a pure
 view-model mapper on a manifest descriptor the host reads — and may use a host-injected
 capability (telemetry capture, a **human-in-the-loop prompt** — the one surface behind both the
@@ -40,6 +43,8 @@ See also:
 - [packages-concept.md](../architecture/packages-concept.md)
 - [sentry-telemetry.md](../architecture/sentry-telemetry.md)
 - [mcp-integration.md](./mcp-integration.md) — the closest existing pattern (settings-gated tools)
+- [Build a plugin](./build-a-plugin.md) — a task-oriented walkthrough that builds one small,
+  compiling plugin from this contract
 - [Plugin & tool-picker impact lab](./plugin-tool-picker-lab.mdx) — a live, hands-on demo of the
   tool-tree picker described below
 - [PRIVACY.md](../overview/PRIVACY.md) — feedback content is sent via telemetry on purpose
@@ -66,6 +71,17 @@ interface PluginHost {
   capture: PluginCaptureSink // always present; forwards reports out-of-band (telemetry)
   requestHumanInput?: HumanInputService // optional; the ONE human-in-the-loop prompt (issue #85)
   edgeFetch?: PluginEdgeFetch // optional; only hosts with an edge backend
+}
+
+// The minimal, runtime-agnostic shape of a tool a plugin contributes.
+interface Tool<Input, Output> {
+  id: string
+  description: string
+  schema: ZodSchema<Input> // the SAME schema PluginToolDescriptor.schema advertises (issue #287)
+  summarizeActivity?: ActivitySummarizer
+  outputSchema?: ZodSchema<Output> // when present, the registry throws on a result that fails it
+  awaitsHumanInput?: boolean // governs execution by the human-input budget, not the machine one
+  execute(input: Input): Promise<Output>
 }
 
 type PluginCaptureSink = (report: PluginReport) => void
@@ -128,8 +144,13 @@ type ActivitySummarizer = (
 type PluginToolDescriptor = {
   id: string
   description: string
-  inputSchema: Record<string, unknown>
+  // The CANONICAL Zod schema (issue #287) — the SAME schema object the contributed
+  // Tool.execute validates against, not a hand-written parallel JSON Schema. The host
+  // generates the planner-visible JSON Schema from this one source of truth.
+  schema: ZodSchema<unknown>
+  keywordPlannerStep?: KeywordPlannerStep // optional heuristic-planner fallback step
   summarizeActivity?: ActivitySummarizer // owns this tool's turn-activity presentation
+  summarizePermission?: PermissionSummarizer // owns this tool's permission-prompt presentation
 }
 
 type PluginManifest = {
@@ -137,7 +158,11 @@ type PluginManifest = {
   label: string // Settings toggle copy
   description: string
   toolDescriptors?: PluginToolDescriptor[] // planner descriptors for the plugin's tools
+  statusDescriptor?: PluginStatusDescriptor // persistent status-gauge contribution
+  inspectorDescriptor?: PluginInspectorDescriptor // developer context-inspector contribution
+  toolTreeDescriptor?: PluginToolTreeDescriptor // compose-area tool-picker contribution
   defaultEnabled?: boolean // ships on out-of-the-box when true (e.g. web search)
+  settingsDescriptor?: PluginSettingsDescriptor // user-configurable fields the host renders
 }
 
 type PluginModule = {
@@ -147,6 +172,10 @@ type PluginModule = {
 
 function isPluginModule(value: unknown): value is PluginModule // runtime guard
 ```
+
+This mirrors the real contract in `packages/shared/contracts/src/plugins.ts`, trimmed to the
+shapes referenced on this page — see that file (or
+[Build a plugin](./build-a-plugin.md), which compiles against it) for every field.
 
 `PluginManifest`/`PluginModule` live in the **contract layer**, not inside any concrete plugin,
 so the host depends only on the abstraction. `isPluginModule` keeps dynamic loading best-effort:

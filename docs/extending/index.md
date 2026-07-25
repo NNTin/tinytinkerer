@@ -12,19 +12,26 @@ new integrated application workspace alongside Canvas, the IDE, Mermaid, and Pix
 
 ## Start here
 
-- [Content platform](./content-platform.md) — the shared assistant-content architecture: parsing,
-  rendering, specialized renderer packages, and fallback behavior.
-- [Integrated application shells](./app-shell.md) — the stage/controller/dock contract that Canvas,
-  IDE, Mermaid, and Pixel Agents implement, and the ownership boundary between `apps/<app>` and
-  `packages/app/<app>`.
-- [Interactive live labs](./interactive-labs.md) — the MDX framework for embedding a live,
-  working TinyTinkerer demo directly in a docs page.
-- [Rich content renderer playground](./rich-content-playground.mdx) — edit markdown and see it
-  parsed and rendered through the real content platform, with the semantic document and selected
-  renderer plugin shown alongside it.
-- [Live agent execution trace lab](./execution-trace.mdx) — run your own prompt through the real
-  runtime and watch request preparation, planning, tool activity, failures, and synthesis unfold
-  as an ordered, expandable trace.
+- **Concept & reference:** [Content platform](./content-platform.md) — the shared
+  assistant-content architecture: parsing, rendering, specialized renderer packages, and fallback
+  behavior.
+- **Tutorial:** [Build a content renderer](./build-a-renderer.md) — ship one small, real renderer
+  end to end, verified against the current renderer contract.
+- **Concept & reference:** [Integrated application shells](./app-shell.md) — the
+  stage/controller/dock contract that Canvas, IDE, Mermaid, and Pixel Agents implement, and the
+  ownership boundary between `apps/<app>` and `packages/app/<app>`.
+- **Concept & reference:** [Interactive live labs](./interactive-labs.md) — the MDX framework for
+  embedding a live, working TinyTinkerer demo directly in a docs page.
+- **Live lab:** [Rich content renderer playground](./rich-content-playground.mdx) — edit markdown
+  and see it parsed and rendered through the real content platform, with the semantic document and
+  selected renderer plugin shown alongside it.
+- **Live lab:** [Live agent execution trace lab](./execution-trace.mdx) — run your own prompt
+  through the real runtime and watch request preparation, planning, tool activity, failures, and
+  synthesis unfold as an ordered, expandable trace.
+
+Understanding the runtime and data flow that all of the above sit inside is its own builder path:
+see [Contracts And Data Flow](../architecture/ARCHITECTURE.md#contracts-and-data-flow) in
+Architecture.
 
 ## Next step
 

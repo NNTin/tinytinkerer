@@ -1,6 +1,6 @@
 ---
 title: Integrated Application Shells
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 <!--

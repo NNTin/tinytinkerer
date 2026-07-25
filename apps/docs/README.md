@@ -36,6 +36,13 @@ Conventions for new docs:
 'throw'` in `docusaurus.config.ts` fails the build on a broken one. A same-origin link that
   leaves the docs router entirely (e.g. back to the product) needs the `pathname://` protocol
   (see `docs/index.mdx`) so Docusaurus doesn't try to resolve it as a doc route.
+- Distinguish **concept/reference** docs (e.g. `plugin-infrastructure.md`,
+  `content-platform.md`) from **task-oriented tutorials** (`build-a-plugin.md`,
+  `build-a-renderer.md`) and **live labs** (`*-lab.mdx`, `execution-trace.mdx`,
+  `rich-content-playground.mdx`). A tutorial builds one small, real thing end to end with runnable
+  code and a troubleshooting table, then links back into the concept doc instead of duplicating
+  it; it doesn't need to re-teach the full contract. A live lab opens with a one-line "Learning
+  objective" and follows the interaction with an explanation of what was actually observed.
 
 Run the documentation site through the unified root development command:
 

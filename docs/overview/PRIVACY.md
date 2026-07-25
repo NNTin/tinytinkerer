@@ -104,6 +104,27 @@ into a sandboxed or cross-origin frame.
 
 If the plugin is disabled, the `read_dom` tool is not available and no page content is read.
 
+## Interactive documentation labs
+
+Pages under `/docs/` may embed a **live lab** — a working, embedded copy of TinyTinkerer used to
+demonstrate a real feature (for example, a live agent run or the plugin tool picker). A lab is
+clearly marked in its own page and shows a standing notice before it contacts anything. When you
+use one:
+
+- It reuses your existing sign-in **read-only**: if you are already signed in to TinyTinkerer in
+  this browser, the lab reads that token to act as you; it is never written back, so signing in
+  from a lab never creates a separate credential, and signing in from a lab is the same GitHub
+  OAuth flow as the rest of the app.
+- Chat messages you send inside a lab take the exact same path described above under "Chat
+  content and the model proxy (LiteLLM)" — the same edge API, the same LiteLLM proxy, the same
+  model providers, and (if self-hosted) your own deployment's instance of each.
+- Conversations, plugin/tool selections, and model choice created inside a lab are stored in their
+  own isolated browser database, separate from your real TinyTinkerer conversations. Each lab's own
+  reset control clears only that isolated data; your real conversations are never read by a lab,
+  and a lab is never read by the rest of the app.
+- General telemetry (crash reports, request-failure diagnostics) behaves the same inside a lab as
+  in the rest of the app, subject to the same opt-in described above.
+
 ## Why we collect it
 
 To detect, reproduce, and fix crashes and errors, and to improve reliability and security.

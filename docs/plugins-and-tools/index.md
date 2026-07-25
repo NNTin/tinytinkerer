@@ -12,13 +12,16 @@ writing a plugin that ships with the runtime, or by pointing users at an externa
 
 ## Start here
 
-- [Plugin infrastructure](./plugin-infrastructure.md) — the plugin contract, discovery, and how
-  the nine shipped plugins (web search, code execution, browser state, feedback, and more) are
-  built.
-- [MCP integration](./mcp-integration.md) — how per-user remote MCP servers are registered,
-  discovered, and exposed to the assistant.
-- [Plugin & tool-picker impact lab](./plugin-tool-picker-lab.mdx) — try the real tool-tree picker
-  live, right in these docs.
+- **Concept & reference:** [Plugin infrastructure](./plugin-infrastructure.md) — the plugin
+  contract, discovery, and how the nine shipped plugins (web search, code execution, browser
+  state, feedback, and more) are built.
+- **Tutorial:** [Build a plugin](./build-a-plugin.md) — give the assistant one new tool, end to
+  end, in under a page.
+- **Concept & reference:** [MCP integration](./mcp-integration.md) — how per-user remote MCP
+  servers are registered, discovered, and exposed to the assistant (includes its own worked
+  example).
+- **Live lab:** [Plugin & tool-picker impact lab](./plugin-tool-picker-lab.mdx) — try the real
+  tool-tree picker live, right in these docs.
 
 ## Next step
 

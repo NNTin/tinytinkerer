@@ -371,6 +371,10 @@ Fallback rules:
 
 ## Adding a Renderer Package
 
+For a task-oriented, compiling walkthrough of Scenario 1 below, see
+[Build a content renderer](./build-a-renderer.md) — this section is the full reference the
+tutorial links back into.
+
 The platform is plugin-driven on two axes:
 
 1. source plugins turn raw source text into semantic `ContentDocument` snapshots

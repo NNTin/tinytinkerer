@@ -29,6 +29,6 @@ Mermaid diagramming, and Pixel Agents — inside the same session. Capabilities 
 
 ## Next step
 
-Once you know TinyTinkerer fits, continue to [Using TinyTinkerer](../using-tinytinkerer/index.md)
-to learn the product surface, or jump straight to [Self-Hosting](../self-hosting/index.md) if
-you already plan to run your own instance.
+Once you know TinyTinkerer fits, continue to [Using TinyTinkerer](../using-tinytinkerer/index.mdx)
+for shell experiences, capabilities, and a guided live trial, or jump straight to
+[Self-Hosting](../self-hosting/index.md) if you already plan to run your own instance.

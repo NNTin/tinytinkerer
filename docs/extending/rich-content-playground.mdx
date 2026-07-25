@@ -4,6 +4,10 @@ title: Rich content renderer playground
 
 # Rich content renderer playground
 
+**Learning objective:** connect markdown source syntax to the specific renderer plugin and AST
+node it resolves to, by editing real markdown and watching both change together — no model call,
+no backend, immediate feedback.
+
 The playground below runs the **real** content platform — `@tinytinkerer/content-markdown`'s
 parser, the React content runtime, and every specialized renderer plugin (Mermaid, wireframe,
 code, callout, link card, table, image) — against markdown you edit yourself. It never calls a

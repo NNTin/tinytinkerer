@@ -15,19 +15,28 @@ audiences: people **evaluating** TinyTinkerer, and **builders** extending or sel
 
 ## Evaluating TinyTinkerer
 
-- [Overview & Evaluation](./overview/index.md) — what TinyTinkerer is and what it can do.
-- [Privacy & Telemetry](./overview/PRIVACY.md) — what data leaves the machine and who can see it.
-- [Open TinyTinkerer](pathname:///) — try the running product directly.
+The evaluator path: read these in order, or jump straight to the guided live trial at the end of
+the second link.
+
+1. [Overview & Evaluation](./overview/index.md) — what TinyTinkerer is and what it can do.
+2. [Using TinyTinkerer](./using-tinytinkerer/index.mdx) — shell experiences, supported
+   capabilities, and a guided live trial you can try right now.
+3. [Plugins & Tools](./plugins-and-tools/index.md) — what the assistant can be given access to.
+4. [Privacy & Telemetry](./overview/PRIVACY.md) — what data leaves the machine and who can see it.
+5. [Open TinyTinkerer](pathname:///) — try the running product directly, unguided.
 
 ## Building with TinyTinkerer
 
-- [Using TinyTinkerer](./using-tinytinkerer/index.md) — the product surface, day to day.
+Five builder paths, roughly in order of how self-contained they are:
+
 - [Plugins & Tools](./plugins-and-tools/index.md) — give the assistant a new tool, or register an
-  MCP server.
+  MCP server (start with [Build a plugin](./plugins-and-tools/build-a-plugin.md)).
 - [Extending the Content & Runtime](./extending/index.md) — add a content renderer or a new
-  integrated application workspace.
+  integrated application workspace (start with
+  [Build a content renderer](./extending/build-a-renderer.md)).
 - [Self-Hosting](./self-hosting/index.md) — run your own instance (Vercel, Cloudflare, LiteLLM).
-- [Architecture](./architecture/ARCHITECTURE.md) — the monorepo map, layers, and dependency rules.
+- [Architecture](./architecture/ARCHITECTURE.md) — the system-level map and data flow, for
+  understanding the runtime before making a structural change.
 - [Contributing](./contributing/CONTRIBUTING.md) — contribution terms and security disclosure.
 
 Each section above links to a landing page that explains who it's for and where to go next.
