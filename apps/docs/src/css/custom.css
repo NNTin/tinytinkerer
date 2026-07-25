@@ -1,3 +1,10 @@
+/* Generates the Tailwind utilities the embedded ChatApp/PixelAgentsStage
+   live-lab components render with — see tailwind.css for why this is a
+   second Tailwind pass over the same `packages/` sources rather than a
+   hand-copied stylesheet. Imported first so this file's own rules can still
+   layer on top / override where needed. */
+@import './tailwind.css';
+
 /**
  * TinyTinkerer brand theme for the /docs Docusaurus site.
  *
@@ -557,6 +564,39 @@ div[class^='codeBlockContainer'] {
 .rich-content-playground__ast-plugin--fallback {
   background: var(--lab-warning-bg);
   color: var(--lab-warning-text);
+}
+
+/* Shared LiveLab/LiveSessionGate framework (issue #451) ----------------------
+   `signed-out` is not a blocking gate state (see LiveSessionGate.tsx) — a
+   visitor without a token still gets the real lab content against the
+   shared, rate-limited key; this is just the small, non-blocking notice and
+   sign-in link shown above it. */
+
+.live-lab__signed-out-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-color-emphasis-100);
+  font-size: 0.85rem;
+}
+
+.live-lab__signed-out-notice p {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.live-lab__sign-in {
+  flex-shrink: 0;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-background-surface-color);
+  cursor: pointer;
 }
 
 /* Pixel Agents lab (issue #452) ----------------------------------------------

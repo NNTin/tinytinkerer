@@ -1,0 +1,21 @@
+/* Generates the Tailwind utility classes the real product components this
+   docs site embeds (ChatApp, PixelAgentsStage, via the live-lab framework —
+   see interactive-labs.md) render with. Scans `packages/`, exactly like every
+   other TinyTinkerer app's own Tailwind entry (apps/host/src/index.css and
+   friends) — this is the SAME source-of-truth scan, not a hand-copied
+   stylesheet, so the generated utilities never drift from what those apps
+   themselves produce. Docusaurus builds with webpack, not Vite, so this can't
+   reuse `@tailwindcss/vite` directly; `configurePostCss` in
+   docusaurus.config.ts wires `@tailwindcss/postcss` into webpack's existing
+   postcss-loader pipeline instead, and this file is `@import`ed from
+   custom.css so Docusaurus's normal CSS pipeline picks it up. */
+/* `tailwindcss/preflight.css` (the reset/normalize layer bundled into the bare
+   `@import 'tailwindcss'`) is deliberately EXCLUDED: it resets margins,
+   heading sizes, list styles, etc. on every element site-wide, which fights
+   Docusaurus's own Infima theme far beyond the embedded lab components this
+   is actually for. Theme (tokens) + utilities (the classes ChatApp/
+   PixelAgentsStage use) is enough — utilities alone would reference undefined
+   theme values otherwise. */
+@import 'tailwindcss/theme.css';
+@import 'tailwindcss/utilities.css';
+@source '../../../../packages';

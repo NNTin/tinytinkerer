@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import type { Config, PluginModule } from '@docusaurus/types'
+import tailwindcssPostcss from '@tailwindcss/postcss'
 import { themes as prismThemes } from 'prism-react-renderer'
 import {
   resolveDocsBaseUrl,
@@ -98,6 +99,25 @@ const stubAppBrowserPluginDiscoveryPlugin: PluginModule = () => ({
   })
 })
 
+// The live-lab framework embeds the REAL ChatApp/PixelAgentsStage components
+// (see interactive-labs.md), styled with Tailwind utility classes — but every
+// TinyTinkerer app that renders them (host, canvas, mermaid, ide, pixel-agents)
+// generates those utilities itself, via its own `@tailwindcss/vite` build
+// scanning `packages/` (e.g. apps/host/src/index.css's `@source
+// "../../../packages"`). Docusaurus builds with webpack, which never ran that
+// scan, so none of those classes have ever had matching CSS here. This wires
+// `@tailwindcss/postcss` into Docusaurus's existing postcss-loader pipeline —
+// the SAME source-of-truth scan (src/css/tailwind.css's `@source` points at
+// the same `packages/`), not a hand-copied stylesheet, so the generated
+// utilities can't drift from what those apps' own builds produce.
+const enableTailwindPostCssPlugin: PluginModule = () => ({
+  name: 'enable-tailwind-postcss',
+  configurePostCss: (options) => {
+    options.plugins.push(tailwindcssPostcss())
+    return options
+  }
+})
+
 // The Pixel Agents lab (issue #452) embeds the SAME prepared upstream bundle
 // `apps/pixel-agents` already builds (`pnpm -w prepare:pixel-agents`, run by
 // this package's own dev/build scripts) rather than fetching/building a
@@ -180,7 +200,11 @@ const config: Config = {
     '@docusaurus/theme-mermaid',
     ['@easyops-cn/docusaurus-search-local', searchLocalOptions]
   ],
-  plugins: [supportViteUrlSuffixImportsPlugin, stubAppBrowserPluginDiscoveryPlugin],
+  plugins: [
+    supportViteUrlSuffixImportsPlugin,
+    stubAppBrowserPluginDiscoveryPlugin,
+    enableTailwindPostCssPlugin
+  ],
   customFields: { ...docsLabCustomFields },
   presets: [
     [

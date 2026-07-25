@@ -29,8 +29,6 @@ const DefaultFallback = ({ snapshot }: { snapshot: LabSessionSnapshot }) => {
   switch (snapshot.status) {
     case 'loading':
       return <p role="status">Loading the live lab session…</p>
-    case 'signed-out':
-      return <p role="status">Sign in to TinyTinkerer to run this lab.</p>
     case 'rate-limited':
       return (
         <p role="status">
@@ -46,9 +44,21 @@ const DefaultFallback = ({ snapshot }: { snapshot: LabSessionSnapshot }) => {
   }
 }
 
-// Standardizes the loading/signed-out/rate-limited/error/reset states (issue #451)
-// so every lab on the site presents them identically; only renders `children` —
-// the actual live content — once the shared docs session is 'ready' or 'running'.
+const DefaultSignedOutNotice = () => (
+  <p role="status">
+    This lab uses the shared, rate-limited key by default — sign in for your own budget and rate
+    limits.
+  </p>
+)
+
+// Standardizes the loading/rate-limited/error/reset states (issue #451) so
+// every lab on the site presents them identically; only these truly block
+// `children`. `signed-out` is NOT one of them: TinyTinkerer's own chat
+// surfaces (web/mobile/widget) work anonymously against a shared, rate-limited
+// key by default, and the docs labs must behave the same way — sign-in is
+// offered as an upgrade (your own budget/rate limits), never required to use
+// the lab at all. A signed-out visitor gets the exact same `children` as a
+// signed-in one, with a small, non-blocking notice and sign-in link above it.
 export const LiveSessionGate = ({
   children,
   loading,
@@ -66,29 +76,36 @@ export const LiveSessionGate = ({
   }
 
   const { snapshot } = context
-  if (snapshot.status === 'ready' || snapshot.status === 'running') {
-    return <>{children}</>
+  if (
+    snapshot.status === 'ready' ||
+    snapshot.status === 'running' ||
+    snapshot.status === 'signed-out'
+  ) {
+    return (
+      <>
+        {snapshot.status === 'signed-out' ? (
+          <div className="live-lab__signed-out-notice" data-lab-status="signed-out">
+            {signedOut ?? <DefaultSignedOutNotice />}
+            <button type="button" className="live-lab__sign-in" onClick={context.signIn}>
+              Sign in with GitHub
+            </button>
+          </div>
+        ) : null}
+        {children}
+      </>
+    )
   }
 
   const overrides: Partial<Record<typeof snapshot.status, ReactNode>> = {
     loading,
-    'signed-out': signedOut,
     'rate-limited': rateLimited,
     error,
     reset
   }
 
-  const signInAction =
-    snapshot.status === 'signed-out' ? (
-      <button type="button" className="live-lab__sign-in" onClick={context.signIn}>
-        Sign in with GitHub
-      </button>
-    ) : null
-
   return (
     <div className="live-lab__gate" data-lab-status={snapshot.status}>
       {overrides[snapshot.status] ?? <DefaultFallback snapshot={snapshot} />}
-      {signInAction}
     </div>
   )
 }
