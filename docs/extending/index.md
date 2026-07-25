@@ -17,6 +17,8 @@ new integrated application workspace alongside Canvas, the IDE, Mermaid, and Pix
 - [Integrated application shells](./app-shell.md) — the stage/controller/dock contract that Canvas,
   IDE, Mermaid, and Pixel Agents implement, and the ownership boundary between `apps/<app>` and
   `packages/app/<app>`.
+- [Interactive live labs](./interactive-labs.md) — the MDX framework for embedding a live,
+  working TinyTinkerer demo directly in a docs page.
 
 ## Next step
 

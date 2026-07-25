@@ -1,10 +1,27 @@
 import type { Config } from '@docusaurus/types'
 import { themes as prismThemes } from 'prism-react-renderer'
-import { resolveDocsBaseUrl, resolveProductBaseUrl } from './site-config'
+import {
+  resolveDocsBaseUrl,
+  resolveDocsLabCustomFields,
+  resolveProductBaseUrl
+} from './site-config'
 
 const deployBase = process.env.TINYTINKERER_DEPLOY_BASE
 const baseUrl = resolveDocsBaseUrl(deployBase)
 const productBaseUrl = resolveProductBaseUrl(deployBase)
+// Same VITE_* vars the product's own Vite builds already read at their build time
+// (see apps/host/src/main.tsx, packages/app/app-browser/src/create-browser-shell-root.tsx)
+// — Turbo/Vercel supplies one shared process.env to the whole `pnpm build`, so this
+// Node-side Docusaurus config sees the identical values. Kept out of themeConfig
+// (which is deep-merged and end-user documented) and off customFields' top level
+// (reserved for arbitrary site metadata) — resolveDocsLabCustomFields gives the
+// LiveLab framework its own namespaced, typed slice.
+const docsLabCustomFields = resolveDocsLabCustomFields(deployBase, {
+  edgeBaseUrl: process.env.VITE_EDGE_URL,
+  githubClientId: process.env.VITE_GITHUB_CLIENT_ID,
+  sentryDsn: process.env.VITE_SENTRY_DSN,
+  sentryEnvironment: process.env.VITE_SENTRY_ENVIRONMENT
+})
 // This points outside the Docusaurus router (from /docs/ back to the product).
 // Without these flags Docusaurus prepends its own base URL and treats the
 // destination as a documentation route during link validation.
@@ -97,6 +114,7 @@ const config: Config = {
     '@docusaurus/theme-mermaid',
     ['@easyops-cn/docusaurus-search-local', searchLocalOptions]
   ],
+  customFields: { ...docsLabCustomFields },
   presets: [
     [
       'classic',
