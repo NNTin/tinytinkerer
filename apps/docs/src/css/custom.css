@@ -278,6 +278,8 @@ div[class^='codeBlockContainer'] {
 
 .lab-container__body {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-height: 16rem;
   container-type: inline-size;
 }
@@ -389,6 +391,7 @@ div[class^='codeBlockContainer'] {
 .lab-container--fullscreen .lab-container__body {
   flex: 1 1 auto;
   min-height: 0;
+  overflow-y: auto;
 }
 
 @media (max-width: 700px) {
@@ -611,6 +614,16 @@ div[class^='codeBlockContainer'] {
   gap: 0.75rem;
 }
 
+/* Fullscreen: `.lab-container__body` becomes a flex column sized to the
+   fullscreen viewport box (see `.lab-container__body` and
+   `.lab-container--fullscreen .lab-container__body` above); this lab's own
+   root also needs to opt into that flex-fill chain, or it just keeps its
+   natural (small) height and leaves dead space below it. */
+.lab-container--fullscreen .pixel-agents-lab {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .pixel-agents-lab__switcher {
   display: flex;
   flex-direction: column;
@@ -698,7 +711,7 @@ div[class^='codeBlockContainer'] {
 }
 
 .pixel-agents-lab__fallback {
-  min-height: 20rem;
+  min-height: 32rem;
   border: 1px solid var(--ifm-color-emphasis-300);
   border-radius: var(--ifm-card-border-radius);
   overflow: hidden;
@@ -707,12 +720,47 @@ div[class^='codeBlockContainer'] {
 /* @tinytinkerer/pixel-agents's root is `height: 100%` all the way down to its
    iframe (see packages/app/pixel-agents/src/styles.css) — it needs THIS
    wrapper to have a definite (not just minimum) height, or the whole stage
-   renders at zero visible height inside a normal-flow MDX article. */
+   renders at zero visible height inside a normal-flow MDX article.
+   32rem (512px), not 20rem: subtracting this dock's own toolbar/panel-header/
+   border chrome (~90px) leaves the office/assistant panels' own content area
+   at ~420px, matching ChatApp's own documented floating-widget `minHeight:
+   420` (packages/app/app-browser/src/chat-shell/layout-geometry.ts) — this
+   embed is no longer smaller than the product's own comfortable minimum. */
 .pixel-agents-lab__stage {
-  height: 20rem;
+  height: 32rem;
   border: 1px solid var(--ifm-color-emphasis-300);
   border-radius: var(--ifm-card-border-radius);
   overflow: hidden;
+}
+
+@media (max-width: 700px) {
+  /* Mirrors `.lab-container__body`'s own 700px breakpoint above (16rem ->
+     12rem, a 25% cut): a fixed 32rem box would otherwise dominate an entire
+     phone viewport before the switcher/reset controls are even visible. */
+  .pixel-agents-lab__fallback {
+    min-height: 24rem;
+  }
+
+  .pixel-agents-lab__stage {
+    height: 24rem;
+  }
+}
+
+/* Fullscreen: let the stage absorb the actual growth from the flex-fill
+   chain (`.lab-container__body` -> `.lab-container--fullscreen
+   .pixel-agents-lab` above) instead of staying pinned at its inline height —
+   that mismatch left a large dead gap below a fixed-height stage in
+   fullscreen before this fix. `min-height: 32rem` (not `0`) keeps the same
+   comfortable floor as inline mode: on labs with little surrounding content
+   the stage grows well past it to fill the viewport; on labs with more
+   surrounding panels (e.g. the plugin-tool-picker lab's picker/compare
+   panels) it stops shrinking at this floor instead of collapsing to a
+   sliver, and `.lab-container__body`'s own `overflow-y: auto` (above) lets
+   the user scroll to whatever doesn't fit rather than clipping it. */
+.lab-container--fullscreen .pixel-agents-lab__fallback,
+.lab-container--fullscreen .pixel-agents-lab__stage {
+  flex: 1 1 auto;
+  min-height: 32rem;
 }
 
 /* Execution trace lab (issue #454) --------------------------------------
@@ -728,8 +776,15 @@ div[class^='codeBlockContainer'] {
   gap: 0.75rem;
 }
 
+/* See .pixel-agents-lab's fullscreen comment above: same fix, same reason. */
+.lab-container--fullscreen .execution-trace-lab {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* See .pixel-agents-lab__stage's comment: same fix, same reason. */
 .execution-trace-lab__fallback {
-  min-height: 20rem;
+  min-height: 32rem;
   border: 1px solid var(--ifm-color-emphasis-300);
   border-radius: var(--ifm-card-border-radius);
   overflow: hidden;
@@ -737,10 +792,28 @@ div[class^='codeBlockContainer'] {
 
 /* See .pixel-agents-lab__stage's comment: same fix, same reason. */
 .execution-trace-lab__stage {
-  height: 20rem;
+  height: 32rem;
   border: 1px solid var(--ifm-color-emphasis-300);
   border-radius: var(--ifm-card-border-radius);
   overflow: hidden;
+}
+
+/* See .pixel-agents-lab__stage's 700px breakpoint comment: same fix, same reason. */
+@media (max-width: 700px) {
+  .execution-trace-lab__fallback {
+    min-height: 24rem;
+  }
+
+  .execution-trace-lab__stage {
+    height: 24rem;
+  }
+}
+
+/* See .pixel-agents-lab__stage's fullscreen comment: same fix, same reason. */
+.lab-container--fullscreen .execution-trace-lab__fallback,
+.lab-container--fullscreen .execution-trace-lab__stage {
+  flex: 1 1 auto;
+  min-height: 32rem;
 }
 
 .execution-trace-lab__panel {
@@ -981,6 +1054,12 @@ div[class^='codeBlockContainer'] {
   gap: 0.75rem;
 }
 
+/* See .pixel-agents-lab's fullscreen comment above: same fix, same reason. */
+.lab-container--fullscreen .plugin-tool-picker-lab {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .plugin-tool-picker-lab__picker {
   display: flex;
   flex-direction: column;
@@ -1006,7 +1085,7 @@ div[class^='codeBlockContainer'] {
 }
 
 .plugin-tool-picker-lab__fallback {
-  min-height: 20rem;
+  min-height: 32rem;
   border: 1px solid var(--ifm-color-emphasis-300);
   border-radius: var(--ifm-card-border-radius);
   overflow: hidden;
@@ -1014,10 +1093,28 @@ div[class^='codeBlockContainer'] {
 
 /* See .pixel-agents-lab__stage's comment: same fix, same reason. */
 .plugin-tool-picker-lab__stage {
-  height: 20rem;
+  height: 32rem;
   border: 1px solid var(--ifm-color-emphasis-300);
   border-radius: var(--ifm-card-border-radius);
   overflow: hidden;
+}
+
+/* See .pixel-agents-lab__stage's 700px breakpoint comment: same fix, same reason. */
+@media (max-width: 700px) {
+  .plugin-tool-picker-lab__fallback {
+    min-height: 24rem;
+  }
+
+  .plugin-tool-picker-lab__stage {
+    height: 24rem;
+  }
+}
+
+/* See .pixel-agents-lab__stage's fullscreen comment: same fix, same reason. */
+.lab-container--fullscreen .plugin-tool-picker-lab__fallback,
+.lab-container--fullscreen .plugin-tool-picker-lab__stage {
+  flex: 1 1 auto;
+  min-height: 32rem;
 }
 
 .plugin-tool-picker-lab__compare {
