@@ -1,5 +1,5 @@
 import MDXComponentsOriginal from '@theme-original/MDXComponents'
-import { LabReset, LiveLab, LiveSessionGate } from '../live-lab'
+import { LabReset, LiveLab, LiveSessionGate, PixelAgentsLab } from '../live-lab'
 import { RichContentPlayground } from '../playground'
 
 // `@theme-original/MDXComponents` is a Docusaurus webpack alias with no real type
@@ -8,16 +8,18 @@ import { RichContentPlayground } from '../playground'
 // narrowing the spread down to only the three keys added below.
 const originalComponents = MDXComponentsOriginal as Record<string, unknown>
 
-// Registers the reusable MDX live-lab framework (issue #451) and the
-// rich-content renderer playground (issue #455) as global MDX components, so
-// any docs page can drop `<LiveLab>`, `<LiveSessionGate>`, `<LabReset>`, and
-// `<RichContentPlayground>` straight into its content with no per-page import.
+// Registers the reusable MDX live-lab framework (issue #451), the
+// rich-content renderer playground (issue #455), and the Pixel Agents lab
+// (issue #452) as global MDX components, so any docs page can drop
+// `<LiveLab>`, `<LiveSessionGate>`, `<LabReset>`, `<RichContentPlayground>`,
+// and `<PixelAgentsLab>` straight into its content with no per-page import.
 const components: Record<string, unknown> = {
   ...originalComponents,
   LiveLab,
   LiveSessionGate,
   LabReset,
-  RichContentPlayground
+  RichContentPlayground,
+  PixelAgentsLab
 }
 
 export default components

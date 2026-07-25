@@ -59,9 +59,16 @@ const migrateLegacyRecord = (
   updatedAt: legacy.updatedAt
 })
 
-const pixelAgentsWorkspaceStore = createWorkspaceStore<StoredPixelAgentsWorkspaceRecord>(
-  PIXEL_AGENTS_DATABASE_NAME
-)
+// Exposed so a host that embeds the stage OUTSIDE the main product (e.g. the
+// docs site's isolated live-lab session) can point it at a differently-named
+// IndexedDB database, keeping its demo agents' seats/layout from colliding
+// with the same-origin product's own `tinytinkerer-pixel-agents` database.
+export const createPixelAgentsWorkspaceStore = (
+  databaseName: string = PIXEL_AGENTS_DATABASE_NAME
+): WorkspaceStore<StoredPixelAgentsWorkspaceRecord> =>
+  createWorkspaceStore<StoredPixelAgentsWorkspaceRecord>(databaseName)
+
+const pixelAgentsWorkspaceStore = createPixelAgentsWorkspaceStore()
 
 // The result of loading the workspace record. `migratedFromLegacy` is the ONLY
 // reliable signal that a pre-#430 record was just upgraded in memory (the

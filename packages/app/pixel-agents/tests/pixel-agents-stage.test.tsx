@@ -3,11 +3,15 @@ import '@testing-library/jest-dom/vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatEvent } from '@tinytinkerer/contracts'
-import type { PixelAgentsConversation, PixelAgentsStageActions } from '../src/stage-props'
+import type {
+  PixelAgentsConversation,
+  PixelAgentsStageActions,
+  PixelAgentsStageProps
+} from '../src/stage-props'
 import type { LoadedPixelAgentsWorkspace } from '../src/workspace-db'
 
 const workspace = vi.hoisted(() => ({
-  load: vi.fn<() => Promise<LoadedPixelAgentsWorkspace>>(),
+  load: vi.fn<(store?: { load: unknown; save: unknown }) => Promise<LoadedPixelAgentsWorkspace>>(),
   save: vi.fn<(value: unknown) => Promise<void>>()
 }))
 
@@ -86,17 +90,30 @@ const postFromOffice = (iframe: HTMLIFrameElement, message: unknown): void => {
   window.dispatchEvent(event)
 }
 
-const renderStage = (props: {
-  conversations: PixelAgentsConversation[]
-  activeConversationId: string | undefined
-  actions: PixelAgentsStageActions
-}) =>
+const renderStage = (
+  props: {
+    conversations: PixelAgentsConversation[]
+    activeConversationId: string | undefined
+    actions: PixelAgentsStageActions
+  } & Partial<
+    Pick<
+      PixelAgentsStageProps,
+      'resolveUpstreamUrl' | 'workspaceDatabaseName' | 'dockLayoutStorageKey' | 'onBootstrapError'
+    >
+  >
+) =>
   render(
     <PixelAgentsWorkspace
       assistant={<div>assistant</div>}
       conversations={props.conversations}
       activeConversationId={props.activeConversationId}
       actions={props.actions}
+      {...(props.resolveUpstreamUrl ? { resolveUpstreamUrl: props.resolveUpstreamUrl } : {})}
+      {...(props.workspaceDatabaseName
+        ? { workspaceDatabaseName: props.workspaceDatabaseName }
+        : {})}
+      {...(props.dockLayoutStorageKey ? { dockLayoutStorageKey: props.dockLayoutStorageKey } : {})}
+      {...(props.onBootstrapError ? { onBootstrapError: props.onBootstrapError } : {})}
     />
   )
 
@@ -494,7 +511,8 @@ describe('PixelAgentsWorkspace office-driven actions', () => {
           1: { palette: 1, hueShift: 10, seatId: 'desk-1' },
           2: { palette: 2, hueShift: 20 }
         }
-      })
+      }),
+      expect.anything()
     )
   })
 
@@ -531,7 +549,82 @@ describe('PixelAgentsWorkspace office-driven actions', () => {
         agentMeta: {
           1: { palette: 1, hueShift: 10, seatId: 'desk-1' }
         }
-      })
+      }),
+      expect.anything()
     )
+  })
+})
+
+describe('PixelAgentsWorkspace host contract (issue #452)', () => {
+  it('resolves upstream assets through a supplied resolveUpstreamUrl instead of document.baseURI', async () => {
+    const resolveUpstreamUrl = vi.fn((path: string) => `https://docs.example/upstream/${path}`)
+    const conversations = [conversation({ id: 'conv-a', title: 'First' })]
+    const { container } = renderStage({
+      conversations,
+      activeConversationId: 'conv-a',
+      actions: actions(),
+      resolveUpstreamUrl
+    })
+    const iframe = container.querySelector('iframe')
+    if (!iframe?.contentWindow) throw new Error('iframe not mounted')
+    const postSpy = spyOnPostMessage(iframe)
+
+    await bootstrap(iframe, postSpy)
+
+    expect(resolveUpstreamUrl).toHaveBeenCalledWith('index.html')
+    expect(resolveUpstreamUrl).toHaveBeenCalledWith('tinytinkerer-bootstrap.json')
+    // The `tinytinkerer-parent-origin` query param is appended on top of the
+    // resolver's own URL, so only the origin+pathname are asserted here.
+    expect(iframe.src.startsWith('https://docs.example/upstream/index.html')).toBe(true)
+    expect(fetch).toHaveBeenCalledWith('https://docs.example/upstream/tinytinkerer-bootstrap.json')
+  })
+
+  it('reports bootstrap failure (and recovery) through onBootstrapError instead of only its own inline UI', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({}) })
+    )
+    const onBootstrapError = vi.fn()
+    const conversations = [conversation({ id: 'conv-a', title: 'First' })]
+    const { container } = renderStage({
+      conversations,
+      activeConversationId: 'conv-a',
+      actions: actions(),
+      onBootstrapError
+    })
+    const iframe = container.querySelector('iframe')
+    if (!iframe?.contentWindow) throw new Error('iframe not mounted')
+    const postSpy = spyOnPostMessage(iframe)
+
+    // Fires once on mount with the initial "no error yet" value.
+    expect(onBootstrapError).toHaveBeenCalledWith(null)
+
+    await bootstrap(iframe, postSpy)
+
+    expect(onBootstrapError).toHaveBeenLastCalledWith(expect.stringContaining('500'))
+  })
+
+  it('persists the workspace through a caller-supplied database name, not the shared product default', async () => {
+    const conversations = [conversation({ id: 'conv-a', title: 'First' })]
+    const { container } = renderStage({
+      conversations,
+      activeConversationId: 'conv-a',
+      actions: actions(),
+      workspaceDatabaseName: 'tinytinkerer-docs-lab-pixel-agents'
+    })
+    const iframe = container.querySelector('iframe')
+    if (!iframe?.contentWindow) throw new Error('iframe not mounted')
+    const postSpy = spyOnPostMessage(iframe)
+
+    // loadPixelAgentsWorkspace/savePixelAgentsWorkspace are mocked at the
+    // module level (see the vi.mock above), so this only verifies the load
+    // path was reached at all with a store instance — the real store-name
+    // plumbing (a distinct IndexedDB database per name) is covered by
+    // workspace-db.test.ts's createPixelAgentsWorkspaceStore tests.
+    await bootstrap(iframe, postSpy)
+    expect(workspace.load).toHaveBeenCalledTimes(1)
+    const passedStore = workspace.load.mock.calls[0]?.[0]
+    expect(typeof passedStore?.load).toBe('function')
+    expect(typeof passedStore?.save).toBe('function')
   })
 })

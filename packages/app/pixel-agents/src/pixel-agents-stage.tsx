@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DockablePanelLayout, useLiveChatActivity } from '@tinytinkerer/app-shell'
-import type { ChatEvent } from '@tinytinkerer/contracts'
-import { messagesForChatEvent } from './activity'
+import { isAwaitingInput, messagesForChatEvent } from './activity'
 import {
   createPixelBootstrapMessages,
   parsePixelAgentsBootstrap,
@@ -13,25 +12,18 @@ import {
 import type { PixelAgentsConversation, PixelAgentsStageProps } from './stage-props'
 import {
   adoptLegacySeat,
-  loadPixelAgentsWorkspace,
+  createPixelAgentsWorkspaceStore,
   resolveAgentNumber,
   retireAgentNumber,
+  loadPixelAgentsWorkspace,
   savePixelAgentsWorkspace,
   type PixelAgentsWorkspaceRecord
 } from './workspace-db'
 
-const upstreamUrl = (path: string): string => new URL(`upstream/${path}`, document.baseURI).href
+const defaultUpstreamUrl = (path: string): string =>
+  new URL(`upstream/${path}`, document.baseURI).href
 
-const hasCompletedRun = (events: readonly ChatEvent[]): boolean =>
-  events.some((event) => event.type === 'agent.run.completed')
-
-// Whether an idle agent should show the office's awaiting-input state. An
-// UNHYDRATED conversation (events not yet loaded — after a reload, every
-// background conversation) must read as NOT awaiting: its empty events array
-// says nothing about whether a run ever completed, and marking every
-// backgrounded agent as awaiting input would be wrong in the common case.
-const isAwaitingInput = (conversation: PixelAgentsConversation): boolean =>
-  conversation.eventsLoaded && !hasCompletedRun(conversation.events)
+const DEFAULT_DOCK_LAYOUT_STORAGE_KEY = 'tinytinkerer:pixel-agents-workspace-layout:v1'
 
 type WorkspaceMemo = Pick<
   PixelAgentsWorkspaceRecord,
@@ -97,7 +89,11 @@ export const PixelAgentsWorkspace = ({
   assistant,
   conversations,
   activeConversationId,
-  actions
+  actions,
+  resolveUpstreamUrl,
+  workspaceDatabaseName,
+  dockLayoutStorageKey = DEFAULT_DOCK_LAYOUT_STORAGE_KEY,
+  onBootstrapError
 }: PixelAgentsStageProps): React.JSX.Element => {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const conversationsRef = useRef(conversations)
@@ -106,6 +102,16 @@ export const PixelAgentsWorkspace = ({
   // so never re-navigates the iframe) just because a caller passes a fresh
   // `actions` object identity on some unrelated re-render.
   const actionsRef = useRef(actions)
+  const upstreamUrl = useCallback(
+    (path: string): string => (resolveUpstreamUrl ?? defaultUpstreamUrl)(path),
+    [resolveUpstreamUrl]
+  )
+  // Constructed once per mount: a host embedding this stage outside the main
+  // product (issue #452) picks a distinct `workspaceDatabaseName` up front,
+  // it never changes for the life of the mounted stage.
+  const [workspaceStore] = useState(() => createPixelAgentsWorkspaceStore(workspaceDatabaseName))
+  const onBootstrapErrorRef = useRef(onBootstrapError)
+  onBootstrapErrorRef.current = onBootstrapError
   const bootstrappingRef = useRef(false)
   // Imperative source of truth (always fresh, unlike React state, for reads
   // inside the postMessage handler and the reconciliation effect below).
@@ -151,20 +157,23 @@ export const PixelAgentsWorkspace = ({
     [postToPixelAgents]
   )
 
-  const persistWorkspace = useCallback((update: Partial<WorkspaceMemo>): void => {
-    workspaceRef.current = { ...workspaceRef.current, ...update }
-    if (update.agentNumbers) {
-      setAgentNumbers(update.agentNumbers)
-    }
-    const snapshot = workspaceRef.current
-    saveQueueRef.current = saveQueueRef.current
-      .catch(() => undefined)
-      .then(() => savePixelAgentsWorkspace(snapshot))
-      .then(
-        () => setStorageError(null),
-        () => setStorageError('Pixel Agents layout changes could not be saved in this browser.')
-      )
-  }, [])
+  const persistWorkspace = useCallback(
+    (update: Partial<WorkspaceMemo>): void => {
+      workspaceRef.current = { ...workspaceRef.current, ...update }
+      if (update.agentNumbers) {
+        setAgentNumbers(update.agentNumbers)
+      }
+      const snapshot = workspaceRef.current
+      saveQueueRef.current = saveQueueRef.current
+        .catch(() => undefined)
+        .then(() => savePixelAgentsWorkspace(snapshot, workspaceStore))
+        .then(
+          () => setStorageError(null),
+          () => setStorageError('Pixel Agents layout changes could not be saved in this browser.')
+        )
+    },
+    [workspaceStore]
+  )
 
   // Reverse lookup for `focusAgent`/`closeAgent`, which name an agent NUMBER;
   // the store's actions take a conversation id.
@@ -258,7 +267,7 @@ export const PixelAgentsWorkspace = ({
             throw new Error(`Pixel Agents bootstrap request failed (${response.status})`)
           return parsePixelAgentsBootstrap(await response.json())
         }),
-        loadPixelAgentsWorkspace()
+        loadPixelAgentsWorkspace(workspaceStore)
       ])
         .then(([bootstrap, { record: saved, migratedFromLegacy }]) => {
           const currentConversations = conversationsRef.current
@@ -341,7 +350,15 @@ export const PixelAgentsWorkspace = ({
     src.searchParams.set('tinytinkerer-parent-origin', window.location.origin)
     setPixelAgentsUrl(src.href)
     return () => window.removeEventListener('message', handleMessage)
-  }, [conversationIdForAgent, persistWorkspace, postMany])
+  }, [conversationIdForAgent, persistWorkspace, postMany, upstreamUrl, workspaceStore])
+
+  // Notifies a host-provided fallback surface (issue #452) whenever bootstrap
+  // failure state changes, including the initial "no error yet" mount value —
+  // a host that never sees this fire (no `onBootstrapError` passed) is
+  // unaffected either way.
+  useEffect(() => {
+    onBootstrapErrorRef.current?.(bootstrapError)
+  }, [bootstrapError])
 
   // Reconcile the office's agent set against the current conversation list
   // (issue #430): a conversation with no number yet is new -> assign one and
@@ -445,7 +462,7 @@ export const PixelAgentsWorkspace = ({
       })}
       <DockablePanelLayout
         title="Pixel Agents workspace"
-        storageKey="tinytinkerer:pixel-agents-workspace-layout:v1"
+        storageKey={dockLayoutStorageKey}
         panels={[
           { id: 'pixel-agents', title: 'Pixel Agents', content: pixelAgents },
           { id: 'assistant', title: 'Assistant', content: assistant }

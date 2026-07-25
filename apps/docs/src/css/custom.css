@@ -546,3 +546,108 @@ div[class^='codeBlockContainer'] {
   background: var(--lab-warning-bg);
   color: var(--lab-warning-text);
 }
+
+/* Pixel Agents lab (issue #452) ----------------------------------------------
+   The textual conversation switcher is always present (accessible fallback);
+   the graphical office (rendered by @tinytinkerer/pixel-agents, which ships
+   its own internal styling) is an additional surface shown alongside it only
+   when usePixelAgentsCapability allows it. See live-lab/pixel-agents/. */
+
+.pixel-agents-lab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pixel-agents-lab__switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  background: var(--ifm-color-emphasis-100);
+}
+
+.pixel-agents-lab__switcher-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pixel-agents-lab__switcher-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pixel-agents-lab__switcher-select {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pixel-agents-lab__switcher-select[aria-current='true'] {
+  border-color: var(--ifm-color-primary);
+  background: var(--ifm-color-emphasis-200);
+  font-weight: 600;
+}
+
+.pixel-agents-lab__switcher-select:focus-visible,
+.pixel-agents-lab__switcher-delete:focus-visible,
+.pixel-agents-lab__switcher-create:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+.pixel-agents-lab__switcher-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pixel-agents-lab__switcher-status {
+  flex-shrink: 0;
+  font-size: 0.8em;
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
+}
+
+.pixel-agents-lab__switcher-delete,
+.pixel-agents-lab__switcher-create {
+  flex-shrink: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-background-surface-color);
+  cursor: pointer;
+}
+
+.pixel-agents-lab__switcher-delete[aria-pressed='true'] {
+  border-color: var(--lab-error-border);
+  background: var(--lab-error-bg);
+  color: var(--lab-error-text);
+}
+
+.pixel-agents-lab__switcher-create {
+  align-self: flex-start;
+  font-weight: 600;
+}
+
+.pixel-agents-lab__fallback {
+  min-height: 20rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  overflow: hidden;
+}

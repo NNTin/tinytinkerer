@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { WorkspaceStore } from '@tinytinkerer/app-shell'
 import {
   adoptLegacySeat,
+  createPixelAgentsWorkspaceStore,
   loadPixelAgentsWorkspace,
   resolveAgentNumber,
   retireAgentNumber,
@@ -198,6 +199,23 @@ describe('Pixel Agents workspace persistence', () => {
       const agentNumbers = {}
       const result = adoptLegacySeat(agentNumbers, { 1: { palette: 3 } }, [])
       expect(result).toBe(agentNumbers)
+    })
+  })
+
+  describe('createPixelAgentsWorkspaceStore', () => {
+    // Database creation is deferred until first use (see workspace-store.ts),
+    // so constructing a store never touches IndexedDB — safe to assert on the
+    // shape/identity here without a real IndexedDB implementation available.
+    it('returns a load/save store for the default (product) database when called with no name', () => {
+      const store = createPixelAgentsWorkspaceStore()
+      expect(typeof store.load).toBe('function')
+      expect(typeof store.save).toBe('function')
+    })
+
+    it('returns independent store instances for distinct database names (issue #452 isolation)', () => {
+      const productStore = createPixelAgentsWorkspaceStore('tinytinkerer-pixel-agents')
+      const docsStore = createPixelAgentsWorkspaceStore('tinytinkerer-docs-lab-pixel-agents')
+      expect(productStore).not.toBe(docsStore)
     })
   })
 })

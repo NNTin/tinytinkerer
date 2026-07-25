@@ -16,3 +16,6 @@ export type {
   PixelAgentsStageActions,
   PixelAgentsStageProps
 } from './stage-props'
+export { conversationActivityStatus } from './activity'
+export type { PixelAgentsActivityStatus } from './activity'
+export { createPixelAgentsWorkspaceStore } from './workspace-db'

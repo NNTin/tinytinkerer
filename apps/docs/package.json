@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "tinytinkerer": {
-    "architectureRole": "browser-shell"
+    "architectureRole": "integrated-shell",
+    "stagePackage": "@tinytinkerer/pixel-agents"
   },
   "scripts": {
-    "dev": "docusaurus start --host 127.0.0.1 --port 3112 --no-open",
+    "dev": "pnpm -w prepare:pixel-agents && docusaurus start --host 127.0.0.1 --port 3112 --no-open",
     "start": "docusaurus start",
-    "build": "docusaurus build",
+    "build": "pnpm -w prepare:pixel-agents && docusaurus build",
     "lint": "eslint tests docusaurus.config.ts sidebars.ts site-config.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -21,6 +22,8 @@
     "@mdx-js/react": "3.1.1",
     "@mermaid-js/layout-elk": "0.1.9",
     "@tinytinkerer/app-browser": "workspace:*",
+    "@tinytinkerer/app-shell": "workspace:*",
+    "@tinytinkerer/pixel-agents": "workspace:*",
     "prism-react-renderer": "2.4.1",
     "react": "19.2.6",
     "react-dom": "19.2.6"

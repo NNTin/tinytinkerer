@@ -18,6 +18,9 @@ export default defineConfig({
       ),
       '@docusaurus/useDocusaurusContext': fileURLToPath(
         new URL('./src/test/docusaurus-use-docusaurus-context-stub.ts', import.meta.url)
+      ),
+      '@docusaurus/useBaseUrl': fileURLToPath(
+        new URL('./src/test/docusaurus-use-base-url-stub.ts', import.meta.url)
       )
     }
   },
