@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
 import type { DocsLabCustomFields } from '../../site-config'
 
@@ -27,12 +28,28 @@ export const useDocsLabRuntimeConfig = (): DocsLabRuntimeConfig => {
     ...FALLBACK_CUSTOM_FIELDS,
     ...(siteConfig.customFields as Partial<DocsLabCustomFields> | undefined)
   }
+  const {
+    tinyEdgeBaseUrl,
+    tinyGithubClientId,
+    tinySentryDsn,
+    tinySentryEnvironment,
+    tinyProductBaseUrl
+  } = customFields
 
-  return {
-    edgeBaseUrl: customFields.tinyEdgeBaseUrl,
-    githubClientId: customFields.tinyGithubClientId,
-    sentryDsn: customFields.tinySentryDsn,
-    sentryEnvironment: customFields.tinySentryEnvironment,
-    productBaseUrl: customFields.tinyProductBaseUrl
-  }
+  // Memoized by the underlying primitive values (stable for the lifetime of the
+  // page — this is static site config baked in at build time), NOT a fresh object
+  // literal every render: ClientRuntime's bootstrap effect (client-runtime.tsx)
+  // depends on this value by reference, and an unstable reference there re-fires
+  // the effect on every render it causes, which re-sets state, which re-renders —
+  // an infinite loop that pegs the tab's CPU on any page with a <LiveLab>.
+  return useMemo<DocsLabRuntimeConfig>(
+    () => ({
+      edgeBaseUrl: tinyEdgeBaseUrl,
+      githubClientId: tinyGithubClientId,
+      sentryDsn: tinySentryDsn,
+      sentryEnvironment: tinySentryEnvironment,
+      productBaseUrl: tinyProductBaseUrl
+    }),
+    [tinyEdgeBaseUrl, tinyGithubClientId, tinySentryDsn, tinySentryEnvironment, tinyProductBaseUrl]
+  )
 }

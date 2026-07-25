@@ -48,8 +48,11 @@ container, so its responsive, loading, warning, error, and fullscreen treatment 
 across labs from day one:
 
 <LabContainer title="Preview lab" status="ready">
+  {/* A JS expression child, not literal JSX text — keeps MDX's markdown-paragraph
+  parser from re-wrapping this in its own nested <p> (which produces invalid
+  <p> markup and a hydration error) regardless of how prettier reflows the line. */}
   <p className="lab-container__placeholder">
-    Ready content, such as an embedded lab, renders here.
+    {'Ready content, such as an embedded lab, renders here.'}
   </p>
 </LabContainer>
 <LabContainer title="Preview lab" status="loading" />
