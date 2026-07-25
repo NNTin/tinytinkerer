@@ -475,6 +475,7 @@ jobs:
                 `- IDE: ${previewUrl}/ide/`,
                 `- Mermaid: ${previewUrl}/mermaid/`,
                 `- Pixel Agents: ${previewUrl}/pixel-agents/`,
+                `- Docs: ${previewUrl}/docs/`,
                 `- Test report: ${previewUrl}/test-report/`,
                 '',
                 `Preview: ${previewUrl}`,

@@ -1,4 +1,4 @@
-import type { Config } from '@docusaurus/types'
+import type { Config, PluginModule } from '@docusaurus/types'
 import { themes as prismThemes } from 'prism-react-renderer'
 import {
   resolveDocsBaseUrl,
@@ -43,6 +43,32 @@ const DARK_THEME_COLOR = '#1b140d'
 // second static directory — docs itself stays a browser-shell package with no
 // @tinytinkerer/* dependency, per scripts/check-boundaries.mjs.
 const brandAssetsDir = '../../packages/brand/brand-assets/assets/generated'
+
+// @tinytinkerer/content-mermaid loads its browser runtime via Vite's `?url`
+// suffix (`mermaid/dist/mermaid.min.js?url`) so the specialized renderer can
+// lazy-load it via a <script src> instead of bundling mermaid's multi-MB UMD
+// build into the main chunk. Vite understands `?url` natively; webpack (which
+// Docusaurus builds with) does not — without this rule, webpack falls back to
+// importing the file as a plain JS module, which has no exports, so the
+// resulting URL is `undefined` and the rich-content playground's/interactive
+// live labs' Mermaid examples never render a real diagram (see docs/extending/
+// rich-content-playground.mdx and interactive-labs.md). This rule gives `?url`
+// imports the same "emit the file, give me its URL" behavior Vite provides.
+const supportViteUrlSuffixImportsPlugin: PluginModule = () => ({
+  name: 'support-vite-url-suffix-imports',
+  configureWebpack: () => ({
+    module: {
+      rules: [
+        {
+          resourceQuery: /^\?url$/,
+          type: 'asset/resource',
+          generator: { filename: 'assets/vite-url-imports/[contenthash][ext]' }
+        }
+      ]
+    },
+    mergeStrategy: { 'module.rules': 'prepend' }
+  })
+})
 
 // The plugin ships no `types`/`exports` field in package.json, so this stays
 // structurally typed rather than importing its PluginOptions type.
@@ -114,6 +140,7 @@ const config: Config = {
     '@docusaurus/theme-mermaid',
     ['@easyops-cn/docusaurus-search-local', searchLocalOptions]
   ],
+  plugins: [supportViteUrlSuffixImportsPlugin],
   customFields: { ...docsLabCustomFields },
   presets: [
     [
