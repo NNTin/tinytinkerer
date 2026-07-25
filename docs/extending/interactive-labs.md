@@ -105,3 +105,6 @@ See also:
 - [Rich content renderer playground](./rich-content-playground.mdx) — a sibling MDX framework for
   a client-side-only demo (parsing and rendering, no backend session) built on the same
   `<BrowserOnly>` + `React.lazy` isolation pattern this page documents
+- [Live agent execution trace lab](./execution-trace.mdx) — a second ready-made lab, built on this
+  same framework and on `PixelAgentsLab`'s office, that turns a visitor's own prompt into an
+  ordered, expandable trace of the live run

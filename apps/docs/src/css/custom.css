@@ -61,6 +61,12 @@
   --lab-error-bg: #fee2e2;
   --lab-error-border: #ef4444;
   --lab-error-text: #7f1d1d;
+  --lab-success-bg: #dcfce7;
+  --lab-success-border: #22c55e;
+  --lab-success-text: #14532d;
+  --lab-neutral-bg: #f6f2ec;
+  --lab-neutral-border: #dccdb9;
+  --lab-neutral-text: #57534e;
 }
 
 [data-theme='dark'] {
@@ -99,6 +105,12 @@
   --lab-error-bg: #3a1414;
   --lab-error-border: #ef4444;
   --lab-error-text: #fecaca;
+  --lab-success-bg: #0f2e1c;
+  --lab-success-border: #22c55e;
+  --lab-success-text: #bbf7d0;
+  --lab-neutral-bg: #2a2016;
+  --lab-neutral-border: #4a3c2c;
+  --lab-neutral-text: #cbbfae;
 }
 
 /* Typography & long-form content ----------------------------------------- */
@@ -650,4 +662,251 @@ div[class^='codeBlockContainer'] {
   border: 1px solid var(--ifm-color-emphasis-300);
   border-radius: var(--ifm-card-border-radius);
   overflow: hidden;
+}
+
+/* Execution trace lab (issue #454) --------------------------------------
+   Mirrors the Pixel Agents lab's layout (switcher + graphical office/
+   fallback), but the office's `assistant` pane is an ordered, expandable
+   ChatEvent/turn-activity trace (see live-lab/execution-trace/) instead of a
+   chat transcript. Every trace entry stays readable with no colour,
+   animation, or the office rendered at all (acceptance criterion). */
+
+.execution-trace-lab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.execution-trace-lab__fallback {
+  min-height: 20rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  overflow: hidden;
+}
+
+.execution-trace-lab__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.9rem;
+}
+
+.execution-trace-lab__composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.execution-trace-lab__composer-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.execution-trace-lab__composer-input {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  padding: 0.6rem 0.75rem;
+}
+
+.execution-trace-lab__composer-input:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+.execution-trace-lab__composer-model {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ifm-color-emphasis-600, #6c675a);
+}
+
+.execution-trace-lab__composer-model code {
+  font-size: 0.85em;
+}
+
+.execution-trace-lab__composer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.execution-trace-lab__composer-actions button {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.4rem;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.75rem;
+}
+
+.execution-trace-lab__composer-actions button:hover:not(:disabled) {
+  background: var(--ifm-color-emphasis-100);
+}
+
+.execution-trace-lab__composer-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.execution-trace-lab__composer-actions button:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+.execution-trace-lab__composer-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--ifm-color-emphasis-600, #6c675a);
+}
+
+.execution-trace-lab__empty {
+  margin: 0;
+  padding: 0.9rem;
+  border: 1px dashed var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  color: var(--ifm-color-emphasis-600, #6c675a);
+  font-size: 0.85rem;
+}
+
+.execution-trace-lab__runs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.execution-trace-lab__run {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  background: var(--ifm-color-emphasis-100);
+}
+
+.execution-trace-lab__run-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.execution-trace-lab__run-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.execution-trace-lab__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  border: 1px solid var(--lab-neutral-border);
+  border-radius: 999px;
+  background: var(--lab-neutral-bg);
+  color: var(--lab-neutral-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.6rem;
+}
+
+.execution-trace-lab__badge--success {
+  border-color: var(--lab-success-border);
+  background: var(--lab-success-bg);
+  color: var(--lab-success-text);
+}
+
+.execution-trace-lab__badge--warning {
+  border-color: var(--lab-warning-border);
+  background: var(--lab-warning-bg);
+  color: var(--lab-warning-text);
+}
+
+.execution-trace-lab__badge--error {
+  border-color: var(--lab-error-border);
+  background: var(--lab-error-bg);
+  color: var(--lab-error-text);
+}
+
+.execution-trace-lab__requests {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-background-surface-color);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.execution-trace-lab__requests summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.execution-trace-lab__requests summary:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+.execution-trace-lab__requests ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.execution-trace-lab__requests-hint {
+  margin: 0.5rem 0 0;
+  color: var(--ifm-color-emphasis-600, #6c675a);
+  font-size: 0.78rem;
+}
+
+.execution-trace-lab__notice {
+  margin: 0;
+  border: 1px solid var(--lab-warning-border);
+  border-radius: 0.5rem;
+  background: var(--lab-warning-bg);
+  color: var(--lab-warning-text);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.execution-trace-lab__notice--error {
+  border-color: var(--lab-error-border);
+  background: var(--lab-error-bg);
+  color: var(--lab-error-text);
+}
+
+.execution-trace-lab__notice--info {
+  border-color: var(--ifm-color-emphasis-300);
+  background: var(--ifm-color-emphasis-100);
+  color: var(--ifm-font-color-base);
+}
+
+.execution-trace-lab__synthesis {
+  border-top: 1px dashed var(--ifm-color-emphasis-300);
+  padding-top: 0.5rem;
+}
+
+.execution-trace-lab__synthesis-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ifm-color-emphasis-600, #6c675a);
 }

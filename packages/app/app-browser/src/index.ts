@@ -119,7 +119,7 @@ export {
   useGitHubOAuthCallbackController,
   useSettingsSurfaceController
 } from './surfaces'
-export type { ChatComposer } from './surfaces'
+export type { ChatComposer, ChatSurfaceController } from './surfaces'
 export { ContextGauge, ContextGaugeSlot, useContextGauge } from './context-gauge'
 export type { ContextGaugeProps } from './context-gauge'
 export { ContextInspectorSlot, useContextInspector } from './context-inspector'
@@ -147,6 +147,8 @@ export { TurnActivityPanel, toolLabel } from './turn-activity-panel'
 export type { ResolveActivitySummarizer } from './turn-activity-panel'
 export type {
   ChatEvent,
+  InspectorEntry,
+  InspectorRequestPayload,
   McpDiscoveryResult,
   McpServerConfig,
   McpToolMeta,

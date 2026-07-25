@@ -22,6 +22,9 @@ new integrated application workspace alongside Canvas, the IDE, Mermaid, and Pix
 - [Rich content renderer playground](./rich-content-playground.mdx) — edit markdown and see it
   parsed and rendered through the real content platform, with the semantic document and selected
   renderer plugin shown alongside it.
+- [Live agent execution trace lab](./execution-trace.mdx) — run your own prompt through the real
+  runtime and watch request preparation, planning, tool activity, failures, and synthesis unfold
+  as an ordered, expandable trace.
 
 ## Next step
 

@@ -1,0 +1,80 @@
+---
+title: Live agent execution trace lab
+---
+
+# Live agent execution trace lab
+
+The lab below runs **your own prompt** through the real docs-isolated TinyTinkerer runtime and
+renders every step of that live agent run — request preparation, planning, reasoning, tool calls,
+failures, and the final synthesized answer — as an ordered, expandable trace. It contacts the live
+backend and may consume model quota, like every lab built on the [interactive live
+labs](./interactive-labs.md) framework.
+
+<ExecutionTraceLab title="Try the execution trace lab" />
+
+## What the trace shows
+
+Every entry in the trace comes from the SAME `ChatEvent` stream and turn-activity contracts the
+product itself renders — there is no parallel, docs-only instrumentation format:
+
+- **Request preparation** — for each run, the model and the tools advertised to it for every
+  model call captured during that run, read from the same `InspectorEntry` contract the developer
+  [context inspector plugin](../plugins-and-tools/plugin-infrastructure.md) uses (off by default —
+  enable "Context inspector (developer)" in Settings to populate this section). The "Open request
+  inspector" control next to the composer opens the exact same sanitized, isolated panel — it
+  never shows authentication headers, and it only ever shows this conversation's own captured
+  requests.
+- **Reasoning & activity** — the model's streamed thinking (when the provider exposes it) and the
+  chronological plan/tool-call tree, rendered by the exact same `TurnActivityPanel` the chat
+  surfaces use, including each plugin's own tool-specific input/output summarizer where one is
+  registered.
+- **Final synthesis** — the assistant's completed answer, rendered through the same content
+  runtime as the product's own chat surface.
+- **Distinct terminal states** — a run that completed, one you cancelled, one that hit a rate
+  limit, one where a tool call was denied, and one where a tool genuinely failed all end in a
+  differently labeled (glyph + word, never colour alone) badge, so the difference reads without
+  colour vision or a screen that renders CSS.
+
+## Synchronized with Pixel Agents
+
+The trace panel is the exact `assistant` pane handed to the [Pixel Agents](./interactive-labs.md)
+office for the active conversation, so the office's agent state (running, using a tool, awaiting
+input, completed) and the trace's own live badge are always the SAME projection of the SAME
+event stream — never two competing status vocabularies. On a narrow viewport, under
+`prefers-reduced-motion`, or if the office's asset bundle fails to bootstrap, the office is
+replaced by a plain fallback and the trace — and the accessible conversation switcher above it —
+keep working exactly the same, with no dependency on colour, animation, or the pixel-art office.
+
+## Cancellation, retry, and reset
+
+- **Send** starts a new live request against the model.
+- **Stop** cancels the in-flight request. It does not start a new one, and the run it cancelled
+  is labeled "Cancelled" in the trace rather than being removed.
+- **Retry last prompt** re-sends your most recent prompt as a **distinct** run: a new
+  `agent.run.started`…`agent.run.completed` sequence is appended to the conversation's event log,
+  and the original run's trace entries are never overwritten or mutated.
+- **Clear trace** removes this conversation's events (no live request is made).
+- **Reset lab session** (bottom of the lab) wipes the entire isolated docs session — every demo
+  conversation, not just this one — and reloads the page; it never touches your real TinyTinkerer
+  conversations or auth token.
+
+## What this reuses
+
+- **The runtime** is the exact docs-isolated `useChatStore`/`useChatSurfaceController` contract
+  every chat surface (web, mobile, widget) already uses — the same `sendPrompt`, `stop`,
+  `rerunLastPrompt`, and `resetConversation` actions, not a lab-specific reimplementation.
+  See [interactive live labs](./interactive-labs.md) for how isolation and the shared docs session
+  work.
+- **The trace** is built by grouping the conversation's own `ChatEvent` log into per-run slices and
+  feeding each slice through `buildTurns` — the exact function the product's own transcript uses —
+  plus a small pure classifier (`deriveRunOutcome`) that reads the same event payloads to label a
+  settled run's outcome. Nothing about a run's content is re-derived or approximated.
+- **Pixel Agents** — see [interactive live labs](./interactive-labs.md#the-built-in-lab-pixelagentslab)
+  for how the office, its accessible conversation-switcher fallback, and workspace isolation work;
+  this lab reuses that machinery unchanged.
+
+See also:
+
+- [Interactive live labs](./interactive-labs.md) — the framework this lab is built on.
+- [Rich content renderer playground](./rich-content-playground.mdx) — a sibling lab with no
+  backend session at all.
