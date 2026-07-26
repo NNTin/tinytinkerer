@@ -1,0 +1,53 @@
+---
+title: Frontmatter must not leak
+unlisted: true
+---
+
+# Corpus fixture
+
+Authored [links](https://example.com), ~~GFM~~, and prose stay intact.
+
+- [x] A task
+- [ ] Another task
+
+| Feature | Preserved |
+| ------- | --------- |
+| GFM     | yes       |
+
+```md
+## Not a real section
+
+import NotExecutable from './inside-a-fence'
+```
+
+## Repeated heading
+
+First occurrence.
+
+### Child section
+
+Child prose.
+
+## Repeated heading
+
+Second occurrence.
+
+## Explicit comment {/* #explicit-comment */}
+
+Comment anchor.
+
+## Explicit classic {#explicit-classic}
+
+Classic anchor.
+
+## The <code>API</code>
+
+Inline markup does not become anchor text.
+
+:::note Supported admonition
+
+## Heading in an admonition
+
+The directive and its authored content stay readable.
+
+:::

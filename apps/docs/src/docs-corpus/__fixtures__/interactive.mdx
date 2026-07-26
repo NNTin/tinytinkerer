@@ -1,0 +1,26 @@
+---
+title: Interactive fixture
+---
+
+import Widget from './Widget'
+export const answer = 42
+
+# MDX fixture
+
+## Duplicate
+
+Visible authored prose with an inline value: {answer}.
+
+<Widget client:load>
+
+## Duplicate
+
+Runtime-owned component content.
+
+</Widget>
+
+## Duplicate
+
+Visible prose after the component.
+
+<Widget value={answer} />

@@ -158,6 +158,9 @@ importers:
       '@mermaid-js/layout-elk':
         specifier: 0.1.9
         version: 0.1.9(mermaid@11.15.0)
+      '@slorber/remark-comment':
+        specifier: 1.0.0
+        version: 1.0.0
       '@tinytinkerer/app-browser':
         specifier: workspace:*
         version: link:../../packages/app/app-browser
@@ -167,6 +170,12 @@ importers:
       '@tinytinkerer/pixel-agents':
         specifier: workspace:*
         version: link:../../packages/app/pixel-agents
+      github-slugger:
+        specifier: 1.5.0
+        version: 1.5.0
+      mdast-util-to-string:
+        specifier: 4.0.0
+        version: 4.0.0
       prism-react-renderer:
         specifier: 2.4.1
         version: 2.4.1(react@19.2.6)
@@ -176,6 +185,24 @@ importers:
       react-dom:
         specifier: 19.2.6
         version: 19.2.6(react@19.2.6)
+      remark-directive:
+        specifier: 3.0.1
+        version: 3.0.1(supports-color@10.2.2)
+      remark-frontmatter:
+        specifier: 5.0.0
+        version: 5.0.0(supports-color@10.2.2)
+      remark-gfm:
+        specifier: 4.0.1
+        version: 4.0.1(supports-color@10.2.2)
+      remark-mdx:
+        specifier: 3.1.1
+        version: 3.1.1(supports-color@10.2.2)
+      remark-parse:
+        specifier: 11.0.0
+        version: 11.0.0(supports-color@10.2.2)
+      unified:
+        specifier: 11.0.5
+        version: 11.0.5
       zod:
         specifier: 4.4.3
         version: 4.4.3

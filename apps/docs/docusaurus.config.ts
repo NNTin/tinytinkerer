@@ -7,6 +7,7 @@ import {
   resolveDocsLabCustomFields,
   resolveProductBaseUrl
 } from './site-config'
+import { documentationCorpusPlugin } from './src/docs-corpus/plugin'
 
 const deployBase = process.env.TINYTINKERER_DEPLOY_BASE
 const baseUrl = resolveDocsBaseUrl(deployBase)
@@ -201,6 +202,7 @@ const config: Config = {
     ['@easyops-cn/docusaurus-search-local', searchLocalOptions]
   ],
   plugins: [
+    documentationCorpusPlugin,
     supportViteUrlSuffixImportsPlugin,
     stubAppBrowserPluginDiscoveryPlugin,
     enableTailwindPostCssPlugin

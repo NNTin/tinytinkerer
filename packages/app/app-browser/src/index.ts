@@ -156,6 +156,15 @@ export type {
   McpDiscoveryResult,
   McpServerConfig,
   McpToolMeta,
+  DocumentationCorpusDocumentArtifact,
+  DocumentationCorpusLoadFailure,
+  DocumentationCorpusLocator,
+  DocumentationCorpusManifest,
+  DocumentationCorpusManifestEntry,
+  DocumentationCorpusOutlineItem,
+  DocumentationCorpusReadTruncation,
+  DocumentationCorpusSchemaVersion,
+  DocumentationCorpusSection,
   ServiceStatus,
   SystemStatus
 } from '@tinytinkerer/contracts'

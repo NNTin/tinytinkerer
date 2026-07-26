@@ -8,6 +8,7 @@
     "src",
     "tests",
     "docusaurus.config.ts",
+    "src/docs-corpus",
     "sidebars.ts",
     "site-config.ts",
     "vitest.config.ts"

@@ -54,6 +54,10 @@ export * from './plugins'
 // its Zod schema; the planner-facing JSON Schema is generated, never duplicated.
 export * from './tool-schema'
 
+// Authored Markdown/MDX documentation corpus wire contracts. The Docusaurus
+// build emits these shapes and later assistant tools consume them lazily.
+export * from './documentation-corpus'
+
 // Host↔plugin presentation view-models (status gauge + context inspector). Split
 // out of ./plugins to contain its growth; still the host↔plugin boundary contract,
 // so it stays in contracts (the only layer the host can import). See ./plugin-views.
