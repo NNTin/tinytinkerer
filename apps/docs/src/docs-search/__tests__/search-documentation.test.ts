@@ -2,14 +2,41 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { __resetGlobalData, __setPluginData } from '../../test/generated-global-data-stub'
 import {
   buildFixtureSearchIndex,
+  buildOrderingFixtureSearchIndex,
   PAGE_A_URL,
-  PAGE_B_URL
+  PAGE_B_URL,
+  PAGE_F_URL,
+  PAGE_G_URL,
+  PAGE_H_URL
 } from '../__fixtures__/build-fixture-index'
 import { resetCorpusRefMapCacheForTests } from '../corpus-ref-map'
-import { resetPrivateIndexCacheForTests } from '../private-index-adapter'
+import { resetSearchWorkerModuleCacheForTests } from '../private-worker-adapter'
 import { searchDocumentation } from '../search-documentation'
 
-const SITE_CONFIG = { baseUrl: '/', trailingSlash: true }
+/**
+ * The private worker is driven by the **real** upstream `SearchWorker` here
+ * rather than a hand-written stub, so this end-to-end composition test exercises
+ * genuine query behavior, ordering and result shapes. `searchByWorker.js` itself
+ * only exists to wrap that class in a `Worker` + Comlink RPC, which jsdom has
+ * no use for — so it is replaced with a direct call into the same class. See
+ * private-worker-contract.test.ts for the contract this relies on.
+ */
+vi.mock('@easyops-cn/docusaurus-search-local/dist/client/client/theme/searchByWorker.js', () => ({
+  searchByWorker: async (
+    baseUrl: string,
+    searchContext: string,
+    input: string,
+    limit: number
+  ): Promise<unknown[]> => {
+    const { SearchWorker } =
+      await import('@easyops-cn/docusaurus-search-local/dist/client/client/theme/worker.js')
+    return new SearchWorker().search(baseUrl, searchContext, input, limit)
+  },
+  fetchIndexesByWorker: () => Promise.resolve()
+}))
+
+// This site's real configuration (apps/docs/site-config.ts, docusaurus.config.ts).
+const SITE_CONFIG = { baseUrl: '/docs/', trailingSlash: true }
 const MANIFEST_URL = '/assets/docs-corpus/manifest.v1.abc123.json'
 
 const manifest = {
@@ -37,6 +64,26 @@ const manifest = {
   ]
 }
 
+const manifestEntry = (ref: string, title: string, permalink: string) => ({
+  ref,
+  version: 'current',
+  versionPath: '/docs/',
+  isLast: true,
+  title,
+  permalink,
+  unlisted: false
+})
+
+const orderingManifest = {
+  schemaVersion: 1,
+  manifestHash: 'abc123',
+  documents: [
+    manifestEntry('widget-configuration-reference', 'Widget configuration reference', PAGE_F_URL),
+    manifestEntry('release-notes', 'Release notes', PAGE_G_URL),
+    manifestEntry('widget-faq', 'Widget FAQ', PAGE_H_URL)
+  ]
+}
+
 const stubFetch = (searchIndex: unknown, corpusManifest: unknown) => {
   vi.stubGlobal(
     'fetch',
@@ -53,7 +100,10 @@ describe('searchDocumentation', () => {
 
   beforeEach(() => {
     process.env.NODE_ENV = 'production'
-    resetPrivateIndexCacheForTests()
+    // The upstream worker memoizes its fetched index in a module-level Map, so
+    // each test needs a fresh module graph as well as a fresh adapter cache.
+    vi.resetModules()
+    resetSearchWorkerModuleCacheForTests()
     resetCorpusRefMapCacheForTests()
     __resetGlobalData()
     __setPluginData('documentation-corpus', 'default', {
@@ -66,7 +116,8 @@ describe('searchDocumentation', () => {
   afterEach(() => {
     process.env.NODE_ENV = originalNodeEnv
     vi.unstubAllGlobals()
-    resetPrivateIndexCacheForTests()
+    vi.resetModules()
+    resetSearchWorkerModuleCacheForTests()
     resetCorpusRefMapCacheForTests()
     __resetGlobalData()
   })
@@ -78,10 +129,12 @@ describe('searchDocumentation', () => {
 
     expect(response.ok).toBe(true)
     if (!response.ok) return
-    // "Getting Started" matches via title, heading, AND content — all three
-    // must collapse into a single result for that page.
+    // "Getting Started" matches via title, heading, description AND content —
+    // all of them must collapse into a single result for that page.
     const gettingStarted = response.results.filter((result) => result.ref === 'getting-started')
     expect(gettingStarted).toHaveLength(1)
+    // An anchored section match beats the page-title match, so the citation
+    // points at the matching section rather than the top of the page.
     expect(gettingStarted[0]).toMatchObject({
       ref: 'getting-started',
       title: 'Getting Started',
@@ -89,6 +142,35 @@ describe('searchDocumentation', () => {
       anchor: 'installation',
       section: 'Installation'
     })
+  })
+
+  it('keeps the worker ordering instead of re-ranking pages by raw lunr score', async () => {
+    stubFetch(buildOrderingFixtureSearchIndex(), orderingManifest)
+
+    const response = await searchDocumentation(SITE_CONFIG, 'widget')
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+
+    // Scores from five independent lunr indexes aren't comparable, so page
+    // order must be the worker's own (sortSearchResults), which scans the title
+    // group before the content group. `release-notes` has by far the highest
+    // raw score but matches only in content, so it must still come last — a
+    // score-descending re-sort would promote it to first.
+    expect(response.results.map((result) => result.ref)).toEqual([
+      'widget-faq',
+      'widget-configuration-reference',
+      'release-notes'
+    ])
+
+    // Guards the guard: assert the fixture really does invert score against
+    // order, so the expectation above can't pass for the wrong reason.
+    const { searchPrivateWorker } = await import('../private-worker-adapter')
+    const raw = await searchPrivateWorker(SITE_CONFIG.baseUrl, 'widget', 40)
+    expect(raw.ok).toBe(true)
+    if (!raw.ok) return
+    const bestScoring = [...raw.hits].sort((a, b) => b.score - a.score)[0]
+    expect(bestScoring.url).toBe(PAGE_G_URL)
+    expect(bestScoring.order).toBe(raw.hits.length - 1)
   })
 
   it('returns a valid empty result set (not a failure) when nothing matches', async () => {
@@ -147,13 +229,14 @@ describe('searchDocumentation', () => {
     })
   })
 
-  it('gives a title-only match a null section', async () => {
+  it('gives a page matched only by its title a null section and anchor', async () => {
     stubFetch(buildFixtureSearchIndex(), manifest)
     const response = await searchDocumentation(SITE_CONFIG, 'started')
     expect(response.ok).toBe(true)
     if (!response.ok) return
     const gettingStarted = response.results.find((result) => result.ref === 'getting-started')
     expect(gettingStarted?.section).toBeNull()
+    expect(gettingStarted?.anchor).toBeNull()
   })
 
   it('clamps maxResults and enforces the limit after page-level dedup', async () => {

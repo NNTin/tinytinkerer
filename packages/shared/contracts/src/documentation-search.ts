@@ -43,7 +43,13 @@ export type DocumentationSearchSuccess = {
 export type DocumentationSearchFailureCode =
   /** Non-production Docusaurus build: the upstream plugin never writes a search index outside `docusaurus build`. */
   | 'index_dev_unsupported'
-  /** The search index asset could not be fetched (network/HTTP failure); may succeed on retry. */
+  /**
+   * The search worker could not load or query the index (network/HTTP
+   * failure). Reported with `retryable: false`: the upstream worker memoizes
+   * its index fetch — including a rejected one — for the lifetime of the page,
+   * so retrying in the same session replays the same failure. The message says
+   * so and asks for a reload.
+   */
   | 'index_unavailable'
   /** The fetched search index does not match the shape this adapter was pinned against. */
   | 'index_incompatible'
