@@ -10,13 +10,17 @@ tool or UI noticing.
 
 ## Module boundary
 
-- `private-worker-adapter.ts` is the **only** file that imports
-  `@easyops-cn/docusaurus-search-local` internals. It calls the plugin's own
-  `searchByWorker()` — the same entry point the site's search bar and
-  `/docs/search` page use — validates the response against the pinned contract,
-  and returns a small neutral shape (`PrivateIndexSearchHit`) — never the
-  plugin's abbreviated document fields (`i`/`t`/`u`/`p`/`h`/`s`/`b`) or its
-  `DSLASearchResult` wrapper.
+- `private-worker-adapter.ts` is the only **production** module that imports
+  `@easyops-cn/docusaurus-search-local` internals. It drives the plugin's own
+  `fetchIndexesByWorker()`/`searchByWorker()` — the same entry points the site's
+  search bar and `/docs/search` page use — validates the response against the
+  pinned contract, and returns a small neutral shape (`PrivateIndexSearchHit`) —
+  never the plugin's abbreviated document fields (`i`/`t`/`u`/`p`/`h`/`s`/`b`),
+  its `DSLASearchResult` wrapper, or its lunr match metadata. Two non-production
+  files deliberately reach one module further: `easyops-search-worker.d.ts`
+  declares `theme/worker.js`, and `__tests__/private-worker-contract.test.ts`
+  imports it to drive the genuine upstream `SearchWorker` without a real
+  `Worker`.
 - `corpus-ref-map.ts` maps a hit's page URL to a `#474` corpus ref via the
   documentation corpus's own manifest (`docs-corpus/plugin.ts`,
   `docs-corpus/build-corpus.ts`). It knows nothing about the search plugin.
@@ -49,11 +53,12 @@ Nothing outside this directory should import `private-worker-adapter.ts` or
 
 The plugin's real search entry point is `searchByWorker()`
 (`dist/client/client/theme/searchByWorker.js`), which Comlink-wraps a genuine
-Web Worker (`theme/worker.js`). `private-worker-adapter.ts` imports that module
-with the **byte-identical specifier** the plugin's own `SearchBar.jsx` and
-`SearchPage.jsx` use, which has two consequences that matter:
+Web Worker (`theme/worker.js`). `private-worker-adapter.ts` imports **that same
+module**. Upstream's own theme components spell the specifier `../searchByWorker`
+— relative and extensionless, which nothing outside the package can write — but
+both spellings resolve to the same file, which has two consequences that matter:
 
-- Webpack resolves both importers to one module instance, so the module-level
+- Webpack serves both importers from one module instance, so the module-level
   `remoteWorkerPromise` singleton — and the worker's own index cache, keyed on
   `${baseUrl}${searchContext}` — are **shared** with the search bar rather than
   duplicated. Searching from the assistant after searching from the search bar
@@ -99,11 +104,19 @@ set. Every result is therefore checked for:
 - a `type` inside the five configured groups (`Title`…`Content`); upstream's
   `AskAI = 5` only exists when `searchLocalOptions.askAi` is set, which this
   site never sets;
-- a document matching the abbreviated wire record, with `p` required on
-  everything but a `Title` record;
+- a document matching the **per-type** field shape `scanDocuments.js` emits, not
+  just a generic record — a Title has `b` and no `p`/`s`/`h`, a Heading has `p`
+  and an optional `h` but never `s`, Description/Keywords always have `s` and
+  never `h`, Content has both. `section`'s derivation below depends on exactly
+  this, so a type that starts or stops carrying one of these must not pass;
+- integer document ids;
 - a parent `page` that is literal `false` for a `Title` result and otherwise a
-  title-shaped record whose `i` equals the document's `p`;
-- a finite `score` and a `tokens` string array.
+  title-shaped record whose `i` equals the document's `p` **and whose `u`
+  matches the document's** — a child attached to one page while carrying another
+  page's URL would otherwise be cited against the wrong corpus ref;
+- a finite `score` and a `tokens` string array;
+- match metadata whose `[start, length]` positions are integers that actually
+  fall inside the indexed text (see "Snippets" below).
 
 Anything else becomes `index_incompatible` with a message naming the offending
 result and pointing back at the upgrade checklist below.
@@ -114,17 +127,52 @@ rather than silently.
 
 ## Result ordering
 
-`search-documentation.ts` deliberately does **not** re-rank pages. Raw lunr
+`search-documentation.ts` deliberately does **not** re-rank anything. Raw lunr
 scores come from five _independent_ indexes and are not comparable across them,
 so sorting by them diverges from what the site's own `/docs/search` page shows
 for the same query. Instead:
 
 - **Page order** is the order pages first appear in the worker's already-sorted
   result array.
-- **Within a page**, the representative hit prefers one that carries an anchor
-  (so a section match cites the section, not the top of the page); among those
-  the higher raw lunr score wins, with the worker's own order breaking ties. A
-  page-title hit represents the page only when it is all that page produced.
+- **Within a page**, the representative is that page's **first** hit — the one
+  the worker itself ranked highest for that page, whose anchor and section
+  therefore describe why the page matched.
+
+An earlier revision preferred any anchored hit over an unanchored one, on the
+theory that a section citation is always more useful. That was wrong in
+practice: for `how can I host TinyTinkerer` it replaced the Vercel deployment
+guide's page-intro match with a later, weaker relaxed match on "1.1 Create the
+OAuth App", and for an exact page-title query it cited "Next step" instead of
+the page. Since #477 hands these to a model as grounding and to users as
+clickable citations, manufacturing section specificity the match doesn't support
+is worse than citing the page.
+
+Because the number of raw hits a single page produces is unbounded (one document
+per heading _and_ per content section — a large page can occupy a dozen
+consecutive slots), the over-fetch that feeds this collapse is iterative rather
+than a fixed multiple of `maxResults`: `fetchMappedPages` re-queries with a
+doubled limit until enough distinct eligible pages survive, the worker returns
+fewer hits than it was asked for, or a documented ceiling is reached.
+
+## Snippets
+
+The plugin indexes a whole section as one document, and real sections run to
+several thousand characters. Truncating from the start therefore routinely
+produced a snippet containing none of the query terms — a citation with no
+evidence for why it matched. (Real case: `abort/reset` matches a Plugin
+Infrastructure section at character 4,949 of 7,446.)
+
+So `private-worker-adapter.ts` normalizes lunr's match metadata into
+`PrivateIndexMatchRange[]` — a TinyTinkerer-owned `{ start, length }` shape,
+ordered exactly the way the plugin's own `getStemmedPositions` orders it — and
+`boundedSnippet` centers a bounded window on the first match, with `…` marking
+either elision. Whitespace is collapsed only _after_ slicing, since the offsets
+index the raw text.
+
+A structurally malformed position is contract drift and fails the search. An
+_absent_ position list is not: a hit reporting no offsets is odd but not
+provably a break, so it degrades to a leading snippet rather than taking the
+whole search down.
 
 ## `section`: human-readable section titles
 
@@ -181,20 +229,32 @@ index that legitimately matched nothing.
 | Code                    | Meaning                                                                           | Retryable |
 | ----------------------- | --------------------------------------------------------------------------------- | --------- |
 | `index_dev_unsupported` | Not a production build; no index exists.                                          | No        |
-| `index_unavailable`     | The worker could not load or query the index (network/HTTP).                      | No¹       |
-| `index_incompatible`    | The worker's response doesn't match this adapter's pinned contract.               | No        |
+| `index_unavailable`     | The worker chunk or the index itself could not be loaded.                         | Depends¹  |
+| `index_incompatible`    | The worker's response, or the query it ran, doesn't match the pinned contract.    | No        |
 | `manifest_unavailable`  | The `#474` corpus manifest request failed, or the corpus plugin isn't registered. | Depends²  |
 | `manifest_incompatible` | The corpus locator or manifest doesn't match the expected schema.                 | No        |
 
-¹ Not retryable **in the current page session**, which is what `retryable`
-means to a caller. Upstream's `SearchWorker.lowLevelFetchIndexes` memoizes its
-index fetch in a module-level `Map` and stores the promise _before_ awaiting it,
-so a rejected fetch is replayed to every later caller. That cache lives inside
-the worker and cannot be evicted from here, so the message tells the user to
-reload the page rather than inviting a futile retry loop. If in-session recovery
-ever becomes necessary, fix or fork the upstream cache explicitly — do not
-instantiate a second worker, which would duplicate the index in memory and
-defeat the singleton reuse described above.
+¹ `retryable` means "the caller can retry this in the current page session", so
+the three things that can go wrong here are driven — and reported — separately
+rather than through one catch-all:
+
+- **The worker chunk fails to download.** Retryable: that memo is ours, and
+  `loadSearchByWorker` drops a rejected import so the next call re-fetches.
+- **Index initialization fails** (`fetchIndexesByWorker`). Not retryable, and
+  the message asks for a reload. Upstream's `SearchWorker.lowLevelFetchIndexes`
+  stores its fetch promise in a module-level `Map` _before_ awaiting it, so a
+  rejected fetch is replayed to every later caller; that cache lives inside the
+  worker and cannot be evicted from here.
+- **The query itself throws after the index loaded** (`searchByWorker`). This is
+  `index_incompatible`, not `index_unavailable`: the index _is_ available, the
+  worker's own tokenize/query/sort path is what failed, and a reload would not
+  help — so claiming one would be misleading. Driving initialization separately
+  is what makes this distinction possible at all.
+
+If in-session recovery from a failed index load ever becomes necessary, fix or
+fork the upstream cache explicitly — do not instantiate a second worker, which
+would duplicate the index in memory and defeat the singleton reuse described
+above.
 
 ² Retryable for a network/HTTP failure, not for a missing corpus plugin. This
 cache is TinyTinkerer's own, so `corpus-ref-map.ts` evicts a retryable failure
@@ -208,22 +268,29 @@ caller's site config can never decide another's normalization.
    (asserting `apps/docs/package.json` still declares `0.55.2`, matching
    `PINNED_SEARCH_PLUGIN_VERSION`) as a tripwire pointing back at this checklist
    — it's not a substitute for actually working through the rest of it. It reads
-   _our_ manifest rather than the plugin's, so this directory's "only the
-   compatibility module imports package internals" rule stays mechanically true.
+   _our_ manifest rather than the plugin's, so the "only the compatibility
+   module imports package internals" rule stays mechanically true for production
+   code.
 1. Run `apps/docs`'s tests. `private-worker-contract.test.ts` drives the real
    upstream `SearchWorker` and is where a changed response contract surfaces
    first, naming the field that no longer matches.
 2. Diff `dist/client/client/theme/searchByWorker.js` and `theme/worker.js`: the
-   `searchByWorker(baseUrl, searchContext, input, limit)` signature, the
-   `NODE_ENV === 'production'` gate, the module-level worker singleton, and the
-   result fields (`document`, `type`, `page`, `metadata`, `tokens`, `score`)
-   this adapter validates. Also re-diff `dist/client/shared/interfaces.js` for
-   the `SearchDocumentType` ordinals, and `dist/server/server/utils/scanDocuments.js`
-   if `section`'s derivation (documented above) stops matching real behavior.
+   `searchByWorker(baseUrl, searchContext, input, limit)` and
+   `fetchIndexesByWorker(baseUrl, searchContext)` signatures, the
+   `NODE_ENV === 'production'` gate, the module-level worker singleton, whether
+   `lowLevelFetchIndexes` still memoizes rejections (the failure table above
+   depends on it), and the result fields (`document`, `type`, `page`,
+   `metadata`, `tokens`, `score`) this adapter validates. Also re-diff
+   `dist/client/shared/interfaces.js` for the `SearchDocumentType` ordinals,
+   `dist/client/client/utils/getStemmedPositions.js` for the
+   `metadata[term].t.position` layout snippets depend on, and
+   `dist/server/server/utils/scanDocuments.js` for the per-type field shape the
+   validator and `section`'s derivation both encode.
 3. Confirm `dist/server/server/utils/buildIndex.js`/`scanDocuments.js` still
    emit exactly 5 index groups, in order
    `[title, heading, description, keywords, content]`, with `ref('i')` and the
-   same abbreviated field names. A 6th `AskAI` group only appears when
+   same abbreviated field names, one indexed field (`t`) and
+   `metadataWhitelist = ['position']`. A 6th `AskAI` group only appears when
    `searchLocalOptions.askAi` is set; TinyTinkerer never sets it, and the
    adapter rejects a `type` outside `0..4`.
 4. Confirm `generate.js` still emits the constants

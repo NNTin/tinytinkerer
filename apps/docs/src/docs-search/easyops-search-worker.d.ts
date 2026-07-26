@@ -9,10 +9,12 @@
 // exactly the fields it validates and consumes.
 
 /**
- * The one deep import production code takes. The specifier is byte-identical
- * to the one the plugin's own theme components (SearchBar.jsx, SearchPage.jsx)
- * use, which is what makes webpack dedupe them onto a single module instance
- * and therefore a single shared worker.
+ * The one deep import production code takes. Upstream's own theme components
+ * spell it `../searchByWorker` (SearchBar.jsx, SearchPage.jsx) — a relative,
+ * extensionless specifier we cannot write from outside the package — but both
+ * spellings resolve to the same file, so webpack serves them from one module
+ * instance and therefore one shared worker. That outcome is verified by the
+ * browser probe in the PR, not inferred from the specifier text.
  */
 declare module '@easyops-cn/docusaurus-search-local/dist/client/client/theme/searchByWorker.js' {
   export function searchByWorker(
