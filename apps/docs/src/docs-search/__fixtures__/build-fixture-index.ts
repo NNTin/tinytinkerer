@@ -198,10 +198,115 @@ export const buildOrderingFixtureSearchIndex = (): unknown[] => [
   // of a very short section (high length norm) — a strong content-group match.
   buildGroupIndex([
     { i: 35, t: 'Widget.', s: 'Release notes', u: PAGE_G_URL, h: '#widget', p: 32 },
-    { i: 36, t: 'Installation prerequisites and supported platforms.', u: PAGE_F_URL, p: 30 },
-    { i: 37, t: 'Upgrading from an earlier release of the toolkit.', u: PAGE_F_URL, p: 30 },
-    { i: 38, t: 'Reporting bugs and requesting new capabilities.', u: PAGE_H_URL, p: 34 },
-    { i: 39, t: 'Publishing a package to the internal registry.', u: PAGE_H_URL, p: 34 },
-    { i: 40, t: 'Deprecation policy and long term support windows.', u: PAGE_G_URL, p: 32 }
+    {
+      i: 36,
+      t: 'Installation prerequisites and supported platforms.',
+      s: 'Prerequisites',
+      u: PAGE_F_URL,
+      p: 30
+    },
+    {
+      i: 37,
+      t: 'Upgrading from an earlier release of the toolkit.',
+      s: 'Upgrading',
+      u: PAGE_F_URL,
+      p: 30
+    },
+    {
+      i: 38,
+      t: 'Reporting bugs and requesting new capabilities.',
+      s: 'Feedback',
+      u: PAGE_H_URL,
+      p: 34
+    },
+    {
+      i: 39,
+      t: 'Publishing a package to the internal registry.',
+      s: 'Publishing',
+      u: PAGE_H_URL,
+      p: 34
+    },
+    {
+      i: 40,
+      t: 'Deprecation policy and long term support windows.',
+      s: 'Deprecation',
+      u: PAGE_G_URL,
+      p: 32
+    }
+  ])
+]
+
+export const PAGE_I_URL = '/docs/plugin-lifecycle/'
+
+/**
+ * The section text `buildLongSectionFixtureSearchIndex` indexes: the only
+ * occurrence of "quiescent" sits far past any leading-truncation window, the way
+ * a real match deep inside a multi-thousand-character indexed section does.
+ */
+export const LONG_SECTION_MATCH_TERM = 'quiescent'
+export const LONG_SECTION_TEXT = `${'Every plugin declares the tools it contributes and the events it observes, and the host resolves that graph before the first turn begins. '.repeat(
+  12
+)}A plugin that has drained its queue and released its subscriptions reports itself ${LONG_SECTION_MATCH_TERM}, which is how the host knows a teardown finished cleanly. ${'Teardown then proceeds in reverse registration order so a dependent never observes a released dependency. '.repeat(
+  6
+)}`
+
+/**
+ * One page whose single content section is far longer than the snippet budget,
+ * with the query term appearing only well beyond it. Truncating from the start
+ * would return a snippet that contains no part of the match — a citation with no
+ * evidence for why it matched — which is what `boundedSnippet`'s match-centered
+ * window exists to prevent.
+ */
+export const buildLongSectionFixtureSearchIndex = (): unknown[] => [
+  buildGroupIndex([{ i: 50, t: 'Plugin Lifecycle', u: PAGE_I_URL, b: ['Docs'] }]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([
+    { i: 51, t: LONG_SECTION_TEXT, s: 'Teardown', u: PAGE_I_URL, h: '#teardown', p: 50 }
+  ])
+]
+
+export const PAGE_J_URL = '/docs/widget-handbook/'
+export const PAGE_K_URL = '/docs/appendix/'
+/** How many matching content sections `PAGE_J` contributes ahead of `PAGE_K`. */
+export const CROWDED_PAGE_SECTION_COUNT = 50
+
+/**
+ * One page that occupies far more consecutive raw hits than any fixed
+ * `maxResults * N` over-fetch could budget for, with a second eligible page
+ * behind it.
+ *
+ * The plugin emits one document per *section*, not a fixed few per page, so a
+ * large page's hits can crowd out every other page in a bounded raw window.
+ * `PAGE_K` deliberately does not match in the title group (which the worker
+ * scans first) and scores lower than `PAGE_J`'s sections in the content group,
+ * so it only appears once the requested limit grows.
+ */
+export const buildCrowdedPageFixtureSearchIndex = (): unknown[] => [
+  buildGroupIndex([
+    { i: 60, t: 'Widget Handbook', u: PAGE_J_URL, b: ['Docs'] },
+    { i: 61, t: 'Appendix', u: PAGE_K_URL, b: ['Docs'] }
+  ]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([
+    ...Array.from({ length: CROWDED_PAGE_SECTION_COUNT }, (_, index) => ({
+      i: 100 + index,
+      t: `Widget ${index}.`,
+      s: `Section ${index}`,
+      u: PAGE_J_URL,
+      h: `#section-${index}`,
+      p: 60
+    })),
+    {
+      i: 900,
+      t: 'A longer closing note that also happens to mention the widget vocabulary once, scoring below every short section above it.',
+      s: 'Closing note',
+      u: PAGE_K_URL,
+      h: '#closing-note',
+      p: 61
+    }
   ])
 ]

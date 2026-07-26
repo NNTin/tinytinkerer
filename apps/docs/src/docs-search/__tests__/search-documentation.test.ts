@@ -1,16 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { __resetGlobalData, __setPluginData } from '../../test/generated-global-data-stub'
 import {
+  buildCrowdedPageFixtureSearchIndex,
+  CROWDED_PAGE_SECTION_COUNT,
   buildFixtureSearchIndex,
+  buildLongSectionFixtureSearchIndex,
+  buildNaturalLanguageFixtureSearchIndex,
   buildOrderingFixtureSearchIndex,
+  LONG_SECTION_MATCH_TERM,
+  LONG_SECTION_TEXT,
   PAGE_A_URL,
   PAGE_B_URL,
+  PAGE_C_URL,
+  PAGE_D_URL,
+  PAGE_E_URL,
   PAGE_F_URL,
   PAGE_G_URL,
-  PAGE_H_URL
+  PAGE_H_URL,
+  PAGE_I_URL,
+  PAGE_J_URL,
+  PAGE_K_URL
 } from '../__fixtures__/build-fixture-index'
 import { resetCorpusRefMapCacheForTests } from '../corpus-ref-map'
-import { resetSearchWorkerModuleCacheForTests } from '../private-worker-adapter'
+import {
+  resetSearchWorkerModuleCacheForTests,
+  searchPrivateWorker
+} from '../private-worker-adapter'
 import { searchDocumentation } from '../search-documentation'
 
 /**
@@ -39,31 +54,6 @@ vi.mock('@easyops-cn/docusaurus-search-local/dist/client/client/theme/searchByWo
 const SITE_CONFIG = { baseUrl: '/docs/', trailingSlash: true }
 const MANIFEST_URL = '/assets/docs-corpus/manifest.v1.abc123.json'
 
-const manifest = {
-  schemaVersion: 1,
-  manifestHash: 'abc123',
-  documents: [
-    {
-      ref: 'getting-started',
-      version: 'current',
-      versionPath: '/docs/',
-      isLast: true,
-      title: 'Getting Started',
-      permalink: PAGE_A_URL,
-      unlisted: false
-    },
-    {
-      ref: 'search-configuration',
-      version: 'current',
-      versionPath: '/docs/',
-      isLast: true,
-      title: 'Search Configuration',
-      permalink: PAGE_B_URL,
-      unlisted: false
-    }
-  ]
-}
-
 const manifestEntry = (ref: string, title: string, permalink: string) => ({
   ref,
   version: 'current',
@@ -74,15 +64,37 @@ const manifestEntry = (ref: string, title: string, permalink: string) => ({
   unlisted: false
 })
 
-const orderingManifest = {
+const manifestOf = (...documents: ReturnType<typeof manifestEntry>[]) => ({
   schemaVersion: 1,
   manifestHash: 'abc123',
-  documents: [
-    manifestEntry('widget-configuration-reference', 'Widget configuration reference', PAGE_F_URL),
-    manifestEntry('release-notes', 'Release notes', PAGE_G_URL),
-    manifestEntry('widget-faq', 'Widget FAQ', PAGE_H_URL)
-  ]
-}
+  documents
+})
+
+const manifest = manifestOf(
+  manifestEntry('getting-started', 'Getting Started', PAGE_A_URL),
+  manifestEntry('search-configuration', 'Search Configuration', PAGE_B_URL)
+)
+
+const orderingManifest = manifestOf(
+  manifestEntry('widget-configuration-reference', 'Widget configuration reference', PAGE_F_URL),
+  manifestEntry('release-notes', 'Release notes', PAGE_G_URL),
+  manifestEntry('widget-faq', 'Widget FAQ', PAGE_H_URL)
+)
+
+const naturalLanguageManifest = manifestOf(
+  manifestEntry('plugin-infrastructure', 'Plugin Infrastructure', PAGE_C_URL),
+  manifestEntry('vercel-deployment', 'Vercel Deployment Guide', PAGE_D_URL),
+  manifestEntry('widgetkit-overview', 'WidgetKit Overview', PAGE_E_URL)
+)
+
+const longSectionManifest = manifestOf(
+  manifestEntry('plugin-lifecycle', 'Plugin Lifecycle', PAGE_I_URL)
+)
+
+const crowdedManifest = manifestOf(
+  manifestEntry('widget-handbook', 'Widget Handbook', PAGE_J_URL),
+  manifestEntry('appendix', 'Appendix', PAGE_K_URL)
+)
 
 const stubFetch = (searchIndex: unknown, corpusManifest: unknown) => {
   vi.stubGlobal(
@@ -129,19 +141,119 @@ describe('searchDocumentation', () => {
 
     expect(response.ok).toBe(true)
     if (!response.ok) return
-    // "Getting Started" matches via title, heading, description AND content —
-    // all of them must collapse into a single result for that page.
+    // "Getting Started" matches via its heading, description AND content — all
+    // of them must collapse into a single result for that page, represented by
+    // the hit the worker itself ranked first.
     const gettingStarted = response.results.filter((result) => result.ref === 'getting-started')
     expect(gettingStarted).toHaveLength(1)
-    // An anchored section match beats the page-title match, so the citation
-    // points at the matching section rather than the top of the page.
-    expect(gettingStarted[0]).toMatchObject({
+    expect(gettingStarted[0]).toEqual({
       ref: 'getting-started',
       title: 'Getting Started',
       permalink: PAGE_A_URL,
       anchor: 'installation',
-      section: 'Installation'
+      section: 'Installation',
+      snippet: 'Installation'
     })
+  })
+
+  it('represents a page by its top-ranked hit, not by a weaker hit that happens to be anchored', async () => {
+    // Regression for a review finding: preferring any anchored hit over an
+    // unanchored one rewrote strong page-level matches into weaker, misleading
+    // section citations (an exact page-title query citing "Next step", a
+    // hosting question citing "1.1 Create the OAuth App").
+    stubFetch(buildNaturalLanguageFixtureSearchIndex(), naturalLanguageManifest)
+
+    const response = await searchDocumentation(SITE_CONFIG, 'plugin infrastructure')
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+
+    const [top] = response.results
+    expect(top).toMatchObject({
+      ref: 'plugin-infrastructure',
+      title: 'Plugin Infrastructure',
+      permalink: PAGE_C_URL,
+      // The page's own title matched; nothing about that match supports citing
+      // one of its later sections instead.
+      anchor: null,
+      section: null
+    })
+    expect(top.snippet).toBe('Plugin Infrastructure')
+  })
+
+  it('answers the locked natural-language queries with complete, citable results', async () => {
+    stubFetch(buildNaturalLanguageFixtureSearchIndex(), naturalLanguageManifest)
+
+    const hosting = await searchDocumentation(SITE_CONFIG, 'how can I host TinyTinkerer')
+    expect(hosting.ok).toBe(true)
+    if (!hosting.ok) return
+    expect(hosting.results[0]).toMatchObject({
+      ref: 'vercel-deployment',
+      title: 'Vercel Deployment Guide',
+      permalink: PAGE_D_URL
+    })
+    expect(hosting.results[0].snippet.length).toBeGreaterThan(0)
+    // Precision: a page sharing no content words with the question must not be
+    // handed to the model as support for it.
+    expect(hosting.results.some((result) => result.permalink === PAGE_E_URL)).toBe(false)
+
+    const plugins = await searchDocumentation(SITE_CONFIG, 'where can I find plugin infrastructure')
+    expect(plugins.ok).toBe(true)
+    if (!plugins.ok) return
+    expect(plugins.results[0]).toMatchObject({
+      ref: 'plugin-infrastructure',
+      permalink: PAGE_C_URL
+    })
+  })
+
+  it('builds a snippet around the match, not from the start of a long section', async () => {
+    // Regression for a review finding: a match thousands of characters into an
+    // indexed section produced a leading snippet containing none of the query
+    // terms — a citation with no evidence for why it matched.
+    stubFetch(buildLongSectionFixtureSearchIndex(), longSectionManifest)
+
+    const response = await searchDocumentation(SITE_CONFIG, LONG_SECTION_MATCH_TERM)
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    expect(response.results).toHaveLength(1)
+
+    const { snippet } = response.results[0]
+    expect(snippet).toContain(LONG_SECTION_MATCH_TERM)
+    expect(snippet.length).toBeLessThanOrEqual(302) // budget plus both ellipses
+    // Elided on both sides: the match sits well inside the section.
+    expect(snippet.startsWith('…')).toBe(true)
+    expect(snippet.endsWith('…')).toBe(true)
+
+    // The match must sit *inside* the window with context either side, not be
+    // jammed against an edge — a snippet that ends at the matched word gives an
+    // assistant the term but not what the page says about it.
+    const at = snippet.indexOf(LONG_SECTION_MATCH_TERM)
+    expect(at).toBeGreaterThan(20)
+    expect(snippet.length - (at + LONG_SECTION_MATCH_TERM.length)).toBeGreaterThan(20)
+    // And the window must not start mid-word.
+    expect(snippet.slice(1)).toMatch(/^[A-Za-z]/)
+    expect(LONG_SECTION_TEXT).toContain(snippet.slice(1, 40))
+  })
+
+  it('keeps over-fetching until enough distinct pages survive deduplication', async () => {
+    // Regression for a review finding: the plugin emits one document per
+    // *section*, so a single large page can occupy every slot of a fixed
+    // `maxResults * N` raw window and hide every page behind it.
+    stubFetch(buildCrowdedPageFixtureSearchIndex(), crowdedManifest)
+
+    // A single fixed-size pass genuinely cannot see the second page...
+    const oneShot = await searchPrivateWorker(SITE_CONFIG.baseUrl, 'widget', 40)
+    expect(oneShot.ok).toBe(true)
+    if (!oneShot.ok) return
+    expect(oneShot.hits).toHaveLength(40)
+    expect(oneShot.hits.every((hit) => hit.url === PAGE_J_URL)).toBe(true)
+    // ...because the page contributes more sections than that pass can show.
+    expect(CROWDED_PAGE_SECTION_COUNT).toBeGreaterThan(oneShot.hits.length)
+
+    // ...but the composed API still returns both.
+    const response = await searchDocumentation(SITE_CONFIG, 'widget', 2)
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    expect(response.results.map((result) => result.ref)).toEqual(['widget-handbook', 'appendix'])
   })
 
   it('keeps the worker ordering instead of re-ranking pages by raw lunr score', async () => {
@@ -155,22 +267,14 @@ describe('searchDocumentation', () => {
     // order must be the worker's own (sortSearchResults), which scans the title
     // group before the content group. `release-notes` has by far the highest
     // raw score but matches only in content, so it must still come last — a
-    // score-descending re-sort would promote it to first.
+    // score-descending re-sort would promote it to first. That the fixture
+    // really does invert score against order is asserted in
+    // private-worker-contract.test.ts, against the real worker.
     expect(response.results.map((result) => result.ref)).toEqual([
       'widget-faq',
       'widget-configuration-reference',
       'release-notes'
     ])
-
-    // Guards the guard: assert the fixture really does invert score against
-    // order, so the expectation above can't pass for the wrong reason.
-    const { searchPrivateWorker } = await import('../private-worker-adapter')
-    const raw = await searchPrivateWorker(SITE_CONFIG.baseUrl, 'widget', 40)
-    expect(raw.ok).toBe(true)
-    if (!raw.ok) return
-    const bestScoring = [...raw.hits].sort((a, b) => b.score - a.score)[0]
-    expect(bestScoring.url).toBe(PAGE_G_URL)
-    expect(bestScoring.order).toBe(raw.hits.length - 1)
   })
 
   it('returns a valid empty result set (not a failure) when nothing matches', async () => {
