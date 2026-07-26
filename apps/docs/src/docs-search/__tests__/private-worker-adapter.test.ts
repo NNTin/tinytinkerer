@@ -169,6 +169,26 @@ describe('searchPrivateWorker', () => {
     expect(outcome.hits[3]).toMatchObject({ anchor: 'installation', section: 'Installation' })
   })
 
+  it('still names the section of a Heading record that renders no anchor', async () => {
+    // Real shape: the production index carries `h: ""` for four headings under
+    // /docs/contributing/. A Heading's own `t` is its section title whether or
+    // not navigation can target it, so deriving `section` from field presence
+    // rather than from the document type silently dropped it.
+    searchByWorkerMock.mockResolvedValue([
+      workerResult({
+        document: { i: 120, t: 'Security Issues', u: '/docs/contributing/', h: '', p: 116 },
+        type: 1,
+        page: { i: 116, t: 'Contributing', u: '/docs/contributing/', b: ['Docs'] },
+        metadata: { secur: { t: { position: [[0, 8]] } } }
+      })
+    ])
+
+    const outcome = await searchPrivateWorker(BASE_URL, 'security', 10)
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.hits[0]).toMatchObject({ anchor: null, section: 'Security Issues' })
+  })
+
   it('normalizes lunr match metadata into ordered match ranges', async () => {
     searchByWorkerMock.mockResolvedValue([
       workerResult({
@@ -207,14 +227,24 @@ describe('searchPrivateWorker', () => {
     ])
   })
 
-  it('tolerates a hit that reports no match positions', async () => {
-    // Odd, but not provably a contract break — degrading to an empty range list
-    // is better than failing the whole search on an uncertain assumption.
+  it('reports index_incompatible when a hit carries no match positions', async () => {
+    // Provable drift for this pinned version, not a judgement call: buildIndex.js
+    // indexes only `t` and whitelists only `position`, so a positive lunr result
+    // necessarily matched that field and necessarily records its offsets.
+    // Verified across 1,590 real worker results (types 0/1/2/4) on the
+    // production index: none lacked them.
     searchByWorkerMock.mockResolvedValue([workerResult({ metadata: {} })])
     const outcome = await searchPrivateWorker(BASE_URL, 'install', 10)
-    expect(outcome.ok).toBe(true)
-    if (!outcome.ok) return
-    expect(outcome.hits[0].matchRanges).toEqual([])
+    expect(outcome).toMatchObject({ ok: false, code: 'index_incompatible', retryable: false })
+    expect(outcome.ok === false && outcome.message).toContain('no "t" field positions')
+  })
+
+  it('reports index_incompatible when metadata only carries a field the index never had', async () => {
+    searchByWorkerMock.mockResolvedValue([
+      workerResult({ metadata: { instal: { body: { position: [[0, 7]] } } } })
+    ])
+    const outcome = await searchPrivateWorker(BASE_URL, 'install', 10)
+    expect(outcome).toMatchObject({ ok: false, code: 'index_incompatible', retryable: false })
   })
 
   it('reports index_incompatible when a match position falls outside the indexed text', async () => {

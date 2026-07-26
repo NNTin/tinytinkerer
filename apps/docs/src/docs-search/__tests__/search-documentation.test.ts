@@ -4,9 +4,12 @@ import {
   buildCrowdedPageFixtureSearchIndex,
   CROWDED_PAGE_SECTION_COUNT,
   buildFixtureSearchIndex,
+  buildHashlessHeadingFixtureSearchIndex,
+  buildLimitSensitiveFixtureSearchIndex,
   buildLongSectionFixtureSearchIndex,
   buildNaturalLanguageFixtureSearchIndex,
   buildOrderingFixtureSearchIndex,
+  LIMIT_SENSITIVE_QUERY,
   LONG_SECTION_MATCH_TERM,
   LONG_SECTION_TEXT,
   PAGE_A_URL,
@@ -19,7 +22,10 @@ import {
   PAGE_H_URL,
   PAGE_I_URL,
   PAGE_J_URL,
-  PAGE_K_URL
+  PAGE_K_URL,
+  PAGE_L_URL,
+  PAGE_M_URL,
+  PAGE_N_URL
 } from '../__fixtures__/build-fixture-index'
 import { resetCorpusRefMapCacheForTests } from '../corpus-ref-map'
 import {
@@ -94,6 +100,15 @@ const longSectionManifest = manifestOf(
 const crowdedManifest = manifestOf(
   manifestEntry('widget-handbook', 'Widget Handbook', PAGE_J_URL),
   manifestEntry('appendix', 'Appendix', PAGE_K_URL)
+)
+
+const limitSensitiveManifest = manifestOf(
+  manifestEntry('alpha-beta-overview', 'Alpha beta overview', PAGE_L_URL),
+  manifestEntry('zeta-notes', 'Zeta notes', PAGE_M_URL)
+)
+
+const hashlessHeadingManifest = manifestOf(
+  manifestEntry('contributing/CONTRIBUTING', 'Contributing', PAGE_N_URL)
 )
 
 const stubFetch = (searchIndex: unknown, corpusManifest: unknown) => {
@@ -254,6 +269,81 @@ describe('searchDocumentation', () => {
     expect(response.ok).toBe(true)
     if (!response.ok) return
     expect(response.results.map((result) => result.ref)).toEqual(['widget-handbook', 'appendix'])
+  })
+
+  it('returns the same ordering regardless of how many results were requested', async () => {
+    // Regression for a review finding: the raw worker limit used to be derived
+    // from `maxResults`, and the pinned worker is *not* monotonic in that limit
+    // — so asking for more results reordered the top citations. On the real
+    // index, `app` at 6 vs 20 disagreed about positions 5 and 6.
+    stubFetch(buildLimitSensitiveFixtureSearchIndex(), limitSensitiveManifest)
+
+    // First: the hazard is real, at the worker level, with this fixture.
+    const small = await searchPrivateWorker(SITE_CONFIG.baseUrl, LIMIT_SENSITIVE_QUERY, 2)
+    const large = await searchPrivateWorker(SITE_CONFIG.baseUrl, LIMIT_SENSITIVE_QUERY, 8)
+    expect(small.ok && large.ok).toBe(true)
+    if (!small.ok || !large.ok) return
+    const firstPages = (hits: typeof small.hits) => {
+      const seen: string[] = []
+      for (const hit of hits) if (!seen.includes(hit.url)) seen.push(hit.url)
+      return seen
+    }
+    expect(firstPages(small.hits)).toEqual([PAGE_L_URL, PAGE_M_URL])
+    // A larger limit admits PAGE_L's title from a relaxed tier, which drags
+    // PAGE_L's already-admitted section hit down beside it — the page order
+    // inverts, so a bigger run is neither a prefix nor a set superset.
+    expect(firstPages(large.hits)).toEqual([PAGE_M_URL, PAGE_L_URL])
+
+    // Second: the public API is nonetheless prefix-stable across `maxResults`.
+    const responses = await Promise.all(
+      [1, 2, 5, 20].map(async (n) => {
+        resetSearchWorkerModuleCacheForTests()
+        return searchDocumentation(SITE_CONFIG, LIMIT_SENSITIVE_QUERY, n)
+      })
+    )
+    const refLists = responses.map((response) => (response.ok ? response.results : null))
+    expect(refLists.every((list) => list !== null)).toBe(true)
+    const widest = refLists.at(-1)?.map((result) => result.ref) ?? []
+    for (const list of refLists) {
+      expect(list?.map((result) => result.ref)).toEqual(widest.slice(0, list?.length))
+    }
+    // And the representative hit for a shared page is identical, not just its ref.
+    expect(refLists[0]?.[0]).toEqual(refLists.at(-1)?.[0])
+  })
+
+  it('stays prefix-stable across maxResults when the over-fetch loop expands', async () => {
+    stubFetch(buildCrowdedPageFixtureSearchIndex(), crowdedManifest)
+
+    const widest = await searchDocumentation(SITE_CONFIG, 'widget', 20)
+    expect(widest.ok).toBe(true)
+    if (!widest.ok) return
+
+    for (const n of [1, 2]) {
+      resetSearchWorkerModuleCacheForTests()
+      const narrower = await searchDocumentation(SITE_CONFIG, 'widget', n)
+      expect(narrower.ok).toBe(true)
+      if (!narrower.ok) return
+      expect(narrower.results).toEqual(widest.results.slice(0, narrower.results.length))
+    }
+  })
+
+  it('names a section for a heading that renders no anchor', async () => {
+    // Regression for a review finding, and not hypothetical: the production
+    // index carries `h: ""` for four headings under /docs/contributing/.
+    // `anchor: null` is right (nothing to navigate to); `section: null` was not.
+    stubFetch(buildHashlessHeadingFixtureSearchIndex(), hashlessHeadingManifest)
+
+    const response = await searchDocumentation(SITE_CONFIG, 'security issues')
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    expect(response.results[0]).toEqual({
+      ref: 'contributing/CONTRIBUTING',
+      title: 'Contributing',
+      permalink: PAGE_N_URL,
+      anchor: null,
+      section: 'Security Issues',
+      snippet: 'Security Issues'
+    })
   })
 
   it('keeps the worker ordering instead of re-ranking pages by raw lunr score', async () => {

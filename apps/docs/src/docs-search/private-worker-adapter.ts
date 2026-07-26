@@ -173,15 +173,16 @@ export type PrivateIndexSearchHit = {
   /** Section anchor with no leading `#`, or null when the match was the page title itself. */
   anchor: string | null
   /**
-   * Human-readable section/heading title (see scanDocuments.js): a Heading
+   * Human-readable section/heading title (see `deriveSection`): a Heading
    * record's own `t`, a Description/Keywords/Content record's `s` (the
    * enclosing heading's title, or the page title if there isn't one), or
-   * null for a Title (whole-page) record.
+   * null for a Title (whole-page) record. Independent of `anchor` — a heading
+   * with no rendered hash still has a name.
    */
   section: string | null
   /** Raw indexed text for the matching field — the snippet source. */
   matchedText: string
-  /** Where the query matched inside `matchedText`; may be empty. */
+  /** Where the query matched inside `matchedText`; always at least one range. */
   matchRanges: PrivateIndexMatchRange[]
 }
 
@@ -229,19 +230,40 @@ const validateDocumentRecord = (
   return true
 }
 
-const deriveSection = (doc: RawDocumentRecord): string | null => doc.s ?? (doc.h ? doc.t : null)
+/**
+ * The human-readable section title for a hit, keyed off the document *type*
+ * rather than off which optional fields happen to be populated — see
+ * `DOCUMENT_SHAPE` for where each type keeps it.
+ *
+ * Deriving it from field presence instead (`doc.s ?? (doc.h ? doc.t : null)`)
+ * silently lost the section for a real case: the production index contains
+ * Heading records with `h: ""`, for rendered headings Docusaurus gives no
+ * anchor. A Heading's own `t` is its section title whether or not navigation can
+ * target it, so those pages reported `section: null` while `anchor: null` was
+ * correct.
+ */
+const deriveSection = (type: SearchDocumentType, doc: RawDocumentRecord): string | null => {
+  if (type === SEARCH_DOCUMENT_TYPE.title) return null
+  if (type === SEARCH_DOCUMENT_TYPE.heading) return doc.t
+  return doc.s ?? null
+}
 
 /**
  * Normalizes lunr's match metadata into `PrivateIndexMatchRange[]`.
  *
  * The structure being read is `metadata[stemmedTerm][field].position`, an array
- * of `[start, length]` pairs — see the plugin's own `getStemmedPositions`,
- * which this mirrors including its ordering. A malformed position is treated as
- * contract drift, because the public snippet depends on these offsets pointing
- * into `text`. An *absent* position list is not: a hit that reports no offsets
- * is odd but not provably a contract break, so it degrades to an empty range
- * list (and the caller falls back to a leading snippet) rather than failing the
- * whole search.
+ * of `[start, length]` pairs — see the plugin's own `getStemmedPositions`, which
+ * this mirrors including its ordering.
+ *
+ * At least one valid range is **required**. For this pinned implementation that
+ * is provable rather than merely likely: `buildIndex.js` indexes exactly one
+ * field (`t`) and sets `metadataWhitelist = ["position"]`, so a positive lunr
+ * result necessarily matched that field and necessarily carries its offsets,
+ * and the worker forwards match metadata unchanged. A result without them means
+ * the wire contract changed or the payload is corrupt — and accepting it
+ * silently would reintroduce exactly the defect the match-centered snippet
+ * exists to fix, since a long section would quietly fall back to a leading
+ * window containing none of the query evidence.
  */
 const normalizeMatchRanges = (
   metadata: unknown,
@@ -281,6 +303,13 @@ const normalizeMatchRanges = (
         }
       }
       ranges.push({ start, length })
+    }
+  }
+
+  if (ranges.length === 0) {
+    return {
+      ok: false,
+      message: `match metadata reports no "${INDEXED_FIELD}" field positions, which the pinned index always records for a positive result`
     }
   }
 
@@ -375,7 +404,7 @@ const normalizeWorkerResult = (
     hit: {
       url: document.u,
       anchor: document.h ? document.h.replace(/^#/, '') : null,
-      section: deriveSection(document),
+      section: deriveSection(type, document),
       matchedText: document.t,
       matchRanges: normalizedRanges.ranges
     }
