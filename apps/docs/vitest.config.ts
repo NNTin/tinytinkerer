@@ -21,6 +21,9 @@ export default defineConfig({
       ),
       '@docusaurus/useBaseUrl': fileURLToPath(
         new URL('./src/test/docusaurus-use-base-url-stub.ts', import.meta.url)
+      ),
+      '@generated/globalData': fileURLToPath(
+        new URL('./src/test/generated-global-data-stub.ts', import.meta.url)
       )
     }
   },

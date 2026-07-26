@@ -58,6 +58,11 @@ export * from './tool-schema'
 // build emits these shapes and later assistant tools consume them lazily.
 export * from './documentation-corpus'
 
+// Documentation retrieval (search) wire contracts (issue #475). The
+// compatibility adapter around the pinned local-search plugin lives in
+// apps/docs; only its normalized output shapes are shared here.
+export * from './documentation-search'
+
 // Host↔plugin presentation view-models (status gauge + context inspector). Split
 // out of ./plugins to contain its growth; still the host↔plugin boundary contract,
 // so it stays in contracts (the only layer the host can import). See ./plugin-views.
