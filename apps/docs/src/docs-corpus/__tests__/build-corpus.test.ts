@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -76,16 +77,49 @@ describe('documentation corpus generation', () => {
     await writeDocumentationCorpus(output, after)
     const manifest = JSON.parse(
       await readFile(join(output, 'assets/docs-corpus', after.manifestFileName), 'utf8')
-    ) as { documents: Array<{ artifact: string }> }
+    ) as { documents: Array<{ artifact: string; artifactHash: string }> }
     expect(manifest.documents).toHaveLength(2)
-    for (const artifactUrl of manifest.documents.map((entry) => entry.artifact)) {
-      const relative = artifactUrl.replace('/assets/docs-corpus/', '')
-      const artifact = JSON.parse(
-        await readFile(join(output, 'assets/docs-corpus', relative), 'utf8')
-      ) as { markdown: string; sections: unknown[] }
+    for (const entry of manifest.documents) {
+      const relative = entry.artifact.replace('/assets/docs-corpus/', '')
+      const serializedArtifact = await readFile(
+        join(output, 'assets/docs-corpus', relative),
+        'utf8'
+      )
+      expect(createHash('sha256').update(serializedArtifact).digest('hex')).toBe(entry.artifactHash)
+      const artifact = JSON.parse(serializedArtifact) as {
+        markdown: string
+        sections: unknown[]
+      }
       expect(artifact.markdown).toBeTruthy()
       expect(artifact.sections.length).toBeGreaterThan(1)
     }
+  })
+
+  it('changes the artifact URL for metadata-only changes without invalidating other documents', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'tinytinkerer-corpus-'))
+    const changedPath = join(directory, 'changed.md')
+    const stablePath = join(directory, 'stable.md')
+    await writeFile(changedPath, '# Authored heading\n\nUnchanged body.\n', 'utf8')
+    await writeFile(stablePath, '# Stable\n\nStill stable.\n', 'utf8')
+
+    const before = await generateDocumentationCorpus(
+      [source('changed', changedPath, { title: 'Old title' }), source('stable', stablePath)],
+      '/assets/docs-corpus'
+    )
+    const after = await generateDocumentationCorpus(
+      [source('changed', changedPath, { title: 'New title' }), source('stable', stablePath)],
+      '/assets/docs-corpus'
+    )
+    const beforeChanged = before.manifest.documents.find((entry) => entry.ref === 'changed')
+    const afterChanged = after.manifest.documents.find((entry) => entry.ref === 'changed')
+    const beforeStable = before.manifest.documents.find((entry) => entry.ref === 'stable')
+    const afterStable = after.manifest.documents.find((entry) => entry.ref === 'stable')
+
+    expect(afterChanged?.contentHash).toBe(beforeChanged?.contentHash)
+    expect(afterChanged?.artifactHash).not.toBe(beforeChanged?.artifactHash)
+    expect(afterChanged?.artifact).not.toBe(beforeChanged?.artifact)
+    expect(after.manifest.manifestHash).not.toBe(before.manifest.manifestHash)
+    expect(afterStable).toEqual(beforeStable)
   })
 
   it('rejects duplicate stable refs instead of emitting an ambiguous manifest', async () => {

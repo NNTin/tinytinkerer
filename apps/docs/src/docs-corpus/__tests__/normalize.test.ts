@@ -5,6 +5,19 @@ import canonicalFixture from '../__fixtures__/canonical.mdx?raw'
 import interactiveFixture from '../__fixtures__/interactive.mdx?raw'
 import { normalizeDocumentation } from '../normalize'
 
+const selectSection = (
+  normalized: ReturnType<typeof normalizeDocumentation>,
+  anchor: string
+): string => {
+  const section = normalized.sections.find((candidate) => candidate.anchor === anchor)
+  if (!section) throw new Error(`missing test section ${anchor}`)
+  return (
+    section.selectionPrefix +
+    normalized.markdown.slice(section.startOffset, section.endOffset) +
+    section.selectionSuffix
+  )
+}
+
 describe('normalizeDocumentation', () => {
   it('preserves Markdown, GFM, fences, directives, and Docusaurus anchors', () => {
     const normalized = normalizeDocumentation(canonicalFixture, 'Canonical fixture')
@@ -16,7 +29,7 @@ describe('normalizeDocumentation', () => {
     expect(normalized.markdown).toContain('[links](https://example.com)')
     expect(normalized.markdown).toContain('- [x] A task')
     expect(normalized.markdown).toContain('| Feature | Preserved |')
-    expect(normalized.markdown).toContain(':::note Supported admonition')
+    expect(normalized.markdown).toContain(':::note[Supported admonition]')
     expect(normalized.markdown).toContain('## Not a real section')
     expect(normalized.markdown).toContain("import NotExecutable from './inside-a-fence'")
     expect(anchors).toEqual([
@@ -27,6 +40,8 @@ describe('normalizeDocumentation', () => {
       'explicit-comment',
       'explicit-classic',
       'the-api',
+      'heading-in-a-blockquote',
+      'heading-in-a-list',
       'heading-in-an-admonition'
     ])
     expect(anchors).not.toContain('not-a-real-section')
@@ -79,6 +94,20 @@ describe('normalizeDocumentation', () => {
     expect(normalized.outline[0]?.children[0]?.children[0]?.anchor).toBe('child-section')
   })
 
+  it('makes nested container sections independently valid Markdown selections', () => {
+    const normalized = normalizeDocumentation(canonicalFixture, 'Canonical fixture')
+
+    expect(selectSection(normalized, 'heading-in-a-blockquote')).toBe(
+      '> ## Heading in a blockquote\n>\n> Quoted prose stays inside the selected section.\n\n'
+    )
+    expect(selectSection(normalized, 'heading-in-a-list')).toBe(
+      '- ## Heading in a list\n\n  Listed prose stays inside the selected section.\n\n'
+    )
+    expect(selectSection(normalized, 'heading-in-an-admonition')).toBe(
+      ':::note[Supported admonition]\n\n## Heading in an admonition\n\nThe directive and its authored content stay readable.\n\n:::\n'
+    )
+  })
+
   it('splits the repository oversized page into addressable sections', () => {
     const source = readFileSync(
       resolve(process.cwd(), '../../docs/plugins-and-tools/plugin-infrastructure.md'),
@@ -98,7 +127,12 @@ describe('normalizeDocumentation', () => {
     ).toBeLessThan(10_000)
     for (const section of normalized.sections) {
       expect(section.endOffset).toBeGreaterThanOrEqual(section.contentStartOffset)
-      expect(section.characterCount).toBe(section.endOffset - section.startOffset)
+      expect(section.characterCount).toBe(
+        section.selectionPrefix.length +
+          section.endOffset -
+          section.startOffset +
+          section.selectionSuffix.length
+      )
     }
   })
 })

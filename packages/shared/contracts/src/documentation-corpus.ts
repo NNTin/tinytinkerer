@@ -19,6 +19,8 @@ export type DocumentationCorpusManifestEntry = {
   source: string
   /** SHA-256 of the normalized authored Markdown. */
   contentHash: string
+  /** SHA-256 of the complete serialized document artifact bytes. */
+  artifactHash: string
   unlisted: boolean
   /** Absolute, base-url-aware URL of the independently loadable JSON artifact. */
   artifact: string
@@ -59,6 +61,17 @@ export type DocumentationCorpusSection = {
   contentStartOffset: number
   /** Exclusive UTF-16 offset, including all descendant subsections. */
   endOffset: number
+  /**
+   * Authored container opening syntax to prepend to the offset slice. This is
+   * empty for top-level sections.
+   */
+  selectionPrefix: string
+  /**
+   * Authored container closing syntax to append to the offset slice. This is
+   * empty when the slice already contains its closing syntax.
+   */
+  selectionSuffix: string
+  /** Character count after applying the selection prefix and suffix. */
   characterCount: number
 }
 

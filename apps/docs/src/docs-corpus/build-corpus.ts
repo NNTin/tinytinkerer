@@ -38,14 +38,14 @@ const joinUrl = (...parts: string[]): string => {
   return `${first.replace(/\/+$/, '')}/${rest.map((part) => part.replace(/^\/+|\/+$/g, '')).join('/')}`
 }
 
-const artifactFileName = (ref: string, contentHash: string): string => {
+const artifactFileName = (ref: string, artifactHash: string): string => {
   const readableRef =
     ref
       .toLowerCase()
       .replace(/[^a-z0-9._-]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 60) || 'document'
-  return `documents/${readableRef}.${sha256(ref).slice(0, 12)}.${contentHash}.json`
+  return `documents/${readableRef}.${sha256(ref).slice(0, 12)}.${artifactHash}.json`
 }
 
 export const generateDocumentationCorpus = async (
@@ -80,7 +80,8 @@ export const generateDocumentationCorpus = async (
       outline: normalized.outline,
       sections: normalized.sections
     }
-    const fileName = artifactFileName(source.id, contentHash)
+    const artifactHash = sha256(serialize(artifact))
+    const fileName = artifactFileName(source.id, artifactHash)
     artifacts.set(fileName, artifact)
     entries.push({
       ref: source.id,
@@ -88,6 +89,7 @@ export const generateDocumentationCorpus = async (
       permalink: source.permalink,
       source: source.source,
       contentHash,
+      artifactHash,
       unlisted: source.unlisted,
       artifact: joinUrl(publicBaseUrl, fileName),
       characterCount: artifact.characterCount,

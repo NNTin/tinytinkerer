@@ -31,6 +31,14 @@ type Replacement = {
   value: string
 }
 
+type ContainerWrapperRecord = {
+  start: number
+  end: number
+  closingStart: number
+  prefix: string
+  suffix: string
+}
+
 type HeadingRecord = {
   anchor: string
   title: string
@@ -38,6 +46,7 @@ type HeadingRecord = {
   start: number
   contentStart: number
   end: number
+  wrappers: ContainerWrapperRecord[]
 }
 
 export type NormalizedDocumentation = {
@@ -145,17 +154,47 @@ const headingTextAndId = (heading: MarkdownNode): { title: string; id?: string }
 
 const walk = (
   node: MarkdownNode,
-  visit: (node: MarkdownNode, parent: MarkdownNode | null) => boolean | void,
-  parent: MarkdownNode | null = null
+  visit: (
+    node: MarkdownNode,
+    parent: MarkdownNode | null,
+    ancestors: readonly MarkdownNode[]
+  ) => boolean | void,
+  parent: MarkdownNode | null = null,
+  ancestors: readonly MarkdownNode[] = []
 ): void => {
-  if (visit(node, parent) === false) return
-  for (const child of node.children ?? []) walk(child, visit, node)
+  if (visit(node, parent, ancestors) === false) return
+  for (const child of node.children ?? []) walk(child, visit, node, [...ancestors, node])
 }
 
-const collectHeadings = (tree: MarkdownNode): HeadingRecord[] => {
+const collectContainerWrappers = (
+  ancestors: readonly MarkdownNode[],
+  source: string
+): ContainerWrapperRecord[] =>
+  ancestors.flatMap((ancestor) => {
+    if (ancestor.type !== 'containerDirective') return []
+    const offsets = getOffsets(ancestor)
+    if (!offsets) return []
+    const openingLineStart = source.lastIndexOf('\n', offsets.start - 1) + 1
+    const openingNewline = source.indexOf('\n', offsets.start)
+    const openingEnd = openingNewline === -1 ? offsets.end : openingNewline + 1
+    const closingStart = source.lastIndexOf('\n', offsets.end - 1) + 1
+    const opening = source.slice(openingLineStart, openingEnd)
+    const closing = source.slice(closingStart, offsets.end)
+    return [
+      {
+        start: openingLineStart,
+        end: offsets.end,
+        closingStart,
+        prefix: `${opening}${opening.endsWith('\n') ? '' : '\n'}\n`,
+        suffix: `\n${closing}${closing.endsWith('\n') ? '' : '\n'}`
+      }
+    ]
+  })
+
+const collectHeadings = (tree: MarkdownNode, source: string): HeadingRecord[] => {
   const headings: HeadingRecord[] = []
   const slugger = new GithubSlugger()
-  walk(tree, (node) => {
+  walk(tree, (node, _parent, ancestors) => {
     if (node.type !== 'heading' || typeof node.depth !== 'number') return
     const offsets = getOffsets(node)
     if (!offsets) return
@@ -167,9 +206,10 @@ const collectHeadings = (tree: MarkdownNode): HeadingRecord[] => {
       anchor,
       title,
       depth: node.depth,
-      start: offsets.start,
+      start: source.lastIndexOf('\n', offsets.start - 1) + 1,
       contentStart: offsets.end,
-      end: offsets.end
+      end: offsets.end,
+      wrappers: collectContainerWrappers(ancestors, source)
     })
   })
   return headings
@@ -266,6 +306,8 @@ const createSections = (
       startOffset: 0,
       contentStartOffset: 0,
       endOffset: markdown.length,
+      selectionPrefix: '',
+      selectionSuffix: '',
       characterCount: markdown.length
     }
   ]
@@ -274,10 +316,26 @@ const createSections = (
     const nextBoundary = headings
       .slice(headingIndex + 1)
       .find((candidate) => candidate.depth <= heading.depth)
-    const endOffset = nextBoundary?.start ?? markdown.length
+    const currentWrappers = new Set(
+      heading.wrappers.map((wrapper) => `${wrapper.start}:${wrapper.end}`)
+    )
+    // When the next peer heading begins inside a new explicit container, end
+    // before that container's opener. Otherwise the current slice would retain
+    // an opening directive while the next slice retained its closing one.
+    const endOffset =
+      nextBoundary?.wrappers
+        .filter((wrapper) => !currentWrappers.has(`${wrapper.start}:${wrapper.end}`))
+        .reduce((boundary, wrapper) => Math.min(boundary, wrapper.start), nextBoundary.start) ??
+      markdown.length
     const parent = [...headings.slice(0, headingIndex)]
       .reverse()
       .find((candidate) => candidate.depth < heading.depth)
+    const selectionPrefix = heading.wrappers.map((wrapper) => wrapper.prefix).join('')
+    const selectionSuffix = [...heading.wrappers]
+      .reverse()
+      .filter((wrapper) => endOffset <= wrapper.closingStart)
+      .map((wrapper) => wrapper.suffix)
+      .join('')
     sections.push({
       index: headingIndex + 1,
       anchor: heading.anchor,
@@ -287,7 +345,9 @@ const createSections = (
       startOffset: heading.start,
       contentStartOffset: heading.contentStart,
       endOffset,
-      characterCount: endOffset - heading.start
+      selectionPrefix,
+      selectionSuffix,
+      characterCount: selectionPrefix.length + endOffset - heading.start + selectionSuffix.length
     })
   })
   return sections
@@ -308,7 +368,7 @@ export const normalizeDocumentation = (
   const tree = (format === 'mdx' ? mdxProcessor : markdownProcessor).parse(
     canonicalSource
   ) as MarkdownNode
-  const allHeadings = collectHeadings(tree)
+  const allHeadings = collectHeadings(tree, canonicalSource)
   const replacements = collectReplacements(tree)
   const replaced = applyReplacements(canonicalSource, replacements)
   const leadingWhitespace = /^\s*/.exec(replaced)?.[0].length ?? 0
@@ -331,7 +391,16 @@ export const normalizeDocumentation = (
         ...heading,
         start: mappedStart,
         contentStart,
-        end: Math.max(mappedStart, mapOffset(heading.end, replacements) - leadingWhitespace)
+        end: Math.max(mappedStart, mapOffset(heading.end, replacements) - leadingWhitespace),
+        wrappers: heading.wrappers.map((wrapper) => ({
+          ...wrapper,
+          start: Math.max(0, mapOffset(wrapper.start, replacements) - leadingWhitespace),
+          end: Math.max(0, mapOffset(wrapper.end, replacements) - leadingWhitespace),
+          closingStart: Math.max(
+            0,
+            mapOffset(wrapper.closingStart, replacements) - leadingWhitespace
+          )
+        }))
       }
     })
 

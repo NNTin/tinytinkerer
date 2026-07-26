@@ -12,6 +12,29 @@ import {
 const DOCS_PLUGIN_NAME = 'docusaurus-plugin-content-docs'
 const DOCS_PLUGIN_ID = 'default'
 
+type CorpusVersionCandidate = {
+  versionName: string
+  isLast: boolean
+}
+
+/**
+ * Corpus refs deliberately describe the one canonical, non-version-prefixed
+ * docs version Docusaurus serves. Older and upcoming version routes can repeat
+ * the same DocMetadata id and require route-qualified identity, which belongs
+ * to the version-aware routing layer rather than this id-keyed corpus.
+ */
+export const selectCanonicalCorpusVersion = <Version extends CorpusVersionCandidate>(
+  versions: readonly Version[]
+): Version => {
+  const canonicalVersions = versions.filter((version) => version.isLast)
+  if (canonicalVersions.length !== 1 || !canonicalVersions[0]) {
+    throw new Error(
+      `documentation corpus requires exactly one Docusaurus isLast version, found ${canonicalVersions.length}`
+    )
+  }
+  return canonicalVersions[0]
+}
+
 const loadedDocsContent = (value: unknown): LoadedContent => {
   if (
     !value ||
@@ -46,17 +69,16 @@ export const documentationCorpusPlugin = (context: LoadContext): Plugin<unknown>
     name: 'documentation-corpus',
     allContentLoaded: async ({ allContent, actions }) => {
       const docsContent = loadedDocsContent(allContent[DOCS_PLUGIN_NAME]?.[DOCS_PLUGIN_ID])
-      const sources: DocumentationCorpusSource[] = docsContent.loadedVersions.flatMap((version) =>
-        version.docs.map((doc) => ({
-          id: doc.id,
-          title: doc.title,
-          permalink: doc.permalink,
-          source: doc.source,
-          draft: doc.draft,
-          unlisted: doc.unlisted,
-          absoluteSourcePath: resolveSourcePath(context.siteDir, doc.source)
-        }))
-      )
+      const canonicalVersion = selectCanonicalCorpusVersion(docsContent.loadedVersions)
+      const sources: DocumentationCorpusSource[] = canonicalVersion.docs.map((doc) => ({
+        id: doc.id,
+        title: doc.title,
+        permalink: doc.permalink,
+        source: doc.source,
+        draft: doc.draft,
+        unlisted: doc.unlisted,
+        absoluteSourcePath: resolveSourcePath(context.siteDir, doc.source)
+      }))
       generatedCorpus = await generateDocumentationCorpus(
         sources,
         `${context.baseUrl}${DOCUMENTATION_CORPUS_OUTPUT_DIRECTORY}`
