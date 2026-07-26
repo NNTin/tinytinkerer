@@ -9,7 +9,7 @@ import { resetCorpusRefMapCacheForTests } from '../corpus-ref-map'
 import { resetPrivateIndexCacheForTests } from '../private-index-adapter'
 import { searchDocumentation } from '../search-documentation'
 
-const BASE_URL = '/'
+const SITE_CONFIG = { baseUrl: '/', trailingSlash: true }
 const MANIFEST_URL = '/assets/docs-corpus/manifest.v1.abc123.json'
 
 const manifest = {
@@ -74,7 +74,7 @@ describe('searchDocumentation', () => {
   it('returns one deduplicated, #474-cited result per page for a multi-section match', async () => {
     stubFetch(buildFixtureSearchIndex(), manifest)
 
-    const response = await searchDocumentation(BASE_URL, 'install')
+    const response = await searchDocumentation(SITE_CONFIG, 'install')
 
     expect(response.ok).toBe(true)
     if (!response.ok) return
@@ -86,13 +86,14 @@ describe('searchDocumentation', () => {
       ref: 'getting-started',
       title: 'Getting Started',
       permalink: PAGE_A_URL,
-      anchor: 'installation'
+      anchor: 'installation',
+      section: 'Installation'
     })
   })
 
   it('returns a valid empty result set (not a failure) when nothing matches', async () => {
     stubFetch(buildFixtureSearchIndex(), manifest)
-    const response = await searchDocumentation(BASE_URL, 'xyznonexistentterm')
+    const response = await searchDocumentation(SITE_CONFIG, 'xyznonexistentterm')
     expect(response).toEqual({ ok: true, query: 'xyznonexistentterm', results: [] })
   })
 
@@ -105,7 +106,7 @@ describe('searchDocumentation', () => {
     }
     stubFetch(buildFixtureSearchIndex(), unlistedManifest)
 
-    const response = await searchDocumentation(BASE_URL, 'install')
+    const response = await searchDocumentation(SITE_CONFIG, 'install')
     expect(response.ok).toBe(true)
     if (!response.ok) return
     expect(response.results.some((result) => result.ref === 'getting-started')).toBe(false)
@@ -118,7 +119,7 @@ describe('searchDocumentation', () => {
     }
     stubFetch(buildFixtureSearchIndex(), partialManifest)
 
-    const response = await searchDocumentation(BASE_URL, 'hashing')
+    const response = await searchDocumentation(SITE_CONFIG, 'hashing')
     expect(response.ok).toBe(true)
     if (!response.ok) return
     expect(response.results).toEqual([])
@@ -127,7 +128,7 @@ describe('searchDocumentation', () => {
   it('propagates a dev-mode failure distinctly from an empty result', async () => {
     process.env.NODE_ENV = 'test'
     stubFetch(buildFixtureSearchIndex(), manifest)
-    const response = await searchDocumentation(BASE_URL, 'install')
+    const response = await searchDocumentation(SITE_CONFIG, 'install')
     expect(response).toMatchObject({
       ok: false,
       kind: 'documentation_search_failure',
@@ -138,7 +139,7 @@ describe('searchDocumentation', () => {
   it('propagates a corpus-manifest failure', async () => {
     __resetGlobalData() // no locator published
     stubFetch(buildFixtureSearchIndex(), manifest)
-    const response = await searchDocumentation(BASE_URL, 'install')
+    const response = await searchDocumentation(SITE_CONFIG, 'install')
     expect(response).toMatchObject({
       ok: false,
       kind: 'documentation_search_failure',
@@ -146,9 +147,18 @@ describe('searchDocumentation', () => {
     })
   })
 
+  it('gives a title-only match a null section', async () => {
+    stubFetch(buildFixtureSearchIndex(), manifest)
+    const response = await searchDocumentation(SITE_CONFIG, 'started')
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    const gettingStarted = response.results.find((result) => result.ref === 'getting-started')
+    expect(gettingStarted?.section).toBeNull()
+  })
+
   it('clamps maxResults and enforces the limit after page-level dedup', async () => {
     stubFetch(buildFixtureSearchIndex(), manifest)
-    const response = await searchDocumentation(BASE_URL, 'install configure', 1)
+    const response = await searchDocumentation(SITE_CONFIG, 'install configure', 1)
     expect(response.ok).toBe(true)
     if (!response.ok) return
     expect(response.results.length).toBeLessThanOrEqual(1)

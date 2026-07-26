@@ -9,11 +9,10 @@
  * modules it composes is meant to be used directly outside this file.
  */
 import type {
-  DocumentationCorpusManifestEntry,
   DocumentationSearchResponse,
   DocumentationSearchResult
 } from '@tinytinkerer/app-browser'
-import { loadCorpusRefMap } from './corpus-ref-map'
+import { type CorpusRefMapEntry, loadCorpusRefMap, type SiteUrlConfig } from './corpus-ref-map'
 import { type PrivateIndexSearchHit, searchPrivateIndex } from './private-index-adapter'
 
 const DEFAULT_MAX_RESULTS = 8
@@ -41,11 +40,14 @@ const boundedSnippet = (text: string): string => {
 
 /**
  * Searches the production-only local search index and returns unique,
- * #474-cited documentation results. `baseUrl` must be the site's configured
- * Docusaurus `baseUrl` (e.g. `siteConfig.baseUrl`).
+ * #474-cited documentation results. `siteConfig.baseUrl` must be the site's
+ * configured Docusaurus `baseUrl`, and `siteConfig.trailingSlash` its
+ * configured `trailingSlash` (both from `useDocusaurusContext().siteConfig`)
+ * — both are needed to normalize a raw search hit's URL against the #474
+ * corpus manifest's canonical permalinks.
  */
 export const searchDocumentation = async (
-  baseUrl: string,
+  siteConfig: SiteUrlConfig,
   query: string,
   maxResults?: number
 ): Promise<DocumentationSearchResponse> => {
@@ -54,8 +56,8 @@ export const searchDocumentation = async (
   const internalLimit = Math.max(MIN_RAW_HITS, limit * RAW_HITS_PER_RESULT)
 
   const [indexOutcome, refMapOutcome] = await Promise.all([
-    searchPrivateIndex(baseUrl, trimmedQuery, internalLimit),
-    loadCorpusRefMap()
+    searchPrivateIndex(siteConfig.baseUrl, trimmedQuery, internalLimit),
+    loadCorpusRefMap(siteConfig)
   ])
 
   if (!indexOutcome.ok) {
@@ -77,10 +79,7 @@ export const searchDocumentation = async (
     }
   }
 
-  const bestByRef = new Map<
-    string,
-    { entry: DocumentationCorpusManifestEntry; hit: PrivateIndexSearchHit }
-  >()
+  const bestByRef = new Map<string, { entry: CorpusRefMapEntry; hit: PrivateIndexSearchHit }>()
   for (const hit of indexOutcome.hits) {
     const entry = refMapOutcome.resolve(hit.url)
     // Drop rather than invent a ref: an unmapped URL means the search index
@@ -104,6 +103,7 @@ export const searchDocumentation = async (
       title: entry.title,
       permalink: entry.permalink,
       anchor: hit.anchor,
+      section: hit.section,
       snippet: boundedSnippet(hit.matchedText)
     }))
 
