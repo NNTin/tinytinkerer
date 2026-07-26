@@ -10,42 +10,121 @@ tool or UI noticing.
 
 ## Module boundary
 
-- `private-index-adapter.ts` is the **only** file that imports
-  `@easyops-cn/docusaurus-search-local` internals. It fetches and validates
-  the plugin's raw `search-index.json`, runs a tiered, progressively-relaxed
-  query against the loaded lunr indexes (see "Progressive query relaxation"
-  below), and returns a small neutral shape (`PrivateIndexSearchHit`) — never
-  the plugin's abbreviated document fields (`i`/`t`/`u`/`p`/`h`/`s`/`b`).
+- `private-worker-adapter.ts` is the **only** file that imports
+  `@easyops-cn/docusaurus-search-local` internals. It calls the plugin's own
+  `searchByWorker()` — the same entry point the site's search bar and
+  `/docs/search` page use — validates the response against the pinned contract,
+  and returns a small neutral shape (`PrivateIndexSearchHit`) — never the
+  plugin's abbreviated document fields (`i`/`t`/`u`/`p`/`h`/`s`/`b`) or its
+  `DSLASearchResult` wrapper.
 - `corpus-ref-map.ts` maps a hit's page URL to a `#474` corpus ref via the
   documentation corpus's own manifest (`docs-corpus/plugin.ts`,
   `docs-corpus/build-corpus.ts`). It knows nothing about the search plugin.
   The manifest emits every loaded Docusaurus version, so the lookup only
-  considers `isLast: true` entries — the pinned search index only ever
-  indexes that canonical version's pages. It also cross-checks the fetched
-  manifest's own `manifestHash` against the locator's, and normalizes both a
-  hit's raw URL and a manifest permalink through the exact same
-  `canonicalizeDocusaurusPermalink` helper `docs-corpus` built the manifest
-  with (`docusaurus-compatibility.ts`), so the two can't drift apart over
-  absolute-vs-relative URLs, query strings/fragments, or trailing slashes.
-  Both `searchDocumentation` and `loadCorpusRefMap` take a `siteConfig:
-{ baseUrl, trailingSlash }` argument (the same shape
-  `useDocusaurusContext().siteConfig` exposes) for this normalization.
+  considers `isLast: true` entries — the pinned search index only ever indexes
+  that canonical version's pages. It also cross-checks the fetched manifest's
+  own `manifestHash` against the locator's (see "URL normalization" below for
+  how the two sides' URLs are kept comparable). Both `searchDocumentation` and
+  `loadCorpusRefMap` take a `siteConfig: { baseUrl, trailingSlash }` argument
+  (the same shape `useDocusaurusContext().siteConfig` exposes).
 - `search-documentation.ts` composes the two into
   `DocumentationSearchResponse`
   (`packages/shared/contracts/src/documentation-search.ts`): it deduplicates
-  raw hits down to one result per page (keeping the best-scoring section),
+  raw hits down to one result per page (keeping the best matching section),
   drops results that don't map to a listed `#474` document, enforces the
   requested result limit, and builds bounded, safe snippets.
 
-Nothing outside this directory should import `private-index-adapter.ts` or
+Nothing outside this directory should import `private-worker-adapter.ts` or
 `corpus-ref-map.ts` directly — call `searchDocumentation` instead.
 
-Every cache in this directory (the loaded search index, the corpus ref map)
-only memoizes a _stable_ outcome — success, or a non-retryable failure like
-`index_incompatible`. A retryable failure (`index_unavailable`,
-`manifest_unavailable` from a network/HTTP error) is evicted immediately, so
-the next call gets a fresh attempt instead of replaying the same failure
-until a full page reload.
+> **Landmine for anything built on this (e.g. `#477`).** Docusaurus' Webpack +
+> Babel browser targets compile an array-literal spread down to
+> `[].concat(x)`, which does the wrong thing for a non-array iterable:
+> `[...someMap.values()]` becomes a one-element array holding the _iterator_.
+> Vitest transpiles to a modern target and does not reproduce this, so it only
+> shows up in a production build. Use `Array.from(...)` for `Map`/`Set`
+> iterables in code that ships to the browser.
+
+## Wrapping the worker, not forking it
+
+The plugin's real search entry point is `searchByWorker()`
+(`dist/client/client/theme/searchByWorker.js`), which Comlink-wraps a genuine
+Web Worker (`theme/worker.js`). `private-worker-adapter.ts` imports that module
+with the **byte-identical specifier** the plugin's own `SearchBar.jsx` and
+`SearchPage.jsx` use, which has two consequences that matter:
+
+- Webpack resolves both importers to one module instance, so the module-level
+  `remoteWorkerPromise` singleton — and the worker's own index cache, keyed on
+  `${baseUrl}${searchContext}` — are **shared** with the search bar rather than
+  duplicated. Searching from the assistant after searching from the search bar
+  re-uses the already-loaded index.
+- The import is a **lazy, memoized `import()`**, not a static one, so the worker
+  chunk stays out of the entry bundle and no `Worker` is constructed until the
+  first query. `#475` requires that: "No search worker or index is loaded merely
+  by opening a documentation page or the assistant."
+
+Because the query runs in the worker, everything about _how_ it runs stays
+upstream's: tokenization, stop-word handling, the trailing wildcards
+`smartQueries` adds for a possibly-incomplete last term, the
+`fuzzyMatchingDistance` matrix, `smartTerms`' 12-token cap, its leave-one-out
+relaxation at 3+ terms, iteration across the five index groups, the
+`?_=<hash>` cache-busting index URL, and the final
+`sortSearchResults`/`processTreeStatusOfSearchResults` ordering. This adapter
+adds exactly two things upstream does not: runtime validation of the response
+contract, and normalization into a stable TinyTinkerer shape.
+
+> **Correction.** An earlier revision of this file claimed `searchByWorker` and
+> `worker.js` were "architecturally unreachable" from app code, because
+> `worker.js` reads its config from
+> `@generated/@easyops-cn/docusaurus-search-local/default/generated-constants.js`.
+> That was wrong. Docusaurus' build **does** write that module (see the pinned
+> package's `generate.js`; the file lands in
+> `apps/docs/.docusaurus/@easyops-cn/docusaurus-search-local/default/`) and the
+> `@generated` alias applies to every module in the build, app code included —
+> the same channel `corpus-ref-map.ts` already uses for `@generated/globalData`.
+> The hand-rolled lunr querying that justification produced reimplemented
+> upstream's recall behavior badly, ran on the UI thread, and diverged from the
+> site's own `/search` ordering. It has been removed.
+
+## Response validation
+
+`normalizeWorkerResult` in `private-worker-adapter.ts` is `#475`'s "pinned
+compatibility fixture" surface, and it is not defensive boilerplate. Upstream's
+`SearchWorker.search` builds each result with a bare
+`documents.find((doc) => doc.i.toString() === result.ref)` and **no** runtime
+check, so a serialized lunr index whose refs have drifted from its own
+`documents[]` yields `document: undefined` and a plausible-looking empty result
+set. Every result is therefore checked for:
+
+- a `type` inside the five configured groups (`Title`…`Content`); upstream's
+  `AskAI = 5` only exists when `searchLocalOptions.askAi` is set, which this
+  site never sets;
+- a document matching the abbreviated wire record, with `p` required on
+  everything but a `Title` record;
+- a parent `page` that is literal `false` for a `Title` result and otherwise a
+  title-shaped record whose `i` equals the document's `p`;
+- a finite `score` and a `tokens` string array.
+
+Anything else becomes `index_incompatible` with a message naming the offending
+result and pointing back at the upgrade checklist below.
+`__tests__/private-worker-contract.test.ts` runs the **real** upstream
+`SearchWorker` over a byte-real serialized index and asserts this is exactly the
+shape it produces, so an upgrade that changes it fails with a concrete diff
+rather than silently.
+
+## Result ordering
+
+`search-documentation.ts` deliberately does **not** re-rank pages. Raw lunr
+scores come from five _independent_ indexes and are not comparable across them,
+so sorting by them diverges from what the site's own `/docs/search` page shows
+for the same query. Instead:
+
+- **Page order** is the order pages first appear in the worker's already-sorted
+  result array.
+- **Within a page**, the representative hit prefers one that carries an anchor
+  (so a section match cites the section, not the top of the page); among those
+  the higher raw lunr score wins, with the worker's own order breaking ties. A
+  page-title hit represents the page only when it is all that page produced.
 
 ## `section`: human-readable section titles
 
@@ -53,7 +132,7 @@ Each `DocumentationSearchResult` carries `section: string | null` alongside
 `anchor: string | null` — `anchor` is a URL slug for navigation
 (`read_doc(ref, anchor)`), `section` is the display name of the heading the
 match belongs to, for a UI or an assistant to show directly. Derived in
-`private-index-adapter.ts` per the plugin's own `scanDocuments.js` semantics:
+`private-worker-adapter.ts` per the plugin's own `scanDocuments.js` semantics:
 
 ```ts
 const section = doc.s ?? (doc.h ? doc.t : null)
@@ -65,6 +144,26 @@ const section = doc.s ?? (doc.h ? doc.t : null)
 - A Description/Keywords/Content record's `s` is the enclosing heading's
   title, or the page title itself if the match has no enclosing heading.
 
+## URL normalization
+
+`corpus-ref-map.ts` compares a hit's page URL against a `#474` manifest
+permalink after: resolving it to a pathname (so an absolute URL and a bare path
+normalize identically, and any query string or fragment is dropped), then
+applying `canonicalizeDocusaurusPermalink` — the exact same helper, over
+Docusaurus' own `applyTrailingSlash`, that `docs-corpus` built the manifest
+with, so the two sides can't drift over trailing-slash policy.
+
+It deliberately does **not** add, strip, or rewrite a base URL or a version
+path, because neither is ever needed:
+
+- Both producers already emit base-url-prefixed paths. The plugin's own
+  `postBuildFactory.js` asserts `doc.u.startsWith(baseUrl)`, and a Docusaurus
+  `permalink` is base-url-aware by construction — with this site's `/docs/`
+  base URL, both sides read `/docs/...` already.
+- Version paths can't diverge either: the lookup only considers `isLast`
+  entries, and the plugin writes exactly one root index covering that same
+  canonical version.
+
 ## Production-only index
 
 The plugin writes `search-index.json` only from its Webpack `postBuild` hook;
@@ -72,136 +171,66 @@ The plugin writes `search-index.json` only from its Webpack `postBuild` hook;
 in development. `searchDocumentation` mirrors the plugin's own search bar
 (`searchByWorker.js` checks `process.env.NODE_ENV === 'production'`) and
 returns the explicit `index_dev_unsupported` failure in dev, instead of a
-misleading empty result set. A genuinely empty result set (`{ ok: true,
-results: [] }`) only ever comes from a production index that legitimately
-matched nothing.
+misleading empty result set — upstream itself just returns `[]` there, which
+would be indistinguishable from a real zero-result search. A genuinely empty
+result set (`{ ok: true, results: [] }`) only ever comes from a production
+index that legitimately matched nothing.
 
 ## Failure vocabulary
 
 | Code                    | Meaning                                                                           | Retryable |
 | ----------------------- | --------------------------------------------------------------------------------- | --------- |
 | `index_dev_unsupported` | Not a production build; no index exists.                                          | No        |
-| `index_unavailable`     | The index asset request failed (network/HTTP).                                    | Yes       |
-| `index_incompatible`    | The fetched index doesn't match this adapter's pinned shape.                      | No        |
-| `manifest_unavailable`  | The `#474` corpus manifest request failed, or the corpus plugin isn't registered. | Depends   |
-| `manifest_incompatible` | The fetched corpus manifest doesn't match the expected schema.                    | No        |
+| `index_unavailable`     | The worker could not load or query the index (network/HTTP).                      | No¹       |
+| `index_incompatible`    | The worker's response doesn't match this adapter's pinned contract.               | No        |
+| `manifest_unavailable`  | The `#474` corpus manifest request failed, or the corpus plugin isn't registered. | Depends²  |
+| `manifest_incompatible` | The corpus locator or manifest doesn't match the expected schema.                 | No        |
+
+¹ Not retryable **in the current page session**, which is what `retryable`
+means to a caller. Upstream's `SearchWorker.lowLevelFetchIndexes` memoizes its
+index fetch in a module-level `Map` and stores the promise _before_ awaiting it,
+so a rejected fetch is replayed to every later caller. That cache lives inside
+the worker and cannot be evicted from here, so the message tells the user to
+reload the page rather than inviting a futile retry loop. If in-session recovery
+ever becomes necessary, fix or fork the upstream cache explicitly — do not
+instantiate a second worker, which would duplicate the index in memory and
+defeat the singleton reuse described above.
+
+² Retryable for a network/HTTP failure, not for a missing corpus plugin. This
+cache is TinyTinkerer's own, so `corpus-ref-map.ts` evicts a retryable failure
+immediately and the next call gets a fresh attempt. Its cache is keyed by
+manifest URL, manifest hash, base URL and trailing-slash policy, so one
+caller's site config can never decide another's normalization.
 
 ## Upgrade checklist for `@easyops-cn/docusaurus-search-local`
 
-0. The `private-index-adapter.test.ts` "pinned version" test fails
-   immediately (asserting the installed version is still `0.55.2`) as a
-   tripwire pointing back at this checklist — it's not a substitute for
-   actually working through the rest of it.
-1. Run `apps/docs`'s tests. A wire-format change surfaces as an
-   `index_incompatible` failure from `validateRawSearchIndex` naming the
-   group/field that no longer matches — that is this module's pinned
-   compatibility fixture/test.
-2. Diff `dist/client/client/utils/tokenize.js` (the one function this adapter
-   imports) against the new version; update the import if its name or
-   signature changed. Also re-diff `dist/client/client/utils/smartQueries.js`
-   and `dist/server/server/utils/scanDocuments.js` if the query-relaxation
-   tiers or `section`'s derivation (both documented above) ever stop matching
-   real search-bar behavior — re-verify against a real production build the
-   same way this feature's fix was validated (a small, uncommitted script
-   loading `search-index.json` through `searchPrivateIndex` directly).
+0. The `private-worker-adapter.test.ts` "pinned version" test fails immediately
+   (asserting `apps/docs/package.json` still declares `0.55.2`, matching
+   `PINNED_SEARCH_PLUGIN_VERSION`) as a tripwire pointing back at this checklist
+   — it's not a substitute for actually working through the rest of it. It reads
+   _our_ manifest rather than the plugin's, so this directory's "only the
+   compatibility module imports package internals" rule stays mechanically true.
+1. Run `apps/docs`'s tests. `private-worker-contract.test.ts` drives the real
+   upstream `SearchWorker` and is where a changed response contract surfaces
+   first, naming the field that no longer matches.
+2. Diff `dist/client/client/theme/searchByWorker.js` and `theme/worker.js`: the
+   `searchByWorker(baseUrl, searchContext, input, limit)` signature, the
+   `NODE_ENV === 'production'` gate, the module-level worker singleton, and the
+   result fields (`document`, `type`, `page`, `metadata`, `tokens`, `score`)
+   this adapter validates. Also re-diff `dist/client/shared/interfaces.js` for
+   the `SearchDocumentType` ordinals, and `dist/server/server/utils/scanDocuments.js`
+   if `section`'s derivation (documented above) stops matching real behavior.
 3. Confirm `dist/server/server/utils/buildIndex.js`/`scanDocuments.js` still
    emit exactly 5 index groups, in order
-   `[title, heading, description, keywords, content]`, with `ref('i')` and
-   the same abbreviated field names this file's types encode
-   (`validateRawSearchIndex` now rejects anything other than exactly 5). A
-   6th `AskAI` group only appears when `searchLocalOptions.askAi` is set;
-   TinyTinkerer never sets it.
-4. Confirm `hashed`/`searchContextByPaths` handling in `generate.js`/
-   `postBuildFactory.js` still matches `SEARCH_INDEX_FILENAME` being a fixed
-   `search-index.json` literal (true today because `searchLocalOptions` pins
-   `hashed: true`, not `"filename"`, and sets no `searchContextByPaths`) — if
-   either config changes, update the URL construction alongside it.
-
-## Why `tokenize`, but neither `smartQueries` nor `searchByWorker`
-
-The plugin's real search entry points, `searchByWorker`/`fetchIndexesByWorker`
-(`dist/client/client/theme/searchByWorker.js`), are Comlink-wrapped calls into
-an actual Web Worker (`worker.js`, `Comlink.expose(SearchWorker)`) — not
-plain functions. Both are also hard-gated on `NODE_ENV === 'production'`, and
-the worker's query builder, `smartQueries.js`, reads its `language`,
-`removeDefaultStopWordFilter`, and `fuzzyMatchingDistance` config from
-`./proxiedGeneratedConstants`, which re-exports a Docusaurus-webpack-generated
-virtual module (`@generated/@easyops-cn/docusaurus-search-local/default/
-generated-constants.js`) materialized only inside the site's own build — not
-passable as a plain argument. Calling either directly from this adapter is
-not a style choice this module opted out of; it is architecturally
-unreachable outside a live browser build's own worker thread.
-
-Instead, this adapter reuses only `tokenize()` — the pure function that
-turns a query into the same tokens the build indexed — and reimplements the
-_mechanism_ `smartQueries` uses for recall (progressive relaxation), scoped
-to what a complete assistant query needs rather than the incremental-typing
-wildcard/edit-distance machinery real keystroke-by-keystroke search-bar input
-needs.
-
-### Progressive query relaxation
-
-An earlier version of this adapter marked every tokenized query term
-`presence: REQUIRED` in a single query per index group. Against a real
-production build, complete natural-language questions like `"how can I host
-TinyTinkerer"` or `"where can I find plugin infrastructure"` — exactly the
-kind of query issue #471 exists to support — returned **zero** hits, while
-the plugin's own search bar found dozens. Tracing `smartQueries.js` end to
-end explains why, and it's not what it looks like at first: lunr's default
-English `stopWordFilter` is active for this site (`searchLocalOptions` never
-sets `removeDefaultStopWordFilter`), and lunr runs that same pipeline on a
-_query_ term before matching it — so a stopword submitted as a `REQUIRED`
-term is **already a no-op**, not a hard requirement, in both the old code and
-the real plugin. The actual reason `smartQueries` finds more is that it
-builds and tries several separate all-`REQUIRED` queries over different
-_subsets_ of the remaining content words — specifically, "leave-one-out"
-variants that each drop exactly one word — so a page whose matching words
-never all co-occur in one indexed field can still be found via a variant
-that doesn't require the missing one.
-
-`private-index-adapter.ts` reimplements this as three ordered tiers, tried
-only as needed (an escalation to a looser tier only happens if the current
-one hasn't found enough distinct results for the caller's requested `limit`
-after scanning **every** index group — see the note on the early-break fix
-below):
-
-1. **`exact`** — every token `REQUIRED` (the original, unchanged behavior).
-   Any query this alone satisfies is completely unaffected by the tiers
-   below.
-2. **`stopword_trimmed`** — drop tokens `lunr.stopWordFilter` identifies as
-   stopwords (checked directly via `lunr.stopWordFilter(new
-lunr.Token(word, {}))`, not a hand-rolled list), if that's non-empty and
-   shorter than the original. Provably redundant under this site's current
-   config for the reason above — kept for defense-in-depth if
-   `removeDefaultStopWordFilter` is ever configured later.
-3. **`leave_one_out`** — for the (possibly trimmed) remaining tokens, once
-   there are **2 or more**, one variant per token that drops exactly that
-   token, each still all-`REQUIRED`.
-
-Hits are merged and ranked across tiers _and_ across all 5 index groups by a
-large fixed per-tier score offset (`TIER_SCORE_OFFSET`) added to lunr's own
-score, so an `exact` hit always outranks a `leave_one_out` hit regardless of
-raw lunr score, and `search-documentation.ts`'s existing score-based re-sort
-automatically respects this with no changes of its own.
-
-**Deliberate deviation from upstream's own threshold**: the real plugin only
-generates leave-one-out variants once 3+ content words remain (`term.length >
-2`); this adapter lowers that to 2, so a two-content-word question (e.g.
-`"host TinyTinkerer"`) falls back to matching either word alone as a
-last-resort tier if the two never co-occur. This is a real precision/recall
-trade-off, not a mechanical port — accepted here because #471 explicitly
-prioritizes answering natural-language questions over upstream's more
-conservative default. See `LEAVE_ONE_OUT_MIN_TOKENS` in
-`private-index-adapter.ts`.
-
-**The early-break fix**: every index group is now scanned in full for a tier
-before deciding whether to escalate. The previous code stopped as soon as
-`limit` raw hits accumulated mid-scan, which could both bias the escalation
-decision toward whichever group happened to be queried first and miss a
-later group's better section for a page already seen via an earlier group.
-
-**Known, accepted gap**: the plugin's own `?_=<hash>` cache-busting query
-string on `search-index.json` can't be reproduced here for the same
-virtual-module reason described above — this adapter always fetches the
-stable, un-suffixed filename. This only affects browser HTTP cache
-aggressiveness immediately after a fresh deploy, never search correctness.
+   `[title, heading, description, keywords, content]`, with `ref('i')` and the
+   same abbreviated field names. A 6th `AskAI` group only appears when
+   `searchLocalOptions.askAi` is set; TinyTinkerer never sets it, and the
+   adapter rejects a `type` outside `0..4`.
+4. Confirm `generate.js` still emits the constants
+   `apps/docs/src/test/generated-search-constants-stub.ts` mirrors
+   (`language`, `removeDefaultStopWordFilter`, `searchIndexUrl`,
+   `searchResultLimits`, `fuzzyMatchingDistance`) — if the worker starts
+   reading a new one, add it to the stub or the contract test quietly stops
+   exercising real behavior. Also confirm `searchContextByPaths` is still
+   unset for this site, since `private-worker-adapter.ts` passes an empty
+   search context on that basis.
