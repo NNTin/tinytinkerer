@@ -23,10 +23,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildFixtureSearchIndex,
   buildNaturalLanguageFixtureSearchIndex,
+  buildOrderingFixtureSearchIndex,
   PAGE_A_URL,
   PAGE_C_URL,
   PAGE_D_URL,
-  PAGE_E_URL
+  PAGE_E_URL,
+  PAGE_G_URL
 } from '../__fixtures__/build-fixture-index'
 
 const BASE_URL = '/docs/'
@@ -103,9 +105,59 @@ describe('the pinned search worker contract', () => {
         expect(document.p).toBeUndefined()
       } else {
         expect(typeof document.p).toBe('number')
-        expect((entry.page as Record<string, unknown>).i).toBe(document.p)
+        const page = entry.page as Record<string, unknown>
+        expect(page.i).toBe(document.p)
+        // The invariant the adapter relies on to cite a hit against the right
+        // corpus ref: a child never belongs to a parent on a different page.
+        expect(page.u).toBe(document.u)
       }
     }
+  })
+
+  it('reports match offsets under metadata[term].t.position, inside the indexed text', async () => {
+    // The public snippet is built from these offsets — see boundedSnippet in
+    // search-documentation.ts. `buildIndex.js` indexes one field (`t`) and
+    // whitelists one metadata key (`position`); this pins both.
+    const search = await loadUpstreamWorker(buildFixtureSearchIndex())
+    const results = await search(BASE_URL, SEARCH_CONTEXT, 'install', LIMIT)
+
+    expect(results.length).toBeGreaterThan(0)
+    let positionsSeen = 0
+    for (const result of results) {
+      const { metadata, document } = result as {
+        metadata: Record<string, Record<string, { position: [number, number][] }>>
+        document: { t: string }
+      }
+      for (const perTerm of Object.values(metadata)) {
+        const perField = perTerm.t
+        if (!perField) continue
+        expect(Array.isArray(perField.position)).toBe(true)
+        for (const [start, length] of perField.position) {
+          positionsSeen += 1
+          expect(Number.isInteger(start)).toBe(true)
+          expect(Number.isInteger(length)).toBe(true)
+          expect(start).toBeGreaterThanOrEqual(0)
+          expect(length).toBeGreaterThan(0)
+          expect(start + length).toBeLessThanOrEqual(document.t.length)
+        }
+      }
+    }
+    expect(positionsSeen).toBeGreaterThan(0)
+  })
+
+  it('ranks a page that matches only in the content group after weaker title-group matches', async () => {
+    // Guards search-documentation.ts's ordering test: it asserts the collapsed
+    // page order, which is only a meaningful regression test while this fixture
+    // genuinely inverts raw score against worker order.
+    const search = await loadUpstreamWorker(buildOrderingFixtureSearchIndex())
+    const results = (await search(BASE_URL, SEARCH_CONTEXT, 'widget', LIMIT)) as {
+      document: { u: string }
+      score: number
+    }[]
+
+    const bestScoring = [...results].sort((a, b) => b.score - a.score)[0]
+    expect(bestScoring.document.u).toBe(PAGE_G_URL)
+    expect(results.at(-1)?.document.u).toBe(PAGE_G_URL)
   })
 
   it('finds every section of a page across the separate index groups', async () => {
