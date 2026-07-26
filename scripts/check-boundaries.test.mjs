@@ -68,6 +68,18 @@ test('workspace package subpath imports are forbidden', async (t) => {
   assert.match(result.stderr, /workspace package subpath imports are forbidden/)
 })
 
+test('the server-safe documentation corpus facade is allowed', async (t) => {
+  const result = await withFixture(t, {
+    'packages/app-browser/package.json': pkg('@tinytinkerer/app-browser'),
+    'packages/app-browser/src/index.ts': '',
+    'packages/consumer/package.json': pkg('@tinytinkerer/consumer'),
+    'packages/consumer/src/index.ts':
+      "import { version } from '@tinytinkerer/app-browser/documentation-corpus'\n"
+  })
+
+  assert.equal(result.code, 0)
+})
+
 test('app-to-app imports are forbidden', async (t) => {
   const result = await withFixture(t, {
     'apps/app-one/package.json': pkg('@tinytinkerer/app-one', {

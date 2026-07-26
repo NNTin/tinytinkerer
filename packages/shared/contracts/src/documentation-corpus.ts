@@ -12,6 +12,12 @@ export type DocumentationCorpusSchemaVersion = typeof DOCUMENTATION_CORPUS_SCHEM
 export type DocumentationCorpusManifestEntry = {
   /** Docusaurus' canonical document id (the `metadata.id` active-doc exposes). */
   ref: string
+  /** Docusaurus version name. `(version, ref)` is unique within a corpus. */
+  version: string
+  /** Canonical base route for this Docusaurus version. */
+  versionPath: string
+  /** Whether this is the version used for unqualified `read_doc(ref)` calls. */
+  isLast: boolean
   title: string
   /** Canonical, base-url-aware Docusaurus permalink. */
   permalink: string
@@ -86,6 +92,7 @@ export type DocumentationCorpusOutlineItem = {
 export type DocumentationCorpusDocumentArtifact = {
   schemaVersion: DocumentationCorpusSchemaVersion
   ref: string
+  version: string
   contentHash: string
   characterCount: number
   markdown: string

@@ -168,6 +168,7 @@ export type {
   ServiceStatus,
   SystemStatus
 } from '@tinytinkerer/contracts'
+export { DOCUMENTATION_CORPUS_SCHEMA_VERSION } from '@tinytinkerer/contracts'
 export { createAppShellRouter } from './app-shell-router'
 export type { AppShellPageModule, CreateAppShellRouterOptions } from './app-shell-router'
 export { createAppLoadingScreens } from './app-loading-screens'

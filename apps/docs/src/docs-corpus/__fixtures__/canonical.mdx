@@ -5,6 +5,8 @@ unlisted: true
 
 # Corpus fixture
 
+<!-- Editorial note: never expose this to the model. -->
+
 Authored [links](https://example.com), ~~GFM~~, and prose stay intact.
 
 - [x] A task
@@ -35,6 +37,12 @@ Second occurrence.
 ## Explicit comment {/* #explicit-comment */}
 
 Comment anchor.
+
+## Explicit HTML comment <!-- #explicit-html -->
+
+HTML comment anchor.
+
+{/* Another hidden editorial note. */}
 
 ## Explicit classic {#explicit-classic}
 

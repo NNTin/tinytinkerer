@@ -11,6 +11,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./documentation-corpus": {
+      "types": "./src/documentation-corpus.ts",
+      "default": "./src/documentation-corpus.ts"
+    },
     "./styles.css": "./src/styles.css"
   },
   "main": "src/index.ts",

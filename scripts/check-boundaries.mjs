@@ -64,6 +64,9 @@ const PURE_TYPE_MODULE_RULES = [
 
 const importPattern =
   /\b(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g
+// Docusaurus build configuration must not evaluate app-browser's browser-only
+// root barrel. This narrowly scoped public facade contains contracts only.
+const ALLOWED_WORKSPACE_FACADES = new Set(['@tinytinkerer/app-browser/documentation-corpus'])
 
 const workspacePackages = await loadWorkspacePackages()
 const workspaceByName = new Map(workspacePackages.map((pkg) => [pkg.name, pkg]))
@@ -329,7 +332,11 @@ function validateBoundary(sourcePkg, target, filePath) {
   const sourceLabel = relative(rootDir, filePath)
   const targetPkg = target.pkg
 
-  if (target.isSubpathImport && targetPkg.name !== sourcePkg.name) {
+  if (
+    target.isSubpathImport &&
+    targetPkg.name !== sourcePkg.name &&
+    !ALLOWED_WORKSPACE_FACADES.has(target.specifier)
+  ) {
     errors.push(
       `${sourceLabel}: workspace package subpath imports are forbidden (${target.specifier})`
     )

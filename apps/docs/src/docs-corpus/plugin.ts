@@ -1,13 +1,15 @@
 import { resolve } from 'node:path'
-import type { LoadedContent } from '@docusaurus/plugin-content-docs'
+import type { DocMetadata, LoadedContent, LoadedVersion } from '@docusaurus/plugin-content-docs'
 import type { LoadContext, Plugin } from '@docusaurus/types'
 import {
   DOCUMENTATION_CORPUS_OUTPUT_DIRECTORY,
   generateDocumentationCorpus,
-  writeDocumentationCorpus,
+  serializeDocumentationCorpusAssets,
   type DocumentationCorpusSource,
   type GeneratedDocumentationCorpus
 } from './build-corpus'
+import { canonicalizeDocusaurusPermalink } from './docusaurus-compatibility'
+import { validateProductionDocumentationCorpus } from './validate-corpus'
 
 const DOCS_PLUGIN_NAME = 'docusaurus-plugin-content-docs'
 const DOCS_PLUGIN_ID = 'default'
@@ -18,10 +20,9 @@ type CorpusVersionCandidate = {
 }
 
 /**
- * Corpus refs deliberately describe the one canonical, non-version-prefixed
- * docs version Docusaurus serves. Older and upcoming version routes can repeat
- * the same DocMetadata id and require route-qualified identity, which belongs
- * to the version-aware routing layer rather than this id-keyed corpus.
+ * Corpus refs remain Docusaurus document ids. All versions are emitted and the
+ * `(versionName, ref)` pair supplies the unique internal identity; this helper
+ * identifies the version used for unqualified ref reads.
  */
 export const selectCanonicalCorpusVersion = <Version extends CorpusVersionCandidate>(
   versions: readonly Version[]
@@ -33,6 +34,61 @@ export const selectCanonicalCorpusVersion = <Version extends CorpusVersionCandid
     )
   }
   return canonicalVersions[0]
+}
+
+type WebpackCompiler = {
+  webpack: {
+    Compilation: { PROCESS_ASSETS_STAGE_ADDITIONAL: number }
+    sources: { RawSource: new (value: string) => unknown }
+  }
+  hooks: {
+    thisCompilation: {
+      tap: (
+        name: string,
+        handler: (compilation: {
+          hooks: {
+            processAssets: {
+              tap: (options: { name: string; stage: number }, handler: () => void) => void
+            }
+          }
+          emitAsset: (name: string, source: unknown) => void
+        }) => void
+      ) => void
+    }
+  }
+}
+
+class DocumentationCorpusAssetsPlugin {
+  readonly #getCorpus: () => GeneratedDocumentationCorpus | undefined
+
+  constructor(getCorpus: () => GeneratedDocumentationCorpus | undefined) {
+    this.#getCorpus = getCorpus
+  }
+
+  apply(compilerValue: unknown): void {
+    const compiler = compilerValue as WebpackCompiler
+    const pluginName = 'DocumentationCorpusAssetsPlugin'
+    compiler.hooks.thisCompilation.tap(pluginName, (compilation) => {
+      compilation.hooks.processAssets.tap(
+        {
+          name: pluginName,
+          stage: compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_ADDITIONAL
+        },
+        () => {
+          const corpus = this.#getCorpus()
+          if (!corpus) {
+            throw new Error('documentation corpus assets requested before content was loaded')
+          }
+          for (const [relativePath, bytes] of serializeDocumentationCorpusAssets(corpus)) {
+            compilation.emitAsset(
+              `${DOCUMENTATION_CORPUS_OUTPUT_DIRECTORY}/${relativePath}`,
+              new compiler.webpack.sources.RawSource(bytes)
+            )
+          }
+        }
+      )
+    })
+  }
 }
 
 const loadedDocsContent = (value: unknown): LoadedContent => {
@@ -56,11 +112,49 @@ const resolveSourcePath = (siteDir: string, source: string): string => {
   return resolve(siteDir, source.slice('@site/'.length))
 }
 
+type CorpusDocMetadata = Pick<DocMetadata, 'id' | 'title' | 'permalink' | 'source' | 'frontMatter'>
+type CorpusLoadedVersion = Pick<LoadedVersion, 'versionName' | 'path' | 'isLast'> & {
+  docs: CorpusDocMetadata[]
+}
+
+export const createDocumentationCorpusSources = (
+  versions: readonly CorpusLoadedVersion[],
+  options: {
+    siteDir: string
+    baseUrl: string
+    trailingSlash: boolean | undefined
+  }
+): DocumentationCorpusSource[] => {
+  selectCanonicalCorpusVersion(versions)
+  const canonicalize = (permalink: string): string =>
+    canonicalizeDocusaurusPermalink(permalink, {
+      baseUrl: options.baseUrl,
+      trailingSlash: options.trailingSlash
+    })
+
+  return versions.flatMap((version) =>
+    version.docs.map((doc) => ({
+      id: doc.id,
+      version: version.versionName,
+      versionPath: canonicalize(version.path),
+      isLast: version.isLast,
+      title: doc.title,
+      permalink: canonicalize(doc.permalink),
+      source: doc.source,
+      // Docusaurus intentionally neutralizes these metadata fields in
+      // development. Authored frontmatter is the environment-stable truth.
+      draft: doc.frontMatter.draft === true,
+      unlisted: doc.frontMatter.unlisted === true,
+      absoluteSourcePath: resolveSourcePath(options.siteDir, doc.source)
+    }))
+  )
+}
+
 /**
  * First-party Docusaurus plugin that derives the assistant corpus from the docs
  * plugin's loaded metadata. It deliberately emits no route or document-body
- * module: only a tiny manifest locator enters global data, while postBuild
- * writes hashed JSON assets for explicit read operations.
+ * module: only a tiny manifest locator enters global data, while the client
+ * compiler emits hashed JSON assets for explicit reads in start and build.
  */
 export const documentationCorpusPlugin = (context: LoadContext): Plugin<unknown> => {
   let generatedCorpus: GeneratedDocumentationCorpus | undefined
@@ -69,21 +163,22 @@ export const documentationCorpusPlugin = (context: LoadContext): Plugin<unknown>
     name: 'documentation-corpus',
     allContentLoaded: async ({ allContent, actions }) => {
       const docsContent = loadedDocsContent(allContent[DOCS_PLUGIN_NAME]?.[DOCS_PLUGIN_ID])
-      const canonicalVersion = selectCanonicalCorpusVersion(docsContent.loadedVersions)
-      const sources: DocumentationCorpusSource[] = canonicalVersion.docs.map((doc) => ({
-        id: doc.id,
-        title: doc.title,
-        permalink: doc.permalink,
-        source: doc.source,
-        draft: doc.draft,
-        unlisted: doc.unlisted,
-        absoluteSourcePath: resolveSourcePath(context.siteDir, doc.source)
-      }))
+      const sources = createDocumentationCorpusSources(docsContent.loadedVersions, {
+        siteDir: context.siteDir,
+        baseUrl: context.baseUrl,
+        trailingSlash: context.siteConfig.trailingSlash
+      })
       generatedCorpus = await generateDocumentationCorpus(
         sources,
         `${context.baseUrl}${DOCUMENTATION_CORPUS_OUTPUT_DIRECTORY}`
       )
       actions.setGlobalData(generatedCorpus.locator)
+    },
+    configureWebpack: (_config, isServer) => {
+      if (isServer) return
+      return {
+        plugins: [new DocumentationCorpusAssetsPlugin(() => generatedCorpus)]
+      }
     },
     postBuild: async ({ outDir }) => {
       if (!generatedCorpus) {
@@ -91,7 +186,11 @@ export const documentationCorpusPlugin = (context: LoadContext): Plugin<unknown>
           'documentation corpus postBuild ran before Docusaurus loaded document metadata'
         )
       }
-      await writeDocumentationCorpus(outDir, generatedCorpus)
+      await validateProductionDocumentationCorpus(outDir, generatedCorpus, {
+        baseUrl: context.baseUrl,
+        trailingSlash: context.siteConfig.trailingSlash,
+        siteUrl: context.siteConfig.url
+      })
     }
   }
 }

@@ -5,16 +5,18 @@ import type {
   DocumentationCorpusDocumentArtifact,
   DocumentationCorpusLocator,
   DocumentationCorpusManifest,
-  DocumentationCorpusManifestEntry,
-  DocumentationCorpusSchemaVersion
-} from '@tinytinkerer/app-browser'
+  DocumentationCorpusManifestEntry
+} from '@tinytinkerer/app-browser/documentation-corpus'
+import { DOCUMENTATION_CORPUS_SCHEMA_VERSION } from '@tinytinkerer/app-browser/documentation-corpus'
 import { normalizeDocumentation } from './normalize'
 
 export const DOCUMENTATION_CORPUS_OUTPUT_DIRECTORY = 'assets/docs-corpus'
-const DOCUMENTATION_CORPUS_SCHEMA_VERSION = 1 satisfies DocumentationCorpusSchemaVersion
 
 export type DocumentationCorpusSource = {
   id: string
+  version: string
+  versionPath: string
+  isLast: boolean
   title: string
   permalink: string
   source: string
@@ -38,14 +40,14 @@ const joinUrl = (...parts: string[]): string => {
   return `${first.replace(/\/+$/, '')}/${rest.map((part) => part.replace(/^\/+|\/+$/g, '')).join('/')}`
 }
 
-const artifactFileName = (ref: string, artifactHash: string): string => {
+const artifactFileName = (version: string, ref: string, artifactHash: string): string => {
   const readableRef =
-    ref
+    `${version}-${ref}`
       .toLowerCase()
       .replace(/[^a-z0-9._-]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 60) || 'document'
-  return `documents/${readableRef}.${sha256(ref).slice(0, 12)}.${artifactHash}.json`
+  return `documents/${readableRef}.${sha256(`${version}:${ref}`).slice(0, 12)}.${artifactHash}.json`
 }
 
 export const generateDocumentationCorpus = async (
@@ -54,15 +56,18 @@ export const generateDocumentationCorpus = async (
 ): Promise<GeneratedDocumentationCorpus> => {
   const artifacts = new Map<string, DocumentationCorpusDocumentArtifact>()
   const entries: DocumentationCorpusManifestEntry[] = []
-  const seenRefs = new Set<string>()
+  const seenIdentities = new Set<string>()
 
   for (const source of [...sources]
     .filter((item) => !item.draft)
-    .sort((a, b) => a.id.localeCompare(b.id))) {
-    if (seenRefs.has(source.id)) {
-      throw new Error(`documentation corpus contains duplicate Docusaurus ref "${source.id}"`)
+    .sort((a, b) => a.version.localeCompare(b.version) || a.id.localeCompare(b.id))) {
+    const identity = `${source.version}\0${source.id}`
+    if (seenIdentities.has(identity)) {
+      throw new Error(
+        `documentation corpus contains duplicate Docusaurus identity "${source.version}/${source.id}"`
+      )
     }
-    seenRefs.add(source.id)
+    seenIdentities.add(identity)
 
     const authoredSource = await readFile(source.absoluteSourcePath, 'utf8')
     const normalized = normalizeDocumentation(
@@ -74,6 +79,7 @@ export const generateDocumentationCorpus = async (
     const artifact: DocumentationCorpusDocumentArtifact = {
       schemaVersion: DOCUMENTATION_CORPUS_SCHEMA_VERSION,
       ref: source.id,
+      version: source.version,
       contentHash,
       characterCount: normalized.markdown.length,
       markdown: normalized.markdown,
@@ -81,10 +87,13 @@ export const generateDocumentationCorpus = async (
       sections: normalized.sections
     }
     const artifactHash = sha256(serialize(artifact))
-    const fileName = artifactFileName(source.id, artifactHash)
+    const fileName = artifactFileName(source.version, source.id, artifactHash)
     artifacts.set(fileName, artifact)
     entries.push({
       ref: source.id,
+      version: source.version,
+      versionPath: source.versionPath,
+      isLast: source.isLast,
       title: source.title,
       permalink: source.permalink,
       source: source.source,
@@ -121,6 +130,15 @@ export const generateDocumentationCorpus = async (
   }
 }
 
+/** Exact relative output paths and bytes shared by build and development. */
+export const serializeDocumentationCorpusAssets = (
+  corpus: GeneratedDocumentationCorpus
+): Map<string, string> =>
+  new Map([
+    [corpus.manifestFileName, serialize(corpus.manifest)],
+    ...[...corpus.artifacts].map(([fileName, artifact]) => [fileName, serialize(artifact)] as const)
+  ])
+
 export const writeDocumentationCorpus = async (
   outDir: string,
   corpus: GeneratedDocumentationCorpus
@@ -128,10 +146,9 @@ export const writeDocumentationCorpus = async (
   const corpusOutDir = join(outDir, DOCUMENTATION_CORPUS_OUTPUT_DIRECTORY)
   await rm(corpusOutDir, { recursive: true, force: true })
   await mkdir(join(corpusOutDir, 'documents'), { recursive: true })
-  await Promise.all([
-    writeFile(join(corpusOutDir, corpus.manifestFileName), serialize(corpus.manifest), 'utf8'),
-    ...[...corpus.artifacts].map(([fileName, artifact]) =>
-      writeFile(join(corpusOutDir, fileName), serialize(artifact), 'utf8')
+  await Promise.all(
+    [...serializeDocumentationCorpusAssets(corpus)].map(([fileName, bytes]) =>
+      writeFile(join(corpusOutDir, fileName), bytes, 'utf8')
     )
-  ])
+  )
 }

@@ -33,11 +33,11 @@ describe('normalizeDocumentation', () => {
     expect(normalized.markdown).toContain('## Not a real section')
     expect(normalized.markdown).toContain("import NotExecutable from './inside-a-fence'")
     expect(anchors).toEqual([
-      'corpus-fixture',
       'repeated-heading',
       'child-section',
       'repeated-heading-1',
       'explicit-comment',
+      'explicit-html',
       'explicit-classic',
       'the-api',
       'heading-in-a-blockquote',
@@ -45,7 +45,12 @@ describe('normalizeDocumentation', () => {
       'heading-in-an-admonition'
     ])
     expect(anchors).not.toContain('not-a-real-section')
+    expect(normalized.sections.find((section) => section.depth === 1)?.anchor).toBeNull()
     expect(normalized.markdown).toContain('## Explicit classic \\{#explicit-classic}')
+    expect(normalized.markdown).toContain('## Explicit comment {/* #explicit-comment */}')
+    expect(normalized.markdown).toContain('## Explicit HTML comment <!-- #explicit-html -->')
+    expect(normalized.markdown).not.toContain('Editorial note')
+    expect(normalized.markdown).not.toContain('Another hidden editorial note')
   })
 
   it('removes executable MDX and marks component/expression omissions without using runtime output', () => {
@@ -62,7 +67,24 @@ describe('normalizeDocumentation', () => {
     expect(normalized.markdown).toContain('**Non-executable MDX omitted.**')
     // The omitted component's heading still occupies Docusaurus' duplicate
     // slug, so the later retained heading has the rendered page's real anchor.
-    expect(anchors).toEqual(['mdx-fixture', 'duplicate', 'duplicate-2'])
+    expect(anchors).toEqual(['duplicate', 'duplicate-2'])
+    expect(normalized.markdown).not.toContain('hidden comment-only expression')
+  })
+
+  it('keeps H1 slug accounting without exposing theme-classic fragments', () => {
+    const normalized = normalizeDocumentation(
+      '# Duplicate\n\n## Duplicate\n\n# Duplicate\n\n## Duplicate\n',
+      'H1 identity'
+    )
+
+    expect(normalized.sections.map(({ depth, anchor }) => ({ depth, anchor }))).toEqual([
+      { depth: 0, anchor: null },
+      { depth: 1, anchor: null },
+      { depth: 2, anchor: 'duplicate-1' },
+      { depth: 1, anchor: null },
+      { depth: 2, anchor: 'duplicate-3' }
+    ])
+    expect(normalized.outline.map((item) => item.anchor)).toEqual(['duplicate-1', 'duplicate-3'])
   })
 
   it('matches Docusaurus heading text rules for authored Markdown HTML', () => {
@@ -90,8 +112,8 @@ describe('normalizeDocumentation', () => {
     expect(normalized.markdown.slice(child?.startOffset, child?.endOffset)).not.toContain(
       '## Repeated heading\n\nSecond occurrence.'
     )
-    expect(normalized.outline[0]?.children[0]?.anchor).toBe('repeated-heading')
-    expect(normalized.outline[0]?.children[0]?.children[0]?.anchor).toBe('child-section')
+    expect(normalized.outline[0]?.anchor).toBe('repeated-heading')
+    expect(normalized.outline[0]?.children[0]?.anchor).toBe('child-section')
   })
 
   it('makes nested container sections independently valid Markdown selections', () => {

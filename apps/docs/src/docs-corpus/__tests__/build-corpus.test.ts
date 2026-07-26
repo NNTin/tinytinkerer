@@ -15,6 +15,9 @@ const source = (
   overrides: Partial<DocumentationCorpusSource> = {}
 ): DocumentationCorpusSource => ({
   id,
+  version: 'current',
+  versionPath: '/docs/',
+  isLast: true,
   title: `Title ${id}`,
   permalink: `/docs/${id}/`,
   source: `@site/../../docs/${id}.md`,
@@ -122,7 +125,7 @@ describe('documentation corpus generation', () => {
     expect(afterStable).toEqual(beforeStable)
   })
 
-  it('rejects duplicate stable refs instead of emitting an ambiguous manifest', async () => {
+  it('allows refs across versions but rejects duplicate version-qualified identities', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'tinytinkerer-corpus-'))
     const path = join(directory, 'same.md')
     await writeFile(path, '# Same\n', 'utf8')
@@ -132,6 +135,27 @@ describe('documentation corpus generation', () => {
         [source('same', path), source('same', path)],
         '/assets/docs-corpus'
       )
-    ).rejects.toThrow('duplicate Docusaurus ref')
+    ).rejects.toThrow('duplicate Docusaurus identity')
+
+    await expect(
+      generateDocumentationCorpus(
+        [
+          source('same', path),
+          source('same', path, {
+            version: '1.0',
+            versionPath: '/docs/1.0/',
+            isLast: false
+          })
+        ],
+        '/assets/docs-corpus'
+      )
+    ).resolves.toMatchObject({
+      manifest: {
+        documents: [
+          { ref: 'same', version: '1.0', isLast: false },
+          { ref: 'same', version: 'current', isLast: true }
+        ]
+      }
+    })
   })
 })
