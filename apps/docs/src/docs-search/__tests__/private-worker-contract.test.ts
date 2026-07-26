@@ -22,13 +22,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildFixtureSearchIndex,
+  buildLimitSensitiveFixtureSearchIndex,
   buildNaturalLanguageFixtureSearchIndex,
   buildOrderingFixtureSearchIndex,
+  LIMIT_SENSITIVE_QUERY,
   PAGE_A_URL,
   PAGE_C_URL,
   PAGE_D_URL,
   PAGE_E_URL,
-  PAGE_G_URL
+  PAGE_G_URL,
+  PAGE_L_URL,
+  PAGE_M_URL
 } from '../__fixtures__/build-fixture-index'
 
 const BASE_URL = '/docs/'
@@ -122,27 +126,64 @@ describe('the pinned search worker contract', () => {
     const results = await search(BASE_URL, SEARCH_CONTEXT, 'install', LIMIT)
 
     expect(results.length).toBeGreaterThan(0)
-    let positionsSeen = 0
-    for (const result of results) {
-      const { metadata, document } = result as {
+    for (const [order, result] of results.entries()) {
+      const { metadata, document, type } = result as {
         metadata: Record<string, Record<string, { position: [number, number][] }>>
         document: { t: string }
+        type: number
       }
+      const positions: [number, number][] = []
       for (const perTerm of Object.values(metadata)) {
         const perField = perTerm.t
         if (!perField) continue
         expect(Array.isArray(perField.position)).toBe(true)
-        for (const [start, length] of perField.position) {
-          positionsSeen += 1
-          expect(Number.isInteger(start)).toBe(true)
-          expect(Number.isInteger(length)).toBe(true)
-          expect(start).toBeGreaterThanOrEqual(0)
-          expect(length).toBeGreaterThan(0)
-          expect(start + length).toBeLessThanOrEqual(document.t.length)
-        }
+        positions.push(...perField.position)
+      }
+      // Asserted **per result**, not aggregated: a single document type
+      // silently ceasing to carry offsets would otherwise leave this green
+      // while the public snippet quietly degrades for that type.
+      expect(
+        positions.length,
+        `result ${order} (type ${type}) carried no t-field positions`
+      ).toBeGreaterThan(0)
+      for (const [start, length] of positions) {
+        expect(Number.isInteger(start)).toBe(true)
+        expect(Number.isInteger(length)).toBe(true)
+        expect(start).toBeGreaterThanOrEqual(0)
+        expect(length).toBeGreaterThan(0)
+        expect(start + length).toBeLessThanOrEqual(document.t.length)
       }
     }
-    expect(positionsSeen).toBeGreaterThan(0)
+
+    // Cover more than one document type, so the per-result assertion above is
+    // actually exercising the whole shape of a real response.
+    const types = new Set(results.map((result) => (result as { type: number }).type))
+    expect(types.size).toBeGreaterThan(1)
+  })
+
+  it('is not monotonic in `limit` — the hazard fetchMappedPages is built around', async () => {
+    const search = await loadUpstreamWorker(buildLimitSensitiveFixtureSearchIndex())
+    const pagesOf = (results: unknown[]) => {
+      const seen: string[] = []
+      for (const url of urlsOf(results)) if (!seen.includes(url)) seen.push(url)
+      return seen
+    }
+
+    // The exact tier alone fills a small limit, from the content group.
+    expect(pagesOf(await search(BASE_URL, SEARCH_CONTEXT, LIMIT_SENSITIVE_QUERY, 2))).toEqual([
+      PAGE_L_URL,
+      PAGE_M_URL
+    ])
+    // A larger limit reaches a relaxed tier that matches PAGE_L's *title*, and
+    // `sortSearchResults` keys a section hit on the index of its page's title —
+    // so PAGE_L's already-admitted section hit is dragged down beside it and the
+    // page order inverts. A bigger run is neither a prefix nor a set superset,
+    // which is why search-documentation.ts starts from a fixed window and only
+    // ever appends.
+    expect(pagesOf(await search(BASE_URL, SEARCH_CONTEXT, LIMIT_SENSITIVE_QUERY, 8))).toEqual([
+      PAGE_M_URL,
+      PAGE_L_URL
+    ])
   })
 
   it('ranks a page that matches only in the content group after weaker title-group matches', async () => {

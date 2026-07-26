@@ -310,3 +310,70 @@ export const buildCrowdedPageFixtureSearchIndex = (): unknown[] => [
     }
   ])
 ]
+
+export const PAGE_L_URL = '/docs/alpha-beta-overview/'
+export const PAGE_M_URL = '/docs/zeta-notes/'
+/** The query `buildLimitSensitiveFixtureSearchIndex` is built around. */
+export const LIMIT_SENSITIVE_QUERY = 'alpha beta gamma'
+
+/**
+ * Demonstrates that the pinned worker is **not monotonic in its `limit`**, which
+ * is why `fetchMappedPages` starts from a fixed window and only ever appends.
+ *
+ * The worker fills the requested limit while iterating smart-query tiers and
+ * index groups, breaks as soon as it is full, and only *then* sorts. Here, for
+ * `LIMIT_SENSITIVE_QUERY`:
+ *
+ * - at `limit <= 2` the exact tier alone fills it, from the content group, and
+ *   the page order is `[PAGE_L, PAGE_M]`;
+ * - at `limit >= 3` a relaxed tier (`alpha beta`, dropping one token) also
+ *   matches `PAGE_L`'s *title*. `sortSearchResults` keys a section hit on the
+ *   index of its page's title, so `PAGE_L`'s content hit is pulled down beside
+ *   that late title hit and the page order becomes `[PAGE_M, PAGE_L]`.
+ *
+ * `PAGE_L`'s title deliberately omits the third token so it can only match a
+ * relaxed tier, and its content section is short enough to outscore `PAGE_M`'s
+ * in the exact tier.
+ */
+export const buildLimitSensitiveFixtureSearchIndex = (): unknown[] => [
+  buildGroupIndex([
+    { i: 1, t: 'Alpha beta overview', u: PAGE_L_URL, b: ['Docs'] },
+    { i: 2, t: 'Zeta notes', u: PAGE_M_URL, b: ['Docs'] }
+  ]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([
+    { i: 3, t: 'Alpha beta gamma.', s: 'Summary', u: PAGE_L_URL, h: '#summary', p: 1 },
+    {
+      i: 4,
+      t: 'Alpha beta gamma appears here among a good many other words which lower this section score.',
+      s: 'Detail',
+      u: PAGE_M_URL,
+      h: '#detail',
+      p: 2
+    }
+  ])
+]
+
+export const PAGE_N_URL = '/docs/contributing/'
+
+/**
+ * A page whose Heading records carry `h: ""` — real shape, not hypothetical: the
+ * production index contains exactly this for four headings under
+ * `/docs/contributing/`, where the rendered heading gets no anchor.
+ *
+ * `anchor` must be null (there is nothing to navigate to) while `section` must
+ * still be the heading's own text, which is what `deriveSection` keying off the
+ * document *type* rather than off field presence guarantees.
+ */
+export const buildHashlessHeadingFixtureSearchIndex = (): unknown[] => [
+  buildGroupIndex([{ i: 116, t: 'Contributing', u: PAGE_N_URL, b: ['Docs'] }]),
+  buildGroupIndex([
+    { i: 120, t: 'Security Issues', u: PAGE_N_URL, h: '', p: 116 },
+    { i: 122, t: 'Contributor License Terms', u: PAGE_N_URL, h: '', p: 116 }
+  ]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([])
+]

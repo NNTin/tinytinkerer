@@ -30,16 +30,25 @@ const MAX_SNIPPET_CHARS = 300
 const SNIPPET_LEAD_IN_CHARS = 60
 
 /**
- * How many raw worker hits to ask for per requested result, initially.
+ * The raw worker limit every search starts from — a **constant**, deliberately
+ * independent of `maxResults`.
  *
- * There is no fixed fan-out per page to compute this from: the plugin emits one
- * document per page title, description and keyword set, but one *per section*
- * for headings and content, so a single large page can occupy an unbounded
- * number of consecutive raw hits. Any fixed multiplier is therefore a guess,
- * and `fetchMappedPages` below re-queries with a larger limit when the guess
- * turns out too small.
+ * The pinned worker is not monotonic in its `limit`: it fills the requested
+ * limit while iterating smart-query tiers and index groups, breaks as soon as
+ * that limit is full, and only *then* sorts. A larger limit can therefore admit
+ * a page's title during a later relaxed tier, which pulls that page's already-
+ * admitted section hit down beside it (`sortSearchResults` keys a section on the
+ * index of its page's title). So a bigger run is neither a set superset nor a
+ * stable prefix of a smaller one.
+ *
+ * Deriving the first limit from `maxResults` therefore made the *public* result
+ * order depend on how many results the caller asked for: on the production
+ * index, `searchDocumentation(…, 'app', 6)` and `(…, 'app', 20)` disagreed about
+ * the top citations. Starting every search from the same window, and only ever
+ * appending newly-seen pages on expansion (see `fetchMappedPages`), makes
+ * `results(N)` a prefix of `results(M > N)` by construction — without needing
+ * the worker to be well-behaved.
  */
-const RAW_HITS_PER_RESULT = 6
 const INITIAL_RAW_HITS = 40
 /**
  * Ceiling on the over-fetch loop. The worker slices each query's results to the
@@ -99,21 +108,29 @@ const boundedSnippet = (text: string, ranges: readonly PrivateIndexMatchRange[])
 type MappedHit = { entry: CorpusRefMapEntry; hit: PrivateIndexSearchHit }
 
 /**
- * Collapses raw worker hits to one per page, keeping **the first** hit each page
- * produced.
+ * Folds one pass of raw worker hits into the accumulated page map, **appending
+ * only pages not already seen** and never replacing an existing page's
+ * representative hit.
  *
- * The worker has already ranked its results, and a page's first hit is the one
- * it ranked highest for that page — so it is both the strongest match and the
- * one whose anchor/section describe why the page matched. Preferring a later,
- * lower-ranked hit because it happens to carry an anchor manufactures section
- * specificity the match does not support (and would compare raw lunr scores
- * across five independent indexes, which is not meaningful).
+ * Two rules are doing work here.
+ *
+ * Within a pass, a page is represented by its first hit: the worker has already
+ * ranked its results, so a page's first hit is the one it ranked highest for
+ * that page, and the one whose anchor/section describe why the page matched.
+ * Preferring a later, lower-ranked hit because it happens to carry an anchor
+ * manufactures section specificity the match does not support (and would compare
+ * raw lunr scores across five independent indexes, which is not meaningful).
+ *
+ * Across passes, append-only is what makes the public result order stable under
+ * `maxResults`, given a worker that is not monotonic in its own limit — see
+ * `INITIAL_RAW_HITS`. Recomputing the map from each larger pass would let an
+ * expansion reorder or drop pages the caller had already been shown.
  */
-const collapseToPages = (
+const accumulatePages = (
+  byRef: Map<string, MappedHit>,
   hits: readonly PrivateIndexSearchHit[],
   resolve: (url: string) => CorpusRefMapEntry | undefined
-): Map<string, MappedHit> => {
-  const byRef = new Map<string, MappedHit>()
+): void => {
   for (const hit of hits) {
     const entry = resolve(hit.url)
     // Drop rather than invent a ref: an unmapped URL means the search index
@@ -125,7 +142,6 @@ const collapseToPages = (
     if (!entry || entry.unlisted) continue
     if (!byRef.has(entry.ref)) byRef.set(entry.ref, { entry, hit })
   }
-  return byRef
 }
 
 type MappedPagesOutcome =
@@ -133,11 +149,15 @@ type MappedPagesOutcome =
   | Extract<PrivateIndexOutcome, { ok: false }>
 
 /**
- * Queries the worker with a progressively larger limit until enough distinct
- * eligible pages survive collapsing, the worker runs out of hits, or the safety
- * ceiling is reached. Re-querying is cheap: the worker's index is already
- * loaded and cached, and each pass is a superset of the previous one, so the
- * collapse is simply redone from scratch.
+ * Queries the worker from a fixed starting window, expanding it until enough
+ * distinct eligible pages have accumulated, the worker runs out of hits, or the
+ * safety ceiling is reached. Re-querying is cheap: the worker's index is already
+ * loaded and cached.
+ *
+ * Expansion is append-only rather than a fresh collapse, because the worker is
+ * not monotonic in `limit` — see `INITIAL_RAW_HITS` for what that means and why
+ * this shape is what gives the public API a `results(N) ⊑ results(M > N)`
+ * guarantee.
  */
 const fetchMappedPages = async (
   siteConfig: SiteUrlConfig,
@@ -145,13 +165,14 @@ const fetchMappedPages = async (
   limit: number,
   resolve: (url: string) => CorpusRefMapEntry | undefined
 ): Promise<MappedPagesOutcome> => {
-  let rawLimit = Math.max(INITIAL_RAW_HITS, limit * RAW_HITS_PER_RESULT)
+  const pages = new Map<string, MappedHit>()
+  let rawLimit = INITIAL_RAW_HITS
 
   for (;;) {
     const outcome = await searchPrivateWorker(siteConfig.baseUrl, query, rawLimit)
     if (!outcome.ok) return outcome
 
-    const pages = collapseToPages(outcome.hits, resolve)
+    accumulatePages(pages, outcome.hits, resolve)
     if (pages.size >= limit) return { ok: true, pages }
     // The worker slices to the limit it was given, so a short response means it
     // has nothing more to give and a larger limit cannot help.
