@@ -115,8 +115,8 @@ set. Every result is therefore checked for:
   matches the document's** — a child attached to one page while carrying another
   page's URL would otherwise be cited against the wrong corpus ref;
 - a finite `score` and a `tokens` string array;
-- match metadata whose `[start, length]` positions are integers that actually
-  fall inside the indexed text (see "Snippets" below).
+- match metadata carrying at least one `[start, length]` position, with integer
+  offsets that actually fall inside the indexed text (see "Snippets" below).
 
 Anything else becomes `index_incompatible` with a message naming the offending
 result and pointing back at the upgrade checklist below.
@@ -147,12 +147,35 @@ the page. Since #477 hands these to a model as grounding and to users as
 clickable citations, manufacturing section specificity the match doesn't support
 is worse than citing the page.
 
-Because the number of raw hits a single page produces is unbounded (one document
-per heading _and_ per content section — a large page can occupy a dozen
-consecutive slots), the over-fetch that feeds this collapse is iterative rather
-than a fixed multiple of `maxResults`: `fetchMappedPages` re-queries with a
-doubled limit until enough distinct eligible pages survive, the worker returns
-fewer hits than it was asked for, or a documented ceiling is reached.
+### Stability under `maxResults`
+
+`results(N)` is a **prefix** of `results(M > N)`: asking for more results extends
+the list rather than reordering it. That is a property the public facade has to
+provide, not one it inherits — **the pinned worker is not monotonic in its own
+`limit`.** It fills the requested limit while iterating smart-query tiers and
+index groups, breaks as soon as it is full, and only _then_ sorts. So a larger
+limit can admit a page's title during a later relaxed tier, and because
+`sortSearchResults` keys a section hit on the index of its page's title, that
+page's already-admitted section hit gets dragged down beside it. A bigger run is
+neither a stable prefix nor a set superset.
+
+An earlier revision derived the first raw limit from `maxResults`, which handed
+that instability straight to callers: on the production index,
+`searchDocumentation(…, 'app', 6)` and `(…, 'app', 20)` disagreed about the top
+citations. Two rules fix it by construction:
+
+- every search starts from the same fixed window (`INITIAL_RAW_HITS`),
+  independent of `maxResults`;
+- expansion is **append-only** — a larger pass contributes only pages not
+  already seen, and never replaces an existing page's representative.
+
+Expansion is still needed because the number of raw hits one page produces is
+unbounded (one document per heading _and_ per content section, so a large page
+can occupy dozens of consecutive slots). `fetchMappedPages` doubles the limit
+until enough distinct eligible pages have accumulated, the worker returns fewer
+hits than it was asked for, or a documented ceiling is reached.
+`private-worker-contract.test.ts` pins the underlying non-monotonicity against
+the real worker, so the reason for this design cannot quietly stop being true.
 
 ## Snippets
 
@@ -169,10 +192,16 @@ ordered exactly the way the plugin's own `getStemmedPositions` orders it — and
 either elision. Whitespace is collapsed only _after_ slicing, since the offsets
 index the raw text.
 
-A structurally malformed position is contract drift and fails the search. An
-_absent_ position list is not: a hit reporting no offsets is odd but not
-provably a break, so it degrades to a leading snippet rather than taking the
-whole search down.
+**At least one valid position is required.** For this pinned version that is
+provable, not a judgement call: `buildIndex.js` indexes exactly one field (`t`)
+and sets `metadataWhitelist = ["position"]`, so a positive lunr result
+necessarily matched that field and necessarily records its offsets, and the
+worker forwards match metadata unchanged. Verified across 1,590 real worker
+results (document types 0/1/2/4) on the production index — none lacked them.
+Tolerating the absence would silently reintroduce the leading-snippet defect this
+section exists to fix, so it is `index_incompatible` instead. The contract test
+asserts this **per result**, not in aggregate, so one document type cannot stop
+carrying offsets while the suite stays green.
 
 ## `section`: human-readable section titles
 
@@ -182,15 +211,19 @@ Each `DocumentationSearchResult` carries `section: string | null` alongside
 match belongs to, for a UI or an assistant to show directly. Derived in
 `private-worker-adapter.ts` per the plugin's own `scanDocuments.js` semantics:
 
-```ts
-const section = doc.s ?? (doc.h ? doc.t : null)
-```
+It is derived from the document **type**, not from which optional fields happen
+to be populated:
 
-- A Title (whole-page) record has neither `s` nor `h` → `null`.
-- A Heading record's own `t` **is** the section title (`s` is never set on
-  Heading records).
-- A Description/Keywords/Content record's `s` is the enclosing heading's
-  title, or the page title itself if the match has no enclosing heading.
+- Title (whole page) → `null`.
+- Heading → the record's own `t`; a heading's text **is** its section title.
+- Description/Keywords/Content → `s`, the enclosing heading's title, or the page
+  title itself if the match has no enclosing heading.
+
+Keying off field presence instead (`doc.s ?? (doc.h ? doc.t : null)`) looked
+equivalent and was not: the production index carries `h: ""` for four headings
+under `/docs/contributing/`, where Docusaurus renders no anchor. Those results
+correctly reported `anchor: null` but wrongly reported `section: null` — a
+heading has a name whether or not navigation can target it.
 
 ## URL normalization
 
@@ -285,7 +318,10 @@ caller's site config can never decide another's normalization.
    `dist/client/client/utils/getStemmedPositions.js` for the
    `metadata[term].t.position` layout snippets depend on, and
    `dist/server/server/utils/scanDocuments.js` for the per-type field shape the
-   validator and `section`'s derivation both encode.
+   validator and `section`'s derivation both encode. Also re-check
+   `sortSearchResults.js` and the `results.length >= limit` break in
+   `worker.js`: the limit non-monotonicity documented above is what
+   `fetchMappedPages`' fixed-window, append-only shape exists to absorb.
 3. Confirm `dist/server/server/utils/buildIndex.js`/`scanDocuments.js` still
    emit exactly 5 index groups, in order
    `[title, heading, description, keywords, content]`, with `ref('i')` and the
