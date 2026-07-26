@@ -31,11 +31,22 @@ const validManifest = {
   documents: [
     {
       ref: 'getting-started',
+      version: 'current',
+      versionPath: '/docs/',
+      isLast: true,
       title: 'Getting Started',
       permalink: '/docs/getting-started/',
       unlisted: false
     },
-    { ref: 'secret', title: 'Secret Page', permalink: '/docs/secret/', unlisted: true }
+    {
+      ref: 'secret',
+      version: 'current',
+      versionPath: '/docs/',
+      isLast: true,
+      title: 'Secret Page',
+      permalink: '/docs/secret/',
+      unlisted: true
+    }
   ]
 }
 
@@ -87,6 +98,29 @@ describe('loadCorpusRefMap', () => {
     expect(outcome.ok).toBe(true)
     if (!outcome.ok) return
     expect(outcome.resolve('/docs/unknown/')).toBeUndefined()
+  })
+
+  it('ignores non-canonical (isLast: false) version entries', async () => {
+    setLocator()
+    stubFetchJson({
+      ...validManifest,
+      documents: [
+        ...validManifest.documents,
+        {
+          ref: 'getting-started',
+          version: '1.0',
+          versionPath: '/docs/1.0/',
+          isLast: false,
+          title: 'Getting Started (1.0)',
+          permalink: '/docs/1.0/getting-started/',
+          unlisted: false
+        }
+      ]
+    })
+    const outcome = await loadCorpusRefMap()
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.resolve('/docs/1.0/getting-started/')).toBeUndefined()
   })
 
   it('caches the fetched manifest across calls', async () => {

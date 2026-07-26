@@ -47,6 +47,9 @@ const isManifestEntry = (value: unknown): value is DocumentationCorpusManifestEn
   const entry = value as Record<string, unknown>
   return (
     typeof entry.ref === 'string' &&
+    typeof entry.version === 'string' &&
+    typeof entry.versionPath === 'string' &&
+    typeof entry.isLast === 'boolean' &&
     typeof entry.title === 'string' &&
     typeof entry.permalink === 'string' &&
     typeof entry.unlisted === 'boolean'
@@ -131,8 +134,16 @@ export const loadCorpusRefMap = (): Promise<CorpusRefMapOutcome> => {
         }
       }
 
+      // The pinned search index only ever indexes the canonical (`isLast`)
+      // version's pages (see selectCanonicalCorpusVersion in
+      // docs-corpus/plugin.ts and easyops' own postBuildFactory.js, which
+      // writes only one root index for the last version). The #474 manifest
+      // now emits every loaded version, so restrict the lookup to `isLast`
+      // entries to avoid ever resolving a hit to a historical/upcoming
+      // version's document.
       const byPermalink = new Map<string, DocumentationCorpusManifestEntry>()
       for (const entry of payload.documents) {
+        if (!entry.isLast) continue
         byPermalink.set(normalizePermalink(entry.permalink), entry)
       }
 

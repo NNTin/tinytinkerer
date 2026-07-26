@@ -18,12 +18,18 @@ const manifest = {
   documents: [
     {
       ref: 'getting-started',
+      version: 'current',
+      versionPath: '/docs/',
+      isLast: true,
       title: 'Getting Started',
       permalink: PAGE_A_URL,
       unlisted: false
     },
     {
       ref: 'search-configuration',
+      version: 'current',
+      versionPath: '/docs/',
+      isLast: true,
       title: 'Search Configuration',
       permalink: PAGE_B_URL,
       unlisted: false

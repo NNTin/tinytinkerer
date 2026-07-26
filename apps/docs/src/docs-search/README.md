@@ -18,6 +18,9 @@ tool or UI noticing.
 - `corpus-ref-map.ts` maps a hit's page URL to a `#474` corpus ref via the
   documentation corpus's own manifest (`docs-corpus/plugin.ts`,
   `docs-corpus/build-corpus.ts`). It knows nothing about the search plugin.
+  The manifest now emits every loaded Docusaurus version, so the lookup only
+  considers `isLast: true` entries — the pinned search index only ever
+  indexes that canonical version's pages.
 - `search-documentation.ts` composes the two into
   `DocumentationSearchResponse`
   (`packages/shared/contracts/src/documentation-search.ts`): it deduplicates
