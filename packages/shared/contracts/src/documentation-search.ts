@@ -17,6 +17,14 @@ export type DocumentationSearchResult = {
   permalink: string
   /** Section anchor (no leading `#`) when the best match was a specific section, else null. */
   anchor: string | null
+  /**
+   * Human-readable section/heading title the match belongs to (the enclosing
+   * heading's text, or the page title when the match has no enclosing
+   * heading), or null for a page-title match. Distinct from `anchor`, which
+   * is a URL slug, not a display name — #477's `search_docs` tool surfaces
+   * this directly to the assistant/user.
+   */
+  section: string | null
   /** Bounded, plain-text preview of the best matching section. */
   snippet: string
 }

@@ -1,9 +1,10 @@
 /**
  * Compatibility adapter around the pinned `@easyops-cn/docusaurus-search-local@0.55.2`
  * local-search plugin (issue #475). See ./README.md for the full rationale
- * (production-only index behavior, why `tokenize` is reused but not
- * `smartQueries`, and the package-upgrade checklist) — the notes below are
- * only what's needed to follow this file itself.
+ * (production-only index behavior, the tiered query-relaxation strategy, why
+ * `tokenize` is reused but not `smartQueries`/`searchByWorker`, and the
+ * package-upgrade checklist) — the notes below are only what's needed to
+ * follow this file itself.
  *
  * This is the ONLY module allowed to know that plugin's private, unversioned
  * wire format. Every export here returns a small, TinyTinkerer-owned shape
@@ -19,7 +20,12 @@
  * never changes — the content hash only ever appears as a `?_=`
  * cache-busting query string. `docsRouteBasePath: '/'` and no
  * `searchContextByPaths` mean there is exactly one root index (`k === ''` in
- * postBuildFactory.js), so no `-{dir}` suffix ever applies here either.
+ * postBuildFactory.js), so no `-{dir}` suffix ever applies here either. The
+ * `?_=` cache-buster itself can't be reproduced here: it's read from a
+ * webpack-generated virtual module (`@generated/@easyops-cn/...`), the same
+ * kind of build-only channel `searchByWorker`/`smartQueries` depend on (see
+ * README). Omitting it only affects browser HTTP cache aggressiveness right
+ * after a fresh deploy, not correctness.
  */
 import lunr from 'lunr'
 // The one sanctioned deep import into the pinned plugin's private surface;
@@ -51,6 +57,44 @@ const INDEX_LANGUAGE = ['en']
 const FUZZY_MIN_TOKEN_LENGTH = 4
 const FUZZY_EDIT_DISTANCE = 1
 
+/**
+ * Progressive query relaxation, mirroring the *mechanism* (not the
+ * incremental-typing wildcards) the plugin's own `smartQueries.js` uses to
+ * answer questions its "all tokens required" baseline can't: lunr's default
+ * English `stopWordFilter` is active for this site (searchLocalOptions never
+ * sets `removeDefaultStopWordFilter`), so a stopword submitted as a
+ * `REQUIRED` query term is already a no-op — `exact` and `stopword_trimmed`
+ * only diverge if that ever changes. `leave_one_out` is what actually adds
+ * recall: it drops exactly one remaining content word at a time and re-runs
+ * an all-`REQUIRED` query, so a page whose matching words are split across
+ * the literal query but never all co-occur in one indexed field can still be
+ * found. See README.md for the full trace (including why the threshold below
+ * is deliberately lower than the upstream plugin's own `> 2`).
+ */
+const TIER_RANK = { exact: 0, stopword_trimmed: 1, leave_one_out: 2 } as const
+type Tier = keyof typeof TIER_RANK
+
+// Large, fixed separations so tier always dominates raw lunr score in the
+// merge/sort below, without changing `score`'s type. Lunr's tf-idf-derived
+// scores stay in a small range for realistic corpora/term counts, so these
+// offsets are effectively infinite separation between tiers.
+const TIER_SCORE_OFFSET: Record<Tier, number> = {
+  exact: 2_000_000,
+  stopword_trimmed: 1_000_000,
+  leave_one_out: 0
+}
+
+// Deliberately lower than the upstream plugin's own `> 2` (3+ content words)
+// threshold: a 2-content-word query (e.g. "how can I host TinyTinkerer")
+// falls back to matching either word alone as a last-resort tier, always
+// ranked below any exact/stopword-trimmed match. This is a documented
+// precision/recall trade-off favoring #471's natural-language goal over
+// upstream's more conservative default — see README.md.
+const LEAVE_ONE_OUT_MIN_TOKENS = 2
+// Safety cap against pathologically long queries generating O(n) variants;
+// mirrors the scale of upstream's own term-count budget.
+const MAX_LEAVE_ONE_OUT_TOKENS = 12
+
 type RawDocumentRecord = {
   i: number
   t: string
@@ -71,8 +115,20 @@ export type PrivateIndexSearchHit = {
   url: string
   /** Section anchor with no leading `#`, or null when the match was the page title itself. */
   anchor: string | null
+  /**
+   * Human-readable section/heading title (see scanDocuments.js): a Heading
+   * record's own `t`, a Description/Keywords/Content record's `s` (the
+   * enclosing heading's title, or the page title if there isn't one), or
+   * null for a Title (whole-page) record.
+   */
+  section: string | null
   /** Raw indexed text for the matching field — the snippet source. */
   matchedText: string
+  /**
+   * Relative ranking key: a large per-tier offset (see `TIER_SCORE_OFFSET`)
+   * plus lunr's own tf-idf score. Meaningful only for this adapter's own
+   * sort, not as an absolute relevance measure comparable across calls.
+   */
   score: number
 }
 
@@ -88,6 +144,9 @@ export type PrivateIndexOutcome =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
 
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string')
+
 const isValidDocument = (value: unknown, requireParent: boolean): value is RawDocumentRecord => {
   if (!isRecord(value)) return false
   if (typeof value.i !== 'number' || typeof value.t !== 'string' || typeof value.u !== 'string') {
@@ -96,6 +155,7 @@ const isValidDocument = (value: unknown, requireParent: boolean): value is RawDo
   if (requireParent && typeof value.p !== 'number') return false
   if (value.h !== undefined && typeof value.h !== 'string') return false
   if (value.s !== undefined && typeof value.s !== 'string') return false
+  if (value.b !== undefined && !isStringArray(value.b)) return false
   return true
 }
 
@@ -109,16 +169,16 @@ const isValidDocument = (value: unknown, requireParent: boolean): value is RawDo
 const validateRawSearchIndex = (
   payload: unknown
 ): { ok: true; groups: RawIndexGroup[] } | { ok: false; message: string } => {
-  if (!Array.isArray(payload) || payload.length < EXPECTED_GROUP_COUNT) {
+  if (!Array.isArray(payload) || payload.length !== EXPECTED_GROUP_COUNT) {
     return {
       ok: false,
-      message: `expected an array of ${EXPECTED_GROUP_COUNT} search index groups, got ${
+      message: `expected an array of exactly ${EXPECTED_GROUP_COUNT} search index groups, got ${
         Array.isArray(payload) ? `an array of ${payload.length}` : typeof payload
       }`
     }
   }
   const groups: RawIndexGroup[] = []
-  for (const [groupIndex, group] of payload.slice(0, EXPECTED_GROUP_COUNT).entries()) {
+  for (const [groupIndex, group] of payload.entries()) {
     if (!isRecord(group) || !Array.isArray(group.documents) || !isRecord(group.index)) {
       return {
         ok: false,
@@ -132,15 +192,26 @@ const validateRawSearchIndex = (
         ok: false,
         message: `index group ${groupIndex} document ${invalidAt} is missing required fields (i/t/u${
           requireParent ? '/p' : ''
-        })`
+        }) or has a malformed optional field`
       }
     }
-    groups.push({ documents: group.documents as RawDocumentRecord[], index: group.index })
+    const documents = group.documents as RawDocumentRecord[]
+    const seenIds = new Set<number>()
+    for (const doc of documents) {
+      if (seenIds.has(doc.i)) {
+        return {
+          ok: false,
+          message: `index group ${groupIndex} has a duplicate document id ${doc.i}`
+        }
+      }
+      seenIds.add(doc.i)
+    }
+    groups.push({ documents, index: group.index })
   }
   return { ok: true, groups }
 }
 
-type LoadedIndexGroup = { documents: RawDocumentRecord[]; index: lunr.Index }
+type LoadedIndexGroup = { documents: Map<string, RawDocumentRecord>; index: lunr.Index }
 type LoadIndexesOutcome =
   | { ok: true; groups: LoadedIndexGroup[] }
   | { ok: false; code: PrivateIndexFailureCode; message: string; retryable: boolean }
@@ -149,7 +220,7 @@ let cachedIndexes: Promise<LoadIndexesOutcome> | undefined
 
 const loadIndexes = (baseUrl: string): Promise<LoadIndexesOutcome> => {
   if (!cachedIndexes) {
-    cachedIndexes = (async (): Promise<LoadIndexesOutcome> => {
+    const promise = (async (): Promise<LoadIndexesOutcome> => {
       if (process.env.NODE_ENV !== 'production') {
         return {
           ok: false,
@@ -211,7 +282,7 @@ const loadIndexes = (baseUrl: string): Promise<LoadIndexesOutcome> => {
 
       try {
         const groups = validated.groups.map((group) => ({
-          documents: group.documents,
+          documents: new Map(group.documents.map((doc) => [doc.i.toString(), doc])),
           index: lunr.Index.load(group.index)
         }))
         return { ok: true, groups }
@@ -226,6 +297,16 @@ const loadIndexes = (baseUrl: string): Promise<LoadIndexesOutcome> => {
         }
       }
     })()
+    cachedIndexes = promise
+    // Retryable failures (network/HTTP) must not stick around forever — a
+    // later call should get a fresh attempt instead of replaying the same
+    // failure until a full page reload. Non-retryable outcomes (success or a
+    // genuine incompatibility) are stable and stay cached.
+    void promise.then((outcome) => {
+      if (!outcome.ok && outcome.retryable && cachedIndexes === promise) {
+        cachedIndexes = undefined
+      }
+    })
   }
   return cachedIndexes
 }
@@ -235,12 +316,57 @@ export const resetPrivateIndexCacheForTests = (): void => {
   cachedIndexes = undefined
 }
 
+// `lunr.stopWordFilter` only reads `token.toString()`, but its type
+// declarations require a real `lunr.Token`, not a plain string — construct
+// one rather than casting past the stricter (but functionally equivalent)
+// public type.
+const isStopword = (token: string): boolean =>
+  lunr.stopWordFilter(new lunr.Token(token, {})) === undefined
+
+const deriveSection = (doc: RawDocumentRecord): string | null => doc.s ?? (doc.h ? doc.t : null)
+
+type QueryTier = { tier: Tier; tokens: string[] }
+
 /**
- * Runs one query against every lunr index group the plugin built, and
- * returns normalized, de-duplicated (by the plugin's own per-document ref)
- * hits. Callers are expected to request more hits than they need (many hits
- * usually collapse onto the same page once mapped to a #474 ref) and to
- * rank/limit/deduplicate by page themselves — see search-documentation.ts.
+ * Builds the ordered list of query variants to try. Tier A (`exact`) is
+ * always tried first and alone reproduces this adapter's original,
+ * unmodified behavior. Later tiers are only ever consulted by the caller if
+ * an earlier tier didn't find enough distinct results — see
+ * `searchPrivateIndex`.
+ */
+const buildQueryTiers = (tokens: string[]): QueryTier[] => {
+  const tiers: QueryTier[] = [{ tier: 'exact', tokens }]
+
+  const nonStopTokens = tokens.filter((token) => !isStopword(token))
+  const trimmed =
+    nonStopTokens.length > 0 && nonStopTokens.length < tokens.length ? nonStopTokens : null
+  if (trimmed) {
+    tiers.push({ tier: 'stopword_trimmed', tokens: trimmed })
+  }
+
+  const leaveOneOutBase = trimmed ?? tokens
+  if (
+    leaveOneOutBase.length >= LEAVE_ONE_OUT_MIN_TOKENS &&
+    leaveOneOutBase.length <= MAX_LEAVE_ONE_OUT_TOKENS
+  ) {
+    for (let index = 0; index < leaveOneOutBase.length; index += 1) {
+      tiers.push({
+        tier: 'leave_one_out',
+        tokens: [...leaveOneOutBase.slice(0, index), ...leaveOneOutBase.slice(index + 1)]
+      })
+    }
+  }
+  return tiers
+}
+
+/**
+ * Runs one or more progressively-relaxed queries (see `buildQueryTiers`)
+ * against every lunr index group the plugin built, and returns normalized,
+ * de-duplicated (by the plugin's own per-document ref, across every tier and
+ * group) hits. Callers are expected to request more hits than they need
+ * (many hits usually collapse onto the same page once mapped to a #474 ref)
+ * and to rank/limit/deduplicate by page themselves — see
+ * search-documentation.ts.
  */
 export const searchPrivateIndex = async (
   baseUrl: string,
@@ -257,49 +383,65 @@ export const searchPrivateIndex = async (
     return { ok: true, hits: [] }
   }
 
-  const seenRefs = new Set<string>()
-  const hits: PrivateIndexSearchHit[] = []
+  const bestByRef = new Map<string, { tier: Tier; hit: PrivateIndexSearchHit }>()
 
-  for (const group of loaded.groups) {
-    if (hits.length >= limit) break
-    let results: lunr.Index.Result[]
-    try {
-      results = group.index.query((builder) => {
-        for (const token of tokens) {
-          builder.term(token, {
-            presence: lunr.Query.presence.REQUIRED,
-            ...(token.length > FUZZY_MIN_TOKEN_LENGTH
-              ? { editDistance: FUZZY_EDIT_DISTANCE }
-              : null)
-          })
+  for (const { tier, tokens: tierTokens } of buildQueryTiers(tokens)) {
+    // Every group is scanned fully for this tier before deciding whether to
+    // escalate — breaking early would bias both the escalation check and the
+    // final ranking toward whichever group happens to be queried first, and
+    // could miss a later group's better section for an already-seen page.
+    for (const group of loaded.groups) {
+      let results: lunr.Index.Result[]
+      try {
+        results = group.index.query((builder) => {
+          for (const token of tierTokens) {
+            builder.term(token, {
+              presence: lunr.Query.presence.REQUIRED,
+              ...(token.length > FUZZY_MIN_TOKEN_LENGTH
+                ? { editDistance: FUZZY_EDIT_DISTANCE }
+                : null)
+            })
+          }
+        })
+      } catch (error) {
+        return {
+          ok: false,
+          code: 'index_incompatible',
+          message: `querying a loaded search index group (tier=${tier}) failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          retryable: false
         }
-      })
-    } catch (error) {
-      return {
-        ok: false,
-        code: 'index_incompatible',
-        message: `querying a loaded search index group failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        retryable: false
+      }
+
+      for (const result of results) {
+        const doc = group.documents.get(result.ref)
+        if (!doc) continue
+
+        const candidateHit: PrivateIndexSearchHit = {
+          url: doc.u,
+          anchor: doc.h ? doc.h.replace(/^#/, '') : null,
+          section: deriveSection(doc),
+          matchedText: doc.t,
+          score: result.score + TIER_SCORE_OFFSET[tier]
+        }
+
+        const existing = bestByRef.get(result.ref)
+        const isBetter =
+          !existing ||
+          TIER_RANK[tier] < TIER_RANK[existing.tier] ||
+          (tier === existing.tier && candidateHit.score > existing.hit.score)
+        if (isBetter) bestByRef.set(result.ref, { tier, hit: candidateHit })
       }
     }
 
-    for (const result of results) {
-      if (seenRefs.has(result.ref)) continue
-      const doc = group.documents.find((candidate) => candidate.i.toString() === result.ref)
-      if (!doc) continue
-      seenRefs.add(result.ref)
-      hits.push({
-        url: doc.u,
-        anchor: doc.h ? doc.h.replace(/^#/, '') : null,
-        matchedText: doc.t,
-        score: result.score
-      })
-      if (hits.length >= limit) break
-    }
+    if (bestByRef.size >= limit) break
   }
 
-  hits.sort((a, b) => b.score - a.score)
+  const hits = [...bestByRef.values()]
+    .map(({ hit }) => hit)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+
   return { ok: true, hits }
 }

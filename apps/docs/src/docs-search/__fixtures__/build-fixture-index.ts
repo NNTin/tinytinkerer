@@ -74,3 +74,66 @@ export const buildFixtureSearchIndex = (): unknown[] => [
     }
   ])
 ]
+
+export const PAGE_C_URL = '/docs/plugin-infrastructure/'
+export const PAGE_D_URL = '/docs/deployment/'
+export const PAGE_E_URL = '/docs/widgetkit-overview/'
+
+/**
+ * A separate, deliberately independent fixture (not an extension of
+ * `buildFixtureSearchIndex`, so it can never change that fixture's existing
+ * tests' hit counts) reproducing the two natural-language query shapes a PR
+ * #485 review caught returning zero hits under an all-tokens-`REQUIRED`
+ * query: a 4-content-word question whose page never repeats every word
+ * verbatim in one indexed chunk, and a 2-content-word question whose two
+ * words never co-occur at all. See private-index-adapter.ts's tiered query
+ * relaxation and README.md for how each tier resolves these.
+ *
+ *  - `PAGE_C` ("Plugin Infrastructure"): content mentions "plugin",
+ *    "infrastructure", "guides" but never "find" — a
+ *    "where can I find plugin infrastructure guides" query only matches via
+ *    the leave-one-out tier dropping "find" (this holds regardless of the
+ *    leave-one-out token-count threshold, since 4 content words exceeds
+ *    either candidate threshold).
+ *  - `PAGE_D` ("Deployment Guide") mentions "host" but never "widgetkit";
+ *    `PAGE_E` ("WidgetKit Overview") mentions "widgetkit" but never "host" —
+ *    a "how can I host WidgetKit" query (2 content words) only matches
+ *    either page via the lowered leave-one-out threshold's single-word
+ *    last-resort tier.
+ */
+export const buildNaturalLanguageFixtureSearchIndex = (): unknown[] => [
+  buildGroupIndex([
+    { i: 10, t: 'Plugin Infrastructure', u: PAGE_C_URL, b: ['Docs'] },
+    { i: 20, t: 'Deployment Guide', u: PAGE_D_URL, b: ['Docs'] },
+    { i: 22, t: 'WidgetKit Overview', u: PAGE_E_URL, b: ['Docs'] }
+  ]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([
+    {
+      i: 11,
+      t: 'These plugin infrastructure guides cover extension points and lifecycle hooks.',
+      s: 'Plugin Infrastructure',
+      u: PAGE_C_URL,
+      h: '#extension-points',
+      p: 10
+    },
+    {
+      i: 21,
+      t: 'Follow these steps to host your application on any hosting provider.',
+      s: 'Deployment Guide',
+      u: PAGE_D_URL,
+      h: '#hosting',
+      p: 20
+    },
+    {
+      i: 23,
+      t: 'WidgetKit is the toolkit powering every dashboard widget in this product.',
+      s: 'WidgetKit Overview',
+      u: PAGE_E_URL,
+      h: '#overview',
+      p: 22
+    }
+  ])
+]
