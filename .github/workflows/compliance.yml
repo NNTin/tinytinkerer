@@ -83,8 +83,17 @@ jobs:
       - name: Check advisory allow-list synchronization
         run: pnpm check:advisory-allowlists
 
+      # --ignore-registry-errors: the audit endpoint occasionally returns a
+      # response pnpm can't parse (e.g. a gzip-compressed body served without a
+      # Content-Encoding header — confirmed via a raw curl against
+      # registry.npmjs.org reproducing byte-for-byte the same
+      # ERR_PNPM_AUDIT_BAD_RESPONSE locally, unrelated to anything in this
+      # repo). pnpm's own docs describe this flag for exactly this case: "A
+      # build should not fail because the registry has issues." Real
+      # vulnerability findings still fail the step; only a broken/unparseable
+      # registry response is downgraded to a warning.
       - name: Audit dependencies
-        run: pnpm audit --audit-level=moderate
+        run: pnpm audit --audit-level=moderate --ignore-registry-errors
 
       - name: Generate SBOM (CycloneDX)
         run: pnpm compliance:sbom
