@@ -68,6 +68,15 @@ jobs:
       # cacheable @tinytinkerer/brand-assets#generate dependency in Turbo.
       - run: ${{ matrix.task.run }}
 
+      # Docs performance budget (issue #457): the Build task's `turbo run build`
+      # produces apps/docs/build (a cache hit still restores it to disk), so this
+      # runs only alongside that task and fails CI at the source if the live-lab
+      # product-runtime chunk ever becomes an eager dependency of an ordinary docs
+      # page instead of staying behind React.lazy + <BrowserOnly>.
+      - name: Docs performance budget
+        if: ${{ matrix.task.key == 'build' }}
+        run: pnpm check:docs-performance-budget
+
       # Consolidate every package's allure-results into one directory even when a
       # test failed above (the failing shard already reds the run), so the merged
       # report can still surface the failures.

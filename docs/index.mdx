@@ -47,7 +47,12 @@ Individual labs are tracked in separate issues, but every one of them renders in
 container, so its responsive, loading, warning, error, and fullscreen treatment is consistent
 across labs from day one:
 
-<LabContainer title="Preview lab" status="ready">
+<!-- Each demo below gets its own distinguishing title (not a shared "Preview
+lab") — LabContainer's <section> is an accessible-name-bearing landmark, and
+four adjacent landmarks with the identical name are indistinguishable to
+assistive tech (axe's landmark-unique rule). -->
+
+<LabContainer title="Preview lab (ready)" status="ready">
   {/* A JS expression child, not literal JSX text — keeps MDX's markdown-paragraph
   parser from re-wrapping this in its own nested <p> (which produces invalid
   <p> markup and a hydration error) regardless of how prettier reflows the line. */}
@@ -55,14 +60,14 @@ across labs from day one:
     {'Ready content, such as an embedded lab, renders here.'}
   </p>
 </LabContainer>
-<LabContainer title="Preview lab" status="loading" />
+<LabContainer title="Preview lab (loading)" status="loading" />
 <LabContainer
-  title="Preview lab"
+  title="Preview lab (warning)"
   status="warning"
   warningMessage="Sample data only — connect a live agent to see real traces."
 />
 <LabContainer
-  title="Preview lab"
+  title="Preview lab (error)"
   status="error"
   errorMessage="Failed to load the lab bundle."
   onRetry={() => undefined}

@@ -28,6 +28,8 @@ const LIGHT_FILES = [
   'lab-session-context.ts',
   'index.ts',
   'plugin-tool-picker/PluginToolPickerLab.tsx',
+  'pixel-agents/PixelAgentsLab.tsx',
+  'execution-trace/ExecutionTraceLab.tsx',
   '../theme/MDXComponents.tsx'
 ]
 
@@ -53,6 +55,21 @@ describe('live-lab bundle boundary', () => {
     expect(source).toMatch(/lazy\(\(\) =>\s*\n?\s*import\(['"]\.\/PluginToolPickerLabContent['"]\)/)
   })
 
+  // Each ready-made lab (issue #457's "each lab must lazy-load heavyweight
+  // dependencies") repeats the same pattern as PluginToolPickerLab above: its own
+  // wrapper component stays light, deferring to its *Content component (the one
+  // that actually imports @tinytinkerer/pixel-agents and the chat runtime) only
+  // via React.lazy.
+  it('PixelAgentsLab.tsx only reaches its content through React.lazy', () => {
+    const source = readSource('pixel-agents/PixelAgentsLab.tsx')
+    expect(source).toMatch(/lazy\(\(\) =>\s*\n?\s*import\(['"]\.\/PixelAgentsLabContent['"]\)/)
+  })
+
+  it('ExecutionTraceLab.tsx only reaches its content through React.lazy', () => {
+    const source = readSource('execution-trace/ExecutionTraceLab.tsx')
+    expect(source).toMatch(/lazy\(\(\) =>\s*\n?\s*import\(['"]\.\/ExecutionTraceLabContent['"]\)/)
+  })
+
   // lab-session-context.ts is deliberately excluded here: deriveLabSessionSnapshot
   // takes a `token: string | null` as an EXISTENCE check (has one or not) to decide
   // signed-out vs. ready, but the TYPES that reach these render-facing files
@@ -63,6 +80,8 @@ describe('live-lab bundle boundary', () => {
     'LiveSessionGate.tsx',
     'LabReset.tsx',
     'plugin-tool-picker/PluginToolPickerLab.tsx',
+    'pixel-agents/PixelAgentsLab.tsx',
+    'execution-trace/ExecutionTraceLab.tsx',
     '../theme/MDXComponents.tsx'
   ]
 

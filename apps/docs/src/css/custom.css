@@ -47,6 +47,19 @@
   --ifm-table-border-color: #e4d8c6;
   --ifm-hr-border-color: #dccdb9;
 
+  /* Both default to --ifm-color-primary (#b45309), which only reaches 4.34:1
+     against these active-state backgrounds — short of WCAG AA's 4.5:1 (axe's
+     color-contrast rule caught it). --ifm-color-primary-dark clears 6:1+ here;
+     dark mode's primary is already light-on-dark with plenty of headroom, so
+     it keeps the default. */
+  --ifm-menu-color-active: var(--ifm-color-primary-dark);
+  --ifm-breadcrumb-color-active: var(--ifm-color-primary-dark);
+  /* The search box's "ctrl K" shortcut hint (@easyops-cn/docusaurus-search-local)
+     defaults to Infima's own cool-gray --ifm-color-emphasis-500, never overridden
+     here — it neither matched this warm palette nor cleared 4.5:1 against the
+     search box background (axe measured ~1.44:1). */
+  --ifm-navbar-search-input-placeholder-color: var(--ifm-color-emphasis-700);
+
   --ifm-font-family-base:
     Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --ifm-font-family-monospace:
@@ -252,7 +265,10 @@ div[class^='codeBlockContainer'] {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--ifm-color-emphasis-600, #6c675a);
+  /* emphasis-700 (not -600): at this size/weight, -600 fell short of the 4.5:1
+     contrast minimum against both the panel and pure-white loading background
+     (axe's color-contrast rule caught it at ~2.7:1). */
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
 }
 
 .lab-container__fullscreen-toggle {
@@ -305,7 +321,7 @@ div[class^='codeBlockContainer'] {
   gap: 0.6rem;
   height: 100%;
   min-height: inherit;
-  color: var(--ifm-color-emphasis-600, #6c675a);
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
   font-size: 0.9rem;
 }
 
@@ -462,7 +478,7 @@ div[class^='codeBlockContainer'] {
 .rich-content-playground__description {
   margin: 0;
   font-size: 0.85rem;
-  color: var(--ifm-color-emphasis-600, #6c675a);
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
 }
 
 .rich-content-playground__panes {
@@ -490,7 +506,7 @@ div[class^='codeBlockContainer'] {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--ifm-color-emphasis-600, #6c675a);
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
 }
 
 .rich-content-playground__source {
@@ -552,7 +568,7 @@ div[class^='codeBlockContainer'] {
 }
 
 .rich-content-playground__ast-detail {
-  color: var(--ifm-color-emphasis-600, #6c675a);
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
 }
 
 .rich-content-playground__ast-plugin {
@@ -855,7 +871,7 @@ div[class^='codeBlockContainer'] {
 .execution-trace-lab__composer-model {
   margin: 0;
   font-size: 0.8rem;
-  color: var(--ifm-color-emphasis-600, #6c675a);
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
 }
 
 .execution-trace-lab__composer-model code {
@@ -899,7 +915,7 @@ div[class^='codeBlockContainer'] {
   margin: 0;
   font-size: 0.78rem;
   line-height: 1.5;
-  color: var(--ifm-color-emphasis-600, #6c675a);
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
 }
 
 .execution-trace-lab__empty {
@@ -907,7 +923,7 @@ div[class^='codeBlockContainer'] {
   padding: 0.9rem;
   border: 1px dashed var(--ifm-color-emphasis-300);
   border-radius: var(--ifm-card-border-radius);
-  color: var(--ifm-color-emphasis-600, #6c675a);
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
   font-size: 0.85rem;
 }
 
@@ -1003,7 +1019,7 @@ div[class^='codeBlockContainer'] {
 
 .execution-trace-lab__requests-hint {
   margin: 0.5rem 0 0;
-  color: var(--ifm-color-emphasis-600, #6c675a);
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
   font-size: 0.78rem;
 }
 
@@ -1040,7 +1056,7 @@ div[class^='codeBlockContainer'] {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--ifm-color-emphasis-600, #6c675a);
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
 }
 
 /* Plugin & tool-picker impact lab (issue #453) ---------------------------
