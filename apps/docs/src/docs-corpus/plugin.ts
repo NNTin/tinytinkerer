@@ -41,7 +41,6 @@ const resolveSourcePath = (siteDir: string, source: string): string => {
  */
 export const documentationCorpusPlugin = (context: LoadContext): Plugin<unknown> => {
   let generatedCorpus: GeneratedDocumentationCorpus | undefined
-  const publicBaseUrl = `${context.baseUrl}${DOCUMENTATION_CORPUS_OUTPUT_DIRECTORY}`
 
   return {
     name: 'documentation-corpus',
@@ -58,7 +57,10 @@ export const documentationCorpusPlugin = (context: LoadContext): Plugin<unknown>
           absoluteSourcePath: resolveSourcePath(context.siteDir, doc.source)
         }))
       )
-      generatedCorpus = await generateDocumentationCorpus(sources, publicBaseUrl)
+      generatedCorpus = await generateDocumentationCorpus(
+        sources,
+        `${context.baseUrl}${DOCUMENTATION_CORPUS_OUTPUT_DIRECTORY}`
+      )
       actions.setGlobalData(generatedCorpus.locator)
     },
     postBuild: async ({ outDir }) => {

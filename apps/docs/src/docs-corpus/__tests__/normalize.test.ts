@@ -1,14 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import canonicalFixture from '../__fixtures__/canonical.mdx?raw'
+import interactiveFixture from '../__fixtures__/interactive.mdx?raw'
 import { normalizeDocumentation } from '../normalize'
-
-const fixture = (name: string): string =>
-  readFileSync(resolve(process.cwd(), 'src/docs-corpus/__fixtures__', name), 'utf8')
 
 describe('normalizeDocumentation', () => {
   it('preserves Markdown, GFM, fences, directives, and Docusaurus anchors', () => {
-    const normalized = normalizeDocumentation(fixture('canonical.mdx'), 'Canonical fixture')
+    const normalized = normalizeDocumentation(canonicalFixture, 'Canonical fixture')
     const anchors = normalized.sections.flatMap((section) =>
       section.anchor ? [section.anchor] : []
     )
@@ -35,12 +34,12 @@ describe('normalizeDocumentation', () => {
   })
 
   it('removes executable MDX and marks component/expression omissions without using runtime output', () => {
-    const normalized = normalizeDocumentation(fixture('interactive.mdx'), 'Interactive fixture')
+    const normalized = normalizeDocumentation(interactiveFixture, 'Interactive fixture')
     const anchors = normalized.sections.flatMap((section) =>
       section.anchor ? [section.anchor] : []
     )
 
-    expect(normalized.markdown).not.toContain("import Widget from './Widget'")
+    expect(normalized.markdown).not.toContain('import Widget')
     expect(normalized.markdown).not.toContain('export const answer')
     expect(normalized.markdown).not.toContain('<Widget')
     expect(normalized.markdown).not.toContain('Runtime-owned component content')
@@ -62,7 +61,7 @@ describe('normalizeDocumentation', () => {
   })
 
   it('emits hierarchical, sliceable section boundaries and a nested outline', () => {
-    const normalized = normalizeDocumentation(fixture('canonical.mdx'), 'Canonical fixture')
+    const normalized = normalizeDocumentation(canonicalFixture, 'Canonical fixture')
     const parent = normalized.sections.find((section) => section.anchor === 'repeated-heading')
     const child = normalized.sections.find((section) => section.anchor === 'child-section')
     const nextPeer = normalized.sections.find((section) => section.anchor === 'repeated-heading-1')
