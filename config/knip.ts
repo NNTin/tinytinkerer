@@ -85,7 +85,9 @@ const config: KnipConfig = {
       // convention, so it's misreported as unlisted under that guessed name
       // (which is not a real package). The real package name itself is no
       // longer misreported as unused now that src/docs-search's compatibility
-      // adapter (issue #475) statically imports from it.
+      // adapter (issue #475) imports its worker entry point — deliberately via a
+      // lazy dynamic import, since #475 requires that opening a documentation
+      // page load neither the worker nor the index.
       ignoreDependencies: ['@easyops-cn/docusaurus-theme-docusaurus-search-local']
     },
     'apps/shell': {
