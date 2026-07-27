@@ -224,9 +224,12 @@ const validateDocumentRecord = (
   if (shape.hash === 'required' && typeof value.h !== 'string') return false
   if (shape.hash === 'optional' && value.h !== undefined && typeof value.h !== 'string')
     return false
-  if (shape.breadcrumb ? value.b !== undefined && !isStringArray(value.b) : value.b !== undefined) {
-    return false
-  }
+  // Required, not merely well-typed-if-present: `parseDocument.js` and
+  // `parsePage.js` both initialise `breadcrumb` to `[]` and always return it, so
+  // a Title record without `b` is drift rather than an upstream variation. (An
+  // empty array is normal and passes.) The fresh production index carries `b` on
+  // all 26 Title records.
+  if (shape.breadcrumb ? !isStringArray(value.b) : value.b !== undefined) return false
   return true
 }
 

@@ -107,10 +107,14 @@ describe('the pinned search worker contract', () => {
         // Upstream sets `page` to literal `false` for a Title result.
         expect(entry.page).toBe(false)
         expect(document.p).toBeUndefined()
+        // `parseDocument.js`/`parsePage.js` always return a breadcrumb array,
+        // so the adapter requires one rather than accepting it if present.
+        expect(Array.isArray(document.b)).toBe(true)
       } else {
         expect(typeof document.p).toBe('number')
         const page = entry.page as Record<string, unknown>
         expect(page.i).toBe(document.p)
+        expect(Array.isArray(page.b)).toBe(true)
         // The invariant the adapter relies on to cite a hit against the right
         // corpus ref: a child never belongs to a parent on a different page.
         expect(page.u).toBe(document.u)

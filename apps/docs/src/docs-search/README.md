@@ -21,16 +21,17 @@ tool or UI noticing.
   declares `theme/worker.js`, and `__tests__/private-worker-contract.test.ts`
   imports it to drive the genuine upstream `SearchWorker` without a real
   `Worker`.
-- `corpus-ref-map.ts` maps a hit's page URL to a `#474` corpus ref via the
-  documentation corpus's own manifest (`docs-corpus/plugin.ts`,
-  `docs-corpus/build-corpus.ts`). It knows nothing about the search plugin.
-  The manifest emits every loaded Docusaurus version, so the lookup only
-  considers `isLast: true` entries — the pinned search index only ever indexes
-  that canonical version's pages. It also cross-checks the fetched manifest's
-  own `manifestHash` against the locator's (see "URL normalization" below for
-  how the two sides' URLs are kept comparable). Both `searchDocumentation` and
-  `loadCorpusRefMap` take a `siteConfig: { baseUrl, trailingSlash }` argument
-  (the same shape `useDocusaurusContext().siteConfig` exposes).
+- `corpus-ref-map.ts` maps a hit's page URL to a `#474` corpus ref. It knows
+  nothing about the search plugin — and nothing about fetching either: it is a
+  thin canonical-version projection over
+  **`docs-corpus/manifest-store.ts`**, the shared runtime store that owns
+  locator discovery, full-contract validation, integrity verification, caching
+  and retry for _every_ documentation consumer. `#477`'s `read_doc` reaches the
+  same store for the same entries' `artifact` when a search result's `ref` is
+  handed straight to it, so search and reads cannot develop separate ideas of
+  what the corpus is. `searchDocumentation` takes a
+  `siteConfig: { baseUrl, trailingSlash }` argument (the same shape
+  `useDocusaurusContext().siteConfig` exposes) and passes it through.
 - `search-documentation.ts` composes the two into
   `DocumentationSearchResponse`
   (`packages/shared/contracts/src/documentation-search.ts`): it deduplicates
@@ -105,10 +106,14 @@ set. Every result is therefore checked for:
   `AskAI = 5` only exists when `searchLocalOptions.askAi` is set, which this
   site never sets;
 - a document matching the **per-type** field shape `scanDocuments.js` emits, not
-  just a generic record — a Title has `b` and no `p`/`s`/`h`, a Heading has `p`
-  and an optional `h` but never `s`, Description/Keywords always have `s` and
-  never `h`, Content has both. `section`'s derivation below depends on exactly
-  this, so a type that starts or stops carrying one of these must not pass;
+  just a generic record — a Title always has `b` and never `p`/`s`/`h`, a
+  Heading has `p` and an optional `h` but never `s`, Description/Keywords always
+  have `s` and never `h`, Content has both. `section`'s derivation below depends
+  on exactly this, so a type that starts or stops carrying one of these must not
+  pass. `b` is **required** on Title records (and on every parent `page`, which
+  is one): `parseDocument.js` and `parsePage.js` both initialise `breadcrumb` to
+  `[]` and always return it, so its absence is drift rather than an upstream
+  variation — an empty array is normal and accepted;
 - integer document ids;
 - a parent `page` that is literal `false` for a `Title` result and otherwise a
   title-shaped record whose `i` equals the document's `p` **and whose `u`
@@ -227,7 +232,7 @@ heading has a name whether or not navigation can target it.
 
 ## URL normalization
 
-`corpus-ref-map.ts` compares a hit's page URL against a `#474` manifest
+The corpus store compares a hit's page URL against a `#474` manifest
 permalink after: resolving it to a pathname (so an absolute URL and a bare path
 normalize identically, and any query string or fragment is dropped), then
 applying `canonicalizeDocusaurusPermalink` — the exact same helper, over
@@ -290,10 +295,14 @@ would duplicate the index in memory and defeat the singleton reuse described
 above.
 
 ² Retryable for a network/HTTP failure, not for a missing corpus plugin. This
-cache is TinyTinkerer's own, so `corpus-ref-map.ts` evicts a retryable failure
-immediately and the next call gets a fresh attempt. Its cache is keyed by
-manifest URL, manifest hash, base URL and trailing-slash policy, so one
-caller's site config can never decide another's normalization.
+cache is TinyTinkerer's own, so `docs-corpus/manifest-store.ts` evicts a
+retryable failure immediately and the next call gets a fresh attempt. Its cache
+is keyed by manifest URL, manifest hash, base URL and trailing-slash policy, so
+one caller's site config can never decide another's normalization.
+`manifest_incompatible` additionally covers a manifest that fails **integrity
+verification** — the store recomputes the SHA-256 `build-corpus.ts` advertises,
+rather than trusting two self-reported strings to agree, since a payload edited
+under a content-addressed URL would otherwise be accepted.
 
 ## Upgrade checklist for `@easyops-cn/docusaurus-search-local`
 

@@ -306,11 +306,64 @@ describe('searchPrivateWorker', () => {
 
   it('reports index_incompatible when a result parent page contradicts the document', async () => {
     searchByWorkerMock.mockResolvedValue([
-      workerResult({ page: { i: 99, t: 'Other Page', u: '/docs/other/' } })
+      workerResult({ page: { i: 99, t: 'Other Page', u: '/docs/other/', b: ['Docs'] } })
     ])
     const outcome = await searchPrivateWorker(BASE_URL, 'install', 10)
     expect(outcome).toMatchObject({ ok: false, code: 'index_incompatible', retryable: false })
     expect(outcome.ok === false && outcome.message).toContain('resolved parent page 99')
+  })
+
+  it('reports index_incompatible for a Title result with no breadcrumb', async () => {
+    // `parseDocument.js`/`parsePage.js` both initialise `breadcrumb` to `[]` and
+    // always return it, so a Title record without `b` is drift, not an upstream
+    // variation. (An empty array is normal and accepted — see below.)
+    searchByWorkerMock.mockResolvedValue([
+      workerResult({
+        document: { i: 1, t: 'Getting Started', u: PAGE_URL },
+        type: 0,
+        page: false,
+        metadata: positionMetadata([0, 7])
+      })
+    ])
+    const outcome = await searchPrivateWorker(BASE_URL, 'started', 10)
+    expect(outcome).toMatchObject({ ok: false, code: 'index_incompatible', retryable: false })
+    expect(outcome.ok === false && outcome.message).toContain('field shape')
+  })
+
+  it('reports index_incompatible for a parent page with no breadcrumb', async () => {
+    // Every non-Title result carries its parent Title document, which is subject
+    // to the same shape rule.
+    searchByWorkerMock.mockResolvedValue([
+      workerResult({ page: { i: 1, t: 'Getting Started', u: PAGE_URL } })
+    ])
+    const outcome = await searchPrivateWorker(BASE_URL, 'install', 10)
+    expect(outcome).toMatchObject({ ok: false, code: 'index_incompatible', retryable: false })
+  })
+
+  it('reports index_incompatible for a malformed breadcrumb', async () => {
+    searchByWorkerMock.mockResolvedValue([
+      workerResult({
+        document: { i: 1, t: 'Getting Started', u: PAGE_URL, b: [42] },
+        type: 0,
+        page: false,
+        metadata: positionMetadata([0, 7])
+      })
+    ])
+    const outcome = await searchPrivateWorker(BASE_URL, 'started', 10)
+    expect(outcome).toMatchObject({ ok: false, code: 'index_incompatible', retryable: false })
+  })
+
+  it('accepts an empty breadcrumb, which upstream emits for a page with no sidebar trail', async () => {
+    searchByWorkerMock.mockResolvedValue([
+      workerResult({
+        document: { i: 1, t: 'Getting Started', u: PAGE_URL, b: [] },
+        type: 0,
+        page: false,
+        metadata: positionMetadata([0, 7])
+      })
+    ])
+    const outcome = await searchPrivateWorker(BASE_URL, 'started', 10)
+    expect(outcome.ok).toBe(true)
   })
 
   it('reports index_incompatible when a result sits on a different page than its parent', async () => {
