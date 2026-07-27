@@ -1,0 +1,414 @@
+// Builds a realistic `search-index.json` payload for tests, using the same
+// lunr recipe `buildIndex.js` (pinned @easyops-cn/docusaurus-search-local
+// 0.55.2) uses at build time: `ref('i')`, `field('t')`, and a document `i`
+// coerced to a string ref. This produces byte-real, loadable lunr indexes, so
+// __tests__/private-worker-contract.test.ts can run the plugin's genuine
+// `SearchWorker` over them and exercise real query behavior — tokenization,
+// wildcards, fuzziness, `smartQueries` relaxation, group iteration and result
+// ordering — rather than a hand-rolled stand-in.
+import lunr from 'lunr'
+
+type FixtureDoc = {
+  i: number
+  t: string
+  u: string
+  p?: number
+  h?: string
+  s?: string
+  b?: string[]
+}
+
+const buildGroupIndex = (documents: FixtureDoc[]): { documents: FixtureDoc[]; index: object } => {
+  const index = lunr(function build(this: lunr.Builder) {
+    this.ref('i')
+    this.field('t')
+    this.metadataWhitelist = ['position']
+    for (const doc of documents) {
+      this.add({ ...doc, i: doc.i.toString() })
+    }
+  })
+  return { documents, index: index.toJSON() }
+}
+
+export const PAGE_A_URL = '/docs/getting-started/'
+export const PAGE_B_URL = '/docs/search-configuration/'
+
+/**
+ * Two pages:
+ *  - "Getting Started" (`PAGE_A_URL`), matched via its title, a heading
+ *    ("Installation"), and a content section — exercising per-page dedup.
+ *  - "Search Configuration" (`PAGE_B_URL`), matched only via content.
+ *
+ * The five groups are emitted in the plugin's own positional order:
+ * `[title, heading, description, keywords, content]` (see buildIndex.js).
+ */
+export const buildFixtureSearchIndex = (): unknown[] => [
+  buildGroupIndex([
+    { i: 1, t: 'Getting Started', u: PAGE_A_URL, b: ['Docs'] },
+    { i: 4, t: 'Search Configuration', u: PAGE_B_URL, b: ['Docs'] }
+  ]),
+  buildGroupIndex([{ i: 2, t: 'Installation', u: PAGE_A_URL, h: '#installation', p: 1 }]),
+  buildGroupIndex([
+    {
+      i: 6,
+      t: 'Learn how to install and configure the toolkit.',
+      s: 'Getting Started',
+      u: PAGE_A_URL,
+      p: 1
+    }
+  ]),
+  buildGroupIndex([]),
+  buildGroupIndex([
+    {
+      i: 3,
+      t: 'Run the installer script and follow the interactive prompts to configure your workspace.',
+      s: 'Installation',
+      u: PAGE_A_URL,
+      h: '#installation',
+      p: 1
+    },
+    {
+      i: 5,
+      t: 'Configure the search index hashing strategy and result limits.',
+      s: 'Search Configuration',
+      u: PAGE_B_URL,
+      h: '#tuning',
+      p: 4
+    }
+  ])
+]
+
+export const PAGE_C_URL = '/docs/plugins-and-tools/plugin-infrastructure/'
+export const PAGE_D_URL = '/docs/self-hosting/vercel-deployment/'
+export const PAGE_E_URL = '/docs/widgetkit-overview/'
+
+/**
+ * A separate, deliberately independent fixture (not an extension of
+ * `buildFixtureSearchIndex`, so it can never move that fixture's existing
+ * tests' expectations) shaped after the natural-language questions a PR #485
+ * review ran against the real site. It exists to demonstrate, through the
+ * genuine upstream worker, that recall for those questions comes from the
+ * plugin's own query machinery — trailing wildcards on the last term, a
+ * `fuzzyMatchingDistance` matrix, and `smartQueries`' leave-one-out relaxation
+ * at 3+ terms — and needs no TinyTinkerer-owned query policy on top.
+ *
+ *  - `PAGE_C` ("Plugin Infrastructure"): its content mentions "plugin",
+ *    "infrastructure" and "guides" but never "find", so
+ *    "where can I find plugin infrastructure" only matches once a variant that
+ *    drops a token is tried.
+ *  - `PAGE_D` ("Vercel Deployment Guide") mentions hosting TinyTinkerer, and
+ *    is the page "how can I host TinyTinkerer" should surface.
+ *  - `PAGE_E` ("WidgetKit Overview") shares no content words with either
+ *    question — a control for the precision half: it must NOT be returned for
+ *    a hosting question just because one stray token overlaps.
+ */
+export const buildNaturalLanguageFixtureSearchIndex = (): unknown[] => [
+  buildGroupIndex([
+    { i: 10, t: 'Plugin Infrastructure', u: PAGE_C_URL, b: ['Docs', 'Plugins and tools'] },
+    { i: 20, t: 'Vercel Deployment Guide', u: PAGE_D_URL, b: ['Docs', 'Self hosting'] },
+    { i: 22, t: 'WidgetKit Overview', u: PAGE_E_URL, b: ['Docs'] }
+  ]),
+  buildGroupIndex([
+    { i: 12, t: 'Extension points', u: PAGE_C_URL, h: '#extension-points', p: 10 },
+    { i: 24, t: 'Hosting TinyTinkerer on Vercel', u: PAGE_D_URL, h: '#hosting', p: 20 }
+  ]),
+  buildGroupIndex([
+    {
+      i: 10,
+      t: 'How TinyTinkerer plugins are discovered, registered and loaded.',
+      s: 'Plugin Infrastructure',
+      u: PAGE_C_URL,
+      p: 10
+    }
+  ]),
+  buildGroupIndex([]),
+  buildGroupIndex([
+    {
+      i: 11,
+      t: 'These plugin infrastructure guides cover extension points and lifecycle hooks.',
+      s: 'Extension points',
+      u: PAGE_C_URL,
+      h: '#extension-points',
+      p: 10
+    },
+    {
+      i: 21,
+      t: 'This guide covers the full hosted setup: TinyTinkerer on Vercel serves the static frontend, while Cloudflare workers serve the edge API.',
+      s: 'Hosting TinyTinkerer on Vercel',
+      u: PAGE_D_URL,
+      h: '#hosting',
+      p: 20
+    },
+    {
+      i: 23,
+      t: 'WidgetKit is the toolkit powering every dashboard widget in this product.',
+      s: 'WidgetKit Overview',
+      u: PAGE_E_URL,
+      h: '#overview',
+      p: 22
+    }
+  ])
+]
+
+export const PAGE_F_URL = '/docs/widget-configuration-reference/'
+export const PAGE_G_URL = '/docs/release-notes/'
+export const PAGE_H_URL = '/docs/widget-faq/'
+
+/**
+ * Pins the ranking-parity rule in search-documentation.ts: raw lunr scores come
+ * from five *independent* indexes and are not comparable across them, so page
+ * order has to be the worker's own (`sortSearchResults`), not a re-sort by
+ * score. This fixture makes the two disagree.
+ *
+ * For the query "widget", all three pages match weakly in the **title** group
+ * (the term is common there and buried in a long field), and `PAGE_G` also
+ * matches very strongly in the **content** group. The worker scans the title
+ * group first, so `PAGE_G` still lands last — even though its best hit
+ * outscores every other page's by an order of magnitude. A score-descending
+ * re-sort would therefore promote it to first, which is exactly the divergence
+ * from the site's own `/search` page the ordering test guards against.
+ */
+export const buildOrderingFixtureSearchIndex = (): unknown[] => [
+  // Every title mentions "widget", so the term is common here (low idf) and
+  // buried in a long field (low length norm) — a weak title-group match.
+  buildGroupIndex([
+    {
+      i: 30,
+      t: 'Widget configuration reference guide for advanced integration authors',
+      u: PAGE_F_URL,
+      b: ['Docs']
+    },
+    {
+      i: 32,
+      t: 'Release notes for the widget runtime and its companion command line tooling',
+      u: PAGE_G_URL,
+      b: ['Docs']
+    },
+    {
+      i: 34,
+      t: 'Frequently asked questions about widget packaging and distribution',
+      u: PAGE_H_URL,
+      b: ['Docs']
+    }
+  ]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  // In the content index the term is rare (high idf) and is nearly the whole
+  // of a very short section (high length norm) — a strong content-group match.
+  buildGroupIndex([
+    { i: 35, t: 'Widget.', s: 'Release notes', u: PAGE_G_URL, h: '#widget', p: 32 },
+    {
+      i: 36,
+      t: 'Installation prerequisites and supported platforms.',
+      s: 'Prerequisites',
+      u: PAGE_F_URL,
+      p: 30
+    },
+    {
+      i: 37,
+      t: 'Upgrading from an earlier release of the toolkit.',
+      s: 'Upgrading',
+      u: PAGE_F_URL,
+      p: 30
+    },
+    {
+      i: 38,
+      t: 'Reporting bugs and requesting new capabilities.',
+      s: 'Feedback',
+      u: PAGE_H_URL,
+      p: 34
+    },
+    {
+      i: 39,
+      t: 'Publishing a package to the internal registry.',
+      s: 'Publishing',
+      u: PAGE_H_URL,
+      p: 34
+    },
+    {
+      i: 40,
+      t: 'Deprecation policy and long term support windows.',
+      s: 'Deprecation',
+      u: PAGE_G_URL,
+      p: 32
+    }
+  ])
+]
+
+export const PAGE_I_URL = '/docs/plugin-lifecycle/'
+
+/**
+ * The section text `buildLongSectionFixtureSearchIndex` indexes: the only
+ * occurrence of "quiescent" sits far past any leading-truncation window, the way
+ * a real match deep inside a multi-thousand-character indexed section does.
+ */
+export const LONG_SECTION_MATCH_TERM = 'quiescent'
+export const LONG_SECTION_TEXT = `${'Every plugin declares the tools it contributes and the events it observes, and the host resolves that graph before the first turn begins. '.repeat(
+  12
+)}A plugin that has drained its queue and released its subscriptions reports itself ${LONG_SECTION_MATCH_TERM}, which is how the host knows a teardown finished cleanly. ${'Teardown then proceeds in reverse registration order so a dependent never observes a released dependency. '.repeat(
+  6
+)}`
+
+/**
+ * One page whose single content section is far longer than the snippet budget,
+ * with the query term appearing only well beyond it. Truncating from the start
+ * would return a snippet that contains no part of the match — a citation with no
+ * evidence for why it matched — which is what `boundedSnippet`'s match-centered
+ * window exists to prevent.
+ */
+export const buildLongSectionFixtureSearchIndex = (): unknown[] => [
+  buildGroupIndex([{ i: 50, t: 'Plugin Lifecycle', u: PAGE_I_URL, b: ['Docs'] }]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([
+    { i: 51, t: LONG_SECTION_TEXT, s: 'Teardown', u: PAGE_I_URL, h: '#teardown', p: 50 }
+  ])
+]
+
+export const PAGE_J_URL = '/docs/widget-handbook/'
+export const PAGE_K_URL = '/docs/appendix/'
+/** How many matching content sections `PAGE_J` contributes ahead of `PAGE_K`. */
+export const CROWDED_PAGE_SECTION_COUNT = 50
+
+/**
+ * One page that occupies far more consecutive raw hits than any fixed
+ * `maxResults * N` over-fetch could budget for, with a second eligible page
+ * behind it.
+ *
+ * The plugin emits one document per *section*, not a fixed few per page, so a
+ * large page's hits can crowd out every other page in a bounded raw window.
+ * `PAGE_K` deliberately does not match in the title group (which the worker
+ * scans first) and scores lower than `PAGE_J`'s sections in the content group,
+ * so it only appears once the requested limit grows.
+ */
+export const buildCrowdedPageFixtureSearchIndex = (): unknown[] => [
+  buildGroupIndex([
+    { i: 60, t: 'Widget Handbook', u: PAGE_J_URL, b: ['Docs'] },
+    { i: 61, t: 'Appendix', u: PAGE_K_URL, b: ['Docs'] }
+  ]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([
+    ...Array.from({ length: CROWDED_PAGE_SECTION_COUNT }, (_, index) => ({
+      i: 100 + index,
+      t: `Widget ${index}.`,
+      s: `Section ${index}`,
+      u: PAGE_J_URL,
+      h: `#section-${index}`,
+      p: 60
+    })),
+    {
+      i: 900,
+      t: 'A longer closing note that also happens to mention the widget vocabulary once, scoring below every short section above it.',
+      s: 'Closing note',
+      u: PAGE_K_URL,
+      h: '#closing-note',
+      p: 61
+    }
+  ])
+]
+
+export const PAGE_L_URL = '/docs/alpha-beta-overview/'
+export const PAGE_M_URL = '/docs/zeta-notes/'
+/** The query `buildLimitSensitiveFixtureSearchIndex` is built around. */
+export const LIMIT_SENSITIVE_QUERY = 'alpha beta gamma'
+
+/**
+ * Demonstrates that the pinned worker is **not monotonic in its `limit`**, which
+ * is why `fetchMappedPages` starts from a fixed window and only ever appends.
+ *
+ * The worker fills the requested limit while iterating smart-query tiers and
+ * index groups, breaks as soon as it is full, and only *then* sorts. Here, for
+ * `LIMIT_SENSITIVE_QUERY`:
+ *
+ * - at `limit <= 2` the exact tier alone fills it, from the content group, and
+ *   the page order is `[PAGE_L, PAGE_M]`;
+ * - at `limit >= 3` a relaxed tier (`alpha beta`, dropping one token) also
+ *   matches `PAGE_L`'s *title*. `sortSearchResults` keys a section hit on the
+ *   index of its page's title, so `PAGE_L`'s content hit is pulled down beside
+ *   that late title hit and the page order becomes `[PAGE_M, PAGE_L]`.
+ *
+ * `PAGE_L`'s title deliberately omits the third token so it can only match a
+ * relaxed tier, and its content section is short enough to outscore `PAGE_M`'s
+ * in the exact tier.
+ */
+export const buildLimitSensitiveFixtureSearchIndex = (): unknown[] => [
+  buildGroupIndex([
+    { i: 1, t: 'Alpha beta overview', u: PAGE_L_URL, b: ['Docs'] },
+    { i: 2, t: 'Zeta notes', u: PAGE_M_URL, b: ['Docs'] }
+  ]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([
+    { i: 3, t: 'Alpha beta gamma.', s: 'Summary', u: PAGE_L_URL, h: '#summary', p: 1 },
+    {
+      i: 4,
+      t: 'Alpha beta gamma appears here among a good many other words which lower this section score.',
+      s: 'Detail',
+      u: PAGE_M_URL,
+      h: '#detail',
+      p: 2
+    }
+  ])
+]
+
+export const PAGE_N_URL = '/docs/contributing/'
+
+/**
+ * A page whose Heading records carry `h: ""` — real shape, not hypothetical: the
+ * production index contains exactly this for four headings under
+ * `/docs/contributing/`, where the rendered heading gets no anchor.
+ *
+ * `anchor` must be null (there is nothing to navigate to) while `section` must
+ * still be the heading's own text, which is what `deriveSection` keying off the
+ * document *type* rather than off field presence guarantees.
+ */
+export const buildHashlessHeadingFixtureSearchIndex = (): unknown[] => [
+  buildGroupIndex([{ i: 116, t: 'Contributing', u: PAGE_N_URL, b: ['Docs'] }]),
+  buildGroupIndex([
+    { i: 120, t: 'Security Issues', u: PAGE_N_URL, h: '', p: 116 },
+    { i: 122, t: 'Contributor License Terms', u: PAGE_N_URL, h: '', p: 116 }
+  ]),
+  buildGroupIndex([]),
+  buildGroupIndex([]),
+  buildGroupIndex([])
+]
+
+export const PAGE_O_URL = '/docs/snippet-boundary/'
+/** The unique term `buildSnippetBoundaryFixtureSearchIndex` places at a chosen offset. */
+export const SNIPPET_BOUNDARY_TERM = 'needle'
+/** Text that follows the term — a snippet is only useful if some of this survives. */
+export const SNIPPET_BOUNDARY_TRAILER =
+  'followed by the explanation that makes the citation worth reading, which is the entire reason a snippet is centered on the match rather than taken from the start of the section.'
+
+/**
+ * A page whose single content section places `SNIPPET_BOUNDARY_TERM` at exactly
+ * `matchStart` characters in, padded with a stop word so nothing but the term
+ * itself can match.
+ *
+ * Built for the snippet window's boundary cases. A match ending exactly at the
+ * character budget is *inside* a leading window, so an implementation that only
+ * repositions when the match falls outside one leaves the whole budget ahead of
+ * the match and cuts off everything after it — technically containing the match,
+ * uselessly.
+ */
+export const buildSnippetBoundaryFixtureSearchIndex = (
+  matchStart: number,
+  { trailer = true }: { trailer?: boolean } = {}
+): unknown[] => {
+  const padding = 'a '.repeat(Math.ceil(matchStart / 2)).slice(0, matchStart)
+  const text = trailer
+    ? `${padding}${SNIPPET_BOUNDARY_TERM} ${SNIPPET_BOUNDARY_TRAILER}`
+    : `${padding}${SNIPPET_BOUNDARY_TERM}`
+  return [
+    buildGroupIndex([{ i: 70, t: 'Snippet boundary', u: PAGE_O_URL, b: ['Docs'] }]),
+    buildGroupIndex([]),
+    buildGroupIndex([]),
+    buildGroupIndex([]),
+    buildGroupIndex([{ i: 71, t: text, s: 'Boundary', u: PAGE_O_URL, h: '#boundary', p: 70 }])
+  ]
+}

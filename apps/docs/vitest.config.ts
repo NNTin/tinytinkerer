@@ -21,7 +21,17 @@ export default defineConfig({
       ),
       '@docusaurus/useBaseUrl': fileURLToPath(
         new URL('./src/test/docusaurus-use-base-url-stub.ts', import.meta.url)
-      )
+      ),
+      '@generated/globalData': fileURLToPath(
+        new URL('./src/test/generated-global-data-stub.ts', import.meta.url)
+      ),
+      // The search plugin's own worker.js reads its runtime config from this
+      // webpack-generated module. Docusaurus' build writes and resolves it for
+      // real (apps/docs/.docusaurus/@easyops-cn/...); this alias is what lets
+      // docs-search's contract test drive the genuine upstream SearchWorker
+      // instead of a hand-rolled imitation. See the stub for details.
+      '@generated/@easyops-cn/docusaurus-search-local/default/generated-constants.js':
+        fileURLToPath(new URL('./src/test/generated-search-constants-stub.ts', import.meta.url))
     }
   },
   test: {

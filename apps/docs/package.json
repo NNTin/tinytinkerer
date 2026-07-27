@@ -10,7 +10,7 @@
     "dev": "pnpm -w prepare:pixel-agents && docusaurus start --host 127.0.0.1 --port 3112 --no-open",
     "start": "docusaurus start",
     "build": "pnpm -w prepare:pixel-agents && docusaurus build",
-    "lint": "eslint tests docusaurus.config.ts sidebars.ts site-config.ts",
+    "lint": "eslint src tests docusaurus.config.ts sidebars.ts site-config.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -48,6 +48,8 @@
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",
     "@testing-library/user-event": "14.6.1",
+    "@types/lunr": "2.3.7",
+    "lunr": "2.3.9",
     "@types/node": "25.9.1",
     "@types/react": "19.2.15",
     "@types/react-dom": "19.2.3",

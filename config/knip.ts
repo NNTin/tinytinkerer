@@ -82,13 +82,13 @@ const config: KnipConfig = {
       // assuming the `@scope/docusaurus-theme-x` convention (it special-cases
       // names that already contain "theme-", which @docusaurus/theme-mermaid
       // does). @easyops-cn/docusaurus-search-local doesn't follow that
-      // convention, so it's both misreported as unused (the real name) and as
-      // unlisted (the plugin's incorrectly guessed name below, which is not a
-      // real package).
-      ignoreDependencies: [
-        '@easyops-cn/docusaurus-search-local',
-        '@easyops-cn/docusaurus-theme-docusaurus-search-local'
-      ]
+      // convention, so it's misreported as unlisted under that guessed name
+      // (which is not a real package). The real package name itself is no
+      // longer misreported as unused now that src/docs-search's compatibility
+      // adapter (issue #475) imports its worker entry point — deliberately via a
+      // lazy dynamic import, since #475 requires that opening a documentation
+      // page load neither the worker nor the index.
+      ignoreDependencies: ['@easyops-cn/docusaurus-theme-docusaurus-search-local']
     },
     'apps/shell': {
       // Radix primitives kept for parity with the shared UI package; consumed by

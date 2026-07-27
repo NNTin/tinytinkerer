@@ -165,6 +165,11 @@ export type {
   DocumentationCorpusReadTruncation,
   DocumentationCorpusSchemaVersion,
   DocumentationCorpusSection,
+  DocumentationSearchFailure,
+  DocumentationSearchFailureCode,
+  DocumentationSearchResponse,
+  DocumentationSearchResult,
+  DocumentationSearchSuccess,
   ServiceStatus,
   SystemStatus
 } from '@tinytinkerer/contracts'
