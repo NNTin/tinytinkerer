@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { __resetGlobalData, __setPluginData } from '../../test/generated-global-data-stub'
 import {
@@ -9,6 +10,7 @@ import {
   buildLongSectionFixtureSearchIndex,
   buildNaturalLanguageFixtureSearchIndex,
   buildOrderingFixtureSearchIndex,
+  buildSnippetBoundaryFixtureSearchIndex,
   LIMIT_SENSITIVE_QUERY,
   LONG_SECTION_MATCH_TERM,
   LONG_SECTION_TEXT,
@@ -25,7 +27,10 @@ import {
   PAGE_K_URL,
   PAGE_L_URL,
   PAGE_M_URL,
-  PAGE_N_URL
+  PAGE_N_URL,
+  PAGE_O_URL,
+  SNIPPET_BOUNDARY_TERM,
+  SNIPPET_BOUNDARY_TRAILER
 } from '../__fixtures__/build-fixture-index'
 import { resetCorpusRefMapCacheForTests } from '../corpus-ref-map'
 import {
@@ -67,12 +72,25 @@ const manifestEntry = (ref: string, title: string, permalink: string) => ({
   isLast: true,
   title,
   permalink,
-  unlisted: false
+  source: `@site/../../docs/${ref}.md`,
+  contentHash: 'c'.repeat(64),
+  artifactHash: 'a'.repeat(64),
+  unlisted: false,
+  artifact: `/docs/assets/docs-corpus/documents/${ref}.json`,
+  characterCount: 1000,
+  sectionCount: 3
 })
 
+/**
+ * Manifests carry a real content hash, because the shared corpus store now
+ * verifies it (docs-corpus/manifest-store.ts) rather than trusting the string.
+ * Computed exactly the way build-corpus.ts computes it.
+ */
 const manifestOf = (...documents: ReturnType<typeof manifestEntry>[]) => ({
   schemaVersion: 1,
-  manifestHash: 'abc123',
+  manifestHash: createHash('sha256')
+    .update(JSON.stringify({ schemaVersion: 1, documents }))
+    .digest('hex'),
   documents
 })
 
@@ -111,7 +129,28 @@ const hashlessHeadingManifest = manifestOf(
   manifestEntry('contributing/CONTRIBUTING', 'Contributing', PAGE_N_URL)
 )
 
-const stubFetch = (searchIndex: unknown, corpusManifest: unknown) => {
+const snippetBoundaryManifest = manifestOf(
+  manifestEntry('snippet-boundary', 'Snippet boundary', PAGE_O_URL)
+)
+
+/**
+ * Publishes the locator for the manifest being served, so the two agree — the
+ * shared corpus store cross-checks them and then verifies the manifest's own
+ * content hash. `publishLocator: false` covers "the corpus plugin was never
+ * registered".
+ */
+const stubFetch = (
+  searchIndex: unknown,
+  corpusManifest: unknown,
+  { publishLocator = true }: { publishLocator?: boolean } = {}
+) => {
+  if (publishLocator) {
+    __setPluginData('documentation-corpus', 'default', {
+      schemaVersion: 1,
+      manifestHash: (corpusManifest as { manifestHash: string }).manifestHash,
+      manifestUrl: MANIFEST_URL
+    })
+  }
   vi.stubGlobal(
     'fetch',
     vi.fn((input: unknown) => {
@@ -133,11 +172,6 @@ describe('searchDocumentation', () => {
     resetSearchWorkerModuleCacheForTests()
     resetCorpusRefMapCacheForTests()
     __resetGlobalData()
-    __setPluginData('documentation-corpus', 'default', {
-      schemaVersion: 1,
-      manifestHash: 'abc123',
-      manifestUrl: MANIFEST_URL
-    })
   })
 
   afterEach(() => {
@@ -247,6 +281,47 @@ describe('searchDocumentation', () => {
     // And the window must not start mid-word.
     expect(snippet.slice(1)).toMatch(/^[A-Za-z]/)
     expect(LONG_SECTION_TEXT).toContain(snippet.slice(1, 40))
+  })
+
+  // 300 is MAX_SNIPPET_CHARS in search-documentation.ts; the interesting cases
+  // are the ones straddling it, which the "thousands of characters in" test
+  // could never reach.
+  it.each([
+    ['ends well before the budget', 40],
+    ['ends just before the budget', 290],
+    ['ends exactly at the budget', 294],
+    ['ends just past the budget', 298],
+    ['starts well past the budget', 900]
+  ])('centers the snippet on a match that %s', async (_label, matchStart) => {
+    stubFetch(buildSnippetBoundaryFixtureSearchIndex(matchStart), snippetBoundaryManifest)
+
+    const response = await searchDocumentation(SITE_CONFIG, SNIPPET_BOUNDARY_TERM)
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    const { snippet } = response.results[0]
+
+    expect(snippet).toContain(SNIPPET_BOUNDARY_TERM)
+    // The point of centering: enough of what follows the match survives to
+    // explain why the page matched.
+    const after = snippet.slice(
+      snippet.indexOf(SNIPPET_BOUNDARY_TERM) + SNIPPET_BOUNDARY_TERM.length
+    )
+    expect(after.replace(/…$/, '').trim().length).toBeGreaterThan(60)
+    expect(SNIPPET_BOUNDARY_TRAILER).toContain(after.replace(/…$/, '').trim().slice(0, 30))
+  })
+
+  it('keeps a snippet readable when the match sits at the very end of the text', async () => {
+    // Nothing follows the match here, so the window has to lean the other way
+    // rather than insist on trailing context that does not exist.
+    stubFetch(
+      buildSnippetBoundaryFixtureSearchIndex(900, { trailer: false }),
+      snippetBoundaryManifest
+    )
+
+    const response = await searchDocumentation(SITE_CONFIG, SNIPPET_BOUNDARY_TERM)
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    expect(response.results[0].snippet).toContain(SNIPPET_BOUNDARY_TERM)
   })
 
   it('keeps over-fetching until enough distinct pages survive deduplication', async () => {
@@ -374,12 +449,13 @@ describe('searchDocumentation', () => {
   })
 
   it('drops results for pages the #474 corpus marks unlisted', async () => {
-    const unlistedManifest = {
-      ...manifest,
-      documents: manifest.documents.map((doc) =>
-        doc.ref === 'getting-started' ? { ...doc, unlisted: true } : doc
-      )
-    }
+    // Rebuilt through manifestOf, not spread over `manifest`: the store now
+    // verifies the manifest's own content hash, so an edited payload keeping the
+    // original hash is (correctly) rejected as tampered.
+    const unlistedManifest = manifestOf(
+      { ...manifestEntry('getting-started', 'Getting Started', PAGE_A_URL), unlisted: true },
+      manifestEntry('search-configuration', 'Search Configuration', PAGE_B_URL)
+    )
     stubFetch(buildFixtureSearchIndex(), unlistedManifest)
 
     const response = await searchDocumentation(SITE_CONFIG, 'install')
@@ -389,10 +465,9 @@ describe('searchDocumentation', () => {
   })
 
   it('drops hits that do not map to any #474 corpus document', async () => {
-    const partialManifest = {
-      ...manifest,
-      documents: manifest.documents.filter((doc) => doc.ref !== 'search-configuration')
-    }
+    const partialManifest = manifestOf(
+      manifestEntry('getting-started', 'Getting Started', PAGE_A_URL)
+    )
     stubFetch(buildFixtureSearchIndex(), partialManifest)
 
     const response = await searchDocumentation(SITE_CONFIG, 'hashing')
@@ -413,8 +488,7 @@ describe('searchDocumentation', () => {
   })
 
   it('propagates a corpus-manifest failure', async () => {
-    __resetGlobalData() // no locator published
-    stubFetch(buildFixtureSearchIndex(), manifest)
+    stubFetch(buildFixtureSearchIndex(), manifest, { publishLocator: false })
     const response = await searchDocumentation(SITE_CONFIG, 'install')
     expect(response).toMatchObject({
       ok: false,

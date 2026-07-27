@@ -1,302 +1,47 @@
 /**
  * Maps a documentation-search hit's page URL back to a #474 corpus ref.
  *
- * This module knows nothing about the private search plugin — it only reads
- * the #474 documentation corpus's own public locator/manifest (see
- * apps/docs/src/docs-corpus/plugin.ts and build-corpus.ts). The locator is
- * discovered via `@generated/globalData`, Docusaurus' own stable, public
- * plugin-data channel (the same data `useGlobalData`/`usePluginData` read) —
- * not a virtual module owned by the easyops plugin.
+ * This module knows nothing about the private search plugin, and nothing about
+ * fetching either: it is a thin canonical-version projection over the shared
+ * runtime corpus store (`docs-corpus/manifest-store.ts`), which owns locator
+ * discovery, full-contract validation, integrity verification, caching and
+ * retry for every documentation consumer. #477's `read_doc` reaches the *same*
+ * store for the same entries' `artifact` when a search result's `ref` is handed
+ * straight to it, so neither side can develop its own idea of what the corpus
+ * is.
  */
-import { DOCUMENTATION_CORPUS_SCHEMA_VERSION } from '@tinytinkerer/app-browser/documentation-corpus'
-import globalData from '@generated/globalData'
-import { canonicalizeDocusaurusPermalink } from '../docs-corpus/docusaurus-compatibility'
+import {
+  loadDocumentationCorpusStore,
+  type DocumentationCorpusStoreFailureCode,
+  type SiteUrlConfig
+} from '../docs-corpus/manifest-store'
 
-const CORPUS_PLUGIN_NAME = 'documentation-corpus'
-const CORPUS_PLUGIN_ID = 'default'
-
-type CorpusLocator = { schemaVersion: number; manifestHash: string; manifestUrl: string }
+export type { SiteUrlConfig }
 
 /**
- * Only the manifest-entry fields this module actually reads and validates.
- * Deliberately narrower than (and not cast to) the full
- * `DocumentationCorpusManifestEntry` contract type: that type carries fields
- * (`source`, `contentHash`, `artifactHash`, `artifact`, `characterCount`,
- * `sectionCount`) this module never uses and never validates, so pretending
- * to produce the full type would be dishonest. `search-documentation.ts`
- * consumes exactly this shape.
+ * Only the manifest-entry fields the search path actually consumes. Deliberately
+ * narrower than the full `DocumentationCorpusManifestEntry` the store validates
+ * and hands to #477 — `search-documentation.ts` has no business reading a
+ * document's artifact URL or hashes, and this keeps that visible in the types.
  */
 export type CorpusRefMapEntry = {
   ref: string
-  version: string
-  versionPath: string
-  isLast: boolean
   title: string
   permalink: string
   unlisted: boolean
 }
 
-type CorpusManifestForSearch = {
-  schemaVersion: number
-  manifestHash: string
-  documents: CorpusRefMapEntry[]
-}
-
-export type SiteUrlConfig = { baseUrl: string; trailingSlash: boolean | undefined }
-
-/**
- * Extracts the pathname before canonicalizing, so an absolute URL (a different
- * origin/scheme than a raw search hit happens to carry) and a bare path both
- * normalize identically; `URL.pathname` already excludes any query string or
- * fragment. The base passed to `URL` only ever resolves a relative path — it
- * never appears in the result.
- */
-const toPathname = (value: string): string => {
-  try {
-    return new URL(value, 'http://localhost').pathname
-  } catch {
-    return value
-  }
-}
-
-/**
- * Canonicalizes a URL for lookup. This deliberately does **not** add, strip, or
- * rewrite a base URL or a version path, because neither is ever needed here:
- *
- * - Both producers already emit base-url-prefixed paths. The search plugin's
- *   own `postBuildFactory.js` asserts `doc.u.startsWith(baseUrl)`, and a
- *   Docusaurus `permalink` (what the #474 manifest stores) is base-url-aware by
- *   construction — so with this site's `/docs/` base URL both sides read
- *   `/docs/...` already.
- * - Version paths never diverge either: the lookup below only considers
- *   `isLast` entries, and the plugin writes exactly one root index covering
- *   that same canonical version (see selectCanonicalCorpusVersion in
- *   docs-corpus/plugin.ts and postBuildFactory.js).
- *
- * What is left is trailing-slash policy, and that is applied through the exact
- * same `canonicalizeDocusaurusPermalink` helper (a thin wrapper over
- * Docusaurus' own `applyTrailingSlash`, including its base-URL homepage
- * special case) that `docs-corpus` built the manifest with — so the two sides
- * cannot drift apart.
- */
-const normalizePermalink = (value: string, siteConfig: SiteUrlConfig): string =>
-  canonicalizeDocusaurusPermalink(toPathname(value), siteConfig)
-
-export type CorpusRefMapFailureCode = 'manifest_unavailable' | 'manifest_incompatible'
+export type CorpusRefMapFailureCode = DocumentationCorpusStoreFailureCode
 
 export type CorpusRefMapOutcome =
   | { ok: true; resolve: (url: string) => CorpusRefMapEntry | undefined }
   | { ok: false; code: CorpusRefMapFailureCode; message: string; retryable: boolean }
 
-/**
- * A locator that is simply absent (the corpus plugin was never registered) is a
- * different operational problem from one that is present but does not match the
- * schema this module was built against — the first is a configuration mistake,
- * the second is corpus/consumer drift. They must not collapse into one code.
- */
-type LocatorLookup =
-  | { kind: 'ok'; locator: CorpusLocator }
-  | { kind: 'absent' }
-  | { kind: 'malformed' }
-  | { kind: 'incompatible_version'; schemaVersion: unknown }
-
-const isLocatorShape = (value: unknown): value is CorpusLocator =>
-  typeof value === 'object' &&
-  value !== null &&
-  typeof (value as Record<string, unknown>).manifestUrl === 'string' &&
-  typeof (value as Record<string, unknown>).schemaVersion === 'number' &&
-  typeof (value as Record<string, unknown>).manifestHash === 'string'
-
-const readLocator = (): LocatorLookup => {
-  const pluginData = (globalData as unknown as Record<string, Record<string, unknown> | undefined>)[
-    CORPUS_PLUGIN_NAME
-  ]
-  const locator = pluginData?.[CORPUS_PLUGIN_ID]
-  if (locator === undefined || locator === null) return { kind: 'absent' }
-  if (!isLocatorShape(locator)) return { kind: 'malformed' }
-  if (locator.schemaVersion !== DOCUMENTATION_CORPUS_SCHEMA_VERSION) {
-    return { kind: 'incompatible_version', schemaVersion: locator.schemaVersion }
-  }
-  return { kind: 'ok', locator }
-}
-
-const isManifestEntry = (value: unknown): value is CorpusRefMapEntry => {
-  if (typeof value !== 'object' || value === null) return false
-  const entry = value as Record<string, unknown>
-  return (
-    typeof entry.ref === 'string' &&
-    typeof entry.version === 'string' &&
-    typeof entry.versionPath === 'string' &&
-    typeof entry.isLast === 'boolean' &&
-    typeof entry.title === 'string' &&
-    typeof entry.permalink === 'string' &&
-    typeof entry.unlisted === 'boolean'
-  )
-}
-
-const isManifest = (value: unknown): value is CorpusManifestForSearch => {
-  if (typeof value !== 'object' || value === null) return false
-  const manifest = value as Record<string, unknown>
-  return (
-    manifest.schemaVersion === DOCUMENTATION_CORPUS_SCHEMA_VERSION &&
-    typeof manifest.manifestHash === 'string' &&
-    Array.isArray(manifest.documents) &&
-    manifest.documents.every(isManifestEntry)
-  )
-}
-
-/**
- * Keyed by everything that changes the resolved map: which manifest is being
- * read (URL + hash) and how URLs are normalized against it (base URL +
- * trailing-slash policy). An unkeyed cache would let the first caller's site
- * config silently decide every later caller's normalization.
- *
- * The parts are joined with an escaped NUL, which cannot occur in a URL, a
- * content hash, or a boolean, so no two distinct inputs can collide on one key.
- */
-const cacheKeyOf = (lookup: LocatorLookup, siteConfig: SiteUrlConfig): string => {
-  const locatorKey =
-    lookup.kind === 'ok'
-      ? `${lookup.locator.manifestUrl}\u0000${lookup.locator.manifestHash}`
-      : lookup.kind
-  return `${locatorKey}\u0000${siteConfig.baseUrl}\u0000${String(siteConfig.trailingSlash)}`
-}
-
-const cache = new Map<string, Promise<CorpusRefMapOutcome>>()
-
-const buildRefMap = async (
-  lookup: LocatorLookup,
-  siteConfig: SiteUrlConfig
-): Promise<CorpusRefMapOutcome> => {
-  if (lookup.kind === 'absent') {
-    return {
-      ok: false,
-      code: 'manifest_unavailable',
-      message:
-        'the #474 documentation corpus plugin has not published a manifest locator (is documentationCorpusPlugin registered in docusaurus.config.ts?)',
-      retryable: false
-    }
-  }
-  if (lookup.kind === 'malformed') {
-    return {
-      ok: false,
-      code: 'manifest_incompatible',
-      message:
-        'the #474 documentation corpus plugin published a manifest locator missing a schemaVersion, manifestHash, or manifestUrl',
-      retryable: false
-    }
-  }
-  if (lookup.kind === 'incompatible_version') {
-    return {
-      ok: false,
-      code: 'manifest_incompatible',
-      message: `the #474 documentation corpus locator declares schema version ${String(
-        lookup.schemaVersion
-      )}, but this consumer was built against ${DOCUMENTATION_CORPUS_SCHEMA_VERSION}`,
-      retryable: false
-    }
-  }
-  const { locator } = lookup
-
-  let response: Response
-  try {
-    // Same-origin static build asset (the #474 corpus manifest), not a
-    // backend API call; none of fetchWithTelemetry's
-    // RequestTelemetryMetadata.origin values apply.
-    // eslint-disable-next-line no-restricted-globals -- see comment above
-    response = await fetch(locator.manifestUrl)
-  } catch (error) {
-    return {
-      ok: false,
-      code: 'manifest_unavailable',
-      message: `failed to fetch the documentation corpus manifest at "${locator.manifestUrl}": ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-      retryable: true
-    }
-  }
-  if (!response.ok) {
-    return {
-      ok: false,
-      code: 'manifest_unavailable',
-      message: `documentation corpus manifest request to "${locator.manifestUrl}" failed with HTTP ${response.status}`,
-      retryable: true
-    }
-  }
-
-  let payload: unknown
-  try {
-    payload = await response.json()
-  } catch {
-    return {
-      ok: false,
-      code: 'manifest_incompatible',
-      message: `documentation corpus manifest response from "${locator.manifestUrl}" was not valid JSON`,
-      retryable: false
-    }
-  }
-  if (!isManifest(payload)) {
-    return {
-      ok: false,
-      code: 'manifest_incompatible',
-      message: 'documentation corpus manifest did not match the expected #474 schema',
-      retryable: false
-    }
-  }
-  if (payload.manifestHash !== locator.manifestHash) {
-    // A locator naming a manifest hash the fetched payload doesn't actually
-    // carry means the two were published by different builds (e.g. a stale
-    // cached page bundle after a redeploy) — surface this loudly rather than
-    // silently resolving hits against a manifest that may no longer describe
-    // the live corpus.
-    return {
-      ok: false,
-      code: 'manifest_incompatible',
-      message: `documentation corpus manifest hash mismatch: locator referenced "${locator.manifestHash}", fetched manifest reports "${payload.manifestHash}"`,
-      retryable: false
-    }
-  }
-
-  // The pinned search index only ever indexes the canonical (`isLast`)
-  // version's pages (see selectCanonicalCorpusVersion in docs-corpus/plugin.ts
-  // and easyops' own postBuildFactory.js, which writes only one root index for
-  // the last version). The #474 manifest emits every loaded version, so
-  // restrict the lookup to `isLast` entries to avoid ever resolving a hit to a
-  // historical/upcoming version's document.
-  const byPermalink = new Map<string, CorpusRefMapEntry>()
-  for (const entry of payload.documents) {
-    if (!entry.isLast) continue
-    byPermalink.set(normalizePermalink(entry.permalink, siteConfig), entry)
-  }
-
-  return {
-    ok: true,
-    resolve: (url: string) => byPermalink.get(normalizePermalink(url, siteConfig))
-  }
-}
-
-export const loadCorpusRefMap = (siteConfig: SiteUrlConfig): Promise<CorpusRefMapOutcome> => {
-  const lookup = readLocator()
-  const key = cacheKeyOf(lookup, siteConfig)
-  const existing = cache.get(key)
-  if (existing) return existing
-
-  const promise = buildRefMap(lookup, siteConfig)
-  cache.set(key, promise)
-  // Retryable failures (network/HTTP) must not stick around forever — a later
-  // call should get a fresh attempt instead of replaying the same failure until
-  // a full page reload. Unlike the search worker's own internal index cache
-  // (see private-worker-adapter.ts), this cache is ours, so we can and do evict
-  // it. The identity check keeps a newer in-flight promise from being dropped.
-  void promise.then((outcome) => {
-    if (!outcome.ok && outcome.retryable && cache.get(key) === promise) {
-      cache.delete(key)
-    }
-  })
-  return promise
+export const loadCorpusRefMap = async (siteConfig: SiteUrlConfig): Promise<CorpusRefMapOutcome> => {
+  const outcome = await loadDocumentationCorpusStore(siteConfig)
+  if (!outcome.ok) return outcome
+  return { ok: true, resolve: (url) => outcome.store.findByPermalink(url) }
 }
 
 /** Test-only: forces the next call to reload/re-fetch instead of reusing a cached promise. */
-export const resetCorpusRefMapCacheForTests = (): void => {
-  cache.clear()
-}
+export { resetDocumentationCorpusStoreForTests as resetCorpusRefMapCacheForTests } from '../docs-corpus/manifest-store'

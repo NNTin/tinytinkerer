@@ -24,6 +24,38 @@ page loading. `postBuild` verifies emitted bytes, hashes, canonical links, and
 anchors against the static Docusaurus output; rendered HTML is a build
 assertion only and is never an input to corpus content.
 
+## Runtime store
+
+`manifest-store.ts` is the single browser-side reader of everything above. It
+discovers the locator through `@generated/globalData`, fetches the manifest,
+validates the **complete** `DocumentationCorpusManifestEntry` contract (not just
+one consumer's slice), verifies integrity, caches the result, and answers
+lookups — `findByPermalink` for a canonical page URL and `findByRef(ref,
+version?)` for a Docusaurus document id.
+
+Every documentation consumer goes through it. `#475` search projects it down to
+canonical-version permalinks (`docs-search/corpus-ref-map.ts`); `#477`'s
+`read_doc` needs the same entries' `artifact`/`artifactHash` to load a body,
+reached by the very `ref` a search result returned. A second locator reader,
+validator, cache and retry policy for one resource is exactly the drift the
+store exists to prevent, so consumers add projections to it rather than
+re-reading the manifest.
+
+Integrity means what it says: the store recomputes the SHA-256 that
+`build-corpus.ts` advertises — over `JSON.stringify({ schemaVersion, documents
+})`, the manifest without its own hash field — instead of only checking that the
+locator's `manifestHash` and the payload's agree. Both of those are
+self-reported, so agreement proves nothing about a payload served from a
+content-addressed URL. `crypto.subtle` is secure-context only; where it is
+absent the store degrades to the string comparison rather than losing retrieval
+entirely.
+
+Caching is keyed by manifest URL, manifest hash, base URL and trailing-slash
+policy, so one caller's site config can never decide another's normalization,
+and a redeploy's new locator is never served from a stale entry. Retryable
+(network/HTTP) failures are evicted immediately; schema and integrity failures
+are stable and stay cached.
+
 ### Version policy
 
 Docusaurus permits the same document id in multiple loaded versions. The corpus
