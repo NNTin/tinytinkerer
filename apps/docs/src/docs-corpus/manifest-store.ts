@@ -216,9 +216,9 @@ const computeManifestHash = async (
 const cacheKeyOf = (lookup: LocatorLookup, siteConfig: SiteUrlConfig): string => {
   const locatorKey =
     lookup.kind === 'ok'
-      ? `${lookup.locator.manifestUrl} ${lookup.locator.manifestHash}`
+      ? `${lookup.locator.manifestUrl}\u0000${lookup.locator.manifestHash}`
       : lookup.kind
-  return `${locatorKey} ${siteConfig.baseUrl} ${String(siteConfig.trailingSlash)}`
+  return `${locatorKey}\u0000${siteConfig.baseUrl}\u0000${String(siteConfig.trailingSlash)}`
 }
 
 const cache = new Map<string, Promise<DocumentationCorpusStoreOutcome>>()
@@ -235,7 +235,7 @@ const buildStore = (
   const byVersionAndRef = new Map<string, DocumentationCorpusManifestEntry>()
 
   for (const entry of manifest.documents) {
-    byVersionAndRef.set(`${entry.version} ${entry.ref}`, entry)
+    byVersionAndRef.set(`${entry.version}\u0000${entry.ref}`, entry)
     if (!entry.isLast) continue
     canonicalByPermalink.set(normalizePermalink(entry.permalink, siteConfig), entry)
     canonicalByRef.set(entry.ref, entry)
@@ -246,7 +246,9 @@ const buildStore = (
     documents: manifest.documents,
     findByPermalink: (url) => canonicalByPermalink.get(normalizePermalink(url, siteConfig)),
     findByRef: (ref, version) =>
-      version === undefined ? canonicalByRef.get(ref) : byVersionAndRef.get(`${version} ${ref}`)
+      version === undefined
+        ? canonicalByRef.get(ref)
+        : byVersionAndRef.get(`${version}\u0000${ref}`)
   }
 }
 
