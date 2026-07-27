@@ -377,3 +377,38 @@ export const buildHashlessHeadingFixtureSearchIndex = (): unknown[] => [
   buildGroupIndex([]),
   buildGroupIndex([])
 ]
+
+export const PAGE_O_URL = '/docs/snippet-boundary/'
+/** The unique term `buildSnippetBoundaryFixtureSearchIndex` places at a chosen offset. */
+export const SNIPPET_BOUNDARY_TERM = 'needle'
+/** Text that follows the term — a snippet is only useful if some of this survives. */
+export const SNIPPET_BOUNDARY_TRAILER =
+  'followed by the explanation that makes the citation worth reading, which is the entire reason a snippet is centered on the match rather than taken from the start of the section.'
+
+/**
+ * A page whose single content section places `SNIPPET_BOUNDARY_TERM` at exactly
+ * `matchStart` characters in, padded with a stop word so nothing but the term
+ * itself can match.
+ *
+ * Built for the snippet window's boundary cases. A match ending exactly at the
+ * character budget is *inside* a leading window, so an implementation that only
+ * repositions when the match falls outside one leaves the whole budget ahead of
+ * the match and cuts off everything after it — technically containing the match,
+ * uselessly.
+ */
+export const buildSnippetBoundaryFixtureSearchIndex = (
+  matchStart: number,
+  { trailer = true }: { trailer?: boolean } = {}
+): unknown[] => {
+  const padding = 'a '.repeat(Math.ceil(matchStart / 2)).slice(0, matchStart)
+  const text = trailer
+    ? `${padding}${SNIPPET_BOUNDARY_TERM} ${SNIPPET_BOUNDARY_TRAILER}`
+    : `${padding}${SNIPPET_BOUNDARY_TERM}`
+  return [
+    buildGroupIndex([{ i: 70, t: 'Snippet boundary', u: PAGE_O_URL, b: ['Docs'] }]),
+    buildGroupIndex([]),
+    buildGroupIndex([]),
+    buildGroupIndex([]),
+    buildGroupIndex([{ i: 71, t: text, s: 'Boundary', u: PAGE_O_URL, h: '#boundary', p: 70 }])
+  ]
+}
