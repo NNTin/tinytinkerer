@@ -7,6 +7,8 @@
  *
  * - `#475` search projects it down to canonical-version permalinks
  *   (docs-search/corpus-ref-map.ts);
+ * - `#476`'s active-document context validates the id Docusaurus routing
+ *   reports against `findByRef` (docs-page/active-document.ts);
  * - `#477`'s `read_doc` needs the same entries' `artifact`/`artifactHash` to
  *   load a document body, reached by the very `ref` a search result returned.
  *

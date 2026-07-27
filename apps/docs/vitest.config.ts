@@ -1,6 +1,25 @@
-import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+
+// `@docusaurus/router` is a webpack-only alias that core resolves to
+// client/exports/router.js, a thin re-export of react-router-dom. Both that
+// module and the copy of react-router-dom it re-exports are located *through*
+// @docusaurus/core rather than declared as dependencies here, because this
+// workspace deliberately does not depend on react-router-dom itself. What
+// matters is that a test gets the same physical copy Docusaurus' own client
+// uses, so a `<MemoryRouter>` in a test and the `useLocation()`/`matchPath`
+// inside the docs plugin share one router context instead of silently landing
+// in two.
+const docusaurusCoreManifest = createRequire(import.meta.url).resolve(
+  '@docusaurus/core/package.json'
+)
+const docusaurusCoreRequire = createRequire(docusaurusCoreManifest)
+const docusaurusRouter = fileURLToPath(
+  new URL('lib/client/exports/router.js', pathToFileURL(docusaurusCoreManifest))
+)
+const reactRouterDom = docusaurusCoreRequire.resolve('react-router-dom')
 
 export default defineConfig({
   plugins: [react()],
@@ -12,6 +31,29 @@ export default defineConfig({
       // details.
       '@theme-original/MDXComponents': fileURLToPath(
         new URL('./src/test/theme-original-mdx-components-stub.ts', import.meta.url)
+      ),
+      '@theme-original/Root': fileURLToPath(
+        new URL('./src/test/theme-original-root-stub.tsx', import.meta.url)
+      ),
+      // See the resolution note above: the real modules, not stand-ins, so tests
+      // exercise the genuine router hooks and the genuine `matchPath` the docs
+      // plugin's active-doc context matches routes with.
+      '@docusaurus/router': docusaurusRouter,
+      // Test-only specifier, not the bare package name — see the ambient
+      // declaration in src/test/react-router-dom.d.ts for why the name has to
+      // stay distinct.
+      '@docs-test/react-router-dom': reactRouterDom,
+      // The docs plugin's client barrel cannot be loaded outside a Docusaurus
+      // webpack build; this stub keeps upstream's real active-document
+      // resolution while skipping the barrel. See the file for the details.
+      '@docusaurus/plugin-content-docs/client': fileURLToPath(
+        new URL('./src/test/docusaurus-plugin-content-docs-client-stub.ts', import.meta.url)
+      ),
+      // Read by that stub, mirroring the `failfast` semantics core's real
+      // `@docusaurus/useGlobalData` implements over a React context a plain
+      // Vitest render cannot mount.
+      '@docusaurus/useGlobalData': fileURLToPath(
+        new URL('./src/test/docusaurus-use-global-data-stub.ts', import.meta.url)
       ),
       '@docusaurus/BrowserOnly': fileURLToPath(
         new URL('./src/test/docusaurus-browser-only-stub.tsx', import.meta.url)

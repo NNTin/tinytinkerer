@@ -88,7 +88,17 @@ const config: KnipConfig = {
       // adapter (issue #475) imports its worker entry point — deliberately via a
       // lazy dynamic import, since #475 requires that opening a documentation
       // page load neither the worker nor the index.
-      ignoreDependencies: ['@easyops-cn/docusaurus-theme-docusaurus-search-local']
+      //
+      // `@docs-test/react-router-dom` is not a package at all: it is a
+      // test-only specifier apps/docs/vitest.config.ts resolves to the very copy
+      // of react-router-dom @docusaurus/core already depends on, so a test's
+      // `<MemoryRouter>` and the docs plugin's `useLocation()` share one router
+      // context. Declaring a second pinned react-router-dom here is exactly what
+      // it exists to avoid; see apps/docs/src/test/react-router-dom.d.ts.
+      ignoreDependencies: [
+        '@easyops-cn/docusaurus-theme-docusaurus-search-local',
+        '@docs-test/react-router-dom'
+      ]
     },
     'apps/shell': {
       // Radix primitives kept for parity with the shared UI package; consumed by

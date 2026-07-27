@@ -34,9 +34,11 @@ lookups — `findByPermalink` for a canonical page URL and `findByRef(ref,
 version?)` for a Docusaurus document id.
 
 Every documentation consumer goes through it. `#475` search projects it down to
-canonical-version permalinks (`docs-search/corpus-ref-map.ts`); `#477`'s
-`read_doc` needs the same entries' `artifact`/`artifactHash` to load a body,
-reached by the very `ref` a search result returned. A second locator reader,
+canonical-version permalinks (`docs-search/corpus-ref-map.ts`); `#476`'s active
+documentation page context validates the id Docusaurus routing reports against
+`findByRef` (`docs-page/active-document.ts`); `#477`'s `read_doc` needs the same
+entries' `artifact`/`artifactHash` to load a body, reached by the very `ref` a
+search result returned. A second locator reader,
 validator, cache and retry policy for one resource is exactly the drift the
 store exists to prevent, so consumers add projections to it rather than
 re-reading the manifest.
