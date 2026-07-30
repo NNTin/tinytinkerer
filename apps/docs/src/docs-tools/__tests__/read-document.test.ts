@@ -226,13 +226,16 @@ describe('readDocument', () => {
       })
     })
 
-    it('never fetches anything for an unknown ref', async () => {
-      const { calls } = installDocumentationCorpus()
+    it('never fetches anything for a ref that is spelled as a URL', async () => {
+      const { calls, manifestUrl } = installDocumentationCorpus()
       await read({ ref: 'https://example.com/evil' })
 
-      // A ref is resolved through the manifest, so a caller cannot smuggle a URL
-      // in: only the manifest request happens.
-      expect(calls.filter((url) => url.includes('example.com'))).toHaveLength(0)
+      // The exact set of requests, not "nothing that looks like the attacker's
+      // host": a ref is only ever resolved through the manifest, so the manifest
+      // request is the only one that may happen at all. Asserting equality also
+      // catches a request to some *other* unexpected location, which a substring
+      // check over one hostname would miss entirely.
+      expect(calls).toEqual([manifestUrl])
     })
 
     it('reports a retryable artifact fetch failure', async () => {

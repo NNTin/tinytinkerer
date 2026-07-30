@@ -16,11 +16,23 @@ import {
   CANONICAL,
   installDocumentationCorpus,
   LANDING,
-  resetDocumentationCorpus
+  OVERSIZED,
+  resetDocumentationCorpus,
+  UNLISTED
 } from '../../docs-tools/__tests__/site-artifact-fixture'
 
+/**
+ * The requests that were for a document body, told apart from the manifest one
+ * by matching the fixtures' own artifact URLs exactly rather than by sniffing a
+ * substring — so an unexpected request cannot be silently counted as a body
+ * fetch, or silently ignored.
+ */
+const ARTIFACT_URLS = new Set(
+  [CANONICAL, LANDING, UNLISTED, OVERSIZED].map((fixture) => fixture.entry.artifact)
+)
+
 const artifactCalls = (calls: readonly string[]): string[] =>
-  calls.filter((url) => url.includes('/documents/'))
+  calls.filter((url) => ARTIFACT_URLS.has(url))
 
 describe('loadDocumentationArtifact', () => {
   afterEach(() => {
