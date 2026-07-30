@@ -451,6 +451,24 @@ export const clickCharacterToSelect = async (
           ?.style.pointerEvents,
       agentId
     )
+  const isSelected = (): Promise<boolean> =>
+    overlayPointerEvents()
+      .then((value) => value === 'auto')
+      .catch(() => false)
+  // A single truthy read is not enough: `officeState.selectedAgentId`'s
+  // synchronous mutation and its DOM reflection (this pointer-events style, and
+  // the "Close agent" button's own mount) can be caught mid-flicker by one read
+  // taken right at the click, then read false again a beat later — confirmed
+  // empirically as the cause of a 60s "element was detached, retrying" hang on
+  // a caller that clicks the overlay's "Close agent" button immediately after
+  // this returns. Requiring the SAME truthy result on a second read, a few
+  // animation frames later, closes that window before this function hands
+  // "selected" back to a caller.
+  const confirmSelected = async (): Promise<boolean> => {
+    if (!(await isSelected())) return false
+    await page.waitForTimeout(150)
+    return isSelected()
+  }
 
   // Selecting a character can itself start a camera-follow pan (upstream sets
   // `cameraFollowId` on select), which moves every OTHER character's overlay —
@@ -468,10 +486,23 @@ export const clickCharacterToSelect = async (
   // off-canvas for longer than 12 * 250ms (~3s) — observed causing this loop
   // to exhaust and throw well before the test's own 60s timeout, on a run
   // where the camera just hadn't settled yet. Worst case (every attempt both
-  // finds a point and has that click intercepted) is 20 * (1_500 + 250) =
-  // ~35s, still comfortably inside the test timeout alongside everything else
-  // a caller does before/after this call.
+  // finds a point and has that click intercepted) is 20 * (1_500 + 250) plus
+  // at most one 150ms confirmation read per attempt = ~38s, still inside the
+  // test timeout alongside everything else a caller does before/after this
+  // call.
   for (let attempt = 0; attempt < 20; attempt++) {
+    // Re-read before clicking again. A previous attempt's click may have landed
+    // and only now reflected in the DOM — and because clicking an
+    // already-selected character TOGGLES it off (see the note above this
+    // function), clicking a second time on a lagging reflection would undo the
+    // selection this loop is waiting for. Without this the loop can alternate
+    // on/off until it exhausts its 20 attempts and throws "never became
+    // selected" against an office that is working fine, which is exactly the
+    // shape of the flake seen in CI (the non-clicking office tests in the same
+    // file pass on the same run). Skipped on the first pass: the guard above
+    // has already established nothing is selected yet.
+    if (attempt > 0 && (await confirmSelected())) return
+
     const rect = await frame.evaluate((id) => {
       const overlay = document.querySelector(`[data-testid="agent-overlay"][data-agent-id="${id}"]`)
       const canvas = document.querySelector('canvas')
@@ -507,28 +538,7 @@ export const clickCharacterToSelect = async (
         .click({ position: { x: rect.x, y: rect.y }, timeout: 1_500 })
         .then(() => true)
         .catch(() => false)
-      const selectedOnce =
-        clicked &&
-        (await overlayPointerEvents()
-          .then((value) => value === 'auto')
-          .catch(() => false))
-      // A single truthy read is not enough: `officeState.selectedAgentId`'s
-      // synchronous mutation and its DOM reflection (this pointer-events
-      // style, and the "Close agent" button's own mount) can be caught
-      // mid-flicker by one read taken right at the click, then read false
-      // again a beat later — confirmed empirically as the cause of a 60s
-      // "element was detached, retrying" hang on a caller that clicks the
-      // overlay's "Close agent" button immediately after this returns.
-      // Requiring the SAME truthy result on a second read, a few animation
-      // frames later, closes that window before this function hands
-      // "selected" back to a caller.
-      if (selectedOnce) {
-        await page.waitForTimeout(150)
-        const selectedStill = await overlayPointerEvents()
-          .then((value) => value === 'auto')
-          .catch(() => false)
-        if (selectedStill) return
-      }
+      if (clicked && (await confirmSelected())) return
     }
     // Give a still-settling camera pan (or a selection flicker, see above) a
     // moment before the next attempt reads a (hopefully now-stable) position.
