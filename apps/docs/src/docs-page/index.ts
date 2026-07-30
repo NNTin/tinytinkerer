@@ -5,11 +5,12 @@
  * here rather than reaching into the provider or the resolver directly.
  */
 export { DocsPageProvider, useDocsPageContext } from './docs-page-context'
+export type { DocsPageContextValue } from './docs-page-context'
 export type {
   DocsActiveDocument,
   DocsActiveDocumentState,
   DocsNoActiveDocumentReason,
-  DocsPageContextValue,
   DocsPageDiagnostic,
-  DocsPageDiagnosticCode
+  DocsPageDiagnosticCode,
+  DocsPageResolution
 } from './active-document'

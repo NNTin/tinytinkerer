@@ -27,6 +27,7 @@
  */
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -41,11 +42,23 @@ import { loadDocumentationCorpusStore } from '../docs-corpus/manifest-store'
 import {
   resolveDocsPageContext,
   type DocsCorpusLookup,
-  type DocsPageContextValue,
-  type DocsPageDiagnostic
+  type DocsPageDiagnostic,
+  type DocsPageResolution
 } from './active-document'
 
-export type { DocsPageContextValue }
+/**
+ * What `useDocsPageContext()` returns: one route's resolution, plus the one
+ * operation a consumer can perform.
+ *
+ * `retryCorpus` lives here rather than in the pure resolver because it is the
+ * provider's async state it acts on. It is a no-op unless the corpus is in a
+ * *retryable* failure — a consumer may call it whenever it sees
+ * `retryable: true` without having to know whether a load is already running.
+ */
+export type DocsPageContextValue = DocsPageResolution & {
+  /** Re-attempt a retryable corpus-manifest load. Stable across renders. */
+  retryCorpus: () => void
+}
 
 /**
  * The docs plugin instance the site's documentation routes come from. This site
@@ -95,6 +108,12 @@ export const DocsPageProvider = ({ children }: { children: ReactNode }): ReactNo
   // produce, on both sides, because the effect below never runs on the server.
   // Nothing in this provider touches `window` or `document`.
   const [corpus, setCorpus] = useState<DocsCorpusLookup>({ status: 'pending' })
+  // Bumped by `retryCorpus` to re-run the load effect. Without it a retryable
+  // failure would be permanent: this provider is mounted by `@theme/Root` for
+  // the whole life of the SPA, and `baseUrl`/`trailingSlash` never change
+  // within a session, so the effect would run exactly once no matter how many
+  // routes the reader visits.
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -108,20 +127,46 @@ export const DocsPageProvider = ({ children }: { children: ReactNode }): ReactNo
       setCorpus(
         outcome.ok
           ? { status: 'ready', store: outcome.store }
-          : { status: 'unavailable', message: outcome.message, retryable: outcome.retryable }
+          : {
+              status: 'unavailable',
+              code: outcome.code,
+              message: outcome.message,
+              retryable: outcome.retryable
+            }
       )
     })
     return () => {
       cancelled = true
     }
-  }, [baseUrl, trailingSlash])
+  }, [baseUrl, trailingSlash, attempt])
+
+  // Read through a ref so the callback below can keep one identity forever.
+  // Depending on `corpus` directly would republish the context value — and
+  // re-render every consumer — every time the corpus state changed.
+  const corpusRef = useRef(corpus)
+  useEffect(() => {
+    corpusRef.current = corpus
+  }, [corpus])
+
+  const retryCorpus = useCallback(() => {
+    const current = corpusRef.current
+    // Gated deliberately. A tool that retries on every failure must not be able
+    // to restart a healthy load, hammer the network while one is in flight, or
+    // re-fetch a manifest whose schema or hash will never validate.
+    if (current.status !== 'unavailable' || !current.retryable) return
+    // Back to `pending` before the fresh load, so a consumer never reads a
+    // stale failure while its own retry is running. The store evicts retryable
+    // failures from its cache, so the next call genuinely re-fetches.
+    setCorpus({ status: 'pending' })
+    setAttempt((n) => n + 1)
+  }, [])
 
   const activeDocId = activeDoc?.id
   const activeVersionName = activeVersion?.name
   // Memoized on primitives: `useActiveDocContext` returns a freshly built object
   // on every render, so depending on it directly would publish a new context
   // value (and re-render every consumer) on every render of the whole app.
-  const value = useMemo<DocsPageContextValue>(
+  const resolution = useMemo<DocsPageResolution>(
     () =>
       resolveDocsPageContext(
         {
@@ -135,18 +180,25 @@ export const DocsPageProvider = ({ children }: { children: ReactNode }): ReactNo
     [pathname, activeDocId, activeVersionName, corpus, baseUrl, trailingSlash]
   )
 
+  const value = useMemo<DocsPageContextValue>(
+    () => ({ ...resolution, retryCorpus }),
+    [resolution, retryCorpus]
+  )
+
   // Route/manifest mapping diagnostics. Reported once per distinct anomaly so a
   // page that re-renders (or is revisited) does not bury the console, and from
-  // an effect so static rendering stays silent and side-effect free.
+  // an effect so static rendering stays silent and side-effect free. Keyed on
+  // the resolution rather than the published value, since only the resolution
+  // can carry a diagnostic.
   const reported = useRef<Set<string>>(new Set())
   useEffect(() => {
-    const { diagnostic } = value
+    const { diagnostic } = resolution
     if (!diagnostic) return
     const key = diagnosticKey(diagnostic)
     if (reported.current.has(key)) return
     reported.current.add(key)
     console.warn(`[docs-page] ${diagnostic.message}`)
-  }, [value])
+  }, [resolution])
 
   return <DocsPageContext.Provider value={value}>{children}</DocsPageContext.Provider>
 }

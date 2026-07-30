@@ -12,22 +12,9 @@ import {
 } from '../../test/docusaurus-use-global-data-stub'
 import { useDocsPageContext } from '../../docs-page'
 import Root from '../Root'
+import { siteGlobalData } from '../../docs-page/__tests__/site-corpus-fixture'
 
-const DOCS_GLOBAL_DATA = {
-  path: '/docs/',
-  breadcrumbs: true,
-  versions: [
-    {
-      name: 'current',
-      label: 'Next',
-      isLast: true,
-      path: '/docs/',
-      mainDocId: 'index',
-      draftIds: [],
-      docs: [{ id: 'architecture/overview', path: '/docs/architecture/overview/' }]
-    }
-  ]
-}
+const DOCS_GLOBAL_DATA = siteGlobalData()
 
 const Probe = () => <output data-testid="probe">{useDocsPageContext().pathname}</output>
 
@@ -42,7 +29,7 @@ describe('theme/Root', () => {
 
   it('renders children through the theme original Root, inside the docs page provider', () => {
     render(
-      <MemoryRouter initialEntries={['/docs/architecture/overview/']}>
+      <MemoryRouter initialEntries={['/docs/architecture/packages-concept/']}>
         <Root>
           <Probe />
         </Root>
@@ -52,6 +39,6 @@ describe('theme/Root', () => {
     // Wrapping, not replacing: whatever the active theme puts in its own Root
     // has to keep working.
     expect(screen.getByTestId('theme-original-root')).toContainElement(screen.getByTestId('probe'))
-    expect(screen.getByTestId('probe')).toHaveTextContent('/docs/architecture/overview/')
+    expect(screen.getByTestId('probe')).toHaveTextContent('/docs/architecture/packages-concept/')
   })
 })

@@ -10,45 +10,22 @@ import type { DocumentationCorpusManifestEntry } from '@tinytinkerer/app-browser
 import {
   resolveDocsPageContext,
   type DocsCorpusLookup,
-  type DocsPageContextValue
+  type DocsPageResolution
 } from '../active-document'
-
-// This site's real configuration: `resolveDocsBaseUrl` in apps/docs/site-config.ts
-// returns `/docs/`, and docusaurus.config.ts sets `trailingSlash: true`.
-const SITE_CONFIG = { baseUrl: '/docs/', trailingSlash: true }
+import {
+  assertFixtureStillMatchesSite,
+  CANONICAL_DOCUMENT,
+  GENERATED_INDEX_ID,
+  GENERATED_INDEX_PATH,
+  SITE_CONFIG,
+  SITE_DOCUMENTS
+} from './site-corpus-fixture'
 
 const entry = (
   overrides: Partial<DocumentationCorpusManifestEntry> = {}
-): DocumentationCorpusManifestEntry => ({
-  ref: 'architecture/overview',
-  version: 'current',
-  versionPath: '/docs/',
-  isLast: true,
-  title: 'Architecture overview',
-  permalink: '/docs/architecture/overview/',
-  source: '@site/../../docs/architecture/overview.md',
-  contentHash: 'c'.repeat(64),
-  artifactHash: 'a'.repeat(64),
-  unlisted: false,
-  artifact: '/docs/assets/docs-corpus/documents/current-architecture-overview.abc.def.json',
-  characterCount: 4321,
-  sectionCount: 9,
-  ...overrides
-})
+): DocumentationCorpusManifestEntry => ({ ...CANONICAL_DOCUMENT, ...overrides })
 
-const DOCUMENTS = [
-  entry(),
-  entry({ ref: 'index', title: 'TinyTinkerer documentation', permalink: '/docs/' }),
-  entry({ ref: 'secret', title: 'Secret page', permalink: '/docs/secret/', unlisted: true }),
-  entry({
-    ref: 'architecture/overview',
-    version: '1.0',
-    versionPath: '/docs/1.0/',
-    isLast: false,
-    title: 'Architecture overview (1.0)',
-    permalink: '/docs/1.0/architecture/overview/'
-  })
-]
+const DOCUMENTS = SITE_DOCUMENTS
 
 const readyCorpus = (
   documents: DocumentationCorpusManifestEntry[] = DOCUMENTS
@@ -68,25 +45,27 @@ const resolve = (
   route: Parameters<typeof resolveDocsPageContext>[0],
   corpus: DocsCorpusLookup = readyCorpus(),
   siteConfig = SITE_CONFIG
-): DocsPageContextValue => resolveDocsPageContext(route, corpus, siteConfig)
+): DocsPageResolution => resolveDocsPageContext(route, corpus, siteConfig)
 
 describe('resolveDocsPageContext', () => {
+  assertFixtureStillMatchesSite()
+
   it('resolves a normal authored docs route to its corpus ref and canonical permalink', () => {
     const value = resolve({
-      pathname: '/docs/architecture/overview/',
-      activeDocId: 'architecture/overview',
+      pathname: '/docs/architecture/packages-concept/',
+      activeDocId: 'architecture/packages-concept',
       activeVersionName: 'current'
     })
 
-    expect(value.pathname).toBe('/docs/architecture/overview/')
+    expect(value.pathname).toBe('/docs/architecture/packages-concept/')
     expect(value.active).toEqual({
       status: 'document',
       document: {
-        ref: 'architecture/overview',
+        ref: 'architecture/packages-concept',
         version: 'current',
         isLast: true,
-        title: 'Architecture overview',
-        permalink: '/docs/architecture/overview/',
+        title: 'Packages Concept',
+        permalink: '/docs/architecture/packages-concept/',
         unlisted: false
       }
     })
@@ -97,14 +76,18 @@ describe('resolveDocsPageContext', () => {
     // #475 keeps unlisted pages out of global search; being unfindable is not
     // the same as being unreadable once a reader is standing on the page.
     const value = resolve({
-      pathname: '/docs/secret/',
-      activeDocId: 'secret',
+      pathname: '/docs/updates/PRIVACY-UPDATE/',
+      activeDocId: 'updates/PRIVACY-UPDATE',
       activeVersionName: 'current'
     })
 
     expect(value.active).toMatchObject({
       status: 'document',
-      document: { ref: 'secret', unlisted: true, permalink: '/docs/secret/' }
+      document: {
+        ref: 'updates/PRIVACY-UPDATE',
+        unlisted: true,
+        permalink: '/docs/updates/PRIVACY-UPDATE/'
+      }
     })
   })
 
@@ -134,8 +117,8 @@ describe('resolveDocsPageContext', () => {
     // gives them their slug as an id (leading slash), so they are expected to
     // be absent from the corpus and must not raise a diagnostic.
     const value = resolve({
-      pathname: '/docs/category/architecture/',
-      activeDocId: '/category/architecture',
+      pathname: GENERATED_INDEX_PATH,
+      activeDocId: GENERATED_INDEX_ID,
       activeVersionName: 'current'
     })
 
@@ -145,7 +128,10 @@ describe('resolveDocsPageContext', () => {
 
   it('reports a retryable pending state while the corpus manifest is still loading', () => {
     const value = resolve(
-      { pathname: '/docs/architecture/overview/', activeDocId: 'architecture/overview' },
+      {
+        pathname: '/docs/architecture/packages-concept/',
+        activeDocId: 'architecture/packages-concept'
+      },
       { status: 'pending' }
     )
 
@@ -156,10 +142,18 @@ describe('resolveDocsPageContext', () => {
     })
   })
 
-  it('propagates a corpus load failure, including whether it is worth retrying', () => {
+  it('propagates a corpus fetch failure, including whether it is worth retrying', () => {
     const value = resolve(
-      { pathname: '/docs/architecture/overview/', activeDocId: 'architecture/overview' },
-      { status: 'unavailable', message: 'manifest request failed with HTTP 503', retryable: true }
+      {
+        pathname: '/docs/architecture/packages-concept/',
+        activeDocId: 'architecture/packages-concept'
+      },
+      {
+        status: 'unavailable',
+        code: 'manifest_unavailable',
+        message: 'manifest request failed with HTTP 503',
+        retryable: true
+      }
     )
 
     expect(value.active).toEqual({
@@ -167,6 +161,32 @@ describe('resolveDocsPageContext', () => {
       reason: 'corpus_unavailable',
       message: 'manifest request failed with HTTP 503',
       retryable: true
+    })
+  })
+
+  it('reports an incompatible corpus distinctly from an unreachable one', () => {
+    // #477 must be able to tell "try again shortly" from "this deployment is
+    // broken" without parsing the message, and `retryable` alone cannot say so:
+    // an unpublished corpus locator is `manifest_unavailable` and not retryable
+    // either.
+    const value = resolve(
+      {
+        pathname: '/docs/architecture/packages-concept/',
+        activeDocId: 'architecture/packages-concept'
+      },
+      {
+        status: 'unavailable',
+        code: 'manifest_incompatible',
+        message: 'documentation corpus manifest did not match the expected #474 schema',
+        retryable: false
+      }
+    )
+
+    expect(value.active).toEqual({
+      status: 'no-document',
+      reason: 'corpus_incompatible',
+      message: 'documentation corpus manifest did not match the expected #474 schema',
+      retryable: false
     })
   })
 
@@ -192,60 +212,63 @@ describe('resolveDocsPageContext', () => {
 
   it('resolves a deep link that omits the configured trailing slash', () => {
     const value = resolve({
-      pathname: '/docs/architecture/overview',
-      activeDocId: 'architecture/overview',
+      pathname: '/docs/architecture/packages-concept',
+      activeDocId: 'architecture/packages-concept',
       activeVersionName: 'current'
     })
 
     expect(value.active).toMatchObject({
       status: 'document',
-      document: { permalink: '/docs/architecture/overview/' }
+      document: { permalink: '/docs/architecture/packages-concept/' }
     })
     // The route spelling differs from the canonical permalink; trailing-slash
     // policy is not drift.
     expect(value.diagnostic).toBeUndefined()
   })
 
-  it('resolves the base-url root, which Docusaurus exempts from trailing-slash rewriting', () => {
+  it('resolves the authored landing document at the base-url root', () => {
+    // `docs/index.mdx` authors this route (`id: documentation-home`, `slug: /`),
+    // so it is a current document like any other. It is also the one path
+    // Docusaurus exempts from trailing-slash rewriting.
     const value = resolve({
       pathname: '/docs/',
-      activeDocId: 'index',
+      activeDocId: 'documentation-home',
       activeVersionName: 'current'
     })
 
     expect(value.active).toMatchObject({
       status: 'document',
-      document: { ref: 'index', permalink: '/docs/' }
+      document: { ref: 'documentation-home', permalink: '/docs/' }
     })
     expect(value.diagnostic).toBeUndefined()
   })
 
   it('resolves a versioned route against that version, not the canonical one', () => {
     const value = resolve({
-      pathname: '/docs/1.0/architecture/overview/',
-      activeDocId: 'architecture/overview',
+      pathname: '/docs/1.0/architecture/packages-concept/',
+      activeDocId: 'architecture/packages-concept',
       activeVersionName: '1.0'
     })
 
     expect(value.active).toMatchObject({
       status: 'document',
       document: {
-        ref: 'architecture/overview',
+        ref: 'architecture/packages-concept',
         version: '1.0',
         isLast: false,
-        title: 'Architecture overview (1.0)',
-        permalink: '/docs/1.0/architecture/overview/'
+        title: 'Packages Concept (1.0)',
+        permalink: '/docs/1.0/architecture/packages-concept/'
       }
     })
     expect(value.diagnostic).toBeUndefined()
   })
 
   it('resolves consistently under a site configured without a trailing slash', () => {
-    const documents = [entry({ permalink: '/docs/architecture/overview' })]
+    const documents = [entry({ permalink: '/docs/architecture/packages-concept' })]
     const value = resolve(
       {
-        pathname: '/docs/architecture/overview/',
-        activeDocId: 'architecture/overview',
+        pathname: '/docs/architecture/packages-concept/',
+        activeDocId: 'architecture/packages-concept',
         activeVersionName: 'current'
       },
       readyCorpus(documents),
@@ -254,17 +277,17 @@ describe('resolveDocsPageContext', () => {
 
     expect(value.active).toMatchObject({
       status: 'document',
-      document: { permalink: '/docs/architecture/overview' }
+      document: { permalink: '/docs/architecture/packages-concept' }
     })
     expect(value.diagnostic).toBeUndefined()
   })
 
   it('resolves consistently under a different configured base URL', () => {
-    const documents = [entry({ versionPath: '/', permalink: '/architecture/overview/' })]
+    const documents = [entry({ versionPath: '/', permalink: '/architecture/packages-concept/' })]
     const value = resolve(
       {
-        pathname: '/architecture/overview/',
-        activeDocId: 'architecture/overview',
+        pathname: '/architecture/packages-concept/',
+        activeDocId: 'architecture/packages-concept',
         activeVersionName: 'current'
       },
       readyCorpus(documents),
@@ -273,7 +296,7 @@ describe('resolveDocsPageContext', () => {
 
     expect(value.active).toMatchObject({
       status: 'document',
-      document: { permalink: '/architecture/overview/' }
+      document: { permalink: '/architecture/packages-concept/' }
     })
     expect(value.diagnostic).toBeUndefined()
   })
@@ -282,11 +305,11 @@ describe('resolveDocsPageContext', () => {
     // Docusaurus is the authority on which id is active; a manifest that puts
     // that id somewhere else is drift worth shouting about, not a reason to
     // disown the document.
-    const documents = [entry({ permalink: '/docs/architecture/old-overview/' })]
+    const documents = [entry({ permalink: '/docs/architecture/old-packages-concept/' })]
     const value = resolve(
       {
-        pathname: '/docs/architecture/overview/',
-        activeDocId: 'architecture/overview',
+        pathname: '/docs/architecture/packages-concept/',
+        activeDocId: 'architecture/packages-concept',
         activeVersionName: 'current'
       },
       readyCorpus(documents)
@@ -294,12 +317,12 @@ describe('resolveDocsPageContext', () => {
 
     expect(value.active).toMatchObject({
       status: 'document',
-      document: { ref: 'architecture/overview' }
+      document: { ref: 'architecture/packages-concept' }
     })
     expect(value.diagnostic).toMatchObject({
       code: 'permalink_mismatch',
-      pathname: '/docs/architecture/overview/',
-      ref: 'architecture/overview'
+      pathname: '/docs/architecture/packages-concept/',
+      ref: 'architecture/packages-concept'
     })
   })
 
@@ -307,13 +330,13 @@ describe('resolveDocsPageContext', () => {
     // The invariant an in-flight SPA navigation must never break: whatever a
     // consumer reads, both halves describe one route.
     const first = resolve({
-      pathname: '/docs/architecture/overview/',
-      activeDocId: 'architecture/overview',
+      pathname: '/docs/architecture/packages-concept/',
+      activeDocId: 'architecture/packages-concept',
       activeVersionName: 'current'
     })
     const second = resolve({
-      pathname: '/docs/secret/',
-      activeDocId: 'secret',
+      pathname: '/docs/updates/PRIVACY-UPDATE/',
+      activeDocId: 'updates/PRIVACY-UPDATE',
       activeVersionName: 'current'
     })
 

@@ -21,22 +21,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { __setDocusaurusGlobalData } from '../../test/docusaurus-use-global-data-stub'
 import Root from '../../theme/Root'
 import { useDocsPageContext } from '../docs-page-context'
+import { siteGlobalData } from './site-corpus-fixture'
 
-const docsGlobalData = {
-  path: '/docs/',
-  breadcrumbs: true,
-  versions: [
-    {
-      name: 'current',
-      label: 'Next',
-      isLast: true,
-      path: '/docs/',
-      mainDocId: 'index',
-      draftIds: [],
-      docs: [{ id: 'architecture/overview', path: '/docs/architecture/overview/' }]
-    }
-  ]
-}
+const docsGlobalData = siteGlobalData()
 
 const Probe = () => {
   const { pathname, active } = useDocsPageContext()
@@ -54,7 +41,7 @@ describe('static rendering', () => {
     expect(globalThis.window).toBeUndefined()
 
     const html = renderToString(
-      <StaticRouter location="/docs/architecture/overview/">
+      <StaticRouter location="/docs/architecture/packages-concept/">
         <Root>
           <Probe />
         </Root>
@@ -65,7 +52,7 @@ describe('static rendering', () => {
     // manifest is not, and its explicit `corpus_pending` state is exactly what
     // the client's first hydration render produces too — so the two agree and
     // hydration has nothing to reconcile.
-    expect(html).toContain('/docs/architecture/overview/ → corpus_pending')
+    expect(html).toContain('/docs/architecture/packages-concept/ → corpus_pending')
   })
 
   it('reports a non-document route during static rendering without the corpus', () => {

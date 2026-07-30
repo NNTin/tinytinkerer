@@ -6,18 +6,31 @@
  * manifest store, and answers one question — *which authored document, if any,
  * is the current page?*
  *
- * "Current page" is deliberately narrow. It means an authored Docusaurus
- * documentation document that exists in the #474 corpus. The docs landing
- * route, `/search`, category index pages, and 404s are all legitimate places
- * for the assistant to be mounted, and all of them are explicitly *not* a
- * current document rather than a silent `undefined`.
+ * "Current page" is deliberately narrow, and the line it draws is *authorship*:
+ * a route has a current document when it resolves to an authored Docusaurus
+ * document present in the #474 corpus. `/search`, generated category index
+ * pages, and 404s are all legitimate places for the assistant to be mounted,
+ * and all of them are explicitly *not* a current document rather than a silent
+ * `undefined`.
+ *
+ * The docs landing route is **not** an exception on this site. `docs/index.mdx`
+ * authors it (`id: documentation-home`, `slug: /`), so the corpus contains it
+ * and `/docs/` resolves like any other authored document. #476 originally
+ * grouped the landing route with the non-document routes, which is right for a
+ * site whose landing page is a Docusaurus-generated index and wrong for this
+ * one; the issue was amended to the authorship rule rather than special-casing
+ * a real document out of existence. See docs-page/README.md.
  *
  * Nothing here reads the DOM, headings, prose, or rendered metadata: identity
  * comes from Docusaurus routing data, and everything a caller is allowed to see
  * (title, canonical permalink, `unlisted`) comes from the corpus manifest the
  * build produced from authored Markdown.
  */
-import type { DocumentationCorpusStore, SiteUrlConfig } from '../docs-corpus/manifest-store'
+import type {
+  DocumentationCorpusStore,
+  DocumentationCorpusStoreFailureCode,
+  SiteUrlConfig
+} from '../docs-corpus/manifest-store'
 import { canonicalizeDocusaurusPermalink } from '../docs-corpus/docusaurus-compatibility'
 
 /**
@@ -56,10 +69,34 @@ export type DocsNoActiveDocumentReason =
   | 'generated_index_route'
   /** The corpus manifest has not finished loading yet (or this is SSR). */
   | 'corpus_pending'
-  /** The corpus manifest could not be loaded or validated. */
+  /** The corpus manifest could not be fetched, or was never published. */
   | 'corpus_unavailable'
+  /** A corpus manifest was reached but does not match the contract this build expects. */
+  | 'corpus_incompatible'
   /** An authored-looking active id that the corpus manifest does not contain. */
   | 'unknown_active_document'
+
+/**
+ * The store's two failure codes, kept apart in the published reason.
+ *
+ * #477's `read_current_doc` has to tell a transient or unpublished manifest
+ * (worth surfacing as "try again shortly") from a schema/hash incompatibility
+ * (a deployment problem no retry can fix), and `retryable` alone cannot: an
+ * absent corpus locator is `manifest_unavailable` and *not* retryable.
+ *
+ * A `Record`, not a `switch`: the base tsconfig does not set
+ * `noImplicitReturns`, so only a total record turns a future #474 failure code
+ * into a compile error here instead of a silent collapse into one reason.
+ * `docs-search/corpus-ref-map.ts` forwards the store code verbatim instead —
+ * it can, because its outcome has no other discriminant to carry.
+ */
+const CORPUS_FAILURE_REASON: Record<
+  DocumentationCorpusStoreFailureCode,
+  DocsNoActiveDocumentReason
+> = {
+  manifest_unavailable: 'corpus_unavailable',
+  manifest_incompatible: 'corpus_incompatible'
+}
 
 export type DocsActiveDocumentState =
   | { status: 'document'; document: DocsActiveDocument }
@@ -85,11 +122,14 @@ export type DocsPageDiagnostic = {
 }
 
 /**
- * The value the docs page context publishes. `pathname` and `active` are always
- * derived from the same render, so a consumer can never observe the previous
- * document paired with the new pathname during an SPA navigation.
+ * What one route resolves to. `pathname` and `active` are always derived from
+ * the same render, so a consumer can never observe the previous document paired
+ * with the new pathname during an SPA navigation.
+ *
+ * This is the pure half of the published context value; the provider adds the
+ * `retryCorpus` operation to it (see docs-page-context.tsx).
  */
-export type DocsPageContextValue = {
+export type DocsPageResolution = {
   /** Current router pathname, base URL included, exactly as routed. */
   pathname: string
   active: DocsActiveDocumentState
@@ -113,7 +153,13 @@ export type DocsActiveRoute = {
 /** The #474 corpus store as seen by the provider, including its not-yet states. */
 export type DocsCorpusLookup =
   | { status: 'pending' }
-  | { status: 'unavailable'; message: string; retryable: boolean }
+  | {
+      status: 'unavailable'
+      /** The store's own failure code, kept rather than flattened into prose. */
+      code: DocumentationCorpusStoreFailureCode
+      message: string
+      retryable: boolean
+    }
   | { status: 'ready'; store: Pick<DocumentationCorpusStore, 'findByRef'> }
 
 const noDocument = (
@@ -122,7 +168,7 @@ const noDocument = (
   message: string,
   retryable: boolean,
   diagnostic?: DocsPageDiagnostic
-): DocsPageContextValue => ({
+): DocsPageResolution => ({
   pathname,
   active: { status: 'no-document', reason, message, retryable },
   ...(diagnostic ? { diagnostic } : {})
@@ -137,6 +183,12 @@ const noDocument = (
  * This matters because such a page is legitimately absent from the corpus —
  * nobody authored it. Without this check every category index would look like
  * corpus drift and raise a diagnostic on a perfectly healthy site.
+ *
+ * Defensive today: this site's `sidebars.ts` is one `autogenerated` entry with
+ * no `link: { type: 'generated-index' }`, so it builds no category routes and
+ * backs every section with an authored index document instead. The check stays
+ * because adding one is a sidebar edit away, and the failure mode it prevents
+ * (a healthy page reported as corpus drift) is silent.
  */
 const isGeneratedIndexId = (activeDocId: string): boolean => activeDocId.startsWith('/')
 
@@ -153,7 +205,7 @@ export const resolveDocsPageContext = (
   route: DocsActiveRoute,
   corpus: DocsCorpusLookup,
   siteConfig: SiteUrlConfig
-): DocsPageContextValue => {
+): DocsPageResolution => {
   const { pathname, activeDocId, activeVersionName } = route
 
   if (activeDocId === undefined) {
@@ -181,7 +233,12 @@ export const resolveDocsPageContext = (
     )
   }
   if (corpus.status === 'unavailable') {
-    return noDocument(pathname, 'corpus_unavailable', corpus.message, corpus.retryable)
+    return noDocument(
+      pathname,
+      CORPUS_FAILURE_REASON[corpus.code],
+      corpus.message,
+      corpus.retryable
+    )
   }
 
   // Resolve by (version, ref) rather than by URL. The document id is what

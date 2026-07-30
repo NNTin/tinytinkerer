@@ -27,6 +27,13 @@ import {
   __setSiteConfig
 } from '../../test/docusaurus-use-docusaurus-context-stub'
 import { DocsPageProvider, useDocsPageContext } from '../docs-page-context'
+import {
+  assertFixtureStillMatchesSite,
+  CANONICAL_DOCUMENT,
+  GENERATED_INDEX_PATH,
+  SITE_DOCUMENTS,
+  siteGlobalData
+} from './site-corpus-fixture'
 
 const DOCS_PLUGIN = 'docusaurus-plugin-content-docs'
 const MANIFEST_URL = '/docs/assets/docs-corpus/manifest.v1.abc123.json'
@@ -38,92 +45,46 @@ const manifestHashOf = (documents: unknown[]): string =>
     .digest('hex')
 
 const corpusEntry = (overrides: Record<string, unknown> = {}) => ({
-  ref: 'architecture/overview',
-  version: 'current',
-  versionPath: '/docs/',
-  isLast: true,
-  title: 'Architecture overview',
-  permalink: '/docs/architecture/overview/',
-  source: '@site/../../docs/architecture/overview.md',
-  contentHash: 'c'.repeat(64),
-  artifactHash: 'a'.repeat(64),
-  unlisted: false,
-  artifact: '/docs/assets/docs-corpus/documents/current-architecture-overview.abc.def.json',
-  characterCount: 4321,
-  sectionCount: 9,
+  ...CANONICAL_DOCUMENT,
   ...overrides
 })
 
-const CORPUS_DOCUMENTS = [
-  corpusEntry(),
-  corpusEntry({ ref: 'index', title: 'TinyTinkerer documentation', permalink: '/docs/' }),
-  corpusEntry({ ref: 'secret', title: 'Secret page', permalink: '/docs/secret/', unlisted: true }),
-  corpusEntry({
-    version: '1.0',
-    versionPath: '/docs/1.0/',
-    isLast: false,
-    title: 'Architecture overview (1.0)',
-    permalink: '/docs/1.0/architecture/overview/'
-  })
-]
+const CORPUS_DOCUMENTS = SITE_DOCUMENTS
 
-/**
- * Mirrors what `toGlobalDataVersion` publishes for this site: authored docs,
- * unlisted docs (still routed, still in the list), and generated category
- * indices carrying their slug as an id. Drafts are absent by construction —
- * Docusaurus keeps them in `draftIds`, never in `docs`.
- */
-const docsGlobalData = (documents = CORPUS_DOCUMENTS) => ({
-  path: '/docs/',
-  breadcrumbs: true,
-  versions: [
-    {
-      name: 'current',
-      label: 'Next',
-      isLast: true,
-      path: '/docs/',
-      mainDocId: 'index',
-      draftIds: [],
-      docs: [
-        ...documents
-          .filter((document) => document.isLast)
-          .map((document) => ({
-            id: document.ref,
-            path: document.permalink,
-            ...(document.unlisted ? { unlisted: true } : {})
-          })),
-        { id: '/category/architecture', path: '/docs/category/architecture/' }
-      ]
-    },
-    {
-      name: '1.0',
-      label: '1.0',
-      isLast: false,
-      path: '/docs/1.0/',
-      mainDocId: 'index',
-      draftIds: [],
-      docs: documents
-        .filter((document) => !document.isLast)
-        .map((document) => ({ id: document.ref, path: document.permalink }))
-    }
-  ]
+/** The payload a healthy build serves at `MANIFEST_URL`. */
+const validManifest = (documents: unknown[] = CORPUS_DOCUMENTS) => ({
+  schemaVersion: 1,
+  manifestHash: manifestHashOf(documents),
+  documents
+})
+
+/** What #474's build plugin puts in Docusaurus global data. */
+const publishLocator = (manifestHash: string) => {
+  __setPluginData('documentation-corpus', 'default', {
+    schemaVersion: 1,
+    manifestHash,
+    manifestUrl: MANIFEST_URL
+  })
+}
+
+const okResponse = (manifest: unknown) => ({
+  ok: true,
+  status: 200,
+  json: () => Promise.resolve(manifest)
 })
 
 const setCorpus = (documents: unknown[] = CORPUS_DOCUMENTS) => {
-  const manifest = {
-    schemaVersion: 1,
-    manifestHash: manifestHashOf(documents),
-    documents
-  }
-  __setPluginData('documentation-corpus', 'default', {
-    schemaVersion: 1,
-    manifestHash: manifest.manifestHash,
-    manifestUrl: MANIFEST_URL
-  })
+  const manifest = validManifest(documents)
+  publishLocator(manifest.manifestHash)
   vi.stubGlobal(
     'fetch',
-    vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(manifest) }))
+    vi.fn(() => Promise.resolve(okResponse(manifest)))
   )
+}
+
+/** Hoisted out of the render the same way `navigate` is, for the retry tests. */
+let retryCorpus: () => void = () => {
+  throw new Error('retryCorpus used before render')
 }
 
 /**
@@ -132,7 +93,9 @@ const setCorpus = (documents: unknown[] = CORPUS_DOCUMENTS) => {
  * letting two separate assertions each pass against a different render.
  */
 const Probe = () => {
-  const { pathname, active } = useDocsPageContext()
+  const context = useDocsPageContext()
+  const { pathname, active } = context
+  retryCorpus = context.retryCorpus
   const identity =
     active.status === 'document'
       ? `${active.document.ref}@${active.document.version} ${active.document.permalink}${
@@ -174,12 +137,14 @@ const renderAt = async (pathname: string) => {
 const probeText = () => screen.getByTestId('probe').textContent
 
 describe('DocsPageProvider', () => {
+  assertFixtureStillMatchesSite()
+
   beforeEach(() => {
     resetDocumentationCorpusStoreForTests()
     __resetGlobalData()
     __resetDocusaurusGlobalData()
     __resetSiteConfig()
-    __setDocusaurusGlobalData(DOCS_PLUGIN, 'default', docsGlobalData())
+    __setDocusaurusGlobalData(DOCS_PLUGIN, 'default', siteGlobalData())
     setCorpus()
   })
 
@@ -193,33 +158,35 @@ describe('DocsPageProvider', () => {
   })
 
   it('resolves a normal authored docs route to its corpus ref and canonical permalink', async () => {
-    await renderAt('/docs/architecture/overview/')
+    await renderAt('/docs/architecture/packages-concept/')
     expect(probeText()).toBe(
-      '/docs/architecture/overview/ → architecture/overview@current /docs/architecture/overview/'
+      '/docs/architecture/packages-concept/ → architecture/packages-concept@current /docs/architecture/packages-concept/'
     )
   })
 
   it('resolves a deep link that omits the configured trailing slash', async () => {
-    await renderAt('/docs/architecture/overview')
+    await renderAt('/docs/architecture/packages-concept')
     expect(probeText()).toBe(
-      '/docs/architecture/overview → architecture/overview@current /docs/architecture/overview/'
+      '/docs/architecture/packages-concept → architecture/packages-concept@current /docs/architecture/packages-concept/'
     )
   })
 
   it('resolves a direct visit to an unlisted document as the current document', async () => {
-    await renderAt('/docs/secret/')
-    expect(probeText()).toBe('/docs/secret/ → secret@current /docs/secret/ unlisted')
+    await renderAt('/docs/updates/PRIVACY-UPDATE/')
+    expect(probeText()).toBe(
+      '/docs/updates/PRIVACY-UPDATE/ → updates/PRIVACY-UPDATE@current /docs/updates/PRIVACY-UPDATE/ unlisted'
+    )
   })
 
   it('resolves the docs landing route, which this site authors as a real document', async () => {
     await renderAt('/docs/')
-    expect(probeText()).toBe('/docs/ → index@current /docs/')
+    expect(probeText()).toBe('/docs/ → documentation-home@current /docs/')
   })
 
   it('resolves a versioned route against that version rather than the canonical one', async () => {
-    await renderAt('/docs/1.0/architecture/overview/')
+    await renderAt('/docs/1.0/architecture/packages-concept/')
     expect(probeText()).toBe(
-      '/docs/1.0/architecture/overview/ → architecture/overview@1.0 /docs/1.0/architecture/overview/'
+      '/docs/1.0/architecture/packages-concept/ → architecture/packages-concept@1.0 /docs/1.0/architecture/packages-concept/'
     )
   })
 
@@ -234,30 +201,34 @@ describe('DocsPageProvider', () => {
   })
 
   it('exposes an explicit no-active-document state on a generated category index', async () => {
-    await renderAt('/docs/category/architecture/')
-    expect(probeText()).toBe('/docs/category/architecture/ → none:generated_index_route')
+    await renderAt(GENERATED_INDEX_PATH)
+    expect(probeText()).toBe(`${GENERATED_INDEX_PATH} → none:generated_index_route`)
   })
 
   it('updates the identity atomically on client-side navigation', async () => {
-    await renderAt('/docs/architecture/overview/')
+    await renderAt('/docs/architecture/packages-concept/')
     expect(probeText()).toBe(
-      '/docs/architecture/overview/ → architecture/overview@current /docs/architecture/overview/'
+      '/docs/architecture/packages-concept/ → architecture/packages-concept@current /docs/architecture/packages-concept/'
     )
 
-    act(() => navigate('/docs/secret/'))
+    act(() => navigate('/docs/updates/PRIVACY-UPDATE/'))
 
     // One commit, both halves moved. There is no intermediate state in which the
     // new pathname is paired with the previous document — the identity is
     // derived during the same render the router updates, not copied into state
     // by an effect afterwards.
-    expect(probeText()).toBe('/docs/secret/ → secret@current /docs/secret/ unlisted')
+    expect(probeText()).toBe(
+      '/docs/updates/PRIVACY-UPDATE/ → updates/PRIVACY-UPDATE@current /docs/updates/PRIVACY-UPDATE/ unlisted'
+    )
 
     act(() => navigate('/docs/search/'))
     expect(probeText()).toBe('/docs/search/ → none:not_a_document_route')
   })
 
   it('resolves consistently under a different configured base URL', async () => {
-    const documents = [corpusEntry({ versionPath: '/', permalink: '/architecture/overview/' })]
+    const documents = [
+      corpusEntry({ versionPath: '/', permalink: '/architecture/packages-concept/' })
+    ]
     __setDocusaurusGlobalData(DOCS_PLUGIN, 'default', {
       path: '/',
       breadcrumbs: true,
@@ -267,18 +238,18 @@ describe('DocsPageProvider', () => {
           label: 'Next',
           isLast: true,
           path: '/',
-          mainDocId: 'architecture/overview',
+          mainDocId: 'architecture/packages-concept',
           draftIds: [],
-          docs: [{ id: 'architecture/overview', path: '/architecture/overview/' }]
+          docs: [{ id: 'architecture/packages-concept', path: '/architecture/packages-concept/' }]
         }
       ]
     })
     __setSiteConfig({ baseUrl: '/', trailingSlash: true })
     setCorpus(documents)
 
-    await renderAt('/architecture/overview/')
+    await renderAt('/architecture/packages-concept/')
     expect(probeText()).toBe(
-      '/architecture/overview/ → architecture/overview@current /architecture/overview/'
+      '/architecture/packages-concept/ → architecture/packages-concept@current /architecture/packages-concept/'
     )
   })
 
@@ -291,13 +262,13 @@ describe('DocsPageProvider', () => {
       vi.fn(() => new Promise(() => {}))
     )
     render(
-      <MemoryRouter initialEntries={['/docs/architecture/overview/']}>
+      <MemoryRouter initialEntries={['/docs/architecture/packages-concept/']}>
         <DocsPageProvider>
           <Probe />
         </DocsPageProvider>
       </MemoryRouter>
     )
-    expect(probeText()).toBe('/docs/architecture/overview/ → none:corpus_pending')
+    expect(probeText()).toBe('/docs/architecture/packages-concept/ → none:corpus_pending')
   })
 
   it('answers non-document routes immediately, without waiting for the corpus', () => {
@@ -317,36 +288,155 @@ describe('DocsPageProvider', () => {
 
   it('surfaces a corpus load failure instead of pretending the page has no document', async () => {
     __resetGlobalData()
-    await renderAt('/docs/architecture/overview/')
-    expect(probeText()).toBe('/docs/architecture/overview/ → none:corpus_unavailable')
+    await renderAt('/docs/architecture/packages-concept/')
+    expect(probeText()).toBe('/docs/architecture/packages-concept/ → none:corpus_unavailable')
   })
 
   it('diagnoses an active document id the corpus manifest does not contain', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    setCorpus(CORPUS_DOCUMENTS.filter((document) => document.ref !== 'secret'))
+    setCorpus(CORPUS_DOCUMENTS.filter((document) => document.ref !== 'updates/PRIVACY-UPDATE'))
 
-    await renderAt('/docs/secret/')
+    await renderAt('/docs/updates/PRIVACY-UPDATE/')
 
-    expect(probeText()).toBe('/docs/secret/ → none:unknown_active_document')
+    expect(probeText()).toBe('/docs/updates/PRIVACY-UPDATE/ → none:unknown_active_document')
     expect(warn).toHaveBeenCalledTimes(1)
-    expect(warn.mock.calls[0]?.[0]).toContain('"secret"')
+    expect(warn.mock.calls[0]?.[0]).toContain('"updates/PRIVACY-UPDATE"')
   })
 
   it('reports each distinct mapping anomaly once, not on every render', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    setCorpus(CORPUS_DOCUMENTS.filter((document) => document.ref !== 'secret'))
+    setCorpus(CORPUS_DOCUMENTS.filter((document) => document.ref !== 'updates/PRIVACY-UPDATE'))
 
-    await renderAt('/docs/secret/')
-    act(() => navigate('/docs/architecture/overview/'))
-    act(() => navigate('/docs/secret/'))
+    await renderAt('/docs/updates/PRIVACY-UPDATE/')
+    act(() => navigate('/docs/architecture/packages-concept/'))
+    act(() => navigate('/docs/updates/PRIVACY-UPDATE/'))
 
     expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('does not diagnose a generated category index as corpus drift', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    await renderAt('/docs/category/architecture/')
+    await renderAt(GENERATED_INDEX_PATH)
     expect(warn).not.toHaveBeenCalled()
+  })
+})
+
+describe('DocsPageProvider corpus recovery', () => {
+  assertFixtureStillMatchesSite()
+
+  beforeEach(() => {
+    resetDocumentationCorpusStoreForTests()
+    __resetGlobalData()
+    __resetDocusaurusGlobalData()
+    __resetSiteConfig()
+    __setDocusaurusGlobalData(DOCS_PLUGIN, 'default', siteGlobalData())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    resetDocumentationCorpusStoreForTests()
+    __resetGlobalData()
+    __resetDocusaurusGlobalData()
+    __resetSiteConfig()
+  })
+
+  it('recovers from a retryable manifest failure when a consumer retries', async () => {
+    // The provider is mounted by `@theme/Root` for the lifetime of the SPA, and
+    // neither `baseUrl` nor `trailingSlash` changes within a session — so
+    // without an explicit retry a single 503 would make the corpus permanently
+    // unavailable while the published state still claimed `retryable: true`.
+    const manifest = validManifest()
+    publishLocator(manifest.manifestHash)
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, json: () => Promise.resolve({}) })
+      .mockResolvedValue(okResponse(manifest))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await renderAt('/docs/architecture/packages-concept/')
+    expect(probeText()).toBe('/docs/architecture/packages-concept/ → none:corpus_unavailable')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    act(() => retryCorpus())
+
+    await waitFor(() => {
+      expect(probeText()).toBe(
+        '/docs/architecture/packages-concept/ → architecture/packages-concept@current /docs/architecture/packages-concept/'
+      )
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('passes through pending on the way back, so no consumer reads a stale failure', async () => {
+    const manifest = validManifest()
+    publishLocator(manifest.manifestHash)
+    let releaseSecond: (value: unknown) => void = () => {}
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, json: () => Promise.resolve({}) })
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseSecond = resolve
+        })
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await renderAt('/docs/architecture/packages-concept/')
+    expect(probeText()).toBe('/docs/architecture/packages-concept/ → none:corpus_unavailable')
+
+    act(() => retryCorpus())
+    expect(probeText()).toBe('/docs/architecture/packages-concept/ → none:corpus_pending')
+
+    releaseSecond(okResponse(manifest))
+    await waitFor(() => {
+      expect(probeText()).toContain('architecture/packages-concept@current')
+    })
+  })
+
+  it('does not re-fetch when the corpus already loaded', async () => {
+    const manifest = validManifest()
+    publishLocator(manifest.manifestHash)
+    const fetchMock = vi.fn(() => Promise.resolve(okResponse(manifest)))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await renderAt('/docs/architecture/packages-concept/')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    act(() => retryCorpus())
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(probeText()).toContain('architecture/packages-concept@current')
+  })
+
+  it('does not re-fetch a manifest that will never validate', async () => {
+    // A hash the payload does not carry is a deployment mismatch, not a blip:
+    // `retryable` is false, so a consumer looping on failure must not be able
+    // to turn it into an unbounded request loop.
+    publishLocator('f'.repeat(64))
+    const fetchMock = vi.fn(() => Promise.resolve(okResponse(validManifest())))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await renderAt('/docs/architecture/packages-concept/')
+    expect(probeText()).toBe('/docs/architecture/packages-concept/ → none:corpus_incompatible')
+
+    act(() => retryCorpus())
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(probeText()).toBe('/docs/architecture/packages-concept/ → none:corpus_incompatible')
+  })
+
+  it('reports an unpublished corpus as unavailable, not incompatible', async () => {
+    // No locator in global data at all: nothing was fetched, so this is
+    // `manifest_unavailable` even though it is not retryable.
+    __resetGlobalData()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(okResponse({})))
+    )
+
+    await renderAt('/docs/architecture/packages-concept/')
+    expect(probeText()).toBe('/docs/architecture/packages-concept/ → none:corpus_unavailable')
   })
 })
 
