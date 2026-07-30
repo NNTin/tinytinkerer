@@ -45,6 +45,7 @@ import {
   type DocsPageDiagnostic,
   type DocsPageResolution
 } from './active-document'
+import { publishDocsPageSnapshot } from './page-snapshot'
 
 /**
  * What `useDocsPageContext()` returns: one route's resolution, plus the one
@@ -184,6 +185,15 @@ export const DocsPageProvider = ({ children }: { children: ReactNode }): ReactNo
     () => ({ ...resolution, retryCorpus }),
     [resolution, retryCorpus]
   )
+
+  // Republished for non-React consumers — #477's documentation tools run from
+  // the agent runtime, outside this tree, and must answer from the same
+  // resolution rather than resolving the route a second way. From an effect, so
+  // only a render React actually committed can become a tool's answer, and so
+  // static rendering publishes nothing.
+  useEffect(() => {
+    publishDocsPageSnapshot({ ...value, siteConfig: { baseUrl, trailingSlash } })
+  }, [value, baseUrl, trailingSlash])
 
   // Route/manifest mapping diagnostics. Reported once per distinct anomaly so a
   // page that re-renders (or is revisited) does not bury the console, and from

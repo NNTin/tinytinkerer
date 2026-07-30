@@ -114,7 +114,14 @@ export type DocumentationCorpusReadTruncation = {
 
 export type DocumentationCorpusLoadFailureCode =
   | 'manifest_unavailable'
-  | 'manifest_invalid'
+  /**
+   * Spelled the same way `DocumentationCorpusStoreFailureCode` spells it
+   * (apps/docs/src/docs-corpus/manifest-store.ts). It was `manifest_invalid`
+   * until #477 became this type's first consumer and had to forward a store
+   * failure through it; two names for one condition is drift a reader has to
+   * hold in their head, and renaming stops being free once #478 consumes these.
+   */
+  | 'manifest_incompatible'
   | 'document_not_found'
   | 'document_unavailable'
   | 'document_invalid'

@@ -21,6 +21,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { __setDocusaurusGlobalData } from '../../test/docusaurus-use-global-data-stub'
 import Root from '../../theme/Root'
 import { useDocsPageContext } from '../docs-page-context'
+import { readDocsPageSnapshot } from '../page-snapshot'
 import { siteGlobalData } from './site-corpus-fixture'
 
 const docsGlobalData = siteGlobalData()
@@ -65,6 +66,22 @@ describe('static rendering', () => {
     )
 
     expect(html).toContain('/docs/search/ → not_a_document_route')
+  })
+
+  it('publishes no snapshot for a non-React consumer to read', () => {
+    renderToString(
+      <StaticRouter location="/docs/architecture/packages-concept/">
+        <Root>
+          <Probe />
+        </Root>
+      </StaticRouter>
+    )
+
+    // The provider republishes each resolution for #477's tools through a commit
+    // effect, and effects never run on the server. So a tool can never answer
+    // from a value no browser committed — and `undefined` here is read as "not
+    // known yet", never as "this page has no document".
+    expect(readDocsPageSnapshot()).toBeUndefined()
   })
 })
 

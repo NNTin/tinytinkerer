@@ -14,3 +14,11 @@ export type {
   DocsPageDiagnosticCode,
   DocsPageResolution
 } from './active-document'
+// The same resolution, for consumers that cannot use a hook — an agent tool's
+// `execute` runs outside React. See page-snapshot.ts.
+export {
+  awaitDocsPageSnapshot,
+  readDocsPageSnapshot,
+  subscribeDocsPageSnapshot
+} from './page-snapshot'
+export type { DocsPageSnapshot } from './page-snapshot'
