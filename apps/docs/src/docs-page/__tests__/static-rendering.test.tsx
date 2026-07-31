@@ -101,7 +101,10 @@ describe('no DOM extraction', () => {
       readFileSync(fileURLToPath(new URL(name, sourceDirectory)), 'utf8')
     )
 
-    expect(source).not.toMatch(/\bwindow\b/)
+    // `typeof window` is an environment feature detect, not a page read — the
+    // one in isomorphic-layout-effect.ts decides whether a layout effect can
+    // run at all. Everything else about `window` stays forbidden.
+    expect(source.replace(/typeof window/g, '')).not.toMatch(/\bwindow\b/)
     // `document` is also an ordinary local name for a corpus entry here, so the
     // check names the global's members rather than the bare identifier.
     expect(source).not.toMatch(/\bdocument\.(title|body|head|getElement|querySelector)/)

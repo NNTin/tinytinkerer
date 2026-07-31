@@ -19,20 +19,35 @@
 import type { SiteUrlConfig } from '../docs-corpus/manifest-store'
 import type { DocsPageResolution } from './active-document'
 
-export type DocsPageSnapshot = DocsPageResolution & {
+export type DocsPageSnapshotInput = DocsPageResolution & {
   /** The site's `baseUrl`/`trailingSlash`, from `useDocusaurusContext()`. */
   siteConfig: SiteUrlConfig
   /** #476's gated corpus recovery. Stable across renders; safe to call unconditionally. */
   retryCorpus: () => void
 }
 
+export type DocsPageSnapshot = DocsPageSnapshotInput & {
+  /**
+   * Monotonically increasing publication number, assigned here rather than by
+   * the provider.
+   *
+   * A consumer waiting on asynchronous recovery has to distinguish "the state I
+   * already saw" from "a state published since I acted". Comparing the values
+   * cannot do it — a corpus retry that fails republishes an equal-looking
+   * failure — so identity has to come from the publication itself.
+   */
+  revision: number
+}
+
 let current: DocsPageSnapshot | undefined
+let revision = 0
 const listeners = new Set<(snapshot: DocsPageSnapshot) => void>()
 
 /** Called by `DocsPageProvider` for every committed resolution. */
-export const publishDocsPageSnapshot = (snapshot: DocsPageSnapshot): void => {
-  current = snapshot
-  for (const listener of Array.from(listeners)) listener(snapshot)
+export const publishDocsPageSnapshot = (snapshot: DocsPageSnapshotInput): void => {
+  revision += 1
+  current = { ...snapshot, revision }
+  for (const listener of Array.from(listeners)) listener(current)
 }
 
 /**
@@ -90,8 +105,9 @@ export const awaitDocsPageSnapshot = (
   })
 }
 
-/** Test-only: clears the published snapshot and every subscriber. */
+/** Test-only: clears the published snapshot, the revision counter, and every subscriber. */
 export const resetDocsPageSnapshotForTests = (): void => {
   current = undefined
+  revision = 0
   listeners.clear()
 }

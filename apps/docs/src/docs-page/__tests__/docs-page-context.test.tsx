@@ -128,9 +128,18 @@ const renderAt = async (pathname: string) => {
   // settled state, not the (separately asserted) pending one. Polled rather than
   // flushed a fixed number of times because the store's integrity check awaits
   // `crypto.subtle.digest`, whose scheduling is not ours to predict.
-  await waitFor(() => {
-    expect(probeText()).not.toContain('corpus_pending')
-  })
+  //
+  // The generous timeout is for exactly that: under a full parallel run this
+  // digest competes with every other worker for CPU, and the default 1s budget
+  // was observed timing out while the state settled correctly a moment later.
+  // Waiting longer costs nothing when the state settles promptly, which is the
+  // normal case.
+  await waitFor(
+    () => {
+      expect(probeText()).not.toContain('corpus_pending')
+    },
+    { timeout: 10_000 }
+  )
   return result
 }
 

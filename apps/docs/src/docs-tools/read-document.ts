@@ -17,7 +17,12 @@ import type { DocumentationCorpusDocumentArtifact } from '@tinytinkerer/app-brow
 import { loadDocumentationArtifact } from '../docs-corpus/artifact-store'
 import { loadDocumentationCorpusStore, type SiteUrlConfig } from '../docs-corpus/manifest-store'
 import { MAX_READ_CHARS, type ReadDocOutput, type ReadErrorCode } from './schemas'
-import { fitToResponseCap, RESPONSE_CHARACTER_CAP, serializedLength } from './response-cap'
+import {
+  boundedMessage,
+  fitToResponseCap,
+  RESPONSE_CHARACTER_CAP,
+  serializedLength
+} from './response-cap'
 import {
   flattenOutline,
   selectDocument,
@@ -36,18 +41,63 @@ export type ReadDocumentRequest = {
 /** A model may well write the fragment the way it appears in a URL. */
 const normalizeAnchor = (anchor: string): string => anchor.trim().replace(/^#+/, '')
 
+/**
+ * Every failure goes through here, so none can be built without its message
+ * bounded — the messages quote model-supplied identifiers and upstream error
+ * text, neither of which this code chose the length of.
+ */
 const error = (
   code: ReadErrorCode,
   message: string,
   retryable: boolean,
   extra: { ref?: string; outline?: DocumentationOutlineEntry[] } = {}
-): ReadDocOutput => ({ status: 'error', code, message, retryable, ...extra })
+): ReadDocOutput =>
+  fitFailure({
+    status: 'error',
+    code,
+    message: boundedMessage(message),
+    retryable,
+    ...extra,
+    // Bounded here too, not only by the input schema: `readDocument` is also
+    // reachable from `read_current_doc`, and a bound that lives in one caller's
+    // schema is not a bound on this function.
+    ...(extra.ref === undefined ? {} : { ref: boundedMessage(extra.ref) })
+  })
 
 /**
- * Last-resort guard for a payload whose fixed parts alone overrun the cap — a
- * document with a pathologically large outline. Shrinking Markdown cannot help
- * there, so the outline is trimmed instead, and the response says so rather than
- * letting the transport cut the tail off silently.
+ * Fits a typed failure to the response cap.
+ *
+ * A failure that overran the limit would be cut mid-JSON by the transport,
+ * which defeats the entire point of a typed, discriminated failure: the model
+ * would receive an unparseable fragment instead of an actionable error. The
+ * outline is the only unbounded part left once the message is bounded, so it is
+ * dropped rather than the failure being mangled.
+ */
+const fitFailure = (payload: ReadDocOutput): ReadDocOutput => {
+  if (payload.status !== 'error') return payload
+  if (serializedLength(payload) <= RESPONSE_CHARACTER_CAP) return payload
+
+  let outline = payload.outline ?? []
+  let candidate: ReadDocOutput = payload
+  while (serializedLength(candidate) > RESPONSE_CHARACTER_CAP && outline.length > 0) {
+    outline = outline.slice(0, Math.floor(outline.length / 2))
+    candidate = { ...payload, outline }
+  }
+  if (serializedLength(candidate) > RESPONSE_CHARACTER_CAP) {
+    candidate = { ...payload, outline: undefined }
+  }
+  return candidate
+}
+
+/**
+ * Last-resort guard for a successful payload whose *fixed* parts overrun the cap
+ * — a document with a pathologically large outline. Shrinking Markdown cannot
+ * help there, so the outline is trimmed instead.
+ *
+ * Reported through its own `outlineTruncated` flag, never through the content
+ * truncation fields: those describe the document text, and overloading them
+ * would produce `truncated: true` beside `omittedCharacterCount: 0` while the
+ * thing actually omitted was metadata.
  *
  * This site's largest document has 15 headings, so nothing here exercises it
  * today; it exists because the acceptance criterion is absolute and the failure
@@ -59,12 +109,7 @@ const trimOutlineToFit = (payload: ReadDocOutput): ReadDocOutput => {
   let candidate = payload
   while (serializedLength(candidate) > RESPONSE_CHARACTER_CAP && outline.length > 0) {
     outline = outline.slice(0, Math.floor(outline.length / 2))
-    candidate = {
-      ...payload,
-      outline,
-      truncated: true,
-      truncation: { ...payload.truncation, truncated: true }
-    }
+    candidate = { ...payload, outline, outlineTruncated: true }
   }
   return candidate
 }
@@ -88,7 +133,8 @@ const buildRead = (
     outline,
     sections: selection.sections,
     truncated: selection.truncation.truncated,
-    truncation: selection.truncation
+    truncation: selection.truncation,
+    outlineTruncated: false
   }
 }
 

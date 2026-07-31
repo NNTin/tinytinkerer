@@ -28,6 +28,10 @@ import type {
   DocumentationCorpusSection
 } from '@tinytinkerer/app-browser/documentation-corpus'
 import { DOCUMENTATION_CORPUS_SCHEMA_VERSION } from '@tinytinkerer/app-browser/documentation-corpus'
+import {
+  documentationArtifactEntryProblem,
+  documentationArtifactProblem
+} from './artifact-invariants'
 
 export type DocumentationCorpusArtifactOutcome =
   | { ok: true; artifact: DocumentationCorpusDocumentArtifact }
@@ -60,40 +64,24 @@ const isOutlineItem = (value: unknown): value is DocumentationCorpusOutlineItem 
   value.children.every(isOutlineItem)
 
 /**
- * Validates the whole `DocumentationCorpusDocumentArtifact` contract, including
- * the offset invariants a selection depends on. A section whose offsets run
- * backwards or past the end of `markdown` would not throw when sliced — it would
- * quietly return the wrong text, or nothing, which is worse than a typed
- * failure.
+ * Validates the artifact's *shape* — that every field is the declared type.
+ * Semantic consistency (offsets, character counts, anchor uniqueness,
+ * outline-to-section referential integrity) is the shared
+ * `documentationArtifactProblem`'s job, so the build and the browser cannot
+ * develop different ideas of what a valid artifact is.
  */
-const isArtifact = (value: unknown): value is DocumentationCorpusDocumentArtifact => {
-  if (!isRecord(value)) return false
-  if (
-    value.schemaVersion !== DOCUMENTATION_CORPUS_SCHEMA_VERSION ||
-    typeof value.ref !== 'string' ||
-    typeof value.version !== 'string' ||
-    typeof value.contentHash !== 'string' ||
-    !Number.isInteger(value.characterCount) ||
-    typeof value.markdown !== 'string' ||
-    !Array.isArray(value.outline) ||
-    !value.outline.every(isOutlineItem) ||
-    !Array.isArray(value.sections) ||
-    !value.sections.every(isSection)
-  ) {
-    return false
-  }
-  const { markdown, sections } = value as {
-    markdown: string
-    sections: DocumentationCorpusSection[]
-  }
-  return sections.every(
-    (section) =>
-      section.startOffset >= 0 &&
-      section.startOffset <= section.contentStartOffset &&
-      section.contentStartOffset <= section.endOffset &&
-      section.endOffset <= markdown.length
-  )
-}
+const isArtifact = (value: unknown): value is DocumentationCorpusDocumentArtifact =>
+  isRecord(value) &&
+  value.schemaVersion === DOCUMENTATION_CORPUS_SCHEMA_VERSION &&
+  typeof value.ref === 'string' &&
+  typeof value.version === 'string' &&
+  typeof value.contentHash === 'string' &&
+  Number.isInteger(value.characterCount) &&
+  typeof value.markdown === 'string' &&
+  Array.isArray(value.outline) &&
+  value.outline.every(isOutlineItem) &&
+  Array.isArray(value.sections) &&
+  value.sections.every(isSection)
 
 const toHex = (buffer: ArrayBuffer): string =>
   Array.from(new Uint8Array(buffer))
@@ -209,22 +197,33 @@ const loadArtifact = async (
     )
   }
 
-  // Cross-checks that still hold where `crypto.subtle` is unavailable. They are
-  // weaker than the byte hash above (all three values are self-reported), but
-  // they do catch the artifact that was served for a *different* document — the
-  // one failure mode a plain "did it parse?" check would let through.
-  if (payload.ref !== entry.ref || payload.version !== entry.version) {
+  // The relationships a selection reads as if they agreed — offsets, character
+  // counts, anchor uniqueness, outline-to-section references. None is
+  // expressible in a type, and a violation does not throw when sliced: it
+  // silently returns the wrong text.
+  const semantic = documentationArtifactProblem(payload)
+  if (semantic) {
     return failure(
       'document_invalid',
-      `documentation artifact at "${entry.artifact}" identifies itself as "${payload.version}/${payload.ref}", but the manifest requested "${entry.version}/${entry.ref}"`,
+      `documentation artifact for "${entry.ref}" ${semantic}`,
       false,
       entry
     )
   }
-  if (payload.contentHash !== entry.contentHash) {
+
+  // Cross-checks against the manifest that still hold where `crypto.subtle` is
+  // unavailable. They are weaker than the byte hash above (both sides are
+  // self-reported), but they do catch the artifact served for a *different*
+  // document — the one failure mode a plain "did it parse?" check lets through.
+  const mismatch = documentationArtifactEntryProblem(entry, payload)
+  if (mismatch) {
     return failure(
-      'content_hash_mismatch',
-      `documentation artifact for "${entry.ref}" reports content hash "${payload.contentHash}", but the manifest records "${entry.contentHash}"`,
+      // An artifact that is a *different document* is an identity problem; one
+      // whose content no longer matches what the manifest recorded is an
+      // integrity problem. Reported as the validator classified it rather than
+      // re-derived from which field happened to differ.
+      mismatch.kind === 'identity' ? 'document_invalid' : 'content_hash_mismatch',
+      `documentation artifact for "${entry.ref}" ${mismatch.message}`,
       false,
       entry
     )

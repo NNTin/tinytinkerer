@@ -35,6 +35,20 @@ export const RESPONSE_CHARACTER_CAP = MAX_CHAT_MESSAGE_CONTENT_CHARS - RESPONSE_
 /** How the payload is measured: exactly how the runtime will serialize it. */
 export const serializedLength = (value: unknown): number => (JSON.stringify(value) ?? '').length
 
+/**
+ * The longest a free-form message may be inside a response.
+ *
+ * Failure messages quote model-supplied identifiers and upstream error text,
+ * neither of which this code chose the length of. Bounding the message is what
+ * lets a typed failure stay parseable rather than being cut mid-JSON by the
+ * transport.
+ */
+const MAX_MESSAGE_CHARS = 2_000
+
+/** Bounds a message, marking the cut so a reader is not misled by the tail. */
+export const boundedMessage = (message: string): string =>
+  message.length <= MAX_MESSAGE_CHARS ? message : `${message.slice(0, MAX_MESSAGE_CHARS - 1)}…`
+
 /** Below this there is no point shrinking further; the guard below takes over. */
 const MIN_BUDGET = 500
 

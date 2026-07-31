@@ -17,7 +17,7 @@ import {
   publishDocsPageSnapshot,
   resetDocsPageSnapshotForTests
 } from '../../docs-page/page-snapshot'
-import type { DocsPageSnapshot } from '../../docs-page/page-snapshot'
+import type { DocsPageSnapshotInput } from '../../docs-page/page-snapshot'
 import type { DocsNoActiveDocumentReason } from '../../docs-page'
 import { createDocumentationToolGroup, READ_CURRENT_DOC_TOOL_ID } from '../index'
 import { readCurrentDocOutputSchema, type ReadCurrentDocOutput } from '../schemas'
@@ -47,8 +47,8 @@ const run = async (input: Record<string, unknown> = {}): Promise<ReadCurrentDocO
 
 const documentSnapshot = (
   fixture: typeof CANONICAL,
-  overrides: Partial<DocsPageSnapshot> = {}
-): DocsPageSnapshot => ({
+  overrides: Partial<DocsPageSnapshotInput> = {}
+): DocsPageSnapshotInput => ({
   pathname: fixture.entry.permalink,
   siteConfig: SITE_CONFIG,
   retryCorpus: () => {},
@@ -69,7 +69,7 @@ const documentSnapshot = (
 const noDocumentSnapshot = (
   reason: DocsNoActiveDocumentReason,
   options: { pathname?: string; retryable?: boolean; retryCorpus?: () => void } = {}
-): DocsPageSnapshot => ({
+): DocsPageSnapshotInput => ({
   pathname: options.pathname ?? '/docs/search/',
   siteConfig: SITE_CONFIG,
   retryCorpus: options.retryCorpus ?? (() => {}),
@@ -207,20 +207,87 @@ describe('read_current_doc', () => {
   })
 
   describe('corpus recovery', () => {
-    it('invokes retryCorpus and answers from the recovered state', async () => {
+    // The provider's `retryCorpus` calls `setCorpus`, so recovery lands on a
+    // later task — never synchronously inside the callback. Publishing
+    // synchronously in a test would let an implementation that never waited at
+    // all still pass, which is exactly how the first version of this suite
+    // missed the bug.
+    const publishLater = (snapshot: DocsPageSnapshotInput) => {
+      setTimeout(() => {
+        publishDocsPageSnapshot(snapshot)
+      }, 50)
+    }
+
+    it('waits for the retry it started instead of answering with the failure that prompted it', async () => {
       installDocumentationCorpus()
       const retryCorpus = vi.fn(() => {
-        // What DocsPageProvider does on a successful retry.
-        publishDocsPageSnapshot(documentSnapshot(CANONICAL))
+        publishLater(documentSnapshot(CANONICAL))
       })
       publishDocsPageSnapshot(
-        noDocumentSnapshot('corpus_unavailable', { retryable: true, retryCorpus })
+        noDocumentSnapshot('corpus_unavailable', {
+          pathname: CANONICAL.entry.permalink,
+          retryable: true,
+          retryCorpus
+        })
       )
 
       const output = await run()
 
       expect(retryCorpus).toHaveBeenCalledTimes(1)
       expect(output).toMatchObject({ status: 'ok', doc: { ref: CANONICAL.entry.ref } })
+    })
+
+    it('does not accept the still-current failure as the retry outcome', async () => {
+      installDocumentationCorpus()
+      // The provider republishes an equal-looking failure when a retry also
+      // fails, so the values cannot discriminate — only the publication can.
+      const retryCorpus = vi.fn(() => {
+        publishLater(
+          noDocumentSnapshot('corpus_unavailable', {
+            pathname: CANONICAL.entry.permalink,
+            retryable: true
+          })
+        )
+      })
+      publishDocsPageSnapshot(
+        noDocumentSnapshot('corpus_unavailable', {
+          pathname: CANONICAL.entry.permalink,
+          retryable: true,
+          retryCorpus
+        })
+      )
+
+      const output = await run()
+
+      expect(retryCorpus).toHaveBeenCalledTimes(1)
+      expect(output).toMatchObject({
+        status: 'unavailable',
+        reason: 'corpus_unavailable',
+        retryable: true
+      })
+    })
+
+    it('skips the interim pending state the provider publishes before the outcome', async () => {
+      installDocumentationCorpus()
+      const retryCorpus = vi.fn(() => {
+        // Exactly what DocsPageProvider does: back to pending, then the result.
+        publishDocsPageSnapshot(
+          noDocumentSnapshot('corpus_pending', {
+            pathname: CANONICAL.entry.permalink,
+            retryable: true
+          })
+        )
+        publishLater(documentSnapshot(CANONICAL))
+      })
+      publishDocsPageSnapshot(
+        noDocumentSnapshot('corpus_unavailable', {
+          pathname: CANONICAL.entry.permalink,
+          retryable: true,
+          retryCorpus
+        })
+      )
+
+      expect(await run()).toMatchObject({ status: 'ok', doc: { ref: CANONICAL.entry.ref } })
     })
 
     it('does not invoke retryCorpus for a failure no retry can fix', async () => {
@@ -234,35 +301,53 @@ describe('read_current_doc', () => {
       expect(retryCorpus).not.toHaveBeenCalled()
     })
 
-    it('reports honestly when the retry it started does not recover', async () => {
+    it('does not retry a load that is merely still in flight', async () => {
       installDocumentationCorpus()
+      // `corpus_pending` is retryable in #476's vocabulary, but the provider's
+      // gate makes `retryCorpus` a no-op while a load is running — calling it
+      // would burn the deadline for nothing.
+      const retryCorpus = vi.fn()
+      publishDocsPageSnapshot(
+        noDocumentSnapshot('corpus_pending', {
+          pathname: CANONICAL.entry.permalink,
+          retryable: true,
+          retryCorpus
+        })
+      )
+      publishLater(documentSnapshot(CANONICAL))
+
+      expect(await run()).toMatchObject({ status: 'ok' })
+      expect(retryCorpus).not.toHaveBeenCalled()
+    })
+
+    it('spends one deadline in total, not one per wait', async () => {
+      installDocumentationCorpus()
+      // Pending, then a retryable failure that never recovers: the two waits
+      // plus the first-publication wait must still share a single budget, or
+      // they would consume most of the runtime's 10s machine tool timeout
+      // before the artifact fetch could start.
       vi.useFakeTimers()
       const retryCorpus = vi.fn()
       publishDocsPageSnapshot(
-        noDocumentSnapshot('corpus_unavailable', { retryable: true, retryCorpus })
+        noDocumentSnapshot('corpus_pending', {
+          pathname: CANONICAL.entry.permalink,
+          retryable: true,
+          retryCorpus
+        })
       )
 
-      const pending = run()
-      await vi.advanceTimersByTimeAsync(10_000)
-      const output = await pending
-
-      expect(retryCorpus).toHaveBeenCalledTimes(1)
-      expect(output).toMatchObject({
-        status: 'unavailable',
-        reason: 'corpus_unavailable',
-        retryable: true
+      const started = Date.now()
+      let resolvedAt = -1
+      // Measured when the call *resolves*, not after the clock is advanced —
+      // otherwise the assertion would just be reading back the advance.
+      const pending = run().then((value) => {
+        resolvedAt = Date.now()
+        return value
       })
-    })
+      await vi.advanceTimersByTimeAsync(20_000)
+      await pending
 
-    it('waits for a corpus still loading instead of answering "no document"', async () => {
-      installDocumentationCorpus()
-      publishDocsPageSnapshot(noDocumentSnapshot('corpus_pending', { retryable: true }))
-
-      const pending = run()
-      // The provider settles a moment later, exactly as it does on a fresh page.
-      publishDocsPageSnapshot(documentSnapshot(CANONICAL))
-
-      expect(await pending).toMatchObject({ status: 'ok', doc: { ref: CANONICAL.entry.ref } })
+      expect(resolvedAt - started).toBeLessThanOrEqual(4_100)
     })
 
     it('reports pending rather than "no document" when nothing has published yet', async () => {
@@ -276,6 +361,31 @@ describe('read_current_doc', () => {
         status: 'unavailable',
         reason: 'corpus_pending',
         retryable: true
+      })
+    })
+  })
+
+  describe('route pinning', () => {
+    it('answers for the route the call was made on, not one navigated to later', async () => {
+      installDocumentationCorpus()
+      publishDocsPageSnapshot(
+        noDocumentSnapshot('corpus_pending', {
+          pathname: CANONICAL.entry.permalink,
+          retryable: true
+        })
+      )
+
+      const pending = run()
+      // The reader moves on while the corpus is still loading. The question was
+      // asked about the page they were on, so that is what must be answered.
+      setTimeout(() => {
+        publishDocsPageSnapshot(documentSnapshot(LANDING))
+        publishDocsPageSnapshot(documentSnapshot(CANONICAL))
+      }, 20)
+
+      expect(await pending).toMatchObject({
+        status: 'ok',
+        doc: { ref: CANONICAL.entry.ref }
       })
     })
   })

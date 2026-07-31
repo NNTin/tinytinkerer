@@ -8,6 +8,15 @@
  * - `balanced_overview` — it does not, so the budget is spread across the
  *   document's top-level structure rather than spent on its first N characters.
  *
+ * All three go through one primitive, `boundedSlice`. That is the point: a
+ * second path slicing raw offsets would not know about the container wrappers
+ * the corpus records, and #474 deliberately preserves directives. `boundedSlice`
+ * tracks source offsets separately from emitted characters and reserves **every**
+ * mandatory piece of syntax — the section's wrapper prefix and suffix, any fence
+ * or container it cuts into, and the truncation marker — before choosing where
+ * to cut. So the result is both independently valid Markdown and genuinely
+ * within budget.
+ *
  * Every rule below was chosen against this site's real corpus (all 28 authored
  * documents driven through `normalizeDocumentation`), not invented fixtures —
  * including `plugins-and-tools/plugin-infrastructure.md`, the >54,000-character
@@ -21,8 +30,17 @@ import type {
   DocumentationCorpusSection
 } from '@tinytinkerer/app-browser/documentation-corpus'
 
-/** Marks where text was cut. Kept short: it is spent from the same budget. */
+/** Marks where text was cut. Kept short: it is reserved from the same budget. */
 const TRUNCATION_MARKER = '\n\n…[truncated]\n'
+
+/**
+ * How far a cut may retreat to reach a paragraph break. A paragraph boundary
+ * reads better, but an unbounded retreat was measured spending about a fifth of
+ * the budget on whitespace alignment (16,112 returned characters instead of
+ * 19,299 on the oversized document), and a section opening with one long code
+ * block has no paragraph break inside the budget at all.
+ */
+const PARAGRAPH_RETREAT_DIVISOR = 8
 
 export type DocumentationOutlineEntry = { heading: string; level: number; anchor: string }
 
@@ -57,100 +75,188 @@ export const flattenOutline = (
     ...flattenOutline(item.children)
   ])
 
-/** The independently valid Markdown for one corpus section. */
-const sectionMarkdown = (
-  artifact: DocumentationCorpusDocumentArtifact,
-  section: DocumentationCorpusSection
-): string =>
-  `${section.selectionPrefix}${artifact.markdown.slice(section.startOffset, section.endOffset)}${section.selectionSuffix}`
+// ---------------------------------------------------------------------------
+// Structure scanning
+// ---------------------------------------------------------------------------
+
+type OpenConstruct = { kind: 'fence' | 'container'; marker: string; start: number }
 
 /**
- * Line starts in `text`, paired with the fence marker open *at* each one.
+ * What must be appended at each line start to make the text before it
+ * self-contained.
  *
- * Cutting text at an arbitrary offset can land inside a fenced code block, and
- * the result would not be valid Markdown — the rest of the response would render
- * as code. Tracking the fence per line start is what lets `truncateMarkdown`
- * close the block it cut into instead of throwing the cut away.
+ * Fence and container closers are kept apart because they belong on opposite
+ * sides of the truncation marker: a fence has to close *immediately*, or the
+ * marker renders as code, while a container closes *after* it, so the marker is
+ * visible prose inside the admonition it was cut out of.
+ *
+ * A fence is always innermost — directive lines inside a code block are code,
+ * not syntax — so there is at most one fence closer.
  */
-const lineStates = (text: string): { starts: number[]; openFence: (string | undefined)[] } => {
+type LineStructure = {
+  starts: number[]
+  fenceCloser: string[]
+  containerClosers: string[]
+  /** Start of the outermost container still open at the end of the text. */
+  unclosedContainerStart: number | undefined
+}
+
+const FENCE_OPEN = /^\s{0,3}(`{3,}|~{3,})/
+const FENCE_CLOSE = /^\s{0,3}(`{3,}|~{3,})\s*$/
+const CONTAINER_OPEN = /^\s{0,3}(:{3,})[A-Za-z]/
+const CONTAINER_CLOSE = /^\s{0,3}(:{3,})\s*$/
+
+const scanStructure = (text: string): LineStructure => {
   const starts: number[] = []
-  const openFence: (string | undefined)[] = []
+  const fenceCloser: string[] = []
+  const containerClosers: string[] = []
+  const stack: OpenConstruct[] = []
   let offset = 0
-  let open: string | undefined
+
   for (const line of text.split('\n')) {
     starts.push(offset)
-    openFence.push(open)
-    const match = /^\s{0,3}(`{3,}|~{3,})/.exec(line)
-    if (match) {
-      const marker = match[1]
-      if (open === undefined) {
-        open = marker
-      } else if (
-        marker[0] === open[0] &&
-        marker.length >= open.length &&
-        /^\s{0,3}[`~]+\s*$/.test(line)
-      ) {
-        open = undefined
+    const top = stack.at(-1)
+    fenceCloser.push(top?.kind === 'fence' ? `${top.marker}\n` : '')
+    containerClosers.push(
+      stack
+        .filter((item) => item.kind === 'container')
+        .reverse()
+        .map((item) => `${item.marker}\n`)
+        .join('')
+    )
+
+    if (top?.kind === 'fence') {
+      const close = FENCE_CLOSE.exec(line)
+      if (close && close[1][0] === top.marker[0] && close[1].length >= top.marker.length) {
+        stack.pop()
       }
+    } else {
+      const fence = FENCE_OPEN.exec(line)
+      const closeContainer = CONTAINER_CLOSE.exec(line)
+      const openContainer = CONTAINER_OPEN.exec(line)
+      if (fence) stack.push({ kind: 'fence', marker: fence[1], start: offset })
+      else if (closeContainer && top?.kind === 'container') stack.pop()
+      else if (openContainer)
+        stack.push({ kind: 'container', marker: openContainer[1], start: offset })
     }
     offset += line.length + 1
   }
-  return { starts, openFence }
+
+  return {
+    starts,
+    fenceCloser,
+    containerClosers,
+    unclosedContainerStart: stack.find((item) => item.kind === 'container')?.start
+  }
 }
 
 /**
- * Bounds `text` to `budget` characters at a Markdown-safe boundary.
+ * The length of `text` up to the point where it stops leaving a container
+ * directive open.
+ *
+ * Used for the balanced overview's preamble, which ends where the first outline
+ * root begins. When that root is authored inside an admonition, the span before
+ * it holds the `:::note` opener but not its closer — and the root's own
+ * `selectionPrefix` reproduces that opener anyway, so keeping it would emit it
+ * twice as well as leaving it unbalanced. Ending earlier does both jobs without
+ * inventing syntax.
+ */
+const balancedLength = (text: string): number =>
+  scanStructure(text).unclosedContainerStart ?? text.length
+
+// ---------------------------------------------------------------------------
+// The bounded-slice primitive
+// ---------------------------------------------------------------------------
+
+export type BoundedSlice = {
+  /** Emitted Markdown: independently valid, and never longer than the budget. */
+  markdown: string
+  /** How many characters of `source` were included, in source offsets. */
+  consumedSourceChars: number
+  truncated: boolean
+}
+
+const isParagraphBoundary = (text: string, offset: number): boolean =>
+  /\n[ \t]*\n$/.test(text.slice(Math.max(0, offset - 2), offset))
+
+/**
+ * Bounds `prefix + source + suffix` to `budget` characters at a Markdown-safe
+ * boundary.
  *
  * The cut is always a line start — never mid-line, so no list marker, table row,
- * or link is ever severed — and when it falls inside a fenced block the fence is
- * closed rather than abandoned.
+ * or link is severed — and the emitted length is computed **exactly** for each
+ * candidate rather than estimated, because the syntax that must be appended
+ * depends on where the cut lands. An earlier version reserved only the marker
+ * and then appended a fence closer, which returned 25 characters for a budget
+ * of 21.
  *
- * That last rule is not a detail. The obvious alternative, retreating to before
- * the block's opening, was measured on the real corpus and is far worse: it
- * drops budget utilisation from ~97% to 71%, and reduces a section whose code
- * block starts right after its heading to the heading alone —
- * `self-hosting/litellm-setup.md`'s Troubleshooting came back as 20 characters.
- * Closing the fence keeps the returned Markdown independently valid while
- * spending the budget on content. Truncated GFM tables need nothing special:
- * a header, its separator, and whole rows are already a valid table.
+ * Closing a fence rather than retreating past it is what makes the budget usable
+ * at all: retreating measured 71% utilisation against ~97%, and reduced a
+ * section whose code block starts right after its heading to the heading alone.
+ * Truncated GFM tables need nothing special — a header, its separator, and whole
+ * rows are already a valid table.
  */
-export const truncateMarkdown = (text: string, budget: number): string => {
-  if (text.length <= budget) return text
-  if (budget <= TRUNCATION_MARKER.length) return ''
-
-  const limit = budget - TRUNCATION_MARKER.length
-  const { starts, openFence } = lineStates(text)
-
-  // The last line start at or below the limit, preferring one that follows a
-  // blank line so a cut lands between paragraphs where it can.
-  let cutIndex = -1
-  let paragraphIndex = -1
-  for (let index = 1; index < starts.length; index += 1) {
-    const start = starts[index]
-    if (start > limit) break
-    cutIndex = index
-    if (/\n[ \t]*\n$/.test(text.slice(Math.max(0, start - 2), start))) paragraphIndex = index
+export const boundedSlice = (options: {
+  source: string
+  prefix?: string
+  suffix?: string
+  budget: number
+}): BoundedSlice => {
+  const { source, prefix = '', suffix = '', budget } = options
+  const whole = `${prefix}${source}${suffix}`
+  if (whole.length <= budget) {
+    return { markdown: whole, consumedSourceChars: source.length, truncated: false }
   }
-  if (cutIndex < 0) return ''
 
-  // A paragraph boundary reads better, but only if reaching it costs little.
-  // Measured on the real corpus: allowing an arbitrary retreat spends about a
-  // fifth of the budget on whitespace alignment (16,112 returned characters
-  // instead of 19,299 for the oversized document), and a section that opens
-  // with one long code block has no paragraph break inside the budget at all.
-  // The `…[truncated]` marker already tells the reader the text was cut, so a
-  // mid-paragraph cut is honest rather than confusing.
-  const paragraphRetreatAllowance = Math.floor(limit / 8)
+  // Scanned **with** the prefix, not just the source. A section's
+  // `selectionPrefix` is where its container opens — `:::note` lives there, not
+  // in the slice — so scanning the source alone would find nothing to close and
+  // emit an opener with no closer.
+  const combined = `${prefix}${source}`
+  const { starts, fenceCloser, containerClosers } = scanStructure(combined)
+
+  const emittedLength = (index: number): number =>
+    starts[index] +
+    fenceCloser[index].length +
+    TRUNCATION_MARKER.length +
+    containerClosers[index].length
+
+  let cut = -1
+  let paragraphCut = -1
+  for (let index = 1; index < starts.length; index += 1) {
+    // Candidates start after the prefix: cutting into it would emit a partial
+    // opener, and the prefix is mandatory syntax rather than content.
+    if (starts[index] < prefix.length) continue
+    // Not a `break`: the closing syntax a cut needs varies with the cut, so a
+    // later candidate can fit where an earlier one did not.
+    if (emittedLength(index) > budget) continue
+    cut = index
+    if (isParagraphBoundary(combined, starts[index])) paragraphCut = index
+  }
+  if (cut < 0) return { markdown: '', consumedSourceChars: 0, truncated: true }
+
+  const allowance = Math.floor(budget / PARAGRAPH_RETREAT_DIVISOR)
   const chosen =
-    paragraphIndex > 0 && starts[cutIndex] - starts[paragraphIndex] <= paragraphRetreatAllowance
-      ? paragraphIndex
-      : cutIndex
+    paragraphCut > 0 && starts[cut] - starts[paragraphCut] <= allowance ? paragraphCut : cut
 
-  const cut = starts[chosen]
-  const fence = openFence[chosen]
-  const closing = fence === undefined ? '' : `${fence}\n`
-  return `${text.slice(0, cut)}${closing}${TRUNCATION_MARKER}`
+  // `suffix` is deliberately dropped on this path. It closes exactly the
+  // containers the *untruncated* slice leaves open; once the slice is cut, the
+  // set still open is different, and `containerClosers` is that set. Emitting
+  // both would close some of them twice.
+  return {
+    markdown: `${combined.slice(0, starts[chosen])}${fenceCloser[chosen]}${TRUNCATION_MARKER}${containerClosers[chosen]}`,
+    consumedSourceChars: starts[chosen] - prefix.length,
+    truncated: true
+  }
 }
+
+/** `boundedSlice` over a bare span, kept as a named primitive for its own tests. */
+export const truncateMarkdown = (text: string, budget: number): string =>
+  boundedSlice({ source: text, budget }).markdown
+
+// ---------------------------------------------------------------------------
+// Allocation
+// ---------------------------------------------------------------------------
 
 /**
  * Max-min fair ("water-filling") allocation of `budget` across `sizes`.
@@ -180,9 +286,8 @@ export const allocateBudget = (sizes: readonly number[], budget: number): number
       break
     }
     for (const index of satisfied) {
-      const size = sizes[index]
-      allocation[index] = size
-      remaining -= size
+      allocation[index] = sizes[index]
+      remaining -= sizes[index]
     }
     open = open.filter((index) => sizes[index] > share)
   }
@@ -190,16 +295,26 @@ export const allocateBudget = (sizes: readonly number[], budget: number): number
   return allocation
 }
 
+// ---------------------------------------------------------------------------
+// Selections
+// ---------------------------------------------------------------------------
+
 type OverviewSlice = {
   heading: string
   anchor: string | undefined
-  start: number
-  end: number
+  source: string
+  prefix: string
+  suffix: string
+  /** Offset of `source` within the document, for `nextSectionAnchor`. */
+  documentOffset: number
+  /** Emitted size when returned whole, which allocation budgets against. */
+  size: number
 }
 
 /**
  * The units a balanced overview is built from: the document preamble, then one
- * slice per top-level outline entry.
+ * slice per top-level outline entry, each carrying the container wrappers the
+ * corpus recorded for it.
  *
  * Three properties of the real corpus decide this shape:
  *
@@ -223,19 +338,30 @@ const overviewSlices = (artifact: DocumentationCorpusDocumentArtifact): Overview
   const slices: OverviewSlice[] = []
   const firstRootStart = roots[0]?.startOffset ?? artifact.markdown.length
   if (firstRootStart > 0) {
-    slices.push({
-      heading: artifact.sections[0]?.title ?? '',
-      anchor: undefined,
-      start: 0,
-      end: firstRootStart
-    })
+    const span = artifact.markdown.slice(0, firstRootStart)
+    const preamble = span.slice(0, balancedLength(span))
+    if (preamble.length > 0) {
+      slices.push({
+        heading: artifact.sections[0]?.title ?? '',
+        anchor: undefined,
+        source: preamble,
+        prefix: '',
+        suffix: '',
+        documentOffset: 0,
+        size: preamble.length
+      })
+    }
   }
+
   for (const section of roots) {
     slices.push({
       heading: section.title,
       anchor: section.anchor ?? undefined,
-      start: section.startOffset,
-      end: section.endOffset
+      source: artifact.markdown.slice(section.startOffset, section.endOffset),
+      prefix: section.selectionPrefix,
+      suffix: section.selectionSuffix,
+      documentOffset: section.startOffset,
+      size: section.characterCount
     })
   }
   return slices
@@ -244,16 +370,18 @@ const overviewSlices = (artifact: DocumentationCorpusDocumentArtifact): Overview
 const truncationOf = (
   sourceCharacterCount: number,
   sections: readonly DocumentationSelectionSection[],
+  truncated: boolean,
   nextSectionAnchor: string | null
 ): DocumentationCorpusReadTruncation => {
   const returnedCharacterCount = sections.reduce((total, item) => total + item.markdown.length, 0)
-  const omittedCharacterCount = Math.max(0, sourceCharacterCount - returnedCharacterCount)
   return {
-    truncated: omittedCharacterCount > 0,
+    truncated,
     sourceCharacterCount,
     returnedCharacterCount,
-    omittedCharacterCount,
-    nextSectionAnchor: omittedCharacterCount > 0 ? nextSectionAnchor : null
+    omittedCharacterCount: truncated
+      ? Math.max(0, sourceCharacterCount - returnedCharacterCount)
+      : 0,
+    nextSectionAnchor: truncated ? nextSectionAnchor : null
   }
 }
 
@@ -269,49 +397,57 @@ const nextAnchorAfter = (
   artifact.sections.find((section) => section.anchor !== null && section.startOffset >= offset)
     ?.anchor ?? null
 
-/** The whole document, when it fits. */
+/** The whole document, truncated at a safe boundary if it overruns. */
 const selectFull = (
   artifact: DocumentationCorpusDocumentArtifact,
   budget: number
 ): DocumentationSelection => {
-  const markdown = truncateMarkdown(artifact.markdown, budget)
+  const slice = boundedSlice({ source: artifact.markdown, budget })
   const heading = artifact.sections[0]?.title
-  const sections: DocumentationSelectionSection[] = [{ ...(heading ? { heading } : {}), markdown }]
+  const sections: DocumentationSelectionSection[] = [
+    { ...(heading ? { heading } : {}), markdown: slice.markdown }
+  ]
   return {
     selection: 'full',
     sections,
     truncation: truncationOf(
       artifact.markdown.length,
       sections,
-      nextAnchorAfter(artifact, markdown.length)
+      slice.truncated,
+      nextAnchorAfter(artifact, slice.consumedSourceChars)
     )
   }
 }
 
-/** One named section, truncated at a safe boundary if it alone overruns. */
+/** One named section, with the container wrappers the corpus recorded for it. */
 export const selectSection = (
   artifact: DocumentationCorpusDocumentArtifact,
   section: DocumentationCorpusSection,
   budget: number
 ): DocumentationSelection => {
-  const source = sectionMarkdown(artifact, section)
-  const markdown = truncateMarkdown(source, budget)
+  const slice = boundedSlice({
+    source: artifact.markdown.slice(section.startOffset, section.endOffset),
+    prefix: section.selectionPrefix,
+    suffix: section.selectionSuffix,
+    budget
+  })
   const sections: DocumentationSelectionSection[] = [
     {
       heading: section.title,
       ...(section.anchor ? { anchor: section.anchor } : {}),
-      markdown
+      markdown: slice.markdown
     }
   ]
   return {
     selection: 'section',
     sections,
     truncation: truncationOf(
-      source.length,
+      section.characterCount,
       sections,
+      slice.truncated,
       // Where the returned text stopped inside the document, so the suggestion
       // is a section the reader has not already been shown.
-      nextAnchorAfter(artifact, section.startOffset + markdown.length)
+      nextAnchorAfter(artifact, section.startOffset + slice.consumedSourceChars)
     )
   }
 }
@@ -328,28 +464,36 @@ const selectBalancedOverview = (
 ): DocumentationSelection => {
   const slices = overviewSlices(artifact)
   const allocation = allocateBudget(
-    slices.map((slice) => slice.end - slice.start),
+    slices.map((slice) => slice.size),
     budget
   )
 
   let firstTruncatedAnchor: string | null = null
+  let anyTruncated = false
   const sections = slices.map((slice, index) => {
-    const source = artifact.markdown.slice(slice.start, slice.end)
-    const markdown = truncateMarkdown(source, allocation[index])
-    if (markdown.length < source.length && firstTruncatedAnchor === null) {
-      firstTruncatedAnchor = slice.anchor ?? null
+    const bounded = boundedSlice({
+      source: slice.source,
+      prefix: slice.prefix,
+      suffix: slice.suffix,
+      budget: allocation[index]
+    })
+    if (bounded.truncated) {
+      anyTruncated = true
+      if (firstTruncatedAnchor === null) firstTruncatedAnchor = slice.anchor ?? null
     }
     return {
       ...(slice.heading ? { heading: slice.heading } : {}),
       ...(slice.anchor ? { anchor: slice.anchor } : {}),
-      markdown
+      markdown: bounded.markdown
     }
   })
 
   return {
     selection: 'balanced_overview',
     sections,
-    truncation: truncationOf(artifact.markdown.length, sections, firstTruncatedAnchor)
+    // Derived rather than assumed, even though the caller only reaches here
+    // because the document did not fit.
+    truncation: truncationOf(artifact.markdown.length, sections, anyTruncated, firstTruncatedAnchor)
   }
 }
 

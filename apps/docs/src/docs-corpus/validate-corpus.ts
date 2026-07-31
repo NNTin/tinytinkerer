@@ -1,15 +1,15 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type {
-  DocumentationCorpusOutlineItem,
-  DocumentationCorpusSection
-} from '@tinytinkerer/app-browser/documentation-corpus'
 import {
   DOCUMENTATION_CORPUS_OUTPUT_DIRECTORY,
   serializeDocumentationCorpusAssets,
   type GeneratedDocumentationCorpus
 } from './build-corpus'
+import {
+  documentationArtifactEntryProblem,
+  documentationArtifactProblem
+} from './artifact-invariants'
 import { canonicalizeDocusaurusPermalink } from './docusaurus-compatibility'
 
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex')
@@ -23,39 +23,6 @@ const required = <Value>(value: Value | undefined, message: string): Value => {
     throw new Error(`documentation corpus invariant failed: ${message}`)
   }
   return value
-}
-
-const walkOutline = (
-  items: DocumentationCorpusOutlineItem[],
-  visit: (item: DocumentationCorpusOutlineItem) => void
-): void => {
-  for (const item of items) {
-    visit(item)
-    walkOutline(item.children, visit)
-  }
-}
-
-const assertValidSection = (
-  ref: string,
-  markdown: string,
-  section: DocumentationCorpusSection
-): void => {
-  if (
-    section.startOffset < 0 ||
-    section.startOffset > section.contentStartOffset ||
-    section.contentStartOffset > section.endOffset ||
-    section.endOffset > markdown.length
-  ) {
-    fail(`${ref} section ${section.index} has invalid offsets`)
-  }
-  const expectedCount =
-    section.selectionPrefix.length +
-    section.endOffset -
-    section.startOffset +
-    section.selectionSuffix.length
-  if (section.characterCount !== expectedCount) {
-    fail(`${ref} section ${section.index} has an invalid characterCount`)
-  }
 }
 
 export const validateNoHiddenAuthorComments = (ref: string, markdown: string): void => {
@@ -113,13 +80,8 @@ export const validateDocumentationCorpusInvariants = (
       artifactRelativePath ? corpus.artifacts.get(artifactRelativePath) : undefined,
       `${identity} points to a missing artifact`
     )
-    if (
-      artifact.ref !== entry.ref ||
-      artifact.version !== entry.version ||
-      artifact.contentHash !== entry.contentHash
-    ) {
-      fail(`${identity} manifest metadata does not match its artifact`)
-    }
+    const entryProblem = documentationArtifactEntryProblem(entry, artifact)
+    if (entryProblem) fail(`${identity} artifact ${entryProblem.message}`)
 
     const artifactBytes = serializeDocumentationCorpusAssets(corpus).get(artifactRelativePath)
     if (!artifactBytes || sha256(artifactBytes) !== entry.artifactHash) {
@@ -129,18 +91,11 @@ export const validateDocumentationCorpusInvariants = (
       fail(`${identity} contentHash does not match normalized Markdown`)
     }
 
-    const anchors = new Set<string>()
-    for (const section of artifact.sections) {
-      assertValidSection(identity, artifact.markdown, section)
-      if (section.anchor !== null) {
-        if (anchors.has(section.anchor)) fail(`${identity} has duplicate anchor ${section.anchor}`)
-        anchors.add(section.anchor)
-      }
-    }
-    walkOutline(artifact.outline, (item) => {
-      if (!anchors.has(item.anchor))
-        fail(`${identity} outline anchor ${item.anchor} has no section`)
-    })
+    // The same semantic invariants the runtime artifact store enforces, from the
+    // one shared implementation — so a corpus that would be rejected in the
+    // browser cannot pass the build.
+    const semantic = documentationArtifactProblem(artifact)
+    if (semantic) fail(`${identity} artifact ${semantic}`)
     validateNoHiddenAuthorComments(identity, artifact.markdown)
   }
 

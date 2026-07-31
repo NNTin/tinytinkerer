@@ -7,6 +7,7 @@
  * pipeline (docs-tools/__tests__/read-document.test.ts) against this site's real
  * documents; what is left here is the store behaviour a read cannot observe.
  */
+import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   loadDocumentationArtifact,
@@ -132,6 +133,47 @@ describe('loadDocumentationArtifact', () => {
       ok: false,
       retryable: false
     })
+  })
+
+  it('rejects an artifact whose outline points at the wrong section', async () => {
+    // The runtime enforces the *same* semantic invariants the build does, from
+    // the one shared validator — so a corpus that could not pass the build
+    // cannot be trusted in the browser either. Without this the read would
+    // succeed and return text from elsewhere in the document.
+    const broken = structuredClone(CANONICAL.artifact)
+    broken.outline[0].sectionIndex = 0
+    const bytes = `${JSON.stringify(broken)}\n`
+    // Republished as a *self-consistent* build would: bytes, artifact hash, and
+    // manifest summary all agree, so nothing but the semantic validator can
+    // catch it. Tampering without rehashing would only re-test the byte check.
+    const entry = {
+      ...CANONICAL.entry,
+      artifact: `${CANONICAL.entry.artifact}?broken-outline`,
+      artifactHash: createHash('sha256').update(bytes).digest('hex')
+    }
+    installDocumentationCorpus(undefined, {
+      [entry.artifact]: () => Promise.resolve(new Response(bytes, { status: 200 }))
+    })
+
+    expect(await loadDocumentationArtifact(entry)).toMatchObject({
+      ok: false,
+      code: 'document_invalid',
+      retryable: false
+    })
+  })
+
+  it('rejects an artifact whose manifest summary no longer matches it', async () => {
+    installDocumentationCorpus(undefined, {
+      [CANONICAL.entry.artifact]: () =>
+        Promise.resolve(new Response(CANONICAL.bytes, { status: 200 }))
+    })
+
+    expect(
+      await loadDocumentationArtifact({
+        ...CANONICAL.entry,
+        sectionCount: CANONICAL.entry.sectionCount + 1
+      })
+    ).toMatchObject({ ok: false, retryable: false })
   })
 
   it('is not consulted by anything until a read asks for a body', () => {

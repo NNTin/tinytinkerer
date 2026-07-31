@@ -102,12 +102,15 @@ describe('documentation corpus validation', () => {
     duplicateAnchor.manifest.documents[0].artifactHash = createHash('sha256')
       .update(`${JSON.stringify(duplicateAnchorArtifact)}\n`)
       .digest('hex')
-    expect(() =>
-      validateDocumentationCorpusInvariants(duplicateAnchor, {
-        baseUrl: '/base/',
-        trailingSlash: true
-      })
-    ).toThrow('duplicate anchor addressable')
+    expect(
+      () =>
+        validateDocumentationCorpusInvariants(duplicateAnchor, {
+          baseUrl: '/base/',
+          trailingSlash: true
+        })
+      // Wording now comes from the shared `documentationArtifactProblem`, which
+      // the runtime artifact store enforces too — see docs-corpus/artifact-invariants.ts.
+    ).toThrow('more than one section anchored "addressable"')
 
     const invalidHash = structuredClone(corpus)
     invalidHash.manifest.documents[0].artifactHash = '0'.repeat(64)

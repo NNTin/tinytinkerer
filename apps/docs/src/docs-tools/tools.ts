@@ -30,7 +30,7 @@ import {
 } from './activity'
 import { resolveCurrentDocument } from './current-document'
 import { readDocument } from './read-document'
-import { RESPONSE_CHARACTER_CAP, serializedLength } from './response-cap'
+import { boundedMessage, RESPONSE_CHARACTER_CAP, serializedLength } from './response-cap'
 import {
   readCurrentDocInputSchema,
   readCurrentDocOutputSchema,
@@ -98,7 +98,8 @@ const createSearchDocsTool = (
       return {
         status: 'search_unavailable',
         code: response.code,
-        message: response.message,
+        // Upstream text this code did not choose the length of.
+        message: boundedMessage(response.message),
         retryable: response.retryable
       }
     }
@@ -154,14 +155,18 @@ const createReadCurrentDocTool = (
   async execute(input) {
     const current = await resolveCurrentDocument()
     if (current.kind === 'not-on-doc-page') {
-      return { status: 'not_on_doc_page', pathname: current.pathname, message: current.message }
+      return {
+        status: 'not_on_doc_page',
+        pathname: current.pathname,
+        message: boundedMessage(current.message)
+      }
     }
     if (current.kind === 'unavailable') {
       return {
         status: 'unavailable',
         pathname: current.pathname,
         reason: current.reason,
-        message: current.message,
+        message: boundedMessage(current.message),
         retryable: current.retryable
       }
     }

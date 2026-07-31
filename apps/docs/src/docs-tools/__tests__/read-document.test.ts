@@ -203,6 +203,48 @@ describe('readDocument', () => {
       }
     })
 
+    it('bounds a typed failure whose inputs are pathologically large', async () => {
+      installDocumentationCorpus()
+      // A structurally valid but enormous ref used to produce a
+      // `document_not_found` of about 80,000 serialized characters — well past
+      // the transport limit, which would then cut the JSON mid-tail and leave
+      // the model an unparseable fragment instead of an actionable error.
+      const output = await read({ ref: 'x'.repeat(40_000) })
+
+      expect(output.status).toBe('error')
+      expect(serializedLength(output)).toBeLessThanOrEqual(RESPONSE_CHARACTER_CAP)
+    })
+
+    it('bounds a bad-anchor failure that also carries the outline', async () => {
+      installDocumentationCorpus()
+      const output = await read({ ref: OVERSIZED.entry.ref, anchor: 'y'.repeat(40_000) })
+
+      expect(output).toMatchObject({ status: 'error', code: 'section_not_found' })
+      expect(serializedLength(output)).toBeLessThanOrEqual(RESPONSE_CHARACTER_CAP)
+    })
+
+    it('bounds a failure whose message comes from upstream', async () => {
+      installDocumentationCorpus(undefined, {
+        [CANONICAL.entry.artifact]: () => Promise.reject(new Error('z'.repeat(50_000)))
+      })
+      const output = await read({ ref: CANONICAL.entry.ref })
+
+      expect(output).toMatchObject({ status: 'error', code: 'document_unavailable' })
+      expect(serializedLength(output)).toBeLessThanOrEqual(RESPONSE_CHARACTER_CAP)
+    })
+
+    it('keeps every failure variant inside the enforced output limit', async () => {
+      const { manifestUrl } = installDocumentationCorpus()
+      resetDocumentationCorpus()
+      installDocumentationCorpus(undefined, {
+        [manifestUrl]: () => Promise.reject(new Error('m'.repeat(60_000)))
+      })
+      const output = await read({ ref: 'q'.repeat(1_000) })
+
+      expect(output.status).toBe('error')
+      expect(serializedLength(output)).toBeLessThanOrEqual(RESPONSE_CHARACTER_CAP)
+    })
+
     it('honours a smaller maxChars', async () => {
       installDocumentationCorpus()
       const output = await read({ ref: CANONICAL.entry.ref, maxChars: 2_000 })
@@ -210,6 +252,34 @@ describe('readDocument', () => {
 
       expect(output.truncation.returnedCharacterCount).toBeLessThanOrEqual(2_000)
       expect(output.truncated).toBe(true)
+    })
+
+    it('does not report a trimmed outline through the content-truncation fields', async () => {
+      installDocumentationCorpus()
+      const output = await read({ ref: UNLISTED.entry.ref })
+      if (output.status !== 'ok') throw new Error('expected ok')
+
+      // A document that fits returns everything: `truncated` describes document
+      // text and `outlineTruncated` describes metadata, and neither may stand in
+      // for the other. Overloading them produced `truncated: true` beside
+      // `omittedCharacterCount: 0`.
+      expect(output.truncated).toBe(false)
+      expect(output.outlineTruncated).toBe(false)
+      expect(output.truncation.omittedCharacterCount).toBe(0)
+    })
+
+    it('reports consistent truncation accounting whenever it truncates', async () => {
+      installDocumentationCorpus()
+      for (const ref of [CANONICAL.entry.ref, OVERSIZED.entry.ref]) {
+        const output = await read({ ref, maxChars: 3_000 })
+        if (output.status !== 'ok') throw new Error('expected ok')
+
+        expect(output.truncated).toBe(output.truncation.truncated)
+        expect(output.truncation.omittedCharacterCount).toBeGreaterThan(0)
+        expect(output.truncation.returnedCharacterCount).toBeLessThan(
+          output.truncation.sourceCharacterCount
+        )
+      }
     })
   })
 

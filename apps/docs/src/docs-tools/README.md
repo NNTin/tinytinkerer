@@ -85,21 +85,42 @@ Owner decisions that shaped these contracts are recorded on the issue
   output limit, even if a caller supplies a larger `maxChars`" describes
   bounding, not an error.
 
-## Corpus recovery
+## Corpus recovery, and what "awaited" means
 
 `read_current_doc` calls #476's `retryCorpus()` when it sees a retryable corpus
-failure, and waits for the outcome before answering.
+failure, and **waits for the retry it started** before answering.
 
-That is the #476 review's finding applied. `@theme/Root` stays mounted for the
-whole SPA session, so a single failed manifest load would otherwise be permanent
-while the state still advertised `retryable: true` — a tool reporting it would,
-in that review's words, "tell the model to retry forever while no retry can
-change the state." `retryCorpus()` is gated (a no-op unless the corpus is in a
-retryable failure), so calling it cannot restart a healthy load or hammer one
-already in flight.
+Triggering recovery is not enough, and the difference is subtle enough to have
+been wrong once. The provider's `retryCorpus` calls `setCorpus`, so the _current_
+snapshot immediately afterwards is still the failure that prompted the retry —
+a wait keyed on "is the state settled?" is satisfied by that failure and returns
+it. Nor can the values discriminate: a retry that also fails republishes an
+equal-looking failure.
 
-The waits are bounded well inside the runtime's 10s machine tool timeout, so a
-corpus that never settles costs a late, honest answer rather than a killed call.
+So every published snapshot carries a monotonically increasing `revision`, and
+the wait is for a snapshot **newer than the one that triggered the retry** which
+is also no longer pending — skipping the interim `corpus_pending` the provider
+publishes on its way to the outcome.
+
+`corpus_pending` is deliberately _not_ retried even though #476 marks it
+retryable: the provider's gate makes `retryCorpus` a no-op while a load is in
+flight, so calling it would spend the deadline for nothing.
+
+**One deadline, not one per wait.** First-publication, corpus-settling, and
+retry waits share a single absolute budget of 4s. Independent timeouts compose
+badly — 1s + 4s + 4s would have consumed almost all of the runtime's 10s machine
+tool timeout before the artifact fetch could start.
+
+## Route pinning
+
+A call is **pinned to the route it was made on**. Every wait requires the
+snapshot to still be for that pathname, so a reader who asks about "this page"
+and then navigates gets an answer about the page they asked about.
+
+This is a policy choice rather than a fallout of the implementation, recorded
+here because #479 and #480 would otherwise inherit it by accident: following the
+latest route would mean answering about a page the reader never asked about,
+using a question they asked somewhere else.
 
 ## Bounding a response
 
@@ -118,6 +139,26 @@ count of the Markdown alone is not a safe proxy for what goes on the wire. The
 constant is re-exported through
 `@tinytinkerer/app-browser/documentation-corpus` — not the app-browser barrel,
 which reaches `virtual:pwa-register` and cannot load outside a Vite app build.
+
+**Failures are bounded too, and that is where the limit actually bit.** Fitting
+only successful reads left the typed-failure contract defeating itself: `ref` and
+`anchor` had no upper bound, and a 40,000-character `ref` produced a
+`document_not_found` serializing to about **80,000 characters** — which the
+transport would cut mid-JSON, handing the model an unparseable fragment instead
+of an actionable error. Three things fix it, in order of how much they matter:
+
+1. `ref` and `anchor` are bounded in the input contracts (300 characters; this
+   site's longest real ref is 39 and its longest anchor 71);
+2. every free-form message — including upstream text this code did not author —
+   is bounded before it enters a payload;
+3. every output variant, success and failure alike, passes a final serialized
+   size check, dropping the outline from a failure rather than letting it be
+   mangled.
+
+A trimmed outline on a _successful_ read is reported by its own
+`outlineTruncated` flag, never through the content-truncation fields: those
+describe the document text, and overloading them produced `truncated: true`
+beside `omittedCharacterCount: 0` while what was actually omitted was metadata.
 
 ## Selection
 
@@ -166,13 +207,43 @@ Redistribution passes are therefore not implemented. What matters about max-min
 fairness is the _floor_ it guarantees: a slice given less than a heading and a
 sentence contributes nothing to an overview.
 
+### One primitive, structure-aware
+
+All three selections go through `boundedSlice`. That is the point rather than
+tidiness: a second path slicing raw offsets does not know about the container
+wrappers the corpus records, and #474 deliberately preserves directives. An
+earlier revision had exactly that split, and both halves were wrong — an
+oversized section authored inside `:::note` came back opening the admonition and
+never closing it, while the balanced overview ignored `selectionPrefix`/
+`selectionSuffix` entirely and sliced raw Markdown.
+
+`boundedSlice` scans the prefix **together with** the source (a section's
+container opens in its prefix, not in its slice), tracks source offsets
+separately from emitted characters, and computes the emitted length **exactly**
+for each candidate cut — because the syntax that must be appended depends on
+where the cut lands. Estimating it returned 25 characters for a budget of 21.
+
+On the truncation path the recorded `selectionSuffix` is deliberately dropped:
+it closes exactly the containers an _untruncated_ slice leaves open, and once
+the slice is cut the still-open set is different. The scanner's own closers are
+that set.
+
+The preamble gets one extra rule. It runs up to the first outline root, so when
+that root is authored inside an admonition the raw span before it holds an
+opener whose closer is further down — and the root's own `selectionPrefix`
+reproduces that opener anyway. The preamble therefore ends where it stops
+leaving a container open, which fixes the imbalance and the duplication at once
+without inventing syntax.
+
 ### Truncation: cut at a line boundary, close the fence
 
 A cut is always a line start — never mid-line, so no list marker, table row, or
 link is severed — and when it lands inside a fenced block, the fence is **closed**
-rather than the cut abandoned.
+rather than the cut abandoned. A fence closes _before_ the truncation marker so
+the marker is not rendered as code; containers close _after_ it, so the marker
+reads as prose inside the admonition it was cut out of.
 
-That last rule is not a detail:
+That rule is not a detail:
 
 | Rule                                                                           | Result                                                                                                                                                                 |
 | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -202,6 +273,25 @@ rows are already a valid table.
 | `error` / `content_hash_mismatch`    | The artifact's bytes are not what the manifest recorded               | No        |
 | `error` / `section_not_found`        | No such anchor — the response carries the available `outline`         | No        |
 | `search_unavailable` / _(#475 code)_ | Retrieval could not run                                               | Depends   |
+
+## Artifact validity has one definition
+
+`artifact-invariants.ts` is the single answer to "is this artifact internally
+consistent?", used by both `validate-corpus.ts` at build time and the runtime
+artifact store. It checks section positions, offsets, character counts, anchor
+uniqueness, and outline-to-section referential integrity — the relationships
+selection reads as if they agreed, none of which a type can express and none of
+which throws when violated. A bad `sectionIndex` does not fail; it silently
+produces an overview of the wrong parts of a document.
+
+The store adds only the checks that need both sides: the recomputed byte hash,
+and the manifest summary. Those report `identity` (this is a different document)
+apart from `content` (this is not what the manifest recorded), so the two map to
+different failure codes rather than being re-derived from which field differed.
+
+Keeping a third interpretation in the store would have been the kind of drift
+#482 later asks us to remove, and it is much cheaper to avoid before #478 and
+#479 consume the API.
 
 ## What is not here
 

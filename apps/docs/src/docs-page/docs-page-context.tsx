@@ -45,6 +45,7 @@ import {
   type DocsPageDiagnostic,
   type DocsPageResolution
 } from './active-document'
+import { useIsomorphicLayoutEffect } from './isomorphic-layout-effect'
 import { publishDocsPageSnapshot } from './page-snapshot'
 
 /**
@@ -188,10 +189,19 @@ export const DocsPageProvider = ({ children }: { children: ReactNode }): ReactNo
 
   // Republished for non-React consumers — #477's documentation tools run from
   // the agent runtime, outside this tree, and must answer from the same
-  // resolution rather than resolving the route a second way. From an effect, so
-  // only a render React actually committed can become a tool's answer, and so
-  // static rendering publishes nothing.
-  useEffect(() => {
+  // resolution rather than resolving the route a second way.
+  //
+  // A **layout** effect, not a passive one. Passive effects flush after paint,
+  // so a tool call landing between an SPA route commit and that flush would
+  // have read the previous route's document — reintroducing exactly the
+  // stale-page window #476 eliminated by deriving pathname and identity in the
+  // same render. A layout effect runs synchronously at commit, so the published
+  // snapshot is never older than the committed route.
+  //
+  // Still an effect rather than a render-phase write: only a render React
+  // actually committed may become a tool's answer, and static rendering (where
+  // no effect runs) must publish nothing at all.
+  useIsomorphicLayoutEffect(() => {
     publishDocsPageSnapshot({ ...value, siteConfig: { baseUrl, trailingSlash } })
   }, [value, baseUrl, trailingSlash])
 

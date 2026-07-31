@@ -7,28 +7,35 @@
  * resolution (docs-page/page-snapshot.ts) rather than re-deriving anything: the
  * DOM is never read, and neither is the route.
  *
- * The corpus recovery below is the #476 review's finding applied. `retryCorpus()`
- * exists because `@theme/Root` stays mounted for the whole SPA session, so a
- * single failed manifest load would otherwise be permanent while the state still
- * advertised `retryable: true`. A tool that reported that state without invoking
- * the recovery would, in that review's words, "tell the model to retry forever
- * while no retry can change the state" — so this invokes it, waits for the
- * result, and only then answers.
+ * Two properties of this module are load-bearing and easy to get wrong.
+ *
+ * **Recovery is awaited, not merely triggered.** `retryCorpus()` exists because
+ * `@theme/Root` stays mounted for the whole SPA session, so a failed manifest
+ * load would otherwise be permanent while the state still advertised
+ * `retryable: true`. Triggering it and answering immediately is no better: the
+ * provider's `setCorpus` is asynchronous React state, so the *current* snapshot
+ * is still the failure that prompted the retry. Waiting for a snapshot with a
+ * newer `revision` is what makes the difference — the values cannot discriminate
+ * (a retry that fails republishes an equal-looking failure), only the
+ * publication identity can.
+ *
+ * **The answer is pinned to the route the call was made on.** A reader who asks
+ * about "this page" and then navigates meant the page they asked about, so a
+ * later route never retargets an in-flight call.
  */
 import { awaitDocsPageSnapshot, readDocsPageSnapshot, type DocsPageSnapshot } from '../docs-page'
 import type { DocsActiveDocument } from '../docs-page'
 
 /**
- * How long identity resolution may wait on asynchronous corpus state.
+ * One absolute budget for **all** asynchronous waiting in this module, not one
+ * per wait.
  *
- * Comfortably inside the runtime's 10s machine tool timeout (`toolTimeoutMs`),
- * with the remainder left for the artifact fetch that follows. A corpus that
- * never settles costs a late, honest answer rather than a killed tool call.
+ * Independent timeouts compose badly: a first-publication wait, a
+ * corpus-settling wait, and a retry wait at 1s + 4s + 4s could spend 9s of the
+ * runtime's 10s machine tool timeout before the artifact fetch had even
+ * started. A single deadline leaves the rest of the budget for the read.
  */
-const CORPUS_SETTLE_TIMEOUT_MS = 4_000
-
-/** The provider publishes on its first commit; this covers the race with it. */
-const SNAPSHOT_TIMEOUT_MS = 1_000
+const IDENTITY_RESOLUTION_BUDGET_MS = 4_000
 
 export type CurrentDocumentOutcome =
   | { kind: 'document'; snapshot: DocsPageSnapshot; document: DocsActiveDocument }
@@ -45,16 +52,28 @@ export type CurrentDocumentOutcome =
       retryable: boolean
     }
 
-const settled = (snapshot: DocsPageSnapshot): boolean =>
-  snapshot.active.status === 'document' || snapshot.active.reason !== 'corpus_pending'
+const isPending = (snapshot: DocsPageSnapshot): boolean =>
+  snapshot.active.status === 'no-document' && snapshot.active.reason === 'corpus_pending'
+
+/**
+ * A failure a retry could plausibly change. `corpus_pending` is excluded even
+ * though #476 marks it retryable: the provider's `retryCorpus` is gated to
+ * *unavailable* states, so calling it while a load is already in flight is a
+ * no-op that would burn the remaining budget for nothing.
+ */
+const isRecoverableFailure = (snapshot: DocsPageSnapshot): boolean =>
+  snapshot.active.status === 'no-document' && snapshot.active.retryable && !isPending(snapshot)
 
 export const resolveCurrentDocument = async (): Promise<CurrentDocumentOutcome> => {
+  const deadline = Date.now() + IDENTITY_RESOLUTION_BUDGET_MS
+  const remaining = (): number => Math.max(0, deadline - Date.now())
+
   let snapshot = readDocsPageSnapshot()
   if (!snapshot) {
-    // Not "no document" — nobody has answered the question yet. That happens
-    // during static rendering, and would happen if the provider were not
-    // mounted; both are worth a short wait rather than a confident wrong answer.
-    snapshot = await awaitDocsPageSnapshot(() => true, SNAPSHOT_TIMEOUT_MS)
+    // Not "no document" — nobody has answered the question yet. That is the case
+    // during static rendering, and would be the case if the provider were not
+    // mounted; both deserve a short wait rather than a confident wrong answer.
+    snapshot = await awaitDocsPageSnapshot(() => true, remaining())
     if (!snapshot) {
       return {
         kind: 'unavailable',
@@ -67,32 +86,49 @@ export const resolveCurrentDocument = async (): Promise<CurrentDocumentOutcome> 
     }
   }
 
-  // The corpus may simply not have arrived yet on a freshly loaded page. Waiting
-  // is the right answer, and it is what the reader would see a moment later.
-  if (snapshot.active.status === 'no-document' && snapshot.active.reason === 'corpus_pending') {
-    snapshot = (await awaitDocsPageSnapshot(settled, CORPUS_SETTLE_TIMEOUT_MS)) ?? snapshot
+  // Pinned for the rest of the call. Every later wait requires the same route,
+  // so a reader navigating mid-call gets an answer about the page they asked
+  // about rather than the one they happen to have moved to.
+  const pathname = snapshot.pathname
+  const onPinnedRoute = (candidate: DocsPageSnapshot): boolean => candidate.pathname === pathname
+
+  // The corpus may simply not have arrived yet on a freshly loaded page.
+  // Waiting is the right answer, and it is what the reader sees a moment later.
+  if (isPending(snapshot)) {
+    snapshot =
+      (await awaitDocsPageSnapshot(
+        (candidate) => onPinnedRoute(candidate) && !isPending(candidate),
+        remaining()
+      )) ?? snapshot
   }
 
-  // A retryable corpus failure: actually recover, then wait for the outcome.
-  // `retryCorpus` is a no-op unless the corpus is in a retryable failure, so
-  // this cannot restart a healthy load or hammer one already in flight.
-  if (snapshot.active.status === 'no-document' && snapshot.active.retryable) {
+  if (isRecoverableFailure(snapshot)) {
+    const from = snapshot.revision
     snapshot.retryCorpus()
-    snapshot = (await awaitDocsPageSnapshot(settled, CORPUS_SETTLE_TIMEOUT_MS)) ?? snapshot
+    // A *newer* publication that has settled. Requiring `revision > from` is
+    // what stops the still-current failure from satisfying this immediately,
+    // and requiring "not pending" skips the interim `corpus_pending` the
+    // provider publishes on its way to the outcome.
+    snapshot =
+      (await awaitDocsPageSnapshot(
+        (candidate) =>
+          candidate.revision > from && onPinnedRoute(candidate) && !isPending(candidate),
+        remaining()
+      )) ?? snapshot
   }
 
-  const { pathname, active } = snapshot
+  const { active } = snapshot
   if (active.status === 'document') {
     return { kind: 'document', snapshot, document: active.document }
   }
 
   if (active.reason === 'not_a_document_route' || active.reason === 'generated_index_route') {
-    return { kind: 'not-on-doc-page', pathname, message: active.message }
+    return { kind: 'not-on-doc-page', pathname: snapshot.pathname, message: active.message }
   }
 
   return {
     kind: 'unavailable',
-    pathname,
+    pathname: snapshot.pathname,
     reason: active.reason,
     message: active.message,
     retryable: active.retryable

@@ -22,6 +22,23 @@ export const MAX_READ_CHARS = 20_000
 const MIN_QUERY_CHARS = 2
 const MAX_QUERY_CHARS = 500
 
+/**
+ * Upper bounds on the model-controlled identifiers that are echoed back in
+ * failure messages.
+ *
+ * Without them the *typed failure* contract defeats itself: a 40,000-character
+ * `ref` is structurally a valid string, and the `document_not_found` it produced
+ * serialized to about 80,000 characters — well past the transport's per-message
+ * limit, which would then cut the JSON mid-tail and leave the model with an
+ * unparseable result instead of an actionable error. The response fitter is
+ * defence in depth; bounding the input is the actual fix.
+ *
+ * Generous against reality: this site's longest ref is 39 characters and its
+ * longest anchor 71.
+ */
+const MAX_REF_CHARS = 300
+const MAX_ANCHOR_CHARS = 300
+
 const MAX_SEARCH_RESULTS = 10
 const DEFAULT_SEARCH_RESULTS = 5
 
@@ -76,6 +93,7 @@ const anchorSchema = z
   .string()
   .trim()
   .min(1)
+  .max(MAX_ANCHOR_CHARS)
   .optional()
   .describe(
     'A section anchor from this document\'s `outline` (no leading "#"). Omit to read the whole ' +
@@ -94,6 +112,7 @@ export const readDocInputSchema = z
       .string()
       .trim()
       .min(1)
+      .max(MAX_REF_CHARS)
       .describe(
         'The documentation `ref` of the page to read, exactly as returned by `search_docs` or by ' +
           'a previous read. This is a corpus document id, not a URL — no URL is ever fetched.'
@@ -166,7 +185,14 @@ const readOkSchema = z
     outline: z.array(outlineEntrySchema),
     sections: z.array(readSectionSchema),
     truncated: z.boolean(),
-    truncation: readTruncationSchema
+    truncation: readTruncationSchema,
+    /**
+     * The `outline` was shortened to fit the response limit — a different fact
+     * from `truncated`, which is about document *content*. Kept separate so a
+     * trimmed outline can never be reported through the content-truncation
+     * fields, which would say `truncated: true` with `omittedCharacterCount: 0`.
+     */
+    outlineTruncated: z.boolean()
   })
   .strict()
 
