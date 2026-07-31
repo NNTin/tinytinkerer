@@ -53,7 +53,8 @@ const isLinkNode = (node: MarkdownNode): node is LinkNode =>
 
 type LocatedLink = {
   node: LinkNode
-  target: CanonicalDocumentationTarget
+  /** `null` for an unresolvable URL: demotable, but it names no document. */
+  target: CanonicalDocumentationTarget | null
   authorized: boolean
 }
 
@@ -78,7 +79,12 @@ const locateDocumentationLinks = (
       return
     }
     const classification = classifyDocumentationLink(node.url, site)
-    if (classification.kind !== 'documentation') {
+    if (classification.kind === 'outside-policy') {
+      return
+    }
+    if (classification.kind === 'unresolvable') {
+      // Nothing to cite and nothing to compare, but it must not stay clickable.
+      located.push({ node, target: null, authorized: false })
       return
     }
     located.push({
@@ -105,7 +111,7 @@ export const citedDocuments = (
 ): ReadonlySet<string> => {
   const cited = new Set<string>()
   for (const link of locateDocumentationLinks(source, ledger, site)) {
-    if (link.authorized) {
+    if (link.authorized && link.target) {
       cited.add(link.target.document)
     }
   }

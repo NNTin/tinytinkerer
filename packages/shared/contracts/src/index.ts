@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { contentDocumentSchema } from './content'
+import { toolSourceSchema } from './plugins'
 
 export {
   blockNodeSchema,
@@ -324,12 +325,24 @@ export const agentToolStartedEventSchema = eventBaseSchema(
     stepId: z.string(),
     parentStepId: z.string().optional(),
     toolId: z.string(),
-    input: z.record(z.string(), z.unknown())
+    input: z.record(z.string(), z.unknown()),
+    // Where the tool came from (issue #478). Optional so events persisted before
+    // provenance existed still parse — and, deliberately, so they carry no
+    // attribution: a consumer that gates trust on it fails closed for them
+    // rather than trusting an id whose origin was never recorded.
+    source: toolSourceSchema.optional()
   })
 )
 export const agentToolCompletedEventSchema = eventBaseSchema(
   'agent.tool.completed',
-  z.object({ stepId: z.string(), toolId: z.string(), output: z.unknown() })
+  z.object({
+    stepId: z.string(),
+    toolId: z.string(),
+    output: z.unknown(),
+    // See agent.tool.started: this is the copy the RENDER path reads, since a
+    // reloaded conversation is projected from these events alone.
+    source: toolSourceSchema.optional()
+  })
 )
 // `kind` taxonomy for a tool failure, used by telemetry to decide whether a
 // failure is a bug worth paging (Sentry) or a by-design outcome that never was

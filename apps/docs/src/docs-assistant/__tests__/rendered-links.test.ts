@@ -7,7 +7,7 @@
  * snapshots a half-typed link produces mid-stream.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createMarkdownContentSession } from '@docs-test/content-markdown'
+import { createMarkdownContentSession } from '@tinytinkerer/app-browser/assistant-markdown'
 import type { ContentDocument } from '@tinytinkerer/app-browser'
 import {
   CANONICAL,
@@ -27,8 +27,10 @@ const policy = createDocumentationAssistantPolicy({
 const parse = (markdown: string): ContentDocument =>
   createMarkdownContentSession(markdown).snapshot().document
 
+const sanitizerFor = (results: AppToolResultRecord[]) => policy.prepareRenderedContent!({ results })
+
 const sanitize = (markdown: string, results: AppToolResultRecord[]): ContentDocument =>
-  policy.sanitizeRenderedContent!({ document: parse(markdown), results })
+  sanitizerFor(results)(parse(markdown))
 
 /**
  * Every `href` the renderer would mount. Structural on purpose: this is the
@@ -66,7 +68,7 @@ describe('rendered link policy', () => {
   it('returns the document by identity when nothing needs changing', async () => {
     const results = [await authorized()]
     const parsed = parse(`See [it](${CANONICAL.entry.permalink}).`)
-    expect(policy.sanitizeRenderedContent!({ document: parsed, results })).toBe(parsed)
+    expect(sanitizerFor(results)(parsed)).toBe(parsed)
   })
 
   it('strips an unauthorized documentation link while keeping its text', async () => {
@@ -92,32 +94,24 @@ describe('rendered link policy', () => {
     const results = [await authorized()]
     const answer = `Read [the API reference](/docs/api-reference/) and [this](${CANONICAL.entry.permalink}).`
     const session = createMarkdownContentSession('')
+    // Compiled ONCE, then applied per snapshot — the shape the host uses.
+    const sanitizer = sanitizerFor(results)
 
     // Every prefix of the streamed answer, i.e. every snapshot the renderer
     // would have been handed while the model was typing.
     for (const character of answer) {
       const snapshot = session.append(character)
-      const sanitized = policy.sanitizeRenderedContent!({
-        document: snapshot.document,
-        results
-      })
-      expect(hrefs(sanitized.nodes)).not.toContain('/docs/api-reference/')
+      expect(hrefs(sanitizer(snapshot.document).nodes)).not.toContain('/docs/api-reference/')
     }
 
     // …and the authorized one survives to the end.
-    expect(
-      hrefs(
-        policy.sanitizeRenderedContent!({ document: session.snapshot().document, results }).nodes
-      )
-    ).toContain(CANONICAL.entry.permalink)
+    expect(hrefs(sanitizer(session.snapshot().document).nodes)).toContain(CANONICAL.entry.permalink)
   })
 
   it('leaves a documentation URL inside a code block alone', async () => {
     const markdown = ['```md', '[docs](/docs/invented/)', '```'].join('\n')
     const parsed = parse(markdown)
-    expect(
-      policy.sanitizeRenderedContent!({ document: parsed, results: [await authorized()] })
-    ).toBe(parsed)
+    expect(sanitizerFor([await authorized()])(parsed)).toBe(parsed)
   })
 
   it('sanitizes inside lists, blockquotes, and tables', async () => {

@@ -140,9 +140,50 @@ describe('reconcileTurns / turnsEquivalent — settled turn identity (issue #340
     const reconciled = reconcileTurns(before, after)
     // Settled first turn: same object as before (skips re-render).
     expect(reconciled[0]).toBe(before[0])
-    // Streaming turn changed, so it is the freshly built object.
-    expect(reconciled[1]).toBe(after[1])
+    // Streaming turn changed, so it re-renders: a new object carrying the new
+    // content. Its identity is deliberately NOT asserted to be `after[1]` — see
+    // the activity-identity test below for what it is allowed to reuse.
     expect(reconciled[1]).not.toBe(before[1])
+    expect(reconciled[1]?.assistantSource).toBe('partial')
+  })
+
+  it("keeps the live turn's activity by reference while only its content streams", () => {
+    // Compiling anything from a turn's tool results (issue #478 builds the
+    // citation ledger from them) must cost once per tool completion, not once
+    // per streamed chunk — which is only possible if the activity a delta did
+    // not touch keeps its identity.
+    const withTool = [
+      event('user.message', { text: 'second' }),
+      event('agent.tool.started', { stepId: 's1', toolId: 'read_doc', input: {} }),
+      event('agent.tool.completed', { stepId: 's1', toolId: 'read_doc', output: { ok: true } })
+    ]
+    const before = buildTurns([
+      ...settled,
+      ...withTool,
+      event('assistant.chunk', { source: 'par', content: doc('par') })
+    ])
+    const after = buildTurns([
+      ...settled,
+      ...withTool,
+      event('assistant.chunk', { source: 'partial', content: doc('partial') })
+    ])
+
+    const reconciled = reconcileTurns(before, after)
+    expect(reconciled[1]?.assistantSource).toBe('partial')
+    expect(reconciled[1]?.activity).toBe(before[1]?.activity)
+  })
+
+  it('replaces the activity once a new tool result lands', () => {
+    const base = [...settled, event('user.message', { text: 'second' })]
+    const before = buildTurns([...base])
+    const after = buildTurns([
+      ...base,
+      event('agent.tool.completed', { stepId: 's1', toolId: 'read_doc', output: { ok: true } })
+    ])
+
+    const reconciled = reconcileTurns(before, after)
+    expect(reconciled[1]?.activity).not.toBe(before[1]?.activity)
+    expect(reconciled[1]?.activity.items).toHaveLength(1)
   })
 
   it('turnsEquivalent is true for an unchanged settled turn and false when content changes', () => {

@@ -30,10 +30,17 @@ const isAuthorizedLink = (
   site: DocumentationSite
 ): boolean => {
   const classification = classifyDocumentationLink(url, site)
+  if (classification.kind === 'outside-policy') {
+    return true
+  }
+  // `unresolvable` is deliberately NOT allowed through: the renderer empties the
+  // href of a URL it will not navigate to, so an authorized-looking empty link
+  // may be all that survives of a same-origin protocol-relative fabrication.
   return (
-    classification.kind !== 'documentation' ||
+    classification.kind === 'documentation' &&
     // A query string can never be authorized — no tool result produces one.
-    (!classification.hasQuery && isAuthorizedTarget(ledger, classification.target))
+    !classification.hasQuery &&
+    isAuthorizedTarget(ledger, classification.target)
   )
 }
 
@@ -179,6 +186,55 @@ const sanitizeBlock = (
       // an image URL is already restricted to absolute https by the renderer.
       return node
   }
+}
+
+/**
+ * Every `href` a rendered document would mount.
+ *
+ * Used to *verify* a composed answer rather than to sanitize one: the footer is
+ * only really attached if its links survive parsing and this policy, and asking
+ * the document is the only way to know (see `attachSourcesFooter`).
+ */
+export const renderedDocumentationHrefs = (document: ContentDocument): readonly string[] => {
+  const found: string[] = []
+  const fromInline = (nodes: readonly InlineNode[]): void => {
+    for (const node of nodes) {
+      if (node.type === 'link') {
+        found.push(node.url)
+        fromInline(node.children)
+      } else if (
+        node.type === 'emphasis' ||
+        node.type === 'strong' ||
+        node.type === 'strikethrough'
+      ) {
+        fromInline(node.children)
+      }
+    }
+  }
+  const fromBlocks = (nodes: readonly BlockNode[]): void => {
+    for (const node of nodes) {
+      switch (node.type) {
+        case 'paragraph':
+        case 'heading':
+          fromInline(node.children)
+          break
+        case 'blockquote':
+          fromBlocks(node.children)
+          break
+        case 'list':
+          for (const item of node.children) fromBlocks(item.children)
+          break
+        case 'table':
+          node.header.forEach(fromInline)
+          node.rows.forEach((row) => row.forEach(fromInline))
+          break
+        default:
+          break
+      }
+    }
+  }
+  fromBlocks(document.nodes)
+  return found
 }
 
 /**

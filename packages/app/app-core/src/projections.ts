@@ -2,7 +2,8 @@ import type {
   AgentStepKind,
   ChatEvent,
   ContentDocument,
-  ReActDecisionKind
+  ReActDecisionKind,
+  ToolSource
 } from '@tinytinkerer/contracts'
 
 export type TurnNotice = {
@@ -39,6 +40,10 @@ export type TurnActivityItem =
       input?: Record<string, unknown>
       output?: unknown
       error?: string
+      // Where the tool came from (issue #478). Projected from the tool events so
+      // a consumer gating trust on provenance — the documentation citation
+      // ledger — reads the same attribution live and after a reload.
+      source?: ToolSource
     }
 
 export type TurnActivity = {
@@ -237,7 +242,8 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
         stepId: event.payload.stepId,
         ...(event.payload.parentStepId ? { parentId: event.payload.parentStepId } : {}),
         status: 'started',
-        input: event.payload.input
+        input: event.payload.input,
+        ...(event.payload.source ? { source: event.payload.source } : {})
       })
       return
     }
@@ -255,6 +261,12 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
         if (open) {
           open.status = 'completed'
           open.output = event.payload.output
+          // Carried on both events, so a completion that arrives without its
+          // `started` (a truncated or partially-persisted run) is still
+          // attributable rather than silently untrusted.
+          if (event.payload.source) {
+            open.source = event.payload.source
+          }
         } else {
           activity.items.push({
             kind: 'tool',
@@ -262,7 +274,8 @@ const applyActivityEvent = (activity: TurnActivity, event: ChatEvent): void => {
             toolId: event.payload.toolId,
             stepId: event.payload.stepId,
             status: 'completed',
-            output: event.payload.output
+            output: event.payload.output,
+            ...(event.payload.source ? { source: event.payload.source } : {})
           })
         }
       } else if (open) {
@@ -460,7 +473,9 @@ const activityItemEqual = (a: TurnActivityItem, b: TurnActivityItem): boolean =>
       a.status === b.status &&
       a.error === b.error &&
       a.input === b.input &&
-      a.output === b.output
+      a.output === b.output &&
+      a.source?.kind === b.source?.kind &&
+      a.source?.groupId === b.source?.groupId
     )
   }
   return JSON.stringify(a) === JSON.stringify(b)
@@ -503,5 +518,18 @@ export const turnsEquivalent = (a: Turn, b: Turn): boolean =>
 export const reconcileTurns = (previous: Turn[], next: Turn[]): Turn[] =>
   next.map((turn, index) => {
     const before = previous[index]
-    return before && turnsEquivalent(before, turn) ? before : turn
+    if (!before) {
+      return turn
+    }
+    if (turnsEquivalent(before, turn)) {
+      return before
+    }
+    // The LIVE turn changes on every delta, so it never reuses the object above
+    // — but its activity log usually has not moved at all. Handing back the
+    // previous `activity` by reference is what lets a consumer memoize work
+    // derived from it (issue #478: compiling the citation ledger from the turn's
+    // tool results) instead of redoing that work for every streamed chunk.
+    return activitiesEqual(before.activity, turn.activity)
+      ? { ...turn, activity: before.activity }
+      : turn
   })

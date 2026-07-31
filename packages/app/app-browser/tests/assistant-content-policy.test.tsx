@@ -36,7 +36,7 @@ const appWith = (policy: AppAssistantPolicy): BrowserApp =>
 
 /** Drops every link, so "the policy ran" is visible in the rendered output. */
 const dropLinks: AppAssistantPolicy = {
-  sanitizeRenderedContent: ({ document }) => ({
+  prepareRenderedContent: () => (document) => ({
     nodes: document.nodes.map((node) =>
       node.type === 'paragraph'
         ? {
@@ -76,12 +76,12 @@ describe('the rendered-content policy', () => {
     expect(screen.getByRole('link')).toHaveAttribute('href', '/docs/x/')
   })
 
-  it("receives the turn's own successful tool results", () => {
+  it("receives the turn's own successful tool results, provenance included", () => {
     const seen: AppToolResultRecord[][] = []
     const app = appWith({
-      sanitizeRenderedContent: ({ document, results }) => {
+      prepareRenderedContent: ({ results }) => {
         seen.push([...results])
-        return document
+        return (document) => document
       }
     })
 
@@ -89,7 +89,14 @@ describe('the rendered-content policy', () => {
       <AppBrowserProvider app={app}>
         <TurnChrome
           turn={turn([
-            { kind: 'tool', id: '1', toolId: 'read_doc', status: 'completed', output: { ok: 1 } },
+            {
+              kind: 'tool',
+              id: '1',
+              toolId: 'read_doc',
+              status: 'completed',
+              output: { ok: 1 },
+              source: { kind: 'app', groupId: 'documentation' }
+            },
             { kind: 'tool', id: '2', toolId: 'search_docs', status: 'failed', error: 'boom' },
             { kind: 'tool', id: '3', toolId: 'read_doc', status: 'started', input: {} },
             { kind: 'reasoning', id: '4', text: 'thinking' }
@@ -100,8 +107,76 @@ describe('the rendered-content policy', () => {
       </AppBrowserProvider>
     )
 
-    // Only the completed call, and no `input` alongside it.
-    expect(seen.at(-1)).toEqual([{ toolId: 'read_doc', output: { ok: 1 } }])
+    // Only the completed call, no `input` alongside it, and the host's own
+    // attribution — which is what a trust-gating policy reads after a reload.
+    expect(seen.at(-1)).toEqual([
+      { toolId: 'read_doc', output: { ok: 1 }, source: { kind: 'app', groupId: 'documentation' } }
+    ])
+  })
+
+  it('compiles the sanitizer once per results change, not once per chunk', () => {
+    // The cost this guards is real: the documentation policy validates every
+    // read (up to 20,000 characters of Markdown) against its schema and rebuilds
+    // its target sets inside `prepareRenderedContent`. Doing that per streamed
+    // delta would scale with result-size x chunks.
+    let prepared = 0
+    let sanitized = 0
+    const app = appWith({
+      prepareRenderedContent: () => {
+        prepared += 1
+        return (document) => {
+          sanitized += 1
+          return document
+        }
+      }
+    })
+    const results: AppToolResultRecord[] = [{ toolId: 'read_doc', output: { ok: 1 } }]
+
+    const view = render(
+      <AppBrowserProvider app={app}>
+        <AssistantContent content={parseMarkdownContent('one')} toolResults={results} />
+      </AppBrowserProvider>
+    )
+    for (const chunk of ['two', 'three', 'four', 'five']) {
+      view.rerender(
+        <AppBrowserProvider app={app}>
+          <AssistantContent content={parseMarkdownContent(chunk)} toolResults={results} />
+        </AppBrowserProvider>
+      )
+    }
+
+    expect(prepared).toBe(1)
+    expect(sanitized).toBe(5)
+  })
+
+  it('recompiles when a new tool result lands', () => {
+    let prepared = 0
+    const app = appWith({
+      prepareRenderedContent: () => {
+        prepared += 1
+        return (document) => document
+      }
+    })
+    const content = parseMarkdownContent('answer')
+
+    const view = render(
+      <AppBrowserProvider app={app}>
+        <AssistantContent content={content} toolResults={[{ toolId: 'a', output: 1 }]} />
+      </AppBrowserProvider>
+    )
+    view.rerender(
+      <AppBrowserProvider app={app}>
+        <AssistantContent
+          content={content}
+          toolResults={[
+            { toolId: 'a', output: 1 },
+            { toolId: 'b', output: 2 }
+          ]}
+        />
+      </AppBrowserProvider>
+    )
+
+    expect(prepared).toBe(2)
   })
 })
 

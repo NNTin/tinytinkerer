@@ -1,5 +1,5 @@
 import type { ContentDocument } from '@tinytinkerer/contracts'
-import { useCallback } from 'react'
+import { useMemo } from 'react'
 import { useOptionalBrowserApp } from './app'
 import type { AppToolResultRecord } from './app-assistant-policy'
 import type { TurnActivityItem } from '@tinytinkerer/app-core'
@@ -17,7 +17,9 @@ import type { TurnActivityItem } from '@tinytinkerer/app-core'
  * Activity items are projected from the persisted `agent.tool.*` events, so this
  * covers a live run and a reload with no separate rehydrate path. A `completed`
  * item is a successful result by construction; `started`/`failed` are skipped,
- * which is what keeps a failed result from ever authorizing a link.
+ * which is what keeps a failed result from ever authorizing a link. The host's
+ * `source` attribution rides along on the same events, so a policy gating trust
+ * on provenance reads it identically live and after a reload.
  */
 export const toolResultsFromActivity = (
   items: readonly TurnActivityItem[]
@@ -25,26 +27,35 @@ export const toolResultsFromActivity = (
   items.reduce<AppToolResultRecord[]>(
     (records, item) =>
       item.kind === 'tool' && item.status === 'completed'
-        ? [...records, { toolId: item.toolId, output: item.output }]
+        ? [
+            ...records,
+            {
+              toolId: item.toolId,
+              output: item.output,
+              ...(item.source ? { source: item.source } : {})
+            }
+          ]
         : records,
     []
   )
 
+const passThrough = (document: ContentDocument): ContentDocument => document
+
 /**
- * The app's render-time content policy, or a pass-through when it has none.
+ * The app's render-time content sanitizer, compiled once per turn's results.
+ *
+ * The memo is the point: `results` is stable while a turn only streams content
+ * (see `reconcileTurns`, which hands back an unchanged activity by reference),
+ * so a policy's preparation — schema validation, ledger construction — happens
+ * once per tool completion instead of once per chunk.
  *
  * Tolerates rendering outside a mounted BrowserApp (component tests, the docs
  * content playground): the document is then returned untouched, matching a host
  * that wires no policy at all.
  */
-export const useSanitizeRenderedContent = (): ((
-  document: ContentDocument,
+export const useRenderedContentSanitizer = (
   results: readonly AppToolResultRecord[]
-) => ContentDocument) => {
-  const sanitize = useOptionalBrowserApp()?.appAssistantPolicy?.sanitizeRenderedContent
-  return useCallback(
-    (document: ContentDocument, results: readonly AppToolResultRecord[]) =>
-      sanitize ? sanitize({ document, results }) : document,
-    [sanitize]
-  )
+): ((document: ContentDocument) => ContentDocument) => {
+  const prepare = useOptionalBrowserApp()?.appAssistantPolicy?.prepareRenderedContent
+  return useMemo(() => (prepare ? prepare({ results }) : passThrough), [prepare, results])
 }

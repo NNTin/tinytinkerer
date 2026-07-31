@@ -48,17 +48,18 @@ describe('answer link policy', () => {
       expect([...citedDocuments(source, ledger, SITE)]).toEqual([CANONICAL.entry.permalink])
     })
 
-    it('accepts a section anchor the returned outline proved exists', async () => {
+    it('accepts the section anchor a read actually selected', async () => {
       const anchor = firstAnchorOf(CANONICAL)
+      const ledger = await ledgerFor(['read_doc', { ref: CANONICAL.entry.ref, anchor }])
       const source = `See [that section](${CANONICAL.entry.permalink}#${anchor}).`
-      expect(demoteUnauthorizedLinks(source, await canonicalRead(), SITE)).toBe(source)
+      expect(demoteUnauthorizedLinks(source, ledger, SITE)).toBe(source)
     })
 
     it('does not govern links to other origins or to the product site', async () => {
       const ledger = await canonicalRead()
       const source =
         'See [upstream](https://docusaurus.io/docs/api) and [the product](/pricing/) and ' +
-        '[mail us](mailto:hi@example.test).'
+        '[a lookalike path](/docs-evil/x/) and [mail us](mailto:hi@example.test).'
       expect(demoteUnauthorizedLinks(source, ledger, SITE)).toBe(source)
       expect(citedDocuments(source, ledger, SITE).size).toBe(0)
     })
@@ -79,6 +80,14 @@ describe('answer link policy', () => {
       )
     })
 
+    it('rejects a heading the read did not select, even though the page has it', async () => {
+      // An outline entry proves the heading exists; it does not prove the answer
+      // drew on that section, so a whole-page read does not license the link.
+      const anchor = firstAnchorOf(CANONICAL)
+      const source = `See [that section](${CANONICAL.entry.permalink}#${anchor}).`
+      expect(demoteUnauthorizedLinks(source, await canonicalRead(), SITE)).toBe('See that section.')
+    })
+
     it('rejects an anchor the document does not have, and a query string', async () => {
       const ledger = await canonicalRead()
       const withAnchor = `See [a section](${CANONICAL.entry.permalink}#not-a-real-heading).`
@@ -86,6 +95,17 @@ describe('answer link policy', () => {
 
       expect(demoteUnauthorizedLinks(withAnchor, ledger, SITE)).toBe('See a section.')
       expect(demoteUnauthorizedLinks(withQuery, ledger, SITE)).toBe('See the page.')
+    })
+
+    it('demotes a same-origin protocol-relative fabrication', async () => {
+      // `//host/docs/...` borrows the page's scheme, so it is this site — and the
+      // renderer would empty its href rather than navigate, leaving a clickable
+      // link to nowhere if the finalizer had passed it through.
+      const host = new URL(SITE.origin!).host
+      const source = `Read [the API reference](//${host}/docs/api-reference/) for details.`
+      expect(demoteUnauthorizedLinks(source, await canonicalRead(), SITE)).toBe(
+        'Read the API reference for details.'
+      )
     })
 
     it('never repairs an invented target by matching it to a similar real page', async () => {

@@ -15,6 +15,10 @@
       "types": "./src/documentation-corpus.ts",
       "default": "./src/documentation-corpus.ts"
     },
+    "./assistant-markdown": {
+      "types": "./src/assistant-markdown.ts",
+      "default": "./src/assistant-markdown.ts"
+    },
     "./styles.css": "./src/styles.css"
   },
   "main": "src/index.ts",

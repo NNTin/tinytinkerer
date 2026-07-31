@@ -66,7 +66,13 @@ const importPattern =
   /\b(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g
 // Docusaurus build configuration must not evaluate app-browser's browser-only
 // root barrel. This narrowly scoped public facade contains contracts only.
-const ALLOWED_WORKSPACE_FACADES = new Set(['@tinytinkerer/app-browser/documentation-corpus'])
+// `assistant-markdown` is the second: an app that composes assistant Markdown
+// has to be able to parse it with the same parser the transcript renders with,
+// to verify what it composed actually became the nodes it intended.
+const ALLOWED_WORKSPACE_FACADES = new Set([
+  '@tinytinkerer/app-browser/documentation-corpus',
+  '@tinytinkerer/app-browser/assistant-markdown'
+])
 
 const workspacePackages = await loadWorkspacePackages()
 const workspaceByName = new Map(workspacePackages.map((pkg) => [pkg.name, pkg]))

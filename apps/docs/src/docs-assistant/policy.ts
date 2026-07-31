@@ -15,6 +15,7 @@
  * call or from model text" holds structurally rather than by inspection here.
  */
 import type { AppAssistantPolicy } from '@tinytinkerer/app-browser'
+import { parseMarkdownContent } from '@tinytinkerer/app-browser/assistant-markdown'
 import { readDocsPageSnapshot } from '../docs-page'
 import type { SiteUrlConfig } from '../docs-corpus/manifest-store'
 import { citedDocuments, demoteUnauthorizedLinks } from './answer-links'
@@ -22,7 +23,8 @@ import type { DocumentationSite } from './canonical-target'
 import { buildDocumentationCitationLedger } from './citation-ledger'
 import { documentationGroundingInstructions } from './grounding'
 import { sanitizeRenderedDocumentationLinks } from './rendered-links'
-import { appendSourcesFooter, missingCitations } from './sources-footer'
+import { attachSourcesFooter, missingCitations } from './sources-footer'
+import { renderedDocumentationHrefs } from './rendered-links'
 
 export type DocumentationAssistantPolicyDependencies = {
   /**
@@ -65,18 +67,29 @@ export const createDocumentationAssistantPolicy = (
     // Demotion first: an unauthorized link must not count as a citation that
     // settles an obligation, and it is gone by the time the footer is built.
     const demoted = demoteUnauthorizedLinks(source, ledger, site)
-    return appendSourcesFooter(
+    return attachSourcesFooter(
       demoted,
-      missingCitations(ledger, citedDocuments(demoted, ledger, site))
+      missingCitations(ledger, citedDocuments(demoted, ledger, site)),
+      // Verified against the PARSED document, and against the version the render
+      // policy would actually mount — a citation that survives concatenation but
+      // not sanitization is not a citation either.
+      (candidate, expected) => {
+        const rendered = sanitizeRenderedDocumentationLinks(
+          parseMarkdownContent(candidate),
+          ledger,
+          site
+        )
+        const hrefs = new Set(renderedDocumentationHrefs(rendered))
+        return expected.every((href) => hrefs.has(href))
+      }
     )
   },
 
-  sanitizeRenderedContent: ({ document, results }) => {
+  prepareRenderedContent: ({ results }) => {
+    // Compiled once per turn's results: schema validation and ledger
+    // construction happen here, and the returned sanitizer runs per snapshot.
     const site = resolveSite(dependencies)
-    return sanitizeRenderedDocumentationLinks(
-      document,
-      buildDocumentationCitationLedger(results, site),
-      site
-    )
+    const ledger = buildDocumentationCitationLedger(results, site)
+    return (document) => sanitizeRenderedDocumentationLinks(document, ledger, site)
   }
 })

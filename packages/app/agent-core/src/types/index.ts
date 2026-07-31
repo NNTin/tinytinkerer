@@ -2,7 +2,8 @@ import type {
   ContentDocument,
   ExecutionPlan,
   PlanStep,
-  ReActDecision
+  ReActDecision,
+  ToolSource
 } from '@tinytinkerer/contracts'
 
 export type ConversationMessage = {
@@ -22,6 +23,10 @@ export type ToolInvocation = {
   toolId: string
   input: Record<string, unknown>
   outcome: { ok: true; output: unknown } | { ok: false; error: string }
+  // Where the executed tool came from (issue #478), copied from the registered
+  // tool rather than from the model's chosen id. Absent when the host stamped
+  // none. See `ToolSource` in contracts for why a name is not an origin.
+  source?: ToolSource
 }
 
 export type ExecutionContext = {

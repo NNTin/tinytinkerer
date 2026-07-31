@@ -186,6 +186,32 @@ export const pluginToolDisablementStateSchema = z.record(z.string(), z.array(z.s
 export type PluginToolDisablementState = z.infer<typeof pluginToolDisablementStateSchema>
 
 // =============================================================================
+// Tool provenance — who contributed a registered tool.
+// =============================================================================
+//
+// A tool id is a NAME, not an origin: `create-runtime` registers MCP, plugin and
+// app tools into one id space and lets the first writer win, so a plugin can
+// legitimately claim an id an app also wanted. Anything that decides how far to
+// TRUST a tool's output therefore has to know where the tool came from, not just
+// what it is called (issue #478 — the documentation citation ledger is the first
+// such consumer, and schema compatibility proves shape rather than origin).
+//
+// The host stamps this at registration and it is never read from the tool object
+// a plugin supplies, so a contributor cannot claim someone else's provenance.
+export const toolSourceSchema = z
+  .object({
+    kind: z.enum(['app', 'plugin', 'mcp']),
+    // The app tool-group id or MCP server id that contributed the tool. Absent
+    // for a plugin tool: `collectContributions` merges every active plugin's
+    // tools before the host sees them, so per-plugin attribution is not
+    // available there (see create-runtime's note on the same limitation).
+    groupId: z.string().optional()
+  })
+  .strict()
+
+export type ToolSource = z.infer<typeof toolSourceSchema>
+
+// =============================================================================
 // Tool interface — the pure tool contract.
 // =============================================================================
 //
@@ -199,6 +225,11 @@ export interface Tool<Input, Output> {
   id: string
   description: string
   schema: ZodSchema<Input>
+  // Where this tool came from (issue #478). Set by the HOST at registration —
+  // `create-runtime` overwrites whatever a contributor put here — so a consumer
+  // deciding how far to trust an output reads an attribution it can rely on.
+  // Absent for a host that stamps none, which trusts nothing extra.
+  source?: ToolSource
   // Optional owner-provided presentation for completed calls. Plugin tools
   // normally expose the same mapper from their manifest descriptor (so the host
   // can discover it before activation); app-local tools travel to the host as

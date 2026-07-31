@@ -7,11 +7,11 @@ with an invented link in it.
 `createDocumentationAssistantPolicy()` returns an `AppAssistantPolicy` with three
 contributions, all driven by one ledger:
 
-| Contribution              | Runs                             | Guarantees                                              |
-| ------------------------- | -------------------------------- | ------------------------------------------------------- |
-| `instructions`            | every outgoing model request     | Markdown is reference content; links are never invented |
-| `finalizeAnswer`          | once, before the answer persists | owed citations exist; fabricated links do not           |
-| `sanitizeRenderedContent` | every rendered snapshot          | a fabricated link is never clickable, even mid-stream   |
+| Contribution             | Runs                                       | Guarantees                                              |
+| ------------------------ | ------------------------------------------ | ------------------------------------------------------- |
+| `instructions`           | every outgoing model request               | Markdown is reference content; links are never invented |
+| `finalizeAnswer`         | once, before the answer persists           | owed citations _render_; fabricated links do not        |
+| `prepareRenderedContent` | once per turn's results, then per snapshot | a fabricated link is never clickable, even mid-stream   |
 
 #479 attaches it beside #477's tool group:
 
@@ -30,8 +30,8 @@ https://github.com/NNTin/tinytinkerer/issues/478.
 Three different questions, deliberately not one:
 
 - **eligible** — a canonical target some successful typed result returned;
-- **authorized** — may stay clickable. Every eligible document, plus every
-  section anchor a result's `outline` proved exists;
+- **authorized** — may stay clickable. Every eligible document, plus exactly the
+  sections a result returned as its own selection;
 - **required** — the answer owes it a citation.
 
 Only successful cross-page `read_doc` results are required. A search is
@@ -55,12 +55,24 @@ links, by contrast, use the most specific eligible target.
 
 ## Only a typed success authorizes a link
 
-The ledger re-parses every result through #477's own output schemas. It trusts
-nothing else — not prose, not a `ref` the model proposed, not a link inside the
-returned Markdown, not a failed call. Two narrowings make that structural rather
-than a rule to remember: the runtime hands over **successful results only**, and
-it strips their **inputs**. A citation composed from an `anchor` the model asked
-for would be a citation composed from model text.
+The ledger re-parses every result through #477's own output schemas — each tool
+with its **own** contract, so the two read schemas sharing a success shape today
+cannot silently stop testing one of them tomorrow.
+
+Schema compatibility proves _shape_, though, not _origin_. A tool id is a name:
+`create-runtime` registers MCP, plugin and app tools into one id space and lets
+the first writer win, so a plugin can claim `read_doc` and answer in a compatible
+shape. The ledger therefore also requires the **provenance the host stamped at
+registration** (`{ kind: 'app', groupId: 'documentation' }`) — an attribution a
+contributor cannot forge, because `create-runtime` overwrites whatever the tool
+object declared. It travels on `ToolInvocation` for the live path and on the
+`agent.tool.*` events for the persisted render path, so a reload is gated the
+same way. A result with no attribution authorizes nothing.
+
+Two further narrowings are structural rather than rules to remember: the runtime
+hands over **successful results only**, and strips their **inputs**. A citation
+composed from an `anchor` the model asked for would be a citation composed from
+model text.
 
 ### The anchor rule
 
@@ -71,10 +83,23 @@ for would be a citation composed from model text.
   out of an overview would misrepresent what the answer drew on.
 - `read_current_doc` — same rule, and still never a footer entry.
 
+An outline entry is **not** an anchor rule. It proves a heading exists; it does
+not prove the answer drew on that section, so a whole-page read authorizes the
+page and none of its headings.
+
 Deterministic composition of a permalink and an anchor **from the same
 successful result** is itself a result-authorized target. Reading "only links
 emitted by successful tool results" as forbidding the composition would throw
 away every section-level citation #475's adapter works to produce.
+
+### Evidence is aggregated per document, not taken from the first call
+
+A whole read followed by a section read and the reverse carry identical evidence
+— the turn saw the whole page — so both generate the page citation. Retaining
+the first call instead would make the citation depend on the order the model
+happened to call in. Two distinct sections are likewise a document-level target:
+the evidence spans more of the page than either link would claim. Both sections
+stay individually citable.
 
 ## A fabricated documentation link never stays clickable
 
@@ -90,11 +115,17 @@ it still looks like evidence.
 
 Scope, and the reasons for it:
 
-- **matching is on canonical identity**, so `/docs/x`, `/docs/x/`, and
-  `https://host/docs/x` are one target and a fabrication cannot hide behind a
-  trailing slash. Trailing-slash policy goes through
-  `canonicalizeDocusaurusPermalink` — the helper #474 built the corpus
-  permalinks with — so the two sides cannot drift;
+- **matching is on canonical identity**, so `/docs/x`, `/docs/x/`,
+  `https://host/docs/x`, and `//host/docs/x` are one target and a fabrication
+  cannot hide behind a trailing slash or a borrowed scheme. Trailing-slash policy
+  goes through `canonicalizeDocusaurusPermalink` — the helper #474 built the
+  corpus permalinks with — so the two sides cannot drift;
+- **the base is a path boundary, not a string prefix.** `/docs-evil/x` shares
+  five characters with `/docs/` and is somebody else's route;
+- **a URL with no usable destination is demoted**, including the empty string
+  `content-markdown` leaves behind after stripping a URL it refuses to navigate
+  to. It cannot be authorized, and it cannot be shown to be outside policy
+  either — leaving it would render a clickable `<a href="">`;
 - **query strings are rejected**: no tool result produces one;
 - **relative links resolve against the documentation base URL**, not the reader's
   route. Resolving against the route would make the same answer legal on one page
@@ -131,7 +162,26 @@ destroyed on the first. The finalizer owns the persisted answer; the renderer
 owns what is on screen while it arrives.
 
 The render pass returns its input **by identity** when nothing changed, so an
-answer with no unauthorized link costs one walk and no re-render.
+answer with no unauthorized link costs one walk and no re-render. It is also
+**compiled once per turn's results** rather than per snapshot: schema validation
+and ledger construction scale with tool completions, not with
+`result-size x streamed-chunks`. `reconcileTurns` hands back an unchanged
+activity by reference specifically so that memo holds while an answer streams.
+
+## A footer is not a citation until it renders as one
+
+Concatenating Markdown does not make a link. An answer whose last fence was never
+closed absorbs everything appended after it, so the footer becomes lines inside a
+`codeBlock` and the document contains **no link node at all** — the same for an
+unterminated HTML block or comment. The deterministic fallback would then have
+guaranteed nothing.
+
+So attaching the footer is a postcondition, checked against the parsed document
+and against the version the render policy would actually mount: appending is
+tried first because it is what a reader expects, and if the owed links do not
+survive, the footer is moved **ahead** of the answer, where a construct opening
+after it cannot capture it. An unusual position beats a missing citation, and no
+word the model wrote is ever discarded.
 
 ## The instructions
 
@@ -165,8 +215,12 @@ before.
   rate-limit retry, and can **replace** content — which the provider's
   append-only chunk stream cannot. `assistant.done` supersedes the streamed
   chunks in the projection, so what it replaces is exactly what persists.
-- `sanitizeRenderedContent` is read by `AssistantContent`, which `TurnChrome`
-  hands the turn's own completed tool results.
+- `prepareRenderedContent` is read by `AssistantContent`, which `TurnChrome`
+  hands the turn's own completed tool results; the host memoizes the compiled
+  sanitizer on them.
+- `@tinytinkerer/app-browser/assistant-markdown` is the facade that lets this app
+  parse assistant Markdown with the very parser the transcript renders with,
+  which is what makes the footer postcondition checkable.
 
 ## What is not here
 

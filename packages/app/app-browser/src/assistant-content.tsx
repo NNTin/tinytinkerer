@@ -23,7 +23,7 @@ import { linkCardPlugin } from '@tinytinkerer/content-link-card'
 import { tablePlugin } from '@tinytinkerer/content-table'
 import { useOptionalBrowserApp } from './app'
 import { useResolveMediaUrl } from './media-registry'
-import { useSanitizeRenderedContent } from './assistant-content-policy'
+import { useRenderedContentSanitizer } from './assistant-content-policy'
 import type { AppToolResultRecord } from './app-assistant-policy'
 
 export type AssistantContentProps = {
@@ -221,13 +221,14 @@ export const AssistantContent = ({
     [turnId, showCodeBlockFullscreenButton, resolveMediaUrl]
   )
 
-  // Applied to every snapshot, not just the settled one. The policy returns the
-  // same document by identity when it changes nothing, so a turn that cites
-  // nothing pays one walk and no extra render.
-  const sanitizeRenderedContent = useSanitizeRenderedContent()
+  // Applied to every snapshot, not just the settled one. The sanitizer is
+  // compiled once per results change (not per chunk) and returns the same
+  // document by identity when it changes nothing, so a turn with nothing to
+  // demote pays one walk and no extra render.
+  const sanitizeRenderedContent = useRenderedContentSanitizer(toolResults)
   const document = useMemo(
-    () => sanitizeRenderedContent(content, toolResults),
-    [sanitizeRenderedContent, content, toolResults]
+    () => sanitizeRenderedContent(content),
+    [sanitizeRenderedContent, content]
   )
 
   return (

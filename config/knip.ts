@@ -96,19 +96,15 @@ const config: KnipConfig = {
       // context. Declaring a second pinned react-router-dom here is exactly what
       // it exists to avoid; see apps/docs/src/test/react-router-dom.d.ts.
       //
-      // `@docs-test/browser-runtime` and `@docs-test/content-markdown` are the
-      // same arrangement for issue #478's citation tests: the first resolves to
-      // app-browser's own `createRuntime` (not on its public barrel, and its
-      // barrel cannot load outside a Vite app build), the second to the real
-      // incremental Markdown session the transcript renders. Both exist so those
-      // tests drive the genuine implementations instead of imitations, without
-      // widening a package's public surface or adding a runtime dependency this
-      // application never uses.
+      // `@docs-test/browser-runtime` is the same arrangement for issue #478's
+      // conversation test: it resolves to app-browser's own `createRuntime`,
+      // which is not on its public barrel (and that barrel cannot load outside a
+      // Vite app build). It exists so the test drives the genuine runtime rather
+      // than an imitation, without widening the package's public surface.
       ignoreDependencies: [
         '@easyops-cn/docusaurus-theme-docusaurus-search-local',
         '@docs-test/react-router-dom',
-        '@docs-test/browser-runtime',
-        '@docs-test/content-markdown'
+        '@docs-test/browser-runtime'
       ]
     },
     'apps/shell': {

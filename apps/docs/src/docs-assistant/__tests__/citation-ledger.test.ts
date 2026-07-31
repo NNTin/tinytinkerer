@@ -96,30 +96,46 @@ describe('the citation ledger', () => {
     expect(overviewLedger.obligations[0]?.target.anchor).toBeNull()
   })
 
-  it('authorizes every anchor the outline proved exists, and nothing else', async () => {
-    const read = await runTool('read_doc', { ref: CANONICAL.entry.ref })
-    const ledger = ledgerOf(read)
-    const outlineAnchor = firstAnchorOf(CANONICAL)
+  it('authorizes the section a read selected, and no other heading of that page', async () => {
+    const anchor = firstAnchorOf(CANONICAL)
+    const ledger = ledgerOf(await runTool('read_doc', { ref: CANONICAL.entry.ref, anchor }))
+    const otherAnchor = CANONICAL.artifact.outline.find(
+      (item) => item.anchor !== null && item.anchor !== anchor
+    )?.anchor
 
-    expect(
-      isAuthorizedTarget(ledger, {
-        document: CANONICAL.entry.permalink,
-        anchor: outlineAnchor
-      })
-    ).toBe(true)
-    expect(
-      isAuthorizedTarget(ledger, {
-        document: CANONICAL.entry.permalink,
-        anchor: 'a-heading-this-page-does-not-have'
-      })
-    ).toBe(false)
+    const authorizes = (value: string | null) =>
+      isAuthorizedTarget(ledger, { document: CANONICAL.entry.permalink, anchor: value })
+
+    expect(authorizes(anchor)).toBe(true)
+    // The page itself: citing the document rather than the heading is citing
+    // something the result returned.
+    expect(authorizes(null)).toBe(true)
+    // An outline entry proves a heading EXISTS; it does not prove the answer
+    // drew on it, so it is not a target this turn can cite.
+    expect(otherAnchor).toBeDefined()
+    expect(authorizes(otherAnchor!)).toBe(false)
+    expect(authorizes('a-heading-this-page-does-not-have')).toBe(false)
     // A document nobody read is not authorized just because it exists.
     expect(isAuthorizedTarget(ledger, { document: LANDING.entry.permalink, anchor: null })).toBe(
       false
     )
   })
 
-  it('counts two anchored reads of one page as a single obligation', async () => {
+  it('does not authorize any section of a page read whole', async () => {
+    const ledger = ledgerOf(await runTool('read_doc', { ref: CANONICAL.entry.ref }))
+
+    expect(isAuthorizedTarget(ledger, { document: CANONICAL.entry.permalink, anchor: null })).toBe(
+      true
+    )
+    expect(
+      isAuthorizedTarget(ledger, {
+        document: CANONICAL.entry.permalink,
+        anchor: firstAnchorOf(CANONICAL)
+      })
+    ).toBe(false)
+  })
+
+  it('counts two anchored reads of one page as a single, document-level obligation', async () => {
     const outline = CANONICAL.artifact.outline.filter((item) => item.anchor !== null)
     const ledger = ledgerOf(
       await runTool('read_doc', { ref: CANONICAL.entry.ref, anchor: outline[0].anchor }),
@@ -127,6 +143,56 @@ describe('the citation ledger', () => {
     )
 
     expect(ledger.obligations).toHaveLength(1)
+    // The evidence spans more of the page than either section link would claim.
+    expect(ledger.obligations[0].target.anchor).toBeNull()
+    // Both sections the turn actually selected stay citable.
+    for (const entry of outline.slice(0, 2)) {
+      expect(
+        isAuthorizedTarget(ledger, {
+          document: CANONICAL.entry.permalink,
+          anchor: entry.anchor
+        })
+      ).toBe(true)
+    }
+  })
+
+  it('generates the same citation whichever order the reads happened in', async () => {
+    const anchor = firstAnchorOf(CANONICAL)
+    const wholeThenSection = ledgerOf(
+      await runTool('read_doc', { ref: CANONICAL.entry.ref }),
+      await runTool('read_doc', { ref: CANONICAL.entry.ref, anchor })
+    )
+    const sectionThenWhole = ledgerOf(
+      await runTool('read_doc', { ref: CANONICAL.entry.ref, anchor }),
+      await runTool('read_doc', { ref: CANONICAL.entry.ref })
+    )
+
+    // Identical evidence, so an identical citation: the page, because the turn
+    // saw the whole of it either way.
+    expect(wholeThenSection.obligations[0].target).toEqual(sectionThenWhole.obligations[0].target)
+    expect(wholeThenSection.obligations[0].target.anchor).toBeNull()
+  })
+
+  it('trusts only a result the host attributed to the documentation tool group', async () => {
+    const real = await runTool('read_doc', { ref: CANONICAL.entry.ref })
+
+    // A plugin that claimed the `read_doc` id and answers in a schema-compatible
+    // shape. `create-runtime` lets a colliding plugin win the id, so this is a
+    // reachable state rather than a hypothetical one — and the shape alone must
+    // not buy it any trust.
+    const impostor = { ...real, source: { kind: 'plugin' as const } }
+    const unattributed = { toolId: real.toolId, output: real.output }
+
+    for (const untrusted of [impostor, unattributed]) {
+      const ledger = buildDocumentationCitationLedger([untrusted], SITE)
+      expect(ledger.obligations).toEqual([])
+      expect(ledger.eligible).toEqual([])
+      expect(ledger.authorizedTargets.size).toBe(0)
+    }
+
+    // The genuine one still works, so this is a provenance check rather than a
+    // schema regression.
+    expect(ledgerOf(real).obligations).toHaveLength(1)
   })
 
   it('creates nothing from a failed call, an unknown ref, or an unparseable output', async () => {

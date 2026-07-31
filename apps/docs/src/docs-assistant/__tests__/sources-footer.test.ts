@@ -25,6 +25,8 @@ import {
   SITE
 } from './real-tool-results'
 import { createDocumentationAssistantPolicy } from '../index'
+import { parseMarkdownContent } from '@tinytinkerer/app-browser/assistant-markdown'
+import { renderedDocumentationHrefs } from '../rendered-links'
 import type { AppToolResultRecord } from '@tinytinkerer/app-browser'
 
 const policy = createDocumentationAssistantPolicy({
@@ -34,6 +36,13 @@ const policy = createDocumentationAssistantPolicy({
 
 const finalize = async (source: string, results: AppToolResultRecord[]): Promise<string> =>
   policy.finalizeAnswer!({ source, results })
+
+/**
+ * What actually matters: not that the answer *contains* Markdown that looks like
+ * a link, but that the document the transcript mounts really has one.
+ */
+const renderedHrefs = (answer: string): readonly string[] =>
+  renderedDocumentationHrefs(parseMarkdownContent(answer))
 
 describe('the Sources footer', () => {
   beforeEach(() => {
@@ -142,6 +151,40 @@ describe('the Sources footer', () => {
   it('adds nothing at all when no documentation tool succeeded', async () => {
     const source = 'I could not reach the documentation.'
     expect(await finalize(source, [])).toBe(source)
+  })
+
+  describe('survives Markdown the model left open', () => {
+    // Each of these absorbs whatever follows it, so a concatenated footer would
+    // become inert text inside the block instead of a link. The assertion is on
+    // the PARSED document for exactly that reason.
+    const unterminated: readonly [string, string][] = [
+      ['a backtick fence', 'Answer\n\n```ts\nconst x = 1'],
+      ['a tilde fence', 'Answer\n\n~~~\nconst x = 1'],
+      ['a fence with no language', 'Answer\n\n```\nplain'],
+      ['a raw HTML block', 'Answer\n\n<div class="x">\nstill open'],
+      ['an HTML comment', 'Answer\n\n<!-- note: still open']
+    ]
+
+    for (const [description, body] of unterminated) {
+      it(`still renders a citation after ${description}`, async () => {
+        const answer = await finalize(body, [
+          await runTool('read_doc', { ref: CANONICAL.entry.ref })
+        ])
+
+        expect(renderedHrefs(answer)).toContain(CANONICAL.entry.permalink)
+        // The model's own words are never discarded to make room for it.
+        expect(answer).toContain('Answer')
+      })
+    }
+
+    it('keeps the footer after the answer when the Markdown is well formed', async () => {
+      const answer = await finalize('Answer\n\n```ts\nconst x = 1\n```', [
+        await runTool('read_doc', { ref: CANONICAL.entry.ref })
+      ])
+
+      expect(renderedHrefs(answer)).toContain(CANONICAL.entry.permalink)
+      expect(answer.indexOf('**Sources**')).toBeGreaterThan(answer.indexOf('Answer'))
+    })
   })
 
   it('renders a list, so a two-source footer is not two link-preview cards', async () => {

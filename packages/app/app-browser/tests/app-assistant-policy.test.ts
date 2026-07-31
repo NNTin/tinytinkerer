@@ -152,8 +152,36 @@ describe('an app assistant policy', () => {
     })
 
     expect(await test.run()).toBe('composed [cited]')
-    // The failed call is absent, and the surviving record carries no `input`.
-    expect(seen).toEqual([[{ toolId: 'alpha', output: { page: 1 } }]])
+    // The failed call is absent; the surviving record carries no `input`, and it
+    // carries the provenance the HOST stamped at registration rather than
+    // anything the tool declared about itself.
+    expect(seen).toEqual([
+      [{ toolId: 'alpha', output: { page: 1 }, source: { kind: 'app', groupId: 'demo' } }]
+    ])
+  })
+
+  it('stamps provenance the tool itself cannot forge', async () => {
+    const seen: AppToolResultRecord[][] = []
+    const test = harness({
+      responses: [call('alpha'), prose('done'), prose('answer')],
+      tools: [
+        {
+          ...appTool('alpha'),
+          // A contributor claiming to be somebody else's app group.
+          source: { kind: 'app', groupId: 'documentation' }
+        }
+      ],
+      policy: {
+        finalizeAnswer: ({ source, results }) => {
+          seen.push([...results])
+          return source
+        }
+      }
+    })
+
+    await test.run()
+
+    expect(seen[0]?.[0]?.source).toEqual({ kind: 'app', groupId: 'demo' })
   })
 
   it('runs the finalizer once, after the answer is complete', async () => {

@@ -60,20 +60,56 @@ const formatCitation = (citation: DocumentationCitation): string => {
 }
 
 /**
- * Appends the footer, or returns the answer untouched when nothing is owed.
- *
  * A list rather than a bare link per line: `content-markdown` renders a
  * paragraph containing only a link as a preview card, which would turn a
  * two-source footer into two full-width cards below every answer.
  */
-export const appendSourcesFooter = (
+const renderFooter = (citations: readonly DocumentationCitation[]): string =>
+  [SOURCES_HEADING, '', ...citations.map(formatCitation)].join('\n')
+
+/**
+ * Whether a candidate answer really *renders* every owed citation as a link.
+ *
+ * Concatenating Markdown does not make a link: an answer whose last fence was
+ * never closed absorbs everything after it, so the footer becomes lines inside a
+ * `codeBlock` and the document contains no link node at all. An unterminated
+ * HTML block or comment does the same. That is exactly the case the deterministic
+ * fallback exists for, so "a citation is available" has to be checked against the
+ * parsed document rather than assumed from the string.
+ */
+export type FooterVerifier = (candidate: string, expected: readonly string[]) => boolean
+
+/**
+ * Attaches the footer so that every owed citation is a link in the rendered
+ * document, or returns the answer untouched when nothing is owed.
+ *
+ * Appending is tried first because it is what a reader expects. When the model's
+ * own Markdown swallows it, the footer is moved **ahead** of the answer instead:
+ * a leading block cannot be captured by a construct that opens after it. That is
+ * a deliberate trade — an unusual position beats a missing citation, and it
+ * never discards a word the model wrote.
+ */
+export const attachSourcesFooter = (
   source: string,
-  citations: readonly DocumentationCitation[]
+  citations: readonly DocumentationCitation[],
+  verify: FooterVerifier
 ): string => {
   if (citations.length === 0) {
     return source
   }
-  const footer = [SOURCES_HEADING, '', ...citations.map(formatCitation)].join('\n')
+  const footer = renderFooter(citations)
   const body = source.replace(/\s+$/, '')
-  return body.length === 0 ? footer : `${body}\n\n${footer}\n`
+  if (body.length === 0) {
+    return footer
+  }
+
+  const expected = citations.map((citation) => targetToHref(citation.target))
+  const appended = `${body}\n\n${footer}\n`
+  if (verify(appended, expected)) {
+    return appended
+  }
+  // Last resort rather than first choice, and unconditional: if even this does
+  // not verify, nothing about the answer can make a link render, and returning
+  // it is still strictly better than returning the swallowed version.
+  return `${footer}\n\n${body}`
 }

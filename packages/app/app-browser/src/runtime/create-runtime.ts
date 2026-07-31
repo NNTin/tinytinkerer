@@ -243,11 +243,17 @@ export const createRuntime = (options: {
     const disc = options.mcpDiscovery?.[server.id]
     if (!disc || disc.error) continue
     for (const toolMeta of disc.tools) {
-      addToolWithDescriptor(createMcpTool(server, toolMeta, edgeFetch), {
-        id: `mcp:${server.id}:${toolMeta.toolName}`,
-        description: `[${server.name}] ${toolMeta.description}`,
-        inputSchema: toolMeta.inputSchema
-      })
+      addToolWithDescriptor(
+        {
+          ...createMcpTool(server, toolMeta, edgeFetch),
+          source: { kind: 'mcp', groupId: server.id }
+        },
+        {
+          id: `mcp:${server.id}:${toolMeta.toolName}`,
+          description: `[${server.name}] ${toolMeta.description}`,
+          inputSchema: toolMeta.inputSchema
+        }
+      )
     }
   }
 
@@ -330,7 +336,13 @@ export const createRuntime = (options: {
     )
     hooks.push(...contributions.hooks)
     for (const tool of contributions.tools) {
-      if (addTool(tool)) {
+      // Provenance is stamped by the HOST, overwriting anything the contributor
+      // set (issue #478): a tool that could declare its own origin could claim
+      // somebody else's. No `groupId` for a plugin tool — `collectContributions`
+      // merges every active plugin's tools before this point, so per-plugin
+      // attribution is not available here (the same limitation the descriptor
+      // lockstep check below works around).
+      if (addTool({ ...tool, source: { kind: 'plugin' } })) {
         addedPluginToolIds.add(tool.id)
       }
     }
@@ -409,7 +421,7 @@ export const createRuntime = (options: {
     if (!isPluginToolEnabled(appToolDisablement, appToolGroup!.id, tool.id)) {
       continue
     }
-    if (addTool(tool)) {
+    if (addTool({ ...tool, source: { kind: 'app', groupId: appToolGroup!.id } })) {
       registeredAppToolIds.push(tool.id)
       allToolDescriptors.push({
         id: tool.id,
@@ -462,7 +474,13 @@ export const createRuntime = (options: {
               // narrow `outcome` to its successful arm.
               results: context.toolInvocations.flatMap<AppToolResultRecord>((invocation) =>
                 invocation.outcome.ok
-                  ? [{ toolId: invocation.toolId, output: invocation.outcome.output }]
+                  ? [
+                      {
+                        toolId: invocation.toolId,
+                        output: invocation.outcome.output,
+                        ...(invocation.source ? { source: invocation.source } : {})
+                      }
+                    ]
                   : []
               )
             })

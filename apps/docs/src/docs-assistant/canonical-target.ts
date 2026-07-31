@@ -43,6 +43,13 @@ export type DocumentationSite = {
 
 export type DocumentationLinkClassification =
   | { kind: 'outside-policy' }
+  /**
+   * The URL names no destination this policy can judge — an empty or malformed
+   * one, including what `content-markdown` leaves behind after stripping a URL
+   * it refuses to navigate to. Demoted rather than allowed: it cannot be
+   * authorized, and it cannot be shown to be somebody else's page either.
+   */
+  | { kind: 'unresolvable' }
   | {
       kind: 'documentation'
       target: CanonicalDocumentationTarget
@@ -75,16 +82,24 @@ const decodeAnchor = (value: string): string => {
  * it names.
  *
  * `outside-policy` covers everything this issue deliberately does not govern:
- * other origins, `mailto:`/`tel:`, protocol-relative URLs (which are always
- * another origin), and same-site paths outside the documentation base.
+ * other origins, `mailto:`/`tel:`, and same-site paths outside the documentation
+ * base.
+ *
+ * `unresolvable` is the third answer, and it exists because the renderer strips
+ * a URL it will not navigate to (`content-markdown`'s `sanitizeLinkUrl` empties
+ * a protocol-relative or non-web scheme) *before* this policy ever sees the
+ * parsed document. Such a link is not proof of anything: it may be the sanitized
+ * remains of `//host/docs/invented/`, which is a same-origin documentation
+ * fabrication. Treating it as outside-policy would leave a clickable `<a href="">`
+ * behind, so it is reported as its own outcome and demoted.
  */
 export const classifyDocumentationLink = (
   url: string,
   site: DocumentationSite
 ): DocumentationLinkClassification => {
   const trimmed = url.trim()
-  if (trimmed.length === 0 || trimmed.startsWith('//')) {
-    return { kind: 'outside-policy' }
+  if (trimmed.length === 0) {
+    return { kind: 'unresolvable' }
   }
 
   const scheme = /^([a-z][a-z\d+\-.]*):/i.exec(trimmed)?.[1]?.toLowerCase()
@@ -92,28 +107,42 @@ export const classifyDocumentationLink = (
     return { kind: 'outside-policy' }
   }
 
+  // A protocol-relative URL borrows the *page's* scheme, so `//host/docs/x` is
+  // this site whenever `host` is. Treating it as always-foreign was a real
+  // bypass: the finalizer left it alone, and the renderer then emptied its href
+  // rather than navigating anywhere.
+  const protocolRelative = !scheme && trimmed.startsWith('//')
+  const absolute = Boolean(scheme) || protocolRelative
+
   const base = new URL(site.siteConfig.baseUrl, RESOLUTION_ORIGIN)
   let parsed: URL
   try {
-    parsed = new URL(trimmed, base)
+    parsed = new URL(
+      protocolRelative
+        ? `${new URL(site.origin ?? RESOLUTION_ORIGIN).protocol}${trimmed}`
+        : trimmed,
+      base
+    )
   } catch {
-    return { kind: 'outside-policy' }
+    return { kind: 'unresolvable' }
   }
 
-  if (scheme) {
+  if (absolute) {
     // An absolute URL is only this site's when we know the site's origin and it
     // matches. Everything else is somebody else's page.
-    if (site.origin === null || new URL(trimmed).origin !== site.origin) {
+    if (site.origin === null || parsed.origin !== new URL(site.origin).origin) {
       return { kind: 'outside-policy' }
     }
   }
 
-  const canonicalBase = canonicalizeDocusaurusPermalink(base.pathname, site.siteConfig)
+  const canonicalBase = stripTrailingSlash(
+    canonicalizeDocusaurusPermalink(base.pathname, site.siteConfig)
+  )
   const canonicalPath = canonicalizeDocusaurusPermalink(parsed.pathname, site.siteConfig)
-  // `startsWith` on the canonical base is what scopes the policy to the
-  // documentation application: the product's own marketing routes share this
-  // origin and are none of this issue's business.
-  if (!canonicalPath.startsWith(stripTrailingSlash(canonicalBase))) {
+  // A path *segment* boundary, not a string prefix: bare `startsWith` classified
+  // `/docs-evil/...` as documentation because it shares the first five
+  // characters of `/docs/`. The base itself still counts, so `/docs/` resolves.
+  if (canonicalPath !== canonicalBase && !canonicalPath.startsWith(`${canonicalBase}/`)) {
     return { kind: 'outside-policy' }
   }
 

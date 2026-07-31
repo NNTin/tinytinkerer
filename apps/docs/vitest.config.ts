@@ -48,12 +48,6 @@ export default defineConfig({
       // composition and answer finalization rather than an imitation, and
       // `createRuntime` is deliberately not on app-browser's public barrel (which
       // cannot load outside a Vite app build). See src/test/browser-runtime.d.ts.
-      // The assistant's real incremental Markdown session, so the streamed-
-      // snapshot link policy is tested against the documents the renderer would
-      // actually have been handed. See src/test/content-markdown.d.ts.
-      '@docs-test/content-markdown': fileURLToPath(
-        new URL('../../packages/content/content-markdown/src/index.ts', import.meta.url)
-      ),
       '@docs-test/browser-runtime': fileURLToPath(
         new URL('../../packages/app/app-browser/src/runtime/create-runtime.ts', import.meta.url)
       ),

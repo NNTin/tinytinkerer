@@ -50,6 +50,13 @@ const toolById = new Map(
   ])
 )
 
+/**
+ * The provenance `create-runtime` stamps on a tool it registers from the
+ * `Documentation` app group. Written out rather than imported so a change to
+ * what the host stamps has to be reflected here deliberately.
+ */
+export const DOCUMENTATION_SOURCE = { kind: 'app', groupId: 'documentation' } as const
+
 /** Runs a real documentation tool and returns the record a policy would see. */
 export const runTool = async (
   toolId: string,
@@ -58,7 +65,7 @@ export const runTool = async (
   const tool = toolById.get(toolId)
   if (!tool) throw new Error(`tool ${toolId} missing`)
   const output = await tool.execute(tool.schema.parse(input))
-  return { toolId, output }
+  return { toolId, output, source: DOCUMENTATION_SOURCE }
 }
 
 /**

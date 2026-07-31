@@ -241,6 +241,11 @@ export abstract class AgentRuntimeBase {
     toolCall: { toolId: string; input: Record<string, unknown> }
   ): AsyncGenerator<ChatEvent, ToolOutcome> {
     const { toolId, input } = toolCall
+    // Read from the REGISTERED tool, never from the model's chosen id: this is
+    // the attribution a consumer gates trust on (issue #478), so it has to come
+    // from what the host registered under that id. An unknown id has none, which
+    // is the fail-closed direction.
+    const source = this.registry.get(toolId)?.source
 
     // Always emit a started→failed pair (even when policy disables tool calls),
     // so the projection layer — which coalesces tool events by matching a failure
@@ -250,7 +255,8 @@ export abstract class AgentRuntimeBase {
       stepId,
       ...(parentStepId ? { parentStepId } : {}),
       toolId,
-      input
+      input,
+      ...(source ? { source } : {})
     })
 
     if (this.maxToolCallsPerStep < 1) {
@@ -293,7 +299,12 @@ export abstract class AgentRuntimeBase {
         awaitsHumanInput ? this.humanInputTimeoutMs : this.toolTimeoutMs,
         `Tool ${toolId} timed out`
       )
-      yield createEvent('agent.tool.completed', { stepId, toolId, output })
+      yield createEvent('agent.tool.completed', {
+        stepId,
+        toolId,
+        output,
+        ...(source ? { source } : {})
+      })
       return { ok: true, output }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Tool execution failed'
@@ -559,11 +570,13 @@ export abstract class AgentRuntimeBase {
       // Record the call in run order as the structured source for native
       // tool-call message assembly (issue #276). `toolStepId` is the tool_call
       // id echoed on both the assistant tool_call and its tool result message.
+      const toolSource = this.registry.get(decision.toolId)?.source
       context.toolInvocations.push({
         callId: toolStepId,
         toolId: decision.toolId,
         input: decision.input,
-        outcome
+        outcome,
+        ...(toolSource ? { source: toolSource } : {})
       })
 
       if (outcome.ok) {

@@ -1,4 +1,4 @@
-import type { ContentDocument } from '@tinytinkerer/contracts'
+import type { ContentDocument, ToolSource } from '@tinytinkerer/contracts'
 
 /**
  * What an app may contribute to its own assistant's reasoning and answers
@@ -27,10 +27,18 @@ import type { ContentDocument } from '@tinytinkerer/contracts'
  * - the tool's **input** is deliberately absent. A citation composed from what
  *   the model *asked for* is a citation composed from model text. Withholding
  *   the input makes that structurally impossible instead of merely forbidden.
+ *
+ * `source` is the host's own attribution, stamped at registration. A policy that
+ * decides how far to trust an output needs it because a tool **id is a name, not
+ * an origin**: ids are registered into one space where the first writer wins, so
+ * a plugin can claim an id an app also wanted, and a schema-compatible payload
+ * from it would otherwise be indistinguishable from the real tool's. Absent for
+ * a tool registered before provenance existed, which fails closed.
  */
 export type AppToolResultRecord = {
   toolId: string
   output: unknown
+  source?: ToolSource
 }
 
 /** The three model-facing prompts an app can contribute instructions to. */
@@ -61,17 +69,26 @@ export type AppAssistantPolicy = {
   }) => string | Promise<string>
 
   /**
-   * Rewrites a *rendered* snapshot of an answer, live and after reload.
+   * Compiles a display-time sanitizer for one turn's results, then applies it to
+   * every rendered snapshot of that turn.
    *
-   * `finalizeAnswer` alone is not enough: it runs when the stream settles, so
-   * an unauthorized link would be clickable for the seconds the answer is
-   * streaming. This is the display-time counterpart, applied to every snapshot
-   * of the parsed document; it must return the document unchanged (by
-   * identity) when it changes nothing, so a settled turn's memoized render is
-   * not invalidated on every keystroke of the next one.
+   * `finalizeAnswer` alone is not enough: it runs when the stream settles, so an
+   * unauthorized link would be clickable for the seconds an answer is streaming.
+   * This is the display-time counterpart.
+   *
+   * Two stages rather than one call per render, because the two inputs change at
+   * completely different rates: a turn's results change once per tool
+   * completion, while its document changes on every streamed chunk. Validating a
+   * 20,000-character read against its schema on every delta is work proportional
+   * to `result-size x chunks`; compiling once makes it proportional to
+   * completions. The host memoizes the returned sanitizer on the results, so a
+   * policy may do arbitrary preparation here and should keep the returned
+   * function cheap.
+   *
+   * The sanitizer must return its document unchanged **by identity** when it
+   * changes nothing, so an unaffected render is not invalidated.
    */
-  sanitizeRenderedContent?: (input: {
-    document: ContentDocument
+  prepareRenderedContent?: (input: {
     results: readonly AppToolResultRecord[]
-  }) => ContentDocument
+  }) => (document: ContentDocument) => ContentDocument
 }
