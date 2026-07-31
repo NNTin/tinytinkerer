@@ -45,9 +45,42 @@ export const serializedLength = (value: unknown): number => (JSON.stringify(valu
  */
 const MAX_MESSAGE_CHARS = 2_000
 
+/**
+ * The longest route a response echoes back. A pathname is whatever the SPA was
+ * navigated to, so it is caller-controlled in the same way a `ref` is; a valid
+ * 40,000-character route produced a `not_on_doc_page` of 42,057 characters.
+ */
+const MAX_PATHNAME_CHARS = 1_000
+
+/** Bounds text, marking the cut so a reader is not misled by the tail. */
+const boundedText = (value: string, limit: number): string =>
+  value.length <= limit ? value : `${value.slice(0, limit - 1)}…`
+
 /** Bounds a message, marking the cut so a reader is not misled by the tail. */
-export const boundedMessage = (message: string): string =>
-  message.length <= MAX_MESSAGE_CHARS ? message : `${message.slice(0, MAX_MESSAGE_CHARS - 1)}…`
+export const boundedMessage = (message: string): string => boundedText(message, MAX_MESSAGE_CHARS)
+
+/** Bounds a route echoed back to the model. */
+export const boundedPathname = (pathname: string): string =>
+  boundedText(pathname, MAX_PATHNAME_CHARS)
+
+/**
+ * The single postcondition every documentation-tool response passes through.
+ *
+ * Field-by-field bounds are the fix for the cases we know about; this is the
+ * one that holds for the cases we do not. Some parts of a response are neither
+ * caller-controlled nor shrinkable — a document's `title` and `permalink` come
+ * from a *validated* corpus, so a 16,000-character authored title produced a
+ * 32,394-character `ok` payload even after its Markdown had been reduced to
+ * nothing. Shrinking cannot fix that, and emitting it would hand the model a
+ * fragment of JSON, so the response becomes a small typed failure instead.
+ *
+ * `overflow` must build its result from constants, since nothing downstream
+ * checks it again.
+ */
+export const enforceResponseCap = <T>(payload: T, overflow: (length: number) => T): T =>
+  serializedLength(payload) <= RESPONSE_CHARACTER_CAP
+    ? payload
+    : overflow(serializedLength(payload))
 
 /** Below this there is no point shrinking further; the guard below takes over. */
 const MIN_BUDGET = 500

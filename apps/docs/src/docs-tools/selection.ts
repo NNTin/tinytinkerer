@@ -79,11 +79,19 @@ export const flattenOutline = (
 // Structure scanning
 // ---------------------------------------------------------------------------
 
-type OpenConstruct = { kind: 'fence' | 'container'; marker: string; start: number }
+/**
+ * A block construct that spans lines and therefore needs closing syntax if the
+ * text is cut while it is open.
+ *
+ * `linePrefix` is the exact text before the marker on the opening line — the
+ * blockquote markers and indentation a nested construct carries. Reusing it
+ * verbatim for the closer is what makes `> :::note` close as `> :::` rather
+ * than as a bare `:::` that is no longer inside the quote.
+ */
+type OpenConstruct = { kind: 'fence' | 'container'; marker: string; linePrefix: string }
 
 /**
- * What must be appended at each line start to make the text before it
- * self-contained.
+ * What must be appended to make text ending at a given point self-contained.
  *
  * Fence and container closers are kept apart because they belong on opposite
  * sides of the truncation marker: a fence has to close *immediately*, or the
@@ -93,76 +101,141 @@ type OpenConstruct = { kind: 'fence' | 'container'; marker: string; start: numbe
  * A fence is always innermost — directive lines inside a code block are code,
  * not syntax — so there is at most one fence closer.
  */
+type LineClosers = { fence: string; containers: string }
+
 type LineStructure = {
   starts: number[]
-  fenceCloser: string[]
-  containerClosers: string[]
-  /** Start of the outermost container still open at the end of the text. */
-  unclosedContainerStart: number | undefined
+  closers: LineClosers[]
+  /**
+   * Line starts that must never be cut at, because the line *after* the cut is
+   * what makes the line *before* it mean what it says.
+   */
+  unsafeCut: boolean[]
+  /** Closers for the whole text, i.e. for a cut at its very end. */
+  trailing: LineClosers
 }
 
-const FENCE_OPEN = /^\s{0,3}(`{3,}|~{3,})/
-const FENCE_CLOSE = /^\s{0,3}(`{3,}|~{3,})\s*$/
-const CONTAINER_OPEN = /^\s{0,3}(:{3,})[A-Za-z]/
-const CONTAINER_CLOSE = /^\s{0,3}(:{3,})\s*$/
+/**
+ * Blockquote markers and indentation, which every block construct may carry.
+ *
+ * The indent is deliberately unbounded rather than CommonMark's three spaces:
+ * the corpus preserves authored Markdown, and a fence or directive nested in a
+ * list is indented to its item. Bounding it at three would miss those openers
+ * and emit an admonition that never closes — the failure this scanner exists to
+ * prevent. The cost is that a fence line inside a *4-space indented code block*
+ * would be read as a real fence; closers stay bounded relative to their opener
+ * (below) so the common case of documenting fences *inside* a fence is
+ * unaffected, and this site's corpus authors no indented code blocks at all.
+ */
+const LINE_PREFIX = /^((?:[ \t]*>)*)([ \t]*)/
+const FENCE_MARKER = /^(`{3,}|~{3,})/
+const FENCE_CLOSE_MARKER = /^(`{3,}|~{3,})[ \t]*$/
+const CONTAINER_OPEN_MARKER = /^(:{3,})[A-Za-z]/
+const CONTAINER_CLOSE_MARKER = /^(:{3,})[ \t]*$/
 
-const scanStructure = (text: string): LineStructure => {
-  const starts: number[] = []
-  const fenceCloser: string[] = []
-  const containerClosers: string[] = []
-  const stack: OpenConstruct[] = []
-  let offset = 0
+/** How much further than its opener a closing marker may be indented. */
+const CLOSER_INDENT_SLACK = 3
 
-  for (const line of text.split('\n')) {
-    starts.push(offset)
-    const top = stack.at(-1)
-    fenceCloser.push(top?.kind === 'fence' ? `${top.marker}\n` : '')
-    containerClosers.push(
-      stack
-        .filter((item) => item.kind === 'container')
-        .reverse()
-        .map((item) => `${item.marker}\n`)
-        .join('')
-    )
+type ParsedLine = { linePrefix: string; quote: string; indent: number; body: string }
 
-    if (top?.kind === 'fence') {
-      const close = FENCE_CLOSE.exec(line)
-      if (close && close[1][0] === top.marker[0] && close[1].length >= top.marker.length) {
-        stack.pop()
-      }
-    } else {
-      const fence = FENCE_OPEN.exec(line)
-      const closeContainer = CONTAINER_CLOSE.exec(line)
-      const openContainer = CONTAINER_OPEN.exec(line)
-      if (fence) stack.push({ kind: 'fence', marker: fence[1], start: offset })
-      else if (closeContainer && top?.kind === 'container') stack.pop()
-      else if (openContainer)
-        stack.push({ kind: 'container', marker: openContainer[1], start: offset })
-    }
-    offset += line.length + 1
-  }
-
+const parseLine = (line: string): ParsedLine => {
+  const match = LINE_PREFIX.exec(line)
+  const quote = match?.[1] ?? ''
+  const spaces = match?.[2] ?? ''
   return {
-    starts,
-    fenceCloser,
-    containerClosers,
-    unclosedContainerStart: stack.find((item) => item.kind === 'container')?.start
+    linePrefix: `${quote}${spaces}`,
+    quote: quote.replace(/[ \t]/g, ''),
+    indent: spaces.length,
+    body: line.slice(quote.length + spaces.length)
+  }
+}
+
+const closes = (open: OpenConstruct, line: ParsedLine): boolean =>
+  parseLine(open.linePrefix).quote === line.quote &&
+  line.indent <= parseLine(open.linePrefix).indent + CLOSER_INDENT_SLACK
+
+const closersFor = (stack: readonly OpenConstruct[]): LineClosers => {
+  const top = stack.at(-1)
+  return {
+    fence: top?.kind === 'fence' ? `${top.linePrefix}${top.marker}\n` : '',
+    containers: stack
+      .filter((item) => item.kind === 'container')
+      .reverse()
+      .map((item) => `${item.linePrefix}${item.marker}\n`)
+      .join('')
   }
 }
 
 /**
- * The length of `text` up to the point where it stops leaving a container
- * directive open.
- *
- * Used for the balanced overview's preamble, which ends where the first outline
- * root begins. When that root is authored inside an admonition, the span before
- * it holds the `:::note` opener but not its closer — and the root's own
- * `selectionPrefix` reproduces that opener anyway, so keeping it would emit it
- * twice as well as leaving it unbalanced. Ending earlier does both jobs without
- * inventing syntax.
+ * A GFM table's delimiter row. Cutting between a header row and this line turns
+ * the promised table into a paragraph, so the line start it begins at is not a
+ * legal cut. Requiring a pipe is what keeps a bare `---` thematic break out.
  */
-const balancedLength = (text: string): number =>
-  scanStructure(text).unclosedContainerStart ?? text.length
+const isTableDelimiter = (line: string): boolean =>
+  line.includes('|') && line.includes('-') && /^[\s|:-]+$/.test(line)
+
+/** A setext underline, which likewise turns into a paragraph without its text. */
+const isSetextUnderline = (line: string, previous: string): boolean =>
+  previous.trim().length > 0 && /^ {0,3}(=+|-+)[ \t]*$/.test(line)
+
+const scanStructure = (text: string): LineStructure => {
+  const starts: number[] = []
+  const closers: LineClosers[] = []
+  const unsafeCut: boolean[] = []
+  const stack: OpenConstruct[] = []
+  const lines = text.split('\n')
+  let offset = 0
+
+  lines.forEach((line, index) => {
+    starts.push(offset)
+    closers.push(closersFor(stack))
+    const parsed = parseLine(line)
+    const insideFence = stack.at(-1)?.kind === 'fence'
+    unsafeCut.push(
+      !insideFence &&
+        index > 0 &&
+        (isTableDelimiter(line) || isSetextUnderline(line, lines[index - 1]))
+    )
+
+    const top = stack.at(-1)
+    if (top?.kind === 'fence') {
+      const close = FENCE_CLOSE_MARKER.exec(parsed.body)
+      if (
+        close &&
+        close[1][0] === top.marker[0] &&
+        close[1].length >= top.marker.length &&
+        closes(top, parsed)
+      ) {
+        stack.pop()
+      }
+    } else {
+      const fence = FENCE_MARKER.exec(parsed.body)
+      const closeContainer = CONTAINER_CLOSE_MARKER.exec(parsed.body)
+      const openContainer = CONTAINER_OPEN_MARKER.exec(parsed.body)
+      if (fence) stack.push({ kind: 'fence', marker: fence[1], linePrefix: parsed.linePrefix })
+      else if (closeContainer && top?.kind === 'container' && closes(top, parsed)) stack.pop()
+      else if (openContainer)
+        stack.push({ kind: 'container', marker: openContainer[1], linePrefix: parsed.linePrefix })
+    }
+    offset += line.length + 1
+  })
+
+  return { starts, closers, unsafeCut, trailing: closersFor(stack) }
+}
+
+/**
+ * The syntax `text` needs appended to stand alone.
+ *
+ * The balanced overview's gap slices use it. A span that ends inside an
+ * admonition — the `:::note` opener and the prose beneath it, before the first
+ * heading — is authored content, and an earlier version deleted it rather than
+ * closing it. Closing it is the same thing the corpus already does for a
+ * section through `selectionSuffix`, so nothing new is invented here.
+ */
+const trailingSyntax = (text: string): string => {
+  const { trailing } = scanStructure(text)
+  return `${trailing.fence}${trailing.containers}`
+}
 
 // ---------------------------------------------------------------------------
 // The bounded-slice primitive
@@ -213,13 +286,13 @@ export const boundedSlice = (options: {
   // in the slice — so scanning the source alone would find nothing to close and
   // emit an opener with no closer.
   const combined = `${prefix}${source}`
-  const { starts, fenceCloser, containerClosers } = scanStructure(combined)
+  const { starts, closers, unsafeCut } = scanStructure(combined)
 
   const emittedLength = (index: number): number =>
     starts[index] +
-    fenceCloser[index].length +
+    closers[index].fence.length +
     TRUNCATION_MARKER.length +
-    containerClosers[index].length
+    closers[index].containers.length
 
   let cut = -1
   let paragraphCut = -1
@@ -227,6 +300,13 @@ export const boundedSlice = (options: {
     // Candidates start after the prefix: cutting into it would emit a partial
     // opener, and the prefix is mandatory syntax rather than content.
     if (starts[index] < prefix.length) continue
+    // Strictly inside the source, so a truncated slice always leaves something
+    // out. A cut at the very end would emit the truncation marker while having
+    // consumed everything, making `truncated` disagree with the accounting.
+    if (starts[index] >= combined.length) continue
+    // A cut that would strand a table header without its delimiter row, or a
+    // setext heading without its underline.
+    if (unsafeCut[index]) continue
     // Not a `break`: the closing syntax a cut needs varies with the cut, so a
     // later candidate can fit where an earlier one did not.
     if (emittedLength(index) > budget) continue
@@ -241,10 +321,11 @@ export const boundedSlice = (options: {
 
   // `suffix` is deliberately dropped on this path. It closes exactly the
   // containers the *untruncated* slice leaves open; once the slice is cut, the
-  // set still open is different, and `containerClosers` is that set. Emitting
-  // both would close some of them twice.
+  // set still open is different, and `closers` is that set. Emitting both would
+  // close some of them twice.
+  const { fence, containers } = closers[chosen]
   return {
-    markdown: `${combined.slice(0, starts[chosen])}${fenceCloser[chosen]}${TRUNCATION_MARKER}${containerClosers[chosen]}`,
+    markdown: `${combined.slice(0, starts[chosen])}${fence}${TRUNCATION_MARKER}${containers}`,
     consumedSourceChars: starts[chosen] - prefix.length,
     truncated: true
   }
@@ -312,6 +393,17 @@ type OverviewSlice = {
 }
 
 /**
+ * The overview's units plus the characters deliberately left unrepresented.
+ *
+ * The two travel together because the truncation accounting is derived from
+ * coverage: every character of the document is either inside a slice, counted
+ * here as elided whitespace, or reported as omitted. Returning the slices alone
+ * is what previously let content vanish while the response claimed
+ * `truncated: false`.
+ */
+type OverviewPlan = { slices: OverviewSlice[]; elidedCharacterCount: number }
+
+/**
  * The units a balanced overview is built from: the document preamble, then one
  * slice per top-level outline entry, each carrying the container wrappers the
  * corpus recorded for it.
@@ -328,60 +420,96 @@ type OverviewSlice = {
  * - an outline root's section already spans its descendants, so no recursion is
  *   needed here. The response's flat `outline` still exposes nested headings, so
  *   a follow-up targeted read remains possible.
+ *
+ * The spans **tile the document exactly**: a gap between roots — the `:::note`
+ * opener line and any prose before the next heading — becomes its own slice,
+ * balanced by `trailingSyntax`, rather than being clipped away. That is the
+ * property the truncation accounting below is derived from, so authored text
+ * can no longer disappear silently.
  */
-const overviewSlices = (artifact: DocumentationCorpusDocumentArtifact): OverviewSlice[] => {
+const overviewSlices = (artifact: DocumentationCorpusDocumentArtifact): OverviewPlan => {
   const roots = artifact.outline.flatMap((item) => {
     const section = artifact.sections[item.sectionIndex]
     return section ? [section] : []
   })
 
-  const slices: OverviewSlice[] = []
-  const firstRootStart = roots[0]?.startOffset ?? artifact.markdown.length
-  if (firstRootStart > 0) {
-    const span = artifact.markdown.slice(0, firstRootStart)
-    const preamble = span.slice(0, balancedLength(span))
-    if (preamble.length > 0) {
-      slices.push({
-        heading: artifact.sections[0]?.title ?? '',
-        anchor: undefined,
-        source: preamble,
-        prefix: '',
-        suffix: '',
-        documentOffset: 0,
-        size: preamble.length
-      })
-    }
+  type Span = { start: number; end: number; section?: DocumentationCorpusSection }
+  const spans: Span[] = []
+  let cursor = 0
+  for (const section of roots) {
+    // Clamped rather than trusted: overlapping roots would break the tiling, and
+    // the shared artifact validator rejects them before this ever runs.
+    const start = Math.max(cursor, section.startOffset)
+    const end = Math.max(start, section.endOffset)
+    if (start > cursor) spans.push({ start: cursor, end: start })
+    spans.push({ start, end, section })
+    cursor = end
+  }
+  if (cursor < artifact.markdown.length) {
+    spans.push({ start: cursor, end: artifact.markdown.length })
   }
 
-  for (const section of roots) {
+  const slices: OverviewSlice[] = []
+  let elidedCharacterCount = 0
+  for (const span of spans) {
+    const source = artifact.markdown.slice(span.start, span.end)
+    if (!span.section) {
+      // Whitespace between structural units carries no authored content, so
+      // leaving it out is not omission — but it is still counted, because the
+      // accounting below asserts that every character is accounted for.
+      if (source.trim().length === 0) {
+        elidedCharacterCount += source.length
+        continue
+      }
+      const suffix = trailingSyntax(source)
+      slices.push({
+        heading: span.start === 0 ? (artifact.sections[0]?.title ?? '') : '',
+        anchor: undefined,
+        source,
+        prefix: '',
+        suffix,
+        documentOffset: span.start,
+        size: source.length + suffix.length
+      })
+      continue
+    }
+    const { selectionPrefix, selectionSuffix } = span.section
     slices.push({
-      heading: section.title,
-      anchor: section.anchor ?? undefined,
-      source: artifact.markdown.slice(section.startOffset, section.endOffset),
-      prefix: section.selectionPrefix,
-      suffix: section.selectionSuffix,
-      documentOffset: section.startOffset,
-      size: section.characterCount
+      heading: span.section.title,
+      anchor: span.section.anchor ?? undefined,
+      source,
+      prefix: selectionPrefix,
+      suffix: selectionSuffix,
+      documentOffset: span.start,
+      size: selectionPrefix.length + source.length + selectionSuffix.length
     })
   }
-  return slices
+  return { slices, elidedCharacterCount }
 }
 
+/**
+ * Truncation metadata derived from **source coverage**, never from whether a
+ * slice happened to need a local cut.
+ *
+ * `omittedCharacterCount` is the caller's count of source characters no slice
+ * represents, so `truncated` is exactly `omitted > 0`. An earlier version set
+ * `truncated` from the bounded slices alone, which reported `truncated: false`
+ * with `omittedCharacterCount: 0` for a document whose prologue had been
+ * discarded before allocation ever ran.
+ */
 const truncationOf = (
   sourceCharacterCount: number,
+  omittedCharacterCount: number,
   sections: readonly DocumentationSelectionSection[],
-  truncated: boolean,
   nextSectionAnchor: string | null
 ): DocumentationCorpusReadTruncation => {
-  const returnedCharacterCount = sections.reduce((total, item) => total + item.markdown.length, 0)
+  const omitted = Math.max(0, omittedCharacterCount)
   return {
-    truncated,
+    truncated: omitted > 0,
     sourceCharacterCount,
-    returnedCharacterCount,
-    omittedCharacterCount: truncated
-      ? Math.max(0, sourceCharacterCount - returnedCharacterCount)
-      : 0,
-    nextSectionAnchor: truncated ? nextSectionAnchor : null
+    returnedCharacterCount: sections.reduce((total, item) => total + item.markdown.length, 0),
+    omittedCharacterCount: omitted,
+    nextSectionAnchor: omitted > 0 ? nextSectionAnchor : null
   }
 }
 
@@ -412,8 +540,8 @@ const selectFull = (
     sections,
     truncation: truncationOf(
       artifact.markdown.length,
+      artifact.markdown.length - slice.consumedSourceChars,
       sections,
-      slice.truncated,
       nextAnchorAfter(artifact, slice.consumedSourceChars)
     )
   }
@@ -425,8 +553,9 @@ export const selectSection = (
   section: DocumentationCorpusSection,
   budget: number
 ): DocumentationSelection => {
+  const span = artifact.markdown.slice(section.startOffset, section.endOffset)
   const slice = boundedSlice({
-    source: artifact.markdown.slice(section.startOffset, section.endOffset),
+    source: span,
     prefix: section.selectionPrefix,
     suffix: section.selectionSuffix,
     budget
@@ -443,8 +572,8 @@ export const selectSection = (
     sections,
     truncation: truncationOf(
       section.characterCount,
+      span.length - slice.consumedSourceChars,
       sections,
-      slice.truncated,
       // Where the returned text stopped inside the document, so the suggestion
       // is a section the reader has not already been shown.
       nextAnchorAfter(artifact, section.startOffset + slice.consumedSourceChars)
@@ -462,14 +591,14 @@ const selectBalancedOverview = (
   artifact: DocumentationCorpusDocumentArtifact,
   budget: number
 ): DocumentationSelection => {
-  const slices = overviewSlices(artifact)
+  const { slices, elidedCharacterCount } = overviewSlices(artifact)
   const allocation = allocateBudget(
     slices.map((slice) => slice.size),
     budget
   )
 
-  let firstTruncatedAnchor: string | null = null
-  let anyTruncated = false
+  let coveredCharacterCount = elidedCharacterCount
+  let firstOmittedOffset: number | undefined
   const sections = slices.map((slice, index) => {
     const bounded = boundedSlice({
       source: slice.source,
@@ -477,9 +606,9 @@ const selectBalancedOverview = (
       suffix: slice.suffix,
       budget: allocation[index]
     })
-    if (bounded.truncated) {
-      anyTruncated = true
-      if (firstTruncatedAnchor === null) firstTruncatedAnchor = slice.anchor ?? null
+    coveredCharacterCount += bounded.consumedSourceChars
+    if (bounded.consumedSourceChars < slice.source.length && firstOmittedOffset === undefined) {
+      firstOmittedOffset = slice.documentOffset + bounded.consumedSourceChars
     }
     return {
       ...(slice.heading ? { heading: slice.heading } : {}),
@@ -491,9 +620,15 @@ const selectBalancedOverview = (
   return {
     selection: 'balanced_overview',
     sections,
-    // Derived rather than assumed, even though the caller only reaches here
-    // because the document did not fit.
-    truncation: truncationOf(artifact.markdown.length, sections, anyTruncated, firstTruncatedAnchor)
+    // From coverage of the source, not from whether any slice needed a cut: the
+    // spans tile the document, so this is the exact count of characters the
+    // reader was not shown.
+    truncation: truncationOf(
+      artifact.markdown.length,
+      artifact.markdown.length - coveredCharacterCount,
+      sections,
+      nextAnchorAfter(artifact, firstOmittedOffset ?? artifact.markdown.length)
+    )
   }
 }
 

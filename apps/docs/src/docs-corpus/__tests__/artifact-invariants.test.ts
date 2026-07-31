@@ -103,6 +103,74 @@ describe('documentationArtifactProblem', () => {
     artifact.characterCount += 1
     expect(documentationArtifactProblem(artifact)).toMatch(/but its Markdown is/)
   })
+
+  /**
+   * The relationship has to hold in *both* directions. Checking only that every
+   * outline entry resolves is satisfied by an artifact with no outline at all —
+   * and that is the worst case rather than a harmless one: the balanced overview
+   * is built from outline roots, so an empty outline silently degrades it to a
+   * single slice from the start of the document, which is exactly the "first N
+   * characters" behaviour #477 forbids.
+   */
+  describe('outline-to-section bijection', () => {
+    it('rejects an artifact whose outline was dropped entirely', () => {
+      const artifact = valid()
+      artifact.outline = []
+      expect(documentationArtifactProblem(artifact)).toMatch(/appears nowhere in the outline/)
+    })
+
+    it('rejects an outline missing one addressable section', () => {
+      const artifact = valid()
+      artifact.outline = artifact.outline.slice(0, -1)
+      expect(documentationArtifactProblem(artifact)).toMatch(/appears nowhere in the outline/)
+    })
+
+    it('rejects an outline that lists the same section twice', () => {
+      const artifact = valid()
+      artifact.outline.push(structuredClone(artifact.outline[0]))
+      expect(documentationArtifactProblem(artifact)).toMatch(/more than once/)
+    })
+
+    it('rejects an outline whose entries are out of document order', () => {
+      const artifact = valid()
+      artifact.outline.reverse()
+      expect(documentationArtifactProblem(artifact)).toMatch(/out of document order/)
+    })
+
+    it('rejects an outline entry whose heading disagrees with its section', () => {
+      const artifact = valid()
+      artifact.outline[0].title = 'Something else entirely'
+      expect(documentationArtifactProblem(artifact)).toMatch(/about its heading/)
+    })
+
+    it('rejects nesting the section itself does not record', () => {
+      const artifact = valid()
+      const parent = artifact.outline.find((item) => item.children.length > 0)
+      if (!parent) throw new Error('fixture needs a nested outline entry')
+      artifact.sections[parent.children[0].sectionIndex].parentAnchor = 'somewhere-else'
+
+      expect(documentationArtifactProblem(artifact)).toMatch(/its section records parent/)
+    })
+  })
+
+  /**
+   * `sections[0]` is synthetic, not authored: `createSections` prepends it so an
+   * unanchored read has a name and a span covering the document. Both the full
+   * read and the balanced overview take it on trust.
+   */
+  describe('the whole-document section', () => {
+    it('rejects an artifact whose section 0 is a real heading', () => {
+      const artifact = valid()
+      artifact.sections[0] = { ...artifact.sections[1], index: 0 }
+      expect(documentationArtifactProblem(artifact)).toMatch(/section 0 is not the whole-document/)
+    })
+
+    it('rejects an artifact with no sections at all', () => {
+      const artifact = valid()
+      artifact.sections = []
+      expect(documentationArtifactProblem(artifact)).toMatch(/has no sections/)
+    })
+  })
 })
 
 describe('documentationArtifactEntryProblem', () => {

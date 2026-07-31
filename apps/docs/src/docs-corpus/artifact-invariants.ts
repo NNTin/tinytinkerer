@@ -57,23 +57,124 @@ const sectionProblem = (
 
 const walkOutline = (
   items: readonly DocumentationCorpusOutlineItem[],
-  visit: (item: DocumentationCorpusOutlineItem) => void
+  visit: (item: DocumentationCorpusOutlineItem, parent?: DocumentationCorpusOutlineItem) => void,
+  parent?: DocumentationCorpusOutlineItem
 ): void => {
   for (const item of items) {
-    visit(item)
-    walkOutline(item.children, visit)
+    visit(item, parent)
+    walkOutline(item.children, visit, item)
   }
 }
 
 /**
- * Checks every relationship a consumer relies on: section positions, offsets,
- * character counts, anchor uniqueness, and outline-to-section referential
- * integrity.
+ * The synthetic whole-document section every artifact begins with.
+ *
+ * It is not an authored heading: `createSections` prepends it so an unanchored
+ * read has something to name, and consumers rely on that — `selectFull` takes
+ * its `title` as the document heading, and the balanced overview takes it as
+ * the preamble's. An artifact whose section 0 were a real heading would give
+ * both the wrong name and, worse, hand the overview a span that does not cover
+ * the document.
+ */
+const wholeDocumentSectionProblem = (
+  artifact: DocumentationCorpusDocumentArtifact
+): string | undefined => {
+  const section = artifact.sections[0]
+  if (!section) return 'has no sections; every artifact carries a whole-document section at index 0'
+  if (
+    section.anchor !== null ||
+    section.depth !== 0 ||
+    section.parentAnchor !== null ||
+    section.startOffset !== 0 ||
+    section.contentStartOffset !== 0 ||
+    section.endOffset !== artifact.markdown.length ||
+    section.selectionPrefix !== '' ||
+    section.selectionSuffix !== ''
+  ) {
+    return 'section 0 is not the whole-document section: it must be unanchored, at depth 0, span the entire Markdown, and carry no selection wrappers'
+  }
+  return undefined
+}
+
+/**
+ * The outline and the addressable sections must describe each other exactly.
+ *
+ * A one-way check — "every outline entry points at a matching section" — is
+ * satisfied by an artifact with **no outline at all**, and that is not a
+ * harmless gap: the balanced overview is built from outline roots, so an empty
+ * outline degrades it to a single unanchored slice from the start of the
+ * document. That is precisely the "first N characters" behaviour #477 forbids,
+ * arrived at silently, with every other check passing.
+ *
+ * So the relationship is validated as a bijection, together with the ordering
+ * and nesting the flattened outline promises a reader.
+ */
+const outlineProblem = (artifact: DocumentationCorpusDocumentArtifact): string | undefined => {
+  const addressable = artifact.sections.filter((section) => section.anchor !== null)
+  const seen = new Map<number, DocumentationCorpusOutlineItem>()
+  let problem: string | undefined
+  let previousIndex = -1
+
+  walkOutline(artifact.outline, (item, parent) => {
+    if (problem) return
+    const section = artifact.sections[item.sectionIndex]
+    if (!section) {
+      problem = `outline entry "${item.anchor}" points at section ${item.sectionIndex}, which does not exist`
+      return
+    }
+    if (section.anchor !== item.anchor) {
+      problem = `outline entry "${item.anchor}" points at section ${item.sectionIndex}, which is anchored "${String(section.anchor)}"`
+      return
+    }
+    if (seen.has(item.sectionIndex)) {
+      problem = `outline lists section ${item.sectionIndex} ("${item.anchor}") more than once`
+      return
+    }
+    seen.set(item.sectionIndex, item)
+    // Document order, which is what makes a flattened outline readable as the
+    // page's structure rather than as an arbitrary list.
+    if (item.sectionIndex <= previousIndex) {
+      problem = `outline entry "${item.anchor}" is out of document order (section ${item.sectionIndex} after ${previousIndex})`
+      return
+    }
+    previousIndex = item.sectionIndex
+    if (item.depth !== section.depth || item.title !== section.title) {
+      problem = `outline entry "${item.anchor}" disagrees with section ${item.sectionIndex} about its heading`
+      return
+    }
+    if (parent) {
+      if (item.depth <= parent.depth) {
+        problem = `outline entry "${item.anchor}" is nested under "${parent.anchor}" but is not deeper than it`
+        return
+      }
+      if (section.parentAnchor !== parent.anchor) {
+        problem = `outline nests "${item.anchor}" under "${parent.anchor}", but its section records parent "${String(section.parentAnchor)}"`
+      }
+      return
+    }
+    if (section.parentAnchor !== null) {
+      problem = `outline lists "${item.anchor}" as a root, but its section records parent "${String(section.parentAnchor)}"`
+    }
+  })
+  if (problem) return problem
+
+  const missing = addressable.find((section) => !seen.has(section.index))
+  if (missing) {
+    return `section ${missing.index} is anchored "${String(missing.anchor)}" but appears nowhere in the outline`
+  }
+  return undefined
+}
+
+/**
+ * Checks every relationship a consumer relies on: the whole-document section,
+ * section positions, offsets, character counts, anchor uniqueness, and the
+ * bijection between the outline and the addressable sections.
  *
  * The outline check is the one that matters most to #477: a balanced overview
  * resolves `outline[i].sectionIndex` into `sections`, so an outline entry
  * pointing at a missing or mismatched section would silently produce an
- * overview of the wrong parts of the document.
+ * overview of the wrong parts of the document — and an outline missing entries
+ * would silently produce an overview of only part of it.
  */
 export const documentationArtifactProblem = (
   artifact: DocumentationCorpusDocumentArtifact
@@ -81,6 +182,9 @@ export const documentationArtifactProblem = (
   if (artifact.characterCount !== artifact.markdown.length) {
     return `declares characterCount ${artifact.characterCount}, but its Markdown is ${artifact.markdown.length} characters`
   }
+
+  const wholeDocument = wholeDocumentSectionProblem(artifact)
+  if (wholeDocument) return wholeDocument
 
   const anchors = new Set<string>()
   for (const [index, section] of artifact.sections.entries()) {
@@ -93,19 +197,7 @@ export const documentationArtifactProblem = (
     anchors.add(section.anchor)
   }
 
-  let outlineProblem: string | undefined
-  walkOutline(artifact.outline, (item) => {
-    if (outlineProblem) return
-    const section = artifact.sections[item.sectionIndex]
-    if (!section) {
-      outlineProblem = `outline entry "${item.anchor}" points at section ${item.sectionIndex}, which does not exist`
-      return
-    }
-    if (section.anchor !== item.anchor) {
-      outlineProblem = `outline entry "${item.anchor}" points at section ${item.sectionIndex}, which is anchored "${String(section.anchor)}"`
-    }
-  })
-  return outlineProblem
+  return outlineProblem(artifact)
 }
 
 /**

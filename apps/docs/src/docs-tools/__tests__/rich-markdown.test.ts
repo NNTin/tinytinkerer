@@ -102,16 +102,103 @@ describe('sections authored inside an admonition', () => {
     }
   })
 
-  it('does not emit the container opener twice across preamble and section', () => {
+  it('gives every emitted opener its own closer, in the slice that emitted it', () => {
     const selection = selectDocument(artifact, 900)
-    const openers = selection.sections
-      .map((section) => (section.markdown.match(/^\s{0,3}:{3,}[A-Za-z]/gm) ?? []).length)
-      .reduce((total, count) => total + count, 0)
 
-    // The preamble runs up to the first outline root, which here sits inside the
-    // admonition — so the raw span before it holds an opener the section's own
-    // `selectionPrefix` reproduces. It must appear once, not twice.
-    expect(openers).toBe(1)
+    // The preamble ends inside the admonition, so it opens a container the
+    // section slice opens again through its own `selectionPrefix`. Repeating a
+    // wrapper across slices is the corpus' own design; what must never happen is
+    // an opener without a closer, which is checked per slice rather than by
+    // counting openers across the response.
+    for (const section of selection.sections) {
+      expect(containerBalance(section.markdown)).toBe(0)
+    }
+  })
+})
+
+/**
+ * Content authored between a container's opener and the first heading inside
+ * it.
+ *
+ * An earlier revision ended the overview's preamble at the point the container
+ * opened, which deleted this prose outright — and, because truncation was
+ * derived from whether the surviving slices needed a local cut, reported
+ * `truncated: false` with `omittedCharacterCount: 0` while doing it.
+ */
+describe('container prologue', () => {
+  const PROLOGUE = lines(40, (index) => `Prologue sentence ${index} inside the note.`)
+  const artifact = artifactOf(
+    [
+      '# Doc',
+      '',
+      'Intro prose before the note.',
+      '',
+      ':::note[Wrapped]',
+      '',
+      PROLOGUE,
+      '',
+      '## First addressable heading',
+      '',
+      lines(40, (index) => `Body line ${index}.`),
+      '',
+      ':::',
+      ''
+    ].join('\n')
+  )
+
+  it('is a document whose prologue no outline entry covers', () => {
+    const firstRoot = artifact.sections[artifact.outline[0].sectionIndex]
+    expect(artifact.markdown.slice(0, firstRoot.startOffset)).toContain('Prologue sentence 39')
+  })
+
+  it('returns the prologue instead of discarding it', () => {
+    // Just under the whole document, so the balanced overview runs rather than
+    // `full`, and every slice still receives close to its full size.
+    const selection = selectDocument(artifact, artifact.markdown.length - 100)
+    const returned = selection.sections.map((section) => section.markdown).join('\n')
+
+    expect(selection.selection).toBe('balanced_overview')
+    // The earlier revision returned *none* of it: the preamble ended where the
+    // container opened, so every one of these lines was clipped away.
+    const present = PROLOGUE.split('\n').filter((line) => returned.includes(line))
+    expect(present.length).toBeGreaterThan(35)
+    for (const section of selection.sections) {
+      expect(containerBalance(section.markdown)).toBe(0)
+    }
+  })
+
+  it('reports what it left out at every budget, and never claims to have left out nothing', () => {
+    for (let budget = 80; budget <= 3_000; budget += 20) {
+      const selection = selectDocument(artifact, budget)
+      const returned = selection.sections.reduce(
+        (total, section) => total + section.markdown.length,
+        0
+      )
+      const { truncated, omittedCharacterCount, sourceCharacterCount } = selection.truncation
+
+      expect(sourceCharacterCount).toBe(artifact.markdown.length)
+      // The invariant the accounting is now derived from, rather than a flag set
+      // beside it: reported truncation and reported omission cannot disagree.
+      expect(truncated).toBe(omittedCharacterCount > 0)
+      if (returned < artifact.markdown.length) expect(truncated).toBe(true)
+    }
+  })
+
+  it('accounts for every authored line: present in the response, or counted as omitted', () => {
+    const authored = artifact.markdown.split('\n').filter((line) => line.trim().length > 0)
+
+    for (let budget = 80; budget <= 3_000; budget += 20) {
+      const selection = selectDocument(artifact, budget)
+      const returned = selection.sections.map((section) => section.markdown).join('\n')
+      const absent = authored.filter((line) => !returned.includes(line))
+      const absentCharacters = absent.reduce((total, line) => total + line.length, 0)
+
+      // Derived from the response text rather than from the implementation, so
+      // it fails for content that is dropped by any means — clipped away before
+      // allocation, or cut inside a slice.
+      expect(selection.truncation.omittedCharacterCount).toBeGreaterThanOrEqual(absentCharacters)
+      if (absent.length > 0) expect(selection.truncation.truncated).toBe(true)
+    }
   })
 })
 
@@ -218,5 +305,133 @@ describe('tables', () => {
     expect(rows.length).toBeGreaterThan(2)
     for (const row of rows) expect(row.trimEnd().endsWith('|')).toBe(true)
     expect(markdown.length).toBeLessThanOrEqual(400)
+  })
+
+  it('never returns a header row without its delimiter, at any budget', () => {
+    // A generous budget hides this: it only happens where the budget reaches the
+    // header line and stops before the delimiter. Measured at budgets 42-55, the
+    // response was `| Symptom | Cause | Fix |` alone, which GFM renders as a
+    // paragraph — the promised table silently becoming prose.
+    const isDelimiter = (line: string): boolean =>
+      line.includes('|') && line.includes('-') && /^[\s|:-]+$/.test(line)
+
+    for (let budget = 1; budget <= 600; budget += 1) {
+      const markdown = selectSection(artifact, artifact.sections[1], budget).sections[0]?.markdown
+      const rows = (markdown ?? '').split('\n')
+      const header = rows.findIndex((line) => line.startsWith('| Symptom |'))
+      if (header < 0) continue
+      expect(isDelimiter(rows[header + 1] ?? '')).toBe(true)
+    }
+  })
+})
+
+/**
+ * Container directives and fences the normalizer accepts but that no document on
+ * this site authors yet.
+ *
+ * The scanner is a line scanner, so what it recognises is a contract in its own
+ * right: a construct it fails to recognise is one it fails to close. A directive
+ * inside a blockquote is recorded by the corpus with a `> :::note[...]`
+ * `selectionPrefix`, and an earlier revision — which allowed only three leading
+ * spaces before a marker — emitted that opener and no closer at all.
+ */
+describe('containers the corpus accepts but this site does not yet author', () => {
+  const quoted = artifactOf(
+    [
+      '# Quoted',
+      '',
+      'Lead prose.',
+      '',
+      '> :::note[Quoted]',
+      '>',
+      '> ## Heading inside a quoted note',
+      '>',
+      lines(120, (index) => `> Quoted body line ${index}.`),
+      '>',
+      '> :::',
+      ''
+    ].join('\n')
+  )
+
+  const quotedSection = quoted.sections[quoted.outline[0].sectionIndex]
+
+  it('records the blockquote prefix on the wrapper, which is what must be closed', () => {
+    expect(quotedSection.selectionPrefix).toBe('> :::note[Quoted]\n\n')
+  })
+
+  it('closes a blockquote-nested directive with a blockquote-nested closer', () => {
+    for (let budget = 40; budget <= 800; budget += 1) {
+      const markdown = selectSection(quoted, quotedSection, budget).sections[0]?.markdown ?? ''
+      if (markdown.length === 0) continue
+      const openers = (markdown.match(/^[ \t>]*:{3,}[A-Za-z]/gm) ?? []).length
+      const closers = (markdown.match(/^[ \t>]*:{3,}[ \t]*$/gm) ?? []).length
+      expect(closers).toBe(openers)
+      if (openers > 0) expect(markdown).toMatch(/^>[ \t]*:{3,}[ \t]*$/m)
+      expect(markdown.length).toBeLessThanOrEqual(budget)
+    }
+  })
+
+  const listed = artifactOf(
+    [
+      '# Listed',
+      '',
+      'Lead prose.',
+      '',
+      '## Steps',
+      '',
+      '1. First step:',
+      '',
+      '   - Nested item:',
+      '',
+      // Six spaces: past the three CommonMark allows a construct at the *root*,
+      // which is where an earlier revision stopped looking for openers.
+      '      :::tip[Indented]',
+      '',
+      lines(80, (index) => `      Tip body line ${index}.`),
+      '',
+      '      :::',
+      ''
+    ].join('\n')
+  )
+
+  it('closes a list-indented directive at the indentation it was opened at', () => {
+    const section = listed.sections[listed.outline[0].sectionIndex]
+    for (let budget = 40; budget <= 800; budget += 1) {
+      const markdown = selectSection(listed, section, budget).sections[0]?.markdown ?? ''
+      if (markdown.length === 0) continue
+      const openers = (markdown.match(/^[ \t]*:{3,}[A-Za-z]/gm) ?? []).length
+      const closers = (markdown.match(/^[ \t]*:{3,}[ \t]*$/gm) ?? []).length
+      expect(closers).toBe(openers)
+      expect(markdown.length).toBeLessThanOrEqual(budget)
+    }
+  })
+
+  it('does not mistake an indented fence inside a fence for the fence closer', () => {
+    // A document that documents Markdown. The inner indented ``` is content;
+    // treating it as the closer would leave the real code block unterminated.
+    const nested = artifactOf(
+      [
+        '# Fences',
+        '',
+        'Lead prose.',
+        '',
+        '## Showing a fence',
+        '',
+        '````md',
+        '    ```ts',
+        lines(60, (index) => `    const value${index} = ${index}`),
+        '    ```',
+        '````',
+        ''
+      ].join('\n')
+    )
+
+    const section = nested.sections[nested.outline[0].sectionIndex]
+    for (let budget = 40; budget <= 600; budget += 1) {
+      const markdown = selectSection(nested, section, budget).sections[0]?.markdown ?? ''
+      if (!markdown.includes('````')) continue
+      expect((markdown.match(/^`{4,}/gm) ?? []).length % 2).toBe(0)
+      expect(markdown.length).toBeLessThanOrEqual(budget)
+    }
   })
 })

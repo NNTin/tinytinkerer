@@ -196,7 +196,17 @@ const readOkSchema = z
   })
   .strict()
 
-/** #474's corpus-load failure vocabulary, forwarded rather than re-coded. */
+/**
+ * #474's corpus-load failure vocabulary, forwarded rather than re-coded, plus
+ * one code this boundary owns.
+ *
+ * `response_too_large` is what the universal response-cap postcondition returns
+ * when a payload cannot be made to fit — a document whose *fixed* metadata
+ * (identity, outline) already exceeds the transport limit, which no amount of
+ * shrinking Markdown can rescue. It is a real, reportable outcome rather than a
+ * corpus-load failure, so it gets its own name instead of being disguised as
+ * `document_invalid`.
+ */
 export type ReadErrorCode = z.infer<typeof readErrorCodeSchema>
 
 const readErrorCodeSchema = z.enum([
@@ -206,7 +216,8 @@ const readErrorCodeSchema = z.enum([
   'document_unavailable',
   'document_invalid',
   'content_hash_mismatch',
-  'section_not_found'
+  'section_not_found',
+  'response_too_large'
 ])
 
 /**

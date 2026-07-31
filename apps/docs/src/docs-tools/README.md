@@ -147,13 +147,31 @@ only successful reads left the typed-failure contract defeating itself: `ref` an
 transport would cut mid-JSON, handing the model an unparseable fragment instead
 of an actionable error. Three things fix it, in order of how much they matter:
 
-1. `ref` and `anchor` are bounded in the input contracts (300 characters; this
-   site's longest real ref is 39 and its longest anchor 71);
+1. `ref`, `anchor` and `pathname` are bounded (300 characters for the first two,
+   which the input contracts enforce — this site's longest real ref is 39 and
+   its longest anchor 71; 1,000 for a route, which no schema can bound because
+   it comes from the SPA rather than from the model);
 2. every free-form message — including upstream text this code did not author —
    is bounded before it enters a payload;
-3. every output variant, success and failure alike, passes a final serialized
-   size check, dropping the outline from a failure rather than letting it be
-   mangled.
+3. **every response, from every tool, passes one final postcondition**
+   (`enforceResponseCap`), after any variant-specific shrinking.
+
+The third point is the one that carries the guarantee. Field-by-field bounds fix
+the cases we know about; the postcondition covers the ones we do not, and the
+failure mode it exists for is a _new_ variant carrying one unbounded field —
+invisible until the transport cuts the JSON. Bounding `ref` and `anchor` left
+`pathname` unbounded for exactly that reason, and a valid 40,000-character route
+serialized to 42,057 characters.
+
+Some responses cannot be shrunk at all. `doc.title` and `doc.permalink` come
+from a corpus that passed every integrity and semantic check, so a document with
+a 16,000-character authored title produced a 32,394-character `ok` after its
+Markdown had already been reduced to nothing. There is no smaller true answer,
+so the postcondition returns `response_too_large` — a typed, actionable failure
+— rather than an oversized success. `__tests__/response-cap.test.ts` sweeps every
+public variant of all three tools through the postcondition and asserts the set
+of variants it covered, so a status added by #478/#479 fails there rather than
+silently narrowing the sweep.
 
 A trimmed outline on a _successful_ read is reported by its own
 `outlineTruncated` flag, never through the content-truncation fields: those
@@ -192,6 +210,20 @@ markdown.length`, no anchor since theme-classic renders no fragment id on an
 
 That gives 14 slices for the 54k document.
 
+The slices **tile the document exactly**. Anything an outline root does not
+cover — the preamble, and the gap between one root's end and the next root's
+heading when a container opens in between — becomes its own slice, balanced by
+appending the syntax it leaves open. An earlier revision instead ended the
+preamble where a container opened, which deleted the authored prose between
+`:::note` and the first heading beneath it.
+
+That tiling is what the truncation accounting is derived from:
+`omittedCharacterCount` is the count of source characters no slice represents,
+and `truncated` is exactly `omitted > 0`. Deriving `truncated` from whether the
+surviving slices needed a local cut is what let a response report
+`truncated: false, omittedCharacterCount: 0` while content had been discarded
+before allocation ever ran.
+
 ### Allocation: one max-min fair pass
 
 Everything gets an equal share; what a slice does not need is redistributed to
@@ -228,12 +260,36 @@ it closes exactly the containers an _untruncated_ slice leaves open, and once
 the slice is cut the still-open set is different. The scanner's own closers are
 that set.
 
-The preamble gets one extra rule. It runs up to the first outline root, so when
-that root is authored inside an admonition the raw span before it holds an
-opener whose closer is further down — and the root's own `selectionPrefix`
-reproduces that opener anyway. The preamble therefore ends where it stops
-leaving a container open, which fixes the imbalance and the duplication at once
-without inventing syntax.
+### What the line scanner recognises, and what it cannot
+
+The scanner is a line scanner, so the constructs it recognises are a contract:
+one it fails to recognise is one it fails to close. It handles fenced code
+blocks and container directives, each carrying whatever blockquote markers and
+indentation its opening line had — so `> :::note[Quoted]` closes as `> :::`, and
+a directive nested in a list closes at the indentation it opened at. A closing
+marker must carry the same blockquote prefix and be indented no more than three
+spaces past its opener, which is what keeps a deeper-indented ``` _inside_ a
+fence (a document documenting Markdown) from being read as that fence's closer.
+
+Indentation is otherwise unbounded rather than CommonMark's three spaces. That
+is a deliberate trade in one direction: a fence or directive nested in a list is
+common and would otherwise go unrecognised and unclosed, while the cost is that
+a fence line inside a 4-space **indented code block** would be read as a real
+fence. No document on this site authors an indented code block; several nest
+constructs in lists.
+
+Some line starts are not legal cuts at all, because the line _after_ the cut is
+what makes the line _before_ it mean what it says:
+
+- a GFM table's delimiter row — cutting between a header and its delimiter turns
+  the promised table into a paragraph. Measured at budgets 42–55 on a real
+  table, the response was `| A | B |` alone;
+- a setext underline, for the same reason.
+
+The long-term answer is to derive safe cut points and required closing syntax
+from the Markdown AST during #474 corpus construction, where a real parser is
+already running. That is a corpus-contract change rather than a bounded fix, and
+is recorded as follow-up work rather than done here.
 
 ### Truncation: cut at a line boundary, close the fence
 
@@ -272,17 +328,28 @@ rows are already a valid table.
 | `error` / `document_invalid`         | The artifact does not match the #474 schema, or is another document's | No        |
 | `error` / `content_hash_mismatch`    | The artifact's bytes are not what the manifest recorded               | No        |
 | `error` / `section_not_found`        | No such anchor — the response carries the available `outline`         | No        |
+| `error` / `response_too_large`       | Irreducible metadata exceeds the transport limit (see above)          | No        |
 | `search_unavailable` / _(#475 code)_ | Retrieval could not run                                               | Depends   |
 
 ## Artifact validity has one definition
 
 `artifact-invariants.ts` is the single answer to "is this artifact internally
 consistent?", used by both `validate-corpus.ts` at build time and the runtime
-artifact store. It checks section positions, offsets, character counts, anchor
-uniqueness, and outline-to-section referential integrity — the relationships
-selection reads as if they agreed, none of which a type can express and none of
-which throws when violated. A bad `sectionIndex` does not fail; it silently
-produces an overview of the wrong parts of a document.
+artifact store. It checks the synthetic whole-document section, section
+positions, offsets, character counts, anchor uniqueness, and the **bijection**
+between the outline and the addressable sections — the relationships selection
+reads as if they agreed, none of which a type can express and none of which
+throws when violated. A bad `sectionIndex` does not fail; it silently produces
+an overview of the wrong parts of a document.
+
+The bijection has to hold in both directions. "Every outline entry resolves to a
+matching section" is satisfied by an artifact with _no outline at all_, and that
+is the worst case rather than a harmless one: the balanced overview is built
+from outline roots, so an empty outline degrades it to a single slice from the
+start of the document — exactly the first-N-characters behaviour #477 forbids,
+reached silently with every other check passing. Ordering, depth, and
+parent/child agreement are validated alongside it, since the flattened outline
+is presented to a model as the page's structure.
 
 The store adds only the checks that need both sides: the recomputed byte hash,
 and the manifest summary. Those report `identity` (this is a different document)

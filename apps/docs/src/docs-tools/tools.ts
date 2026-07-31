@@ -30,7 +30,13 @@ import {
 } from './activity'
 import { resolveCurrentDocument } from './current-document'
 import { readDocument } from './read-document'
-import { boundedMessage, RESPONSE_CHARACTER_CAP, serializedLength } from './response-cap'
+import {
+  boundedMessage,
+  boundedPathname,
+  enforceResponseCap,
+  RESPONSE_CHARACTER_CAP,
+  serializedLength
+} from './response-cap'
 import {
   readCurrentDocInputSchema,
   readCurrentDocOutputSchema,
@@ -81,6 +87,38 @@ const fitSearchResults = (payload: SearchDocsOutput): SearchDocsOutput => {
   return candidate
 }
 
+/**
+ * The one place every response in this group is checked against the cap.
+ *
+ * Each tool builds its result however it likes and then passes it through here.
+ * That is what makes "no response exceeds the limit" a property of the boundary
+ * rather than a habit each variant has to remember — the failure mode being
+ * guarded against is a *new* variant (#478/#479 add more) carrying one
+ * unbounded field, which is invisible until the transport cuts the JSON.
+ */
+const OVERSIZED_READ_MESSAGE =
+  'this documentation page cannot be returned: its own metadata is larger than a single tool ' +
+  'response may be. Use search_docs to find a more specific page, or read one section by anchor.'
+
+/**
+ * The search fallback. Unreachable in practice — the input schema bounds the
+ * query and `fitSearchResults` can always drop to zero results — but the
+ * postcondition is uniform across the group rather than argued case by case.
+ */
+const EMPTY_SEARCH_RESULT: SearchDocsOutput = { status: 'ok', query: '', results: [] }
+
+const cappedRead = <T extends ReadDocOutput | ReadCurrentDocOutput>(payload: T): T =>
+  enforceResponseCap(
+    payload,
+    () =>
+      ({
+        status: 'error',
+        code: 'response_too_large',
+        message: OVERSIZED_READ_MESSAGE,
+        retryable: false
+      }) as T
+  )
+
 const createSearchDocsTool = (
   dependencies: DocumentationToolDependencies
 ): Tool<SearchDocsInput, SearchDocsOutput> => ({
@@ -95,27 +133,33 @@ const createSearchDocsTool = (
   async execute({ query, maxResults }) {
     const response = await searchDocumentation(resolveSiteConfig(dependencies), query, maxResults)
     if (!response.ok) {
-      return {
-        status: 'search_unavailable',
-        code: response.code,
-        // Upstream text this code did not choose the length of.
-        message: boundedMessage(response.message),
-        retryable: response.retryable
-      }
+      return enforceResponseCap<SearchDocsOutput>(
+        {
+          status: 'search_unavailable',
+          code: response.code,
+          // Upstream text this code did not choose the length of.
+          message: boundedMessage(response.message),
+          retryable: response.retryable
+        },
+        () => EMPTY_SEARCH_RESULT
+      )
     }
-    return fitSearchResults({
-      status: 'ok',
-      query: response.query,
-      // `section`/`anchor` are omitted rather than null — see schemas.ts.
-      results: response.results.map((result) => ({
-        ref: result.ref,
-        title: result.title,
-        permalink: result.permalink,
-        ...(result.section === null ? {} : { section: result.section }),
-        ...(result.anchor === null ? {} : { anchor: result.anchor }),
-        snippet: result.snippet
-      }))
-    })
+    return enforceResponseCap(
+      fitSearchResults({
+        status: 'ok',
+        query: response.query,
+        // `section`/`anchor` are omitted rather than null — see schemas.ts.
+        results: response.results.map((result) => ({
+          ref: result.ref,
+          title: result.title,
+          permalink: result.permalink,
+          ...(result.section === null ? {} : { section: result.section }),
+          ...(result.anchor === null ? {} : { anchor: result.anchor }),
+          snippet: result.snippet
+        }))
+      }),
+      () => EMPTY_SEARCH_RESULT
+    )
   }
 })
 
@@ -131,12 +175,14 @@ const createReadDocTool = (
   schema: readDocInputSchema,
   outputSchema: readDocOutputSchema,
   summarizeActivity: summarizeReadDocActivity,
-  execute(input) {
-    return readDocument(resolveSiteConfig(dependencies), {
-      ref: input.ref,
-      ...(input.anchor === undefined ? {} : { anchor: input.anchor }),
-      ...(input.maxChars === undefined ? {} : { maxChars: input.maxChars })
-    })
+  async execute(input) {
+    return cappedRead(
+      await readDocument(resolveSiteConfig(dependencies), {
+        ref: input.ref,
+        ...(input.anchor === undefined ? {} : { anchor: input.anchor }),
+        ...(input.maxChars === undefined ? {} : { maxChars: input.maxChars })
+      })
+    )
   }
 })
 
@@ -155,31 +201,34 @@ const createReadCurrentDocTool = (
   async execute(input) {
     const current = await resolveCurrentDocument()
     if (current.kind === 'not-on-doc-page') {
-      return {
+      return cappedRead({
         status: 'not_on_doc_page',
-        pathname: current.pathname,
+        // A route is caller-controlled in the same way a `ref` is.
+        pathname: boundedPathname(current.pathname),
         message: boundedMessage(current.message)
-      }
+      })
     }
     if (current.kind === 'unavailable') {
-      return {
+      return cappedRead({
         status: 'unavailable',
-        pathname: current.pathname,
+        pathname: boundedPathname(current.pathname),
         reason: current.reason,
         message: boundedMessage(current.message),
         retryable: current.retryable
-      }
+      })
     }
 
     // Read by (ref, version), not by ref alone: a route belonging to a
     // non-canonical documentation version must read that version's content, not
     // whatever an unqualified lookup resolves to.
-    return readDocument(dependencies.getSiteConfig?.() ?? current.snapshot.siteConfig, {
-      ref: current.document.ref,
-      version: current.document.version,
-      ...(input.anchor === undefined ? {} : { anchor: input.anchor }),
-      ...(input.maxChars === undefined ? {} : { maxChars: input.maxChars })
-    })
+    return cappedRead(
+      await readDocument(dependencies.getSiteConfig?.() ?? current.snapshot.siteConfig, {
+        ref: current.document.ref,
+        version: current.document.version,
+        ...(input.anchor === undefined ? {} : { anchor: input.anchor }),
+        ...(input.maxChars === undefined ? {} : { maxChars: input.maxChars })
+      })
+    )
   }
 })
 

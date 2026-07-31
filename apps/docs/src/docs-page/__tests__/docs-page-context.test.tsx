@@ -27,6 +27,7 @@ import {
   __setSiteConfig
 } from '../../test/docusaurus-use-docusaurus-context-stub'
 import { DocsPageProvider, useDocsPageContext } from '../docs-page-context'
+import { resetDocsPageSnapshotForTests, subscribeDocsPageSnapshot } from '../page-snapshot'
 import {
   assertFixtureStillMatchesSite,
   CANONICAL_DOCUMENT,
@@ -335,6 +336,7 @@ describe('DocsPageProvider corpus recovery', () => {
 
   beforeEach(() => {
     resetDocumentationCorpusStoreForTests()
+    resetDocsPageSnapshotForTests()
     __resetGlobalData()
     __resetDocusaurusGlobalData()
     __resetSiteConfig()
@@ -345,6 +347,7 @@ describe('DocsPageProvider corpus recovery', () => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
     resetDocumentationCorpusStoreForTests()
+    resetDocsPageSnapshotForTests()
     __resetGlobalData()
     __resetDocusaurusGlobalData()
     __resetSiteConfig()
@@ -401,6 +404,54 @@ describe('DocsPageProvider corpus recovery', () => {
     await waitFor(() => {
       expect(probeText()).toContain('architecture/packages-concept@current')
     })
+  })
+
+  it('publishes a retry callback whose gate already describes the published commit', async () => {
+    // The snapshot carrying `retryCorpus` is published during commit, and the
+    // gate that callback reads has to describe the *same* commit. While the gate
+    // lived in a passive effect it did not: for the whole commit-to-paint window
+    // — the very window publishing during commit exists to make safe — the
+    // callback was still gated on the previous `pending` corpus, so a consumer
+    // acting on the freshly published retryable failure would call a retry that
+    // silently no-opped. No new revision would ever arrive, and #477's
+    // `resolveCurrentDocument` would wait out its whole four-second deadline for
+    // a recovery that was never started.
+    //
+    // A snapshot subscriber is the earliest anything can act, because listeners
+    // run synchronously inside `publishDocsPageSnapshot` — and it is where the
+    // real consumer sits, outside React entirely.
+    const manifest = validManifest()
+    publishLocator(manifest.manifestHash)
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, json: () => Promise.resolve({}) })
+      .mockResolvedValue(okResponse(manifest))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const reasons: string[] = []
+    let retried = false
+    const unsubscribe = subscribeDocsPageSnapshot((value) => {
+      if (value.active.status !== 'no-document') return
+      reasons.push(value.active.reason)
+      // The same predicate #477's `isRecoverableFailure` uses: a load already in
+      // flight is not something a retry can help with.
+      if (retried || !value.active.retryable || value.active.reason === 'corpus_pending') return
+      retried = true
+      value.retryCorpus()
+    })
+
+    try {
+      await renderAt('/docs/architecture/packages-concept/')
+      expect(retried).toBe(true)
+      // `retryCorpus` resets the corpus to `pending` before re-running the load
+      // effect, so a `corpus_pending` published *after* the failure is proof the
+      // gate let this retry through. A no-opped retry publishes nothing at all.
+      expect(reasons.slice(reasons.indexOf('corpus_unavailable') + 1)).toContain('corpus_pending')
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(probeText()).toContain('architecture/packages-concept@current')
+    } finally {
+      unsubscribe()
+    }
   })
 
   it('does not re-fetch when the corpus already loaded', async () => {

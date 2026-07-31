@@ -145,8 +145,16 @@ export const DocsPageProvider = ({ children }: { children: ReactNode }): ReactNo
   // Read through a ref so the callback below can keep one identity forever.
   // Depending on `corpus` directly would republish the context value — and
   // re-render every consumer — every time the corpus state changed.
+  //
+  // A **layout** effect, declared before the snapshot publication below so it
+  // runs first. The two have to describe the same commit: the published
+  // snapshot carries `retryCorpus`, and if the ref were still catching up in a
+  // passive effect, a consumer acting on a freshly published retryable failure
+  // would call a retry that is gated on the *previous* corpus state. It would
+  // no-op, no new revision would ever be published, and the caller would wait
+  // out its whole deadline for a recovery that was never started.
   const corpusRef = useRef(corpus)
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     corpusRef.current = corpus
   }, [corpus])
 
