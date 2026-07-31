@@ -18,3 +18,22 @@ Use a plain fence (e.g. \`\`\`html) to show code as source instead of rendering 
 Blockquotes starting with \`[!NOTE]\`, \`[!TIP]\`, \`[!WARNING]\`, \`[!IMPORTANT]\`, or \`[!CAUTION]\` render as styled callouts.
 
 A paragraph that is only a single link or bare URL renders as a preview card — use it for references and citations.`
+
+/**
+ * Appends an app's own instructions to one of the three model-facing system
+ * prompts (issue #478).
+ *
+ * The documentation assistant needs the model told, at every reasoning boundary,
+ * that returned Markdown is reference material rather than instructions. That
+ * policy belongs to `apps/docs`, not to this shared prompt — so each boundary
+ * composes here instead of growing an app-specific paragraph, and an app that
+ * contributes nothing sends a byte-identical prompt to the one it sent before.
+ *
+ * One system message rather than two: providers vary in how they treat a second
+ * system turn, and a boundary the model reads as lower-priority is exactly the
+ * wrong place for a grounding rule.
+ */
+export const composeSystemPrompt = (base: string, appInstructions?: string): string =>
+  appInstructions && appInstructions.trim().length > 0
+    ? `${base}\n\n${appInstructions.trim()}`
+    : base

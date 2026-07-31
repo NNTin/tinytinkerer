@@ -43,6 +43,20 @@ export default defineConfig({
       // declaration in src/test/react-router-dom.d.ts for why the name has to
       // stay distinct.
       '@docs-test/react-router-dom': reactRouterDom,
+      // The real browser runtime factory, for the #478 conversation test. Same
+      // arrangement, same reason: the test must drive the genuine prompt
+      // composition and answer finalization rather than an imitation, and
+      // `createRuntime` is deliberately not on app-browser's public barrel (which
+      // cannot load outside a Vite app build). See src/test/browser-runtime.d.ts.
+      // The assistant's real incremental Markdown session, so the streamed-
+      // snapshot link policy is tested against the documents the renderer would
+      // actually have been handed. See src/test/content-markdown.d.ts.
+      '@docs-test/content-markdown': fileURLToPath(
+        new URL('../../packages/content/content-markdown/src/index.ts', import.meta.url)
+      ),
+      '@docs-test/browser-runtime': fileURLToPath(
+        new URL('../../packages/app/app-browser/src/runtime/create-runtime.ts', import.meta.url)
+      ),
       // The docs plugin's client barrel cannot be loaded outside a Docusaurus
       // webpack build; this stub keeps upstream's real active-document
       // resolution while skipping the barrel. See the file for the details.

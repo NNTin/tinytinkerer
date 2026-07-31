@@ -1,5 +1,6 @@
 import type { ChatRuntimeFactory, PluginModule } from '@tinytinkerer/app-core'
 import type { AppToolGroup } from '../app-tool-group'
+import type { AppAssistantPolicy } from '../app-assistant-policy'
 import type { BrowserShell } from '../shell'
 import type { AuthStore } from '../stores/auth-store'
 import type { SettingsStore } from '../stores/settings-store'
@@ -19,6 +20,9 @@ export const createBrowserRuntimeFactory = (options: {
   // The host app's always-on tool group (e.g. an integrated shell's stage
   // verbs). Forwarded verbatim to createRuntime; omitted by web/mobile.
   appToolGroup?: AppToolGroup
+  // The host app's grounding/answer policy (issue #478). Forwarded verbatim to
+  // createRuntime; omitted by every app that contributes none.
+  appAssistantPolicy?: AppAssistantPolicy
 }): ChatRuntimeFactory => {
   const pluginRuntime = createPluginRuntime(options.pluginModules ?? [])
 
@@ -44,6 +48,7 @@ export const createBrowserRuntimeFactory = (options: {
           ? { captureForwardedRequest: options.captureForwardedRequest }
           : {}),
         ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
+        ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
         ...(context?.conversationId ? { conversationId: context.conversationId } : {})
       })
     }

@@ -13,6 +13,7 @@ import {
 } from '@tinytinkerer/contracts'
 import { createEdgeError, type ModelsChatFetch } from './edge-fetch'
 import { createRateLimitError } from './rate-limit'
+import { composeSystemPrompt } from './system-prompt'
 import { buildToolNameMap, type ToolNameMap } from './tool-calling'
 
 export type PlannerToolDescriptor = {
@@ -36,14 +37,17 @@ const EXECUTION_PLAN_SCHEMA_NAME = 'execution_plan'
 // convey: a step's `toolCall.input` is a JSON-ENCODED STRING (the strict-mode
 // workaround for arbitrary per-tool arguments, mirroring native tool-call
 // `arguments`), and `toolCall.toolId` is the advertised tool name.
-const buildPlanningSystemPrompt = (): string =>
-  `You are a planning assistant. Given the user prompt and conversation history, produce an execution plan using the tools available to you.
+const buildPlanningSystemPrompt = (appInstructions?: string): string =>
+  composeSystemPrompt(
+    `You are a planning assistant. Given the user prompt and conversation history, produce an execution plan using the tools available to you.
 
 Rules:
 - Start with an "understand" step and end with a "compose" step.
 - Give a step a "toolCall" whenever a tool would be more reliable than doing it by hand (exact calculation, parsing, fetching); use null when no tool would help.
 - "toolCall.toolId" must be the exact name of an available tool.
-- "toolCall.input" is a JSON-encoded STRING of that tool's arguments object (e.g. "{\\"query\\":\\"…\\"}"), or "{}" when none; it must match the tool's parameters.`
+- "toolCall.input" is a JSON-encoded STRING of that tool's arguments object (e.g. "{\\"query\\":\\"…\\"}"), or "{}" when none; it must match the tool's parameters.`,
+    appInstructions
+  )
 
 // The model addresses a tool by its advertised (wire-safe) name, exactly like the
 // ReAct decider. Map each planned step's `toolId` back to the real runtime tool id
@@ -80,9 +84,12 @@ export const llmPlan = async (
   tools: PlannerToolDescriptor[],
   model: string,
   modelsChat: ModelsChatFetch,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  // The host app's own planning instructions (issue #478), appended to the
+  // system prompt above. Undefined for every app that contributes none.
+  appInstructions?: string
 ): Promise<ExecutionPlan> => {
-  const systemPrompt = buildPlanningSystemPrompt()
+  const systemPrompt = buildPlanningSystemPrompt(appInstructions)
   const names = buildToolNameMap(tools)
 
   const messages = [

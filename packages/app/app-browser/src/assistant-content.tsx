@@ -23,12 +23,22 @@ import { linkCardPlugin } from '@tinytinkerer/content-link-card'
 import { tablePlugin } from '@tinytinkerer/content-table'
 import { useOptionalBrowserApp } from './app'
 import { useResolveMediaUrl } from './media-registry'
+import { useSanitizeRenderedContent } from './assistant-content-policy'
+import type { AppToolResultRecord } from './app-assistant-policy'
 
 export type AssistantContentProps = {
   content: ContentDocument
   isStreaming?: boolean
   className?: string
   turnId?: string
+  /**
+   * This turn's successful tool results (issue #478). The app's render-time
+   * content policy — the documentation assistant's link allowlist — is applied
+   * against them, so an unauthorized link is never clickable, not even for the
+   * seconds an answer is streaming. Omitted by hosts with no policy and by
+   * surfaces with no turn (the content playground).
+   */
+  toolResults?: readonly AppToolResultRecord[]
 }
 
 const createLazyCodeBlockPlugin = (options: {
@@ -188,11 +198,14 @@ const useShowCodeBlockFullscreenButton = (): boolean => {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
+const NO_TOOL_RESULTS: readonly AppToolResultRecord[] = []
+
 export const AssistantContent = ({
   content,
   isStreaming = false,
   className,
-  turnId
+  turnId,
+  toolResults = NO_TOOL_RESULTS
 }: AssistantContentProps) => {
   const showCodeBlockFullscreenButton = useShowCodeBlockFullscreenButton()
   // Resolves the model's `media:<ref>` markdown image handles (see
@@ -208,9 +221,18 @@ export const AssistantContent = ({
     [turnId, showCodeBlockFullscreenButton, resolveMediaUrl]
   )
 
+  // Applied to every snapshot, not just the settled one. The policy returns the
+  // same document by identity when it changes nothing, so a turn that cites
+  // nothing pays one walk and no extra render.
+  const sanitizeRenderedContent = useSanitizeRenderedContent()
+  const document = useMemo(
+    () => sanitizeRenderedContent(content, toolResults),
+    [sanitizeRenderedContent, content, toolResults]
+  )
+
   return (
     <ContentDocumentContent
-      document={content}
+      document={document}
       isStreaming={isStreaming}
       plugins={assistantContentPlugins}
       renderOptions={renderOptions}

@@ -16,7 +16,8 @@ import {
   type PlanStep,
   type ReActDecision
 } from '@tinytinkerer/contracts'
-import { SYSTEM_STYLE_PROMPT } from './system-prompt'
+import { composeSystemPrompt, SYSTEM_STYLE_PROMPT } from './system-prompt'
+import type { AppInstructionBoundary } from '../app-assistant-policy'
 import { createRateLimitError } from './rate-limit'
 import { RateLimitQuota } from './quota-tracker'
 import {
@@ -71,6 +72,10 @@ type LiteLLMProviderOptions = {
   // context-inspector plugin. The host injects it ONLY while that plugin is
   // enabled, so capture is off — and nothing is retained — otherwise.
   onForwardRequest?: ForwardedRequestSink
+  // The host app's per-boundary system instructions (issue #478), already bound
+  // to the tools that registered for this runtime. Absent for every app that
+  // contributes none, which leaves all three prompts exactly as they were.
+  appInstructions?: (boundary: AppInstructionBoundary) => string | undefined
 }
 
 // SYNTHESIZE is the *second* models.chat call site, alongside the DECIDE path
@@ -138,7 +143,8 @@ export class LiteLLMProvider implements ModelProvider {
           allDescriptors,
           model,
           this.modelsChatFetch(token),
-          options?.signal
+          options?.signal,
+          this.options.appInstructions?.('planning')
         )
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') throw error
@@ -184,7 +190,8 @@ export class LiteLLMProvider implements ModelProvider {
         tools,
         model,
         this.modelsChatFetch(token),
-        options?.signal
+        options?.signal,
+        this.options.appInstructions?.('decision')
       )
     } catch (error) {
       if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
@@ -201,7 +208,14 @@ export class LiteLLMProvider implements ModelProvider {
     const model = this.options.getModel?.() ?? DEFAULT_MODEL
     const tools = this.options.allToolDescriptors ?? []
     try {
-      yield* llmStreamDecision(context, tools, model, this.modelsChatFetch(token), options?.signal)
+      yield* llmStreamDecision(
+        context,
+        tools,
+        model,
+        this.modelsChatFetch(token),
+        options?.signal,
+        this.options.appInstructions?.('decision')
+      )
     } catch (error) {
       if (error instanceof RateLimitError) this.quota.recordRateLimit(error.retryAfterMs)
       throw error
@@ -263,7 +277,13 @@ export class LiteLLMProvider implements ModelProvider {
         // usage chunk and the gauge stays hidden.
         stream_options: { include_usage: true },
         messages: [
-          { role: 'system', content: SYSTEM_STYLE_PROMPT },
+          {
+            role: 'system',
+            content: composeSystemPrompt(
+              SYSTEM_STYLE_PROMPT,
+              this.options.appInstructions?.('synthesis')
+            )
+          },
           ...context.history,
           { role: 'user', content: context.prompt },
           ...toolMessages

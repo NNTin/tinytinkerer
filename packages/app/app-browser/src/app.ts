@@ -30,6 +30,7 @@ import {
 } from './telemetry/telemetry'
 import type { ContentRenderErrorInfo } from '@tinytinkerer/content-react'
 import type { AppToolGroup } from './app-tool-group'
+import type { AppAssistantPolicy } from './app-assistant-policy'
 import { loadPluginModules } from './plugins/registry'
 
 export type { AppToolGroup } from './app-tool-group'
@@ -47,6 +48,11 @@ export type BrowserApp = {
   // the tool picker (useToolTree) can read it from context — the same group the
   // chat store forwards to the runtime.
   appToolGroup?: AppToolGroup
+  // The app's grounding/answer policy (issue #478), if any. Held here — like the
+  // tool group — so the transcript renderer can read it from context, since the
+  // link allowlist has to apply to every streamed snapshot and not only to the
+  // finalized answer the runtime produced.
+  appAssistantPolicy?: AppAssistantPolicy
   // App-owned cold-start prompts shown before plugin/MCP/generic suggestions.
   starterPrompts?: readonly string[]
 }
@@ -82,6 +88,9 @@ export const createBrowserApp = (
     // Threaded down to the chat store / runtime AND held on the app for the tool
     // picker; absent for web/widget/mobile.
     appToolGroup?: AppToolGroup
+    // The app's grounding/answer policy (issue #478). Threaded down to the chat
+    // store / runtime AND held on the app for the transcript renderer.
+    appAssistantPolicy?: AppAssistantPolicy
     starterPrompts?: readonly string[]
   } = {}
 ): BrowserApp => {
@@ -95,7 +104,8 @@ export const createBrowserApp = (
     authStore: auth,
     settingsStore: settings,
     inspectorStore: inspector,
-    ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {})
+    ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
+    ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {})
   })
 
   const app: BrowserApp = {
@@ -108,6 +118,7 @@ export const createBrowserApp = (
       inspector
     },
     ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
+    ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
     ...(options.starterPrompts ? { starterPrompts: options.starterPrompts } : {})
   }
 

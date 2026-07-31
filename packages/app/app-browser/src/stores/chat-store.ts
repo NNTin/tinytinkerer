@@ -9,6 +9,7 @@ import type { ChatRuntimeFactory, ConversationSlice } from '@tinytinkerer/app-co
 import { ConversationRunRegistry, MAX_CONCURRENT_RUNS } from './run-registry'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { AppToolGroup } from '../app-tool-group'
+import type { AppAssistantPolicy } from '../app-assistant-policy'
 import type { BrowserShell } from '../shell'
 import { loadCoreModule } from '../core-module'
 import { loadPluginModules } from '../plugins/registry'
@@ -93,6 +94,9 @@ export const createChatStore = (options: {
   // The host app's always-on tool group (e.g. an integrated shell's stage
   // verbs). Forwarded to the runtime factory; absent for web/widget/mobile.
   appToolGroup?: AppToolGroup
+  // The host app's grounding/answer policy (issue #478). Forwarded to the
+  // runtime factory; absent for every app that contributes none.
+  appAssistantPolicy?: AppAssistantPolicy
 }): ChatStore => {
   // Per-conversation run state (issue #430), owned by ConversationRunRegistry
   // (app-core) — the synchronous re-entry latch (issue #334), the cap, and the
@@ -157,6 +161,7 @@ export const createChatStore = (options: {
         settingsStore: options.settingsStore,
         pluginModules,
         ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
+        ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
         // The runtime arms this only while the inspector plugin is enabled, so a
         // disabled inspector captures (and retains) nothing. Records the request as
         // a pending entry — tagged with the run's conversation id (issue #430),

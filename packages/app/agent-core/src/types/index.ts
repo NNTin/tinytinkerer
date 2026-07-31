@@ -117,3 +117,22 @@ export interface AssistantContentSession {
 export type CreateAssistantContentSession = (
   initialSource?: string
 ) => AssistantContentSession | Promise<AssistantContentSession>
+
+/**
+ * Last chance to rewrite a composed answer before it becomes the turn's
+ * persisted content (issue #478).
+ *
+ * Injected by the host, like `createAssistantContentSession`, so agent-core
+ * stays free of any one app's answer policy. It runs exactly once, after a
+ * synthesis attempt succeeds and before `assistant.done` — the only point that
+ * has BOTH the complete answer and the run's ordered tool invocations, and the
+ * only one that can *replace* content rather than append to it.
+ *
+ * Returning `source` unchanged is the no-op. A host that registers nothing
+ * behaves exactly as before.
+ */
+export type AssistantContentFinalizer = (input: {
+  context: ExecutionContext
+  source: string
+  snapshot: AssistantContentSnapshot
+}) => Promise<string>

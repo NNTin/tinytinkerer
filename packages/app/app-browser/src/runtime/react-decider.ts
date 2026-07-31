@@ -5,6 +5,7 @@ import { createEdgeError, type ModelsChatFetch } from './edge-fetch'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createRateLimitError } from './rate-limit'
 import { parseSseStream, splitInlineThink } from './sse-utils'
+import { composeSystemPrompt } from './system-prompt'
 import {
   buildToolNameMap,
   parseToolCallArguments,
@@ -17,20 +18,27 @@ import {
 // content (it is ready to finish). The tool catalogue is no longer described in
 // the system prompt and the model no longer emits a hand-rolled JSON decision —
 // that brittle prose protocol (and its truncation-recovery parsing) is retired.
-const buildDecisionSystemPrompt = (): string =>
-  `You are a ReAct agent: solve the user's request one step at a time. Given the request and the tool results so far, either call the single most useful tool to make progress, or — once you have enough — answer directly with no tool call.
+const buildDecisionSystemPrompt = (appInstructions?: string): string =>
+  composeSystemPrompt(
+    `You are a ReAct agent: solve the user's request one step at a time. Given the request and the tool results so far, either call the single most useful tool to make progress, or — once you have enough — answer directly with no tool call.
 
 - Think first; your reasoning streams to the user.
 - Prefer a tool whenever it would be more reliable than working it out yourself (exact calculation, parsing, fetching).
 - At most one tool per step.
-- When the results suffice, stop calling tools and give a short confirmation; the final answer is composed separately.`
+- When the results suffice, stop calling tools and give a short confirmation; the final answer is composed separately.`,
+    appInstructions
+  )
 
 // Assemble the request messages shared by both decision variants. The accumulated
 // tool I/O is replayed as native assistant `tool_calls` + `tool` result turns
 // (issue #276) — identical in shape to the synthesis path — instead of prose
 // notes glued onto the user message.
-const buildMessages = (context: ExecutionContext, names: ToolNameMap): ChatMessage[] => [
-  { role: 'system', content: buildDecisionSystemPrompt() },
+const buildMessages = (
+  context: ExecutionContext,
+  names: ToolNameMap,
+  appInstructions?: string
+): ChatMessage[] => [
+  { role: 'system', content: buildDecisionSystemPrompt(appInstructions) },
   ...context.history.map((message) => ({ role: message.role, content: message.content })),
   { role: 'user' as const, content: context.prompt },
   ...toolInvocationsToMessages(context.toolInvocations, names.toWire)
@@ -56,13 +64,14 @@ const requestDecision = async (
   model: string,
   modelsChat: ModelsChatFetch,
   stream: boolean,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  appInstructions?: string
 ): Promise<Response> => {
   const response = await modelsChat(
     {
       model,
       stream,
-      messages: buildMessages(context, names),
+      messages: buildMessages(context, names, appInstructions),
       tools: names.definitions,
       // `auto`: the model decides whether to call a tool or answer. Synthesis
       // uses `none` to force a final answer (see litellm-provider).
@@ -153,10 +162,21 @@ export const decideNextAction = async (
   tools: PlannerToolDescriptor[],
   model: string,
   modelsChat: ModelsChatFetch,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  // The host app's own decision instructions (issue #478), appended to the
+  // system prompt above. Undefined for every app that contributes none.
+  appInstructions?: string
 ): Promise<ReActDecision> => {
   const names = buildToolNameMap(tools)
-  const response = await requestDecision(context, names, model, modelsChat, false, signal)
+  const response = await requestDecision(
+    context,
+    names,
+    model,
+    modelsChat,
+    false,
+    signal,
+    appInstructions
+  )
 
   const metadata = decisionMetadata(response, model, false)
   const data = await parseJsonWithTelemetry<{
@@ -184,10 +204,19 @@ export async function* streamDecision(
   tools: PlannerToolDescriptor[],
   model: string,
   modelsChat: ModelsChatFetch,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  appInstructions?: string
 ): AsyncGenerator<DecisionChunk> {
   const names = buildToolNameMap(tools)
-  const response = await requestDecision(context, names, model, modelsChat, true, signal)
+  const response = await requestDecision(
+    context,
+    names,
+    model,
+    modelsChat,
+    true,
+    signal,
+    appInstructions
+  )
 
   let thought = ''
   const toolCalls = new Map<number, ToolCallAccumulator>()

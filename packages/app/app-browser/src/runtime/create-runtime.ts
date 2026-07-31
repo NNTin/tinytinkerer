@@ -22,6 +22,7 @@ import { LiteLLMProvider } from './litellm-provider'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch, type ForwardedRequestSink } from './edge-fetch'
 import type { AppToolGroup } from '../app-tool-group'
+import type { AppAssistantPolicy, AppToolResultRecord } from '../app-assistant-policy'
 import { createMcpTool } from './mcp-tool'
 import { createSandboxExecutor } from '../sandbox-executor'
 import { createDomReader, type DomSnapshotNode } from '../dom-reader'
@@ -119,6 +120,10 @@ export const createRuntime = (options: {
   // is skipped at registration below, so it never registers and its descriptor
   // never reaches the planner. Absence means all of the group's tools are enabled.
   appToolDisablement?: PluginToolDisablementState
+  // The app's own grounding/answer policy (issue #478). Scoped exactly like
+  // `appToolGroup`: only the app that passes one gets it, so every other shell's
+  // prompts and answers are untouched.
+  appAssistantPolicy?: AppAssistantPolicy
   // The conversation this runtime instance is running for (issue #430), forwarded
   // by the factory's run-scoped `create(context)`. Threaded into the two host
   // capabilities that used to be global singletons — the human-prompt bridge and
@@ -396,11 +401,16 @@ export const createRuntime = (options: {
   // itself keeps running regardless (there is no activation to flip).
   const appToolGroup = options.appToolGroup
   const appToolDisablement = options.appToolDisablement ?? {}
+  // The app tools that actually registered, in registration order. The app's own
+  // instructions are bound to exactly this list (issue #478), so a tool the user
+  // unchecked in the tool picker is never described to the model as available.
+  const registeredAppToolIds: string[] = []
   for (const tool of appToolGroup?.tools ?? []) {
     if (!isPluginToolEnabled(appToolDisablement, appToolGroup!.id, tool.id)) {
       continue
     }
     if (addTool(tool)) {
+      registeredAppToolIds.push(tool.id)
       allToolDescriptors.push({
         id: tool.id,
         description: tool.description,
@@ -429,7 +439,35 @@ export const createRuntime = (options: {
   // one deliberate host↔plugin coupling (see RUN_JAVASCRIPT_TOOL_ID above).
   captureDomSnapshot = registeredToolIds.has(RUN_JAVASCRIPT_TOOL_ID)
 
+  // The app's grounding/answer policy (issue #478), bound here because this is
+  // where the two things it needs are known: which app tools registered, and
+  // (per run) which of their results succeeded.
+  const appPolicy = options.appAssistantPolicy
+  const policyInstructions = appPolicy?.instructions
+  const policyFinalizeAnswer = appPolicy?.finalizeAnswer
+
   return createChatRuntime({
+    ...(policyFinalizeAnswer
+      ? {
+          // agent-core hands over the run's whole ExecutionContext; the policy
+          // sees only successful results, stripped of their inputs — see
+          // AppToolResultRecord for why that narrowing is the contract. Every
+          // tool is included, not just the app group's: a policy recognises its
+          // own tool ids, and filtering here would hide a plugin result an app
+          // legitimately wants to reason about.
+          finalizeAssistantContent: async ({ context, source }) =>
+            policyFinalizeAnswer({
+              source,
+              // flatMap, not filter+map: it is the shape that lets the compiler
+              // narrow `outcome` to its successful arm.
+              results: context.toolInvocations.flatMap<AppToolResultRecord>((invocation) =>
+                invocation.outcome.ok
+                  ? [{ toolId: invocation.toolId, output: invocation.outcome.output }]
+                  : []
+              )
+            })
+        }
+      : {}),
     ...(options.agentType ? { agentType: options.agentType } : {}),
     provider: new LiteLLMProvider({
       baseUrl: options.baseUrl,
@@ -445,6 +483,12 @@ export const createRuntime = (options: {
       ...(captureForwardedRequest &&
       activePluginModules.some((mod) => mod.manifest.inspectorDescriptor)
         ? { onForwardRequest: captureForwardedRequest }
+        : {}),
+      ...(policyInstructions
+        ? {
+            appInstructions: (boundary) =>
+              policyInstructions({ boundary, toolIds: registeredAppToolIds })
+          }
         : {})
     }),
     // Terminal runtime failures (e.g. a ReAct decision timeout, a provider/edge

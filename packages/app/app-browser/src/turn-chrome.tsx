@@ -1,6 +1,7 @@
 import type { Turn } from '@tinytinkerer/app-core'
-import { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AssistantContent } from './assistant-content'
+import { toolResultsFromActivity } from './assistant-content-policy'
 import { toolLabel } from './turn-activity-panel'
 
 // Local thinking-dots so app-browser stays free of the @tinytinkerer/ui
@@ -225,6 +226,13 @@ export const TurnChrome = memo(function TurnChrome({
 }: TurnChromeProps) {
   const [collapsed, setCollapsed] = useState(false)
   const collapsibleId = useId()
+  // What the app's render-time content policy is allowed to trust for this turn
+  // (issue #478). Memoized on the activity items so a settled turn keeps handing
+  // the same array down and its content render stays memoized.
+  const toolResults = useMemo(
+    () => toolResultsFromActivity(turn.activity.items),
+    [turn.activity.items]
+  )
 
   if (!turn.assistantContent && !isLive) {
     return null
@@ -252,6 +260,7 @@ export const TurnChrome = memo(function TurnChrome({
               content={turn.assistantContent}
               isStreaming={turn.isStreaming}
               turnId={turn.id}
+              toolResults={toolResults}
               {...(contentClassName ? { className: contentClassName } : {})}
             />
           </div>

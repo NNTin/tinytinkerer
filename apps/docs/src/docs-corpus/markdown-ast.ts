@@ -7,6 +7,9 @@ export type MarkdownNode = {
   type: string
   value?: string
   depth?: number
+  // Present on link/image/definition nodes. Read by #478's answer-link policy,
+  // which walks assistant Markdown with this same structural node type.
+  url?: string
   children?: MarkdownNode[]
   position?: MarkdownPosition
 }

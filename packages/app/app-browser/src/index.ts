@@ -24,6 +24,11 @@ export {
   useStatusStore
 } from './app'
 export type { BrowserApp } from './app'
+export type {
+  AppAssistantPolicy,
+  AppInstructionBoundary,
+  AppToolResultRecord
+} from './app-assistant-policy'
 export type { AssistantContentProps } from './assistant-content'
 export { assistantContentPlugins } from './assistant-content'
 export {
@@ -126,6 +131,10 @@ export { ContextInspectorSlot, useContextInspector } from './context-inspector'
 export { useToolTree, ToolTreeSlot } from './tool-tree'
 export { genericToolTreeSummarizer } from './generic-tool-tree-summarizer'
 export type { AppToolGroup } from './app-tool-group'
+// The content node types an app's render-time policy operates on. Re-exported
+// here for the same reason ContentDocument/ContentNode already are: an app
+// (apps/docs) does not depend on @tinytinkerer/contracts directly.
+export type { BlockNode, InlineNode, ListItemNode, TableCell } from '@tinytinkerer/contracts'
 export type { ToolTreeView, ToolTreeSummarizer } from '@tinytinkerer/contracts'
 export { fetchStatus, startStatusPolling } from './status'
 export type { BrowserShell } from './shell'
@@ -150,6 +159,7 @@ export type {
 export { TurnActivityPanel, toolLabel } from './turn-activity-panel'
 export type { ResolveActivitySummarizer } from './turn-activity-panel'
 export type {
+  AgentType,
   ChatEvent,
   InspectorEntry,
   InspectorRequestPayload,

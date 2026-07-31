@@ -9,6 +9,7 @@ import {
 import type {
   AgentRuntimeBase,
   AgentHookContribution,
+  AssistantContentFinalizer as AgentAssistantContentFinalizer,
   ConversationMessage as AgentConversationMessage,
   CreateAssistantContentSession,
   ExecutionContext as AgentExecutionContext,
@@ -88,6 +89,11 @@ export type ToolInvocation = AgentToolInvocation
 
 export type ExecutionContext = AgentExecutionContext
 
+// The host's last-chance answer rewrite (issue #478), surfaced through the
+// app-core boundary like the other runtime hooks so app-browser builds against
+// the agent-core shape rather than a copy of it.
+export type AssistantContentFinalizer = AgentAssistantContentFinalizer
+
 export type ProviderCallOptions = AgentProviderCallOptions
 
 export type ModelProvider = AgentModelProvider
@@ -119,6 +125,7 @@ export const createChatRuntime = (options: {
   stepTimeoutMs?: number
   firstChunkTimeoutMs?: number
   createAssistantContentSession?: CreateAssistantContentSession
+  finalizeAssistantContent?: AgentAssistantContentFinalizer
   reportError?: RuntimeErrorReporter
   hooks?: readonly AgentHookContribution[]
   hookTimeoutMs?: number
@@ -140,6 +147,9 @@ export const createChatRuntime = (options: {
       : {}),
     ...(options.createAssistantContentSession
       ? { createAssistantContentSession: options.createAssistantContentSession }
+      : {}),
+    ...(options.finalizeAssistantContent
+      ? { finalizeAssistantContent: options.finalizeAssistantContent }
       : {}),
     ...(options.reportError ? { reportError: options.reportError } : {}),
     ...(options.hooks ? { hooks: options.hooks } : {}),

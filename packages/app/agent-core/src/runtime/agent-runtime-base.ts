@@ -6,6 +6,7 @@ import {
 import { isRateLimitError, type RateLimitError } from '../errors/rate-limit-error'
 import { createEvent } from '../events/create-event'
 import type {
+  AssistantContentFinalizer,
   AssistantContentSession,
   ConversationMessage,
   CreateAssistantContentSession,
@@ -48,6 +49,12 @@ export type AgentRuntimeOptions = {
    */
   firstChunkTimeoutMs?: number
   createAssistantContentSession?: CreateAssistantContentSession
+  /**
+   * Host-owned rewrite of the composed answer, applied once before
+   * `assistant.done` (issue #478). Absent for every host that does not need it,
+   * which is all of them except the documentation assistant.
+   */
+  finalizeAssistantContent?: AssistantContentFinalizer
   reportError?: RuntimeErrorReporter
   hooks?: readonly AgentHookContribution[]
   hookTimeoutMs?: number
@@ -149,6 +156,7 @@ export abstract class AgentRuntimeBase {
   protected readonly stepTimeoutMs: number
   protected readonly firstChunkTimeoutMs: number
   protected readonly createAssistantContentSession: CreateAssistantContentSession
+  protected readonly finalizeAssistantContent: AssistantContentFinalizer | undefined
   protected readonly reportError: RuntimeErrorReporter
   protected readonly hooks: readonly AgentHookContribution[]
   protected readonly hookTimeoutMs: number
@@ -171,6 +179,7 @@ export abstract class AgentRuntimeBase {
     this.firstChunkTimeoutMs = options.firstChunkTimeoutMs ?? Math.max(this.stepTimeoutMs, 90_000)
     this.createAssistantContentSession =
       options.createAssistantContentSession ?? createPlainTextAssistantContentSession
+    this.finalizeAssistantContent = options.finalizeAssistantContent
     this.reportError = options.reportError ?? (() => {})
     this.hooks = options.hooks ?? []
     this.hookTimeoutMs = options.hookTimeoutMs ?? 60_000
@@ -681,6 +690,7 @@ export abstract class AgentRuntimeBase {
             text: reasoningText
           })
         }
+        await this.applyAssistantContentFinalizer(session, context)
         yield createEvent('agent.step.completed', { stepId: synthesizeStepId })
         yield createEvent('assistant.done', session.snapshot())
         return
@@ -724,6 +734,45 @@ export abstract class AgentRuntimeBase {
           )
         )
         return
+      }
+    }
+  }
+
+  // Applies the host's answer finalizer (issue #478) to the completed answer,
+  // replacing the session source when it changed. Deliberately placed AFTER the
+  // synthesis stream settles and BEFORE `assistant.done`: that event supersedes
+  // the live `assistant.chunk` stream in the projection, so its snapshot is what
+  // is persisted and re-rendered on reload.
+  //
+  // Guarded like the telemetry sink: a finalizer that throws leaves the answer
+  // exactly as the model composed it and reports the failure, because losing a
+  // citation footer is a far smaller harm than losing the answer. It is not
+  // reached at all on a rate-limited attempt that retries, so it runs once per
+  // delivered answer rather than once per attempt.
+  private async applyAssistantContentFinalizer(
+    session: AssistantContentSession,
+    context: ExecutionContext
+  ): Promise<void> {
+    if (!this.finalizeAssistantContent) {
+      return
+    }
+    const snapshot = session.snapshot()
+    try {
+      const finalized = await this.finalizeAssistantContent({
+        context,
+        source: snapshot.source,
+        snapshot
+      })
+      if (finalized !== snapshot.source) {
+        session.replace(finalized)
+      }
+    } catch (error) {
+      try {
+        this.reportError(
+          error instanceof Error ? error : new Error('Assistant content finalizer failed')
+        )
+      } catch {
+        // Telemetry must never break the run.
       }
     }
   }
