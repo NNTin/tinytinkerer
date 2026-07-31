@@ -26,7 +26,13 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   useAuthStore: vi.fn(),
   useChatStore: vi.fn(),
   useChatCooldown: vi.fn(),
-  BrowserAppShell: () => null
+  BrowserAppShell: () => null,
+  NO_GLOBAL_HOST_CAPABILITIES: {
+    humanPrompt: false,
+    telemetryConsent: false,
+    privacyUpdate: false,
+    konami: false
+  }
 }))
 
 vi.mock('@docusaurus/useDocusaurusContext', () => ({
@@ -93,24 +99,24 @@ describe('client-runtime module singleton', () => {
     expect(resolvedConfig.hostToken).toBe('the-shared-token')
   })
 
-  it('beginDocsLabSignIn uses the PRODUCT default namespace (no override) so the callback route can find its state', async () => {
-    const { beginDocsLabSignIn } = await import('../client-runtime')
-    const started = beginDocsLabSignIn(runtimeConfig)
+  // Issue #479: the assistant runtime host at @theme/Root owns every
+  // document-global effect for the documentation site, so a lab must claim none
+  // of them — otherwise a lab booting first would configure telemetry under its
+  // own namespace and could restore its own stale consent over the assistant's.
+  it('claims no document-global effect', async () => {
+    const { ensureDocsLabApp } = await import('../client-runtime')
+    await ensureDocsLabApp(runtimeConfig)
 
-    expect(started).toBe(true)
-    const [signInOptions] = resolveBrowserShellBootstrapConfig.mock.calls[0]
-    expect(signInOptions.storageNamespace).toBeUndefined()
-    expect(signInOptions.authMode).toBe('oauth')
-    expect(signInOptions.baseUrl).toBe(runtimeConfig.productBaseUrl)
-    expect(startGitHubOAuth).toHaveBeenCalledTimes(1)
-  })
-
-  it('beginDocsLabSignIn is a no-op when OAuth is not configured for this deployment', async () => {
-    canStartGitHubOAuth.mockReturnValue(false)
-    const { beginDocsLabSignIn } = await import('../client-runtime')
-    const started = beginDocsLabSignIn(runtimeConfig)
-    expect(started).toBe(false)
-    expect(startGitHubOAuth).not.toHaveBeenCalled()
+    const [, options] = createBrowserApp.mock.calls[0] as unknown as [
+      unknown,
+      { documentGlobals: Record<string, boolean> }
+    ]
+    expect(options.documentGlobals).toEqual({
+      brandMetadata: false,
+      telemetry: false,
+      contentRenderReporter: false,
+      oauthCallbackWatchdog: false
+    })
   })
 
   it('resetDocsLabSession deletes only the docs-lab database and reloads, then forces a fresh session next time', async () => {

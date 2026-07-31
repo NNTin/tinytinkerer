@@ -1,0 +1,31 @@
+/*
+ * Containment for the assistant runtime's stylesheet (issue #479).
+ *
+ * `@tinytinkerer/app-browser/styles.css` opens with a `:root` block that both
+ * defines the shell's design tokens (which the assistant's own surfaces need)
+ * and declares `color-scheme: light` (which it must not impose on the
+ * documentation site). Until #479 that leaked only onto pages carrying a live
+ * lab; the assistant is present on every `/docs/` route, so it would reset the
+ * site's dark mode everywhere — form controls, scrollbars, and the UA's own
+ * canvas — the moment a reader opened it.
+ *
+ * Loaded after the shell's stylesheet, and matching on Docusaurus' own
+ * `data-theme` attribute so specificity (0,1,1) beats the shell's `:root`
+ * (0,1,0) regardless of the order a bundler happens to emit. The site keeps
+ * deciding its colour scheme; the assistant keeps its tokens.
+ *
+ * #480 owns the rest of the theme boundary — the overlay, stacking, and the
+ * surfaces themselves. This file is only what #479's own consent and privacy
+ * dialogs require in order not to change the page around them.
+ */
+:root {
+  color-scheme: light dark;
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+}

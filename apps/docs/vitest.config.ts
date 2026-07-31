@@ -81,7 +81,15 @@ export default defineConfig({
       // docs-search's contract test drive the genuine upstream SearchWorker
       // instead of a hand-rolled imitation. See the stub for details.
       '@generated/@easyops-cn/docusaurus-search-local/default/generated-constants.js':
-        fileURLToPath(new URL('./src/test/generated-search-constants-stub.ts', import.meta.url))
+        fileURLToPath(new URL('./src/test/generated-search-constants-stub.ts', import.meta.url)),
+      // vite-plugin-pwa supplies this virtual module at build time only, and
+      // app-browser's public barrel reaches it through createBrowserShellRoot →
+      // register-pwa. #479's tool-picker test drives that barrel for real (a
+      // real BrowserApp, a real AppBrowserProvider, the real useToolTree), so
+      // point it at the same stub app-browser's own vite.config.ts uses.
+      'virtual:pwa-register': fileURLToPath(
+        new URL('../../packages/app/app-browser/src/test/pwa-register-stub.ts', import.meta.url)
+      )
     }
   },
   test: {

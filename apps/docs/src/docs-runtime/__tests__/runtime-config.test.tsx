@@ -15,10 +15,10 @@ vi.mock('@docusaurus/useDocusaurusContext', () => ({
   })
 }))
 
-describe('useDocsLabRuntimeConfig', () => {
+describe('useDocsRuntimeConfig', () => {
   it('reads the edge/GitHub-OAuth config docusaurus.config.ts baked into the page', async () => {
-    const { useDocsLabRuntimeConfig } = await import('../runtime-config')
-    const { result } = renderHook(() => useDocsLabRuntimeConfig())
+    const { useDocsRuntimeConfig } = await import('../runtime-config')
+    const { result } = renderHook(() => useDocsRuntimeConfig())
     expect(result.current).toEqual({
       edgeBaseUrl: 'https://edge.example',
       githubClientId: 'client-123',
@@ -33,8 +33,8 @@ describe('useDocsLabRuntimeConfig', () => {
     vi.doMock('@docusaurus/useDocusaurusContext', () => ({
       default: () => ({ siteConfig: {} })
     }))
-    const { useDocsLabRuntimeConfig } = await import('../runtime-config')
-    const { result } = renderHook(() => useDocsLabRuntimeConfig())
+    const { useDocsRuntimeConfig } = await import('../runtime-config')
+    const { result } = renderHook(() => useDocsRuntimeConfig())
     expect(result.current.edgeBaseUrl).toBe('')
     expect(result.current.productBaseUrl).toBe('/')
   })

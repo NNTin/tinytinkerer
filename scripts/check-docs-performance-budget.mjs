@@ -29,11 +29,31 @@ import process from 'node:process'
 const rootDir = process.cwd()
 const buildDir = join(rootDir, 'apps/docs/build')
 
-// A string literal from client-runtime.tsx's error fallback, chosen because it
-// does not appear in any of the "light" always-loaded files (LiveLab.tsx's own
-// fallback text is deliberately different: "Preparing the live lab session…"
-// alone, shared verbatim between the two, would match both).
-const CLIENT_RUNTIME_MARKER = 'Failed to start the live lab session.'
+// Each entry is one lazily-loaded product-runtime door, identified by a string
+// literal unique to the module behind it (so it survives minification, unlike a
+// chunk id or filename, which webpack reassigns on every build).
+//
+// The live-lab marker comes from client-runtime.tsx's error fallback, chosen
+// because it does not appear in any of the "light" always-loaded files
+// (LiveLab.tsx's own fallback text is deliberately different: "Preparing the
+// live lab session…" alone, shared verbatim between the two, would match both).
+//
+// The assistant marker (issue #479) matters more, not less: its host is mounted
+// from `@theme/Root`, which EVERY documentation page loads. A static import
+// anywhere on the path from Root to the runtime would put app-browser in every
+// page's initial HTML — which is precisely what this check exists to catch.
+const RUNTIME_CHUNKS = [
+  {
+    label: 'live-lab client-runtime',
+    source: 'apps/docs/src/live-lab/client-runtime.tsx',
+    marker: 'Failed to start the live lab session.'
+  },
+  {
+    label: 'documentation assistant runtime',
+    source: 'apps/docs/src/docs-runtime/assistant-runtime-client.tsx',
+    marker: 'Failed to start the documentation assistant session.'
+  }
+]
 
 const walk = async (dir) => {
   const entries = await readdir(dir, { withFileTypes: true })
@@ -69,45 +89,54 @@ const main = async () => {
     throw new Error(`${relative(rootDir, buildDir)} looks incomplete (no .js or .html output).`)
   }
 
-  const runtimeChunks = []
+  const jsContents = new Map()
   for (const file of jsFiles) {
-    const content = await readFile(file, 'utf8')
-    if (content.includes(CLIENT_RUNTIME_MARKER)) {
-      runtimeChunks.push(file)
-    }
+    jsContents.set(file, await readFile(file, 'utf8'))
   }
-
-  if (runtimeChunks.length === 0) {
-    throw new Error(
-      `Could not find the live-lab client-runtime chunk in ${relative(rootDir, buildDir)} ` +
-        `(searched for the marker ${JSON.stringify(CLIENT_RUNTIME_MARKER)}). ` +
-        'Either the build is stale, or client-runtime.tsx changed and this check needs a new marker.'
-    )
+  const htmlContents = new Map()
+  for (const file of htmlFiles) {
+    htmlContents.set(file, await readFile(file, 'utf8'))
   }
 
   const violations = []
-  for (const chunkPath of runtimeChunks) {
-    const chunkName = chunkPath.split('/').pop()
-    for (const htmlPath of htmlFiles) {
-      const html = await readFile(htmlPath, 'utf8')
-      if (html.includes(chunkName)) {
-        violations.push({ chunkName, page: relative(rootDir, htmlPath) })
+  const summaries = []
+
+  for (const { label, source, marker } of RUNTIME_CHUNKS) {
+    const chunks = jsFiles.filter((file) => jsContents.get(file).includes(marker))
+
+    if (chunks.length === 0) {
+      throw new Error(
+        `Could not find the ${label} chunk in ${relative(rootDir, buildDir)} ` +
+          `(searched for the marker ${JSON.stringify(marker)}). ` +
+          `Either the build is stale, or ${source} changed and this check needs a new marker.`
+      )
+    }
+
+    for (const chunkPath of chunks) {
+      const chunkName = chunkPath.split('/').pop()
+      for (const [htmlPath, html] of htmlContents) {
+        if (html.includes(chunkName)) {
+          violations.push({ label, chunkName, page: relative(rootDir, htmlPath) })
+        }
       }
     }
+
+    summaries.push(`${chunks.length} ${label} chunk(s)`)
   }
 
   if (violations.length > 0) {
-    const lines = violations.map((v) => `  - ${v.page} eagerly references ${v.chunkName}`)
+    const lines = violations.map(
+      (v) => `  - ${v.page} eagerly references ${v.chunkName} (${v.label})`
+    )
     throw new Error(
-      `Performance budget violated: the live-lab product-runtime chunk must only be fetched ` +
-        `on demand (React.lazy behind <BrowserOnly>), never referenced from a page's initial ` +
+      `Performance budget violated: a product-runtime chunk must only be fetched on demand ` +
+        `(React.lazy behind <BrowserOnly>), never referenced from a page's initial ` +
         `HTML:\n${lines.join('\n')}`
     )
   }
 
   console.log(
-    `Performance budget OK: ${runtimeChunks.length} live-lab runtime chunk(s) ` +
-      `(${runtimeChunks.map((f) => f.split('/').pop()).join(', ')}) are absent from all ` +
+    `Performance budget OK: ${summaries.join(' and ')} are absent from all ` +
       `${htmlFiles.length} built docs page(s).`
   )
 }

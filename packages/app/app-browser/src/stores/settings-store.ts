@@ -55,7 +55,26 @@ export type SettingsState = CoreSettingsState & {
 
 export type SettingsStore = StoreApi<SettingsState>
 
-export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
+export const createSettingsStore = (
+  shell: BrowserShell,
+  options: {
+    /**
+     * Whether this app is the document's telemetry-consent controller (issue
+     * #479). Consent is ONE module-global flag while `telemetryEnabled` is
+     * persisted per storage namespace, so in a document with two apps only the
+     * owner's action may reach it — otherwise the second app's toggle (or the
+     * Konami preset, which writes through this same action) silently overrides
+     * the first app's choice.
+     *
+     * A non-owner's action is a no-op rather than a local-only write: an app
+     * that does not control the setting has no setting of its own to keep, and
+     * a stored value nothing reads is exactly the "displays a value that no
+     * longer controls anything" trap the ownership rule exists to close. Its
+     * settings UI hides the control (see `useSettingsSurfaceController`).
+     */
+    ownsTelemetryConsent?: boolean
+  } = {}
+): SettingsStore =>
   createStore<SettingsState>((set, get) => ({
     ...defaultSettingsState(),
     litellmBaseUrlError: null,
@@ -161,6 +180,9 @@ export const createSettingsStore = (shell: BrowserShell): SettingsStore =>
       set({ mcpDiscovery: nextDiscovery })
     },
     setTelemetryEnabled: async (enabled) => {
+      if (options.ownsTelemetryConsent === false) {
+        return
+      }
       const { persistBooleanPreference } = await loadCoreModule()
       await persistBooleanPreference(shell.preferences, SETTINGS_KEYS.telemetryEnabled, enabled)
       set({ telemetryEnabled: enabled })

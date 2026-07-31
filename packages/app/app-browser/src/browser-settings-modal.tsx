@@ -732,8 +732,13 @@ const InterfaceSection = () => {
 }
 
 const PrivacySection = () => {
-  const { telemetryEnabled, setTelemetryEnabled, webSpeechEnabled, setWebSpeechEnabled } =
-    useSettingsSurfaceController()
+  const {
+    telemetryEnabled,
+    setTelemetryEnabled,
+    telemetryControlAvailable,
+    webSpeechEnabled,
+    setWebSpeechEnabled
+  } = useSettingsSurfaceController()
   const [policyOpen, setPolicyOpen] = useState(false)
 
   return (
@@ -744,12 +749,22 @@ const PrivacySection = () => {
         checked={webSpeechEnabled}
         onChange={(next) => void setWebSpeechEnabled(next)}
       />
-      <ToggleRow
-        label="Enable telemetry"
-        description="Send pseudonymous crash reports to help fix bugs."
-        checked={telemetryEnabled}
-        onChange={(next) => void setTelemetryEnabled(next)}
-      />
+      {/* Hidden — not merely disabled — where another app in this document owns
+          telemetry consent (issue #479). A toggle rendered from this app's own
+          namespace would show a value that no longer controls the real setting,
+          which is worse than no control at all. */}
+      {telemetryControlAvailable ? (
+        <ToggleRow
+          label="Enable telemetry"
+          description="Send pseudonymous crash reports to help fix bugs."
+          checked={telemetryEnabled}
+          onChange={(next) => void setTelemetryEnabled(next)}
+        />
+      ) : (
+        <p className="text-xs text-[var(--muted)]">
+          Telemetry is a single site-wide setting, managed outside this panel.
+        </p>
+      )}
       <p className="text-xs text-[var(--muted)]">
         This application uses optional telemetry to improve reliability and performance. Voice input
         uses the browser&apos;s Web Speech API, which may run locally on the device or through a

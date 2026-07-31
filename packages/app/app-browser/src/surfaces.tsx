@@ -368,6 +368,12 @@ export type SettingsSurfaceController = {
   refreshMcpServer: (server: McpServerConfig) => Promise<void>
   telemetryEnabled: boolean
   setTelemetryEnabled: (enabled: boolean) => Promise<void>
+  // Whether this app is the document's telemetry-consent controller (issue
+  // #479). False only where another app in the same document owns the setting,
+  // in which case the surface must not offer a control: `setTelemetryEnabled`
+  // is a no-op there and `telemetryEnabled` is a namespace-local value that no
+  // longer reflects the real one.
+  telemetryControlAvailable: boolean
   availablePlugins: PluginManifest[]
   pluginActivation: PluginActivationState
   setPluginEnabled: (pluginId: string, enabled: boolean) => Promise<void>
@@ -427,7 +433,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const setPluginEnabled = useSettingsStore((state) => state.setPluginEnabled)
   const pluginConfig = useSettingsStore((state) => state.pluginConfig)
   const setPluginSetting = useSettingsStore((state) => state.setPluginSetting)
-  const { shell } = useBrowserApp()
+  const { shell, documentGlobals } = useBrowserApp()
 
   const effectiveStatus = status ?? OFFLINE_SYSTEM_STATUS
 
@@ -529,6 +535,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     refreshMcpServer,
     telemetryEnabled,
     setTelemetryEnabled,
+    telemetryControlAvailable: documentGlobals.telemetry,
     availablePlugins,
     pluginActivation,
     setPluginEnabled,

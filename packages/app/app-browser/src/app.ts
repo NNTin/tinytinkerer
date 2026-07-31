@@ -31,12 +31,19 @@ import {
 import type { ContentRenderErrorInfo } from '@tinytinkerer/content-react'
 import type { AppToolGroup } from './app-tool-group'
 import type { AppAssistantPolicy } from './app-assistant-policy'
+import {
+  resolveDocumentGlobalCapabilities,
+  type DocumentGlobalCapabilities
+} from './document-globals'
 import { loadPluginModules } from './plugins/registry'
 
 export type { AppToolGroup } from './app-tool-group'
 
 export type BrowserApp = {
   shell: BrowserShell
+  // Which document-global effects this app owns (issue #479). Always resolved,
+  // so a consumer never has to repeat the "absent means yes" default.
+  documentGlobals: DocumentGlobalCapabilities
   stores: {
     auth: AuthStore
     chat: ChatStore
@@ -92,11 +99,17 @@ export const createBrowserApp = (
     // store / runtime AND held on the app for the transcript renderer.
     appAssistantPolicy?: AppAssistantPolicy
     starterPrompts?: readonly string[]
+    // Which document-global effects this app owns (issue #479). Omitted means
+    // "owns everything", the correct answer for a document with one app.
+    documentGlobals?: Partial<DocumentGlobalCapabilities>
   } = {}
 ): BrowserApp => {
   const shell = createBrowserShell(config)
+  const documentGlobals = resolveDocumentGlobalCapabilities(options.documentGlobals)
   const auth = createAuthStore(shell)
-  const settings = createSettingsStore(shell)
+  // A non-owner must not reach module-global telemetry consent from its own
+  // settings action — see the store's own note.
+  const settings = createSettingsStore(shell, { ownsTelemetryConsent: documentGlobals.telemetry })
   const status = createStatusStore(shell)
   const inspector = createInspectorStore()
   const chat = createChatStore({
@@ -110,6 +123,7 @@ export const createBrowserApp = (
 
   const app: BrowserApp = {
     shell,
+    documentGlobals,
     stores: {
       auth,
       chat,
@@ -129,7 +143,13 @@ export const initializeBrowserApp = async (
   app: BrowserApp,
   config: BrowserShellConfig = {}
 ): Promise<void> => {
-  applyBrandMetadata(config)
+  // From here to `Promise.all` below, every effect is document-global and gated
+  // on this app's ownership (issue #479); the store initialization that follows
+  // is per-instance and always runs.
+  const { documentGlobals } = app
+  if (documentGlobals.brandMetadata) {
+    applyBrandMetadata(config)
+  }
   const { shell } = app
   // Route content render failures (React boundary, runtime per-node catch, and
   // failed lazy plugin loads) to Sentry. The sink no-ops until telemetry is
@@ -164,24 +184,35 @@ export const initializeBrowserApp = async (
   // adds little latency — so this function only resolves once the sink is
   // registered. That closes the race where content rendered before a
   // fire-and-forget registration would silently drop its error.
-  const reporterReady = import('@tinytinkerer/content-react')
-    .then(({ setContentRenderErrorReporter }) => {
-      setContentRenderErrorReporter(reportContentRender)
-    })
-    .catch((error: unknown) => {
-      // Telemetry wiring must never break startup; surface the failure in dev
-      // and continue without the content-render sink.
-      console.error('Failed to wire content render telemetry', error)
-    })
-  await configureTelemetry(
-    {
-      ...(shell.config.sentryDsn ? { dsn: shell.config.sentryDsn } : {}),
-      environment: shell.config.sentryEnvironment,
-      appVersion: shell.config.appVersion,
-      buildHash: shell.config.buildHash
-    },
-    shell.preferences
-  )
+  //
+  // The sink is module-global, so a second app in the same document would
+  // simply replace the first app's registration; only the owner registers one.
+  const reporterReady = !documentGlobals.contentRenderReporter
+    ? Promise.resolve()
+    : import('@tinytinkerer/content-react')
+        .then(({ setContentRenderErrorReporter }) => {
+          setContentRenderErrorReporter(reportContentRender)
+        })
+        .catch((error: unknown) => {
+          // Telemetry wiring must never break startup; surface the failure in
+          // dev and continue without the content-render sink.
+          console.error('Failed to wire content render telemetry', error)
+        })
+  // Configuration AND the pseudonymous install identity, which
+  // `configureTelemetry` reads from this shell's own preferences. Both are
+  // module-global, so a non-owner booting second would otherwise republish the
+  // document's telemetry identity as its own namespace's.
+  if (documentGlobals.telemetry) {
+    await configureTelemetry(
+      {
+        ...(shell.config.sentryDsn ? { dsn: shell.config.sentryDsn } : {}),
+        environment: shell.config.sentryEnvironment,
+        appVersion: shell.config.appVersion,
+        buildHash: shell.config.buildHash
+      },
+      shell.preferences
+    )
+  }
   await Promise.all([
     app.stores.auth.getState().initialize(),
     app.stores.settings.getState().initialize()
@@ -212,7 +243,12 @@ export const initializeBrowserApp = async (
       .catch(() => {})
   }
   // Restore Sentry for returning users who previously opted in.
-  if (app.stores.settings.getState().telemetryEnabled) {
+  //
+  // Owner-only (issue #479). Consent is one module-global flag, but
+  // `telemetryEnabled` is persisted per storage namespace, so a non-owner
+  // restoring its own stale `true` would switch telemetry back on over the
+  // owner's decision — the outcome decided by nothing more than boot order.
+  if (documentGlobals.telemetry && app.stores.settings.getState().telemetryEnabled) {
     await setTelemetryConsent(true)
   }
   // Ensure the content-render sink is registered before initialization resolves

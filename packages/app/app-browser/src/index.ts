@@ -20,10 +20,19 @@ export {
   useAuthStore,
   useBrowserApp,
   useChatStore,
+  useOptionalBrowserApp,
   useSettingsStore,
   useStatusStore
 } from './app'
 export type { BrowserApp } from './app'
+export {
+  DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES,
+  DEFAULT_GLOBAL_HOST_CAPABILITIES,
+  NO_GLOBAL_HOST_CAPABILITIES,
+  resolveDocumentGlobalCapabilities,
+  resolveGlobalHostCapabilities
+} from './document-globals'
+export type { DocumentGlobalCapabilities, GlobalHostCapabilities } from './document-globals'
 export type {
   AppAssistantPolicy,
   AppInstructionBoundary,

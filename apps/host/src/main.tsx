@@ -36,7 +36,7 @@ const browserApp = createBrowserApp(config)
 // BrowserAppShell provides, so they must be its descendants, same as
 // createBrowserShellRoot wires the shell/canvas routers.
 createRoot(document.getElementById('root')!).render(
-  <BrowserAppShell app={browserApp} config={config} BootScreen={RootBootScreen} mountGlobals>
+  <BrowserAppShell app={browserApp} config={config} BootScreen={RootBootScreen}>
     <RouterProvider router={hostRouter} />
   </BrowserAppShell>
 )

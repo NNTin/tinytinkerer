@@ -104,4 +104,20 @@ describe('applyKonamiPreset', () => {
 
     expect(setTelemetryConsent).toHaveBeenCalledWith(true)
   })
+
+  // The preset is the THIRD writer to module-global consent (after boot restore
+  // and the settings toggle), and it reaches it through this same store action —
+  // so a non-owner app must be unable to flip the document's telemetry with a
+  // ten-key sequence either (issue #479).
+  it('cannot grant telemetry consent from an app that does not own it', async () => {
+    const store = createSettingsStore(makeShell(preferences), { ownsTelemetryConsent: false })
+
+    await applyKonamiPreset(store)
+
+    expect(setTelemetryConsent).not.toHaveBeenCalled()
+    expect(store.getState().telemetryEnabled).toBe(false)
+    expect(await preferences.get('settings_telemetry_enabled')).toBeUndefined()
+    // Every other preset entry still applies: only consent is owned elsewhere.
+    expect(store.getState().webSpeechEnabled).toBe(true)
+  })
 })

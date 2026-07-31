@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import OriginalRoot from '@theme-original/Root'
 import { DocsPageProvider } from '../docs-page'
+import { DocsAssistantRuntimeHost } from '../docs-runtime'
 
 // Docusaurus keeps `@theme/Root` mounted for the whole lifetime of the SPA:
 // above the layout, outside the route tree, and inside both the router and the
@@ -17,10 +18,24 @@ import { DocsPageProvider } from '../docs-page'
 // this component typed.
 const ThemeRoot = OriginalRoot as (props: { children: ReactNode }) => ReactNode
 
+// The assistant runtime host is a SIBLING of `children`, never an ancestor
+// (issue #479): `BrowserAppShell` renders a boot screen in place of its children
+// and wraps them in StrictMode and an error boundary, so hosting the
+// documentation inside it would blank the page while the assistant booted and
+// remount every live lab the first time a reader opened it. As a sibling it
+// persists across SPA navigation just the same — this whole tree does — while
+// the page tree above stays untouched.
+//
+// It renders nothing until something calls `requestDocsAssistantRuntime()`, and
+// it stays inside `DocsPageProvider` so the assistant's tools resolve the same
+// active document the page context reports.
 export default function Root({ children }: { children: ReactNode }): ReactNode {
   return (
     <ThemeRoot>
-      <DocsPageProvider>{children}</DocsPageProvider>
+      <DocsPageProvider>
+        {children}
+        <DocsAssistantRuntimeHost />
+      </DocsPageProvider>
     </ThemeRoot>
   )
 }

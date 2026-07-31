@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
 import type { DocsLabCustomFields } from '../../site-config'
 
-export type DocsLabRuntimeConfig = {
+export type DocsRuntimeConfig = {
   edgeBaseUrl: string
   githubClientId: string | undefined
   sentryDsn: string | undefined
@@ -22,7 +22,13 @@ const FALLBACK_CUSTOM_FIELDS: DocsLabCustomFields = {
 // (see site-config.ts's resolveDocsLabCustomFields) — the same edge/GitHub-OAuth
 // configuration the product's own Vite builds resolve from VITE_* env vars, just
 // carried across the Node build → static-page boundary Docusaurus provides.
-export const useDocsLabRuntimeConfig = (): DocsLabRuntimeConfig => {
+//
+// Shared by every docs BrowserApp (issue #479): the live labs and the global
+// documentation assistant read the identical build-time configuration and differ
+// only in storage namespace, tools, and document-global ownership. The
+// `DocsLabCustomFields` name predates the assistant; the fields are the docs
+// site's, not the labs'.
+export const useDocsRuntimeConfig = (): DocsRuntimeConfig => {
   const { siteConfig } = useDocusaurusContext()
   const customFields = {
     ...FALLBACK_CUSTOM_FIELDS,
@@ -42,7 +48,7 @@ export const useDocsLabRuntimeConfig = (): DocsLabRuntimeConfig => {
   // depends on this value by reference, and an unstable reference there re-fires
   // the effect on every render it causes, which re-sets state, which re-renders —
   // an infinite loop that pegs the tab's CPU on any page with a <LiveLab>.
-  return useMemo<DocsLabRuntimeConfig>(
+  return useMemo<DocsRuntimeConfig>(
     () => ({
       edgeBaseUrl: tinyEdgeBaseUrl,
       githubClientId: tinyGithubClientId,

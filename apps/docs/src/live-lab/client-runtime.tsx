@@ -5,11 +5,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   BrowserAppShell,
-  createBrowserApp,
-  createBrowserShell,
-  canStartGitHubOAuth,
-  resolveBrowserShellBootstrapConfig,
-  startGitHubOAuth,
+  NO_GLOBAL_HOST_CAPABILITIES,
   useAuthStore,
   useChatCooldown,
   useChatStore,
@@ -17,11 +13,14 @@ import {
   type BrowserShellConfig
 } from '@tinytinkerer/app-browser'
 import '@tinytinkerer/app-browser/styles.css'
+import { createDocsBrowserApp } from '../docs-runtime/create-docs-app'
+import { beginDocsProductSignIn } from '../docs-runtime/product-sign-in'
+import type { DocsRuntimeConfig } from '../docs-runtime/runtime-config'
+import { useDocsRuntimeConfig } from '../docs-runtime/runtime-config'
+import { deleteDocsStorageNamespace } from '../docs-runtime/storage'
 import { DOCS_LAB_STORAGE_NAMESPACE } from './constants'
 import { deriveLabSessionSnapshot, LabSessionContext } from './lab-session-context'
 import { pluginToolPickerDemoToolGroup } from './plugin-tool-picker/demo-tools'
-import type { DocsLabRuntimeConfig } from './runtime-config'
-import { useDocsLabRuntimeConfig } from './runtime-config'
 
 type DocsLabApp = { app: BrowserApp; config: BrowserShellConfig }
 
@@ -31,101 +30,51 @@ type DocsLabApp = { app: BrowserApp; config: BrowserShellConfig }
 // chat, and settings stores — is created at most once per page load.
 let sharedAppPromise: Promise<DocsLabApp> | null = null
 
-const buildDocsLabApp = async (runtimeConfig: DocsLabRuntimeConfig): Promise<DocsLabApp> => {
-  // Read-only peek at the PRODUCT's own default-namespace token store (same
-  // origin, same IndexedDB the main app already writes to). Never written back —
-  // this is exactly what a "same-origin auth token, isolated everything-else"
-  // reuse looks like: the token travels into the docs shell's config as a
-  // `hostToken` (kept in memory only, see @tinytinkerer/app-browser's AuthTokenStore
-  // contract), while conversations/preferences/model selection go into a
-  // completely separate IndexedDB database below.
-  const productShell = createBrowserShell({})
-  const hostToken = await productShell.authTokens.getStoredToken()
-
-  const config = resolveBrowserShellBootstrapConfig({
-    baseUrl: '/',
-    origin: window.location.origin,
-    edgeBaseUrl: runtimeConfig.edgeBaseUrl,
+export const ensureDocsLabApp = (runtimeConfig: DocsRuntimeConfig): Promise<DocsLabApp> => {
+  sharedAppPromise ??= createDocsBrowserApp({
     storageNamespace: DOCS_LAB_STORAGE_NAMESPACE,
-    // 'host-token': this shell never runs its own GitHub OAuth (canStartGitHubOAuth
-    // is false), it only ever borrows the token above. Sign-in happens through
-    // beginDocsLabSignIn's separate, product-namespace shell instead.
-    authMode: 'host-token',
-    hostToken,
-    sentryDsn: runtimeConfig.sentryDsn,
-    sentryEnvironment: runtimeConfig.sentryEnvironment,
-    appVersion: 'docs',
-    buildHash: 'docs'
-  })
-
-  // The docs app's own intrinsic tool group (issue #453) — exactly the mechanism
-  // apps/canvas/apps/mermaid use for their real stage tools, not a simulation.
-  // Attached to the ONE shared docs-lab BrowserApp (see `sharedAppPromise` below),
-  // so it is available to every LiveLab on the page, same as any other app's
-  // always-on tools would be — there is no plugin here, so no activation gate.
-  return {
-    app: createBrowserApp(config, { appToolGroup: pluginToolPickerDemoToolGroup }),
-    config
-  }
-}
-
-export const ensureDocsLabApp = (runtimeConfig: DocsLabRuntimeConfig): Promise<DocsLabApp> => {
-  sharedAppPromise ??= buildDocsLabApp(runtimeConfig).catch((error: unknown) => {
+    runtimeConfig,
+    // The docs app's own intrinsic tool group (issue #453) — exactly the
+    // mechanism apps/canvas/apps/mermaid use for their real stage tools, not a
+    // simulation. Attached to the ONE shared docs-lab BrowserApp, so it is
+    // available to every LiveLab on the page, same as any other app's always-on
+    // tools would be — there is no plugin here, so no activation gate. The
+    // assistant's Documentation tools are deliberately NOT here (issue #479):
+    // they belong to the assistant session alone.
+    appToolGroup: pluginToolPickerDemoToolGroup,
+    // A live lab owns no document-global effect (issue #479). The global
+    // assistant at @theme/Root owns them all for the documentation site, which
+    // is why this is structural rather than a race the first lab to mount wins:
+    // a lab must not configure telemetry, publish an install identity, restore
+    // its own persisted consent over the assistant's, register the
+    // content-render sink, arm the OAuth watchdog, or touch the document head.
+    documentGlobals: {
+      brandMetadata: false,
+      telemetry: false,
+      contentRenderReporter: false,
+      oauthCallbackWatchdog: false
+    }
+  }).catch((error: unknown) => {
     sharedAppPromise = null
     throw error
   })
   return sharedAppPromise
 }
 
-// Sends a signed-out visitor to the product's OWN GitHub login (issue #451: "direct
-// signed-out visitors to the existing app login flow"), not a docs-local OAuth flow.
-// Deliberately uses a THROWAWAY shell with the PRODUCT's default storage namespace
-// (no override), because startGitHubOAuth stores its state/return-url in
-// sessionStorage keyed by that namespace, and the product's own callback route
-// (owned by apps/host at the site root) completes the exchange under that same
-// default namespace — a docs-namespaced shell here would leave the callback unable
-// to find the state it validates against.
-export const beginDocsLabSignIn = (runtimeConfig: DocsLabRuntimeConfig): boolean => {
-  const config = resolveBrowserShellBootstrapConfig({
-    baseUrl: runtimeConfig.productBaseUrl,
-    origin: window.location.origin,
-    edgeBaseUrl: runtimeConfig.edgeBaseUrl,
-    authMode: 'oauth',
-    ...(runtimeConfig.githubClientId ? { githubClientId: runtimeConfig.githubClientId } : {})
-  })
-  const shell = createBrowserShell(config)
-  if (!canStartGitHubOAuth(shell)) {
-    return false
-  }
-  startGitHubOAuth(shell)
-  return true
-}
-
 // Clears ONLY the isolated docs-lab IndexedDB database (conversations, plugin
 // settings, model selection) and reloads. Never touches the product's own
 // database or token — those live under a different IndexedDB database name
-// entirely (see buildDocsLabApp's read-only peek above).
+// entirely (see createDocsBrowserApp's read-only peek at it).
+//
+// The reload stays a LAB behaviour: a lab lives inside one page, so restarting
+// that page is a proportionate way to rebuild its stores. The global assistant
+// resets its conversation in place instead (issue #479) — reloading the
+// documentation out from under a reader would not be.
 export const resetDocsLabSession = async (): Promise<void> => {
-  await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(DOCS_LAB_STORAGE_NAMESPACE)
-    request.onsuccess = () => resolve()
-    // A connection from this same page may still be open; the delete completes
-    // once it closes (imminently, via the reload below), so this is not a failure.
-    request.onblocked = () => resolve()
-    request.onerror = () => reject(request.error ?? new Error('Failed to reset the lab session.'))
-  })
+  await deleteDocsStorageNamespace(DOCS_LAB_STORAGE_NAMESPACE)
   sharedAppPromise = null
   window.location.reload()
 }
-
-// Ensures the mountGlobals subtree (telemetry/privacy consent, human-prompt host,
-// Konami listener) renders at most once per page even with several <LiveLab>
-// instances mounted side by side — otherwise each would independently claim it via
-// BrowserAppShell's default `mountGlobals: true` and the visitor would see duplicate
-// consent dialogs. Deliberately mutated from an effect (not a useState initializer),
-// so React StrictMode's dev-only double mount/cleanup settles on exactly one owner
-// instead of a render-phase side effect double-firing it.
-let globalsOwned = false
 
 const DocsLabBootScreen = ({ error }: { error?: string }) => (
   <p role="status">
@@ -175,25 +124,18 @@ export type ClientRuntimeProps = { children: ReactNode }
 
 // The client-only tree every <LiveLab> mounts (via LiveLab.tsx's BrowserOnly +
 // React.lazy boundary). Resolves the shared docs-lab BrowserApp, then defers to
-// BrowserAppShell for the SAME bootstrap/consent/error-boundary tree every other
-// TinyTinkerer surface uses (issue #451: "retain existing privacy/telemetry
-// consent behavior").
+// BrowserAppShell for the SAME bootstrap/error-boundary tree every other
+// TinyTinkerer surface uses.
+//
+// It mounts NO document-global host (issue #479). The privacy/telemetry consent
+// behaviour issue #451 asked for is retained, but it is now owned once for the
+// whole documentation site by the assistant runtime host at @theme/Root instead
+// of by whichever lab happened to mount first — which is what lets a page carry
+// several labs beside the assistant with one consent dialog between them.
 export default function ClientRuntime({ children }: ClientRuntimeProps) {
-  const runtimeConfig = useDocsLabRuntimeConfig()
-  const [ownsGlobals, setOwnsGlobals] = useState(false)
+  const runtimeConfig = useDocsRuntimeConfig()
   const [appState, setAppState] = useState<AppState>({ phase: 'loading' })
   const [isResetting, setIsResetting] = useState(false)
-
-  useEffect(() => {
-    if (globalsOwned) {
-      return undefined
-    }
-    globalsOwned = true
-    setOwnsGlobals(true)
-    return () => {
-      globalsOwned = false
-    }
-  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -218,7 +160,7 @@ export default function ClientRuntime({ children }: ClientRuntimeProps) {
   }, [runtimeConfig])
 
   const signIn = useCallback(() => {
-    beginDocsLabSignIn(runtimeConfig)
+    beginDocsProductSignIn(runtimeConfig)
   }, [runtimeConfig])
 
   const reset = useCallback(async () => {
@@ -259,7 +201,7 @@ export default function ClientRuntime({ children }: ClientRuntimeProps) {
       app={appState.app}
       config={appState.config}
       BootScreen={DocsLabBootScreen}
-      mountGlobals={ownsGlobals}
+      globalHosts={NO_GLOBAL_HOST_CAPABILITIES}
     >
       <SessionBridge isResetting={isResetting} signIn={signIn} reset={reset}>
         {children}
