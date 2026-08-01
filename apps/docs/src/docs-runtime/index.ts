@@ -27,6 +27,19 @@ export type { DocsAssistantRuntimeStatus } from './assistant-activation'
 export { registerDocsAssistantSurface, setDocsAssistantSurfaceTarget } from './assistant-surface'
 export type { DocsAssistantSurface, DocsAssistantSurfacePlacement } from './assistant-surface'
 export { DOCS_ASSISTANT_STORAGE_NAMESPACE } from './assistant-constants'
+export {
+  openDocsAssistant,
+  readDocsAssistantPresentation,
+  setDocsAssistantMinimized,
+  useDocsAssistantPresentation
+} from './assistant-presentation'
+export type {
+  DocsAssistantPresentation,
+  DocsAssistantPresentationState
+} from './assistant-presentation'
+// How a documentation-owned overlay tells the assistant to get out of the way
+// (issue #480). `LabContainer` is the only caller today, for fullscreen labs.
+export { setDocsHostOverlay } from './host-overlays'
 // Types erase at build time, so re-exporting the session's shapes here costs a
 // consumer nothing and lets a light module type a value it receives.
 export type { DocsAssistantConversation, DocsAssistantSession } from './session'

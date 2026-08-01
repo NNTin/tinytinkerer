@@ -23,6 +23,7 @@ import {
   DOCS_ASSISTANT_STORAGE_NAMESPACE
 } from './assistant-constants'
 import { createDocsBrowserApp, type DocsBrowserApp } from './create-docs-app'
+import { beginDocsProductSignIn } from './product-sign-in'
 import type { DocsRuntimeConfig } from './runtime-config'
 
 let assistantAppPromise: Promise<DocsBrowserApp> | null = null
@@ -45,7 +46,23 @@ export const ensureDocsAssistantApp = (
     // #478's grounding and citation policy: instructions at every reasoning
     // boundary, the citation ledger, and the render-time link allowlist.
     appAssistantPolicy: createDocumentationAssistantPolicy(),
+    // Route-NEUTRAL, because they are fixed at construction while the assistant
+    // is present on search results and 404s too. #480's widget overrides them
+    // per route through `ChatApp`'s `starterPrompts`, prepending current-page
+    // suggestions only where #476 reports an authored document.
     starterPrompts: DOCS_ASSISTANT_STARTER_PROMPTS,
+    // The docs shells borrow a product token and can never start OAuth
+    // themselves, so without this the ordinary sign-in affordances would offer a
+    // flow that cannot begin (issue #480). Hands off to the product's own GitHub
+    // login, which owns the callback; anonymous shared-quota use continues
+    // meanwhile and is never blocked on it.
+    signIn: () => beginDocsProductSignIn(runtimeConfig),
+    // #479's locked reset semantics — abort the run, discard the active
+    // conversation, create and select a fresh one — reached from the widget's own
+    // reset control rather than only from the session facade. The store's
+    // clear-in-place default keeps an emptied conversation's id and title, which
+    // is not what this assistant documented that button as doing.
+    conversationReset: 'restart',
     // The assistant owns every document-global effect for the documentation
     // site (issue #479). Structural, not first-claim: this host exists at
     // `@theme/Root` for the whole application, so there is no race to win and no

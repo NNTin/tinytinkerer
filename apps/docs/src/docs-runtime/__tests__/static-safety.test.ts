@@ -32,14 +32,21 @@ const stripTypeOnlySpecifiers = (source: string): string =>
 const LIGHT_FILES = [
   'index.ts',
   'AssistantRuntimeHost.tsx',
+  'AssistantLauncher.tsx',
   'assistant-runtime-loader.ts',
   'assistant-activation.ts',
+  'assistant-presentation.ts',
+  'assistant-starters.ts',
   'assistant-surface.ts',
   'assistant-surfaces.tsx',
   'assistant-constants.ts',
+  'host-overlays.ts',
   'subscribable.ts',
   'runtime-config.ts',
-  '../theme/Root.tsx'
+  '../theme/Root.tsx',
+  // Eagerly imported by <LiveLab>, and therefore by every MDX page carrying a
+  // lab: it reaches the light index to declare its fullscreen overlay (#480).
+  '../components/lab-container.tsx'
 ]
 
 describe('assistant bundle boundary', () => {
@@ -48,10 +55,13 @@ describe('assistant bundle boundary', () => {
     expect(source).not.toMatch(/from ['"]@tinytinkerer\/app-browser['"]/)
     expect(source).not.toMatch(/from ['"]@tinytinkerer\/app-browser\//)
     // Nor anything that does, transitively.
-    expect(source).not.toMatch(/from ['"]\.\/assistant-runtime-client['"]/)
-    expect(source).not.toMatch(/from ['"]\.\/assistant-app['"]/)
-    expect(source).not.toMatch(/from ['"]\.\/create-docs-app['"]/)
-    expect(source).not.toMatch(/from ['"]\.\/session['"]/)
+    expect(source).not.toMatch(/from ['"][./]*(?:docs-runtime\/)?assistant-runtime-client['"]/)
+    expect(source).not.toMatch(/from ['"][./]*(?:docs-runtime\/)?assistant-app['"]/)
+    expect(source).not.toMatch(/from ['"][./]*(?:docs-runtime\/)?create-docs-app['"]/)
+    expect(source).not.toMatch(/from ['"][./]*(?:docs-runtime\/)?session['"]/)
+    // #480's widget is the one docs-runtime component that renders ChatApp, so
+    // it belongs to the runtime chunk and nothing light may name it.
+    expect(source).not.toMatch(/from ['"][./]*(?:docs-runtime\/)?assistant-widget['"]/)
   })
 
   it('the host reaches the runtime only through React.lazy, per attempt', () => {

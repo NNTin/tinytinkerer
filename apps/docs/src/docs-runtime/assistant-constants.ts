@@ -17,6 +17,26 @@
 export const DOCS_ASSISTANT_STORAGE_NAMESPACE = 'tinytinkerer-docs-assistant'
 
 /**
+ * The `localStorage` key holding whether the panel is open or minimized (issue
+ * #480), and the versioned value under it.
+ *
+ * Deliberately not in the IndexedDB namespace above: presentation is not
+ * conversation data, and #479's reset preserves it precisely because a reader who
+ * starts a new conversation has not asked for the panel to collapse.
+ */
+export const DOCS_ASSISTANT_PRESENTATION_STORAGE_KEY = 'tinytinkerer:docs-assistant-presentation'
+
+/**
+ * Where `FloatingLayout` persists the widget's geometry. Its own key, because the
+ * layout owns position and size while the presentation store above owns
+ * open/minimized — see assistant-presentation.ts for why those are separate.
+ */
+export const DOCS_ASSISTANT_LAYOUT_STORAGE_KEY = 'tinytinkerer:docs-assistant-layout:v1'
+
+/** The id the floating widget registers under in the #479 surface registry. */
+export const DOCS_ASSISTANT_WIDGET_SURFACE_ID = 'docs-assistant-widget'
+
+/**
  * Cold-start prompts for the assistant's empty conversation.
  *
  * Route-NEUTRAL by decision (issue #479): the assistant is present on every

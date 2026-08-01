@@ -42,7 +42,15 @@ export type FloatingChatSurfaceProps = {
   // inspector plugin's toggle in Settings AND renders the viewer button (below) in
   // the composer's left action row. Forwarded to the inline settings panel.
   inspectorPanelSupported?: boolean
+  // Surface-supplied cold-start suggestions and how many to show (issue #480).
+  starterPrompts?: readonly string[]
+  starterPromptCount?: number
 }
+
+// One suggestion is all a 400px-wide widget historically had room for. A caller
+// that wants more (the documentation assistant shows a current-page suggestion
+// plus route-neutral ones) raises it explicitly.
+const DEFAULT_STARTER_PROMPT_COUNT = 1
 
 // The compact chat body shared by every floating layout (the widget app and the
 // canvas app's overlay). It is pure composition over the shared chat-surface hooks
@@ -51,7 +59,9 @@ export type FloatingChatSurfaceProps = {
 export const FloatingChatSurface = ({
   LoadingComponent,
   framed = true,
-  inspectorPanelSupported
+  inspectorPanelSupported,
+  starterPrompts,
+  starterPromptCount = DEFAULT_STARTER_PROMPT_COUNT
 }: FloatingChatSurfaceProps) => {
   const {
     isBooting,
@@ -73,9 +83,11 @@ export const FloatingChatSurface = ({
     stop,
     sendRefusalNotice
   } = useChatSurfaceController()
-  const { token } = useSettingsSurfaceController()
+  const { token, signIn, canSignIn, signInOpensSettings } = useSettingsSurfaceController()
   const { prompt, setPrompt, speech, handleSubmit } = useChatComposer(submitPrompt)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Set when a sign-in was asked for and could not start (issue #480).
+  const [signInUnavailable, setSignInUnavailable] = useState(false)
   const { scrollRef, showJumpButton, scrollToBottom } = useStickToBottom<HTMLDivElement>(events)
 
   if (isBooting || initializeError) {
@@ -94,7 +106,11 @@ export const FloatingChatSurface = ({
       >
         <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
           {turns.length === 0 ? (
-            <ConversationEmptyState count={1} onSelectPrompt={setPrompt} />
+            <ConversationEmptyState
+              count={starterPromptCount}
+              onSelectPrompt={setPrompt}
+              {...(starterPrompts !== undefined ? { starterPrompts } : {})}
+            />
           ) : (
             <div className="space-y-2.5">
               {turns.map((turn, index) => (
@@ -172,12 +188,21 @@ export const FloatingChatSurface = ({
               >
                 <FaGear className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
-              {!token ? (
+              {/* Hidden only when there is no sign-in route at all — which used
+                  to be exactly the case where it stayed visible and led to a
+                  Settings panel with no button under it (issue #480). A
+                  host-provided sign-in starts here directly, since the host has
+                  already decided where its readers authenticate; a shell relying
+                  on its own OAuth keeps opening Settings, where that flow has
+                  always lived. */}
+              {!token && canSignIn ? (
                 <button
                   type="button"
                   aria-label="Sign in with GitHub"
                   title="Sign in with GitHub"
-                  onClick={() => setSettingsOpen(true)}
+                  onClick={() =>
+                    signInOpensSettings ? setSettingsOpen(true) : setSignInUnavailable(!signIn())
+                  }
                   className={`${headerIconButton} ${headerIconButtonHover}`}
                 >
                   <FaGithub className="h-3.5 w-3.5" aria-hidden="true" />
@@ -254,6 +279,11 @@ export const FloatingChatSurface = ({
           {sendRefusalNotice ? (
             <p role="alert" className="mt-1.5 text-[11px] text-rose-600">
               {sendRefusalNotice}
+            </p>
+          ) : null}
+          {signInUnavailable ? (
+            <p role="alert" className="mt-1.5 text-[11px] text-rose-600">
+              Sign-in is unavailable in this deployment. You can keep asking questions anonymously.
             </p>
           ) : null}
         </div>

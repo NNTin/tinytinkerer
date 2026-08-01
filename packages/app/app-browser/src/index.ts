@@ -24,7 +24,7 @@ export {
   useSettingsStore,
   useStatusStore
 } from './app'
-export type { BrowserApp } from './app'
+export type { AppSignIn, BrowserApp, ConversationResetBehavior } from './app'
 export {
   DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES,
   DEFAULT_GLOBAL_HOST_CAPABILITIES,

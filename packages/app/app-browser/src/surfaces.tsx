@@ -17,6 +17,7 @@ import {
   type SystemStatus
 } from '@tinytinkerer/contracts'
 import {
+  useCallback,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -90,7 +91,16 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const sendPrompt = useChatStore((state) => state.sendPrompt)
   const rerunLastPrompt = useChatStore((state) => state.rerunLastPrompt)
   const stop = useChatStore((state) => state.stop)
-  const resetConversation = useChatStore((state) => state.resetConversation)
+  // Which of the two resets this app's control performs (issue #480). Both are
+  // real store actions; the app declares which one its reader gets, so a surface
+  // never has to know whose session it is rendering. The documentation assistant
+  // picks `restart` — #479's locked "abort, discard, start fresh" — while every
+  // product shell keeps clearing in place.
+  const conversationReset = useBrowserApp().conversationReset
+  const clearConversation = useChatStore((state) => state.resetConversation)
+  const restartConversation = useChatStore((state) => state.restartConversation)
+  const resetConversation =
+    conversationReset === 'restart' ? restartConversation : clearConversation
   const cancelRetry = useChatStore((state) => state.cancelRetry)
   const refreshStatus = useStatusStore((state) => state.refresh)
   const token = useAuthStore((state) => state.token)
@@ -339,6 +349,25 @@ export type SettingsSurfaceController = {
   token: string | null
   clearToken: () => Promise<void>
   setToken: (token: string) => Promise<void>
+  // Whether ANY sign-in route exists here: this shell's own GitHub OAuth, or a
+  // host-provided one (issue #480). Surfaces should gate on this rather than on
+  // `canStartGitHubOAuth`, which is false for every `host-token` shell and left
+  // the docs/embedded settings panel offering sign-in with no button under it.
+  canSignIn: boolean
+  /**
+   * Start whichever sign-in this app has. Returns whether it actually started —
+   * `false` means the deployment cannot begin one (no client id, no host
+   * handler), which a surface must announce rather than swallow.
+   */
+  signIn: () => boolean
+  /**
+   * Whether a composer's sign-in affordance should open Settings instead of
+   * calling {@link signIn}. True when this shell's own OAuth is the only route,
+   * because that button has always lived in the Settings panel — keeping every
+   * existing surface's two-step flow exactly as it was. A host-provided sign-in
+   * starts from the affordance itself.
+   */
+  signInOpensSettings: boolean
   canStartGitHubOAuth: boolean
   startGitHubOAuth: () => void
   user: ReturnType<typeof useGitHubUser>
@@ -388,6 +417,21 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const clearToken = useAuthStore((state) => state.clearToken)
   const setToken = useAuthStore((state) => state.setToken)
   const { canStartGitHubOAuth, startGitHubOAuth } = useGitHubOAuth()
+  // A host-provided sign-in wins over this shell's own OAuth when present: an
+  // embedder that supplies one has, by definition, decided where its readers
+  // authenticate. It also reports whether the flow started, which OAuth cannot.
+  const appSignIn = useBrowserApp().signIn
+  const canSignIn = appSignIn !== undefined || canStartGitHubOAuth
+  const signIn = useCallback((): boolean => {
+    if (appSignIn) {
+      return appSignIn()
+    }
+    if (!canStartGitHubOAuth) {
+      return false
+    }
+    startGitHubOAuth()
+    return true
+  }, [appSignIn, canStartGitHubOAuth, startGitHubOAuth])
   const user = useGitHubUser()
   // Plugin manifests are discovered dynamically (via the shared usePluginModules
   // hook); the settings UI has no static dependency on any concrete plugin package.
@@ -506,6 +550,9 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     token,
     clearToken,
     setToken,
+    canSignIn,
+    signIn,
+    signInOpensSettings: appSignIn === undefined,
     canStartGitHubOAuth,
     startGitHubOAuth,
     user,

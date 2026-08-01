@@ -1,7 +1,8 @@
 # The documentation runtime
 
-Where a `BrowserApp` comes from inside `/docs/`, and who owns the document
-(issue #479). #480 mounts the widget on top of this; #472 consumes its session.
+Where a `BrowserApp` comes from inside `/docs/`, who owns the document (issue
+#479), and how the floating assistant is mounted on top of it (issue #480). #472
+consumes the same session.
 
 Two apps live in this document and share nothing but their bootstrap:
 
@@ -180,8 +181,107 @@ proportionate. A site-wide assistant reloading the documentation out from under 
 reader is not. A full "delete all assistant data" would be a separate, explicitly
 named operation; `deleteDocsStorageNamespace` is the primitive it would use.
 
+## The floating widget (#480)
+
+The real `ChatApp` against this session — `morphable={false}`, registered as an
+`inline` surface, and therefore a child of the Root-mounted host. Nothing about
+that subtree is remounted by a route change, which is the whole mechanism behind
+"the conversation, the draft and any in-flight run survive navigation".
+
+### Two launchers, one at a time
+
+The runtime is lazy, so `app-browser`'s own minimized launcher lives inside a
+chunk that has not been downloaded yet. The launcher on a cold `/docs/` page is
+therefore the documentation's own light control (`AssistantLauncher.tsx`), and
+the rule that keeps them from ever both being interactive is simply the status:
+
+| status                        | what is interactive                            |
+| ----------------------------- | ---------------------------------------------- |
+| `idle` / `starting` / `error` | the light launcher (busy, or offering a retry) |
+| `ready`                       | `ChatApp`'s panel and its own launcher         |
+
+It reports `aria-busy` rather than going `disabled` while the chunk loads: a
+disabled button leaves the tab order and stops being announced, so a keyboard
+reader who pressed it would lose the element mid-flow. A failed start returns
+focus to it, because that is where the retry is.
+
+### Presentation state has one owner
+
+`assistant-presentation.ts` — a versioned enum in `localStorage`, separate from
+the IndexedDB conversations, so resetting one cannot disturb the other.
+
+`FloatingLayout` also persists a `minimized` flag inside its geometry blob, which
+would be a second authority written by a component that only exists _after_ the
+decision was made. So the widget uses `FloatingLayout`'s **controlled** mode
+(#480 added it): this store owns open/minimized, the layout owns geometry. A
+callback-only seam was rejected — the two desynchronise the moment anything but
+the launcher opens the assistant, which is exactly what #472 does when it
+activates the runtime while the reader had the widget minimized.
+
+**A returning reader who left the panel open gets it back**, runtime download
+included. "Retains the presentation state" cannot mean "restores everything
+except the state the reader actually chose". That gives `/docs/` two load
+profiles for #481 to budget separately: new-or-minimized (no runtime chunk, the
+shape `check-docs-performance-budget.mjs` enforces) and returning-open.
+
+### The stacking contract
+
+| band | who                                                               |
+| ---- | ----------------------------------------------------------------- |
+| ~200 | ordinary fixed Docusaurus chrome (sticky navbar, mobile drawer)   |
+| ~300 | `.docs-assistant-root` — launcher, panel, consent/privacy dialogs |
+| ~400 | overlays that own the viewport, including fullscreen labs         |
+
+One stacking context for the whole assistant, established with `isolation` on
+that root. app-browser's dialogs carry `z-index: 60`/`70` of their own, which is
+meaningless against Infima's 200-level navbar; contained here they only order
+themselves against each other. `isolation` specifically, never `transform`,
+`filter`, `contain` or `will-change` — each of those would additionally
+re-anchor the `position: fixed` dialogs to the root instead of the viewport.
+
+The root is `position: fixed` and click-through, so it adds no page height and
+intercepts nothing outside the launcher and panel. `.widget-stage`'s own
+`min-height: 100vh` is overridden for the same reason apps/host and
+`@tinytinkerer/app-shell` override it for their compositions.
+
+While a fullscreen lab, the mobile drawer, or the search dropdown is open the
+widget is `inert` and hidden — but still **mounted**, with its persisted state
+untouched. Detection is by named overlays (`host-overlays.ts`): documentation-owned
+ones declare themselves, Docusaurus-owned ones are matched on published contracts
+(Infima's `navbar-sidebar--show`, the search combobox's `aria-expanded`) rather
+than hashed CSS-module names. A generic "any open `aria-modal`" rule was rejected
+because it would hide the assistant when its _own_ consent dialog opened.
+
+### Route-aware starters
+
+The widget reads `useDocsPageContext()` itself. It has to: `Root` has no hooks, so
+the host's element keeps its identity across navigation and React bails out of
+re-rendering it — only a component that consumes the context sees a route change.
+
+Current-page suggestions appear only where #476 reports an authored document
+(including the authored landing page and a direct visit to an unlisted one).
+Search, 404, generated category indexes, and any corpus-pending or corpus-failed
+state get the route-neutral list, because a "Summarize this page" that
+`read_current_doc` would refuse is worse than no suggestion at all. Suggestions
+**fill** the composer; they never send, so a reader keeps the chance to edit.
+
+### What #480 added to `app-browser`
+
+Four additive seams, every default preserving every existing surface: controlled
+minimization plus `onMinimizedChange`, a dynamic starter-prompt override and
+count, a host-provided `signIn`, and a `conversationReset` behaviour. Preferred
+over docs-owned imitations, which is what #482 exists to clean up.
+
+The last two close real defects rather than adding options. Docs shells run
+`authMode: 'host-token'` and can never start OAuth, so the settings panel offered
+sign-in above no button at all; the assistant now supplies
+`beginDocsProductSignIn`, and a deployment that cannot start one says so instead
+of doing nothing. And the widget's reset reached the store's clear-in-place
+action, which keeps the conversation's id and title — not the semantics #479
+locked and this session documents.
+
 ## What is not here
 
-- The floating widget, its overlay, stacking, and route-aware starters (#480).
 - The Pixel Agents Office UI (#472) — only the portal it mounts through.
+- The privacy, accessibility and performance release gates (#481).
 - Any use of the rendered DOM or live-lab state.

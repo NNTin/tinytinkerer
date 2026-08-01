@@ -14,9 +14,24 @@ import '@tinytinkerer/app-browser/styles.css'
 import './assistant-containment.css'
 import { ensureDocsAssistantApp } from './assistant-app'
 import { publishDocsAssistantRuntimeStatus } from './assistant-activation'
+import { DOCS_ASSISTANT_WIDGET_SURFACE_ID } from './assistant-constants'
 import { DocsAssistantSessionContext } from './assistant-session-context'
+import { registerDocsAssistantSurface } from './assistant-surface'
 import { AssistantSurfaces } from './assistant-surfaces'
+import { DocsAssistantWidget } from './assistant-widget'
 import { useDocsRuntimeConfig } from './runtime-config'
+
+// Registered at module scope, which runs exactly once: this module is only ever
+// reached through the loader's `import()`, and a module registry caches a
+// resolved module even across the host's retry attempts.
+//
+// `inline` placement (issue #479's activation contract): the widget renders in the
+// runtime host, inside the provider, and never consults a portal target. #472's
+// Office is the `portal` case, and conflating the two is what made a portal
+// surface silently remount inline when its target unmounted.
+registerDocsAssistantSurface(DOCS_ASSISTANT_WIDGET_SURFACE_ID, DocsAssistantWidget, {
+  placement: 'inline'
+})
 
 type AppState =
   | { phase: 'loading' }

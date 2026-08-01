@@ -31,11 +31,25 @@ export type ChatAppProps = {
   // Floating body/window passthrough.
   framed?: boolean
   initialMinimized?: boolean
+  // Controlled minimization (issue #480). See FloatingLayout for why a caller
+  // that owns open/minimized must own it outright rather than mirror it.
+  minimized?: boolean
+  onMinimizedChange?: (minimized: boolean) => void
+  focusPanelOnMount?: boolean
   defaultWidth?: number
   defaultHeight?: number
   minWidth?: number
   minHeight?: number
   stageClassName?: string
+  // Cold-start suggestions for this surface, replacing the app's own
+  // `starterPrompts` in the derived list (issue #480). A prop rather than app
+  // state because the useful ones change with what the host is showing — the
+  // documentation assistant recomputes them per route — and `BrowserApp` is
+  // built once per session.
+  starterPrompts?: readonly string[]
+  // How many suggestions the empty state offers. Defaults to each body's own
+  // historical count.
+  starterPromptCount?: number
 }
 
 const readStoredMode = (storageKey: string): ChatMode | null => {
@@ -77,11 +91,16 @@ export const ChatApp = ({
   settingsFallback,
   framed = false,
   initialMinimized = false,
+  minimized,
+  onMinimizedChange,
+  focusPanelOnMount,
   defaultWidth,
   defaultHeight,
   minWidth,
   minHeight,
-  stageClassName
+  stageClassName,
+  starterPrompts,
+  starterPromptCount
 }: ChatAppProps) => {
   const [activeMode, setActiveMode] = useState<ChatMode>(
     () => (morphable ? readStoredMode(storageKey) : null) ?? mode
@@ -137,6 +156,8 @@ export const ChatApp = ({
           installSlot={installSlot}
           settingsFallback={settingsFallback}
           {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
+          {...(starterPrompts !== undefined ? { starterPrompts } : {})}
+          {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
         />
       </SidebarLayout>
     )
@@ -146,6 +167,9 @@ export const ChatApp = ({
     <FloatingLayout
       storageKey={`${storageKey}:floating`}
       initialMinimized={initialMinimized}
+      {...(minimized !== undefined ? { minimized } : {})}
+      {...(onMinimizedChange !== undefined ? { onMinimizedChange } : {})}
+      {...(focusPanelOnMount !== undefined ? { focusPanelOnMount } : {})}
       {...(morphable ? { onDock: dockTo } : {})}
       {...(defaultWidth !== undefined ? { defaultWidth } : {})}
       {...(defaultHeight !== undefined ? { defaultHeight } : {})}
@@ -157,6 +181,8 @@ export const ChatApp = ({
         LoadingComponent={LoadingComponent}
         framed={framed}
         {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
+        {...(starterPrompts !== undefined ? { starterPrompts } : {})}
+        {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
       />
     </FloatingLayout>
   )

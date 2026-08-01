@@ -25,9 +25,11 @@ import {
   createBrowserShell,
   resolveBrowserShellBootstrapConfig,
   type AppAssistantPolicy,
+  type AppSignIn,
   type AppToolGroup,
   type BrowserApp,
   type BrowserShellConfig,
+  type ConversationResetBehavior,
   type DocumentGlobalCapabilities
 } from '@tinytinkerer/app-browser'
 import type { DocsRuntimeConfig } from './runtime-config'
@@ -53,6 +55,14 @@ export type CreateDocsBrowserAppOptions = {
    * decision decided by boot order.
    */
   documentGlobals: DocumentGlobalCapabilities
+  /**
+   * A host-provided sign-in (issue #480). Docs shells run `authMode:
+   * 'host-token'` and so can never start OAuth themselves — without this, their
+   * settings panel offers sign-in and renders no button under it.
+   */
+  signIn?: AppSignIn
+  /** What this app's reset-conversation control does (issue #480). */
+  conversationReset?: ConversationResetBehavior
 }
 
 export const createDocsBrowserApp = async ({
@@ -61,7 +71,9 @@ export const createDocsBrowserApp = async ({
   appToolGroup,
   appAssistantPolicy,
   starterPrompts,
-  documentGlobals
+  documentGlobals,
+  signIn,
+  conversationReset
 }: CreateDocsBrowserAppOptions): Promise<DocsBrowserApp> => {
   // Read-only peek at the PRODUCT's own default-namespace token store (same
   // origin, same IndexedDB the main app already writes to). Never written back —
@@ -98,6 +110,8 @@ export const createDocsBrowserApp = async ({
       ...(appToolGroup ? { appToolGroup } : {}),
       ...(appAssistantPolicy ? { appAssistantPolicy } : {}),
       ...(starterPrompts ? { starterPrompts } : {}),
+      ...(signIn ? { signIn } : {}),
+      ...(conversationReset ? { conversationReset } : {}),
       documentGlobals
     }),
     config

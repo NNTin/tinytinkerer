@@ -67,6 +67,14 @@ vi.mock('../src/surfaces.js', async () => {
       cancelRetry: mockChatState.cancelRetry,
       stop: mockChatState.stop,
       sendRefusalNotice: mockChatState.sendRefusalNotice
+    }),
+    // The shell-OAuth shape every product surface has (issue #480): the
+    // composer's GitHub action opens Settings, where that button lives.
+    useSettingsSurfaceController: () => ({
+      token: mockChatState.token,
+      canSignIn: true,
+      signIn: () => true,
+      signInOpensSettings: true
     })
   }
 })

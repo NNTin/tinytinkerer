@@ -12,7 +12,11 @@ import { LazyBrowserSettingsModal } from '../lazy-browser-settings-modal'
 import { ToolTreeSlot } from '../tool-tree'
 import { TurnActivityPanel } from '../turn-activity-panel'
 import { TurnChrome } from '../turn-chrome'
-import { useChatComposer, useChatSurfaceController } from '../surfaces'
+import {
+  useChatComposer,
+  useChatSurfaceController,
+  useSettingsSurfaceController
+} from '../surfaces'
 import { useStickToBottom } from '../use-stick-to-bottom'
 import { SpeechToggleButton } from './speech-toggle-button'
 import { surfaceButtonClass } from './surface-button'
@@ -116,6 +120,10 @@ export type DockedChatSurfaceProps = {
   inspectorPanelSupported?: boolean
   // Per-shell Suspense fallback while the settings modal chunk loads.
   settingsFallback?: ReactNode
+  // Surface-supplied cold-start suggestions and how many to show (issue #480).
+  // Omitted keeps the app's own prompts and this variant's `emptyCount`.
+  starterPrompts?: readonly string[]
+  starterPromptCount?: number
 }
 
 // The docked, full-height chat body shared by the web and mobile shells. It was two
@@ -127,7 +135,9 @@ export const DockedChatSurface = ({
   sizeVariant = 'comfortable',
   installSlot,
   inspectorPanelSupported,
-  settingsFallback
+  settingsFallback,
+  starterPrompts,
+  starterPromptCount
 }: DockedChatSurfaceProps) => {
   const {
     isBooting,
@@ -150,8 +160,10 @@ export const DockedChatSurface = ({
     stop,
     sendRefusalNotice
   } = useChatSurfaceController()
+  const { canSignIn, signIn, signInOpensSettings } = useSettingsSurfaceController()
   const { prompt, setPrompt, speech, handleSubmit } = useChatComposer(submitPrompt)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [signInUnavailable, setSignInUnavailable] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { scrollRef, showJumpButton, scrollToBottom } = useStickToBottom<HTMLDivElement>(events)
   const v = VARIANTS[sizeVariant]
@@ -204,8 +216,9 @@ export const DockedChatSurface = ({
           <div ref={scrollRef} className={v.scroll}>
             {turns.length === 0 ? (
               <ConversationEmptyState
-                count={v.emptyCount}
+                count={starterPromptCount ?? v.emptyCount}
                 onSelectPrompt={setPrompt}
+                {...(starterPrompts !== undefined ? { starterPrompts } : {})}
                 {...(v.emptyClassName ? { className: v.emptyClassName } : {})}
               />
             ) : (
@@ -298,12 +311,17 @@ export const DockedChatSurface = ({
                 <FaGear className="h-4 w-4" aria-hidden="true" />
               </button>
 
-              {!token ? (
+              {/* See the floating body's copy of this: hidden when no sign-in
+                  route exists at all, started directly when the host provides
+                  one, otherwise still routed through Settings (issue #480). */}
+              {!token && canSignIn ? (
                 <button
                   type="button"
                   aria-label="Sign in with GitHub"
                   title="Sign in with GitHub"
-                  onClick={() => setSettingsOpen(true)}
+                  onClick={() =>
+                    signInOpensSettings ? setSettingsOpen(true) : setSignInUnavailable(!signIn())
+                  }
                   className={`${iconButtonBase} border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800`}
                 >
                   <FaGithub className="h-4 w-4" aria-hidden="true" />
@@ -391,6 +409,11 @@ export const DockedChatSurface = ({
           {sendRefusalNotice ? (
             <p role="alert" className="mt-2 text-xs text-rose-600">
               {sendRefusalNotice}
+            </p>
+          ) : null}
+          {signInUnavailable ? (
+            <p role="alert" className="mt-2 text-xs text-rose-600">
+              Sign-in is unavailable in this deployment. You can keep asking questions anonymously.
             </p>
           ) : null}
         </form>

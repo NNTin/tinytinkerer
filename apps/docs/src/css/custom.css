@@ -395,11 +395,17 @@ div[class^='codeBlockContainer'] {
 /* Fullscreen: an in-page overlay rather than the Fullscreen API, so it keeps
    working inside iframed/embedded docs previews. Mirrors the fullscreen code
    editor pattern in packages/content/renderers/content-code (role=dialog,
-   aria-modal, Escape-to-close). */
+   aria-modal, Escape-to-close).
+
+   In the OVERLAY band (400), not the fixed band (200): the assistant sits at 300
+   so it clears the navbar, and a fullscreen lab is an `aria-modal` surface that a
+   floating widget must not cover (issue #480). The widget also goes `inert` while
+   this is open — see `.docs-assistant-root` — so this z-index is the backstop
+   rather than the whole mechanism. */
 .lab-container--fullscreen {
   position: fixed;
   inset: 1rem;
-  z-index: var(--ifm-z-index-fixed);
+  z-index: var(--ifm-z-index-overlay);
   margin: 0;
   max-height: none;
 }
@@ -1189,4 +1195,251 @@ div[class^='codeBlockContainer'] {
   background: var(--ifm-background-surface-color);
   color: var(--ifm-font-color-base);
   cursor: pointer;
+}
+
+/* Documentation assistant widget (issue #480) -------------------------------
+   The floating global assistant: a light launcher on every route, and the real
+   app-browser ChatApp once a reader opens it. See src/docs-runtime/README.md.
+
+   Plain CSS rather than Tailwind utilities on purpose: src/css/tailwind.css
+   `@source`s `packages/` (so the embedded product components get their classes)
+   and not this app's own `src/`, so a utility class written here would generate
+   no CSS at all. Every other docs-owned component in this file works the same
+   way. */
+
+/* === The z-index contract ===
+   200  ordinary fixed Docusaurus chrome (sticky navbar, mobile drawer)
+   300  this overlay root — the assistant's launcher, panel, and the consent /
+        privacy dialogs app-browser mounts inside it
+   400  overlays that own the viewport: fullscreen labs (above), and anything
+        Docusaurus escalates there
+
+   ONE stacking context for the whole assistant, established by `isolation`.
+   app-browser's dialogs carry their own `z-index: 60`/`70`, which are meaningless
+   against Infima's 200-level navbar; contained here they only ever order
+   themselves against each other, and the root's single 300 decides where the
+   assistant as a whole sits.
+
+   `isolation` specifically — NOT `transform`, `filter`, `backdrop-filter`,
+   `perspective`, `contain`, or `will-change`. Each of those also creates a
+   stacking context, and each additionally re-anchors `position: fixed`
+   descendants to this element instead of the viewport, which would break the
+   consent and privacy dialogs that rely on `fixed inset-0`.
+
+   `position: fixed` (not `absolute`) with no size of its own: the host renders
+   after the page content in @theme/Root, so an in-flow element would extend the
+   document. Out of flow, it adds no page height and causes no layout shift. */
+.docs-assistant-root {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  isolation: isolate;
+  /* Click-through: only the launcher and the panel take pointer events, so the
+     documentation underneath stays fully usable everywhere else. */
+  pointer-events: none;
+}
+
+/* Hidden while a fullscreen lab, the mobile navigation drawer, or the search
+   dropdown owns the viewport. `inert` (set by the host) already removes it from
+   the pointer, the tab order and the accessibility tree; this is the visual half.
+   Deliberately NOT `display: none` — the subtree stays mounted and laid out, so
+   the conversation, the composer draft, and any in-flight run survive. */
+.docs-assistant-root[data-host-overlay='true'] {
+  visibility: hidden;
+}
+
+.docs-assistant-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- The light launcher ---
+   Sized and shaped to match app-browser's own minimized launcher
+   (WIDGET_MINIMIZED_SIZE = 64px, 1.35rem radius), because the two hand off to
+   each other: this one disappears at `ready` and ChatApp's takes its place. A
+   visible jump between them would read as two different controls. */
+.docs-assistant-launcher {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 4rem;
+  padding: 0;
+  border: 1px solid var(--docs-assistant-border);
+  border-radius: 1.35rem;
+  background: var(--docs-assistant-panel);
+  box-shadow: 0 18px 48px rgba(36, 33, 24, 0.16);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.docs-assistant-launcher:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 22px 56px rgba(36, 33, 24, 0.22);
+}
+
+.docs-assistant-launcher:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 3px;
+}
+
+.docs-assistant-launcher__icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 1rem;
+}
+
+/* Busy: the chunk is downloading. The button stays focusable and announced (the
+   host renders a polite live region beside it) and simply ignores presses. */
+.docs-assistant-launcher[data-status='starting'] {
+  cursor: progress;
+  opacity: 0.72;
+}
+
+.docs-assistant-launcher[data-status='error'] {
+  border-color: var(--lab-error-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .docs-assistant-launcher {
+    transition: none;
+  }
+
+  .docs-assistant-launcher:hover {
+    transform: none;
+  }
+}
+
+/* Narrow viewports: a 64px control 24px from two edges is already thumb-sized,
+   but it should sit clear of the safe area on phones with rounded corners. */
+@media (max-width: 700px) {
+  .docs-assistant-launcher {
+    right: max(0.75rem, env(safe-area-inset-right));
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* --- The panel ---
+   app-browser's `.widget-stage` is `position: relative; min-height: 100vh`,
+   which is right for an app that owns its window and would add a full viewport
+   of page height to every documentation route. Same override apps/host and
+   @tinytinkerer/app-shell apply for their own compositions, with `fixed` because
+   this stage is not inside a positioned full-screen ancestor. */
+.docs-assistant-root .widget-stage.docs-assistant-stage {
+  position: fixed;
+  inset: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.docs-assistant-stage .widget-floating-shell {
+  pointer-events: auto;
+}
+
+/* app-browser's dialogs (telemetry consent, privacy policy, the settings
+   slide-over) are `position: fixed` inside this click-through root, so they need
+   their pointer events back. Scoped to the root's own children rather than the
+   stage, which must stay click-through. */
+.docs-assistant-root > *:not(.widget-stage) {
+  pointer-events: auto;
+}
+
+.docs-assistant-widget__loading {
+  padding: 1rem;
+  font-size: 0.85rem;
+  color: var(--docs-assistant-muted);
+}
+
+/* --- Theme tokens ---
+   app-browser ships no `--widget-*` values: every deployable app defines them in
+   its own entry stylesheet (apps/shell, apps/canvas, apps/mermaid,
+   apps/pixel-agents), and this site never had to because the live labs render the
+   DOCKED body, which uses none of them. The floating body uses seven, so without
+   these its borders fall back to `currentColor` and its panels to transparent.
+
+   Scoped to the assistant root so nothing leaks into the documentation, and so
+   the live labs keep exactly the presentation they shipped with — retheming those
+   is a change to the live-lab precedent and belongs to its own issue, not this
+   one.
+
+   The derived tokens app-browser builds with `color-mix` (panel-hover,
+   accent-soft, accent-ring, user-bubble) all resolve from these, so overriding
+   the bases recolours the whole conversation surface. */
+.docs-assistant-root {
+  --docs-assistant-border: #dccdb9;
+  --docs-assistant-panel: #fffaf5;
+  --docs-assistant-muted: #766a5d;
+
+  --bg: #f6f2ec;
+  --panel: #fffaf5;
+  --muted: #766a5d;
+  --border: #dccdb9;
+  --text: #2f2923;
+  --accent: #b45309;
+
+  --widget-bg: #f6f2ec;
+  --widget-panel: #fffaf5;
+  --widget-border: #dccdb9;
+  --widget-text: #2f2923;
+  --widget-muted: #766a5d;
+}
+
+/* Dark mode, keyed on Docusaurus' own attribute so the widget follows the site's
+   theme toggle. The palette is this site's dark scale (see the `[data-theme]`
+   block above), not a second invention. */
+html[data-theme='dark'] .docs-assistant-root {
+  --docs-assistant-border: #3a2f22;
+  --docs-assistant-panel: #251c13;
+  --docs-assistant-muted: #cbbfae;
+
+  --bg: #1b140d;
+  --panel: #251c13;
+  --muted: #cbbfae;
+  --border: #3a2f22;
+  --text: #f6ead7;
+  --accent: #f59e0b;
+
+  --widget-bg: #1b140d;
+  --widget-panel: #251c13;
+  --widget-border: #3a2f22;
+  --widget-text: #f6ead7;
+  --widget-muted: #cbbfae;
+}
+
+/* The floating shell's own frame and the settings/consent dialog surfaces carry
+   literal light colours in app-browser's stylesheet and utility classes. These
+   are the few that would otherwise stay bright in dark mode; each maps onto a
+   token above rather than a new hard-coded value. */
+html[data-theme='dark'] .docs-assistant-root .widget-floating-shell {
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+html[data-theme='dark'] .docs-assistant-root .widget-shell-minimize,
+html[data-theme='dark'] .docs-assistant-root .widget-shell-dock {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--muted);
+}
+
+html[data-theme='dark'] .docs-assistant-root .widget-shell-minimize:hover,
+html[data-theme='dark'] .docs-assistant-root .widget-shell-dock:hover {
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  color: var(--text);
+}
+
+html[data-theme='dark'] .docs-assistant-root .widget-shell-grip::before {
+  background: color-mix(in srgb, var(--text) 40%, transparent);
 }

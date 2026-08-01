@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
+import { setDocsHostOverlay } from '../docs-runtime'
 
 export type LabStatus = 'loading' | 'ready' | 'warning' | 'error'
 
@@ -34,6 +35,20 @@ export const LabContainer = ({
 }: LabContainerProps): React.JSX.Element => {
   const [fullscreen, setFullscreen] = useState(false)
   const headingId = useId()
+  const overlayId = `lab-fullscreen:${headingId}`
+
+  // Tell the assistant overlay to stand down while this lab owns the viewport
+  // (issue #480). Declared rather than sniffed for: this component knows the
+  // answer exactly, and a fullscreen lab is a `role="dialog" aria-modal` surface
+  // that a floating widget must not sit on top of. Keyed per instance so two
+  // labs could never cancel each other's claim.
+  useEffect(() => {
+    if (!fullscreen) return undefined
+    setDocsHostOverlay(overlayId, true)
+    return () => {
+      setDocsHostOverlay(overlayId, false)
+    }
+  }, [fullscreen, overlayId])
 
   useEffect(() => {
     if (!fullscreen) {

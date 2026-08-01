@@ -91,7 +91,15 @@ vi.mock('../src/surfaces.js', async () => {
       deleteConversation: mockChatState.deleteConversation,
       sendRefusalNotice: mockChatState.sendRefusalNotice
     }),
-    useSettingsSurfaceController: () => ({ token: mockAuthState.token })
+    // `signInOpensSettings: true` is the shell-OAuth shape every product surface
+    // has (issue #480): the composer's GitHub action opens Settings, where that
+    // button lives, rather than starting a flow itself.
+    useSettingsSurfaceController: () => ({
+      token: mockAuthState.token,
+      canSignIn: true,
+      signIn: () => true,
+      signInOpensSettings: true
+    })
   }
 })
 

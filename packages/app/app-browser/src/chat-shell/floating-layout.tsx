@@ -5,7 +5,8 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode
+  type ReactNode,
+  type RefObject
 } from 'react'
 import { TINYTINKERER_BRAND_ASSET_URLS } from '@tinytinkerer/brand-assets'
 import { useBrowserShellConfig } from '../hooks'
@@ -43,8 +44,23 @@ const DRAG_CLICK_THRESHOLD = 5
 export type FloatingLayoutProps = {
   // localStorage key the layout persists under (per app).
   storageKey: string
-  // Start minimized.
+  // Start minimized. Uncontrolled: it seeds the layout on mount and overrides
+  // whatever was persisted, which is what a URL-driven `?window=minimized`
+  // wants. Ignored when `minimized` below is supplied.
   initialMinimized?: boolean
+  // Controlled minimized state (issue #480). When provided, the CALLER owns
+  // open/minimized and this layout owns geometry only — the persisted
+  // `layout.minimized` stops being a second, independent authority that could
+  // disagree with the caller's after anything but the launcher opened the
+  // widget. Leave it out for the uncontrolled behaviour every product shell has.
+  minimized?: boolean
+  // Fired whenever the reader minimizes or restores, in both modes.
+  onMinimizedChange?: (minimized: boolean) => void
+  // Move focus into the panel when this layout FIRST mounts unminimized. Off by
+  // default: a shell that mounts its widget during page load must not steal
+  // focus. An embedder that mounts it in response to a reader's click should,
+  // since that click is the request to start typing.
+  focusPanelOnMount?: boolean
   // Window sizing overrides; defaults match the widget's historical sizes.
   defaultWidth?: number
   defaultHeight?: number
@@ -64,13 +80,16 @@ export type FloatingLayoutProps = {
 
 const WidgetLauncher = ({
   onRestore,
-  onDragPointerDown
+  onDragPointerDown,
+  buttonRef
 }: {
   onRestore: () => void
   onDragPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void
+  buttonRef: RefObject<HTMLButtonElement | null>
 }) => (
   <div className="flex h-full items-center justify-center p-2">
     <button
+      ref={buttonRef}
       type="button"
       onClick={onRestore}
       onPointerDown={onDragPointerDown}
@@ -139,7 +158,9 @@ const WidgetWindow = ({
   children,
   resizeHandle,
   className,
-  style
+  style,
+  launcherRef,
+  bodyRef
 }: {
   minimized: boolean
   dragging: boolean
@@ -153,6 +174,8 @@ const WidgetWindow = ({
   resizeHandle?: ReactNode
   className?: string
   style?: CSSProperties
+  launcherRef: RefObject<HTMLButtonElement | null>
+  bodyRef: RefObject<HTMLDivElement | null>
 }) => (
   <div
     className={['widget-floating-shell', className].filter(Boolean).join(' ')}
@@ -160,9 +183,16 @@ const WidgetWindow = ({
     data-minimized={minimized ? 'true' : 'false'}
     style={style}
   >
-    <div className="widget-shell-body">
+    {/* `tabIndex={-1}` so restoring has somewhere to put focus on a body that
+        happens to contain no focusable control yet (a still-booting chat). It is
+        programmatic only — never in the tab order. */}
+    <div className="widget-shell-body" ref={bodyRef} tabIndex={-1}>
       {minimized ? (
-        <WidgetLauncher onRestore={onRestore} onDragPointerDown={onLauncherPointerDown} />
+        <WidgetLauncher
+          onRestore={onRestore}
+          onDragPointerDown={onLauncherPointerDown}
+          buttonRef={launcherRef}
+        />
       ) : (
         <>
           <WidgetShellBar
@@ -195,6 +225,9 @@ type DragState = {
 export const FloatingLayout = ({
   storageKey,
   initialMinimized = false,
+  minimized: controlledMinimized,
+  onMinimizedChange,
+  focusPanelOnMount = false,
   defaultWidth,
   defaultHeight,
   minWidth,
@@ -209,9 +242,18 @@ export const FloatingLayout = ({
     minWidth: minWidth ?? DEFAULT_DIMS.minWidth,
     minHeight: minHeight ?? DEFAULT_DIMS.minHeight
   }
+  const isControlled = controlledMinimized !== undefined
   const config = useBrowserShellConfig()
   const [layout, setLayout] = useState<WidgetLayout>(() =>
-    clampLayout({ ...loadStandaloneLayout(storageKey, dims), minimized: initialMinimized }, dims)
+    clampLayout(
+      {
+        ...loadStandaloneLayout(storageKey, dims),
+        // The caller's value wins outright when controlled, so the persisted
+        // flag can never be a competing answer.
+        minimized: controlledMinimized ?? initialMinimized
+      },
+      dims
+    )
   )
   const [isDragging, setIsDragging] = useState(false)
   const [liveMessage, setLiveMessage] = useState('')
@@ -219,9 +261,31 @@ export const FloatingLayout = ({
   // One-shot flag that suppresses the launcher's restore click after a real drag (so
   // dragging the minimized widget never restores).
   const suppressLauncherClickRef = useRef(false)
+  const launcherRef = useRef<HTMLButtonElement | null>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+
+  // Adopt a changed controlled value during render (React's documented pattern
+  // for state derived from props) rather than in an effect: an effect would
+  // paint one frame of the stale size and position, since `clampLayout` bounds
+  // x/y differently for a 64px launcher than for a full panel.
+  const [lastControlledMinimized, setLastControlledMinimized] = useState(controlledMinimized)
+  if (isControlled && controlledMinimized !== lastControlledMinimized) {
+    setLastControlledMinimized(controlledMinimized)
+    setLayout((current) => clampLayout({ ...current, minimized: controlledMinimized }, dims))
+  }
 
   const isMinimized = layout.minimized
   const themeStyle = shellThemeToCssVars(config.theme)
+
+  // The one place minimized/restored changes, in both modes. Uncontrolled keeps
+  // the state here; controlled only reports, and the caller's next prop value
+  // comes back through the render-phase adoption above.
+  const changeMinimized = (next: boolean): void => {
+    if (!isControlled) {
+      setLayout((current) => clampLayout({ ...current, minimized: next }, dims))
+    }
+    onMinimizedChange?.(next)
+  }
 
   useEffect(() => {
     document.body.dataset.widgetViewMode = 'standalone'
@@ -343,11 +407,11 @@ export const FloatingLayout = ({
   }
 
   const handleMinimize = () => {
-    setLayout((currentLayout) => clampLayout({ ...currentLayout, minimized: true }, dims))
+    changeMinimized(true)
   }
 
   const handleRestore = () => {
-    setLayout((currentLayout) => clampLayout({ ...currentLayout, minimized: false }, dims))
+    changeMinimized(false)
   }
 
   const handleLauncherClick = () => {
@@ -411,6 +475,36 @@ export const FloatingLayout = ({
     }
   }
 
+  // Focus follows the widget's own state change, never a page load (C1, issue
+  // #480). Minimizing hands focus to the launcher that replaced the panel;
+  // restoring hands it to the composer, so a reader who reopened the widget can
+  // type. Both are cases where the element the reader was using has just left
+  // the document, and leaving focus on `<body>` there would drop a keyboard user
+  // back at the top of the documentation.
+  //
+  // This layout is non-modal by design: nothing here traps focus, so Tab always
+  // leads back out into the host page.
+  const previousMinimizedRef = useRef<boolean | null>(null)
+  useEffect(() => {
+    const previous = previousMinimizedRef.current
+    previousMinimizedRef.current = isMinimized
+    // First commit: only an explicit `focusPanelOnMount` may move focus, because
+    // every product shell mounts this during page load.
+    const isFirstCommit = previous === null
+    if (isFirstCommit ? !(focusPanelOnMount && !isMinimized) : previous === isMinimized) {
+      return
+    }
+    if (isMinimized) {
+      launcherRef.current?.focus()
+      return
+    }
+    // The composer, when the body has one — a booting or errored chat body may
+    // not. `widget-shell-body` is focusable programmatically for exactly that
+    // case, so focus always lands inside the panel rather than nowhere.
+    const composer = bodyRef.current?.querySelector('textarea')
+    ;(composer ?? bodyRef.current)?.focus()
+  }, [isMinimized, focusPanelOnMount])
+
   useEffect(() => {
     saveStandaloneLayout(storageKey, layout)
   }, [layout, storageKey])
@@ -468,6 +562,8 @@ export const FloatingLayout = ({
         onMovePointerDown={handleGripPointerDown}
         onLauncherPointerDown={handleLauncherPointerDown}
         onMoveKeyDown={handleGripKeyDown}
+        launcherRef={launcherRef}
+        bodyRef={bodyRef}
         style={{
           left: layout.x,
           top: layout.y,

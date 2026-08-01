@@ -67,7 +67,10 @@ vi.mock('../src/surfaces.js', async () => {
       sendRefusalNotice: mockChatState.sendRefusalNotice
     }),
     useSettingsSurfaceController: () => ({
-      token: null
+      token: null,
+      canSignIn: true,
+      signIn: () => true,
+      signInOpensSettings: true
     })
   }
 })

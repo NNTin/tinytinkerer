@@ -15,7 +15,10 @@
  */
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from '@docs-test/react-router-dom'
 import { createBrowserApp, type BrowserApp } from '@tinytinkerer/app-browser'
+
+import { siteGlobalData } from '../../docs-page/__tests__/site-corpus-fixture'
 
 vi.mock('@tinytinkerer/app-browser/styles.css', () => ({}))
 
@@ -78,6 +81,10 @@ beforeEach(() => {
   bootstrap.failures = 0
   ensureDocsAssistantApp.mockReset()
   ensureDocsAssistantApp.mockImplementation(() => Promise.resolve(buildApp()))
+  // The corpus manifest is left unreachable: the assistant's lifecycle is what
+  // this file is about, and a route with no resolved document is a perfectly
+  // ordinary one for it.
+  vi.stubGlobal('fetch', () => Promise.reject(new Error('offline')))
 })
 
 const renderClient = async () => {
@@ -89,7 +96,28 @@ const renderClient = async () => {
     () => <p data-testid="surface">assistant surface</p>,
     { placement: 'inline' }
   )
-  const view = render(<AssistantRuntimeClient />)
+  // Inside the router and the #476 provider, because that is where @theme/Root
+  // puts this tree: importing the runtime client registers #480's floating
+  // widget, which reads the page context to pick its route-aware starters.
+  // Rendering it bare would be a situation the site cannot produce, and the
+  // widget would (correctly) throw about a missing provider.
+  //
+  // Imported HERE, not at the top of the file: `vi.resetModules()` gives each
+  // test a fresh module graph, and a statically imported provider would carry
+  // the previous graph's React context object — a different context from the one
+  // the freshly imported widget reads, so the widget would see no provider at
+  // all while one was plainly rendered above it.
+  const { DocsPageProvider } = await import('../../docs-page')
+  // Seeded through the fresh graph's stub for the same reason.
+  const { __setDocusaurusGlobalData } = await import('../../test/docusaurus-use-global-data-stub')
+  __setDocusaurusGlobalData('docusaurus-plugin-content-docs', 'default', siteGlobalData())
+  const view = render(
+    <MemoryRouter initialEntries={['/docs/architecture/']}>
+      <DocsPageProvider>
+        <AssistantRuntimeClient />
+      </DocsPageProvider>
+    </MemoryRouter>
+  )
   return { ...activation, ...view }
 }
 

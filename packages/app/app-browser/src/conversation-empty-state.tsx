@@ -64,9 +64,19 @@ export const deriveStarterPrompts = (input: {
 /**
  * The ordered list of starter prompts for the current configuration (B3),
  * derived from enabled plugins and MCP servers via {@link deriveStarterPrompts}.
+ *
+ * `override` replaces the app's own `starterPrompts` at the head of that list
+ * (issue #480). A surface passes one when the useful suggestions depend on
+ * something the app cannot know at construction — the documentation assistant
+ * recomputes them for every route, offering current-page suggestions only where
+ * a current authored document actually exists. Plugin, MCP and generic
+ * suggestions still follow, so an override narrows nothing else.
  */
-export const useStarterPrompts = (): string[] => {
+export const useStarterPrompts = (override?: readonly string[]): string[] => {
+  // Read unconditionally — `override ?? useBrowserApp()...` would make this a
+  // conditional hook call.
   const appStarterPrompts = useBrowserApp().starterPrompts
+  const starterPrompts = override ?? appStarterPrompts
   const pluginModules = usePluginModules()
   const pluginActivation = useSettingsStore((state) => state.pluginActivation)
   const mcpServers = useSettingsStore((state) => state.mcpServers)
@@ -75,11 +85,11 @@ export const useStarterPrompts = (): string[] => {
     () =>
       deriveStarterPrompts({
         manifests: pluginModules.map((mod) => mod.manifest),
-        ...(appStarterPrompts ? { appStarterPrompts } : {}),
+        ...(starterPrompts ? { appStarterPrompts: starterPrompts } : {}),
         pluginActivation,
         hasEnabledMcpServer: mcpServers.some((server) => server.enabled)
       }),
-    [appStarterPrompts, pluginModules, pluginActivation, mcpServers]
+    [starterPrompts, pluginModules, pluginActivation, mcpServers]
   )
 }
 
@@ -87,7 +97,11 @@ export type ConversationEmptyStateProps = {
   // How many suggested prompts to show. Web shows more, the widget just one.
   count: number
   // Fill the composer with the chosen prompt (shells wire this to setPrompt).
+  // Deliberately fills rather than sends: the reader keeps the chance to edit
+  // before anything reaches a model.
   onSelectPrompt: (prompt: string) => void
+  // Surface-supplied suggestions replacing the app's own (issue #480).
+  starterPrompts?: readonly string[]
   // Optional one-line capability summary above the suggestions.
   summary?: string
   className?: string
@@ -104,10 +118,11 @@ const DEFAULT_SUMMARY =
 export const ConversationEmptyState = ({
   count,
   onSelectPrompt,
+  starterPrompts,
   summary = DEFAULT_SUMMARY,
   className
 }: ConversationEmptyStateProps) => {
-  const prompts = useStarterPrompts().slice(0, Math.max(0, count))
+  const prompts = useStarterPrompts(starterPrompts).slice(0, Math.max(0, count))
 
   return (
     <div className={className}>

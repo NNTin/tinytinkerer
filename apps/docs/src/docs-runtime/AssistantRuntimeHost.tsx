@@ -1,12 +1,25 @@
-import { Component, lazy, Suspense, useMemo, type ErrorInfo, type ReactNode } from 'react'
+import {
+  Component,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  type ErrorInfo,
+  type ReactNode
+} from 'react'
 import BrowserOnly from '@docusaurus/BrowserOnly'
+import { AssistantLauncher } from './AssistantLauncher'
 import {
   publishDocsAssistantRuntimeStatus,
+  requestDocsAssistantRuntime,
   useDocsAssistantRuntimeActivation
 } from './assistant-activation'
+import { openDocsAssistant, useDocsAssistantPresentation } from './assistant-presentation'
 import { importAssistantRuntimeClient } from './assistant-runtime-loader'
+import { useDocsHostOverlayOpen } from './host-overlays'
 
-// The documentation assistant's runtime host (issue #479), mounted from
+// The documentation assistant's runtime host (issues #479, #480), mounted from
 // @theme/Root as a SIBLING of the Docusaurus page subtree.
 //
 // Sibling, not ancestor, and the reason is structural: BrowserAppShell renders
@@ -16,6 +29,13 @@ import { importAssistantRuntimeClient } from './assistant-runtime-loader'
 // take a documentation page down with it. As a sibling it can fail entirely and
 // the page is unaffected — which is also why this file adds an error boundary of
 // its own around the lazy subtree.
+//
+// It is also the documentation's single assistant OVERLAY ROOT (#480): one fixed,
+// click-through, `isolation: isolate` element that owns the whole z-index
+// contract for everything the assistant draws — the launcher, the panel, and the
+// consent and privacy dialogs the shell mounts inside it. One stacking context
+// rather than per-element z-indexes, because those dialogs carry `z-[60]`/`z-[70]`
+// of their own and would otherwise paint under Infima's 200-level navbar.
 //
 // This module stays LIGHT. It is imported by @theme/Root, which every
 // documentation page loads, so a static import of @tinytinkerer/app-browser
@@ -40,8 +60,8 @@ class AssistantErrorBoundary extends Component<BoundaryProps, BoundaryState> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // Surfaced in the console rather than on the page: #479 ships no visible
-    // assistant surface, and the status is what a launcher (#480) reads.
+    // Surfaced in the console, and as `error` in the activation store — which is
+    // what the launcher reads to offer a retry.
     console.error('The documentation assistant failed to start.', error, info.componentStack)
     this.props.onError()
   }
@@ -53,6 +73,8 @@ class AssistantErrorBoundary extends Component<BoundaryProps, BoundaryState> {
 
 export const DocsAssistantRuntimeHost = (): ReactNode => {
   const { status, attempt } = useDocsAssistantRuntimeActivation()
+  const { presentation } = useDocsAssistantPresentation()
+  const hostOverlayOpen = useDocsHostOverlayOpen()
 
   // A fresh payload per attempt. `React.lazy` memoises BOTH outcomes on the
   // payload object, so reusing one module-level `lazy(...)` would make every
@@ -63,26 +85,66 @@ export const DocsAssistantRuntimeHost = (): ReactNode => {
   // change, and a new attempt must produce a new payload.
   const AssistantRuntimeClient = useMemo(() => lazy(importAssistantRuntimeClient), [attempt])
 
-  // Nothing has asked for the assistant yet: no chunk, no session, no session
-  // storage touched. `error` also renders nothing — `activate()` moves it back
-  // to `starting` with a new attempt, which remounts the subtree below and
-  // re-runs the import.
-  if (status === 'idle' || status === 'error') {
-    return null
-  }
+  // Pressing the launcher does BOTH: record that the panel is open, and ask for
+  // the runtime. Not just the first — after a failed start the presentation is
+  // already `open`, so a handler that only wrote the presentation would publish
+  // nothing, fire no effect, and leave the reader pressing a "Try again" button
+  // that does nothing. `requestDocsAssistantRuntime` is idempotent while
+  // starting or ready, and retries from `idle` and `error`.
+  const activate = useCallback(() => {
+    openDocsAssistant()
+    requestDocsAssistantRuntime()
+  }, [])
+
+  // A returning reader who left the panel open gets it back, runtime download
+  // included (issue #480). "Retains the presentation state" cannot mean
+  // "restores everything except the state the reader actually chose" — and the
+  // cost falls only on readers who asked for it, since a new or minimized
+  // visitor never reaches this branch and downloads no runtime at all.
+  //
+  // An effect, so static rendering never triggers it and the first client render
+  // still agrees with the server.
+  useEffect(() => {
+    if (presentation === 'open') requestDocsAssistantRuntime()
+  }, [presentation])
+
+  const runtimeRequested = status === 'starting' || status === 'ready'
 
   return (
-    <AssistantErrorBoundary
-      key={attempt}
-      onError={() => publishDocsAssistantRuntimeStatus('error')}
+    // `inert` while a fullscreen lab, the mobile drawer, or the search dropdown
+    // owns the viewport: it removes the whole subtree from the pointer, the tab
+    // order, and the accessibility tree in one attribute, while leaving it
+    // MOUNTED — the conversation, the composer draft, and any in-flight run
+    // survive, and the persisted presentation is untouched. `data-host-overlay`
+    // is what the stylesheet hides it on.
+    <div
+      className="docs-assistant-root"
+      data-host-overlay={hostOverlayOpen ? 'true' : 'false'}
+      {...(hostOverlayOpen ? { inert: true } : {})}
     >
-      <BrowserOnly>
-        {() => (
-          <Suspense fallback={null}>
-            <AssistantRuntimeClient />
-          </Suspense>
-        )}
-      </BrowserOnly>
-    </AssistantErrorBoundary>
+      {/* The light launcher owns every state before the session is live, and
+          nothing once it is: at `ready` the panel and ChatApp's own minimized
+          launcher take over, so there is never a second interactive launcher. */}
+      {status !== 'ready' ? <AssistantLauncher status={status} onActivate={activate} /> : null}
+
+      {/* Nothing has asked for the assistant yet: no chunk, no session, no
+          session storage touched. `error` also renders nothing — activating
+          again moves it back to `starting` with a new attempt, which remounts
+          the subtree below and re-runs the import. */}
+      {runtimeRequested ? (
+        <AssistantErrorBoundary
+          key={attempt}
+          onError={() => publishDocsAssistantRuntimeStatus('error')}
+        >
+          <BrowserOnly>
+            {() => (
+              <Suspense fallback={null}>
+                <AssistantRuntimeClient />
+              </Suspense>
+            )}
+          </BrowserOnly>
+        </AssistantErrorBoundary>
+      ) : null}
+    </div>
   )
 }

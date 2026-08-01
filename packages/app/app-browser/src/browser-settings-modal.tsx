@@ -108,8 +108,11 @@ const ToggleRow = ({
 )
 
 const AuthSection = ({ status }: { status: ServiceStatus }) => {
-  const { token, clearToken, canStartGitHubOAuth, startGitHubOAuth, user } =
-    useSettingsSurfaceController()
+  const { token, clearToken, canSignIn, signIn, user } = useSettingsSurfaceController()
+  // Set when a sign-in could not start (issue #480). The only cause is
+  // deployment configuration, so an unexplained no-op button is the one outcome
+  // this must not produce.
+  const [unavailable, setUnavailable] = useState(false)
 
   if (token) {
     return (
@@ -152,17 +155,29 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
   return (
     <div className="space-y-3">
       <SectionStatus label="Auth" status={status} />
-      <p className="text-xs text-[var(--muted)]">Sign in with GitHub to enable AI responses.</p>
+      {/* Accurate rather than alarming (issue #480): every TinyTinkerer chat
+          surface answers anonymously against a shared, rate-limited key. Signing
+          in raises a reader's own budget and limits; it has never been a
+          precondition for a response, and the previous copy said it was. */}
+      <p className="text-xs text-[var(--muted)]">
+        Answers work without an account, on a shared rate-limited key. Sign in with GitHub for your
+        own budget and rate limits.
+      </p>
 
-      {canStartGitHubOAuth ? (
+      {canSignIn ? (
         <button
           type="button"
-          onClick={() => startGitHubOAuth()}
+          onClick={() => setUnavailable(!signIn())}
           className="inline-flex items-center gap-2 rounded-md border border-stone-800 bg-stone-900 px-4 py-2 text-sm text-white transition-colors hover:bg-stone-700"
         >
           <GitHubMark />
           Sign in with GitHub
         </button>
+      ) : null}
+      {unavailable ? (
+        <p role="alert" className="text-xs text-rose-600">
+          Sign-in is unavailable in this deployment.
+        </p>
       ) : null}
     </div>
   )

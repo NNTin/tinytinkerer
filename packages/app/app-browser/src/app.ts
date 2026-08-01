@@ -39,6 +39,38 @@ import { loadPluginModules } from './plugins/registry'
 
 export type { AppToolGroup } from './app-tool-group'
 
+/**
+ * A host-provided sign-in, used instead of this shell's own GitHub OAuth.
+ *
+ * Returns whether the flow actually started. A surface that gets `false` must
+ * say so rather than appear to have done something: the reason is always
+ * deployment configuration (no client id, no route to a product that owns the
+ * callback), which no amount of clicking will change.
+ *
+ * Exists because a shell running `authMode: 'host-token'` cannot start OAuth at
+ * all (`canStartGitHubOAuth` is false), and until now that meant its settings
+ * panel rendered "Sign in with GitHub to enable AI responses" with no button
+ * under it. An embedder that CAN sign a reader in — the documentation
+ * assistant hands off to the product's own login — supplies it here so the
+ * ordinary sign-in affordances work rather than being replaced by a parallel UI.
+ */
+export type AppSignIn = () => boolean
+
+/**
+ * What a surface's "reset conversation" control does.
+ *
+ * - `clear-in-place` empties the active conversation and keeps its id and title.
+ *   The historical behaviour, and still the default for every product shell.
+ * - `restart` aborts the in-flight run, discards the active conversation, and
+ *   creates and selects a fresh one — the semantics the documentation assistant
+ *   locked in issue #479 and exposes as `resetActiveConversation`.
+ *
+ * A behaviour rather than a callback because both are already store actions with
+ * documented semantics; a host-supplied function would have to close over stores
+ * that `createBrowserApp` is in the middle of creating.
+ */
+export type ConversationResetBehavior = 'clear-in-place' | 'restart'
+
 export type BrowserApp = {
   shell: BrowserShell
   // Which document-global effects this app owns (issue #479). Always resolved,
@@ -62,6 +94,12 @@ export type BrowserApp = {
   appAssistantPolicy?: AppAssistantPolicy
   // App-owned cold-start prompts shown before plugin/MCP/generic suggestions.
   starterPrompts?: readonly string[]
+  // A host-provided sign-in, if this app has one. Absent means the shell's own
+  // GitHub OAuth is the only route (the behaviour every product surface keeps).
+  signIn?: AppSignIn
+  // What this app's reset-conversation control does. Always resolved, so a
+  // surface never has to repeat the default.
+  conversationReset: ConversationResetBehavior
 }
 
 const BrowserAppContext = createContext<BrowserApp | undefined>(undefined)
@@ -102,6 +140,12 @@ export const createBrowserApp = (
     // Which document-global effects this app owns (issue #479). Omitted means
     // "owns everything", the correct answer for a document with one app.
     documentGlobals?: Partial<DocumentGlobalCapabilities>
+    // A host-provided sign-in (issue #480). Omitted leaves the shell's own
+    // GitHub OAuth as the only route, which is what every product app wants.
+    signIn?: AppSignIn
+    // What this app's reset control does (issue #480). Omitted keeps the
+    // historical clear-in-place behaviour.
+    conversationReset?: ConversationResetBehavior
   } = {}
 ): BrowserApp => {
   const shell = createBrowserShell(config)
@@ -133,7 +177,9 @@ export const createBrowserApp = (
     },
     ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
     ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
-    ...(options.starterPrompts ? { starterPrompts: options.starterPrompts } : {})
+    ...(options.starterPrompts ? { starterPrompts: options.starterPrompts } : {}),
+    ...(options.signIn ? { signIn: options.signIn } : {}),
+    conversationReset: options.conversationReset ?? 'clear-in-place'
   }
 
   return app
