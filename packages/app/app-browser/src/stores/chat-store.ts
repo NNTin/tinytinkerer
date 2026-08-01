@@ -70,6 +70,12 @@ export type ChatState = {
   // the given conversation's run, defaulting to the active conversation.
   stop: (conversationId?: string) => void
   resetConversation: (conversationId?: string) => Promise<void>
+  // Start a conversation over (the active one by default): abort its run,
+  // discard it, and create and select a fresh one. Distinct from
+  // `resetConversation`, which empties one in place and keeps its id and title —
+  // see app-core's `restartConversationAction` for why this is one action rather
+  // than delete-then-create at the call site.
+  restartConversation: (conversationId?: string) => Promise<void>
   // Create a fresh conversation, make it active, and remember it as active.
   startNewConversation: () => Promise<void>
   // Make an existing conversation active, lazily loading its events from the
@@ -295,6 +301,16 @@ export const createChatStore = (options: {
             // Drop that conversation's captured inspector requests too (issue
             // #430) — they belong to the run that was just reset, so the
             // developer panel must not still show them for it.
+            options.inspectorStore?.getState().clear(targetId)
+          }
+        }),
+      restartConversation: (conversationId) =>
+        withCore(async (core) => {
+          const targetId = conversationId ?? get().conversationId
+          await core.restartConversationAction(conversationActions, conversationId)
+          // The discarded conversation's captured inspector requests go with it
+          // (issue #430) — they belonged to a run that no longer has a home.
+          if (targetId) {
             options.inspectorStore?.getState().clear(targetId)
           }
         }),

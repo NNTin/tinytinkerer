@@ -1,86 +1,212 @@
 /**
  * The supported session/conversation service #472 consumes (issue #479).
  *
- * Driven against a real `BrowserApp` and a real `AppBrowserProvider` — the same
- * arrangement the tool-picker suite uses — so what is asserted is the facade
- * over the genuine chat store, not a re-description of it. Only the store's
- * async actions are replaced, because those persist through Dexie and this
- * environment has no IndexedDB; what the facade does with them is the point.
+ * Driven against a real `BrowserApp`, a real chat store, and an in-memory
+ * conversation repository — not mocked actions (issue #479 review, finding 4).
+ * A test that stubs `restartConversation` can only prove that a wrapper called
+ * one function; what the acceptance criterion asks for is the resulting state:
+ * a fresh conversation, the old one gone, other conversations and the lab and
+ * product namespaces untouched.
  */
-import { act, renderHook } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { AppBrowserProvider, createBrowserApp, type BrowserApp } from '@tinytinkerer/app-browser'
+import { DocsAssistantSessionContext } from '../assistant-session-context'
 import { useDocsAssistantSession } from '../session'
 
 const beginDocsProductSignIn = vi.hoisted(() => vi.fn())
 vi.mock('../product-sign-in', () => ({ beginDocsProductSignIn }))
 
-const actions = {
-  selectConversation: vi.fn(async () => {}),
-  startNewConversation: vi.fn(async () => {}),
-  deleteConversation: vi.fn(async () => {}),
-  resetConversation: vi.fn(async () => {})
+// One in-memory database per storage namespace, so "the assistant reset did not
+// touch the lab" is a real observation rather than an assumption.
+const databases = new Map<string, Map<string, { id: string; title: string; updatedAt: string }>>()
+
+const namespaceOf = (app: BrowserApp): string => app.shell.config.storageNamespace
+
+const attachRepository = (app: BrowserApp): void => {
+  const conversations = new Map<string, { id: string; title: string; updatedAt: string }>()
+  const events = new Map<string, unknown[]>()
+  databases.set(namespaceOf(app), conversations)
+  let nextId = 0
+
+  Object.assign(app.shell, {
+    preferences: {
+      get: () => Promise.resolve(undefined),
+      set: () => Promise.resolve()
+    },
+    conversations: {
+      createConversation: () => {
+        nextId += 1
+        const conversation = {
+          id: `${namespaceOf(app)}-conv-${nextId}`,
+          title: 'New chat',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+        conversations.set(conversation.id, conversation)
+        events.set(conversation.id, [])
+        return Promise.resolve(conversation)
+      },
+      deleteConversation: (id: string) => {
+        conversations.delete(id)
+        events.delete(id)
+        return Promise.resolve()
+      },
+      listConversations: () => Promise.resolve(Array.from(conversations.values())),
+      loadConversationEvents: (id: string) => Promise.resolve(events.get(id) ?? []),
+      appendEvent: () => Promise.resolve(),
+      resetConversation: (id: string) => {
+        events.set(id, [])
+        return Promise.resolve([])
+      },
+      renameConversation: (id: string, title: string) => {
+        const existing = conversations.get(id)
+        if (existing) conversations.set(id, { ...existing, title })
+        return Promise.resolve()
+      }
+    }
+  })
 }
 
-const slice = (id: string, title: string, isRunning = false) => ({
-  id,
-  title,
-  events: [],
-  isRunning,
-  isRetryPending: false,
-  eventsLoaded: true
-})
-
-const assistantApp = (): BrowserApp => {
-  const app = createBrowserApp({ storageNamespace: 'tinytinkerer-docs-assistant-test' })
+const seed = (
+  app: BrowserApp,
+  slices: { id: string; title: string; isRunning?: boolean }[],
+  activeId: string
+): void => {
+  const repository = databases.get(namespaceOf(app))!
+  for (const { id, title } of slices) {
+    repository.set(id, { id, title, updatedAt: new Date().toISOString() })
+  }
   app.stores.chat.setState({
-    conversationId: 'conv-b',
-    conversations: {
-      'conv-a': slice('conv-a', 'Hosting questions'),
-      'conv-b': slice('conv-b', 'Plugin tools', true)
-    },
-    // Most-recently-updated first — the order the facade must preserve.
-    conversationOrder: ['conv-b', 'conv-a'],
-    ...actions
+    hydrated: true,
+    conversationId: activeId,
+    conversations: Object.fromEntries(
+      slices.map(({ id, title, isRunning }) => [
+        id,
+        {
+          id,
+          title,
+          events: [],
+          isRunning: isRunning ?? false,
+          isRetryPending: false,
+          eventsLoaded: true
+        }
+      ])
+    ),
+    conversationOrder: slices.map(({ id }) => id)
   })
+}
+
+const makeApp = (storageNamespace: string): BrowserApp => {
+  const app = createBrowserApp({ storageNamespace })
+  attachRepository(app)
   return app
 }
 
-const renderSession = (app: BrowserApp) =>
+let assistant: BrowserApp
+let lab: BrowserApp
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  databases.clear()
+  assistant = makeApp('tinytinkerer-docs-assistant')
+  lab = makeApp('tinytinkerer-docs-lab')
+  seed(
+    assistant,
+    [
+      { id: 'assistant-active', title: 'Plugin tools', isRunning: true },
+      { id: 'assistant-other', title: 'Hosting questions' }
+    ],
+    'assistant-active'
+  )
+  seed(lab, [{ id: 'lab-conv', title: 'Lab demo' }], 'lab-conv')
+})
+
+const renderSession = (app: BrowserApp = assistant) =>
   renderHook(() => useDocsAssistantSession(), {
     wrapper: ({ children }: { children: ReactNode }) => (
-      <AppBrowserProvider app={app}>{children}</AppBrowserProvider>
+      <AppBrowserProvider app={app}>
+        <DocsAssistantSessionContext.Provider value={app}>
+          {children}
+        </DocsAssistantSessionContext.Provider>
+      </AppBrowserProvider>
     )
   })
 
 describe('useDocsAssistantSession', () => {
   it('exposes the assistant conversations in the store’s own order', () => {
-    const { result } = renderSession(assistantApp())
+    const { result } = renderSession()
 
     expect(result.current.conversations).toEqual([
-      { id: 'conv-b', title: 'Plugin tools', isRunning: true },
-      { id: 'conv-a', title: 'Hosting questions', isRunning: false }
+      { id: 'assistant-active', title: 'Plugin tools', isRunning: true },
+      { id: 'assistant-other', title: 'Hosting questions', isRunning: false }
     ])
-    expect(result.current.activeConversationId).toBe('conv-b')
+    expect(result.current.activeConversationId).toBe('assistant-active')
   })
 
   it('forwards selection, creation, and deletion to the one assistant store', async () => {
-    const { result } = renderSession(assistantApp())
+    const { result } = renderSession()
 
     await act(async () => {
-      await result.current.selectConversation('conv-a')
-      await result.current.startNewConversation()
-      await result.current.deleteConversation('conv-a')
+      await result.current.selectConversation('assistant-other')
     })
+    expect(assistant.stores.chat.getState().conversationId).toBe('assistant-other')
 
-    expect(actions.selectConversation).toHaveBeenCalledWith('conv-a')
-    expect(actions.startNewConversation).toHaveBeenCalled()
-    expect(actions.deleteConversation).toHaveBeenCalledWith('conv-a')
+    await act(async () => {
+      await result.current.startNewConversation()
+    })
+    const created = assistant.stores.chat.getState().conversationId!
+    expect(created).toMatch(/^tinytinkerer-docs-assistant-conv-/)
+
+    await act(async () => {
+      await result.current.deleteConversation('assistant-other')
+    })
+    expect(assistant.stores.chat.getState().conversations['assistant-other']).toBeUndefined()
   })
 
-  it('resets the active conversation in place, never the page', async () => {
-    const app = assistantApp()
+  it('restarts the active conversation into a fresh one, keeping the others', async () => {
+    const { result } = renderSession()
+
+    await act(async () => {
+      await result.current.resetActiveConversation()
+    })
+
+    const state = assistant.stores.chat.getState()
+    // A FRESH conversation, not the same one emptied in place: decision 5's
+    // locked semantics. The old id is gone from the store and the repository.
+    expect(state.conversationId).not.toBe('assistant-active')
+    expect(state.conversationId).toMatch(/^tinytinkerer-docs-assistant-conv-/)
+    expect(state.conversations['assistant-active']).toBeUndefined()
+    expect(databases.get('tinytinkerer-docs-assistant')!.has('assistant-active')).toBe(false)
+    expect(state.conversations[state.conversationId!]?.title).toBe('New chat')
+    expect(state.conversations[state.conversationId!]?.events).toEqual([])
+
+    // Every other assistant conversation survives…
+    expect(state.conversations['assistant-other']?.title).toBe('Hosting questions')
+    // …and no other namespace was touched.
+    expect(lab.stores.chat.getState().conversationId).toBe('lab-conv')
+    expect(databases.get('tinytinkerer-docs-lab')!.has('lab-conv')).toBe(true)
+  })
+
+  it('cancels the restarted conversation’s in-flight work', async () => {
+    // `assistant-active` is seeded as running. After the restart nothing is
+    // running: the conversation that held the run no longer exists, and the
+    // fresh one has never been sent a prompt. The store aborts before the rows
+    // disappear (app-core's restartConversationAction), so the doomed run cannot
+    // keep streaming into a conversation that is gone.
+    const { result } = renderSession()
+    expect(result.current.conversations.some((entry) => entry.isRunning)).toBe(true)
+
+    await act(async () => {
+      await result.current.resetActiveConversation()
+    })
+
+    expect(result.current.conversations.some((entry) => entry.isRunning)).toBe(false)
+    expect(assistant.stores.chat.getState().isRunning).toBe(false)
+  })
+
+  it('never reloads the page or deletes a database', async () => {
     const reload = vi.fn()
     const deleteDatabase = vi.fn()
     vi.stubGlobal('indexedDB', { deleteDatabase })
@@ -90,7 +216,7 @@ describe('useDocsAssistantSession', () => {
       value: { ...originalLocation, reload }
     })
 
-    const { result } = renderSession(app)
+    const { result } = renderSession()
     await act(async () => {
       await result.current.resetActiveConversation()
     })
@@ -98,7 +224,6 @@ describe('useDocsAssistantSession', () => {
     // The live labs delete their database and reload; a site-wide assistant must
     // do neither — that would reload the documentation out from under the reader
     // and take consent, authentication input and settings with it.
-    expect(actions.resetConversation).toHaveBeenCalled()
     expect(reload).not.toHaveBeenCalled()
     expect(deleteDatabase).not.toHaveBeenCalled()
 
@@ -106,9 +231,8 @@ describe('useDocsAssistantSession', () => {
     vi.unstubAllGlobals()
   })
 
-  it('reports anonymous use as a normal state and offers the product login', () => {
-    const app = assistantApp()
-    const { result } = renderSession(app)
+  it('reports anonymous use as a normal state and offers the product login', async () => {
+    const { result } = renderSession()
 
     expect(result.current.isAuthenticated).toBe(false)
 
@@ -118,15 +242,31 @@ describe('useDocsAssistantSession', () => {
     expect(beginDocsProductSignIn).toHaveBeenCalledTimes(1)
 
     act(() => {
-      app.stores.auth.setState({ token: 'product-token' })
+      assistant.stores.auth.setState({ token: 'product-token' })
     })
-    expect(result.current.isAuthenticated).toBe(true)
+    await waitFor(() => {
+      expect(result.current.isAuthenticated).toBe(true)
+    })
   })
 
   it('refuses to answer outside the assistant session rather than inventing one', () => {
-    // #472 must not be able to reach a conversation list that no session backs.
     expect(() => renderHook(() => useDocsAssistantSession())).toThrow(
       /outside the documentation assistant session/
     )
+  })
+
+  it('refuses a live-lab session, which is a different app with different conversations', () => {
+    // The isolation this API exists to enforce: under a lab provider, a guard
+    // that only asked "is SOME BrowserApp mounted?" would have silently read and
+    // mutated LAB conversations while calling itself the assistant session.
+    expect(() =>
+      renderHook(() => useDocsAssistantSession(), {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <AppBrowserProvider app={lab}>{children}</AppBrowserProvider>
+        )
+      })
+    ).toThrow(/documentation assistant/)
+
+    expect(lab.stores.chat.getState().conversations['lab-conv']?.title).toBe('Lab demo')
   })
 })

@@ -28,8 +28,30 @@ export type DocsAssistantRuntimeStatus =
   /** The chunk or the bootstrap failed. `activate()` again to retry. */
   | 'error'
 
+export type DocsAssistantRuntimeActivation = {
+  status: DocsAssistantRuntimeStatus
+  /** Which start this is. Changes on every retry; never decreases. */
+  attempt: number
+}
+
 let status: DocsAssistantRuntimeStatus = 'idle'
+// Incremented on every (re)start. The host keys its lazy payload on this, which
+// is what makes a retry re-import rather than rethrow React.lazy's cached
+// rejection — see assistant-runtime-loader.ts.
+let attempt = 0
 const { subscribe, emit } = createSubscribable()
+
+// One snapshot object per change, so `useSyncExternalStore` — which compares by
+// identity — re-renders exactly when something moved.
+let snapshot: DocsAssistantRuntimeActivation = { status, attempt }
+
+const publish = (next: DocsAssistantRuntimeStatus, nextAttempt = attempt): void => {
+  if (status === next && attempt === nextAttempt) return
+  status = next
+  attempt = nextAttempt
+  snapshot = { status, attempt }
+  emit()
+}
 
 const readStatus = (): DocsAssistantRuntimeStatus => status
 
@@ -37,6 +59,11 @@ const readStatus = (): DocsAssistantRuntimeStatus => status
 // one, so they always read `idle` — the server and the first client render
 // agree, and activation happens strictly afterwards.
 const readServerStatus = (): DocsAssistantRuntimeStatus => 'idle'
+
+const readActivation = (): DocsAssistantRuntimeActivation => snapshot
+
+const SERVER_ACTIVATION: DocsAssistantRuntimeActivation = { status: 'idle', attempt: 0 }
+const readServerActivation = (): DocsAssistantRuntimeActivation => SERVER_ACTIVATION
 
 /**
  * Ask for the assistant runtime. Idempotent, and safe to call from an event
@@ -48,15 +75,14 @@ const readServerStatus = (): DocsAssistantRuntimeStatus => 'idle'
  */
 export const requestDocsAssistantRuntime = (): void => {
   if (status === 'starting' || status === 'ready') return
-  status = 'starting'
-  emit()
+  // A retry is a NEW attempt: the host must build a fresh lazy payload, because
+  // the previous one has memoised its rejection and would rethrow it untouched.
+  publish('starting', attempt + 1)
 }
 
 /** Published by the runtime host as its own boot progresses. */
 export const publishDocsAssistantRuntimeStatus = (next: DocsAssistantRuntimeStatus): void => {
-  if (status === next) return
-  status = next
-  emit()
+  publish(next)
 }
 
 /** The current status, for a non-React caller (and for tests). */
@@ -76,3 +102,7 @@ export const useDocsAssistantRuntime = (): {
   status: useDocsAssistantRuntimeStatus(),
   activate: requestDocsAssistantRuntime
 })
+
+/** Status plus attempt, for the host. Consumers want `useDocsAssistantRuntime`. */
+export const useDocsAssistantRuntimeActivation = (): DocsAssistantRuntimeActivation =>
+  useSyncExternalStore(subscribe, readActivation, readServerActivation)

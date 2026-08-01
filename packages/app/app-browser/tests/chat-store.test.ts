@@ -707,6 +707,96 @@ describe('createChatStore', () => {
     expect(setPreference).toHaveBeenCalledWith(ACTIVE_CONVERSATION_KEY, 'fresh')
   })
 
+  // The docs assistant's reset (issue #479): a fresh conversation, not the same
+  // one emptied in place, and not delete-then-create from a caller — deleting the
+  // ACTIVE conversation already activates the most recent remaining one, so a
+  // composite would briefly select an unrelated conversation and could leave two
+  // new ones behind.
+  it('restartConversation aborts the active run, discards it, and selects a fresh one', async () => {
+    const runs = captureRuns()
+    const shell = makeShell()
+    const createConversation = vi.fn(() => Promise.resolve(conversationRow('fresh')))
+    shell.conversations.createConversation = createConversation
+    const deleteConversation = vi.fn(() => Promise.resolve())
+    shell.conversations.deleteConversation = deleteConversation
+    const setPreference = vi.fn(() => Promise.resolve())
+    shell.preferences = { get: vi.fn(() => Promise.resolve(undefined)), set: setPreference }
+
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }, { id: 'b' }])
+
+    void store.getState().sendPrompt('into a')
+    await vi.waitFor(() => expect(runs).toHaveLength(1))
+
+    await store.getState().restartConversation()
+
+    expect(runs[0]?.signal?.aborted).toBe(true)
+    expect(deleteConversation).toHaveBeenCalledWith('a')
+    expect(createConversation).toHaveBeenCalledTimes(1)
+    expect(store.getState().conversationId).toBe('fresh')
+    // The other conversation is untouched, and the discarded one never becomes
+    // active on the way through.
+    expect(store.getState().conversationOrder).toEqual(['fresh', 'b'])
+    expect(store.getState().conversations.a).toBeUndefined()
+    expect(store.getState().conversations.b).toBeDefined()
+    expect(setPreference).toHaveBeenCalledWith(ACTIVE_CONVERSATION_KEY, 'fresh')
+  })
+
+  it('restartConversation targets a named conversation and leaves the active one alone', async () => {
+    const shell = makeShell()
+    shell.conversations.createConversation = vi.fn(() => Promise.resolve(conversationRow('fresh')))
+    const deleteConversation = vi.fn(() => Promise.resolve())
+    shell.conversations.deleteConversation = deleteConversation
+    shell.preferences = {
+      get: vi.fn(() => Promise.resolve(undefined)),
+      set: vi.fn(() => Promise.resolve())
+    }
+
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }, { id: 'b' }])
+
+    await store.getState().restartConversation('b')
+
+    expect(deleteConversation).toHaveBeenCalledWith('b')
+    expect(store.getState().conversations.b).toBeUndefined()
+    expect(store.getState().conversations.a).toBeDefined()
+    // Creating the fresh conversation makes it active, as it does everywhere else.
+    expect(store.getState().conversationId).toBe('fresh')
+  })
+
+  it('restartConversation still yields a conversation when the id is unknown', async () => {
+    const shell = makeShell()
+    shell.conversations.createConversation = vi.fn(() => Promise.resolve(conversationRow('fresh')))
+    const deleteConversation = vi.fn(() => Promise.resolve())
+    shell.conversations.deleteConversation = deleteConversation
+    shell.preferences = {
+      get: vi.fn(() => Promise.resolve(undefined)),
+      set: vi.fn(() => Promise.resolve())
+    }
+
+    const store = createChatStore({
+      shell,
+      authStore: makeAuthStore(),
+      settingsStore: makeSettingsStore()
+    })
+    seedConversations(store, [{ id: 'a' }])
+
+    await store.getState().restartConversation('missing')
+
+    // Nothing was deleted, but the chat always has a conversation.
+    expect(deleteConversation).not.toHaveBeenCalled()
+    expect(store.getState().conversationId).toBe('fresh')
+    expect(store.getState().conversations.a).toBeDefined()
+  })
+
   it('deleteConversation is a no-op for an unknown id', async () => {
     const shell = makeShell()
     const deleteConversation = vi.fn(() => Promise.resolve())

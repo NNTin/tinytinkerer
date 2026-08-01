@@ -1,42 +1,41 @@
 /**
- * The Root-mounted host itself (issue #479): nothing until asked, the runtime
- * once asked, and — whatever happens — never the documentation page.
+ * The Root-mounted host (issue #479): nothing until asked, the runtime once
+ * asked, a retry that genuinely re-imports, and — whatever happens — never the
+ * documentation page.
  *
- * The runtime chunk is stubbed rather than booted; that it is the ONLY static
- * importer of the product runtime is what `static-safety.test.ts` pins, and what
- * it does once mounted is `assistant-app.test.ts`'s subject. What matters here is
- * the boundary: when the chunk is fetched, and what a failure inside it reaches.
+ * The runtime chunk is stubbed at the LOADER (issue #479 review, finding 3). A
+ * test that mocked the client module could only prove that an enum changed; what
+ * has to be proved is that a second activation calls `import()` again, because
+ * `React.lazy` memoises its rejection and the first implementation rethrew it
+ * forever while the status said "try again".
  */
 import { createElement, Fragment } from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const clientLoads = vi.hoisted(() => ({ count: 0, shouldThrow: false }))
+const loader = vi.hoisted(() => ({ calls: 0, failUntil: 0 }))
 
 // No JSX anywhere in this file, hence the `.ts` extension and `createElement`:
 // vitest hoists `vi.mock` factories above the imports, and a factory that
 // returns a component defeats the JSX transform for the whole module.
-vi.mock('../assistant-runtime-client', () => {
-  clientLoads.count += 1
-  return {
-    default: () => {
-      if (clientLoads.shouldThrow) throw new Error('runtime exploded')
-      return clientElement()
-    }
+vi.mock('../assistant-runtime-loader', () => ({
+  importAssistantRuntimeClient: () => {
+    loader.calls += 1
+    return loader.calls <= loader.failUntil
+      ? Promise.reject(new Error('chunk load failed'))
+      : Promise.resolve({ default: () => createElement('p', null, 'assistant runtime') })
   }
-})
+}))
 
 beforeEach(() => {
   vi.resetModules()
-  clientLoads.count = 0
-  clientLoads.shouldThrow = false
+  loader.calls = 0
+  loader.failUntil = 0
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
 })
-
-const clientElement = () => createElement('p', null, 'assistant runtime')
 
 // Stands in for the documentation Docusaurus renders beside the host — the thing
 // that must survive everything below.
@@ -58,7 +57,7 @@ describe('DocsAssistantRuntimeHost', () => {
     expect(screen.getByText('documentation page')).toBeInTheDocument()
     expect(screen.queryByText('assistant runtime')).not.toBeInTheDocument()
     // The whole point of the lazy boundary: opening a page costs no chunk.
-    expect(clientLoads.count).toBe(0)
+    expect(loader.calls).toBe(0)
   })
 
   it('mounts the runtime once activated', async () => {
@@ -69,15 +68,41 @@ describe('DocsAssistantRuntimeHost', () => {
     })
 
     expect(await screen.findByText('assistant runtime')).toBeInTheDocument()
-    expect(clientLoads.count).toBe(1)
+    expect(loader.calls).toBe(1)
     expect(screen.getByText('documentation page')).toBeInTheDocument()
+  })
+
+  it('re-imports on retry after a failed chunk load', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    loader.failUntil = 1
+
+    const { requestDocsAssistantRuntime, readDocsAssistantRuntimeStatus } = await renderRoot()
+
+    act(() => {
+      requestDocsAssistantRuntime()
+    })
+    await waitFor(() => {
+      expect(readDocsAssistantRuntimeStatus()).toBe('error')
+    })
+    expect(loader.calls).toBe(1)
+    expect(screen.queryByText('assistant runtime')).not.toBeInTheDocument()
+    expect(screen.getByText('documentation page')).toBeInTheDocument()
+
+    // The retry. This is what a memoised `lazy` payload could not do: the loader
+    // has to run a SECOND time, and the runtime has to actually mount.
+    act(() => {
+      requestDocsAssistantRuntime()
+    })
+    expect(await screen.findByText('assistant runtime')).toBeInTheDocument()
+    expect(loader.calls).toBe(2)
+    expect(consoleError).toHaveBeenCalled()
   })
 
   it('contains a failing runtime instead of blanking the documentation', async () => {
     // The error boundary logs through console.error; keep the run quiet while
     // still proving the failure was reported rather than swallowed.
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    clientLoads.shouldThrow = true
+    loader.failUntil = Number.POSITIVE_INFINITY
 
     const { requestDocsAssistantRuntime, readDocsAssistantRuntimeStatus } = await renderRoot()
     act(() => {

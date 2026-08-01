@@ -32,9 +32,12 @@ const stripTypeOnlySpecifiers = (source: string): string =>
 const LIGHT_FILES = [
   'index.ts',
   'AssistantRuntimeHost.tsx',
+  'assistant-runtime-loader.ts',
   'assistant-activation.ts',
   'assistant-surface.ts',
+  'assistant-surfaces.tsx',
   'assistant-constants.ts',
+  'subscribable.ts',
   'runtime-config.ts',
   '../theme/Root.tsx'
 ]
@@ -51,12 +54,22 @@ describe('assistant bundle boundary', () => {
     expect(source).not.toMatch(/from ['"]\.\/session['"]/)
   })
 
-  it('the host reaches the runtime only through React.lazy', () => {
+  it('the host reaches the runtime only through React.lazy, per attempt', () => {
     const source = readSource('AssistantRuntimeHost.tsx')
-    expect(source).toMatch(/lazy\(\(\) => import\(['"]\.\/assistant-runtime-client['"]\)\)/)
+    expect(source).toMatch(/lazy\(importAssistantRuntimeClient\)/)
+    // Built inside a memo keyed on the attempt, never once at module scope:
+    // React.lazy memoises its rejection, so a shared payload would make every
+    // retry rethrow the first failure without re-importing (issue #479 review).
+    expect(source).toMatch(/useMemo\(\s*\(\) => lazy\(importAssistantRuntimeClient\)/)
+    expect(source).not.toMatch(/^const \w+ = lazy\(/m)
     // …and only in a browser: <BrowserOnly> renders nothing during static
     // rendering, so a build never evaluates the chunk.
     expect(source).toMatch(/BrowserOnly/)
+  })
+
+  it('the loader module holds the only import of the runtime chunk', () => {
+    const source = readSource('assistant-runtime-loader.ts')
+    expect(source).toMatch(/import\(['"]\.\/assistant-runtime-client['"]\)/)
   })
 
   it('the client module is the sole static importer of the product runtime', () => {

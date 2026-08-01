@@ -1,11 +1,12 @@
 /**
- * Activation and the surface registry (issue #479) — the two light modules a
- * launcher (#480) or a sidebar page (#472) may import without pulling the
- * product runtime into its own chunk.
+ * Activation (issue #479) — the light module a launcher (#480) or a sidebar page
+ * (#472) may import without pulling the product runtime into its own chunk.
+ *
+ * The registry lives in assistant-surfaces.test.tsx, where placement is asserted
+ * against real renders rather than snapshot shapes.
  */
-import { act, render, renderHook, screen } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useSyncExternalStore } from 'react'
 
 beforeEach(() => {
   vi.resetModules()
@@ -49,107 +50,52 @@ describe('assistant runtime activation', () => {
     expect(readDocsAssistantRuntimeStatus()).toBe('ready')
   })
 
-  it('can be retried after a failure', async () => {
+  it('counts a retry as a new attempt, so the host can re-import', async () => {
     const {
       publishDocsAssistantRuntimeStatus,
       requestDocsAssistantRuntime,
-      readDocsAssistantRuntimeStatus
+      readDocsAssistantRuntimeStatus,
+      useDocsAssistantRuntimeActivation
     } = await import('../assistant-activation')
+    const { result } = renderHook(() => useDocsAssistantRuntimeActivation())
 
-    requestDocsAssistantRuntime()
-    publishDocsAssistantRuntimeStatus('error')
+    act(() => {
+      requestDocsAssistantRuntime()
+    })
+    const first = result.current.attempt
+
+    act(() => {
+      publishDocsAssistantRuntimeStatus('error')
+    })
     expect(readDocsAssistantRuntimeStatus()).toBe('error')
 
-    // A status that advertises a retry must have one — the #476 lesson.
-    requestDocsAssistantRuntime()
+    act(() => {
+      requestDocsAssistantRuntime()
+    })
     expect(readDocsAssistantRuntimeStatus()).toBe('starting')
-  })
-})
-
-describe('assistant surface registry', () => {
-  const Surfaces = ({
-    subscribe,
-    read
-  }: {
-    subscribe: (listener: () => void) => () => void
-    read: () => readonly { id: string }[]
-  }) => {
-    const surfaces = useSyncExternalStore(subscribe, read, read)
-    return <span data-testid="ids">{surfaces.map((surface) => surface.id).join(',')}</span>
-  }
-
-  it('is empty until something registers, which is all #479 ships', async () => {
-    const { readDocsAssistantSurfaces } = await import('../assistant-surface')
-    expect(readDocsAssistantSurfaces()).toEqual([])
+    // The attempt is what makes the retry real: React.lazy memoises its
+    // rejection, so the host has to build a fresh payload, and it keys that on
+    // this number. A status that advertises a retry must have one — the #476
+    // lesson, applied to a chunk load.
+    expect(result.current.attempt).toBe(first + 1)
   })
 
-  it('registers, replaces, and withdraws a surface', async () => {
+  it('does not advance the attempt when the status merely changes', async () => {
     const {
-      readDocsAssistantSurfaces,
-      registerDocsAssistantSurface,
-      subscribeDocsAssistantSurfaces
-    } = await import('../assistant-surface')
-
-    render(<Surfaces subscribe={subscribeDocsAssistantSurfaces} read={readDocsAssistantSurfaces} />)
-    expect(screen.getByTestId('ids')).toHaveTextContent('')
-
-    let unregister = () => {}
-    act(() => {
-      unregister = registerDocsAssistantSurface('widget', () => <p>widget</p>)
-    })
-    expect(screen.getByTestId('ids')).toHaveTextContent('widget')
-
-    // A re-registration under the same id replaces rather than duplicates, and
-    // the previous owner's cleanup must not tear the new one down.
-    let replaced = () => {}
-    act(() => {
-      replaced = registerDocsAssistantSurface('widget', () => <p>widget v2</p>)
-    })
-    act(() => {
-      unregister()
-    })
-    expect(screen.getByTestId('ids')).toHaveTextContent('widget')
+      publishDocsAssistantRuntimeStatus,
+      requestDocsAssistantRuntime,
+      useDocsAssistantRuntimeActivation
+    } = await import('../assistant-activation')
+    const { result } = renderHook(() => useDocsAssistantRuntimeActivation())
 
     act(() => {
-      replaced()
+      requestDocsAssistantRuntime()
     })
-    expect(screen.getByTestId('ids')).toHaveTextContent('')
-  })
+    const attempt = result.current.attempt
 
-  it('remembers the DOM target a surface should be portaled into', async () => {
-    const {
-      readDocsAssistantSurfaces,
-      registerDocsAssistantSurface,
-      setDocsAssistantSurfaceTarget
-    } = await import('../assistant-surface')
-    const target = document.createElement('div')
-
-    registerDocsAssistantSurface('office', () => null)
-    setDocsAssistantSurfaceTarget('office', target)
-    expect(readDocsAssistantSurfaces()[0]?.target).toBe(target)
-
-    // #472's sidebar page unmounts on navigation; the surface stays registered
-    // and simply stops being portaled.
-    setDocsAssistantSurfaceTarget('office', null)
-    expect(readDocsAssistantSurfaces()[0]?.target).toBeNull()
-  })
-
-  it('keeps snapshot identity stable so a subscriber never loops', async () => {
-    const {
-      readDocsAssistantSurfaces,
-      registerDocsAssistantSurface,
-      setDocsAssistantSurfaceTarget
-    } = await import('../assistant-surface')
-    const target = document.createElement('div')
-    registerDocsAssistantSurface('widget', () => null)
-    setDocsAssistantSurfaceTarget('widget', target)
-
-    const snapshot = readDocsAssistantSurfaces()
-    expect(readDocsAssistantSurfaces()).toBe(snapshot)
-
-    // A no-op write is not a change, so it must not invalidate the snapshot —
-    // useSyncExternalStore compares by identity and would re-render forever.
-    setDocsAssistantSurfaceTarget('widget', target)
-    expect(readDocsAssistantSurfaces()).toBe(snapshot)
+    act(() => {
+      publishDocsAssistantRuntimeStatus('ready')
+    })
+    expect(result.current.attempt).toBe(attempt)
   })
 })

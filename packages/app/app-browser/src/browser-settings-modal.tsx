@@ -651,7 +651,8 @@ const PluginsSection = ({ inspectorPanelSupported }: { inspectorPanelSupported: 
     setPluginEnabled,
     pluginConfig,
     setPluginSetting,
-    telemetryEnabled
+    telemetryEnabled,
+    telemetryControlAvailable
   } = useSettingsSurfaceController()
 
   if (availablePlugins.length === 0) {
@@ -695,7 +696,12 @@ const PluginsSection = ({ inspectorPanelSupported }: { inspectorPanelSupported: 
       <p className="text-xs text-[var(--muted)]">
         Each enabled plugin adds its tools to every chat, expanding what the assistant can do.
       </p>
-      {!telemetryEnabled ? (
+      {/* Only the app that OWNS telemetry may reason about it here (issue #479):
+          a non-owner's `telemetryEnabled` is a stale namespace-local value, so it
+          would either suppress this warning while telemetry was off, or point the
+          reader at a Privacy control that was deliberately removed from its own
+          panel. */}
+      {telemetryControlAvailable && !telemetryEnabled ? (
         <p className="text-xs text-[var(--muted)]">
           Some plugins (including Feedback) deliver data through telemetry. Enable telemetry in the
           Privacy section for them to send anything.

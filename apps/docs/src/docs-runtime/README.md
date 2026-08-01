@@ -49,11 +49,39 @@ Three consequences worth knowing, because each one is load-bearing:
    `setDocsAssistantSurfaceTarget`, and the host renders it inside the provider,
    portaled into the page. One app, one conversation repository, one query
    client, no remount of anything.
+
+   Placement is **declared**, never inferred from whether a target happens to
+   exist: `{ placement: 'portal' }` with no live target renders nothing, and
+   `{ placement: 'inline' }` (#480's widget) never consults one. Inferring it
+   would have remounted the Office inline at the document root on every route
+   that unmounted its sidebar target, losing its state each way. Target state is
+   independent of registration, so #472 and #480 may mount in either order.
+
 2. **The provider is never added above `children` later.** Doing so would change
    the element tree over the page and remount every documentation page — and any
    live lab running on one — the first time a reader opened the assistant.
 3. **The host renders nothing until asked.** `requestDocsAssistantRuntime()`
    moves it from `idle` to `starting`; only then is the runtime chunk fetched.
+
+## The status says what the session is actually doing
+
+`ready` is published by a component that mounts **inside** `BrowserAppShell`, so
+it cannot exist before `initializeBrowserApp` has resolved; a bootstrap rejection
+is published as `error` by the boot screen the shell hands it to. Publishing off
+the app's _construction_ instead — the first revision — meant a failed auth,
+settings or telemetry step left the status saying `ready` with no provider
+mounted and no way back, since `activate()` is a no-op from `ready`.
+
+A retry re-imports. `React.lazy` memoises rejection on its payload, so the host
+builds a **fresh payload per attempt** (`assistant-runtime-loader.ts` exists so
+that import is both replaceable and testable); a single module-level `lazy(...)`
+would rethrow the first failure forever while the status advertised a retry.
+
+Post-bootstrap surface failures are caught by an assistant-scoped boundary
+**above** the session and below the shell's own `AppErrorBoundary` — near enough
+that React reaches it first, so an embedded assistant never renders a full-app
+"Something went wrong / Reload page" panel at the root of a documentation page.
+The failure becomes `error`, which a launcher can act on.
 
 ## Import boundaries
 
@@ -134,8 +162,15 @@ discovery is ever enabled here.
 
 ## Reset
 
-`resetActiveConversation()` cancels that conversation's in-flight work and clears
-its transcript. It does not reload the page, delete a database, or touch consent,
+`resetActiveConversation()` aborts that conversation's in-flight run, discards it,
+and creates and selects a fresh one — decision 5's locked semantics, implemented
+as one store action (`restartConversationAction`) rather than delete-then-create
+at the call site: deleting the ACTIVE conversation already selects the most
+recent remaining one, so composing the two would flash somebody else's
+conversation between the awaits and could leave two new ones behind.
+
+Other assistant conversations survive. It does not reload the page, delete a
+database, or touch consent,
 authentication input, assistant settings, #480's presentation state, a live lab,
 or the product — those live in other stores.
 

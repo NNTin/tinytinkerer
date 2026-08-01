@@ -21,12 +21,11 @@ export { DocsAssistantRuntimeHost } from './AssistantRuntimeHost'
 export {
   readDocsAssistantRuntimeStatus,
   requestDocsAssistantRuntime,
-  useDocsAssistantRuntime,
-  useDocsAssistantRuntimeStatus
+  useDocsAssistantRuntime
 } from './assistant-activation'
 export type { DocsAssistantRuntimeStatus } from './assistant-activation'
 export { registerDocsAssistantSurface, setDocsAssistantSurfaceTarget } from './assistant-surface'
-export type { DocsAssistantSurface } from './assistant-surface'
+export type { DocsAssistantSurface, DocsAssistantSurfacePlacement } from './assistant-surface'
 export { DOCS_ASSISTANT_STORAGE_NAMESPACE } from './assistant-constants'
 // Types erase at build time, so re-exporting the session's shapes here costs a
 // consumer nothing and lets a light module type a value it receives.

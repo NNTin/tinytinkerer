@@ -425,6 +425,38 @@ export const resetConversationAction = async (
   return targetId
 }
 
+/**
+ * Start a conversation over (the active one by default): abort its in-flight
+ * run, discard it, and create and select a fresh one. Other conversations are
+ * untouched.
+ *
+ * Distinct from `resetConversationAction`, which empties a conversation in place
+ * and keeps its id, title and position — the right shape for "clear this
+ * transcript", and the wrong one for a surface whose contract is "the reader gets
+ * a fresh conversation" (the docs assistant, issue #479).
+ *
+ * It is also not `delete` followed by `startNew` from a caller: deleting the
+ * ACTIVE conversation already activates the most recent remaining one, or creates
+ * a fresh one when none remain, so that composition would briefly select an
+ * unrelated conversation between the two awaits and could leave two new ones
+ * behind. Sequencing it here keeps the intermediate state unobservable.
+ */
+export const restartConversationAction = async (
+  context: ConversationActionsContext,
+  conversationId?: string
+): Promise<void> => {
+  const targetId = conversationId ?? context.getState().conversationId
+  if (targetId && context.getState().conversations[targetId]) {
+    // Abort before the rows disappear, exactly as delete does (issue #332), so
+    // the doomed run stops streaming and persisting into a conversation that is
+    // about to stop existing.
+    context.abortRun(targetId)
+    await context.shell.conversations.deleteConversation(targetId)
+    context.setState(removeConversationFromState(context.getState(), targetId))
+  }
+  await startNewConversationAction(context)
+}
+
 export type ConversationRunContext = ConversationActionsContext & {
   // The cooldown scope (the LiteLLM deployment base URL, issue #179) lives in
   // the settings store, and the runtime factory is browser-layer code — the

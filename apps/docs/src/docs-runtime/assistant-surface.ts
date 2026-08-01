@@ -27,14 +27,37 @@
 import type { ComponentType } from 'react'
 import { createSubscribable } from './subscribable'
 
+/**
+ * Where a surface is drawn. Declared at registration, never inferred from
+ * whether a target happens to exist.
+ *
+ * The distinction is the whole point: `target: null` used to mean both "renders
+ * inline" and "its portal target is currently absent", so a portal surface whose
+ * target unmounted — #472's Office on a search or 404 route — did not stop being
+ * portaled, it REMOUNTED INLINE at the document root, in the wrong part of the
+ * page and losing its state on every transition. A `portal` surface with no live
+ * target now renders nothing at all.
+ */
+export type DocsAssistantSurfacePlacement =
+  /** Rendered in the runtime host, where #480's floating widget belongs. */
+  | 'inline'
+  /** Rendered only into a registered DOM target, where #472's Office belongs. */
+  | 'portal'
+
 export type DocsAssistantSurface = {
   id: string
   Component: ComponentType
-  /** Where to portal it, or null to render it inline in the runtime host. */
+  placement: DocsAssistantSurfacePlacement
+  /** The live portal target, if one is registered. Always null for `inline`. */
   target: HTMLElement | null
 }
 
-const components = new Map<string, ComponentType>()
+type Registration = { Component: ComponentType; placement: DocsAssistantSurfacePlacement }
+
+const components = new Map<string, Registration>()
+// Deliberately its own map: a target may be set before its component registers,
+// outlive a re-registration, or come and go many times within one — so #472 and
+// #480 may mount in either order.
 const targets = new Map<string, HTMLElement>()
 const { subscribe, emit } = createSubscribable()
 
@@ -43,10 +66,11 @@ const { subscribe, emit } = createSubscribable()
 let snapshot: readonly DocsAssistantSurface[] = []
 
 const rebuild = (): void => {
-  snapshot = Array.from(components, ([id, Component]) => ({
+  snapshot = Array.from(components, ([id, { Component, placement }]) => ({
     id,
     Component,
-    target: targets.get(id) ?? null
+    placement,
+    target: placement === 'portal' ? (targets.get(id) ?? null) : null
   }))
   emit()
 }
@@ -62,15 +86,18 @@ const readServerSurfaces = (): readonly DocsAssistantSurface[] => EMPTY
  */
 export const registerDocsAssistantSurface = (
   id: string,
-  Component: ComponentType
+  Component: ComponentType,
+  { placement }: { placement: DocsAssistantSurfacePlacement }
 ): (() => void) => {
-  components.set(id, Component)
+  const registration: Registration = { Component, placement }
+  components.set(id, registration)
   rebuild()
   return () => {
-    // Only withdraw the registration still in place: a re-registration under the
-    // same id (a fast refresh, a remount) must not be torn down by the previous
-    // owner's cleanup.
-    if (components.get(id) === Component) {
+    // Only withdraw THIS registration: a re-registration under the same id (a
+    // fast refresh, a remount) must not be torn down by the previous owner's
+    // cleanup. Compared by the registration object rather than by the component,
+    // so it holds even when the same component is registered twice.
+    if (components.get(id) === registration) {
       components.delete(id)
       rebuild()
     }
@@ -78,8 +105,9 @@ export const registerDocsAssistantSurface = (
 }
 
 /**
- * Point a surface at the DOM element it should be portaled into, or clear it
- * with `null` when that element unmounts.
+ * Point a `portal` surface at the DOM element it should be drawn into, or clear
+ * it with `null` when that element unmounts — after which the surface renders
+ * nothing until a target returns. Has no effect on an `inline` surface.
  */
 export const setDocsAssistantSurfaceTarget = (id: string, target: HTMLElement | null): void => {
   if (target === null) {

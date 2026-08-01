@@ -16,8 +16,9 @@
  * product runtime, so an eagerly-loaded page component must import
  * `@site/src/docs-runtime` (light) and register a surface instead.
  */
-import { useCallback, useMemo } from 'react'
-import { useAuthStore, useChatStore, useOptionalBrowserApp } from '@tinytinkerer/app-browser'
+import { useCallback, useContext, useMemo } from 'react'
+import { useAuthStore, useChatStore } from '@tinytinkerer/app-browser'
+import { DocsAssistantSessionContext } from './assistant-session-context'
 import { beginDocsProductSignIn } from './product-sign-in'
 import { useDocsRuntimeConfig } from './runtime-config'
 
@@ -41,8 +42,9 @@ export type DocsAssistantSession = {
   startNewConversation: () => Promise<void>
   deleteConversation: (conversationId: string) => Promise<void>
   /**
-   * Reset the assistant conversation the reader is in: cancel its in-flight
-   * work, clear its transcript, keep everything else.
+   * Start the reader's assistant conversation over: cancel its in-flight work,
+   * discard it, and create and select a fresh one — the locked semantics from
+   * decision 5. Other assistant conversations are untouched.
    *
    * Deliberately NOT the live labs' reset. A lab lives inside one page and can
    * afford to delete its database and reload; doing that from a site-wide
@@ -58,12 +60,15 @@ export type DocsAssistantSession = {
 
 const NO_SESSION_MESSAGE =
   'useDocsAssistantSession() was called outside the documentation assistant session. Render ' +
-  'through registerDocsAssistantSurface() so the component mounts inside the assistant provider.'
+  'through registerDocsAssistantSurface() so the component mounts inside the assistant provider. ' +
+  'A live-lab or product BrowserApp does not satisfy it: this service manages the global ' +
+  'documentation assistant conversations only.'
 
 export const useDocsAssistantSession = (): DocsAssistantSession => {
-  // `useOptionalBrowserApp` rather than `useBrowserApp`, so the diagnostic names
-  // this app's own contract instead of app-browser's generic "no provider".
-  if (!useOptionalBrowserApp()) {
+  // The assistant's OWN identity, not merely "a BrowserApp is mounted" — under a
+  // live lab's provider that weaker check would silently manage lab
+  // conversations. See assistant-session-context.ts.
+  if (!useContext(DocsAssistantSessionContext)) {
     throw new Error(NO_SESSION_MESSAGE)
   }
 
@@ -74,7 +79,11 @@ export const useDocsAssistantSession = (): DocsAssistantSession => {
   const selectConversation = useChatStore((state) => state.selectConversation)
   const startNewConversation = useChatStore((state) => state.startNewConversation)
   const deleteConversation = useChatStore((state) => state.deleteConversation)
-  const resetConversation = useChatStore((state) => state.resetConversation)
+  // One store action rather than delete-then-create from here: deleting the
+  // active conversation already selects the most recent remaining one (or makes
+  // a fresh one), so composing the two would flash somebody else's conversation
+  // between the awaits, and could leave two new ones behind.
+  const restartConversation = useChatStore((state) => state.restartConversation)
   const token = useAuthStore((state) => state.token)
 
   const conversations = useMemo<readonly DocsAssistantConversation[]>(
@@ -91,8 +100,8 @@ export const useDocsAssistantSession = (): DocsAssistantSession => {
   )
 
   const resetActiveConversation = useCallback(async () => {
-    await resetConversation()
-  }, [resetConversation])
+    await restartConversation()
+  }, [restartConversation])
 
   const signIn = useCallback(() => {
     beginDocsProductSignIn(runtimeConfig)
