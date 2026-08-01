@@ -492,17 +492,52 @@ export const FloatingLayout = ({
     // every product shell mounts this during page load.
     const isFirstCommit = previous === null
     if (isFirstCommit ? !(focusPanelOnMount && !isMinimized) : previous === isMinimized) {
-      return
+      return undefined
     }
     if (isMinimized) {
       launcherRef.current?.focus()
-      return
+      return undefined
     }
-    // The composer, when the body has one — a booting or errored chat body may
-    // not. `widget-shell-body` is focusable programmatically for exactly that
-    // case, so focus always lands inside the panel rather than nowhere.
-    const composer = bodyRef.current?.querySelector('textarea')
-    ;(composer ?? bodyRef.current)?.focus()
+
+    const body = bodyRef.current
+    const focusComposer = (): boolean => {
+      const composer = body?.querySelector('textarea')
+      if (!composer) {
+        return false
+      }
+      composer.focus()
+      return true
+    }
+    if (focusComposer() || !body) {
+      return undefined
+    }
+
+    // No composer yet. On a COLD activation that is the normal case rather than
+    // an edge one: the chat body renders its loading screen instead of the
+    // conversation until the session has booted, so at this commit the panel
+    // contains no focusable control at all.
+    //
+    // Park focus on the panel first — `widget-shell-body` is programmatically
+    // focusable for exactly this — so a keyboard reader is inside the widget
+    // rather than back at the top of the host page, then hand it to the composer
+    // the moment one appears.
+    body.focus()
+    const observer = new MutationObserver(() => {
+      // Only while focus is still inside the panel. A reader who clicked away
+      // during the boot has moved on, and yanking focus back a second later
+      // would be worse than never having moved it.
+      if (!body.contains(document.activeElement)) {
+        observer.disconnect()
+        return
+      }
+      if (focusComposer()) {
+        observer.disconnect()
+      }
+    })
+    observer.observe(body, { childList: true, subtree: true })
+    return () => {
+      observer.disconnect()
+    }
   }, [isMinimized, focusPanelOnMount])
 
   useEffect(() => {

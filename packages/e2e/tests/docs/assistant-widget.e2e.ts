@@ -14,14 +14,13 @@ import { PIXEL_AGENTS_LAB_URL } from '../../fixtures/docs-lab'
 // quota; nothing here sends a prompt.
 const DOCS_ORIGIN = `http://localhost:${requireShellPort('E2E_PORT')}`
 
-// One of each route kind #480 names. The 404 is a path the docs build has no
-// page for, and Docusaurus still renders `@theme/Root` around its NotFound page.
+// One of each route kind #480 names. The 404 is covered separately below,
+// because an unknown path is not a route this origin can serve — see there.
 const ROUTES = {
   landing: `${DOCS_ORIGIN}/docs/`,
   authored: `${DOCS_ORIGIN}/docs/architecture/`,
   nested: `${DOCS_ORIGIN}/docs/plugins-and-tools/build-a-plugin/`,
-  search: `${DOCS_ORIGIN}/docs/search/`,
-  notFound: `${DOCS_ORIGIN}/docs/this-page-does-not-exist/`
+  search: `${DOCS_ORIGIN}/docs/search/`
 } as const
 
 const launcher = (page: Page) => page.getByRole('button', { name: /documentation assistant/i })
@@ -34,6 +33,19 @@ test.describe('the documentation assistant widget (#480)', () => {
       await expect(launcher(page)).toBeVisible()
     })
   }
+
+  test('the launcher is present on the 404 page', async ({ page }) => {
+    // The built 404 document by name, rather than by visiting an unknown path.
+    // Both this suite's origin (`vite preview` over a static `apps/host/dist`)
+    // and the real deployment (static output, no rewrite rules in vercel.json)
+    // answer an unknown `/docs/*` path from the file system, so a reader who
+    // follows a broken documentation link gets a full load of exactly this
+    // document — not a client-side transition into Docusaurus' NotFound route.
+    await page.goto(`${DOCS_ORIGIN}/docs/404.html`)
+
+    await expect(page.getByText('Page Not Found')).toBeVisible()
+    await expect(launcher(page)).toBeVisible()
+  })
 
   test('the launcher is in the static HTML, before any JavaScript runs', async ({ browser }) => {
     // A reader on a slow connection should not watch the launcher pop in after
@@ -176,9 +188,14 @@ test.describe('the documentation assistant widget (#480)', () => {
   })
 
   test('stays usable in dark mode', async ({ page }) => {
+    // Driven from the system preference rather than by clicking the navbar
+    // toggle: `colorMode.respectPrefersColorScheme` is true for this site, so
+    // this lands on dark deterministically. Clicking a toggle only *flips*
+    // whatever the runner's own preference produced, which is how this test
+    // first arrived at light and asserted dark.
+    await page.emulateMedia({ colorScheme: 'dark' })
     await installChatMock(page)
     await page.goto(ROUTES.authored)
-    await page.locator('button[aria-label*="Switch between dark and light mode"]').click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
 
     // The site's own dark mode must survive the assistant's stylesheet, which
@@ -188,14 +205,21 @@ test.describe('the documentation assistant widget (#480)', () => {
     await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible({ timeout: 30_000 })
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
 
-    const panelIsDark = await page.evaluate(() => {
+    const panelBrightness = await page.evaluate(() => {
       const shell = document.querySelector('.docs-assistant-root .widget-floating-shell')
-      if (!shell) return false
+      if (!shell) return null
       const { backgroundColor } = getComputedStyle(shell)
-      const [r = 255, g = 255, b = 255] = (backgroundColor.match(/\d+/g) ?? []).map(Number)
-      return (r + g + b) / 3 < 128
+      const parts = (backgroundColor.match(/[\d.]+/g) ?? []).map(Number)
+      // Chromium reports a `color-mix()` result as `color(srgb r g b / a)` with
+      // 0–1 components, and a plain colour as `rgb()`/`rgba()` with 0–255 ones.
+      // Reading the first form as if it were the second is how this assertion
+      // first concluded a genuinely dark panel was light.
+      const scale = backgroundColor.startsWith('color(') ? 255 : 1
+      const [r = 1, g = 1, b = 1] = parts
+      return ((r + g + b) / 3) * scale
     })
-    expect(panelIsDark).toBe(true)
+    expect(panelBrightness).not.toBeNull()
+    expect(panelBrightness!).toBeLessThan(128)
   })
 
   test('the launcher and panel controls are keyboard operable', async ({ page }) => {

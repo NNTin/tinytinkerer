@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { useState } from 'react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useEffect, useState } from 'react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
@@ -196,6 +196,73 @@ describe('focus follows the widget, never a page load', () => {
     )
 
     expect(screen.getByRole('textbox', { name: 'Message' })).toHaveFocus()
+  })
+
+  it('waits for a composer that has not rendered yet', async () => {
+    // The real cold-activation shape, and what a jsdom test with a
+    // ready-made body hides: `FloatingChatSurface` renders its loading screen
+    // INSTEAD of the conversation until the session has booted, so at the commit
+    // that mounts this layout the panel contains no focusable control at all.
+    const Booting = () => {
+      const [booted, setBooted] = useState(false)
+      useEffect(() => {
+        const id = setTimeout(() => {
+          setBooted(true)
+        }, 10)
+        return () => {
+          clearTimeout(id)
+        }
+      }, [])
+      return booted ? <Body /> : <p>Preparing…</p>
+    }
+
+    render(
+      <FloatingLayout storageKey="test:focus-late-composer" focusPanelOnMount>
+        <Booting />
+      </FloatingLayout>
+    )
+
+    // Focus is parked inside the panel meanwhile — never left on <body>, which
+    // would drop a keyboard reader back at the top of the host page.
+    expect(document.body).not.toHaveFocus()
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: 'Message' })).toHaveFocus()
+    })
+  })
+
+  it('does not steal focus back if the reader clicked away while it booted', async () => {
+    const Booting = () => {
+      const [booted, setBooted] = useState(false)
+      useEffect(() => {
+        const id = setTimeout(() => {
+          setBooted(true)
+        }, 20)
+        return () => {
+          clearTimeout(id)
+        }
+      }, [])
+      return booted ? <Body /> : <p>Preparing…</p>
+    }
+
+    render(
+      <>
+        <button type="button">something on the page</button>
+        <FloatingLayout storageKey="test:focus-abandoned" focusPanelOnMount>
+          <Booting />
+        </FloatingLayout>
+      </>
+    )
+
+    const pageButton = screen.getByRole('button', { name: 'something on the page' })
+    pageButton.focus()
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: 'Message' })).toBeInTheDocument()
+    })
+    // The reader moved on; the widget must not yank focus out of whatever they
+    // are doing a second after they left it.
+    expect(pageButton).toHaveFocus()
   })
 
   it('does not trap focus — the widget is non-modal', () => {
