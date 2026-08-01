@@ -265,12 +265,34 @@ state get the route-neutral list, because a "Summarize this page" that
 `read_current_doc` would refuse is worse than no suggestion at all. Suggestions
 **fill** the composer; they never send, so a reader keeps the chance to edit.
 
+### The current page is pinned to the run
+
+`read_current_doc` executes long after the reader hit send, and it used to resolve
+against #476's live snapshot. #476 already pinned the answer to the route a tool
+CALL was made on; the widget widened what that leaves open, because a reader can
+now ask "summarize this page" and keep reading while the model decides. The run
+survived the navigation — and answered about the page they drifted to.
+
+So the `Documentation` group builds per-run tool instances through
+`AppToolGroup.createTools` (called once per run, where `createRuntime` already
+knows the conversation), capturing the page snapshot at run start. Only a
+_settled_ pin short-circuits: a run that began before the corpus manifest arrived
+still falls through to the live path and all of #476's waiting and retrying.
+
 ### What #480 added to `app-browser`
 
-Four additive seams, every default preserving every existing surface: controlled
+Six additive seams, every default preserving every existing surface: controlled
 minimization plus `onMinimizedChange`, a dynamic starter-prompt override and
-count, a host-provided `signIn`, and a `conversationReset` behaviour. Preferred
-over docs-owned imitations, which is what #482 exists to clean up.
+count, a host-provided `signIn`, a `conversationReset` behaviour, an app-level
+`toolTreeSummarizer`, and `AppToolGroup.createTools`. Preferred over docs-owned
+imitations, which is what #482 exists to clean up.
+
+`toolTreeSummarizer` is the one worth knowing about, because forgetting it is
+INVISIBLE: `ToolTreeSlot` renders nothing without a summarizer, so an app with a
+perfectly good tool group looks exactly like an app with no tools. That is how the
+widget first shipped — the three documentation tools registered, selectable in
+principle, and unreachable. `createDocsBrowserApp` now sets it for any docs app
+that has a tool group, so no docs surface can repeat it.
 
 The last two close real defects rather than adding options. Docs shells run
 `authMode: 'host-token'` and can never start OAuth, so the settings panel offered

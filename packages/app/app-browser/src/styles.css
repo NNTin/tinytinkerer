@@ -30,6 +30,13 @@
 
   /* Derived tokens consumed by the shared components. */
   --text-strong: var(--text);
+  /* Link/emphasis colour on a panel. Its own token rather than `--accent`
+     because the two have different jobs: `--accent` fills buttons and rings,
+     where a lighter amber reads well, while this carries normal-size TEXT and
+     has to clear 4.5:1 against `--panel`. Defaults to the amber-700 every
+     surface already used, so overriding it is opt-in (the documentation
+     assistant does, per theme — issue #480 review, finding 3). */
+  --link: #b45309;
   --panel-hover: color-mix(in srgb, var(--text) 6%, var(--panel));
   --accent-ring: color-mix(in srgb, var(--accent) 42%, white);
   --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--panel));

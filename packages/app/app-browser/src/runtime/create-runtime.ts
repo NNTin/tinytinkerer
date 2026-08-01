@@ -417,7 +417,12 @@ export const createRuntime = (options: {
   // instructions are bound to exactly this list (issue #478), so a tool the user
   // unchecked in the tool picker is never described to the model as available.
   const registeredAppToolIds: string[] = []
-  for (const tool of appToolGroup?.tools ?? []) {
+  // Per-RUN instances when the group builds them (issue #480 review, finding 5),
+  // otherwise the session-long catalogue. This function runs once per run, which
+  // is exactly the moment a group that captures "what was true when the reader
+  // hit send" needs.
+  const appTools = appToolGroup?.createTools?.() ?? appToolGroup?.tools ?? []
+  for (const tool of appTools) {
     if (!isPluginToolEnabled(appToolDisablement, appToolGroup!.id, tool.id)) {
       continue
     }

@@ -6,6 +6,12 @@
   "git": {
     "deploymentEnabled": false
   },
+  "rewrites": [
+    {
+      "source": "/docs/:path*",
+      "destination": "/docs/404.html"
+    }
+  ],
   "headers": [
     {
       "source": "/mobile/sw.js",

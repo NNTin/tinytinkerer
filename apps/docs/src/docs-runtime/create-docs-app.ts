@@ -23,6 +23,7 @@
 import {
   createBrowserApp,
   createBrowserShell,
+  genericToolTreeSummarizer,
   resolveBrowserShellBootstrapConfig,
   type AppAssistantPolicy,
   type AppSignIn,
@@ -107,7 +108,19 @@ export const createDocsBrowserApp = async ({
 
   return {
     app: createBrowserApp(config, {
-      ...(appToolGroup ? { appToolGroup } : {}),
+      ...(appToolGroup
+        ? {
+            appToolGroup,
+            // Every docs app with its own tools gets the picker, structurally
+            // (issue #480 review, finding 1). `docusaurus.config.ts` aliases
+            // plugin discovery to a stub that resolves to `[]`, so no plugin can
+            // ever contribute a tool-tree mapper here — and without one
+            // `ToolTreeSlot` renders nothing, which is indistinguishable from
+            // "this app has no tools". Set here rather than at each call site so
+            // the assistant, the live labs and #472 cannot each forget it.
+            toolTreeSummarizer: genericToolTreeSummarizer
+          }
+        : {}),
       ...(appAssistantPolicy ? { appAssistantPolicy } : {}),
       ...(starterPrompts ? { starterPrompts } : {}),
       ...(signIn ? { signIn } : {}),

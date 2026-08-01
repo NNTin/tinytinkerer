@@ -13,5 +13,27 @@ import type { Tool } from '@tinytinkerer/app-core'
 export type AppToolGroup = {
   id: string
   label: string
+  /**
+   * The group's stable catalogue: what the tool picker lists and what per-tool
+   * disablement is keyed against. Ids and descriptions here never change within
+   * a session.
+   */
   tools: Tool<unknown, unknown>[]
+  /**
+   * Optional per-RUN tool instances (issue #480 review, finding 5).
+   *
+   * `createRuntime` is called once per run, so a group whose behaviour depends on
+   * state captured at the moment the reader hit send builds its tools here
+   * instead of once per session. The documentation assistant uses it to pin
+   * "the current page" to the run: `read_current_doc` executes long after the
+   * prompt was submitted, and without a pin a reader who navigates while the
+   * model is still deciding gets an answer about the page they moved to.
+   *
+   * Must return the same tool ids as `tools` — the picker, the disablement
+   * denylist and the runtime all key on those, and the runtime filters these
+   * instances through the selection made against the catalogue above. Omitted
+   * (the default) and the runtime registers `tools` directly, which is what every
+   * existing app group does.
+   */
+  createTools?: () => Tool<unknown, unknown>[]
 }

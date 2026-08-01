@@ -58,8 +58,13 @@ export const useToolTree = (options?: {
   const pluginDisabledTools = useSettingsStore((state) => state.pluginDisabledTools)
   const appToolDisablement = useSettingsStore((state) => state.appToolDisablement)
   const pluginModules = usePluginModules()
-  const appToolGroup = useBrowserApp().appToolGroup
-  const fallbackSummarizer = options?.fallbackSummarizer ?? null
+  const app = useBrowserApp()
+  const appToolGroup = app.appToolGroup
+  // The app's own mapper is the fallback when a render site passes none (issue
+  // #480 review, finding 1). Held on the app so a surface cannot silently ship
+  // without a picker: `ToolTreeSlot` renders NOTHING without a summarizer, so
+  // forgetting it looks exactly like "this app has no tools".
+  const fallbackSummarizer = options?.fallbackSummarizer ?? app.toolTreeSummarizer ?? null
 
   const summarizer = useMemo<ToolTreeSummarizer | null>(() => {
     const active = pluginModules.find(

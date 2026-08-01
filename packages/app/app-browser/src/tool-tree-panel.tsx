@@ -29,7 +29,7 @@ const IndeterminateCheckbox = ({
       if (node) node.indeterminate = indeterminate
     }}
     onChange={onChange}
-    className="h-4 w-4 shrink-0 accent-stone-700"
+    className="h-4 w-4 shrink-0 accent-[var(--accent)]"
   />
 )
 
@@ -115,7 +115,7 @@ export const ToolTreePanel = ({
       >
         <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-3">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-stone-900">Tools</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-strong)]">Tools</h2>
             <p className="truncate text-xs text-[var(--muted)]">
               {view.enabledCount} of {view.toolCount} tools enabled
             </p>
@@ -130,7 +130,7 @@ export const ToolTreePanel = ({
             type="button"
             aria-label="Close tool picker"
             onClick={onClose}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted)] transition-colors hover:bg-[var(--panel-hover)] hover:text-[var(--text-strong)]"
           >
             <span aria-hidden="true" className="text-lg leading-none">
               ×
@@ -145,7 +145,7 @@ export const ToolTreePanel = ({
             view.plugins.map((plugin) => (
               <div
                 key={plugin.id}
-                className="space-y-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2"
+                className="space-y-1.5 rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-2"
               >
                 <label className="flex cursor-pointer items-center gap-2">
                   <IndeterminateCheckbox
@@ -155,8 +155,10 @@ export const ToolTreePanel = ({
                     testId={`tool-tree-plugin-${plugin.id}`}
                     ariaLabel={`Toggle all tools for ${plugin.label}`}
                   />
-                  <span className="flex-1 text-sm font-medium text-stone-800">{plugin.label}</span>
-                  <span className="shrink-0 text-xs text-stone-500">
+                  <span className="flex-1 text-sm font-medium text-[var(--text-strong)]">
+                    {plugin.label}
+                  </span>
+                  <span className="shrink-0 text-xs text-[var(--muted)]">
                     {plugin.enabledCount} of {plugin.toolCount} tools
                   </span>
                 </label>
@@ -165,7 +167,7 @@ export const ToolTreePanel = ({
                   {plugin.tools.map((tool) => (
                     <label
                       key={tool.id}
-                      className="flex cursor-pointer items-start gap-2 rounded px-1 py-0.5 hover:bg-stone-50"
+                      className="flex cursor-pointer items-start gap-2 rounded px-1 py-0.5 hover:bg-[var(--panel-hover)]"
                     >
                       <IndeterminateCheckbox
                         checked={tool.checked}
@@ -175,13 +177,13 @@ export const ToolTreePanel = ({
                         ariaLabel={tool.id}
                       />
                       <span className="min-w-0">
-                        <span className="block truncate font-mono text-xs text-stone-800">
+                        <span className="block truncate font-mono text-xs text-[var(--text-strong)]">
                           {tool.id}
                         </span>
                         {/* Full description, wrapping to as many lines as needed —
                             never truncated (issue #400 follow-up). break-words so a
                             long unbroken token still wraps instead of overflowing. */}
-                        <span className="block whitespace-normal break-words text-xs text-stone-500">
+                        <span className="block whitespace-normal break-words text-xs text-[var(--muted)]">
                           {tool.description}
                         </span>
                       </span>

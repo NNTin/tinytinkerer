@@ -390,3 +390,81 @@ describe('read_current_doc', () => {
     })
   })
 })
+
+describe('the run pin (issue #480 review, finding 5)', () => {
+  afterEach(() => {
+    resetDocumentationCorpus()
+    resetDocsPageSnapshotForTests()
+  })
+
+  /** The tools the runtime builds for one run, as `createRuntime` does. */
+  const runScopedReadCurrentDoc = (): Tool<unknown, unknown> => {
+    const group = createDocumentationToolGroup()
+    const tools = group.createTools?.() ?? group.tools
+    const tool = tools.find((candidate) => candidate.id === READ_CURRENT_DOC_TOOL_ID)
+    if (!tool) throw new Error('read_current_doc tool is missing from the run-scoped group')
+    return tool
+  }
+
+  it('answers about the page the run started on, not the one the reader moved to', async () => {
+    installDocumentationCorpus()
+    // The reader is on the canonical document and hits send.
+    publishDocsPageSnapshot(documentSnapshot(CANONICAL))
+    const tool = runScopedReadCurrentDoc()
+
+    // …then keeps reading while the model decides, landing somewhere else long
+    // before the tool call is actually made.
+    publishDocsPageSnapshot(documentSnapshot(LANDING))
+
+    const output = (await tool.execute({})) as ReadCurrentDocOutput
+    expect(output).toMatchObject({
+      status: 'ok',
+      doc: { ref: CANONICAL.entry.ref, permalink: CANONICAL.entry.permalink }
+    })
+  })
+
+  it('reports no current document when the run started off one, even if the reader lands on one', async () => {
+    installDocumentationCorpus()
+    // Asked from /search, where there is no current page.
+    publishDocsPageSnapshot(noDocumentSnapshot('not_a_document_route'))
+    const tool = runScopedReadCurrentDoc()
+
+    publishDocsPageSnapshot(documentSnapshot(CANONICAL))
+
+    const output = (await tool.execute({})) as ReadCurrentDocOutput
+    expect(output).toMatchObject({ status: 'not_on_doc_page', pathname: '/docs/search/' })
+  })
+
+  it('still waits for a corpus that had not loaded when the run started', async () => {
+    // An unsettled pin must NOT short-circuit: a run that began a moment before
+    // the manifest arrived would otherwise answer "unavailable" forever.
+    publishDocsPageSnapshot(noDocumentSnapshot('corpus_pending', { retryable: true }))
+    const tool = runScopedReadCurrentDoc()
+
+    installDocumentationCorpus()
+    publishDocsPageSnapshot(documentSnapshot(CANONICAL))
+
+    const output = (await tool.execute({})) as ReadCurrentDocOutput
+    expect(output).toMatchObject({ status: 'ok', doc: { ref: CANONICAL.entry.ref } })
+  })
+
+  it('leaves the catalogue tools resolving at execution time', async () => {
+    // The session-long `tools` array is what the picker lists; it carries no pin,
+    // so it keeps #476's behaviour for any consumer that uses it directly.
+    installDocumentationCorpus()
+    publishDocsPageSnapshot(documentSnapshot(CANONICAL))
+    const tool = readCurrentDoc()
+
+    publishDocsPageSnapshot(documentSnapshot(LANDING))
+
+    const output = (await tool.execute({})) as ReadCurrentDocOutput
+    expect(output).toMatchObject({ status: 'ok', doc: { ref: LANDING.entry.ref } })
+  })
+
+  it('offers the same tool ids either way, which the runtime filters selection against', () => {
+    const group = createDocumentationToolGroup()
+    expect((group.createTools?.() ?? []).map((tool) => tool.id)).toEqual(
+      group.tools.map((tool) => tool.id)
+    )
+  })
+})

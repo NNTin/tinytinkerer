@@ -71,8 +71,10 @@ export const TelemetryConsentGate = () => {
             className="settings-content fixed left-1/2 top-1/2 z-[70] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6 shadow-xl outline-none"
             data-state="open"
           >
-            <h2 className="text-base font-semibold text-stone-900">Help improve TinyTinkerer</h2>
-            <p className="mt-3 text-sm leading-relaxed text-stone-700">
+            <h2 className="text-base font-semibold text-[var(--text-strong)]">
+              Help improve TinyTinkerer
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--text)]">
               We collect optional crash and error diagnostics to fix bugs and improve reliability.
               No message content is collected. Diagnostics use a random install ID; when you&apos;re
               signed in they may be linked to your GitHub account. You can change this anytime in
@@ -81,7 +83,7 @@ export const TelemetryConsentGate = () => {
             <button
               type="button"
               onClick={() => setPolicyOpen(true)}
-              className="mt-2 text-sm font-medium text-amber-700 underline-offset-2 hover:underline"
+              className="mt-2 text-sm font-medium text-[var(--link)] underline-offset-2 hover:underline"
             >
               Learn more
             </button>
@@ -89,7 +91,7 @@ export const TelemetryConsentGate = () => {
               <button
                 type="button"
                 onClick={() => void onDecline()}
-                className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-stone-600 transition-colors hover:bg-stone-100"
+                className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)] transition-colors hover:bg-[var(--panel-hover)]"
               >
                 Continue without
               </button>

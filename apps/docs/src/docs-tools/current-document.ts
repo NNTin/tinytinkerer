@@ -64,9 +64,46 @@ const isPending = (snapshot: DocsPageSnapshot): boolean =>
 const isRecoverableFailure = (snapshot: DocsPageSnapshot): boolean =>
   snapshot.active.status === 'no-document' && snapshot.active.retryable && !isPending(snapshot)
 
-export const resolveCurrentDocument = async (): Promise<CurrentDocumentOutcome> => {
+/**
+ * A settled answer needs no further resolution: the corpus produced it, and no
+ * amount of waiting or retrying would change it.
+ *
+ * Deliberately narrow. `corpus_pending` and the retryable failures are NOT
+ * settled — a run that started before the manifest arrived must still be allowed
+ * to wait for it rather than answering "unavailable" from a snapshot taken a
+ * moment too early.
+ */
+const isSettled = (snapshot: DocsPageSnapshot): boolean =>
+  snapshot.active.status === 'document' ||
+  snapshot.active.reason === 'not_a_document_route' ||
+  snapshot.active.reason === 'generated_index_route'
+
+/**
+ * @param pinned The page context as of when the RUN started (issue #480 review,
+ * finding 5). #476 already pinned the answer to the route a tool call was made
+ * on; the widget widened the gap that leaves open, because a reader can now
+ * submit "summarize this page" and keep reading while the model decides. Without
+ * this the eventual `read_current_doc` resolves against wherever they ended up —
+ * the run survives the navigation, but its referent silently changes.
+ *
+ * Only a SETTLED pin short-circuits. An unsettled one falls through to the live
+ * path below, which keeps every corpus wait and retry #476 built.
+ */
+export const resolveCurrentDocument = async (
+  pinned?: DocsPageSnapshot
+): Promise<CurrentDocumentOutcome> => {
   const deadline = Date.now() + IDENTITY_RESOLUTION_BUDGET_MS
   const remaining = (): number => Math.max(0, deadline - Date.now())
+
+  if (pinned && isSettled(pinned)) {
+    return pinned.active.status === 'document'
+      ? { kind: 'document', snapshot: pinned, document: pinned.active.document }
+      : {
+          kind: 'not-on-doc-page',
+          pathname: pinned.pathname,
+          message: pinned.active.message
+        }
+  }
 
   let snapshot = readDocsPageSnapshot()
   if (!snapshot) {

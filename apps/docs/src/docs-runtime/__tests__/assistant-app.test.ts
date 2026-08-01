@@ -20,9 +20,12 @@ const resolveBrowserShellBootstrapConfig = vi.fn((options: Record<string, unknow
   ...options
 }))
 
+const genericToolTreeSummarizer = vi.fn()
+
 vi.mock('@tinytinkerer/app-browser', () => ({
   createBrowserShell,
   createBrowserApp,
+  genericToolTreeSummarizer,
   resolveBrowserShellBootstrapConfig
 }))
 
@@ -39,6 +42,9 @@ type CreateBrowserAppOptions = {
   appAssistantPolicy?: unknown
   starterPrompts?: readonly string[]
   documentGlobals: Record<string, boolean>
+  toolTreeSummarizer?: unknown
+  signIn?: () => boolean
+  conversationReset?: string
 }
 
 const optionsOfLastApp = (): CreateBrowserAppOptions =>
@@ -143,6 +149,30 @@ describe('ensureDocsAssistantApp', () => {
     for (const prompt of DOCS_ASSISTANT_STARTER_PROMPTS) {
       expect(prompt.toLowerCase()).not.toMatch(/this (page|section|document)/)
     }
+  })
+
+  it('carries a tool-tree summarizer, so its tools are reachable in the picker', async () => {
+    const { ensureDocsAssistantApp } = await import('../assistant-app')
+    await ensureDocsAssistantApp(runtimeConfig)
+
+    // The other half of the production path the picker test renders (issue #480
+    // review, finding 1). Without this the widget's `<ToolTreeSlot />` renders
+    // nothing at all: docs plugin discovery resolves to `[]`, so no plugin can
+    // ever contribute a mapper, and the three tools become unreachable.
+    expect(optionsOfLastApp().toolTreeSummarizer).toBe(genericToolTreeSummarizer)
+  })
+
+  it('routes sign-in to the product and resets by restarting the conversation', async () => {
+    const { ensureDocsAssistantApp } = await import('../assistant-app')
+    await ensureDocsAssistantApp(runtimeConfig)
+
+    const options = optionsOfLastApp()
+    // A docs shell can never start OAuth itself (`authMode: 'host-token'`), so
+    // without a host-provided sign-in the ordinary affordances offer a flow that
+    // cannot begin.
+    expect(typeof options.signIn).toBe('function')
+    // #479's locked semantics, reachable from the widget's own reset control.
+    expect(options.conversationReset).toBe('restart')
   })
 
   it('owns every document-global effect except the document head', async () => {

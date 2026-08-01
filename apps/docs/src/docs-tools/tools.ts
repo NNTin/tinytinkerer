@@ -21,7 +21,7 @@
  */
 import type { AppToolGroup, Tool } from '@tinytinkerer/app-browser'
 import { searchDocumentation } from '../docs-search/search-documentation'
-import { readDocsPageSnapshot } from '../docs-page'
+import { readDocsPageSnapshot, type DocsPageSnapshot } from '../docs-page'
 import type { SiteUrlConfig } from '../docs-corpus/manifest-store'
 import {
   summarizeReadCurrentDocActivity,
@@ -187,7 +187,11 @@ const createReadDocTool = (
 })
 
 const createReadCurrentDocTool = (
-  dependencies: DocumentationToolDependencies
+  dependencies: DocumentationToolDependencies,
+  // The page context as of when this RUN started, when the group built per-run
+  // instances (issue #480 review, finding 5). Undefined for the session-long
+  // catalogue, which keeps #476's execution-time resolution.
+  pinned?: DocsPageSnapshot
 ): Tool<ReadCurrentDocInput, ReadCurrentDocOutput> => ({
   id: READ_CURRENT_DOC_TOOL_ID,
   description:
@@ -199,7 +203,7 @@ const createReadCurrentDocTool = (
   outputSchema: readCurrentDocOutputSchema,
   summarizeActivity: summarizeReadCurrentDocActivity,
   async execute(input) {
-    const current = await resolveCurrentDocument()
+    const current = await resolveCurrentDocument(pinned)
     if (current.kind === 'not-on-doc-page') {
       return cappedRead({
         status: 'not_on_doc_page',
@@ -243,9 +247,25 @@ export const createDocumentationToolGroup = (
 ): AppToolGroup => ({
   id: DOCUMENTATION_TOOL_GROUP_ID,
   label: 'Documentation',
+  // The stable catalogue the tool picker lists and per-tool disablement keys on.
   tools: [
     createSearchDocsTool(dependencies),
     createReadDocTool(dependencies),
     createReadCurrentDocTool(dependencies)
-  ]
+  ],
+  // Per-RUN instances, built when the reader hits send (issue #480 review,
+  // finding 5). The whole reason this exists is the line below: "which page is
+  // this?" is answered from the snapshot taken NOW, not from wherever the reader
+  // has navigated to by the time the model gets around to calling the tool.
+  //
+  // Same ids as the catalogue above, which is what the runtime filters the
+  // reader's tool selection against.
+  createTools: () => {
+    const pinned = readDocsPageSnapshot()
+    return [
+      createSearchDocsTool(dependencies),
+      createReadDocTool(dependencies),
+      createReadCurrentDocTool(dependencies, pinned)
+    ]
+  }
 })

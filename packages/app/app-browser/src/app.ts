@@ -28,6 +28,7 @@ import {
   fingerprintMessage,
   setTelemetryConsent
 } from './telemetry/telemetry'
+import type { ToolTreeSummarizer } from '@tinytinkerer/contracts'
 import type { ContentRenderErrorInfo } from '@tinytinkerer/content-react'
 import type { AppToolGroup } from './app-tool-group'
 import type { AppAssistantPolicy } from './app-assistant-policy'
@@ -97,6 +98,22 @@ export type BrowserApp = {
   // A host-provided sign-in, if this app has one. Absent means the shell's own
   // GitHub OAuth is the only route (the behaviour every product surface keeps).
   signIn?: AppSignIn
+  /**
+   * The tool-tree mapper this app's surfaces use when no enabled plugin
+   * contributes one (issue #480 review, finding 1).
+   *
+   * Held on the app rather than passed at each render site because forgetting it
+   * is invisible: `ToolTreeSlot` renders nothing at all without a summarizer, so
+   * an app with a perfectly good `appToolGroup` silently has no tool picker. That
+   * is exactly what happened to the documentation assistant — its tools were
+   * registered, selectable in principle, and unreachable in the real widget.
+   *
+   * A host whose plugin discovery can never surface a tool-tree plugin (the
+   * Docusaurus build aliases discovery to a stub returning `[]`) sets
+   * `genericToolTreeSummarizer` here once, and every surface of that app — this
+   * widget, and #472's Office later — gets the picker without knowing to ask.
+   */
+  toolTreeSummarizer?: ToolTreeSummarizer
   // What this app's reset-conversation control does. Always resolved, so a
   // surface never has to repeat the default.
   conversationReset: ConversationResetBehavior
@@ -143,6 +160,10 @@ export const createBrowserApp = (
     // A host-provided sign-in (issue #480). Omitted leaves the shell's own
     // GitHub OAuth as the only route, which is what every product app wants.
     signIn?: AppSignIn
+    // The fallback tool-tree mapper for this app's surfaces (issue #480 review).
+    // Omitted keeps today's behaviour: no picker until an enabled plugin
+    // contributes one.
+    toolTreeSummarizer?: ToolTreeSummarizer
     // What this app's reset control does (issue #480). Omitted keeps the
     // historical clear-in-place behaviour.
     conversationReset?: ConversationResetBehavior
@@ -179,6 +200,7 @@ export const createBrowserApp = (
     ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
     ...(options.starterPrompts ? { starterPrompts: options.starterPrompts } : {}),
     ...(options.signIn ? { signIn: options.signIn } : {}),
+    ...(options.toolTreeSummarizer ? { toolTreeSummarizer: options.toolTreeSummarizer } : {}),
     conversationReset: options.conversationReset ?? 'clear-in-place'
   }
 

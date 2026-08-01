@@ -42,7 +42,7 @@ const renderInline = (nodes: readonly InlineNode[]): ReactNode =>
         )
       case 'codeInline':
         return (
-          <code key={key} className="rounded bg-stone-100 px-1 font-mono text-xs">
+          <code key={key} className="rounded bg-[var(--panel-hover)] px-1 font-mono text-xs">
             {node.value}
           </code>
         )
@@ -53,7 +53,7 @@ const renderInline = (nodes: readonly InlineNode[]): ReactNode =>
             key={key}
             href={node.url}
             title={node.title}
-            className="text-amber-700 underline underline-offset-2 hover:text-amber-800"
+            className="text-[var(--link)] underline underline-offset-2 hover:opacity-80"
             {...(external ? { target: '_blank', rel: 'noreferrer' } : {})}
           >
             {renderInline(node.children)}
@@ -101,14 +101,14 @@ const renderListItem = (node: ListItemNode) => (
 
 const renderTable = (node: TableNode) => (
   <div key={node.id} className="my-4 overflow-x-auto">
-    <table className="min-w-full border-collapse text-left text-sm text-stone-700">
+    <table className="min-w-full border-collapse text-left text-sm text-[var(--text)]">
       <thead>
-        <tr className="border-b border-stone-300">
+        <tr className="border-b border-[var(--border)]">
           {node.header.map((cell, index) => (
             <th
               key={`header-${index}-${cell.map((item) => item.id ?? item.type).join('-')}`}
               align={tableAlign(node.align[index] ?? null)}
-              className="border border-stone-200 bg-stone-50 px-3 py-2 font-semibold"
+              className="border border-[var(--border)] bg-[var(--panel-hover)] px-3 py-2 font-semibold"
             >
               {renderInline(cell)}
             </th>
@@ -117,12 +117,12 @@ const renderTable = (node: TableNode) => (
       </thead>
       <tbody>
         {node.rows.map((row, rowIndex) => (
-          <tr key={`row-${rowIndex}`} className="border-b border-stone-200">
+          <tr key={`row-${rowIndex}`} className="border-b border-[var(--border)]">
             {row.map((cell, cellIndex) => (
               <td
                 key={`cell-${rowIndex}-${cellIndex}-${cell.map((item) => item.id ?? item.type).join('-')}`}
                 align={tableAlign(node.align[cellIndex] ?? null)}
-                className="border border-stone-200 px-3 py-2 align-top"
+                className="border border-[var(--border)] px-3 py-2 align-top"
               >
                 {renderInline(cell)}
               </td>
@@ -139,37 +139,37 @@ const renderHeading = (node: Extract<BlockNode, { type: 'heading' }>) => {
   switch (node.level) {
     case 1:
       return (
-        <h1 key={node.id} className="mt-5 mb-3 text-xl font-semibold text-stone-900">
+        <h1 key={node.id} className="mt-5 mb-3 text-xl font-semibold text-[var(--text-strong)]">
           {content}
         </h1>
       )
     case 2:
       return (
-        <h2 key={node.id} className="mt-5 mb-3 text-lg font-semibold text-stone-900">
+        <h2 key={node.id} className="mt-5 mb-3 text-lg font-semibold text-[var(--text-strong)]">
           {content}
         </h2>
       )
     case 3:
       return (
-        <h3 key={node.id} className="mt-4 mb-2 text-base font-semibold text-stone-900">
+        <h3 key={node.id} className="mt-4 mb-2 text-base font-semibold text-[var(--text-strong)]">
           {content}
         </h3>
       )
     case 4:
       return (
-        <h4 key={node.id} className="mt-4 mb-2 text-sm font-semibold text-stone-900">
+        <h4 key={node.id} className="mt-4 mb-2 text-sm font-semibold text-[var(--text-strong)]">
           {content}
         </h4>
       )
     case 5:
       return (
-        <h5 key={node.id} className="mt-4 mb-2 text-sm font-semibold text-stone-900">
+        <h5 key={node.id} className="mt-4 mb-2 text-sm font-semibold text-[var(--text-strong)]">
           {content}
         </h5>
       )
     case 6:
       return (
-        <h6 key={node.id} className="mt-4 mb-2 text-sm font-semibold text-stone-900">
+        <h6 key={node.id} className="mt-4 mb-2 text-sm font-semibold text-[var(--text-strong)]">
           {content}
         </h6>
       )
@@ -182,7 +182,7 @@ const renderBlock = (node: BlockNode): ReactNode => {
       return renderHeading(node)
     case 'paragraph':
       return (
-        <p key={node.id} className="my-2 text-sm leading-relaxed text-stone-700">
+        <p key={node.id} className="my-2 text-sm leading-relaxed text-[var(--text)]">
           {renderInline(node.children)}
         </p>
       )
@@ -192,7 +192,7 @@ const renderBlock = (node: BlockNode): ReactNode => {
         return (
           <ol
             key={node.id}
-            className="my-2 list-decimal pl-5 text-sm leading-relaxed text-stone-700"
+            className="my-2 list-decimal pl-5 text-sm leading-relaxed text-[var(--text)]"
             start={node.start}
           >
             {items}
@@ -200,7 +200,10 @@ const renderBlock = (node: BlockNode): ReactNode => {
         )
       }
       return (
-        <ul key={node.id} className="my-2 list-disc pl-5 text-sm leading-relaxed text-stone-700">
+        <ul
+          key={node.id}
+          className="my-2 list-disc pl-5 text-sm leading-relaxed text-[var(--text)]"
+        >
           {items}
         </ul>
       )
@@ -209,7 +212,7 @@ const renderBlock = (node: BlockNode): ReactNode => {
       return (
         <blockquote
           key={node.id}
-          className="my-2 border-l-2 border-stone-300 pl-3 text-sm leading-relaxed text-stone-600"
+          className="my-2 border-l-2 border-[var(--border)] pl-3 text-sm leading-relaxed text-[var(--text)]"
         >
           {node.children.map((child) => (
             <Fragment key={child.id}>{renderBlock(child)}</Fragment>
@@ -217,12 +220,12 @@ const renderBlock = (node: BlockNode): ReactNode => {
         </blockquote>
       )
     case 'thematicBreak':
-      return <hr key={node.id} className="my-4 border-stone-200" />
+      return <hr key={node.id} className="my-4 border-[var(--border)]" />
     case 'codeBlock':
       return (
         <pre
           key={node.id}
-          className="my-2 overflow-x-auto rounded bg-stone-100 p-3 font-mono text-xs leading-relaxed text-stone-800"
+          className="my-2 overflow-x-auto rounded bg-[var(--panel-hover)] p-3 font-mono text-xs leading-relaxed text-[var(--text-strong)]"
         >
           <code>{node.code}</code>
         </pre>
@@ -248,7 +251,7 @@ export const MarkdownDocument = ({ markdown, className }: MarkdownDocumentProps)
   const document = useMemo<ContentDocument>(() => parseMarkdownContent(markdown), [markdown])
 
   return (
-    <div className={joinClasses('text-sm text-stone-700', className)}>
+    <div className={joinClasses('text-sm text-[var(--text)]', className)}>
       {document.nodes.map((node) => (
         <Fragment key={node.id}>{renderBlock(node)}</Fragment>
       ))}

@@ -101,8 +101,8 @@ const ToggleRow = ({
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
       />
-      <span className="block h-5 w-9 rounded-full border border-stone-300 bg-stone-100 transition-colors peer-checked:border-amber-500 peer-checked:bg-amber-500 peer-focus-visible:ring-2 peer-focus-visible:ring-amber-300" />
-      <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
+      <span className="block h-5 w-9 rounded-full border border-[var(--border)] bg-[var(--panel-hover)] transition-colors peer-checked:border-amber-500 peer-checked:bg-amber-500 peer-focus-visible:ring-2 peer-focus-visible:ring-amber-300" />
+      <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-[var(--panel)] shadow-sm transition-transform peer-checked:translate-x-4" />
     </span>
   </label>
 )
@@ -124,7 +124,7 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
               <img
                 src={user.avatarUrl}
                 alt={user.login}
-                className="h-8 w-8 shrink-0 rounded-full border border-stone-200"
+                className="h-8 w-8 shrink-0 rounded-full border border-[var(--border)]"
               />
             ) : null}
             <div className="min-w-0">
@@ -143,7 +143,7 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
           <button
             type="button"
             onClick={() => void clearToken()}
-            className="inline-flex shrink-0 items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50"
+            className="inline-flex shrink-0 items-center rounded-md border border-[var(--border)] bg-[var(--panel)] px-3 py-1.5 text-xs text-[var(--text)] transition-colors hover:border-[var(--border)] hover:bg-[var(--panel-hover)]"
           >
             Sign out
           </button>
@@ -168,7 +168,7 @@ const AuthSection = ({ status }: { status: ServiceStatus }) => {
         <button
           type="button"
           onClick={() => setUnavailable(!signIn())}
-          className="inline-flex items-center gap-2 rounded-md border border-stone-800 bg-stone-900 px-4 py-2 text-sm text-white transition-colors hover:bg-stone-700"
+          className="inline-flex items-center gap-2 rounded-md border border-[var(--text-strong)] bg-[var(--text-strong)] px-4 py-2 text-sm text-[var(--panel)] transition-opacity hover:opacity-90"
         >
           <GitHubMark />
           Sign in with GitHub
@@ -241,8 +241,8 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
       <SectionStatus label="Models" status={status} />
       {/* LiteLLM uses the edge-managed virtual key; custom base URLs must be
           allowlisted by the edge service (LITELLM_ALLOWED_BASE_URLS). */}
-      <div className="space-y-2 rounded-lg border border-stone-200 bg-white p-3">
-        <label htmlFor="litellm-base-url" className="block text-xs text-stone-700">
+      <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--panel)] p-3">
+        <label htmlFor="litellm-base-url" className="block text-xs text-[var(--text)]">
           Base URL
         </label>
         <div className="flex gap-2">
@@ -259,12 +259,12 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
               }
             }}
             placeholder="Deployment default"
-            className="flex-1 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+            className="flex-1 rounded-md border border-[var(--border)] bg-[var(--panel)] px-3 py-1.5 text-xs text-[var(--text)] outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
           />
           <button
             type="button"
             onClick={() => void handleSaveLiteLLMBaseUrl()}
-            className="inline-flex items-center rounded-md border border-stone-800 bg-stone-900 px-3 py-1.5 text-xs text-white transition-colors hover:bg-stone-700"
+            className="inline-flex items-center rounded-md border border-[var(--text-strong)] bg-[var(--text-strong)] px-3 py-1.5 text-xs text-[var(--panel)] transition-opacity hover:opacity-90"
           >
             Save
           </button>
@@ -276,7 +276,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
           <button
             type="button"
             onClick={() => void setLiteLLMBaseUrl(null)}
-            className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:bg-stone-50"
+            className="inline-flex items-center rounded-md border border-[var(--border)] bg-[var(--panel)] px-3 py-1.5 text-xs text-[var(--text)] transition-colors hover:bg-[var(--panel-hover)]"
           >
             Reset to deployment default
           </button>
@@ -293,7 +293,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
           title={token ? 'Refresh models' : 'Sign in to refresh models'}
           disabled={!canRefresh}
           onClick={() => void refreshModels()}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-stone-200 bg-white text-stone-500 transition-colors hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--panel)] text-[var(--muted)] transition-colors hover:border-[var(--border)] hover:bg-[var(--panel-hover)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RotateIcon className={`h-3.5 w-3.5 ${isRefreshingModels ? 'animate-spin' : ''}`} />
         </button>
@@ -302,7 +302,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
         id="model-select"
         value={selectedModel}
         onChange={(event) => void setSelectedModel(event.target.value)}
-        className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+        className="w-full rounded-md border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
       >
         {models.map((model) => (
           <option key={model.id} value={model.id}>
@@ -322,7 +322,7 @@ const ModelsSection = ({ status }: { status: ServiceStatus }) => {
         id="agent-type-select"
         value={agentType}
         onChange={(event) => void setAgentType(event.target.value as AgentType)}
-        className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+        className="w-full rounded-md border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
       >
         {AGENT_TYPE_OPTIONS.map((option) => (
           <option key={option.id} value={option.id}>
@@ -390,7 +390,7 @@ const McpServerCard = ({
       ? 'text-rose-600'
       : discovery
         ? 'text-emerald-700'
-        : 'text-stone-400'
+        : 'text-[var(--muted)]'
 
   const handleSave = () => {
     const patch: Partial<Omit<McpServerConfig, 'id'>> = {}
@@ -404,10 +404,10 @@ const McpServerCard = ({
   }
 
   return (
-    <div className="rounded-lg border border-stone-200 bg-white p-3 text-sm">
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-3 text-sm">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate font-medium text-stone-800">{server.name}</p>
+          <p className="truncate font-medium text-[var(--text-strong)]">{server.name}</p>
           <p className="mt-0.5 truncate text-xs text-[var(--muted)]">{server.url}</p>
           <p className={`mt-0.5 text-xs ${badgeClass}`}>{syncBadge}</p>
         </div>
@@ -425,14 +425,14 @@ const McpServerCard = ({
             disabled={isSyncing}
             aria-label={`Refresh ${server.name}`}
             title={`Refresh ${server.name}`}
-            className="rounded px-1.5 py-0.5 text-xs text-stone-500 hover:bg-stone-100 disabled:opacity-50"
+            className="rounded px-1.5 py-0.5 text-xs text-[var(--muted)] hover:bg-[var(--panel-hover)] disabled:opacity-50"
           >
             <span aria-hidden="true">↺</span>
           </button>
           <button
             type="button"
             onClick={() => setEditing((v) => !v)}
-            className="rounded px-1.5 py-0.5 text-xs text-stone-500 hover:bg-stone-100"
+            className="rounded px-1.5 py-0.5 text-xs text-[var(--muted)] hover:bg-[var(--panel-hover)]"
           >
             {editing ? 'Close' : 'Edit'}
           </button>
@@ -456,30 +456,30 @@ const McpServerCard = ({
         </div>
       </div>
       {editing ? (
-        <div className="mt-2 space-y-1.5 border-t border-stone-100 pt-2">
+        <div className="mt-2 space-y-1.5 border-t border-[var(--border)] pt-2">
           <input
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             placeholder="Name"
-            className="w-full rounded border border-stone-300 px-2 py-1 text-xs outline-none focus:border-amber-400"
+            className="w-full rounded border border-[var(--border)] px-2 py-1 text-xs outline-none focus:border-amber-400"
           />
           <input
             value={form.url}
             onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
             placeholder="URL"
-            className="w-full rounded border border-stone-300 px-2 py-1 text-xs outline-none focus:border-amber-400"
+            className="w-full rounded border border-[var(--border)] px-2 py-1 text-xs outline-none focus:border-amber-400"
           />
           <input
             type="password"
             value={form.bearerToken}
             onChange={(e) => setForm((f) => ({ ...f, bearerToken: e.target.value }))}
             placeholder="Bearer token (optional)"
-            className="w-full rounded border border-stone-300 px-2 py-1 text-xs outline-none focus:border-amber-400"
+            className="w-full rounded border border-[var(--border)] px-2 py-1 text-xs outline-none focus:border-amber-400"
           />
           <button
             type="button"
             onClick={handleSave}
-            className="rounded bg-stone-900 px-2.5 py-1 text-xs text-white hover:bg-stone-700"
+            className="rounded bg-[var(--text-strong)] px-2.5 py-1 text-xs text-[var(--panel)] hover:opacity-90"
           >
             Save
           </button>
@@ -557,33 +557,33 @@ export const McpServerList = () => {
             onChange={(e) => setAddForm((f) => f && { ...f, name: e.target.value })}
             placeholder="Name"
             autoFocus
-            className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-400"
+            className="w-full rounded border border-[var(--border)] bg-[var(--panel)] px-2 py-1 text-xs outline-none focus:border-amber-400"
           />
           <input
             value={addForm.url}
             onChange={(e) => setAddForm((f) => f && { ...f, url: e.target.value })}
             placeholder="https://mcp.example.com/mcp"
-            className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-400"
+            className="w-full rounded border border-[var(--border)] bg-[var(--panel)] px-2 py-1 text-xs outline-none focus:border-amber-400"
           />
           <input
             type="password"
             value={addForm.bearerToken}
             onChange={(e) => setAddForm((f) => f && { ...f, bearerToken: e.target.value })}
             placeholder="Bearer token (optional)"
-            className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-400"
+            className="w-full rounded border border-[var(--border)] bg-[var(--panel)] px-2 py-1 text-xs outline-none focus:border-amber-400"
           />
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => void handleAdd()}
-              className="rounded bg-stone-900 px-2.5 py-1 text-xs text-white hover:bg-stone-700"
+              className="rounded bg-[var(--text-strong)] px-2.5 py-1 text-xs text-[var(--panel)] hover:opacity-90"
             >
               Add
             </button>
             <button
               type="button"
               onClick={() => setAddForm(null)}
-              className="rounded border border-stone-200 px-2.5 py-1 text-xs text-stone-600 hover:bg-stone-50"
+              className="rounded border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--text)] hover:bg-[var(--panel-hover)]"
             >
               Cancel
             </button>
@@ -593,7 +593,7 @@ export const McpServerList = () => {
         <button
           type="button"
           onClick={() => setAddForm(emptyForm())}
-          className="inline-flex items-center rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50"
+          className="inline-flex items-center rounded-md border border-[var(--border)] bg-[var(--panel)] px-3 py-1.5 text-xs text-[var(--text)] transition-colors hover:border-[var(--border)] hover:bg-[var(--panel-hover)]"
         >
           + Add server
         </button>
@@ -647,7 +647,7 @@ const PluginSettingFieldRow = ({
         id={selectId}
         value={typeof value === 'string' ? value : field.default}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+        className="w-full rounded-md border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
       >
         {field.options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -693,7 +693,7 @@ const PluginsSection = ({ inspectorPanelSupported }: { inspectorPanelSupported: 
             {/* A plugin's own settings appear only once it is enabled — they
                 configure behaviour that does nothing while the plugin is off. */}
             {enabled && settingFields.length > 0 ? (
-              <div className="space-y-2 border-l-2 border-stone-100 pl-3">
+              <div className="space-y-2 border-l-2 border-[var(--border)] pl-3">
                 {settingFields.map((field) => (
                   <PluginSettingFieldRow
                     key={field.key}

@@ -52,12 +52,14 @@ export const PrivacyPolicyDialog = ({
         data-state="open"
       >
         <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
-          <h2 className="text-base font-semibold text-stone-900">Privacy &amp; Telemetry</h2>
+          <h2 className="text-base font-semibold text-[var(--text-strong)]">
+            Privacy &amp; Telemetry
+          </h2>
           <button
             type="button"
             aria-label="Close privacy policy"
             onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--muted)] transition-colors hover:bg-[var(--panel-hover)] hover:text-[var(--text-strong)]"
           >
             <span aria-hidden="true" className="text-lg leading-none">
               ×

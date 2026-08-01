@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
+  clampLayout,
   clampSize,
   detectSnapEdge,
   dockedResizeDelta,
@@ -11,7 +12,9 @@ import {
   SNAP_INTENT_TRAVEL,
   SNAP_THRESHOLD,
   WIDGET_KEYBOARD_STEP,
-  type SnapEdge
+  WIDGET_MINIMIZED_SIZE,
+  type SnapEdge,
+  type WidgetLayout
 } from '../src/chat-shell/layout-geometry.js'
 
 const viewport = { width: 1000, height: 800 }
@@ -197,5 +200,67 @@ describe('updatePersisted (#335)', () => {
     window.localStorage.setItem('test:persist', JSON.stringify([1, 2]))
     updatePersisted('test:persist', { height: 300 })
     expect(JSON.parse(window.localStorage.getItem('test:persist') ?? '{}')).toEqual({ height: 300 })
+  })
+})
+
+describe('clampLayout keeps the panel inside the viewport (issue #480 review)', () => {
+  const dims = { defaultWidth: 400, defaultHeight: 680, minWidth: 320, minHeight: 420 }
+  const setViewport = (width: number, height: number): void => {
+    Object.defineProperty(window, 'innerWidth', { value: width, configurable: true })
+    Object.defineProperty(window, 'innerHeight', { value: height, configurable: true })
+  }
+  const open = (over: Partial<WidgetLayout> = {}): WidgetLayout => ({
+    x: 24,
+    y: 24,
+    width: 400,
+    height: 680,
+    minimized: false,
+    ...over
+  })
+
+  it('keeps the safe margin when the viewport can afford it', () => {
+    setViewport(1200, 900)
+    const layout = clampLayout(open(), dims)
+
+    expect(layout.x).toBeGreaterThanOrEqual(24)
+    expect(layout.x + layout.width).toBeLessThanOrEqual(1200 - 24)
+  })
+
+  it('fits a 320px viewport rather than honouring an impossible minWidth', () => {
+    // The reported case: minWidth 320 and a 24px margin on both sides cannot
+    // both hold at 320 CSS pixels. Preferring the minimum pushed the right edge
+    // — the resize handle and part of the shell bar — 24px off-screen, with no
+    // way to scroll to it.
+    setViewport(320, 568)
+    const layout = clampLayout(open(), dims)
+
+    expect(layout.x).toBeGreaterThanOrEqual(0)
+    expect(layout.x + layout.width).toBeLessThanOrEqual(320)
+  })
+
+  it('fits a short viewport the same way', () => {
+    setViewport(360, 420)
+    const layout = clampLayout(open(), dims)
+
+    expect(layout.y).toBeGreaterThanOrEqual(0)
+    expect(layout.y + layout.height).toBeLessThanOrEqual(420)
+  })
+
+  it('fits a viewport smaller than the minimum on both axes', () => {
+    setViewport(280, 380)
+    const layout = clampLayout(open(), dims)
+
+    expect(layout.x).toBeGreaterThanOrEqual(0)
+    expect(layout.y).toBeGreaterThanOrEqual(0)
+    expect(layout.x + layout.width).toBeLessThanOrEqual(280)
+    expect(layout.y + layout.height).toBeLessThanOrEqual(380)
+  })
+
+  it('keeps a minimized launcher on screen too', () => {
+    setViewport(320, 568)
+    const layout = clampLayout(open({ minimized: true }), dims)
+
+    expect(layout.x).toBeGreaterThanOrEqual(0)
+    expect(layout.x + WIDGET_MINIMIZED_SIZE).toBeLessThanOrEqual(320)
   })
 })

@@ -1395,6 +1395,20 @@ div[class^='codeBlockContainer'] {
   --widget-border: #dccdb9;
   --widget-text: #2f2923;
   --widget-muted: #766a5d;
+
+  /* The DERIVED tokens too, not just the bases. app-browser declares these on
+     `:root` in terms of `--text`/`--panel`/`--accent`, and a `var()` in a custom
+     property resolves where it is DECLARED — so overriding only the bases here
+     left `--text-strong` (and the color-mix trio) computing from the light root
+     values. That is why the consent dialog's heading rendered near-black on a
+     near-black panel: about 1.04:1. Redeclared with the same expressions so they
+     resolve against this block's values instead. */
+  --text-strong: var(--text);
+  --link: var(--accent);
+  --panel-hover: color-mix(in srgb, var(--text) 6%, var(--panel));
+  --accent-ring: color-mix(in srgb, var(--accent) 42%, var(--panel));
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  --user-bubble: color-mix(in srgb, var(--accent) 16%, var(--panel));
 }
 
 /* Dark mode, keyed on Docusaurus' own attribute so the widget follows the site's
@@ -1417,6 +1431,20 @@ html[data-theme='dark'] .docs-assistant-root {
   --widget-border: #3a2f22;
   --widget-text: #f6ead7;
   --widget-muted: #cbbfae;
+
+  /* The DERIVED tokens too, not just the bases. app-browser declares these on
+     `:root` in terms of `--text`/`--panel`/`--accent`, and a `var()` in a custom
+     property resolves where it is DECLARED — so overriding only the bases here
+     left `--text-strong` (and the color-mix trio) computing from the light root
+     values. That is why the consent dialog's heading rendered near-black on a
+     near-black panel: about 1.04:1. Redeclared with the same expressions so they
+     resolve against this block's values instead. */
+  --text-strong: var(--text);
+  --link: var(--accent);
+  --panel-hover: color-mix(in srgb, var(--text) 6%, var(--panel));
+  --accent-ring: color-mix(in srgb, var(--accent) 42%, var(--panel));
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  --user-bubble: color-mix(in srgb, var(--accent) 16%, var(--panel));
 }
 
 /* The floating shell's own frame and the settings/consent dialog surfaces carry
@@ -1442,4 +1470,44 @@ html[data-theme='dark'] .docs-assistant-root .widget-shell-dock:hover {
 
 html[data-theme='dark'] .docs-assistant-root .widget-shell-grip::before {
   background: color-mix(in srgb, var(--text) 40%, transparent);
+}
+
+/* --- The embedded baseline app-browser's own builds get from Tailwind preflight
+   ---
+   Every product app's Tailwind entry includes `tailwindcss/preflight.css`, which
+   resets `button`/`input`/`select` to `background: transparent` and
+   `color: inherit`. This site deliberately EXCLUDES preflight (see
+   src/css/tailwind.css: it would fight Infima across the whole documentation),
+   so app-browser's controls fell back to the UA's own `ButtonFace`/`FieldFace`
+   system colours — grey boxes in the settings panel and the tool picker, and
+   unreadable once the surrounding panel went dark (issue #480 review, finding 3).
+
+   Scoped to the assistant root, so this is the missing baseline for the embedded
+   product components ONLY: Infima keeps styling the documentation's own buttons,
+   and the live labs are untouched. Utility classes still win — they are declared
+   later and carry the same or higher specificity — so a control that sets its own
+   background keeps it. */
+.docs-assistant-root button,
+.docs-assistant-root input,
+.docs-assistant-root select,
+.docs-assistant-root textarea {
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+.docs-assistant-root button {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* Native controls keep their own widget rendering — a checkbox painted with
+   `background: transparent` would be invisible. `accent-color` is what colours
+   them, and the components set it from `--accent`. */
+.docs-assistant-root input[type='checkbox'],
+.docs-assistant-root input[type='radio'] {
+  background-color: revert;
 }

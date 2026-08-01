@@ -38,19 +38,48 @@ export type WidgetLayout = {
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max)
 
+/**
+ * The largest box that fits an axis, and the margin it may keep.
+ *
+ * `minWidth`/`minHeight` are a comfort floor, not a guarantee the viewport can
+ * honour: a 320 CSS-pixel phone cannot show a 320px-minimum panel AND a 24px
+ * margin on both sides. Preferring the minimum there put the panel's right edge
+ * 24px past the viewport, taking the resize handle and part of the window
+ * chrome off-screen with no way to scroll to them.
+ *
+ * So when the two constraints cannot both hold, FITTING WINS: the margin
+ * collapses first, and the box then shrinks below its configured minimum rather
+ * than overflowing. A panel narrower than its designed minimum is awkward; one
+ * whose controls are off-screen is unusable.
+ */
+const fitAxis = (extent: number, minimum: number): { size: number; margin: number } => {
+  const withMargin = extent - WIDGET_SAFE_MARGIN * 2
+  if (withMargin >= minimum) {
+    return { size: withMargin, margin: WIDGET_SAFE_MARGIN }
+  }
+  if (extent >= minimum) {
+    // The minimum still fits, but not with the full margin on both sides.
+    return { size: minimum, margin: Math.max(0, Math.floor((extent - minimum) / 2)) }
+  }
+  return { size: extent, margin: 0 }
+}
+
 export const clampLayout = (layout: WidgetLayout, dims: WidgetDims): WidgetLayout => {
+  const horizontal = fitAxis(window.innerWidth, dims.minWidth)
+  const vertical = fitAxis(window.innerHeight, dims.minHeight)
+
   const width = clamp(
     Math.round(layout.width),
-    dims.minWidth,
-    Math.max(dims.minWidth, window.innerWidth - WIDGET_SAFE_MARGIN * 2)
+    Math.min(dims.minWidth, horizontal.size),
+    horizontal.size
   )
   const height = clamp(
     Math.round(layout.height),
-    dims.minHeight,
-    Math.max(dims.minHeight, window.innerHeight - WIDGET_SAFE_MARGIN * 2)
+    Math.min(dims.minHeight, vertical.size),
+    vertical.size
   )
-  const boxWidth = layout.minimized ? WIDGET_MINIMIZED_SIZE : width
-  const boxHeight = layout.minimized ? WIDGET_MINIMIZED_SIZE : height
+  const boxWidth = layout.minimized ? Math.min(WIDGET_MINIMIZED_SIZE, horizontal.size) : width
+  const boxHeight = layout.minimized ? Math.min(WIDGET_MINIMIZED_SIZE, vertical.size) : height
 
   return {
     ...layout,
@@ -58,13 +87,13 @@ export const clampLayout = (layout: WidgetLayout, dims: WidgetDims): WidgetLayou
     height,
     x: clamp(
       Math.round(layout.x),
-      WIDGET_SAFE_MARGIN,
-      Math.max(WIDGET_SAFE_MARGIN, window.innerWidth - boxWidth - WIDGET_SAFE_MARGIN)
+      horizontal.margin,
+      Math.max(horizontal.margin, window.innerWidth - boxWidth - horizontal.margin)
     ),
     y: clamp(
       Math.round(layout.y),
-      WIDGET_SAFE_MARGIN,
-      Math.max(WIDGET_SAFE_MARGIN, window.innerHeight - boxHeight - WIDGET_SAFE_MARGIN)
+      vertical.margin,
+      Math.max(vertical.margin, window.innerHeight - boxHeight - vertical.margin)
     )
   }
 }

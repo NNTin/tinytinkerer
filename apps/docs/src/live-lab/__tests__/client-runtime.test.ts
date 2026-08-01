@@ -17,9 +17,12 @@ const resolveBrowserShellBootstrapConfig = vi.fn((options: Record<string, unknow
 const canStartGitHubOAuth = vi.fn(() => true)
 const startGitHubOAuth = vi.fn()
 
+const genericToolTreeSummarizer = vi.fn()
+
 vi.mock('@tinytinkerer/app-browser', () => ({
   createBrowserShell,
   createBrowserApp,
+  genericToolTreeSummarizer,
   resolveBrowserShellBootstrapConfig,
   canStartGitHubOAuth,
   startGitHubOAuth,

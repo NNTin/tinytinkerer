@@ -1,6 +1,12 @@
+import AxeBuilder from '@axe-core/playwright'
 import { test, expect, type Page } from '@playwright/test'
-import { requireShellPort } from '../../fixtures/first-load'
-import { installChatMock } from '../../fixtures/mock-litellm'
+import { dismissTelemetryDialog, requireShellPort } from '../../fixtures/first-load'
+import {
+  installAppToolMock,
+  installChatMock,
+  SYNTHESIS_ANSWER,
+  toolResultFor
+} from '../../fixtures/mock-litellm'
 import { PIXEL_AGENTS_LAB_URL } from '../../fixtures/docs-lab'
 
 // The floating documentation assistant on the BUILT site (issue #480).
@@ -34,17 +40,26 @@ test.describe('the documentation assistant widget (#480)', () => {
     })
   }
 
-  test('the launcher is present on the 404 page', async ({ page }) => {
-    // The built 404 document by name, rather than by visiting an unknown path.
-    // Both this suite's origin (`vite preview` over a static `apps/host/dist`)
-    // and the real deployment (static output, no rewrite rules in vercel.json)
-    // answer an unknown `/docs/*` path from the file system, so a reader who
-    // follows a broken documentation link gets a full load of exactly this
-    // document — not a client-side transition into Docusaurus' NotFound route.
-    await page.goto(`${DOCS_ORIGIN}/docs/404.html`)
+  test('the launcher is present on a genuinely missing docs URL', async ({ page }) => {
+    // An actually nonexistent path, not the 404 artifact by filename. Asserting
+    // the file proved only that the build emits it — it could not see that the
+    // deployment answered a broken documentation link with its own plain-text
+    // NOT_FOUND, so no reader ever reached this page (issue #480 review).
+    //
+    // The routing that makes this work is vercel.json's `/docs/:path*` rewrite,
+    // mirrored for this origin by apps/host/vite.config.ts's preview middleware.
+    await page.goto(`${DOCS_ORIGIN}/docs/definitely-missing-review-route`)
 
     await expect(page.getByText('Page Not Found')).toBeVisible()
     await expect(launcher(page)).toBeVisible()
+  })
+
+  test('the missing-docs fallback does not leak outside /docs/', async ({ page }) => {
+    // The rewrite is scoped: an unknown path at the root keeps whatever the host
+    // already did, and must never start answering with the documentation's 404.
+    const response = await page.goto(`${DOCS_ORIGIN}/definitely-missing-root-route`)
+
+    expect(await response?.text()).not.toContain('docs-assistant-launcher')
   })
 
   test('the launcher is in the static HTML, before any JavaScript runs', async ({ browser }) => {
@@ -136,6 +151,94 @@ test.describe('the documentation assistant widget (#480)', () => {
     await expect(page.getByRole('button', { name: 'How can I host TinyTinkerer?' })).toBeVisible()
   })
 
+  test('offers the Documentation tools in the normal tool picker', async ({ page }) => {
+    // The acceptance criterion #477 deferred and #479 claimed: the three tools
+    // are visible in the ordinary picker and independently controllable. The
+    // unit test that stood in for it supplied the summarizer itself, so the real
+    // widget shipped with no picker button at all.
+    await installChatMock(page)
+    await page.goto(ROUTES.authored)
+    await launcher(page).click()
+    await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible({ timeout: 30_000 })
+    // The assistant owns the documentation site's telemetry consent (issue
+    // #479), so activating it for the first time opens that dialog over the
+    // page. Every pointer interaction below is behind it until it is answered.
+    await dismissTelemetryDialog(page)
+
+    await page.getByRole('button', { name: 'Choose available tools' }).click()
+    const picker = page.getByRole('dialog', { name: 'Choose available tools' })
+    await expect(picker).toBeVisible()
+    await expect(picker).toContainText('Documentation')
+
+    const searchDocs = picker.getByRole('checkbox', { name: 'search_docs' })
+    await expect(searchDocs).toBeChecked()
+    await expect(picker.getByRole('checkbox', { name: 'read_doc' })).toBeChecked()
+    await expect(picker.getByRole('checkbox', { name: 'read_current_doc' })).toBeChecked()
+
+    // Independently controllable: one off, the others untouched. `click()` plus a
+    // retrying assertion rather than `uncheck()`, whose one-shot state check
+    // races the store's async persist-then-rerender.
+    await searchDocs.click()
+    await expect(searchDocs).not.toBeChecked()
+    await expect(picker.getByRole('checkbox', { name: 'read_doc' })).toBeChecked()
+    await expect(picker.getByRole('checkbox', { name: 'read_current_doc' })).toBeChecked()
+
+    // …and the choice survives a reload, through the assistant's own store.
+    await page.reload()
+    await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible({ timeout: 30_000 })
+    await page.getByRole('button', { name: 'Choose available tools' }).click()
+    await expect(
+      page
+        .getByRole('dialog', { name: 'Choose available tools' })
+        .getByRole('checkbox', { name: 'search_docs' })
+    ).not.toBeChecked()
+  })
+
+  test('answers about the page the run started on, even after navigating mid-run', async ({
+    page
+  }) => {
+    // The locked criterion the draft test replaced with an unsent draft: a
+    // response/tool call in flight must survive navigation. Keeping the React
+    // node mounted is only half of it — `read_current_doc` resolves at EXECUTION
+    // time, so without a run pin the reader gets an answer about wherever they
+    // drifted to (issue #480 review, finding 5).
+    const mock = await installAppToolMock(page, 'read_current_doc', {})
+    // Hold the model's first response back so the tool call is issued well after
+    // the navigation below, making this a fact about the pin rather than a race.
+    // Registered after the mock, so it intercepts first and falls through.
+    await page.route('**/api/**', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 2_000))
+      await route.fallback()
+    })
+
+    await page.goto(ROUTES.authored)
+    await launcher(page).click()
+    const composer = page.getByRole('textbox', { name: 'Message' })
+    await expect(composer).toBeVisible({ timeout: 30_000 })
+    await dismissTelemetryDialog(page)
+
+    await composer.fill('Summarize this page.')
+    await composer.press('Enter')
+
+    // Leave for a different document while the run is still in flight.
+    await page
+      .locator('.theme-doc-sidebar-container')
+      .getByRole('link', { name: 'Contributing' })
+      .first()
+      .click()
+    await expect(page).toHaveURL(/\/docs\/contributing\//)
+
+    // The same run completes on the new route…
+    await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
+
+    // …and its tool result is still about the page the question was asked on.
+    const result = toolResultFor(mock, 'read_current_doc') as
+      | { status?: string; doc?: { ref?: string } }
+      | undefined
+    expect(result?.status).toBe('ok')
+    expect(result?.doc?.ref).toBe('architecture/ARCHITECTURE')
+  })
+
   test('remembers a minimized panel, and downloads no runtime on the next load', async ({
     page
   }) => {
@@ -186,6 +289,122 @@ test.describe('the documentation assistant widget (#480)', () => {
     await expect(page.locator('.navbar-sidebar')).toBeVisible()
     await expect(launcher(page)).toBeHidden()
   })
+
+  // WCAG AA for normal text. The dialogs below were measured at 1.04:1, 1.63:1
+  // and 2.19:1 in dark mode before the shared primitives moved onto semantic
+  // tokens (issue #480 review, finding 3).
+  const AA_NORMAL_TEXT = 4.5
+
+  /**
+   * Real contrast for every text node inside `selector`, resolved against the
+   * nearest ancestor that actually paints a background.
+   *
+   * Reading the outer frame's brightness — what the first version of the dark
+   * test did — cannot see any of this: the panel was genuinely dark the whole
+   * time, and the text on it was near-black.
+   */
+  const worstContrastIn = async (page: Page, selector: string): Promise<number> =>
+    page.evaluate((target) => {
+      const parse = (value: string): [number, number, number] => {
+        const parts = (value.match(/[\d.]+/g) ?? []).map(Number)
+        const scale = value.startsWith('color(') ? 255 : 1
+        return [(parts[0] ?? 0) * scale, (parts[1] ?? 0) * scale, (parts[2] ?? 0) * scale]
+      }
+      const opaque = (value: string): boolean => {
+        if (!value || value === 'transparent') return false
+        const alpha = value.startsWith('color(')
+          ? Number((value.split('/')[1] ?? '1').replace(/[^\d.]/g, '') || 1)
+          : Number((value.match(/[\d.]+/g) ?? [])[3] ?? 1)
+        return alpha > 0.95
+      }
+      const luminance = ([r, g, b]: [number, number, number]): number => {
+        const channel = (c: number): number => {
+          const v = c / 255
+          return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+        }
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+      }
+      const backgroundOf = (element: Element): [number, number, number] => {
+        let node: Element | null = element
+        while (node) {
+          const { backgroundColor } = getComputedStyle(node)
+          if (opaque(backgroundColor)) return parse(backgroundColor)
+          node = node.parentElement
+        }
+        return [255, 255, 255]
+      }
+
+      let worst = 21
+      for (const element of document.querySelectorAll(`${target} *`)) {
+        const text = Array.from(element.childNodes)
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => node.textContent?.trim() ?? '')
+          .join('')
+        if (!text) continue
+        const style = getComputedStyle(element)
+        if (style.visibility === 'hidden' || style.display === 'none') continue
+        const foreground = luminance(parse(style.color))
+        const background = luminance(backgroundOf(element))
+        const ratio =
+          (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)
+        worst = Math.min(worst, ratio)
+      }
+      return worst
+    }, selector)
+
+  for (const theme of ['light', 'dark'] as const) {
+    test(`the consent, privacy and settings surfaces are legible in ${theme} mode`, async ({
+      page
+    }) => {
+      await page.emulateMedia({ colorScheme: theme })
+      await installChatMock(page)
+      await page.goto(ROUTES.authored)
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+
+      // Consent is the FIRST thing a reader sees after activating the assistant,
+      // and it was the least legible surface of all.
+      await launcher(page).click()
+      const consent = page.getByRole('dialog', { name: 'Telemetry' })
+      await expect(consent).toBeVisible({ timeout: 30_000 })
+      expect(await worstContrastIn(page, '[aria-label="Telemetry"]')).toBeGreaterThanOrEqual(
+        AA_NORMAL_TEXT
+      )
+
+      // The privacy policy it links to.
+      await consent.getByRole('button', { name: 'Learn more' }).click()
+      const privacy = page.getByRole('dialog', { name: 'Privacy & Telemetry' })
+      await expect(privacy).toBeVisible()
+      expect(
+        await worstContrastIn(page, '[aria-label="Privacy & Telemetry"]')
+      ).toBeGreaterThanOrEqual(AA_NORMAL_TEXT)
+      await privacy.getByRole('button', { name: 'Close privacy policy' }).first().click()
+      await dismissTelemetryDialog(page)
+
+      // The settings panel, whose heading and tabs were the other reported case.
+      await page.getByRole('button', { name: 'Settings' }).click()
+      const settings = page.locator('[data-presentation="inline"][aria-label="Settings"]')
+      await expect(settings).toBeVisible()
+      expect(
+        await worstContrastIn(page, '[data-presentation="inline"][aria-label="Settings"]')
+      ).toBeGreaterThanOrEqual(AA_NORMAL_TEXT)
+
+      // …and the tool picker, the last embedded surface with its own chrome.
+      await page.getByRole('button', { name: 'Close settings' }).first().click()
+      await page.getByRole('button', { name: 'Choose available tools' }).click()
+      await expect(page.getByRole('dialog', { name: 'Choose available tools' })).toBeVisible()
+      expect(
+        await worstContrastIn(page, '[aria-label="Choose available tools"]')
+      ).toBeGreaterThanOrEqual(AA_NORMAL_TEXT)
+
+      // axe over the whole assistant subtree, which catches what a contrast
+      // sweep cannot (names, roles, control labelling) on the same surfaces.
+      const results = await new AxeBuilder({ page }).include('.docs-assistant-root').analyze()
+      const serious = results.violations.filter(
+        (violation) => violation.impact === 'serious' || violation.impact === 'critical'
+      )
+      expect(JSON.stringify(serious, null, 2)).toBe('[]')
+    })
+  }
 
   test('stays usable in dark mode', async ({ page }) => {
     // Driven from the system preference rather than by clicking the navbar
