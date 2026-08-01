@@ -120,16 +120,25 @@ describe('shell bundle regression guard', () => {
     expect(staticImports.filter((fileName) => fileName.includes('app-core'))).toEqual([])
   })
 
-  it('keeps the lazy chat route chunk under 57 kB', () => {
+  it('keeps the lazy chat route chunk under 59 kB', () => {
     // The chat route imports the shared ChatApp (both layout shells + bodies) so the
     // widget↔sidebar morph happens in-place. Still lazy (split from the entry).
     // Raised 55 → 57 kB (2026-07-11): the tool picker's compose-area slot +
     // useToolTree hook (issue #400) are eager in both chat surfaces by design —
     // the button must render whenever the tool-tree plugin is enabled — while
     // the checkbox-tree panel itself stays in its own lazy chunk.
+    // Raised 57 → 59 kB (2026-08-01), measured 56.2 → 57.6: the four host
+    // capabilities issue #480 added for the documentation assistant — controlled
+    // minimization with its focus behaviour, the dynamic starter-prompt
+    // override, host-provided sign-in, and the reset behaviour — all live in the
+    // window chrome and both chat bodies. None of it can move behind an
+    // `import()`: it is the interactive surface itself, not a panel opened from
+    // it, and two of the four exist to fix affordances that were reachable but
+    // dead (a sign-in button with no flow behind it, a reset that did something
+    // other than what it said).
     const chunk = chunks.find((entry) => entry.fileName.includes('chat-surface'))
     expect(chunk, 'No chat route chunk found in build output').toBeDefined()
-    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(57)
+    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(59)
   })
 
   it('keeps every non-vendor JS chunk under 120 kB', () => {

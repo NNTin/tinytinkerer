@@ -55,11 +55,16 @@ describe('IDE bundle regression guard', () => {
     // chunk rather than splitting into its own chat-surface chunk like the shell
     // app does. Same real growth the shell app's chat-surface budget already
     // absorbed; this app just had no dedicated chunk to isolate it in.
+    // Raised 282 → 284 kB (2026-08-01), measured 280.2 → 282.2: the same story
+    // again, for issue #480's four host capabilities on the chat surfaces
+    // (controlled minimization and its focus behaviour, dynamic starter prompts,
+    // host-provided sign-in, host-provided reset). See the shell app's
+    // chat-surface budget, which absorbed the identical growth.
     const stage = chunks.find((chunk) => chunk.fileName.includes('ide-page'))
     const codeMirror = chunks.find((chunk) => chunk.fileName.includes('codemirror-vendor'))
     expect(stage).toBeDefined()
     expect(codeMirror).toBeDefined()
-    expect((stage?.code?.length ?? 0) / 1024).toBeLessThan(282)
+    expect((stage?.code?.length ?? 0) / 1024).toBeLessThan(284)
     expect((codeMirror?.code?.length ?? 0) / 1024).toBeLessThan(800)
   })
 })
