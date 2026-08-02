@@ -664,14 +664,24 @@ never from the rendered view — a summarizer's view is display-only and may be 
 enablement (per server) and stay out of the tree's scope.
 
 **App tools in the picker (issue #400 follow-up).** An app's always-on tools (e.g. the canvas
-shell's Excalidraw verbs) are shown in the same tree as one **app tool group** — `AppToolGroup =
-{ id, label, tools, bindRun? }`, passed to `createBrowserShellRoot({ appToolGroup })` and held on
-the `BrowserApp` so `useToolTree` can read it. `tools` is the group's single catalogue: the list
-the picker shows AND the list the runtime registers. `bindRun` is for a group whose tool must act
-on state as of the moment a run STARTS rather than the moment it executes — the documentation
-assistant pins the route the reader submitted from — and it may only replace a declared tool's
-`execute`, never its id, description, schemas or summarizer, so what the reader selected and what
-the model is handed cannot diverge (issue #480 re-review). They participate in per-tool disablement, but under a
+shell's Excalidraw verbs) are shown in the same tree as one **app tool group**:
+
+```ts
+type AppToolGroup = {
+  id: string
+  label: string
+  tools: AppTool[]
+  bindRun?: () => AppToolRunBindings
+}
+```
+
+It is passed to `createBrowserShellRoot({ appToolGroup })` and held on the `BrowserApp` so
+`useToolTree` can read it. `tools` is the group's single catalogue: the list the picker shows AND
+the list the runtime registers. `bindRun` is for a group whose tool must act on state as of the
+moment a run STARTS rather than the moment it executes — the documentation assistant pins the route
+the reader submitted from — and it may only replace a declared tool's `execute`, never its id,
+description, schemas or summarizer, so what the reader selected and what the model is handed cannot
+diverge (issue #480 re-review). They participate in per-tool disablement, but under a
 **separate axis** from plugins because an app has **no activation toggle** — it is intrinsic to
 the shell (Excalidraw is always present). So they get their own denylist
 (`appToolDisablement`, key `settings_apps_disabled_tools`) and their own chokepoint,
