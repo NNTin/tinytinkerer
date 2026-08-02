@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
-import type { DocsRuntimeCustomFields } from '../../site-config'
+import { resolveDocsAssistantEnabled, type DocsRuntimeCustomFields } from '../../site-config'
 
 export type DocsRuntimeConfig = {
   edgeBaseUrl: string
@@ -16,10 +16,11 @@ const FALLBACK_CUSTOM_FIELDS: DocsRuntimeCustomFields = {
   tinySentryDsn: undefined,
   tinySentryEnvironment: undefined,
   tinyProductBaseUrl: '/',
-  // Enabled, matching `resolveDocsAssistantEnabled`'s own default: a page served
-  // without custom fields at all is a misconfiguration, and the rollback switch
-  // must only ever be armed by someone deliberately arming it.
-  tinyDocsAssistantEnabled: true
+  // Asked, not restated. A page served without custom fields at all is a
+  // misconfiguration, and the answer to "is the assistant on?" for an absent
+  // value is the resolver's to give — writing `true` here worked, but put the
+  // rollback switch's default in two places that had to be kept in step.
+  tinyDocsAssistantEnabled: resolveDocsAssistantEnabled(undefined)
 }
 
 const readCustomFields = (
