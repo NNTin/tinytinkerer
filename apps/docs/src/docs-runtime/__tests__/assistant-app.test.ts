@@ -33,8 +33,7 @@ vi.mock('@tinytinkerer/app-browser', () => ({
 // `app-browser` is mocked here (the point of this suite is what `assistant-app`
 // passes it), so its `appToolCatalogue` is not available. The group's tools are
 // a per-run factory, and this is what reading its catalogue amounts to.
-const catalogueOf = (group: AppToolGroup) =>
-  typeof group.tools === 'function' ? group.tools('catalogue') : group.tools
+const catalogueOf = (group: AppToolGroup) => group.tools
 
 const runtimeConfig = {
   edgeBaseUrl: 'https://edge.example',

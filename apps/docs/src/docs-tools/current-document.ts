@@ -177,40 +177,40 @@ export const resolveCurrentDocument = async (pin?: DocsRunPin): Promise<CurrentD
   // provider republishes for the reader's new route, and this still answers
   // about the old one.
   const pinnedRoute = route
-  const settled = (candidate: DocsPageSnapshot): boolean =>
-    !isPending(candidate.resolveRoute(pinnedRoute))
+
+  /**
+   * Wait for a publication NEWER than `from` whose corpus has settled for the
+   * pinned route, and answer from it — or from `current` if the budget runs out.
+   *
+   * Both waits below need exactly this, and both need it for the same two
+   * reasons. `revision > from` is what stops the still-current state from
+   * satisfying the wait immediately (a retry that fails republishes an
+   * equal-looking failure, so only the publication identity discriminates), and
+   * "not pending" skips the interim `corpus_pending` the provider publishes on
+   * its way to an outcome.
+   */
+  const advance = async (current: DocsPageSnapshot): Promise<DocsPageSnapshot> => {
+    const from = current.revision
+    const next = await awaitDocsPageSnapshot(
+      (candidate) => candidate.revision > from && !isPending(candidate.resolveRoute(pinnedRoute)),
+      remaining()
+    )
+    return next ?? current
+  }
 
   let resolution = snapshot.resolveRoute(pinnedRoute)
 
   // The corpus may simply not have arrived yet on a freshly loaded page.
   // Waiting is the right answer, and it is what the reader sees a moment later.
   if (isPending(resolution)) {
-    const from = snapshot.revision
-    const next = await awaitDocsPageSnapshot(
-      (candidate) => candidate.revision > from && settled(candidate),
-      remaining()
-    )
-    if (next) {
-      snapshot = next
-      resolution = next.resolveRoute(pinnedRoute)
-    }
+    snapshot = await advance(snapshot)
+    resolution = snapshot.resolveRoute(pinnedRoute)
   }
 
   if (isRecoverableFailure(resolution)) {
-    const from = snapshot.revision
     snapshot.retryCorpus()
-    // A *newer* publication whose corpus has settled. Requiring `revision > from`
-    // is what stops the still-current failure from satisfying this immediately,
-    // and requiring "not pending" skips the interim `corpus_pending` the provider
-    // publishes on its way to the outcome.
-    const next = await awaitDocsPageSnapshot(
-      (candidate) => candidate.revision > from && settled(candidate),
-      remaining()
-    )
-    if (next) {
-      snapshot = next
-      resolution = next.resolveRoute(pinnedRoute)
-    }
+    snapshot = await advance(snapshot)
+    resolution = snapshot.resolveRoute(pinnedRoute)
   }
 
   return outcomeFor(resolution, snapshot.siteConfig)

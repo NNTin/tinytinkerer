@@ -1,0 +1,71 @@
+/*
+ * The minimized launcher's chrome — size, radius, border, fill, elevation — as
+ * ONE product-owned primitive (issue #480 re-review, finding 4).
+ *
+ * Two renderers draw this control and they must be indistinguishable:
+ *
+ *  - `FloatingLayout`'s `WidgetLauncher`, once the chat session is mounted;
+ *  - a host's own COLD launcher, drawn before the runtime chunk exists at all —
+ *    the documentation assistant's, which has to be interactive on a page that
+ *    has downloaded nothing of the product.
+ *
+ * They hand off to each other mid-interaction: a reader presses the cold button,
+ * the runtime boots, and the mounted one replaces it in place. Any difference in
+ * geometry or elevation reads as two different controls, and the second one
+ * jumping. This file is why there is no difference to have — it used to be
+ * spelled twice, once in a Tailwind class string and once in a stylesheet, with a
+ * comment claiming they could not drift.
+ *
+ * It sets CHROME only. Position, activation, status affordances and drag
+ * behaviour are the renderer's, because those genuinely differ: the mounted
+ * launcher is a drag handle inside a positioned shell, the cold one is fixed to
+ * the viewport corner.
+ *
+ * Tokens, not literals: `--border`/`--panel`/`--accent` resolve against whichever
+ * palette is in force, so an embedded host's dark mode recolours it for free.
+ * `WIDGET_MINIMIZED_SIZE` in chat-shell/layout-geometry.ts is the same 64px — the
+ * layout has to know the box it is positioning.
+ */
+
+.tt-embed-launcher {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 4rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 1.35rem;
+  background: var(--panel);
+  box-shadow: 0 18px 48px rgba(36, 33, 24, 0.16);
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.tt-embed-launcher:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 22px 56px rgba(36, 33, 24, 0.22);
+}
+
+.tt-embed-launcher:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.tt-embed-launcher__icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tt-embed-launcher {
+    transition: none;
+  }
+
+  .tt-embed-launcher:hover {
+    transform: none;
+  }
+}

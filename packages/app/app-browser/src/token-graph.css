@@ -1,0 +1,53 @@
+/*
+ * The derived token graph (issue #480 re-review, finding 5).
+ *
+ * Every declaration below is a pure function of the BASE palette
+ * (`--bg`/`--panel`/`--muted`/`--border`/`--text`/`--accent`, plus `--link` and
+ * `--accent-strong`), which tokens.css defaults on `:root` and which any host may
+ * override.
+ *
+ * It is declared for `:root` AND for the embed scope, and that repetition is the
+ * mechanism rather than redundancy. A custom property's value is computed where
+ * it is DECLARED and inherits as a computed value, so
+ * `--panel-hover: color-mix(…, var(--panel))` declared only on `:root` mixes
+ * against the ROOT's `--panel` and hands that same colour to every descendant —
+ * including one that overrode `--panel`. That is exactly how the documentation
+ * assistant's dark mode came to paint a near-black heading on a near-black panel:
+ * about 1.04:1. Declared again on the embed scope, the formulas resolve against
+ * the bases in force there.
+ *
+ * A host therefore declares a palette and nothing else. It does not restate the
+ * graph, which is the thing that used to be copied — with the copies already
+ * differing on `--accent-ring`, one mixing toward `white` and one toward
+ * `var(--panel)`.
+ *
+ * A shell that overrides bases on the ROOT ELEMENT (every deployable app does,
+ * including `apps/shell`'s `html[data-shell='widget']`) needs no second scope:
+ * `:root`'s own declarations here already resolve against those overrides,
+ * because they are declared on the same element.
+ *
+ * Imported by tokens.css (which every deployable app gets through styles.css) and
+ * by embed.css (which an embedding host gets on its own). Split out so an
+ * embedder can take the graph WITHOUT tokens.css's `:root` block, whose
+ * `color-scheme: light` would override a host's own theme switching.
+ */
+:root,
+:where(.tt-app-embed) {
+  --text-strong: var(--text);
+  --panel-hover: color-mix(in srgb, var(--text) 6%, var(--panel));
+  /* Mixed toward the SURFACE, not toward white: a ring blended with white is
+     invisible on a dark panel, which is what the documentation's own copy of this
+     formula had already had to fix locally. */
+  --accent-ring: color-mix(in srgb, var(--accent) 42%, var(--panel));
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  --user-bubble: color-mix(in srgb, var(--accent) 16%, var(--panel));
+
+  /* The widget aliases. Every deployable shell used to declare these five by
+     hand and then alias the bases back onto them; they are simply the bases,
+     under the names the floating shell's chrome spells them with. */
+  --widget-bg: var(--bg);
+  --widget-panel: var(--panel);
+  --widget-border: var(--border);
+  --widget-text: var(--text);
+  --widget-muted: var(--muted);
+}

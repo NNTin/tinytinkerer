@@ -45,7 +45,13 @@ const config: KnipConfig = {
     // in `pnpm test:allure`), and the CLI is invoked as the `allure` bin — neither is
     // statically imported, so knip cannot trace them.
     'allure-vitest',
-    'allure-commandline'
+    'allure-commandline',
+    // scripts/generate-embed-preflight.mjs reads `tailwindcss/preflight.css`
+    // through apps/docs, deliberately: the docs site is the embedder whose
+    // preflight the generated copy has to match, so its pin is the one that
+    // matters. Declaring tailwindcss at the root too would create a second pin
+    // that could silently diverge from it.
+    'tailwindcss'
   ],
   rules: {
     exports: 'warn',

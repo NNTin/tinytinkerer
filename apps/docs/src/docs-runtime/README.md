@@ -207,16 +207,24 @@ focus to it, because that is where the retry is.
 
 ### Presentation state has one owner
 
-`assistant-presentation.ts` — a versioned enum in `localStorage`, separate from
+`assistant-presentation.ts` — a versioned record in `localStorage`, separate from
 the IndexedDB conversations, so resetting one cannot disturb the other.
 
-`FloatingLayout` also persists a `minimized` flag inside its geometry blob, which
-would be a second authority written by a component that only exists _after_ the
-decision was made. So the widget uses `FloatingLayout`'s **controlled** mode
-(#480 added it): this store owns open/minimized, the layout owns geometry. A
-callback-only seam was rejected — the two desynchronise the moment anything but
-the launcher opens the assistant, which is exactly what #472 does when it
-activates the runtime while the reader had the widget minimized.
+The RULES are the product's. The mode union, the record's shape and parser, the
+transitions and the store all come from
+`@tinytinkerer/app-browser/chat-presentation`, which `ChatApp` uses too; this
+module supplies the key and one ephemeral `focusPanelOnMount` flag. Before that
+split the documentation carried a second, independently-written presentation
+state machine — the debt #482 exists to remove, reintroduced.
+
+`ChatApp` and `FloatingLayout` also persist presentation of their own, which
+would be a second authority written by components that only exist _after_ the
+decision was made. So the widget uses their **controlled** mode (#480 added it,
+and its re-review extended it to `mode`): this store owns mode and
+open/minimized, the layouts own geometry. A callback-only seam was rejected — the
+two desynchronise the moment anything but the launcher opens the assistant, which
+is exactly what #472 does when it activates the runtime while the reader had the
+widget minimized.
 
 **A returning reader who left the panel open gets it back**, runtime download
 included. "Retains the presentation state" cannot mean "restores everything
@@ -273,19 +281,30 @@ CALL was made on; the widget widened what that leaves open, because a reader can
 now ask "summarize this page" and keep reading while the model decides. The run
 survived the navigation — and answered about the page they drifted to.
 
-So the `Documentation` group builds per-run tool instances through
-`AppToolGroup.createTools` (called once per run, where `createRuntime` already
-knows the conversation), capturing the page snapshot at run start. Only a
-_settled_ pin short-circuits: a run that began before the corpus manifest arrived
-still falls through to the live path and all of #476's waiting and retrying.
+So the `Documentation` group declares ONE catalogue and binds a per-run
+implementation for `read_current_doc` alone, through `AppToolGroup.bindRun`
+(called once per run, where `createRuntime` already knows the conversation). A
+binding may replace a declared tool's body and nothing else, so its id, schemas,
+description and summarizer cannot differ from what the reader selected in the
+picker — the drift a build-it-twice seam left expressible (#480 re-review,
+finding 1).
+
+What the run captures is the ROUTE, not a resolution: a run submitted while the
+corpus manifest was still loading has nothing resolved to hold on to, and that
+route is then resolved through whatever corpus exists when the tool actually
+runs, with all of #476's waiting and retrying.
 
 ### What #480 added to `app-browser`
 
-Six additive seams, every default preserving every existing surface: controlled
-minimization plus `onMinimizedChange`, a dynamic starter-prompt override and
-count, a host-provided `signIn`, a `conversationReset` behaviour, an app-level
-`toolTreeSummarizer`, and `AppToolGroup.createTools`. Preferred over docs-owned
-imitations, which is what #482 exists to clean up.
+Additive seams, every default preserving every existing surface: controlled
+minimization and mode plus their `onChange`s, a dynamic starter-prompt override
+and count, a host-provided `signIn`, a `conversationReset` behaviour, an app-level
+`toolTreeSummarizer`, and `AppToolGroup.bindRun`. Its re-review added four
+product-owned artifacts an embedder shares rather than reimplements: the
+`chat-presentation` contract, the generated scoped preflight
+(`embed.css`/`scripts/generate-embed-preflight.mjs`), the `tt-embed-launcher`
+chrome primitive, and the derived token graph (`token-graph.css`). Preferred over
+docs-owned imitations, which is what #482 exists to clean up.
 
 `toolTreeSummarizer` is the one worth knowing about, because forgetting it is
 INVISIBLE: `ToolTreeSlot` renders nothing without a summarizer, so an app with a

@@ -186,12 +186,57 @@ const createReadDocTool = (
   }
 })
 
-const createReadCurrentDocTool = (
+/**
+ * `read_current_doc`'s body, as a function of the route the run was pinned to
+ * (issue #480 review, finding 5; re-review, findings 1 and 4).
+ *
+ * Separated from the tool's DEFINITION below because the pin is the one thing
+ * about this tool that a run supplies and the catalogue cannot know. Everything
+ * else — id, description, schemas, summarizer — is written once, in the tool, and
+ * a run binding is structurally incapable of restating it.
+ *
+ * `pin` is undefined for a direct call and for the catalogue's own body, which
+ * `resolveCurrentDocument` answers about the latest publication instead.
+ */
+const executeReadCurrentDoc = async (
   dependencies: DocumentationToolDependencies,
-  // The ROUTE this run was submitted on (issue #480 review, finding 5; re-review,
-  // finding 4). Undefined only when the group is asked for its catalogue, which
-  // nothing executes.
-  pin?: DocsRunPin
+  pin: DocsRunPin | undefined,
+  input: ReadCurrentDocInput
+): Promise<ReadCurrentDocOutput> => {
+  const current = await resolveCurrentDocument(pin)
+  if (current.kind === 'not-on-doc-page') {
+    return cappedRead({
+      status: 'not_on_doc_page',
+      // A route is caller-controlled in the same way a `ref` is.
+      pathname: boundedPathname(current.pathname),
+      message: boundedMessage(current.message)
+    })
+  }
+  if (current.kind === 'unavailable') {
+    return cappedRead({
+      status: 'unavailable',
+      pathname: boundedPathname(current.pathname),
+      reason: current.reason,
+      message: boundedMessage(current.message),
+      retryable: current.retryable
+    })
+  }
+
+  // Read by (ref, version), not by ref alone: a route belonging to a
+  // non-canonical documentation version must read that version's content, not
+  // whatever an unqualified lookup resolves to.
+  return cappedRead(
+    await readDocument(dependencies.getSiteConfig?.() ?? current.siteConfig, {
+      ref: current.document.ref,
+      version: current.document.version,
+      ...(input.anchor === undefined ? {} : { anchor: input.anchor }),
+      ...(input.maxChars === undefined ? {} : { maxChars: input.maxChars })
+    })
+  )
+}
+
+const createReadCurrentDocTool = (
+  dependencies: DocumentationToolDependencies
 ): Tool<ReadCurrentDocInput, ReadCurrentDocOutput> => ({
   id: READ_CURRENT_DOC_TOOL_ID,
   description:
@@ -202,38 +247,7 @@ const createReadCurrentDocTool = (
   schema: readCurrentDocInputSchema,
   outputSchema: readCurrentDocOutputSchema,
   summarizeActivity: summarizeReadCurrentDocActivity,
-  async execute(input) {
-    const current = await resolveCurrentDocument(pin)
-    if (current.kind === 'not-on-doc-page') {
-      return cappedRead({
-        status: 'not_on_doc_page',
-        // A route is caller-controlled in the same way a `ref` is.
-        pathname: boundedPathname(current.pathname),
-        message: boundedMessage(current.message)
-      })
-    }
-    if (current.kind === 'unavailable') {
-      return cappedRead({
-        status: 'unavailable',
-        pathname: boundedPathname(current.pathname),
-        reason: current.reason,
-        message: boundedMessage(current.message),
-        retryable: current.retryable
-      })
-    }
-
-    // Read by (ref, version), not by ref alone: a route belonging to a
-    // non-canonical documentation version must read that version's content, not
-    // whatever an unqualified lookup resolves to.
-    return cappedRead(
-      await readDocument(dependencies.getSiteConfig?.() ?? current.siteConfig, {
-        ref: current.document.ref,
-        version: current.document.version,
-        ...(input.anchor === undefined ? {} : { anchor: input.anchor }),
-        ...(input.maxChars === undefined ? {} : { maxChars: input.maxChars })
-      })
-    )
-  }
+  execute: (input) => executeReadCurrentDoc(dependencies, undefined, input)
 })
 
 /**
@@ -247,25 +261,28 @@ export const createDocumentationToolGroup = (
 ): AppToolGroup => ({
   id: DOCUMENTATION_TOOL_GROUP_ID,
   label: 'Documentation',
-  // A FACTORY, not an array (issue #480 re-review, finding 5). `app-browser`
-  // calls it once to derive the catalogue the tool picker lists, and again for
-  // every run to build the instances the runtime registers — from this one
-  // definition site, so an id, a schema or a description cannot drift between
-  // what the reader selects and what the model is handed.
+  // ONE catalogue, built once. It is what the tool picker lists AND what the
+  // runtime registers, so an id, a schema or a description cannot differ between
+  // what the reader selects and what the model is handed — not because two lists
+  // are validated against each other, but because there is only one list (issue
+  // #480 re-review, finding 1).
+  tools: [
+    createSearchDocsTool(dependencies),
+    createReadDocTool(dependencies),
+    createReadCurrentDocTool(dependencies)
+  ],
+  // The one thing a RUN adds: the route the reader was on when they hit send, so
+  // "which page is this?" is answered about that page rather than wherever they
+  // have navigated to by the time the model gets around to calling the tool.
   //
-  // The per-run call is the whole reason the seam exists: `captureDocsRunPin()`
-  // records the route the reader was on when they hit send, so "which page is
-  // this?" is answered about that page rather than wherever they have navigated
-  // to by the time the model gets around to calling the tool.
-  tools: (purpose) => {
-    // Pinned for a RUN only. The catalogue is derived whenever the tool picker
-    // first renders and is never executed, so pinning it would bind a route that
-    // no reader ever asked about.
-    const pin = purpose === 'run' ? captureDocsRunPin() : undefined
-    return [
-      createSearchDocsTool(dependencies),
-      createReadDocTool(dependencies),
-      createReadCurrentDocTool(dependencies, pin)
-    ]
+  // `search_docs` and `read_doc` capture nothing and are therefore not bound at
+  // all — they are served from the catalogue, as the same instances.
+  bindRun: () => {
+    const pin = captureDocsRunPin()
+    return {
+      [READ_CURRENT_DOC_TOOL_ID]: {
+        execute: (input: ReadCurrentDocInput) => executeReadCurrentDoc(dependencies, pin, input)
+      }
+    }
   }
 })

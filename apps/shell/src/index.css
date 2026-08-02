@@ -25,20 +25,18 @@ body {
     sans-serif;
 }
 
-/* Widget: remap the generic tokens onto the widget palette + IBM Plex, matching the
-   former standalone widget shell. The derived tokens (--panel-hover, --accent-soft,
-   …) in app-browser styles follow automatically because they build on these. */
+/* Widget: the neutral palette + IBM Plex, matching the former standalone widget
+   shell. BASES only — the `--widget-*` aliases and the derived tokens
+   (--panel-hover, --accent-soft, …) follow from these in
+   @tinytinkerer/app-browser/tokens.css (issue #480 re-review, finding 5).
+   Declared on the ROOT ELEMENT, which is where `:root`'s own derived
+   declarations resolve, so no second scope is needed. */
 html[data-shell='widget'] {
-  --widget-bg: #f7f7f4;
-  --widget-panel: #fffdf8;
-  --widget-border: #d7d4ca;
-  --widget-text: #25231d;
-  --widget-muted: #6c675a;
-  --bg: var(--widget-bg);
-  --panel: var(--widget-panel);
-  --border: var(--widget-border);
-  --text: var(--widget-text);
-  --muted: var(--widget-muted);
+  --bg: #f7f7f4;
+  --panel: #fffdf8;
+  --border: #d7d4ca;
+  --text: #25231d;
+  --muted: #6c675a;
   font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
 }
 

@@ -1,55 +1,9 @@
 @import '@tinytinkerer/content-react/styles.css';
-
-/*
- * Design tokens — the single source of truth shared by every shell. Each shell
- * imports this stylesheet before its own `index.css`, so the values below are
- * the defaults; a shell may override any base token (the widget aliases them to
- * its own `--widget-*` palette) and an embedding host may override them at
- * runtime via `shellThemeToCssVars`.
- *
- * The base tokens (`--bg`/`--panel`/`--text`/`--muted`/`--border`/`--accent`)
- * were previously duplicated in every shell's stylesheet; defining them here
- * once stops the three copies from drifting.
- *
- * The derived tokens are expressed in terms of the base tokens via `color-mix`,
- * so shared components carry no literal palette values: overriding a base token
- * (a host theme today, a `prefers-color-scheme` dark mode tomorrow) recolors the
- * whole conversation surface — bubbles, turn chrome, empty state, jump pill and
- * settings — with no per-component change.
- */
-:root {
-  color-scheme: light;
-
-  /* Base palette (the warm default shared by the web and mobile shells). */
-  --bg: #f6f2ec;
-  --panel: #fffaf5;
-  --muted: #766a5d;
-  --border: #dccdb9;
-  --text: #2f2923;
-  --accent: #d97706;
-
-  /* Derived tokens consumed by the shared components. */
-  --text-strong: var(--text);
-  /* Link/emphasis colour on a panel. Its own token rather than `--accent`
-     because the two have different jobs: `--accent` fills buttons and rings,
-     where a lighter amber reads well, while this carries normal-size TEXT and
-     has to clear 4.5:1 against `--panel`. Defaults to the amber-700 every
-     surface already used, so overriding it is opt-in (the documentation
-     assistant does, per theme — issue #480 review, finding 3). */
-  --link: #b45309;
-  /* The accent as a FILL BEHIND WHITE TEXT. Its own token for the same reason
-     `--link` is: `--accent` is tuned to read well as a large block of colour, and
-     white on it is about 3:1 — under AA for normal text. Every primary action
-     that paints white on accent uses this instead. Defaults to the same amber-700
-     `--link` does, which clears 4.5:1 against white in both themes, so a host that
-     overrides `--accent` per theme inherits a legible primary button for free
-     (issue #480 re-review). */
-  --accent-strong: #b45309;
-  --panel-hover: color-mix(in srgb, var(--text) 6%, var(--panel));
-  --accent-ring: color-mix(in srgb, var(--accent) 42%, white);
-  --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--panel));
-  --user-bubble: color-mix(in srgb, var(--accent) 16%, var(--panel));
-}
+/* The launcher primitive shared with an embedding host's cold launcher (issue
+   #480 re-review, finding 4). Imported first so `.widget-launcher` below can add
+   the mounted launcher's own affordances on top of it. */
+@import './launcher.css';
+@import './tokens.css';
 
 @keyframes collapsible-open {
   from {

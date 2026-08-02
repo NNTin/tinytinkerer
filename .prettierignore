@@ -25,6 +25,9 @@ blob-report
 # *.third-party-notices.generated.ts, packages/brand/brand-assets/assets/generated/.
 **/generated/
 **/*.generated.ts
+# Also the scoped embed preflight (scripts/generate-embed-preflight.mjs), which
+# `pnpm check:embed-preflight` compares byte-for-byte.
+**/*.generated.css
 
 # Generated OpenAPI document — emitted by scripts/generate-edge-openapi.ts and
 # verified byte-for-byte by `pnpm check:edge-openapi`; reformatting it would

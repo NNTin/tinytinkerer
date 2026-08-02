@@ -36,3 +36,10 @@ jobs:
 
       - name: Skill README sync check
         run: pnpm check:skill-readme
+
+      # The scoped copy of Tailwind's preflight an embedded surface applies.
+      # Regenerated from the pinned tailwindcss, so a dependency bump that
+      # changes preflight fails here instead of silently changing what every
+      # embedded TinyTinkerer surface resets (issue #480 re-review, finding 3).
+      - name: Embedded preflight freshness check
+        run: pnpm check:embed-preflight

@@ -1,4 +1,11 @@
 import { useState, type ReactNode } from 'react'
+import {
+  DEFAULT_CHAT_PRESENTATION,
+  readChatPresentation,
+  setChatPresentationMode,
+  writeChatPresentation,
+  type ChatMode
+} from '../chat-presentation'
 import { DockedChatSurface } from './docked-chat-surface'
 import { FloatingChatSurface, type ChatLoadingComponent } from './floating-chat-surface'
 import { FloatingLayout } from './floating-layout'
@@ -6,7 +13,7 @@ import { SidebarLayout } from './sidebar-layout'
 import type { DockedSizeVariant } from './docked-chat-surface'
 import type { SnapEdge } from './layout-geometry'
 
-export type ChatMode = 'floating' | 'sidebar'
+export type { ChatMode }
 
 export type ChatAppProps = {
   // Which layout to show.
@@ -26,7 +33,8 @@ export type ChatAppProps = {
   // layout (e.g. the canvas overlay, or a fixed pane in the root composition).
   morphable?: boolean
   // Base localStorage key; each layout persists its own geometry under a suffix
-  // (`:floating`, `:sidebar`) and the chosen mode under `:mode`.
+  // (`:floating`, `:sidebar`) and the presentation record — mode and dock edge —
+  // under `:presentation`, in the shared format from ../chat-presentation.
   storageKey: string
   LoadingComponent: ChatLoadingComponent
   // Docked (sidebar) body presentation.
@@ -61,25 +69,11 @@ export type ChatAppProps = {
   starterPromptCount?: number
 }
 
-const readStoredMode = (storageKey: string): ChatMode | null => {
-  try {
-    const stored = window.localStorage.getItem(`${storageKey}:mode`)
-    return stored === 'floating' || stored === 'sidebar' ? stored : null
-  } catch {
-    return null
-  }
-}
-
-const readStoredEdge = (storageKey: string): SnapEdge | null => {
-  try {
-    const stored = window.localStorage.getItem(`${storageKey}:edge`)
-    return stored === 'top' || stored === 'bottom' || stored === 'left' || stored === 'right'
-      ? stored
-      : null
-  } catch {
-    return null
-  }
-}
+// The persisted presentation, or nothing. Reading it through the shared parser
+// rather than pulling two ad-hoc string keys is what keeps this and an embedder
+// that owns presentation (the documentation assistant) on ONE storage format.
+const readStoredPresentation = (storageKey: string, morphable: boolean) =>
+  morphable ? readChatPresentation(storageKey) : null
 
 // The single shared chat App: one session (the surface hooks + stores live above
 // this in AppBrowserProvider) rendered through a pluggable layout shell. Because
@@ -116,45 +110,52 @@ export const ChatApp = ({
   // host-driven change — restoring a persisted `sidebar` on activation, say —
   // from being visible for one frame as the other layout.
   const controlled = onModeChange !== undefined && mode !== undefined
+  const [stored] = useState(() => readStoredPresentation(storageKey, morphable))
   const [uncontrolledMode, setUncontrolledMode] = useState<ChatMode>(
-    () => (morphable ? readStoredMode(storageKey) : null) ?? mode ?? 'floating'
+    () => stored?.mode ?? mode ?? 'floating'
   )
   const activeMode = controlled ? mode : uncontrolledMode
-  const setActiveMode = (next: ChatMode): void => {
-    if (!controlled) setUncontrolledMode(next)
-  }
   // Which edge the docked "web mode" fills. Set by the dock button (the configured
   // `side`) or by a snap-drag release near a viewport edge (#324), and persisted so a
   // reload restores the same split.
-  const [dockEdge, setDockEdge] = useState<SnapEdge>(
-    () => (morphable ? readStoredEdge(storageKey) : null) ?? side
-  )
+  const [dockEdge, setDockEdge] = useState<SnapEdge>(() => stored?.edge ?? side)
 
-  // Morph into the docked web mode. `edge` comes from a snap-drag release; the plain
-  // dock button omits it and docks to the configured `side`.
-  const dockTo = (edge?: SnapEdge) => {
-    const target: SnapEdge = edge ?? side
+  /**
+   * The one place a morph happens, for both directions.
+   *
+   * The TRANSITION is the shared one, so "docking clears minimized" is decided
+   * in a single place whoever drives the morph; what varies is only who keeps the
+   * result. A controlled host owns which LAYOUT is shown and persists its own
+   * record, so this writes nothing for it — except the edge, which is ChatApp's
+   * either way: a host owns floating-versus-docked, not which viewport edge a
+   * snap-drag released against.
+   */
+  const morphTo = (next: ChatMode, edge?: SnapEdge): void => {
+    const target: SnapEdge = edge ?? (next === 'sidebar' ? side : dockEdge)
     setDockEdge(target)
-    setActiveMode('sidebar')
-    try {
-      // The edge is ChatApp's either way — a controlled host owns which LAYOUT is
-      // shown, not which viewport edge a snap-drag released against.
-      window.localStorage.setItem(`${storageKey}:edge`, target)
-      if (!controlled) window.localStorage.setItem(`${storageKey}:mode`, 'sidebar')
-    } catch {
-      // Non-fatal: the mode/edge just won't persist across reloads.
+    if (!controlled) setUncontrolledMode(next)
+    const current = readChatPresentation(storageKey) ?? {
+      ...DEFAULT_CHAT_PRESENTATION,
+      mode: activeMode,
+      edge: dockEdge
     }
-    onModeChange?.('sidebar')
+    const persisted = setChatPresentationMode(current, next, target)
+    writeChatPresentation(
+      storageKey,
+      // A controlled host is the authority on mode; only the edge is ours to keep.
+      controlled ? { ...current, edge: target } : persisted
+    )
+    onModeChange?.(next)
+  }
+
+  // `edge` comes from a snap-drag release; the plain dock button omits it and
+  // docks to the configured `side`.
+  const dockTo = (edge?: SnapEdge) => {
+    morphTo('sidebar', edge)
   }
 
   const undock = () => {
-    setActiveMode('floating')
-    try {
-      if (!controlled) window.localStorage.setItem(`${storageKey}:mode`, 'floating')
-    } catch {
-      // Non-fatal.
-    }
-    onModeChange?.('floating')
+    morphTo('floating')
   }
 
   if (activeMode === 'sidebar') {

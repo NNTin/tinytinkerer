@@ -43,6 +43,7 @@ vi.mock('../src/chat-shell/docked-chat-surface.js', () => ({
 }))
 
 import { ChatApp } from '../src/chat-shell/chat-app.js'
+import { readChatPresentation } from '../src/chat-presentation.js'
 
 const Loading = () => <div data-loading="true" />
 
@@ -102,7 +103,9 @@ describe('ChatApp', () => {
     expect(window.localStorage.getItem('k:floating')).not.toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Dock to sidebar' }))
-    expect(window.localStorage.getItem('k:mode')).toBe('sidebar')
+    // ONE record, in the shared presentation format an embedder reads and writes
+    // through the same helpers (issue #480 re-review, finding 2).
+    expect(readChatPresentation('k')).toMatchObject({ mode: 'sidebar' })
 
     // A fresh mount restores the persisted mode.
     unmount()
@@ -126,7 +129,7 @@ describe('ChatApp', () => {
     expect(panel).not.toBeNull()
     expect(panel).toHaveAttribute('data-edge', 'right')
     expect(screen.getByTestId('docked-body')).toBeInTheDocument()
-    expect(window.localStorage.getItem('k:edge')).toBe('right')
+    expect(readChatPresentation('k')).toMatchObject({ mode: 'sidebar', edge: 'right' })
 
     // The docked web mode is resizable (issue #324) and can morph back to floating.
     expect(screen.getByRole('separator', { name: 'Resize sidebar' })).toBeInTheDocument()

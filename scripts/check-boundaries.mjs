@@ -69,9 +69,16 @@ const importPattern =
 // `assistant-markdown` is the second: an app that composes assistant Markdown
 // has to be able to parse it with the same parser the transcript renders with,
 // to verify what it composed actually became the nodes it intended.
+// `chat-presentation` is the third (issue #480 re-review, finding 2): the
+// versioned record, transitions and store deciding whether a chat surface shows
+// a panel. An embedder must answer that BEFORE the runtime chunk exists — the
+// documentation site decides it in `@theme/Root` on every route — so the rules
+// have to be reachable without the barrel. It imports React and nothing else,
+// which apps/docs/src/docs-runtime/__tests__/static-safety.test.ts certifies.
 const ALLOWED_WORKSPACE_FACADES = new Set([
   '@tinytinkerer/app-browser/documentation-corpus',
-  '@tinytinkerer/app-browser/assistant-markdown'
+  '@tinytinkerer/app-browser/assistant-markdown',
+  '@tinytinkerer/app-browser/chat-presentation'
 ])
 
 const workspacePackages = await loadWorkspacePackages()

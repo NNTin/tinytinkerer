@@ -17,6 +17,28 @@ import { describe, expect, it } from 'vitest'
 const readSource = (relativePath: string): string =>
   readFileSync(fileURLToPath(new URL(`../${relativePath}`, import.meta.url)), 'utf8')
 
+const readPackageSource = (relativePath: string): string =>
+  readFileSync(
+    fileURLToPath(new URL(`../../../../../packages/app/${relativePath}`, import.meta.url)),
+    'utf8'
+  )
+
+/**
+ * `@tinytinkerer/app-browser` subpaths a light module may import FOR REAL.
+ *
+ * The package barrel pulls the whole product runtime, so importing it from the
+ * `@theme/Root` path would ship app-browser in every documentation page. A
+ * subpath need not: these are entry points the product publishes precisely so an
+ * embedder can share the product's rules without the product's weight (issue
+ * #480 re-review, finding 2). Each one is CERTIFIED by the test below, which
+ * reads its source and checks what it actually imports — an entry that starts
+ * pulling the runtime fails there rather than silently costing every reader a
+ * megabyte.
+ */
+const LIGHT_APP_BROWSER_SUBPATHS: Record<string, string> = {
+  'chat-presentation': 'app-browser/src/chat-presentation.ts'
+}
+
 /**
  * Drops `import type` / `export type` statements before the checks below.
  *
@@ -52,9 +74,12 @@ const LIGHT_FILES = [
 describe('assistant bundle boundary', () => {
   it.each(LIGHT_FILES)('%s never statically imports the product runtime', (path) => {
     const source = stripTypeOnlySpecifiers(readSource(path))
-    expect(source).not.toMatch(/from ['"]@tinytinkerer\/app-browser['"]/)
-    expect(source).not.toMatch(/from ['"]@tinytinkerer\/app-browser\//)
-    // Nor anything that does, transitively.
+    // The barrel is always out; a subpath only if it is on the certified list.
+    const imported = [...source.matchAll(/from ['"]@tinytinkerer\/app-browser(?:\/([^'"]+))?['"]/g)]
+    for (const [, subpath] of imported) {
+      expect(Object.keys(LIGHT_APP_BROWSER_SUBPATHS)).toContain(subpath)
+    }
+    // Nor anything that pulls the runtime, transitively.
     expect(source).not.toMatch(/from ['"][./]*(?:docs-runtime\/)?assistant-runtime-client['"]/)
     expect(source).not.toMatch(/from ['"][./]*(?:docs-runtime\/)?assistant-app['"]/)
     expect(source).not.toMatch(/from ['"][./]*(?:docs-runtime\/)?create-docs-app['"]/)
@@ -63,6 +88,23 @@ describe('assistant bundle boundary', () => {
     // it belongs to the runtime chunk and nothing light may name it.
     expect(source).not.toMatch(/from ['"][./]*(?:docs-runtime\/)?assistant-widget['"]/)
   })
+
+  it.each(Object.entries(LIGHT_APP_BROWSER_SUBPATHS))(
+    'the %s subpath is light enough for a light module to import',
+    (_subpath, source) => {
+      // The certification behind the allowance above. React is the one thing a
+      // shared contract may need (a store's `useSyncExternalStore`); anything
+      // else — a store, a component, another package — would drag the runtime in
+      // behind it and undo the whole boundary.
+      const imports = [
+        ...readPackageSource(source).matchAll(/^\s*import\s[\s\S]*?from\s+['"]([^'"]+)['"]/gm)
+      ]
+      for (const [statement, specifier] of imports) {
+        if (/^\s*import\s+type\s/.test(statement ?? '')) continue
+        expect(specifier).toBe('react')
+      }
+    }
+  )
 
   it('the host reaches the runtime only through React.lazy, per attempt', () => {
     const source = readSource('AssistantRuntimeHost.tsx')

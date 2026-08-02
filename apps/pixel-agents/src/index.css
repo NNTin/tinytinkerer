@@ -2,16 +2,15 @@
 @source "../../../packages";
 
 :root {
-  --widget-bg: #f7f7f4;
-  --widget-panel: #fffdf8;
-  --widget-border: #d7d4ca;
-  --widget-text: #25231d;
-  --widget-muted: #6c675a;
-  --bg: var(--widget-bg);
-  --panel: var(--widget-panel);
-  --border: var(--widget-border);
-  --text: var(--widget-text);
-  --muted: var(--widget-muted);
+  /* The neutral palette this shell uses instead of app-browser's warm default.
+     BASES only: the `--widget-*` aliases and every derived token follow from
+     these, in @tinytinkerer/app-browser/tokens.css (issue #480 re-review,
+     finding 5). */
+  --bg: #f7f7f4;
+  --panel: #fffdf8;
+  --border: #d7d4ca;
+  --text: #25231d;
+  --muted: #6c675a;
   font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
 }
 

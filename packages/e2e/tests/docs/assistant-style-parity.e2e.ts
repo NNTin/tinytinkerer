@@ -16,8 +16,13 @@ import { installChatMock } from '../../fixtures/mock-litellm'
  * with selectors of its own, those selectors outranked the utility classes the
  * real components render with: the same suggestion button was a bordered control
  * on `/widget` and bulleted plain text on `/docs/`. The baseline now ships from
- * `@tinytinkerer/app-browser/embed.css` at the specificity real preflight has,
- * and this is what holds it there.
+ * `@tinytinkerer/app-browser/embed.css` — generated from the pinned Tailwind
+ * preflight, at the specificity real preflight has — and this is what holds it
+ * there at runtime, where the host's postcss pipeline has had its say.
+ *
+ * The launcher hand-off below covers the other half of the same problem: two
+ * renderers of one control, which must be indistinguishable across the moment
+ * one replaces the other.
  *
  * COLOURS are deliberately not compared. The documentation legitimately themes
  * the surface — it has a dark mode, and `/widget` does not — and that is the one
@@ -112,5 +117,50 @@ test.describe('assistant style parity between /docs/ and /widget/ (#480)', () =>
     expect((await computed(suggestionList(page), ['list-style-type']))['list-style-type']).toBe(
       'none'
     )
+  })
+
+  test('the cold launcher and the mounted one are the same control', async ({ page }) => {
+    // Two renderers, one primitive (`tt-embed-launcher`). They hand off to each
+    // other mid-interaction: the reader presses the cold button, the runtime
+    // boots, and `FloatingLayout`'s launcher takes its place. When the geometry
+    // was spelled twice — once in a stylesheet, once in a Tailwind class string —
+    // nothing compared them, and the claim that they could not drift was simply
+    // untrue. This compares them.
+    await installChatMock(page)
+    await page.goto(`${DOCS_ORIGIN}/docs/architecture/`)
+    await dismissTelemetryDialog(page)
+
+    const CHROME = [
+      'width',
+      'height',
+      'border-top-width',
+      'border-top-style',
+      'border-radius',
+      'background-color',
+      'box-shadow',
+      'display',
+      'align-items',
+      'justify-content'
+    ] as const
+
+    const cold = page.locator('.docs-assistant-launcher')
+    await expect(cold).toBeVisible()
+    const coldChrome = await computed(cold, CHROME)
+    const coldBox = await cold.boundingBox()
+
+    // Activate, wait for the real widget, then collapse it back to its launcher.
+    await cold.click()
+    await expect(page.locator('.widget-floating-shell')).toBeVisible({ timeout: 30_000 })
+    await page.getByRole('button', { name: 'Minimize widget' }).click()
+
+    const mounted = page.locator('.widget-launcher')
+    await expect(mounted).toBeVisible()
+
+    expect(await computed(mounted, CHROME)).toEqual(coldChrome)
+    // Size, not position: the mounted launcher lives inside a draggable shell
+    // and the cold one is pinned to the corner, which is the host's business.
+    const mountedBox = await mounted.boundingBox()
+    expect(mountedBox?.width).toBe(coldBox?.width)
+    expect(mountedBox?.height).toBe(coldBox?.height)
   })
 })

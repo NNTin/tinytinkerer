@@ -1,15 +1,7 @@
-import {
-  Component,
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  type ErrorInfo,
-  type ReactNode
-} from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, type ReactNode } from 'react'
 import BrowserOnly from '@docusaurus/BrowserOnly'
 import { AssistantLauncher } from './AssistantLauncher'
+import { LatchedErrorBoundary } from './LatchedErrorBoundary'
 import {
   publishDocsAssistantRuntimeStatus,
   requestDocsAssistantRuntime,
@@ -48,32 +40,6 @@ import { useDocsHostOverlayOpen } from './host-overlays'
 // reached through React.lazy behind <BrowserOnly> AND behind an explicit
 // activation, so the chunk is fetched when a reader first asks for the
 // assistant, not when they open a documentation page.
-
-type BoundaryProps = { children: ReactNode; onError: () => void }
-type BoundaryState = { failed: boolean }
-
-// Scoped to the assistant subtree, and to ONE attempt: `key`ed on the attempt
-// number by its parent, so a retry mounts a fresh boundary rather than one that
-// has already latched `failed`. Docusaurus has its own error handling for the
-// page; this exists so a broken assistant chunk never reaches it.
-class AssistantErrorBoundary extends Component<BoundaryProps, BoundaryState> {
-  state: BoundaryState = { failed: false }
-
-  static getDerivedStateFromError(): BoundaryState {
-    return { failed: true }
-  }
-
-  componentDidCatch(error: Error, info: ErrorInfo): void {
-    // Surfaced in the console, and as `error` in the activation store — which is
-    // what the launcher reads to offer a retry.
-    console.error('The documentation assistant failed to start.', error, info.componentStack)
-    this.props.onError()
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? null : this.props.children
-  }
-}
 
 export const DocsAssistantRuntimeHost = (): ReactNode => {
   const { status, attempt } = useDocsAssistantRuntimeActivation()
@@ -142,10 +108,23 @@ export const DocsAssistantRuntimeHost = (): ReactNode => {
           session storage touched. `error` also renders nothing — activating
           again moves it back to `starting` with a new attempt, which remounts
           the subtree below and re-runs the import. */}
+      {/* Scoped to the assistant subtree, and to ONE attempt: `key`ed on the
+          attempt number so a retry mounts a fresh boundary rather than one that
+          has already latched. Docusaurus has its own error handling for the
+          page; this exists so a broken assistant chunk never reaches it. */}
       {runtimeRequested ? (
-        <AssistantErrorBoundary
+        <LatchedErrorBoundary
           key={attempt}
-          onError={() => publishDocsAssistantRuntimeStatus('error')}
+          onError={(error, info) => {
+            // Surfaced in the console, and as `error` in the activation store —
+            // which is what the launcher reads to offer a retry.
+            console.error(
+              'The documentation assistant failed to start.',
+              error,
+              info.componentStack
+            )
+            publishDocsAssistantRuntimeStatus('error')
+          }}
         >
           <BrowserOnly>
             {() => (
@@ -154,7 +133,7 @@ export const DocsAssistantRuntimeHost = (): ReactNode => {
               </Suspense>
             )}
           </BrowserOnly>
-        </AssistantErrorBoundary>
+        </LatchedErrorBoundary>
       ) : null}
     </div>
   )

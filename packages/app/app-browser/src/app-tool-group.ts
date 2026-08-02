@@ -14,121 +14,116 @@ import type { Tool } from '@tinytinkerer/app-core'
 export type AppTool = Tool<unknown, unknown>
 
 /**
- * Why the factory is being called.
+ * A per-run implementation for ONE tool already in the group's catalogue.
  *
- * `'catalogue'` builds the list the tool picker shows, once per group; `'run'`
- * builds the instances one run registers. A factory that captures nothing can
- * ignore it — but one that captures "what was true when the reader hit send"
- * must NOT capture it for the catalogue, which is derived whenever the picker
- * first renders and is never executed.
+ * Deliberately carries nothing but the body. A run may need context the
+ * catalogue cannot have — the documentation assistant pins "which page was the
+ * reader on when they hit send?" — but it must never restate the tool's
+ * identity, description, schemas or summarizer, because those are what the
+ * reader saw in the picker and what the model is handed.
  */
-export type AppToolPurpose = 'catalogue' | 'run'
+export type AppToolRunImplementation = Pick<AppTool, 'execute'>
 
 /**
- * Builds the group's tools. Called once to derive the catalogue the picker lists,
- * and once per RUN to produce the instances the runtime registers — from the SAME
- * definition site, which is the whole point (issue #480 re-review, finding 5).
+ * Per-run implementations, keyed by the id of the catalogue tool each replaces.
+ *
+ * Partial by design: a group binds only the tools that actually capture run
+ * context, and every other tool is served from the catalogue unchanged.
  */
-export type AppToolFactory = (purpose: AppToolPurpose) => AppTool[]
+export type AppToolRunBindings = Readonly<Record<string, AppToolRunImplementation>>
 
 export type AppToolGroup = {
   id: string
   label: string
   /**
-   * The group's tools.
-   *
-   * An ARRAY for a stateless group: the same instances serve the picker and every
-   * run, which is what the canvas, Mermaid and IDE shells pass.
-   *
-   * A FACTORY for a group whose tools must capture state as of the moment a run
-   * starts. `createRuntime` runs once per run, so the factory is called there too;
-   * the documentation assistant uses it to pin "which page is this?" to the run,
-   * since `read_current_doc` executes long after the prompt was submitted and a
-   * reader who navigates meanwhile meant the page they asked about.
-   *
-   * A factory is deliberately ONE field rather than a catalogue array plus a
-   * separate per-run builder. Two lists have to be kept in lockstep by hand, and
-   * nothing notices when an id, a schema or a description drifts between what the
-   * reader selects in the picker and what the model is handed. With one definition
-   * site that drift is not expressible; {@link createAppToolRunInstances}
-   * additionally fails hard if a factory's id set is not stable, so a factory that
-   * closes over something it should not is loud rather than silent.
+   * The group's tools, and the ONLY place their metadata is written (issue #480
+   * re-review, finding 1). This array is what the picker lists, what per-tool
+   * disablement is keyed against, where activity summarizers are resolved from,
+   * and — after {@link bindRun} has swapped in any run-scoped bodies — what the
+   * runtime registers.
    */
-  tools: AppTool[] | AppToolFactory
+  tools: AppTool[]
+  /**
+   * Optional per-run rebinding, for a group whose tools must act on state as of
+   * the moment a run STARTS rather than the moment they execute.
+   *
+   * `createRuntime` calls this once per run and applies the result over the
+   * catalogue by tool id. It can supply a different body; it cannot add a tool,
+   * remove one, or change any tool's metadata, because it never touches the
+   * catalogue array — which is what makes the drift this API used to allow
+   * structurally impossible rather than merely validated.
+   *
+   * The documentation assistant is the motivating case: `read_current_doc`
+   * executes long after the prompt was submitted, and a reader who navigates
+   * meanwhile meant the page they asked about, so its run body closes over the
+   * route captured here.
+   */
+  bindRun?: () => AppToolRunBindings
 }
 
-// The catalogue derived from a factory, memoised per group. The picker reads it
-// inside `useMemo` keyed on the group's identity, so it has to be the same array
-// every render; it is also the reference each run's ids are validated against.
-const catalogues = new WeakMap<AppToolGroup, AppTool[]>()
+// Groups whose ids have already been checked. The check is cheap, but the
+// catalogue is read on every tool-picker render, and a group object outlives the
+// session.
+const validated = new WeakSet<AppToolGroup>()
 
-const uniqueIds = (tools: readonly AppTool[], groupId: string, which: string): Set<string> => {
+const assertUniqueIds = (group: AppToolGroup): void => {
   const ids = new Set<string>()
-  for (const tool of tools) {
+  for (const tool of group.tools) {
     if (ids.has(tool.id)) {
       throw new Error(
-        `App tool group "${groupId}" ${which} contains more than one tool with id "${tool.id}". ` +
+        `App tool group "${group.id}" contains more than one tool with id "${tool.id}". ` +
           'Tool ids key the picker, per-tool disablement and runtime registration, so they must be unique.'
       )
     }
     ids.add(tool.id)
   }
-  return ids
 }
 
 /**
- * The group's stable catalogue: what the tool picker lists, what per-tool
- * disablement is keyed against, and where activity summarizers are resolved from.
- * Stable for the lifetime of the group object.
+ * The group's catalogue: what the tool picker lists, what per-tool disablement is
+ * keyed against, and where activity summarizers are resolved from.
+ *
+ * Returns the group's own array, so its identity is stable for the lifetime of
+ * the group object — the picker reads it inside a `useMemo` keyed on the group.
  */
 export const appToolCatalogue = (group: AppToolGroup): AppTool[] => {
-  if (Array.isArray(group.tools)) return group.tools
-  const cached = catalogues.get(group)
-  if (cached) return cached
-  const built = group.tools('catalogue')
-  uniqueIds(built, group.id, 'catalogue')
-  catalogues.set(group, built)
-  return built
+  if (!validated.has(group)) {
+    assertUniqueIds(group)
+    validated.add(group)
+  }
+  return group.tools
 }
 
 /**
- * The instances to register for ONE run. Identical to the catalogue for a
- * stateless group; a fresh call to the factory otherwise.
+ * The instances to register for ONE run.
  *
- * Throws rather than degrading when a factory's ids differ from the catalogue's.
- * The runtime filters these instances through a selection the reader made against
- * the catalogue, so a drifted id set means their choice is being applied to tools
- * they never saw — a programming error whose quiet failure mode (a tool silently
- * missing, or silently present) is exactly what this API exists to prevent.
+ * The catalogue itself for a group with no run bindings — the same instances the
+ * picker lists, which is what every stateless group wants. Otherwise the
+ * catalogue with each bound tool's `execute` replaced, and nothing else changed.
+ *
+ * Throws when a binding names a tool the catalogue does not contain. A binding
+ * that misses its target is silent otherwise: the reader's selection would be
+ * applied to a catalogue tool still carrying the context-free body, which is
+ * exactly the class of failure this seam exists to prevent.
  */
 export const createAppToolRunInstances = (group: AppToolGroup): AppTool[] => {
-  if (Array.isArray(group.tools)) return group.tools
-
   const catalogue = appToolCatalogue(group)
-  const instances = group.tools('run')
-  const expected = uniqueIds(catalogue, group.id, 'catalogue')
-  const actual = uniqueIds(instances, group.id, 'per-run instances')
+  if (!group.bindRun) return catalogue
 
-  // `Array.from`, not `[...set]`. A Babel build with `@babel/preset-env`'s
-  // `loose: true` — Docusaurus's default client preset, which is what compiles
-  // the documentation assistant — downlevels spread to `[].concat(x)`, which
-  // wraps a Set as one opaque element instead of spreading its values. That made
-  // this guard report every run as drifted and threw on every prompt. Same
-  // hazard, same fix, as `deriveStarterPrompts` in conversation-empty-state.tsx.
-  const missing = Array.from(expected)
-    .filter((id) => !actual.has(id))
+  const bindings = group.bindRun()
+  const ids = new Set(catalogue.map((tool) => tool.id))
+  const unknown = Object.keys(bindings)
+    .filter((id) => !ids.has(id))
     .sort()
-  const unexpected = Array.from(actual)
-    .filter((id) => !expected.has(id))
-    .sort()
-  if (missing.length > 0 || unexpected.length > 0) {
+  if (unknown.length > 0) {
     throw new Error(
-      `App tool group "${group.id}" produced a different tool set for this run than for its catalogue` +
-        (missing.length > 0 ? `; missing: ${missing.join(', ')}` : '') +
-        (unexpected.length > 0 ? `; unexpected: ${unexpected.join(', ')}` : '') +
-        '. The picker, per-tool disablement and the runtime all key on tool ids, so the set must not change between runs.'
+      `App tool group "${group.id}" bound per-run implementations for tools it does not declare: ` +
+        `${unknown.join(', ')}. A run binding may only replace the body of a tool already in the group's catalogue.`
     )
   }
 
-  return instances
+  return catalogue.map((tool) => {
+    const bound = bindings[tool.id]
+    return bound ? { ...tool, execute: bound.execute } : tool
+  })
 }

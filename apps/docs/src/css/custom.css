@@ -6,10 +6,11 @@
 @import './tailwind.css';
 
 /* The baseline the embedded product surfaces need on a site that ships no
-   Tailwind preflight — product-owned, versioned with the components it serves.
-   Applied through the `tt-app-embed` class the assistant root carries; see the
-   file itself for the cascade contract that keeps it below the utilities and
-   above Infima (issue #480 re-review, finding 1). */
+   Tailwind preflight, plus the launcher primitive and the derived token graph —
+   all product-owned, versioned with the components they serve. Applied through
+   the `tt-app-embed` class the assistant root carries; the bulk of it is
+   GENERATED from the pinned Tailwind preflight (issue #480 re-review, findings 1,
+   3, 4 and 5 — see the file and scripts/generate-embed-preflight.mjs). */
 @import '@tinytinkerer/app-browser/embed.css';
 
 /**
@@ -1281,10 +1282,12 @@ div[class^='codeBlockContainer'] {
 }
 
 /* --- The light launcher ---
-   Chrome comes from `.tt-embed-launcher` in app-browser's embed stylesheet — the
-   same size, radius and elevation the mounted widget's launcher has, because the
-   two hand off to each other and a visible jump between them would read as two
-   different controls. Only POSITION is the documentation's business. */
+   Chrome comes from `.tt-embed-launcher` in app-browser's launcher.css, which is
+   the SAME class `FloatingLayout`'s mounted launcher renders with (issue #480
+   re-review, finding 4). The two hand off to each other mid-interaction — press
+   this, the runtime boots, the mounted one replaces it — so any difference would
+   read as two different controls, and one of them jumping. Only POSITION and the
+   loading/error affordances below are the documentation's business. */
 .docs-assistant-launcher {
   position: fixed;
   right: 1.5rem;
@@ -1396,20 +1399,20 @@ div[class^='codeBlockContainer'] {
 }
 
 /* --- Theme tokens ---
-   app-browser ships no `--widget-*` values: every deployable app defines them in
-   its own entry stylesheet (apps/shell, apps/canvas, apps/mermaid,
-   apps/pixel-agents), and this site never had to because the live labs render the
-   DOCKED body, which uses none of them. The floating body uses seven, so without
-   these its borders fall back to `currentColor` and its panels to transparent.
+   The documentation's palette for the assistant, and nothing else.
+
+   The token GRAPH — the derived `--text-strong`/`--panel-hover`/`--accent-*`
+   formulas and the `--widget-*` aliases — belongs to
+   @tinytinkerer/app-browser/tokens.css, which declares it for `:where(.tt-app-embed)`
+   as well as `:root` precisely so an embedded scope's overrides resolve locally
+   (issue #480 re-review, finding 5). The assistant root carries that class, so
+   declaring the six bases below is the whole job. Restating the formulas here was
+   how the two copies came to disagree about `--accent-ring`.
 
    Scoped to the assistant root so nothing leaks into the documentation, and so
    the live labs keep exactly the presentation they shipped with — retheming those
    is a change to the live-lab precedent and belongs to its own issue, not this
-   one.
-
-   This is the one thing the documentation legitimately decides about the product
-   surface: which semantic values its tokens resolve to per theme. It sets no
-   geometry and no chrome. */
+   one. */
 .docs-assistant-root {
   --bg: #f6f2ec;
   --panel: #fffaf5;
@@ -1417,26 +1420,6 @@ div[class^='codeBlockContainer'] {
   --border: #dccdb9;
   --text: #2f2923;
   --accent: #b45309;
-
-  --widget-bg: #f6f2ec;
-  --widget-panel: #fffaf5;
-  --widget-border: #dccdb9;
-  --widget-text: #2f2923;
-  --widget-muted: #766a5d;
-
-  /* The DERIVED tokens too, not just the bases. app-browser declares these on
-     `:root` in terms of `--text`/`--panel`/`--accent`, and a `var()` in a custom
-     property resolves where it is DECLARED — so overriding only the bases here
-     left `--text-strong` (and the color-mix trio) computing from the light root
-     values. That is why the consent dialog's heading rendered near-black on a
-     near-black panel: about 1.04:1. Redeclared with the same expressions so they
-     resolve against this block's values instead. */
-  --text-strong: var(--text);
-  --link: var(--accent);
-  --panel-hover: color-mix(in srgb, var(--text) 6%, var(--panel));
-  --accent-ring: color-mix(in srgb, var(--accent) 42%, var(--panel));
-  --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--panel));
-  --user-bubble: color-mix(in srgb, var(--accent) 16%, var(--panel));
 }
 
 /* Dark mode, keyed on Docusaurus' own attribute so the widget follows the site's
@@ -1450,20 +1433,10 @@ html[data-theme='dark'] .docs-assistant-root {
   --text: #f6ead7;
   --accent: #f59e0b;
 
-  --widget-bg: #1b140d;
-  --widget-panel: #251c13;
-  --widget-border: #3a2f22;
-  --widget-text: #f6ead7;
-  --widget-muted: #cbbfae;
-
-  /* Derived from THIS block's bases — see the light block above for why each of
-     these has to be repeated rather than inherited. */
-  --text-strong: var(--text);
+  /* The one derived value the documentation overrides rather than inherits.
+     `--link` carries normal-size TEXT, and its amber-700 default does not clear
+     4.5:1 on a near-black panel; this site's dark accent does. */
   --link: var(--accent);
-  --panel-hover: color-mix(in srgb, var(--text) 6%, var(--panel));
-  --accent-ring: color-mix(in srgb, var(--accent) 42%, var(--panel));
-  --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--panel));
-  --user-bubble: color-mix(in srgb, var(--accent) 16%, var(--panel));
 }
 
 /* The floating shell's own frame and the settings/consent dialog surfaces carry

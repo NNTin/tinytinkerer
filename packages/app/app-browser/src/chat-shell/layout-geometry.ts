@@ -1,3 +1,5 @@
+import type { ChatDockEdge } from '../chat-presentation'
+
 // Shared geometry + persistence helpers for the chat-shell layouts. The floating
 // layout (free x/y/width/height window) and the sidebar layout (single-axis docked
 // panel) both clamp to the viewport and persist under a localStorage key. This is
@@ -168,7 +170,11 @@ export const clampSize = (
 // math live here so the drag surface (floating-layout) and the docked layout stay
 // thin and the behavior is unit-testable without a DOM.
 
-export type SnapEdge = 'top' | 'bottom' | 'left' | 'right'
+// One union, declared with the rest of the presentation contract (issue #480
+// re-review, finding 2). Aliased rather than re-declared so the geometry helpers
+// keep their local name without there being two spellings of the same four
+// edges. `import type` — nothing from that module is pulled in at runtime.
+export type SnapEdge = ChatDockEdge
 
 export type Viewport = { width: number; height: number }
 

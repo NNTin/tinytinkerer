@@ -87,7 +87,12 @@ const WidgetLauncher = ({
   onDragPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void
   buttonRef: RefObject<HTMLButtonElement | null>
 }) => (
-  <div className="flex h-full items-center justify-center p-2">
+  // No padding: the launcher FILLS the minimized shell, which is
+  // `WIDGET_MINIMIZED_SIZE` — the same 4rem the shared primitive sizes it to. It
+  // used to sit inside `p-2`, which flex-shrank the 4rem button to 48px, so the
+  // control a reader pressed on /widget was visibly smaller than the identical
+  // one a host draws before the runtime boots. The parity e2e measures both.
+  <div className="flex h-full items-center justify-center">
     <button
       ref={buttonRef}
       type="button"
@@ -95,9 +100,13 @@ const WidgetLauncher = ({
       onPointerDown={onDragPointerDown}
       aria-label="Restore widget"
       title="Drag to move, click to restore"
-      className="widget-launcher inline-flex h-16 w-16 items-center justify-center rounded-[1.35rem] border border-[var(--widget-border)] bg-[var(--widget-panel)] shadow-[0_18px_48px_rgba(36,33,24,0.16)]"
+      // `tt-embed-launcher` is the product's launcher chrome, shared with the
+      // cold launcher a host draws before this component exists (issue #480
+      // re-review, finding 4 — see launcher.css). `widget-launcher` adds only
+      // what is true of the MOUNTED one: it doubles as a drag handle.
+      className="widget-launcher tt-embed-launcher"
     >
-      <img src={TINYTINKERER_BRAND_ASSET_URLS.icon192} alt="" className="h-11 w-11 rounded-2xl" />
+      <img src={TINYTINKERER_BRAND_ASSET_URLS.icon192} alt="" className="tt-embed-launcher__icon" />
       <span className="sr-only">Restore widget</span>
     </button>
   </div>

@@ -103,9 +103,10 @@ describe('the widget is the real ChatApp, configured for a documentation site', 
   })
 
   it('is controlled on BOTH axes by the docs presentation store', async () => {
-    // One authority. `ChatApp` persists `:mode` and `FloatingLayout` persists
-    // `minimized` inside its geometry blob; letting either own half the answer
-    // is what makes "is the assistant showing?" depend on which store you ask.
+    // One authority. Uncontrolled, `ChatApp` persists its own presentation
+    // record and `FloatingLayout` persists `minimized` inside its geometry blob;
+    // letting either own half the answer is what makes "is the assistant
+    // showing?" depend on which store you ask.
     const { setDocsAssistantMode } = await renderWidget()
 
     expect(captured.props?.mode).toBe('floating')

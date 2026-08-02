@@ -16,10 +16,11 @@
  * It also renders during static rendering, so the launcher is in the built HTML of
  * every documentation route rather than appearing after hydration.
  *
- * Its CHROME is `tt-embed-launcher` from `@tinytinkerer/app-browser/embed.css` —
- * a CSS-only entry, so borrowing the product's own size, radius and elevation
- * costs no JavaScript and cannot drift from the launcher it hands off to (issue
- * #480 re-review, finding 1). Only position is the documentation's own.
+ * Its CHROME is `tt-embed-launcher` from `@tinytinkerer/app-browser/launcher.css`
+ * — a CSS-only entry, so borrowing the product's own size, radius and elevation
+ * costs no JavaScript. It is the SAME class `FloatingLayout`'s mounted launcher
+ * renders with, which is what makes the hand-off between the two invisible
+ * (issue #480 re-review, finding 4). Only position is the documentation's own.
  */
 import { useEffect, useRef, type ReactNode } from 'react'
 import useBaseUrl from '@docusaurus/useBaseUrl'

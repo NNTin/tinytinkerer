@@ -5,7 +5,11 @@
   "type": "module",
   "sideEffects": [
     "./src/styles.css",
-    "./src/embed.css"
+    "./src/embed.css",
+    "./src/launcher.css",
+    "./src/tokens.css",
+    "./src/token-graph.css",
+    "./src/embed-preflight.generated.css"
   ],
   "exports": {
     ".": {
@@ -20,8 +24,14 @@
       "types": "./src/assistant-markdown.ts",
       "default": "./src/assistant-markdown.ts"
     },
+    "./chat-presentation": {
+      "types": "./src/chat-presentation.ts",
+      "default": "./src/chat-presentation.ts"
+    },
     "./styles.css": "./src/styles.css",
-    "./embed.css": "./src/embed.css"
+    "./embed.css": "./src/embed.css",
+    "./launcher.css": "./src/launcher.css",
+    "./tokens.css": "./src/tokens.css"
   },
   "main": "src/index.ts",
   "types": "src/index.ts",

@@ -2,9 +2,22 @@
  * The single authority on how the assistant is presented — floating or docked,
  * panel or launcher (issue #480) — and the only thing that decides whether a
  * returning reader downloads the runtime during page load.
+ *
+ * The RULES it applies are the product's, and are pinned in app-browser's
+ * chat-presentation suite (issue #480 re-review, finding 2). What this covers is
+ * what the documentation adds on top: the key it stores under, the ephemeral
+ * focus intent, and — the part that actually costs a reader something — that
+ * every unreadable record still resolves to "a launcher, and no runtime".
  */
+import {
+  CHAT_PRESENTATION_STORAGE_VERSION,
+  chatPresentationStorageKey,
+  parseChatPresentation
+} from '@tinytinkerer/app-browser/chat-presentation'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOCS_ASSISTANT_PRESENTATION_STORAGE_KEY } from '../assistant-constants'
+
+const RECORD_KEY = chatPresentationStorageKey(DOCS_ASSISTANT_PRESENTATION_STORAGE_KEY)
 
 const load = async () => {
   const module = await import('../assistant-presentation')
@@ -21,7 +34,7 @@ describe('a new visitor', () => {
   it('starts minimized, which is what keeps the runtime undownloaded', async () => {
     const { readDocsAssistantPresentation } = await load()
 
-    expect(readDocsAssistantPresentation()).toEqual({
+    expect(readDocsAssistantPresentation()).toMatchObject({
       mode: 'floating',
       minimized: true,
       focusPanelOnMount: false
@@ -64,41 +77,37 @@ describe('persistence', () => {
     expect(isDocsAssistantOpen(restored)).toBe(true)
   })
 
-  it('writes a versioned value', async () => {
+  it('stores the product record under the assistant"s own key', async () => {
     const { openDocsAssistant } = await load()
     openDocsAssistant()
 
-    expect(
-      JSON.parse(window.localStorage.getItem(DOCS_ASSISTANT_PRESENTATION_STORAGE_KEY) ?? 'null')
-    ).toEqual({ version: 2, mode: 'floating', minimized: false })
+    // Its own key, so a conversation reset cannot collapse the panel — and the
+    // product's format under it, so there is one parser rather than two.
+    expect(parseChatPresentation(window.localStorage.getItem(RECORD_KEY))).toMatchObject({
+      mode: 'floating',
+      minimized: false
+    })
   })
 
   it.each([
     ['corrupt JSON', 'not json at all'],
-    ['a future version', JSON.stringify({ version: 99, mode: 'floating', minimized: false })],
     [
-      'the version-1 record, which is not migrated',
-      JSON.stringify({ version: 1, presentation: 'open' })
+      'a future version',
+      JSON.stringify({ version: CHAT_PRESENTATION_STORAGE_VERSION + 1, minimized: false })
+    ],
+    [
+      'a version-1 or -2 record, neither of which is migrated',
+      JSON.stringify({ version: 2, mode: 'sidebar', minimized: false })
     ],
     ['a non-object', JSON.stringify(42)]
   ])('falls back to a minimized floating widget for %s', async (_label, stored) => {
-    window.localStorage.setItem(DOCS_ASSISTANT_PRESENTATION_STORAGE_KEY, stored)
+    window.localStorage.setItem(RECORD_KEY, stored)
     const { readDocsAssistantPresentation, isDocsAssistantOpen } = await load()
 
     // The conservative direction in every case: a launcher, and no runtime.
     const value = readDocsAssistantPresentation()
     expect(value).toMatchObject({ mode: 'floating', minimized: true })
     expect(isDocsAssistantOpen(value)).toBe(false)
-  })
-
-  it('reads an unknown mode as floating', async () => {
-    window.localStorage.setItem(
-      DOCS_ASSISTANT_PRESENTATION_STORAGE_KEY,
-      JSON.stringify({ version: 2, mode: 'docked', minimized: false })
-    )
-    const { readDocsAssistantPresentation } = await load()
-
-    expect(readDocsAssistantPresentation().mode).toBe('floating')
   })
 
   it('survives storage being unavailable', async () => {
@@ -139,7 +148,7 @@ describe('focus intent', () => {
     const { readDocsAssistantPresentation } = await load()
     // The panel comes back, but focus stays where the reader put it — this is a
     // page load, not a request to start typing.
-    expect(readDocsAssistantPresentation()).toEqual({
+    expect(readDocsAssistantPresentation()).toMatchObject({
       mode: 'floating',
       minimized: false,
       focusPanelOnMount: false
@@ -150,7 +159,7 @@ describe('focus intent', () => {
     const { setDocsAssistantMinimized, readDocsAssistantPresentation } = await load()
     setDocsAssistantMinimized(false)
 
-    expect(readDocsAssistantPresentation()).toEqual({
+    expect(readDocsAssistantPresentation()).toMatchObject({
       mode: 'floating',
       minimized: false,
       focusPanelOnMount: false

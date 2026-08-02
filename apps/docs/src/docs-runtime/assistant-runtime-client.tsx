@@ -4,7 +4,7 @@
 // React.lazy, itself gated behind Docusaurus' <BrowserOnly> and an explicit
 // activation), so a documentation page that never starts the assistant never
 // downloads this chunk, and a static build never executes it.
-import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react'
+import { useEffect, useState, type ErrorInfo, type ReactNode } from 'react'
 import {
   BrowserAppShell,
   type BrowserApp,
@@ -12,6 +12,7 @@ import {
 } from '@tinytinkerer/app-browser'
 import '@tinytinkerer/app-browser/styles.css'
 import './assistant-containment.css'
+import { LatchedErrorBoundary } from './LatchedErrorBoundary'
 import { ensureDocsAssistantApp } from './assistant-app'
 import { publishDocsAssistantRuntimeStatus } from './assistant-activation'
 import { DOCS_ASSISTANT_WIDGET_SURFACE_ID } from './assistant-constants'
@@ -63,33 +64,19 @@ const AssistantBootScreen = ({ error }: { error?: string }): null => {
   return null
 }
 
-type BoundaryProps = { children: ReactNode }
-type BoundaryState = { failed: boolean }
-
 /**
- * Catches a surface's render failure INSIDE the shell.
+ * Reports a surface's render failure, from a boundary INSIDE the shell.
  *
- * React uses the nearest boundary, so this one runs before `BrowserAppShell`'s
- * own `AppErrorBoundary` — whose fallback is a full-app "Something went wrong /
- * Reload page" panel. That panel is right for a shell that owns its window and
- * quite wrong for an assistant embedded at the root of a documentation page, so
- * the failure becomes a status a launcher can act on instead.
+ * React uses the nearest boundary, so that boundary runs before
+ * `BrowserAppShell`'s own `AppErrorBoundary` — whose fallback is a full-app
+ * "Something went wrong / Reload page" panel. That panel is right for a shell
+ * that owns its window and quite wrong for an assistant embedded at the root of
+ * a documentation page, so the failure becomes a status a launcher can act on
+ * instead.
  */
-class AssistantSurfaceBoundary extends Component<BoundaryProps, BoundaryState> {
-  state: BoundaryState = { failed: false }
-
-  static getDerivedStateFromError(): BoundaryState {
-    return { failed: true }
-  }
-
-  componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error('A documentation assistant surface failed to render.', error, info.componentStack)
-    publishDocsAssistantRuntimeStatus('error')
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? null : this.props.children
-  }
+const reportSurfaceFailure = (error: Error, info: ErrorInfo): void => {
+  console.error('A documentation assistant surface failed to render.', error, info.componentStack)
+  publishDocsAssistantRuntimeStatus('error')
 }
 
 /**
@@ -186,9 +173,9 @@ export default function AssistantRuntimeClient(): ReactNode {
           effect would otherwise publish `ready` AFTER the boundary had already
           published `error` — React runs `componentDidCatch` before the surviving
           effects flush. */}
-      <AssistantSurfaceBoundary>
+      <LatchedErrorBoundary onError={reportSurfaceFailure}>
         <AssistantSession app={appState.app} />
-      </AssistantSurfaceBoundary>
+      </LatchedErrorBoundary>
     </BrowserAppShell>
   )
 }
