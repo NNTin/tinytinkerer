@@ -120,7 +120,7 @@ describe('shell bundle regression guard', () => {
     expect(staticImports.filter((fileName) => fileName.includes('app-core'))).toEqual([])
   })
 
-  it('keeps the lazy chat route chunk under 59 kB', () => {
+  it('keeps the lazy chat route chunk under 60 kB', () => {
     // The chat route imports the shared ChatApp (both layout shells + bodies) so the
     // widget↔sidebar morph happens in-place. Still lazy (split from the entry).
     // Raised 55 → 57 kB (2026-07-11): the tool picker's compose-area slot +
@@ -136,9 +136,16 @@ describe('shell bundle regression guard', () => {
     // it, and two of the four exist to fix affordances that were reachable but
     // dead (a sign-in button with no flow behind it, a reset that did something
     // other than what it said).
+    // Raised 59 → 60 kB (2026-08-02), measured 59.3: the issue #480 re-review
+    // replaces three partial presentation controls and two competing storage
+    // records with one complete controlled/uncontrolled ChatPresentation. That
+    // controller is the widget↔sidebar interaction itself, so it cannot move
+    // behind another import. The wrapper was reduced to its type discriminant
+    // first (keeping the IDE stage below its unchanged budget); this 1 kB band is
+    // the remaining product logic, not duplicated host code.
     const chunk = chunks.find((entry) => entry.fileName.includes('chat-surface'))
     expect(chunk, 'No chat route chunk found in build output').toBeDefined()
-    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(59)
+    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(60)
   })
 
   it('keeps every non-vendor JS chunk under 120 kB', () => {
