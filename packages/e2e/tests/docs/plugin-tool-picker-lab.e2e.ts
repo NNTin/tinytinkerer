@@ -24,13 +24,12 @@ test.describe('docs plugin & tool-picker impact lab (#453)', () => {
     const summary = page.locator('.plugin-tool-picker-lab__picker-summary strong').first()
     await expect(summary).toHaveText('3 of 3')
 
-    // Scoped to the lab's OWN picker. The embedded ChatApp below now renders one
-    // too: an app that owns a tool group carries its tool-tree summarizer, so
-    // every surface of that app offers the picker rather than silently omitting
-    // it (issue #480 review, finding 1). Both drive the same selection.
-    await page
-      .locator('[role="group"][aria-label="Tool picker"] [data-testid="tool-tree-toggle"]')
-      .click()
+    // Exactly ONE picker on the page: the shipped one in the assistant's
+    // composer. The lab used to render a second `ToolTreeSlot` of its own over
+    // the same selection store; the teaching panel now annotates the production
+    // control instead (issue #480 re-review, finding 6).
+    await expect(page.locator('[data-testid="tool-tree-toggle"]')).toHaveCount(1)
+    await page.locator('[data-testid="tool-tree-toggle"]').click()
     const panel = page.locator('[data-testid="tool-tree-panel"]')
     await expect(panel).toBeVisible()
 

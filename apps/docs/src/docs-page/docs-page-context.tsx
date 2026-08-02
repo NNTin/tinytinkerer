@@ -41,6 +41,7 @@ import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
 import { loadDocumentationCorpusStore } from '../docs-corpus/manifest-store'
 import {
   resolveDocsPageContext,
+  type DocsActiveRoute,
   type DocsCorpusLookup,
   type DocsPageDiagnostic,
   type DocsPageResolution
@@ -173,22 +174,30 @@ export const DocsPageProvider = ({ children }: { children: ReactNode }): ReactNo
 
   const activeDocId = activeDoc?.id
   const activeVersionName = activeVersion?.name
-  // Memoized on primitives: `useActiveDocContext` returns a freshly built object
-  // on every render, so depending on it directly would publish a new context
-  // value (and re-render every consumer) on every render of the whole app.
-  const resolution = useMemo<DocsPageResolution>(
-    () =>
-      resolveDocsPageContext(
-        {
-          pathname,
-          ...(activeDocId === undefined ? {} : { activeDocId }),
-          ...(activeVersionName === undefined ? {} : { activeVersionName })
-        },
-        corpus,
-        { baseUrl, trailingSlash }
-      ),
-    [pathname, activeDocId, activeVersionName, corpus, baseUrl, trailingSlash]
+  // The current route reduced to the primitives the resolver needs. Memoized on
+  // those primitives: `useActiveDocContext` returns a freshly built object on
+  // every render, so depending on it directly would publish a new context value
+  // (and re-render every consumer) on every render of the whole app.
+  const route = useMemo<DocsActiveRoute>(
+    () => ({
+      pathname,
+      ...(activeDocId === undefined ? {} : { activeDocId }),
+      ...(activeVersionName === undefined ? {} : { activeVersionName })
+    }),
+    [pathname, activeDocId, activeVersionName]
   )
+
+  // Resolution for an ARBITRARY route against the corpus as of this render, not
+  // only the current one. Published with the snapshot so a run that pinned a
+  // route before the manifest arrived can still be answered about that route
+  // once it has (issue #480 re-review, finding 4).
+  const resolveRoute = useCallback(
+    (target: DocsActiveRoute): DocsPageResolution =>
+      resolveDocsPageContext(target, corpus, { baseUrl, trailingSlash }),
+    [corpus, baseUrl, trailingSlash]
+  )
+
+  const resolution = useMemo<DocsPageResolution>(() => resolveRoute(route), [resolveRoute, route])
 
   const value = useMemo<DocsPageContextValue>(
     () => ({ ...resolution, retryCorpus }),
@@ -210,8 +219,13 @@ export const DocsPageProvider = ({ children }: { children: ReactNode }): ReactNo
   // actually committed may become a tool's answer, and static rendering (where
   // no effect runs) must publish nothing at all.
   useIsomorphicLayoutEffect(() => {
-    publishDocsPageSnapshot({ ...value, siteConfig: { baseUrl, trailingSlash } })
-  }, [value, baseUrl, trailingSlash])
+    publishDocsPageSnapshot({
+      ...value,
+      siteConfig: { baseUrl, trailingSlash },
+      route,
+      resolveRoute
+    })
+  }, [value, baseUrl, trailingSlash, route, resolveRoute])
 
   // Route/manifest mapping diagnostics. Reported once per distinct anomaly so a
   // page that re-renders (or is revisited) does not bury the console, and from

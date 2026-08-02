@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "sideEffects": [
-    "./src/styles.css"
+    "./src/styles.css",
+    "./src/embed.css"
   ],
   "exports": {
     ".": {
@@ -19,7 +20,8 @@
       "types": "./src/assistant-markdown.ts",
       "default": "./src/assistant-markdown.ts"
     },
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/styles.css",
+    "./embed.css": "./src/embed.css"
   },
   "main": "src/index.ts",
   "types": "src/index.ts",

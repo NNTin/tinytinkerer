@@ -14,25 +14,29 @@ import { createBrowserShellViteConfig } from '../../scripts/browser-shell-vite.m
 const deployBase = process.env.TINYTINKERER_DEPLOY_BASE?.replace(/\/+$/, '')
 
 /**
- * Serve the Docusaurus 404 document for a missing `/docs/*` URL, mirroring the
- * `rewrites` entry in vercel.json (issue #480 review, finding 2).
+ * Serve the Docusaurus 404 document, with a 404 status, for a missing `/docs/*`
+ * URL — the preview-server half of vercel.json's `/docs(/.*)?` route (issue #480
+ * review, finding 2; re-review, finding 6).
  *
  * Without it, `vite preview` answers an unknown path from its SPA fallback — the
  * ROOT composition's index.html — so an e2e that visits a broken documentation
  * link exercises the host's fallback instead of the documentation's 404 page, and
  * silently cannot see the assistant that is supposed to be on it. Production had
  * the same shape of gap for a different reason (Vercel's own plain-text
- * NOT_FOUND), which is what the deployment rewrite fixes.
+ * NOT_FOUND), which is what the deployment route fixes.
  *
  * Scoped to `/docs/`: everything else keeps the existing fallback. The check is
  * done against the filesystem rather than by middleware ordering so a real
- * documentation page always wins, exactly as a rewrite does on the platform.
+ * documentation page always wins, exactly as the platform's `handle: filesystem`
+ * does.
  *
- * The status is 404 here, where a plain Node response can set one. The
- * deployment's rewrite serves the same document with 200, because vercel.json
- * cannot attach a status to a rewrite without moving the whole file to the legacy
- * `routes` form, which cannot coexist with its `headers` block. Worth revisiting
- * if the crawler impact ever matters more than the config churn.
+ * Both sides now answer 404, not 200. Getting that on Vercel meant moving the
+ * whole file from `rewrites` + `headers` to the legacy `routes` form, which is
+ * the only one that can attach a status to a destination — and which cannot
+ * coexist with `rewrites`/`headers`, so the mobile cache-control entries moved
+ * with it as `continue: true` routes. A soft 404 tells crawlers, caches and
+ * uptime monitoring that a missing document exists, which is worth the config
+ * churn to avoid.
  */
 const serveDocsNotFoundOnPreview = (): Plugin => ({
   name: 'serve-docs-not-found-on-preview',

@@ -11,6 +11,7 @@
  * become visible in a real picker in #479, which mounts the assistant session.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { appToolCatalogue } from '@tinytinkerer/app-browser'
 import type { DocumentationSearchResponse } from '@tinytinkerer/app-browser'
 
 const searchDocumentation = vi.fn<(...args: unknown[]) => Promise<DocumentationSearchResponse>>()
@@ -41,7 +42,7 @@ const group = () =>
   })
 
 const tool = (id: string) => {
-  const found = group().tools.find((candidate) => candidate.id === id)
+  const found = appToolCatalogue(group()).find((candidate) => candidate.id === id)
   if (!found) throw new Error(`tool ${id} missing`)
   return found
 }
@@ -63,18 +64,18 @@ describe('the Documentation tool group', () => {
     expect(value.label).toBe('Documentation')
     // Both the literal ids the locked issue names and the constants #479 will
     // address them by, so neither can drift from the other.
-    expect(value.tools.map((item) => item.id)).toEqual([
+    expect(appToolCatalogue(value).map((item) => item.id)).toEqual([
       'search_docs',
       'read_doc',
       'read_current_doc'
     ])
     expect([SEARCH_DOCS_TOOL_ID, READ_DOC_TOOL_ID, READ_CURRENT_DOC_TOOL_ID]).toEqual(
-      value.tools.map((item) => item.id)
+      appToolCatalogue(value).map((item) => item.id)
     )
   })
 
   it('gives every tool what the runtime and the picker require of it', () => {
-    for (const item of group().tools) {
+    for (const item of appToolCatalogue(group())) {
       // The picker lists tools by id and renders `description`; the runtime
       // parses arguments with `schema` and *enforces* `outputSchema`.
       expect(item.id).toMatch(/^[a-z_]+$/)
@@ -88,13 +89,13 @@ describe('the Documentation tool group', () => {
   })
 
   it('has unique tool ids, which a runtime registry requires', () => {
-    const ids = group().tools.map((item) => item.id)
+    const ids = appToolCatalogue(group()).map((item) => item.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
 
   it('can be created more than once without sharing mutable state', () => {
-    expect(createDocumentationToolGroup().tools[0]).not.toBe(
-      createDocumentationToolGroup().tools[0]
+    expect(appToolCatalogue(createDocumentationToolGroup())[0]).not.toBe(
+      appToolCatalogue(createDocumentationToolGroup())[0]
     )
   })
 })

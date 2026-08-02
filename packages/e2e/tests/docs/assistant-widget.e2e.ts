@@ -46,16 +46,20 @@ test.describe('the documentation assistant widget (#480)', () => {
     // deployment answered a broken documentation link with its own plain-text
     // NOT_FOUND, so no reader ever reached this page (issue #480 review).
     //
-    // The routing that makes this work is vercel.json's `/docs/:path*` rewrite,
+    // The routing that makes this work is vercel.json's `/docs(/.*)?` route,
     // mirrored for this origin by apps/host/vite.config.ts's preview middleware.
-    await page.goto(`${DOCS_ORIGIN}/docs/definitely-missing-review-route`)
+    const response = await page.goto(`${DOCS_ORIGIN}/docs/definitely-missing-review-route`)
 
+    // The Docusaurus 404 body AND a 404 status (issue #480 re-review, finding 6):
+    // a soft 404 would tell crawlers, caches and monitoring that a missing
+    // document exists.
+    expect(response?.status()).toBe(404)
     await expect(page.getByText('Page Not Found')).toBeVisible()
     await expect(launcher(page)).toBeVisible()
   })
 
   test('the missing-docs fallback does not leak outside /docs/', async ({ page }) => {
-    // The rewrite is scoped: an unknown path at the root keeps whatever the host
+    // The route is scoped: an unknown path at the root keeps whatever the host
     // already did, and must never start answering with the documentation's 404.
     const response = await page.goto(`${DOCS_ORIGIN}/definitely-missing-root-route`)
 
@@ -265,6 +269,115 @@ test.describe('the documentation assistant widget (#480)', () => {
     await page.reload()
     // Restoring the reader's own choice, runtime download included.
     await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible({ timeout: 30_000 })
+  })
+
+  // === Morphing into the docked web mode (issue #480 re-review, finding 2) ===
+
+  test('docks into the sidebar, insets the page, and comes back', async ({ page }) => {
+    await installChatMock(page)
+    await page.goto(ROUTES.authored)
+    await launcher(page).click()
+    const composer = page.getByRole('textbox', { name: 'Message' })
+    await expect(composer).toBeVisible({ timeout: 30_000 })
+    // Its overlay is `fixed inset-0` and intercepts every pointer event on the
+    // page, including the dock button.
+    await dismissTelemetryDialog(page)
+
+    const article = page.locator('article').first()
+    const floatingBox = await article.boundingBox()
+
+    await page.getByRole('button', { name: 'Dock to sidebar' }).click()
+    const panel = page.locator('.docs-assistant-stage .sidebar-panel')
+    await expect(panel).toBeVisible()
+    // The conversation surface came with it; only the layout wrapper swapped.
+    await expect(composer).toBeVisible()
+
+    // The page is INSET, not covered: the article's right edge stops before the
+    // panel starts, the way AppStageShell insets /ide's stage.
+    const panelBox = await panel.boundingBox()
+    const dockedBox = await article.boundingBox()
+    expect(panelBox).not.toBeNull()
+    expect(dockedBox).not.toBeNull()
+    expect(dockedBox!.x + dockedBox!.width).toBeLessThanOrEqual(panelBox!.x + 1)
+    expect(dockedBox!.width).toBeLessThan(floatingBox!.width)
+
+    await page.getByRole('button', { name: 'Float chat' }).click()
+    await expect(panel).toHaveCount(0)
+    await expect(composer).toBeVisible()
+    // The inset is released, so the page is back to its full width. Polled
+    // because the padding is transitioned — a single measurement would catch it
+    // mid-animation.
+    await expect
+      .poll(async () => Math.round((await article.boundingBox())!.width))
+      .toBe(Math.round(floatingBox!.width))
+  })
+
+  test('restores a docked assistant across a reload', async ({ page }) => {
+    await installChatMock(page)
+    await page.goto(ROUTES.authored)
+    await launcher(page).click()
+    await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible({ timeout: 30_000 })
+    await dismissTelemetryDialog(page)
+    await page.getByRole('button', { name: 'Dock to sidebar' }).click()
+    await expect(page.locator('.docs-assistant-stage .sidebar-panel')).toBeVisible()
+
+    await page.reload()
+
+    // One versioned record covers mode AND open/minimized, so the reader gets
+    // back exactly what they left — not a floating widget that re-docks a frame
+    // later, and not a launcher.
+    await expect(page.locator('.docs-assistant-stage .sidebar-panel')).toBeVisible({
+      timeout: 30_000
+    })
+    await expect(launcher(page)).toHaveCount(0)
+  })
+
+  test('keeps a docked assistant, and its draft, across SPA navigation', async ({ page }) => {
+    await installChatMock(page)
+    await page.goto(ROUTES.authored)
+    await launcher(page).click()
+    const composer = page.getByRole('textbox', { name: 'Message' })
+    await expect(composer).toBeVisible({ timeout: 30_000 })
+    await dismissTelemetryDialog(page)
+    await page.getByRole('button', { name: 'Dock to sidebar' }).click()
+    await composer.fill('a draft that must survive docking and navigating')
+
+    await page
+      .locator('.theme-doc-sidebar-container')
+      .getByRole('link', { name: 'Contributing' })
+      .first()
+      .click()
+    await expect(page).toHaveURL(/\/docs\/contributing\//)
+
+    await expect(page.locator('.docs-assistant-stage .sidebar-panel')).toBeVisible()
+    await expect(composer).toHaveValue('a draft that must survive docking and navigating')
+  })
+
+  test('a docked assistant hides with the rest while a host overlay owns the viewport', async ({
+    page
+  }) => {
+    // The overlay contract is per-ROOT, not per-layout: the docked panel is
+    // inside the same `.docs-assistant-root` the `inert`/visibility rules key on,
+    // so docking cannot leak a surface past a fullscreen lab.
+    await installChatMock(page)
+    await page.goto(PIXEL_AGENTS_LAB_URL)
+    await launcher(page).click()
+    // Scoped to the assistant: this lab embeds a ChatApp of its own, so a bare
+    // composer locator matches two.
+    await expect(assistantRoot(page).getByRole('textbox', { name: 'Message' })).toBeVisible({
+      timeout: 30_000
+    })
+    await dismissTelemetryDialog(page)
+    await assistantRoot(page).getByRole('button', { name: 'Dock to sidebar' }).click()
+    const panel = page.locator('.docs-assistant-stage .sidebar-panel')
+    await expect(panel).toBeVisible()
+
+    await page.getByRole('button', { name: 'Fullscreen', exact: true }).click()
+    await expect(assistantRoot(page)).toHaveAttribute('data-host-overlay', 'true')
+    await expect(panel).toBeHidden()
+
+    await page.getByRole('button', { name: 'Exit fullscreen' }).click()
+    await expect(panel).toBeVisible()
   })
 
   test('hides entirely while a fullscreen lab owns the viewport', async ({ page }) => {

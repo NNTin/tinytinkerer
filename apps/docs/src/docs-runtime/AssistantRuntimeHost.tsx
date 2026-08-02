@@ -15,7 +15,11 @@ import {
   requestDocsAssistantRuntime,
   useDocsAssistantRuntimeActivation
 } from './assistant-activation'
-import { openDocsAssistant, useDocsAssistantPresentation } from './assistant-presentation'
+import {
+  isDocsAssistantOpen,
+  openDocsAssistant,
+  useDocsAssistantPresentation
+} from './assistant-presentation'
 import { importAssistantRuntimeClient } from './assistant-runtime-loader'
 import { useDocsHostOverlayOpen } from './host-overlays'
 
@@ -73,8 +77,9 @@ class AssistantErrorBoundary extends Component<BoundaryProps, BoundaryState> {
 
 export const DocsAssistantRuntimeHost = (): ReactNode => {
   const { status, attempt } = useDocsAssistantRuntimeActivation()
-  const { presentation } = useDocsAssistantPresentation()
+  const presentation = useDocsAssistantPresentation()
   const hostOverlayOpen = useDocsHostOverlayOpen()
+  const open = isDocsAssistantOpen(presentation)
 
   // A fresh payload per attempt. `React.lazy` memoises BOTH outcomes on the
   // payload object, so reusing one module-level `lazy(...)` would make every
@@ -105,8 +110,8 @@ export const DocsAssistantRuntimeHost = (): ReactNode => {
   // An effect, so static rendering never triggers it and the first client render
   // still agrees with the server.
   useEffect(() => {
-    if (presentation === 'open') requestDocsAssistantRuntime()
-  }, [presentation])
+    if (open) requestDocsAssistantRuntime()
+  }, [open])
 
   const runtimeRequested = status === 'starting' || status === 'ready'
 
@@ -117,8 +122,14 @@ export const DocsAssistantRuntimeHost = (): ReactNode => {
     // MOUNTED — the conversation, the composer draft, and any in-flight run
     // survive, and the persisted presentation is untouched. `data-host-overlay`
     // is what the stylesheet hides it on.
+    // `tt-app-embed` marks the region app-browser's embed baseline applies to.
+    // The RULES are the product's (packages/app/app-browser/src/embed.css); this
+    // only says where they apply, which is the whole of what the assistant draws
+    // — the panel and the dialogs the shell mounts beside it (issue #480
+    // re-review, finding 1).
     <div
-      className="docs-assistant-root"
+      className="docs-assistant-root tt-app-embed"
+      data-mode={presentation.mode}
       data-host-overlay={hostOverlayOpen ? 'true' : 'false'}
       {...(hostOverlayOpen ? { inert: true } : {})}
     >

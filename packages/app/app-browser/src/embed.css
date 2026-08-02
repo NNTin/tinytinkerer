@@ -1,0 +1,302 @@
+/*
+ * The embed baseline: the CSS a host must apply around a TinyTinkerer surface
+ * when it does not ship Tailwind's preflight globally (issue #480 re-review,
+ * finding 1).
+ *
+ * Every deployable TinyTinkerer app imports `tailwindcss`, whose preflight resets
+ * `button`/`input`/`ul`/`p`/heading defaults to nothing so that the utility
+ * classes the shared components render with are the ONLY thing styling them. A
+ * host with its own theme — the Docusaurus documentation site, whose Infima
+ * stylesheet styles those same elements — cannot import that preflight globally
+ * without fighting its own pages, so it gets this instead: the same baseline,
+ * confined to a region.
+ *
+ * ## The cascade contract, which is the whole point
+ *
+ * Every rule below is `:where(.tt-app-embed) <element>`. `:where()` contributes
+ * ZERO specificity, so each selector weighs exactly as much as the bare element
+ * selector real preflight uses — (0,0,1).
+ *
+ * That is deliberate and load-bearing in both directions:
+ *
+ * - it BEATS the host's own element rules (Infima's `ul`, `p`, `button`), which
+ *   are also (0,0,1) but are declared earlier;
+ * - it LOSES to every Tailwind utility class (0,1,0), which is exactly how
+ *   preflight relates to utilities inside a product build.
+ *
+ * A host-authored `.some-scope button { … }` would be (0,1,1) and would win over
+ * the utilities instead — which is the bug this file exists to end. That is what
+ * made a suggestion button in the documentation render as bulleted plain text
+ * while the same component on /widget rendered as a bordered control: the
+ * embed's baseline was outranking the product's own styling.
+ *
+ * ## Scope
+ *
+ * Elements are enumerated rather than reset through `*`, because `:where(.x) *`
+ * is (0,0,0) and would lose to every one of the host's element rules. The list
+ * covers what the shared surfaces actually render; an element the host styles and
+ * a surface starts rendering has to be added here, and the computed-style parity
+ * e2e (packages/e2e/tests/docs/assistant-style-parity.e2e.ts) is what notices.
+ *
+ * Deployable apps do NOT import this — their global preflight already does all of
+ * it, and re-applying a scoped copy could only override their own later rules.
+ * They are held to the same result by that parity test instead.
+ */
+
+/* 1. Box model, 2. no inherited margins/padding, 3. borders opt-in. */
+:where(.tt-app-embed),
+:where(.tt-app-embed) *,
+:where(.tt-app-embed) *::before,
+:where(.tt-app-embed) *::after {
+  box-sizing: border-box;
+}
+
+:where(.tt-app-embed) div,
+:where(.tt-app-embed) span,
+:where(.tt-app-embed) p,
+:where(.tt-app-embed) h1,
+:where(.tt-app-embed) h2,
+:where(.tt-app-embed) h3,
+:where(.tt-app-embed) h4,
+:where(.tt-app-embed) h5,
+:where(.tt-app-embed) h6,
+:where(.tt-app-embed) ul,
+:where(.tt-app-embed) ol,
+:where(.tt-app-embed) menu,
+:where(.tt-app-embed) li,
+:where(.tt-app-embed) dl,
+:where(.tt-app-embed) dt,
+:where(.tt-app-embed) dd,
+:where(.tt-app-embed) blockquote,
+:where(.tt-app-embed) figure,
+:where(.tt-app-embed) pre,
+:where(.tt-app-embed) form,
+:where(.tt-app-embed) fieldset,
+:where(.tt-app-embed) legend,
+:where(.tt-app-embed) label,
+:where(.tt-app-embed) table,
+:where(.tt-app-embed) thead,
+:where(.tt-app-embed) tbody,
+:where(.tt-app-embed) tfoot,
+:where(.tt-app-embed) tr,
+:where(.tt-app-embed) th,
+:where(.tt-app-embed) td,
+:where(.tt-app-embed) hr,
+:where(.tt-app-embed) details,
+:where(.tt-app-embed) summary,
+:where(.tt-app-embed) dialog,
+:where(.tt-app-embed) header,
+:where(.tt-app-embed) footer,
+:where(.tt-app-embed) section,
+:where(.tt-app-embed) article,
+:where(.tt-app-embed) aside,
+:where(.tt-app-embed) nav,
+:where(.tt-app-embed) main,
+:where(.tt-app-embed) button,
+:where(.tt-app-embed) input,
+:where(.tt-app-embed) select,
+:where(.tt-app-embed) textarea,
+:where(.tt-app-embed) optgroup {
+  margin: 0;
+  padding: 0;
+  border: 0 solid;
+}
+
+/* Headings carry no size or weight of their own; the components set both. */
+:where(.tt-app-embed) h1,
+:where(.tt-app-embed) h2,
+:where(.tt-app-embed) h3,
+:where(.tt-app-embed) h4,
+:where(.tt-app-embed) h5,
+:where(.tt-app-embed) h6 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* Lists are layout containers here, not prose. */
+:where(.tt-app-embed) ol,
+:where(.tt-app-embed) ul,
+:where(.tt-app-embed) menu {
+  list-style: none;
+}
+
+/* Links opt in to their styling, like every other element. */
+:where(.tt-app-embed) a {
+  color: inherit;
+  text-decoration: inherit;
+}
+
+:where(.tt-app-embed) b,
+:where(.tt-app-embed) strong {
+  font-weight: bolder;
+}
+
+:where(.tt-app-embed) code,
+:where(.tt-app-embed) kbd,
+:where(.tt-app-embed) samp,
+:where(.tt-app-embed) pre {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  font-size: 1em;
+}
+
+/* A host theme commonly gives inline code a chip background and border; inside a
+   surface the markdown renderer owns that decision. */
+:where(.tt-app-embed) code {
+  background-color: transparent;
+}
+
+:where(.tt-app-embed) small {
+  font-size: 80%;
+}
+
+:where(.tt-app-embed) sub,
+:where(.tt-app-embed) sup {
+  font-size: 75%;
+  line-height: 0;
+  position: relative;
+  vertical-align: baseline;
+}
+
+:where(.tt-app-embed) sub {
+  bottom: -0.25em;
+}
+
+:where(.tt-app-embed) sup {
+  top: -0.5em;
+}
+
+:where(.tt-app-embed) table {
+  text-indent: 0;
+  border-color: inherit;
+  border-collapse: collapse;
+}
+
+:where(.tt-app-embed) hr {
+  height: 0;
+  color: inherit;
+  border-top-width: 1px;
+}
+
+:where(.tt-app-embed) summary {
+  display: list-item;
+}
+
+:where(.tt-app-embed) img,
+:where(.tt-app-embed) svg,
+:where(.tt-app-embed) video,
+:where(.tt-app-embed) canvas,
+:where(.tt-app-embed) audio,
+:where(.tt-app-embed) iframe,
+:where(.tt-app-embed) embed,
+:where(.tt-app-embed) object {
+  display: block;
+  vertical-align: middle;
+}
+
+:where(.tt-app-embed) img,
+:where(.tt-app-embed) video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Form controls inherit typography and carry no chrome of their own. Without
+   this they fall back to the UA's `ButtonFace`/`FieldFace` system colours, which
+   is what turned the settings panel and the tool picker into grey boxes on a
+   dark panel. */
+:where(.tt-app-embed) button,
+:where(.tt-app-embed) input,
+:where(.tt-app-embed) select,
+:where(.tt-app-embed) optgroup,
+:where(.tt-app-embed) textarea {
+  font: inherit;
+  font-feature-settings: inherit;
+  font-variation-settings: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  border-radius: 0;
+  background-color: transparent;
+  background-image: none;
+  opacity: 1;
+}
+
+/* NOTE: no `cursor: pointer` on buttons. Tailwind's preflight does not set one
+   either, so adding it here would make the embedded surface diverge from every
+   deployable app — which is exactly what the parity e2e catches. */
+
+/* Native widgets keep their own rendering — a checkbox painted with
+   `background: transparent` would simply be invisible. The components colour
+   them through `accent-color`. */
+:where(.tt-app-embed) input[type='checkbox'],
+:where(.tt-app-embed) input[type='radio'] {
+  background-color: revert;
+  appearance: auto;
+}
+
+:where(.tt-app-embed) textarea {
+  resize: vertical;
+}
+
+:where(.tt-app-embed) ::placeholder {
+  opacity: 1;
+}
+
+:where(.tt-app-embed) [hidden]:where(:not([hidden='until-found'])) {
+  display: none !important;
+}
+
+/*
+ * The minimized launcher's visual primitive.
+ *
+ * A host that wants a launcher BEFORE the runtime chunk exists (the
+ * documentation assistant's cold-start button) needs the same size, radius and
+ * elevation the mounted widget's launcher has, or the hand-off between the two
+ * reads as two different controls. Shared from here rather than copied into the
+ * host's stylesheet, so the two cannot drift.
+ *
+ * `WIDGET_MINIMIZED_SIZE` in chat-shell/layout-geometry.ts is the same 64px.
+ * Position is the host's business; this is chrome only.
+ */
+.tt-embed-launcher {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 4rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 1.35rem;
+  background: var(--panel);
+  box-shadow: 0 18px 48px rgba(36, 33, 24, 0.16);
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.tt-embed-launcher:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 22px 56px rgba(36, 33, 24, 0.22);
+}
+
+.tt-embed-launcher:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.tt-embed-launcher__icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tt-embed-launcher {
+    transition: none;
+  }
+
+  .tt-embed-launcher:hover {
+    transform: none;
+  }
+}

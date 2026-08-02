@@ -37,6 +37,14 @@
      surface already used, so overriding it is opt-in (the documentation
      assistant does, per theme — issue #480 review, finding 3). */
   --link: #b45309;
+  /* The accent as a FILL BEHIND WHITE TEXT. Its own token for the same reason
+     `--link` is: `--accent` is tuned to read well as a large block of colour, and
+     white on it is about 3:1 — under AA for normal text. Every primary action
+     that paints white on accent uses this instead. Defaults to the same amber-700
+     `--link` does, which clears 4.5:1 against white in both themes, so a host that
+     overrides `--accent` per theme inherits a legible primary button for free
+     (issue #480 re-review). */
+  --accent-strong: #b45309;
   --panel-hover: color-mix(in srgb, var(--text) 6%, var(--panel));
   --accent-ring: color-mix(in srgb, var(--accent) 42%, white);
   --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--panel));

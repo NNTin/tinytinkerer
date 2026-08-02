@@ -6,28 +6,23 @@
   "git": {
     "deploymentEnabled": false
   },
-  "rewrites": [
+  "routes": [
     {
-      "source": "/docs/:path*",
-      "destination": "/docs/404.html"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/mobile/sw.js",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+      "src": "/mobile/sw\\.js",
+      "headers": { "Cache-Control": "public, max-age=0, must-revalidate" },
+      "continue": true
     },
     {
-      "source": "/mobile",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+      "src": "/mobile/?",
+      "headers": { "Cache-Control": "public, max-age=0, must-revalidate" },
+      "continue": true
     },
     {
-      "source": "/mobile/",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+      "src": "/mobile/index\\.html",
+      "headers": { "Cache-Control": "public, max-age=0, must-revalidate" },
+      "continue": true
     },
-    {
-      "source": "/mobile/index.html",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
-    }
+    { "handle": "filesystem" },
+    { "src": "/docs(/.*)?", "dest": "/docs/404.html", "status": 404 }
   ]
 }

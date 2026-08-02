@@ -225,12 +225,12 @@ describe('while a host overlay owns the viewport', () => {
     // Still mounted: the conversation, the composer draft and any in-flight run
     // are exactly where the reader left them.
     expect(screen.getByTestId('assistant-panel')).toBeInTheDocument()
-    expect(loaded.readDocsAssistantPresentation().presentation).toBe('open')
+    expect(loaded.readDocsAssistantPresentation().minimized).toBe(false)
 
     act(() => {
       loaded.setDocsHostOverlay('lab-fullscreen:probe', false)
     })
     expect(root()).not.toHaveAttribute('inert')
-    expect(loaded.readDocsAssistantPresentation().presentation).toBe('open')
+    expect(loaded.readDocsAssistantPresentation().minimized).toBe(false)
   })
 })

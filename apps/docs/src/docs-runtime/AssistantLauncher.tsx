@@ -15,6 +15,11 @@
  *
  * It also renders during static rendering, so the launcher is in the built HTML of
  * every documentation route rather than appearing after hydration.
+ *
+ * Its CHROME is `tt-embed-launcher` from `@tinytinkerer/app-browser/embed.css` —
+ * a CSS-only entry, so borrowing the product's own size, radius and elevation
+ * costs no JavaScript and cannot drift from the launcher it hands off to (issue
+ * #480 re-review, finding 1). Only position is the documentation's own.
  */
 import { useEffect, useRef, type ReactNode } from 'react'
 import useBaseUrl from '@docusaurus/useBaseUrl'
@@ -62,7 +67,7 @@ export const AssistantLauncher = ({ status, onActivate }: AssistantLauncherProps
       <button
         ref={buttonRef}
         type="button"
-        className="docs-assistant-launcher"
+        className="tt-embed-launcher docs-assistant-launcher"
         data-status={status}
         aria-label={label}
         title={label}
@@ -75,7 +80,7 @@ export const AssistantLauncher = ({ status, onActivate }: AssistantLauncherProps
           if (!isStarting) onActivate()
         }}
       >
-        <img src={iconUrl} alt="" className="docs-assistant-launcher__icon" />
+        <img src={iconUrl} alt="" className="tt-embed-launcher__icon" />
       </button>
       {/* Announced rather than drawn: the visual cue is the button's own busy
           styling, and a floating text label would cover the page. */}

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { appToolCatalogue } from '@tinytinkerer/app-browser'
 import { PLUGIN_TOOL_PICKER_APP_TOOL_GROUP_ID, pluginToolPickerDemoToolGroup } from '../demo-tools'
 
 const toolById = (id: string) => {
-  const tool = pluginToolPickerDemoToolGroup.tools.find((candidate) => candidate.id === id)
+  const tool = appToolCatalogue(pluginToolPickerDemoToolGroup).find(
+    (candidate) => candidate.id === id
+  )
   if (!tool) throw new Error(`missing demo tool ${id}`)
   return tool
 }
@@ -10,11 +13,11 @@ const toolById = (id: string) => {
 describe('pluginToolPickerDemoToolGroup', () => {
   it('carries the stable group id and three demo tools', () => {
     expect(pluginToolPickerDemoToolGroup.id).toBe(PLUGIN_TOOL_PICKER_APP_TOOL_GROUP_ID)
-    expect(pluginToolPickerDemoToolGroup.tools.map((tool) => tool.id).sort()).toEqual([
-      'lab_always_fails',
-      'lab_explain_plugin_concept',
-      'lab_roll_dice'
-    ])
+    expect(
+      appToolCatalogue(pluginToolPickerDemoToolGroup)
+        .map((tool) => tool.id)
+        .sort()
+    ).toEqual(['lab_always_fails', 'lab_explain_plugin_concept', 'lab_roll_dice'])
   })
 
   it('lab_roll_dice rolls the requested count of dice within range', async () => {

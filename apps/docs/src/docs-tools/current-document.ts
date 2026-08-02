@@ -19,11 +19,24 @@
  * (a retry that fails republishes an equal-looking failure), only the
  * publication identity can.
  *
- * **The answer is pinned to the route the call was made on.** A reader who asks
- * about "this page" and then navigates meant the page they asked about, so a
- * later route never retargets an in-flight call.
+ * **The answer is pinned to the ROUTE the run was submitted on, not to a
+ * resolution.** A reader who asks about "this page" and then navigates meant the
+ * page they asked about. Pinning a resolved snapshot only holds when the corpus
+ * had already settled; a run submitted while the manifest was still loading has
+ * nothing resolved to hold on to, and re-reading the live snapshot later would
+ * silently retarget it (issue #480 re-review, finding 4). So what is captured is
+ * the ROUTE — pathname, active document id, version — which is knowable from
+ * Docusaurus routing alone, and it is resolved through whatever corpus exists by
+ * the time the tool runs, via the snapshot's `resolveRoute`.
  */
-import { awaitDocsPageSnapshot, readDocsPageSnapshot, type DocsPageSnapshot } from '../docs-page'
+import {
+  awaitDocsPageSnapshot,
+  readDocsPageSnapshot,
+  type DocsActiveRoute,
+  type DocsPageResolution,
+  type DocsPageSnapshot
+} from '../docs-page'
+import type { SiteUrlConfig } from '../docs-corpus/manifest-store'
 import type { DocsActiveDocument } from '../docs-page'
 
 /**
@@ -38,7 +51,12 @@ import type { DocsActiveDocument } from '../docs-page'
 const IDENTITY_RESOLUTION_BUDGET_MS = 4_000
 
 export type CurrentDocumentOutcome =
-  | { kind: 'document'; snapshot: DocsPageSnapshot; document: DocsActiveDocument }
+  | {
+      kind: 'document'
+      /** The site config the resolving publication carried, for the read that follows. */
+      siteConfig: SiteUrlConfig
+      document: DocsActiveDocument
+    }
   | { kind: 'not-on-doc-page'; pathname: string; message: string }
   | {
       kind: 'unavailable'
@@ -52,8 +70,41 @@ export type CurrentDocumentOutcome =
       retryable: boolean
     }
 
-const isPending = (snapshot: DocsPageSnapshot): boolean =>
-  snapshot.active.status === 'no-document' && snapshot.active.reason === 'corpus_pending'
+/**
+ * What a run captured about the route it was submitted on.
+ *
+ * Captured with {@link captureDocsRunPin} at the moment `createRuntime` builds
+ * the run's tools, so it describes the page the reader was looking at when they
+ * hit send — however long the model then takes to decide to call the tool, and
+ * wherever the reader has navigated to in the meantime.
+ */
+export type DocsRunPin = {
+  /** The routing identity the page context had published when the run started. */
+  route: DocsActiveRoute
+}
+
+/**
+ * The route identity as of NOW, for a run that is starting.
+ *
+ * Deliberately captures the ROUTE and not the resolution: the corpus may not have
+ * arrived yet, and "not resolved yet" must never degrade into "resolve it later
+ * against wherever the reader ended up".
+ *
+ * `undefined` when nothing has been published — static rendering, or a provider
+ * that is not mounted. It is not read from `window.location`: identity on this
+ * site comes from Docusaurus routing and nowhere else (#476, and the mechanical
+ * rule in docs-tools/__tests__/source-rules.test.ts), and the URL alone cannot
+ * supply the active document id and version a route needs. A run with no pin
+ * adopts the first publication instead, which is the earliest route identity that
+ * exists at all.
+ */
+export const captureDocsRunPin = (): DocsRunPin | undefined => {
+  const snapshot = readDocsPageSnapshot()
+  return snapshot ? { route: snapshot.route } : undefined
+}
+
+const isPending = (resolution: DocsPageResolution): boolean =>
+  resolution.active.status === 'no-document' && resolution.active.reason === 'corpus_pending'
 
 /**
  * A failure a retry could plausibly change. `corpus_pending` is excluded even
@@ -61,113 +112,106 @@ const isPending = (snapshot: DocsPageSnapshot): boolean =>
  * *unavailable* states, so calling it while a load is already in flight is a
  * no-op that would burn the remaining budget for nothing.
  */
-const isRecoverableFailure = (snapshot: DocsPageSnapshot): boolean =>
-  snapshot.active.status === 'no-document' && snapshot.active.retryable && !isPending(snapshot)
+const isRecoverableFailure = (resolution: DocsPageResolution): boolean =>
+  resolution.active.status === 'no-document' &&
+  resolution.active.retryable &&
+  !isPending(resolution)
+
+const outcomeFor = (
+  resolution: DocsPageResolution,
+  siteConfig: SiteUrlConfig
+): CurrentDocumentOutcome => {
+  const { active } = resolution
+  if (active.status === 'document') {
+    return { kind: 'document', siteConfig, document: active.document }
+  }
+  if (active.reason === 'not_a_document_route' || active.reason === 'generated_index_route') {
+    return { kind: 'not-on-doc-page', pathname: resolution.pathname, message: active.message }
+  }
+  return {
+    kind: 'unavailable',
+    pathname: resolution.pathname,
+    reason: active.reason,
+    message: active.message,
+    retryable: active.retryable
+  }
+}
 
 /**
- * A settled answer needs no further resolution: the corpus produced it, and no
- * amount of waiting or retrying would change it.
- *
- * Deliberately narrow. `corpus_pending` and the retryable failures are NOT
- * settled — a run that started before the manifest arrived must still be allowed
- * to wait for it rather than answering "unavailable" from a snapshot taken a
- * moment too early.
+ * @param pin The route the RUN was submitted on. Omitted, this falls back to the
+ * latest publication, which is what a caller with no run context (a direct
+ * caller, a test) gets.
  */
-const isSettled = (snapshot: DocsPageSnapshot): boolean =>
-  snapshot.active.status === 'document' ||
-  snapshot.active.reason === 'not_a_document_route' ||
-  snapshot.active.reason === 'generated_index_route'
-
-/**
- * @param pinned The page context as of when the RUN started (issue #480 review,
- * finding 5). #476 already pinned the answer to the route a tool call was made
- * on; the widget widened the gap that leaves open, because a reader can now
- * submit "summarize this page" and keep reading while the model decides. Without
- * this the eventual `read_current_doc` resolves against wherever they ended up —
- * the run survives the navigation, but its referent silently changes.
- *
- * Only a SETTLED pin short-circuits. An unsettled one falls through to the live
- * path below, which keeps every corpus wait and retry #476 built.
- */
-export const resolveCurrentDocument = async (
-  pinned?: DocsPageSnapshot
-): Promise<CurrentDocumentOutcome> => {
+export const resolveCurrentDocument = async (pin?: DocsRunPin): Promise<CurrentDocumentOutcome> => {
   const deadline = Date.now() + IDENTITY_RESOLUTION_BUDGET_MS
   const remaining = (): number => Math.max(0, deadline - Date.now())
 
-  if (pinned && isSettled(pinned)) {
-    return pinned.active.status === 'document'
-      ? { kind: 'document', snapshot: pinned, document: pinned.active.document }
-      : {
-          kind: 'not-on-doc-page',
-          pathname: pinned.pathname,
-          message: pinned.active.message
-        }
-  }
-
+  let route = pin?.route
   let snapshot = readDocsPageSnapshot()
-  if (!snapshot) {
+
+  if (!route || !snapshot) {
     // Not "no document" — nobody has answered the question yet. That is the case
     // during static rendering, and would be the case if the provider were not
     // mounted; both deserve a short wait rather than a confident wrong answer.
-    snapshot = await awaitDocsPageSnapshot(() => true, remaining())
-    if (!snapshot) {
+    //
+    // The FIRST publication then becomes the pin for the rest of the call, so a
+    // run that started before the page context existed is still answered about
+    // one route rather than re-reading a moving target at every step.
+    const first = await awaitDocsPageSnapshot(() => true, remaining())
+    if (!first) {
       return {
         kind: 'unavailable',
-        pathname: '',
+        pathname: route?.pathname ?? '',
         reason: 'corpus_pending',
         message:
           'the documentation page context has not published a resolution yet; try again in a moment',
         retryable: true
       }
     }
+    snapshot = first
+    route ??= first.route
   }
 
-  // Pinned for the rest of the call. Every later wait requires the same route,
-  // so a reader navigating mid-call gets an answer about the page they asked
-  // about rather than the one they happen to have moved to.
-  const pathname = snapshot.pathname
-  const onPinnedRoute = (candidate: DocsPageSnapshot): boolean => candidate.pathname === pathname
+  // Every resolution below is of the PINNED route, through the corpus the
+  // resolving publication carried. That is what survives a navigation: the
+  // provider republishes for the reader's new route, and this still answers
+  // about the old one.
+  const pinnedRoute = route
+  const settled = (candidate: DocsPageSnapshot): boolean =>
+    !isPending(candidate.resolveRoute(pinnedRoute))
+
+  let resolution = snapshot.resolveRoute(pinnedRoute)
 
   // The corpus may simply not have arrived yet on a freshly loaded page.
   // Waiting is the right answer, and it is what the reader sees a moment later.
-  if (isPending(snapshot)) {
-    snapshot =
-      (await awaitDocsPageSnapshot(
-        (candidate) => onPinnedRoute(candidate) && !isPending(candidate),
-        remaining()
-      )) ?? snapshot
+  if (isPending(resolution)) {
+    const from = snapshot.revision
+    const next = await awaitDocsPageSnapshot(
+      (candidate) => candidate.revision > from && settled(candidate),
+      remaining()
+    )
+    if (next) {
+      snapshot = next
+      resolution = next.resolveRoute(pinnedRoute)
+    }
   }
 
-  if (isRecoverableFailure(snapshot)) {
+  if (isRecoverableFailure(resolution)) {
     const from = snapshot.revision
     snapshot.retryCorpus()
-    // A *newer* publication that has settled. Requiring `revision > from` is
-    // what stops the still-current failure from satisfying this immediately,
-    // and requiring "not pending" skips the interim `corpus_pending` the
-    // provider publishes on its way to the outcome.
-    snapshot =
-      (await awaitDocsPageSnapshot(
-        (candidate) =>
-          candidate.revision > from && onPinnedRoute(candidate) && !isPending(candidate),
-        remaining()
-      )) ?? snapshot
+    // A *newer* publication whose corpus has settled. Requiring `revision > from`
+    // is what stops the still-current failure from satisfying this immediately,
+    // and requiring "not pending" skips the interim `corpus_pending` the provider
+    // publishes on its way to the outcome.
+    const next = await awaitDocsPageSnapshot(
+      (candidate) => candidate.revision > from && settled(candidate),
+      remaining()
+    )
+    if (next) {
+      snapshot = next
+      resolution = next.resolveRoute(pinnedRoute)
+    }
   }
 
-  const { active } = snapshot
-  if (active.status === 'document') {
-    return { kind: 'document', snapshot, document: active.document }
-  }
-
-  if (active.reason === 'not_a_document_route' || active.reason === 'generated_index_route') {
-    return { kind: 'not-on-doc-page', pathname: snapshot.pathname, message: active.message }
-  }
-
-  return {
-    kind: 'unavailable',
-    pathname: snapshot.pathname,
-    reason: active.reason,
-    message: active.message,
-    retryable: active.retryable
-  }
+  return outcomeFor(resolution, snapshot.siteConfig)
 }

@@ -78,7 +78,6 @@ vi.mock('@tinytinkerer/app-browser', () => ({
     appGroupIds: ['plugin-tool-picker-lab-demo-tools']
   }),
   genericToolTreeSummarizer: fixedView,
-  ToolTreeSlot: () => <button type="button">Choose available tools</button>,
   ChatApp: () => <div data-testid="chat-app" />
 }))
 
@@ -116,7 +115,15 @@ describe('PluginToolPickerLabContent', () => {
     for (const id of DEMO_TOOL_IDS) {
       expect(screen.getByText(id)).toBeInTheDocument()
     }
-    expect(screen.getByRole('button', { name: 'Choose available tools' })).toBeInTheDocument()
+  })
+
+  it('renders no picker of its own — it annotates the one in the composer', () => {
+    // The lab used to mount a second `ToolTreeSlot` over the same selection
+    // store as the embedded ChatApp's (issue #480 re-review, finding 6). Two
+    // controls for one setting is not a teaching aid; the read-out below is.
+    render(<PluginToolPickerLabContent />)
+    expect(screen.queryByRole('button', { name: /tool picker|available tools/i })).toBeNull()
+    expect(screen.getByRole('group', { name: 'Enabled demo tools' })).toBeInTheDocument()
   })
 
   it('renders the Pixel Agents stage and the accessible chat surface together', () => {

@@ -26,6 +26,7 @@ import {
   type Dispatch,
   type SetStateAction
 } from 'react'
+import { appToolCatalogue } from './app-tool-group'
 import { usePluginModules } from './plugins/use-plugin-modules'
 import { isMcpToolId, summarizeMcpActivity } from './runtime/mcp-tool'
 import { toolLabel, type ResolveActivitySummarizer } from './turn-activity-panel'
@@ -208,7 +209,7 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
   const appSummarizers = useMemo(
     () =>
       new Map(
-        (appToolGroup?.tools ?? []).flatMap((tool) =>
+        (appToolGroup ? appToolCatalogue(appToolGroup) : []).flatMap((tool) =>
           tool.summarizeActivity ? [[tool.id, tool.summarizeActivity] as const] : []
         )
       ),

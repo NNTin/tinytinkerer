@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import OriginalRoot from '@theme-original/Root'
 import { DocsPageProvider } from '../docs-page'
-import { DocsAssistantRuntimeHost } from '../docs-runtime'
+import { DocsAssistantPageRegion, DocsAssistantRuntimeHost } from '../docs-runtime'
 
 // Docusaurus keeps `@theme/Root` mounted for the whole lifetime of the SPA:
 // above the layout, outside the route tree, and inside both the router and the
@@ -33,7 +33,11 @@ export default function Root({ children }: { children: ReactNode }): ReactNode {
   return (
     <ThemeRoot>
       <DocsPageProvider>
-        {children}
+        {/* A stable region, present in every mode from the first render, so
+            docking the assistant insets the page instead of covering it — and
+            does so without remounting anything inside, which would restart every
+            live lab on the route mid-session (issue #480 re-review, finding 2). */}
+        <DocsAssistantPageRegion>{children}</DocsAssistantPageRegion>
         <DocsAssistantRuntimeHost />
       </DocsPageProvider>
     </ThemeRoot>

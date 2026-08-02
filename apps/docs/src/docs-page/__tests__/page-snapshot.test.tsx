@@ -28,18 +28,20 @@ import {
 } from '../../test/docusaurus-use-global-data-stub'
 import { resetDocumentationCorpusStoreForTests } from '../../docs-corpus/manifest-store'
 import { SITE_CONFIG, siteGlobalData } from './site-corpus-fixture'
+import { asPublication } from './publication-fixture'
 
-const snapshot = (pathname: string): DocsPageSnapshotInput => ({
-  pathname,
-  siteConfig: SITE_CONFIG,
-  retryCorpus: () => {},
-  active: {
-    status: 'no-document',
-    reason: 'not_a_document_route',
-    message: 'no document',
-    retryable: false
-  }
-})
+const snapshot = (pathname: string): DocsPageSnapshotInput =>
+  asPublication({
+    pathname,
+    siteConfig: SITE_CONFIG,
+    retryCorpus: () => {},
+    active: {
+      status: 'no-document',
+      reason: 'not_a_document_route',
+      message: 'no document',
+      retryable: false
+    }
+  })
 
 describe('the documentation page snapshot', () => {
   afterEach(() => {

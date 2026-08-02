@@ -28,15 +28,18 @@ export { registerDocsAssistantSurface, setDocsAssistantSurfaceTarget } from './a
 export type { DocsAssistantSurface, DocsAssistantSurfacePlacement } from './assistant-surface'
 export { DOCS_ASSISTANT_STORAGE_NAMESPACE } from './assistant-constants'
 export {
+  isDocsAssistantOpen,
   openDocsAssistant,
   readDocsAssistantPresentation,
   setDocsAssistantMinimized,
+  setDocsAssistantMode,
   useDocsAssistantPresentation
 } from './assistant-presentation'
-export type {
-  DocsAssistantPresentation,
-  DocsAssistantPresentationState
-} from './assistant-presentation'
+export type { DocsAssistantMode, DocsAssistantPresentationState } from './assistant-presentation'
+// The stable wrapper the documentation page renders inside, so docking the
+// assistant insets the page without remounting anything in it (issue #480
+// re-review, finding 2).
+export { DocsAssistantPageRegion } from './AssistantPageRegion'
 // How a documentation-owned overlay tells the assistant to get out of the way
 // (issue #480). `LabContainer` is the only caller today, for fullscreen labs.
 export { setDocsHostOverlay } from './host-overlays'

@@ -5,6 +5,13 @@
    layer on top / override where needed. */
 @import './tailwind.css';
 
+/* The baseline the embedded product surfaces need on a site that ships no
+   Tailwind preflight — product-owned, versioned with the components it serves.
+   Applied through the `tt-app-embed` class the assistant root carries; see the
+   file itself for the cascade contract that keeps it below the utilities and
+   above Infima (issue #480 re-review, finding 1). */
+@import '@tinytinkerer/app-browser/embed.css';
+
 /**
  * TinyTinkerer brand theme for the /docs Docusaurus site.
  *
@@ -1195,11 +1202,24 @@ div[class^='codeBlockContainer'] {
   background: var(--ifm-background-surface-color);
   color: var(--ifm-font-color-base);
   cursor: pointer;
-}
+} /* Documentation assistant widget (issues #480) ------------------------------
+   The floating/dockable global assistant: a light launcher on every route, and
+   the real app-browser ChatApp once a reader opens it. See
+   src/docs-runtime/README.md.
 
-/* Documentation assistant widget (issue #480) -------------------------------
-   The floating global assistant: a light launcher on every route, and the real
-   app-browser ChatApp once a reader opens it. See src/docs-runtime/README.md.
+   Scope of this block, after the #480 re-review: Docusaurus INTEGRATION only —
+   where the overlay sits in the stacking order, how the page is inset when the
+   assistant docks, and which semantic tokens the product surfaces resolve
+   against in this site's light and dark themes.
+
+   It deliberately does NOT restyle product controls. The baseline those controls
+   need where a host ships no Tailwind preflight is
+   `@tinytinkerer/app-browser/embed.css`, imported at the top of this file and
+   applied by the `tt-app-embed` class the assistant root carries. A rule here
+   like `.docs-assistant-root button { … }` would be (0,1,1) and would outrank
+   every one-class utility the real components render with — which is exactly how
+   the empty-state suggestions ended up as bulleted plain text instead of the
+   bordered controls /widget shows.
 
    Plain CSS rather than Tailwind utilities on purpose: src/css/tailwind.css
    `@source`s `packages/` (so the embedded product components get their classes)
@@ -1261,45 +1281,15 @@ div[class^='codeBlockContainer'] {
 }
 
 /* --- The light launcher ---
-   Sized and shaped to match app-browser's own minimized launcher
-   (WIDGET_MINIMIZED_SIZE = 64px, 1.35rem radius), because the two hand off to
-   each other: this one disappears at `ready` and ChatApp's takes its place. A
-   visible jump between them would read as two different controls. */
+   Chrome comes from `.tt-embed-launcher` in app-browser's embed stylesheet — the
+   same size, radius and elevation the mounted widget's launcher has, because the
+   two hand off to each other and a visible jump between them would read as two
+   different controls. Only POSITION is the documentation's business. */
 .docs-assistant-launcher {
   position: fixed;
   right: 1.5rem;
   bottom: 1.5rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 4rem;
-  height: 4rem;
-  padding: 0;
-  border: 1px solid var(--docs-assistant-border);
-  border-radius: 1.35rem;
-  background: var(--docs-assistant-panel);
-  box-shadow: 0 18px 48px rgba(36, 33, 24, 0.16);
-  cursor: pointer;
   pointer-events: auto;
-  transition:
-    transform 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.docs-assistant-launcher:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 22px 56px rgba(36, 33, 24, 0.22);
-}
-
-.docs-assistant-launcher:focus-visible {
-  outline: 2px solid var(--ifm-color-primary);
-  outline-offset: 3px;
-}
-
-.docs-assistant-launcher__icon {
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: 1rem;
 }
 
 /* Busy: the chunk is downloading. The button stays focusable and announced (the
@@ -1313,16 +1303,6 @@ div[class^='codeBlockContainer'] {
   border-color: var(--lab-error-border);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .docs-assistant-launcher {
-    transition: none;
-  }
-
-  .docs-assistant-launcher:hover {
-    transform: none;
-  }
-}
-
 /* Narrow viewports: a 64px control 24px from two edges is already thumb-sized,
    but it should sit clear of the safe area on phones with rounded corners. */
 @media (max-width: 700px) {
@@ -1332,7 +1312,7 @@ div[class^='codeBlockContainer'] {
   }
 }
 
-/* --- The panel ---
+/* --- The floating panel ---
    app-browser's `.widget-stage` is `position: relative; min-height: 100vh`,
    which is right for an app that owns its window and would add a full viewport
    of page height to every documentation route. Same override apps/host and
@@ -1349,18 +1329,70 @@ div[class^='codeBlockContainer'] {
   pointer-events: auto;
 }
 
-/* app-browser's dialogs (telemetry consent, privacy policy, the settings
-   slide-over) are `position: fixed` inside this click-through root, so they need
-   their pointer events back. Scoped to the root's own children rather than the
-   stage, which must stay click-through. */
-.docs-assistant-root > *:not(.widget-stage) {
+/* --- The docked panel (web mode) ---
+   The same `SidebarLayout` the IDE and canvas shells dock, positioned against the
+   viewport instead of an app stage. `@tinytinkerer/app-shell`'s AppStageShell
+   insets its own stage element for this; here the "stage" is the whole
+   documentation page, so the inset is applied by the wrapper in @theme/Root from
+   the measurements useStageInset publishes. */
+.docs-assistant-root .sidebar-stage.docs-assistant-stage {
+  position: fixed;
+  inset: 0;
+  height: 100%;
+  pointer-events: none;
+}
+
+.docs-assistant-stage .sidebar-panel {
+  pointer-events: auto;
+  background: var(--panel);
+  box-shadow: 0 0 40px rgba(36, 33, 24, 0.16);
+}
+
+/* The undock button lives on the stage, not the panel, for a full-bleed dock;
+   it still has to be clickable through the click-through stage. */
+.docs-assistant-stage .sidebar-undock,
+.docs-assistant-stage .sidebar-resize {
+  pointer-events: auto;
+}
+
+/* The widget's own click-through mount. It wraps whichever layout is active so
+   the docked panel's geometry can be measured from one element across a morph
+   (see assistant-widget.tsx); everything else the shell renders beside it — the
+   telemetry consent, privacy and settings dialogs, which are `position: fixed`
+   inside this click-through root — needs its pointer events back. */
+.docs-assistant-mount {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.docs-assistant-root > *:not(.docs-assistant-mount) {
   pointer-events: auto;
 }
 
 .docs-assistant-widget__loading {
   padding: 1rem;
   font-size: 0.85rem;
-  color: var(--docs-assistant-muted);
+  color: var(--muted);
+}
+
+/* --- The page inset while docked ---
+   A stable wrapper around the documentation, present from the first render, so
+   docking changes the page's insets without remounting anything inside it — a
+   live lab keeps running across a dock/undock. The values are CSS variables the
+   host writes from measured panel geometry; they are 0 while floating. */
+.docs-assistant-page {
+  padding-top: var(--docs-assistant-inset-top, 0px);
+  padding-right: var(--docs-assistant-inset-right, 0px);
+  padding-bottom: var(--docs-assistant-inset-bottom, 0px);
+  padding-left: var(--docs-assistant-inset-left, 0px);
+  transition: padding 120ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .docs-assistant-page {
+    transition: none;
+  }
 }
 
 /* --- Theme tokens ---
@@ -1375,14 +1407,10 @@ div[class^='codeBlockContainer'] {
    is a change to the live-lab precedent and belongs to its own issue, not this
    one.
 
-   The derived tokens app-browser builds with `color-mix` (panel-hover,
-   accent-soft, accent-ring, user-bubble) all resolve from these, so overriding
-   the bases recolours the whole conversation surface. */
+   This is the one thing the documentation legitimately decides about the product
+   surface: which semantic values its tokens resolve to per theme. It sets no
+   geometry and no chrome. */
 .docs-assistant-root {
-  --docs-assistant-border: #dccdb9;
-  --docs-assistant-panel: #fffaf5;
-  --docs-assistant-muted: #766a5d;
-
   --bg: #f6f2ec;
   --panel: #fffaf5;
   --muted: #766a5d;
@@ -1415,10 +1443,6 @@ div[class^='codeBlockContainer'] {
    theme toggle. The palette is this site's dark scale (see the `[data-theme]`
    block above), not a second invention. */
 html[data-theme='dark'] .docs-assistant-root {
-  --docs-assistant-border: #3a2f22;
-  --docs-assistant-panel: #251c13;
-  --docs-assistant-muted: #cbbfae;
-
   --bg: #1b140d;
   --panel: #251c13;
   --muted: #cbbfae;
@@ -1432,13 +1456,8 @@ html[data-theme='dark'] .docs-assistant-root {
   --widget-text: #f6ead7;
   --widget-muted: #cbbfae;
 
-  /* The DERIVED tokens too, not just the bases. app-browser declares these on
-     `:root` in terms of `--text`/`--panel`/`--accent`, and a `var()` in a custom
-     property resolves where it is DECLARED — so overriding only the bases here
-     left `--text-strong` (and the color-mix trio) computing from the light root
-     values. That is why the consent dialog's heading rendered near-black on a
-     near-black panel: about 1.04:1. Redeclared with the same expressions so they
-     resolve against this block's values instead. */
+  /* Derived from THIS block's bases — see the light block above for why each of
+     these has to be repeated rather than inherited. */
   --text-strong: var(--text);
   --link: var(--accent);
   --panel-hover: color-mix(in srgb, var(--text) 6%, var(--panel));
@@ -1448,66 +1467,28 @@ html[data-theme='dark'] .docs-assistant-root {
 }
 
 /* The floating shell's own frame and the settings/consent dialog surfaces carry
-   literal light colours in app-browser's stylesheet and utility classes. These
-   are the few that would otherwise stay bright in dark mode; each maps onto a
-   token above rather than a new hard-coded value. */
+   literal light colours in app-browser's stylesheet. These are the few that would
+   otherwise stay bright in dark mode; each maps onto a token above rather than a
+   new hard-coded value. */
 html[data-theme='dark'] .docs-assistant-root .widget-floating-shell {
   background: color-mix(in srgb, var(--panel) 88%, transparent);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
 }
 
 html[data-theme='dark'] .docs-assistant-root .widget-shell-minimize,
-html[data-theme='dark'] .docs-assistant-root .widget-shell-dock {
+html[data-theme='dark'] .docs-assistant-root .widget-shell-dock,
+html[data-theme='dark'] .docs-assistant-root .sidebar-undock {
   background: color-mix(in srgb, var(--text) 12%, transparent);
   color: var(--muted);
 }
 
 html[data-theme='dark'] .docs-assistant-root .widget-shell-minimize:hover,
-html[data-theme='dark'] .docs-assistant-root .widget-shell-dock:hover {
+html[data-theme='dark'] .docs-assistant-root .widget-shell-dock:hover,
+html[data-theme='dark'] .docs-assistant-root .sidebar-undock:hover {
   background: color-mix(in srgb, var(--text) 22%, transparent);
   color: var(--text);
 }
 
 html[data-theme='dark'] .docs-assistant-root .widget-shell-grip::before {
   background: color-mix(in srgb, var(--text) 40%, transparent);
-}
-
-/* --- The embedded baseline app-browser's own builds get from Tailwind preflight
-   ---
-   Every product app's Tailwind entry includes `tailwindcss/preflight.css`, which
-   resets `button`/`input`/`select` to `background: transparent` and
-   `color: inherit`. This site deliberately EXCLUDES preflight (see
-   src/css/tailwind.css: it would fight Infima across the whole documentation),
-   so app-browser's controls fell back to the UA's own `ButtonFace`/`FieldFace`
-   system colours — grey boxes in the settings panel and the tool picker, and
-   unreadable once the surrounding panel went dark (issue #480 review, finding 3).
-
-   Scoped to the assistant root, so this is the missing baseline for the embedded
-   product components ONLY: Infima keeps styling the documentation's own buttons,
-   and the live labs are untouched. Utility classes still win — they are declared
-   later and carry the same or higher specificity — so a control that sets its own
-   background keeps it. */
-.docs-assistant-root button,
-.docs-assistant-root input,
-.docs-assistant-root select,
-.docs-assistant-root textarea {
-  background-color: transparent;
-  background-image: none;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-}
-
-.docs-assistant-root button {
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-}
-
-/* Native controls keep their own widget rendering — a checkbox painted with
-   `background: transparent` would be invisible. `accent-color` is what colours
-   them, and the components set it from `--accent`. */
-.docs-assistant-root input[type='checkbox'],
-.docs-assistant-root input[type='radio'] {
-  background-color: revert;
 }

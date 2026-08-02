@@ -16,6 +16,7 @@
  * becoming a partial sweep as #478/#479 add statuses.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { appToolCatalogue } from '@tinytinkerer/app-browser'
 import type { Tool } from '@tinytinkerer/app-browser'
 import type { DocumentationSearchResponse } from '@tinytinkerer/app-browser'
 import {
@@ -33,6 +34,7 @@ import {
   resetDocumentationCorpus,
   SITE_CONFIG
 } from './site-artifact-fixture'
+import { asPublication } from '../../docs-page/__tests__/publication-fixture'
 
 const searchDocumentation = vi.fn<(...args: unknown[]) => Promise<DocumentationSearchResponse>>()
 vi.mock('../../docs-search/search-documentation', () => ({
@@ -40,7 +42,9 @@ vi.mock('../../docs-search/search-documentation', () => ({
 }))
 
 const toolNamed = (id: string): Tool<unknown, unknown> => {
-  const found = createDocumentationToolGroup().tools.find((candidate) => candidate.id === id)
+  const found = appToolCatalogue(createDocumentationToolGroup()).find(
+    (candidate) => candidate.id === id
+  )
   if (!found) throw new Error(`tool ${id} missing`)
   return found
 }
@@ -48,37 +52,36 @@ const toolNamed = (id: string): Tool<unknown, unknown> => {
 /** A route long enough to have overrun the cap on its own. */
 const HUGE_PATHNAME = `/docs/${'p'.repeat(40_000)}/`
 
-const documentRoute = (pathname: string) => ({
-  pathname,
-  siteConfig: SITE_CONFIG,
-  retryCorpus: () => {},
-  active: {
-    status: 'document' as const,
-    document: {
-      ref: CANONICAL.entry.ref,
-      version: CANONICAL.entry.version,
-      isLast: true,
-      title: CANONICAL.entry.title,
-      permalink: CANONICAL.entry.permalink,
-      unlisted: false
+const documentRoute = (pathname: string) =>
+  asPublication({
+    pathname,
+    siteConfig: SITE_CONFIG,
+    retryCorpus: () => {},
+    active: {
+      status: 'document' as const,
+      document: {
+        ref: CANONICAL.entry.ref,
+        version: CANONICAL.entry.version,
+        isLast: true,
+        title: CANONICAL.entry.title,
+        permalink: CANONICAL.entry.permalink,
+        unlisted: false
+      }
     }
-  }
-})
+  })
 
-const noDocumentRoute = (
-  reason: 'not_a_document_route' | 'corpus_unavailable',
-  pathname: string
-) => ({
-  pathname,
-  siteConfig: SITE_CONFIG,
-  retryCorpus: () => {},
-  active: {
-    status: 'no-document' as const,
-    reason,
-    message: `no current document: ${'m'.repeat(50_000)}`,
-    retryable: false
-  }
-})
+const noDocumentRoute = (reason: 'not_a_document_route' | 'corpus_unavailable', pathname: string) =>
+  asPublication({
+    pathname,
+    siteConfig: SITE_CONFIG,
+    retryCorpus: () => {},
+    active: {
+      status: 'no-document' as const,
+      reason,
+      message: `no current document: ${'m'.repeat(50_000)}`,
+      retryable: false
+    }
+  })
 
 /**
  * A *valid* corpus whose manifest records an enormous authored title.

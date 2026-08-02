@@ -9,8 +9,17 @@ import type { SnapEdge } from './layout-geometry'
 export type ChatMode = 'floating' | 'sidebar'
 
 export type ChatAppProps = {
-  // Which layout to show first. Uncontrolled: ChatApp owns the live mode so the
-  // dock/undock toggle can morph between layouts without remounting the session.
+  // Which layout to show.
+  //
+  // Uncontrolled by default: ChatApp owns the live mode (seeded from `mode`, then
+  // from its own persistence) so the dock/undock toggle can morph between layouts
+  // without remounting the session.
+  //
+  // CONTROLLED when `onModeChange` is also given (issue #480 re-review, finding
+  // 2). A host that persists its own presentation — the documentation assistant
+  // keeps `mode` beside open/minimized in one versioned record — must be the
+  // single authority, or two stores end up disagreeing about whether the reader
+  // left the assistant docked.
   mode?: ChatMode
   onModeChange?: (mode: ChatMode) => void
   // Whether the dock/undock toggle is offered (default true). Set false to pin the
@@ -102,9 +111,18 @@ export const ChatApp = ({
   starterPrompts,
   starterPromptCount
 }: ChatAppProps) => {
-  const [activeMode, setActiveMode] = useState<ChatMode>(
-    () => (morphable ? readStoredMode(storageKey) : null) ?? mode
+  // Controlled exactly when the caller supplies both halves. Adopting the
+  // controlled value during RENDER (rather than in an effect) is what keeps a
+  // host-driven change — restoring a persisted `sidebar` on activation, say —
+  // from being visible for one frame as the other layout.
+  const controlled = onModeChange !== undefined && mode !== undefined
+  const [uncontrolledMode, setUncontrolledMode] = useState<ChatMode>(
+    () => (morphable ? readStoredMode(storageKey) : null) ?? mode ?? 'floating'
   )
+  const activeMode = controlled ? mode : uncontrolledMode
+  const setActiveMode = (next: ChatMode): void => {
+    if (!controlled) setUncontrolledMode(next)
+  }
   // Which edge the docked "web mode" fills. Set by the dock button (the configured
   // `side`) or by a snap-drag release near a viewport edge (#324), and persisted so a
   // reload restores the same split.
@@ -119,8 +137,10 @@ export const ChatApp = ({
     setDockEdge(target)
     setActiveMode('sidebar')
     try {
-      window.localStorage.setItem(`${storageKey}:mode`, 'sidebar')
+      // The edge is ChatApp's either way — a controlled host owns which LAYOUT is
+      // shown, not which viewport edge a snap-drag released against.
       window.localStorage.setItem(`${storageKey}:edge`, target)
+      if (!controlled) window.localStorage.setItem(`${storageKey}:mode`, 'sidebar')
     } catch {
       // Non-fatal: the mode/edge just won't persist across reloads.
     }
@@ -130,7 +150,7 @@ export const ChatApp = ({
   const undock = () => {
     setActiveMode('floating')
     try {
-      window.localStorage.setItem(`${storageKey}:mode`, 'floating')
+      if (!controlled) window.localStorage.setItem(`${storageKey}:mode`, 'floating')
     } catch {
       // Non-fatal.
     }
@@ -141,6 +161,7 @@ export const ChatApp = ({
     return (
       <SidebarLayout
         storageKey={`${storageKey}:sidebar`}
+        {...(stageClassName !== undefined ? { stageClassName } : {})}
         sizeVariant={sizeVariant}
         side={side}
         edge={dockEdge}

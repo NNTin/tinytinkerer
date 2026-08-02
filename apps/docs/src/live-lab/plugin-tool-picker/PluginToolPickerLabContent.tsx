@@ -4,14 +4,7 @@
 // its stylesheets here, at module scope, never affects a page that doesn't
 // render a <PluginToolPickerLab>, and never runs during static rendering.
 import { useCallback, useMemo, useState } from 'react'
-import {
-  ChatApp,
-  genericToolTreeSummarizer,
-  ToolTreeSlot,
-  useBrowserApp,
-  useChatStore,
-  useToolTree
-} from '@tinytinkerer/app-browser'
+import { ChatApp, useBrowserApp, useChatStore, useToolTree } from '@tinytinkerer/app-browser'
 import {
   conversationActivityStatus,
   PixelAgentsStage,
@@ -49,9 +42,10 @@ export const PluginToolPickerLabContent = (): React.JSX.Element => {
   const canRunPixelAgents = usePixelAgentsCapability(pixelAgentsFailed)
   const browserApp = useBrowserApp()
 
-  const { summarizer, input, toolIdsByPlugin } = useToolTree({
-    fallbackSummarizer: genericToolTreeSummarizer
-  })
+  // No `fallbackSummarizer` argument: the lab's own `BrowserApp` carries one
+  // (createDocsBrowserApp attaches it to any app with a tool group), so this
+  // reads exactly what the shipped picker in the composer below reads.
+  const { summarizer, input, toolIdsByPlugin } = useToolTree()
   const view = useMemo(() => (summarizer ? summarizer(input) : null), [summarizer, input])
   const demoGroupView = view?.plugins.find(
     (plugin) => plugin.id === PLUGIN_TOOL_PICKER_APP_TOOL_GROUP_ID
@@ -182,7 +176,12 @@ export const PluginToolPickerLabContent = (): React.JSX.Element => {
 
   return (
     <div className="plugin-tool-picker-lab">
-      <div className="plugin-tool-picker-lab__picker" role="group" aria-label="Tool picker">
+      {/* A read-out of the production picker's state, NOT a second picker
+          (issue #480 re-review, finding 6). The lab used to render its own
+          `ToolTreeSlot` beside the one the embedded ChatApp now renders, which
+          put two controls over one selection store; the shipped control is the
+          one to teach, so this annotates it instead of competing with it. */}
+      <div className="plugin-tool-picker-lab__picker" role="group" aria-label="Enabled demo tools">
         <div className="plugin-tool-picker-lab__picker-summary">
           <p>
             <strong>
@@ -190,8 +189,9 @@ export const PluginToolPickerLabContent = (): React.JSX.Element => {
                 ? `${demoGroupView.enabledCount} of ${demoGroupView.toolCount}`
                 : '0 of 0'}
             </strong>{' '}
-            demo tools enabled. Changes apply from your next message — this is the SAME picker and
-            the SAME selection the runtime below actually uses.
+            demo tools enabled. Change the selection with the tool picker in the assistant&apos;s
+            composer below — this panel is a live read of that same selection, and changes apply
+            from your next message.
           </p>
           {/* Always-visible textual list (issue #453 acceptance: full functionality
               without relying on the Pixel Agents visualization) — the exact tool
@@ -205,7 +205,6 @@ export const PluginToolPickerLabContent = (): React.JSX.Element => {
             ))}
           </ul>
         </div>
-        <ToolTreeSlot fallbackSummarizer={genericToolTreeSummarizer} />
       </div>
 
       <ConversationSwitcher

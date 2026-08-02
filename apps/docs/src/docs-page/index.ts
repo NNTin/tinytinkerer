@@ -9,6 +9,7 @@ export type { DocsPageContextValue } from './docs-page-context'
 export type {
   DocsActiveDocument,
   DocsActiveDocumentState,
+  DocsActiveRoute,
   DocsNoActiveDocumentReason,
   DocsPageDiagnostic,
   DocsPageDiagnosticCode,

@@ -98,7 +98,7 @@ export const TelemetryConsentGate = () => {
               <button
                 type="button"
                 onClick={() => void onAccept()}
-                className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600"
+                className="rounded-lg bg-[var(--accent-strong)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
               >
                 Accept
               </button>

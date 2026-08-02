@@ -99,9 +99,21 @@ describe('assistant bundle boundary', () => {
 
   it('Root mounts the assistant beside the page, never around it', () => {
     const source = readSource('../theme/Root.tsx')
-    // A provider wrapping `children` would remount every documentation page —
-    // and every live lab running on one — the first time a reader opened the
-    // assistant. See issue #479 decision 2.
-    expect(source).toMatch(/\{children\}\s*\n\s*<DocsAssistantRuntimeHost \/>/)
+    // The assistant host is a SIBLING of the page region. A provider wrapping
+    // `children` would remount every documentation page — and every live lab
+    // running on one — the first time a reader opened the assistant. See issue
+    // #479 decision 2.
+    //
+    // `DocsAssistantPageRegion` is not that: it is a plain element rendered
+    // unconditionally in every mode, so it never mounts or unmounts (issue #480
+    // re-review, finding 2). What matters is that the host is not inside it.
+    expect(source).toMatch(
+      /<DocsAssistantPageRegion>\{children\}<\/DocsAssistantPageRegion>\s*\n\s*<DocsAssistantRuntimeHost \/>/
+    )
+    // Nothing between the region's own tags but `children` — the host cannot be
+    // inside it.
+    expect(source).not.toMatch(
+      /<DocsAssistantPageRegion>(?:(?!<\/DocsAssistantPageRegion>)[\s\S])*<DocsAssistantRuntimeHost/
+    )
   })
 })

@@ -139,7 +139,10 @@ export type { ContextGaugeProps } from './context-gauge'
 export { ContextInspectorSlot, useContextInspector } from './context-inspector'
 export { useToolTree, ToolTreeSlot } from './tool-tree'
 export { genericToolTreeSummarizer } from './generic-tool-tree-summarizer'
-export type { AppToolGroup } from './app-tool-group'
+export { appToolCatalogue, createAppToolRunInstances } from './app-tool-group'
+export { useDockedPanelMetrics } from './chat-shell/use-docked-panel-metrics'
+export type { DockedPanelMetrics } from './chat-shell/use-docked-panel-metrics'
+export type { AppTool, AppToolFactory, AppToolGroup, AppToolPurpose } from './app-tool-group'
 // The content node types an app's render-time policy operates on. Re-exported
 // here for the same reason ContentDocument/ContentNode already are: an app
 // (apps/docs) does not depend on @tinytinkerer/contracts directly.

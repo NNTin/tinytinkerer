@@ -12,13 +12,16 @@
  *   act on it.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { appToolCatalogue, createAppToolRunInstances } from '@tinytinkerer/app-browser'
 import type { Tool } from '@tinytinkerer/app-browser'
 import {
   publishDocsPageSnapshot,
   resetDocsPageSnapshotForTests
 } from '../../docs-page/page-snapshot'
 import type { DocsPageSnapshotInput } from '../../docs-page/page-snapshot'
-import type { DocsNoActiveDocumentReason } from '../../docs-page'
+import type { DocsActiveRoute, DocsNoActiveDocumentReason } from '../../docs-page'
+import { resolveDocsPageContext, type DocsCorpusLookup } from '../../docs-page/active-document'
+import { asPublication } from '../../docs-page/__tests__/publication-fixture'
 import { createDocumentationToolGroup, READ_CURRENT_DOC_TOOL_ID } from '../index'
 import { readCurrentDocOutputSchema, type ReadCurrentDocOutput } from '../schemas'
 import {
@@ -31,7 +34,7 @@ import {
 } from './site-artifact-fixture'
 
 const readCurrentDoc = (): Tool<unknown, unknown> => {
-  const tool = createDocumentationToolGroup().tools.find(
+  const tool = appToolCatalogue(createDocumentationToolGroup()).find(
     (candidate) => candidate.id === READ_CURRENT_DOC_TOOL_ID
   )
   if (!tool) throw new Error('read_current_doc tool is missing from the Documentation group')
@@ -48,38 +51,40 @@ const run = async (input: Record<string, unknown> = {}): Promise<ReadCurrentDocO
 const documentSnapshot = (
   fixture: typeof CANONICAL,
   overrides: Partial<DocsPageSnapshotInput> = {}
-): DocsPageSnapshotInput => ({
-  pathname: fixture.entry.permalink,
-  siteConfig: SITE_CONFIG,
-  retryCorpus: () => {},
-  active: {
-    status: 'document',
-    document: {
-      ref: fixture.entry.ref,
-      version: fixture.entry.version,
-      isLast: fixture.entry.isLast,
-      title: fixture.entry.title,
-      permalink: fixture.entry.permalink,
-      unlisted: fixture.entry.unlisted
-    }
-  },
-  ...overrides
-})
+): DocsPageSnapshotInput =>
+  asPublication({
+    pathname: fixture.entry.permalink,
+    siteConfig: SITE_CONFIG,
+    retryCorpus: () => {},
+    active: {
+      status: 'document',
+      document: {
+        ref: fixture.entry.ref,
+        version: fixture.entry.version,
+        isLast: fixture.entry.isLast,
+        title: fixture.entry.title,
+        permalink: fixture.entry.permalink,
+        unlisted: fixture.entry.unlisted
+      }
+    },
+    ...overrides
+  })
 
 const noDocumentSnapshot = (
   reason: DocsNoActiveDocumentReason,
   options: { pathname?: string; retryable?: boolean; retryCorpus?: () => void } = {}
-): DocsPageSnapshotInput => ({
-  pathname: options.pathname ?? '/docs/search/',
-  siteConfig: SITE_CONFIG,
-  retryCorpus: options.retryCorpus ?? (() => {}),
-  active: {
-    status: 'no-document',
-    reason,
-    message: `no current document: ${reason}`,
-    retryable: options.retryable ?? false
-  }
-})
+): DocsPageSnapshotInput =>
+  asPublication({
+    pathname: options.pathname ?? '/docs/search/',
+    siteConfig: SITE_CONFIG,
+    retryCorpus: options.retryCorpus ?? (() => {}),
+    active: {
+      status: 'no-document',
+      reason,
+      message: `no current document: ${reason}`,
+      retryable: options.retryable ?? false
+    }
+  })
 
 describe('read_current_doc', () => {
   afterEach(() => {
@@ -364,57 +369,87 @@ describe('read_current_doc', () => {
       })
     })
   })
-
-  describe('route pinning', () => {
-    it('answers for the route the call was made on, not one navigated to later', async () => {
-      installDocumentationCorpus()
-      publishDocsPageSnapshot(
-        noDocumentSnapshot('corpus_pending', {
-          pathname: CANONICAL.entry.permalink,
-          retryable: true
-        })
-      )
-
-      const pending = run()
-      // The reader moves on while the corpus is still loading. The question was
-      // asked about the page they were on, so that is what must be answered.
-      setTimeout(() => {
-        publishDocsPageSnapshot(documentSnapshot(LANDING))
-        publishDocsPageSnapshot(documentSnapshot(CANONICAL))
-      }, 20)
-
-      expect(await pending).toMatchObject({
-        status: 'ok',
-        doc: { ref: CANONICAL.entry.ref }
-      })
-    })
-  })
 })
 
-describe('the run pin (issue #480 review, finding 5)', () => {
+/**
+ * The run pin (issue #480 review, finding 5; re-review, finding 4).
+ *
+ * These build publications the way `DocsPageProvider` does — a route plus a
+ * `resolveRoute` closed over the corpus as of that publication — because that is
+ * what the property under test needs. A fixture whose `resolveRoute` ignored its
+ * argument would answer about the pinned route no matter what the implementation
+ * did, and could not tell "pinned the route" from "pinned nothing".
+ */
+describe('the run pin', () => {
   afterEach(() => {
     resetDocumentationCorpus()
     resetDocsPageSnapshotForTests()
   })
 
-  /** The tools the runtime builds for one run, as `createRuntime` does. */
+  const CORPUS_ENTRIES = [CANONICAL, LANDING, OVERSIZED].map((fixture) => fixture.entry)
+
+  const readyCorpus = (): DocsCorpusLookup => ({
+    status: 'ready',
+    store: {
+      findByRef: (ref, version) =>
+        CORPUS_ENTRIES.find(
+          (entry) => entry.ref === ref && (version === undefined || entry.version === version)
+        )
+    }
+  })
+
+  const pendingCorpus = (): DocsCorpusLookup => ({ status: 'pending' })
+
+  const failedCorpus = (retryable: boolean): DocsCorpusLookup => ({
+    status: 'unavailable',
+    code: 'manifest_unavailable',
+    message: 'the corpus manifest could not be fetched',
+    retryable
+  })
+
+  /** The route a real document lives on, as Docusaurus routing reports it. */
+  const routeOf = (fixture: typeof CANONICAL): DocsActiveRoute => ({
+    pathname: fixture.entry.permalink,
+    activeDocId: fixture.entry.ref,
+    activeVersionName: fixture.entry.version
+  })
+
+  /** A route Docusaurus has no active document for (search results, a 404). */
+  const NON_DOCUMENT_ROUTE: DocsActiveRoute = { pathname: '/docs/search/' }
+
+  const publish = (
+    route: DocsActiveRoute,
+    corpus: DocsCorpusLookup,
+    retryCorpus: () => void = () => {}
+  ): void => {
+    const resolveRoute = (target: DocsActiveRoute) =>
+      resolveDocsPageContext(target, corpus, SITE_CONFIG)
+    publishDocsPageSnapshot({
+      ...resolveRoute(route),
+      siteConfig: SITE_CONFIG,
+      retryCorpus,
+      route,
+      resolveRoute
+    })
+  }
+
+  /** The tools the runtime builds for one run, exactly as `createRuntime` does. */
   const runScopedReadCurrentDoc = (): Tool<unknown, unknown> => {
-    const group = createDocumentationToolGroup()
-    const tools = group.createTools?.() ?? group.tools
-    const tool = tools.find((candidate) => candidate.id === READ_CURRENT_DOC_TOOL_ID)
+    const tool = createAppToolRunInstances(createDocumentationToolGroup()).find(
+      (candidate) => candidate.id === READ_CURRENT_DOC_TOOL_ID
+    )
     if (!tool) throw new Error('read_current_doc tool is missing from the run-scoped group')
     return tool
   }
 
   it('answers about the page the run started on, not the one the reader moved to', async () => {
     installDocumentationCorpus()
-    // The reader is on the canonical document and hits send.
-    publishDocsPageSnapshot(documentSnapshot(CANONICAL))
+    publish(routeOf(CANONICAL), readyCorpus())
     const tool = runScopedReadCurrentDoc()
 
-    // …then keeps reading while the model decides, landing somewhere else long
-    // before the tool call is actually made.
-    publishDocsPageSnapshot(documentSnapshot(LANDING))
+    // The reader keeps reading while the model decides, landing somewhere else
+    // long before the tool call is actually made.
+    publish(routeOf(LANDING), readyCorpus())
 
     const output = (await tool.execute({})) as ReadCurrentDocOutput
     expect(output).toMatchObject({
@@ -425,37 +460,102 @@ describe('the run pin (issue #480 review, finding 5)', () => {
 
   it('reports no current document when the run started off one, even if the reader lands on one', async () => {
     installDocumentationCorpus()
-    // Asked from /search, where there is no current page.
-    publishDocsPageSnapshot(noDocumentSnapshot('not_a_document_route'))
+    publish(NON_DOCUMENT_ROUTE, readyCorpus())
     const tool = runScopedReadCurrentDoc()
 
-    publishDocsPageSnapshot(documentSnapshot(CANONICAL))
+    publish(routeOf(CANONICAL), readyCorpus())
 
     const output = (await tool.execute({})) as ReadCurrentDocOutput
     expect(output).toMatchObject({ status: 'not_on_doc_page', pathname: '/docs/search/' })
   })
 
-  it('still waits for a corpus that had not loaded when the run started', async () => {
-    // An unsettled pin must NOT short-circuit: a run that began a moment before
-    // the manifest arrived would otherwise answer "unavailable" forever.
-    publishDocsPageSnapshot(noDocumentSnapshot('corpus_pending', { retryable: true }))
+  // The three cases below are the ones a settled-only pin got wrong: it had
+  // nothing resolved to hold on to, so it fell back to the live snapshot and
+  // silently retargeted to wherever the reader had gone.
+  it('resolves the pinned route once a corpus that was still loading arrives', async () => {
+    installDocumentationCorpus()
+    publish(routeOf(CANONICAL), pendingCorpus())
     const tool = runScopedReadCurrentDoc()
 
-    installDocumentationCorpus()
-    publishDocsPageSnapshot(documentSnapshot(CANONICAL))
+    // The manifest lands — and by then the reader has navigated away.
+    publish(routeOf(LANDING), readyCorpus())
 
     const output = (await tool.execute({})) as ReadCurrentDocOutput
-    expect(output).toMatchObject({ status: 'ok', doc: { ref: CANONICAL.entry.ref } })
+    expect(output).toMatchObject({
+      status: 'ok',
+      doc: { ref: CANONICAL.entry.ref, permalink: CANONICAL.entry.permalink }
+    })
+  })
+
+  it('resolves the pinned route after a retryable manifest failure recovers', async () => {
+    installDocumentationCorpus()
+    const retryCorpus = vi.fn(() => {
+      publish(routeOf(LANDING), readyCorpus())
+    })
+    publish(routeOf(CANONICAL), failedCorpus(true), retryCorpus)
+    const tool = runScopedReadCurrentDoc()
+
+    // The reader moves on while the manifest is still broken, so by the time the
+    // tool runs the live publication is about a different page.
+    publish(routeOf(LANDING), failedCorpus(true), retryCorpus)
+
+    const output = (await tool.execute({})) as ReadCurrentDocOutput
+    expect(retryCorpus).toHaveBeenCalledTimes(1)
+    expect(output).toMatchObject({
+      status: 'ok',
+      doc: { ref: CANONICAL.entry.ref, permalink: CANONICAL.entry.permalink }
+    })
+  })
+
+  it('adopts the first publication when the run beat the provider, and holds it', async () => {
+    // Nothing has been published yet, so there is no route to pin. Identity on
+    // this site comes from Docusaurus routing and nowhere else, so this waits for
+    // the first publication rather than inventing one from `window.location` —
+    // and that publication is then held for the rest of the call, so a reader who
+    // navigates a moment later still does not retarget the answer.
+    installDocumentationCorpus()
+    const tool = runScopedReadCurrentDoc()
+
+    setTimeout(() => {
+      publish(routeOf(CANONICAL), pendingCorpus())
+      publish(routeOf(LANDING), readyCorpus())
+    }, 20)
+
+    const output = (await tool.execute({})) as ReadCurrentDocOutput
+    expect(output).toMatchObject({
+      status: 'ok',
+      doc: { ref: CANONICAL.entry.ref, permalink: CANONICAL.entry.permalink }
+    })
+  })
+
+  it('answers about the pinned route even while the corpus is still loading elsewhere', async () => {
+    // The catalogue path: no pin at capture, so the first publication supplies
+    // one. It is `corpus_pending`, which must NOT short-circuit into
+    // "unavailable" — the wait is what a reader sees resolve a moment later.
+    installDocumentationCorpus()
+    publish(routeOf(CANONICAL), pendingCorpus())
+    const tool = readCurrentDoc()
+
+    setTimeout(() => {
+      publish(routeOf(LANDING), readyCorpus())
+    }, 20)
+
+    const output = (await tool.execute({})) as ReadCurrentDocOutput
+    expect(output).toMatchObject({
+      status: 'ok',
+      doc: { ref: CANONICAL.entry.ref, permalink: CANONICAL.entry.permalink }
+    })
   })
 
   it('leaves the catalogue tools resolving at execution time', async () => {
-    // The session-long `tools` array is what the picker lists; it carries no pin,
-    // so it keeps #476's behaviour for any consumer that uses it directly.
+    // The catalogue is what the picker lists, and it is derived whenever the
+    // picker first renders — which is not a run. Its instances carry no pin, so
+    // they keep #476's execution-time behaviour for any direct caller.
     installDocumentationCorpus()
-    publishDocsPageSnapshot(documentSnapshot(CANONICAL))
+    publish(routeOf(CANONICAL), readyCorpus())
     const tool = readCurrentDoc()
 
-    publishDocsPageSnapshot(documentSnapshot(LANDING))
+    publish(routeOf(LANDING), readyCorpus())
 
     const output = (await tool.execute({})) as ReadCurrentDocOutput
     expect(output).toMatchObject({ status: 'ok', doc: { ref: LANDING.entry.ref } })
@@ -463,8 +563,8 @@ describe('the run pin (issue #480 review, finding 5)', () => {
 
   it('offers the same tool ids either way, which the runtime filters selection against', () => {
     const group = createDocumentationToolGroup()
-    expect((group.createTools?.() ?? []).map((tool) => tool.id)).toEqual(
-      group.tools.map((tool) => tool.id)
+    expect(createAppToolRunInstances(group).map((tool) => tool.id)).toEqual(
+      appToolCatalogue(group).map((tool) => tool.id)
     )
   })
 })

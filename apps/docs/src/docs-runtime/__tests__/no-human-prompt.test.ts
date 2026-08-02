@@ -16,6 +16,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { appToolCatalogue } from '@tinytinkerer/app-browser'
 import { createDocumentationToolGroup } from '../../docs-tools'
 import { pluginToolPickerDemoToolGroup } from '../../live-lab/plugin-tool-picker/demo-tools'
 
@@ -40,7 +41,7 @@ describe('no human-in-the-loop capability in docs', () => {
     // A `Tool` asks for human input through the PluginHost it is executed with;
     // an app tool group has no such hook, and none of these tools names one.
     for (const group of [createDocumentationToolGroup(), pluginToolPickerDemoToolGroup]) {
-      for (const tool of group.tools) {
+      for (const tool of appToolCatalogue(group)) {
         expect(tool).not.toHaveProperty('requestHumanInput')
         expect(String(tool['execute'])).not.toMatch(/requestHumanInput/)
       }

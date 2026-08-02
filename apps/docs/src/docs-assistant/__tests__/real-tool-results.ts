@@ -42,12 +42,13 @@ vi.mock('../../docs-search/search-documentation', () => ({
 }))
 
 const { createDocumentationToolGroup } = await import('../../docs-tools')
+const { asPublication } = await import('../../docs-page/__tests__/publication-fixture')
+const { appToolCatalogue } = await import('@tinytinkerer/app-browser')
 
 const toolById = new Map(
-  createDocumentationToolGroup({ getSiteConfig: () => SITE_CONFIG }).tools.map((tool) => [
-    tool.id,
-    tool
-  ])
+  appToolCatalogue(createDocumentationToolGroup({ getSiteConfig: () => SITE_CONFIG })).map(
+    (tool) => [tool.id, tool] as const
+  )
 )
 
 /**
@@ -73,22 +74,24 @@ export const runTool = async (
  * so `read_current_doc` resolves a current document instead of reporting none.
  */
 export const readerIsOn = (fixture: SiteDocumentFixture): void => {
-  publishDocsPageSnapshot({
-    pathname: fixture.entry.permalink,
-    siteConfig: SITE_CONFIG,
-    retryCorpus: () => {},
-    active: {
-      status: 'document',
-      document: {
-        ref: fixture.entry.ref,
-        version: fixture.entry.version,
-        isLast: fixture.entry.isLast,
-        title: fixture.entry.title,
-        permalink: fixture.entry.permalink,
-        unlisted: fixture.entry.unlisted
+  publishDocsPageSnapshot(
+    asPublication({
+      pathname: fixture.entry.permalink,
+      siteConfig: SITE_CONFIG,
+      retryCorpus: () => {},
+      active: {
+        status: 'document',
+        document: {
+          ref: fixture.entry.ref,
+          version: fixture.entry.version,
+          isLast: fixture.entry.isLast,
+          title: fixture.entry.title,
+          permalink: fixture.entry.permalink,
+          unlisted: fixture.entry.unlisted
+        }
       }
-    }
-  })
+    })
+  )
 }
 
 export const readerIsNowhere = resetDocsPageSnapshotForTests

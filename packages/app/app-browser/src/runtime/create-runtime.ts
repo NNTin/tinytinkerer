@@ -21,7 +21,7 @@ import type {
 import { LiteLLMProvider } from './litellm-provider'
 import type { PlannerToolDescriptor } from './mcp-planner'
 import { createEdgeFetch, type ForwardedRequestSink } from './edge-fetch'
-import type { AppToolGroup } from '../app-tool-group'
+import { createAppToolRunInstances, type AppToolGroup } from '../app-tool-group'
 import type { AppAssistantPolicy, AppToolResultRecord } from '../app-assistant-policy'
 import { createMcpTool } from './mcp-tool'
 import { createSandboxExecutor } from '../sandbox-executor'
@@ -417,11 +417,11 @@ export const createRuntime = (options: {
   // instructions are bound to exactly this list (issue #478), so a tool the user
   // unchecked in the tool picker is never described to the model as available.
   const registeredAppToolIds: string[] = []
-  // Per-RUN instances when the group builds them (issue #480 review, finding 5),
-  // otherwise the session-long catalogue. This function runs once per run, which
-  // is exactly the moment a group that captures "what was true when the reader
-  // hit send" needs.
-  const appTools = appToolGroup?.createTools?.() ?? appToolGroup?.tools ?? []
+  // Per-RUN instances when the group defines its tools with a factory (issue #480
+  // review, finding 5), otherwise the session-long catalogue itself. This function
+  // runs once per run, which is exactly the moment a group that captures "what was
+  // true when the reader hit send" needs.
+  const appTools = appToolGroup ? createAppToolRunInstances(appToolGroup) : []
   for (const tool of appTools) {
     if (!isPluginToolEnabled(appToolDisablement, appToolGroup!.id, tool.id)) {
       continue

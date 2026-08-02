@@ -19,7 +19,11 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   ChatApp: (props: ChatAppProps) => {
     captured.props = props
     return <div data-testid="chat-app">chat</div>
-  }
+  },
+  // The docked-panel measurement is real geometry the stub ChatApp never renders,
+  // so it is stubbed to "floating" here; the page-inset behaviour it drives has
+  // its own coverage in the widget e2e.
+  useDockedPanelMetrics: () => ({ ref: { current: null }, metrics: null })
 }))
 
 const load = async () => {
@@ -86,14 +90,46 @@ const renderWidget = async (initialEntry = '/docs/architecture/') => {
 }
 
 describe('the widget is the real ChatApp, configured for a documentation site', () => {
-  it('renders it floating and NOT morphable', async () => {
+  it('renders it floating by default and morphable', async () => {
     await renderWidget()
 
     expect(screen.getByTestId('chat-app')).toBeInTheDocument()
     expect(captured.props?.mode).toBe('floating')
-    // A global assistant, not the labs' morphable surface: docking into a
-    // sidebar is #472's shape, and "web mode" means nothing on a docs page.
-    expect(captured.props?.morphable).toBe(false)
+    // Morphing into the docked web mode is supported (issue #480 re-review,
+    // finding 2): the reader gets the same dock/undock the IDE and canvas
+    // shells offer, and the docs page insets around it rather than being
+    // covered.
+    expect(captured.props?.morphable).not.toBe(false)
+  })
+
+  it('is controlled on BOTH axes by the docs presentation store', async () => {
+    // One authority. `ChatApp` persists `:mode` and `FloatingLayout` persists
+    // `minimized` inside its geometry blob; letting either own half the answer
+    // is what makes "is the assistant showing?" depend on which store you ask.
+    const { setDocsAssistantMode } = await renderWidget()
+
+    expect(captured.props?.mode).toBe('floating')
+    expect(captured.props?.onModeChange).toBeTypeOf('function')
+    expect(captured.props?.onMinimizedChange).toBeTypeOf('function')
+
+    act(() => {
+      setDocsAssistantMode('sidebar')
+    })
+    expect(captured.props?.mode).toBe('sidebar')
+  })
+
+  it('writes the widget"s own dock/undock back into the store', async () => {
+    const { readDocsAssistantPresentation } = await renderWidget()
+
+    act(() => {
+      captured.props?.onModeChange?.('sidebar')
+    })
+    expect(readDocsAssistantPresentation().mode).toBe('sidebar')
+
+    act(() => {
+      captured.props?.onModeChange?.('floating')
+    })
+    expect(readDocsAssistantPresentation().mode).toBe('floating')
   })
 
   it('gives it the assistant"s own layout key, apart from the conversation store', async () => {
@@ -128,12 +164,12 @@ describe('minimization is controlled by the docs presentation store', () => {
     act(() => {
       captured.props?.onMinimizedChange?.(false)
     })
-    expect(readDocsAssistantPresentation().presentation).toBe('open')
+    expect(readDocsAssistantPresentation().minimized).toBe(false)
 
     act(() => {
       captured.props?.onMinimizedChange?.(true)
     })
-    expect(readDocsAssistantPresentation().presentation).toBe('minimized')
+    expect(readDocsAssistantPresentation().minimized).toBe(true)
   })
 
   it('takes focus on mount only when a reader opened it', async () => {

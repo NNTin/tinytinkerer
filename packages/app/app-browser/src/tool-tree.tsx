@@ -6,6 +6,7 @@ import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
 // is the same source ui re-exports.
 import { FaListCheck } from 'react-icons/fa6'
 import { useBrowserApp, useSettingsStore } from './app'
+import { appToolCatalogue } from './app-tool-group'
 import { usePluginModules } from './plugins/use-plugin-modules'
 
 // The panel is lazy-loaded so it stays out of the eagerly-loaded chat route chunk
@@ -103,17 +104,21 @@ export const useToolTree = (options?: {
     // to the shell), so it is added unconditionally here; the all-unchecked =
     // still-visible behavior falls out because its tools always exist.
     const appGroupIds: string[] = []
-    if (appToolGroup && appToolGroup.tools.length > 0) {
+    // The catalogue, never a run's instances: this is the list the reader picks
+    // from, and it is stable for the whole session even when the group builds its
+    // tools per run (see app-tool-group.ts).
+    const appTools = appToolGroup ? appToolCatalogue(appToolGroup) : []
+    if (appToolGroup && appTools.length > 0) {
       pluginNodes.push({
         id: appToolGroup.id,
         label: appToolGroup.label,
-        tools: appToolGroup.tools.map((tool) => ({
+        tools: appTools.map((tool) => ({
           id: tool.id,
           description: tool.description,
           enabled: isPluginToolEnabled(appToolDisablement, appToolGroup.id, tool.id)
         }))
       })
-      ids[appToolGroup.id] = appToolGroup.tools.map((tool) => tool.id)
+      ids[appToolGroup.id] = appTools.map((tool) => tool.id)
       appGroupIds.push(appToolGroup.id)
     }
 

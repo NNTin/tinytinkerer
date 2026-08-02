@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { DOCS_ASSISTANT_STORAGE_NAMESPACE } from '../assistant-constants'
 import { DOCS_LAB_STORAGE_NAMESPACE } from '../../live-lab/constants'
+import type { AppToolGroup } from '@tinytinkerer/app-browser'
 
 vi.mock('@tinytinkerer/app-browser/styles.css', () => ({}))
 
@@ -29,6 +30,12 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   resolveBrowserShellBootstrapConfig
 }))
 
+// `app-browser` is mocked here (the point of this suite is what `assistant-app`
+// passes it), so its `appToolCatalogue` is not available. The group's tools are
+// a per-run factory, and this is what reading its catalogue amounts to.
+const catalogueOf = (group: AppToolGroup) =>
+  typeof group.tools === 'function' ? group.tools('catalogue') : group.tools
+
 const runtimeConfig = {
   edgeBaseUrl: 'https://edge.example',
   githubClientId: 'client-123',
@@ -38,7 +45,7 @@ const runtimeConfig = {
 }
 
 type CreateBrowserAppOptions = {
-  appToolGroup?: { id: string; tools: { id: string }[] }
+  appToolGroup?: AppToolGroup
   appAssistantPolicy?: unknown
   starterPrompts?: readonly string[]
   documentGlobals: Record<string, boolean>
@@ -137,7 +144,7 @@ describe('ensureDocsAssistantApp', () => {
 
     const options = optionsOfLastApp()
     expect(options.appToolGroup?.id).toBe('documentation')
-    expect(options.appToolGroup?.tools.map((tool) => tool.id)).toEqual([
+    expect(catalogueOf(options.appToolGroup!).map((tool) => tool.id)).toEqual([
       'search_docs',
       'read_doc',
       'read_current_doc'

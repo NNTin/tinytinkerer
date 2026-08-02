@@ -21,14 +21,14 @@
  */
 import type { AppToolGroup, Tool } from '@tinytinkerer/app-browser'
 import { searchDocumentation } from '../docs-search/search-documentation'
-import { readDocsPageSnapshot, type DocsPageSnapshot } from '../docs-page'
+import { readDocsPageSnapshot } from '../docs-page'
 import type { SiteUrlConfig } from '../docs-corpus/manifest-store'
 import {
   summarizeReadCurrentDocActivity,
   summarizeReadDocActivity,
   summarizeSearchDocsActivity
 } from './activity'
-import { resolveCurrentDocument } from './current-document'
+import { captureDocsRunPin, resolveCurrentDocument, type DocsRunPin } from './current-document'
 import { readDocument } from './read-document'
 import {
   boundedMessage,
@@ -188,10 +188,10 @@ const createReadDocTool = (
 
 const createReadCurrentDocTool = (
   dependencies: DocumentationToolDependencies,
-  // The page context as of when this RUN started, when the group built per-run
-  // instances (issue #480 review, finding 5). Undefined for the session-long
-  // catalogue, which keeps #476's execution-time resolution.
-  pinned?: DocsPageSnapshot
+  // The ROUTE this run was submitted on (issue #480 review, finding 5; re-review,
+  // finding 4). Undefined only when the group is asked for its catalogue, which
+  // nothing executes.
+  pin?: DocsRunPin
 ): Tool<ReadCurrentDocInput, ReadCurrentDocOutput> => ({
   id: READ_CURRENT_DOC_TOOL_ID,
   description:
@@ -203,7 +203,7 @@ const createReadCurrentDocTool = (
   outputSchema: readCurrentDocOutputSchema,
   summarizeActivity: summarizeReadCurrentDocActivity,
   async execute(input) {
-    const current = await resolveCurrentDocument(pinned)
+    const current = await resolveCurrentDocument(pin)
     if (current.kind === 'not-on-doc-page') {
       return cappedRead({
         status: 'not_on_doc_page',
@@ -226,7 +226,7 @@ const createReadCurrentDocTool = (
     // non-canonical documentation version must read that version's content, not
     // whatever an unqualified lookup resolves to.
     return cappedRead(
-      await readDocument(dependencies.getSiteConfig?.() ?? current.snapshot.siteConfig, {
+      await readDocument(dependencies.getSiteConfig?.() ?? current.siteConfig, {
         ref: current.document.ref,
         version: current.document.version,
         ...(input.anchor === undefined ? {} : { anchor: input.anchor }),
@@ -247,25 +247,25 @@ export const createDocumentationToolGroup = (
 ): AppToolGroup => ({
   id: DOCUMENTATION_TOOL_GROUP_ID,
   label: 'Documentation',
-  // The stable catalogue the tool picker lists and per-tool disablement keys on.
-  tools: [
-    createSearchDocsTool(dependencies),
-    createReadDocTool(dependencies),
-    createReadCurrentDocTool(dependencies)
-  ],
-  // Per-RUN instances, built when the reader hits send (issue #480 review,
-  // finding 5). The whole reason this exists is the line below: "which page is
-  // this?" is answered from the snapshot taken NOW, not from wherever the reader
-  // has navigated to by the time the model gets around to calling the tool.
+  // A FACTORY, not an array (issue #480 re-review, finding 5). `app-browser`
+  // calls it once to derive the catalogue the tool picker lists, and again for
+  // every run to build the instances the runtime registers — from this one
+  // definition site, so an id, a schema or a description cannot drift between
+  // what the reader selects and what the model is handed.
   //
-  // Same ids as the catalogue above, which is what the runtime filters the
-  // reader's tool selection against.
-  createTools: () => {
-    const pinned = readDocsPageSnapshot()
+  // The per-run call is the whole reason the seam exists: `captureDocsRunPin()`
+  // records the route the reader was on when they hit send, so "which page is
+  // this?" is answered about that page rather than wherever they have navigated
+  // to by the time the model gets around to calling the tool.
+  tools: (purpose) => {
+    // Pinned for a RUN only. The catalogue is derived whenever the tool picker
+    // first renders and is never executed, so pinning it would bind a route that
+    // no reader ever asked about.
+    const pin = purpose === 'run' ? captureDocsRunPin() : undefined
     return [
       createSearchDocsTool(dependencies),
       createReadDocTool(dependencies),
-      createReadCurrentDocTool(dependencies, pinned)
+      createReadCurrentDocTool(dependencies, pin)
     ]
   }
 })

@@ -1,5 +1,5 @@
-import { ChatApp } from '@tinytinkerer/app-browser'
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { ChatApp, useDockedPanelMetrics } from '@tinytinkerer/app-browser'
+import type { CSSProperties, ReactNode } from 'react'
 import type { ChatAppProps, ChatMode } from '@tinytinkerer/app-browser'
 
 export type AppStageShellProps = {
@@ -9,25 +9,6 @@ export type AppStageShellProps = {
   className?: string
 }
 
-const insetForPanel = (panel: HTMLElement): CSSProperties => {
-  const rect = panel.getBoundingClientRect()
-  switch (panel.dataset.edge) {
-    case 'right':
-      return { right: Math.round(rect.width) }
-    case 'left':
-      return { left: Math.round(rect.width) }
-    case 'top':
-      return { top: Math.round(rect.height) }
-    case 'bottom':
-      return { bottom: Math.round(rect.height) }
-    default:
-      return {}
-  }
-}
-
-const insetSignature = (inset: CSSProperties): string =>
-  `${inset.top ?? ''}|${inset.right ?? ''}|${inset.bottom ?? ''}|${inset.left ?? ''}`
-
 // Generic composition for a trusted in-process application stage and assistant.
 export const AppStageShell = ({
   children,
@@ -35,35 +16,11 @@ export const AppStageShell = ({
   initialChatMode = 'floating',
   className
 }: AppStageShellProps): React.JSX.Element => {
-  const chatRef = useRef<HTMLDivElement>(null)
-  const [stageInset, setStageInset] = useState<CSSProperties>({})
-
-  useEffect(() => {
-    const root = chatRef.current
-    if (!root) return
-    let lastSignature = insetSignature({})
-    const measure = () => {
-      const panel = root.querySelector<HTMLElement>('.sidebar-panel')
-      const next = panel ? insetForPanel(panel) : {}
-      const signature = insetSignature(next)
-      if (signature === lastSignature) return
-      lastSignature = signature
-      setStageInset(next)
-    }
-    measure()
-    const observer = new MutationObserver(measure)
-    observer.observe(root, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['style', 'data-edge']
-    })
-    window.addEventListener('resize', measure)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', measure)
-    }
-  }, [])
+  // The measurement itself lives in app-browser, beside the layout that produces
+  // it, so a second host can inset its own stage from the same numbers rather
+  // than growing a private copy of this effect (issue #480 re-review, finding 2).
+  const { ref: chatRef, metrics } = useDockedPanelMetrics()
+  const stageInset: CSSProperties = metrics ? { [metrics.edge]: metrics.size } : {}
 
   return (
     <div className={['app-stage-shell', className].filter(Boolean).join(' ')}>

@@ -49,6 +49,10 @@ export type SidebarLayoutProps = {
   maxFraction?: number
   // When set, shows a float/undock button that morphs back to the floating layout.
   onUndock?: () => void
+  // Extra class on the stage element, for a host that positions the docked panel
+  // against the viewport rather than inside its own layout (the documentation
+  // assistant). Mirrors FloatingLayout's prop of the same name.
+  stageClassName?: string
   children: ReactNode
 }
 
@@ -63,6 +67,7 @@ export const SidebarLayout = ({
   minWidth = DEFAULT_MIN_WIDTH,
   maxFraction = DEFAULT_MAX_FRACTION,
   onUndock,
+  stageClassName,
   children
 }: SidebarLayoutProps) => {
   const config = useBrowserShellConfig()
@@ -162,6 +167,8 @@ export const SidebarLayout = ({
   }
 
   const heightClass = fill ? 'h-full' : sizeVariant === 'mobile' ? 'h-[100dvh]' : 'h-screen'
+  const stageClasses = (...extra: string[]) =>
+    ['sidebar-stage', stageClassName, ...extra].filter(Boolean).join(' ')
 
   const undockButton = onUndock ? (
     <button
@@ -177,7 +184,7 @@ export const SidebarLayout = ({
 
   if (!isDocked) {
     return (
-      <div className={`sidebar-stage relative ${heightClass} w-full`} style={themeStyle}>
+      <div className={stageClasses('relative', heightClass, 'w-full')} style={themeStyle}>
         {undockButton}
         {children}
       </div>
@@ -196,7 +203,7 @@ export const SidebarLayout = ({
 
   return (
     <div
-      className={`sidebar-stage relative flex ${heightClass} w-full ${stageAlign}`}
+      className={stageClasses('relative', 'flex', heightClass, 'w-full', stageAlign)}
       style={themeStyle}
     >
       <div

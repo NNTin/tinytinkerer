@@ -17,13 +17,35 @@
  * URLs against it) and only the provider is inside Docusaurus' context.
  */
 import type { SiteUrlConfig } from '../docs-corpus/manifest-store'
-import type { DocsPageResolution } from './active-document'
+import type { DocsActiveRoute, DocsPageResolution } from './active-document'
 
 export type DocsPageSnapshotInput = DocsPageResolution & {
   /** The site's `baseUrl`/`trailingSlash`, from `useDocusaurusContext()`. */
   siteConfig: SiteUrlConfig
   /** #476's gated corpus recovery. Stable across renders; safe to call unconditionally. */
   retryCorpus: () => void
+  /**
+   * The UNRESOLVED Docusaurus routing input this publication resolved — pathname
+   * plus the active document id and version, before the corpus had any say.
+   *
+   * Published alongside the resolution because a route's identity is knowable
+   * long before the corpus can turn it into a document (issue #480 re-review,
+   * finding 4). A run that starts while the manifest is still loading captures
+   * this, and {@link DocsPageSnapshotInput.resolveRoute} turns it into an answer
+   * once a manifest exists — even if the reader has navigated away by then.
+   */
+  route: DocsActiveRoute
+  /**
+   * Resolves ANY route against the corpus as of this publication.
+   *
+   * The route-independent half of the page context: `active` above answers for
+   * the route the reader is on *now*, this answers for a route someone captured
+   * earlier. Without it a pinned route could only be re-resolved by waiting for
+   * the provider to publish that route again — which never happens once the
+   * reader has moved on, so a question asked on A before the manifest arrived
+   * could only ever be answered about B.
+   */
+  resolveRoute: (route: DocsActiveRoute) => DocsPageResolution
 }
 
 export type DocsPageSnapshot = DocsPageSnapshotInput & {
