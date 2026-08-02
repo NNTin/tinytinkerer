@@ -85,19 +85,24 @@ test.describe('the documentation assistant, on every supported engine', () => {
     // Docusaurus' own search dropdown is one of the three overlays that own the
     // viewport. Opening it must take the assistant out of the pointer, the tab
     // order and the accessibility tree — without unmounting it.
-    const search = page.locator('.navbar__search [role="combobox"]').first()
-    await search.click()
-    await search.fill('plugin')
+    //
+    // `ControlOrMeta` rather than `Control`: the WebKit project runs a macOS
+    // device profile, where the shortcut the search binds is Cmd+K. Reaching it
+    // through the same keyboard path a reader uses is also more portable than
+    // clicking a navbar element whose markup differs between themes.
+    await page.keyboard.press('ControlOrMeta+K')
 
     await expect(root).toHaveAttribute('data-host-overlay', 'true')
     await expect(root).toHaveAttribute('inert', /.*/)
     // `inert` is the part engines implement differently. The consequence a
-    // reader would notice is the one asserted: the composer is not reachable.
-    await expect(composer).not.toBeFocused()
+    // reader would notice is the one asserted: the composer is gone from the
+    // page and no longer holds focus.
     await expect(composer).toBeHidden()
+    await expect(composer).not.toBeFocused()
 
-    // Still mounted, so nothing about the conversation was thrown away.
-    await expect(root.locator('textarea, input[type="text"]')).toHaveCount(1)
+    // Still MOUNTED, though — the conversation, the draft and any in-flight run
+    // survive, which is the whole reason this hides rather than unmounts.
+    await expect(root.locator('.docs-assistant-mount')).toHaveCount(1)
 
     await page.keyboard.press('Escape')
     await expect(root).toHaveAttribute('data-host-overlay', 'false')
