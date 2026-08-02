@@ -1,10 +1,10 @@
-import { ChatApp, useDockedPanelMetrics } from '@tinytinkerer/app-browser'
+import { ChatApp, resolveDockedPanelInsets, useDockedPanelMetrics } from '@tinytinkerer/app-browser'
 import type { CSSProperties, ReactNode } from 'react'
 import type { ChatAppProps, ChatMode } from '@tinytinkerer/app-browser'
 
 export type AppStageShellProps = {
   children: ReactNode
-  chat: Omit<ChatAppProps, 'stageClassName' | 'mode' | 'onModeChange'>
+  chat: Omit<ChatAppProps, 'stageClassName' | 'mode' | 'presentation' | 'onPresentationChange'>
   initialChatMode?: ChatMode
   className?: string
 }
@@ -20,7 +20,7 @@ export const AppStageShell = ({
   // it, so a second host can inset its own stage from the same numbers rather
   // than growing a private copy of this effect (issue #480 re-review, finding 2).
   const { ref: chatRef, metrics } = useDockedPanelMetrics()
-  const stageInset: CSSProperties = metrics ? { [metrics.edge]: metrics.size } : {}
+  const stageInset: CSSProperties = resolveDockedPanelInsets(metrics)
 
   return (
     <div className={['app-stage-shell', className].filter(Boolean).join(' ')}>

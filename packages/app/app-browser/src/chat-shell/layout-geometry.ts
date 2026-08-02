@@ -34,7 +34,6 @@ export type WidgetLayout = {
   y: number
   width: number
   height: number
-  minimized: boolean
 }
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -66,7 +65,11 @@ const fitAxis = (extent: number, minimum: number): { size: number; margin: numbe
   return { size: extent, margin: 0 }
 }
 
-export const clampLayout = (layout: WidgetLayout, dims: WidgetDims): WidgetLayout => {
+export const clampLayout = (
+  layout: WidgetLayout,
+  dims: WidgetDims,
+  minimized = false
+): WidgetLayout => {
   const horizontal = fitAxis(window.innerWidth, dims.minWidth)
   const vertical = fitAxis(window.innerHeight, dims.minHeight)
 
@@ -80,8 +83,8 @@ export const clampLayout = (layout: WidgetLayout, dims: WidgetDims): WidgetLayou
     Math.min(dims.minHeight, vertical.size),
     vertical.size
   )
-  const boxWidth = layout.minimized ? Math.min(WIDGET_MINIMIZED_SIZE, horizontal.size) : width
-  const boxHeight = layout.minimized ? Math.min(WIDGET_MINIMIZED_SIZE, vertical.size) : height
+  const boxWidth = minimized ? Math.min(WIDGET_MINIMIZED_SIZE, horizontal.size) : width
+  const boxHeight = minimized ? Math.min(WIDGET_MINIMIZED_SIZE, vertical.size) : height
 
   return {
     ...layout,
@@ -100,28 +103,32 @@ export const clampLayout = (layout: WidgetLayout, dims: WidgetDims): WidgetLayou
   }
 }
 
-const createDefaultStandaloneLayout = (dims: WidgetDims): WidgetLayout =>
+const createDefaultStandaloneLayout = (dims: WidgetDims, minimized: boolean): WidgetLayout =>
   clampLayout(
     {
       x: Math.round((window.innerWidth - dims.defaultWidth) / 2),
       y: Math.round(window.innerHeight - dims.defaultHeight - 32),
       width: dims.defaultWidth,
-      height: dims.defaultHeight,
-      minimized: false
+      height: dims.defaultHeight
     },
-    dims
+    dims,
+    minimized
   )
 
-export const loadStandaloneLayout = (storageKey: string, dims: WidgetDims): WidgetLayout => {
+export const loadStandaloneLayout = (
+  storageKey: string,
+  dims: WidgetDims,
+  minimized = false
+): WidgetLayout => {
   const stored = window.localStorage.getItem(storageKey)
   if (!stored) {
-    return createDefaultStandaloneLayout(dims)
+    return createDefaultStandaloneLayout(dims, minimized)
   }
 
   try {
     const parsed: unknown = JSON.parse(stored)
     if (typeof parsed !== 'object' || parsed === null) {
-      return createDefaultStandaloneLayout(dims)
+      return createDefaultStandaloneLayout(dims, minimized)
     }
     const r = parsed as Record<string, unknown>
     if (
@@ -130,7 +137,7 @@ export const loadStandaloneLayout = (storageKey: string, dims: WidgetDims): Widg
       typeof r.width !== 'number' ||
       typeof r.height !== 'number'
     ) {
-      return createDefaultStandaloneLayout(dims)
+      return createDefaultStandaloneLayout(dims, minimized)
     }
 
     return clampLayout(
@@ -138,13 +145,13 @@ export const loadStandaloneLayout = (storageKey: string, dims: WidgetDims): Widg
         x: r.x,
         y: r.y,
         width: r.width,
-        height: r.height,
-        minimized: r.minimized === true
+        height: r.height
       },
-      dims
+      dims,
+      minimized
     )
   } catch {
-    return createDefaultStandaloneLayout(dims)
+    return createDefaultStandaloneLayout(dims, minimized)
   }
 }
 

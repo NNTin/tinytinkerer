@@ -214,7 +214,6 @@ describe('clampLayout keeps the panel inside the viewport (issue #480 review)', 
     y: 24,
     width: 400,
     height: 680,
-    minimized: false,
     ...over
   })
 
@@ -258,7 +257,7 @@ describe('clampLayout keeps the panel inside the viewport (issue #480 review)', 
 
   it('keeps a minimized launcher on screen too', () => {
     setViewport(320, 568)
-    const layout = clampLayout(open({ minimized: true }), dims)
+    const layout = clampLayout(open(), dims, true)
 
     expect(layout.x).toBeGreaterThanOrEqual(0)
     expect(layout.x + WIDGET_MINIMIZED_SIZE).toBeLessThanOrEqual(320)

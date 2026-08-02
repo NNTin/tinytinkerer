@@ -31,6 +31,13 @@ const ROUTES = {
 
 const launcher = (page: Page) => page.getByRole('button', { name: /documentation assistant/i })
 const assistantRoot = (page: Page) => page.locator('.docs-assistant-root')
+const assistantInset = (page: Page, edge: 'top' | 'right' | 'bottom' | 'left' = 'right') =>
+  page.evaluate((physicalEdge) => {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(
+      `--docs-assistant-inset-${physicalEdge}`
+    )
+    return Number.parseFloat(value)
+  }, edge)
 
 test.describe('the documentation assistant widget (#480)', () => {
   for (const [label, url] of Object.entries(ROUTES)) {
@@ -332,6 +339,80 @@ test.describe('the documentation assistant widget (#480)', () => {
     await expect(launcher(page)).toHaveCount(0)
   })
 
+  test('persists a snap edge in the one host-owned presentation record', async ({ page }) => {
+    await installChatMock(page)
+    await page.goto(ROUTES.authored)
+    await launcher(page).click()
+    await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible({ timeout: 30_000 })
+    await dismissTelemetryDialog(page)
+
+    // Use the drag-to-snap path rather than the ordinary dock button: only a snap
+    // carries a non-default edge, which is what exposed ChatApp's former private
+    // presentation record.
+    const grip = page.getByRole('button', { name: /move widget/i })
+    const box = await grip.boundingBox()
+    expect(box).not.toBeNull()
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(2, box!.y + box!.height / 2, { steps: 12 })
+    await page.mouse.up()
+
+    const panel = page.locator('.docs-assistant-stage .sidebar-panel')
+    await expect(panel).toHaveAttribute('data-edge', 'left')
+
+    const records = await page.evaluate(() => ({
+      host: window.localStorage.getItem('tinytinkerer:docs-assistant-presentation:presentation'),
+      chatApp: window.localStorage.getItem('tinytinkerer:docs-assistant-layout:v1:presentation')
+    }))
+    expect(JSON.parse(records.host ?? '{}')).toMatchObject({
+      mode: 'sidebar',
+      minimized: false,
+      edge: 'left'
+    })
+    expect(records.chatApp).toBeNull()
+
+    await page.reload()
+    await expect(panel).toHaveAttribute('data-edge', 'left', { timeout: 30_000 })
+  })
+
+  test('releases a docked page inset while search owns the viewport, then restores it', async ({
+    page
+  }) => {
+    await installChatMock(page)
+    await page.goto(ROUTES.authored)
+    await launcher(page).click()
+    await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible({ timeout: 30_000 })
+    await dismissTelemetryDialog(page)
+    await page.getByRole('button', { name: 'Dock to sidebar' }).click()
+
+    const article = page.locator('article').first()
+    const panel = page.locator('.docs-assistant-stage .sidebar-panel')
+    await expect(panel).toBeVisible()
+    await expect.poll(() => assistantInset(page)).toBeGreaterThan(0)
+    const dockedInset = await assistantInset(page)
+    const dockedWidth = (await article.boundingBox())!.width
+
+    await page.keyboard.press('Control+K')
+    await expect(assistantRoot(page)).toHaveAttribute('data-host-overlay', 'true')
+    await expect(panel).toBeHidden()
+    await expect.poll(() => assistantInset(page)).toBe(0)
+    await expect
+      .poll(async () => Math.round((await article.boundingBox())!.width))
+      .toBeGreaterThan(Math.round(dockedWidth))
+    const searchWidth = (await article.boundingBox())!.width
+    expect(searchWidth).toBeGreaterThan(dockedWidth)
+
+    await page.keyboard.press('Escape')
+    await expect(assistantRoot(page)).toHaveAttribute('data-host-overlay', 'false')
+    await expect(panel).toBeVisible()
+    // Assert the actual coordinator output rather than pixel-equality with the
+    // first animation frame of the page's 120ms padding transition.
+    await expect.poll(() => assistantInset(page)).toBe(dockedInset)
+    await expect
+      .poll(async () => Math.round((await article.boundingBox())!.width))
+      .toBeLessThan(Math.round(searchWidth))
+  })
+
   test('keeps a docked assistant, and its draft, across SPA navigation', async ({ page }) => {
     await installChatMock(page)
     await page.goto(ROUTES.authored)
@@ -371,13 +452,16 @@ test.describe('the documentation assistant widget (#480)', () => {
     await assistantRoot(page).getByRole('button', { name: 'Dock to sidebar' }).click()
     const panel = page.locator('.docs-assistant-stage .sidebar-panel')
     await expect(panel).toBeVisible()
+    await expect.poll(() => assistantInset(page)).toBeGreaterThan(0)
 
     await page.getByRole('button', { name: 'Fullscreen', exact: true }).click()
     await expect(assistantRoot(page)).toHaveAttribute('data-host-overlay', 'true')
     await expect(panel).toBeHidden()
+    await expect.poll(() => assistantInset(page)).toBe(0)
 
     await page.getByRole('button', { name: 'Exit fullscreen' }).click()
     await expect(panel).toBeVisible()
+    await expect.poll(() => assistantInset(page)).toBeGreaterThan(0)
   })
 
   test('hides entirely while a fullscreen lab owns the viewport', async ({ page }) => {
@@ -395,12 +479,24 @@ test.describe('the documentation assistant widget (#480)', () => {
 
   test('hides while the mobile navigation drawer is open', async ({ page }) => {
     await page.setViewportSize({ width: 480, height: 800 })
+    await installChatMock(page)
     await page.goto(ROUTES.authored)
-    await expect(launcher(page)).toBeVisible()
+    await launcher(page).click()
+    await expect(assistantRoot(page).getByRole('textbox', { name: 'Message' })).toBeVisible({
+      timeout: 30_000
+    })
+    await dismissTelemetryDialog(page)
+    await assistantRoot(page).getByRole('button', { name: 'Dock to sidebar' }).click()
+    await expect.poll(() => assistantInset(page)).toBeGreaterThan(0)
 
     await page.getByRole('button', { name: 'Toggle navigation bar' }).click()
     await expect(page.locator('.navbar-sidebar')).toBeVisible()
-    await expect(launcher(page)).toBeHidden()
+    await expect(assistantRoot(page)).toHaveAttribute('data-host-overlay', 'true')
+    await expect.poll(() => assistantInset(page)).toBe(0)
+
+    await page.getByRole('button', { name: 'Close navigation bar' }).click()
+    await expect(assistantRoot(page)).toHaveAttribute('data-host-overlay', 'false')
+    await expect.poll(() => assistantInset(page)).toBeGreaterThan(0)
   })
 
   // WCAG AA for normal text. The dialogs below were measured at 1.04:1, 1.63:1

@@ -38,6 +38,10 @@
       }
 
       html[data-shell='widget'] {
+        /* Deliberate critical-CSS mirror of app-browser/neutral-palette.css.
+           The bundled stylesheet is the runtime authority; these five values
+           exist only so the shared /web|widget|mobile boot screen cannot flash
+           the warm web palette before JavaScript loads. */
         --bg: #f7f7f4;
         --panel: #fffdf8;
         --border: #d7d4ca;

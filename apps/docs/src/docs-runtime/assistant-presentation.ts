@@ -10,17 +10,12 @@
  * record lives under, and one ephemeral flag (`focusPanelOnMount`) that is about
  * how a mount came about rather than about the presentation itself.
  *
- * **Why the documentation is the authority at all.** `FloatingLayout` persists a
- * `minimized` flag inside its geometry blob and `ChatApp` persists its own
- * record, which is the right design for a shell that mounts its widget on page
- * load. Here the widget is not mounted at all until something activates the
- * runtime, so both would be written by components that only exist after the
- * decision has already been made. They disagree the moment anything but the
- * launcher opens the assistant — #472's Office activating the runtime while the
- * reader had it minimized is exactly that case — and a two-authority split is
- * worse once `mode` is in play, because "is the assistant showing?" then depends
- * on which of the two stores you ask. So this store is the single authority, and
- * `ChatApp` renders in its CONTROLLED mode against it.
+ * **Why the documentation is the authority at all.** The widget is not mounted
+ * until something activates the runtime, so presentation must be readable before
+ * `ChatApp` exists — #472's Office can be that activator. This store therefore
+ * controls ChatApp with one complete `{ mode, minimized, edge }` value. Controlled
+ * ChatApp never reads or writes a second presentation record, and its layouts
+ * persist geometry only.
  *
  * Separate from everything else the assistant persists, on purpose. Conversations,
  * settings and model selection live in the `tinytinkerer-docs-assistant` IndexedDB
@@ -39,12 +34,13 @@ import {
   setChatPresentationMinimized,
   setChatPresentationMode,
   useChatPresentation,
+  type ChatDockEdge,
   type ChatMode,
   type ChatPresentation
 } from '@tinytinkerer/app-browser/chat-presentation'
 import { DOCS_ASSISTANT_PRESENTATION_STORAGE_KEY } from './assistant-constants'
 
-/** Which layout the assistant renders in. The product's union, not a copy of it. */
+/** Which layout the assistant renders in. The product's union, not a copy. */
 export type DocsAssistantMode = ChatMode
 
 export type DocsAssistantPresentationState = ChatPresentation & {
@@ -98,9 +94,21 @@ export const setDocsAssistantMinimized = (minimized: boolean): void => {
   }))
 }
 
-/** Report the widget's own dock/undock. */
-export const setDocsAssistantMode = (mode: DocsAssistantMode): void => {
-  store.update((current) => setChatPresentationMode(current, mode))
+/** Host-driven morph (the widget itself reports a complete presentation below). */
+export const setDocsAssistantMode = (mode: ChatMode, edge?: ChatDockEdge): void => {
+  store.update((current) => setChatPresentationMode(current, mode, edge))
+}
+
+/**
+ * Adopt the widget's complete presentation request.
+ *
+ * One callback for mode, minimized, and edge is load-bearing: snap-docking must
+ * not update an app-browser-private edge record while this host updates only the
+ * mode. The ephemeral focus flag belongs to the activation that already
+ * happened, so any subsequent widget interaction clears it.
+ */
+export const setDocsAssistantPresentation = (presentation: ChatPresentation): void => {
+  store.update(() => ({ ...presentation, focusPanelOnMount: false }))
 }
 
 export const useDocsAssistantPresentation = (): DocsAssistantPresentationState =>

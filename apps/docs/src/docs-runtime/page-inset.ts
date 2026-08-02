@@ -12,15 +12,18 @@
  * All four are written every time, so undocking clears the previous edge rather
  * than leaving the page indented against an assistant that is no longer there.
  */
-import type { DockedPanelMetrics } from '@tinytinkerer/app-browser'
+import { resolveDockedPanelInsets, type DockedPanelMetrics } from '@tinytinkerer/app-browser'
 
 const EDGES = ['top', 'right', 'bottom', 'left'] as const
 
-export const publishDocsAssistantPageInset = (metrics: DockedPanelMetrics): void => {
+export const publishDocsAssistantPageInset = (
+  metrics: DockedPanelMetrics,
+  suppressed = false
+): void => {
   const { style } = document.documentElement
+  const insets = resolveDockedPanelInsets(metrics, suppressed)
   for (const edge of EDGES) {
-    const size = metrics?.edge === edge ? metrics.size : 0
-    style.setProperty(`--docs-assistant-inset-${edge}`, `${size}px`)
+    style.setProperty(`--docs-assistant-inset-${edge}`, `${insets[edge]}px`)
   }
 }
 

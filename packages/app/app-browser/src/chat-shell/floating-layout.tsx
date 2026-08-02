@@ -30,11 +30,12 @@ import { usePointerDrag } from './use-pointer-drag'
 
 // The floating, movable/resizable chat window shared by the widget app and the
 // canvas app's overlay. It owns the window chrome and the standalone layout state
-// machine (drag/resize/keyboard nudge/minimize/persistence). The chat body arrives
-// as `children`; per-app concerns (where layout persists, boot copy) are the
-// caller's — no shell is named here. When `onDock` is provided the shell bar shows
-// a dock button, and dragging the window near a viewport edge arms a snap preview so
-// releasing there morphs the window into the docked sidebar ("web mode", #324).
+// machine (drag/resize/keyboard nudge and geometry persistence). The chat body
+// arrives as `children`; per-app concerns (where layout persists, boot copy) are
+// the caller's — no shell is named here. When `onDock` is provided the shell bar
+// shows a dock button, and dragging the window near a viewport edge arms a snap
+// preview so releasing there morphs the window into the docked sidebar
+// ("web mode", #324).
 
 // Below this pointer travel (px) a drag counts as a click. Used so the minimized
 // launcher can be BOTH a drag handle and a restore button (#323): a small movement
@@ -44,15 +45,11 @@ const DRAG_CLICK_THRESHOLD = 5
 export type FloatingLayoutProps = {
   // localStorage key the layout persists under (per app).
   storageKey: string
-  // Start minimized. Uncontrolled: it seeds the layout on mount and overrides
-  // whatever was persisted, which is what a URL-driven `?window=minimized`
-  // wants. Ignored when `minimized` below is supplied.
+  // Start minimized for a direct, uncontrolled layout consumer. ChatApp always
+  // controls this from its complete ChatPresentation record.
   initialMinimized?: boolean
-  // Controlled minimized state (issue #480). When provided, the CALLER owns
-  // open/minimized and this layout owns geometry only — the persisted
-  // `layout.minimized` stops being a second, independent authority that could
-  // disagree with the caller's after anything but the launcher opened the
-  // widget. Leave it out for the uncontrolled behaviour every product shell has.
+  // Controlled minimized state. The layout never persists this value:
+  // presentation belongs to ChatApp/a host; this component persists geometry.
   minimized?: boolean
   // Fired whenever the reader minimizes or restores, in both modes.
   onMinimizedChange?: (minimized: boolean) => void
@@ -252,17 +249,11 @@ export const FloatingLayout = ({
     minHeight: minHeight ?? DEFAULT_DIMS.minHeight
   }
   const isControlled = controlledMinimized !== undefined
+  const [uncontrolledMinimized, setUncontrolledMinimized] = useState(initialMinimized ?? false)
+  const isMinimized = controlledMinimized ?? uncontrolledMinimized
   const config = useBrowserShellConfig()
   const [layout, setLayout] = useState<WidgetLayout>(() =>
-    clampLayout(
-      {
-        ...loadStandaloneLayout(storageKey, dims),
-        // The caller's value wins outright when controlled, so the persisted
-        // flag can never be a competing answer.
-        minimized: controlledMinimized ?? initialMinimized
-      },
-      dims
-    )
+    loadStandaloneLayout(storageKey, dims, isMinimized)
   )
   const [isDragging, setIsDragging] = useState(false)
   const [liveMessage, setLiveMessage] = useState('')
@@ -273,17 +264,15 @@ export const FloatingLayout = ({
   const launcherRef = useRef<HTMLButtonElement | null>(null)
   const bodyRef = useRef<HTMLDivElement | null>(null)
 
-  // Adopt a changed controlled value during render (React's documented pattern
-  // for state derived from props) rather than in an effect: an effect would
-  // paint one frame of the stale size and position, since `clampLayout` bounds
-  // x/y differently for a 64px launcher than for a full panel.
+  // A presentation change alters the box used to clamp x/y. Adopt it during
+  // render (React's documented derived-state pattern) rather than painting one
+  // frame with the full panel's bounds applied to a 64px launcher, or vice versa.
   const [lastControlledMinimized, setLastControlledMinimized] = useState(controlledMinimized)
   if (isControlled && controlledMinimized !== lastControlledMinimized) {
     setLastControlledMinimized(controlledMinimized)
-    setLayout((current) => clampLayout({ ...current, minimized: controlledMinimized }, dims))
+    setLayout((current) => clampLayout(current, dims, controlledMinimized))
   }
 
-  const isMinimized = layout.minimized
   const themeStyle = shellThemeToCssVars(config.theme)
 
   // The one place minimized/restored changes, in both modes. Uncontrolled keeps
@@ -291,7 +280,8 @@ export const FloatingLayout = ({
   // comes back through the render-phase adoption above.
   const changeMinimized = (next: boolean): void => {
     if (!isControlled) {
-      setLayout((current) => clampLayout({ ...current, minimized: next }, dims))
+      setUncontrolledMinimized(next)
+      setLayout((current) => clampLayout(current, dims, next))
     }
     onMinimizedChange?.(next)
   }
@@ -319,7 +309,8 @@ export const FloatingLayout = ({
             x: drag.startLayout.x + (event.clientX - drag.startX),
             y: drag.startLayout.y + (event.clientY - drag.startY)
           },
-          dims
+          dims,
+          drag.fromLauncher
         )
       )
 
@@ -369,7 +360,7 @@ export const FloatingLayout = ({
     onCancel: (drag) => {
       setIsDragging(false)
       setSnapEdge(null)
-      setLayout(clampLayout(drag.startLayout, dims))
+      setLayout(clampLayout(drag.startLayout, dims, drag.fromLauncher))
     }
   })
 
@@ -386,10 +377,11 @@ export const FloatingLayout = ({
             width: start.startLayout.width + (event.clientX - start.startX),
             height: start.startLayout.height + (event.clientY - start.startY)
           },
-          dims
+          dims,
+          false
         )
       ),
-    onCancel: (start) => setLayout(clampLayout(start.startLayout, dims))
+    onCancel: (start) => setLayout(clampLayout(start.startLayout, dims, false))
   })
 
   const beginDrag = (event: ReactPointerEvent<HTMLButtonElement>, fromLauncher: boolean) => {
@@ -450,7 +442,8 @@ export const FloatingLayout = ({
               width: current.width + delta.x * step,
               height: current.height + delta.y * step
             },
-            dims
+            dims,
+            isMinimized
           )
         : clampLayout(
             {
@@ -458,7 +451,8 @@ export const FloatingLayout = ({
               x: current.x + delta.x * step,
               y: current.y + delta.y * step
             },
-            dims
+            dims,
+            isMinimized
           )
       setLiveMessage(
         resize
@@ -558,14 +552,14 @@ export const FloatingLayout = ({
   // widget's original single-bind behavior.
   useEffect(() => {
     const handleResize = () => {
-      setLayout((currentLayout) => clampLayout(currentLayout, dims))
+      setLayout((currentLayout) => clampLayout(currentLayout, dims, isMinimized))
     }
 
     window.addEventListener('resize', handleResize)
     return () => {
       window.removeEventListener('resize', handleResize)
     }
-  }, [])
+  }, [isMinimized])
 
   // Visually-hidden live region announcing keyboard move/resize (C1).
   const liveRegion = (

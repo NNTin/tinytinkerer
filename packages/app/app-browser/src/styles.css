@@ -4,6 +4,7 @@
    the mounted launcher's own affordances on top of it. */
 @import './launcher.css';
 @import './tokens.css';
+@import './neutral-palette.css';
 
 @keyframes collapsible-open {
   from {

@@ -7,12 +7,9 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 /**
  * Controlled minimization and focus behaviour (issue #480).
  *
- * `FloatingLayout` persists `minimized` inside its geometry blob, which is right
- * for a shell that mounts its widget on page load and wrong for an embedder whose
- * widget does not exist until something activates it. The documentation assistant
- * therefore owns open/minimized itself, and this covers the two properties that
- * makes it depend on: the caller's value wins outright, and the layout reports
- * every change instead of quietly keeping a second copy.
+ * `FloatingLayout` persists geometry only. ChatApp (or a controlled embedding
+ * host) owns presentation, so a `minimized` bit can never become a second answer
+ * hidden inside the x/y/width/height record.
  *
  * Focus is here rather than in a docs test because it is `FloatingLayout` that
  * makes the element a reader was using disappear — only it knows where focus
@@ -50,7 +47,7 @@ afterEach(() => {
 const minimizeButton = () => screen.getByRole('button', { name: 'Minimize widget' })
 const launcher = () => screen.getByRole('button', { name: 'Restore widget' })
 
-describe('uncontrolled minimization (every existing surface)', () => {
+describe('direct uncontrolled minimization', () => {
   it('keeps owning the state, and still reports changes', () => {
     const onMinimizedChange = vi.fn()
     render(
@@ -68,9 +65,9 @@ describe('uncontrolled minimization (every existing surface)', () => {
     expect(onMinimizedChange).toHaveBeenLastCalledWith(false)
   })
 
-  it('still lets initialMinimized override a persisted layout', () => {
-    // What `?window=minimized` relies on (apps/shell's widget presentation):
-    // the URL wins over whatever the reader last left behind.
+  it('honors initialMinimized while ignoring a legacy geometry presentation flag', () => {
+    // Geometry records created before presentation moved into ChatApp may still
+    // contain `minimized`. A direct consumer's explicit initial value wins.
     window.localStorage.setItem(
       'test:override',
       JSON.stringify({ x: 40, y: 40, width: 400, height: 680, minimized: false })
@@ -82,6 +79,20 @@ describe('uncontrolled minimization (every existing surface)', () => {
     )
 
     expect(launcher()).toBeInTheDocument()
+  })
+
+  it('persists geometry without smuggling presentation into the record', () => {
+    render(
+      <FloatingLayout storageKey="test:geometry-only">
+        <Body />
+      </FloatingLayout>
+    )
+
+    fireEvent.click(minimizeButton())
+
+    expect(
+      JSON.parse(window.localStorage.getItem('test:geometry-only') ?? '{}')
+    ).not.toHaveProperty('minimized')
   })
 })
 

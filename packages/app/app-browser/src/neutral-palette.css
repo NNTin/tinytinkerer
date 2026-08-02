@@ -1,0 +1,50 @@
+/*
+ * The named neutral TinyTinkerer shell palette.
+ *
+ * IDE, canvas, Mermaid, pixel-agents, and the widget presentation all choose
+ * this same product theme. Keeping the choice behind a root marker means those
+ * hosts do not each transcribe five values and the IBM Plex stack. The four
+ * single-purpose applications also share the same full-viewport scaffold here
+ * rather than carrying four nominally host-specific copies. The warm web/mobile
+ * default remains in tokens.css.
+ *
+ * `data-tt-palette` is for single-purpose applications. The multi-presentation
+ * shell already publishes `data-shell` before first paint, so widget mode can
+ * consume the same preset without introducing another runtime marker.
+ */
+:root[data-tt-palette='neutral'],
+:root[data-shell='widget'] {
+  --bg: #f7f7f4;
+  --panel: #fffdf8;
+  --border: #d7d4ca;
+  --text: #25231d;
+  --muted: #6c675a;
+}
+
+:root[data-tt-palette='neutral'] body,
+:root[data-shell='widget'] body {
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* The data-tt marker identifies the single-purpose neutral applications. Widget
+ * mode deliberately does not match this scaffold: it is one presentation inside
+ * the multi-presentation shell, whose viewport rules remain in apps/shell. */
+:root[data-tt-palette='neutral'],
+:root[data-tt-palette='neutral'] body,
+:root[data-tt-palette='neutral'] #root {
+  height: 100%;
+  min-height: 100%;
+}
+
+:root[data-tt-palette='neutral'] body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--widget-bg);
+  color: var(--widget-text);
+}
+
+:root[data-tt-palette='neutral'] *,
+:root[data-tt-palette='neutral'] *::before,
+:root[data-tt-palette='neutral'] *::after {
+  box-sizing: border-box;
+}

@@ -172,4 +172,20 @@ describe('the store', () => {
     store.reset()
     expect(store.read()).toEqual(floatingOpen)
   })
+
+  it('supports an in-memory controller without reading or writing presentation storage', () => {
+    writeChatPresentation('k', { ...floatingOpen, mode: 'sidebar', edge: 'left' })
+    const fallback: ChatPresentation = { mode: 'floating', minimized: false, edge: 'right' }
+    const store = createChatPresentationStore({
+      storageKey: 'k',
+      defaultPresentation: fallback,
+      persist: false
+    })
+
+    expect(store.read()).toEqual(fallback)
+    store.update((current) => setChatPresentationMode(current, 'sidebar', 'top'))
+    expect(store.read()).toMatchObject({ mode: 'sidebar', edge: 'top' })
+    // The pre-existing record was neither read nor replaced.
+    expect(readChatPresentation('k')).toMatchObject({ mode: 'sidebar', edge: 'left' })
+  })
 })

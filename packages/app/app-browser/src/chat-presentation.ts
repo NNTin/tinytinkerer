@@ -7,10 +7,12 @@
  * uncontrolled mode, and a host that wants to be the single authority over
  * presentation (the documentation assistant, which must decide whether to show a
  * panel BEFORE the runtime chunk exists) builds a store from it and renders
- * `ChatApp` controlled against that store. Before this module the two each
- * defined the mode union, their own storage schema, their own parser and their
- * own transition rules, which is exactly the "second implementation behind a
- * parity promise" this file exists to end.
+ * `ChatApp` controlled against that store. A controlled ChatApp reads and writes
+ * no presentation storage of its own; an uncontrolled ChatApp owns one store of
+ * this complete value and gives its layouts geometry-only persistence. Before
+ * this module the product and documentation host each defined the mode union,
+ * storage schema, parser, and transition rules — exactly the "second
+ * implementation behind a parity promise" this file exists to end.
  *
  * ## Deliberately dependency-light
  *
@@ -203,6 +205,20 @@ export type ChatPresentationStoreOptions<T extends ChatPresentation> = {
   /** Base key; the record is persisted under {@link chatPresentationStorageKey}. */
   storageKey: string
   /**
+   * Value used when there is no usable persisted record.
+   *
+   * The product-level default is a minimized floating assistant because an
+   * embedding host must be able to decide whether to download the runtime at
+   * all. A mounted product shell normally supplies its own open-panel default.
+   */
+  defaultPresentation?: ChatPresentation
+  /**
+   * Whether this store reads and writes localStorage. Fixed, non-morphable
+   * surfaces can use the same controller without creating presentation state
+   * that no control can ever change.
+   */
+  persist?: boolean
+  /**
    * Add the host's own EPHEMERAL fields to a record read from storage.
    *
    * Anything a host derives per session rather than persists — the documentation
@@ -229,16 +245,18 @@ export const createChatPresentationStore = <T extends ChatPresentation = ChatPre
   options: ChatPresentationStoreOptions<T>
 ): ChatPresentationStore<T> => {
   const hydrate = options.hydrate ?? ((persisted: ChatPresentation): T => persisted as T)
+  const fallback = options.defaultPresentation ?? DEFAULT_CHAT_PRESENTATION
+  const persist = options.persist ?? true
   // Static rendering and the hydration pass have no storage to read, so they
   // always report the default. React re-renders with the real value straight
   // afterwards, which is what keeps the server and first client render in
   // agreement. One frozen object, so its identity is stable.
-  const serverValue = hydrate(DEFAULT_CHAT_PRESENTATION)
+  const serverValue = hydrate(fallback)
   const listeners = new Set<() => void>()
   let value: T | null = null
 
   const read = (): T =>
-    (value ??= hydrate(readChatPresentation(options.storageKey) ?? DEFAULT_CHAT_PRESENTATION))
+    (value ??= hydrate((persist ? readChatPresentation(options.storageKey) : null) ?? fallback))
 
   return {
     read,
@@ -254,7 +272,7 @@ export const createChatPresentationStore = <T extends ChatPresentation = ChatPre
       const next = transition(current)
       if (shallowEqual(current, next)) return
       value = next
-      writeChatPresentation(options.storageKey, next)
+      if (persist) writeChatPresentation(options.storageKey, next)
       for (const listener of listeners) listener()
     },
     reset: () => {

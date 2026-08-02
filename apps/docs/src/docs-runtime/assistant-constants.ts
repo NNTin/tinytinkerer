@@ -27,9 +27,9 @@ export const DOCS_ASSISTANT_STORAGE_NAMESPACE = 'tinytinkerer-docs-assistant'
 export const DOCS_ASSISTANT_PRESENTATION_STORAGE_KEY = 'tinytinkerer:docs-assistant-presentation'
 
 /**
- * Where `FloatingLayout` persists the widget's geometry. Its own key, because the
- * layout owns position and size while the presentation store above owns
- * open/minimized — see assistant-presentation.ts for why those are separate.
+ * Where the two layouts persist geometry (floating position/size and docked
+ * width/height). Presentation is deliberately absent from these records; the
+ * store above is the only owner of mode, minimized, and edge.
  */
 export const DOCS_ASSISTANT_LAYOUT_STORAGE_KEY = 'tinytinkerer:docs-assistant-layout:v1'
 

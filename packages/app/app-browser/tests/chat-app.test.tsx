@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ChatApp picks a layout by `mode` and, when morphable, exposes a dock/undock toggle
@@ -43,7 +44,7 @@ vi.mock('../src/chat-shell/docked-chat-surface.js', () => ({
 }))
 
 import { ChatApp } from '../src/chat-shell/chat-app.js'
-import { readChatPresentation } from '../src/chat-presentation.js'
+import { readChatPresentation, type ChatPresentation } from '../src/chat-presentation.js'
 
 const Loading = () => <div data-loading="true" />
 
@@ -113,6 +114,22 @@ describe('ChatApp', () => {
     expect(screen.getByTestId('docked-body')).toBeInTheDocument()
   })
 
+  it('persists minimization in the presentation record, not the geometry record', () => {
+    const { unmount } = render(
+      <ChatApp mode="floating" storageKey="k" LoadingComponent={Loading} />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Minimize widget' }))
+    expect(readChatPresentation('k')).toMatchObject({ minimized: true })
+    expect(JSON.parse(window.localStorage.getItem('k:floating') ?? '{}')).not.toHaveProperty(
+      'minimized'
+    )
+
+    unmount()
+    render(<ChatApp mode="floating" storageKey="k" LoadingComponent={Loading} />)
+    expect(screen.getByRole('button', { name: 'Restore widget' })).toBeInTheDocument()
+  })
+
   it('snap-docks to the edge a drag is released in, then undocks (#324)', () => {
     const { container } = render(
       <ChatApp mode="floating" storageKey="k" LoadingComponent={Loading} />
@@ -143,17 +160,49 @@ describe('ChatApp', () => {
     expect(screen.getByTestId('floating-body')).toBeInTheDocument()
   })
 
-  it('notifies onModeChange when morphing', () => {
-    const onModeChange = vi.fn()
+  it('reports one complete controlled presentation and writes no private record', () => {
+    const onPresentationChange = vi.fn()
     render(
       <ChatApp
-        mode="floating"
+        presentation={{ mode: 'floating', minimized: false, edge: 'right' }}
         storageKey="k"
         LoadingComponent={Loading}
-        onModeChange={onModeChange}
+        onPresentationChange={onPresentationChange}
       />
     )
     fireEvent.click(screen.getByRole('button', { name: 'Dock to sidebar' }))
-    expect(onModeChange).toHaveBeenCalledWith('sidebar')
+    expect(onPresentationChange).toHaveBeenCalledWith({
+      mode: 'sidebar',
+      minimized: false,
+      edge: 'right'
+    })
+    expect(readChatPresentation('k')).toBeNull()
+  })
+
+  it('round-trips a controlled snap edge without a second presentation record', () => {
+    const Host = () => {
+      const [presentation, setPresentation] = useState<ChatPresentation>({
+        mode: 'floating',
+        minimized: false,
+        edge: 'right'
+      })
+      return (
+        <ChatApp
+          presentation={presentation}
+          onPresentationChange={setPresentation}
+          storageKey="k"
+          LoadingComponent={Loading}
+        />
+      )
+    }
+    const { container } = render(<Host />)
+
+    const grip = screen.getByRole('button', { name: /move widget/i })
+    fireEvent.pointerDown(grip, { clientX: 300, clientY: 300, pointerId: 2 })
+    fireEvent.pointerMove(window, { clientX: 3, clientY: 300 })
+    fireEvent.pointerUp(window)
+
+    expect(container.querySelector('.sidebar-panel')).toHaveAttribute('data-edge', 'left')
+    expect(readChatPresentation('k')).toBeNull()
   })
 })

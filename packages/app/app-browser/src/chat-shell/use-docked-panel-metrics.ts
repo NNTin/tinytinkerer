@@ -22,6 +22,28 @@ import type { SnapEdge } from './layout-geometry'
  */
 export type DockedPanelMetrics = { edge: SnapEdge; size: number } | null
 
+export type DockedPanelInsets = Record<SnapEdge, number>
+
+/**
+ * Normalize one measured panel into the four physical insets a host stage uses.
+ *
+ * Both AppStageShell and embedded hosts consume this function. `suppressed`
+ * describes a host overlay temporarily taking the viewport: it releases the
+ * effective split without changing or unmounting the assistant presentation.
+ */
+export const resolveDockedPanelInsets = (
+  metrics: DockedPanelMetrics,
+  suppressed = false
+): DockedPanelInsets => {
+  const visible = suppressed ? null : metrics
+  return {
+    top: visible?.edge === 'top' ? visible.size : 0,
+    right: visible?.edge === 'right' ? visible.size : 0,
+    bottom: visible?.edge === 'bottom' ? visible.size : 0,
+    left: visible?.edge === 'left' ? visible.size : 0
+  }
+}
+
 const measurePanel = (panel: HTMLElement): DockedPanelMetrics => {
   const rect = panel.getBoundingClientRect()
   switch (panel.dataset['edge']) {

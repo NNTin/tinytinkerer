@@ -7,6 +7,7 @@
     "./src/styles.css",
     "./src/embed.css",
     "./src/launcher.css",
+    "./src/neutral-palette.css",
     "./src/tokens.css",
     "./src/token-graph.css",
     "./src/embed-preflight.generated.css"

@@ -11,9 +11,7 @@
  * `morphable` (the default): the reader can dock it into the same web-mode
  * sidebar the IDE and canvas shells dock (issue #480 re-review, finding 2). Both
  * layouts are fully CONTROLLED from `assistant-presentation.ts`, which is the
- * single authority on mode and on open/minimized — `ChatApp` and `FloatingLayout`
- * would otherwise each persist half the answer, and the two disagree the moment
- * anything but the launcher opens the assistant.
+ * single authority on mode, open/minimized, and dock edge.
  *
  * Morphing does not remount the session: only the layout wrapper swaps, so a run
  * in flight survives a dock or an undock exactly as it does on /widget.
@@ -21,14 +19,13 @@
  * Lives in the runtime chunk (it imports `ChatApp`), which is why the launcher
  * that opens it does not — see AssistantLauncher.tsx.
  */
-import { useCallback, useEffect, useMemo, type ReactNode } from 'react'
-import { ChatApp, useDockedPanelMetrics, type ChatMode } from '@tinytinkerer/app-browser'
+import { useEffect, useMemo, type ReactNode } from 'react'
+import { ChatApp, useDockedPanelMetrics } from '@tinytinkerer/app-browser'
 import { useDocsPageContext } from '../docs-page'
 import { DOCS_ASSISTANT_LAYOUT_STORAGE_KEY } from './assistant-constants'
 import {
   readDocsAssistantPresentation,
-  setDocsAssistantMinimized,
-  setDocsAssistantMode,
+  setDocsAssistantPresentation,
   useDocsAssistantPresentation
 } from './assistant-presentation'
 import {
@@ -36,6 +33,7 @@ import {
   resolveDocsAssistantStarterPrompts
 } from './assistant-starters'
 import { clearDocsAssistantPageInset, publishDocsAssistantPageInset } from './page-inset'
+import { useDocsHostOverlayOpen } from './host-overlays'
 
 const AssistantChatLoading = ({ error }: { error?: string }): ReactNode => (
   <div className="docs-assistant-widget__loading" role="status">
@@ -51,16 +49,9 @@ export const DocsAssistantWidget = (): ReactNode => {
   // need.
   const { active } = useDocsPageContext()
   const presentation = useDocsAssistantPresentation()
+  const hostOverlayOpen = useDocsHostOverlayOpen()
 
   const starterPrompts = useMemo(() => resolveDocsAssistantStarterPrompts(active), [active])
-
-  const handleMinimizedChange = useCallback((minimized: boolean) => {
-    setDocsAssistantMinimized(minimized)
-  }, [])
-
-  const handleModeChange = useCallback((mode: ChatMode) => {
-    setDocsAssistantMode(mode)
-  }, [])
 
   // Read once, at mount, and deliberately not subscribed: this asks "did the
   // reader just click the launcher?", which is a fact about how this mount came
@@ -74,8 +65,12 @@ export const DocsAssistantWidget = (): ReactNode => {
   // lab on the page — see page-inset.ts.
   const { ref: mountRef, metrics } = useDockedPanelMetrics()
   useEffect(() => {
-    publishDocsAssistantPageInset(metrics)
-  }, [metrics])
+    // Suppression is a presentation of the HOST, not a change to the reader's
+    // stored assistant choice. Release the effective split while search, mobile
+    // navigation, or a fullscreen lab owns the viewport, then restore it from
+    // the still-mounted panel when that overlay closes.
+    publishDocsAssistantPageInset(metrics, hostOverlayOpen)
+  }, [hostOverlayOpen, metrics])
   useEffect(() => clearDocsAssistantPageInset, [])
 
   return (
@@ -84,13 +79,10 @@ export const DocsAssistantWidget = (): ReactNode => {
     // excludes; the dialogs the shell mounts beside it stay interactive.
     <div className="docs-assistant-mount" ref={mountRef}>
       <ChatApp
-        // Controlled on both axes: the docs presentation store is the single
-        // authority, and the layouts own geometry only. See
-        // assistant-presentation.ts for why a mirrored flag would drift.
-        mode={presentation.mode}
-        onModeChange={handleModeChange}
-        minimized={presentation.minimized}
-        onMinimizedChange={handleMinimizedChange}
+        // One complete controlled value: mode, minimized, and snap edge can never
+        // be split across a docs record and a hidden ChatApp record.
+        presentation={presentation}
+        onPresentationChange={setDocsAssistantPresentation}
         focusPanelOnMount={focusPanelOnMount}
         framed
         storageKey={DOCS_ASSISTANT_LAYOUT_STORAGE_KEY}

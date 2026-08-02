@@ -140,8 +140,11 @@ export { ContextInspectorSlot, useContextInspector } from './context-inspector'
 export { useToolTree, ToolTreeSlot } from './tool-tree'
 export { genericToolTreeSummarizer } from './generic-tool-tree-summarizer'
 export { appToolCatalogue, createAppToolRunInstances } from './app-tool-group'
-export { useDockedPanelMetrics } from './chat-shell/use-docked-panel-metrics'
-export type { DockedPanelMetrics } from './chat-shell/use-docked-panel-metrics'
+export {
+  resolveDockedPanelInsets,
+  useDockedPanelMetrics
+} from './chat-shell/use-docked-panel-metrics'
+export type { DockedPanelInsets, DockedPanelMetrics } from './chat-shell/use-docked-panel-metrics'
 export type {
   AppTool,
   AppToolGroup,

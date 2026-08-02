@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react'
 import {
-  DEFAULT_CHAT_PRESENTATION,
-  readChatPresentation,
+  createChatPresentationStore,
+  setChatPresentationMinimized,
   setChatPresentationMode,
-  writeChatPresentation,
-  type ChatMode
+  useChatPresentation,
+  type ChatMode,
+  type ChatPresentation
 } from '../chat-presentation'
 import { DockedChatSurface } from './docked-chat-surface'
 import { FloatingChatSurface, type ChatLoadingComponent } from './floating-chat-surface'
@@ -15,26 +16,13 @@ import type { SnapEdge } from './layout-geometry'
 
 export type { ChatMode }
 
-export type ChatAppProps = {
-  // Which layout to show.
-  //
-  // Uncontrolled by default: ChatApp owns the live mode (seeded from `mode`, then
-  // from its own persistence) so the dock/undock toggle can morph between layouts
-  // without remounting the session.
-  //
-  // CONTROLLED when `onModeChange` is also given (issue #480 re-review, finding
-  // 2). A host that persists its own presentation — the documentation assistant
-  // keeps `mode` beside open/minimized in one versioned record — must be the
-  // single authority, or two stores end up disagreeing about whether the reader
-  // left the assistant docked.
-  mode?: ChatMode
-  onModeChange?: (mode: ChatMode) => void
+type ChatAppBaseProps = {
   // Whether the dock/undock toggle is offered (default true). Set false to pin the
   // layout (e.g. the canvas overlay, or a fixed pane in the root composition).
   morphable?: boolean
-  // Base localStorage key; each layout persists its own geometry under a suffix
-  // (`:floating`, `:sidebar`) and the presentation record — mode and dock edge —
-  // under `:presentation`, in the shared format from ../chat-presentation.
+  // Base localStorage key. Geometry persists under `:floating` / `:sidebar`; an
+  // UNCONTROLLED ChatApp persists its complete presentation under `:presentation`.
+  // A controlled ChatApp never reads or writes that presentation key.
   storageKey: string
   LoadingComponent: ChatLoadingComponent
   // Docked (sidebar) body presentation.
@@ -47,11 +35,6 @@ export type ChatAppProps = {
   settingsFallback?: ReactNode
   // Floating body/window passthrough.
   framed?: boolean
-  initialMinimized?: boolean
-  // Controlled minimization (issue #480). See FloatingLayout for why a caller
-  // that owns open/minimized must own it outright rather than mirror it.
-  minimized?: boolean
-  onMinimizedChange?: (minimized: boolean) => void
   focusPanelOnMount?: boolean
   defaultWidth?: number
   defaultHeight?: number
@@ -59,29 +42,52 @@ export type ChatAppProps = {
   minHeight?: number
   stageClassName?: string
   // Cold-start suggestions for this surface, replacing the app's own
-  // `starterPrompts` in the derived list (issue #480). A prop rather than app
-  // state because the useful ones change with what the host is showing — the
-  // documentation assistant recomputes them per route — and `BrowserApp` is
-  // built once per session.
+  // `starterPrompts` in the derived list (issue #480).
   starterPrompts?: readonly string[]
   // How many suggestions the empty state offers. Defaults to each body's own
   // historical count.
   starterPromptCount?: number
 }
 
-// The persisted presentation, or nothing. Reading it through the shared parser
-// rather than pulling two ad-hoc string keys is what keeps this and an embedder
-// that owns presentation (the documentation assistant) on ONE storage format.
-const readStoredPresentation = (storageKey: string, morphable: boolean) =>
-  morphable ? readChatPresentation(storageKey) : null
+type UncontrolledChatPresentationProps = {
+  /**
+   * Initial layout for an uncontrolled ChatApp. A persisted presentation wins
+   * when morphing is enabled. A controlled host supplies `presentation` instead.
+   */
+  mode?: ChatMode
+  presentation?: never
+  onPresentationChange?: never
+  /**
+   * Optional initial override for an uncontrolled surface. The shell uses this
+   * for `?window=minimized`.
+   */
+  initialMinimized?: boolean
+}
 
-// The single shared chat App: one session (the surface hooks + stores live above
-// this in AppBrowserProvider) rendered through a pluggable layout shell. Because
-// only the layout wrapper swaps on morph, the conversation and any in-flight run
-// survive the dock/undock toggle.
-export const ChatApp = ({
-  mode = 'floating',
-  onModeChange,
+type ControlledChatPresentationProps = {
+  mode?: never
+  /**
+   * The complete controlled presentation. `mode`, `minimized`, and `edge` move
+   * together so an embedder cannot accidentally create a second authority for
+   * one axis. Both controlled props must be supplied together.
+   */
+  presentation: ChatPresentation
+  onPresentationChange: (presentation: ChatPresentation) => void
+  initialMinimized?: never
+}
+
+export type ChatAppProps = ChatAppBaseProps &
+  (UncontrolledChatPresentationProps | ControlledChatPresentationProps)
+
+type ChatAppLayoutProps = ChatAppBaseProps & ControlledChatPresentationProps
+
+/**
+ * Layout-only half of ChatApp. It has no presentation storage or local mode/edge
+ * state: every reader action becomes one complete value for its owner.
+ */
+const ChatAppLayout = ({
+  presentation,
+  onPresentationChange,
   morphable = true,
   storageKey,
   LoadingComponent,
@@ -93,9 +99,6 @@ export const ChatApp = ({
   inspectorPanelSupported,
   settingsFallback,
   framed = false,
-  initialMinimized = false,
-  minimized,
-  onMinimizedChange,
   focusPanelOnMount,
   defaultWidth,
   defaultHeight,
@@ -104,73 +107,30 @@ export const ChatApp = ({
   stageClassName,
   starterPrompts,
   starterPromptCount
-}: ChatAppProps) => {
-  // Controlled exactly when the caller supplies both halves. Adopting the
-  // controlled value during RENDER (rather than in an effect) is what keeps a
-  // host-driven change — restoring a persisted `sidebar` on activation, say —
-  // from being visible for one frame as the other layout.
-  const controlled = onModeChange !== undefined && mode !== undefined
-  const [stored] = useState(() => readStoredPresentation(storageKey, morphable))
-  const [uncontrolledMode, setUncontrolledMode] = useState<ChatMode>(
-    () => stored?.mode ?? mode ?? 'floating'
-  )
-  const activeMode = controlled ? mode : uncontrolledMode
-  // Which edge the docked "web mode" fills. Set by the dock button (the configured
-  // `side`) or by a snap-drag release near a viewport edge (#324), and persisted so a
-  // reload restores the same split.
-  const [dockEdge, setDockEdge] = useState<SnapEdge>(() => stored?.edge ?? side)
-
-  /**
-   * The one place a morph happens, for both directions.
-   *
-   * The TRANSITION is the shared one, so "docking clears minimized" is decided
-   * in a single place whoever drives the morph; what varies is only who keeps the
-   * result. A controlled host owns which LAYOUT is shown and persists its own
-   * record, so this writes nothing for it — except the edge, which is ChatApp's
-   * either way: a host owns floating-versus-docked, not which viewport edge a
-   * snap-drag released against.
-   */
-  const morphTo = (next: ChatMode, edge?: SnapEdge): void => {
-    const target: SnapEdge = edge ?? (next === 'sidebar' ? side : dockEdge)
-    setDockEdge(target)
-    if (!controlled) setUncontrolledMode(next)
-    const current = readChatPresentation(storageKey) ?? {
-      ...DEFAULT_CHAT_PRESENTATION,
-      edge: dockEdge
-    }
-    writeChatPresentation(
-      storageKey,
-      // A controlled host is the authority on mode, so its record here keeps
-      // whatever mode was already there rather than acquiring a second, stale
-      // answer. Only the edge is ours to keep either way.
-      controlled ? { ...current, edge: target } : setChatPresentationMode(current, next, target)
+}: ChatAppLayoutProps): ReactNode => {
+  const morphTo = (mode: ChatMode, edge?: SnapEdge): void => {
+    onPresentationChange(
+      setChatPresentationMode(
+        presentation,
+        mode,
+        edge ?? (mode === 'sidebar' ? side : presentation.edge)
+      )
     )
-    onModeChange?.(next)
   }
 
-  // `edge` comes from a snap-drag release; the plain dock button omits it and
-  // docks to the configured `side`.
-  const dockTo = (edge?: SnapEdge) => {
-    morphTo('sidebar', edge)
-  }
-
-  const undock = () => {
-    morphTo('floating')
-  }
-
-  if (activeMode === 'sidebar') {
+  if (presentation.mode === 'sidebar') {
     return (
       <SidebarLayout
         storageKey={`${storageKey}:sidebar`}
         {...(stageClassName !== undefined ? { stageClassName } : {})}
         sizeVariant={sizeVariant}
         side={side}
-        edge={dockEdge}
+        edge={presentation.edge}
         // The morph target is the resizable web-mode split (#324); the pinned panes
         // (root composition, /web, /mobile) keep their static `resizable` prop.
         resizable={morphable ? true : resizable}
         fill={fill}
-        {...(morphable ? { onUndock: undock } : {})}
+        {...(morphable ? { onUndock: () => morphTo('floating') } : {})}
       >
         <DockedChatSurface
           LoadingComponent={LoadingComponent}
@@ -188,11 +148,12 @@ export const ChatApp = ({
   return (
     <FloatingLayout
       storageKey={`${storageKey}:floating`}
-      initialMinimized={initialMinimized}
-      {...(minimized !== undefined ? { minimized } : {})}
-      {...(onMinimizedChange !== undefined ? { onMinimizedChange } : {})}
+      minimized={presentation.minimized}
+      onMinimizedChange={(minimized) =>
+        onPresentationChange(setChatPresentationMinimized(presentation, minimized))
+      }
       {...(focusPanelOnMount !== undefined ? { focusPanelOnMount } : {})}
-      {...(morphable ? { onDock: dockTo } : {})}
+      {...(morphable ? { onDock: (edge?: SnapEdge) => morphTo('sidebar', edge) } : {})}
       {...(defaultWidth !== undefined ? { defaultWidth } : {})}
       {...(defaultHeight !== undefined ? { defaultHeight } : {})}
       {...(minWidth !== undefined ? { minWidth } : {})}
@@ -207,5 +168,83 @@ export const ChatApp = ({
         {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
       />
     </FloatingLayout>
+  )
+}
+
+type UncontrolledChatAppProps = ChatAppBaseProps & UncontrolledChatPresentationProps
+
+/** One complete product-owned presentation record for an ordinary mounted shell. */
+const UncontrolledChatApp = ({
+  mode = 'floating',
+  morphable = true,
+  side = 'right',
+  initialMinimized,
+  storageKey,
+  ...props
+}: UncontrolledChatAppProps): ReactNode => {
+  const [store] = useState(() =>
+    createChatPresentationStore({
+      storageKey,
+      // Fixed panes have no morph control, so they neither inherit nor create a
+      // presentation preference that another surface could later mistake for one.
+      persist: morphable,
+      defaultPresentation: {
+        mode,
+        minimized: initialMinimized ?? false,
+        edge: side
+      },
+      // An explicit URL/window override wins for this mount. Omitting it lets a
+      // normal morphable product surface restore all three persisted axes.
+      hydrate: (persisted) =>
+        initialMinimized === undefined ? persisted : { ...persisted, minimized: initialMinimized }
+    })
+  )
+  const presentation = useChatPresentation(store)
+
+  return (
+    <ChatAppLayout
+      {...props}
+      morphable={morphable}
+      side={side}
+      storageKey={storageKey}
+      presentation={presentation}
+      onPresentationChange={(next) => store.update(() => next)}
+    />
+  )
+}
+
+// The single shared chat App: one session (the surface hooks + stores live above
+// this in AppBrowserProvider) rendered through a pluggable layout shell. Because
+// only the layout wrapper swaps on morph, the conversation and an in-flight run
+// survive the dock/undock toggle.
+export const ChatApp = ({
+  presentation,
+  onPresentationChange,
+  mode,
+  initialMinimized,
+  ...props
+}: ChatAppProps): ReactNode => {
+  const controlled = presentation !== undefined || onPresentationChange !== undefined
+  if (controlled) {
+    if (presentation === undefined || onPresentationChange === undefined) {
+      throw new Error(
+        'ChatApp requires presentation and onPresentationChange together when controlled.'
+      )
+    }
+    return (
+      <ChatAppLayout
+        {...props}
+        presentation={presentation}
+        onPresentationChange={onPresentationChange}
+      />
+    )
+  }
+
+  return (
+    <UncontrolledChatApp
+      {...props}
+      {...(mode !== undefined ? { mode } : {})}
+      {...(initialMinimized !== undefined ? { initialMinimized } : {})}
+    />
   )
 }
