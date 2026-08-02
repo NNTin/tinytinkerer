@@ -91,12 +91,19 @@ export type ChatSurfaceController = {
  * against shared mutable gate state. Two surfaces submitting the same words
  * would have correlated with the wrong attempt.
  *
- * `held` carries its own decision, so a caller waits on the attempt it made
+ * `held` carries its own outcome, so a caller waits on the attempt it made
  * rather than on "something was approved recently".
+ *
+ * That outcome is `admitted` — did this prompt actually get a run — and NOT
+ * "did the reader accept the disclosure". The two come apart: the dialog can
+ * sit open long enough for the cooldown, the re-entry latch or the concurrency
+ * cap to change, and several sends can join one dialog and then compete for a
+ * single run slot. Resolving on acceptance cleared the composer for prompts
+ * that were never sent (issue #481 re-review, finding 3).
  */
 export type SubmitPromptResult =
   | { status: 'sent' }
-  | { status: 'held'; requestId: number; decided: Promise<boolean> }
+  | { status: 'held'; requestId: number; admitted: Promise<boolean> }
   | { status: 'refused' }
 
 const SENT: SubmitPromptResult = { status: 'sent' }
@@ -306,14 +313,27 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     const gate = preSendDisclosureStore.getState()
     if (gate.isRequired()) {
       const { requestId, decided } = gate.request(trimmed)
-      return {
-        status: 'held',
-        requestId,
-        decided: decided.then((allowed) => {
-          if (allowed) void sendPrompt(trimmed)
-          return allowed
-        })
-      }
+      // Settled by whichever comes first: the run being committed
+      // (`onAdmitted`), or the send resolving without ever committing. A
+      // promise keeps its first settlement, so the `finally` below is a no-op
+      // once admission has fired — and the ONLY path for a refused send.
+      let settle: (admitted: boolean) => void = () => undefined
+      const admitted = new Promise<boolean>((resolve) => {
+        settle = resolve
+      })
+      void decided.then((allowed) => {
+        if (!allowed) {
+          settle(false)
+          return
+        }
+        // Not awaited: `sendPrompt` resolves when the RUN finishes, and the
+        // composer must clear as soon as the prompt is in — the same
+        // clear-on-accept timing every unheld send gets (issue #206).
+        void sendPrompt(trimmed, undefined, { onAdmitted: () => settle(true) }).finally(() =>
+          settle(false)
+        )
+      })
+      return { status: 'held', requestId, admitted }
     }
 
     // Kick off the send without awaiting the backend response so the caller can
@@ -390,15 +410,18 @@ export const useChatComposer = (
     }
     if (result.status === 'held') {
       // Held for the pre-send disclosure (issue #481). The input stays put so a
-      // reader who declines still has their question; it clears only if they
-      // acknowledge, on THIS attempt's own decision.
+      // reader who declines still has their question, and clears only once THIS
+      // attempt was actually admitted for sending — not merely acknowledged.
+      // Acknowledgement is not admission: the cooldown or the run cap can have
+      // moved while the dialog was open, and several joined sends can compete
+      // for one slot.
       //
       // Waiting on the returned promise rather than on shared "what was approved
       // recently?" state is what makes that safe with several surfaces open: two
       // composers submitting identical text can no longer resume each other's
       // attempt.
-      void result.decided.then((allowed) => {
-        if (allowed) setPrompt('')
+      void result.admitted.then((admitted) => {
+        if (admitted) setPrompt('')
       })
     }
     return false

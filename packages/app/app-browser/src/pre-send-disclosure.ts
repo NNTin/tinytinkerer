@@ -4,9 +4,9 @@
  *
  * ## Why this is a `BrowserApp` capability and not a docs component
  *
- * The documentation assistant has to tell a reader, before anything leaves the
- * browser, that the model receives the conversation plus whatever source
- * Markdown its documentation tools chose to read. Three shapes were rejected:
+ * The documentation assistant has to tell a reader, before any content reaches a
+ * model, that the model receives the conversation plus whatever documentation
+ * its tools chose to search or read. Three shapes were rejected:
  *
  * - **Adding the text to the telemetry consent dialog.** That dialog asks for an
  *   opt-in that defaults to off and can be declined while the app keeps working.
@@ -72,9 +72,9 @@ export type PreSendDisclosureRequest = {
  * What {@link PreSendDisclosureState.request} hands back: the id, and the
  * reader's eventual answer.
  *
- * The promise is the important half. It is what lets EVERY outbound send —
- * the composer, Regenerate, and anything #472 adds later — wait on one
- * decision, instead of each caller re-deriving "was my attempt the one that got
+ * The promise is the important half. It is what lets every prompt send — the
+ * composer, Regenerate, and anything #472 adds later — wait on one decision,
+ * instead of each caller re-deriving "was my attempt the one that got
  * approved?" from shared mutable state.
  */
 export type PreSendDisclosureDecision = {
@@ -193,10 +193,15 @@ export const usePreSendDisclosureStore = <T>(selector: (state: PreSendDisclosure
   useStore(preSendDisclosureStoreFor(useBrowserApp()), selector)
 
 /**
- * The one coordinator every outbound send passes through.
+ * The one coordinator every prompt send passes through.
  *
  * Resolves `true` when this app may send, `false` when the reader declined.
  * An app with no disclosure resolves `true` without touching anything.
+ *
+ * "Prompt send", not "network request": this gates conversation and tool
+ * content on its way to a model. The app still fetches its own code, the
+ * corpus manifest, and the model catalogue without consulting it — none of
+ * which carry content, and none of which reach a model.
  *
  * This exists because "the composer checks the gate" was NOT the same as "the
  * app cannot send unacknowledged". `rerunLastPrompt` reaches `sendPrompt`

@@ -24,7 +24,12 @@ const chatState = vi.hoisted(() => {
     conversations,
     conversationOrder: ['a'],
     initialize: vi.fn(() => Promise.resolve()),
-    sendPrompt: vi.fn(() => Promise.resolve()),
+    sendPrompt: vi.fn(
+      (_prompt: string, _conversationId?: string, options?: { onAdmitted?: () => void }) => {
+        options?.onAdmitted?.()
+        return Promise.resolve()
+      }
+    ),
     rerunLastPrompt: vi.fn(() => Promise.resolve()),
     stop: vi.fn(),
     resetConversation: vi.fn(() => Promise.resolve()),
@@ -56,15 +61,27 @@ const appTool = vi.hoisted(() => {
 // simply never gates anything without a configured disclosure — modelled here as
 // the same "no disclosure" shape, so these tests keep asserting the cap-refusal
 // and activity behaviour they were written for rather than the gate.
+const disclosureResolvers = vi.hoisted(() => [] as ((allowed: boolean) => void)[])
+
 const preSendDisclosureState = vi.hoisted(() => ({
   disclosure: undefined as { version: string } | undefined,
   pending: null as { requestId: number; prompt: string } | null,
-  lastAccepted: null as number | null,
   isRequired: vi.fn(() => false),
-  request: vi.fn(() => 1),
+  request: vi.fn((prompt: string) => ({
+    requestId: 1,
+    decided: new Promise<boolean>((resolve) => {
+      disclosureResolvers.push(resolve)
+    }),
+    prompt
+  })),
   accept: vi.fn(() => Promise.resolve()),
   dismiss: vi.fn()
 }))
+
+/** Answers whatever request the gate is currently holding. */
+const settleDisclosure = (allowed: boolean): void => {
+  for (const resolve of disclosureResolvers.splice(0)) resolve(allowed)
+}
 
 vi.mock('../src/pre-send-disclosure.js', () => ({
   preSendDisclosureStoreFor: () => ({ getState: () => preSendDisclosureState }),
@@ -92,7 +109,7 @@ vi.mock('../src/plugins/use-plugin-modules.js', () => ({
   usePluginModules: () => []
 }))
 
-import { useChatSurfaceController } from '../src/surfaces.js'
+import { useChatSurfaceController, type SubmitPromptResult } from '../src/surfaces.js'
 
 beforeEach(() => {
   chatState.hydrated = true
@@ -103,8 +120,18 @@ beforeEach(() => {
   chatState.conversationId = 'a'
   chatState.conversations = { a: { id: 'a', title: 'A', isRunning: false } }
   chatState.conversationOrder = ['a']
-  chatState.sendPrompt.mockClear()
+  chatState.sendPrompt
+    .mockReset()
+    .mockImplementation(
+      (_prompt: string, _conversationId?: string, options?: { onAdmitted?: () => void }) => {
+        // The default fake is an ADMITTED send, matching a healthy store.
+        options?.onAdmitted?.()
+        return Promise.resolve()
+      }
+    )
   chatState.canStartRun.mockReset().mockReturnValue(true)
+  preSendDisclosureState.isRequired.mockReset().mockReturnValue(false)
+  disclosureResolvers.length = 0
 })
 
 afterEach(() => {
@@ -115,6 +142,88 @@ describe('useChatSurfaceController app-tool activity', () => {
   it('resolves the summarizer carried by an app-local tool', () => {
     const { result } = renderHook(() => useChatSurfaceController())
     expect(result.current.resolveActivitySummarizer('app-tool')).toBe(appTool.summarizeActivity)
+  })
+})
+
+// Acknowledgement is not admission (issue #481 re-review, finding 3). The
+// dialog can sit open long enough for the cooldown or the run cap to change,
+// and several sends can join one dialog and then compete for a single slot —
+// so a held attempt reports whether it actually got a run, not whether the
+// reader said yes.
+/** Narrows a submit result to the held branch, failing loudly if it is not. */
+const admittedOf = (result: SubmitPromptResult | undefined): Promise<boolean> => {
+  if (result?.status !== 'held') {
+    throw new Error(`expected a held submit result, got ${result?.status ?? 'undefined'}`)
+  }
+  return result.admitted
+}
+
+describe('useChatSurfaceController held sends', () => {
+  it('reports admitted only when the send actually gets a run', async () => {
+    preSendDisclosureState.isRequired.mockReturnValue(true)
+    const { result } = renderHook(() => useChatSurfaceController())
+
+    let outcome: SubmitPromptResult | undefined
+    act(() => {
+      outcome = result.current.submitPrompt('a question')
+    })
+    expect(outcome?.status).toBe('held')
+
+    // The reader acknowledges, and the send is admitted.
+    await act(async () => {
+      preSendDisclosureState.isRequired.mockReturnValue(false)
+      settleDisclosure(true)
+      await Promise.resolve()
+    })
+
+    // The send is told how to report admission, rather than being expected to
+    // signal it through a resolved `Promise<void>` that every refusal shares.
+    const [prompt, conversationId, sendOptions] = chatState.sendPrompt.mock.calls[0] ?? []
+    expect(prompt).toBe('a question')
+    expect(conversationId).toBeUndefined()
+    expect(typeof sendOptions?.onAdmitted).toBe('function')
+    await expect(admittedOf(outcome)).resolves.toBe(true)
+  })
+
+  it('reports NOT admitted when the run is refused after acknowledgement', async () => {
+    // The bug this closes: the composer cleared a prompt that was never sent,
+    // because the promise meant "accepted" rather than "admitted".
+    preSendDisclosureState.isRequired.mockReturnValue(true)
+    // A send that never commits — exactly what the run cap, the re-entry latch
+    // and the cooldown all do: return early, resolving the same way a real run
+    // does, without ever calling `onAdmitted`.
+    chatState.sendPrompt.mockImplementation(() => Promise.resolve())
+    const { result } = renderHook(() => useChatSurfaceController())
+
+    let outcome: SubmitPromptResult | undefined
+    act(() => {
+      outcome = result.current.submitPrompt('a question')
+    })
+
+    await act(async () => {
+      preSendDisclosureState.isRequired.mockReturnValue(false)
+      settleDisclosure(true)
+      await Promise.resolve()
+    })
+
+    await expect((outcome as { admitted: Promise<boolean> }).admitted).resolves.toBe(false)
+  })
+
+  it('reports NOT admitted when the reader dismisses', async () => {
+    preSendDisclosureState.isRequired.mockReturnValue(true)
+    const { result } = renderHook(() => useChatSurfaceController())
+
+    let outcome: SubmitPromptResult | undefined
+    act(() => {
+      outcome = result.current.submitPrompt('a question')
+    })
+    await act(async () => {
+      settleDisclosure(false)
+      await Promise.resolve()
+    })
+
+    expect(chatState.sendPrompt).not.toHaveBeenCalled()
+    await expect((outcome as { admitted: Promise<boolean> }).admitted).resolves.toBe(false)
   })
 })
 

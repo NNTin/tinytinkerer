@@ -518,6 +518,17 @@ export const sendConversationPromptAction = async (
     // from both that duplicate and this package's own instances.
     registry: Pick<ConversationRunRegistry, 'rekey'>
     execute: typeof executeChatPrompt
+    /**
+     * Called once, when this send has passed every gate and the run is
+     * committed — never for a send that returns early below.
+     *
+     * Separate from the returned promise, which resolves when the RUN finishes.
+     * A caller that needs to know "did this prompt get in?" (issue #481: the
+     * composer clears its input on admission) cannot wait for completion, and
+     * cannot infer admission from a resolved `Promise<void>` either, since every
+     * early return resolves the same way.
+     */
+    onAdmitted?: () => void
   }
 ): Promise<void> => {
   const { prompt, handle } = options
@@ -572,6 +583,8 @@ export const sendConversationPromptAction = async (
   const runController = new AbortController()
   handle.controller = runController
   patchSlice(context, conversationId, { isRunning: true, isRetryPending: false })
+  // Past every gate: the run is this prompt's now.
+  options.onAdmitted?.()
 
   // Cooldowns are scoped per LiteLLM deployment (issue #179).
   const cooldownScope = context.getCooldownScope()

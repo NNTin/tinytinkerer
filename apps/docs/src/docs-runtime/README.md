@@ -330,10 +330,17 @@ locked and this session documents.
 
 ## The release gates (#481)
 
-### Nothing is sent before the reader is told what a send does
+### No content reaches a model before the reader is told what a send does
 
-The assistant declares a `preSendDisclosure` on its `BrowserApp`, and everything
-outbound passes one coordinator, `requestOutboundSendApproval`.
+The assistant declares a `preSendDisclosure` on its `BrowserApp`, and every
+prompt send passes one coordinator, `requestOutboundSendApproval`.
+
+Scope, stated precisely because the first revision overstated it: this gates
+conversation and tool content on its way to a **model**. It is not a network
+kill switch. A documentation page still fetches the corpus manifest, activating
+the assistant still downloads its chunk, and the shell may still ask the edge
+which models exist — none of which carry content, and none of which reach a
+model.
 
 **The gate is in `chat-store`'s `sendPrompt`**, not in the composer. That
 distinction is the whole correctness of it: "the composer checks the gate" is not
@@ -425,9 +432,23 @@ round trip, a real rate limit — is
 ### Rollback
 
 `TINYTINKERER_DOCS_ASSISTANT=off` plus a rebuild. `@theme/Root` then renders
-ordinary Docusaurus children: no provider, no page region, no launcher, no
-corpus request. Build-time deliberately — a runtime switch cannot help the case
-that motivates a rollback, and `Root` would have to mount the tree to read it.
+ordinary Docusaurus children: nothing mounts, nothing requests the corpus, and
+no launcher renders. Build-configured deliberately — a runtime switch cannot
+help the case that motivates a rollback, since every reader is affected and none
+of them will set a flag.
+
+**It is a behavioural disable, not dead-code elimination.** The light assistant
+modules are still compiled into Docusaurus' shared bundle (`Root` imports them
+unconditionally and branches at render time), so a rolled-back build is the same
+size as a normal one — measured: `coldPage` is byte-identical at 843,003 — and
+the corpus artifacts and search index are still emitted, just never fetched.
+
+That is the right trade for an emergency control. Eliminating the code would
+need a second compile path whose output nobody routinely builds or tests, which
+is the wrong thing to reach for during an incident; it would also break
+`check-docs-performance-budget.mjs`, which requires the assistant runtime chunk
+to exist. If a bundle-size rollback ever becomes the actual requirement, that is
+a separate change.
 
 Live labs are untouched; they boot from `live-lab/client-runtime.tsx`, which the
 flag does not reach. The consequence is that nothing then owns the docs-wide

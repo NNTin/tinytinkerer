@@ -37,24 +37,32 @@
 import type { PreSendDisclosure } from '@tinytinkerer/app-browser'
 
 /**
- * Bumped whenever what a reader is agreeing to MEANS something different.
+ * A CONTENT HASH of the disclosure a reader acknowledged, not a hand-kept
+ * counter.
  *
- * That includes a substantive wording correction, not only a change in the code
- * — the two are not the same thing, and treating them as the same is how an
- * acknowledgement of an inaccurate statement gets carried forward as if it were
- * an acknowledgement of the accurate one (issue #481 review, finding 3). Version
- * `2` is exactly that case: no data flow changed, but version `1` claimed
- * "nothing leaves your browser" and described every tool result as "source
- * Markdown", and a reader who agreed to those did not agree to what actually
- * happens.
+ * The first revision made this a manual number and wrote the rule in a comment:
+ * bump it whenever the meaning materially changes. That is not an invariant —
+ * it is a request, and the very failure it guards against (an acknowledgement
+ * of inaccurate text carried forward as if it covered the corrected text) is
+ * one forgetful edit away. `__tests__/assistant-disclosure.test.ts` recomputes
+ * this from the title and paragraphs and fails if it drifts, so any
+ * user-visible wording change must produce a new version.
  *
- * Pure copy-editing — a typo, a reflow — does not bump it.
+ * A checked-in constant rather than a value this module computes: this file is
+ * loaded by `@theme/Root` on every documentation page, so it stays free of
+ * `node:crypto` and of a hashing implementation nothing at runtime needs. The
+ * derivation lives in the test, which is where the enforcement lives too.
  *
- * Separate from the global privacy-policy version (`PRIVACY_POLICY_VERSION`,
- * hashed from `docs/overview/PRIVACY.md`) and from telemetry consent: all three
- * ask different questions, and none substitutes for another.
+ * That deliberately re-prompts for cosmetic corrections too. An occasional
+ * unnecessary prompt is a far smaller cost than an unenforceable
+ * "substantive versus cosmetic" judgement that nothing checks — and it is
+ * exactly the trade the product already makes for `PRIVACY_POLICY_VERSION`,
+ * which is a SHA-256 of `docs/overview/PRIVACY.md`.
+ *
+ * Separate from that policy version and from telemetry consent: all three ask
+ * different questions, and none substitutes for another.
  */
-export const DOCS_ASSISTANT_DISCLOSURE_VERSION = '2'
+export const DOCS_ASSISTANT_DISCLOSURE_VERSION = '5a419809ebb2'
 
 export const DOCS_ASSISTANT_DISCLOSURE_TITLE = 'Before you send this'
 

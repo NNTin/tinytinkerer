@@ -44,9 +44,26 @@ export type DocsRuntimeCustomFields = {
 /**
  * The documentation assistant's emergency rollback switch (issue #481).
  *
- * A **build-time** flag, deliberately: disabling the assistant requires a
- * rebuild and redeploy, which is what an emergency rollback of a shipped
- * feature already needs. The alternatives were rejected —
+ * A **build-configured behavioural disable**, deliberately: arming it requires a
+ * rebuild and redeploy, which is what an emergency rollback of a shipped feature
+ * already needs.
+ *
+ * What it does NOT do, stated plainly because the name invites the assumption:
+ * it does not produce an assistant-free JavaScript bundle. The light assistant
+ * modules are still compiled into Docusaurus' shared bundle — `@theme/Root`
+ * imports them unconditionally and branches at render time — so a rolled-back
+ * build is byte-for-byte the same size as a normal one, and the corpus artifacts
+ * and search index are still emitted. What changes is that nothing mounts,
+ * nothing requests the corpus, and no launcher renders.
+ *
+ * That is the right trade for an emergency control: dead-code elimination would
+ * mean a second compile path (an alias or DefinePlugin) whose output nobody
+ * routinely builds or tests, which is exactly the wrong thing to reach for
+ * during an incident. If a bundle-size rollback is ever the actual requirement,
+ * it is a separate change — and `scripts/check-docs-performance-budget.mjs`
+ * would need to stop requiring the assistant runtime chunk to exist.
+ *
+ * The alternatives were rejected —
  *
  * - a runtime/`localStorage` switch cannot help the case that motivates a
  *   rollback (every reader is affected, and no reader will set a flag);
@@ -61,8 +78,9 @@ export type DocsRuntimeCustomFields = {
  * documented off-switches leaves it on, so a typo cannot silently disable the
  * feature on a production deploy.
  *
- * With it off, `/docs/` renders ordinary Docusaurus pages: no assistant
- * provider, no launcher, no page-inset wrapper, and no corpus-manifest request.
+ * With it off, `/docs/` renders ordinary Docusaurus pages: no assistant provider
+ * is mounted, no launcher renders, no page-inset wrapper is created, and no
+ * corpus-manifest request is made.
  * Live labs are untouched — they boot from `live-lab/client-runtime.tsx`, which
  * this flag does not reach. The consequence is that nothing on `/docs/` then
  * owns the telemetry-consent or privacy-update hosts; that is acceptable for an

@@ -194,27 +194,49 @@ test.describe('documentation assistant load profiles (#481)', () => {
     expect(requests.matching(SEARCH_INDEX)).toEqual([])
   })
 
-  test('4. a search loads the Lunr index only at that point', async ({ page }) => {
+  test('4. a search loads the Lunr index and its worker only at that point', async ({ page }) => {
     const requests = record(page)
-    await installAppToolMock(page, 'search_docs', { query: 'plugin infrastructure' })
+
+    // WARM THE RUNTIME FIRST, then measure (issue #481 re-review, finding 2).
+    //
+    // The first send of a session pulls the generic LiteLLM/ReAct/tool-calling
+    // chunks — well over 100 kB of them — and the earlier version of this test
+    // marked before that send, so those bytes were counted as "the search
+    // worker". The floor could then be satisfied entirely by first-send
+    // machinery, which means an eager search worker would have passed.
+    //
+    // An ordinary no-tool send warms exactly that machinery and touches neither
+    // the corpus nor the index, so what arrives after the mark is the search
+    // path and nothing else.
+    await installChatMock(page)
     await page.goto(AUTHORED_ROUTE)
     await assistantLauncher(page).click()
     await expect(assistantComposer(page)).toBeVisible({ timeout: 30_000 })
     await dismissTelemetryDialog(page)
+    await sendAssistantPrompt(page, 'A warm-up question that calls no tools.')
+    await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
 
-    // Nothing so far may have touched the index.
+    // Still untouched by the warm-up — the two facts the measurement below rests
+    // on.
     expect(requests.matching(SEARCH_INDEX)).toEqual([])
+    expect(requests.matching(CORPUS_DOCUMENT)).toEqual([])
+
+    // Re-point the mocked upstream at a search_docs call. The conversation
+    // carries no `role: 'tool'` turn yet, so the next decision is an action.
+    await installAppToolMock(page, 'search_docs', { query: 'plugin infrastructure' })
     requests.mark()
 
     await sendAssistantPrompt(page, 'Where can I find the plugin documentation?')
-    await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
+    // BOTH answers, not `.last()`: the mock's reply text is identical for every
+    // turn, so a `.last()` visibility check matches the warm-up's answer and
+    // returns before the search has run.
+    await expect(page.getByText(SYNTHESIS_ANSWER)).toHaveCount(2, { timeout: 30_000 })
 
     // Finding the index here is also the production-build smoke check: the
     // upstream plugin writes `search-index.json` only from its `postBuild` hook,
     // so a build that stopped emitting it would leave search permanently
     // unavailable on the deployed site while every unit test stayed green.
-    const indexes = requests.matching(SEARCH_INDEX)
-    expect(indexes.length).toBeGreaterThan(0)
+    expect(requests.matching(SEARCH_INDEX).length).toBeGreaterThan(0)
 
     const budget = profile('search')
     const maxWorkerBytes = budget.maxWorkerBytes
@@ -222,12 +244,10 @@ test.describe('documentation assistant load profiles (#481)', () => {
     const bytes = await requests.chunkBytesSinceMark()
     console.log(`[#481] search worker chunks: ${bytes.toLocaleString('en-US')} bytes fetched`)
 
-    // The laziness assertion, and the one that actually matters. If the search
-    // worker ever became an eager dependency of the assistant runtime it would
-    // already have been fetched during activation, and NOTHING new would arrive
-    // here — so a floor of zero is what catches that regression. A cap alone
-    // would have passed it, reporting a smaller number and calling it an
-    // improvement.
+    // The laziness assertion. With the runtime already warm, the only JavaScript
+    // that can arrive here is the search loader and the Lunr worker — so a floor
+    // of zero genuinely means "the worker was still lazy", which it did not
+    // before the warm-up was added.
     expect(
       bytes,
       'no JavaScript arrived at first search — the search worker is no longer lazy'

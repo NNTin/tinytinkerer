@@ -15,6 +15,6 @@ reads — but only when it invokes one of its documentation tools. That content 
 Markdown this site is built from, never from the rendered page you are looking at, your form input,
 or a live lab's state.
 
-You will be shown a one-time summary of this before your first message, and nothing is sent until
-you acknowledge it. See the new "Documentation assistant" section of the privacy policy for
+You will be shown a one-time summary of this before your first message, and no conversation or
+documentation content is sent to a model until you acknowledge it. See the new "Documentation assistant" section of the privacy policy for
 details.

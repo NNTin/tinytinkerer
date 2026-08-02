@@ -63,6 +63,9 @@ whatever this map turns out to have missed.
 
 ## Known gaps, stated rather than implied
 
+- **Rollback is a behavioural disable, not dead-code elimination.** A
+  rolled-back build is the same size and still emits the corpus and search
+  index; nothing mounts or fetches them. Deliberate — see `README.md`.
 - **The `assistantRuntime` budget is Chromium-only.** Measured at 2,596,180
   bytes on the one engine the docs specs run on; another engine's chunk set could
   differ. The spec prints the figure on every run, so a drift shows up before it

@@ -110,8 +110,8 @@ Every page under `/docs/` carries a floating **documentation assistant**. It is 
 TinyTinkerer chat assistant, running in its own isolated session, with three extra tools that let
 it search and read this documentation.
 
-Before your first message it shows a one-time notice describing exactly what follows, and it will
-not send anything until you acknowledge it. You can re-read that summary at any time in the
+Before your first message it shows a one-time notice describing exactly what follows, and no
+conversation or documentation content is sent to a model until you acknowledge it. You can re-read that summary at any time in the
 assistant's Settings → Privacy.
 
 **Reading documentation sends no content to a model.** Merely visiting a `/docs/` page, or opening

@@ -25,11 +25,11 @@ import { useChatComposer } from '../src/surfaces.js'
 const SENT = { status: 'sent' } as const
 const REFUSED = { status: 'refused' } as const
 const held = (requestId: number) => {
-  let settle: (allowed: boolean) => void = () => undefined
-  const decided = new Promise<boolean>((resolve) => {
+  let settle: (admitted: boolean) => void = () => undefined
+  const admitted = new Promise<boolean>((resolve) => {
     settle = resolve
   })
-  return { result: { status: 'held' as const, requestId, decided }, settle }
+  return { result: { status: 'held' as const, requestId, admitted }, settle }
 }
 
 beforeEach(() => {
@@ -84,7 +84,7 @@ describe('useChatComposer', () => {
   // THAT attempt's own decision, so nothing is inferred from shared state and two
   // surfaces submitting identical text cannot resume each other.
   describe('pre-send disclosure gate', () => {
-    it('keeps the text while held, and clears it once acknowledged', async () => {
+    it('keeps the text while held, and clears it once the send is admitted', async () => {
       const { result: heldResult, settle } = held(7)
       const submitPrompt = vi.fn(() => heldResult)
       const { result } = renderHook(() => useChatComposer(submitPrompt))
@@ -103,7 +103,7 @@ describe('useChatComposer', () => {
 
       await act(async () => {
         settle(true)
-        await heldResult.decided
+        await heldResult.admitted
       })
 
       expect(result.current.prompt).toBe('')
@@ -111,7 +111,7 @@ describe('useChatComposer', () => {
       expect(submitPrompt).toHaveBeenCalledTimes(1)
     })
 
-    it('keeps the text when the reader dismisses instead of acknowledging', async () => {
+    it('keeps the text when the attempt is not admitted', async () => {
       const { result: heldResult, settle } = held(3)
       const submitPrompt = vi.fn(() => heldResult)
       const { result } = renderHook(() => useChatComposer(submitPrompt))
@@ -124,13 +124,13 @@ describe('useChatComposer', () => {
       })
       await act(async () => {
         settle(false)
-        await heldResult.decided
+        await heldResult.admitted
       })
 
       expect(result.current.prompt).toBe('Where can I find the plugin docs?')
     })
 
-    it('does not clear on another attempt being approved', async () => {
+    it('does not clear on another attempt being admitted', async () => {
       // Two composers, same words. This one's attempt is never settled; the
       // other's is. Correlating by prompt text — what the first revision did —
       // would have cleared this one.
@@ -147,7 +147,7 @@ describe('useChatComposer', () => {
       })
       await act(async () => {
         theirs.settle(true)
-        await theirs.result.decided
+        await theirs.result.admitted
       })
 
       expect(result.current.prompt).toBe('the same question')

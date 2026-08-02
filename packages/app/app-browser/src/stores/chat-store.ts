@@ -50,7 +50,21 @@ export type ChatState = {
   conversationOrder: string[]
   initialize: () => Promise<void>
   // Sends into `conversationId`, defaulting to the active conversation.
-  sendPrompt: (prompt: string, conversationId?: string) => Promise<void>
+  sendPrompt: (
+    prompt: string,
+    conversationId?: string,
+    options?: {
+      /**
+       * Called once if this prompt actually gets a run, and never otherwise —
+       * the re-entry latch, the concurrency cap, the outbound-send gate, and
+       * the cooldown all refuse by returning early (issue #481 re-review).
+       *
+       * The returned promise cannot answer this: it resolves when the run
+       * FINISHES, and resolves identically for a send that was refused.
+       */
+      onAdmitted?: () => void
+    }
+  ) => Promise<void>
   // Synchronous mirror of sendPrompt's two SYNCHRONOUS gates only — the
   // per-conversation re-entry latch (issue #334) and the MAX_CONCURRENT_RUNS
   // cap (issue #430) — for a surface that needs a synchronous accept/refuse
@@ -106,10 +120,14 @@ export const createChatStore = (options: {
   /**
    * Approval for anything about to leave this app (issue #481).
    *
-   * Awaited by `sendPrompt`, which is the one call EVERY outbound send reaches:
+   * Awaited by `sendPrompt`, which is the one call every PROMPT SEND reaches:
    * the composer, `rerunLastPrompt` (Regenerate), and whatever #472 adds. A
    * gate that lived only in the composer was not a gate — Regenerate sent a
    * whole persisted conversation past it.
+   *
+   * Scope, precisely: this gates conversation and tool content on its way to a
+   * model. It is not a network kill switch — model-catalogue lookups, status
+   * polling and telemetry take their own paths and are not routed through it.
    *
    * Absent for every app without a pre-send disclosure, which is all of them
    * today, and then this costs a single `undefined` check per send.
@@ -242,7 +260,7 @@ export const createChatStore = (options: {
         const runKey = conversationId ?? get().conversationId ?? ''
         return !runRegistry.has(runKey) && runRegistry.size < MAX_CONCURRENT_RUNS
       },
-      sendPrompt: async (prompt, conversationId) => {
+      sendPrompt: async (prompt, conversationId, sendOptions) => {
         // Gate re-entry synchronously (issue #334), now per conversation: a
         // second send/regenerate into the SAME conversation that fires while
         // the first is still resolving its awaits (module load, runtime
@@ -280,7 +298,8 @@ export const createChatStore = (options: {
             conversationId,
             handle,
             registry: runRegistry,
-            execute: executeChatPrompt
+            execute: executeChatPrompt,
+            ...(sendOptions?.onAdmitted ? { onAdmitted: sendOptions.onAdmitted } : {})
           })
         } finally {
           // The action may have re-keyed the handle (via registry.rekey) from

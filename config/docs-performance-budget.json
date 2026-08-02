@@ -50,7 +50,7 @@
         "until they press the launcher, or unless they left the panel open last visit."
       ],
       "maxBytes": 3200000,
-      "note": "Measured 2026-08-02 at 2,596,180 bytes of JavaScript across a cold activation on Chromium, by the e2e spec that enforces this. ~23% headroom. It is a large number and an honest one: this is the whole product runtime, and it is why the profile is separate \u2014 a reader who never opens the assistant pays none of it. The spec prints the figure on every run, so a drift is visible before it is a breach."
+      "note": "Measured 2026-08-02 at 2,605,410 bytes of JavaScript across a cold activation on Chromium, by the e2e spec that enforces this. ~23% headroom. It is a large number and an honest one: this is the whole product runtime, and it is why the profile is separate \u2014 a reader who never opens the assistant pays none of it. The spec prints the figure on every run, so a drift is visible before it is a breach."
     },
     "documentRead": {
       "label": "3. First document read",
@@ -86,18 +86,20 @@
         "",
         "TWO budgets, because there are two things to bound and only one of them is weighable from",
         "the build. `maxBytes` is the index, which the build measures exactly.",
-        "`maxWorkerBytes` is the JavaScript fetched at the moment of the first search \u2014 the worker",
-        "and whatever it pulls \u2014 which only a browser can see.",
+        "`maxWorkerBytes` is the JavaScript fetched at the first search, which only a browser can",
+        "see \u2014 and which is only meaningful if the generic runtime is ALREADY WARM. The e2e spec",
+        "therefore performs an ordinary no-tool send before it starts measuring.",
         "",
-        "`maxWorkerBytes` also carries the LAZINESS assertion, and it is the reason the e2e spec",
-        "requires it to be greater than zero. If the search worker ever became an eager dependency",
-        "of the assistant runtime, nothing new would arrive at search time and that floor would",
-        "fail. A budget that only capped the number would have passed a regression that moved the",
-        "whole worker into the activation profile."
+        "`maxWorkerBytes` also carries the LAZINESS assertion, and is why the spec requires it to",
+        "be greater than zero: if the search worker became an eager dependency of the assistant",
+        "runtime, nothing would arrive at first search and that floor would fail. The floor only",
+        "means that with the warm-up in place. Without it the measurement was dominated by the",
+        "first send's LiteLLM/ReAct chunks (~146 kB of the 192 kB originally recorded), so an eager",
+        "worker would have sailed past a floor of zero."
       ],
       "maxBytes": 1800000,
-      "note": "Measured 2026-08-02: 1,207,885 bytes for `search-index.json` (~49% headroom, wide because the index grows with the documentation), and 192,027 bytes of JavaScript fetched at the first search on Chromium (~56% headroom). The index check notices an order-of-magnitude change, e.g. indexing content meant to be excluded; the worker check notices the worker becoming eager or dragging something new in with it.",
-      "maxWorkerBytes": 300000
+      "note": "Measured 2026-08-02: 1,208,995 bytes for `search-index.json` (~49% headroom, wide because the index grows with the documentation), and 46,542 bytes of JavaScript at the first search on Chromium with the runtime warm (~50% headroom). That second figure was 192,027 before the warm-up isolated it \u2014 the difference was generic first-send machinery, not the search path.",
+      "maxWorkerBytes": 70000
     }
   }
 }
