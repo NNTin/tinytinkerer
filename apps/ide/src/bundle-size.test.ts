@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'vite'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { withProductionNodeEnv } from '../../../config/bundle-test-utils'
 
 type OutputChunk = {
   type: 'chunk'
@@ -17,26 +18,18 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 let chunks: OutputChunk[] = []
 
 beforeAll(async () => {
-  const previousNodeEnv = process.env.NODE_ENV
-  try {
-    // Vitest sets NODE_ENV=test. Without this override @vitejs/plugin-react emits
-    // jsxDEV source metadata, including the absolute checkout path, so the measured
-    // chunk varies with the runner's workspace path and is not production-shaped.
-    process.env.NODE_ENV = 'production'
-
-    const result = await build({
+  const result = await withProductionNodeEnv(() =>
+    build({
       root,
       logLevel: 'silent',
       mode: 'production',
       build: { write: false, minify: 'esbuild', sourcemap: false }
     })
-    const output = Array.isArray(result) ? result[0] : result
-    chunks = (output as { output: OutputChunk[] }).output.filter(
-      (entry): entry is OutputChunk => entry.type === 'chunk' && typeof entry.code === 'string'
-    )
-  } finally {
-    process.env.NODE_ENV = previousNodeEnv
-  }
+  )
+  const output = Array.isArray(result) ? result[0] : result
+  chunks = (output as { output: OutputChunk[] }).output.filter(
+    (entry): entry is OutputChunk => entry.type === 'chunk' && typeof entry.code === 'string'
+  )
 }, 30_000)
 
 describe('IDE bundle regression guard', () => {

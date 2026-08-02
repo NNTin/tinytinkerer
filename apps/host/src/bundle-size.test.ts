@@ -12,6 +12,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'vite'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { withProductionNodeEnv } from '../../../config/bundle-test-utils'
 
 type OutputChunk = { type: 'chunk'; fileName: string; code?: string }
 type OutputAsset = { type: 'asset'; fileName: string }
@@ -22,24 +23,20 @@ let chunks: OutputChunk[] = []
 let assets: OutputAsset[] = []
 
 beforeAll(async () => {
-  const previousNodeEnv = process.env.NODE_ENV
-  try {
-    process.env.NODE_ENV = 'production'
-    const result = await build({
+  const result = await withProductionNodeEnv(() =>
+    build({
       root,
       logLevel: 'silent',
       mode: 'production',
       build: { write: false, minify: 'esbuild', sourcemap: false }
     })
-    const output = Array.isArray(result) ? result[0] : result
-    const allEntries = (output as { output: Array<OutputChunk | OutputAsset> }).output
-    chunks = allEntries.filter(
-      (entry): entry is OutputChunk => entry.type === 'chunk' && typeof entry.code === 'string'
-    )
-    assets = allEntries.filter((entry): entry is OutputAsset => entry.type === 'asset')
-  } finally {
-    process.env.NODE_ENV = previousNodeEnv
-  }
+  )
+  const output = Array.isArray(result) ? result[0] : result
+  const allEntries = (output as { output: Array<OutputChunk | OutputAsset> }).output
+  chunks = allEntries.filter(
+    (entry): entry is OutputChunk => entry.type === 'chunk' && typeof entry.code === 'string'
+  )
+  assets = allEntries.filter((entry): entry is OutputAsset => entry.type === 'asset')
 }, 30_000)
 
 describe('root app bundle guard', () => {

@@ -29,6 +29,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { withProductionNodeEnv } from '../../../config/bundle-test-utils'
 
 type OutputChunk = {
   type: 'chunk'
@@ -51,23 +52,22 @@ let assets: OutputAsset[] = []
 let serviceWorkerSource = ''
 
 beforeAll(async () => {
-  const previousNodeEnv = process.env.NODE_ENV
   const outDir = await mkdtemp(`${tmpdir()}/tinytinkerer-shell-bundle-`)
 
   try {
-    process.env.NODE_ENV = 'production'
-
-    const result = await build({
-      root,
-      logLevel: 'silent',
-      mode: 'production',
-      build: {
-        outDir,
-        write: true,
-        minify: 'esbuild',
-        sourcemap: false
-      }
-    })
+    const result = await withProductionNodeEnv(() =>
+      build({
+        root,
+        logLevel: 'silent',
+        mode: 'production',
+        build: {
+          outDir,
+          write: true,
+          minify: 'esbuild',
+          sourcemap: false
+        }
+      })
+    )
     const output = Array.isArray(result) ? result[0] : result
     const allEntries = (output as { output: Array<OutputChunk | OutputAsset> }).output
     chunks = allEntries.filter(
@@ -76,7 +76,6 @@ beforeAll(async () => {
     assets = allEntries.filter((entry): entry is OutputAsset => entry.type === 'asset')
     serviceWorkerSource = await readFile(resolve(outDir, 'sw.js'), 'utf8')
   } finally {
-    process.env.NODE_ENV = previousNodeEnv
     await rm(outDir, { recursive: true, force: true })
   }
 }, 30_000)

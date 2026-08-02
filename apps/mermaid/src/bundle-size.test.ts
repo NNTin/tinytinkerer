@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'vite'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { withProductionNodeEnv } from '../../../config/bundle-test-utils'
 
 type OutputChunk = {
   type: 'chunk'
@@ -16,12 +17,14 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 let chunks: OutputChunk[] = []
 
 beforeAll(async () => {
-  const result = await build({
-    root,
-    logLevel: 'silent',
-    mode: 'production',
-    build: { write: false, minify: 'esbuild', sourcemap: false }
-  })
+  const result = await withProductionNodeEnv(() =>
+    build({
+      root,
+      logLevel: 'silent',
+      mode: 'production',
+      build: { write: false, minify: 'esbuild', sourcemap: false }
+    })
+  )
   const output = Array.isArray(result) ? result[0] : result
   chunks = (output as { output: OutputChunk[] }).output.filter(
     (entry): entry is OutputChunk => entry.type === 'chunk' && typeof entry.code === 'string'

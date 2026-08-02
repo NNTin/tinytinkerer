@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { build } from 'vite'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { withProductionNodeEnv } from '../../../config/bundle-test-utils'
 
 type OutputChunk = {
   type: 'chunk'
@@ -26,17 +27,20 @@ const outputChunks = (result: Awaited<ReturnType<typeof build>>): OutputChunk[] 
 }
 
 beforeAll(async () => {
-  const shellResult = await build({
-    root,
-    logLevel: 'silent',
-    mode: 'production',
-    build: { write: false, minify: 'esbuild', sourcemap: false }
-  })
-  const callbackResult = await build({
-    configFile: resolve(root, 'vite.callback.config.ts'),
-    logLevel: 'silent',
-    mode: 'production',
-    build: { write: false, minify: 'esbuild', sourcemap: false }
+  const [shellResult, callbackResult] = await withProductionNodeEnv(async () => {
+    const shellResult = await build({
+      root,
+      logLevel: 'silent',
+      mode: 'production',
+      build: { write: false, minify: 'esbuild', sourcemap: false }
+    })
+    const callbackResult = await build({
+      configFile: resolve(root, 'vite.callback.config.ts'),
+      logLevel: 'silent',
+      mode: 'production',
+      build: { write: false, minify: 'esbuild', sourcemap: false }
+    })
+    return [shellResult, callbackResult]
   })
   shellChunks = outputChunks(shellResult)
   callbackChunks = outputChunks(callbackResult)
