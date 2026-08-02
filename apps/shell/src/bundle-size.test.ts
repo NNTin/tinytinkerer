@@ -81,7 +81,7 @@ beforeAll(async () => {
 }, 30_000)
 
 describe('shell bundle regression guard', () => {
-  it('keeps the startup entry chunk under 68 kB', () => {
+  it('keeps the startup entry chunk under 69 kB', () => {
     // Raised 65 → 66 kB (2026-07-16): per-conversation scoping of the human-prompt
     // bridge and the inspector capture sink (issue #430, PR 3) adds a small,
     // unavoidable amount of real logic to three entry-chunk files (chat-store,
@@ -97,9 +97,26 @@ describe('shell bundle regression guard', () => {
     // merged ~123 kB app-core/agent-core/contracts chunk (see the next test).
     // Trading ~750 bytes of duplicated code in the entry for no longer fetching
     // that whole chunk eagerly is the point of the fix, not a regression.
+    // Raised 68 → 69 kB (2026-08-02, issue #481): the pre-send disclosure gate.
+    // Measured at 67.77 kB before, 68.40 kB after — ~630 bytes, split between the
+    // optional `preSendDisclosure` data on `BrowserApp` plus the one preference
+    // read `initializeBrowserApp` does for it (~280 bytes), and the lazy host
+    // `BrowserAppShell` mounts (~350 bytes).
+    //
+    // The gate's store, hooks and dialog are NOT in this figure and must not
+    // become so: they were, at first, and cost 1.2 kB — the store now lives in
+    // `pre-send-disclosure.ts`, built lazily by the first surface that needs it,
+    // and `app.ts` reaches past it to `pre-send-disclosure-key.ts` for the two
+    // things it genuinely needs eagerly. If this budget moves again for this
+    // feature, that split is what to check first.
+    //
+    // What remains is eager because it has to be: the acknowledgement is read
+    // during bootstrap so the lazily-built gate starts out already knowing the
+    // answer, rather than having to treat "not loaded yet" as "ask again" and
+    // re-prompting a reader who accepted months ago.
     const entry = chunks.find((chunk) => chunk.isEntry)
     expect(entry, 'No entry chunk found in build output').toBeDefined()
-    expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(68)
+    expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(69)
   })
 
   it('keeps the app-core chunk out of the entry chunk static import graph', () => {

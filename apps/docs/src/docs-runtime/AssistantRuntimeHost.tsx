@@ -93,8 +93,17 @@ export const DocsAssistantRuntimeHost = (): ReactNode => {
     // only says where they apply, which is the whole of what the assistant draws
     // — the panel and the dialogs the shell mounts beside it (issue #480
     // re-review, finding 1).
+    // A named `complementary` landmark, not a bare div (issue #481). The
+    // assistant is supporting content that sits beside the documentation for the
+    // whole session, which is exactly what that role describes — and without it
+    // axe reports every control the panel draws as "page content not contained by
+    // landmarks", because this root is a sibling of the page's `<main>`. The
+    // label is what a screen-reader landmark list shows, so it has to name the
+    // thing rather than the element.
     <div
       className="docs-assistant-root tt-app-embed"
+      role="complementary"
+      aria-label="Documentation assistant"
       data-mode={presentation.mode}
       data-host-overlay={hostOverlayOpen ? 'true' : 'false'}
       {...(hostOverlayOpen ? { inert: true } : {})}

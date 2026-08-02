@@ -1,6 +1,10 @@
 import AxeBuilder from '@axe-core/playwright'
 import { test, expect, type Page } from '@playwright/test'
-import { dismissFirstLoad, requireShellPort } from '../../fixtures/first-load'
+import {
+  dismissFirstLoad,
+  dismissTelemetryDialog,
+  requireShellPort
+} from '../../fixtures/first-load'
 import { installChatMock } from '../../fixtures/mock-litellm'
 import {
   EXECUTION_TRACE_LAB_URL,
@@ -180,6 +184,86 @@ test.describe('docs accessibility (#457)', () => {
     // the keyboard, not just the visible "Exit fullscreen" button.
     await page.keyboard.press('Escape')
     await expect(page.getByRole('button', { name: 'Fullscreen', exact: true })).toBeVisible()
+  })
+
+  // === The assistant surfaces #481 adds to this gate ==========================
+  //
+  // The widget spec already covers the launcher, panel, tool picker, consent and
+  // privacy dialogs (axe over `.docs-assistant-root` in both themes, plus a
+  // contrast sweep). What was missing is the two surfaces a reader meets on the
+  // way to their first answer: the disclosure that gates it, and the sign-in
+  // affordance beside it.
+
+  test('the pre-send disclosure is announced, keyboard-operable, and returns focus', async ({
+    page
+  }) => {
+    await installChatMock(page)
+    await page.goto(`${DOCS_ORIGIN}/docs/architecture/`)
+    await page.getByRole('button', { name: /documentation assistant/i }).click()
+    const composer = page.getByRole('textbox', { name: 'Message' })
+    await expect(composer).toBeVisible({ timeout: 30_000 })
+    await dismissTelemetryDialog(page)
+
+    await composer.fill('Summarize this page.')
+    await composer.press('Enter')
+
+    // A real dialog with a real accessible name, not a styled div: that name is
+    // what a screen reader announces when focus enters it.
+    const disclosure = page.getByRole('dialog', { name: 'Before you send this' })
+    await expect(disclosure).toBeVisible()
+    await expect(disclosure).toHaveAttribute('aria-modal', 'true')
+
+    // Focus moved into the dialog rather than being left behind the overlay.
+    await expect(disclosure.locator(':focus')).toHaveCount(1)
+
+    // Escape dismisses (the package-wide dialog contract), and focus goes back to
+    // where the reader was — with their message still in it.
+    await page.keyboard.press('Escape')
+    await expect(disclosure).toBeHidden()
+    await expect(composer).toBeFocused()
+    await expect(composer).toHaveValue('Summarize this page.')
+
+    // The Prism allowlist applies here too: this is an ordinary content page
+    // with fenced code on it, which the assistant happens to be open over.
+    await assertNoUnexpectedA11yViolations(page, [
+      ...NESTED_PRODUCT_SHELL_LANDMARKS,
+      PRISM_SYNTAX_TOKEN
+    ])
+  })
+
+  test('the assistant sign-in affordance has an accessible name and announces an unavailable deployment', async ({
+    page
+  }) => {
+    // Belt and braces. The e2e build carries no `VITE_GITHUB_CLIENT_ID`, so
+    // `beginDocsProductSignIn` cannot start a flow and nothing navigates — but a
+    // future build that DID carry one would send this page to github.com
+    // mid-test. Aborting the navigation makes that fail here, visibly, instead of
+    // timing out somewhere unrelated.
+    await page.route(/^https:\/\/github\.com\//, (route) => route.abort())
+    await installChatMock(page)
+    await page.goto(`${DOCS_ORIGIN}/docs/architecture/`)
+    await page.getByRole('button', { name: /documentation assistant/i }).click()
+    await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible({ timeout: 30_000 })
+    await dismissTelemetryDialog(page)
+
+    // Named for what it does, reachable by role+name — the query assistive tech
+    // uses, not a visual read of an icon.
+    const signIn = page.getByRole('button', { name: /sign in/i }).first()
+    await expect(signIn).toBeVisible()
+    await signIn.focus()
+    await expect(signIn).toBeFocused()
+    await page.keyboard.press('Enter')
+
+    // The e2e build carries no GitHub client id, so `beginDocsProductSignIn`
+    // cannot start a flow. It must SAY so — `role="alert"`, so the announcement
+    // reaches a screen reader — rather than appearing to do nothing, which is the
+    // dead end #480 replaced.
+    await expect(page.getByRole('alert')).toContainText(/sign-in is unavailable/i)
+
+    await assertNoUnexpectedA11yViolations(page, [
+      ...NESTED_PRODUCT_SHELL_LANDMARKS,
+      PRISM_SYNTAX_TOKEN
+    ])
   })
 
   test('a prefers-reduced-motion visitor gets the accessible text switcher, never the graphical office', async ({

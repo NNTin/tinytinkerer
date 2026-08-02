@@ -8,6 +8,7 @@ import {
   toolResultFor
 } from '../../fixtures/mock-litellm'
 import { PIXEL_AGENTS_LAB_URL } from '../../fixtures/docs-lab'
+import { sendAssistantPrompt } from '../../fixtures/docs-assistant'
 
 // The floating documentation assistant on the BUILT site (issue #480).
 //
@@ -26,7 +27,11 @@ const ROUTES = {
   landing: `${DOCS_ORIGIN}/docs/`,
   authored: `${DOCS_ORIGIN}/docs/architecture/`,
   nested: `${DOCS_ORIGIN}/docs/plugins-and-tools/build-a-plugin/`,
-  search: `${DOCS_ORIGIN}/docs/search/`
+  search: `${DOCS_ORIGIN}/docs/search/`,
+  // The site's real unlisted document (`docs/updates/PRIVACY-UPDATE.md`,
+  // `unlisted: true`). Excluded from global search, still routed, and a current
+  // document when visited directly — so the launcher belongs here too (#481).
+  unlisted: `${DOCS_ORIGIN}/docs/updates/PRIVACY-UPDATE/`
 } as const
 
 const launcher = (page: Page) => page.getByRole('button', { name: /documentation assistant/i })
@@ -228,8 +233,10 @@ test.describe('the documentation assistant widget (#480)', () => {
     await expect(composer).toBeVisible({ timeout: 30_000 })
     await dismissTelemetryDialog(page)
 
-    await composer.fill('Summarize this page.')
-    await composer.press('Enter')
+    // Answers #481's pre-send disclosure on the way through: it stands in front
+    // of every first send in a fresh context, and this spec is about the run pin,
+    // not the gate.
+    await sendAssistantPrompt(page, 'Summarize this page.')
 
     // Leave for a different document while the run is still in flight.
     await page
@@ -648,6 +655,86 @@ test.describe('the documentation assistant widget (#480)', () => {
     })
     expect(panelBrightness).not.toBeNull()
     expect(panelBrightness!).toBeLessThan(128)
+  })
+
+  // === The pre-send privacy disclosure (issue #481) ===========================
+
+  test('discloses what a send does before the first one, and sends nothing until acknowledged', async ({
+    page
+  }) => {
+    const mock = await installChatMock(page)
+    await page.goto(ROUTES.authored)
+    await launcher(page).click()
+    const composer = page.getByRole('textbox', { name: 'Message' })
+    await expect(composer).toBeVisible({ timeout: 30_000 })
+    await dismissTelemetryDialog(page)
+
+    await composer.fill('Summarize this page.')
+    await composer.press('Enter')
+
+    const disclosure = page.getByRole('dialog', { name: 'Before you send this' })
+    await expect(disclosure).toBeVisible()
+    // The claim a reader is most likely to want checked, and the one the whole
+    // corpus design exists to make true.
+    await expect(disclosure).toContainText('only when it uses one of its documentation tools')
+
+    // The guarantee: nothing reached the model. Asserted against the mocked
+    // upstream's recorded request bodies, not against a spinner.
+    expect(mock.requestBodies()).toHaveLength(0)
+
+    // Dismissing keeps the reader's question — it is not a cancellation.
+    await disclosure.getByRole('button', { name: 'Not now' }).click()
+    await expect(disclosure).toBeHidden()
+    await expect(composer).toHaveValue('Summarize this page.')
+    expect(mock.requestBodies()).toHaveLength(0)
+
+    // Acknowledging completes the send the reader already asked for.
+    await composer.press('Enter')
+    await expect(disclosure).toBeVisible()
+    await disclosure.getByRole('button', { name: 'Send' }).click()
+    await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
+    await expect(composer).toHaveValue('')
+  })
+
+  test('asks once per reader, not once per message', async ({ page }) => {
+    await installChatMock(page)
+    await page.goto(ROUTES.authored)
+    await launcher(page).click()
+    const composer = page.getByRole('textbox', { name: 'Message' })
+    await expect(composer).toBeVisible({ timeout: 30_000 })
+    await dismissTelemetryDialog(page)
+    await sendAssistantPrompt(page, 'First question.')
+    await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
+
+    // The acknowledgement is persisted in the assistant's own namespace, so it
+    // survives a reload — a disclosure that reappeared every session would train
+    // readers to click past it.
+    await page.reload()
+    await expect(composer).toBeVisible({ timeout: 30_000 })
+    await composer.fill('Second question.')
+    await composer.press('Enter')
+    await expect(page.getByRole('dialog', { name: 'Before you send this' })).toHaveCount(0)
+    await expect(composer).toHaveValue('')
+  })
+
+  test('keeps the disclosure available in Settings after it has been acknowledged', async ({
+    page
+  }) => {
+    await installChatMock(page)
+    await page.goto(ROUTES.authored)
+    await launcher(page).click()
+    await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible({ timeout: 30_000 })
+    await dismissTelemetryDialog(page)
+    await sendAssistantPrompt(page, 'A question.')
+
+    // A disclosure a reader sees exactly once, while trying to do something
+    // else, is not one they can return to.
+    await page.getByRole('button', { name: 'Settings' }).click()
+    const settings = page.locator('[data-presentation="inline"][aria-label="Settings"]')
+    await expect(settings).toBeVisible()
+    await settings.getByRole('tab', { name: 'Privacy' }).click()
+    await expect(settings).toContainText('Before you send this')
+    await expect(settings).toContainText('only when it uses one of its documentation tools')
   })
 
   test('the launcher and panel controls are keyboard operable', async ({ page }) => {

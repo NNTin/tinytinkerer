@@ -12,6 +12,7 @@ import {
   LITELLM_DEPLOYMENT_DEFAULT
 } from '@tinytinkerer/app-core'
 import { MarkdownDocument } from './markdown-document'
+import { usePreSendDisclosureStore } from './pre-send-disclosure'
 import { useSettingsSurfaceController } from './surfaces'
 import { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
 import { useDialogFocus, useDialogEscape } from './use-dialog-focus'
@@ -761,9 +762,25 @@ const PrivacySection = () => {
     setWebSpeechEnabled
   } = useSettingsSurfaceController()
   const [policyOpen, setPolicyOpen] = useState(false)
+  // The app's own pre-send disclosure (issue #481), from the same content source
+  // the one-time gate renders. A disclosure a reader can only ever see once, at
+  // the moment they are trying to do something else, is not a disclosure they
+  // can return to — so it also lives here, permanently, for as long as the app
+  // declares one.
+  const preSendDisclosure = usePreSendDisclosureStore((state) => state.disclosure)
 
   return (
     <div className="space-y-3">
+      {preSendDisclosure ? (
+        <div className="rounded-lg border border-[var(--border)] p-3">
+          <p className="text-xs font-medium text-[var(--text-strong)]">{preSendDisclosure.title}</p>
+          {preSendDisclosure.paragraphs.map((paragraph) => (
+            <p key={paragraph} className="mt-1.5 text-xs leading-relaxed text-[var(--muted)]">
+              {paragraph}
+            </p>
+          ))}
+        </div>
+      ) : null}
       <ToggleRow
         label="Enable voice input (Web Speech API)"
         description="Off by default. Your browser or device vendor provides this feature and may process speech on-device or in the cloud."

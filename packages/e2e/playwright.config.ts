@@ -1,4 +1,17 @@
 import { defineConfig, devices } from '@playwright/test'
+import { installNoLiveQuotaGuard } from './fixtures/no-live-quota'
+
+// Fail closed on live model/edge/API traffic (issue #481), before anything else
+// in this process can send any. `/api/**` is piped through the REAL edge worker
+// in-process, so Node's `fetch` is the one path out of the machine — and until
+// this guard existed, a spec that forgot to install a mock would have reached
+// whatever upstream the environment pointed at and spent real quota, silently.
+//
+// Called here rather than from a `globalSetup`, which Playwright runs in its own
+// process: this config is re-evaluated in EVERY Playwright process (the same fact
+// the shard tagging below depends on), so this is the one place a module-scope
+// patch is guaranteed to land in the process that actually serves the edge.
+installNoLiveQuotaGuard()
 
 // Structural shape of the Allure result/label objects the `beforeTestResultStop`
 // listener mutates. allure-playwright's reporter options are typed as `any` by

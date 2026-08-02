@@ -183,10 +183,17 @@ named operation; `deleteDocsStorageNamespace` is the primitive it would use.
 
 ## The floating widget (#480)
 
-The real `ChatApp` against this session — `morphable={false}`, registered as an
-`inline` surface, and therefore a child of the Root-mounted host. Nothing about
-that subtree is remounted by a route change, which is the whole mechanism behind
-"the conversation, the draft and any in-flight run survive navigation".
+The real `ChatApp` against this session — **morphable** (the default), registered
+as an `inline` surface, and therefore a child of the Root-mounted host. Nothing
+about that subtree is remounted by a route change, which is the whole mechanism
+behind "the conversation, the draft and any in-flight run survive navigation".
+
+Morphable, not pinned: a reader can dock the widget into the same web-mode
+sidebar `/ide` and `/canvas` dock, and undock it again. #480 originally locked
+`morphable={false}`, and its re-review reversed that — a docs-only, dock-less
+variant is a reimplementation rather than a composition. Both layouts are fully
+controlled from `assistant-presentation.ts`, and morphing swaps the layout
+wrapper only, so a run in flight survives a dock exactly as it does on `/widget`.
 
 ### Two launchers, one at a time
 
@@ -321,8 +328,99 @@ of doing nothing. And the widget's reset reached the store's clear-in-place
 action, which keeps the conversation's id and title — not the semantics #479
 locked and this session documents.
 
+## The release gates (#481)
+
+### Nothing is sent before the reader is told what a send does
+
+The assistant declares a `preSendDisclosure` on its `BrowserApp`. `submitPrompt`
+— the one send path every surface shares — refuses the first send, records the
+attempt, and the single `PreSendDisclosureHost` inside `BrowserAppShell` draws
+it. Acknowledging publishes the request id; the composer that raised it re-runs
+`submitPrompt`, which now finds the gate satisfied and sends normally.
+
+The loop matters: the dialog never sends anything itself, so there is one send
+path, one clear-on-accept rule, and no second copy of either. Dismissing settles
+nothing and the reader keeps their question.
+
+Three things it deliberately is **not**:
+
+- **not the telemetry consent dialog.** That asks for an opt-in which defaults
+  off and can be declined while the app keeps working. A data-flow disclosure is
+  not a choice, so "Continue without" would have meant something false.
+- **not per-surface.** The floating widget, the docked panel and #472's Office
+  are covered because the gate is on the app, not because three components
+  remembered.
+- **not the human-in-the-loop bridge.** That queue is module-global with no
+  session identity — the defect #489 exists to close.
+
+The acknowledgement is versioned (`assistant-disclosure.ts`) and persisted in
+**this app's** preferences namespace, separately from telemetry consent and from
+the global privacy-policy acknowledgement. None of the three substitutes for
+another. The same paragraphs render permanently in Settings → Privacy, because a
+disclosure a reader meets once, while trying to do something else, is not one
+they can return to.
+
+`docs/overview/PRIVACY.md` carries the full version; editing it bumps
+`PRIVACY_POLICY_VERSION` and re-prompts returning **product** users, which is the
+accepted cost of a material data-flow clarification.
+
+### Four load profiles, one table
+
+`config/docs-performance-budget.json` — read by both
+`scripts/check-docs-performance-budget.mjs` (what a built artifact weighs) and
+`packages/e2e/tests/docs/assistant-performance.e2e.ts` (when a browser fetches
+it). Two tables would drift, and the sequencing half is the one that would
+quietly stop matching reality.
+
+| profile | what it costs                                  |
+| ------- | ---------------------------------------------- |
+| 1       | page + launcher + the corpus **manifest**      |
+| 2       | opening the assistant: the runtime chunk graph |
+| 3       | one selected document artifact                 |
+| 4       | the Lunr index and its worker                  |
+
+The manifest sits at profile 1, not 3. `DocsPageProvider` loads it on every
+route so a navigation into a document resolves immediately instead of opening a
+fresh `corpus_pending` window at exactly the moment a reader is most likely to
+ask something — #474's and #476's design. #481's own text placed it at the first
+read; that wording predates what shipped, and the reconciliation is recorded on
+the issue rather than made silently.
+
+The search profile doubles as the production-build smoke check: the upstream
+plugin writes `search-index.json` only from `postBuild`, so a build that stopped
+emitting it would leave the deployed assistant reporting search as permanently
+unavailable while every unit test stayed green.
+
+### CI cannot spend quota, and cannot forget to not spend it
+
+`packages/e2e/fixtures/no-live-quota.ts`, installed from `playwright.config.ts`
+at module scope, refuses any non-local `fetch` in every Playwright process. It is
+worth being precise that the suite does not "stub auth and quota": `/api/**` runs
+through the **real** edge worker in-process, anonymously, with rate limiting
+off, and only the outbound LiteLLM call is replaced. That held only while every
+spec remembered to install a mock; now a spec that forgets fails loudly.
+
+What that cannot cover — a real provider response, real streaming, a real OAuth
+round trip, a real rate limit — is
+[`docs/contributing/staging-smoke-checklist.md`](../../../../docs/contributing/staging-smoke-checklist.md).
+
+### Rollback
+
+`TINYTINKERER_DOCS_ASSISTANT=off` plus a rebuild. `@theme/Root` then renders
+ordinary Docusaurus children: no provider, no page region, no launcher, no
+corpus request. Build-time deliberately — a runtime switch cannot help the case
+that motivates a rollback, and `Root` would have to mount the tree to read it.
+
+Live labs are untouched; they boot from `live-lab/client-runtime.tsx`, which the
+flag does not reach. The consequence is that nothing then owns the docs-wide
+telemetry-consent or privacy-update hosts. That is acceptable for an emergency
+rollback precisely because telemetry defaults to off — "no consent host" means
+"no telemetry", not undisclosed collection. If "assistant permanently disabled"
+ever becomes a supported product mode, a dedicated global privacy owner needs
+designing.
+
 ## What is not here
 
 - The Pixel Agents Office UI (#472) — only the portal it mounts through.
-- The privacy, accessibility and performance release gates (#481).
 - Any use of the rendered DOM or live-lab state.
+- The cross-issue audit and regression hardening (#482).

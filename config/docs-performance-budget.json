@@ -1,0 +1,96 @@
+{
+  "_about": [
+    "The documentation assistant's four load profiles and their byte budgets (issue #481).",
+    "",
+    "ONE table, two readers, on purpose. `scripts/check-docs-performance-budget.mjs` enforces",
+    "the profiles a built artifact can answer on its own (what a page references, how big an",
+    "artifact is, what a search costs). `packages/e2e/tests/docs/assistant-performance.e2e.ts`",
+    "enforces the SEQUENCING — that those bytes are fetched when a reader asks and not before —",
+    "which only a real browser can observe. Two tables would let the two drift, and the",
+    "sequencing test is the one that would quietly stop matching reality.",
+    "",
+    "Every `maxBytes` below is a measured baseline plus stated headroom, not a guess. Raising one",
+    "is a reviewable one-line diff with a reason in `note`, which is the whole point of checking",
+    "the table in: a regression should have to be argued for, not merged silently.",
+    "",
+    "Sizes are UNCOMPRESSED bytes on disk. Transfer size depends on the CDN's encoding and is not",
+    "reproducible in CI; on-disk bytes are, and they move in the same direction."
+  ],
+  "profiles": {
+    "coldPage": {
+      "label": "1. Cold documentation page (new or minimized reader)",
+      "description": [
+        "Everything a reader downloads to read documentation with the assistant minimized: the",
+        "scripts and stylesheets a built page references, plus the corpus manifest.",
+        "",
+        "The manifest belongs HERE rather than at first read. `docs-page-context.tsx` loads it on",
+        "every route so a navigation into a document resolves immediately instead of opening a",
+        "fresh `corpus_pending` window at exactly the moment a reader is most likely to ask",
+        "something — the design #474 and #476 locked. Issue #481's own text put the manifest at",
+        "profile 3; that wording predates the shipped design and was reconciled here.",
+        "",
+        "This profile must NOT contain a runtime chunk. That is a separate, absolute rule enforced",
+        "by the eager-chunk check in the same script, not by a byte count."
+      ],
+      "maxBytes": 1000000,
+      "note": "Measured 2026-08-02 at 842,987 bytes (825,563 of page-referenced JS/CSS — identical across all 31 built pages, since Docusaurus loads route chunks lazily — plus a 17,408-byte corpus manifest). ~19% headroom for ordinary Docusaurus/Infima growth; a jump here means a page started pulling something that should have stayed lazy."
+    },
+    "assistantRuntime": {
+      "label": "2. Opening the assistant",
+      "description": [
+        "The incremental JavaScript fetched when a reader first activates the assistant — the",
+        "`assistant-runtime-client` chunk and everything webpack pulls with it (app-browser, the",
+        "agent runtime, the content platform).",
+        "",
+        "Enforced from the browser rather than the build: which chunks activation actually pulls is",
+        "a property of webpack's chunk graph at runtime, and a static approximation of it would be",
+        "a number nobody could reproduce or trust.",
+        "",
+        "This is a real cost, and it is the reader's choice to pay it — nothing here is downloaded",
+        "until they press the launcher, or unless they left the panel open last visit."
+      ],
+      "maxBytes": 3200000,
+      "note": "Measured 2026-08-02 at 2,596,180 bytes of JavaScript across a cold activation on Chromium, by the e2e spec that enforces this. ~23% headroom. It is a large number and an honest one: this is the whole product runtime, and it is why the profile is separate — a reader who never opens the assistant pays none of it. The spec prints the figure on every run, so a drift is visible before it is a breach."
+    },
+    "documentRead": {
+      "label": "3. First document read",
+      "description": [
+        "One per-document corpus artifact — the normalized Markdown, outline, and section",
+        "boundaries for exactly the document a `read_doc`/`read_current_doc` selected.",
+        "",
+        "Budgeted against the LARGEST artifact the site emits, so the number describes the worst",
+        "case a reader can actually hit rather than an average nobody experiences. Today that is",
+        "`plugins-and-tools/plugin-infrastructure.md`, the >54,000-character document #474's",
+        "balanced-overview rule was built around.",
+        "",
+        "The guarantee that matters alongside the size is that only ONE of these is ever fetched.",
+        "That is the e2e spec's half."
+      ],
+      "maxBytes": 100000,
+      "note": "Measured 2026-08-02 at 62,363 bytes for `plugins-and-tools/plugin-infrastructure`, the largest of 28 emitted artifacts (the next is 38,849). ~60% headroom. A breach means either a document grew far beyond the rest or the artifact format started carrying something it should not."
+    },
+    "search": {
+      "label": "4. First search",
+      "description": [
+        "The Lunr index and the private search worker, fetched only when `search_docs` runs.",
+        "",
+        "Same index the documentation's own search bar uses — the adapter wraps the pinned",
+        "upstream worker rather than building a second index, so this profile is shared cost, not",
+        "additional cost, for a reader who also used the search bar.",
+        "",
+        "Production-only by construction: the upstream plugin writes `search-index.json` from its",
+        "`postBuild` hook, so `docusaurus start` has none and the adapter reports",
+        "`index_dev_unsupported`. Finding the index here is therefore also the production-build",
+        "smoke check #481 asks for — if a build stops emitting it, this fails rather than the",
+        "assistant silently reporting search as unavailable in production.",
+        "",
+        "Split across the two readers: `maxBytes` is the index alone, which the build can weigh",
+        "exactly, while the e2e spec bounds the incremental total including the worker chunk that",
+        "carries it. Identifying that worker chunk statically would mean pattern-matching a",
+        "minified upstream module — precisely the kind of guess the #475 adapter exists to avoid."
+      ],
+      "maxBytes": 1800000,
+      "note": "Measured 2026-08-02 at 1,207,885 bytes for `search-index.json`. ~49% headroom, wide because the index grows with the documentation; the check is here to notice an order-of-magnitude change, e.g. indexing content meant to be excluded."
+    }
+  }
+}

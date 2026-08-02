@@ -40,6 +40,15 @@ export type { DocsAssistantMode, DocsAssistantPresentationState } from './assist
 // assistant insets the page without remounting anything in it (issue #480
 // re-review, finding 2).
 export { DocsAssistantPageRegion } from './AssistantPageRegion'
+// Issue #481's build-time rollback switch, read by `@theme/Root` before it
+// mounts any of the above.
+export { useDocsAssistantEnabled } from './runtime-config'
+export {
+  DOCS_ASSISTANT_DISCLOSURE,
+  DOCS_ASSISTANT_DISCLOSURE_PARAGRAPHS,
+  DOCS_ASSISTANT_DISCLOSURE_TITLE,
+  DOCS_ASSISTANT_DISCLOSURE_VERSION
+} from './assistant-disclosure'
 // How a documentation-owned overlay tells the assistant to get out of the way
 // (issue #480). `LabContainer` is the only caller today, for fullscreen labs.
 export { setDocsHostOverlay } from './host-overlays'

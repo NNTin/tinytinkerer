@@ -4,7 +4,7 @@ import tailwindcssPostcss from '@tailwindcss/postcss'
 import { themes as prismThemes } from 'prism-react-renderer'
 import {
   resolveDocsBaseUrl,
-  resolveDocsLabCustomFields,
+  resolveDocsRuntimeCustomFields,
   resolveProductBaseUrl
 } from './site-config'
 import { documentationCorpusPlugin } from './src/docs-corpus/plugin'
@@ -17,13 +17,18 @@ const productBaseUrl = resolveProductBaseUrl(deployBase)
 // — Turbo/Vercel supplies one shared process.env to the whole `pnpm build`, so this
 // Node-side Docusaurus config sees the identical values. Kept out of themeConfig
 // (which is deep-merged and end-user documented) and off customFields' top level
-// (reserved for arbitrary site metadata) — resolveDocsLabCustomFields gives the
-// LiveLab framework its own namespaced, typed slice.
-const docsLabCustomFields = resolveDocsLabCustomFields(deployBase, {
+// (reserved for arbitrary site metadata) — resolveDocsRuntimeCustomFields gives
+// the docs runtime its own namespaced, typed slice.
+//
+// TINYTINKERER_DOCS_ASSISTANT is issue #481's rollback switch: set it to `off`
+// and redeploy to build a documentation site with no assistant integration at
+// all. Live labs are unaffected. See resolveDocsAssistantEnabled.
+const docsRuntimeCustomFields = resolveDocsRuntimeCustomFields(deployBase, {
   edgeBaseUrl: process.env.VITE_EDGE_URL,
   githubClientId: process.env.VITE_GITHUB_CLIENT_ID,
   sentryDsn: process.env.VITE_SENTRY_DSN,
-  sentryEnvironment: process.env.VITE_SENTRY_ENVIRONMENT
+  sentryEnvironment: process.env.VITE_SENTRY_ENVIRONMENT,
+  docsAssistant: process.env.TINYTINKERER_DOCS_ASSISTANT
 })
 // This points outside the Docusaurus router (from /docs/ back to the product).
 // Without these flags Docusaurus prepends its own base URL and treats the
@@ -207,7 +212,7 @@ const config: Config = {
     stubAppBrowserPluginDiscoveryPlugin,
     enableTailwindPostCssPlugin
   ],
-  customFields: { ...docsLabCustomFields },
+  customFields: { ...docsRuntimeCustomFields },
   presets: [
     [
       'classic',

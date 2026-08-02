@@ -5,12 +5,15 @@ unlisted: true
 
 ## Privacy policy updated
 
-The documentation site (`/docs/`) now embeds **interactive live labs** — working, embedded copies
-of TinyTinkerer used to demonstrate real features. A lab reuses your existing sign-in read-only,
-sends chat messages through the exact same edge/LiteLLM/model-provider path your real conversations
-already take, and stores its own conversations in an isolated browser database separate from your
-real ones.
+The documentation site (`/docs/`) now carries a **documentation assistant** — the same TinyTinkerer
+chat assistant, in its own isolated session, able to search and read this documentation.
 
-No new category of data is collected — a lab behaves like the product itself for every data flow
-already described above. See the new "Interactive documentation labs" section of the privacy
-policy for details.
+Reading documentation sends nothing. Opening the assistant sends nothing. When you send a message,
+your conversation takes the exact path already described above, and the assistant may additionally
+send the **source Markdown** of documentation pages — but only when it invokes one of its
+documentation tools to search or read one. It reads the authored Markdown files this site is built
+from, never the rendered page you are looking at, your form input, or a live lab's state.
+
+You will be shown a one-time summary of this before your first message, and nothing is sent until
+you acknowledge it. See the new "Documentation assistant" section of the privacy policy for
+details.

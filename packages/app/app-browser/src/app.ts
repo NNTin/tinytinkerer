@@ -36,6 +36,10 @@ import {
   resolveDocumentGlobalCapabilities,
   type DocumentGlobalCapabilities
 } from './document-globals'
+import {
+  PRE_SEND_DISCLOSURE_ACKNOWLEDGED_KEY,
+  type PreSendDisclosure
+} from './pre-send-disclosure-key'
 import { loadPluginModules } from './plugins/registry'
 
 export type { AppToolGroup } from './app-tool-group'
@@ -117,6 +121,27 @@ export type BrowserApp = {
   // What this app's reset-conversation control does. Always resolved, so a
   // surface never has to repeat the default.
   conversationReset: ConversationResetBehavior
+  /**
+   * A one-time disclosure this app must have acknowledged before it sends its
+   * first prompt (issue #481). Absent for every product app, which gates nothing.
+   *
+   * Plain data here, deliberately. The gate's STORE is built lazily by the first
+   * surface that needs it (`pre-send-disclosure.ts`), because `app.ts` is in
+   * every shell's startup entry and that entry has kilobytes of headroom, not
+   * tens.
+   */
+  preSendDisclosure?: PreSendDisclosure
+  /**
+   * The disclosure version this reader last acknowledged in this app's storage
+   * namespace, read once during {@link initializeBrowserApp}.
+   *
+   * Read eagerly even though the store is lazy, and mutable so an acknowledgement
+   * outlives any single store: it is what lets the lazily-built gate start out
+   * ALREADY hydrated, instead of having to answer "I don't know yet" — which, for
+   * a privacy gate, must mean "ask again" and would have re-prompted a reader who
+   * accepted months ago.
+   */
+  preSendDisclosureAcknowledged: string | null
 }
 
 const BrowserAppContext = createContext<BrowserApp | undefined>(undefined)
@@ -167,6 +192,11 @@ export const createBrowserApp = (
     // What this app's reset control does (issue #480). Omitted keeps the
     // historical clear-in-place behaviour.
     conversationReset?: ConversationResetBehavior
+    /**
+     * A one-time disclosure this app must have acknowledged before it sends its
+     * first prompt (issue #481). Omitted — every product app — gates nothing.
+     */
+    preSendDisclosure?: PreSendDisclosure
   } = {}
 ): BrowserApp => {
   const shell = createBrowserShell(config)
@@ -201,7 +231,11 @@ export const createBrowserApp = (
     ...(options.starterPrompts ? { starterPrompts: options.starterPrompts } : {}),
     ...(options.signIn ? { signIn: options.signIn } : {}),
     ...(options.toolTreeSummarizer ? { toolTreeSummarizer: options.toolTreeSummarizer } : {}),
-    conversationReset: options.conversationReset ?? 'clear-in-place'
+    ...(options.preSendDisclosure ? { preSendDisclosure: options.preSendDisclosure } : {}),
+    conversationReset: options.conversationReset ?? 'clear-in-place',
+    // Filled in by `initializeBrowserApp` below. `null` until then, which the
+    // gate treats as "not acknowledged" — the conservative direction.
+    preSendDisclosureAcknowledged: null
   }
 
   return app
@@ -283,7 +317,27 @@ export const initializeBrowserApp = async (
   }
   await Promise.all([
     app.stores.auth.getState().initialize(),
-    app.stores.settings.getState().initialize()
+    app.stores.settings.getState().initialize(),
+    // The pre-send disclosure's acknowledgement (issue #481). Awaited with the
+    // rest, deliberately: `BrowserAppShell` withholds its children until this
+    // function resolves, so no composer can exist before this has been read, and
+    // the lazily-built gate is therefore never the thing deciding what to do
+    // about an unknown answer. A read failure leaves it `null`, which prompts —
+    // the conservative direction.
+    //
+    // One preference read rather than the gate's store, because this module is
+    // in every shell's startup entry and the store is not (see
+    // ./pre-send-disclosure.ts).
+    ...(app.preSendDisclosure
+      ? [
+          shell.preferences
+            .get(PRE_SEND_DISCLOSURE_ACKNOWLEDGED_KEY)
+            .catch(() => undefined)
+            .then((version) => {
+              app.preSendDisclosureAcknowledged = version ?? null
+            })
+        ]
+      : [])
   ])
   // Discovery-time reconciliation (issue #400 review, F2/F3) needs BOTH
   // discovered plugin manifests AND hydrated settings — this is the one spot in

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext'
-import type { DocsLabCustomFields } from '../../site-config'
+import type { DocsRuntimeCustomFields } from '../../site-config'
 
 export type DocsRuntimeConfig = {
   edgeBaseUrl: string
@@ -10,30 +10,52 @@ export type DocsRuntimeConfig = {
   productBaseUrl: string
 }
 
-const FALLBACK_CUSTOM_FIELDS: DocsLabCustomFields = {
+const FALLBACK_CUSTOM_FIELDS: DocsRuntimeCustomFields = {
   tinyEdgeBaseUrl: '',
   tinyGithubClientId: undefined,
   tinySentryDsn: undefined,
   tinySentryEnvironment: undefined,
-  tinyProductBaseUrl: '/'
+  tinyProductBaseUrl: '/',
+  // Enabled, matching `resolveDocsAssistantEnabled`'s own default: a page served
+  // without custom fields at all is a misconfiguration, and the rollback switch
+  // must only ever be armed by someone deliberately arming it.
+  tinyDocsAssistantEnabled: true
+}
+
+const readCustomFields = (
+  customFields: Record<string, unknown> | undefined
+): DocsRuntimeCustomFields => ({
+  ...FALLBACK_CUSTOM_FIELDS,
+  ...(customFields as Partial<DocsRuntimeCustomFields> | undefined)
+})
+
+/**
+ * Whether the documentation assistant is built into this deployment at all
+ * (issue #481's rollback switch).
+ *
+ * Read here rather than in `@theme/Root` directly so the one place that decides
+ * is also the one place that knows the fallback. `Root` consults it before
+ * mounting ANY part of the assistant integration — provider, page region, and
+ * host — so a rolled-back deployment issues no corpus request and renders no
+ * launcher.
+ */
+export const useDocsAssistantEnabled = (): boolean => {
+  const { siteConfig } = useDocusaurusContext()
+  return readCustomFields(siteConfig.customFields).tinyDocsAssistantEnabled
 }
 
 // Reads the config docusaurus.config.ts baked into every page via `customFields`
-// (see site-config.ts's resolveDocsLabCustomFields) — the same edge/GitHub-OAuth
-// configuration the product's own Vite builds resolve from VITE_* env vars, just
-// carried across the Node build → static-page boundary Docusaurus provides.
+// (see site-config.ts's resolveDocsRuntimeCustomFields) — the same
+// edge/GitHub-OAuth configuration the product's own Vite builds resolve from
+// VITE_* env vars, just carried across the Node build → static-page boundary
+// Docusaurus provides.
 //
 // Shared by every docs BrowserApp (issue #479): the live labs and the global
 // documentation assistant read the identical build-time configuration and differ
-// only in storage namespace, tools, and document-global ownership. The
-// `DocsLabCustomFields` name predates the assistant; the fields are the docs
-// site's, not the labs'.
+// only in storage namespace, tools, and document-global ownership.
 export const useDocsRuntimeConfig = (): DocsRuntimeConfig => {
   const { siteConfig } = useDocusaurusContext()
-  const customFields = {
-    ...FALLBACK_CUSTOM_FIELDS,
-    ...(siteConfig.customFields as Partial<DocsLabCustomFields> | undefined)
-  }
+  const customFields = readCustomFields(siteConfig.customFields)
   const {
     tinyEdgeBaseUrl,
     tinyGithubClientId,

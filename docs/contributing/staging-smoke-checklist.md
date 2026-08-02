@@ -5,17 +5,23 @@ sidebar_position: 3
 
 # Staging live-call smoke checklist
 
-CI never makes a genuine live model or edge call against `/docs`: every Playwright spec under
+CI never makes a genuine live model or edge call against `/docs`. Every Playwright spec under
 `packages/e2e/tests/docs/` installs `fixtures/mock-litellm.ts`'s in-process LiteLLM mock before
-touching a lab, and the accessibility/navigation specs never send a chat message at all. That is
-deliberate — a docs PR must never consume real model quota just because CI ran — but it also means
-CI cannot catch a regression that only shows up against the **real** edge/LiteLLM (a genuine
-provider-shaped response, real latency/streaming behavior, a real GitHub OAuth round trip). Run
-this checklist by hand, against a real deployment, whenever a change touches:
+touching a lab or the assistant, and `fixtures/no-live-quota.ts` — installed from
+`playwright.config.ts` in every Playwright process — refuses any non-local request outright, so a
+spec that forgets a mock fails loudly instead of quietly spending somebody's quota.
+
+Worth being precise about what that does and does not stub: `/api/**` runs through the **real**
+edge worker in-process, anonymously, with rate limiting disabled. Only the edge's outbound LiteLLM
+call is replaced. So CI covers the edge's own behaviour, and covers nothing about a real provider —
+a genuine provider-shaped response, real latency and streaming, a real GitHub OAuth round trip, or
+a real rate limit. Run this checklist by hand, against a real deployment, whenever a change touches:
 
 - `apps/docs/src/live-lab/**` (the session bridge, any lab's `*Content` component)
+- `apps/docs/src/docs-runtime/**`, `docs-tools/**`, `docs-search/**`, `docs-corpus/**`, or
+  `docs-assistant/**` (the documentation assistant)
 - `apps/docs/src/playground/client-runtime.tsx`
-- anything in `apps/edge` or `packages/app/app-browser` that a lab depends on
+- anything in `apps/edge` or `packages/app/app-browser` that a lab or the assistant depends on
 
 ## Where to run it
 
@@ -29,7 +35,35 @@ Both point at a real Cloudflare edge Worker and a real LiteLLM instance (see
 [Vercel deployment](../self-hosting/vercel-deployment.md) for the full tier breakdown) — no local
 setup needed.
 
-## Checklist
+## Checklist: the documentation assistant
+
+Run this in a **fresh browser profile** (or a private window), because the first two steps are
+one-time and cannot be repeated in a session that has already answered them.
+
+- Open any `/docs/` page **signed out** and confirm the launcher is there and the page is otherwise
+  untouched — no layout shift, no covered navbar.
+- Open the assistant and type a question, then press send. Confirm the **pre-send disclosure**
+  appears before anything is sent, that "Not now" leaves your question in the composer, and that
+  "Read the privacy policy" opens the real policy.
+- Acknowledge it and confirm the message goes through anonymously and a **real** answer streams
+  back. This is the shared-quota path — no sign-in required.
+- Send a second message and confirm the disclosure does **not** reappear.
+- On an authored documentation page, ask "summarize this page". Confirm the activity shows a
+  `read_current_doc` call and the answer is genuinely about that page.
+- Ask something that needs another page ("where can I find the plugin documentation?"). Confirm a
+  `search_docs` and/or `read_doc` call, and that the answer carries a **clickable citation** that
+  lands on the right documentation page — following it must not lose the assistant panel.
+- Sign in from the assistant's GitHub control. Confirm it round-trips back to the docs page you
+  started from, that the conversation survives the round trip, and that a message now runs under
+  your own account.
+- Open Settings → Privacy inside the assistant and confirm the disclosure summary is still there.
+- Reset the conversation from the widget. Confirm a fresh conversation starts, the page does **not**
+  reload, and your **product** conversations (open TinyTinkerer itself in the same browser) are
+  untouched.
+- Keep sending until you hit the shared key's cooldown, and confirm the rate-limited state renders
+  sensibly. This is the one state the mocked suite cannot reproduce.
+
+## Checklist: interactive live labs
 
 For each lab touched by the change (`Try Pixel Agents`, the execution trace lab, the plugin &
 tool-picker lab):

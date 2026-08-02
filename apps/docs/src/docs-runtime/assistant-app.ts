@@ -22,6 +22,7 @@ import {
   DOCS_ASSISTANT_STARTER_PROMPTS,
   DOCS_ASSISTANT_STORAGE_NAMESPACE
 } from './assistant-constants'
+import { DOCS_ASSISTANT_DISCLOSURE } from './assistant-disclosure'
 import { createDocsBrowserApp, type DocsBrowserApp } from './create-docs-app'
 import { beginDocsProductSignIn } from './product-sign-in'
 import type { DocsRuntimeConfig } from './runtime-config'
@@ -63,6 +64,12 @@ export const ensureDocsAssistantApp = (
     // clear-in-place default keeps an emptied conversation's id and title, which
     // is not what this assistant documented that button as doing.
     conversationReset: 'restart',
+    // #481's pre-send disclosure. Enforced in `submitPrompt` and drawn by one
+    // host above every assistant surface, so nothing about the conversation —
+    // and nothing a documentation tool would read — leaves the browser until a
+    // reader has been told where it goes. Acknowledged per THIS namespace, and
+    // separately versioned from telemetry consent and the global privacy policy.
+    preSendDisclosure: DOCS_ASSISTANT_DISCLOSURE,
     // The assistant owns every document-global effect for the documentation
     // site (issue #479). Structural, not first-claim: this host exists at
     // `@theme/Root` for the whole application, so there is no race to win and no

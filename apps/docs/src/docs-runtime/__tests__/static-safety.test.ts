@@ -62,6 +62,10 @@ const LIGHT_FILES = [
   'assistant-surface.ts',
   'assistant-surfaces.tsx',
   'assistant-constants.ts',
+  // #481's disclosure copy. Light on purpose: the light index re-exports it so
+  // the built site's own assertions can read the exact paragraphs a reader sees
+  // without activating the assistant.
+  'assistant-disclosure.ts',
   'host-overlays.ts',
   'subscribable.ts',
   'runtime-config.ts',

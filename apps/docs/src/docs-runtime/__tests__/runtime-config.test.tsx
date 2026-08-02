@@ -39,3 +39,27 @@ describe('useDocsRuntimeConfig', () => {
     expect(result.current.productBaseUrl).toBe('/')
   })
 })
+
+// Issue #481's rollback switch, as the page actually reads it.
+describe('useDocsAssistantEnabled', () => {
+  it('is on for a page built without the flag armed', async () => {
+    vi.resetModules()
+    vi.doMock('@docusaurus/useDocusaurusContext', () => ({
+      default: () => ({ siteConfig: { customFields: { tinyProductBaseUrl: '/' } } })
+    }))
+    const { useDocsAssistantEnabled } = await import('../runtime-config')
+    // Absent means enabled, matching resolveDocsAssistantEnabled: a page served
+    // without custom fields is a misconfiguration, and only somebody
+    // deliberately arming the switch may remove a shipped feature.
+    expect(renderHook(() => useDocsAssistantEnabled()).result.current).toBe(true)
+  })
+
+  it('is off for a deployment built with the switch armed', async () => {
+    vi.resetModules()
+    vi.doMock('@docusaurus/useDocusaurusContext', () => ({
+      default: () => ({ siteConfig: { customFields: { tinyDocsAssistantEnabled: false } } })
+    }))
+    const { useDocsAssistantEnabled } = await import('../runtime-config')
+    expect(renderHook(() => useDocsAssistantEnabled()).result.current).toBe(false)
+  })
+})

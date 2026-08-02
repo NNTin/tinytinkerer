@@ -51,6 +51,7 @@ type CreateBrowserAppOptions = {
   toolTreeSummarizer?: unknown
   signIn?: () => boolean
   conversationReset?: string
+  preSendDisclosure?: { version: string; paragraphs: readonly string[] }
 }
 
 const optionsOfLastApp = (): CreateBrowserAppOptions =>
@@ -179,6 +180,17 @@ describe('ensureDocsAssistantApp', () => {
     expect(typeof options.signIn).toBe('function')
     // #479's locked semantics, reachable from the widget's own reset control.
     expect(options.conversationReset).toBe('restart')
+  })
+
+  it('carries the pre-send disclosure, so nothing is sent before it is acknowledged', async () => {
+    const { ensureDocsAssistantApp } = await import('../assistant-app')
+    const { DOCS_ASSISTANT_DISCLOSURE } = await import('../assistant-disclosure')
+    await ensureDocsAssistantApp(runtimeConfig)
+
+    // Issue #481. On the app, not on a surface: the gate lives in the one
+    // `submitPrompt` every surface shares, so the widget, the docked panel and
+    // #472's Office are covered by construction rather than by remembering.
+    expect(optionsOfLastApp().preSendDisclosure).toBe(DOCS_ASSISTANT_DISCLOSURE)
   })
 
   it('owns every document-global effect except the document head', async () => {

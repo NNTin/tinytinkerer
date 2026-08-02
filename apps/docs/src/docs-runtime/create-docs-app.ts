@@ -31,7 +31,8 @@ import {
   type BrowserApp,
   type BrowserShellConfig,
   type ConversationResetBehavior,
-  type DocumentGlobalCapabilities
+  type DocumentGlobalCapabilities,
+  type PreSendDisclosure
 } from '@tinytinkerer/app-browser'
 import type { DocsRuntimeConfig } from './runtime-config'
 
@@ -64,6 +65,13 @@ export type CreateDocsBrowserAppOptions = {
   signIn?: AppSignIn
   /** What this app's reset-conversation control does (issue #480). */
   conversationReset?: ConversationResetBehavior
+  /**
+   * A one-time disclosure this app must have acknowledged before its first send
+   * (issue #481). The assistant supplies one; the live labs do not, because a
+   * `<LiveLab>` already carries a standing notice above the surface and every
+   * lab page states what it contacts before rendering anything that could.
+   */
+  preSendDisclosure?: PreSendDisclosure
 }
 
 export const createDocsBrowserApp = async ({
@@ -74,7 +82,8 @@ export const createDocsBrowserApp = async ({
   starterPrompts,
   documentGlobals,
   signIn,
-  conversationReset
+  conversationReset,
+  preSendDisclosure
 }: CreateDocsBrowserAppOptions): Promise<DocsBrowserApp> => {
   // Read-only peek at the PRODUCT's own default-namespace token store (same
   // origin, same IndexedDB the main app already writes to). Never written back —
@@ -125,6 +134,7 @@ export const createDocsBrowserApp = async ({
       ...(starterPrompts ? { starterPrompts } : {}),
       ...(signIn ? { signIn } : {}),
       ...(conversationReset ? { conversationReset } : {}),
+      ...(preSendDisclosure ? { preSendDisclosure } : {}),
       documentGlobals
     }),
     config

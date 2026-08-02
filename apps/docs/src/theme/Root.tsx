@@ -1,7 +1,11 @@
 import type { ReactNode } from 'react'
 import OriginalRoot from '@theme-original/Root'
 import { DocsPageProvider } from '../docs-page'
-import { DocsAssistantPageRegion, DocsAssistantRuntimeHost } from '../docs-runtime'
+import {
+  DocsAssistantPageRegion,
+  DocsAssistantRuntimeHost,
+  useDocsAssistantEnabled
+} from '../docs-runtime'
 
 // Docusaurus keeps `@theme/Root` mounted for the whole lifetime of the SPA:
 // above the layout, outside the route tree, and inside both the router and the
@@ -30,6 +34,23 @@ const ThemeRoot = OriginalRoot as (props: { children: ReactNode }) => ReactNode
 // it stays inside `DocsPageProvider` so the assistant's tools resolve the same
 // active document the page context reports.
 export default function Root({ children }: { children: ReactNode }): ReactNode {
+  // Issue #481's rollback switch, and the ONE place it is honoured — the whole
+  // assistant integration hangs off this subtree, so removing it here removes
+  // the provider, the corpus-manifest request, the page-inset wrapper, and the
+  // launcher in one step. `children` is rendered exactly as the theme's own Root
+  // would, so a rolled-back deployment is an ordinary Docusaurus site.
+  //
+  // Live labs are deliberately NOT reached by this: they boot from
+  // `live-lab/client-runtime.tsx` on the pages that embed them, and an assistant
+  // rollback must not take the documentation's interactive examples with it.
+  //
+  // Reading the flag is a hook, so it must run before any early return.
+  const assistantEnabled = useDocsAssistantEnabled()
+
+  if (!assistantEnabled) {
+    return <ThemeRoot>{children}</ThemeRoot>
+  }
+
   return (
     <ThemeRoot>
       <DocsPageProvider>

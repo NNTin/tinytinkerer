@@ -3,7 +3,8 @@ import {
   DOCS_DEV_WEBSOCKET_PATH,
   resolveDeployBase,
   resolveDocsBaseUrl,
-  resolveDocsLabCustomFields,
+  resolveDocsAssistantEnabled,
+  resolveDocsRuntimeCustomFields,
   resolveProductBaseUrl
 } from '../site-config'
 
@@ -41,9 +42,9 @@ describe('documentation site paths', () => {
     expect(DOCS_DEV_WEBSOCKET_PATH).toBe('/ws')
   })
 
-  it('carries the LiveLab framework its edge/GitHub-OAuth config, namespaced under tiny*', () => {
+  it('carries both docs BrowserApps their edge/GitHub-OAuth config, namespaced under tiny*', () => {
     expect(
-      resolveDocsLabCustomFields(undefined, {
+      resolveDocsRuntimeCustomFields(undefined, {
         edgeBaseUrl: 'https://edge.example',
         githubClientId: 'abc123',
         sentryDsn: 'https://sentry.example/1',
@@ -54,15 +55,40 @@ describe('documentation site paths', () => {
       tinyGithubClientId: 'abc123',
       tinySentryDsn: 'https://sentry.example/1',
       tinySentryEnvironment: 'production',
-      tinyProductBaseUrl: '/'
+      tinyProductBaseUrl: '/',
+      tinyDocsAssistantEnabled: true
     })
   })
 
   it('defaults an absent edge base URL to an empty string, not undefined', () => {
-    expect(resolveDocsLabCustomFields(undefined, {}).tinyEdgeBaseUrl).toBe('')
+    expect(resolveDocsRuntimeCustomFields(undefined, {}).tinyEdgeBaseUrl).toBe('')
   })
 
   it('resolves the product base URL for a preview deploy base', () => {
-    expect(resolveDocsLabCustomFields('/pr-42', {}).tinyProductBaseUrl).toBe('/pr-42/')
+    expect(resolveDocsRuntimeCustomFields('/pr-42', {}).tinyProductBaseUrl).toBe('/pr-42/')
+  })
+})
+
+// Issue #481's rollback switch. The asymmetry is the point: only the documented
+// off-values disable the assistant, so a typo, an empty string from an unset CI
+// variable, or a well-meant `TINYTINKERER_DOCS_ASSISTANT=disabled` all leave a
+// production deployment with its assistant intact rather than silently removing
+// a shipped feature.
+describe('the documentation assistant rollback switch', () => {
+  it.each([undefined, '', '  ', 'on', 'true', '1', 'yes', 'disabled', 'OFFLINE'])(
+    'stays enabled for %o',
+    (value) => {
+      expect(resolveDocsAssistantEnabled(value)).toBe(true)
+    }
+  )
+
+  it.each(['off', 'OFF', ' Off ', 'false', 'FALSE', '0'])('is disabled by %o', (value) => {
+    expect(resolveDocsAssistantEnabled(value)).toBe(false)
+  })
+
+  it('threads the resolved switch into the custom fields the pages carry', () => {
+    expect(
+      resolveDocsRuntimeCustomFields(undefined, { docsAssistant: 'off' }).tinyDocsAssistantEnabled
+    ).toBe(false)
   })
 })

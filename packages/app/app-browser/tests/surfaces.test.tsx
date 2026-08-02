@@ -52,6 +52,26 @@ const appTool = vi.hoisted(() => {
   }
 })
 
+// The pre-send disclosure gate (issue #481) is always present on a real app and
+// simply never gates anything without a configured disclosure — modelled here as
+// the same "no disclosure" shape, so these tests keep asserting the cap-refusal
+// and activity behaviour they were written for rather than the gate.
+const preSendDisclosureState = vi.hoisted(() => ({
+  disclosure: undefined as { version: string } | undefined,
+  pending: null as { requestId: number; prompt: string } | null,
+  lastAccepted: null as number | null,
+  isRequired: vi.fn(() => false),
+  request: vi.fn(() => 1),
+  accept: vi.fn(() => Promise.resolve()),
+  dismiss: vi.fn()
+}))
+
+vi.mock('../src/pre-send-disclosure.js', () => ({
+  preSendDisclosureStoreFor: () => ({ getState: () => preSendDisclosureState }),
+  usePreSendDisclosureStore: (selector: (state: typeof preSendDisclosureState) => unknown) =>
+    selector(preSendDisclosureState)
+}))
+
 vi.mock('../src/app.js', () => ({
   useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
   useBrowserApp: () => ({ appToolGroup: appTool.group }),

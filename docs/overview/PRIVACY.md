@@ -104,6 +104,50 @@ into a sandboxed or cross-origin frame.
 
 If the plugin is disabled, the `read_dom` tool is not available and no page content is read.
 
+## Documentation assistant
+
+Every page under `/docs/` carries a floating **documentation assistant**. It is the same
+TinyTinkerer chat assistant, running in its own isolated session, with three extra tools that let
+it search and read this documentation.
+
+Before your first message it shows a one-time notice describing exactly what follows, and it will
+not send anything until you acknowledge it. You can re-read that summary at any time in the
+assistant's Settings → Privacy.
+
+**Reading documentation sends nothing.** Merely visiting a `/docs/` page, or opening the assistant
+panel, does not send the page, your conversation, or any documentation content to a model. Opening
+the assistant downloads its code and may ask the TinyTinkerer edge which models are available;
+neither carries content. Nothing about a conversation leaves your browser until you send a message.
+
+**What is sent when you do send a message:**
+
+- Your messages and the assistant's replies, along the exact path described above under "Chat
+  content and the model proxy (LiteLLM)" — the same edge API, the same LiteLLM proxy, the same
+  model providers.
+- The **source Markdown** of documentation pages, but only when the assistant actually invokes one
+  of its documentation tools to search or read one. If it answers without calling a tool, no
+  documentation content is sent at all.
+
+**What it reads, and what it cannot.** The assistant reads the authored Markdown/MDX files this
+documentation is written from, prepared at build time. It does **not** read the rendered page you
+are looking at, the contents of form fields or search boxes, a live lab's conversation or state,
+your other browser tabs, or anything else on the page. This is a different mechanism from the
+optional Browser state (`read_dom`) plugin described above — that plugin cannot be enabled on the
+documentation site at all. A single tool response is capped, so a long page is returned as selected
+sections rather than in full.
+
+**Unlisted pages.** Pages marked unlisted are excluded from the assistant's search, exactly as they
+are excluded from the site's search bar. If you navigate directly to one, the assistant can read
+that page when you ask it to, because you are already looking at it.
+
+**Signing in is optional.** Signed out, you share an anonymous, rate-limited quota with every other
+visitor. Signing in uses the same GitHub sign-in as the rest of TinyTinkerer and gives you your own
+budget and rate limits; it is never required to get an answer.
+
+**Separate storage.** The assistant's conversations, model choice, and tool selections live in
+their own browser database, separate from your real TinyTinkerer conversations and separate again
+from each live lab's. Its reset control clears only the assistant's active conversation.
+
 ## Interactive documentation labs
 
 Pages under `/docs/` may embed a **live lab** — a working, embedded copy of TinyTinkerer used to
@@ -141,6 +185,8 @@ your GitHub account so we can follow up on issues.
   LiteLLM proxy and onward to its configured model providers. LiteLLM receives a
   per-user virtual key tied to your GitHub id/login for budget and rate enforcement.
   See "Chat content and the model proxy (LiteLLM)" above.
+- Documentation source Markdown selected by the documentation assistant's tools travels the same
+  path, as part of the chat turn that requested it. See "Documentation assistant" above.
 - Crash and error reports are sent to Sentry (our error-monitoring provider).
 - Browser request-failure diagnostics are sent to Sentry with sanitized request metadata
   (method, URL path without query string, status code, and failure type).

@@ -74,6 +74,14 @@ vi.mock('../src/surfaces.js', () => ({
   useSettingsSurfaceController: () => controller
 }))
 
+// The Privacy tab renders the app's pre-send disclosure (issue #481) when it has
+// one. This panel is exercised without a provider, so the store hook is mocked
+// to the "no disclosure" shape every product app has.
+vi.mock('../src/pre-send-disclosure.js', () => ({
+  usePreSendDisclosureStore: (selector: (state: { disclosure: undefined }) => unknown) =>
+    selector({ disclosure: undefined })
+}))
+
 import { SettingsPanel } from '../src/browser-settings-modal.js'
 
 beforeEach(() => {
