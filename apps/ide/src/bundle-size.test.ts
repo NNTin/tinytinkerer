@@ -17,16 +17,26 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 let chunks: OutputChunk[] = []
 
 beforeAll(async () => {
-  const result = await build({
-    root,
-    logLevel: 'silent',
-    mode: 'production',
-    build: { write: false, minify: 'esbuild', sourcemap: false }
-  })
-  const output = Array.isArray(result) ? result[0] : result
-  chunks = (output as { output: OutputChunk[] }).output.filter(
-    (entry): entry is OutputChunk => entry.type === 'chunk' && typeof entry.code === 'string'
-  )
+  const previousNodeEnv = process.env.NODE_ENV
+  try {
+    // Vitest sets NODE_ENV=test. Without this override @vitejs/plugin-react emits
+    // jsxDEV source metadata, including the absolute checkout path, so the measured
+    // chunk varies with the runner's workspace path and is not production-shaped.
+    process.env.NODE_ENV = 'production'
+
+    const result = await build({
+      root,
+      logLevel: 'silent',
+      mode: 'production',
+      build: { write: false, minify: 'esbuild', sourcemap: false }
+    })
+    const output = Array.isArray(result) ? result[0] : result
+    chunks = (output as { output: OutputChunk[] }).output.filter(
+      (entry): entry is OutputChunk => entry.type === 'chunk' && typeof entry.code === 'string'
+    )
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv
+  }
 }, 30_000)
 
 describe('IDE bundle regression guard', () => {
@@ -60,11 +70,15 @@ describe('IDE bundle regression guard', () => {
     // (controlled minimization and its focus behaviour, dynamic starter prompts,
     // host-provided sign-in, host-provided reset). See the shell app's
     // chat-surface budget, which absorbed the identical growth.
+    // Reset 284 → 260 kB (2026-08-02): the guard now forces NODE_ENV=production.
+    // Its former test-shaped build included jsxDEV metadata and absolute source
+    // paths, making the result depend on checkout-path length; 260 kB preserves
+    // roughly the same headroom around the real 258.9 kB production chunk.
     const stage = chunks.find((chunk) => chunk.fileName.includes('ide-page'))
     const codeMirror = chunks.find((chunk) => chunk.fileName.includes('codemirror-vendor'))
     expect(stage).toBeDefined()
     expect(codeMirror).toBeDefined()
-    expect((stage?.code?.length ?? 0) / 1024).toBeLessThan(284)
+    expect((stage?.code?.length ?? 0) / 1024).toBeLessThan(260)
     expect((codeMirror?.code?.length ?? 0) / 1024).toBeLessThan(800)
   })
 })
