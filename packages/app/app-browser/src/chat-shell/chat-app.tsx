@@ -136,14 +136,14 @@ export const ChatApp = ({
     if (!controlled) setUncontrolledMode(next)
     const current = readChatPresentation(storageKey) ?? {
       ...DEFAULT_CHAT_PRESENTATION,
-      mode: activeMode,
       edge: dockEdge
     }
-    const persisted = setChatPresentationMode(current, next, target)
     writeChatPresentation(
       storageKey,
-      // A controlled host is the authority on mode; only the edge is ours to keep.
-      controlled ? { ...current, edge: target } : persisted
+      // A controlled host is the authority on mode, so its record here keeps
+      // whatever mode was already there rather than acquiring a second, stale
+      // answer. Only the edge is ours to keep either way.
+      controlled ? { ...current, edge: target } : setChatPresentationMode(current, next, target)
     )
     onModeChange?.(next)
   }
