@@ -102,12 +102,21 @@ export const BrowserAppShell = ({
                 all get one gate rather than three conditionals. NOT gated by
                 `globalHosts`: this is app-scoped, not document-global — it says
                 something about THIS session's data flow, so a second app in the
-                document must not be able to answer it. Renders nothing at all for
-                an app that declared no disclosure, which is every product app.
-                Lazy like its siblings — see lazy-pre-send-disclosure-host.tsx. */}
-            <Suspense fallback={null}>
-              <LazyPreSendDisclosureHost />
-            </Suspense>
+                document must not be able to answer it.
+
+                The CAPABILITY gates the lazy boundary, not the loaded component
+                (issue #481 review, finding 5). React starts a `React.lazy`
+                import the moment its element is rendered, so a host that
+                returned null once loaded had already cost every product shell —
+                web, mobile, widget, canvas, and each docs live lab — a
+                post-boot request for a chunk none of them can ever use. The
+                entry-chunk budget cannot see that, because the chunk is not in
+                the entry. */}
+            {app.preSendDisclosure ? (
+              <Suspense fallback={null}>
+                <LazyPreSendDisclosureHost />
+              </Suspense>
+            ) : null}
             {/* The single human-in-the-loop modal (issue #85): renders nothing until a
                 plugin raises a prompt. Lazy so its CodeMirror dep code-splits out. */}
             {hosts.humanPrompt ? (

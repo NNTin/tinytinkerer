@@ -17,60 +17,28 @@ vi.mock('../src/web-speech.js', () => ({
   })
 }))
 
-// The composer reads its app's pre-send disclosure gate (issue #481) to know
-// whether a refused submit is one it should resume once the reader acknowledges.
-// A mutable fake stands in for the store; `listeners` lets a test publish an
-// acceptance the way the real dialog does.
-const gate = vi.hoisted(() => {
-  const listeners = new Set<() => void>()
-  const state = {
-    pending: null as { requestId: number; prompt: string } | null,
-    lastAccepted: null as number | null
-  }
-  return {
-    state,
-    listeners,
-    publish: (next: Partial<typeof state>) => {
-      Object.assign(state, next)
-      for (const listener of listeners) listener()
-    },
-    reset: () => {
-      state.pending = null
-      state.lastAccepted = null
-    }
-  }
-})
-
-vi.mock('../src/app.js', () => ({ useBrowserApp: () => ({}) }))
-
-vi.mock('../src/pre-send-disclosure.js', () => ({
-  preSendDisclosureStoreFor: () => ({ getState: () => gate.state }),
-  // A real subscription, so a published acceptance actually re-renders the hook
-  // — the whole behaviour under test is an effect keyed on that value.
-  usePreSendDisclosureStore: (selector: (state: typeof gate.state) => unknown) => {
-    const [, force] = useState(0)
-    useEffect(() => {
-      const listener = () => force((n) => n + 1)
-      gate.listeners.add(listener)
-      return () => {
-        gate.listeners.delete(listener)
-      }
-    }, [])
-    return selector(gate.state)
-  }
-}))
-
-import { useEffect, useState } from 'react'
 import { useChatComposer } from '../src/surfaces.js'
+
+// `submitPrompt`'s three outcomes (issue #481). `sent` and `refused` are
+// constants; `held` carries its own decision, which is what the composer waits
+// on.
+const SENT = { status: 'sent' } as const
+const REFUSED = { status: 'refused' } as const
+const held = (requestId: number) => {
+  let settle: (allowed: boolean) => void = () => undefined
+  const decided = new Promise<boolean>((resolve) => {
+    settle = resolve
+  })
+  return { result: { status: 'held' as const, requestId, decided }, settle }
+}
 
 beforeEach(() => {
   stop.mockClear()
-  gate.reset()
 })
 
 describe('useChatComposer', () => {
   it('clears the input immediately when the prompt is accepted (issue #206)', () => {
-    const submitPrompt = vi.fn(() => true)
+    const submitPrompt = vi.fn(() => SENT)
     const { result } = renderHook(() => useChatComposer(submitPrompt))
 
     act(() => {
@@ -95,7 +63,7 @@ describe('useChatComposer', () => {
     // submitPrompt returns false whenever sending is blocked (empty prompt,
     // agent running, or cooling down) — the input must be preserved so the user
     // does not lose their message.
-    const submitPrompt = vi.fn(() => false)
+    const submitPrompt = vi.fn(() => REFUSED)
     const { result } = renderHook(() => useChatComposer(submitPrompt))
 
     act(() => {
@@ -112,78 +80,77 @@ describe('useChatComposer', () => {
     expect(result.current.prompt).toBe('Blocked message')
   })
 
-  // Resuming a send the pre-send disclosure held (issue #481). The dialog never
-  // sends: it records the acknowledgement and publishes the request id, and the
-  // composer re-runs the ONE `submitPrompt` path. Two send paths would be two
-  // places for the clear-on-accept rule and the disclosure check to drift.
+  // A send held by the pre-send disclosure (issue #481). The composer waits on
+  // THAT attempt's own decision, so nothing is inferred from shared state and two
+  // surfaces submitting identical text cannot resume each other.
   describe('pre-send disclosure gate', () => {
-    it('re-submits and clears once the held request is acknowledged', () => {
-      // Refuses while the gate is closed, accepts once it has been satisfied —
-      // exactly what the real `submitPrompt` does around `isRequired()`.
-      let gated = true
-      const submitPrompt = vi.fn(() => !gated)
+    it('keeps the text while held, and clears it once acknowledged', async () => {
+      const { result: heldResult, settle } = held(7)
+      const submitPrompt = vi.fn(() => heldResult)
       const { result } = renderHook(() => useChatComposer(submitPrompt))
 
       act(() => {
         result.current.setPrompt('Summarize this page.')
       })
+      let accepted: boolean | undefined
       act(() => {
-        gate.state.pending = { requestId: 7, prompt: 'Summarize this page.' }
-        result.current.handleSubmit()
+        accepted = result.current.handleSubmit()
       })
 
-      // Nothing sent, and the reader still has their question.
+      // Not "sent" — the reader still has to answer, and still has their words.
+      expect(accepted).toBe(false)
       expect(result.current.prompt).toBe('Summarize this page.')
 
-      act(() => {
-        gated = false
-        gate.publish({ pending: null, lastAccepted: 7 })
+      await act(async () => {
+        settle(true)
+        await heldResult.decided
       })
 
-      expect(submitPrompt).toHaveBeenCalledTimes(2)
-      expect(submitPrompt).toHaveBeenLastCalledWith('Summarize this page.')
       expect(result.current.prompt).toBe('')
+      // The composer never re-submits: the decision carried the send.
+      expect(submitPrompt).toHaveBeenCalledTimes(1)
     })
 
-    it('keeps the text when the reader dismisses instead of acknowledging', () => {
-      const submitPrompt = vi.fn(() => false)
+    it('keeps the text when the reader dismisses instead of acknowledging', async () => {
+      const { result: heldResult, settle } = held(3)
+      const submitPrompt = vi.fn(() => heldResult)
       const { result } = renderHook(() => useChatComposer(submitPrompt))
 
       act(() => {
         result.current.setPrompt('Where can I find the plugin docs?')
       })
       act(() => {
-        gate.state.pending = { requestId: 3, prompt: 'Where can I find the plugin docs?' }
         result.current.handleSubmit()
       })
-      act(() => {
-        // `dismiss()` clears `pending` and never touches `lastAccepted`.
-        gate.publish({ pending: null })
+      await act(async () => {
+        settle(false)
+        await heldResult.decided
       })
 
-      expect(submitPrompt).toHaveBeenCalledTimes(1)
       expect(result.current.prompt).toBe('Where can I find the plugin docs?')
     })
 
-    it('does not resume a send refused for an unrelated reason', () => {
-      // The run cap refused this one, so no gate request exists to hold it. An
-      // acknowledgement raised by some other composer must not send it.
-      const submitPrompt = vi.fn(() => false)
+    it('does not clear on another attempt being approved', async () => {
+      // Two composers, same words. This one's attempt is never settled; the
+      // other's is. Correlating by prompt text — what the first revision did —
+      // would have cleared this one.
+      const mine = held(1)
+      const theirs = held(2)
+      const submitPrompt = vi.fn(() => mine.result)
       const { result } = renderHook(() => useChatComposer(submitPrompt))
 
       act(() => {
-        result.current.setPrompt('Blocked by the run cap')
-        gate.state.pending = null
+        result.current.setPrompt('the same question')
       })
       act(() => {
         result.current.handleSubmit()
       })
-      act(() => {
-        gate.publish({ lastAccepted: 11 })
+      await act(async () => {
+        theirs.settle(true)
+        await theirs.result.decided
       })
 
-      expect(submitPrompt).toHaveBeenCalledTimes(1)
-      expect(result.current.prompt).toBe('Blocked by the run cap')
+      expect(result.current.prompt).toBe('the same question')
     })
   })
 })

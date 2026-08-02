@@ -32,7 +32,7 @@ import { isMcpToolId, summarizeMcpActivity } from './runtime/mcp-tool'
 import { toolLabel, type ResolveActivitySummarizer } from './turn-activity-panel'
 import { useWebSpeechInput } from './web-speech'
 import { useAuthStore, useBrowserApp, useChatStore, useSettingsStore, useStatusStore } from './app'
-import { preSendDisclosureStoreFor, usePreSendDisclosureStore } from './pre-send-disclosure'
+import { preSendDisclosureStoreFor } from './pre-send-disclosure'
 import { MAX_CONCURRENT_RUNS } from './stores/chat-store'
 import { formatCooldown, useChatCooldown, useGitHubOAuth } from './hooks'
 import { useGitHubUser } from './github-user'
@@ -61,10 +61,10 @@ export type ChatSurfaceController = {
   cooldownRemainingMs: number
   isCoolingDown: boolean
   submitLabel: string
-  // Returns the accept/reject decision synchronously so callers can clear the
-  // input the moment a prompt is accepted, without waiting for the backend
-  // response. The send itself runs in the background (issue #206).
-  submitPrompt: (prompt: string) => boolean
+  // Returns the decision synchronously so callers can clear the input the
+  // moment a prompt is accepted, without waiting for the backend response. The
+  // send itself runs in the background (issue #206).
+  submitPrompt: (prompt: string) => SubmitPromptResult
   // Re-run the latest user prompt as a fresh generation, preserving history.
   // Backs the per-message "Regenerate" action (shared TurnActions).
   rerunLastPrompt: () => Promise<void>
@@ -81,6 +81,26 @@ export type ChatSurfaceController = {
   // few seconds — see useChatSurfaceController.
   sendRefusalNotice: string | null
 }
+
+/**
+ * What one submit attempt did (issue #481).
+ *
+ * A discriminated result rather than a boolean, because "not sent" had grown two
+ * meanings — refused outright, and held pending the reader's acknowledgement —
+ * and the composer was telling them apart by comparing its own prompt text
+ * against shared mutable gate state. Two surfaces submitting the same words
+ * would have correlated with the wrong attempt.
+ *
+ * `held` carries its own decision, so a caller waits on the attempt it made
+ * rather than on "something was approved recently".
+ */
+export type SubmitPromptResult =
+  | { status: 'sent' }
+  | { status: 'held'; requestId: number; decided: Promise<boolean> }
+  | { status: 'refused' }
+
+const SENT: SubmitPromptResult = { status: 'sent' }
+const REFUSED: SubmitPromptResult = { status: 'refused' }
 
 export const useChatSurfaceController = (): ChatSurfaceController => {
   const appToolGroup = useBrowserApp().appToolGroup
@@ -247,10 +267,10 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
       ? 'Thinking…'
       : 'Send'
 
-  const submitPrompt = (prompt: string): boolean => {
+  const submitPrompt = (prompt: string): SubmitPromptResult => {
     const trimmed = prompt.trim()
     if (!trimmed || isCoolingDown || isRunning) {
-      return false
+      return REFUSED
     }
 
     // Cap refusal (issue #430): MAX_CONCURRENT_RUNS conversations are already
@@ -266,7 +286,7 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
         setSendRefusalNotice(null)
         refusalTimeoutRef.current = null
       }, 6000)
-      return false
+      return REFUSED
     }
     if (sendRefusalNotice) {
       setSendRefusalNotice(null)
@@ -277,16 +297,23 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     // send, so a reader is never shown a data-flow dialog only to have the send
     // refused afterwards by the cooldown or the parallel-run cap.
     //
-    // Refusing here (rather than sending and disclosing afterwards) is the whole
-    // guarantee: nothing about the conversation, and nothing any documentation
-    // tool would read, leaves the browser until the disclosure is acknowledged.
-    // `false` keeps the composer's text — the reader can dismiss the dialog and
-    // still have their question — and the composer resumes the attempt itself
-    // once the gate resolves, so this stays the one and only send path.
-    const preSendDisclosure = preSendDisclosureStore.getState()
-    if (preSendDisclosure.isRequired()) {
-      preSendDisclosure.request(trimmed)
-      return false
+    // This is the composer's half of the gate, and it exists for ONE reason the
+    // store-level check cannot cover: clear-on-accept. `sendPrompt` awaits the
+    // same coordinator, so a send is safe either way — but if the composer had
+    // cleared first and the reader then declined, their question would be gone.
+    // So a held send reports itself as `held`, the input stays put, and the
+    // decision carries the actual send.
+    const gate = preSendDisclosureStore.getState()
+    if (gate.isRequired()) {
+      const { requestId, decided } = gate.request(trimmed)
+      return {
+        status: 'held',
+        requestId,
+        decided: decided.then((allowed) => {
+          if (allowed) void sendPrompt(trimmed)
+          return allowed
+        })
+      }
     }
 
     // Kick off the send without awaiting the backend response so the caller can
@@ -294,7 +321,7 @@ export const useChatSurfaceController = (): ChatSurfaceController => {
     // same way they did before — sendPrompt manages run state and emits
     // telemetry/events internally, so we deliberately do not await or catch here.
     void sendPrompt(trimmed)
-    return true
+    return SENT
   }
 
   return {
@@ -336,7 +363,8 @@ export type ChatComposer = {
    * clears the input immediately — so the user can keep typing the next message
    * while the agent is still working (issue #206). Sending stays blocked while
    * the agent is running or cooling down (enforced by submitPrompt). Returns
-   * whether the prompt was accepted.
+   * whether the prompt was accepted for sending right now; a prompt held for a
+   * pre-send disclosure reports `false` and clears itself later, if approved.
    */
   handleSubmit: () => boolean
 }
@@ -353,49 +381,25 @@ export const useChatComposer = (
   const [prompt, setPrompt] = useState('')
   const speech = useWebSpeechInput({ prompt, setPrompt })
 
-  // Resuming an attempt the pre-send disclosure held (issue #481).
-  //
-  // The dialog does NOT send. It records the acknowledgement and publishes the
-  // request id it settled; the composer that raised that id then re-runs
-  // `submitPrompt`, which now finds the gate satisfied and sends normally. One
-  // send path, one clear-on-accept rule, and the composer keeps owning its own
-  // text — a dialog that sent directly would have needed a second copy of both.
-  const preSendDisclosureStore = preSendDisclosureStoreFor(useBrowserApp())
-  const lastAccepted = usePreSendDisclosureStore((state) => state.lastAccepted)
-  const heldRequestRef = useRef<number | null>(null)
-  // Latest-value refs so the resume effect depends on the acceptance alone.
-  // `submitPrompt` is redefined every render and `prompt` changes on every
-  // keystroke; either in the dependency list would re-run this on typing.
-  const submitPromptRef = useRef(submitPrompt)
-  const promptRef = useRef(prompt)
-  useEffect(() => {
-    submitPromptRef.current = submitPrompt
-    promptRef.current = prompt
-  })
-
-  useEffect(() => {
-    if (lastAccepted === null || heldRequestRef.current !== lastAccepted) {
-      return
-    }
-    heldRequestRef.current = null
-    if (submitPromptRef.current(promptRef.current)) {
-      setPrompt('')
-    }
-  }, [lastAccepted])
-
   const handleSubmit = (): boolean => {
     speech.stop()
-    const accepted = submitPrompt(prompt)
-    if (accepted) {
+    const result = submitPrompt(prompt)
+    if (result.status === 'sent') {
       setPrompt('')
       return true
     }
-    // Remember the id only when THIS attempt is the one the gate is holding, so
-    // a surface whose send was refused for an unrelated reason (cooldown, run
-    // cap) never resumes on somebody else's acknowledgement.
-    const pending = preSendDisclosureStore.getState().pending
-    if (pending && pending.prompt === prompt.trim()) {
-      heldRequestRef.current = pending.requestId
+    if (result.status === 'held') {
+      // Held for the pre-send disclosure (issue #481). The input stays put so a
+      // reader who declines still has their question; it clears only if they
+      // acknowledge, on THIS attempt's own decision.
+      //
+      // Waiting on the returned promise rather than on shared "what was approved
+      // recently?" state is what makes that safe with several surfaces open: two
+      // composers submitting identical text can no longer resume each other's
+      // attempt.
+      void result.decided.then((allowed) => {
+        if (allowed) setPrompt('')
+      })
     }
     return false
   }

@@ -62,10 +62,25 @@ export { PRE_SEND_DISCLOSURE_ACKNOWLEDGED_KEY }
 export type { PreSendDisclosure }
 
 export type PreSendDisclosureRequest = {
-  /** Identifies one composer's attempt, so only that composer resumes it. */
+  /** Identifies one attempt, so a caller can correlate its own. */
   requestId: number
-  /** The trimmed prompt the reader tried to send. */
+  /** The trimmed prompt the reader tried to send, when a send raised this. */
   prompt: string
+}
+
+/**
+ * What {@link PreSendDisclosureState.request} hands back: the id, and the
+ * reader's eventual answer.
+ *
+ * The promise is the important half. It is what lets EVERY outbound send —
+ * the composer, Regenerate, and anything #472 adds later — wait on one
+ * decision, instead of each caller re-deriving "was my attempt the one that got
+ * approved?" from shared mutable state.
+ */
+export type PreSendDisclosureDecision = {
+  requestId: number
+  /** Resolves `true` when acknowledged, `false` when dismissed. */
+  decided: Promise<boolean>
 }
 
 export type PreSendDisclosureState = {
@@ -75,19 +90,21 @@ export type PreSendDisclosureState = {
   acknowledgedVersion: string | null
   /** The attempt waiting on an answer, if the gate is open. */
   pending: PreSendDisclosureRequest | null
-  /**
-   * The most recently accepted `requestId`. The composer that raised it watches
-   * this and re-submits, so the send goes through the ONE `submitPrompt` path
-   * rather than a second copy of the send logic living in the dialog.
-   */
-  lastAccepted: number | null
   /** Whether the next send must be gated. */
   isRequired: () => boolean
-  /** Open the gate for `prompt` and return the id the composer should watch. */
-  request: (prompt: string) => number
-  /** Persist the acknowledgement and release the pending attempt. */
+  /**
+   * Ask for acknowledgement, and hand back the eventual answer.
+   *
+   * A request raised while another is already pending JOINS it rather than
+   * replacing it: the disclosure is a fact about this app's data flow, not about
+   * one message, so a second send does not deserve a second dialog — and
+   * overwriting `pending` would have stranded the first caller's promise
+   * forever.
+   */
+  request: (prompt: string) => PreSendDisclosureDecision
+  /** Persist the acknowledgement and release everything waiting on it. */
   accept: () => Promise<void>
-  /** Close the gate without acknowledging. The composer keeps its text. */
+  /** Close the gate without acknowledging. Nothing waiting on it is sent. */
   dismiss: () => void
 }
 
@@ -101,13 +118,20 @@ export type PreSendDisclosureStore = StoreApi<PreSendDisclosureState>
 export const createPreSendDisclosureStore = (app: BrowserApp): PreSendDisclosureStore =>
   createStore<PreSendDisclosureState>((set, get) => {
     let nextRequestId = 1
+    // Everything waiting on the currently open dialog. A list rather than one
+    // resolver because several sends can pile up behind a single question.
+    let waiting: ((allowed: boolean) => void)[] = []
+    const settle = (allowed: boolean) => {
+      const resolvers = waiting
+      waiting = []
+      for (const resolve of resolvers) resolve(allowed)
+    }
     const disclosure = app.preSendDisclosure
 
     return {
       disclosure,
       acknowledgedVersion: app.preSendDisclosureAcknowledged,
       pending: null,
-      lastAccepted: null,
 
       isRequired: () => {
         const state = get()
@@ -116,16 +140,21 @@ export const createPreSendDisclosureStore = (app: BrowserApp): PreSendDisclosure
       },
 
       request: (prompt) => {
+        const decided = new Promise<boolean>((resolve) => {
+          waiting.push(resolve)
+        })
+        const existing = get().pending
+        // Join the open question rather than replacing it — see the type's note.
+        if (existing) return { requestId: existing.requestId, decided }
         const requestId = nextRequestId
         nextRequestId += 1
         set({ pending: { requestId, prompt } })
-        return requestId
+        return { requestId, decided }
       },
 
       accept: async () => {
         const state = get()
-        const pending = state.pending
-        if (!state.disclosure || !pending) return
+        if (!state.disclosure || !state.pending) return
         const { version } = state.disclosure
         await app.shell.preferences.set(PRE_SEND_DISCLOSURE_ACKNOWLEDGED_KEY, version).catch(() => {
           // A failed write means the reader is asked again next session. The
@@ -135,11 +164,13 @@ export const createPreSendDisclosureStore = (app: BrowserApp): PreSendDisclosure
         // Kept on the app too, so a store rebuilt after this one is discarded
         // does not re-prompt within the same session.
         app.preSendDisclosureAcknowledged = version
-        set({ acknowledgedVersion: version, pending: null, lastAccepted: pending.requestId })
+        set({ acknowledgedVersion: version, pending: null })
+        settle(true)
       },
 
       dismiss: () => {
         set({ pending: null })
+        settle(false)
       }
     }
   })
@@ -160,3 +191,31 @@ export const preSendDisclosureStoreFor = (app: BrowserApp): PreSendDisclosureSto
 
 export const usePreSendDisclosureStore = <T>(selector: (state: PreSendDisclosureState) => T): T =>
   useStore(preSendDisclosureStoreFor(useBrowserApp()), selector)
+
+/**
+ * The one coordinator every outbound send passes through.
+ *
+ * Resolves `true` when this app may send, `false` when the reader declined.
+ * An app with no disclosure resolves `true` without touching anything.
+ *
+ * This exists because "the composer checks the gate" was NOT the same as "the
+ * app cannot send unacknowledged". `rerunLastPrompt` reaches `sendPrompt`
+ * directly, so Regenerate sent a whole persisted conversation past a gate the
+ * reader had never seen — and #472 would have added a third such path. The
+ * check therefore lives at the chokepoint every send shares
+ * (`chat-store`'s `sendPrompt`, which awaits this), with the composer
+ * additionally consulting it BEFORE clearing its input so a declined send keeps
+ * the reader's text.
+ *
+ * Consulting it twice for one composer send is free and deliberate: after the
+ * first acknowledgement `isRequired()` is false, so the second consult resolves
+ * immediately and no second dialog appears.
+ */
+export const requestOutboundSendApproval = async (
+  app: BrowserApp,
+  prompt: string
+): Promise<boolean> => {
+  const gate = preSendDisclosureStoreFor(app).getState()
+  if (!gate.isRequired()) return true
+  return gate.request(prompt).decided
+}

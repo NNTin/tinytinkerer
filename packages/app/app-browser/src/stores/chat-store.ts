@@ -103,6 +103,18 @@ export const createChatStore = (options: {
   // The host app's grounding/answer policy (issue #478). Forwarded to the
   // runtime factory; absent for every app that contributes none.
   appAssistantPolicy?: AppAssistantPolicy
+  /**
+   * Approval for anything about to leave this app (issue #481).
+   *
+   * Awaited by `sendPrompt`, which is the one call EVERY outbound send reaches:
+   * the composer, `rerunLastPrompt` (Regenerate), and whatever #472 adds. A
+   * gate that lived only in the composer was not a gate — Regenerate sent a
+   * whole persisted conversation past it.
+   *
+   * Absent for every app without a pre-send disclosure, which is all of them
+   * today, and then this costs a single `undefined` check per send.
+   */
+  outboundSendGate?: (prompt: string) => Promise<boolean>
 }): ChatStore => {
   // Per-conversation run state (issue #430), owned by ConversationRunRegistry
   // (app-core) — the synchronous re-entry latch (issue #334), the cap, and the
@@ -247,6 +259,16 @@ export const createChatStore = (options: {
           return
         }
         try {
+          // Nothing leaves this app before its disclosure is acknowledged
+          // (issue #481). Inside the run latch, so a reader answering the dialog
+          // cannot have a second send slip in beside this one; before any
+          // conversation state is touched, so a decline leaves no trace.
+          //
+          // Checked HERE rather than only at the composer because this is the
+          // call every send shares — `rerunLastPrompt` reaches it directly.
+          if (options.outboundSendGate && !(await options.outboundSendGate(prompt))) {
+            return
+          }
           await ensureInitialized(set, get)
           const { executeChatPrompt, sendConversationPromptAction } = await loadCoreModule()
           // Target resolution, gating (per-conversation run state + global

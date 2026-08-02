@@ -213,7 +213,21 @@ export const createBrowserApp = (
     settingsStore: settings,
     inspectorStore: inspector,
     ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
-    ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {})
+    ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
+    // The outbound-send coordinator (issue #481), supplied only by an app that
+    // declares a disclosure. Reached through a dynamic import so the gate's
+    // store and dialog stay out of every shell's startup entry, and closing over
+    // `app` — which is constructed just below — because the store is created
+    // before it. The chat store only ever calls this from an async `sendPrompt`,
+    // long after construction has returned.
+    ...(options.preSendDisclosure
+      ? {
+          outboundSendGate: (prompt: string) =>
+            import('./pre-send-disclosure').then(({ requestOutboundSendApproval }) =>
+              requestOutboundSendApproval(app, prompt)
+            )
+        }
+      : {})
   })
 
   const app: BrowserApp = {

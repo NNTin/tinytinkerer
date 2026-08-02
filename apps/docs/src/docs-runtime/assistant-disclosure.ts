@@ -14,13 +14,21 @@
  *   `packages/e2e/tests/docs/assistant-performance.e2e.ts` asserts both as
  *   network facts on the built site, which is why this can be stated as
  *   behaviour rather than intent.
- * - **"authored Markdown, not the page you are looking at"** — the whole #474
- *   corpus is built from source Markdown/MDX; nothing in `apps/docs` reads the
- *   rendered DOM, and the optional product `read_dom` plugin cannot load here at
- *   all (`docusaurus.config.ts` aliases plugin discovery to a stub).
- * - **"opening the assistant sends none of it"** — activation downloads the
- *   runtime chunk and may ask the edge which models exist; no conversation and
- *   no document content leaves the browser until a send.
+ * - **"derived from the documentation's authored Markdown"** — deliberately not
+ *   "the source Markdown". A read returns normalized authored Markdown; a search
+ *   returns titles, headings and short excerpts out of the Lunr index. Both are
+ *   derived from what a human wrote, and neither is the rendered page — but
+ *   calling a search snippet "source Markdown" would be describing only half of
+ *   what the tools do (issue #481 review, finding 3).
+ * - **"not the page you are looking at"** — the whole #474 corpus is built from
+ *   source Markdown/MDX; nothing in `apps/docs` reads the rendered DOM, and the
+ *   optional product `read_dom` plugin cannot load here at all
+ *   (`docusaurus.config.ts` aliases plugin discovery to a stub).
+ * - **"does not send conversation or documentation content to a model"** — also
+ *   deliberate, and narrower than "nothing leaves your browser", which was
+ *   false: activation downloads the runtime chunk, the page fetches the corpus
+ *   manifest, and the shell may ask the edge which models exist. None of that is
+ *   content, and the guarantee #481 asks for is about content.
  *
  * Deliberately a light module (no product-runtime import) so the copy can be
  * asserted from a test, and read by the Root-mounted host, without pulling the
@@ -29,16 +37,24 @@
 import type { PreSendDisclosure } from '@tinytinkerer/app-browser'
 
 /**
- * Bumped only when the described data flow changes — not for wording.
+ * Bumped whenever what a reader is agreeing to MEANS something different.
  *
- * A reader who acknowledged `1` is asked again at `2`, so a bump is a decision
- * about whether the change is material to somebody who already agreed. This is
- * separate from the global privacy-policy version
- * (`PRIVACY_POLICY_VERSION`, hashed from `docs/overview/PRIVACY.md`) and from
- * telemetry consent: all three ask different questions, and none of them
- * substitutes for another.
+ * That includes a substantive wording correction, not only a change in the code
+ * — the two are not the same thing, and treating them as the same is how an
+ * acknowledgement of an inaccurate statement gets carried forward as if it were
+ * an acknowledgement of the accurate one (issue #481 review, finding 3). Version
+ * `2` is exactly that case: no data flow changed, but version `1` claimed
+ * "nothing leaves your browser" and described every tool result as "source
+ * Markdown", and a reader who agreed to those did not agree to what actually
+ * happens.
+ *
+ * Pure copy-editing — a typo, a reflow — does not bump it.
+ *
+ * Separate from the global privacy-policy version (`PRIVACY_POLICY_VERSION`,
+ * hashed from `docs/overview/PRIVACY.md`) and from telemetry consent: all three
+ * ask different questions, and none substitutes for another.
  */
-export const DOCS_ASSISTANT_DISCLOSURE_VERSION = '1'
+export const DOCS_ASSISTANT_DISCLOSURE_VERSION = '2'
 
 export const DOCS_ASSISTANT_DISCLOSURE_TITLE = 'Before you send this'
 
@@ -49,8 +65,8 @@ export const DOCS_ASSISTANT_DISCLOSURE_TITLE = 'Before you send this'
  */
 export const DOCS_ASSISTANT_DISCLOSURE_PARAGRAPHS: readonly string[] = [
   'Your message and this conversation are sent to the model backend selected in Settings, through the TinyTinkerer edge and its LiteLLM proxy, to generate an answer.',
-  'The assistant can also send the source Markdown of documentation pages — but only when it uses one of its documentation tools to search or read one. It reads the authored Markdown, never the page you are currently looking at, your form input, a live lab, or anything else in your browser.',
-  'Reading documentation or opening this assistant sends none of that. Nothing leaves your browser until you send a message.',
+  'The assistant can also send documentation content — search excerpts, or a page it reads in full — but only when it uses one of its documentation tools. That content is derived from the Markdown this documentation is written in, never from the page you are currently looking at, your form input, a live lab, or anything else in your browser.',
+  'Merely reading documentation, or opening this assistant, does not send any conversation or documentation content to a model.',
   'Signing in is optional. Without it you share an anonymous, rate-limited quota with everyone else; signing in gives you your own budget and rate limits.'
 ]
 

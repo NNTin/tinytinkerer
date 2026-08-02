@@ -332,15 +332,28 @@ locked and this session documents.
 
 ### Nothing is sent before the reader is told what a send does
 
-The assistant declares a `preSendDisclosure` on its `BrowserApp`. `submitPrompt`
-— the one send path every surface shares — refuses the first send, records the
-attempt, and the single `PreSendDisclosureHost` inside `BrowserAppShell` draws
-it. Acknowledging publishes the request id; the composer that raised it re-runs
-`submitPrompt`, which now finds the gate satisfied and sends normally.
+The assistant declares a `preSendDisclosure` on its `BrowserApp`, and everything
+outbound passes one coordinator, `requestOutboundSendApproval`.
 
-The loop matters: the dialog never sends anything itself, so there is one send
-path, one clear-on-accept rule, and no second copy of either. Dismissing settles
-nothing and the reader keeps their question.
+**The gate is in `chat-store`'s `sendPrompt`**, not in the composer. That
+distinction is the whole correctness of it: "the composer checks the gate" is not
+the same claim as "this app cannot send unacknowledged", and the first revision
+only had the former. `rerunLastPrompt` reaches `sendPrompt` directly, so
+**Regenerate sent a whole persisted conversation past a disclosure the reader had
+never seen** — and #472 would have added a third such path. Gating the call every
+send shares closes the class, not the instance.
+
+The composer consults the same coordinator as well, for one reason the store-level
+check cannot cover: **clear-on-accept**. If the composer cleared first and the
+reader then declined, their question would be gone. So `submitPrompt` reports
+`sent | held | refused`, a held attempt keeps the input, and the held attempt's own
+promise carries both the send and the clear. Consulting twice is free — after the
+first acknowledgement the gate is satisfied, so the second consult resolves
+immediately and no second dialog appears.
+
+`held` carries a `requestId` and a decision, rather than the composer comparing
+its own prompt text against shared gate state. Two surfaces submitting identical
+words used to be able to resume each other's attempt.
 
 Three things it deliberately is **not**:
 
@@ -352,6 +365,11 @@ Three things it deliberately is **not**:
   remembered.
 - **not the human-in-the-loop bridge.** That queue is module-global with no
   session identity — the defect #489 exists to close.
+
+Its dialog links to the full policy, which opens **over** it. That stacking is
+handled once, in `use-dialog-focus.ts`: only the topmost dialog traps focus and
+answers Escape, and the one beneath is `inert`. Without it, one Escape closed
+both — taking the reader's unsent message with it.
 
 The acknowledgement is versioned (`assistant-disclosure.ts`) and persisted in
 **this app's** preferences namespace, separately from telemetry consent and from

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { MarkdownDocument } from '../markdown-document'
+import { useDialogEscape, useDialogFocus } from '../use-dialog-focus'
 import { PRIVACY_POLICY } from './privacy-policy.generated'
 
 export const PrivacyPolicyDialog = ({
@@ -18,18 +19,15 @@ export const PrivacyPolicyDialog = ({
     onOpen?.()
   }, [onOpen, open])
 
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose()
-      }
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [open, onClose])
+  // The shared dialog managers, not a private Escape listener (issue #481
+  // review, finding 2). This dialog is routinely opened OVER another one — the
+  // telemetry consent notice and the pre-send disclosure both link to it — and
+  // on its own it moved no focus, trapped nothing, and closed on the very same
+  // Escape event as whatever was underneath. The stack in `use-dialog-focus`
+  // makes it the only dialog answering while it is on top, and marks the one
+  // below `inert` so a reader cannot Tab back into a dialog they cannot see.
+  const dialogRef = useDialogFocus(open)
+  useDialogEscape(open, onClose)
 
   if (!open) {
     return null
@@ -45,6 +43,8 @@ export const PrivacyPolicyDialog = ({
         onClick={onClose}
       />
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Privacy & Telemetry"

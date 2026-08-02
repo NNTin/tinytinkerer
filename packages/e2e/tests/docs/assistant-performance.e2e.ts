@@ -31,11 +31,19 @@ const BUDGET = JSON.parse(
     'utf8'
   )
 ) as {
-  profiles: Record<string, { label: string; maxBytes: number; note: string } | undefined>
+  profiles: Record<string, BudgetProfile | undefined>
+}
+
+type BudgetProfile = {
+  label: string
+  maxBytes: number
+  /** Only the search profile has a second, browser-measured bound. */
+  maxWorkerBytes?: number
+  note: string
 }
 
 /** Fails loudly on a profile this spec names but the table does not define. */
-const profile = (key: string): { label: string; maxBytes: number; note: string } => {
+const profile = (key: string): BudgetProfile => {
   const entry = BUDGET.profiles[key]
   if (!entry) {
     throw new Error(
@@ -208,8 +216,23 @@ test.describe('documentation assistant load profiles (#481)', () => {
     const indexes = requests.matching(SEARCH_INDEX)
     expect(indexes.length).toBeGreaterThan(0)
 
+    const budget = profile('search')
+    const maxWorkerBytes = budget.maxWorkerBytes
+    expect(maxWorkerBytes, 'the search profile must declare maxWorkerBytes').toBeDefined()
     const bytes = await requests.chunkBytesSinceMark()
     console.log(`[#481] search worker chunks: ${bytes.toLocaleString('en-US')} bytes fetched`)
+
+    // The laziness assertion, and the one that actually matters. If the search
+    // worker ever became an eager dependency of the assistant runtime it would
+    // already have been fetched during activation, and NOTHING new would arrive
+    // here — so a floor of zero is what catches that regression. A cap alone
+    // would have passed it, reporting a smaller number and calling it an
+    // improvement.
+    expect(
+      bytes,
+      'no JavaScript arrived at first search — the search worker is no longer lazy'
+    ).toBeGreaterThan(0)
+    expect(bytes, budget.note).toBeLessThanOrEqual(maxWorkerBytes!)
 
     // Searching is not reading: a search returns pages, and pulling their bodies
     // to answer would defeat the whole point of a separate read tool.

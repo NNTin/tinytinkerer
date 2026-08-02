@@ -51,7 +51,7 @@ describe('the pre-send disclosure gate (issue #481)', () => {
 
     expect(gate.getState().isRequired()).toBe(true)
 
-    const requestId = gate.getState().request('How can I host TinyTinkerer?')
+    const { requestId, decided } = gate.getState().request('How can I host TinyTinkerer?')
     expect(gate.getState().pending).toEqual({
       requestId,
       prompt: 'How can I host TinyTinkerer?'
@@ -61,9 +61,9 @@ describe('the pre-send disclosure gate (issue #481)', () => {
 
     expect(gate.getState().isRequired()).toBe(false)
     expect(gate.getState().pending).toBeNull()
-    // The composer that raised the request is told which one was settled, so a
-    // second surface's held attempt is not released by somebody else's answer.
-    expect(gate.getState().lastAccepted).toBe(requestId)
+    // The attempt gets its OWN answer, so a caller waits on what it asked rather
+    // than on "something was approved recently".
+    await expect(decided).resolves.toBe(true)
     expect(values.get(PRE_SEND_DISCLOSURE_ACKNOWLEDGED_KEY)).toBe('1')
 
     // Written back to the app as well, so a store rebuilt later in the same
@@ -100,30 +100,30 @@ describe('the pre-send disclosure gate (issue #481)', () => {
     const { app } = appStub({ disclosure: DISCLOSURE })
     vi.spyOn(app.shell.preferences, 'set').mockRejectedValue(new Error('quota exceeded'))
     const gate = createPreSendDisclosureStore(app)
-    const requestId = gate.getState().request('a question')
+    const { decided } = gate.getState().request('a question')
 
     await gate.getState().accept()
 
     // The reader is asked again next session — but refusing the send they just
     // approved would punish them for a storage failure they cannot act on.
-    expect(gate.getState().lastAccepted).toBe(requestId)
+    await expect(decided).resolves.toBe(true)
     expect(gate.getState().isRequired()).toBe(false)
   })
 
-  it('dismissing settles nothing', () => {
+  it('dismissing settles nothing, and denies what was waiting', async () => {
     const { app, values } = appStub({ disclosure: DISCLOSURE })
     const gate = createPreSendDisclosureStore(app)
-    gate.getState().request('a question')
+    const { decided } = gate.getState().request('a question')
 
     gate.getState().dismiss()
 
+    await expect(decided).resolves.toBe(false)
     expect(gate.getState().pending).toBeNull()
-    expect(gate.getState().lastAccepted).toBeNull()
     expect(gate.getState().isRequired()).toBe(true)
     expect(values.has(PRE_SEND_DISCLOSURE_ACKNOWLEDGED_KEY)).toBe(false)
   })
 
-  it('mints a distinct id per request', () => {
+  it('mints a distinct id per question', () => {
     const { app } = appStub({ disclosure: DISCLOSURE })
     const gate = createPreSendDisclosureStore(app)
 
@@ -131,7 +131,26 @@ describe('the pre-send disclosure gate (issue #481)', () => {
     gate.getState().dismiss()
     const second = gate.getState().request('two')
 
-    expect(second).not.toBe(first)
+    expect(second.requestId).not.toBe(first.requestId)
+  })
+
+  it('joins a second send to the open question rather than replacing it', async () => {
+    // Two sends racing one dialog: the reader answers once, and BOTH decisions
+    // settle. Replacing `pending` would have shown one question and stranded the
+    // first caller's promise forever.
+    const { app } = appStub({ disclosure: DISCLOSURE })
+    const gate = createPreSendDisclosureStore(app)
+
+    const first = gate.getState().request('one')
+    const second = gate.getState().request('two')
+
+    expect(second.requestId).toBe(first.requestId)
+    expect(gate.getState().pending?.prompt).toBe('one')
+
+    await gate.getState().accept()
+
+    await expect(first.decided).resolves.toBe(true)
+    await expect(second.decided).resolves.toBe(true)
   })
 
   it('gives one app one gate, and two apps two', () => {

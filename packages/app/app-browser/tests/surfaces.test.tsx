@@ -123,12 +123,14 @@ describe('useChatSurfaceController cap refusal (issue #430)', () => {
     chatState.canStartRun.mockReturnValue(false)
     const { result } = renderHook(() => useChatSurfaceController())
 
-    let accepted: boolean | undefined
+    let outcome: { status: string } | undefined
     act(() => {
-      accepted = result.current.submitPrompt('hello')
+      outcome = result.current.submitPrompt('hello')
     })
 
-    expect(accepted).toBe(false)
+    // Refused outright, not held: the run cap is not something a reader can
+    // answer, so nothing is waiting on them (issue #481 rework).
+    expect(outcome?.status).toBe('refused')
     expect(chatState.sendPrompt).not.toHaveBeenCalled()
     expect(result.current.sendRefusalNotice).toMatch(/Parallel run limit reached/)
   })
@@ -143,12 +145,12 @@ describe('useChatSurfaceController cap refusal (issue #430)', () => {
     expect(result.current.sendRefusalNotice).not.toBeNull()
 
     chatState.canStartRun.mockReturnValue(true)
-    let accepted: boolean | undefined
+    let outcome: { status: string } | undefined
     act(() => {
-      accepted = result.current.submitPrompt('through')
+      outcome = result.current.submitPrompt('through')
     })
 
-    expect(accepted).toBe(true)
+    expect(outcome?.status).toBe('sent')
     expect(chatState.sendPrompt).toHaveBeenCalledWith('through')
     expect(result.current.sendRefusalNotice).toBeNull()
   })

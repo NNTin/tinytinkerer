@@ -717,6 +717,102 @@ test.describe('the documentation assistant widget (#480)', () => {
     await expect(composer).toHaveValue('')
   })
 
+  test('Regenerate cannot send a persisted conversation past the disclosure', async ({ page }) => {
+    // The bypass this gate was missing (issue #481 review, finding 1). Regenerate
+    // reaches `sendPrompt` directly, so a reader with history and no
+    // acknowledgement could re-send the whole conversation without ever seeing
+    // the dialog.
+    //
+    // Built by producing real history first, then revoking the acknowledgement —
+    // which is what a returning reader looks like after the disclosure's version
+    // is bumped, and the only way to reach this state through the real product.
+    const mock = await installChatMock(page)
+    await page.goto(ROUTES.authored)
+    await launcher(page).click()
+    await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible({ timeout: 30_000 })
+    await dismissTelemetryDialog(page)
+    await sendAssistantPrompt(page, 'A question with an answer.')
+    await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
+
+    await page.evaluate(
+      ([database, key]) =>
+        new Promise<void>((resolve, reject) => {
+          // IndexedDB reports failures as `DOMException | null`; the lint rule
+          // (rightly) wants a real Error either way.
+          const fail = (reason: DOMException | null) =>
+            reject(reason instanceof Error ? reason : new Error('IndexedDB request failed'))
+          const request = indexedDB.open(database)
+          request.onerror = () => fail(request.error)
+          request.onsuccess = () => {
+            const db = request.result
+            const tx = db.transaction('preferences', 'readwrite')
+            tx.objectStore('preferences').delete(key)
+            tx.oncomplete = () => {
+              db.close()
+              resolve()
+            }
+            tx.onerror = () => fail(tx.error)
+          }
+        }),
+      ['tinytinkerer-docs-assistant', 'pre_send_disclosure_acknowledged_version'] as const
+    )
+
+    await page.reload()
+    await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
+    const sendsBefore = mock.requestBodies().length
+
+    await page.getByRole('button', { name: 'Regenerate response' }).click()
+
+    // The gate stands in front of Regenerate exactly as it does in front of the
+    // composer, and nothing reached the model while it did.
+    const disclosure = page.getByRole('dialog', { name: 'Before you send this' })
+    await expect(disclosure).toBeVisible()
+    expect(mock.requestBodies()).toHaveLength(sendsBefore)
+
+    await disclosure.getByRole('button', { name: 'Send' }).click()
+    await expect(disclosure).toBeHidden()
+    // …and once acknowledged the regenerate it was holding actually runs.
+    await expect.poll(() => mock.requestBodies().length).toBeGreaterThan(sendsBefore)
+  })
+
+  test('reading the privacy policy from the disclosure keeps the message intact', async ({
+    page
+  }) => {
+    // Two aria-modal dialogs, stacked (issue #481 review, finding 2). One Escape
+    // used to close both — taking the unsent message with it.
+    await installChatMock(page)
+    await page.goto(ROUTES.authored)
+    await launcher(page).click()
+    const composer = page.getByRole('textbox', { name: 'Message' })
+    await expect(composer).toBeVisible({ timeout: 30_000 })
+    await dismissTelemetryDialog(page)
+
+    await composer.fill('A question I still want to ask.')
+    await composer.press('Enter')
+    const disclosure = page.getByRole('dialog', { name: 'Before you send this' })
+    await expect(disclosure).toBeVisible()
+
+    await disclosure.getByRole('button', { name: 'Read the privacy policy' }).click()
+    const policy = page.getByRole('dialog', { name: 'Privacy & Telemetry' })
+    await expect(policy).toBeVisible()
+    // The disclosure steps aside completely rather than competing for the
+    // keyboard: `inert` removes it from the pointer, the tab order, and the
+    // accessibility tree.
+    await expect(disclosure).toHaveAttribute('inert', '')
+    expect(await policy.evaluate((node) => node.contains(document.activeElement))).toBe(true)
+
+    await page.keyboard.press('Escape')
+
+    // Only the policy closed. The disclosure is live again, and the reader's
+    // message is exactly where they left it.
+    await expect(policy).toHaveCount(0)
+    await expect(disclosure).toBeVisible()
+    await expect(disclosure).not.toHaveAttribute('inert', '')
+    await disclosure.getByRole('button', { name: 'Send' }).click()
+    await expect(page.getByText(SYNTHESIS_ANSWER)).toBeVisible({ timeout: 30_000 })
+    await expect(composer).toHaveValue('')
+  })
+
   test('keeps the disclosure available in Settings after it has been acknowledged', async ({
     page
   }) => {

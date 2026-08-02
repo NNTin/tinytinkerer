@@ -85,9 +85,21 @@ const supportViteUrlSuffixImportsPlugin: PluginModule = () => ({
 // that touches `useChatStore` (every one built so far, including issue #452's
 // Pixel Agents lab) pulls this in and crashes at runtime ("...glob is not a
 // function") the instant the module evaluates — whether or not the lab cares
-// about plugins at all. Docs has no `packages/plugins/*` of its own to
-// discover anyway, so aliasing the whole module to a "no plugins" stub
-// (live-lab/plugin-registry-stub.ts) is correct behavior, not a workaround.
+// about plugins at all.
+//
+// So the whole module is aliased to a "no plugins" stub
+// (live-lab/plugin-registry-stub.ts). This is a TEMPORARY composition
+// workaround, not settled architecture: the documentation site would legitimately
+// benefit from the product's plugins, and the reason it has none is a build-tool
+// gap rather than a product decision. Replacing it with an injected,
+// per-`BrowserApp` plugin catalogue is recorded on #489
+// (https://github.com/NNTin/tinytinkerer/issues/489#issuecomment-5156205751),
+// which must land before discovery is ever enabled here — the human-in-the-loop
+// queue is module-global and would misroute across the two docs apps.
+//
+// Until then, "docs discovers no plugins" is an assumption several things lean
+// on: #479's guard test, the absence of a HITL host, and
+// `createDocsBrowserApp`'s unconditional `toolTreeSummarizer`.
 const appBrowserPluginRegistryPath = fileURLToPath(
   new URL('../../packages/app/app-browser/src/plugins/registry.ts', import.meta.url)
 )

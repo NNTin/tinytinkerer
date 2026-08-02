@@ -330,6 +330,83 @@ describe('createChatStore', () => {
     )
   })
 
+  // The outbound-send coordinator (issue #481 review, finding 1).
+  //
+  // The gate used to live only in the composer, which made "the composer checks
+  // it" quietly different from "this app cannot send unacknowledged": Regenerate
+  // reaches `sendPrompt` directly, so a reader with persisted history and no
+  // acknowledgement could send the whole conversation without ever seeing the
+  // disclosure. These pin the check at the call every send shares.
+  describe('outbound send gate', () => {
+    const conversationWithHistory = [
+      {
+        id: 'conv-1',
+        events: [
+          { id: 'e1', type: 'user.message', payload: { text: 'first question' } },
+          {
+            id: 'e2',
+            type: 'assistant.done',
+            payload: { source: 'an answer', content: { nodes: [] } }
+          }
+        ] as never
+      }
+    ]
+
+    it('sends nothing — not even a regenerate — while approval is withheld', async () => {
+      mockExecuteChatPrompt.mockResolvedValue(undefined)
+      const outboundSendGate = vi.fn(() => Promise.resolve(false))
+      const store = createChatStore({
+        shell: makeShell(),
+        authStore: makeAuthStore(),
+        settingsStore: makeSettingsStore(),
+        outboundSendGate
+      })
+      seedConversations(store, conversationWithHistory)
+
+      await store.getState().rerunLastPrompt()
+      await store.getState().sendPrompt('a new question')
+
+      expect(outboundSendGate).toHaveBeenCalledTimes(2)
+      expect(mockExecuteChatPrompt).not.toHaveBeenCalled()
+    })
+
+    it('lets a regenerate through once approval is given', async () => {
+      mockExecuteChatPrompt.mockResolvedValue(undefined)
+      const outboundSendGate = vi.fn(() => Promise.resolve(true))
+      const store = createChatStore({
+        shell: makeShell(),
+        authStore: makeAuthStore(),
+        settingsStore: makeSettingsStore(),
+        outboundSendGate
+      })
+      seedConversations(store, conversationWithHistory)
+
+      await store.getState().rerunLastPrompt()
+
+      // Asked about the prompt it was actually going to send, so a disclosure
+      // could show it if it ever wanted to.
+      expect(outboundSendGate).toHaveBeenCalledWith('first question')
+      expect(mockExecuteChatPrompt).toHaveBeenCalledWith(
+        expect.objectContaining({ prompt: 'first question' })
+      )
+    })
+
+    it('is absent for an app that declares no disclosure', async () => {
+      // Every product app today. The store must not require one.
+      mockExecuteChatPrompt.mockResolvedValue(undefined)
+      const store = createChatStore({
+        shell: makeShell(),
+        authStore: makeAuthStore(),
+        settingsStore: makeSettingsStore()
+      })
+      seedConversations(store, [{ id: 'conv-1' }])
+
+      await store.getState().sendPrompt('hello')
+
+      expect(mockExecuteChatPrompt).toHaveBeenCalled()
+    })
+  })
+
   it('rerunLastPrompt() is a no-op when there is no user prompt yet', async () => {
     mockExecuteChatPrompt.mockResolvedValue(undefined)
 
