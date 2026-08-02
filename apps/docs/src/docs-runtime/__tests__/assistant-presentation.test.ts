@@ -12,7 +12,9 @@
 import {
   CHAT_PRESENTATION_STORAGE_VERSION,
   chatPresentationStorageKey,
-  parseChatPresentation
+  parseChatPresentation,
+  setChatPresentationMinimized,
+  setChatPresentationMode
 } from '@tinytinkerer/app-browser/chat-presentation'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOCS_ASSISTANT_PRESENTATION_STORAGE_KEY } from '../assistant-constants'
@@ -23,6 +25,36 @@ const load = async () => {
   const module = await import('../assistant-presentation')
   module.resetDocsAssistantPresentationForTests()
   return module
+}
+
+type Store = Awaited<ReturnType<typeof load>>
+
+/**
+ * Minimize/restore and dock/undock the way the widget does.
+ *
+ * `ChatApp` is fully controlled here, so what it reports is a COMPLETE
+ * presentation it derived with the product's own transitions — there is no
+ * per-axis mutator on the docs store to call instead, and there deliberately is
+ * not one (issue #482). Driving the seam the widget drives is also what keeps
+ * these cases honest: a helper that wrote the record directly would prove
+ * nothing about the path a reader takes.
+ */
+const minimize = (
+  store: Pick<Store, 'readDocsAssistantPresentation' | 'setDocsAssistantPresentation'>,
+  minimized: boolean
+): void => {
+  store.setDocsAssistantPresentation(
+    setChatPresentationMinimized(store.readDocsAssistantPresentation(), minimized)
+  )
+}
+
+const dock = (
+  store: Pick<Store, 'readDocsAssistantPresentation' | 'setDocsAssistantPresentation'>,
+  mode: 'floating' | 'sidebar' = 'sidebar'
+): void => {
+  store.setDocsAssistantPresentation(
+    setChatPresentationMode(store.readDocsAssistantPresentation(), mode)
+  )
 }
 
 beforeEach(() => {
@@ -54,9 +86,9 @@ describe('persistence', () => {
   })
 
   it('remembers a minimized panel across a reload', async () => {
-    const { openDocsAssistant, setDocsAssistantMinimized } = await load()
+    const { openDocsAssistant, ...store } = await load()
     openDocsAssistant()
-    setDocsAssistantMinimized(true)
+    minimize(store, true)
 
     vi.resetModules()
     const { readDocsAssistantPresentation } = await load()
@@ -66,9 +98,9 @@ describe('persistence', () => {
   it('remembers a DOCKED assistant across a reload', async () => {
     // One record covers both axes, so a reader who docked gets a docked panel
     // back — not a floating one that ChatApp then re-docks a frame later.
-    const { openDocsAssistant, setDocsAssistantMode } = await load()
+    const { openDocsAssistant, ...store } = await load()
     openDocsAssistant()
-    setDocsAssistantMode('sidebar')
+    dock(store)
 
     vi.resetModules()
     const { readDocsAssistantPresentation, isDocsAssistantOpen } = await load()
@@ -156,8 +188,9 @@ describe('focus intent', () => {
   })
 
   it('is not set by the widget"s own restore, which FloatingLayout already handles', async () => {
-    const { setDocsAssistantMinimized, readDocsAssistantPresentation } = await load()
-    setDocsAssistantMinimized(false)
+    const store = await load()
+    const { readDocsAssistantPresentation } = store
+    minimize(store, false)
 
     expect(readDocsAssistantPresentation()).toMatchObject({
       mode: 'floating',
@@ -171,10 +204,10 @@ describe('the mode', () => {
   it('opens the panel when the reader docks a minimized widget', async () => {
     // Docking is a request to see the assistant. Keeping `minimized` set would
     // collapse it the instant they undocked again.
-    const { setDocsAssistantMode, readDocsAssistantPresentation, isDocsAssistantOpen } =
-      await load()
+    const store = await load()
+    const { readDocsAssistantPresentation, isDocsAssistantOpen } = store
 
-    setDocsAssistantMode('sidebar')
+    dock(store)
 
     const value = readDocsAssistantPresentation()
     expect(value.minimized).toBe(false)
@@ -182,26 +215,27 @@ describe('the mode', () => {
   })
 
   it('keeps `minimized` meaningful only while floating', async () => {
-    const { setDocsAssistantMinimized, setDocsAssistantMode, readDocsAssistantPresentation } =
-      await load()
+    const store = await load()
+    const { readDocsAssistantPresentation, isDocsAssistantOpen } = store
 
-    setDocsAssistantMode('sidebar')
-    setDocsAssistantMinimized(true)
+    dock(store)
+    minimize(store, true)
     // A docked panel has no collapsed state, so the flag is stored but does not
     // hide anything — it is what undocking restores them to.
-    const { isDocsAssistantOpen } = await load()
     expect(isDocsAssistantOpen(readDocsAssistantPresentation())).toBe(true)
   })
 
   it('preserves the mode a reader opened in', async () => {
-    const { openDocsAssistant, setDocsAssistantMode, setDocsAssistantMinimized } = await load()
-    setDocsAssistantMode('sidebar')
-    setDocsAssistantMode('floating')
-    setDocsAssistantMinimized(true)
-    openDocsAssistant()
+    const store = await load()
+    dock(store)
+    dock(store, 'floating')
+    minimize(store, true)
+    store.openDocsAssistant()
 
-    const { readDocsAssistantPresentation } = await load()
-    expect(readDocsAssistantPresentation()).toMatchObject({ mode: 'floating', minimized: false })
+    expect(store.readDocsAssistantPresentation()).toMatchObject({
+      mode: 'floating',
+      minimized: false
+    })
   })
 })
 
@@ -210,14 +244,15 @@ describe('the snapshot', () => {
     // `useSyncExternalStore` compares snapshots by identity, so a write that
     // changed nothing but still allocated would re-render every consumer on
     // every call — and a change that reused the object would render none.
-    const { setDocsAssistantMinimized, readDocsAssistantPresentation } = await load()
+    const store = await load()
+    const { readDocsAssistantPresentation } = store
 
     const initial = readDocsAssistantPresentation()
-    setDocsAssistantMinimized(false)
+    minimize(store, false)
     const opened = readDocsAssistantPresentation()
     expect(opened).not.toBe(initial)
 
-    setDocsAssistantMinimized(false)
+    minimize(store, false)
     expect(readDocsAssistantPresentation()).toBe(opened)
   })
 })

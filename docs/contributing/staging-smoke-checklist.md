@@ -83,6 +83,53 @@ tool-picker lab):
   the lab's rate-limited state renders sensibly (this is the one state the mocked e2e suite cannot
   reproduce, since its mock never actually throttles).
 
+## What each step costs
+
+Two of the steps above spend something a machine must not spend on your behalf, which is why this
+page exists instead of another Playwright spec.
+
+| Step                                         | Cost                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------- |
+| Any real send (assistant or lab)             | **Shared anonymous quota**, or your own budget once signed in        |
+| The rate-limit step                          | **Deliberately exhausts** the shared key's window for other visitors |
+| Sign-in round trip                           | A **real GitHub OAuth** grant against a real account                 |
+| Everything else (launcher, disclosure, copy) | Nothing — safe to repeat                                             |
+
+So run the rate-limit step last, and prefer a PR preview over `develop` for it. An automated agent
+must not run any of the three: it cannot hold a GitHub account, and burning a shared window is a
+cost borne by people who are not in the conversation.
+
+## Recording a run
+
+Paste this on the issue or PR the change belongs to. It is short on purpose — the value is the
+provenance (who, when, against which build), not a re-transcription of the list above.
+
+```markdown
+### Staging smoke — documentation assistant
+
+- Date:
+- Preview URL:
+- Commit SHA:
+- Browser / OS:
+- Signed in as: (or "anonymous only")
+
+| Step                                       | Result |
+| ------------------------------------------ | ------ |
+| Launcher present, no layout shift          |        |
+| Pre-send disclosure before first send      |        |
+| "Not now" keeps the question               |        |
+| Anonymous answer streams back              |        |
+| Disclosure does not reappear               |        |
+| `read_current_doc` — "summarize this page" |        |
+| Cross-page answer with clickable citation  |        |
+| Sign-in round trip, conversation intact    |        |
+| Settings → Privacy still shows it          |        |
+| Reset: fresh conversation, no reload       |        |
+| Rate-limited state renders sensibly        |        |
+
+Notes / anything that only breaks here:
+```
+
 ## If something only breaks here
 
 File it against the lab's own tracking issue, not this checklist's issue — this page exists so the

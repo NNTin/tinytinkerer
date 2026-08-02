@@ -2,7 +2,8 @@
 
 Where a `BrowserApp` comes from inside `/docs/`, who owns the document (issue
 #479), and how the floating assistant is mounted on top of it (issue #480). #472
-consumes the same session.
+is intended to consume the same session, and has not been built yet — the
+contract exists and is tested; nothing imports it.
 
 Two apps live in this document and share nothing but their bootstrap:
 
@@ -230,7 +231,7 @@ decision was made. So the widget uses their **controlled** mode (#480 added it,
 and its re-review extended it to `mode`): this store owns mode and
 open/minimized, the layouts own geometry. A callback-only seam was rejected — the
 two desynchronise the moment anything but the launcher opens the assistant, which
-is exactly what #472 does when it activates the runtime while the reader had the
+is exactly what #472 will do when it activates the runtime while the reader had the
 widget minimized.
 
 **A returning reader who left the panel open gets it back**, runtime download
@@ -367,7 +368,7 @@ Three things it deliberately is **not**:
 - **not the telemetry consent dialog.** That asks for an opt-in which defaults
   off and can be declined while the app keeps working. A data-flow disclosure is
   not a choice, so "Continue without" would have meant something false.
-- **not per-surface.** The floating widget, the docked panel and #472's Office
+- **not per-surface.** The floating widget, the docked panel and #472's future Office
   are covered because the gate is on the app, not because three components
   remembered.
 - **not the human-in-the-loop bridge.** That queue is module-global with no
@@ -408,8 +409,17 @@ The manifest sits at profile 1, not 3. `DocsPageProvider` loads it on every
 route so a navigation into a document resolves immediately instead of opening a
 fresh `corpus_pending` window at exactly the moment a reader is most likely to
 ask something — #474's and #476's design. #481's own text placed it at the first
-read; that wording predates what shipped, and the reconciliation is recorded on
-the issue rather than made silently.
+read; that wording predates what shipped, and the deviation is recorded
+retrospectively at
+https://github.com/NNTin/tinytinkerer/issues/481#issuecomment-5160246806.
+
+That link is a correction, not a formality. This sentence used to claim the
+reconciliation "is recorded on the issue"; it was not — #481 carried no comment
+at all, unlike every other #471 child, and its issue body still described profile
+3 (issue #482). Two deviations went the same way: this one, and the pre-send
+disclosure being an app-scoped host rather than the reuse of #479's
+`globalHosts` that #481's text asked for. Both are right, and both are now
+written down where somebody reading the issue will find them.
 
 The search profile doubles as the production-build smoke check: the upstream
 plugin writes `search-index.json` only from `postBuild`, so a build that stopped
@@ -452,14 +462,61 @@ a separate change.
 
 Live labs are untouched; they boot from `live-lab/client-runtime.tsx`, which the
 flag does not reach. The consequence is that nothing then owns the docs-wide
-telemetry-consent or privacy-update hosts. That is acceptable for an emergency
+telemetry-consent or privacy-update hosts. That is acceptable for an **emergency**
 rollback precisely because telemetry defaults to off — "no consent host" means
-"no telemetry", not undisclosed collection. If "assistant permanently disabled"
-ever becomes a supported product mode, a dedicated global privacy owner needs
-designing.
+"no telemetry", not undisclosed collection.
+
+Stated plainly because it is the sort of thing that quietly becomes permanent:
+assistant-off is a rollback state, **not a supported permanent product
+configuration** (issue #482). A deployment that intends to run that way
+indefinitely needs a global privacy owner that does not depend on the assistant,
+and that has not been designed.
+
+## The audit (#482)
+
+The cross-issue review. Most of what it found is recorded on the issues rather
+than here; three things changed the code, and each removed a claim that was not
+true.
+
+**The bundle boundary is derived, not listed.** `__tests__/static-safety.test.ts`
+used to assert its rule against a hand-written array of light modules. By the
+time it was audited that array had drifted both ways at once —
+`AssistantPageRegion.tsx` and `LatchedErrorBoundary.tsx` were reachable from
+`@theme/Root` and missing from it — so it walks the value-import graph from the
+declared eager roots now (`__tests__/eager-module-graph.ts`, a TypeScript AST
+walk that stops at every dynamic `import()`). Adding a module to the eager path
+brings it under the rule automatically. It also surfaced a second certified
+subpath nobody had noticed the page was pulling: `documentation-corpus`, which
+`DocsPageProvider` reaches on every route and which re-exports contracts only.
+
+**`read_dom` is excluded on purpose, not by accident.** Nothing in the
+documentation can read the rendered page, and the only reason has been that
+plugin discovery resolves to nothing. That is a build-configuration fact, and the
+plugin-catalogue work in #495 is precisely what would change it —
+so `__tests__/no-dom-access.test.ts` asserts the outcome (the assistant registers
+those three tools and no other; the loader finds no plugin), and the built-site
+picker assertion in `assistant-widget.e2e.ts` asserts it where a reader would see
+it. No denylist and no second catalogue: this issue states the requirement, and
+#495 has to satisfy it.
+
+**The public surface is what someone imports.** `index.ts` carried the storage
+namespace, an imperative status reader, and per-axis presentation mutators — none
+with a consumer, and none named in what #472 was told to use. They are gone,
+along with `setDocsAssistantMinimized`/`setDocsAssistantMode` themselves, which
+had had no caller since the widget became fully controlled by
+`setDocsAssistantPresentation`.
+
+Cross-engine coverage is the other change, and it is a narrow one:
+`packages/e2e/tests/docs/assistant-cross-engine.e2e.ts` runs two flows on
+Chromium, Firefox and WebKit, because `inert`, `isolation: isolate` and the CSS
+custom properties driving the page inset are the parts of #480 an engine could
+plausibly differ on. Everything exhaustive stays on Chromium.
 
 ## What is not here
 
 - The Pixel Agents Office UI (#472) — only the portal it mounts through.
 - Any use of the rendered DOM or live-lab state.
-- The cross-issue audit and regression hardening (#482).
+- Plugin discovery, and the injected per-`BrowserApp` catalogue that would
+  replace the webpack alias to an empty registry — #495. Deliberately deferred;
+  the requirements it has to carry are recorded there, and #489's session-scoped
+  HITL routing is either a prerequisite of it or an explicit exclusion.

@@ -168,6 +168,32 @@ describe('subscription lifecycle', () => {
     disconnect.mockRestore()
   })
 
+  it('keeps a mounted subscriber in step when the test reset clears a declared overlay', () => {
+    // `useSyncExternalStore` caches the snapshot it was last told about, so a
+    // reset that mutated module state silently left a mounted subscriber
+    // rendering `true` against a store reading `false` — and `evaluate`'s
+    // `next === open` guard then swallowed the next real open, because from the
+    // store's point of view nothing had moved (issue #482, finding 4).
+    const { result } = renderHook(() => useDocsHostOverlayOpen())
+
+    act(() => {
+      setDocsHostOverlay('lab-fullscreen:one', true)
+    })
+    expect(result.current).toBe(true)
+
+    act(() => {
+      resetDocsHostOverlaysForTests()
+    })
+    expect(result.current).toBe(false)
+
+    // …and the store is genuinely usable afterwards, which is the half a plain
+    // snapshot assertion would miss.
+    act(() => {
+      setDocsHostOverlay('lab-fullscreen:two', true)
+    })
+    expect(result.current).toBe(true)
+  })
+
   it('renders nothing surprising when the page has no navbar or search at all', async () => {
     // A 404 route, or a static render: the selectors simply match nothing.
     const Probe = () => <span>{useDocsHostOverlayOpen() ? 'hidden' : 'shown'}</span>

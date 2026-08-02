@@ -1,5 +1,7 @@
 /**
- * The supported session/conversation service #472 consumes (issue #479).
+ * The supported session/conversation service #472 is intended to consume (issue
+ * #479). It has no consumer yet: what these tests pin is that the contract
+ * exists, is exported, and cannot be satisfied by the wrong app.
  *
  * Driven against a real `BrowserApp`, a real chat store, and an in-memory
  * conversation repository — not mocked actions (issue #479 review, finding 4).

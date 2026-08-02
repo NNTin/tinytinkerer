@@ -61,18 +61,50 @@ whatever this map turns out to have missed.
 | Deterministic build / static rendering          | inherited: `docs-corpus/__tests__/validate-corpus.test.ts`, corpus `postBuild`   |
 | Maintainer documentation matches implementation | `README.md` beside this file                                                     |
 
+## The browser matrix
+
+Split deliberately, and named here because "which engines?" is a release
+question (issue #482).
+
+| Suite                                       | Engines                   |
+| ------------------------------------------- | ------------------------- |
+| `assistant-cross-engine.e2e.ts` — two flows | Chromium, Firefox, WebKit |
+| everything else under `tests/docs/`         | Chromium                  |
+
+The cross-engine pair covers the parts of #480 an engine could plausibly differ
+on — `inert`, `isolation: isolate`, and CSS custom properties driving the docked
+page inset — plus the one flow whose failure would make the feature useless:
+launcher → activation → disclosure → answer. The exhaustive accessibility,
+contrast, performance and regression specs stay on Chromium, which is the
+deployment target; tripling them would buy far less than it costs.
+
 ## Known gaps, stated rather than implied
 
 - **Rollback is a behavioural disable, not dead-code elimination.** A
   rolled-back build is the same size and still emits the corpus and search
-  index; nothing mounts or fetches them. Deliberate — see `README.md`.
+  index; nothing mounts or fetches them. Deliberate — see `README.md`. It is an
+  emergency control, not a supported permanent configuration (#482).
 - **The `assistantRuntime` budget is Chromium-only.** Measured at 2,596,180
-  bytes on the one engine the docs specs run on; another engine's chunk set could
-  differ. The spec prints the figure on every run, so a drift shows up before it
-  is a breach.
+  bytes on the one engine the byte-budget spec runs on; another engine's chunk
+  set could differ. The spec prints the figure on every run, so a drift shows up
+  before it is a breach. The cross-engine pair above is behavioural, not
+  budgeted — deliberately, since a per-engine byte budget is three numbers
+  nobody would maintain.
 - **A real provider, real streaming, a real OAuth round trip and a real rate
   limit are staging-only**, by design — see the staging checklist.
 - **A reader who only ever uses a live lab is no longer offered the telemetry
   opt-in**, because ownership is structural and the assistant runtime is lazy.
-  Recorded by #479, deliberately left to #482: telemetry stays off, so this is
-  conservative rather than a collection change.
+  Raised by #479 and **approved as-is by #482**: telemetry defaults to off, so
+  "no consent host yet" collects nothing. Reintroducing first-claim ownership or
+  an eager consent host was rejected — the first is the boot-order bug #479
+  removed, the second costs every reader bytes for an opt-in that defaults off.
+- **Live labs render light-on-any-theme while the assistant is theme-aware.**
+  A real visual inconsistency, dating from #451's docked-surface precedent.
+  #482 deferred it to #496 rather than putting a visual change to five shipped
+  lab surfaces inside an audit; light-only labs are not the desired permanent
+  rule.
+- **`/docs` Settings lists no plugins while `/widget` lists the product's.**
+  Plugin discovery is aliased to an empty registry. #482 re-affirmed the
+  deferral; the injected per-`BrowserApp` catalogue that replaces the alias is
+  #495, and `__tests__/no-dom-access.test.ts` is what holds it to excluding
+  `read_dom`.

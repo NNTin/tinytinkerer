@@ -191,7 +191,12 @@ describe('a returning reader', () => {
       expect(screen.getByTestId('assistant-panel')).toBeInTheDocument()
     })
     act(() => {
-      first.setDocsAssistantMinimized(true)
+      // Exactly what `ChatApp`'s `onPresentationChange` reports when a reader
+      // presses minimize — the store has one seam, and this is it.
+      first.setDocsAssistantPresentation({
+        ...first.readDocsAssistantPresentation(),
+        minimized: true
+      })
     })
 
     vi.resetModules()

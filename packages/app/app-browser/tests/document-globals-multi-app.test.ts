@@ -171,6 +171,76 @@ describe('two BrowserApps in one document', () => {
     expect(getTelemetryHeaders()[TELEMETRY_HEADERS.installId]).toBe(ASSISTANT.installId)
   })
 
+  it('stays owner-owned when the lab app boots once per mounted lab, not once per app', async () => {
+    // The REAL documentation topology (issue #482, finding 3), which the cases
+    // above under-modelled by initializing each app exactly once.
+    //
+    // A page carrying several <LiveLab>s has ONE lab BrowserApp — the module
+    // singleton in live-lab/client-runtime.tsx — but each lab renders its own
+    // BrowserAppShell, and every shell runs `initializeBrowserApp` through
+    // `useBrowserAppBootstrap`. So the non-owner's boot restore does not run
+    // once; it runs once per lab on the page, interleaved with the assistant's.
+    //
+    // Modelling that as three independent apps would have been wrong in the
+    // direction that matters: three apps have three namespaces and three
+    // install identities, while the real case is one namespace re-restoring the
+    // SAME stale `telemetryEnabled: true` several times against one global
+    // consent flag.
+    seedNamespace(ASSISTANT, { telemetryEnabled: false })
+    seedNamespace(LAB, { telemetryEnabled: true })
+    const assistant = createApp(ASSISTANT, { owner: true })
+    const lab = createApp(LAB, { owner: false })
+
+    // Three labs and the assistant, in the order Docusaurus would mount them:
+    // the page's labs first, then the runtime host once a reader activates it.
+    await initializeBrowserApp(lab, {})
+    await initializeBrowserApp(lab, {})
+    await initializeBrowserApp(lab, {})
+    await initializeBrowserApp(assistant, {})
+    // …and a fourth lab appearing after activation, which SPA navigation makes
+    // ordinary rather than exotic.
+    await initializeBrowserApp(lab, {})
+
+    expect(getTelemetryHeaders()).not.toHaveProperty(TELEMETRY_HEADERS.installId)
+
+    // The lab's OWN hydrated value is still the `true` its namespace persisted —
+    // and that is correct, not a leak. Ownership is enforced at the two places
+    // that reach module-global consent (`app.ts`'s boot restore and the settings
+    // action), not by rewriting a non-owner's local preference. What keeps it
+    // from becoming a toggle that appears to work and does nothing is that the
+    // non-owner's Privacy section is not rendered at all.
+    expect(lab.stores.settings.getState().telemetryEnabled).toBe(true)
+    expect(lab.documentGlobals.telemetry).toBe(false)
+    await lab.stores.settings.getState().setTelemetryEnabled(true)
+    expect(getTelemetryHeaders()).not.toHaveProperty(TELEMETRY_HEADERS.installId)
+
+    // The owner still owns it after all that, and publishes its own identity.
+    await assistant.stores.settings.getState().setTelemetryEnabled(true)
+    expect(getTelemetryHeaders()[TELEMETRY_HEADERS.installId]).toBe(ASSISTANT.installId)
+
+    // A late lab mount must not undo the decision the owner just made — this is
+    // the same defect as the boot-order one, arriving after boot.
+    await initializeBrowserApp(lab, {})
+    expect(getTelemetryHeaders()[TELEMETRY_HEADERS.installId]).toBe(ASSISTANT.installId)
+  })
+
+  it('arms one OAuth callback watchdog for the document, whatever the shell count', () => {
+    // `BrowserAppShell` arms the watchdog per SHELL and outside the host block,
+    // so the guarantee cannot come from "only one app owns it" alone — it has to
+    // survive several shells of the SAME app. The docs labs pass
+    // `oauthCallbackWatchdog: false`, so the count is the assistant's one shell.
+    const assistant = createApp(ASSISTANT, { owner: true })
+    const lab = createApp(LAB, { owner: false })
+
+    expect(assistant.documentGlobals.oauthCallbackWatchdog).toBe(true)
+    expect(lab.documentGlobals.oauthCallbackWatchdog).toBe(false)
+
+    // The flag lives on the APP, so every shell mounting that app reads the same
+    // answer — four labs cannot add up to four timers.
+    const shellsPerApp = [lab, lab, lab, assistant]
+    expect(shellsPerApp.filter((app) => app.documentGlobals.oauthCallbackWatchdog)).toHaveLength(1)
+  })
+
   it('injects no TinyTinkerer-managed head element for either app', async () => {
     seedNamespace(ASSISTANT, { telemetryEnabled: false })
     seedNamespace(LAB, { telemetryEnabled: false })

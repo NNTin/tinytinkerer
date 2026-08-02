@@ -69,6 +69,15 @@ const resolveMaxFailures = (): number => {
 // Same origin (webPort), different path — one shell build serves all three.
 const baseURL = `http://localhost:${webPort}/web/`
 
+/**
+ * The specs that run on all three engines, not just Chromium.
+ *
+ * Kept as a named list rather than a glob so adding one is a visible decision:
+ * every entry here triples its own runtime, and the reason it earns that is
+ * recorded beside the projects below.
+ */
+const CROSS_ENGINE_SPECS = ['**/sandbox-isolation.e2e.ts', '**/docs/assistant-cross-engine.e2e.ts']
+
 // The app under test is the standalone web shell built for production (so the
 // minified SANDBOX_SRCDOC + worker bootstrap are exercised, not just the dev
 // bundle). `vite preview` serves apps/web/dist; the e2e:build script produces it.
@@ -152,22 +161,28 @@ export default defineConfig({
     trace: 'on-first-retry'
   },
   projects: [
-    // Chromium runs the whole suite (the primary deployment target). The
-    // sandbox-isolation guarantees are engine-sensitive (CSP-in-srcdoc,
-    // opaque-origin iframes, blob: Worker creation, how a CSP-blocked
-    // WebSocket/EventSource fails, indexedDB at an opaque origin, Worker-scope
-    // API absence), so they ALSO run on Gecko + WebKit (issue #245). The other
-    // specs stay Chromium-only — out of scope for #245 — by restricting the
-    // firefox/webkit projects to just the sandbox-isolation spec via testMatch.
+    // Chromium runs the whole suite (the primary deployment target). Two specs
+    // ALSO run on Gecko + WebKit, and each names why below; everything else
+    // stays Chromium-only, so a cross-engine run costs three specs rather than
+    // three suites.
+    //
+    // - sandbox-isolation (issue #245): CSP-in-srcdoc, opaque-origin iframes,
+    //   blob: Worker creation, how a CSP-blocked WebSocket/EventSource fails,
+    //   indexedDB at an opaque origin, Worker-scope API absence.
+    // - assistant-cross-engine (issue #482): the documentation assistant's
+    //   overlay contract leans on `inert`, `isolation: isolate`, and CSS custom
+    //   properties on `<html>` — the parts of #480 an engine could plausibly
+    //   differ on. The exhaustive accessibility, contrast, performance and
+    //   regression specs stay on Chromium.
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     {
       name: 'firefox',
-      testMatch: '**/sandbox-isolation.e2e.ts',
+      testMatch: CROSS_ENGINE_SPECS,
       use: { ...devices['Desktop Firefox'] }
     },
     {
       name: 'webkit',
-      testMatch: '**/sandbox-isolation.e2e.ts',
+      testMatch: CROSS_ENGINE_SPECS,
       use: { ...devices['Desktop Safari'] }
     }
   ],

@@ -12,7 +12,7 @@
  * (`tinytinkerer-docs-lab`), so assistant conversations, settings, and model
  * selection never appear in — or overwrite — either.
  *
- * #472 consumes this session rather than opening a second store of its own.
+ * #472 will consume this session rather than opening a second store of its own.
  */
 export const DOCS_ASSISTANT_STORAGE_NAMESPACE = 'tinytinkerer-docs-assistant'
 

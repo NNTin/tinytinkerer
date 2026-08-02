@@ -31,17 +31,10 @@ import {
   createChatPresentationStore,
   isChatPresentationOpen,
   openChatPresentation,
-  setChatPresentationMinimized,
-  setChatPresentationMode,
   useChatPresentation,
-  type ChatDockEdge,
-  type ChatMode,
   type ChatPresentation
 } from '@tinytinkerer/app-browser/chat-presentation'
 import { DOCS_ASSISTANT_PRESENTATION_STORAGE_KEY } from './assistant-constants'
-
-/** Which layout the assistant renders in. The product's union, not a copy. */
-export type DocsAssistantMode = ChatMode
 
 export type DocsAssistantPresentationState = ChatPresentation & {
   /**
@@ -83,29 +76,23 @@ export const openDocsAssistant = (): void => {
 }
 
 /**
- * Report the widget's own minimize/restore. Never sets `focusPanelOnMount`:
- * `FloatingLayout` already moves focus itself when a reader restores a mounted
- * panel, and this flag is only about a panel that is mounting for the first time.
- */
-export const setDocsAssistantMinimized = (minimized: boolean): void => {
-  store.update((current) => ({
-    ...setChatPresentationMinimized(current, minimized),
-    focusPanelOnMount: false
-  }))
-}
-
-/** Host-driven morph (the widget itself reports a complete presentation below). */
-export const setDocsAssistantMode = (mode: ChatMode, edge?: ChatDockEdge): void => {
-  store.update((current) => setChatPresentationMode(current, mode, edge))
-}
-
-/**
- * Adopt the widget's complete presentation request.
+ * Adopt the widget's complete presentation request — minimize, restore, morph
+ * and snap alike.
  *
  * One callback for mode, minimized, and edge is load-bearing: snap-docking must
  * not update an app-browser-private edge record while this host updates only the
  * mode. The ephemeral focus flag belongs to the activation that already
- * happened, so any subsequent widget interaction clears it.
+ * happened, so any subsequent widget interaction clears it. In particular it is
+ * NOT set by the widget's own restore, which `FloatingLayout` already moves
+ * focus for; the flag is only about a panel mounting for the first time.
+ *
+ * There is deliberately no per-axis mutator beside it. Partial setters were what
+ * the #480 re-review found splitting presentation across two authorities, and
+ * the pair that survived that fix (`setDocsAssistantMinimized`,
+ * `setDocsAssistantMode`) had no caller left once the widget became fully
+ * controlled — a named seam nothing drove, kept alive by its own tests (issue
+ * #482). The product's own transitions are still available to a caller that
+ * needs one, from `@tinytinkerer/app-browser/chat-presentation`.
  */
 export const setDocsAssistantPresentation = (presentation: ChatPresentation): void => {
   store.update(() => ({ ...presentation, focusPanelOnMount: false }))

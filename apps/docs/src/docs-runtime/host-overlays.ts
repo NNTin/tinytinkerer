@@ -144,8 +144,17 @@ const readServer = (): boolean => false
 export const useDocsHostOverlayOpen = (): boolean =>
   useSyncExternalStore(subscribeToOverlays, read, readServer)
 
-/** Test-only: forget declared overlays and re-evaluate from a clean slate. */
+/**
+ * Test-only: forget declared overlays and re-evaluate from a clean slate.
+ *
+ * It EMITS when that changes the answer, for the same reason every other writer
+ * here does. `useSyncExternalStore` caches the last snapshot it was told about,
+ * so a silent write leaves a mounted subscriber rendering `true` against a store
+ * that now reads `false` — and the next real change from `false` is then
+ * swallowed by the `next === open` guard in {@link evaluate}. A reset helper that
+ * desynchronises the thing it is resetting is worse than no helper.
+ */
 export const resetDocsHostOverlaysForTests = (): void => {
   declared.clear()
-  open = false
+  evaluate()
 }

@@ -103,7 +103,7 @@ describe('the widget is the real ChatApp, configured for a documentation site', 
   })
 
   it('is controlled as one complete value by the docs presentation store', async () => {
-    const { setDocsAssistantMode } = await renderWidget()
+    const { readDocsAssistantPresentation, setDocsAssistantPresentation } = await renderWidget()
 
     expect(captured.props?.presentation).toMatchObject({
       mode: 'floating',
@@ -112,8 +112,10 @@ describe('the widget is the real ChatApp, configured for a documentation site', 
     })
     expect(captured.props?.onPresentationChange).toBeTypeOf('function')
 
+    // Driven through the store's one seam, which is also the callback above:
+    // there is no per-axis mutator to reach for (issue #482).
     act(() => {
-      setDocsAssistantMode('sidebar')
+      setDocsAssistantPresentation({ ...readDocsAssistantPresentation(), mode: 'sidebar' })
     })
     expect(captured.props?.presentation?.mode).toBe('sidebar')
   })
@@ -164,12 +166,12 @@ describe('the widget is the real ChatApp, configured for a documentation site', 
 
 describe('minimization is controlled by the docs presentation store', () => {
   it('passes the store"s value, not FloatingLayout"s persisted one', async () => {
-    const { setDocsAssistantMinimized } = await renderWidget()
+    const { readDocsAssistantPresentation, setDocsAssistantPresentation } = await renderWidget()
 
     expect(captured.props?.presentation?.minimized).toBe(true)
 
     act(() => {
-      setDocsAssistantMinimized(false)
+      setDocsAssistantPresentation({ ...readDocsAssistantPresentation(), minimized: false })
     })
     expect(captured.props?.presentation?.minimized).toBe(false)
   })

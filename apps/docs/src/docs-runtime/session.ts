@@ -1,6 +1,6 @@
 /**
  * The supported session/conversation service for the global documentation
- * assistant (issue #479) — the interface #472 consumes.
+ * assistant (issue #479) — the interface #472 is intended to consume.
  *
  * This is the whole of the public surface: a consumer manages assistant
  * conversations through these operations and never touches the chat store, the

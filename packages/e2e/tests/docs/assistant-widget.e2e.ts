@@ -191,6 +191,15 @@ test.describe('the documentation assistant widget (#480)', () => {
     await expect(picker.getByRole('checkbox', { name: 'read_doc' })).toBeChecked()
     await expect(picker.getByRole('checkbox', { name: 'read_current_doc' })).toBeChecked()
 
+    // …and nothing else. #471's first locked decision is that documentation
+    // content comes from authored Markdown, so the product's own `read_dom` must
+    // never be on offer here (issue #482). Asserted on the BUILT site because
+    // what a reader can switch on is a property of the deployed catalogue, not
+    // of the source: today it is held back by the plugin-registry alias, and the
+    // catalogue work tracked after #489 is exactly what would change that.
+    await expect(picker.getByRole('checkbox', { name: 'read_dom' })).toHaveCount(0)
+    await expect(picker).not.toContainText('Browser state')
+
     // Independently controllable: one off, the others untouched. `click()` plus a
     // retrying assertion rather than `uncheck()`, whose one-shot state check
     // races the store's async persist-then-rerender.
