@@ -217,34 +217,10 @@ const UncontrolledChatApp = ({
 // this in AppBrowserProvider) rendered through a pluggable layout shell. Because
 // only the layout wrapper swaps on morph, the conversation and an in-flight run
 // survive the dock/undock toggle.
-export const ChatApp = ({
-  presentation,
-  onPresentationChange,
-  mode,
-  initialMinimized,
-  ...props
-}: ChatAppProps): ReactNode => {
-  const controlled = presentation !== undefined || onPresentationChange !== undefined
-  if (controlled) {
-    if (presentation === undefined || onPresentationChange === undefined) {
-      throw new Error(
-        'ChatApp requires presentation and onPresentationChange together when controlled.'
-      )
-    }
-    return (
-      <ChatAppLayout
-        {...props}
-        presentation={presentation}
-        onPresentationChange={onPresentationChange}
-      />
-    )
-  }
-
-  return (
-    <UncontrolledChatApp
-      {...props}
-      {...(mode !== undefined ? { mode } : {})}
-      {...(initialMinimized !== undefined ? { initialMinimized } : {})}
-    />
-  )
+export const ChatApp = (props: ChatAppProps): ReactNode => {
+  // `presentation` is the discriminant of the public union: TypeScript makes a
+  // partial controlled configuration unrepresentable, while this branch keeps
+  // the runtime wrapper from growing a second set of defaults or transitions.
+  if (props.presentation !== undefined) return <ChatAppLayout {...props} />
+  return <UncontrolledChatApp {...props} />
 }
