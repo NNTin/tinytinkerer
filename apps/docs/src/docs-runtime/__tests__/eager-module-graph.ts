@@ -37,7 +37,7 @@
  * different way (`export type {}` blocks, per-specifier `type` markers inside a
  * named clause, an `import(` inside a comment or a string).
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import ts from 'typescript'
 
@@ -65,14 +65,9 @@ export type EagerGraph = {
 const EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx']
 const INDEXES = EXTENSIONS.map((extension) => `/index${extension}`)
 
-const exists = (candidate: string): boolean => {
-  try {
-    readFileSync(candidate)
-    return true
-  } catch {
-    return false
-  }
-}
+/** A readable FILE — a directory that shares the name is not a resolution. */
+const isFile = (candidate: string): boolean =>
+  statSync(candidate, { throwIfNoEntry: false })?.isFile() === true
 
 /**
  * Resolve a relative specifier the way the bundler does — extensionless first,
@@ -83,13 +78,13 @@ const exists = (candidate: string): boolean => {
  */
 const resolveRelative = (fromDirectory: string, specifier: string): string | null => {
   const base = resolve(fromDirectory, specifier)
-  if (/\.(css|json|svg|png|jpe?g|webp)$/.test(specifier)) return exists(base) ? base : null
-  if (exists(base) && /\.[a-z]+$/.test(base)) return base
+  if (/\.(css|json|svg|png|jpe?g|webp)$/.test(specifier)) return isFile(base) ? base : null
+  if (isFile(base) && /\.[a-z]+$/.test(base)) return base
   for (const extension of EXTENSIONS) {
-    if (exists(`${base}${extension}`)) return `${base}${extension}`
+    if (isFile(`${base}${extension}`)) return `${base}${extension}`
   }
   for (const index of INDEXES) {
-    if (exists(`${base}${index}`)) return `${base}${index}`
+    if (isFile(`${base}${index}`)) return `${base}${index}`
   }
   return null
 }
