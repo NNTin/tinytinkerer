@@ -155,20 +155,12 @@ export default function AssistantRuntimeClient(): ReactNode {
         // consent dialog, from this shell.
         telemetryConsent: true,
         privacyUpdate: true,
-        konami: true,
-        // NOT the human-in-the-loop host (issue #479 decision 4), because
-        // nothing in the docs build can raise a prompt: plugin discovery is
-        // stubbed (see live-lab/plugin-registry-stub.ts) and no documentation
-        // tool requests human input. A host that can never fire still costs
-        // every reader a chunk, so it stays off.
-        //
-        // It is no longer off for the OTHER reason it once was. The queue used
-        // to be module-global, so a host here would have drawn a live lab's
-        // prompt with the assistant's settings and titles; #489 made it one
-        // store per `BrowserApp`, so turning this on is now a safe one-line
-        // change the moment docs has a tool that needs it.
-        // docs-runtime/__tests__/no-human-prompt.test.ts fails loudly first.
-        humanPrompt: false
+        konami: true
+        // The human-in-the-loop modal is not listed here and cannot be: it is
+        // not document-global. Whether this session can prompt at all is
+        // declared once, on the app, by `createDocsBrowserApp` (issue #489
+        // review) — and because the runtime's capability and the shell's
+        // renderer both read that one value, they cannot disagree.
       }}
     >
       {/* The boundary sits ABOVE the session, not inside it: a surface that

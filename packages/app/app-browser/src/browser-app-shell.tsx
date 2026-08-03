@@ -23,16 +23,19 @@ export type BrowserAppShellProps = {
   app: BrowserApp
   config: BrowserShellConfig
   BootScreen: ComponentType<{ error?: string }>
-  // Which document-level, single-instance hosts this shell mounts (HITL modal,
-  // telemetry/privacy gates, Konami listener). A single-page shell mounts all of
-  // them — the default — while a composition rendering several App panes in one
-  // document mounts exactly one shell with them enabled, so the user never sees
-  // duplicate consent dialogs.
+  // Which document-level, single-instance hosts this shell mounts (the
+  // telemetry/privacy gates and the Konami listener). A single-page shell mounts
+  // all of them — the default — while a composition rendering several App panes
+  // in one document mounts exactly one shell with them enabled, so the user
+  // never sees duplicate consent dialogs.
   //
   // Per-host rather than one boolean (issue #479): the docs assistant owns the
-  // consent/privacy/Konami hosts for the whole documentation site yet leaves
-  // `humanPrompt` off, because nothing there can raise a prompt. See
-  // ./document-globals.ts.
+  // consent/privacy/Konami hosts for the whole documentation site while every
+  // live lab beside it mounts none. See ./document-globals.ts.
+  //
+  // The human-in-the-loop modal is NOT among these and never was
+  // document-global: it belongs to the app whose run raised the prompt, and is
+  // mounted below from that app's own capability.
   globalHosts?: Partial<GlobalHostCapabilities>
   children: ReactNode
 }
@@ -119,8 +122,25 @@ export const BrowserAppShell = ({
             ) : null}
             {/* This app's human-in-the-loop modal (issue #85): renders nothing until a
                 plugin raises a prompt on THIS app's queue (issue #489). Lazy so its
-                CodeMirror dep code-splits out. */}
-            {hosts.humanPrompt ? (
+                CodeMirror dep code-splits out.
+
+                Gated on the app's own capability, not on `globalHosts`, and — like
+                the disclosure host above — on the LAZY BOUNDARY rather than inside
+                the loaded component, so an app that cannot prompt never fetches the
+                chunk (issue #481, finding 5).
+
+                When an app has several shells (every `<LiveLab>` mounts its own over
+                the shared lab app) exactly ONE of them draws the modal — two would
+                mean two full-viewport overlays and two `aria-modal` dialogs competing
+                in the shared focus stack. That election lives inside the loaded
+                component rather than here, so its registry stays out of every shell's
+                startup entry; this gate is only the capability check. See
+                ./human-prompt-host-ownership.ts.
+
+                The composer dock is deliberately not elected: it is part of a chat
+                surface, and several surfaces of one session may each show that
+                session's question. */}
+            {app.stores.humanPrompts ? (
               <Suspense fallback={null}>
                 <LazyHumanPromptHost />
               </Suspense>

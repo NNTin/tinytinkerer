@@ -91,8 +91,10 @@ describe('document-global capability defaults', () => {
       contentRenderReporter: true,
       oauthCallbackWatchdog: true
     })
+    // The human-in-the-loop modal is deliberately absent from this set (issue
+    // #489 review): it is app-scoped, not document-global, and lives on
+    // `app.stores.humanPrompts`. See human-prompt-host-ownership.test.tsx.
     expect(resolveGlobalHostCapabilities()).toEqual({
-      humanPrompt: true,
       telemetryConsent: true,
       privacyUpdate: true,
       konami: true
@@ -106,14 +108,12 @@ describe('document-global capability defaults', () => {
       contentRenderReporter: true,
       oauthCallbackWatchdog: true
     })
-    expect(resolveGlobalHostCapabilities({ humanPrompt: false })).toEqual({
-      humanPrompt: false,
+    expect(resolveGlobalHostCapabilities({ konami: false })).toEqual({
       telemetryConsent: true,
       privacyUpdate: true,
-      konami: true
+      konami: false
     })
     expect(NO_GLOBAL_HOST_CAPABILITIES).toEqual({
-      humanPrompt: false,
       telemetryConsent: false,
       privacyUpdate: false,
       konami: false

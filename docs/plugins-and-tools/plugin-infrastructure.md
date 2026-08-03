@@ -529,11 +529,18 @@ also settles any open prompt when the run is aborted (Stop) or the conversation 
 a prompt never outlives its run. Only a poll the host never answers within the human-input budget
 surfaces as a tool failure.
 
+## The human-prompt host (`app-browser`)
+
+Everything from here to the end of this section is HOST machinery rather than choice-prompt
+behaviour: the permissions gate reaches exactly the same queue, renderers and ownership rules, and a
+future human-in-the-loop surface will too. It sits beside the choice plugin because that plugin was
+its first user, not because it belongs to it.
+
 **One generic human-prompt surface — no per-feature host code.** The Permissions allow/deny prompt and
-the Choice poll are the same machinery, so the host owns exactly **one** of everything: one capability
-(`requestHumanInput`), one store of pending `HumanPromptView`s per `BrowserApp`
-(`human-prompt-bridge.ts`), and one generic modal (`<HumanPromptHost/>`) mounted by `BrowserAppShell`
-— never named per-shell. A plugin owns its prompt entirely: it builds
+the Choice poll are the same machinery, so the host owns exactly **one** of everything per `BrowserApp`:
+one capability (`requestHumanInput`), one store of pending `HumanPromptView`s (`human-prompt-bridge.ts`),
+and one generic modal (`<HumanPromptHost/>`), mounted by whichever of that app's `BrowserAppShell`s owns
+it — never named per-shell, and never two at a time. A plugin owns its prompt entirely: it builds
 the `HumanPromptView` (title, `actions`, `allowCustom`, a `dismissAction`) and maps the generic
 `HumanPromptResult` back to its own outcome — the permissions gate to a `ToolGateResult`, the choice tool
 to a `ChoicePromptResult`. The **one** cross-plugin concern only the host can do stays host-side and
@@ -554,10 +561,28 @@ built without it exposes **no** `requestHumanInput` capability at all, the same 
 headless host gets, rather than falling back to somebody else's queue.
 
 Several shells and surfaces can still share one app (apps/host's root composition renders three `ChatApp`s;
-every docs `<LiveLab>` mounts its own shell over one lab app). That is intentional: they are views of one
-session, so they all show its question and answering through any one settles it everywhere. There is no
-leader election and no document-level coordinator — two different apps may each hold a prompt at once, and
-the shared dialog stack in `use-dialog-focus.ts` keeps only the topmost interactive.
+every docs `<LiveLab>` mounts its own shell over one lab app), and the two presentations treat that
+differently on purpose:
+
+- the **composer dock** is part of a chat surface, so every surface of one session shows that session's
+  question, and answering through any one settles it everywhere. Each dock's free-text field gets its own
+  `useId` so two visible docks cannot share a label target.
+- the **modal** is an app-level interrupt — a full-viewport overlay with `aria-modal="true"` — so exactly
+  one shell per app draws it. `human-prompt-host-ownership.ts` elects the first-mounted shell and hands
+  ownership on if it unmounts, without disturbing the pending prompt (the queue is on the app, not the
+  renderer). Two overlays for one question would mean two dialogs claiming the document and two entries
+  competing in the shared focus stack.
+
+Ownership is per app, not per document: two different apps may each hold a modal at once, and the stack in
+`use-dialog-focus.ts` keeps only the topmost interactive. Serializing them across apps would block one
+app's run on another's unanswered question.
+
+**Whether an app can prompt at all is one value.** `createBrowserApp`'s `humanInput` option (default `true`)
+decides whether the queue exists, and everything downstream reads that: the runtime exposes
+`requestHumanInput` iff the queue exists, and a shell mounts a modal iff the queue exists. It was briefly
+two independent switches — an app-level queue and a per-shell `globalHosts.humanPrompt` flag — and set
+inconsistently those produce the worst available outcome: a plugin raises a prompt into a queue no renderer
+draws, and the run blocks invisibly until the human-input budget expires.
 
 **Selectable presentations (the generic per-plugin settings subsystem).** A human prompt can be drawn in
 more than one place, chosen by the user. A `HumanPromptView` carries `source` (the originating plugin id)

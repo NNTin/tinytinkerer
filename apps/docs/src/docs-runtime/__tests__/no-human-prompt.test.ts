@@ -32,7 +32,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { appToolCatalogue } from '@tinytinkerer/app-browser'
+import { appToolCatalogue, createBrowserApp } from '@tinytinkerer/app-browser'
 import { createDocumentationToolGroup } from '../../docs-tools'
 import { pluginToolPickerDemoToolGroup } from '../../live-lab/plugin-tool-picker/demo-tools'
 
@@ -64,10 +64,23 @@ describe('no human-in-the-loop capability in docs', () => {
     }
   })
 
-  it('mounts the assistant shell with the human-prompt host switched off', () => {
+  it('builds every docs app without the human-input capability', () => {
+    // The OUTCOME, through the real factory, rather than a source-text match on
+    // the flag: `app.stores.humanPrompts` is the capability (issue #489 review),
+    // so its absence is simultaneously the proof that the runtime advertises no
+    // `requestHumanInput` and that no shell will mount a modal. A regex on
+    // `humanInput: false` would only have proved somebody wrote it down.
+    const app = createBrowserApp({ storageNamespace: 'docs-guard' }, { humanInput: false })
+    expect(app.stores.humanPrompts).toBeUndefined()
+
+    // …and that this is what `createDocsBrowserApp` actually passes, for both
+    // docs sessions, rather than something a caller could forget per surface.
+    const source = readSource('../create-docs-app.ts')
+    expect(source).toMatch(/humanInput:\s*false/)
+  })
+
+  it('keeps the assistant owning the document-global hosts it is supposed to', () => {
     const source = readSource('../assistant-runtime-client.tsx')
-    expect(source).toMatch(/humanPrompt:\s*false/)
-    // The hosts the assistant DOES own, for the whole documentation site.
     expect(source).toMatch(/telemetryConsent:\s*true/)
     expect(source).toMatch(/privacyUpdate:\s*true/)
     expect(source).toMatch(/konami:\s*true/)

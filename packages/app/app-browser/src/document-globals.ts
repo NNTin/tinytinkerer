@@ -65,42 +65,39 @@ export const resolveDocumentGlobalCapabilities = (
  * Which single-instance UI hosts a `BrowserAppShell` mounts.
  *
  * Replaces the previous coarse `mountGlobals` boolean, which bundled four
- * unrelated hosts together. #479 needs them separable in both directions: the
- * docs assistant owns the consent/privacy/Konami hosts for the whole
- * documentation site while mounting no human-in-the-loop host at all, because
- * nothing in the documentation build can raise a prompt — plugin discovery is
- * stubbed there and no documentation tool requests human input.
+ * unrelated hosts together. #479 needs them separable: the docs assistant owns
+ * the consent/privacy/Konami hosts for the whole documentation site while the
+ * live labs beside it mount none of them.
  *
- * That last part is now the WHOLE reason. It used to come with a second one —
- * that the prompt queue was module-global and would misroute between the two
- * docs apps — and #489 has since made the queue one store per `BrowserApp`, so
- * a mounted host can only ever draw its own app's prompts. What remains is
- * simply that mounting a host which can never fire costs every reader a chunk
- * for nothing. See ./human-prompt-bridge.ts.
+ * **The human-in-the-loop modal is deliberately NOT here** (issue #489 review).
+ * It was, and that was a category error: these three are document-global — there
+ * is one telemetry consent decision, one privacy policy, one Konami listener per
+ * document, whichever app happens to own them. A human prompt is the opposite.
+ * It belongs to the app whose run raised it, exactly like the pre-send
+ * disclosure host, and an app either can prompt or cannot. Expressing that as a
+ * per-shell flag left two independent switches for one question: an app could
+ * hand its runtime a working `requestHumanInput` while every shell mounting it
+ * had the renderer switched off, so a plugin's prompt went into a queue nothing
+ * drew and blocked the run until the human-input budget expired.
  *
- * Note this is per-SHELL, not per-app: several `BrowserAppShell`s can share one
- * `BrowserApp` (every `<LiveLab>` on a docs page mounts its own shell over the
- * one shared lab app), so "which shell draws the modal" is a different question
- * from "which app owns the document". Those shells are views of one session and
- * share its queue, deliberately — see human-prompt-bridge.ts's note on
- * multiplicity.
+ * So the capability lives on the app — `app.stores.humanPrompts`, present iff
+ * the app can prompt (see ./app.ts's `humanInput` option) — and `BrowserAppShell`
+ * reads it from there. See ./human-prompt-host-ownership.ts for which shell
+ * draws it when an app has several.
  */
 export type GlobalHostCapabilities = {
-  humanPrompt: boolean
   telemetryConsent: boolean
   privacyUpdate: boolean
   konami: boolean
 }
 
 export const DEFAULT_GLOBAL_HOST_CAPABILITIES: GlobalHostCapabilities = {
-  humanPrompt: true,
   telemetryConsent: true,
   privacyUpdate: true,
   konami: true
 }
 
 export const NO_GLOBAL_HOST_CAPABILITIES: GlobalHostCapabilities = {
-  humanPrompt: false,
   telemetryConsent: false,
   privacyUpdate: false,
   konami: false

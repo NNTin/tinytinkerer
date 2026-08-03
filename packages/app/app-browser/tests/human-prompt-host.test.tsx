@@ -25,11 +25,17 @@ let conversationSlices: Record<string, { title: string }> = {}
 // `human-prompt-session-routing.test.tsx`.
 let promptStore: HumanPromptStore = createHumanPromptStore()
 
+// ONE stable object, mutated per test rather than rebuilt. The modal's ownership
+// election keys a `WeakMap` on the app identity (issue #489 review), so a mock
+// returning a fresh literal each render would hand every render its own registry
+// and never settle on an owner.
+const fakeApp = { stores: { humanPrompts: promptStore } }
+
 const requestHumanInput = (view: HumanPromptView, scope?: string) =>
   promptStore.getState().request(view, scope)
 
 vi.mock('../src/app.js', () => ({
-  useBrowserApp: () => ({ stores: { humanPrompts: promptStore } }),
+  useBrowserApp: () => fakeApp,
   useSettingsStore: (
     selector: (state: { pluginConfig: Record<string, Record<string, string | boolean>> }) => unknown
   ) => selector({ pluginConfig: {} }),
@@ -42,6 +48,7 @@ beforeEach(() => {
   // A fresh queue per test: nothing a failed assertion leaves pending can reach
   // the next one, and no reset helper has to exist for that reason alone.
   promptStore = createHumanPromptStore()
+  fakeApp.stores.humanPrompts = promptStore
 })
 
 afterEach(() => {

@@ -88,11 +88,26 @@ export type BrowserApp = {
     settings: SettingsStore
     status: StatusStore
     inspector: InspectorStore
-    // This app's human-in-the-loop prompt queue (issue #489). Per app, like
-    // every store beside it: a document can hold several `BrowserApp`s, and a
-    // prompt must be drawn by the session that raised it, with that session's
-    // plugin settings and conversation titles. See ./human-prompt-bridge.ts.
-    humanPrompts: HumanPromptStore
+    /**
+     * This app's human-in-the-loop prompt queue (issue #489), or `undefined`
+     * for an app that cannot prompt.
+     *
+     * Per app, like every store beside it: a document can hold several
+     * `BrowserApp`s, and a prompt must be drawn by the session that raised it,
+     * with that session's plugin settings and conversation titles. See
+     * ./human-prompt-bridge.ts.
+     *
+     * Its presence is also the app's HUMAN-INPUT CAPABILITY, and the single
+     * source of truth for it (issue #489 review, finding 1). The runtime
+     * exposes `PluginHost.requestHumanInput` iff this exists, and
+     * `BrowserAppShell` mounts a modal iff this exists. Those used to be two
+     * switches — an app capability and a per-shell `globalHosts.humanPrompt`
+     * flag — and set inconsistently they produced the worst outcome available:
+     * a plugin could raise a prompt into a queue no mounted renderer drew, and
+     * the run blocked, invisibly, until the ~5-minute human-input budget
+     * expired. One value cannot disagree with itself.
+     */
+    humanPrompts?: HumanPromptStore
   }
   // The app's own tool group, if any (absent for web/widget/mobile). Held here so
   // the tool picker (useToolTree) can read it from context — the same group the
@@ -203,6 +218,22 @@ export const createBrowserApp = (
      * first prompt (issue #481). Omitted — every product app — gates nothing.
      */
     preSendDisclosure?: PreSendDisclosure
+    /**
+     * Whether this app can ask its user a question mid-run (issue #489).
+     *
+     * `true` — the default, and what every product surface wants — builds this
+     * app's prompt queue, so its runtime offers `PluginHost.requestHumanInput`
+     * and its shell draws the modal. `false` builds no queue, and then BOTH of
+     * those follow from the one decision: a HITL plugin contributes no tool (the
+     * documented degradation for a host that cannot prompt) and no renderer is
+     * mounted for prompts that can no longer be raised.
+     *
+     * The documentation apps pass `false`. It is not that their prompts would
+     * misroute — since #489 they cannot — but that nothing there can raise one,
+     * and a capability that can never fire should not be advertised to a plugin
+     * or cost a reader the renderer's chunk.
+     */
+    humanInput?: boolean
   } = {}
 ): BrowserApp => {
   const shell = createBrowserShell(config)
@@ -218,13 +249,17 @@ export const createBrowserApp = (
   // store, so reading them once here is permanently valid — and it keeps this
   // out of the lazy-closure shape `outboundSendGate` below needs, which exists
   // only because that gate genuinely depends on the app being finished.
-  const humanPrompts = createHumanPromptStore()
+  //
+  // Absent for an app that declares no human input, which is what makes the
+  // capability single-valued: there is no queue to prompt into, so there is
+  // nothing for the runtime to offer and nothing for a shell to draw.
+  const humanPrompts = (options.humanInput ?? true) ? createHumanPromptStore() : undefined
   const chat = createChatStore({
     shell,
     authStore: auth,
     settingsStore: settings,
     inspectorStore: inspector,
-    humanPrompts: humanPrompts.getState(),
+    ...(humanPrompts ? { humanPrompts: humanPrompts.getState() } : {}),
     ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
     ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
     // The outbound-send coordinator (issue #481), supplied only by an app that
@@ -252,7 +287,7 @@ export const createBrowserApp = (
       settings,
       status,
       inspector,
-      humanPrompts
+      ...(humanPrompts ? { humanPrompts } : {})
     },
     ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
     ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),

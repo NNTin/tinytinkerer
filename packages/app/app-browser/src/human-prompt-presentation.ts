@@ -5,7 +5,18 @@ import {
   type HumanPromptPresentation
 } from '@tinytinkerer/contracts'
 import { useBrowserApp, useChatStore, useSettingsStore } from './app'
-import type { HumanPromptState, PendingHumanPrompt } from './human-prompt-bridge'
+import {
+  createHumanPromptStore,
+  type HumanPromptState,
+  type PendingHumanPrompt
+} from './human-prompt-bridge'
+
+// An app with no human-input capability has no queue, and a hook cannot be
+// called conditionally — so reads for such an app fall through to this, which is
+// empty and stays empty. Nothing can enqueue onto it: `request` is only ever
+// handed out from the store `createBrowserApp` built for an app that declares
+// the capability, and this one is never given to anybody.
+const NO_QUEUE = createHumanPromptStore()
 
 // Subscription hook the two renderers use to read the head-of-queue prompt.
 //
@@ -18,7 +29,7 @@ import type { HumanPromptState, PendingHumanPrompt } from './human-prompt-bridge
 // store factory with no import back into `./app` — the same cycle
 // `pre-send-disclosure-key.ts` exists to avoid.
 export const useHumanPromptStore = <T>(selector: (state: HumanPromptState) => T): T =>
-  useStore(useBrowserApp().stores.humanPrompts, selector)
+  useStore(useBrowserApp().stores.humanPrompts ?? NO_QUEUE, selector)
 
 // Resolves the head-of-queue human prompt and WHERE the host should draw it (issue
 // #85). The presentation is a per-plugin setting: the view carries the originating

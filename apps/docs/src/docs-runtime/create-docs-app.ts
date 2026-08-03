@@ -135,6 +135,20 @@ export const createDocsBrowserApp = async ({
       ...(signIn ? { signIn } : {}),
       ...(conversationReset ? { conversationReset } : {}),
       ...(preSendDisclosure ? { preSendDisclosure } : {}),
+      // No documentation app can ask its reader a question mid-run (issue #479
+      // decision 4, restated as an app capability by #489's review). Plugin
+      // discovery is stubbed here and no documentation tool requests human
+      // input, so there is nothing to prompt for — and declaring that once, on
+      // the app, is what keeps the runtime from advertising a capability whose
+      // prompts nothing would draw.
+      //
+      // Set here rather than at each call site so the assistant, the live labs
+      // and #472 cannot each forget it — the same reason `toolTreeSummarizer`
+      // is set here. #495 flips this for whichever docs app gains a
+      // HITL-capable plugin, and the guard test in
+      // `docs-runtime/__tests__/no-human-prompt.test.ts` fails first if it does
+      // not.
+      humanInput: false,
       documentGlobals
     }),
     config

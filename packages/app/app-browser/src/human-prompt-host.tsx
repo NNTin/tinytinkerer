@@ -5,7 +5,9 @@ import {
   type PermissionViewSection
 } from '@tinytinkerer/app-core'
 import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
+import { useBrowserApp } from './app'
 import { HumanPromptControls } from './human-prompt-controls'
+import { useOwnsHumanPromptHost } from './human-prompt-host-ownership'
 import { useHumanPromptPresentation } from './human-prompt-presentation'
 import { loadPluginModules } from './plugins/registry'
 import { useResolvedPluginView } from './resolved-plugin-view'
@@ -125,6 +127,11 @@ const InputContextView = ({
 export const HumanPromptHost = () => {
   const { pending, presentation, conversationLabel } = useHumanPromptPresentation()
   const summarizers = usePermissionSummarizers()
+  // One modal per app, however many shells mounted one (issue #489 review). The
+  // election lives here rather than in `BrowserAppShell` so its registry rides in
+  // this lazily-loaded chunk instead of every shell's startup entry — the shell
+  // only has to know whether the app can prompt at all.
+  const owns = useOwnsHumanPromptHost(useBrowserApp())
 
   // Focus management for the modal presentation (issue #353). `focusKey` re-enters
   // the dialog when a queued prompt replaces the answered one.
@@ -134,7 +141,9 @@ export const HumanPromptHost = () => {
 
   // Only the modal presentation renders here; a `composer` prompt is drawn by the
   // composer dock instead. A view with no presentation preference defaults to modal.
-  if (!pending || presentation !== 'modal') {
+  // And only the owning shell renders it, so an app mounted by several shells shows
+  // one overlay rather than one per shell.
+  if (!owns || !pending || presentation !== 'modal') {
     return null
   }
 

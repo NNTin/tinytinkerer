@@ -117,10 +117,16 @@ describe('shell bundle regression guard', () => {
     //
     // NOT raised for issue #489 (2026-08-03), which made the human-prompt queue
     // one store per `BrowserApp` instead of one per module. Measured at 68.818 kB
-    // before and 68.916 kB after — ~98 bytes, for the per-app construction in
+    // before and 68.960 kB after — ~142 bytes, for the per-app construction in
     // `createBrowserApp` and the two actions the chat store forwards to the
-    // runtime factory. The renderers and the presentation hook are not in this
-    // figure and must not become so: they live in the chat route chunk.
+    // runtime factory.
+    //
+    // The renderers, the presentation hook and the modal's ownership election are
+    // NOT in that figure and must not become so. The election was briefly called
+    // from `BrowserAppShell`, which put its registry in this entry and cost 736
+    // bytes — over budget on its own. It now runs inside the lazily-loaded
+    // `HumanPromptHost`, so the entry carries only the one-property capability
+    // check that decides whether to mount the lazy boundary at all.
     //
     // That leaves under 100 bytes of headroom. The next change to touch this
     // budget should treat it as already spent and move something out rather than

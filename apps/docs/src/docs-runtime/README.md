@@ -147,23 +147,32 @@ defaults to off, so "no consent host yet" is the conservative state, but a
 visitor who only ever uses a live lab is no longer _offered_ the opt-in on that
 page.
 
-### No human-in-the-loop host
+### No human-in-the-loop capability
 
 `requestHumanInput` is reachable only through the PluginHost, and
 `docusaurus.config.ts` aliases plugin discovery to a stub that resolves to no
 plugins. No documentation tool requests human input either, so **no HITL prompt
 can be raised in the documentation site at all**.
 
-So the host is off, and `__tests__/no-human-prompt.test.ts` fails if either half
-of that assumption changes. What keeps it off is now only the "nothing can raise
-one" half: a host that can never fire would still cost every reader a chunk.
+Both docs apps therefore declare `humanInput: false`, in `create-docs-app.ts`,
+once for every docs surface. That is a single value rather than a pair of
+switches (#489 review): the app has no prompt queue, so its runtime advertises no
+`requestHumanInput` and no shell mounts a renderer. They cannot be set
+inconsistently, which previously would have let a plugin enqueue a prompt that
+nothing drew — the run blocking until the ~5-minute human-input budget expired.
+`__tests__/no-human-prompt.test.ts` asserts the outcome through the real factory.
 
 The original decision had a second reason — the prompt queue was module-global
 with no session identity, so a host here would have drawn a live lab's prompt
 using the assistant's plugin settings and conversation titles. #489 fixed that:
-the queue is one store per `BrowserApp`, and a mounted host can only see its own
-app's prompts. Turning this on is therefore a one-line change whenever docs
-gains a tool that needs it, rather than a blocked one.
+the queue is one store per `BrowserApp`, a mounted host can only see its own
+app's prompts, and `human-prompt-host-ownership.ts` elects one shell to draw the
+modal when an app has several (as the lab app does, one shell per `<LiveLab>`).
+
+Flipping this on is not, by itself, enough to ship a HITL plugin here. #498 —
+a `composer`-presented prompt is invisible while a floating surface is minimized
+— still applies to the assistant's widget, so #495 has to exclude choice-prompt
+or constrain its presentation until that is resolved.
 
 ## Reset
 
@@ -531,6 +540,8 @@ engine could plausibly differ on. Everything exhaustive stays on Chromium.
 - Any use of the rendered DOM or live-lab state.
 - Plugin discovery, and the injected per-`BrowserApp` catalogue that would
   replace the webpack alias to an empty registry — #495. Deliberately deferred;
-  the requirements it has to carry are recorded there. Its one hard prerequisite,
-  #489's session-scoped HITL routing, has landed, so #495 is free to include the
-  HITL-capable plugins rather than having to exclude them.
+  the requirements it has to carry are recorded there. #489's session-scoped HITL
+  routing has landed, so misrouting is no longer the reason to exclude the
+  HITL-capable plugins — but #498 still is: until a `composer`-presented prompt is
+  visible behind a minimized widget, #495 must exclude choice-prompt or constrain
+  its presentation, and either way say so with a test.

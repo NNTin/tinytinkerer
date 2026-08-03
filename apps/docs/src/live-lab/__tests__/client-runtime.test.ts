@@ -31,7 +31,6 @@ vi.mock('@tinytinkerer/app-browser', () => ({
   useChatCooldown: vi.fn(),
   BrowserAppShell: () => null,
   NO_GLOBAL_HOST_CAPABILITIES: {
-    humanPrompt: false,
     telemetryConsent: false,
     privacyUpdate: false,
     konami: false
