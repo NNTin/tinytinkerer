@@ -326,8 +326,35 @@ export const createChatStore = (options: {
         } finally {
           // The action may have re-keyed the handle (via registry.rekey) from
           // the pre-hydration placeholder onto the resolved conversation id;
-          // release() finds whichever key currently holds it.
-          runRegistry.release(handle)
+          // release() finds whichever key currently holds it, and reports it.
+          const finished = runRegistry.release(handle)
+
+          // Settle any human prompt this run left queued (issue #498).
+          //
+          // Normally there is none: a HITL tool blocks the run until the reader
+          // answers, so the send cannot reach here first. The exception is the
+          // human-input BUDGET. `withTimeout` (agent-core) races the tool against
+          // `humanInputTimeoutMs` and rejects, but nothing cancels the underlying
+          // `requestHumanInput` promise — so the entry stays queued, the run
+          // finishes without it, and the reader is left with a question whose run
+          // is gone (and, once #498's launcher badge exists, a badge advertising
+          // it). The same holds for a run that fails for any other reason while a
+          // prompt is open.
+          //
+          // Scoped to THIS app (the queue is per app since #489) and to the
+          // conversation that just finished — never an unscoped reset, which would
+          // dismiss a prompt belonging to another conversation still running
+          // beside this one. Reusing the shared abort path keeps one
+          // implementation of "settle this conversation's prompts"; aborting a run
+          // that was just released is a no-op.
+          //
+          // Truthiness, not `!== undefined`: the pre-hydration placeholder key is
+          // `''`, and a run that never resolved a conversation also never gave its
+          // runtime one — so any prompt it raised is unscoped and would not have
+          // matched `reset('')` anyway. Passing `''` through would be the one thing
+          // that must not happen here, since `abortConversationRun(undefined)`
+          // deliberately settles everything.
+          if (finished) abortConversationRun(finished)
         }
       },
       rerunLastPrompt: async () => {

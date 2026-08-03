@@ -71,6 +71,24 @@ export type FloatingLayoutProps = {
   // dragging near a viewport edge morphs into that edge's docked split. Receives the
   // released snap edge, or no argument for the plain dock button.
   onDock?: (edge?: SnapEdge) => void
+  /**
+   * Something inside the panel needs the reader, while the panel is minimized
+   * (issue #498).
+   *
+   * Deliberately generic: `{ id, message }`, with no idea what raised it. The
+   * first caller is a composer-presented human prompt, whose dock is unmounted
+   * with the rest of `children` while minimized — so without this the run blocks
+   * on a question nothing is showing, for the full ~5-minute human-input budget.
+   * Whatever needs attention next says so the same way.
+   *
+   * `id` identifies the specific thing waiting, so the announcement is made again
+   * when one question replaces another rather than staying silent because the
+   * message string happens to match.
+   *
+   * Ignored entirely while restored: the panel is on screen, and whatever needs
+   * the reader is in it.
+   */
+  attention?: { id: string; message: string }
   // The chat body (e.g. FloatingChatSurface).
   children: ReactNode
 }
@@ -78,11 +96,16 @@ export type FloatingLayoutProps = {
 const WidgetLauncher = ({
   onRestore,
   onDragPointerDown,
-  buttonRef
+  buttonRef,
+  attention
 }: {
   onRestore: () => void
   onDragPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void
   buttonRef: RefObject<HTMLButtonElement | null>
+  // Present only while something inside the minimized panel is waiting for the
+  // reader. It changes what this control SAYS, not what it does: pressing it
+  // still just restores.
+  attention?: { id: string; message: string }
 }) => (
   // No padding: the launcher FILLS the minimized shell, which is
   // `WIDGET_MINIMIZED_SIZE` — the same 4rem the shared primitive sizes it to. It
@@ -95,16 +118,24 @@ const WidgetLauncher = ({
       type="button"
       onClick={onRestore}
       onPointerDown={onDragPointerDown}
-      aria-label="Restore widget"
-      title="Drag to move, click to restore"
+      // The accessible name carries the waiting message, so a reader who lands on
+      // this control by keyboard hears WHY it matters — not just that a widget can
+      // be restored. `title` follows for the pointer equivalent.
+      aria-label={attention ? attention.message : 'Restore widget'}
+      title={attention ? attention.message : 'Drag to move, click to restore'}
       // `tt-embed-launcher` is the product's launcher chrome, shared with the
       // cold launcher a host draws before this component exists (issue #480
       // re-review, finding 4 — see launcher.css). `widget-launcher` adds only
       // what is true of the MOUNTED one: it doubles as a drag handle.
       className="widget-launcher tt-embed-launcher"
+      data-attention={attention ? 'true' : undefined}
     >
       <img src={TINYTINKERER_BRAND_ASSET_URLS.icon192} alt="" className="tt-embed-launcher__icon" />
-      <span className="sr-only">Restore widget</span>
+      {/* Visible indicator. `aria-hidden` because the accessible name above
+          already says what this dot means — announcing a decorative dot as well
+          would be the same fact twice. */}
+      {attention ? <span className="tt-embed-launcher__badge" aria-hidden="true" /> : null}
+      <span className="sr-only">{attention ? attention.message : 'Restore widget'}</span>
     </button>
   </div>
 )
@@ -166,7 +197,8 @@ const WidgetWindow = ({
   className,
   style,
   launcherRef,
-  bodyRef
+  bodyRef,
+  attention
 }: {
   minimized: boolean
   dragging: boolean
@@ -182,6 +214,7 @@ const WidgetWindow = ({
   style?: CSSProperties
   launcherRef: RefObject<HTMLButtonElement | null>
   bodyRef: RefObject<HTMLDivElement | null>
+  attention?: { id: string; message: string }
 }) => (
   <div
     className={['widget-floating-shell', className].filter(Boolean).join(' ')}
@@ -198,6 +231,7 @@ const WidgetWindow = ({
           onRestore={onRestore}
           onDragPointerDown={onLauncherPointerDown}
           buttonRef={launcherRef}
+          {...(attention ? { attention } : {})}
         />
       ) : (
         <>
@@ -240,6 +274,7 @@ export const FloatingLayout = ({
   minHeight,
   stageClassName,
   onDock,
+  attention,
   children
 }: FloatingLayoutProps) => {
   const dims: WidgetDims = {
@@ -503,12 +538,23 @@ export const FloatingLayout = ({
     }
 
     const body = bodyRef.current
+    // A control that has declared itself the thing to answer FIRST wins over the
+    // ordinary message box (issue #498). Today that is the human prompt's first
+    // action, drawn in the composer dock — a reader who restores because the
+    // launcher said a question was waiting should land on the question, not on
+    // the textarea below it.
+    //
+    // Matched by the existing `data-autofocus` convention rather than anything
+    // prompt-specific: `HumanPromptControls` already marks its first control that
+    // way for the modal's focus manager, so this needs no new contract and the
+    // layout stays ignorant of what a human prompt is.
     const focusComposer = (): boolean => {
-      const composer = body?.querySelector('textarea')
-      if (!composer) {
+      const target =
+        body?.querySelector<HTMLElement>('[data-autofocus]') ?? body?.querySelector('textarea')
+      if (!target) {
         return false
       }
-      composer.focus()
+      target.focus()
       return true
     }
     if (focusComposer() || !body) {
@@ -568,6 +614,28 @@ export const FloatingLayout = ({
     </span>
   )
 
+  // A SECOND, dedicated region for the attention message (issue #498).
+  //
+  // Not folded into `liveMessage`: that state is written on every keyboard move
+  // and resize step, so a question announced through it would be overwritten by
+  // the reader's next arrow key — and, worse, dragging the launcher would replay
+  // "Assistant question waiting" as a geometry update. Two independent facts, two
+  // regions.
+  //
+  // Rendered only while minimized, so restoring removes the node and stops the
+  // announcement from lingering behind a panel that now shows the question
+  // itself.
+  // The inner node is keyed by `attention.id` so that when one question replaces
+  // another, React unmounts and remounts it — a real mutation inside the live
+  // region, which is what makes assistive technology announce again. Rendering
+  // the string alone would stay silent for the second question, because the
+  // message is generic and the text would not have changed.
+  const attentionRegion = (
+    <span role="status" aria-live="polite" className="sr-only">
+      {isMinimized && attention ? <span key={attention.id}>{attention.message}</span> : null}
+    </span>
+  )
+
   const stageClass = ['widget-stage', stageClassName].filter(Boolean).join(' ')
 
   const snapPreview = snapEdge
@@ -590,6 +658,7 @@ export const FloatingLayout = ({
   return (
     <div className={stageClass} style={themeStyle}>
       {liveRegion}
+      {attentionRegion}
       {snapPreview}
       <WidgetWindow
         minimized={isMinimized}
@@ -602,6 +671,7 @@ export const FloatingLayout = ({
         onMoveKeyDown={handleGripKeyDown}
         launcherRef={launcherRef}
         bodyRef={bodyRef}
+        {...(isMinimized && attention ? { attention } : {})}
         style={{
           left: layout.x,
           top: layout.y,

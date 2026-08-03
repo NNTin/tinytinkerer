@@ -128,9 +128,19 @@ describe('shell bundle regression guard', () => {
     // `HumanPromptHost`, so the entry carries only the one-property capability
     // check that decides whether to mount the lazy boundary at all.
     //
-    // That leaves under 100 bytes of headroom. The next change to touch this
-    // budget should treat it as already spent and move something out rather than
-    // raise the number again.
+    // Also NOT raised for issue #498 (2026-08-03), the launcher attention badge
+    // and announcement. Measured 68.960 → 68.976 kB — ~16 bytes, all of it the
+    // run-end prompt cleanup in `chat-store`'s `finally` and the conversation key
+    // `ConversationRunRegistry.release` now reports so that cleanup can be scoped.
+    // The badge, the live region, the attention prop and the shared surface hook
+    // are in the lazy chat route chunk, not here; the loading boundary is
+    // unchanged.
+    //
+    // That leaves ~24 bytes of headroom against 69 kB. Treat this budget as spent:
+    // the next change that touches the entry should move something out rather than
+    // raise the number, and the two candidates are named above — the ownership
+    // registry (already moved into the lazy host) and the disclosure store
+    // (already lazy).
     const entry = chunks.find((chunk) => chunk.isEntry)
     expect(entry, 'No entry chunk found in build output').toBeDefined()
     expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(69)
@@ -176,6 +186,14 @@ describe('shell bundle regression guard', () => {
     // behind another import. The wrapper was reduced to its type discriminant
     // first (keeping the IDE stage below its unchanged budget); this 1 kB band is
     // the remaining product logic, not duplicated host code.
+    //
+    // NOT raised for issue #498 (2026-08-03), which put the launcher attention
+    // badge, its dedicated polite live region, the generic `attention` prop and
+    // the shared `useHumanPromptSurface` hook in here — the right place for them,
+    // since all four are the interactive surface rather than something opened from
+    // it. Measured 59.915 kB, which leaves under 100 bytes. This budget is now as
+    // tight as the entry one: the next addition to the chat surface needs a real
+    // reduction beside it, not a raise.
     const chunk = chunks.find((entry) => entry.fileName.includes('chat-surface'))
     expect(chunk, 'No chat route chunk found in build output').toBeDefined()
     expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(60)

@@ -40,6 +40,23 @@ export const HumanPromptControls = ({ pending }: { pending: PendingHumanPrompt }
 
   const trimmedCustom = customText.trim()
 
+  // Which control the prompt offers FIRST, marked `data-autofocus` so the modal's
+  // focus manager and the floating layout's restore path (issue #498) both land a
+  // reader on the question rather than past it.
+  //
+  // A view with no actions used to mark nothing, so a restore fell through to the
+  // ordinary message box — past the very question the launcher had just announced.
+  // The order below is the order a reader can act in: an action if there is one,
+  // otherwise the free-text field, otherwise the explicit dismiss.
+  const autofocusTarget: 'action' | 'custom' | 'dismiss' | 'none' =
+    view.actions.length > 0
+      ? 'action'
+      : view.allowCustom
+        ? 'custom'
+        : view.dismissAction
+          ? 'dismiss'
+          : 'none'
+
   return (
     <>
       <div className="max-h-[60vh] space-y-2 overflow-y-auto px-6 py-5">
@@ -50,7 +67,7 @@ export const HumanPromptControls = ({ pending }: { pending: PendingHumanPrompt }
             // Initial focus lands on the first action — for the permission prompt that
             // is Deny, the least destructive choice, per the alertdialog pattern (issue
             // #353). Inert in the composer-dock presentation.
-            {...(index === 0 ? { 'data-autofocus': true } : {})}
+            {...(index === 0 && autofocusTarget === 'action' ? { 'data-autofocus': true } : {})}
             onClick={() => resolve({ kind: 'action', id: action.id })}
             className={
               action.tone === 'primary'
@@ -74,6 +91,7 @@ export const HumanPromptControls = ({ pending }: { pending: PendingHumanPrompt }
           <div className="flex gap-2">
             <input
               id={customInputId}
+              {...(autofocusTarget === 'custom' ? { 'data-autofocus': true } : {})}
               type="text"
               value={customText}
               onChange={(event) => setCustomText(event.target.value)}
@@ -104,6 +122,7 @@ export const HumanPromptControls = ({ pending }: { pending: PendingHumanPrompt }
         <div className="flex justify-end border-t border-[var(--border)] px-6 py-4">
           <button
             type="button"
+            {...(autofocusTarget === 'dismiss' ? { 'data-autofocus': true } : {})}
             onClick={() => resolve({ kind: 'dismissed' })}
             className="inline-flex items-center rounded-md border border-stone-200 bg-white px-4 py-2 text-sm text-stone-600 transition-colors hover:border-stone-300 hover:bg-stone-50"
           >

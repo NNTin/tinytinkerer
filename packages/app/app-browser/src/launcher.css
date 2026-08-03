@@ -54,6 +54,52 @@
   outline-offset: 3px;
 }
 
+/*
+ * Attention indicator (issue #498): something inside the minimized panel is
+ * waiting for the reader — today, a composer-presented human prompt whose dock
+ * is unmounted while minimized.
+ *
+ * `position: relative` only while the badge can exist, so the ordinary launcher
+ * keeps its exact previous box. The dot is decorative (`aria-hidden`): the
+ * button's accessible name already carries the message.
+ */
+.tt-embed-launcher[data-attention='true'] {
+  position: relative;
+}
+
+.tt-embed-launcher__badge {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: var(--accent-strong, var(--accent));
+  /* Rings the dot in the launcher's own surface so it stays legible against the
+     product icon underneath, in both themes. */
+  box-shadow: 0 0 0 2px var(--panel);
+}
+
+/*
+ * A reader who has asked for less motion still gets the dot — it is the
+ * indicator, not the animation — but nothing pulses.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .tt-embed-launcher__badge {
+    animation: tt-embed-launcher-badge-pulse 2s ease-in-out infinite;
+  }
+}
+
+@keyframes tt-embed-launcher-badge-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
 .tt-embed-launcher__icon {
   width: 2.75rem;
   height: 2.75rem;

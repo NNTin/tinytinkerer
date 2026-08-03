@@ -82,6 +82,10 @@ vi.mock('../src/plugins/registry', () => ({
 
 const { createBrowserApp } = await import('../src/app.js')
 
+const pendingSentinel = Symbol('pending')
+const settlementOf = (promise: Promise<unknown>): Promise<unknown> =>
+  Promise.race([promise, Promise.resolve(pendingSentinel)])
+
 const view: HumanPromptView = {
   role: 'dialog',
   ariaLabel: 'Assistant question',
@@ -157,6 +161,76 @@ describe('a prompt raised through the real runtime lands in its own app’s queu
     void capturedHost?.requestHumanInput?.(view).then(settled)
     app.stores.humanPrompts?.getState().reset()
     await vi.waitFor(() => expect(settled).toHaveBeenCalledWith({ kind: 'dismissed' }))
+  })
+
+  it('settles a prompt the run left queued when the human-input budget expired', async () => {
+    // The lifecycle gap (issue #498). agent-core's `withTimeout` RACES the tool
+    // against `humanInputTimeoutMs` and rejects; it does not cancel the tool, and
+    // nothing cancels the `requestHumanInput` promise the tool is awaiting. So the
+    // entry stays queued while the run finishes without it, leaving the reader a
+    // question whose run is gone — and, since #498, a launcher badge advertising
+    // it.
+    //
+    // Proven in two halves, because the fix is not in the race:
+    //   1. under fake timers, the race rejects and the entry is STILL queued;
+    //   2. `sendPrompt`'s finally then settles it, scoped to the app and the
+    //      conversation that just finished.
+    vi.useFakeTimers()
+    try {
+      const app = createBrowserApp({ storageNamespace: 'tinytinkerer-wiring-timeout' })
+      const queue = app.stores.humanPrompts
+      expect(queue).toBeDefined()
+
+      const asked = queue!.getState().request(view, 'conv-a')
+      asked.catch(() => undefined)
+
+      // Half 1: the budget expires. This mirrors agent-core's `withTimeout`
+      // shape — a `Promise.race` against a timer — rather than importing it:
+      // that helper is on no package barrel, `app-browser` does not depend on
+      // `agent-core` at all, and widening a public surface for a test is the
+      // friction this repo keeps on purpose. The real helper's behaviour is
+      // pinned where it lives, in
+      // `agent-core/tests/with-timeout-does-not-cancel.test.ts`; the two together
+      // are the claim.
+      const raced = Promise.race([
+        asked,
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Tool ask_user timed out')), 300_000)
+        })
+      ])
+      const rejection = expect(raced).rejects.toThrow('timed out')
+      await vi.advanceTimersByTimeAsync(300_001)
+      await rejection
+
+      // …and the queue is untouched by that rejection. This is the defect, stated
+      // as an assertion so a future change that DOES cancel the request makes this
+      // line fail loudly rather than silently making the cleanup below dead code.
+      expect(queue!.getState().queue).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('settles only the finished conversation’s prompts, never a concurrent one', async () => {
+    const app = createBrowserApp({ storageNamespace: 'tinytinkerer-wiring-cleanup' })
+    const queue = app.stores.humanPrompts
+    expect(queue).toBeDefined()
+
+    // Half 2: a run that ends while a prompt is still queued — exactly the state
+    // the expired budget leaves behind. The stand-in raises the prompt and returns
+    // without it being answered, which is what the real post-timeout run does.
+    const stranded = queue!.getState().request(view, 'conv-a')
+    // A prompt belonging to a DIFFERENT conversation, running beside it. An
+    // unscoped reset here would dismiss somebody else's open question.
+    const other = queue!.getState().request(view, 'conv-b')
+    other.catch(() => undefined)
+
+    mockExecuteChatPrompt.mockImplementation(() => Promise.resolve())
+    await app.stores.chat.getState().sendPrompt('hello')
+
+    await expect(stranded).resolves.toEqual({ kind: 'dismissed' })
+    expect(queue!.getState().queue.map((entry) => entry.scope)).toEqual(['conv-b'])
+    await expect(settlementOf(other)).resolves.toBe(pendingSentinel)
   })
 
   it('exposes no human-input capability at all for an app that declares none', async () => {

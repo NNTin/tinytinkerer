@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HumanPromptView } from '@tinytinkerer/contracts'
 import { HumanPromptHost } from '../src/human-prompt-host.js'
+import { createStore } from 'zustand/vanilla'
 import { createHumanPromptStore, type HumanPromptStore } from '../src/human-prompt-bridge.js'
 
 const forwardPluginReport = vi.hoisted(() => vi.fn())
@@ -29,16 +30,17 @@ let promptStore: HumanPromptStore = createHumanPromptStore()
 // election keys a `WeakMap` on the app identity (issue #489 review), so a mock
 // returning a fresh literal each render would hand every render its own registry
 // and never settle on an owner.
-const fakeApp = { stores: { humanPrompts: promptStore } }
+const settingsStore = createStore(() => ({
+  pluginConfig: {}
+}))
+const fakeApp = { stores: { humanPrompts: promptStore, settings: settingsStore } }
 
 const requestHumanInput = (view: HumanPromptView, scope?: string) =>
   promptStore.getState().request(view, scope)
 
 vi.mock('../src/app.js', () => ({
   useBrowserApp: () => fakeApp,
-  useSettingsStore: (
-    selector: (state: { pluginConfig: Record<string, Record<string, string | boolean>> }) => unknown
-  ) => selector({ pluginConfig: {} }),
+  useOptionalBrowserApp: () => fakeApp,
   useChatStore: (
     selector: (state: { conversations: Record<string, { title: string }> }) => unknown
   ) => selector({ conversations: conversationSlices })

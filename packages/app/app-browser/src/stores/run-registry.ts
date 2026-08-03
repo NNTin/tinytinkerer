@@ -63,11 +63,17 @@ export class ConversationRunRegistry {
     return true
   }
 
-  release(handle: ConversationRunHandle): void {
+  // Returns the key the handle was registered under, so a caller that has to
+  // clean up after the run — settling a human prompt the run left queued, say —
+  // knows WHICH conversation it just finished. That is not always the id the
+  // caller started with: a pre-hydration send latches on the '' placeholder and
+  // is re-keyed once the conversation resolves. `undefined` for a handle that
+  // was already released.
+  release(handle: ConversationRunHandle): string | undefined {
     for (const [key, value] of this.runs) {
       if (value === handle) {
         this.runs.delete(key)
-        return
+        return key
       }
     }
   }

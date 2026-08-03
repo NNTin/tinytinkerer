@@ -7,6 +7,7 @@ import {
   type ChatMode,
   type ChatPresentation
 } from '../chat-presentation'
+import { useHumanPromptSurface } from '../human-prompt-presentation'
 import { DockedChatSurface } from './docked-chat-surface'
 import { FloatingChatSurface, type ChatLoadingComponent } from './floating-chat-surface'
 import { FloatingLayout } from './floating-layout'
@@ -108,6 +109,23 @@ const ChatAppLayout = ({
   starterPrompts,
   starterPromptCount
 }: ChatAppLayoutProps): ReactNode => {
+  // A composer-presented human prompt is drawn by the dock inside the chat
+  // surface, and a minimized floating layout renders the launcher INSTEAD of that
+  // surface — so without this the run would block on a question nothing shows,
+  // for the full ~5-minute human-input budget (issue #498).
+  //
+  // The answer is an attention badge and a polite announcement on the launcher,
+  // not an auto-restore (which lets the model take the reader's screen), not a
+  // silent switch to the modal (which overrides the presentation the reader
+  // chose), and not an early dismissal (which changes what the tool observes).
+  //
+  // Read through the shared surface hook, so "is a composer prompt pending?" has
+  // exactly one implementation — the same one the dock itself uses.
+  // Named apart from this component's own `presentation` prop, which is the
+  // layout record (mode/minimized/edge) and an entirely different thing.
+  const { pending: pendingPrompt, presentation: promptPresentation } = useHumanPromptSurface()
+  const composerPromptWaiting = pendingPrompt !== undefined && promptPresentation === 'composer'
+
   const morphTo = (mode: ChatMode, edge?: SnapEdge): void => {
     onPresentationChange(
       setChatPresentationMode(
@@ -159,6 +177,14 @@ const ChatAppLayout = ({
       {...(minWidth !== undefined ? { minWidth } : {})}
       {...(minHeight !== undefined ? { minHeight } : {})}
       {...(stageClassName !== undefined ? { stageClassName } : {})}
+      {...(composerPromptWaiting && pendingPrompt
+        ? {
+            attention: {
+              id: pendingPrompt.id,
+              message: 'Assistant question waiting. Restore widget to answer.'
+            }
+          }
+        : {})}
     >
       <FloatingChatSurface
         LoadingComponent={LoadingComponent}

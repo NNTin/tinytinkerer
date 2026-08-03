@@ -1,10 +1,12 @@
 import { useMemo } from 'react'
 import { useStore } from 'zustand'
+import { createStore } from 'zustand/vanilla'
 import {
   HUMAN_PROMPT_PRESENTATION_SETTING_KEY,
-  type HumanPromptPresentation
+  type HumanPromptPresentation,
+  type PluginConfigState
 } from '@tinytinkerer/contracts'
-import { useBrowserApp, useChatStore, useSettingsStore } from './app'
+import { useChatStore, useOptionalBrowserApp } from './app'
 import {
   createHumanPromptStore,
   type HumanPromptState,
@@ -16,7 +18,22 @@ import {
 // empty and stays empty. Nothing can enqueue onto it: `request` is only ever
 // handed out from the store `createBrowserApp` built for an app that declares
 // the capability, and this one is never given to anybody.
+//
+// A surface rendered with no app in context at all lands here too. That is the
+// same answer for the same reason — no app, no queue, nothing to draw — and it
+// keeps a layout-only consumer from having to mount a provider just to be told
+// there are no prompts.
 const NO_QUEUE = createHumanPromptStore()
+
+// The settings half of the same "no app in context" answer. `useSettingsStore`
+// requires a provider, and `useHumanPromptSurface` is now called from
+// `ChatAppLayout`, which a layout-only consumer can render without one. With no
+// app there is no prompt either, so the only correct value here is "no stored
+// choice" — which resolves to the universal `modal` default and is never read,
+// because nothing is pending.
+const NO_PLUGIN_CONFIG = createStore<{ pluginConfig: PluginConfigState }>(() => ({
+  pluginConfig: {}
+}))
 
 // Subscription hook the two renderers use to read the head-of-queue prompt.
 //
@@ -29,7 +46,7 @@ const NO_QUEUE = createHumanPromptStore()
 // store factory with no import back into `./app` — the same cycle
 // `pre-send-disclosure-key.ts` exists to avoid.
 export const useHumanPromptStore = <T>(selector: (state: HumanPromptState) => T): T =>
-  useStore(useBrowserApp().stores.humanPrompts ?? NO_QUEUE, selector)
+  useStore(useOptionalBrowserApp()?.stores.humanPrompts ?? NO_QUEUE, selector)
 
 // Resolves the head-of-queue human prompt and WHERE the host should draw it (issue
 // #85). The presentation is a per-plugin setting: the view carries the originating
@@ -39,6 +56,36 @@ export const useHumanPromptStore = <T>(selector: (state: HumanPromptState) => T)
 // choice is always the modal. The two renderers (HumanPromptHost = modal,
 // HumanPromptComposerDock = composer) both call this and each renders only when the
 // resolved presentation matches, so exactly one shows.
+/**
+ * The head-of-queue prompt and WHERE it should be drawn — the half of the
+ * resolution that callers other than the two renderers need.
+ *
+ * Split out for issue #498: `ChatAppLayout` has to know that a `composer` prompt
+ * is waiting so a minimized floating widget can raise an attention badge, and it
+ * has no use for the conversation label. Deriving that from a second source, or
+ * copying the `pluginConfig` lookup, would have given the same question two
+ * answers that could disagree.
+ */
+export const useHumanPromptSurface = (): {
+  pending: PendingHumanPrompt | undefined
+  presentation: HumanPromptPresentation
+} => {
+  const app = useOptionalBrowserApp()
+  const pending = useStore(app?.stores.humanPrompts ?? NO_QUEUE, (state) => state.queue[0])
+  const pluginConfig = useStore(
+    app?.stores.settings ?? NO_PLUGIN_CONFIG,
+    (state) => state.pluginConfig
+  )
+  const source = pending?.view.source
+  const presentation = useMemo<HumanPromptPresentation>(() => {
+    if (!source) return 'modal'
+    return pluginConfig[source]?.[HUMAN_PROMPT_PRESENTATION_SETTING_KEY] === 'composer'
+      ? 'composer'
+      : 'modal'
+  }, [source, pluginConfig])
+  return { pending, presentation }
+}
+
 export const useHumanPromptPresentation = (): {
   pending: PendingHumanPrompt | undefined
   presentation: HumanPromptPresentation
@@ -50,16 +97,8 @@ export const useHumanPromptPresentation = (): {
   // pre-#430 behavior exactly (nothing new renders).
   conversationLabel: string | undefined
 } => {
-  const pending = useHumanPromptStore((state) => state.queue[0])
-  const pluginConfig = useSettingsStore((state) => state.pluginConfig)
+  const { pending, presentation } = useHumanPromptSurface()
   const conversations = useChatStore((state) => state.conversations)
-  const source = pending?.view.source
-  const presentation = useMemo<HumanPromptPresentation>(() => {
-    if (!source) return 'modal'
-    return pluginConfig[source]?.[HUMAN_PROMPT_PRESENTATION_SETTING_KEY] === 'composer'
-      ? 'composer'
-      : 'modal'
-  }, [source, pluginConfig])
   const scope = pending?.scope
   const conversationLabel = useMemo(() => {
     if (!scope || Object.keys(conversations).length <= 1) return undefined

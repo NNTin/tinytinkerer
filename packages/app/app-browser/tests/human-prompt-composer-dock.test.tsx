@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HumanPromptView } from '@tinytinkerer/contracts'
 import { HumanPromptComposerDock } from '../src/human-prompt-composer-dock.js'
+import { createStore } from 'zustand/vanilla'
 import { createHumanPromptStore, type HumanPromptStore } from '../src/human-prompt-bridge.js'
 
 // The dock reads its prompt from the app it is mounted under (issue #489) and
@@ -13,20 +14,27 @@ import { createHumanPromptStore, type HumanPromptStore } from '../src/human-prom
 // in human-prompt-host.test.tsx.
 let promptStore: HumanPromptStore = createHumanPromptStore()
 
+// The choice-prompt source maps to the `composer` presentation, so a poll stamped
+// with that source docks here. One stable app object, because the surface hook
+// reads both stores off it.
+const settingsStore = createStore(() => ({
+  pluginConfig: { 'choice-prompt': { presentation: 'composer' } }
+}))
+const fakeApp = { stores: { humanPrompts: promptStore, settings: settingsStore } }
+
 const requestHumanInput = (view: HumanPromptView, scope?: string) =>
   promptStore.getState().request(view, scope)
 
 vi.mock('../src/app.js', () => ({
-  useBrowserApp: () => ({ stores: { humanPrompts: promptStore } }),
-  useSettingsStore: (
-    selector: (state: { pluginConfig: Record<string, Record<string, string | boolean>> }) => unknown
-  ) => selector({ pluginConfig: { 'choice-prompt': { presentation: 'composer' } } }),
+  useBrowserApp: () => fakeApp,
+  useOptionalBrowserApp: () => fakeApp,
   useChatStore: (selector: (state: { conversations: Record<string, unknown> }) => unknown) =>
     selector({ conversations: {} })
 }))
 
 beforeEach(() => {
   promptStore = createHumanPromptStore()
+  fakeApp.stores.humanPrompts = promptStore
 })
 
 afterEach(() => {
