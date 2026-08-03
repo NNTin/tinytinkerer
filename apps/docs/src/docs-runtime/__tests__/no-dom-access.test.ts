@@ -80,12 +80,32 @@ describe('no documentation session offers a DOM-reading tool', () => {
     }
   })
 
-  it('discovers no plugin at all, so Browser state cannot register one', async () => {
-    // The same stub `no-human-prompt.test.ts` pins, asserted here for the other
-    // capability it currently holds back. When the catalogue becomes injected
-    // (the #489 follow-up), this expectation is what has to be rewritten into
-    // "the docs catalogue excludes Browser state" — deliberately, and in a diff
-    // somebody reviews.
+  /**
+   * Two halves, and NEITHER is sufficient alone — which is the correction this
+   * suite needed.
+   *
+   * The first revision asserted only that the stub resolves to `[]`. That proves
+   * nothing about the deployed app: the stub could be left behind, unused, while
+   * the build resolved `plugins/registry` to a real catalogue (#495 is exactly
+   * that change) and this file stayed green. So the alias that *installs* the
+   * stub is asserted too, and the two together mean "the registry this build
+   * hands `app-browser` is empty".
+   *
+   * They are still a source-level approximation. The deployed catalogue is
+   * asserted for real in `packages/e2e/tests/docs/assistant-no-dom-access.e2e.ts`,
+   * through Settings → Plugins on the built site — including with the plugin
+   * pre-enabled, which is the path a reader would actually take.
+   */
+  it('installs the empty registry over the product’s own discovery', () => {
+    const config = readFileSync(
+      fileURLToPath(new URL('../../../docusaurus.config.ts', import.meta.url)),
+      'utf8'
+    )
+    expect(config).toMatch(/app-browser\/src\/plugins\/registry\.ts/)
+    expect(config).toContain('plugin-registry-stub.ts')
+  })
+
+  it('…and that registry yields no plugin, so Browser state cannot register one', async () => {
     const { loadPluginModules } = await import('../../live-lab/plugin-registry-stub')
     expect(await loadPluginModules()).toEqual([])
   })

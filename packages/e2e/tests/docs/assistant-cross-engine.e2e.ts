@@ -26,19 +26,31 @@ import {
  *   whole z-index contract depends on;
  * - CSS custom properties on `<html>` driving the docked page inset.
  *
+ * Each of those is ASSERTED below, not merely cited. An earlier revision of this
+ * header listed all three while the tests exercised only the first — the same
+ * class of overstatement #482 exists to catch, arriving in #482's own diff.
+ *
  * So this spec is the narrow cross-engine floor, and it is kept SHORT on
  * purpose. `playwright.config.ts` matches it into the firefox and webkit
  * projects beside `sandbox-isolation.e2e.ts`; everything exhaustive stays on
  * Chromium, where it can afford to be exhaustive. Adding a case here costs three
  * runs, so a case belongs here only if an engine could plausibly differ.
  *
- * Two flows, one per thing that could break: can a reader get an answer at all,
- * and does the overlay contract hold.
+ * Three flows: can a reader get an answer at all, does the overlay contract
+ * hold, and does the docked layout resolve.
  */
 const DOCS_ORIGIN = `http://localhost:${requireShellPort('E2E_PORT')}`
 const AUTHORED_ROUTE = `${DOCS_ORIGIN}/docs/architecture/`
 
 const assistantRoot = (page: Page) => page.locator('.docs-assistant-root')
+
+/** The docked panel's published width, as the page region reads it. */
+const pageInset = (page: Page): Promise<number> =>
+  page.evaluate(() =>
+    Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--docs-assistant-inset-right')
+    )
+  )
 
 /**
  * The ASSISTANT's composer, scoped to its own root.
@@ -139,10 +151,45 @@ test.describe('the documentation assistant, on every supported engine', () => {
     await expect(root).not.toHaveAttribute('inert', /.*/)
     await expect(composer).toBeVisible()
 
-    // …and it is operable again, which is the half a visibility assertion alone
-    // would miss: `inert` has to have been removed, not just the styling.
-    await composer.click()
-    await composer.fill('still here')
+    // …and it is reachable from the KEYBOARD again, which is the half a
+    // visibility assertion alone would miss: `inert` has to have been removed,
+    // not just the styling. Focused with the keyboard rather than a click,
+    // because a click would prove pointer-events and nothing about tab order.
+    await composer.focus()
+    await expect(composer).toBeFocused()
+    await page.keyboard.type('still here')
     await expect(composer).toHaveValue('still here')
+  })
+
+  test('establishes one stacking context and insets the page when docked', async ({ page }) => {
+    // The other two engine-sensitive properties the overlay contract rests on
+    // (issue #482, review finding 3). The suite's header used to claim these
+    // were covered when only `inert` was.
+    await installChatMock(page)
+    await activateAssistant(page)
+
+    // `isolation: isolate` is what makes the assistant ONE stacking context, so
+    // app-browser's `z-index: 60/70` dialogs order against each other rather
+    // than against Infima's 200-level navbar. `transform`/`filter`/`contain`
+    // would also create one — and would re-anchor the `position: fixed` dialogs
+    // to the root instead of the viewport, which is why the property matters
+    // specifically and is worth pinning per engine.
+    const root = assistantRoot(page)
+    await expect(root).toHaveCSS('isolation', 'isolate')
+    await expect(root).toHaveCSS('position', 'fixed')
+
+    // Docking publishes the panel's measured width as a CSS custom property on
+    // <html>, which the page region pads against. Custom properties on the root
+    // element, read back through the cascade, are the third thing an engine
+    // could plausibly differ on.
+    expect(await pageInset(page)).toBe(0)
+    await root.getByRole('button', { name: 'Dock to sidebar' }).click()
+    await expect(root.locator('.sidebar-panel')).toBeVisible()
+    await expect.poll(() => pageInset(page)).toBeGreaterThan(0)
+
+    // …and undocking releases it, so the documentation is not left indented
+    // against an assistant that is no longer there.
+    await root.getByRole('button', { name: 'Float chat' }).click()
+    await expect.poll(() => pageInset(page)).toBe(0)
   })
 })

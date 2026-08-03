@@ -493,11 +493,19 @@ subpath nobody had noticed the page was pulling: `documentation-corpus`, which
 documentation can read the rendered page, and the only reason has been that
 plugin discovery resolves to nothing. That is a build-configuration fact, and the
 plugin-catalogue work in #495 is precisely what would change it —
-so `__tests__/no-dom-access.test.ts` asserts the outcome (the assistant registers
-those three tools and no other; the loader finds no plugin), and the built-site
-picker assertion in `assistant-widget.e2e.ts` asserts it where a reader would see
-it. No denylist and no second catalogue: this issue states the requirement, and
-#495 has to satisfy it.
+so the exclusion is asserted as an outcome. `__tests__/no-dom-access.test.ts`
+covers the source side — the assistant registers those three tools and no other,
+and the alias that installs the empty registry is still there — and
+`assistant-no-dom-access.e2e.ts` covers the **deployed catalogue**, through
+Settings → Plugins, including with the plugin pre-enabled in the app's own
+preferences.
+
+That last part is the one worth knowing about: the tool PICKER is the wrong place
+to assert this, because it lists only _enabled_ plugins and Browser state ships
+disabled. A catalogue that wrongly included it would show nothing in the picker
+and let a reader switch it on in Settings anyway. No denylist and no second
+catalogue was invented: this issue states the requirement, and #495 has to
+satisfy it.
 
 **The public surface is what someone imports.** `index.ts` carried the storage
 namespace, an imperative status reader, and per-axis presentation mutators — none
@@ -507,10 +515,10 @@ had had no caller since the widget became fully controlled by
 `setDocsAssistantPresentation`.
 
 Cross-engine coverage is the other change, and it is a narrow one:
-`packages/e2e/tests/docs/assistant-cross-engine.e2e.ts` runs two flows on
-Chromium, Firefox and WebKit, because `inert`, `isolation: isolate` and the CSS
-custom properties driving the page inset are the parts of #480 an engine could
-plausibly differ on. Everything exhaustive stays on Chromium.
+`packages/e2e/tests/docs/assistant-cross-engine.e2e.ts` runs three flows on
+Chromium, Firefox and WebKit — one each for `inert`, `isolation: isolate`, and
+the CSS custom property the page insets on, which are the parts of #480 an
+engine could plausibly differ on. Everything exhaustive stays on Chromium.
 
 ## What is not here
 

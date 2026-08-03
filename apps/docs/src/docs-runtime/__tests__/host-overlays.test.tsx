@@ -7,7 +7,7 @@
  * dialogs must not trigger this, or a first-time reader would never be able to
  * answer the telemetry consent prompt that opens with it.
  */
-import { act, render, renderHook, screen } from '@testing-library/react'
+import { act, cleanup, render, renderHook, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DOCS_HOST_OVERLAY_SELECTORS,
@@ -34,6 +34,11 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  // Unmount BEFORE resetting the store. The reset now notifies subscribers (that
+  // is the fix this suite covers), so resetting while a hook is still mounted
+  // emits into a live React tree outside `act` — a warning that would be noise
+  // here and a real hazard to trust in general.
+  cleanup()
   document.body.innerHTML = ''
   resetDocsHostOverlaysForTests()
 })

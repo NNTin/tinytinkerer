@@ -60,8 +60,8 @@ one-time and cannot be repeated in a session that has already answered them.
 - Reset the conversation from the widget. Confirm a fresh conversation starts, the page does **not**
   reload, and your **product** conversations (open TinyTinkerer itself in the same browser) are
   untouched.
-- Keep sending until you hit the shared key's cooldown, and confirm the rate-limited state renders
-  sensibly. This is the one state the mocked suite cannot reproduce.
+- Confirm the rate-limited state renders sensibly — **without deliberately exhausting the shared
+  anonymous window**. See "The rate-limit step" below for how.
 
 ## Checklist: interactive live labs
 
@@ -79,25 +79,52 @@ tool-picker lab):
 - Click "Reset this lab". Confirm your **product** conversations/settings/token (outside the docs
   lab) are completely unaffected — open the product itself (the preview's `Open TinyTinkerer`
   link) in the same browser and confirm nothing there changed.
-- Watch for a real rate-limit: send enough messages to hit the shared key's cooldown and confirm
-  the lab's rate-limited state renders sensibly (this is the one state the mocked e2e suite cannot
-  reproduce, since its mock never actually throttles).
+- Confirm the lab's rate-limited state renders sensibly if you reach one — again **without**
+  deliberately exhausting the shared window. See "The rate-limit step" below.
 
 ## What each step costs
 
 Two of the steps above spend something a machine must not spend on your behalf, which is why this
 page exists instead of another Playwright spec.
 
-| Step                                         | Cost                                                                 |
-| -------------------------------------------- | -------------------------------------------------------------------- |
-| Any real send (assistant or lab)             | **Shared anonymous quota**, or your own budget once signed in        |
-| The rate-limit step                          | **Deliberately exhausts** the shared key's window for other visitors |
-| Sign-in round trip                           | A **real GitHub OAuth** grant against a real account                 |
-| Everything else (launcher, disclosure, copy) | Nothing — safe to repeat                                             |
+| Step                                         | Cost                                                       |
+| -------------------------------------------- | ---------------------------------------------------------- |
+| Any real send while **signed out**           | **Shared anonymous quota**, drawn from every other visitor |
+| Any real send while **signed in**            | Your own budget and rate limits                            |
+| Sign-in round trip                           | A **real GitHub OAuth** grant against a real account       |
+| Everything else (launcher, disclosure, copy) | Nothing — safe to repeat                                   |
 
-So run the rate-limit step last, and prefer a PR preview over `develop` for it. An automated agent
-must not run any of the three: it cannot hold a GitHub account, and burning a shared window is a
-cost borne by people who are not in the conversation.
+**A PR preview isolates the frontend, not the backend.** Previews reuse the **develop** edge
+(`api.dev.tiny.nntin.xyz`) — see
+[Vercel deployment](../self-hosting/vercel-deployment.md). So "run it on a preview" protects
+production's frontend and protects nobody's quota: the anonymous key a preview spends is the same
+one `dev.tiny.nntin.xyz` visitors share.
+
+Keep the signed-out portion to the few sends the checklist actually needs, and sign in for the rest.
+
+An automated agent must not run any of the priced rows: it cannot hold a GitHub account, and
+spending a shared window is a cost borne by people who are not in the conversation.
+
+### The rate-limit step
+
+Earlier revisions of this page told the reviewer to "keep sending until you hit the shared key's
+cooldown". **Do not.** That deliberately denies service to every anonymous visitor on the develop
+edge for the length of the window, to observe one piece of UI. It was also internally inconsistent:
+by that point in the checklist you are signed in, so it would have exhausted _your_ limit while the
+text claimed it was the shared one.
+
+Verify the rate-limited state one of these ways instead, in order of preference:
+
+1. **A test-only limit.** Point a staging edge at a reduced per-key rate limit, or use a dedicated
+   test account whose LiteLLM budget is small, and hit that. This is the only option that observes
+   the real state without costing anyone else anything.
+2. **Opportunistically.** If you happen to hit a cooldown during the rest of the checklist, record
+   what it looked like.
+3. **Skip it, and say so.** Record "not observed" in the template. An unobserved row is honest; a
+   deliberately induced outage is not.
+
+If your deployment has no way to do (1), that is worth fixing — a state nobody can safely exercise
+is a state nobody is checking.
 
 ## Recording a run
 

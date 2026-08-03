@@ -66,17 +66,27 @@ whatever this map turns out to have missed.
 Split deliberately, and named here because "which engines?" is a release
 question (issue #482).
 
-| Suite                                       | Engines                   |
-| ------------------------------------------- | ------------------------- |
-| `assistant-cross-engine.e2e.ts` — two flows | Chromium, Firefox, WebKit |
-| everything else under `tests/docs/`         | Chromium                  |
+| Suite                                         | Engines                   |
+| --------------------------------------------- | ------------------------- |
+| `assistant-cross-engine.e2e.ts` — three flows | Chromium, Firefox, WebKit |
+| everything else under `tests/docs/`           | Chromium                  |
 
-The cross-engine pair covers the parts of #480 an engine could plausibly differ
-on — `inert`, `isolation: isolate`, and CSS custom properties driving the docked
-page inset — plus the one flow whose failure would make the feature useless:
-launcher → activation → disclosure → answer. The exhaustive accessibility,
-contrast, performance and regression specs stay on Chromium, which is the
-deployment target; tripling them would buy far less than it costs.
+Three flows, one per engine-sensitive property, each **asserted** rather than
+cited:
+
+| Flow                                        | Property                                                                  |
+| ------------------------------------------- | ------------------------------------------------------------------------- |
+| launcher → activation → disclosure → answer | the feature works at all                                                  |
+| a host overlay hides and restores it        | `inert` — accessibility-tree removal, focus leaving, and keyboard return  |
+| dock and undock                             | `isolation: isolate`, and the `<html>` custom property the page insets on |
+
+An earlier revision of this section named all three properties while the suite
+exercised only `inert`. That is the same overstatement #482 exists to catch, so
+it is worth being explicit: what is listed is what is asserted.
+
+The exhaustive accessibility, contrast, performance and regression specs stay on
+Chromium, which is the deployment target; tripling them would buy far less than
+it costs.
 
 ## Known gaps, stated rather than implied
 

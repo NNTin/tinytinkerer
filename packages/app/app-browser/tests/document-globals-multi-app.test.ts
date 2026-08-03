@@ -224,23 +224,6 @@ describe('two BrowserApps in one document', () => {
     expect(getTelemetryHeaders()[TELEMETRY_HEADERS.installId]).toBe(ASSISTANT.installId)
   })
 
-  it('arms one OAuth callback watchdog for the document, whatever the shell count', () => {
-    // `BrowserAppShell` arms the watchdog per SHELL and outside the host block,
-    // so the guarantee cannot come from "only one app owns it" alone — it has to
-    // survive several shells of the SAME app. The docs labs pass
-    // `oauthCallbackWatchdog: false`, so the count is the assistant's one shell.
-    const assistant = createApp(ASSISTANT, { owner: true })
-    const lab = createApp(LAB, { owner: false })
-
-    expect(assistant.documentGlobals.oauthCallbackWatchdog).toBe(true)
-    expect(lab.documentGlobals.oauthCallbackWatchdog).toBe(false)
-
-    // The flag lives on the APP, so every shell mounting that app reads the same
-    // answer — four labs cannot add up to four timers.
-    const shellsPerApp = [lab, lab, lab, assistant]
-    expect(shellsPerApp.filter((app) => app.documentGlobals.oauthCallbackWatchdog)).toHaveLength(1)
-  })
-
   it('injects no TinyTinkerer-managed head element for either app', async () => {
     seedNamespace(ASSISTANT, { telemetryEnabled: false })
     seedNamespace(LAB, { telemetryEnabled: false })

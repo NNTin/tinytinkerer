@@ -144,6 +144,32 @@ const valueSpecifiers = (path: string, source: string): string[] => {
  * page imports eagerly.
  * @param appRoot Absolute path to `apps/docs`, used only to build labels.
  */
+/**
+ * First-party specifiers that are NOT relative paths.
+ *
+ * `@site/` is Docusaurus' alias for the site directory, and it is a documented
+ * import path here — `docs-runtime/README.md` tells a consumer to import
+ * `@site/src/docs-runtime`. Treating it as a third-party package, which the
+ * first revision did, meant a module could reach the whole product runtime
+ * through `@site/src/docs-runtime/session` and the walk would file it under
+ * "packages" and never look inside (issue #482, review finding 5).
+ *
+ * Everything else bare is genuinely external: `react`, `@docusaurus/*`,
+ * `@theme/*` and `@theme-original/*` are resolved by Docusaurus' own build to
+ * code this rule does not own.
+ */
+const FIRST_PARTY_ALIASES = ['@site/'] as const
+
+/** Bare specifier prefixes that are known-external and need no resolution. */
+const KNOWN_EXTERNAL_PREFIXES = [
+  '@docusaurus/',
+  '@theme/',
+  '@theme-original/',
+  '@tinytinkerer/',
+  '@mdx-js/',
+  'node:'
+]
+
 export const collectEagerModuleGraph = (roots: readonly string[], appRoot: string): EagerGraph => {
   const label = (path: string): string => path.slice(appRoot.length + 1)
   const modules = new Map<string, EagerModule>()
@@ -163,9 +189,13 @@ export const collectEagerModuleGraph = (roots: readonly string[], appRoot: strin
 
     const source = readFileSync(current.path, 'utf8')
     for (const specifier of valueSpecifiers(current.path, source)) {
-      if (specifier.startsWith('.')) {
-        const resolved = resolveRelative(dirname(current.path), specifier)
-        // An unresolvable relative specifier is a bug in this walk, not
+      const alias = FIRST_PARTY_ALIASES.find((prefix) => specifier.startsWith(prefix))
+      const relativeTo = specifier.startsWith('.') ? dirname(current.path) : appRoot
+      const target = alias ? `./${specifier.slice(alias.length)}` : specifier
+
+      if (specifier.startsWith('.') || alias) {
+        const resolved = resolveRelative(relativeTo, target)
+        // An unresolvable first-party specifier is a bug in this walk, not
         // something to skip quietly: it would silently shrink the graph the
         // rule is asserted over.
         if (!resolved) {
@@ -178,9 +208,38 @@ export const collectEagerModuleGraph = (roots: readonly string[], appRoot: strin
         queue.push({ path: resolved, label: label(resolved), importedBy: current.label })
         continue
       }
+
+      // A bare specifier that is neither a known external nor a recognised
+      // first-party alias is REJECTED rather than filed under packages. The
+      // alternative is the failure this rule exists to prevent, arriving
+      // silently: a new alias (`@docs/…`, a tsconfig path) would look like a
+      // package, and the runtime behind it would never be walked.
+      const known =
+        KNOWN_EXTERNAL_PREFIXES.some((prefix) => specifier.startsWith(prefix)) ||
+        !specifier.startsWith('@') ||
+        specifier.split('/').length <= 2
+      if (!known) {
+        throw new Error(
+          `Unrecognised first-party-looking specifier "${specifier}" in ${current.label}. ` +
+            'Add it to FIRST_PARTY_ALIASES so the walk follows it, or to ' +
+            'KNOWN_EXTERNAL_PREFIXES if it really is somebody else’s code.'
+        )
+      }
       packages.set(specifier, [...(packages.get(specifier) ?? []), current.label])
     }
   }
 
   return { modules: [...modules.values()], packages }
 }
+
+/**
+ * The value specifiers one module declares — the same walk the graph uses,
+ * exposed so a single file can be certified without traversing from a root.
+ *
+ * `static-safety.test.ts` uses it to certify app-browser's light subpaths. Doing
+ * that with a regex was the first revision's other gap: it matched only
+ * `… from '…'`, so a side-effect `import './runtime'` — the one shape that
+ * pulls code while binding nothing — was invisible to it.
+ */
+export const valueImportsOf = (path: string): string[] =>
+  valueSpecifiers(path, readFileSync(path, 'utf8'))

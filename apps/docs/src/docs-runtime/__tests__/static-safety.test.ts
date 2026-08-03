@@ -14,16 +14,13 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { collectEagerModuleGraph } from './eager-module-graph'
+import { collectEagerModuleGraph, valueImportsOf } from './eager-module-graph'
 
 const readSource = (relativePath: string): string =>
   readFileSync(fileURLToPath(new URL(`../${relativePath}`, import.meta.url)), 'utf8')
 
-const readPackageSource = (relativePath: string): string =>
-  readFileSync(
-    fileURLToPath(new URL(`../../../../../packages/app/${relativePath}`, import.meta.url)),
-    'utf8'
-  )
+const packageSourcePath = (relativePath: string): string =>
+  fileURLToPath(new URL(`../../../../../packages/app/${relativePath}`, import.meta.url))
 
 /**
  * Resolved from the workspace root rather than `import.meta.url`: under jsdom
@@ -85,7 +82,11 @@ const EAGER_ROOTS = [
   resolve(APP_ROOT, 'src/theme/Root.tsx'),
   // Eagerly imported by <LiveLab>, and therefore by every MDX page carrying a
   // lab: it reaches the light index to declare its fullscreen overlay (#480).
-  resolve(APP_ROOT, 'src/components/lab-container.tsx')
+  resolve(APP_ROOT, 'src/components/lab-container.tsx'),
+  // Docusaurus' MDX component registry, loaded by every authored page. It names
+  // the live-lab and playground entry points, whose runtime must stay behind
+  // their own React.lazy boundaries — which is precisely what the walk checks.
+  resolve(APP_ROOT, 'src/theme/MDXComponents.tsx')
 ]
 
 /** Modules that must never be reachable without a dynamic import. */
@@ -115,7 +116,12 @@ describe('assistant bundle boundary', () => {
     // The two the hand-maintained list had missed.
     expect(labels).toContain('src/docs-runtime/AssistantPageRegion.tsx')
     expect(labels).toContain('src/docs-runtime/LatchedErrorBoundary.tsx')
-    expect(labels.length).toBeGreaterThan(12)
+    // …and the MDX registry root, whose eager reach is the reason the live-lab
+    // and playground runtimes have to stay behind their own lazy boundaries.
+    expect(labels).toContain('src/theme/MDXComponents.tsx')
+    expect(labels).toContain('src/live-lab/LiveLab.tsx')
+    expect(labels).toContain('src/playground/RichContentPlayground.tsx')
+    expect(labels.length).toBeGreaterThan(20)
   })
 
   it('never reaches @tinytinkerer/app-browser except through a certified subpath', () => {
@@ -144,15 +150,11 @@ describe('assistant bundle boundary', () => {
       // The certification behind the allowance above: an entry that starts
       // pulling a store, a component, or the product barrel fails HERE, rather
       // than as a bundle-size regression nobody can attribute.
-      const text = readPackageSource(source)
-      const specifiers = [
-        // `import x from 'y'` and `export { x } from 'y'` alike: a re-export is
-        // as much of a runtime edge as an import, and these facades are mostly
-        // re-exports.
-        ...text.matchAll(/^\s*(import|export)\s[\s\S]*?from\s+['"]([^'"]+)['"]/gm)
-      ]
-      for (const [statement, , specifier] of specifiers) {
-        if (/^\s*(?:import|export)\s+type\s/.test(statement ?? '')) continue
+      // The SAME AST walk the graph uses, not a regex (issue #482, review
+      // finding 5). A regex over `… from '…'` cannot see a side-effect
+      // `import './runtime'`, which binds nothing and pulls everything — the one
+      // shape that would quietly uncertify a facade.
+      for (const specifier of valueImportsOf(packageSourcePath(source))) {
         expect(mayImport).toContain(specifier)
       }
     }
