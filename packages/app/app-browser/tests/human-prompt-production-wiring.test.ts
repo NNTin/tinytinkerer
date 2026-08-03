@@ -163,55 +163,14 @@ describe('a prompt raised through the real runtime lands in its own app’s queu
     await vi.waitFor(() => expect(settled).toHaveBeenCalledWith({ kind: 'dismissed' }))
   })
 
-  it('settles a prompt the run left queued when the human-input budget expired', async () => {
-    // The lifecycle gap (issue #498). agent-core's `withTimeout` RACES the tool
-    // against `humanInputTimeoutMs` and rejects; it does not cancel the tool, and
-    // nothing cancels the `requestHumanInput` promise the tool is awaiting. So the
-    // entry stays queued while the run finishes without it, leaving the reader a
-    // question whose run is gone — and, since #498, a launcher badge advertising
-    // it.
-    //
-    // Proven in two halves, because the fix is not in the race:
-    //   1. under fake timers, the race rejects and the entry is STILL queued;
-    //   2. `sendPrompt`'s finally then settles it, scoped to the app and the
-    //      conversation that just finished.
-    vi.useFakeTimers()
-    try {
-      const app = createBrowserApp({ storageNamespace: 'tinytinkerer-wiring-timeout' })
-      const queue = app.stores.humanPrompts
-      expect(queue).toBeDefined()
-
-      const asked = queue!.getState().request(view, 'conv-a')
-      asked.catch(() => undefined)
-
-      // Half 1: the budget expires. This mirrors agent-core's `withTimeout`
-      // shape — a `Promise.race` against a timer — rather than importing it:
-      // that helper is on no package barrel, `app-browser` does not depend on
-      // `agent-core` at all, and widening a public surface for a test is the
-      // friction this repo keeps on purpose. The real helper's behaviour is
-      // pinned where it lives, in
-      // `agent-core/tests/with-timeout-does-not-cancel.test.ts`; the two together
-      // are the claim.
-      const raced = Promise.race([
-        asked,
-        new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Tool ask_user timed out')), 300_000)
-        })
-      ])
-      const rejection = expect(raced).rejects.toThrow('timed out')
-      await vi.advanceTimersByTimeAsync(300_001)
-      await rejection
-
-      // …and the queue is untouched by that rejection. This is the defect, stated
-      // as an assertion so a future change that DOES cancel the request makes this
-      // line fail loudly rather than silently making the cleanup below dead code.
-      expect(queue!.getState().queue).toHaveLength(1)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
   it('settles only the finished conversation’s prompts, never a concurrent one', async () => {
+    // The observable half of the #498 lifecycle fix. The property it depends on —
+    // that agent-core's `withTimeout` abandons rather than cancels the promise it
+    // races, so an expired human-input budget leaves the entry queued — is pinned
+    // where that helper lives, in
+    // `agent-core/tests/with-timeout-does-not-cancel.test.ts`. Re-racing a
+    // hardcoded 300_000 here would have been a second copy of the implementation
+    // rather than a test of this integration.
     const app = createBrowserApp({ storageNamespace: 'tinytinkerer-wiring-cleanup' })
     const queue = app.stores.humanPrompts
     expect(queue).toBeDefined()

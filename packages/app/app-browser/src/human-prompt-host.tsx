@@ -18,7 +18,12 @@ import { useDialogFocus } from './use-dialog-focus'
 // prompt as a centered overlay when that prompt's resolved presentation is `modal`
 // (the default, and the only fit for the permissions allow/deny interrupt) and settles
 // it with the user's answer. The requesting plugin owns the view shape; this generic
-// renderer owns the chrome. Mounted ONCE in the browser shell root.
+// renderer owns the chrome.
+//
+// Every `BrowserAppShell` of an app mounts a candidate; exactly one is elected to
+// draw (see ./human-prompt-host-ownership.ts), because an app can have several
+// shells — every `<LiveLab>` on a documentation page mounts its own over the one
+// shared lab app.
 
 const formatJson = (value: unknown): string => {
   try {
@@ -124,14 +129,35 @@ const InputContextView = ({
   )
 }
 
+/**
+ * Elects which of an app's shells draws the modal, and mounts nothing else.
+ *
+ * The election has to be the OUTERMOST thing this component does (issue #489
+ * re-review, finding 1). `useDialogFocus` registers a token on the shared
+ * document-wide stack whenever it is told a dialog is open, whether or not that
+ * caller actually has a container — so when every shell's host ran the focus hook
+ * and only the elected one rendered a dialog, a LOSING candidate could sit on top
+ * of the stack holding nothing. The real dialog then read itself as not-topmost,
+ * marked itself `inert`, and dropped its focus trap: a modal a keyboard reader
+ * could neither reach nor escape.
+ *
+ * Handoff was broken for the same reason. A non-owner's `active` was already
+ * true, so the membership effect — keyed on `active` — did not re-run when that
+ * shell later became the owner and finally mounted a container, leaving the
+ * inherited dialog unfocused.
+ *
+ * Splitting the component fixes both by construction: a non-owner runs no
+ * presentation subscription, no plugin discovery, and no focus hook, and the
+ * owner mounts fresh so every effect runs in the ordinary order.
+ */
 export const HumanPromptHost = () => {
+  const owns = useOwnsHumanPromptHost(useBrowserApp())
+  return owns ? <OwnedHumanPromptHost /> : null
+}
+
+const OwnedHumanPromptHost = () => {
   const { pending, presentation, conversationLabel } = useHumanPromptPresentation()
   const summarizers = usePermissionSummarizers()
-  // One modal per app, however many shells mounted one (issue #489 review). The
-  // election lives here rather than in `BrowserAppShell` so its registry rides in
-  // this lazily-loaded chunk instead of every shell's startup entry — the shell
-  // only has to know whether the app can prompt at all.
-  const owns = useOwnsHumanPromptHost(useBrowserApp())
 
   // Focus management for the modal presentation (issue #353). `focusKey` re-enters
   // the dialog when a queued prompt replaces the answered one.
@@ -141,9 +167,7 @@ export const HumanPromptHost = () => {
 
   // Only the modal presentation renders here; a `composer` prompt is drawn by the
   // composer dock instead. A view with no presentation preference defaults to modal.
-  // And only the owning shell renders it, so an app mounted by several shells shows
-  // one overlay rather than one per shell.
-  if (!owns || !pending || presentation !== 'modal') {
+  if (!pending || presentation !== 'modal') {
     return null
   }
 

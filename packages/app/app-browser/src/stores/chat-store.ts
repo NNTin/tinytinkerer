@@ -129,8 +129,9 @@ export const createChatStore = (options: {
    * Optional, and absent means a store with no human-input path: `stop`/reset
    * settle nothing, and the runtime it builds exposes no `requestHumanInput`
    * capability, so a HITL plugin contributes no tool exactly as it does on a
-   * headless host. Every `BrowserApp` supplies one; only direct-construction
-   * tests omit it.
+   * headless host. An app supplies one iff it declared `humanInput` (the
+   * default) — the documentation apps deliberately do not, so absence is a real
+   * production configuration here, not only a test shortcut.
    */
   humanPrompts?: HumanPromptActions
   /**
@@ -165,18 +166,28 @@ export const createChatStore = (options: {
   // a queued auto-retry), reset, and delete — now scoped to one conversation's
   // controller (issue #332, per conversation). Keeping one implementation
   // avoids drift between the affordances.
+  // Settle a conversation's open human prompts (permission allow/deny, choice
+  // poll) so none outlives the run that raised it (issue #85). Generic — names no
+  // specific feature. No-op when nothing is pending.
+  //
+  // Scoped per conversation (issue #430): settling A never dismisses B's pending
+  // prompt. An unknown conversation id (the pre-hydration abort path) settles
+  // every prompt in THIS APP's queue (issue #489) — never another app's, which is
+  // not reachable from here.
+  //
+  // Its own function because a run ENDS in two different ways, and only one of
+  // them is an abort: Stop/reset cancel a live run, while a run that simply
+  // finished — including one whose human-input budget expired — has nothing left
+  // to cancel and still has a prompt to clear (issue #498).
+  const settleHumanPrompts = (conversationId: string | undefined) => {
+    options.humanPrompts?.reset(conversationId)
+  }
+
   const abortConversationRun = (conversationId: string | undefined) => {
     if (conversationId !== undefined) {
       runRegistry.abort(conversationId)
     }
-    // Settle this conversation's open human prompts (permission allow/deny, choice
-    // poll) so a Stop never leaves one hanging until the human-input timeout (issue
-    // #85). Generic — names no specific feature. No-op when nothing is pending.
-    // Scoped per conversation (issue #430): stopping/resetting A never dismisses
-    // B's pending prompt. An unknown conversation id (the pre-hydration abort path)
-    // settles every prompt in THIS APP's queue (issue #489) — never another app's,
-    // which is not reachable from here.
-    options.humanPrompts?.reset(conversationId)
+    settleHumanPrompts(conversationId)
   }
 
   const ensureInitialized = async (set: ChatStore['setState'], get: ChatStore['getState']) => {
@@ -344,17 +355,15 @@ export const createChatStore = (options: {
           // Scoped to THIS app (the queue is per app since #489) and to the
           // conversation that just finished — never an unscoped reset, which would
           // dismiss a prompt belonging to another conversation still running
-          // beside this one. Reusing the shared abort path keeps one
-          // implementation of "settle this conversation's prompts"; aborting a run
-          // that was just released is a no-op.
+          // beside this one.
           //
           // Truthiness, not `!== undefined`: the pre-hydration placeholder key is
           // `''`, and a run that never resolved a conversation also never gave its
           // runtime one — so any prompt it raised is unscoped and would not have
-          // matched `reset('')` anyway. Passing `''` through would be the one thing
-          // that must not happen here, since `abortConversationRun(undefined)`
+          // matched `settleHumanPrompts('')` anyway. Passing `''` through would be
+          // the one thing that must not happen here, since an undefined id
           // deliberately settles everything.
-          if (finished) abortConversationRun(finished)
+          if (finished) settleHumanPrompts(finished)
         }
       },
       rerunLastPrompt: async () => {

@@ -17,6 +17,22 @@ vi.mock('../src/shell-theme.js', () => ({
   shellThemeToCssVars: () => ({})
 }))
 
+// `ChatAppLayout` asks whether a composer-presented prompt is waiting, so a
+// minimized floating widget can raise the launcher's attention badge (issue
+// #498). That hook reads the real `BrowserApp`, which this suite deliberately does
+// not mount — its subject is layout selection and the morph toggle, and its own
+// header says session continuity belongs a level up. Mocked here rather than
+// letting the hook tolerate a missing provider: a `ChatApp` with no app above it
+// is a broken composition, and production code should keep saying so.
+type SurfaceStub = { pending: { id: string } | undefined; presentation: 'modal' | 'composer' }
+const humanPromptSurface = vi.hoisted((): { value: SurfaceStub } => ({
+  value: { pending: undefined, presentation: 'modal' }
+}))
+
+vi.mock('../src/human-prompt-presentation.js', () => ({
+  useHumanPromptSurface: () => humanPromptSurface.value
+}))
+
 vi.mock('@tinytinkerer/brand-assets', () => ({
   TINYTINKERER_BRAND_ASSET_URLS: { icon192: '' }
 }))

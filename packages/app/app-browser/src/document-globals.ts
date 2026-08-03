@@ -91,12 +91,6 @@ export type GlobalHostCapabilities = {
   konami: boolean
 }
 
-export const DEFAULT_GLOBAL_HOST_CAPABILITIES: GlobalHostCapabilities = {
-  telemetryConsent: true,
-  privacyUpdate: true,
-  konami: true
-}
-
 export const NO_GLOBAL_HOST_CAPABILITIES: GlobalHostCapabilities = {
   telemetryConsent: false,
   privacyUpdate: false,
@@ -105,4 +99,9 @@ export const NO_GLOBAL_HOST_CAPABILITIES: GlobalHostCapabilities = {
 
 export const resolveGlobalHostCapabilities = (
   overrides: Partial<GlobalHostCapabilities> = {}
-): GlobalHostCapabilities => ({ ...DEFAULT_GLOBAL_HOST_CAPABILITIES, ...overrides })
+): GlobalHostCapabilities => ({
+  telemetryConsent: true,
+  privacyUpdate: true,
+  konami: true,
+  ...overrides
+})

@@ -29,7 +29,6 @@ export { PRE_SEND_DISCLOSURE_ACKNOWLEDGED_KEY } from './pre-send-disclosure-key'
 export type { PreSendDisclosure } from './pre-send-disclosure-key'
 export {
   DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES,
-  DEFAULT_GLOBAL_HOST_CAPABILITIES,
   NO_GLOBAL_HOST_CAPABILITIES,
   resolveDocumentGlobalCapabilities,
   resolveGlobalHostCapabilities

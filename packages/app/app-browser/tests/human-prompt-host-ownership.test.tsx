@@ -157,6 +157,14 @@ describe('one modal per app across its shells (issue #489 review, finding 2)', (
     // One dialog, not three.
     const dialogs = await waitForDialogs(1)
     expect(dialogs[0]).toHaveAttribute('aria-modal', 'true')
+
+    // …and it is genuinely usable. Counting dialogs was not enough (issue #489
+    // re-review, finding 1): every host used to run `useDialogFocus`, so a LOSING
+    // candidate could hold the top of the shared focus stack while rendering
+    // nothing, and the one real dialog marked itself `inert` and dropped its focus
+    // trap — present in the DOM, unreachable by keyboard.
+    expect(dialogs[0]).not.toHaveAttribute('inert')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'OK' })).toHaveFocus())
   })
 
   it('hands the modal to a surviving shell when the owner unmounts, without disturbing the prompt', async () => {
@@ -184,8 +192,15 @@ describe('one modal per app across its shells (issue #489 review, finding 2)', (
     // Still exactly one, drawn by the shell that inherited it, and still the
     // SAME prompt: the queue lives on the app, so replacing its renderer does
     // not settle or restart the question.
-    await waitForDialogs(1)
+    const inherited = await waitForDialogs(1)
     expect(app.stores.humanPrompts?.getState().queue).toHaveLength(1)
+
+    // The inherited dialog is focused and interactive. This is the half of
+    // finding 1 that the shared-stack version could not do at all: the new owner
+    // had already reported `active` before it had a container, so its membership
+    // effect never re-ran and the dialog it finally mounted was never engaged.
+    expect(inherited[0]).not.toHaveAttribute('inert')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'OK' })).toHaveFocus())
 
     act(() => {
       app.stores.humanPrompts?.getState().reset('conv-a')
@@ -212,6 +227,14 @@ describe('one modal per app across its shells (issue #489 review, finding 2)', (
     // Two apps, two modals — the ownership rule is per app, not per document.
     // Serializing them would block one app's run on the other's unanswered
     // question; `use-dialog-focus.ts`'s stack keeps only the topmost interactive.
-    await waitForDialogs(2)
+    const both = await waitForDialogs(2)
+
+    // Exactly one of the two is engaged, and the other is stepped aside rather
+    // than both trapping focus or neither doing so. Which one is the stack's
+    // business (last opened wins); that it is precisely one is this rule's.
+    await waitFor(() => {
+      const inert = both.filter((dialog) => dialog.hasAttribute('inert'))
+      expect(inert).toHaveLength(1)
+    })
   })
 })

@@ -34,8 +34,14 @@ describe('run-registry entry-safe duplicate', () => {
     expect(registry.has('a')).toBe(false)
     expect(registry.has('resolved-a')).toBe(true)
 
-    registry.release(handle!)
+    // `release` REPORTS the key it removed, and that is load-bearing: chat-store
+    // scopes its end-of-run human-prompt cleanup to it (issue #498), and after a
+    // re-key the caller's original id is the wrong answer. A second release of the
+    // same handle reports nothing, so a double-cleanup cannot settle a conversation
+    // that a later run has since claimed.
+    expect(registry.release(handle!)).toBe('resolved-a')
     expect(registry.has('resolved-a')).toBe(false)
     expect(registry.size).toBe(1)
+    expect(registry.release(handle!)).toBeUndefined()
   })
 })

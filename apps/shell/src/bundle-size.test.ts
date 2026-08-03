@@ -129,18 +129,30 @@ describe('shell bundle regression guard', () => {
     // check that decides whether to mount the lazy boundary at all.
     //
     // Also NOT raised for issue #498 (2026-08-03), the launcher attention badge
-    // and announcement. Measured 68.960 → 68.976 kB — ~16 bytes, all of it the
+    // and announcement. Measured 68.960 → 68.977 kB — ~17 bytes, all of it the
     // run-end prompt cleanup in `chat-store`'s `finally` and the conversation key
     // `ConversationRunRegistry.release` now reports so that cleanup can be scoped.
     // The badge, the live region, the attention prop and the shared surface hook
     // are in the lazy chat route chunk, not here; the loading boundary is
     // unchanged.
     //
-    // That leaves ~24 bytes of headroom against 69 kB. Treat this budget as spent:
-    // the next change that touches the entry should move something out rather than
-    // raise the number, and the two candidates are named above — the ownership
-    // registry (already moved into the lazy host) and the disclosure store
-    // (already lazy).
+    // That leaves roughly 20 bytes of headroom against 69 kB, so treat this budget
+    // as spent. There is no small win left to collect: the ownership registry and
+    // the disclosure store are already in lazy chunks, and the unused
+    // `DEFAULT_GLOBAL_HOST_CAPABILITIES` export was removed here for the last ~10
+    // bytes.
+    //
+    // The one identifiable block that could still leave is the issue #441 set of
+    // entry-local duplicates — `stores/run-registry.ts`, `stores/settings-defaults.ts`
+    // and `plugins/is-plugin-module.ts`, ~750 bytes of deliberately copied code —
+    // and only if `@tinytinkerer/app-core` stops being bucketed into one merged
+    // manualChunks output (see scripts/browser-shell-chunks.mjs), which is what
+    // makes a static value import of it expensive. Until then those copies are
+    // load-bearing and must not be "cleaned up".
+    //
+    // So the next change that needs room here has to profile the entry rather than
+    // reach for a known extraction. Raising the number is a product decision about
+    // startup cost, not a formality.
     const entry = chunks.find((chunk) => chunk.isEntry)
     expect(entry, 'No entry chunk found in build output').toBeDefined()
     expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(69)
