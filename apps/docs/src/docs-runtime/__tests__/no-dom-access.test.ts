@@ -14,8 +14,8 @@
  * `read_dom` cannot be reached in docs for one reason: `docusaurus.config.ts`
  * aliases plugin discovery to a stub that resolves to no plugins. That is a
  * BUILD-CONFIGURATION fact, and the reviewer of #491 has asked for it to change
- * — an injected per-`BrowserApp` plugin catalogue, tracked as a follow-up to
- * #489. When it does, "docs has no plugins" stops being the thing that keeps
+ * — an injected per-`BrowserApp` plugin catalogue, tracked as #495. When it
+ * does, "docs has no plugins" stops being the thing that keeps
  * `read_dom` out, and the exclusion has to be stated somewhere that fails.
  *
  * This is that somewhere. It deliberately adds no denylist, no second catalogue,

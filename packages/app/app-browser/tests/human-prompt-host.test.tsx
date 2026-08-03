@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HumanPromptView } from '@tinytinkerer/contracts'
 import { HumanPromptHost } from '../src/human-prompt-host.js'
-import { requestHumanInput, resetHumanPrompts } from '../src/human-prompt-bridge.js'
+import { createHumanPromptStore, type HumanPromptStore } from '../src/human-prompt-bridge.js'
 
 const forwardPluginReport = vi.hoisted(() => vi.fn())
 vi.mock('../src/telemetry/plugin-report', () => ({ forwardPluginReport }))
@@ -15,9 +15,21 @@ vi.mock('../src/telemetry/plugin-report', () => ({ forwardPluginReport }))
 // existing test in this file: no label renders.
 let conversationSlices: Record<string, { title: string }> = {}
 
-// The modal resolves presentation from the settings store (per-plugin). With no stored
-// config every view defaults to `modal`, so these views (no `source`) render here.
+// This suite's stand-in for the app the host is mounted under. The modal reads
+// three things from it: the prompt queue (issue #489), the per-plugin
+// presentation setting, and the conversation titles. With no stored plugin config
+// every view defaults to `modal`, so these views (no `source`) render here.
+//
+// Cross-app routing — the point of the per-app queue — is covered end to end,
+// with two real `BrowserApp`s and two mounted shells, in
+// `human-prompt-session-routing.test.tsx`.
+let promptStore: HumanPromptStore = createHumanPromptStore()
+
+const requestHumanInput = (view: HumanPromptView, scope?: string) =>
+  promptStore.getState().request(view, scope)
+
 vi.mock('../src/app.js', () => ({
+  useBrowserApp: () => ({ stores: { humanPrompts: promptStore } }),
   useSettingsStore: (
     selector: (state: { pluginConfig: Record<string, Record<string, string | boolean>> }) => unknown
   ) => selector({ pluginConfig: {} }),
@@ -26,8 +38,13 @@ vi.mock('../src/app.js', () => ({
   ) => selector({ conversations: conversationSlices })
 }))
 
+beforeEach(() => {
+  // A fresh queue per test: nothing a failed assertion leaves pending can reach
+  // the next one, and no reset helper has to exist for that reason alone.
+  promptStore = createHumanPromptStore()
+})
+
 afterEach(() => {
-  resetHumanPrompts()
   cleanup()
   forwardPluginReport.mockClear()
   conversationSlices = {}
@@ -174,9 +191,9 @@ describe('HumanPromptHost', () => {
     await expect(answer).resolves.toEqual({ kind: 'action', id: 'allow' })
   })
 
-  it('resetHumanPrompts() settles every pending prompt as dismissed', async () => {
+  it('an unscoped reset settles every pending prompt as dismissed', async () => {
     const answer = requestHumanInput(dialogView())
-    resetHumanPrompts()
+    promptStore.getState().reset()
     await expect(answer).resolves.toEqual({ kind: 'dismissed' })
   })
 

@@ -114,6 +114,17 @@ describe('shell bundle regression guard', () => {
     // during bootstrap so the lazily-built gate starts out already knowing the
     // answer, rather than having to treat "not loaded yet" as "ask again" and
     // re-prompting a reader who accepted months ago.
+    //
+    // NOT raised for issue #489 (2026-08-03), which made the human-prompt queue
+    // one store per `BrowserApp` instead of one per module. Measured at 68.818 kB
+    // before and 68.916 kB after — ~98 bytes, for the per-app construction in
+    // `createBrowserApp` and the two actions the chat store forwards to the
+    // runtime factory. The renderers and the presentation hook are not in this
+    // figure and must not become so: they live in the chat route chunk.
+    //
+    // That leaves under 100 bytes of headroom. The next change to touch this
+    // budget should treat it as already spent and move something out rather than
+    // raise the number again.
     const entry = chunks.find((chunk) => chunk.isEntry)
     expect(entry, 'No entry chunk found in build output').toBeDefined()
     expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(69)

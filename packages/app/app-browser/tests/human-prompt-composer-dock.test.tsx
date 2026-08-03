@@ -1,16 +1,23 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HumanPromptView } from '@tinytinkerer/contracts'
 import { HumanPromptComposerDock } from '../src/human-prompt-composer-dock.js'
-import { requestHumanInput, resetHumanPrompts } from '../src/human-prompt-bridge.js'
+import { createHumanPromptStore, type HumanPromptStore } from '../src/human-prompt-bridge.js'
 
-// The dock resolves presentation from the settings store. Map the choice-prompt source
+// The dock reads its prompt from the app it is mounted under (issue #489) and
+// resolves presentation from that app's settings store. Map the choice-prompt source
 // to the `composer` presentation so a poll stamped with that source docks here. A single
 // conversation slice is enough here — the conversation label (issue #430) is exercised
 // in human-prompt-host.test.tsx.
+let promptStore: HumanPromptStore = createHumanPromptStore()
+
+const requestHumanInput = (view: HumanPromptView, scope?: string) =>
+  promptStore.getState().request(view, scope)
+
 vi.mock('../src/app.js', () => ({
+  useBrowserApp: () => ({ stores: { humanPrompts: promptStore } }),
   useSettingsStore: (
     selector: (state: { pluginConfig: Record<string, Record<string, string | boolean>> }) => unknown
   ) => selector({ pluginConfig: { 'choice-prompt': { presentation: 'composer' } } }),
@@ -18,8 +25,11 @@ vi.mock('../src/app.js', () => ({
     selector({ conversations: {} })
 }))
 
+beforeEach(() => {
+  promptStore = createHumanPromptStore()
+})
+
 afterEach(() => {
-  resetHumanPrompts()
   cleanup()
 })
 

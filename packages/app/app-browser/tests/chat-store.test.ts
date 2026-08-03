@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createStore } from 'zustand/vanilla'
 import type { ChatEvent, HumanPromptView, InspectorRequestPayload } from '@tinytinkerer/contracts'
 import type { BrowserShell } from '../src/shell.js'
@@ -7,7 +7,7 @@ import type { SettingsStore } from '../src/stores/settings-store.js'
 import type { PersistedEvent } from '@tinytinkerer/app-core'
 import type { ChatStore, ConversationSlice } from '../src/stores/chat-store.js'
 import { createInspectorStore } from '../src/stores/inspector-store.js'
-import { requestHumanInput, resetHumanPrompts } from '../src/human-prompt-bridge.js'
+import { createHumanPromptStore } from '../src/human-prompt-bridge.js'
 
 const mockExecuteChatPrompt = vi.hoisted(() => vi.fn())
 const mockCanSendPrompt = vi.hoisted(() => vi.fn(() => true))
@@ -138,13 +138,6 @@ const persistedMessage = (id: string, text: string, conversationId: string) =>
 beforeEach(() => {
   vi.clearAllMocks()
   mockCanSendPrompt.mockReturnValue(true)
-})
-
-afterEach(() => {
-  // The human-prompt bridge is a real module-level singleton (issue #430 tests
-  // below use it directly); settle anything a failed assertion left pending so
-  // it cannot leak into a later test.
-  resetHumanPrompts()
 })
 
 const humanPromptView: HumanPromptView = {
@@ -950,15 +943,20 @@ describe('createChatStore', () => {
   })
 
   it("resetConversation settles only the target conversation's human prompts, leaving another conversation's pending (issue #430)", async () => {
+    // The queue this store settles is the one it was given (issue #489) — the
+    // app builds one and hands down its two actions, so a store with no queue
+    // has no human-input path at all rather than a shared one.
+    const humanPrompts = createHumanPromptStore().getState()
     const store = createChatStore({
       shell: makeShell(),
       authStore: makeAuthStore(),
-      settingsStore: makeSettingsStore()
+      settingsStore: makeSettingsStore(),
+      humanPrompts
     })
     seedConversations(store, [{ id: 'a' }, { id: 'b' }])
 
-    const promptA = requestHumanInput(humanPromptView, 'a')
-    const promptB = requestHumanInput(humanPromptView, 'b')
+    const promptA = humanPrompts.request(humanPromptView, 'a')
+    const promptB = humanPrompts.request(humanPromptView, 'b')
 
     await store.getState().resetConversation('a')
 

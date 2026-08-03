@@ -92,10 +92,15 @@ const supportViteUrlSuffixImportsPlugin: PluginModule = () => ({
 // workaround, not settled architecture: the documentation site would legitimately
 // benefit from the product's plugins, and the reason it has none is a build-tool
 // gap rather than a product decision. Replacing it with an injected,
-// per-`BrowserApp` plugin catalogue is recorded on #489
-// (https://github.com/NNTin/tinytinkerer/issues/489#issuecomment-5156205751),
-// which must land before discovery is ever enabled here — the human-in-the-loop
-// queue is module-global and would misroute across the two docs apps.
+// per-`BrowserApp` plugin catalogue is #495
+// (https://github.com/NNTin/tinytinkerer/issues/495), which owns removing this
+// alias.
+//
+// #489 was that work's one hard prerequisite — the human-in-the-loop queue was
+// module-global and would have misrouted across the two docs apps — and it has
+// landed: the queue is now one store per `BrowserApp`. So enabling discovery here
+// is a #495 decision about which plugins the documentation should carry, not a
+// routing hazard.
 //
 // Until then, "docs discovers no plugins" is an assumption several things lean
 // on: #479's guard test, the absence of a HITL host, and

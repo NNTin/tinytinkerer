@@ -156,15 +156,18 @@ export default function AssistantRuntimeClient(): ReactNode {
         telemetryConsent: true,
         privacyUpdate: true,
         konami: true,
-        // NOT the human-in-the-loop host (issue #479 decision 4). Its queue is
-        // module-global and carries no session identity, so with two apps in the
-        // document a prompt would be drawn using the wrong app's plugin settings
-        // and conversation titles. Nothing in the docs build can raise one —
-        // plugin discovery is stubbed (see live-lab/plugin-registry-stub.ts) and
-        // no documentation tool requests human input — so the honest answer is
-        // to mount no host rather than a misroutable one. Session-scoped routing
-        // is tracked in #489, and docs-runtime/__tests__/no-human-prompt.test.ts
-        // fails loudly if a tool ever starts needing it.
+        // NOT the human-in-the-loop host (issue #479 decision 4), because
+        // nothing in the docs build can raise a prompt: plugin discovery is
+        // stubbed (see live-lab/plugin-registry-stub.ts) and no documentation
+        // tool requests human input. A host that can never fire still costs
+        // every reader a chunk, so it stays off.
+        //
+        // It is no longer off for the OTHER reason it once was. The queue used
+        // to be module-global, so a host here would have drawn a live lab's
+        // prompt with the assistant's settings and titles; #489 made it one
+        // store per `BrowserApp`, so turning this on is now a safe one-line
+        // change the moment docs has a tool that needs it.
+        // docs-runtime/__tests__/no-human-prompt.test.ts fails loudly first.
         humanPrompt: false
       }}
     >

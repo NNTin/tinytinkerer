@@ -1,4 +1,9 @@
-import type { ChatRuntimeFactory, PluginModule } from '@tinytinkerer/app-core'
+import type {
+  ChatRuntimeFactory,
+  HumanPromptResult,
+  HumanPromptView,
+  PluginModule
+} from '@tinytinkerer/app-core'
 import type { AppToolGroup } from '../app-tool-group'
 import type { AppAssistantPolicy } from '../app-assistant-policy'
 import type { BrowserShell } from '../shell'
@@ -23,6 +28,11 @@ export const createBrowserRuntimeFactory = (options: {
   // The host app's grounding/answer policy (issue #478). Forwarded verbatim to
   // createRuntime; omitted by every app that contributes none.
   appAssistantPolicy?: AppAssistantPolicy
+  // The host app's human-in-the-loop queue (issue #489): `request` from the
+  // app's own prompt store, which createRuntime tags with the run's
+  // conversation id and wires into the PluginHost. Omitted leaves the runtime
+  // with no human-input capability, so a HITL plugin contributes no tool.
+  requestHumanInput?: (view: HumanPromptView, conversationId?: string) => Promise<HumanPromptResult>
 }): ChatRuntimeFactory => {
   const pluginRuntime = createPluginRuntime(options.pluginModules ?? [])
 
@@ -49,6 +59,7 @@ export const createBrowserRuntimeFactory = (options: {
           : {}),
         ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
         ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
+        ...(options.requestHumanInput ? { requestHumanInput: options.requestHumanInput } : {}),
         ...(context?.conversationId ? { conversationId: context.conversationId } : {})
       })
     }

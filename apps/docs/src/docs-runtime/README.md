@@ -154,13 +154,16 @@ page.
 plugins. No documentation tool requests human input either, so **no HITL prompt
 can be raised in the documentation site at all**.
 
-Its queue is module-global with no session identity, so with two apps a prompt
-would be drawn using the wrong app's plugin settings and conversation titles.
-Mounting a known-misroutable host merely because `BrowserAppShell` used to bundle
-it with consent would be the worse answer, so the host is off, and
-`__tests__/no-human-prompt.test.ts` fails if either half of the assumption
-changes. Session-scoped routing is tracked in #489 and must land before plugin
-discovery is ever enabled here.
+So the host is off, and `__tests__/no-human-prompt.test.ts` fails if either half
+of that assumption changes. What keeps it off is now only the "nothing can raise
+one" half: a host that can never fire would still cost every reader a chunk.
+
+The original decision had a second reason — the prompt queue was module-global
+with no session identity, so a host here would have drawn a live lab's prompt
+using the assistant's plugin settings and conversation titles. #489 fixed that:
+the queue is one store per `BrowserApp`, and a mounted host can only see its own
+app's prompts. Turning this on is therefore a one-line change whenever docs
+gains a tool that needs it, rather than a blocked one.
 
 ## Reset
 
@@ -371,8 +374,10 @@ Three things it deliberately is **not**:
 - **not per-surface.** The floating widget, the docked panel and #472's future Office
   are covered because the gate is on the app, not because three components
   remembered.
-- **not the human-in-the-loop bridge.** That queue is module-global with no
-  session identity — the defect #489 exists to close.
+- **not the human-in-the-loop bridge.** A human prompt is run-scoped — it belongs
+  to one conversation, and stopping that run settles it. This is a persisted,
+  versioned send-admission policy that outlives every run, so a Stop must never
+  be able to un-ask it.
 
 Its dialog links to the full policy, which opens **over** it. That stacking is
 handled once, in `use-dialog-focus.ts`: only the topmost dialog traps focus and
@@ -526,5 +531,6 @@ engine could plausibly differ on. Everything exhaustive stays on Chromium.
 - Any use of the rendered DOM or live-lab state.
 - Plugin discovery, and the injected per-`BrowserApp` catalogue that would
   replace the webpack alias to an empty registry — #495. Deliberately deferred;
-  the requirements it has to carry are recorded there, and #489's session-scoped
-  HITL routing is either a prerequisite of it or an explicit exclusion.
+  the requirements it has to carry are recorded there. Its one hard prerequisite,
+  #489's session-scoped HITL routing, has landed, so #495 is free to include the
+  HITL-capable plugins rather than having to exclude them.

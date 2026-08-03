@@ -493,7 +493,7 @@ ask_user tool.execute({ question, options, allowCustom })
         │  builds a HumanPromptView (a 'dialog' poll: options → actions, allowCustom, a Skip dismiss)
         │  host.requestHumanInput(view)   ← the ONE injected human-in-the-loop capability
         ▼
-app-browser requestHumanInput  → enqueues the view on the shared human-prompt store → <HumanPromptHost/> resolves it
+app-browser requestHumanInput  → enqueues the view on the owning app's prompt store → that app's <HumanPromptHost/> resolves it
         │  { kind: 'action', id } | { kind: 'custom', text } | { kind: 'dismissed' }   ← generic HumanPromptResult
         ▼
 ask_user maps it back → { kind: 'option', value } | { kind: 'custom', text } | { kind: 'dismissed' }   ← tool result (#276)
@@ -525,29 +525,46 @@ only the budget while the gate owns the exemption.
 **Dismissal vs. timeout.** A user who closes the prompt resolves a structured `{ kind: 'dismissed' }`
 result — a normal "the user declined" outcome the model reacts to — **not** a tool failure. The host
 also settles any open prompt when the run is aborted (Stop) or the conversation is reset
-(`chat-store.ts` → `resetAllHumanPrompts`), so a prompt never outlives its run. Only a poll the host
-never answers within the human-input budget surfaces as a tool failure.
+(`chat-store.ts` → the queue's `reset(conversationId)`, scoped per conversation since issue #430), so
+a prompt never outlives its run. Only a poll the host never answers within the human-input budget
+surfaces as a tool failure.
 
 **One generic human-prompt surface — no per-feature host code.** The Permissions allow/deny prompt and
 the Choice poll are the same machinery, so the host owns exactly **one** of everything: one capability
-(`requestHumanInput`), one module-level store of pending `HumanPromptView`s (`human-prompt-bridge.ts`),
-and one generic modal (`<HumanPromptHost/>`) mounted **once** in the browser shell root
-(`create-browser-shell-root.tsx`) — never named per-shell. A plugin owns its prompt entirely: it builds
+(`requestHumanInput`), one store of pending `HumanPromptView`s per `BrowserApp`
+(`human-prompt-bridge.ts`), and one generic modal (`<HumanPromptHost/>`) mounted by `BrowserAppShell`
+— never named per-shell. A plugin owns its prompt entirely: it builds
 the `HumanPromptView` (title, `actions`, `allowCustom`, a `dismissAction`) and maps the generic
 `HumanPromptResult` back to its own outcome — the permissions gate to a `ToolGateResult`, the choice tool
 to a `ChoicePromptResult`. The **one** cross-plugin concern only the host can do stays host-side and
 generic: a view's optional `inputContext: { toolId, input }` is rendered via the **gated tool owner's**
 `summarizePermission` (resolved by tool id across all manifests, falling back to a JSON dump) — so the
 permission body still travels with the tool it describes, not with the permissions plugin. The chat-store
-settles every open prompt via `resetAllHumanPrompts()` on abort/reset, so the run lifecycle names no
-feature and a future HITL surface needs no new service, component, or shell mount — just the `HumanPromptView`.
+settles its app's open prompts on abort/reset, so the run lifecycle names no feature and a future HITL
+surface needs no new service, component, or shell mount — just the `HumanPromptView`.
+
+**The queue belongs to a `BrowserApp`, not to the module (issue #489).** It was a module-level singleton
+until a document could hold more than one app — the documentation assistant beside its live labs. Because
+every reader resolves the prompt's surrounding data (the per-plugin `presentation` setting, the
+conversation title, which conversation ids exist) from the app it is mounted under, one shared queue meant
+a prompt raised by app A was drawn with app B's answers to all three. `createBrowserApp` now builds one
+store per app and hands its two actions — `request` and `reset` — down to the chat store and the runtime,
+which is why `createRuntime` takes `requestHumanInput` as an option instead of importing one. A runtime
+built without it exposes **no** `requestHumanInput` capability at all, the same graceful degradation a
+headless host gets, rather than falling back to somebody else's queue.
+
+Several shells and surfaces can still share one app (apps/host's root composition renders three `ChatApp`s;
+every docs `<LiveLab>` mounts its own shell over one lab app). That is intentional: they are views of one
+session, so they all show its question and answering through any one settles it everywhere. There is no
+leader election and no document-level coordinator — two different apps may each hold a prompt at once, and
+the shared dialog stack in `use-dialog-focus.ts` keeps only the topmost interactive.
 
 **Selectable presentations (the generic per-plugin settings subsystem).** A human prompt can be drawn in
 more than one place, chosen by the user. A `HumanPromptView` carries `source` (the originating plugin id)
 and the host resolves a per-plugin **presentation** preference for it: `modal` (a centered overlay — the
 default, and the only fit for the permissions allow/deny interrupt) or `composer` (a panel docked directly
-above the message box). Two renderers subscribe to the one human-prompt store — `HumanPromptHost` (modal,
-mounted once in the shell root) and `HumanPromptComposerDock` (placed by each shell above its composer, the
+above the message box). Two renderers subscribe to their app's human-prompt store — `HumanPromptHost` (modal,
+mounted by `BrowserAppShell`) and `HumanPromptComposerDock` (placed by each shell above its composer, the
 way the shells already place `ContextGaugeSlot`) — and each draws the head-of-queue prompt only when the
 resolved presentation matches, so exactly one shows; both reuse the shared `HumanPromptControls`. A view
 with no `source` (the permissions prompt) is always the modal.

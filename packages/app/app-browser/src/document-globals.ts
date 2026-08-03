@@ -67,18 +67,23 @@ export const resolveDocumentGlobalCapabilities = (
  * Replaces the previous coarse `mountGlobals` boolean, which bundled four
  * unrelated hosts together. #479 needs them separable in both directions: the
  * docs assistant owns the consent/privacy/Konami hosts for the whole
- * documentation site, but must NOT mount the human-in-the-loop host, whose
- * queue (`human-prompt-bridge.ts`) is module-global and carries no session
- * identity — a prompt raised by one app would be drawn using the other app's
- * plugin settings and conversation titles. Nothing in the docs build can raise
- * such a prompt today (plugin discovery is stubbed there), which is why #479
- * disables the host rather than shipping a router for it; the router itself is
- * tracked in #489.
+ * documentation site while mounting no human-in-the-loop host at all, because
+ * nothing in the documentation build can raise a prompt — plugin discovery is
+ * stubbed there and no documentation tool requests human input.
+ *
+ * That last part is now the WHOLE reason. It used to come with a second one —
+ * that the prompt queue was module-global and would misroute between the two
+ * docs apps — and #489 has since made the queue one store per `BrowserApp`, so
+ * a mounted host can only ever draw its own app's prompts. What remains is
+ * simply that mounting a host which can never fire costs every reader a chunk
+ * for nothing. See ./human-prompt-bridge.ts.
  *
  * Note this is per-SHELL, not per-app: several `BrowserAppShell`s can share one
  * `BrowserApp` (every `<LiveLab>` on a docs page mounts its own shell over the
  * one shared lab app), so "which shell draws the modal" is a different question
- * from "which app owns the document".
+ * from "which app owns the document". Those shells are views of one session and
+ * share its queue, deliberately — see human-prompt-bridge.ts's note on
+ * multiplicity.
  */
 export type GlobalHostCapabilities = {
   humanPrompt: boolean

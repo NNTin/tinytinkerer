@@ -4,14 +4,30 @@
  * enabled in the documentation site, because nothing there can raise a prompt.
  *
  * That is a claim about two things at once — that plugin discovery yields
- * nothing, and that no app-registered tool asks for human input — and it is only
- * safe while BOTH hold. `requestHumanInput` reaches a module-global queue with
- * no session identity (see human-prompt-bridge.ts), so with the assistant and a
- * live lab in one document a prompt would be drawn using the wrong app's plugin
- * settings and conversation titles. Session-scoped routing is #489.
+ * nothing, and that no app-registered tool asks for human input — and the host
+ * stays off while BOTH hold.
  *
- * If a future documentation tool needs human input, this suite fails first, and
- * the fix is #489 rather than quietly enabling a misroutable host.
+ * **What changed, and what did not (issue #489).** The original decision had a
+ * second reason: `requestHumanInput` reached a module-global queue with no
+ * session identity, so with the assistant and a live lab in one document a
+ * prompt would have been drawn using the wrong app's plugin settings and
+ * conversation titles. That is fixed — the queue is one store per `BrowserApp`
+ * (see app-browser's human-prompt-bridge.ts), and mounting a host here would no
+ * longer misroute anything.
+ *
+ * The outcome is unchanged anyway, which is why this suite still asserts it:
+ * docs has no HITL-capable tool, so the host would render nothing, and every
+ * reader would pay a post-boot chunk fetch for it. An unused host is not free
+ * (issue #481's finding 5 is the same lesson), so the honest answer is still not
+ * to mount one.
+ *
+ * If a future documentation tool needs human input, this suite fails first —
+ * and the fix is now simply to turn the host on, since the routing it was
+ * waiting for has landed.
+ *
+ * The plugin-discovery half belongs to #495, which owns removing the webpack
+ * alias; it must rewrite the first case below when it does, rather than delete
+ * it.
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

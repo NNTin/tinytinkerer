@@ -11,13 +11,12 @@ import type {
 import { setCaptureMessageSink } from '@tinytinkerer/sentry-telemetry'
 import { createPluginRuntime, createRuntime } from '../src/runtime/create-runtime.js'
 
-// The runtime's requestHumanInput wraps the shared bridge (issue #430 test below):
-// mocking it here lets the test assert the wrapper forwards the runtime's
-// conversation id, without exercising the real modal/queue machinery.
-const mockRequestHumanInput = vi.hoisted(() => vi.fn(() => Promise.resolve({ kind: 'dismissed' })))
-vi.mock('../src/human-prompt-bridge.js', () => ({
-  requestHumanInput: mockRequestHumanInput
-}))
+// The runtime's requestHumanInput wraps the queue it was GIVEN (issue #489),
+// which is the owning app's own. A stand-in here lets the tests below assert the
+// wrapper forwards the runtime's conversation id (issue #430) without exercising
+// the real modal/queue machinery — and, since #489, without a module mock: the
+// runtime no longer imports a queue, so there is nothing to intercept.
+const mockRequestHumanInput = vi.fn(() => Promise.resolve({ kind: 'dismissed' as const }))
 
 const testTool = (id: string): Tool<unknown, unknown> => ({
   id,
@@ -895,7 +894,8 @@ describe('plugin runtime contributions', () => {
       getModel: () => 'openai/gpt-4.1-mini',
       pluginActivation: { 'human-input-probe': true },
       pluginModules: [module],
-      conversationId: 'conv-xyz'
+      conversationId: 'conv-xyz',
+      requestHumanInput: mockRequestHumanInput
     })
 
     expect(captured).toBeDefined()
@@ -929,7 +929,8 @@ describe('plugin runtime contributions', () => {
       getToken: () => 'token',
       getModel: () => 'openai/gpt-4.1-mini',
       pluginActivation: { 'human-input-probe-2': true },
-      pluginModules: [module]
+      pluginModules: [module],
+      requestHumanInput: mockRequestHumanInput
     })
 
     expect(captured).toBeDefined()
@@ -943,5 +944,42 @@ describe('plugin runtime contributions', () => {
     void captured!(view)
 
     expect(mockRequestHumanInput).toHaveBeenCalledWith(view, undefined)
+  })
+
+  // Issue #489: a runtime built without a queue cannot prompt, and says so by
+  // omitting the capability — the contract's documented degradation, which a
+  // plugin already handles (the choice tool contributes nothing, the permissions
+  // gate allows). Deliberately NOT a fallback to some shared queue: a caller who
+  // forgets to inject one must lose the capability loudly rather than quietly
+  // acquire another session's.
+  it('omits the human-input capability entirely when no queue is injected', () => {
+    let captured: PluginHost | undefined
+    const module: PluginModule = {
+      manifest: { id: 'human-input-probe-3', label: 'human-input-probe-3', description: 'probe' },
+      createPlugin: () => ({
+        id: 'human-input-probe-3',
+        createTools: (host) => {
+          captured = host
+          return []
+        }
+      })
+    }
+
+    createRuntime({
+      baseUrl: 'http://edge.local',
+      getToken: () => 'token',
+      getModel: () => 'openai/gpt-4.1-mini',
+      pluginActivation: { 'human-input-probe-3': true },
+      pluginModules: [module]
+    })
+
+    expect(captured).toBeDefined()
+    // Absent, not undefined-valued: `createTools` guards with a truthiness check,
+    // but the PluginHost contract makes the key optional and the host should not
+    // advertise a capability it does not have.
+    expect(captured).not.toHaveProperty('requestHumanInput')
+    // The capabilities a browser host always has are still there, so this is a
+    // statement about human input rather than about an empty host.
+    expect(captured?.edgeFetch).toBeDefined()
   })
 })

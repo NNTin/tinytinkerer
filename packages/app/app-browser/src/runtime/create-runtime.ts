@@ -5,6 +5,8 @@ import {
   isRuntimeTimeoutError,
   PluginRegistry,
   type AgentHookContribution,
+  type HumanPromptResult,
+  type HumanPromptView,
   type PluginEdgeFetch,
   type PluginHost,
   type PluginModule,
@@ -35,7 +37,6 @@ import {
   parseJsonWithTelemetry,
   type RequestTelemetryMetadata
 } from '../telemetry/request-telemetry'
-import { requestHumanInput } from '../human-prompt-bridge'
 import { createToolFailureTelemetryHook } from './tool-failure-telemetry'
 
 // The code-exec plugin's tool id — the ONE host↔plugin coupling the plugin system
@@ -132,7 +133,24 @@ export const createRuntime = (options: {
   // still-single-conversation caller; both capabilities degrade to their old
   // (unscoped) behavior in that case.
   conversationId?: string
+  // The human-in-the-loop queue this runtime prompts through (issue #489):
+  // `request` from the owning `BrowserApp`'s own prompt store, so a prompt is
+  // drawn by the session that raised it. Threaded in rather than imported,
+  // because a module-level import is precisely how one document's two apps came
+  // to share one queue.
+  //
+  // Absent — a directly-constructed runtime, a test, a headless caller — means
+  // this host CANNOT prompt, and the PluginHost below omits `requestHumanInput`
+  // entirely. That is the contract's documented degradation (the choice tool
+  // contributes nothing, the permissions gate allows), and it is deliberately
+  // not a fallback to some shared queue: a caller that forgets to inject one
+  // should lose the capability loudly rather than quietly acquire another
+  // session's.
+  requestHumanInput?: (view: HumanPromptView, conversationId?: string) => Promise<HumanPromptResult>
 }) => {
+  // Read once into locals so the PluginHost below can be built with a narrowed,
+  // definitely-present function rather than an optional call and a cast.
+  const { conversationId, requestHumanInput } = options
   const edgeFetch = createEdgeFetch(options.baseUrl, options.getToken)
 
   // Wrap the injected capture sink so every request THIS runtime forwards is
@@ -301,13 +319,15 @@ export const createRuntime = (options: {
       },
       // Human-in-the-loop capability (issue #85): the ONE prompt surface. A plugin that
       // needs the user — the permissions gate's allow/deny, the choice-prompt poll —
-      // builds a HumanPromptView and awaits this; it enqueues the view on the shared
-      // human-prompt store and the mounted <HumanPromptHost /> resolves it with the
-      // user's answer. The browser can prompt, so it always provides this; a headless
-      // host omits it and such plugins degrade (a gate allows, a tool contributes none).
-      // Tagged with this runtime's conversation id (issue #430) so a per-conversation
-      // Stop/reset settles only its own prompts.
-      requestHumanInput: (view) => requestHumanInput(view, options.conversationId),
+      // builds a HumanPromptView and awaits this; it enqueues the view on the OWNING
+      // APP's prompt store (issue #489) and that app's mounted <HumanPromptHost />
+      // resolves it with the user's answer. Present only when the host injected a
+      // queue; a host that cannot prompt omits it and such plugins degrade (a gate
+      // allows, a tool contributes none). Tagged with this runtime's conversation id
+      // (issue #430) so a per-conversation Stop/reset settles only its own prompts.
+      ...(requestHumanInput
+        ? { requestHumanInput: (view: HumanPromptView) => requestHumanInput(view, conversationId) }
+        : {}),
       // Edge capability: a plugin tool that must reach the edge (web search) builds
       // against this. The browser always has an edge backend, so it always provides
       // it; request telemetry rides along inside the wrapped edgeFetch.

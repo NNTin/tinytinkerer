@@ -40,6 +40,7 @@ import {
   PRE_SEND_DISCLOSURE_ACKNOWLEDGED_KEY,
   type PreSendDisclosure
 } from './pre-send-disclosure-key'
+import { createHumanPromptStore, type HumanPromptStore } from './human-prompt-bridge'
 import { loadPluginModules } from './plugins/registry'
 
 export type { AppToolGroup } from './app-tool-group'
@@ -87,6 +88,11 @@ export type BrowserApp = {
     settings: SettingsStore
     status: StatusStore
     inspector: InspectorStore
+    // This app's human-in-the-loop prompt queue (issue #489). Per app, like
+    // every store beside it: a document can hold several `BrowserApp`s, and a
+    // prompt must be drawn by the session that raised it, with that session's
+    // plugin settings and conversation titles. See ./human-prompt-bridge.ts.
+    humanPrompts: HumanPromptStore
   }
   // The app's own tool group, if any (absent for web/widget/mobile). Held here so
   // the tool picker (useToolTree) can read it from context — the same group the
@@ -207,11 +213,18 @@ export const createBrowserApp = (
   const settings = createSettingsStore(shell, { ownsTelemetryConsent: documentGlobals.telemetry })
   const status = createStatusStore(shell)
   const inspector = createInspectorStore()
+  // Built BEFORE the chat store, which forwards its two actions down to the
+  // runtime it creates (issue #489). Its actions are stable closures over the
+  // store, so reading them once here is permanently valid — and it keeps this
+  // out of the lazy-closure shape `outboundSendGate` below needs, which exists
+  // only because that gate genuinely depends on the app being finished.
+  const humanPrompts = createHumanPromptStore()
   const chat = createChatStore({
     shell,
     authStore: auth,
     settingsStore: settings,
     inspectorStore: inspector,
+    humanPrompts: humanPrompts.getState(),
     ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
     ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
     // The outbound-send coordinator (issue #481), supplied only by an app that
@@ -238,7 +251,8 @@ export const createBrowserApp = (
       chat,
       settings,
       status,
-      inspector
+      inspector,
+      humanPrompts
     },
     ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
     ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),

@@ -16,7 +16,7 @@ import { loadPluginModules } from '../plugins/registry'
 import type { AuthStore } from './auth-store'
 import type { SettingsStore } from './settings-store'
 import type { InspectorStore } from './inspector-store'
-import { resetHumanPrompts } from '../human-prompt-bridge'
+import type { HumanPromptActions } from '../human-prompt-bridge'
 
 // Defined in app-core next to the pure state helpers that construct slices, so
 // the construction logic stays out of every shell's entry chunk; re-exported
@@ -118,6 +118,22 @@ export const createChatStore = (options: {
   // runtime factory; absent for every app that contributes none.
   appAssistantPolicy?: AppAssistantPolicy
   /**
+   * This app's human-in-the-loop queue, as the two callbacks this store and the
+   * runtime it builds actually need (issue #489).
+   *
+   * `reset` settles the prompts an aborted run left open; `request` is handed to
+   * the runtime factory, which wires it into the PluginHost. Passing the pair
+   * rather than the store keeps both this store and the runtime unable to read
+   * or subscribe to a queue at all — including their own.
+   *
+   * Optional, and absent means a store with no human-input path: `stop`/reset
+   * settle nothing, and the runtime it builds exposes no `requestHumanInput`
+   * capability, so a HITL plugin contributes no tool exactly as it does on a
+   * headless host. Every `BrowserApp` supplies one; only direct-construction
+   * tests omit it.
+   */
+  humanPrompts?: HumanPromptActions
+  /**
    * Approval for anything about to leave this app (issue #481).
    *
    * Awaited by `sendPrompt`, which is the one call every PROMPT SEND reaches:
@@ -158,8 +174,9 @@ export const createChatStore = (options: {
     // #85). Generic — names no specific feature. No-op when nothing is pending.
     // Scoped per conversation (issue #430): stopping/resetting A never dismisses
     // B's pending prompt. An unknown conversation id (the pre-hydration abort path)
-    // settles every prompt, matching the pre-#430 behavior for that edge case.
-    resetHumanPrompts(conversationId)
+    // settles every prompt in THIS APP's queue (issue #489) — never another app's,
+    // which is not reachable from here.
+    options.humanPrompts?.reset(conversationId)
   }
 
   const ensureInitialized = async (set: ChatStore['setState'], get: ChatStore['getState']) => {
@@ -198,6 +215,11 @@ export const createChatStore = (options: {
         pluginModules,
         ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
         ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
+        // This app's prompt queue (issue #489). The factory tags each request
+        // with the run's conversation id and hands the result to the PluginHost;
+        // omitting it — which only a directly-constructed store does — leaves
+        // the runtime with no human-input capability at all.
+        ...(options.humanPrompts ? { requestHumanInput: options.humanPrompts.request } : {}),
         // The runtime arms this only while the inspector plugin is enabled, so a
         // disabled inspector captures (and retains) nothing. Records the request as
         // a pending entry — tagged with the run's conversation id (issue #430),

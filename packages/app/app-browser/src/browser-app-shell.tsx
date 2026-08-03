@@ -30,9 +30,9 @@ export type BrowserAppShellProps = {
   // duplicate consent dialogs.
   //
   // Per-host rather than one boolean (issue #479): the docs assistant owns the
-  // consent/privacy/Konami hosts for the whole documentation site yet must leave
-  // `humanPrompt` off, because that queue is module-global and carries no
-  // session identity. See ./document-globals.ts.
+  // consent/privacy/Konami hosts for the whole documentation site yet leaves
+  // `humanPrompt` off, because nothing there can raise a prompt. See
+  // ./document-globals.ts.
   globalHosts?: Partial<GlobalHostCapabilities>
   children: ReactNode
 }
@@ -117,8 +117,9 @@ export const BrowserAppShell = ({
                 <LazyPreSendDisclosureHost />
               </Suspense>
             ) : null}
-            {/* The single human-in-the-loop modal (issue #85): renders nothing until a
-                plugin raises a prompt. Lazy so its CodeMirror dep code-splits out. */}
+            {/* This app's human-in-the-loop modal (issue #85): renders nothing until a
+                plugin raises a prompt on THIS app's queue (issue #489). Lazy so its
+                CodeMirror dep code-splits out. */}
             {hosts.humanPrompt ? (
               <Suspense fallback={null}>
                 <LazyHumanPromptHost />

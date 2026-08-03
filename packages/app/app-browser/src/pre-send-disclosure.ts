@@ -15,10 +15,17 @@
  *   sending anything to a model", which is false.
  * - **Duplicating a check in the floating and docked chat surfaces.** Two
  *   conditionals guarding one rule, and #472's Office would need a third.
- * - **Routing it through the human-in-the-loop bridge.** That queue is
- *   module-global with no session identity — the exact defect #489 exists to
- *   close — so a second `BrowserApp` in the document would draw the prompt with
- *   the wrong app's settings.
+ * - **Routing it through the human-in-the-loop bridge.** Still the wrong home,
+ *   though no longer for the reason first recorded here: that queue was
+ *   module-global with no session identity, and #489 has since made it one store
+ *   per `BrowserApp`, so the misrouting argument no longer applies. What remains
+ *   is the durable difference. A human prompt is a RUN-SCOPED interaction: it
+ *   belongs to one conversation, an aborted run settles it, and it is answered
+ *   once and gone. This disclosure is a persisted SEND-ADMISSION policy — a fact
+ *   about the app that outlives every run, is versioned, is stored in the app's
+ *   preferences, and gates sends that have not started yet. Putting a durable
+ *   policy in a queue whose entries are dismissed whenever a run is stopped
+ *   would mean a Stop could silently un-ask it.
  *
  * So the gate is one optional capability on the app, enforced in the single
  * `submitPrompt` every surface already shares, and drawn by one host mounted
