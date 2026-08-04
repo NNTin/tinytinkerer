@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url'
 import type { Config, PluginModule } from '@docusaurus/types'
 import tailwindcssPostcss from '@tailwindcss/postcss'
 import { themes as prismThemes } from 'prism-react-renderer'
@@ -74,51 +73,6 @@ const supportViteUrlSuffixImportsPlugin: PluginModule = () => ({
       ]
     },
     mergeStrategy: { 'module.rules': 'prepend' }
-  })
-})
-
-// @tinytinkerer/app-browser's chat store discovers optional plugins via
-// Vite's `import.meta.glob` (packages/app/app-browser/src/plugins/registry.ts),
-// another Vite-only build-time feature webpack has no equivalent for. Unlike
-// the `?url` case above this isn't confined to one specialized renderer:
-// `chat-store.ts` imports `loadPluginModules` directly, so EVERY live lab
-// that touches `useChatStore` (every one built so far, including issue #452's
-// Pixel Agents lab) pulls this in and crashes at runtime ("...glob is not a
-// function") the instant the module evaluates — whether or not the lab cares
-// about plugins at all.
-//
-// So the whole module is aliased to a "no plugins" stub
-// (live-lab/plugin-registry-stub.ts). This is a TEMPORARY composition
-// workaround, not settled architecture: the documentation site would legitimately
-// benefit from the product's plugins, and the reason it has none is a build-tool
-// gap rather than a product decision. Replacing it with an injected,
-// per-`BrowserApp` plugin catalogue is #495
-// (https://github.com/NNTin/tinytinkerer/issues/495), which owns removing this
-// alias.
-//
-// #489 was that work's one hard prerequisite — the human-in-the-loop queue was
-// module-global and would have misrouted across the two docs apps — and it has
-// landed: the queue is now one store per `BrowserApp`. So enabling discovery here
-// is a #495 decision about which plugins the documentation should carry, not a
-// routing hazard.
-//
-// Until then, "docs discovers no plugins" is an assumption several things lean
-// on: #479's guard test, the absence of a HITL host, and
-// `createDocsBrowserApp`'s unconditional `toolTreeSummarizer`.
-const appBrowserPluginRegistryPath = fileURLToPath(
-  new URL('../../packages/app/app-browser/src/plugins/registry.ts', import.meta.url)
-)
-const pluginRegistryStubPath = fileURLToPath(
-  new URL('./src/live-lab/plugin-registry-stub.ts', import.meta.url)
-)
-const stubAppBrowserPluginDiscoveryPlugin: PluginModule = () => ({
-  name: 'stub-app-browser-plugin-discovery',
-  configureWebpack: () => ({
-    resolve: {
-      alias: {
-        [appBrowserPluginRegistryPath]: pluginRegistryStubPath
-      }
-    }
   })
 })
 
@@ -226,7 +180,6 @@ const config: Config = {
   plugins: [
     documentationCorpusPlugin,
     supportViteUrlSuffixImportsPlugin,
-    stubAppBrowserPluginDiscoveryPlugin,
     enableTailwindPostCssPlugin
   ],
   customFields: { ...docsRuntimeCustomFields },

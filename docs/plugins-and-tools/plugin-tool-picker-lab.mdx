@@ -16,17 +16,25 @@ allowed to call.
 
 ## What's live, and what isn't
 
-TinyTinkerer discovers optional plugins (`packages/plugins/*`) dynamically, at build time, via
-Vite's `import.meta.glob` — see [Plugin infrastructure](./plugin-infrastructure.md#dynamic-discovery-app-browser).
-This documentation site builds with webpack (Docusaurus), which has no equivalent of that
-build-time glob, **and** every package in this repo — this docs site included — is forbidden by
-`scripts/check-boundaries.mjs` from statically importing a concrete `@tinytinkerer/plugin-*`
-package (the whole point of dynamic discovery is that the host never names a plugin by module
-specifier). So a real, installed plugin's tools can never appear in this lab — that isn't a bug
-this page works around, it's the same constraint that keeps `app-browser` itself free of any
-plugin dependency.
+**Both halves are real, and they are different mechanisms.**
 
-What **is** real: this docs site is its own small "app," and an app's own intrinsic, always-on
+A real plugin **is** available here. This documentation site injects a plugin catalogue per
+`BrowserApp` — see [The plugin catalogue](./plugin-infrastructure.md#the-plugin-catalogue-tinytinkerercatalogue)
+— and the catalogue this lab's session carries includes **Code execution (`run_javascript`)**. Open
+Settings below and you will find its toggle, off by default, exactly as in the product. Enable it
+and its tool joins the picker.
+
+That was not always so. Until the catalogue existed, this site aliased plugin discovery to an empty
+stub — Vite's `import.meta.glob` has no webpack equivalent, and Docusaurus builds with webpack — so
+this page used to say a real plugin's tools could never appear here. They can now. What is still
+true, and load-bearing, is that neither this site nor `app-browser` ever names a plugin package
+itself: `scripts/check-boundaries.mjs` permits that only inside `@tinytinkerer/catalogue`.
+
+The documentation carries a deliberate **subset**, not the product's whole set — `read_dom` and Web
+search are excluded on purpose. The reasons are recorded in
+`apps/docs/src/docs-runtime/plugin-catalogue.ts`.
+
+The other half is also real: this docs site is its own small "app," and an app's own intrinsic, always-on
 tools — the same mechanism `apps/canvas` and `apps/mermaid` use for their stage tools (an
 `appToolGroup`, see [Per-tool enablement](./plugin-infrastructure.md#per-tool-enablement--the-tool-picker-plugin-tinytinkererplugin-tool-tree))
 — are not gated behind dynamic discovery at all. This lab ships three small demo tools

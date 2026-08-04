@@ -1,7 +1,7 @@
 import type { ComponentProps, ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router-dom'
-import { createBrowserApp, type AppToolGroup } from './app'
+import { createBrowserApp, type AppToolGroup, type PluginCatalogue } from './app'
 import { BrowserAppShell } from './browser-app-shell'
 import { resolveBrowserShellBootstrapConfig } from './config'
 import { registerPwa } from './register-pwa'
@@ -24,6 +24,17 @@ export type BrowserShellBootScreenProps = { error?: string }
 export type CreateBrowserShellRootOptions = {
   router: ShellRouter
   BootScreen: ComponentType<BrowserShellBootScreenProps>
+  /**
+   * This shell's plugin catalogue (issue #495). Required, and passed as a thunk
+   * that reaches `@tinytinkerer/catalogue` through a dynamic `import()` — see
+   * `PluginCatalogue`'s own doc comment for why the shape matters to the entry
+   * budget.
+   *
+   * Named by each shell rather than defaulted here, because `app-browser` cannot
+   * import the catalogue (the boundary checker forbids it naming a plugin
+   * package, directly or transitively through a package that does).
+   */
+  plugins: PluginCatalogue
   // The app's always-on tool group the app contributes to its own runtime (the
   // only per-app runtime input — there is still no shell id or onInit hook). A
   // integrated shell (for example Canvas) passes its stage tools as one
@@ -64,6 +75,7 @@ const readEnvValue = (key: string): string | undefined => {
 export const createBrowserShellRoot = ({
   router,
   BootScreen,
+  plugins,
   appToolGroup,
   starterPrompts,
   registerServiceWorker = true
@@ -92,6 +104,7 @@ export const createBrowserShellRoot = ({
   })
 
   const browserApp = createBrowserApp(browserConfig, {
+    plugins,
     ...(appToolGroup ? { appToolGroup } : {}),
     ...(starterPrompts ? { starterPrompts } : {})
   })

@@ -18,10 +18,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * `getTelemetryHeaders()` — the same headers the edge would receive — without an
  * SDK anywhere near the test.
  */
-vi.mock('../src/plugins/registry.js', () => ({
-  loadPluginModules: vi.fn().mockResolvedValue([])
-}))
-
 // The one substitution: Dexie needs an IndexedDB this environment does not
 // have. Keyed BY STORAGE NAMESPACE, which is precisely the property under test —
 // two apps, two databases, and no way for one to read the other's preferences.
@@ -59,6 +55,7 @@ vi.mock('../src/db.js', () => ({
 import { TELEMETRY_HEADERS } from '@tinytinkerer/contracts'
 import { createBrowserApp, initializeBrowserApp } from '../src/app.js'
 import { getTelemetryHeaders, setTelemetryConsent } from '../src/telemetry/telemetry.js'
+import { noPlugins } from './plugin-catalogue-fixture'
 
 // Each app gets its own namespace, its own preferences, and — like the real
 // thing — its own persisted install identity.
@@ -92,6 +89,7 @@ const createApp = (app: typeof ASSISTANT, { owner }: { owner: boolean }) =>
       sentryEnvironment: 'development'
     },
     {
+      plugins: noPlugins,
       documentGlobals: {
         // Both docs apps leave the head to Docusaurus.
         brandMetadata: false,

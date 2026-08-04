@@ -24,7 +24,7 @@ export {
   useSettingsStore,
   useStatusStore
 } from './app'
-export type { AppSignIn, BrowserApp, ConversationResetBehavior } from './app'
+export type { AppSignIn, BrowserApp, ConversationResetBehavior, PluginCatalogue } from './app'
 export { PRE_SEND_DISCLOSURE_ACKNOWLEDGED_KEY } from './pre-send-disclosure-key'
 export type { PreSendDisclosure } from './pre-send-disclosure-key'
 export {
@@ -115,7 +115,6 @@ export { LazyTelemetryConsentGate } from './telemetry/lazy-consent-gate'
 export { PrivacyPolicyUpdateGate } from './telemetry/privacy-update-gate'
 export { LazyPrivacyPolicyUpdateGate } from './telemetry/lazy-privacy-update-gate'
 export { PrivacyPolicyDialog } from './telemetry/privacy-policy-dialog'
-export { bootstrapBrowserShell } from './initialize'
 export { formatCooldown, useBrowserShellConfig, useChatCooldown, useGitHubOAuth } from './hooks'
 export { useWebSpeechInput } from './web-speech'
 export { resolveBrowserShellBootstrapConfig } from './config'

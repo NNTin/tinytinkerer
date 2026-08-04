@@ -32,6 +32,7 @@ import {
   type BrowserShellConfig,
   type ConversationResetBehavior,
   type DocumentGlobalCapabilities,
+  type PluginCatalogue,
   type PreSendDisclosure
 } from '@tinytinkerer/app-browser'
 import type { DocsRuntimeConfig } from './runtime-config'
@@ -45,6 +46,33 @@ export type CreateDocsBrowserAppOptions = {
    */
   storageNamespace: string
   runtimeConfig: DocsRuntimeConfig
+  /**
+   * Which plugins this documentation app carries (issue #495).
+   *
+   * Required, with no default, for the same reason `documentGlobals` and
+   * `storageNamespace` are: this factory builds BOTH documentation apps, and a
+   * value it chose for both would be a product decision made by a shared helper.
+   * The two catalogues genuinely differ — see `./plugin-catalogue.ts`, which
+   * names them and records why each exclusion is an exclusion.
+   */
+  plugins: PluginCatalogue
+  /**
+   * Whether this app can ask its reader a question mid-run (issue #489 review,
+   * corrected by #495).
+   *
+   * Required rather than hardcoded, which is the fix for a granularity bug: this
+   * factory builds the global assistant AND the shared live-lab app, so the
+   * single `humanInput: false` it used to pass was one switch for both. There
+   * was no way to give one documentation app a HITL-capable plugin without
+   * simultaneously giving every `<LiveLab>` on every page the same capability.
+   *
+   * Both apps pass `false` today — the catalogues exclude the HITL plugins — but
+   * the decision is now expressed once per app, so enabling it later is one
+   * reviewed line on the app that gains the plugin. Required with no default
+   * because a wrong answer here is invisible: `false` on an app that needs it
+   * blocks a run for the whole ~5-minute human-input budget with nothing drawn.
+   */
+  humanInput: boolean
   /** The app's intrinsic tool group, if it has one. */
   appToolGroup?: AppToolGroup
   /** The app's grounding/answer policy (issue #478), if it has one. */
@@ -77,6 +105,8 @@ export type CreateDocsBrowserAppOptions = {
 export const createDocsBrowserApp = async ({
   storageNamespace,
   runtimeConfig,
+  plugins,
+  humanInput,
   appToolGroup,
   appAssistantPolicy,
   starterPrompts,
@@ -117,16 +147,22 @@ export const createDocsBrowserApp = async ({
 
   return {
     app: createBrowserApp(config, {
+      plugins,
       ...(appToolGroup
         ? {
             appToolGroup,
             // Every docs app with its own tools gets the picker, structurally
-            // (issue #480 review, finding 1). `docusaurus.config.ts` aliases
-            // plugin discovery to a stub that resolves to `[]`, so no plugin can
-            // ever contribute a tool-tree mapper here — and without one
-            // `ToolTreeSlot` renders nothing, which is indistinguishable from
-            // "this app has no tools". Set here rather than at each call site so
-            // the assistant, the live labs and #472 cannot each forget it.
+            // (issue #480 review, finding 1): without a summarizer `ToolTreeSlot`
+            // renders nothing, which is indistinguishable from "this app has no
+            // tools". Set here rather than at each call site so the assistant,
+            // the live labs and #472 cannot each forget it.
+            //
+            // This used to be justified by plugin discovery being aliased to `[]`,
+            // so that no plugin could ever contribute a mapper here. Since #495
+            // one can — both documentation catalogues carry `plugin-tool-tree` —
+            // and this is the FALLBACK for a reader who has switched it off,
+            // which is the same role it plays in every product shell. A real
+            // decision now, rather than a consequence of the build.
             toolTreeSummarizer: genericToolTreeSummarizer
           }
         : {}),
@@ -135,20 +171,18 @@ export const createDocsBrowserApp = async ({
       ...(signIn ? { signIn } : {}),
       ...(conversationReset ? { conversationReset } : {}),
       ...(preSendDisclosure ? { preSendDisclosure } : {}),
-      // No documentation app can ask its reader a question mid-run (issue #479
-      // decision 4, restated as an app capability by #489's review). Plugin
-      // discovery is stubbed here and no documentation tool requests human
-      // input, so there is nothing to prompt for — and declaring that once, on
-      // the app, is what keeps the runtime from advertising a capability whose
-      // prompts nothing would draw.
+      // Per app, not per factory (issue #479 decision 4, restated as an app
+      // capability by #489's review, given the right granularity by #495).
+      // Both documentation apps pass `false` today because neither catalogue
+      // carries a HITL-capable plugin and no documentation tool requests human
+      // input — so there is nothing to prompt for, and declaring that on the app
+      // keeps the runtime from advertising a capability whose prompts nothing
+      // would draw.
       //
-      // Set here rather than at each call site so the assistant, the live labs
-      // and #472 cannot each forget it — the same reason `toolTreeSummarizer`
-      // is set here. #495 flips this for whichever docs app gains a
-      // HITL-capable plugin, and the guard test in
-      // `docs-runtime/__tests__/no-human-prompt.test.ts` fails first if it does
-      // not.
-      humanInput: false,
+      // The guard in `docs-runtime/__tests__/no-human-prompt.test.ts` asserts the
+      // outcome through this factory, per app, so flipping one without meaning
+      // to fails there first.
+      humanInput,
       documentGlobals
     }),
     config

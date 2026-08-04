@@ -27,6 +27,27 @@ vi.mock('../src/models.js', () => ({
   })
 }))
 
+const stableLoadPlugins = () =>
+  Promise.resolve([
+    {
+      manifest: {
+        id: 'ctx-plugin',
+        label: 'ctx',
+        description: 'ctx',
+        statusDescriptor: {
+          id: 'ctx-plugin',
+          gaugeType: 'context_usage',
+          // Returns null (gauge hidden) — mirrors a selected model with no
+          // known context window, the exact case that used to loop.
+          summarizeStatus: () => null
+        }
+      },
+      createPlugin: () => ({ id: 'ctx-plugin' })
+    }
+  ])
+
+const fakeApp = { loadPlugins: stableLoadPlugins }
+
 vi.mock('../src/app.js', () => ({
   useChatStore: (selector: (state: { events: unknown[] }) => unknown) => selector({ events: [] }),
   useSettingsStore: (
@@ -34,28 +55,17 @@ vi.mock('../src/app.js', () => ({
       selectedModel: string
       pluginActivation: Record<string, boolean>
     }) => unknown
-  ) => selector({ selectedModel: 'model-x', pluginActivation: { 'ctx-plugin': true } })
-}))
-
-vi.mock('../src/plugins/registry.js', () => ({
-  loadPluginModules: () =>
-    Promise.resolve([
-      {
-        manifest: {
-          id: 'ctx-plugin',
-          label: 'ctx',
-          description: 'ctx',
-          statusDescriptor: {
-            id: 'ctx-plugin',
-            gaugeType: 'context_usage',
-            // Returns null (gauge hidden) — mirrors a selected model with no
-            // known context window, the exact case that used to loop.
-            summarizeStatus: () => null
-          }
-        },
-        createPlugin: () => ({ id: 'ctx-plugin' })
-      }
-    ])
+  ) => selector({ selectedModel: 'model-x', pluginActivation: { 'ctx-plugin': true } }),
+  // The status plugin reaches the gauge through this app's own catalogue
+  // (issue #495) rather than a module-global registry.
+  //
+  // `loadPlugins` is a STABLE reference, like the real one: `createBrowserApp`
+  // assigns it once per app, and `usePluginModules` has it in its effect
+  // dependencies. A mock handing back a fresh function each render would make
+  // that effect re-run forever — which is precisely the loop this suite exists
+  // to catch, so getting it wrong here would have hidden a regression rather
+  // than caused one.
+  useBrowserApp: () => fakeApp
 }))
 
 import { useContextGauge } from '../src/context-gauge.js'

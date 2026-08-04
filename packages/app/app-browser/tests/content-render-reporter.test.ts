@@ -55,6 +55,7 @@ vi.mock('../src/stores/status-store.js', () => ({
 
 import { reportContentRenderError } from '@tinytinkerer/content-react'
 import { createBrowserApp, initializeBrowserApp } from '../src/index.js'
+import { noPlugins } from './plugin-catalogue-fixture'
 
 describe('content render reporter wiring', () => {
   beforeEach(() => {
@@ -63,7 +64,7 @@ describe('content render reporter wiring', () => {
   })
 
   it('routes a content render failure to telemetry once initialized', async () => {
-    const app = createBrowserApp({})
+    const app = createBrowserApp({}, { plugins: noPlugins })
     await initializeBrowserApp(app, {})
 
     // A content node that fails immediately after init — the sink must be
@@ -92,7 +93,7 @@ describe('content render reporter wiring', () => {
   })
 
   it('forwards a loadFailed report with its reason tag and fingerprint', async () => {
-    const app = createBrowserApp({})
+    const app = createBrowserApp({}, { plugins: noPlugins })
     await initializeBrowserApp(app, {})
 
     reportContentRenderError(new Error('chunk load failed'), {

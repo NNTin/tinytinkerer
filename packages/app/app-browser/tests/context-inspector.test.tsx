@@ -45,6 +45,8 @@ vi.mock('../src/models.js', () => ({
   })
 }))
 
+const inspectorApp = { loadPlugins: () => Promise.resolve([inspectorModule]) }
+
 vi.mock('../src/app.js', () => ({
   useInspectorStore: (selector: (state: { entries: InspectorEntry[] }) => unknown) =>
     selector({ entries }),
@@ -59,7 +61,16 @@ vi.mock('../src/app.js', () => ({
       selectedModel: string
       pluginActivation: Record<string, boolean>
     }) => unknown
-  ) => selector({ selectedModel: 'openai/gpt-5', pluginActivation })
+  ) => selector({ selectedModel: 'openai/gpt-5', pluginActivation }),
+  // The inspector plugin reaches this surface through THIS app's catalogue
+  // (issue #495), not a module-global registry. Referencing `inspectorModule`,
+  // defined below, is safe for the same reason tool-tree.test.tsx does it: a
+  // `vi.mock` factory runs when the mocked module is first imported, and the
+  // module under test is imported after these definitions.
+  // Stable reference, like the real `app.loadPlugins`: it is in
+  // `usePluginModules`' effect dependencies, so a fresh function per render
+  // would loop.
+  useBrowserApp: () => inspectorApp
 }))
 
 // A real mapper stands in for the plugin's summarizeRequest so the panel renders
@@ -111,10 +122,6 @@ const inspectorModule: PluginModule = {
   },
   createPlugin: () => ({ id: 'context-inspector' })
 }
-
-vi.mock('../src/plugins/registry.js', () => ({
-  loadPluginModules: () => Promise.resolve([inspectorModule])
-}))
 
 // CodeMirror is irrelevant to this behavior and awkward under jsdom; render the
 // JSON as plain text so we can still assert the raw payload is shown.

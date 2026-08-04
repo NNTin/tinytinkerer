@@ -19,6 +19,7 @@
     "@tinytinkerer/app-browser": "workspace:*",
     "@tinytinkerer/app-shell": "workspace:*",
     "@tinytinkerer/canvas": "workspace:*",
+    "@tinytinkerer/catalogue": "workspace:*",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "react-router-dom": "7.18.1"

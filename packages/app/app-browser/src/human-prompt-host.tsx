@@ -9,7 +9,6 @@ import { useBrowserApp } from './app'
 import { HumanPromptControls } from './human-prompt-controls'
 import { useOwnsHumanPromptHost } from './human-prompt-host-ownership'
 import { useHumanPromptPresentation } from './human-prompt-presentation'
-import { loadPluginModules } from './plugins/registry'
 import { useResolvedPluginView } from './resolved-plugin-view'
 import { useDialogFocus } from './use-dialog-focus'
 
@@ -35,17 +34,20 @@ const formatJson = (value: unknown): string => {
   }
 }
 
-// Plugin-contributed permission summarizers, keyed by tool id. Discovered from the
-// dynamic plugin manifests the host already reads (see ./plugins/registry), so the
-// modal stays free of any static dependency on a concrete plugin and has no knowledge
-// of any specific tool. Only a view with `inputContext` (the permission prompt) uses
-// these — the choice poll carries none. Mirrors the activity-summarizer discovery in
-// surfaces.tsx.
+// Plugin-contributed permission summarizers, keyed by tool id. Read from THIS
+// app's catalogue (issue #495) — the same one every other surface reads — so the
+// modal stays free of any static dependency on a concrete plugin and has no
+// knowledge of any specific tool. Per app rather than per document, like the
+// prompt queue it renders: a prompt raised by one app must be summarized by that
+// app's plugins. Only a view with `inputContext` (the permission prompt) uses
+// these — the choice poll carries none. Mirrors the activity-summarizer
+// discovery in surfaces.tsx.
 const usePermissionSummarizers = (): Map<string, PermissionSummarizer> => {
+  const { loadPlugins } = useBrowserApp()
   const [summarizers, setSummarizers] = useState<Map<string, PermissionSummarizer>>(() => new Map())
   useEffect(() => {
     let cancelled = false
-    void loadPluginModules().then((modules) => {
+    void loadPlugins().then((modules) => {
       if (cancelled) {
         return
       }
@@ -62,7 +64,7 @@ const usePermissionSummarizers = (): Map<string, PermissionSummarizer> => {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [loadPlugins])
   return summarizers
 }
 

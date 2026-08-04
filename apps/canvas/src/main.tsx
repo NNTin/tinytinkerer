@@ -9,6 +9,10 @@ import './index.css'
 
 createBrowserShellRoot({
   router,
+  // Every product shell carries the full catalogue. Reached through a dynamic
+  // import() so the per-plugin map stays out of this entry chunk — see
+  // PluginCatalogue's doc comment in app-browser.
+  plugins: () => import('@tinytinkerer/catalogue').then((m) => m.loadProductPlugins()),
   BootScreen: CanvasBootScreen,
   // The canvas contributes its Excalidraw verbs as one always-on tool group. The
   // group id keys its per-tool disablement in the tool picker (issue #400); the

@@ -2,18 +2,22 @@ import { z } from 'zod'
 import type { AppToolGroup, Tool } from '@tinytinkerer/app-browser'
 
 // Three small, self-contained tools that stand in for a "plugin" in this lab
-// (issue #453). They are NOT a plugin — docs cannot statically import a
-// concrete `@tinytinkerer/plugin-*` package (scripts/check-boundaries.mjs
-// forbids it for every package, not just app-browser) and cannot discover one
-// dynamically either (import.meta.glob has no webpack equivalent — see
-// live-lab/plugin-registry-stub.ts). Instead they travel to the runtime as this
-// docs app's OWN intrinsic `appToolGroup`, exactly the mechanism
+// (issue #453). They are NOT a plugin: they travel to the runtime as this docs
+// app's OWN intrinsic `appToolGroup`, exactly the mechanism
 // apps/canvas/apps/mermaid use for their real stage tools (see
 // packages/app/app-browser/src/app-tool-group.ts) — a REAL, unmodified runtime
-// path, not a simulation. Because there is no plugin here, there is also no
-// activation toggle: the group is always present, and individual tools are
-// narrowed only through per-tool disablement (the same tool-tree picker a
-// plugin's tools would use).
+// path, not a simulation. Because these are app tools rather than a plugin,
+// there is no activation toggle for them: the group is always present, and
+// individual tools are narrowed only through per-tool disablement (the same
+// tool-tree picker a plugin's tools would use).
+//
+// The original reason they were a stand-in no longer holds. This file used to
+// say docs "cannot discover a plugin dynamically either", because
+// `import.meta.glob` had no webpack equivalent and discovery was aliased to an
+// empty stub. Since issue #495 the lab app carries a REAL catalogue — see
+// ../../docs-runtime/plugin-catalogue.ts, which puts `plugin-code-exec` in this
+// very lab. These tools stay because the lab teaches BOTH halves: an app tool
+// group with no activation gate, beside a real plugin that has one.
 
 const rollDiceInputSchema = z.object({
   sides: z

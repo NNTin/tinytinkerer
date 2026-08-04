@@ -12,7 +12,7 @@ import type { AppToolGroup } from '../app-tool-group'
 import type { AppAssistantPolicy } from '../app-assistant-policy'
 import type { BrowserShell } from '../shell'
 import { loadCoreModule } from '../core-module'
-import { loadPluginModules } from '../plugins/registry'
+import type { PluginCatalogue } from '../app'
 import type { AuthStore } from './auth-store'
 import type { SettingsStore } from './settings-store'
 import type { InspectorStore } from './inspector-store'
@@ -111,6 +111,20 @@ export const createChatStore = (options: {
   // the runtime factory, which arms capture only while the inspector plugin is on.
   // Optional so tests can omit it; the app always provides it.
   inspectorStore?: InspectorStore
+  /**
+   * This app's plugin catalogue (issue #495), memoized by `createBrowserApp`.
+   *
+   * Awaited once when the runtime factory is first built, and the resulting
+   * modules handed to `createBrowserRuntimeFactory`. Threaded in rather than
+   * imported: which plugins a runtime gets is a property of the app that owns
+   * this store, and a document can hold several apps with different catalogues.
+   *
+   * Optional so a directly-constructed store (only tests do that) can omit it;
+   * absent means a runtime with no plugins, which is what a bare store had
+   * before too. Every real app supplies it, because `createBrowserApp` requires
+   * it.
+   */
+  loadPlugins?: PluginCatalogue
   // The host app's always-on tool group (e.g. an integrated shell's stage
   // verbs). Forwarded to the runtime factory; absent for web/widget/mobile.
   appToolGroup?: AppToolGroup
@@ -218,7 +232,7 @@ export const createChatStore = (options: {
   const getRuntimeFactory = async (): Promise<ChatRuntimeFactory> => {
     runtimeFactoryPromise ??= (async () => {
       const { createBrowserRuntimeFactory } = await import('../runtime/get-runtime')
-      const pluginModules = await loadPluginModules()
+      const pluginModules = (await options.loadPlugins?.()) ?? []
       return createBrowserRuntimeFactory({
         shell: options.shell,
         authStore: options.authStore,

@@ -20,6 +20,10 @@ import { createBrowserApp, type BrowserApp } from '@tinytinkerer/app-browser'
 
 import { siteGlobalData } from '../../docs-page/__tests__/site-corpus-fixture'
 
+// These suites are about surfaces other than the catalogue, so their apps carry
+// no plugins (issue #495 makes `plugins` a required, undefaulted option).
+const noPlugins = () => Promise.resolve([])
+
 vi.mock('@tinytinkerer/app-browser/styles.css', () => ({}))
 
 const bootstrap = vi.hoisted(() => ({ failures: 0 }))
@@ -31,6 +35,7 @@ const buildApp = (): { app: BrowserApp; config: Record<string, unknown> } => {
   const app = createBrowserApp(
     { storageNamespace: 'tinytinkerer-docs-assistant-test' },
     {
+      plugins: noPlugins,
       documentGlobals: {
         brandMetadata: false,
         telemetry: false,

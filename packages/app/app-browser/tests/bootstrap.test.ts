@@ -71,32 +71,40 @@ vi.mock('../src/stores/status-store.js', () => ({
   }))
 }))
 
-// Discovery is exercised by tool-tree.test.tsx and create-runtime tests; this
-// bootstrap test only needs to prove initializeBrowserApp doesn't crash before
-// hydration completes, so it stubs discovery to an empty plugin set.
-vi.mock('../src/plugins/registry.js', () => ({
-  loadPluginModules: vi.fn().mockResolvedValue([])
-}))
+// Plugin-derived behaviour is exercised by tool-tree.test.tsx and the
+// create-runtime tests; this suite only needs an app that starts, so it carries
+// no plugins.
+import { createBrowserApp, initializeBrowserApp } from '../src/app.js'
+import { noPlugins } from './plugin-catalogue-fixture'
 
-import { bootstrapBrowserShell } from '../src/initialize.js'
-
-describe('bootstrapBrowserShell', () => {
+// Retargeted from `bootstrapBrowserShell` (issue #495). That export was a fourth
+// `createBrowserApp` construction path with no caller anywhere in the monorepo —
+// app-browser is `private: true` with no `files`, so there was no external
+// consumer either — and it was deleted rather than threaded with a plugin
+// catalogue it would never use.
+//
+// The BEHAVIOUR it pinned is worth keeping and is asserted here instead: startup
+// initializes auth and settings, and deliberately not chat or status. That is
+// now tested against the path production actually takes (`createBrowserApp` +
+// `initializeBrowserApp`, reached through `useBrowserAppBootstrap` in
+// `bootstrap.ts` and `BrowserAppShell`), rather than through a facade nobody
+// called — the same shape document-globals.test.ts, branding.test.ts and
+// content-render-reporter.test.ts already use.
+describe('browser app startup', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   it('creates a browser app instance and initializes only startup-critical stores', async () => {
-    const app = await bootstrapBrowserShell({
+    const config = {
       edgeBaseUrl: 'http://edge.local',
       storageNamespace: 'tinytinkerer-test',
       githubClientId: 'github-client-id'
-    })
+    }
+    const app = createBrowserApp(config, { plugins: noPlugins })
+    await initializeBrowserApp(app, config)
 
-    expect(app.shell.config).toMatchObject({
-      edgeBaseUrl: 'http://edge.local',
-      storageNamespace: 'tinytinkerer-test',
-      githubClientId: 'github-client-id'
-    })
+    expect(app.shell.config).toMatchObject(config)
     expect(authInitialize).toHaveBeenCalledTimes(1)
     expect(settingsInitialize).toHaveBeenCalledTimes(1)
     expect(chatInitialize).not.toHaveBeenCalled()

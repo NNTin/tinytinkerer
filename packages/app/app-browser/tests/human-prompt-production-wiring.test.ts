@@ -76,11 +76,12 @@ const probeModule: PluginModule = {
   })
 }
 
-vi.mock('../src/plugins/registry', () => ({
-  loadPluginModules: () => Promise.resolve([probeModule])
-}))
-
 const { createBrowserApp } = await import('../src/app.js')
+
+// This suite is about a plugin's host actually receiving `requestHumanInput`,
+// so the probe travels in as this app's catalogue (issue #495) rather than
+// through a module mock — the same route a real plugin takes.
+const probePlugins = () => Promise.resolve([probeModule])
 
 const pendingSentinel = Symbol('pending')
 const settlementOf = (promise: Promise<unknown>): Promise<unknown> =>
@@ -120,8 +121,14 @@ beforeEach(() => {
 
 describe('a prompt raised through the real runtime lands in its own app’s queue', () => {
   it('carries the app’s queue all the way to the PluginHost, scoped to the run', async () => {
-    const app = createBrowserApp({ storageNamespace: 'tinytinkerer-wiring-a' })
-    const other = createBrowserApp({ storageNamespace: 'tinytinkerer-wiring-b' })
+    const app = createBrowserApp(
+      { storageNamespace: 'tinytinkerer-wiring-a' },
+      { plugins: probePlugins }
+    )
+    const other = createBrowserApp(
+      { storageNamespace: 'tinytinkerer-wiring-b' },
+      { plugins: probePlugins }
+    )
 
     const factory = await runtimeFactoryUsedBy(app)
     // The runtime the store creates for one run, with that run's conversation.
@@ -147,7 +154,10 @@ describe('a prompt raised through the real runtime lands in its own app’s queu
     // Identity, deliberately: a store that built its own queue, or forwarded a
     // wrapper closing over a different one, would satisfy every behavioural
     // assertion above while breaking the routing this issue exists to fix.
-    const app = createBrowserApp({ storageNamespace: 'tinytinkerer-wiring-identity' })
+    const app = createBrowserApp(
+      { storageNamespace: 'tinytinkerer-wiring-identity' },
+      { plugins: probePlugins }
+    )
     const factory = await runtimeFactoryUsedBy(app)
     factory.create({ conversationId: 'conv-xyz' })
 
@@ -171,7 +181,10 @@ describe('a prompt raised through the real runtime lands in its own app’s queu
     // `agent-core/tests/with-timeout-does-not-cancel.test.ts`. Re-racing a
     // hardcoded 300_000 here would have been a second copy of the implementation
     // rather than a test of this integration.
-    const app = createBrowserApp({ storageNamespace: 'tinytinkerer-wiring-cleanup' })
+    const app = createBrowserApp(
+      { storageNamespace: 'tinytinkerer-wiring-cleanup' },
+      { plugins: probePlugins }
+    )
     const queue = app.stores.humanPrompts
     expect(queue).toBeDefined()
 
@@ -195,7 +208,7 @@ describe('a prompt raised through the real runtime lands in its own app’s queu
   it('exposes no human-input capability at all for an app that declares none', async () => {
     const app = createBrowserApp(
       { storageNamespace: 'tinytinkerer-wiring-none' },
-      { humanInput: false }
+      { plugins: probePlugins, humanInput: false }
     )
 
     const factory = await runtimeFactoryUsedBy(app)

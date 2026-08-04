@@ -34,6 +34,10 @@ import {
 } from '../../docs-tools'
 import { pluginToolPickerDemoToolGroup } from '../../live-lab/plugin-tool-picker/demo-tools'
 
+// These suites are about surfaces other than the catalogue, so their apps carry
+// no plugins (issue #495 makes `plugins` a required, undefaulted option).
+const noPlugins = () => Promise.resolve([])
+
 const renderSlot = (app: BrowserApp) =>
   render(<ToolTreeSlot />, {
     wrapper: ({ children }: { children: ReactNode }) => (
@@ -50,7 +54,9 @@ const renderSlot = (app: BrowserApp) =>
 const docsApp = (appToolGroup: BrowserApp['appToolGroup']): BrowserApp => {
   const app = createBrowserApp(
     { storageNamespace: 'tinytinkerer-docs-picker-test' },
-    appToolGroup ? { appToolGroup, toolTreeSummarizer: genericToolTreeSummarizer } : {}
+    appToolGroup
+      ? { plugins: noPlugins, appToolGroup, toolTreeSummarizer: genericToolTreeSummarizer }
+      : { plugins: noPlugins }
   )
   // Toggling a tool persists the denylist through Dexie, which needs an
   // IndexedDB this environment does not have. Only the STORAGE is stood in for —
@@ -157,7 +163,7 @@ describe('the assistant tool picker', () => {
     // build. Kept as a test so the fallback cannot be quietly dropped again.
     const withoutSummarizer = createBrowserApp(
       { storageNamespace: 'tinytinkerer-docs-picker-test' },
-      { appToolGroup: createDocumentationToolGroup() }
+      { plugins: noPlugins, appToolGroup: createDocumentationToolGroup() }
     )
     const { container } = renderSlot(withoutSummarizer)
 

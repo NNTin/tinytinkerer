@@ -185,14 +185,22 @@ let fakeAppToolGroup:
   | { id: string; label: string; tools: { id: string; description: string }[] }
   | undefined
 
+const fakeBrowserApp = {
+  get appToolGroup() {
+    return fakeAppToolGroup
+  },
+  loadPlugins: () => Promise.resolve(pluginModules)
+}
+
 vi.mock('../src/app.js', () => ({
   useSettingsStore: <T,>(selector: (state: FakeSettingsState) => T): T =>
     useStore(fakeSettingsStore, selector),
-  useBrowserApp: () => ({ appToolGroup: fakeAppToolGroup })
-}))
-
-vi.mock('../src/plugins/registry.js', () => ({
-  loadPluginModules: () => Promise.resolve(pluginModules)
+  // This app's catalogue (issue #495) travels on the app, so the plugin set a
+  // surface sees is whatever its own app carries — which is what this suite
+  // varies between cases.
+  // Stable reference, like the real `app.loadPlugins` — see
+  // context-gauge.test.tsx for why a fresh function per render loops.
+  useBrowserApp: () => fakeBrowserApp
 }))
 
 import { ToolTreeSlot, useToolTree } from '../src/tool-tree.js'

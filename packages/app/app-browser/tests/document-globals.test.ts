@@ -24,10 +24,6 @@ vi.mock('../src/telemetry/telemetry.js', () => ({
 
 vi.mock('@tinytinkerer/content-react', () => ({ setContentRenderErrorReporter }))
 
-vi.mock('../src/plugins/registry.js', () => ({
-  loadPluginModules: vi.fn().mockResolvedValue([])
-}))
-
 const telemetryEnabled = vi.hoisted(() => ({ current: true }))
 
 const authInitialize = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
@@ -70,6 +66,7 @@ vi.mock('../src/shell.js', () => ({
 }))
 
 import { createBrowserApp, initializeBrowserApp } from '../src/app.js'
+import { noPlugins } from './plugin-catalogue-fixture'
 import {
   DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES,
   NO_GLOBAL_HOST_CAPABILITIES,
@@ -121,8 +118,11 @@ describe('document-global capability defaults', () => {
   })
 
   it('resolves the capabilities onto the app itself', () => {
-    const owner = createBrowserApp({})
-    const guest = createBrowserApp({}, { documentGlobals: { telemetry: false } })
+    const owner = createBrowserApp({}, { plugins: noPlugins })
+    const guest = createBrowserApp(
+      {},
+      { plugins: noPlugins, documentGlobals: { telemetry: false } }
+    )
 
     expect(owner.documentGlobals).toEqual(DEFAULT_DOCUMENT_GLOBAL_CAPABILITIES)
     expect(guest.documentGlobals.telemetry).toBe(false)
@@ -132,7 +132,7 @@ describe('document-global capability defaults', () => {
 
 describe('initializeBrowserApp document-global effects', () => {
   it('runs every document-global effect for an owner', async () => {
-    await initializeBrowserApp(createBrowserApp({}), {})
+    await initializeBrowserApp(createBrowserApp({}, { plugins: noPlugins }), {})
 
     expect(applyBrandMetadata).toHaveBeenCalledTimes(1)
     expect(configureTelemetry).toHaveBeenCalledTimes(1)
@@ -144,6 +144,7 @@ describe('initializeBrowserApp document-global effects', () => {
     const guest = createBrowserApp(
       {},
       {
+        plugins: noPlugins,
         documentGlobals: {
           brandMetadata: false,
           telemetry: false,
@@ -165,7 +166,10 @@ describe('initializeBrowserApp document-global effects', () => {
   })
 
   it('still runs per-instance initialization for a non-owner', async () => {
-    const guest = createBrowserApp({}, { documentGlobals: { telemetry: false } })
+    const guest = createBrowserApp(
+      {},
+      { plugins: noPlugins, documentGlobals: { telemetry: false } }
+    )
 
     await initializeBrowserApp(guest, {})
 
@@ -177,7 +181,7 @@ describe('initializeBrowserApp document-global effects', () => {
   it('leaves consent alone for an owner who never opted in', async () => {
     telemetryEnabled.current = false
 
-    await initializeBrowserApp(createBrowserApp({}), {})
+    await initializeBrowserApp(createBrowserApp({}, { plugins: noPlugins }), {})
 
     expect(configureTelemetry).toHaveBeenCalledTimes(1)
     expect(setTelemetryConsent).not.toHaveBeenCalled()

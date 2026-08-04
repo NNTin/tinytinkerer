@@ -35,7 +35,7 @@ importing the host.
 > `package.json`, not as an import. It depends only on the `PluginModule` contract in
 > `contracts`. A plugin package can be added or removed from `packages/plugins/*` and the project
 > still type-checks and builds; the plugin's tools simply appear or disappear. See
-> [Dynamic discovery](#dynamic-discovery-app-browser).
+> [The plugin catalogue](#the-plugin-catalogue-tinytinkerercatalogue).
 
 See also:
 
@@ -621,7 +621,7 @@ Settings Modal toggle (app-browser/browser-settings-modal.tsx)
   → persistPluginActivation (app-core/settings.ts) → PreferencesStore (IndexedDB)
   ──────────────────────────────────────────────────────────────────────────────
   next chat run:
-  chat-store: loadPluginModules()  (dynamic discovery, see below)
+  chat-store: app.loadPlugins()  (this app's injected catalogue, see below)
     → get-runtime creates a persistent PluginRegistry for the loaded modules
     → create-runtime: isPluginEnabled(activation, manifest) filters modules → PluginRegistry.collectTools()
     → agent-core ToolRegistry  (only active plugins' tools)
@@ -686,7 +686,7 @@ enabled but disable individual tools it contributes. The state and its invariant
   renamed/removed) can otherwise leave a stored entry that, against the plugin's new tool list,
   transiently covers every current tool while the plugin is still marked active. The settings
   store's `reconcilePluginTools` action calls it once per session (wired in `app.ts`,
-  `initializeBrowserApp`, right after settings hydrate and plugin discovery resolve) and persists
+  `initializeBrowserApp`, right after settings hydrate and this app's catalogue resolves) and persists
   only when something actually changed. Readers must still tolerate a transiently-total entry
   between a stale write and the next reconciliation sweep — `isPluginToolEnabled` and the tool
   tree's `'none'` tri-state already do.
@@ -745,19 +745,25 @@ the free opt-in toggle activation already gives every plugin. The next host affo
 domain mapping of its own should be a plain host feature + host setting, not a plugin — don't take
 the tool tree as precedent for "any host UI element is a plugin."
 
-## Dynamic discovery (`app-browser`)
+## The plugin catalogue (`@tinytinkerer/catalogue`)
 
-`app-browser/src/plugins/registry.ts` is the **only** module aware of where plugins live, and it
-references them by location, not by package name:
+`packages/app/catalogue` is the **only** package that knows which concrete plugins exist. It maps
+each plugin package's directory name to a dynamic import, and a host asks it for the subset that
+host carries:
 
 ```ts
-const pluginModuleLoaders = import.meta.glob<unknown>('../../../../plugins/*/src/index.ts')
+const PLUGIN_LOADERS = {
+  'plugin-browser-state': () => import('@tinytinkerer/plugin-browser-state')
+  // …one line per package under packages/plugins/*
+} satisfies Record<string, () => Promise<unknown>>
 
-export const loadPluginModules = async (): Promise<PluginModule[]> => {
+export const loadPlugins = async (
+  names: readonly CataloguePluginName[]
+): Promise<PluginModule[]> => {
   const modules: PluginModule[] = []
-  for (const load of Object.values(pluginModuleLoaders)) {
+  for (const name of names) {
     try {
-      const mod = await load()
+      const mod = await PLUGIN_LOADERS[name]()
       if (isPluginModule(mod)) modules.push(mod) // tolerate-missing / tolerate-malformed
     } catch {
       /* optional plugin failed to load — skip */
@@ -767,24 +773,72 @@ export const loadPluginModules = async (): Promise<PluginModule[]> => {
 }
 ```
 
-Why `import.meta.glob` rather than a static or literal dynamic `import('@tinytinkerer/plugin-…')`:
+### Why a catalogue package rather than a glob in `app-browser`
 
-- **Compiles if missing.** Glob patterns are not module specifiers, so `tsc` never resolves a
-  concrete plugin. Delete `packages/plugins/plugin-feedback` and `pnpm typecheck` + the Vite
-  builds still succeed — the glob simply matches nothing. (Verified by removing the package.)
-- **Bundles when present.** Vite resolves the glob at build time and emits each matched plugin as
-  its own lazy chunk, so the feature works in the production browser bundle. A literal
-  `import('<bare specifier>')` would force the package to exist at build; a _variable_ bare
-  specifier would not bundle at all. The glob is the only mechanism that satisfies both.
-- **True drop-in.** Any package placed under `packages/plugins/*` that exports a valid
-  `PluginModule` is discovered automatically. Nothing about a specific plugin is hard-coded in
-  `app-browser`.
+Discovery used to be a Vite `import.meta.glob` inside `app-browser/src/plugins/registry.ts`. That
+was elegant for a single Vite application and wrong for the repository as it now stands (issue
+#495):
 
-`loadPluginModules()` is consumed in two places, both via the loaded `PluginModule[]`:
-`chat-store` awaits it once and passes the modules to `createBrowserRuntimeFactory` (runtime tools
+- **It was bundler-specific.** `import.meta.glob` is a Vite build-time transform with no webpack
+  equivalent, and the documentation site builds with webpack (Docusaurus). It had to alias the
+  whole module to a stub returning `[]`, which is why `/docs` Settings said "No plugins available"
+  while `/widget` listed the product's. A build alias to "no plugins" is not a composition
+  boundary; it is the absence of one.
+- **It was module-global.** One memoized promise per module, shared by every `BrowserApp` in the
+  document — while a documentation page holds two (the global assistant and the shared live-lab
+  app), which carry different plugins with independent activation and settings.
+- **It slipped past the boundary checker.** `scripts/check-boundaries.mjs` forbids `app-browser`
+  from importing a concrete plugin package. A glob pattern is not a module specifier, so the rule
+  never applied to the one place that actually reached plugins.
 
-- descriptors, with lifecycle preserved across prompts), and the Settings controller
-  (`surfaces.tsx`) loads the manifests for the toggles.
+A literal `import('@tinytinkerer/plugin-…')` is understood by Vite _and_ webpack, and each plugin
+still becomes its own lazy chunk. The catalogue package is the single place the boundary rule is
+opened, and it is opened narrowly: it may import `plugin-*` and `contracts`, and nothing else.
+
+### The catalogue is injected per `BrowserApp`
+
+`app-browser` knows only the `PluginModule` contract. Which plugins a surface carries is a decision
+belonging to whoever composes it, so `createBrowserApp` takes it — required, with no default:
+
+```ts
+createBrowserApp(config, {
+  plugins: () => import('@tinytinkerer/catalogue').then((m) => m.loadProductPlugins())
+})
+```
+
+Two things about that shape matter:
+
+- **The thunk reaches the catalogue through a dynamic `import()`.** The catalogue is a map of
+  per-plugin imports, and a bundler emits that map into whichever chunk references it. A static
+  import at the top of a shell's entry module would put the whole map in that shell's **entry**
+  chunk — exactly where the old glob sat. Removing it freed ~1.5 kB against a budget that had 24
+  bytes of headroom (`apps/shell/src/bundle-size.test.ts`).
+- **It is required rather than defaulted.** There are four production call sites and they share no
+  chokepoint: `createBrowserShellRoot` (shell, canvas, ide, mermaid, pixel-agents),
+  `apps/host/src/main.tsx` (which mounts `BrowserAppShell` itself), and `apps/docs`'
+  `createDocsBrowserApp` (both documentation apps). Any default would have silently stripped the
+  plugins from whichever site was forgotten.
+
+`createBrowserApp` memoizes the thunk once per app and exposes it as `app.loadPlugins`, so every
+surface of that app shares one load — the property the module-global cache used to give the whole
+document. `usePluginModules` reads it from context, so no surface has to be told which app it is in.
+
+### Adding a plugin still touches one list
+
+`packages/app/catalogue/tests/catalogue-coverage.test.ts` reads `packages/plugins/*` from the
+filesystem and fails if a package is missing from the map, naming the file and the exact line to
+add. So the drop-in property survives, with an explicit step instead of an implicit one — and the
+same technique (`packages/e2e/fixtures/discover-plugins.ts`) independently derives the e2e plugin
+matrix from the filesystem, so a plugin that reaches the catalogue but not a reader fails there.
+
+### The documentation carries a deliberate subset
+
+`apps/docs/src/docs-runtime/plugin-catalogue.ts` names what each documentation app offers, and
+records why each exclusion is an exclusion. `plugin-browser-state` (`read_dom`) is excluded
+permanently — documentation content comes from authored Markdown, never the rendered page — and
+`plugin-web-search` is excluded because it is the only default-on plugin and because a general web
+search contradicts the assistant's grounding and citation policy. Both exclusions are asserted as
+outcomes in `apps/docs/src/docs-runtime/__tests__/no-dom-access.test.ts` and on the built site.
 
 ## Routing into Sentry (`app-browser`)
 
@@ -823,8 +877,10 @@ rather than an error issue. See [sentry-telemetry.md](../architecture/sentry-tel
   local modules, and must stay product-agnostic (no browser APIs, React, or telemetry imports).
   Enforced generically by `scripts/check-boundaries.mjs`.
 - `@tinytinkerer/app-browser` **must not** import a concrete plugin package, statically or via a
-  literal dynamic import — plugins are discovered through `import.meta.glob`. The boundary check
-  rejects any `@tinytinkerer/plugin-*` import from `app-browser`. It implements the `PluginHost`
+  literal dynamic import. It knows only the `PluginModule` contract and receives a catalogue per
+  `BrowserApp` from its host. The boundary check rejects any `@tinytinkerer/plugin-*` import from
+  `app-browser`, and `@tinytinkerer/catalogue` — the one package permitted to name plugins — has a
+  positive rule of its own allowing `plugin-*` and `contracts` only. It implements the `PluginHost`
   capabilities (the capture sink → telemetry, `requestHumanInput` → its single generic
   `<HumanPromptHost/>` modal, `edgeFetch` → its own edge layer, `executeSandboxedCode` → its
   opaque-origin iframe + Worker sandbox, and `readDom` → its current-page DOM reader with host-side
@@ -832,7 +888,8 @@ rather than an error issue. See [sentry-telemetry.md](../architecture/sentry-tel
 
 ## Adding a new plugin
 
-Because discovery is dynamic, adding a plugin touches **no host code** — everything a plugin
+Adding a plugin touches **one list** — `packages/app/catalogue/src/index.ts`, with a test that tells
+you when you have forgotten it — and no other host code. Everything a plugin
 contributes is read off its manifest generically: tools (`toolDescriptors`), a heuristic planner
 step (`keywordPlannerStep`), a turn-activity summary (`summarizeActivity`), a permission view
 (`summarizePermission`), a persistent status gauge (`statusDescriptor`), the developer inspector
@@ -846,11 +903,15 @@ explicitly via a single tool-id literal; nothing else in `create-runtime.ts` nam
 2. From its `src/index.ts`, export the `PluginModule` surface: a `manifest`
    (`{ id, label, description, toolDescriptors? }`, plus any of the optional descriptors above) and a
    `createPlugin()` returning an `AgentPlugin` (with `createTools`).
-3. Run `pnpm check:boundaries` to verify it stays product-agnostic.
-4. If the plugin sends user content anywhere, document it in `PRIVACY.md` / `PRIVACY-UPDATE.md`.
+3. Add one line to `PLUGIN_LOADERS` in `packages/app/catalogue/src/index.ts` and the matching
+   `workspace:*` dependency in that package's `package.json`. (Forget this and
+   `catalogue-coverage.test.ts` fails with the exact line to add.)
+4. Run `pnpm check:boundaries` to verify it stays product-agnostic.
+5. If the plugin sends user content anywhere, document it in `PRIVACY.md` / `PRIVACY-UPDATE.md`.
 
-That's it — the host discovers it via `import.meta.glob`, shows its toggle, and wires its tools
-when active. No `app-browser` dependency, registration, or descriptor edits are needed.
+That's it — every product shell carries the full catalogue, so the host shows its toggle and wires
+its tools when active. No `app-browser` dependency or descriptor edits are needed. (The
+documentation site carries a deliberate subset; see above.)
 
 **The descriptor↔createTools lockstep (issue #400 review, F1):** a plugin's `toolDescriptors` MUST
 enumerate every tool id its `createTools` can ever contribute. Capability gating may contribute

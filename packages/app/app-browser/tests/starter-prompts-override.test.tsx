@@ -20,12 +20,11 @@ import {
   type BrowserApp
 } from '../src/index.js'
 import { useStarterPrompts } from '../src/conversation-empty-state.js'
-
-vi.mock('../src/plugins/registry.js', () => ({ loadPluginModules: () => Promise.resolve([]) }))
+import { noPlugins } from './plugin-catalogue-fixture'
 
 const app: BrowserApp = createBrowserApp(
   { storageNamespace: 'tinytinkerer-starters-test' },
-  { starterPrompts: ['Route-neutral question.'] }
+  { plugins: noPlugins, starterPrompts: ['Route-neutral question.'] }
 )
 
 const wrapper = ({ children }: { children: ReactNode }) => (

@@ -17,6 +17,10 @@ import { AppBrowserProvider, createBrowserApp, type BrowserApp } from '@tinytink
 import { DocsAssistantSessionContext } from '../assistant-session-context'
 import { useDocsAssistantSession } from '../session'
 
+// These suites are about surfaces other than the catalogue, so their apps carry
+// no plugins (issue #495 makes `plugins` a required, undefaulted option).
+const noPlugins = () => Promise.resolve([])
+
 const beginDocsProductSignIn = vi.hoisted(() => vi.fn())
 vi.mock('../product-sign-in', () => ({ beginDocsProductSignIn }))
 
@@ -101,7 +105,7 @@ const seed = (
 }
 
 const makeApp = (storageNamespace: string): BrowserApp => {
-  const app = createBrowserApp({ storageNamespace })
+  const app = createBrowserApp({ storageNamespace }, { plugins: noPlugins })
   attachRepository(app)
   return app
 }

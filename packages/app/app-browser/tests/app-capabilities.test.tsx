@@ -19,8 +19,7 @@ import { describe, expect, it, vi } from 'vitest'
  */
 import { AppBrowserProvider, createBrowserApp, type BrowserApp } from '../src/index.js'
 import { useChatSurfaceController, useSettingsSurfaceController } from '../src/surfaces.js'
-
-vi.mock('../src/plugins/registry.js', () => ({ loadPluginModules: () => Promise.resolve([]) }))
+import { noPlugins } from './plugin-catalogue-fixture'
 
 const wrapper =
   (app: BrowserApp) =>
@@ -28,8 +27,15 @@ const wrapper =
     <AppBrowserProvider app={app}>{children}</AppBrowserProvider>
   )
 
-const buildApp = (options: Parameters<typeof createBrowserApp>[1] = {}): BrowserApp =>
-  createBrowserApp({ storageNamespace: 'tinytinkerer-capabilities-test' }, options)
+// `plugins` is supplied here rather than by each case: every test in this file
+// is about a capability other than the catalogue, and none of them carries one.
+const buildApp = (
+  options: Omit<Parameters<typeof createBrowserApp>[1], 'plugins'> = {}
+): BrowserApp =>
+  createBrowserApp(
+    { storageNamespace: 'tinytinkerer-capabilities-test' },
+    { plugins: noPlugins, ...options }
+  )
 
 describe('sign-in capability', () => {
   it('defaults to the shell"s own OAuth, routed through Settings', () => {

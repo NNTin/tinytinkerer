@@ -31,10 +31,6 @@ vi.mock('../src/db', () => ({
   })
 }))
 
-vi.mock('../src/plugins/registry.js', () => ({
-  loadPluginModules: vi.fn().mockResolvedValue([])
-}))
-
 // jsdom has no `Element.scrollTo`, which the transcript's stick-to-bottom hook
 // calls on mount. Stubbed the same way every other surface suite in this package
 // stubs it; nothing here asserts on scrolling.
@@ -52,6 +48,7 @@ import type { ConversationSlice } from '@tinytinkerer/app-core'
 import type { HumanPromptView } from '@tinytinkerer/contracts'
 import { AppBrowserProvider, createBrowserApp, type BrowserApp } from '../src/app.js'
 import { ChatApp } from '../src/chat-shell/chat-app.js'
+import { noPlugins } from './plugin-catalogue-fixture'
 
 afterEach(() => {
   cleanup()
@@ -89,7 +86,10 @@ const slice = (id: string): ConversationSlice => ({
 let appCounter = 0
 const makeApp = (presentation: 'modal' | 'composer' = 'composer'): BrowserApp => {
   appCounter += 1
-  const app = createBrowserApp({ storageNamespace: `tinytinkerer-attention-${appCounter}` })
+  const app = createBrowserApp(
+    { storageNamespace: `tinytinkerer-attention-${appCounter}` },
+    { plugins: noPlugins }
+  )
   app.stores.settings.setState({
     pluginConfig: { [CHOICE_PROMPT]: { presentation } }
   })

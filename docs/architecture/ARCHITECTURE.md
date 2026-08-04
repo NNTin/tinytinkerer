@@ -131,7 +131,7 @@ flowchart LR
   pixelAgents --> appshell
   appbrowser --> appcore
   appbrowser --> content
-  appbrowser -. "dynamic discovery" .-> plugins
+  appbrowser -. "injected catalogue" .-> plugins
   appcore --> agent
   appcore --> contracts
   agent --> contracts
@@ -216,25 +216,25 @@ These conventions are gated in CI, not left to reviewers:
 
 ## Layers
 
-| Layer                                                          | Purpose                           | Owns                                                                                                  | Must not own                                           |
-| -------------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `apps/host`                                                    | frontend composition              | development routing, production bundle composition, root app                                          | feature runtimes                                       |
-| `apps/shell`                                                   | web/widget/mobile browser shell   | route-selected presentation and shell-only UX                                                         | shared product behavior                                |
-| `apps/canvas`, `apps/ide`, `apps/mermaid`, `apps/pixel-agents` | integrated shell assemblies       | routes, loading copy, stage + assistant composition                                                   | stage domain logic, duplicate runtime wiring           |
-| `apps/edge`                                                    | stateless backend boundary        | HTTP routes and upstream transport                                                                    | browser state or UI                                    |
-| `packages/app-browser`                                         | shared browser assembly           | browser runtime, chat surfaces, auth, settings, shared routing/loading helpers                        | app-owned domain behavior                              |
-| `packages/app-shell`                                           | integrated-stage infrastructure   | stable controller handles, tool adaptation, workspace store, assistant actions, 2/3-panel dock layout | concrete stage logic or third-party stage dependencies |
-| `packages/app/canvas`                                          | Canvas stage                      | Excalidraw UI/API, schemas, controllers/tools, library relay, `tinytinkerer-canvas` persistence       | shell routing or chat runtime                          |
-| `packages/app/ide`, `packages/app/mermaid`                     | trusted application stages        | stage UI, schemas/controllers/tools, app-owned IndexedDB data                                         | deploy routing or duplicated assistant runtime         |
-| `packages/app/pixel-agents`                                    | agent activity visualization      | pinned iframe bridge, event projection, office/agent IndexedDB data                                   | chat execution or backend services                     |
-| `packages/app-core`                                            | headless product logic            | state, orchestration, projections, ports                                                              | React or browser APIs                                  |
-| `packages/agent-core`                                          | runtime abstractions              | agent runtime, tool registry, plugin hooks                                                            | product-specific UI                                    |
-| `packages/contracts`                                           | foundational contracts            | canonical shared schemas and inferred types                                                           | browser implementation                                 |
-| `packages/content-*`                                           | assistant content platform        | parsing, content AST behavior, React rendering plugins                                                | app composition                                        |
-| `packages/plugins/*`                                           | dynamically discovered extensions | plugin manifests and product-agnostic capabilities                                                    | browser/runtime imports                                |
-| `packages/brand-assets`                                        | shared brand metadata             | icons, manifest and theme definitions                                                                 | DOM mutation                                           |
-| `packages/sentry-telemetry`                                    | SDK-agnostic telemetry            | scrubbers, fetch capture, sink indirection                                                            | runtime SDK initialization                             |
-| `packages/ui`                                                  | presentation primitives           | small visual atoms                                                                                    | orchestration or persistence                           |
+| Layer                                                          | Purpose                         | Owns                                                                                                  | Must not own                                           |
+| -------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `apps/host`                                                    | frontend composition            | development routing, production bundle composition, root app                                          | feature runtimes                                       |
+| `apps/shell`                                                   | web/widget/mobile browser shell | route-selected presentation and shell-only UX                                                         | shared product behavior                                |
+| `apps/canvas`, `apps/ide`, `apps/mermaid`, `apps/pixel-agents` | integrated shell assemblies     | routes, loading copy, stage + assistant composition                                                   | stage domain logic, duplicate runtime wiring           |
+| `apps/edge`                                                    | stateless backend boundary      | HTTP routes and upstream transport                                                                    | browser state or UI                                    |
+| `packages/app-browser`                                         | shared browser assembly         | browser runtime, chat surfaces, auth, settings, shared routing/loading helpers                        | app-owned domain behavior                              |
+| `packages/app-shell`                                           | integrated-stage infrastructure | stable controller handles, tool adaptation, workspace store, assistant actions, 2/3-panel dock layout | concrete stage logic or third-party stage dependencies |
+| `packages/app/canvas`                                          | Canvas stage                    | Excalidraw UI/API, schemas, controllers/tools, library relay, `tinytinkerer-canvas` persistence       | shell routing or chat runtime                          |
+| `packages/app/ide`, `packages/app/mermaid`                     | trusted application stages      | stage UI, schemas/controllers/tools, app-owned IndexedDB data                                         | deploy routing or duplicated assistant runtime         |
+| `packages/app/pixel-agents`                                    | agent activity visualization    | pinned iframe bridge, event projection, office/agent IndexedDB data                                   | chat execution or backend services                     |
+| `packages/app-core`                                            | headless product logic          | state, orchestration, projections, ports                                                              | React or browser APIs                                  |
+| `packages/agent-core`                                          | runtime abstractions            | agent runtime, tool registry, plugin hooks                                                            | product-specific UI                                    |
+| `packages/contracts`                                           | foundational contracts          | canonical shared schemas and inferred types                                                           | browser implementation                                 |
+| `packages/content-*`                                           | assistant content platform      | parsing, content AST behavior, React rendering plugins                                                | app composition                                        |
+| `packages/plugins/*`                                           | catalogued extensions           | plugin manifests and product-agnostic capabilities                                                    | the catalogue package only                             |
+| `packages/brand-assets`                                        | shared brand metadata           | icons, manifest and theme definitions                                                                 | DOM mutation                                           |
+| `packages/sentry-telemetry`                                    | SDK-agnostic telemetry          | scrubbers, fetch capture, sink indirection                                                            | runtime SDK initialization                             |
+| `packages/ui`                                                  | presentation primitives         | small visual atoms                                                                                    | orchestration or persistence                           |
 
 ## Dependency Rules
 
@@ -248,7 +248,9 @@ These conventions are gated in CI, not left to reviewers:
 - Application stage packages own their third-party libraries and app schemas. Calls across the
   tool/controller seam remain schema-validated in process.
 - `app-browser` may depend on `app-core`, brand/contracts/telemetry, and outward-facing content
-  packages. It discovers plugin packages dynamically rather than importing them statically.
+  packages. It never imports a plugin package: each app injects a plugin catalogue
+  (`@tinytinkerer/catalogue`) per `BrowserApp`, and app-browser knows only the `PluginModule`
+  contract.
 - `app-core` depends only on `agent-core`, `contracts`, and local modules. `agent-core` depends
   only on `contracts` and local modules.
 - Plugin packages depend only on `contracts` and local modules. Host-only capabilities are

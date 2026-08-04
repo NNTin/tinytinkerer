@@ -4,8 +4,8 @@ import { DEFAULT_MODEL, type PluginModule } from '@tinytinkerer/app-core'
 import type { BrowserShell } from '../src/shell.js'
 import type { AuthStore } from '../src/stores/auth-store.js'
 import type { SettingsStore } from '../src/stores/settings-store.js'
+import { z } from 'zod'
 import { createBrowserRuntimeFactory } from '../src/runtime/get-runtime.js'
-import { loadPluginModules } from '../src/plugins/registry.js'
 
 const mockSettings = {
   selectedModel: 'openai/gpt-4.1-mini',
@@ -42,17 +42,84 @@ const toRequestUrl = (input: RequestInfo | URL): string => {
   return input.url
 }
 
-// Web search ships as a discovered plugin (packages/plugins/plugin-web-search).
-// Load the real workspace plugin modules so the factory can contribute the
-// web-search tool exactly as production does — it is a default-on plugin.
-let pluginModules: PluginModule[] = []
+// A stand-in for the web-search plugin: default-on, one tool that calls the
+// host's edge capability, and the keyword planner step that makes the heuristic
+// planner reach for it.
+//
+// It used to be the REAL package, loaded through `plugins/registry.ts`'s
+// `import.meta.glob`. That was only ever possible because a glob pattern is not
+// a module specifier, so `scripts/check-boundaries.mjs` never saw it — the rule
+// that app-browser must not depend on a concrete plugin has always applied here,
+// and this file was quietly outside it. Issue #495 moved the catalogue into
+// `@tinytinkerer/catalogue`, which app-browser may not import either, so the
+// escape hatch is gone and this stub is what remains.
+//
+// That is a real, deliberate narrowing of what this file covers, so: what is
+// tested WHERE. The factory's contract — a default-on plugin contributes its
+// tool, a disabled one contributes nothing, and planning follows — is here,
+// against the `PluginModule` shape that is now the actual seam. The real
+// plugin's own request/response handling is
+// `packages/plugins/plugin-web-search/tests`. That the real plugin reaches a
+// real reader is `packages/e2e/tests/docs/plugin-matrix.e2e.ts`, which derives
+// its expectations from the filesystem rather than from any catalogue.
+//
+// Mirrors `webSearchPluginManifest`: same id, same `defaultEnabled`, same
+// `keywordPlannerStep.stepId`. Those three are what the assertions below turn on.
+const searchInputSchema = z.object({
+  query: z.string().describe('The search query.'),
+  maxResults: z.number().int().min(1).max(10).default(5)
+})
 
-beforeEach(async () => {
+const webSearchStub: PluginModule = {
+  manifest: {
+    id: 'web-search',
+    label: 'Web search (Tavily)',
+    description: 'Allow the agent to search the web for up-to-date information.',
+    defaultEnabled: true,
+    toolDescriptors: [
+      {
+        id: 'web-search',
+        description: 'Search the web for fresh context using Tavily.',
+        schema: searchInputSchema,
+        keywordPlannerStep: {
+          keywords: ['search', 'latest', 'news', 'current'],
+          stepId: 'search',
+          summary: 'Collect current references from web search',
+          inputTemplate: { query: '__KEYWORD_PROMPT__', maxResults: 5 }
+        }
+      }
+    ]
+  },
+  createPlugin: () => ({
+    id: 'web-search',
+    createTools: (host) => [
+      {
+        id: 'web-search',
+        description: 'Search the web for fresh context using Tavily.',
+        schema: searchInputSchema,
+        // `edgeFetch` is optional on PluginHost; the factory under test always
+        // provides it, and a stub that silently skipped the call would make the
+        // tool-event assertions below pass for the wrong reason.
+        execute: (input: z.infer<typeof searchInputSchema>) => {
+          if (!host.edgeFetch) {
+            throw new Error('PluginHost provided no edgeFetch capability.')
+          }
+          return host
+            .edgeFetch('/api/search', input, { area: 'search' })
+            .then((response) => response.json())
+        }
+      }
+    ]
+  })
+}
+
+const pluginModules: PluginModule[] = [webSearchStub]
+
+beforeEach(() => {
   mockSettings.selectedModel = DEFAULT_MODEL
   mockSettings.litellmBaseUrl = ''
   mockSettings.pluginActivation = {}
   mockAuth.token = null
-  pluginModules = await loadPluginModules()
 })
 
 describe('createBrowserRuntimeFactory', () => {

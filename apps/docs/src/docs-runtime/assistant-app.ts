@@ -24,6 +24,7 @@ import {
 } from './assistant-constants'
 import { DOCS_ASSISTANT_DISCLOSURE } from './assistant-disclosure'
 import { createDocsBrowserApp, type DocsBrowserApp } from './create-docs-app'
+import { DOCS_ASSISTANT_PLUGINS } from './plugin-catalogue'
 import { beginDocsProductSignIn } from './product-sign-in'
 import type { DocsRuntimeConfig } from './runtime-config'
 
@@ -35,6 +36,17 @@ export const ensureDocsAssistantApp = (
   assistantAppPromise ??= createDocsBrowserApp({
     storageNamespace: DOCS_ASSISTANT_STORAGE_NAMESPACE,
     runtimeConfig,
+    // This session's plugins (issue #495), reached through a dynamic import so
+    // the catalogue's per-plugin map is not on the path a reader pays for before
+    // activating the assistant. Presentation-only: see ./plugin-catalogue.ts for
+    // what is excluded here and why — in particular `read_dom`, which #471's
+    // first locked decision keeps out of the documentation permanently.
+    plugins: () =>
+      import('@tinytinkerer/catalogue').then((m) => m.loadPlugins(DOCS_ASSISTANT_PLUGINS)),
+    // Nothing in this catalogue or in the Documentation tool group requests
+    // human input, so the assistant advertises no such capability and mounts no
+    // renderer for it.
+    humanInput: false,
     // #477's three documentation tools, attached to THIS session only. They are
     // ordinary tool-picker entries here — enabled by default for the assistant
     // and independently disablable — and absent from every live lab, which

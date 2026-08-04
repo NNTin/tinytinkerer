@@ -24,10 +24,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  * The watchdog is observed rather than inferred: the module the shell
  * dynamically imports is mocked, and every arming is counted.
  */
-vi.mock('../src/plugins/registry.js', () => ({
-  loadPluginModules: vi.fn().mockResolvedValue([])
-}))
-
 const armings = vi.hoisted(() => ({ count: 0, disposed: 0 }))
 
 vi.mock('../src/telemetry/oauth-callback-watchdog', () => ({
@@ -91,6 +87,7 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { createBrowserApp } from '../src/app.js'
 import { BrowserAppShell } from '../src/browser-app-shell.js'
 import { NO_GLOBAL_HOST_CAPABILITIES } from '../src/document-globals.js'
+import { noPlugins } from './plugin-catalogue-fixture'
 
 const ASSISTANT_NAMESPACE = 'tinytinkerer-docs-assistant'
 const LAB_NAMESPACE = 'tinytinkerer-docs-lab'
@@ -104,6 +101,7 @@ const createDocsApp = (storageNamespace: string, { owner }: { owner: boolean }) 
       sentryEnvironment: 'development'
     },
     {
+      plugins: noPlugins,
       documentGlobals: {
         brandMetadata: false,
         telemetry: owner,

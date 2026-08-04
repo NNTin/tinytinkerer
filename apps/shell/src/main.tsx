@@ -11,6 +11,10 @@ import './index.css'
 const presentation = resolvePresentation(window.location.pathname)
 
 createBrowserShellRoot({
+  // Every product shell carries the full catalogue. Reached through a dynamic
+  // import() so the per-plugin map stays out of this entry chunk — see
+  // PluginCatalogue's doc comment in app-browser.
+  plugins: () => import('@tinytinkerer/catalogue').then((m) => m.loadProductPlugins()),
   router: createShellRouter(presentation),
   BootScreen: presentation.BootScreen,
   registerServiceWorker: presentation.registersServiceWorker

@@ -94,6 +94,9 @@ importers:
       '@tinytinkerer/canvas':
         specifier: workspace:*
         version: link:../../packages/app/canvas
+      '@tinytinkerer/catalogue':
+        specifier: workspace:*
+        version: link:../../packages/app/catalogue
       react:
         specifier: 19.2.6
         version: 19.2.6
@@ -173,6 +176,9 @@ importers:
       '@tinytinkerer/app-shell':
         specifier: workspace:*
         version: link:../../packages/app/app-shell
+      '@tinytinkerer/catalogue':
+        specifier: workspace:*
+        version: link:../../packages/app/catalogue
       '@tinytinkerer/pixel-agents':
         specifier: workspace:*
         version: link:../../packages/app/pixel-agents
@@ -307,6 +313,9 @@ importers:
       '@tinytinkerer/app-browser':
         specifier: workspace:*
         version: link:../../packages/app/app-browser
+      '@tinytinkerer/catalogue':
+        specifier: workspace:*
+        version: link:../../packages/app/catalogue
       react:
         specifier: 19.2.6
         version: 19.2.6
@@ -356,6 +365,9 @@ importers:
       '@tinytinkerer/app-shell':
         specifier: workspace:*
         version: link:../../packages/app/app-shell
+      '@tinytinkerer/catalogue':
+        specifier: workspace:*
+        version: link:../../packages/app/catalogue
       '@tinytinkerer/ide':
         specifier: workspace:*
         version: link:../../packages/app/ide
@@ -405,6 +417,9 @@ importers:
       '@tinytinkerer/app-shell':
         specifier: workspace:*
         version: link:../../packages/app/app-shell
+      '@tinytinkerer/catalogue':
+        specifier: workspace:*
+        version: link:../../packages/app/catalogue
       '@tinytinkerer/mermaid':
         specifier: workspace:*
         version: link:../../packages/app/mermaid
@@ -454,6 +469,9 @@ importers:
       '@tinytinkerer/app-shell':
         specifier: workspace:*
         version: link:../../packages/app/app-shell
+      '@tinytinkerer/catalogue':
+        specifier: workspace:*
+        version: link:../../packages/app/catalogue
       '@tinytinkerer/pixel-agents':
         specifier: workspace:*
         version: link:../../packages/app/pixel-agents
@@ -518,6 +536,9 @@ importers:
       '@tinytinkerer/app-browser':
         specifier: workspace:*
         version: link:../../packages/app/app-browser
+      '@tinytinkerer/catalogue':
+        specifier: workspace:*
+        version: link:../../packages/app/catalogue
       '@tinytinkerer/ui':
         specifier: workspace:*
         version: link:../../packages/shared/ui
@@ -777,6 +798,42 @@ importers:
       vitest:
         specifier: 4.1.7
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@25.9.1)(jsdom@29.1.1)(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.3)(yaml@2.9.0))
+
+  packages/app/catalogue:
+    dependencies:
+      '@tinytinkerer/contracts':
+        specifier: workspace:*
+        version: link:../../shared/contracts
+      '@tinytinkerer/plugin-browser-state':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-browser-state
+      '@tinytinkerer/plugin-choice-prompt':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-choice-prompt
+      '@tinytinkerer/plugin-code-exec':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-code-exec
+      '@tinytinkerer/plugin-context-inspector':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-context-inspector
+      '@tinytinkerer/plugin-context-usage':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-context-usage
+      '@tinytinkerer/plugin-event-logger':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-event-logger
+      '@tinytinkerer/plugin-feedback':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-feedback
+      '@tinytinkerer/plugin-permissions':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-permissions
+      '@tinytinkerer/plugin-tool-tree':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-tool-tree
+      '@tinytinkerer/plugin-web-search':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-web-search
 
   packages/app/ide:
     dependencies:

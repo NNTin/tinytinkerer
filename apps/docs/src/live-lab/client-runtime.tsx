@@ -18,6 +18,7 @@ import { beginDocsProductSignIn } from '../docs-runtime/product-sign-in'
 import type { DocsRuntimeConfig } from '../docs-runtime/runtime-config'
 import { useDocsRuntimeConfig } from '../docs-runtime/runtime-config'
 import { deleteDocsStorageNamespace } from '../docs-runtime/storage'
+import { DOCS_LAB_PLUGINS } from '../docs-runtime/plugin-catalogue'
 import { DOCS_LAB_STORAGE_NAMESPACE } from './constants'
 import { deriveLabSessionSnapshot, LabSessionContext } from './lab-session-context'
 import { pluginToolPickerDemoToolGroup } from './plugin-tool-picker/demo-tools'
@@ -34,6 +35,17 @@ export const ensureDocsLabApp = (runtimeConfig: DocsRuntimeConfig): Promise<Docs
   sharedAppPromise ??= createDocsBrowserApp({
     storageNamespace: DOCS_LAB_STORAGE_NAMESPACE,
     runtimeConfig,
+    // The labs' own plugins (issue #495) — the assistant's two plus code
+    // execution, because this is the surface where the documentation
+    // demonstrates the plugin system rather than the one answering questions
+    // under #478's grounding policy. See ../docs-runtime/plugin-catalogue.ts.
+    // This is already inside a lazily-imported client runtime; the dynamic
+    // import keeps each plugin in its own chunk besides.
+    plugins: () => import('@tinytinkerer/catalogue').then((m) => m.loadPlugins(DOCS_LAB_PLUGINS)),
+    // Nothing in this catalogue requests human input: choice-prompt and
+    // permissions are deliberately excluded, so no lab can raise a prompt and no
+    // lab shell mounts a renderer for one.
+    humanInput: false,
     // The docs app's own intrinsic tool group (issue #453) — exactly the
     // mechanism apps/canvas/apps/mermaid use for their real stage tools, not a
     // simulation. Attached to the ONE shared docs-lab BrowserApp, so it is

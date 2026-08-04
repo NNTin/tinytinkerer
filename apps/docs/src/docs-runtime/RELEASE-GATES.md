@@ -113,8 +113,10 @@ it costs.
   #482 deferred it to #496 rather than putting a visual change to five shipped
   lab surfaces inside an audit; light-only labs are not the desired permanent
   rule.
-- **`/docs` Settings lists no plugins while `/widget` lists the product's.**
-  Plugin discovery is aliased to an empty registry. #482 re-affirmed the
-  deferral; the injected per-`BrowserApp` catalogue that replaces the alias is
-  #495, and `__tests__/no-dom-access.test.ts` is what holds it to excluding
-  `read_dom`.
+- **`/docs` Settings lists a deliberate subset of the product's plugins.**
+  Resolved by #495: the empty-registry alias is gone and each documentation app
+  injects its own catalogue (`plugin-catalogue.ts`). The assistant carries the
+  tool picker and the context gauge; the live labs add code execution. `read_dom`
+  and Web search are excluded permanently, and the HITL plugins by scope —
+  `__tests__/no-dom-access.test.ts` and `__tests__/no-human-prompt.test.ts` hold
+  all three exclusions, against the real catalogues.

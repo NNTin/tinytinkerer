@@ -17,8 +17,8 @@ repeating it.
 
 - A local clone of the repo with `pnpm install` already run.
 - You don't need to touch `app-browser`, the Settings modal, or the tool-tree picker — plugins are
-  discovered dynamically (`import.meta.glob`), so a new package under `packages/plugins/*` is
-  enough. See [Dynamic discovery](./plugin-infrastructure.md#dynamic-discovery-app-browser) for why
+  named in one catalogue, so a new package under `packages/plugins/*` plus one line there is
+  enough. See [The plugin catalogue](./plugin-infrastructure.md#the-plugin-catalogue-tinytinkerercatalogue) for why
   that works.
 
 ## 1. Scaffold the package
@@ -170,9 +170,11 @@ package must stay product-agnostic."
 pnpm dev
 ```
 
-Open the product, then Settings → Plugins. **Dice roller (roll_dice)** should appear in the list
-with no other change — the host discovers it through `import.meta.glob`, not a registration list.
+Open the product, then Settings → Plugins. **Dice roller (roll_dice)** should appear in the list.
 Enable it, start a new conversation, and ask: _"Roll a d20."_
+
+If it is missing, you skipped step 3 — `packages/app/catalogue/tests/catalogue-coverage.test.ts`
+fails in that case and prints the exact line to add.
 
 **Expected outcome:** the turn-activity panel shows a `roll_dice` call with a "Rolled dice" summary
 and a number between 1 and 20. Disable the plugin and ask again — the assistant can no longer call

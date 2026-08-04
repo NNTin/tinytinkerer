@@ -2,7 +2,8 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { HumanPromptView } from '@tinytinkerer/contracts'
+import { z } from 'zod'
+import type { HumanPromptView, PluginModule } from '@tinytinkerer/contracts'
 import { HumanPromptHost } from '../src/human-prompt-host.js'
 import { createStore } from 'zustand/vanilla'
 import { createHumanPromptStore, type HumanPromptStore } from '../src/human-prompt-bridge.js'
@@ -33,7 +34,63 @@ let promptStore: HumanPromptStore = createHumanPromptStore()
 const settingsStore = createStore(() => ({
   pluginConfig: {}
 }))
-const fakeApp = { stores: { humanPrompts: promptStore, settings: settingsStore } }
+// Stand-ins for the two plugin-contributed permission summarizers this suite
+// exercises, reached through THIS app's catalogue (issue #495) exactly as a real
+// plugin's would be.
+//
+// They used to be the REAL packages: `usePermissionSummarizers` called
+// `loadPluginModules()`, whose `import.meta.glob` resolved the actual workspace
+// plugins under vitest. That worked only because a glob pattern is not a module
+// specifier, so `scripts/check-boundaries.mjs` never saw it — app-browser has
+// never been allowed to depend on a concrete plugin, and this file was quietly
+// outside the rule. With the catalogue moved to `@tinytinkerer/catalogue` (which
+// app-browser also may not import) that route is gone.
+//
+// What changed, precisely: this suite now proves the MECHANISM — that a
+// catalogue-contributed `summarizePermission` is found by tool id, used to
+// enrich the modal, and has its report forwarded at most once. What
+// plugin-code-exec's own summarizer renders is
+// `packages/plugins/plugin-code-exec/tests/code-exec-plugin.test.ts`, which owns
+// that formatting and asserts it directly.
+const codeExecStub: PluginModule = {
+  manifest: {
+    id: 'code-exec',
+    label: 'Code execution (run_javascript tool)',
+    description: 'stub',
+    toolDescriptors: [
+      {
+        id: 'run_javascript',
+        description: 'run_javascript descriptor',
+        schema: z.object({ code: z.string() }),
+        summarizePermission: (input: Record<string, unknown>) => ({
+          title: 'Run JavaScript?',
+          sections: [
+            {
+              kind: 'code' as const,
+              label: 'Code',
+              language: 'javascript',
+              // Deliberately reformatted rather than dumped, because the
+              // assertion below is that the SUMMARIZER's output reaches the
+              // dialog instead of the raw JSON fallback.
+              code: String(input['code']).split(';').join(';\n')
+            }
+          ],
+          report: {
+            pluginId: 'code-exec',
+            kind: 'permission_view' as const,
+            message: 'Rendered a run_javascript permission view'
+          }
+        })
+      }
+    ]
+  },
+  createPlugin: () => ({ id: 'code-exec' })
+}
+
+const fakeApp = {
+  stores: { humanPrompts: promptStore, settings: settingsStore },
+  loadPlugins: () => Promise.resolve([codeExecStub])
+}
 
 const requestHumanInput = (view: HumanPromptView, scope?: string) =>
   promptStore.getState().request(view, scope)
@@ -173,10 +230,10 @@ describe('HumanPromptHost', () => {
 
   it('enriches an inputContext via the gated tool owner summarizer and forwards its report once', async () => {
     const { rerender } = render(<HumanPromptHost />)
-    // run_javascript's owner (plugin-code-exec) contributes summarizePermission, which
-    // pretty-prints the code in a CodeMirror view and forwards a report. It is
-    // discovered dynamically (loadPluginModules), proving the modal needs no static
-    // dependency on any concrete plugin.
+    // run_javascript's owner contributes summarizePermission, which renders the
+    // code in a CodeMirror view and forwards a report. It arrives through this
+    // app's catalogue, proving the modal needs no static dependency on any
+    // concrete plugin — only a tool id match.
     const answer = requestHumanInput(
       alertView({
         inputContext: {
@@ -187,7 +244,9 @@ describe('HumanPromptHost', () => {
     )
 
     const dialog = await screen.findByRole('alertdialog')
-    await waitFor(() => expect(dialog).toHaveTextContent('const a = 1'))
+    // The summarizer's output, not the raw JSON fallback: it split the
+    // statements onto their own lines.
+    await waitFor(() => expect(dialog).toHaveTextContent('const a=1;'))
     expect(dialog.querySelector('.cm-editor')).toBeInTheDocument()
     expect(dialog).toHaveTextContent('Code')
     expect(dialog).not.toHaveTextContent('"code"')

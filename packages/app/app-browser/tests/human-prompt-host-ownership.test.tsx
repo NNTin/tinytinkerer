@@ -34,10 +34,6 @@ vi.mock('../src/db', () => ({
   })
 }))
 
-vi.mock('../src/plugins/registry.js', () => ({
-  loadPluginModules: vi.fn().mockResolvedValue([])
-}))
-
 // Bootstrap is stubbed to "already ready" for the same reason
 // `document-globals-multi-shell.test.tsx` does it: the real one needs IndexedDB,
 // and its failure mode — a shell that never leaves its boot screen — is
@@ -51,6 +47,7 @@ import type { HumanPromptView } from '@tinytinkerer/contracts'
 import { createBrowserApp, type BrowserApp } from '../src/app.js'
 import { BrowserAppShell } from '../src/browser-app-shell.js'
 import { NO_GLOBAL_HOST_CAPABILITIES } from '../src/document-globals.js'
+import { noPlugins } from './plugin-catalogue-fixture'
 
 const SHELL_CONFIG = {}
 const BootScreen = () => null
@@ -101,7 +98,10 @@ const makeApp = (options: { humanInput?: boolean } = {}): BrowserApp => {
   promptCounter += 1
   return createBrowserApp(
     { storageNamespace: `tinytinkerer-ownership-${promptCounter}` },
-    { ...(options.humanInput === undefined ? {} : { humanInput: options.humanInput }) }
+    {
+      plugins: noPlugins,
+      ...(options.humanInput === undefined ? {} : { humanInput: options.humanInput })
+    }
   )
 }
 

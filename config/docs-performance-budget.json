@@ -33,7 +33,7 @@
         "by the eager-chunk check in the same script, not by a byte count."
       ],
       "maxBytes": 1000000,
-      "note": "Measured 2026-08-02 at 842,987 bytes (825,563 of page-referenced JS/CSS \u2014 identical across all 31 built pages, since Docusaurus loads route chunks lazily \u2014 plus a 17,408-byte corpus manifest). ~19% headroom for ordinary Docusaurus/Infima growth; a jump here means a page started pulling something that should have stayed lazy."
+      "note": "Measured 2026-08-04 at 844,024 bytes (826,616 of page-referenced JS/CSS \u2014 identical across all 31 built pages, since Docusaurus loads route chunks lazily \u2014 plus a 17,408-byte corpus manifest). ~16% headroom. Essentially unchanged by issue #495: the plugin catalogue and every plugin it names are reached through dynamic imports from the assistant/live-lab runtimes, so none of them is referenced by a built page. A jump here means a page started pulling something that should have stayed lazy."
     },
     "assistantRuntime": {
       "label": "2. Opening the assistant",
@@ -67,7 +67,7 @@
         "That is the e2e spec's half."
       ],
       "maxBytes": 100000,
-      "note": "Measured 2026-08-02 at 62,363 bytes for `plugins-and-tools/plugin-infrastructure`, the largest of 28 emitted artifacts (the next is 38,849). ~60% headroom. A breach means either a document grew far beyond the rest or the artifact format started carrying something it should not."
+      "note": "Measured 2026-08-04 at 71,816 bytes for `plugins-and-tools/plugin-infrastructure`, the largest of 28 emitted artifacts. ~28% headroom. Grew from 62,363 (2026-08-02) because issue #495 rewrote that document's discovery section for the injected plugin catalogue \u2014 the document got longer, the artifact format did not change. The budget is unchanged: this is the worst-case artifact and it is still well inside it. A breach means either a document grew far beyond the rest or the artifact format started carrying something it should not."
     },
     "search": {
       "label": "4. First search",

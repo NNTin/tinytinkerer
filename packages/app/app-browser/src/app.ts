@@ -41,9 +41,46 @@ import {
   type PreSendDisclosure
 } from './pre-send-disclosure-key'
 import { createHumanPromptStore, type HumanPromptStore } from './human-prompt-bridge'
-import { loadPluginModules } from './plugins/registry'
+import type { PluginModule } from '@tinytinkerer/app-core'
 
 export type { AppToolGroup } from './app-tool-group'
+
+/**
+ * How an app gets its plugins (issue #495).
+ *
+ * A thunk resolving this app's plugin modules. `app-browser` knows only the
+ * `PluginModule` contract; WHICH plugins a surface carries is a product decision
+ * belonging to whoever composes the app, and concrete `import()`s live in
+ * `@tinytinkerer/catalogue`, which the boundary checker permits to name plugin
+ * packages and which `app-browser` is forbidden to import.
+ *
+ * ## Why a thunk, and why the thunk must reach the catalogue lazily
+ *
+ * This shape is load-bearing for the startup budget, not merely tidy. A
+ * catalogue is a map of per-plugin dynamic imports, and a bundler emits that map
+ * into whichever chunk references it.
+ *
+ * A composition that pulls the catalogue in with a STATIC import at the top of
+ * its entry module — and then passes the loader it found there — puts the whole
+ * map in that shell's ENTRY chunk. That is exactly where the old
+ * `import.meta.glob` sat, and removing it is what freed ~1.5 kB against a budget
+ * that had 24 bytes of headroom (`apps/shell/src/bundle-size.test.ts`).
+ *
+ * So every composition reaches the catalogue THROUGH the thunk instead: the
+ * thunk body performs the dynamic import and calls the loader on the resolved
+ * module, leaving one line in the entry and the map in its own lazy chunk. See
+ * any of the six call sites (the five shells' `main.tsx`, `apps/host`, and
+ * `apps/docs`' two app factories) for the exact shape.
+ *
+ * If you are here to "simplify" this to a plain array, or to hoist that import
+ * to the top of the module: that is the thing it is protecting against, and the
+ * bundle-size guard is what will tell you.
+ *
+ * Called at most once per `BrowserApp` — {@link createBrowserApp} memoizes it —
+ * so several surfaces of one app share a single load, as they did when discovery
+ * was a module-global cache.
+ */
+export type PluginCatalogue = () => Promise<PluginModule[]>
 
 /**
  * A host-provided sign-in, used instead of this shell's own GitHub OAuth.
@@ -82,6 +119,21 @@ export type BrowserApp = {
   // Which document-global effects this app owns (issue #479). Always resolved,
   // so a consumer never has to repeat the "absent means yes" default.
   documentGlobals: DocumentGlobalCapabilities
+  /**
+   * This app's plugins (issue #495), loaded at most once and shared by every
+   * surface of this app.
+   *
+   * Per app, like the stores beside it, and for the same reason: a document can
+   * hold several `BrowserApp`s — a documentation page holds the global assistant
+   * beside the shared live-lab app — and they carry different catalogues with
+   * independent activation and settings. Discovery used to be one module-global
+   * memo in `plugins/registry.ts`, which could give only one answer for the whole
+   * document.
+   *
+   * Read it rather than importing a registry: `usePluginModules` reaches it from
+   * context, so a surface never has to be told which app it belongs to.
+   */
+  loadPlugins: PluginCatalogue
   stores: {
     auth: AuthStore
     chat: ChatStore
@@ -192,6 +244,27 @@ const requireBrowserApp = (app: BrowserApp | undefined): BrowserApp => {
 export const createBrowserApp = (
   config: BrowserShellConfig,
   options: {
+    /**
+     * This app's plugin catalogue (issue #495). REQUIRED, with no default.
+     *
+     * No default, in the #479/#482 house style, because every possible default is
+     * a wrong answer somewhere and none of them announces itself. Defaulting to
+     * the product catalogue would need `app-browser` to import
+     * `@tinytinkerer/catalogue`, which the boundary checker forbids and which
+     * would put the map back in every entry chunk. Defaulting to EMPTY is worse
+     * in a different direction: a composition that forgot the option would ship
+     * with no plugins at all, and the only symptom is Settings quietly saying
+     * "No plugins available" — which is precisely the defect this issue exists to
+     * remove, reintroduced as a silent failure mode.
+     *
+     * There are four production call sites, and they do not share a chokepoint:
+     * `createBrowserShellRoot` (shell, canvas, ide, mermaid, pixel-agents),
+     * `apps/host/src/main.tsx` (which mounts `BrowserAppShell` itself), and
+     * `apps/docs`' `createDocsBrowserApp` (both documentation apps). Requiring
+     * the option is what makes a missed one a type error rather than a silent
+     * regression in whichever surface was forgotten.
+     */
+    plugins: PluginCatalogue
     // The app's always-on tool group (e.g. an integrated shell's stage tools).
     // Threaded down to the chat store / runtime AND held on the app for the tool
     // picker; absent for web/widget/mobile.
@@ -234,10 +307,17 @@ export const createBrowserApp = (
      * or cost a reader the renderer's chunk.
      */
     humanInput?: boolean
-  } = {}
+  }
 ): BrowserApp => {
   const shell = createBrowserShell(config)
   const documentGlobals = resolveDocumentGlobalCapabilities(options.documentGlobals)
+  // Memoized here so every surface of this app shares ONE load — the property
+  // the module-global cache in `plugins/registry.ts` used to provide, now scoped
+  // to the app that owns it rather than to the document. Deliberately NOT
+  // invoked here: construction must stay synchronous and free of a network/chunk
+  // fetch, so the catalogue is not reached until something actually asks.
+  let pluginsPromise: Promise<PluginModule[]> | undefined
+  const loadPlugins: PluginCatalogue = () => (pluginsPromise ??= options.plugins())
   const auth = createAuthStore(shell)
   // A non-owner must not reach module-global telemetry consent from its own
   // settings action — see the store's own note.
@@ -259,6 +339,10 @@ export const createBrowserApp = (
     authStore: auth,
     settingsStore: settings,
     inspectorStore: inspector,
+    // This app's catalogue (issue #495), threaded down rather than imported:
+    // the store builds the runtime factory, and which plugins that runtime gets
+    // is a property of the app, not of the module.
+    loadPlugins,
     ...(humanPrompts ? { humanPrompts: humanPrompts.getState() } : {}),
     ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
     ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
@@ -281,6 +365,7 @@ export const createBrowserApp = (
   const app: BrowserApp = {
     shell,
     documentGlobals,
+    loadPlugins,
     stores: {
       auth,
       chat,
@@ -403,18 +488,19 @@ export const initializeBrowserApp = async (
       : [])
   ])
   // Discovery-time reconciliation (issue #400 review, F2/F3) needs BOTH
-  // discovered plugin manifests AND hydrated settings — this is the one spot in
+  // this app's plugin manifests AND hydrated settings — this is the one spot in
   // the browser bootstrap where they're guaranteed to have met: settings just
-  // finished hydrating above, and `loadPluginModules()` is the same cached
-  // discovery every other host surface (usePluginModules, chat-store) already
-  // shares, so this adds no second discovery path. Fire-and-forget: unlike
+  // finished hydrating above, and `app.loadPlugins()` is the same memoized
+  // catalogue every other surface of THIS app (usePluginModules, chat-store)
+  // already shares, so this adds no second load. Fire-and-forget: unlike
   // auth/settings hydration, nothing later in this function (or the UI-ready
   // gate that awaits it) depends on the sweep, and it must not add startup
   // latency. Guarded by `reconciledPluginTools` so it runs at most once per
   // session even under StrictMode's double effect invocation.
   if (!reconciledPluginTools.has(app)) {
     reconciledPluginTools.add(app)
-    void loadPluginModules()
+    void app
+      .loadPlugins()
       .then((modules) => {
         const plugins = modules.map((mod) => ({
           id: mod.manifest.id,

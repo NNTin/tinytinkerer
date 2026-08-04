@@ -29,7 +29,18 @@ const config = resolveBrowserShellBootstrapConfig({
   buildHash: __BUILD_HASH__
 })
 
-const browserApp = createBrowserApp(config)
+// The host compositor carries the full product catalogue, like every other
+// product surface (issue #495). It does NOT go through `createBrowserShellRoot`
+// — it mounts `BrowserAppShell` itself, below — so it names its own catalogue
+// here; that is exactly why `plugins` is required on `createBrowserApp` rather
+// than defaulted at the shell-root helper, where this call site would have been
+// silently skipped and the compositor would have lost every plugin.
+//
+// Reached through a dynamic import() so the per-plugin map stays out of this
+// entry chunk — see PluginCatalogue's doc comment in app-browser.
+const browserApp = createBrowserApp(config, {
+  plugins: () => import('@tinytinkerer/catalogue').then((m) => m.loadProductPlugins())
+})
 
 // The RouterProvider renders INSIDE BrowserAppShell (not the other way around):
 // RootComposition and the OAuth callback page both consume the app context

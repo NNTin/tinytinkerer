@@ -359,3 +359,64 @@ test('the same trigger text in a hand-written module is still rejected', async (
   assert.equal(result.code, 1)
   assert.match(result.stderr, /@tinytinkerer\/brand-assets must not use/)
 })
+
+// --- The plugin catalogue (issue #495) -------------------------------------
+//
+// The catalogue is the one package allowed to name a concrete plugin package.
+// Three cases, because the interesting property is not that the permission
+// exists but that it is BOUNDED — validateBoundary has no default-deny, so a
+// package nobody wrote a rule for is unconstrained entirely, and "the catalogue
+// may import plugins" must not have quietly meant "the catalogue may import
+// anything".
+
+test('the plugin catalogue may import a concrete plugin package', async (t) => {
+  const result = await withFixture(t, {
+    'packages/plugins/plugin-demo/package.json': pkg('@tinytinkerer/plugin-demo'),
+    'packages/plugins/plugin-demo/src/index.ts': 'export const manifest = { id: "demo" }\n',
+    'packages/app/catalogue/package.json': pkg('@tinytinkerer/catalogue'),
+    'packages/app/catalogue/src/index.ts':
+      "export const load = () => import('@tinytinkerer/plugin-demo')\n"
+  })
+
+  assert.equal(result.code, 0)
+  assert.equal(result.stdout.trim(), 'Boundary checks passed.')
+})
+
+test('the plugin catalogue may NOT import beyond plugins and contracts', async (t) => {
+  const result = await withFixture(t, {
+    'packages/app-browser/package.json': pkg('@tinytinkerer/app-browser'),
+    'packages/app/catalogue/package.json': pkg('@tinytinkerer/catalogue'),
+    'packages/app/catalogue/src/index.ts':
+      "import { createBrowserApp } from '@tinytinkerer/app-browser'\n\nexport const x = createBrowserApp\n"
+  })
+
+  assert.equal(result.code, 1)
+  assert.match(result.stderr, /the plugin catalogue may import only concrete plugin packages/)
+})
+
+test('app-browser still may not import a concrete plugin package', async (t) => {
+  const result = await withFixture(t, {
+    'packages/plugins/plugin-demo/package.json': pkg('@tinytinkerer/plugin-demo'),
+    'packages/plugins/plugin-demo/src/index.ts': 'export const manifest = { id: "demo" }\n',
+    'packages/app-browser/package.json': pkg('@tinytinkerer/app-browser'),
+    'packages/app-browser/src/index.ts':
+      "export const load = () => import('@tinytinkerer/plugin-demo')\n"
+  })
+
+  assert.equal(result.code, 1)
+  assert.match(result.stderr, /app-browser may import only/)
+})
+
+test('an integrated shell may depend on the plugin catalogue', async (t) => {
+  const result = await withFixture(t, {
+    'packages/app/catalogue/package.json': pkg('@tinytinkerer/catalogue'),
+    'packages/stage/package.json': pkg('@tinytinkerer/stage'),
+    'apps/docs/package.json': pkg('@tinytinkerer/docs', {
+      tinytinkerer: { architectureRole: 'integrated-shell', stagePackage: '@tinytinkerer/stage' }
+    }),
+    'apps/docs/src/main.ts': "export const load = () => import('@tinytinkerer/catalogue')\n"
+  })
+
+  assert.equal(result.code, 0)
+  assert.equal(result.stdout.trim(), 'Boundary checks passed.')
+})

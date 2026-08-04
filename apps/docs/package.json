@@ -26,6 +26,7 @@
     "@slorber/remark-comment": "1.0.0",
     "@tinytinkerer/app-browser": "workspace:*",
     "@tinytinkerer/app-shell": "workspace:*",
+    "@tinytinkerer/catalogue": "workspace:*",
     "@tinytinkerer/pixel-agents": "workspace:*",
     "github-slugger": "1.5.0",
     "mdast-util-to-string": "4.0.0",

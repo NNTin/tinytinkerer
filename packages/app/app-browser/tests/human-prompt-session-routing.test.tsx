@@ -41,16 +41,13 @@ vi.mock('../src/db', () => ({
   })
 }))
 
-vi.mock('../src/plugins/registry.js', () => ({
-  loadPluginModules: vi.fn().mockResolvedValue([])
-}))
-
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { ConversationSlice } from '@tinytinkerer/app-core'
 import type { HumanPromptView } from '@tinytinkerer/contracts'
 import { AppBrowserProvider, createBrowserApp, type BrowserApp } from '../src/app.js'
 import { HumanPromptComposerDock } from '../src/human-prompt-composer-dock.js'
 import { HumanPromptHost } from '../src/human-prompt-host.js'
+import { noPlugins } from './plugin-catalogue-fixture'
 
 afterEach(cleanup)
 
@@ -90,7 +87,7 @@ const makeApp = (options: {
   presentation: 'modal' | 'composer'
   conversations: { id: string; title: string }[]
 }): BrowserApp => {
-  const app = createBrowserApp({ storageNamespace: options.namespace })
+  const app = createBrowserApp({ storageNamespace: options.namespace }, { plugins: noPlugins })
   app.stores.settings.setState({
     pluginConfig: { [CHOICE_PROMPT]: { presentation: options.presentation } }
   })

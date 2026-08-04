@@ -389,11 +389,13 @@ function validateBoundary(sourcePkg, target, filePath) {
       '@tinytinkerer/app-browser',
       '@tinytinkerer/app-shell',
       '@tinytinkerer/ui',
+      // The plugin catalogue (issue #495) — see isBrowserAppDependencyAllowed.
+      '@tinytinkerer/catalogue',
       architecture.stagePackage
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: integrated shells may depend only on app-browser, app-shell, ui, their declared stage package, and local modules (${targetPkg.name})`
+        `${sourceLabel}: integrated shells may depend only on app-browser, app-shell, ui, the plugin catalogue, their declared stage package, and local modules (${targetPkg.name})`
       )
     }
   }
@@ -461,7 +463,28 @@ function validateBoundary(sourcePkg, target, filePath) {
     ])
     if (!allowed.has(targetPkg.name)) {
       errors.push(
-        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, sentry-telemetry, content-react, the outward-facing content packages (content-markdown, content-mermaid, content-wireframe, content-image, content-code, content-callout, content-link-card, content-table), plus app-browser-local modules. Concrete plugin packages must NOT be imported statically — they are discovered dynamically via import.meta.glob (${targetPkg.name})`
+        `${sourceLabel}: app-browser may import only app-core, brand-assets, contracts, sentry-telemetry, content-react, the outward-facing content packages (content-markdown, content-mermaid, content-wireframe, content-image, content-code, content-callout, content-link-card, content-table), plus app-browser-local modules. Concrete plugin packages must NOT be imported — app-browser knows only the PluginModule contract and receives a catalogue per BrowserApp from its host (issue #495; see @tinytinkerer/catalogue) (${targetPkg.name})`
+      )
+    }
+  }
+
+  // The plugin catalogue (issue #495): the ONE package permitted to name a
+  // concrete plugin package. Stated as a POSITIVE rule rather than left to the
+  // absence of one, because validateBoundary has no default-deny — an
+  // unrecognized package's imports are unconstrained ENTIRELY, so relying on
+  // "isPluginPackage does not match it" would have granted it everything.
+  //
+  // It is deliberately not under packages/plugins/ and deliberately not named
+  // `@tinytinkerer/plugin-*`: that prefix is load-bearing in isPluginPackage,
+  // in the app-browser rule above, and in error messages. A catalogue answering
+  // to it would be treated as a plugin (allowed only contracts) if placed under
+  // packages/plugins/, and would escape that treatment by location anywhere
+  // else — two wrong answers decided by directory.
+  if (sourcePkg.name === '@tinytinkerer/catalogue') {
+    const allowed = new Set(['@tinytinkerer/catalogue', '@tinytinkerer/contracts'])
+    if (!allowed.has(targetPkg.name) && !isPluginPackage(targetPkg)) {
+      errors.push(
+        `${sourceLabel}: the plugin catalogue may import only concrete plugin packages, contracts, and catalogue-local modules (${targetPkg.name})`
       )
     }
   }
@@ -585,7 +608,17 @@ function validateSourceConstraints(pkg, filePath, source) {
 }
 
 function isBrowserAppDependencyAllowed(targetPkg) {
-  return targetPkg.name === '@tinytinkerer/app-browser' || targetPkg.name === '@tinytinkerer/ui'
+  return (
+    targetPkg.name === '@tinytinkerer/app-browser' ||
+    targetPkg.name === '@tinytinkerer/ui' ||
+    // The plugin catalogue (issue #495). An app composes its own — which plugins
+    // this surface carries is a product decision that belongs to the app, not to
+    // app-browser, which knows only the PluginModule contract. Depending on it
+    // does NOT let an app reach a concrete plugin package: the rule below keeps
+    // the catalogue's own imports to plugin-* and contracts, and an app still
+    // cannot name a plugin package itself.
+    targetPkg.name === '@tinytinkerer/catalogue'
+  )
 }
 
 function isPluginPackage(pkg) {

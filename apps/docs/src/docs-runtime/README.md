@@ -149,13 +149,17 @@ page.
 
 ### No human-in-the-loop capability
 
-`requestHumanInput` is reachable only through the PluginHost, and
-`docusaurus.config.ts` aliases plugin discovery to a stub that resolves to no
-plugins. No documentation tool requests human input either, so **no HITL prompt
-can be raised in the documentation site at all**.
+`requestHumanInput` is reachable only through the PluginHost. Neither
+documentation catalogue carries a HITL-capable plugin — choice-prompt and
+permissions are excluded deliberately (see `plugin-catalogue.ts`) — and no
+documentation tool requests human input either, so **no HITL prompt can be raised
+in the documentation site at all**.
 
-Both docs apps therefore declare `humanInput: false`, in `create-docs-app.ts`,
-once for every docs surface. That is a single value rather than a pair of
+Both docs apps therefore declare `humanInput: false`. Since #495 that is a
+REQUIRED parameter of `createDocsBrowserApp` rather than a value it hardcodes:
+the factory builds both documentation apps, so one hardcoded value was a single
+switch for both, and there was no way to give the assistant a HITL-capable plugin
+without giving every `<LiveLab>` on every page the same capability. That is a single value rather than a pair of
 switches (#489 review): the app has no prompt queue, so its runtime advertises no
 `requestHumanInput` and no shell mounts a renderer. They cannot be set
 inconsistently, which previously would have let a plugin enqueue a prompt that
@@ -169,10 +173,14 @@ the queue is one store per `BrowserApp`, a mounted host can only see its own
 app's prompts, and `human-prompt-host-ownership.ts` elects one shell to draw the
 modal when an app has several (as the lab app does, one shell per `<LiveLab>`).
 
-Flipping this on is not, by itself, enough to ship a HITL plugin here. #498 —
-a `composer`-presented prompt is invisible while a floating surface is minimized
-— still applies to the assistant's widget, so #495 has to exclude choice-prompt
-or constrain its presentation until that is resolved.
+Nothing blocks flipping it on any more. #489 made the prompt queue per-app, so a
+prompt cannot misroute between the assistant and a lab; #498 — a
+`composer`-presented prompt being invisible behind a minimized surface — is fixed,
+so a minimized assistant widget is a supported place for a question. Excluding the
+HITL plugins is now a scope decision, recorded in `plugin-catalogue.ts`, not a
+constraint. Enabling one means adding it to that app's catalogue and flipping that
+app's `humanInput` — and `__tests__/no-human-prompt.test.ts` fails on both halves
+until you do.
 
 ## Reset
 
@@ -504,10 +512,9 @@ subpath nobody had noticed the page was pulling: `documentation-corpus`, which
 `DocsPageProvider` reaches on every route and which re-exports contracts only.
 
 **`read_dom` is excluded on purpose, not by accident.** Nothing in the
-documentation can read the rendered page, and the only reason has been that
-plugin discovery resolves to nothing. That is a build-configuration fact, and the
-plugin-catalogue work in #495 is precisely what would change it —
-so the exclusion is asserted as an outcome. `__tests__/no-dom-access.test.ts`
+documentation can read the rendered page. The reason USED to be that plugin
+discovery resolved to nothing — a build-configuration fact that #495 has since
+removed — so the exclusion is asserted as an outcome instead. `__tests__/no-dom-access.test.ts`
 covers the source side — the assistant registers those three tools and no other,
 and the alias that installs the empty registry is still there — and
 `assistant-no-dom-access.e2e.ts` covers the **deployed catalogue**, through
@@ -518,8 +525,9 @@ That last part is the one worth knowing about: the tool PICKER is the wrong plac
 to assert this, because it lists only _enabled_ plugins and Browser state ships
 disabled. A catalogue that wrongly included it would show nothing in the picker
 and let a reader switch it on in Settings anyway. No denylist and no second
-catalogue was invented: this issue states the requirement, and #495 has to
-satisfy it.
+catalogue was invented: #482 stated the requirement and #495 satisfied it, by
+naming what each documentation app carries in `plugin-catalogue.ts` and asserting
+the exclusion against those real lists.
 
 **The public surface is what someone imports.** `index.ts` carried the storage
 namespace, an imperative status reader, and per-axis presentation mutators — none
@@ -538,10 +546,10 @@ engine could plausibly differ on. Everything exhaustive stays on Chromium.
 
 - The Pixel Agents Office UI (#472) — only the portal it mounts through.
 - Any use of the rendered DOM or live-lab state.
-- Plugin discovery, and the injected per-`BrowserApp` catalogue that would
-  replace the webpack alias to an empty registry — #495. Deliberately deferred;
-  the requirements it has to carry are recorded there. #489's session-scoped HITL
-  routing has landed, so misrouting is no longer the reason to exclude the
-  HITL-capable plugins — but #498 still is: until a `composer`-presented prompt is
-  visible behind a minimized widget, #495 must exclude choice-prompt or constrain
-  its presentation, and either way say so with a test.
+- Human-in-the-loop in the documentation. Both catalogues exclude choice-prompt
+  and permissions and both apps declare `humanInput: false` — a scope decision
+  since #489 and #498 removed the two things that made it a constraint. See
+  `plugin-catalogue.ts`.
+- Any plugin beyond the approved catalogues, in particular `read_dom` (excluded
+  permanently) and Web search (excluded so no documentation answer can come from
+  the open web).
