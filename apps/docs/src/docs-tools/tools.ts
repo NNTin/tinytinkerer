@@ -4,13 +4,14 @@
  *
  * They travel to the runtime as an `AppToolGroup` — the same mechanism
  * `apps/canvas` and `apps/mermaid` use for their stage verbs, and the same one
- * the docs tool-picker lab uses — rather than as a plugin, because `apps/docs`
- * can neither statically import a concrete `@tinytinkerer/plugin-*` package
- * (scripts/check-boundaries.mjs forbids it) nor discover one dynamically
- * (`import.meta.glob` has no webpack equivalent; see
- * live-lab/plugin-registry-stub.ts). An app group has no activation toggle,
- * which is the right shape here anyway: the documentation tools are intrinsic to
- * the documentation assistant. Individual tools remain independently
+ * the docs tool-picker lab uses — rather than as a plugin. `apps/docs` still
+ * cannot name a concrete `@tinytinkerer/plugin-*` package
+ * (scripts/check-boundaries.mjs forbids it; only `@tinytinkerer/catalogue` may),
+ * but since issue #495 that is no longer the deciding reason: docs DOES carry
+ * plugins now, through an injected catalogue. An app group remains the right
+ * shape here because it has no activation toggle, and the documentation tools
+ * are intrinsic to the documentation assistant — they are not something a reader
+ * should be able to switch off wholesale. Individual tools remain independently
  * controllable through the ordinary tool picker's per-tool disablement.
  *
  * `siteConfig` is injected rather than read, because a `Tool` is a plain object

@@ -42,14 +42,18 @@ type ToolTreeData = {
 // useContextInspector: the plugin owns the input→view mapping; the host only
 // supplies data and renders the result.
 //
-// `fallbackSummarizer` is an opt-in escape hatch for a host that cannot rely on
-// plugin discovery to ever surface a tool-tree-descriptor plugin — e.g. a
-// Docusaurus/webpack docs build, where `import.meta.glob`-based plugin discovery
-// has no equivalent and plugin modules are always `[]` (see
-// apps/docs/src/live-lab/plugin-registry-stub.ts). Such a host may still have a
-// real `appToolGroup` worth picking tools from, so it can pass
-// `genericToolTreeSummarizer` (this package's own product-agnostic mapper) to get
-// a working tree without waiting on a plugin that can never be discovered.
+// `fallbackSummarizer` is an opt-in escape hatch for a host whose catalogue may
+// not carry a tool-tree-descriptor plugin, or whose reader has switched it off.
+// Such a host may still have a real `appToolGroup` worth picking tools from, so
+// it can pass `genericToolTreeSummarizer` (this package's own product-agnostic
+// mapper) to get a working tree either way.
+//
+// It used to say something stronger: that a Docusaurus/webpack build could never
+// discover a plugin at all, because `import.meta.glob` had no equivalent there
+// and plugin modules were always `[]`. Since issue #495 a host injects its own
+// catalogue and the documentation apps carry `plugin-tool-tree`, so the plugin
+// branch below is live in docs too — the fallback is now a real fallback rather
+// than the only reachable path.
 // Omitted (the default), this behaves exactly as before: `summarizer` stays
 // `null` — and the slot stays hidden — until an enabled plugin contributes one.
 export const useToolTree = (options?: {

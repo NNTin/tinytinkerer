@@ -37,6 +37,8 @@ type OutputChunk = {
   code?: string
   isEntry?: boolean
   imports?: string[]
+  dynamicImports?: string[]
+  moduleIds?: string[]
 }
 
 type OutputAsset = {
@@ -92,9 +94,10 @@ describe('shell bundle regression guard', () => {
     // Raised 66 → 68 kB (2026-07-24, issue #441): isPluginModule, SETTINGS_KEYS,
     // defaultSettingsState, and ConversationRunRegistry/MAX_CONCURRENT_RUNS moved
     // from static VALUE imports of `@tinytinkerer/app-core` to small entry-local
-    // duplicates (see plugins/is-plugin-module.ts, stores/settings-defaults.ts,
-    // stores/run-registry.ts) so the entry no longer has a static edge into the
-    // merged ~123 kB app-core/agent-core/contracts chunk (see the next test).
+    // duplicates (then plugins/is-plugin-module.ts — since removed, see below —
+    // plus stores/settings-defaults.ts and stores/run-registry.ts) so the entry no
+    // longer has a static edge into the merged ~123 kB app-core/agent-core/
+    // contracts chunk (see the next test).
     // Trading ~750 bytes of duplicated code in the entry for no longer fetching
     // that whole chunk eagerly is the point of the fix, not a regression.
     // Raised 68 → 69 kB (2026-08-02, issue #481): the pre-send disclosure gate.
@@ -136,23 +139,29 @@ describe('shell bundle regression guard', () => {
     // are in the lazy chat route chunk, not here; the loading boundary is
     // unchanged.
     //
-    // That leaves roughly 20 bytes of headroom against 69 kB, so treat this budget
-    // as spent. There is no small win left to collect: the ownership registry and
-    // the disclosure store are already in lazy chunks, and the unused
-    // `DEFAULT_GLOBAL_HOST_CAPABILITIES` export was removed here for the last ~10
-    // bytes.
+    // LOWERED in practice, not raised, by issue #495 (2026-08-04): 70,632 →
+    // 69,108 bytes, so headroom against 69 kB went from ~24 bytes to 1,548. The
+    // budget number is deliberately left at 69 kB — the headroom is real and
+    // available, and lowering the ceiling to bank it would only force a raise
+    // back through review for the next honest 100 bytes.
     //
-    // The one identifiable block that could still leave is the issue #441 set of
-    // entry-local duplicates — `stores/run-registry.ts`, `stores/settings-defaults.ts`
-    // and `plugins/is-plugin-module.ts`, ~750 bytes of deliberately copied code —
-    // and only if `@tinytinkerer/app-core` stops being bucketed into one merged
-    // manualChunks output (see scripts/browser-shell-chunks.mjs), which is what
-    // makes a static value import of it expensive. Until then those copies are
-    // load-bearing and must not be "cleaned up".
+    // Where it came from: plugin discovery moved out of `app-browser` into
+    // `@tinytinkerer/catalogue`, taking with it the `import.meta.glob` and the
+    // entry-local `plugins/is-plugin-module.ts`. That module WAS on the #441
+    // "load-bearing, do not clean up" list two paragraphs above; the condition
+    // recorded there for removing it was `@tinytinkerer/app-core` leaving its
+    // merged manualChunks bucket, and that is NOT what happened. It left for a
+    // different reason the note did not anticipate: its sole production importer
+    // was the registry, and the registry is no longer in this entry at all. The
+    // other two duplicates — `stores/run-registry.ts` and
+    // `stores/settings-defaults.ts` — are imported by chat-store and
+    // settings-store, are still in this entry, and remain load-bearing under the
+    // original condition.
     //
-    // So the next change that needs room here has to profile the entry rather than
-    // reach for a known extraction. Raising the number is a product decision about
-    // startup cost, not a formality.
+    // So the earlier conclusion ("treat this budget as spent… the next change has
+    // to profile the entry rather than reach for a known extraction") no longer
+    // holds, and the 1,548 bytes are there to be spent. Raising the number is
+    // still a product decision about startup cost, not a formality.
     const entry = chunks.find((chunk) => chunk.isEntry)
     expect(entry, 'No entry chunk found in build output').toBeDefined()
     expect((entry!.code?.length ?? 0) / 1024).toBeLessThan(69)
@@ -160,7 +169,7 @@ describe('shell bundle regression guard', () => {
 
   it('keeps the app-core chunk out of the entry chunk static import graph', () => {
     // Regression guard for issue #441: three long-standing eager value imports
-    // (isPluginModule in plugins/registry.ts; SETTINGS_KEYS and
+    // (isPluginModule in the since-removed plugins/registry.ts; SETTINGS_KEYS and
     // defaultSettingsState in stores/settings-store.ts) used to statically pull
     // `@tinytinkerer/app-core` into the entry — and manualChunks merges app-core
     // with agent-core and contracts into one ~123 kB chunk (see
@@ -173,6 +182,47 @@ describe('shell bundle regression guard', () => {
     expect(entry, 'No entry chunk found in build output').toBeDefined()
     const staticImports = entry!.imports ?? []
     expect(staticImports.filter((fileName) => fileName.includes('app-core'))).toEqual([])
+  })
+
+  it('keeps the plugin catalogue out of the entry chunk', () => {
+    // Issue #495's lazy-reach invariant, asserted structurally.
+    //
+    // A `BrowserApp` gets its plugins as a thunk, and every composition reaches
+    // `@tinytinkerer/catalogue` through a dynamic `import()` INSIDE that thunk.
+    // Hoisting it to a static import at the top of `main.tsx` still typechecks,
+    // still passes every test, and still works at runtime — it just moves the
+    // catalogue's per-plugin import map into this entry chunk, which is exactly
+    // where the `import.meta.glob` it replaced used to sit.
+    //
+    // The byte budget above CANNOT catch that, which is why this test exists
+    // rather than a sentence in a doc comment. Measured 2026-08-04: hoisting the
+    // import costs 1,070 bytes and lands the entry at 68.533 kB — comfortably
+    // UNDER the 69 kB ceiling. It would have shipped green today, before any
+    // future raise. Same reasoning as the app-core static-edge test below: the
+    // import graph shows what a size check cannot.
+    //
+    // Two halves, because the violation has two signatures and either alone is
+    // weaker: the catalogue module lands in this chunk's own modules, AND each
+    // plugin's chunk becomes a DIRECT dynamic import of the entry (10 of them, at
+    // last measurement) instead of hanging off the catalogue's own lazy chunk.
+    const entry = chunks.find((chunk) => chunk.isEntry)
+    expect(entry, 'No entry chunk found in build output').toBeDefined()
+
+    expect(
+      (entry!.moduleIds ?? []).filter((id) => id.includes('/packages/app/catalogue/')),
+      'The plugin catalogue is in the startup entry. Reach it through a dynamic ' +
+        "import() inside the `plugins` thunk — see PluginCatalogue's doc comment."
+    ).toEqual([])
+
+    const byFileName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]))
+    const pluginChunksOffEntry = (entry!.dynamicImports ?? []).filter((fileName) =>
+      (byFileName.get(fileName)?.moduleIds ?? []).some((id) => id.includes('/packages/plugins/'))
+    )
+    expect(
+      pluginChunksOffEntry,
+      'Plugin chunks are dynamic imports of the startup entry, which means the ' +
+        'catalogue map was inlined into it.'
+    ).toEqual([])
   })
 
   it('keeps the lazy chat route chunk under 60 kB', () => {

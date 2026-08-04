@@ -136,14 +136,18 @@ test.describe('the documentation plugin catalogue (#495)', () => {
     }
     await page.keyboard.press('Escape')
 
-    await enableCodeExecPlugin(page)
+    // Scoped to THIS lab (issue #495): a documentation page carries a Settings
+    // button and a composer per mounted surface, so the shared fixture is told
+    // which one it is driving rather than relying on the assistant happening to
+    // be minimized on this route.
+    await enableCodeExecPlugin(page, lab)
 
     // Now execute it. The model issues one run_javascript action; the sandbox
     // really runs it in the browser and the observation folds back into the next
     // model request. Nothing about this path is documentation-specific — it is
     // the product runtime, reached from a documentation page.
-    await page.getByPlaceholder('Ask anything').first().fill('Run the sandbox check.')
-    await page.getByRole('button', { name: 'Send' }).first().click()
+    await lab.getByPlaceholder('Ask anything').first().fill('Run the sandbox check.')
+    await lab.getByRole('button', { name: 'Send' }).first().click()
 
     await expect
       .poll(() => mock.sandboxResult(), {

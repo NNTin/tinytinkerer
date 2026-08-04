@@ -32,10 +32,13 @@ import {
   READ_DOC_TOOL_ID,
   SEARCH_DOCS_TOOL_ID
 } from '../../docs-tools'
+import { loadPlugins } from '@tinytinkerer/catalogue'
 import { pluginToolPickerDemoToolGroup } from '../../live-lab/plugin-tool-picker/demo-tools'
+import { DOCS_ASSISTANT_PLUGINS } from '../plugin-catalogue'
 
-// These suites are about surfaces other than the catalogue, so their apps carry
-// no plugins (issue #495 makes `plugins` a required, undefaulted option).
+// Most cases here are about the picker itself rather than the catalogue, so their
+// apps carry no plugins (issue #495 makes `plugins` a required, undefaulted
+// option). The last suite in this file is the exception, and uses the real one.
 const noPlugins = () => Promise.resolve([])
 
 const renderSlot = (app: BrowserApp) =>
@@ -169,5 +172,62 @@ describe('the assistant tool picker', () => {
 
     expect(container).toBeEmptyDOMElement()
     expect(screen.queryByRole('button', { name: 'Choose available tools' })).toBeNull()
+  })
+
+  it('keeps the picker when a reader enables the tool-tree plugin', async () => {
+    // The one behaviour change #495 makes to a surface that already ships.
+    //
+    // `useToolTree` resolves its summarizer from the first ENABLED plugin
+    // carrying a `toolTreeDescriptor`, falling back to `app.toolTreeSummarizer`.
+    // Before #495 the docs catalogue was empty, so the fallback was the only
+    // possibility and the branch above it was dead here. Both documentation
+    // catalogues now carry `plugin-tool-tree`, so a reader switching it on in
+    // Settings moves the assistant's picker onto the PLUGIN's mapper — a live
+    // path with no coverage until now.
+    //
+    // The real catalogue, not a stub: this asserts what a reader of the shipped
+    // site gets, and `apps/docs` may import `@tinytinkerer/catalogue` (see
+    // scripts/check-boundaries.mjs).
+    //
+    // Built WITHOUT `toolTreeSummarizer`, deliberately. With both present this
+    // test could not tell which one rendered the picker — the two mappers are
+    // deliberate twins (see `genericToolTreeSummarizer`'s header), so a passing
+    // assertion would prove nothing about the plugin branch. Removing the
+    // fallback makes the plugin the ONLY thing that can produce a picker here,
+    // which is exactly the case the test above (`renders nothing at all without
+    // the app's summarizer`) shows is otherwise empty.
+    const app = createBrowserApp(
+      { storageNamespace: 'tinytinkerer-docs-picker-test' },
+      {
+        plugins: () => loadPlugins(DOCS_ASSISTANT_PLUGINS),
+        appToolGroup: createDocumentationToolGroup()
+      }
+    )
+    const preferences = new Map<string, string>()
+    Object.assign(app.shell, {
+      preferences: {
+        get: (key: string) => Promise.resolve(preferences.get(key)),
+        set: (key: string, value: string) => {
+          preferences.set(key, value)
+          return Promise.resolve()
+        }
+      }
+    })
+    app.stores.settings.setState({ pluginActivation: { 'tool-tree': true } })
+
+    renderSlot(app)
+
+    const toggle = await screen.findByRole('button', { name: 'Choose available tools' })
+    await userEvent.click(toggle)
+
+    const dialog = screen.getByRole('dialog', { name: 'Choose available tools' })
+    await waitFor(() => expect(dialog).toHaveTextContent('Documentation'))
+    for (const toolId of [SEARCH_DOCS_TOOL_ID, READ_DOC_TOOL_ID, READ_CURRENT_DOC_TOOL_ID]) {
+      expect(dialog.querySelector(`[data-testid="tool-tree-tool-${toolId}"]`)).not.toBeNull()
+    }
+
+    // …and the plugin contributes no TOOLS of its own, so enabling it must not
+    // add a second group to the reader's picker.
+    expect(dialog).not.toHaveTextContent('Tool picker (tree view)')
   })
 })

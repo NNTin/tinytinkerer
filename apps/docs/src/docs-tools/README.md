@@ -19,12 +19,13 @@ because they are properties of the code rather than of any one code path.
 
 `createDocumentationToolGroup()` returns an `AppToolGroup`
 (`{ id: 'documentation', label: 'Documentation', tools }`) — the same mechanism
-`apps/canvas` and `apps/mermaid` use for their stage verbs. `apps/docs` cannot
-be a plugin host: `scripts/check-boundaries.mjs` forbids importing a concrete
-`@tinytinkerer/plugin-*` package, and dynamic discovery has no webpack
-equivalent (see `live-lab/plugin-registry-stub.ts`). An app group is the right
-shape anyway — the documentation tools are intrinsic to the documentation
-assistant, so there is nothing for an activation toggle to mean. Individual
+`apps/canvas` and `apps/mermaid` use for their stage verbs. `apps/docs` still
+cannot name a concrete `@tinytinkerer/plugin-*` package — `scripts/check-boundaries.mjs`
+allows that only inside `@tinytinkerer/catalogue` — but since issue #495 it is a
+plugin host: each documentation app injects its own catalogue. An app group is
+still the right shape for these three — the documentation tools are intrinsic to
+the documentation assistant, so there is nothing for an activation toggle to
+mean. Individual
 tools remain independently switchable through the ordinary tool picker's
 per-tool disablement.
 

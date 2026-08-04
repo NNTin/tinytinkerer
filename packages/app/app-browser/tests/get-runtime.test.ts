@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatEvent, PluginActivationState } from '@tinytinkerer/contracts'
 import { DEFAULT_MODEL, type PluginModule } from '@tinytinkerer/app-core'
@@ -64,7 +66,10 @@ const toRequestUrl = (input: RequestInfo | URL): string => {
 // its expectations from the filesystem rather than from any catalogue.
 //
 // Mirrors `webSearchPluginManifest`: same id, same `defaultEnabled`, same
-// `keywordPlannerStep.stepId`. Those three are what the assertions below turn on.
+// `keywordPlannerStep.stepId`. Those three are what the assertions below turn on
+// — and the test at the bottom of this file CHECKS the mirror against the real
+// plugin's source, so a rename there fails here instead of leaving this suite
+// quietly asserting something about a plugin that no longer behaves this way.
 const searchInputSchema = z.object({
   query: z.string().describe('The search query.'),
   maxResults: z.number().int().min(1).max(10).default(5)
@@ -367,5 +372,38 @@ describe('createBrowserRuntimeFactory', () => {
     // inferred plan has no search step and no tool runs.
     expect(events.some((event) => event.type === 'agent.run.started')).toBe(true)
     expect(events.some((event) => event.type === 'agent.tool.started')).toBe(false)
+  })
+})
+
+/**
+ * The stub above claims fidelity to `plugin-web-search`. This is the check that
+ * makes the claim worth anything.
+ *
+ * Read as TEXT, not imported: `scripts/check-boundaries.mjs` forbids `app-browser`
+ * — tests included — from depending on a concrete `@tinytinkerer/plugin-*`
+ * package, and that rule is a large part of why the stub exists at all. Same
+ * technique, and the same reason, as
+ * `apps/docs/src/docs-runtime/__tests__/no-dom-access.test.ts`.
+ *
+ * Only the three fields the assertions above actually turn on. This is not a
+ * schema-equivalence check and should not grow into one — the plugin's own
+ * behaviour is tested in `packages/plugins/plugin-web-search/tests`.
+ */
+describe('the web-search stub still mirrors the real plugin', () => {
+  const source = (): string =>
+    readFileSync(
+      fileURLToPath(new URL('../../../plugins/plugin-web-search/src/index.ts', import.meta.url)),
+      'utf8'
+    )
+
+  it('matches on the three fields the assertions turn on', () => {
+    const text = source()
+    // The activation id the `pluginActivation` cases below toggle.
+    expect(text).toContain(`id: WEB_SEARCH_PLUGIN_ID`)
+    expect(text).toContain(`export const WEB_SEARCH_PLUGIN_ID = 'web-search'`)
+    // Default-on, which is what makes "enabled (default)" meaningful.
+    expect(text).toContain('defaultEnabled: true')
+    // The planner step id the heuristic-planning cases assert on.
+    expect(text).toContain(`stepId: 'search'`)
   })
 })

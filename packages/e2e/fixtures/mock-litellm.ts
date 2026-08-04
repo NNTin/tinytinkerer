@@ -1182,21 +1182,33 @@ export const capturedToolCallArgs = (
 // Opens Settings (if not already open), reveals the tab that renders the given plugin
 // label, and ensures its toggle is checked. Returns the Settings dialog locator so the
 // caller can read further controls (e.g. a per-plugin dropdown) before closing.
-const openSettingsAndEnablePlugin = async (page: Page, label: string): Promise<Locator> => {
+const openSettingsAndEnablePlugin = async (
+  page: Page,
+  label: string,
+  // The surface that owns the Settings button, for a page carrying more than one
+  // (issue #495). A documentation page mounts a `<LiveLab>` per lab AND the
+  // global assistant, so a page-level `getByRole('button', { name: 'Settings' })`
+  // is a strict-mode violation waiting for the first spec that opens the
+  // assistant before enabling a plugin. It has not fired only because the
+  // assistant is minimized on the routes that use this today — which is a
+  // property of those specs, not of this fixture. Defaults to the page, so every
+  // single-surface caller is unchanged.
+  root: Page | Locator = page
+): Promise<Locator> => {
   await dismissTelemetryDialog(page)
-  const settingsDialog = page.getByRole('dialog', { name: 'Settings' })
+  const settingsDialog = page.getByRole('dialog', { name: 'Settings' }).first()
   // The settings modal can already be open on first load; only open it if not.
   // Probe the dialog itself (not the "Close settings" label, which the backdrop
   // also carries) so the open/skip decision is unambiguous.
   if (!(await settingsDialog.isVisible().catch(() => false))) {
-    await page.getByRole('button', { name: 'Settings' }).click()
+    await root.getByRole('button', { name: 'Settings' }).first().click()
     await expect(settingsDialog).toBeVisible()
   }
 
   // The settings surface is tabbed: the control may live under any tab (plugins
   // under "Tools", interface prefs under "Models"), and only the active tab's
   // panel is mounted. Reveal the control by activating whichever tab renders it.
-  const labelText = page.getByText(label)
+  const labelText = settingsDialog.getByText(label)
   if (!(await labelText.isVisible().catch(() => false))) {
     const tabs = settingsDialog.getByRole('tab')
     const tabCount = await tabs.count()
@@ -1208,7 +1220,7 @@ const openSettingsAndEnablePlugin = async (page: Page, label: string): Promise<L
     }
   }
   await labelText.scrollIntoViewIfNeeded()
-  const checkbox = page.getByRole('checkbox', { name: label })
+  const checkbox = settingsDialog.getByRole('checkbox', { name: label })
   if (!(await checkbox.isChecked())) {
     await labelText.click()
   }
@@ -1218,23 +1230,30 @@ const openSettingsAndEnablePlugin = async (page: Page, label: string): Promise<L
 
 // Closes the Settings dialog via the X button inside it (the backdrop also carries the
 // "Close settings" label but sits behind the dialog content) and waits for the composer.
-const closeSettings = async (page: Page): Promise<void> => {
+const closeSettings = async (page: Page, root: Page | Locator = page): Promise<void> => {
   await page
     .getByRole('dialog', { name: 'Settings' })
+    .first()
     .getByRole('button', { name: 'Close settings' })
     .click()
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Send' })).toBeVisible()
+  // Scoped for the same reason as the Settings button above: a documentation page
+  // can carry several composers.
+  await expect(root.getByRole('button', { name: 'Send' }).first()).toBeVisible()
 }
 
-export const enablePlugin = async (page: Page, label: string): Promise<void> => {
-  await openSettingsAndEnablePlugin(page, label)
-  await closeSettings(page)
+export const enablePlugin = async (
+  page: Page,
+  label: string,
+  root: Page | Locator = page
+): Promise<void> => {
+  await openSettingsAndEnablePlugin(page, label, root)
+  await closeSettings(page, root)
 }
 
 // The Code execution plugin (run_javascript tool), enabled via its Settings label.
-export const enableCodeExecPlugin = (page: Page): Promise<void> =>
-  enablePlugin(page, 'Code execution (run_javascript tool)')
+export const enableCodeExecPlugin = (page: Page, root: Page | Locator = page): Promise<void> =>
+  enablePlugin(page, 'Code execution (run_javascript tool)', root)
 
 // The Tool tree plugin (compose-area tool picker, issue #400), enabled via its
 // Settings label (exactly `manifest.label`).

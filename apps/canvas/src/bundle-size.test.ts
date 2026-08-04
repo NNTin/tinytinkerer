@@ -11,6 +11,7 @@ type OutputChunk = {
   code?: string
   facadeModuleId?: string | null
   imports?: string[]
+  dynamicImports?: string[]
   isEntry?: boolean
   moduleIds?: string[]
 }
@@ -93,7 +94,46 @@ describe('canvas bundle regression guard', () => {
     // into the merged ~123 kB app-core/agent-core/contracts chunk. Trading ~750
     // bytes of duplicated code in the entry for no longer fetching that whole
     // chunk eagerly is the point of the fix, not a regression.
+    //
+    // LOWERED in practice, not raised, by issue #495 (2026-08-04): 99,683 →
+    // 98,286 bytes, so headroom against 102 kB went from 4,765 to 6,162. Plugin
+    // discovery moved out of `app-browser` into `@tinytinkerer/catalogue`, taking
+    // the `import.meta.glob` and the entry-local `plugins/is-plugin-module.ts`
+    // with it — the latter had been on #441's "load-bearing, do not clean up"
+    // list, and left for a reason that list did not anticipate: its only
+    // production importer was the registry, which is no longer in this entry.
+    // `stores/run-registry.ts` and `stores/settings-defaults.ts` are unaffected
+    // and remain load-bearing. The ceiling is left at 102 kB so the freed bytes
+    // stay available rather than needing a raise back through review.
     expect((entry?.code?.length ?? 0) / 1024).toBeLessThan(102)
+  })
+
+  it('keeps the plugin catalogue out of the canvas startup entry', () => {
+    // Issue #495's lazy-reach invariant. The same guard as
+    // `apps/shell/src/bundle-size.test.ts` — see its longer note — repeated here
+    // because this is a second, independently-composed entry: `apps/canvas`
+    // passes its own `plugins` thunk through `createBrowserShellRoot`, so it can
+    // regress on its own. Measured on the shell, hoisting the catalogue to a
+    // static import cost 1,070 bytes and still passed the byte budget, which is
+    // why this is an import-graph assertion rather than a size one.
+    const byFileName = new Map(shellChunks.map((chunk) => [chunk.fileName, chunk]))
+    const entry = shellChunks.find((chunk) => chunk.facadeModuleId?.endsWith('/canvas/index.html'))
+    expect(entry).toBeDefined()
+
+    expect(
+      (entry!.moduleIds ?? []).filter((id) => id.includes('/packages/app/catalogue/')),
+      'The plugin catalogue is in the canvas startup entry. Reach it through a ' +
+        'dynamic import() inside the `plugins` thunk in apps/canvas/src/main.tsx.'
+    ).toEqual([])
+
+    const pluginChunksOffEntry = (entry!.dynamicImports ?? []).filter((fileName) =>
+      (byFileName.get(fileName)?.moduleIds ?? []).some((id) => id.includes('/packages/plugins/'))
+    )
+    expect(
+      pluginChunksOffEntry,
+      'Plugin chunks are dynamic imports of the canvas entry, which means the ' +
+        'catalogue map was inlined into it.'
+    ).toEqual([])
   })
 
   it('keeps Excalidraw outside the canvas startup graph', () => {

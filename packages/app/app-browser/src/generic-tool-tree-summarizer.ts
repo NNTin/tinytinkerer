@@ -12,11 +12,12 @@ import type {
 // sort/tri-state/count logic `@tinytinkerer/plugin-tool-tree`'s
 // `summarizeToolTree` contributes as a plugin descriptor, kept here as a plain
 // export instead. app-browser must never statically import a concrete plugin
-// (see scripts/check-boundaries.mjs), so a host that has no way to get a
-// tool-tree-descriptor plugin activated — e.g. a build with no dynamic plugin
-// discovery at all, like the docs Docusaurus/webpack build (see
-// apps/docs/src/live-lab/plugin-registry-stub.ts) — has no other route to a
-// working `useToolTree({ fallbackSummarizer })`. The mapper owns no domain
+// (see scripts/check-boundaries.mjs), so a host whose catalogue carries no
+// tool-tree-descriptor plugin — or whose reader has switched that plugin off —
+// has no other route to a working `useToolTree({ fallbackSummarizer })`. (Before
+// issue #495 the example here was the docs Docusaurus/webpack build, which could
+// discover no plugins at all; it now injects a catalogue that includes
+// `plugin-tool-tree`, so this is a fallback rather than the only path.) The mapper owns no domain
 // knowledge (it only sorts/derives tri-state/counts — see
 // docs/plugins-and-tools/plugin-infrastructure.md's "outer edge of the
 // manifest-descriptor pattern" note), so duplicating it here is a deliberate,
