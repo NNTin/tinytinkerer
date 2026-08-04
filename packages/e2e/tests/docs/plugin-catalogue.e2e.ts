@@ -32,6 +32,25 @@ import { assistantLauncher } from '../../fixtures/docs-assistant'
 const DOCS_ORIGIN = `http://localhost:${requireShellPort('E2E_PORT')}`
 const AUTHORED_ROUTE = `${DOCS_ORIGIN}/docs/architecture/`
 
+/**
+ * Plugin toggles are addressed by ROLE and accessible name — each is exactly
+ * `manifest.label` — never by panel text.
+ *
+ * A substring match on the panel is not a catalogue assertion: code-exec's own
+ * description mentions both "Browser state" and `read_dom` ("If the Browser state
+ * plugin is on, it can read the same already-redacted page snapshot that read_dom
+ * produces"), so `not.toContainText('Browser state')` fails against a catalogue
+ * that correctly excludes it. Asking for the toggle asks the real question — is
+ * this plugin offered — and cannot be answered by prose.
+ */
+const TOOL_TREE = 'Tool picker (tree view)'
+const CONTEXT_GAUGE = 'Context usage gauge'
+const CODE_EXEC = 'Code execution (run_javascript tool)'
+const BROWSER_STATE = 'Browser state (read_dom tool)'
+const WEB_SEARCH = 'Web search (Tavily)'
+const CHOICE_PROMPT = 'Choice prompt (ask you a question)'
+const PERMISSIONS = 'Permissions (ask before tools run)'
+
 /** Deterministic: the folded-back result and the log lines are both assertable. */
 const SNIPPET = "console.log('docs-sandbox'); return 21 * 2"
 
@@ -42,6 +61,24 @@ const SNIPPET = "console.log('docs-sandbox'); return 21 * 2"
  */
 const settingsPanel = (page: Page) => page.locator('[data-presentation][aria-label="Settings"]')
 
+/**
+ * The plugin list lives on the **Tools** tab, and Settings opens on Account.
+ *
+ * Asserting against the dialog without activating that tab is not merely a miss:
+ * only the ACTIVE tab's panel is mounted, so every `not.toContainText(...)` below
+ * would have passed while reading the account panel — a negative assertion that
+ * cannot fail is worse than no assertion. This is what the first CI run caught.
+ */
+const openPluginTab = async (page: Page): Promise<void> => {
+  await settingsPanel(page).getByRole('tab', { name: 'Tools' }).click()
+  // Anchor on something the Tools panel always renders, so the assertions that
+  // follow are known to be reading the mounted plugin list.
+  await expect(settingsPanel(page).getByRole('tab', { name: 'Tools' })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  )
+}
+
 const openAssistantSettings = async (page: Page): Promise<void> => {
   await assistantLauncher(page).click()
   await expect(
@@ -50,6 +87,7 @@ const openAssistantSettings = async (page: Page): Promise<void> => {
   await dismissTelemetryDialog(page)
   await page.locator('.docs-assistant-root').getByRole('button', { name: 'Settings' }).click()
   await expect(settingsPanel(page)).toBeVisible()
+  await openPluginTab(page)
 }
 
 test.describe('the documentation plugin catalogue (#495)', () => {
@@ -61,21 +99,19 @@ test.describe('the documentation plugin catalogue (#495)', () => {
     const panel = settingsPanel(page)
     // Present — the defect this issue existed to fix. "No plugins available" is
     // what this panel said before.
-    await expect(panel).toContainText('Tool picker (tree view)')
-    await expect(panel).toContainText('Context usage gauge')
+    await expect(panel.getByRole('checkbox', { name: TOOL_TREE })).toBeVisible()
+    await expect(panel.getByRole('checkbox', { name: CONTEXT_GAUGE })).toBeVisible()
     await expect(panel).not.toContainText('No plugins available')
 
     // Absent, each for its own recorded reason (docs-runtime/plugin-catalogue.ts):
     // the rendered page is never a documentation source; a general web search
     // contradicts the grounding and citation policy; and the HITL plugins are out
-    // of scope for this surface.
-    await expect(panel).not.toContainText('Browser state')
-    await expect(panel).not.toContainText('Web search')
-    await expect(panel).not.toContainText('Choice prompt')
-    await expect(panel).not.toContainText('Permissions')
-    // Code execution belongs to the LABS, not the assistant — the difference
-    // between the two catalogues, asserted from the app that must not have it.
-    await expect(panel).not.toContainText('Code execution')
+    // of scope for this surface. Code execution belongs to the LABS — the
+    // difference between the two catalogues, asserted from the app that must not
+    // have it.
+    for (const label of [BROWSER_STATE, WEB_SEARCH, CHOICE_PROMPT, PERMISSIONS, CODE_EXEC]) {
+      await expect(panel.getByRole('checkbox', { name: label })).toHaveCount(0)
+    }
   })
 
   test('a live lab enables and executes a catalogued plugin end to end', async ({ page }) => {
@@ -91,10 +127,13 @@ test.describe('the documentation plugin catalogue (#495)', () => {
     // in this app's own storage namespace.
     await lab.getByRole('button', { name: 'Settings' }).first().click()
     await expect(settingsPanel(page)).toBeVisible()
-    await expect(settingsPanel(page)).toContainText('Code execution (run_javascript tool)')
+    await openPluginTab(page)
+    const panel = settingsPanel(page)
+    await expect(panel.getByRole('checkbox', { name: CODE_EXEC })).toBeVisible()
     // …and still not the permanently-excluded ones, in this app too.
-    await expect(settingsPanel(page)).not.toContainText('Browser state')
-    await expect(settingsPanel(page)).not.toContainText('Web search')
+    for (const label of [BROWSER_STATE, WEB_SEARCH]) {
+      await expect(panel.getByRole('checkbox', { name: label })).toHaveCount(0)
+    }
     await page.keyboard.press('Escape')
 
     await enableCodeExecPlugin(page)

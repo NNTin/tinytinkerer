@@ -25,15 +25,18 @@ import { assistantLauncher } from '../../fixtures/docs-assistant'
  *    `read_dom` is still absent from the tool picker. That is the reader's path
  *    made concrete: activation state cannot conjure a plugin the catalogue omits.
  *
- * Which of those actually carries the guarantee was settled by experiment, not
- * by argument: with a Browser state module injected into the docs registry and
- * the site rebuilt, only the **tool-picker** assertions turned red. The
- * Settings-text ones stayed green, so they are corroboration and are labelled as
- * such rather than trusted.
+ * Which of those carried the guarantee was settled by experiment: with a Browser
+ * state module injected into the docs registry, only the **tool-picker**
+ * assertions turned red. The Settings ones stayed green — and issue #495 later
+ * showed why, which was worse than "corroboration": they read the dialog without
+ * activating the Tools tab, so they could not fail at all. They now address the
+ * plugin's TOGGLE on the mounted list (see `expectNoBrowserStatePlugin`), so both
+ * halves bite.
  *
- * Today both hold because `docusaurus.config.ts` aliases plugin discovery to an
- * empty registry. #495 replaces that alias with a real injected catalogue, and
- * these are the assertions it has to keep true.
+ * These used to hold because `docusaurus.config.ts` aliased plugin discovery to
+ * an empty registry. #495 replaced that alias with a real per-app catalogue
+ * (`apps/docs/src/docs-runtime/plugin-catalogue.ts`), and these are the
+ * assertions that kept it honest.
  */
 const DOCS_ORIGIN = `http://localhost:${requireShellPort('E2E_PORT')}`
 const AUTHORED_ROUTE = `${DOCS_ORIGIN}/docs/architecture/`
@@ -107,6 +110,36 @@ const seedPluginEnabled = async (page: Page, storageNamespace: string): Promise<
  */
 const settingsPanel = (page: Page) => page.locator('[data-presentation][aria-label="Settings"]')
 
+/** Browser state's Settings toggle — exactly its `manifest.label`. */
+const BROWSER_STATE_LABEL = 'Browser state (read_dom tool)'
+
+/**
+ * Reveal the plugin list, then assert Browser state has no toggle there.
+ *
+ * Two corrections, both made when issue #495 gave the documentation a real
+ * catalogue and these assertions could finally be wrong:
+ *
+ * 1. **The list is on the Tools tab, and Settings opens on Account.** Only the
+ *    active tab's panel is mounted, so asserting against the dialog without
+ *    activating Tools passed no matter what the catalogue contained. That was
+ *    tolerable while docs had no plugins at all; with plugins present it is a
+ *    guard that cannot fail.
+ * 2. **Panel text is the wrong question.** Code execution's own description reads
+ *    "If the Browser state plugin is on, it can read the same already-redacted
+ *    page snapshot that read_dom produces" — so `not.toContainText('read_dom')`
+ *    now fails against a catalogue that correctly excludes Browser state. Asking
+ *    for the TOGGLE asks whether the plugin is offered, which is the actual claim.
+ */
+const expectNoBrowserStatePlugin = async (page: Page): Promise<void> => {
+  const panel = settingsPanel(page)
+  await panel.getByRole('tab', { name: 'Tools' }).click()
+  await expect(panel.getByRole('tab', { name: 'Tools' })).toHaveAttribute('aria-selected', 'true')
+  // The list is mounted and non-empty, so the absence below is a real absence
+  // rather than an unrendered panel.
+  await expect(panel).not.toContainText('No plugins available')
+  await expect(panel.getByRole('checkbox', { name: BROWSER_STATE_LABEL })).toHaveCount(0)
+}
+
 const openAssistantSettings = async (page: Page): Promise<void> => {
   await assistantLauncher(page).click()
   await expect(
@@ -123,9 +156,8 @@ test.describe('no documentation session offers a DOM-reading tool (#482)', () =>
     await page.goto(AUTHORED_ROUTE)
     await openAssistantSettings(page)
 
-    // The catalogue, not the activation state. An empty catalogue says so.
-    await expect(settingsPanel(page)).not.toContainText('Browser state')
-    await expect(settingsPanel(page)).not.toContainText('read_dom')
+    // The catalogue, not the activation state.
+    await expectNoBrowserStatePlugin(page)
   })
 
   test('enabling Browser state beforehand still exposes no read_dom to the assistant', async ({
@@ -137,7 +169,7 @@ test.describe('no documentation session offers a DOM-reading tool (#482)', () =>
     await installChatMock(page)
     await page.goto(AUTHORED_ROUTE)
     await openAssistantSettings(page)
-    await expect(settingsPanel(page)).not.toContainText('Browser state')
+    await expectNoBrowserStatePlugin(page)
 
     await page.keyboard.press('Escape')
     await page
@@ -170,8 +202,7 @@ test.describe('no documentation session offers a DOM-reading tool (#482)', () =>
     await expect(lab).toBeVisible({ timeout: 30_000 })
     await lab.getByRole('button', { name: 'Settings' }).first().click()
     await expect(settingsPanel(page)).toBeVisible()
-    await expect(settingsPanel(page)).not.toContainText('Browser state')
-    await expect(settingsPanel(page)).not.toContainText('read_dom')
+    await expectNoBrowserStatePlugin(page)
     await page.keyboard.press('Escape')
 
     // …and the same question asked where it can actually be answered: what tools
