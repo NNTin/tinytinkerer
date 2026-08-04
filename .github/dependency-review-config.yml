@@ -12,17 +12,13 @@ allow-ghsas:
   - GHSA-fx2h-pf6j-xcff
   - GHSA-v6wh-96g9-6wx3
   - GHSA-h67p-54hq-rp68
-  - GHSA-vmh5-mc38-953g
-  - GHSA-pr7r-676h-xcf6
-  - GHSA-vxpw-j846-p89q
-  - GHSA-hm92-r4w5-c3mj
-  - GHSA-p88m-4jfj-68fv
   - GHSA-r5fr-rjxr-66jc
   - GHSA-f23m-r3pf-42rh
   - GHSA-xxjr-mmjv-4gpg
   - GHSA-mwcw-c2x4-8c55
   - GHSA-frvp-7c67-39w9
-  - GHSA-v2hh-gcrm-f6hx
-  - GHSA-4c8g-83qw-93j6
+  - GHSA-7p8r-x3mc-p8w7
   - GHSA-qwww-vcr4-c8h2
   - GHSA-mh99-v99m-4gvg
+  - GHSA-8j4g-w8fx-2239
+  - GHSA-rgw5-rvv9-x895
