@@ -52,7 +52,7 @@ export type CreateDocsBrowserAppOptions = {
    * Required, with no default, for the same reason `documentGlobals` and
    * `storageNamespace` are: this factory builds BOTH documentation apps, and a
    * value it chose for both would be a product decision made by a shared helper.
-   * The two catalogues genuinely differ — see `./plugin-catalogue.ts`, which
+   * The two catalogues genuinely differ — see `./plugin-subsets.ts`, which
    * names them and records why each exclusion is an exclusion.
    */
   plugins: PluginCatalogue

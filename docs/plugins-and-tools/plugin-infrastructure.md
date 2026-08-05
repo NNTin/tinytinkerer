@@ -831,14 +831,47 @@ add. So the drop-in property survives, with an explicit step instead of an impli
 same technique (`packages/e2e/fixtures/discover-plugins.ts`) independently derives the e2e plugin
 matrix from the filesystem, so a plugin that reaches the catalogue but not a reader fails there.
 
-### The documentation carries a deliberate subset
+### Where a surface's subset is declared (issue #501)
 
-`apps/docs/src/docs-runtime/plugin-catalogue.ts` names what each documentation app offers, and
-records why each exclusion is an exclusion. `plugin-browser-state` (`read_dom`) is excluded
-permanently — documentation content comes from authored Markdown, never the rendered page — and
-`plugin-web-search` is excluded because it is the only default-on plugin and because a general web
-search contradicts the assistant's grounding and citation policy. Both exclusions are asserted as
-outcomes in `apps/docs/src/docs-runtime/__tests__/no-dom-access.test.ts` and on the built site.
+Almost every surface carries all of them: `apps/shell`, `canvas`, `ide`, `mermaid`, `pixel-agents`
+and `apps/host` each pass `loadProductPlugins()`. The documentation is the only surface today that
+carries a **subset**, and it carries two —
+`apps/docs/src/docs-runtime/plugin-subsets.ts` names them and records why each exclusion is an
+exclusion.
+
+**A subset is declared by the app that owns it, not by the catalogue package.** The alternative —
+named profiles exported from `@tinytinkerer/catalogue` — was considered and rejected: the catalogue
+is deliberately product-neutral (it exports the map and a generic `loadPlugins(names)`, and the
+boundary checker's positive rule is written around that), while the reasons for a subset are
+product policy. The documentation's exclusions are arguments about issue #478's grounding and
+citation policy; those do not belong in a package every shell imports, and an embedder outside this
+repository could not add a profile to it anyway.
+
+So the convention is the shape, and it is this:
+
+1. **One module in the app**, exporting a named
+   `as const satisfies readonly CataloguePluginName[]`. The `satisfies` is load-bearing — a plugin
+   renamed or removed from the workspace becomes a compile error at every subset that names it,
+   wherever those subsets live.
+2. **The reason for every exclusion, in that module.** A partial catalogue is fine; an _undeclared_
+   partial catalogue is not. A reviewer should be able to read the product decision rather than
+   infer it from a list of strings.
+3. **A guard test asserting the list by allowlist in both directions.**
+   `apps/docs/src/docs-runtime/__tests__/no-dom-access.test.ts` and `__tests__/no-human-prompt.test.ts`
+   are the worked examples. An allowlist rather than "does not contain X", so a fourth entry is a
+   decision somebody has to argue for in the diff that adds it.
+
+A subset is per-`BrowserApp`, because that is what it physically is: `createBrowserApp({ plugins })`
+memoizes one `app.loadPlugins`, and `usePluginModules` reads it from context. Every surface rendered
+inside one app therefore shares that app's answer. This is why #472's Pixel Agents Office needs no
+subset of its own — it is a portaled surface _inside_ the assistant app, so it inherits
+`DOCS_ASSISTANT_PLUGINS` (the tool picker and the context gauge). Giving it a different answer would
+mean a second `BrowserApp`, which #472 rejected.
+
+The documentation's own exclusions: `plugin-browser-state` (`read_dom`) permanently — documentation
+content comes from authored Markdown, never the rendered page — and `plugin-web-search` because it
+is the only default-on plugin and because a general web search contradicts the assistant's grounding
+and citation policy. Both are asserted as outcomes in the unit guard above and on the built site.
 
 ## Routing into Sentry (`app-browser`)
 

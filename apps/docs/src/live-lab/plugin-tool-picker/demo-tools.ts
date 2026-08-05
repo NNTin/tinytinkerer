@@ -15,7 +15,7 @@ import type { AppToolGroup, Tool } from '@tinytinkerer/app-browser'
 // say docs "cannot discover a plugin dynamically either", because
 // `import.meta.glob` had no webpack equivalent and discovery was aliased to an
 // empty stub. Since issue #495 the lab app carries a REAL catalogue — see
-// ../../docs-runtime/plugin-catalogue.ts, which puts `plugin-code-exec` in this
+// ../../docs-runtime/plugin-subsets.ts, which puts `plugin-code-exec` in this
 // very lab. These tools stay because the lab teaches BOTH halves: an app tool
 // group with no activation gate, beside a real plugin that has one.
 

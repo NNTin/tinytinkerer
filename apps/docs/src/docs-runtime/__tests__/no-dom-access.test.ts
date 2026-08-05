@@ -18,7 +18,7 @@
  * would become registerable with no test failing.
  *
  * The alias is now gone. Each documentation app names its own catalogue
- * (`docs-runtime/plugin-catalogue.ts`), so "docs has no plugins" is no longer
+ * (`docs-runtime/plugin-subsets.ts`), so "docs has no plugins" is no longer
  * true and was never the guarantee worth having. The assertion is unchanged in
  * spirit and stronger in fact: it reads the REAL catalogues those apps are built
  * with and requires `plugin-browser-state` to be absent from both, by an
@@ -42,7 +42,7 @@ import {
   SEARCH_DOCS_TOOL_ID
 } from '../../docs-tools/tools'
 import { pluginToolPickerDemoToolGroup } from '../../live-lab/plugin-tool-picker/demo-tools'
-import { DOCS_ASSISTANT_PLUGINS, DOCS_LAB_PLUGINS } from '../plugin-catalogue'
+import { DOCS_ASSISTANT_PLUGINS, DOCS_LAB_PLUGINS } from '../plugin-subsets'
 
 /** The tool the product's Browser state plugin registers. */
 const DOM_READING_TOOL_ID = 'read_dom'

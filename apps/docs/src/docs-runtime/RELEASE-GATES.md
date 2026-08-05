@@ -115,7 +115,7 @@ it costs.
   rule.
 - **`/docs` Settings lists a deliberate subset of the product's plugins.**
   Resolved by #495: the empty-registry alias is gone and each documentation app
-  injects its own catalogue (`plugin-catalogue.ts`). The assistant carries the
+  injects its own catalogue (`plugin-subsets.ts`). The assistant carries the
   tool picker and the context gauge; the live labs add code execution. `read_dom`
   and Web search are excluded permanently, and the HITL plugins by scope —
   `__tests__/no-dom-access.test.ts` and `__tests__/no-human-prompt.test.ts` hold

@@ -24,7 +24,7 @@ import {
 } from './assistant-constants'
 import { DOCS_ASSISTANT_DISCLOSURE } from './assistant-disclosure'
 import { createDocsBrowserApp, type DocsBrowserApp } from './create-docs-app'
-import { DOCS_ASSISTANT_PLUGINS } from './plugin-catalogue'
+import { DOCS_ASSISTANT_PLUGINS } from './plugin-subsets'
 import { beginDocsProductSignIn } from './product-sign-in'
 import type { DocsRuntimeConfig } from './runtime-config'
 
@@ -38,7 +38,7 @@ export const ensureDocsAssistantApp = (
     runtimeConfig,
     // This session's plugins (issue #495), reached through a dynamic import so
     // the catalogue's per-plugin map is not on the path a reader pays for before
-    // activating the assistant. Presentation-only: see ./plugin-catalogue.ts for
+    // activating the assistant. Presentation-only: see ./plugin-subsets.ts for
     // what is excluded here and why — in particular `read_dom`, which #471's
     // first locked decision keeps out of the documentation permanently.
     plugins: () =>

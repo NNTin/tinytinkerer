@@ -12,14 +12,21 @@ import type { PluginManifest } from '../../shared/contracts/src/index'
 // Node-side plugin discovery for the e2e plugin matrix (issue #268).
 // =============================================================================
 //
-// The browser host discovers optional plugins via a Vite `import.meta.glob`
-// over `packages/plugins/*/src/index.ts` (see app-browser/src/plugins/
-// registry.ts). `import.meta.glob` is a Vite-only transform and does not exist
-// in the Playwright test runner, so the matrix re-derives the SAME plugin set
-// node-side: it enumerates the `packages/plugins/*` directories from the
-// filesystem and reads each package's exported `manifest`. The result is that a
-// newly added plugin package automatically enters the test matrix with ZERO
-// edits to the spec — exactly the property the host's glob gives the app.
+// The product's plugins are named in one place — `@tinytinkerer/catalogue`'s
+// `PLUGIN_LOADERS`, one literal dynamic import per package (issue #495). This
+// matrix deliberately does NOT read that map. It re-derives the plugin set
+// INDEPENDENTLY, node-side: it enumerates the `packages/plugins/*` directories
+// from the filesystem and reads each package's exported `manifest`. So a newly
+// added plugin package enters the test matrix with ZERO edits to the spec, and
+// — the reason the independence matters — a plugin DROPPED from the catalogue
+// fails here instead of quietly lowering the bar, which is what a matrix reading
+// its own expectations out of the catalogue would do.
+//
+// (Until #495 the host discovered plugins through a Vite `import.meta.glob` in
+// `app-browser/src/plugins/registry.ts`, and this comment described re-deriving
+// the glob's set. That module is gone: the glob had no webpack equivalent, so
+// the Docusaurus build had to alias it away entirely. The technique here is
+// unchanged and the independence argument is now the stronger reason for it.)
 //
 // We read the manifest by importing the package entry module (not by parsing
 // source), so the matrix uses the SAME `manifest.id` / `manifest.label` the app

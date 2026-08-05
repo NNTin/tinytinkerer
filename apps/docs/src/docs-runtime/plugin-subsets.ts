@@ -13,6 +13,48 @@
  * lists say what each app *offers*, and the two answers differ because the two
  * surfaces do different jobs.
  *
+ * ## This file is the worked example of a convention (issue #501)
+ *
+ * It was called `plugin-catalogue.ts`, one import away from
+ * `@tinytinkerer/catalogue`, which means the opposite thing: that package names
+ * every plugin that EXISTS, this module names the subset a surface OFFERS.
+ * Renamed rather than left as a reading hazard, because the shape below is the
+ * pattern the next surface should copy, and a pattern whose name misleads is
+ * worse than no pattern.
+ *
+ * The convention, written up for a new surface in
+ * `docs/plugins-and-tools/plugin-infrastructure.md`:
+ *
+ * 1. a subset lives with the APP that owns it, not in the catalogue package —
+ *    the reasons are product policy (docs' exclusions are #478 grounding-policy
+ *    arguments), and product policy does not belong in a product-neutral
+ *    package;
+ * 2. it is a named `as const satisfies readonly CataloguePluginName[]` export,
+ *    so a plugin renamed or removed from the workspace is a compile error here
+ *    rather than a silently missing toggle;
+ * 3. every exclusion carries its reason in the module, as below;
+ * 4. a guard test asserts the list by ALLOWLIST in both directions —
+ *    `__tests__/no-dom-access.test.ts` and `__tests__/no-human-prompt.test.ts`
+ *    are the worked examples — so a fourth entry is a decision somebody has to
+ *    argue for in the diff that adds it.
+ *
+ * ## What #472's Pixel Agents Office gets, decided here rather than there
+ *
+ * The Office does NOT need a subset of its own, and #501 exists partly because
+ * that was never written down. #472's locked decision (its
+ * `5147336205` comment, amended by #490's surface-contract comment) makes the
+ * Office a portaled SURFACE inside the assistant's `BrowserApp` — deliberately,
+ * to preserve "one assistant app and one conversation repository … no second,
+ * office-specific store". A plugin subset is per-`BrowserApp` by construction:
+ * `createBrowserApp({ plugins })` memoizes one `app.loadPlugins`, and
+ * `usePluginModules` reads it from context, so every surface registered through
+ * `registerDocsAssistantSurface` shares whatever the assistant carries.
+ *
+ * So the Office inherits {@link DOCS_ASSISTANT_PLUGINS} — the tool picker and
+ * the context gauge. That is a reasonable answer for a conversation-management
+ * surface, and it is an answer #495 made on #472's behalf. Giving the Office a
+ * different one would mean a second `BrowserApp`, which #472 rejected.
+ *
  * ## The exclusions, and why each one is a decision
  *
  * **`plugin-browser-state` (`read_dom`) — excluded from both, permanently.**

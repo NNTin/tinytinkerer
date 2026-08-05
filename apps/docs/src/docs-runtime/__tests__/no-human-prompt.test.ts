@@ -34,7 +34,7 @@
  * and that exclusion is what this asserts.
  *
  * The reasons they COULD now be included, and were not, are recorded in
- * `../plugin-catalogue.ts`: #489 made the queue per-app so a prompt can no longer
+ * `../plugin-subsets.ts`: #489 made the queue per-app so a prompt can no longer
  * misroute, and #498 made a composer-presented prompt visible behind a minimized
  * widget. Neither is a blocker any more; the exclusion is a scope decision.
  */
@@ -44,7 +44,7 @@ import { describe, expect, it } from 'vitest'
 import { appToolCatalogue, createBrowserApp } from '@tinytinkerer/app-browser'
 import { createDocumentationToolGroup } from '../../docs-tools'
 import { pluginToolPickerDemoToolGroup } from '../../live-lab/plugin-tool-picker/demo-tools'
-import { DOCS_ASSISTANT_PLUGINS, DOCS_LAB_PLUGINS } from '../plugin-catalogue'
+import { DOCS_ASSISTANT_PLUGINS, DOCS_LAB_PLUGINS } from '../plugin-subsets'
 
 /** The two plugins that reach `PluginHost.requestHumanInput`. */
 const HITL_PLUGIN_DIRECTORIES = ['plugin-choice-prompt', 'plugin-permissions'] as const

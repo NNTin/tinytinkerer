@@ -35,7 +35,7 @@ import { assistantLauncher } from '../../fixtures/docs-assistant'
  *
  * These used to hold because `docusaurus.config.ts` aliased plugin discovery to
  * an empty registry. #495 replaced that alias with a real per-app catalogue
- * (`apps/docs/src/docs-runtime/plugin-catalogue.ts`), and these are the
+ * (`apps/docs/src/docs-runtime/plugin-subsets.ts`), and these are the
  * assertions that kept it honest.
  */
 const DOCS_ORIGIN = `http://localhost:${requireShellPort('E2E_PORT')}`

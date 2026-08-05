@@ -18,7 +18,7 @@ import { beginDocsProductSignIn } from '../docs-runtime/product-sign-in'
 import type { DocsRuntimeConfig } from '../docs-runtime/runtime-config'
 import { useDocsRuntimeConfig } from '../docs-runtime/runtime-config'
 import { deleteDocsStorageNamespace } from '../docs-runtime/storage'
-import { DOCS_LAB_PLUGINS } from '../docs-runtime/plugin-catalogue'
+import { DOCS_LAB_PLUGINS } from '../docs-runtime/plugin-subsets'
 import { DOCS_LAB_STORAGE_NAMESPACE } from './constants'
 import { deriveLabSessionSnapshot, LabSessionContext } from './lab-session-context'
 import { pluginToolPickerDemoToolGroup } from './plugin-tool-picker/demo-tools'
@@ -38,7 +38,7 @@ export const ensureDocsLabApp = (runtimeConfig: DocsRuntimeConfig): Promise<Docs
     // The labs' own plugins (issue #495) — the assistant's two plus code
     // execution, because this is the surface where the documentation
     // demonstrates the plugin system rather than the one answering questions
-    // under #478's grounding policy. See ../docs-runtime/plugin-catalogue.ts.
+    // under #478's grounding policy. See ../docs-runtime/plugin-subsets.ts.
     // This is already inside a lazily-imported client runtime; the dynamic
     // import keeps each plugin in its own chunk besides.
     plugins: () => import('@tinytinkerer/catalogue').then((m) => m.loadPlugins(DOCS_LAB_PLUGINS)),

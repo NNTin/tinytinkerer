@@ -103,7 +103,7 @@ test.describe('the documentation plugin catalogue (#495)', () => {
     await expect(panel.getByRole('checkbox', { name: CONTEXT_GAUGE })).toBeVisible()
     await expect(panel).not.toContainText('No plugins available')
 
-    // Absent, each for its own recorded reason (docs-runtime/plugin-catalogue.ts):
+    // Absent, each for its own recorded reason (docs-runtime/plugin-subsets.ts):
     // the rendered page is never a documentation source; a general web search
     // contradicts the grounding and citation policy; and the HITL plugins are out
     // of scope for this surface. Code execution belongs to the LABS — the

@@ -77,7 +77,18 @@ describe('the catalogue covers every plugin package', () => {
             `Add to PLUGIN_LOADERS:\n` +
             missing.map((dir) => `  '${dir}': () => import('@tinytinkerer/${dir}'),`).join('\n') +
             `\n…and the matching "@tinytinkerer/${missing[0]}": "workspace:*" dependency in ` +
-            `packages/app/catalogue/package.json.`
+            `packages/app/catalogue/package.json.` +
+            // Issue #501. Adding the line above is enough for every shell that
+            // carries the whole product catalogue, which is all of them but the
+            // documentation. A SUBSET is an allowlist, so it will not pick a new
+            // plugin up — which is the intended behaviour, not an oversight, and
+            // exactly why this is a prompt rather than a second failing
+            // assertion. Nothing here forces a decision before CI goes green; the
+            // drop-in property this test exists to preserve stays intact.
+            `\n\nThis reaches every shell carrying the full catalogue automatically. A surface ` +
+            `that carries a SUBSET will not pick it up — if a documentation surface should ` +
+            `offer it, decide in apps/docs/src/docs-runtime/plugin-subsets.ts (see ` +
+            `"Where a surface's subset is declared" in docs/plugins-and-tools/plugin-infrastructure.md).`
     ).toEqual([])
 
     expect(

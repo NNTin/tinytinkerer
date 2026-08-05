@@ -34,7 +34,7 @@ import {
 } from '../../docs-tools'
 import { loadPlugins } from '@tinytinkerer/catalogue'
 import { pluginToolPickerDemoToolGroup } from '../../live-lab/plugin-tool-picker/demo-tools'
-import { DOCS_ASSISTANT_PLUGINS } from '../plugin-catalogue'
+import { DOCS_ASSISTANT_PLUGINS } from '../plugin-subsets'
 
 // Most cases here are about the picker itself rather than the catalogue, so their
 // apps carry no plugins (issue #495 makes `plugins` a required, undefaulted

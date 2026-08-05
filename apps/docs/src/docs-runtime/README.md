@@ -151,7 +151,7 @@ page.
 
 `requestHumanInput` is reachable only through the PluginHost. Neither
 documentation catalogue carries a HITL-capable plugin — choice-prompt and
-permissions are excluded deliberately (see `plugin-catalogue.ts`) — and no
+permissions are excluded deliberately (see `plugin-subsets.ts`) — and no
 documentation tool requests human input either, so **no HITL prompt can be raised
 in the documentation site at all**.
 
@@ -177,7 +177,7 @@ Nothing blocks flipping it on any more. #489 made the prompt queue per-app, so a
 prompt cannot misroute between the assistant and a lab; #498 — a
 `composer`-presented prompt being invisible behind a minimized surface — is fixed,
 so a minimized assistant widget is a supported place for a question. Excluding the
-HITL plugins is now a scope decision, recorded in `plugin-catalogue.ts`, not a
+HITL plugins is now a scope decision, recorded in `plugin-subsets.ts`, not a
 constraint. Enabling one means adding it to that app's catalogue and flipping that
 app's `humanInput` — and `__tests__/no-human-prompt.test.ts` fails on both halves
 until you do.
@@ -526,7 +526,7 @@ to assert this, because it lists only _enabled_ plugins and Browser state ships
 disabled. A catalogue that wrongly included it would show nothing in the picker
 and let a reader switch it on in Settings anyway. No denylist and no second
 catalogue was invented: #482 stated the requirement and #495 satisfied it, by
-naming what each documentation app carries in `plugin-catalogue.ts` and asserting
+naming what each documentation app carries in `plugin-subsets.ts` and asserting
 the exclusion against those real lists.
 
 **The public surface is what someone imports.** `index.ts` carried the storage
@@ -549,7 +549,7 @@ engine could plausibly differ on. Everything exhaustive stays on Chromium.
 - Human-in-the-loop in the documentation. Both catalogues exclude choice-prompt
   and permissions and both apps declare `humanInput: false` — a scope decision
   since #489 and #498 removed the two things that made it a constraint. See
-  `plugin-catalogue.ts`.
+  `plugin-subsets.ts`.
 - Any plugin beyond the approved catalogues, in particular `read_dom` (excluded
   permanently) and Web search (excluded so no documentation answer can come from
   the open web).
