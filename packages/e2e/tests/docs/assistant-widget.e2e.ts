@@ -9,6 +9,7 @@ import {
 } from '../../fixtures/mock-litellm'
 import { PIXEL_AGENTS_LAB_URL } from '../../fixtures/docs-lab'
 import { sendAssistantPrompt } from '../../fixtures/docs-assistant'
+import { AA_NORMAL_TEXT, worstContrastIn } from '../../fixtures/contrast'
 
 // The floating documentation assistant on the BUILT site (issue #480).
 //
@@ -506,68 +507,10 @@ test.describe('the documentation assistant widget (#480)', () => {
     await expect.poll(() => assistantInset(page)).toBeGreaterThan(0)
   })
 
-  // WCAG AA for normal text. The dialogs below were measured at 1.04:1, 1.63:1
-  // and 2.19:1 in dark mode before the shared primitives moved onto semantic
-  // tokens (issue #480 review, finding 3).
-  const AA_NORMAL_TEXT = 4.5
-
-  /**
-   * Real contrast for every text node inside `selector`, resolved against the
-   * nearest ancestor that actually paints a background.
-   *
-   * Reading the outer frame's brightness — what the first version of the dark
-   * test did — cannot see any of this: the panel was genuinely dark the whole
-   * time, and the text on it was near-black.
-   */
-  const worstContrastIn = async (page: Page, selector: string): Promise<number> =>
-    page.evaluate((target) => {
-      const parse = (value: string): [number, number, number] => {
-        const parts = (value.match(/[\d.]+/g) ?? []).map(Number)
-        const scale = value.startsWith('color(') ? 255 : 1
-        return [(parts[0] ?? 0) * scale, (parts[1] ?? 0) * scale, (parts[2] ?? 0) * scale]
-      }
-      const opaque = (value: string): boolean => {
-        if (!value || value === 'transparent') return false
-        const alpha = value.startsWith('color(')
-          ? Number((value.split('/')[1] ?? '1').replace(/[^\d.]/g, '') || 1)
-          : Number((value.match(/[\d.]+/g) ?? [])[3] ?? 1)
-        return alpha > 0.95
-      }
-      const luminance = ([r, g, b]: [number, number, number]): number => {
-        const channel = (c: number): number => {
-          const v = c / 255
-          return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
-        }
-        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-      }
-      const backgroundOf = (element: Element): [number, number, number] => {
-        let node: Element | null = element
-        while (node) {
-          const { backgroundColor } = getComputedStyle(node)
-          if (opaque(backgroundColor)) return parse(backgroundColor)
-          node = node.parentElement
-        }
-        return [255, 255, 255]
-      }
-
-      let worst = 21
-      for (const element of document.querySelectorAll(`${target} *`)) {
-        const text = Array.from(element.childNodes)
-          .filter((node) => node.nodeType === Node.TEXT_NODE)
-          .map((node) => node.textContent?.trim() ?? '')
-          .join('')
-        if (!text) continue
-        const style = getComputedStyle(element)
-        if (style.visibility === 'hidden' || style.display === 'none') continue
-        const foreground = luminance(parse(style.color))
-        const background = luminance(backgroundOf(element))
-        const ratio =
-          (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)
-        worst = Math.min(worst, ratio)
-      }
-      return worst
-    }, selector)
-
+  // The dialogs below were measured at 1.04:1, 1.63:1 and 2.19:1 in dark mode
+  // before the shared primitives moved onto semantic tokens (issue #480 review,
+  // finding 3). `worstContrastIn` moved to `fixtures/contrast.ts` when #496
+  // needed the same sweep over a live lab — see `docs/lab-theming.e2e.ts`.
   for (const theme of ['light', 'dark'] as const) {
     test(`the consent, privacy and settings surfaces are legible in ${theme} mode`, async ({
       page

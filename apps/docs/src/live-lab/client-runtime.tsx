@@ -208,6 +208,31 @@ export default function ClientRuntime({ children }: ClientRuntimeProps) {
     )
   }
 
+  // No embed-scope wrapper here, and that is a measured result rather than an
+  // omission (issue #496).
+  //
+  // The labs render as light-on-any-theme because the product surface inside
+  // them resolved its tokens off `:root`. The obvious fix was a wrapper around
+  // this subtree carrying `tt-app-embed` — the class `embed.css` scopes its
+  // generated preflight to and `token-graph.css` re-declares the derived graph
+  // for, which `custom.css` now keys the documentation's per-theme palette on.
+  //
+  // It turned out to be unnecessary, because the scope belongs one level lower
+  // and for an independent reason: `ChatApp`'s own stage element
+  // (`app-browser/src/chat-shell/sidebar-layout.tsx`) carries `tt-app-embed`
+  // now, since that is the element `shellThemeToCssVars` writes a host palette
+  // onto and the graph has to be declared where the bases are. A lab's product
+  // surface is therefore already scoped, and `tests/docs/lab-theming.e2e.ts`
+  // passes identically with and without a wrapper here — verified by building
+  // both ways.
+  //
+  // Leaving it out is also the better answer, not merely the smaller one. A
+  // wrapper at this level would have scoped the documentation's OWN in-lab
+  // chrome too — `ConversationSwitcher`, the tool-picker summary, the compare
+  // panel — which is Infima-styled and must not be preflighted or repainted;
+  // and it would have needed `display: contents` to avoid taking the flex slot
+  // `.lab-container--fullscreen .pixel-agents-lab` depends on. Both problems
+  // disappear when the product scopes itself.
   return (
     <BrowserAppShell
       app={appState.app}

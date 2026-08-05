@@ -94,20 +94,34 @@ window.__TINYTINKERER_SHELL_CONFIG__ = {
 widget-specific `--widget-*` tokens). The widget applies the result to its stage
 element.
 
-The design tokens are defined **once** in
-`@tinytinkerer/app-browser/styles.css` (imported by every shell before its own
-`index.css`), so the three shells no longer keep their own copies and cannot
-drift. That file also defines the _derived_ tokens — `--text-strong`,
-`--panel-hover`, `--accent-ring`, `--accent-soft`, `--user-bubble` — as
-`color-mix` expressions over the base tokens. The shared conversation surface
-(message bubbles, `TurnChrome`, `ConversationEmptyState`, `JumpToLatestButton`,
-the tabbed settings) carries **no literal palette values**; it reads only these
-tokens. So overriding the base tokens — a host theme today, a
-`prefers-color-scheme` dark mode tomorrow — recolors the whole conversation
-surface in one shot, with no per-component change. Fixed semantic colors (the
-notice/warning banners and destructive-action hovers) intentionally stay put.
-This is host-adaptation; it is **not** itself a full dark mode, but it is the
-mechanism a dark mode would reuse.
+The design tokens are defined **once** in `@tinytinkerer/app-browser`, so the
+three shells no longer keep their own copies and cannot drift. Overriding the
+base tokens — a host theme, or a `prefers-color-scheme` dark mode — recolors the
+conversation surface in one shot, with no per-component change. Fixed semantic
+colors (the notice/warning banners and destructive-action hovers) intentionally
+stay put.
+
+> **Two corrections since this was written.**
+>
+> **Where they live.** #491 split the file: `tokens.css` declares the base
+> palette on `:root`; `token-graph.css` declares the _derived_ tokens —
+> `--text-strong`, `--panel-hover`, `--accent-ring`, `--accent-soft`,
+> `--user-bubble` — as `color-mix` expressions over it, for `:root` **and**
+> `:where(.tt-app-embed)`. The second scope is load-bearing, not a convenience: a
+> custom property is computed where it is _declared_, so a graph declared only on
+> `:root` mixes against the root's bases and hands that result down even to a
+> subtree that overrode them.
+>
+> **The list below it was incomplete, and that mattered.** This paragraph
+> enumerated the components carrying "no literal palette values" — message
+> bubbles, `TurnChrome`, `ConversationEmptyState`, `JumpToLatestButton`, the
+> tabbed settings. `DockedChatSurface` and `TurnActivityPanel` were conspicuously
+> absent from it, and they were absent because they had not been converted: 69
+> literal `stone-*`/`white` classes between them. Reading the list as "the
+> conversation surface reads only tokens" is how the gap stayed invisible for
+> four issues, until a host with a real dark mode (the documentation, #480) put a
+> white composer on a near-black page. Both were converted in #496; the claim is
+> now true of the whole conversation surface.
 
 ## 4. New shared exports (app-browser)
 

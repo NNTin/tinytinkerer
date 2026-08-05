@@ -22,8 +22,17 @@ import { SpeechToggleButton } from './speech-toggle-button'
 import { surfaceButtonClass } from './surface-button'
 import type { ChatLoadingComponent } from './floating-chat-surface'
 
+/*
+ * Semantic notices, deliberately still literal (issue #496).
+ *
+ * `warning` and `error` carry MEANING in their colour, the same way the
+ * destructive hovers below do, and the shared convention since the token graph
+ * landed is that those stay fixed while structural chrome reads tokens. `info`
+ * is the exception that had to move: it is not semantic, it is "an ordinary
+ * notice", and stone-on-stone is simply the light palette written out.
+ */
 const noticeStyle: Record<'info' | 'warning' | 'error', string> = {
-  info: 'border-stone-200 bg-stone-50 text-stone-600',
+  info: 'border-[var(--border)] bg-[var(--panel-hover)] text-[var(--muted)]',
   warning: 'border-amber-200 bg-amber-50 text-amber-800',
   error: 'border-rose-200 bg-rose-50 text-rose-700'
 }
@@ -72,7 +81,7 @@ const VARIANTS: Record<DockedSizeVariant, VariantConfig> = {
     jump: 'absolute bottom-4 left-1/2 z-10 -translate-x-1/2',
     form: 'rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3 shadow-sm',
     textarea:
-      'w-full resize-none rounded-md border border-stone-300 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none ring-amber-300 transition focus:ring-2',
+      'w-full resize-none rounded-md border border-[var(--border)] bg-[var(--panel)] px-3 py-2.5 text-sm leading-relaxed text-[var(--text)] outline-none ring-[var(--accent-ring)] transition focus:ring-2',
     textareaMinHeight: '44px',
     autoGrowMax: 200,
     showHint: true,
@@ -88,7 +97,8 @@ const VARIANTS: Record<DockedSizeVariant, VariantConfig> = {
     showTurnCount: true,
     scroll: 'mt-3 flex-1 space-y-4 overflow-y-auto pr-1',
     emptyCount: 2,
-    emptyClassName: 'rounded-2xl border border-dashed border-stone-300 bg-white/70 px-4 py-5',
+    emptyClassName:
+      'rounded-2xl border border-dashed border-[var(--border)] bg-[var(--panel)] px-4 py-5',
     userBubble:
       'wrap-anywhere rounded-2xl bg-[var(--user-bubble)] px-3 py-2.5 text-sm text-[var(--text)]',
     noticeRadius: 'rounded-2xl',
@@ -97,7 +107,7 @@ const VARIANTS: Record<DockedSizeVariant, VariantConfig> = {
     jump: 'absolute bottom-3 left-1/2 z-10 -translate-x-1/2',
     form: 'px-1 py-1',
     textarea:
-      'w-full resize-none rounded-2xl border border-stone-300 bg-white px-3 py-3 text-base leading-relaxed outline-none ring-amber-300 transition focus:ring-2',
+      'w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--panel)] px-3 py-3 text-base leading-relaxed text-[var(--text)] outline-none ring-[var(--accent-ring)] transition focus:ring-2',
     textareaMinHeight: '52px',
     autoGrowMax: 180,
     showHint: false,
@@ -193,8 +203,14 @@ export const DockedChatSurface = ({
   return (
     <div
       className={[
-        'mx-auto flex h-full w-full flex-col',
-        sizeVariant === 'mobile' ? 'max-w-screen-sm text-[var(--text)]' : 'max-w-5xl'
+        // `text-[var(--text)]` on BOTH variants (issue #496). Only `mobile` set
+        // it; `comfortable` left the surface inheriting from whatever contained
+        // it, which is fine in a deployable app whose body is already this
+        // colour and wrong in an embedded one, where it inherited the HOST's
+        // font colour — the documentation's Infima base, which is theme-aware
+        // while the panel under it was not.
+        'mx-auto flex h-full w-full flex-col text-[var(--text)]',
+        sizeVariant === 'mobile' ? 'max-w-screen-sm' : 'max-w-5xl'
       ].join(' ')}
     >
       <main className={v.main}>
@@ -205,7 +221,7 @@ export const DockedChatSurface = ({
           {v.showTurnCount ? (
             <div className="flex items-center justify-between gap-3">
               <h2 className={headingClass}>Conversation</h2>
-              <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] text-[var(--muted)]">
+              <span className="rounded-full border border-[var(--border)] bg-[var(--panel)] px-2.5 py-1 text-[11px] text-[var(--muted)]">
                 {turns.length} turn{turns.length === 1 ? '' : 's'}
               </span>
             </div>
@@ -306,7 +322,7 @@ export const DockedChatSurface = ({
                 aria-label="Settings"
                 title="Settings"
                 onClick={() => setSettingsOpen(true)}
-                className={`${iconButtonBase} border-stone-200 ${v.settingsHasBg ? 'bg-white ' : ''}text-stone-500 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700`}
+                className={`${iconButtonBase} border-[var(--border)] ${v.settingsHasBg ? 'bg-[var(--panel)] ' : ''}text-[var(--muted)] hover:border-[var(--accent-ring)] hover:bg-[var(--panel-hover)] hover:text-[var(--text)]`}
               >
                 <FaGear className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -322,7 +338,7 @@ export const DockedChatSurface = ({
                   onClick={() =>
                     signInOpensSettings ? setSettingsOpen(true) : setSignInUnavailable(!signIn())
                   }
-                  className={`${iconButtonBase} border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800`}
+                  className={`${iconButtonBase} border-[var(--border)] bg-[var(--panel)] text-[var(--muted)] hover:border-[var(--accent-ring)] hover:bg-[var(--panel-hover)] hover:text-[var(--text-strong)]`}
                 >
                   <FaGithub className="h-4 w-4" aria-hidden="true" />
                 </button>
@@ -333,14 +349,16 @@ export const DockedChatSurface = ({
                 aria-label="Reset conversation"
                 title="Reset conversation"
                 onClick={() => void resetConversation()}
-                className={`${iconButtonBase} border-stone-300 bg-white text-stone-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700`}
+                // Base chrome is tokenised; the rose hover stays literal because
+                // it is the destructive-action signal, not palette.
+                className={`${iconButtonBase} border-[var(--border)] bg-[var(--panel)] text-[var(--muted)] hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700`}
               >
                 <FaRotateLeft className="h-4 w-4" aria-hidden="true" />
               </button>
 
               {/* Context-usage gauge (hidden unless the plugin is enabled and the
                   model reports usage against a known context window) */}
-              <ContextGaugeSlot className="text-stone-500" />
+              <ContextGaugeSlot className="text-[var(--muted)]" />
 
               {/* Tool picker (issue #400): unlike the inspector below, this works on
                   every shell — it is not gated on inspectorPanelSupported. Renders
@@ -358,7 +376,7 @@ export const DockedChatSurface = ({
               <SpeechToggleButton
                 speech={speech}
                 className={iconButtonBase}
-                idleClassName="border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-800"
+                idleClassName="border-[var(--border)] bg-[var(--panel)] text-[var(--muted)] hover:border-[var(--accent-ring)] hover:bg-[var(--panel-hover)] hover:text-[var(--text-strong)]"
                 iconClassName="h-4 w-4"
               />
 

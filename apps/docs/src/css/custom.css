@@ -1399,21 +1399,28 @@ div[class^='codeBlockContainer'] {
 }
 
 /* --- Theme tokens ---
-   The documentation's palette for the assistant, and nothing else.
+   The documentation's palette for EVERY embedded product surface (issue #496).
 
    The token GRAPH — the derived `--text-strong`/`--panel-hover`/`--accent-*`
    formulas and the `--widget-*` aliases — belongs to
-   @tinytinkerer/app-browser/tokens.css, which declares it for `:where(.tt-app-embed)`
-   as well as `:root` precisely so an embedded scope's overrides resolve locally
-   (issue #480 re-review, finding 5). The assistant root carries that class, so
-   declaring the six bases below is the whole job. Restating the formulas here was
-   how the two copies came to disagree about `--accent-ring`.
+   @tinytinkerer/app-browser/token-graph.css, which declares it for
+   `:where(.tt-app-embed)` as well as `:root` precisely so an embedded scope's
+   overrides resolve locally (issue #480 re-review, finding 5). Declaring the six
+   bases below is therefore the whole job; restating the formulas here was how the
+   two copies came to disagree about `--accent-ring`.
 
-   Scoped to the assistant root so nothing leaks into the documentation, and so
-   the live labs keep exactly the presentation they shipped with — retheming those
-   is a change to the live-lab precedent and belongs to its own issue, not this
-   one. */
-.docs-assistant-root {
+   (That comment used to name `tokens.css`. It was wrong after #491 split the
+   files: `tokens.css` declares base VALUES and `color-scheme` on `:root` only,
+   and an embedder deliberately does not take it.)
+
+   Keyed on `.tt-app-embed` rather than `.docs-assistant-root` since #496. The
+   assistant was the only surface carrying the class, so the two selectors used to
+   mean the same thing; now the live labs and the rich-content playground carry it
+   too, and the palette is a property of "an embedded TinyTinkerer surface on this
+   site" rather than of the assistant specifically. Three surfaces, one answer —
+   which is the inconsistency #496 exists to close. Nothing leaks into the
+   documentation, because the class marks exactly the product subtrees. */
+.tt-app-embed {
   --bg: #f6f2ec;
   --panel: #fffaf5;
   --muted: #766a5d;
@@ -1422,10 +1429,10 @@ div[class^='codeBlockContainer'] {
   --accent: #b45309;
 }
 
-/* Dark mode, keyed on Docusaurus' own attribute so the widget follows the site's
-   theme toggle. The palette is this site's dark scale (see the `[data-theme]`
-   block above), not a second invention. */
-html[data-theme='dark'] .docs-assistant-root {
+/* Dark mode, keyed on Docusaurus' own attribute so every embedded surface follows
+   the site's theme toggle. The palette is this site's dark scale (see the
+   `[data-theme]` block above), not a second invention. */
+html[data-theme='dark'] .tt-app-embed {
   --bg: #1b140d;
   --panel: #251c13;
   --muted: #cbbfae;
@@ -1438,6 +1445,21 @@ html[data-theme='dark'] .docs-assistant-root {
      4.5:1 on a near-black panel; this site's dark accent does. */
   --link: var(--accent);
 }
+
+/* Which elements carry `.tt-app-embed` on this site, since the palette above is
+   now keyed on it rather than on the assistant root:
+
+   - the assistant overlay root (`docs-runtime/AssistantRuntimeHost.tsx`);
+   - every `ChatApp` stage, which the PRODUCT marks itself
+     (`app-browser/src/chat-shell/{sidebar,floating}-layout.tsx`) because that is
+     the element a host palette is written onto — so a live lab's embedded chat
+     surface is scoped without the documentation wrapping anything;
+   - the rich-content playground's preview (`playground/client-runtime.tsx`),
+     which is not inside a chat stage and so names the class itself.
+
+   The documentation's own in-lab chrome — `LabContainer`, the network notice,
+   `ConversationSwitcher`, the tool-picker summary — is deliberately NOT in any
+   of those, and keeps Infima. */
 
 /* The floating shell's own frame and the settings/consent dialog surfaces carry
    literal light colours in app-browser's stylesheet. These are the few that would

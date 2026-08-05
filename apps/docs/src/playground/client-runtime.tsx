@@ -150,7 +150,19 @@ export default function PlaygroundClientRuntime({ title }: PlaygroundClientRunti
           <div className="rich-content-playground__pane">
             <span className="rich-content-playground__pane-label">Preview</span>
             <div className="rich-content-playground__preview">
-              <ContentPlaygroundPreview document={contentDocument} className="prose-assistant" />
+              {/* The embed scope (issue #496), on the product component itself
+                  rather than a wrapper. This playground is the third embedded
+                  product surface on the site and was un-themed like the labs,
+                  but its product/documentation boundary is exactly one element:
+                  everything else here — the toolbar, the pane labels, the source
+                  textarea, the AST disclosure — is documentation-authored chrome
+                  on Infima tokens, which must NOT be scoped. `ContentPlaygroundPreview`
+                  already takes a className, so the scope costs no extra node and
+                  no layout risk. */}
+              <ContentPlaygroundPreview
+                document={contentDocument}
+                className="prose-assistant tt-app-embed"
+              />
             </div>
           </div>
         </div>

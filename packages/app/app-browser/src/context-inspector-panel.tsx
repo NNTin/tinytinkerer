@@ -7,6 +7,23 @@ import { ReadOnlyCodeView } from '@tinytinkerer/content-code'
 // pulls in via ReadOnlyCodeView — stays OUT of the eagerly-loaded chat route
 // chunk and only loads when a developer actually opens the panel. Mirrors the
 // LazyBrowserSettingsModal split. Keep imports here panel-only.
+//
+// NOT TOKENISED, deliberately (issue #496). This file still carries ~27 literal
+// `stone-*`/`white` classes, which is exactly what #496 converted out of
+// `docked-chat-surface.tsx` and `turn-activity-panel.tsx` — so an inconsistent
+// sibling here would otherwise read as an oversight.
+//
+// It was left because it is unreachable from the surface that needed the fix.
+// This panel renders only when `plugin-context-inspector` is enabled, and
+// neither documentation catalogue carries it (see
+// `apps/docs/src/docs-runtime/plugin-catalogue.ts`: developer-facing aids whose
+// audience is the product, not a documentation reader). So no themed host can
+// currently draw it, no dark mode can regress on it, and converting it would
+// have added ~27 unverifiable changes to a diff whose whole claim is that its
+// changes are asserted in both themes on the built site.
+//
+// If a host ever offers the inspector under a dark palette, this is the file to
+// convert, and `turn-activity-panel.tsx` is the worked example.
 
 const formatTokens = (value: number): string => value.toLocaleString('en-US')
 

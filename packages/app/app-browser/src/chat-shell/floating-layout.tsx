@@ -636,7 +636,11 @@ export const FloatingLayout = ({
     </span>
   )
 
-  const stageClass = ['widget-stage', stageClassName].filter(Boolean).join(' ')
+  // `tt-app-embed` for the same reason `sidebar-layout.tsx` carries it (issue
+  // #496): this is the element `themeStyle` writes the base palette onto, and
+  // the derived token graph has to be re-declared here or it resolves against
+  // `:root`'s bases instead of the host's.
+  const stageClass = ['widget-stage', 'tt-app-embed', stageClassName].filter(Boolean).join(' ')
 
   const snapPreview = snapEdge
     ? (() => {

@@ -109,10 +109,24 @@ it costs.
   an eager consent host was rejected — the first is the boot-order bug #479
   removed, the second costs every reader bytes for an opt-in that defaults off.
 - **Live labs render light-on-any-theme while the assistant is theme-aware.**
-  A real visual inconsistency, dating from #451's docked-surface precedent.
-  #482 deferred it to #496 rather than putting a visual change to five shipped
-  lab surfaces inside an audit; light-only labs are not the desired permanent
-  rule.
+  **Resolved by #496.** The cause was only half what this entry said. A palette
+  did not reach them — but `docked-chat-surface.tsx` and `turn-activity-panel.tsx`
+  also carried 69 literal `stone-*`/`white` classes between them, which no
+  palette can reach, so this was never a documentation-CSS gap: it was an
+  `app-browser` tokenisation gap that happened to show up here first. Both
+  components now read the token graph; `ChatApp`'s stage carries `tt-app-embed`,
+  so the product scopes its own surface; and the documentation's palette is keyed
+  on that class, covering the assistant, the live labs and the rich-content
+  playground alike. Asserted in both themes by
+  `packages/e2e/tests/docs/lab-theming.e2e.ts` — contrast sweep, palette, dark
+  axe, and computed-chrome parity against `/widget`.
+- **`@tinytinkerer/app-shell`'s dock chrome does not follow the site theme.**
+  The Pixel Agents lab's dock header, grip and move controls carry a hard-coded
+  palette in `app-shell/src/styles.css` (`#eee4cf`, `#243447`, `#7a725f`) that is
+  outside the token graph entirely, so it reads identically in both themes. Left
+  alone by #496 deliberately: it is a fourth component with its own palette, not
+  part of the conversation surface that issue is about, and its one text node is
+  an `aria-hidden` decorative glyph. Visible only inside the Pixel Agents lab.
 - **`/docs` Settings lists a deliberate subset of the product's plugins.**
   Resolved by #495: the empty-registry alias is gone and each documentation app
   injects its own catalogue (`plugin-subsets.ts`). The assistant carries the

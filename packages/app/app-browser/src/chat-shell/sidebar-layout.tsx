@@ -167,8 +167,18 @@ export const SidebarLayout = ({
   }
 
   const heightClass = fill ? 'h-full' : sizeVariant === 'mobile' ? 'h-[100dvh]' : 'h-screen'
+  // `tt-app-embed` on the element that carries `themeStyle` (issue #496). A
+  // custom property's value is computed where it is DECLARED, so the derived
+  // graph — `--panel-hover`, `--accent-ring`, `--accent-soft`, `--user-bubble`,
+  // `--text-strong` — declared only on `:root` resolves against the ROOT's
+  // bases and hands the result down even to a subtree that overrode them.
+  // `shellThemeToCssVars` writes the bases HERE as an inline style, so without
+  // this class a host supplying a dark theme got dark bases and light derived
+  // values: the same partial theming `token-graph.css`'s header records as the
+  // documentation assistant's 1.04:1 heading. The class is what
+  // `token-graph.css` re-declares the graph for.
   const stageClasses = (...extra: string[]) =>
-    ['sidebar-stage', stageClassName, ...extra].filter(Boolean).join(' ')
+    ['sidebar-stage', 'tt-app-embed', stageClassName, ...extra].filter(Boolean).join(' ')
 
   const undockButton = onUndock ? (
     <button

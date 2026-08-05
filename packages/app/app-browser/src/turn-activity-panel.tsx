@@ -1,3 +1,23 @@
+/*
+ * Reasoning/tool activity, under the turn it belongs to.
+ *
+ * ## Palette (issue #496)
+ *
+ * This panel is rendered by BOTH chat surfaces — `floating-chat-surface.tsx` and
+ * `docked-chat-surface.tsx` — and it was the last part of the conversation
+ * surface still painted in literal light neutrals: 36 `stone-*`/`white` classes
+ * on the containers, summaries, code frames and gutters. That was invisible
+ * while every host was light. It stopped being invisible the moment a host
+ * supplied a dark palette: the documentation assistant has had a dark mode since
+ * #480, so a reader in dark mode who expanded a tool call got a white card on a
+ * near-black panel, on `/docs/` and on `/widget` alike.
+ *
+ * Structural chrome now reads the token graph, so a host that overrides the six
+ * bases recolours this panel with the rest of the surface. What stays literal:
+ * the `error`/`warn` status styles and their badges, which carry MEANING in
+ * their colour rather than palette — the same rule `docked-chat-surface.tsx`'s
+ * notices and destructive hovers follow.
+ */
 import type {
   ActivitySummarizer,
   ActivityView,
@@ -24,9 +44,9 @@ export type ResolveActivitySummarizer = (toolId: string) => ActivitySummarizer |
 // `thinking-dot` animation class is provided globally by the host app CSS.
 const ThinkingDots = () => (
   <span aria-label="Thinking" className="inline-flex items-end gap-0.5 pb-0.5">
-    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-stone-400" />
-    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-stone-400" />
-    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-stone-400" />
+    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-[var(--muted)]" />
+    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-[var(--muted)]" />
+    <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-[var(--muted)]" />
   </span>
 )
 
@@ -73,14 +93,14 @@ const decisionStyles: Record<ReActDecisionKind, { badge: string; icon: string; l
 // tool activity row (issue #276).
 const LabelEntry = ({ item }: { item: LabelItem }) => {
   if (item.stepKind !== 'think') {
-    return <span className="text-xs text-stone-600">{item.label}</span>
+    return <span className="text-xs text-[var(--muted)]">{item.label}</span>
   }
 
   const decision = item.decisionKind ? decisionStyles[item.decisionKind] : undefined
   return (
     <div className="space-y-1">
       {item.label ? (
-        <span className="block font-mono text-xs italic text-stone-500">{item.label}</span>
+        <span className="block font-mono text-xs italic text-[var(--muted)]">{item.label}</span>
       ) : null}
       {decision ? (
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1" data-react-decision>
@@ -151,9 +171,9 @@ const statusStyles: Record<
   { border: string; summary: string; body: string; badge: string; icon: string; label: string }
 > = {
   ok: {
-    border: 'border-stone-200/70 bg-white/60',
-    summary: 'text-stone-600',
-    body: 'border-stone-100 text-[var(--muted)]',
+    border: 'border-[var(--border)] bg-[var(--panel-hover)]',
+    summary: 'text-[var(--muted)]',
+    body: 'border-[var(--border)] text-[var(--muted)]',
     // The non-colour cue: a glyph + spelled-out word so the outcome never relies on
     // colour alone (WCAG 1.4.1, mirroring the gauge and the ReAct decision badge).
     badge: 'border-emerald-300 bg-emerald-50 text-emerald-700',
@@ -177,10 +197,10 @@ const statusStyles: Record<
     label: 'Warning'
   },
   unknown: {
-    border: 'border-stone-200/70 bg-white/60',
-    summary: 'text-stone-600',
-    body: 'border-stone-100 text-[var(--muted)]',
-    badge: 'border-stone-300 bg-stone-50 text-stone-600',
+    border: 'border-[var(--border)] bg-[var(--panel-hover)]',
+    summary: 'text-[var(--muted)]',
+    body: 'border-[var(--border)] text-[var(--muted)]',
+    badge: 'border-[var(--border)] bg-[var(--panel-hover)] text-[var(--muted)]',
     icon: '?',
     label: 'Unknown'
   }
@@ -202,7 +222,7 @@ const ActivitySectionEntry = ({ section }: { section: ActivityView['sections'][n
         <ReadOnlyCodeView
           value={section.code}
           language={section.language}
-          className="tt-code-editor mt-1 max-h-72 overflow-auto rounded-md border border-stone-200"
+          className="tt-code-editor mt-1 max-h-72 overflow-auto rounded-md border border-[var(--border)]"
         />
       </div>
     )
@@ -211,7 +231,7 @@ const ActivitySectionEntry = ({ section }: { section: ActivityView['sections'][n
     return (
       <div>
         {section.label ? <span className="text-[var(--muted)]">{section.label}: </span> : null}
-        <pre className="mt-1 overflow-x-auto rounded-md border border-stone-200 bg-stone-50 p-2 text-stone-700">
+        <pre className="mt-1 overflow-x-auto rounded-md border border-[var(--border)] bg-[var(--panel-hover)] p-2 text-[var(--text)]">
           {boundedJson(section.value, MAX_JSON_CHARS)}
         </pre>
       </div>
@@ -226,7 +246,7 @@ const ActivitySectionEntry = ({ section }: { section: ActivityView['sections'][n
           alt={section.alt}
           loading="lazy"
           decoding="async"
-          className="mt-1 block max-h-72 max-w-full rounded-md border border-stone-200 object-contain"
+          className="mt-1 block max-h-72 max-w-full rounded-md border border-[var(--border)] object-contain"
         />
       </div>
     )
@@ -238,7 +258,7 @@ const ActivitySectionEntry = ({ section }: { section: ActivityView['sections'][n
   return (
     <div>
       {section.label ? <span className="text-[var(--muted)]">{section.label}: </span> : null}
-      <span className="whitespace-pre-wrap text-stone-600">{section.value}</span>
+      <span className="whitespace-pre-wrap text-[var(--muted)]">{section.value}</span>
     </div>
   )
 }
@@ -266,16 +286,16 @@ const ActivityViewEntry = ({
   return (
     <details className={`group rounded-md border text-xs ${styles.border}`}>
       <summary
-        className={`flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 hover:bg-stone-50/80 ${styles.summary}`}
+        className={`flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 hover:bg-[var(--panel-hover)] ${styles.summary}`}
       >
-        <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-stone-100 text-[9px] font-bold text-stone-400 transition-transform group-open:rotate-90">
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-[var(--panel-hover)] text-[9px] font-bold text-[var(--muted)] transition-transform group-open:rotate-90">
           ▶
         </span>
         <span className="flex-1">{view.title}</span>
         {resolving ? (
           <span
             data-activity-resolution="pending"
-            className="inline-flex shrink-0 items-center gap-1 rounded border border-stone-300 bg-stone-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-600"
+            className="inline-flex shrink-0 items-center gap-1 rounded border border-[var(--border)] bg-[var(--panel-hover)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]"
           >
             <ThinkingDots />
             Resolving
@@ -372,7 +392,7 @@ const ToolEntry = ({
 
   if (item.status === 'started') {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-stone-200/70 bg-white/60 px-3 py-1.5 text-xs text-stone-600">
+      <div className="flex items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--panel-hover)] px-3 py-1.5 text-xs text-[var(--muted)]">
         <span>{label}</span>
         <ThinkingDots />
       </div>
@@ -473,7 +493,7 @@ export const TurnActivityPanel = memo(function TurnActivityPanel({
           aria-label="Toggle reasoning and activity"
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
-          className="text-xs text-[var(--muted)] transition-colors hover:text-stone-700"
+          className="text-xs text-[var(--muted)] transition-colors hover:text-[var(--text)]"
         >
           {open ? 'Collapse' : 'Expand'}
         </button>
@@ -482,11 +502,11 @@ export const TurnActivityPanel = memo(function TurnActivityPanel({
       {open ? (
         <div className="mt-2 space-y-2">
           {hasReasoning ? (
-            <div className="rounded-md border border-stone-200/70 bg-white/60 px-3 py-2">
+            <div className="rounded-md border border-[var(--border)] bg-[var(--panel-hover)] px-3 py-2">
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
                 Reasoning
               </p>
-              <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-stone-600">
+              <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-[var(--muted)]">
                 {activity.reasoningText}
               </p>
             </div>
@@ -504,7 +524,7 @@ export const TurnActivityPanel = memo(function TurnActivityPanel({
                   >
                     <span
                       aria-hidden
-                      className="mt-1 shrink-0 select-none font-mono text-[10px] leading-none text-stone-300"
+                      className="mt-1 shrink-0 select-none font-mono text-[10px] leading-none text-[var(--muted)]"
                     >
                       {depth > 0 ? '└─' : '•'}
                     </span>
