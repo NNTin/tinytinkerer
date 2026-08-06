@@ -21,14 +21,27 @@ import type { Page } from '@playwright/test'
  *    result as `color(srgb r g b / a)` with 0–1 components and a plain colour as
  *    `rgb()`/`rgba()` with 0–255 ones. Reading the first as if it were the
  *    second is how an assertion once concluded a genuinely dark panel was light.
- * 3. **It skips `aria-hidden` subtrees** (issue #496). WCAG 1.4.3 exempts
- *    decorative content, and axe — which runs beside this sweep on the same
- *    surfaces — excludes it for that reason. Without this the two gates
- *    disagreed: `@tinytinkerer/app-shell`'s dock drag handle is an
- *    `aria-hidden="true"` braille glyph (`⠿`, `dockable-panel-layout.tsx:443`)
- *    at 3.78:1, which axe passes and this failed. A sweep that reds on a glyph
- *    no assistive technology announces trains people to widen its scope
- *    exclusions, which is how it stops measuring anything.
+ * 3. **It skips `aria-hidden` subtrees** (issue #496).
+ *
+ *    Stated plainly: this is a **loosening** of a check that has been guarding
+ *    the assistant since #480, not a bug fix. It was added because #496 pointed
+ *    the sweep at a live lab and hit `@tinytinkerer/app-shell`'s dock drag
+ *    handle — an `aria-hidden="true"` braille glyph (`⠿`,
+ *    `dockable-panel-layout.tsx:443`) at 3.78:1 — so the decision was either
+ *    this, or a per-surface scope exclusion.
+ *
+ *    The trade is worth taking on two grounds. WCAG 1.4.3 exempts decorative
+ *    content, so the skipped nodes are outside what the sweep claims to measure;
+ *    and axe, which runs beside this on the same surfaces, excludes them for
+ *    that reason, so the two gates now agree instead of contradicting each other.
+ *    The alternative was worse: a sweep that reds on a glyph no assistive
+ *    technology announces trains people to widen its scope exclusions, and a
+ *    widened scope stops measuring anything.
+ *
+ *    What it costs: text that is genuinely illegible AND marked `aria-hidden`
+ *    now passes here. That is a real hole, and it is the reason this skip is
+ *    narrow (`aria-hidden="true"` only, no `role="presentation"`, no opacity
+ *    heuristic) rather than a general "decorative" filter.
  *
  * Returns the WORST ratio found, or 21 when the subtree has no visible text.
  */

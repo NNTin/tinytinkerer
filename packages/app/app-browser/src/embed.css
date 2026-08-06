@@ -22,6 +22,37 @@
  */
 
 @import './embed-preflight.generated.css';
+
+/*
+ * The markdown/prose styles for rendered answers (issue #496 review, finding 2).
+ *
+ * Same argument as the launcher primitive below: a deployable app gets these
+ * through styles.css, and an embedded surface renders exactly the same markdown,
+ * so it needs them too — and it needs them AT THIS CASCADE POSITION, which is
+ * the part that turned out to matter.
+ *
+ * The defect this fixes, which predates this issue and had been live on the
+ * documentation assistant since #491: `.tt-markdown.prose-assistant ul` is
+ * (0,2,1) and the scoped preflight's `:where(.tt-app-embed) ul` is (0,0,1), so
+ * on paper the prose rule wins and lists keep their discs. On the documentation
+ * site it lost, and rendered answers showed unbulleted, unindented lists.
+ *
+ * The reason is a host build detail this file cannot see: Docusaurus runs
+ * `@csstools/postcss-cascade-layers` to polyfill `@layer`, and because unlayered
+ * rules must outrank layered ones, that plugin appends `:not(#\#)` — an ID-weight
+ * selector — to unlayered rules. `custom.css` imports this file, so the preflight
+ * became `:where(.tt-app-embed):not(#\#) ul` at (1,0,1), while the prose rules —
+ * reaching the page through a JS-imported stylesheet in another bundle — stayed
+ * at (0,2,1) and lost.
+ *
+ * Importing them HERE puts them in the same stylesheet as the preflight, so
+ * whatever a host's pipeline does to one it does to both, and the (0,2,1) vs
+ * (0,0,1) relationship the product designed survives it. That is the general
+ * property worth having: this baseline should not depend on a host's postcss
+ * plugins agreeing with our specificity arithmetic.
+ */
+@import '@tinytinkerer/content-react/styles.css';
+
 /* The launcher primitive both the cold and the mounted renderer use. Every
    deployable app gets it through styles.css; an embedder gets it here. */
 @import './launcher.css';

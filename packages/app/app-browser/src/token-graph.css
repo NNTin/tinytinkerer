@@ -42,6 +42,19 @@
   --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--panel));
   --user-bubble: color-mix(in srgb, var(--accent) 16%, var(--panel));
 
+  /* The same border, one step stronger — for the hover state of NEUTRAL chrome
+     (issue #496 review, finding 3).
+     Its own derived value rather than reusing `--accent-ring`, because the two
+     have different jobs. `--accent-ring` tints toward the accent, which is right
+     for a call to action: the empty state's suggestions use it. Utility controls
+     — settings, sign-in, the microphone — were deliberately neutral, and mapping
+     their `hover:border-stone-300` onto `--accent-ring` while tokenising would
+     have turned four composer buttons amber on hover in every shipped app, which
+     is a design change rather than the palette substitution this is.
+     14%, because the literal it replaces was a one-step darkening of a neutral
+     (stone-200 -> stone-300), not an emphasis colour. */
+  --border-strong: color-mix(in srgb, var(--text) 14%, var(--border));
+
   /* The widget aliases. Every deployable shell used to declare these five by
      hand and then alias the bases back onto them; they are simply the bases,
      under the names the floating shell's chrome spells them with. */

@@ -62,6 +62,20 @@
   list-style-type: disc;
 }
 
+/* The indent those discs need in order to sit inside the bubble rather than
+   over its edge (issue #496 review, finding 2).
+   Moved here from `apps/shell/src/index.css` and `apps/host/src/index.css`,
+   which carried byte-identical copies of it. It styles `.tt-markdown.prose-assistant`,
+   a class this package owns, so an app stylesheet was the wrong home twice over:
+   the two copies could drift, and no EMBEDDED surface could reach either — which
+   is how a live lab came to render bulleted lists with no indent while `/web`
+   indented them. The mobile shell's tighter 1.3em override stays in
+   `apps/shell/src/index.css`, since that one is genuinely per-shell. */
+.tt-markdown.prose-assistant ul,
+.tt-markdown.prose-assistant ol {
+  padding-left: 1.4em;
+}
+
 .tt-markdown.prose-assistant ol {
   list-style-type: decimal;
 }

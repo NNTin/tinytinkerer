@@ -53,7 +53,7 @@ const noticeStyle: Record<'info' | 'warning' | 'error', string> = {
  * `--text-strong`.
  */
 const CONTROL_CHROME =
-  'border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent-ring)] hover:bg-[var(--panel-hover)]'
+  'border-[var(--border)] text-[var(--muted)] hover:border-[var(--border-strong)] hover:bg-[var(--panel-hover)]'
 const CONTROL_CHROME_FILLED = `${CONTROL_CHROME} bg-[var(--panel)] hover:text-[var(--text-strong)]`
 
 /*

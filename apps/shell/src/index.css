@@ -66,11 +66,6 @@ html[data-shell='mobile'] body {
   font-size: 1.1em;
 }
 
-.tt-markdown.prose-assistant ul,
-.tt-markdown.prose-assistant ol {
-  padding-left: 1.4em;
-}
-
 .tt-markdown.prose-assistant pre {
   border-radius: 6px;
 }
