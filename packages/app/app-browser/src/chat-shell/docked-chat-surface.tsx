@@ -37,6 +37,40 @@ const noticeStyle: Record<'info' | 'warning' | 'error', string> = {
   error: 'border-rose-200 bg-rose-50 text-rose-700'
 }
 
+/*
+ * The composer's icon-button chrome, hoisted because it is repeated (issue
+ * #496).
+ *
+ * Four controls render it — settings, sign-in, reset and the microphone — and it
+ * was four copies of a literal light palette. Tokenising it made each copy ~70
+ * characters longer, which put the chat route chunk over its 60 kB budget; the
+ * budget's own note says the next addition needs a real reduction beside it
+ * rather than a raise, and three of these four copies were exactly that.
+ *
+ * Split at the hover text colour because that is the only axis they differ on:
+ * the reset control keeps a literal rose hover (destructive signal, not
+ * palette), and settings settles on `--text` where the other two use
+ * `--text-strong`.
+ */
+const CONTROL_CHROME =
+  'border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent-ring)] hover:bg-[var(--panel-hover)]'
+const CONTROL_CHROME_FILLED = `${CONTROL_CHROME} bg-[var(--panel)] hover:text-[var(--text-strong)]`
+
+/*
+ * What the two size variants SHARE (issue #496).
+ *
+ * `comfortable` and `mobile` differ only on size — radius, padding, font size —
+ * which is what `sizeVariant` means. Their palette and behaviour were duplicated
+ * character for character, and tokenising made each copy ~40 characters longer.
+ * Hoisted rather than raising the chat route's 60 kB budget, whose note asks for
+ * a real reduction beside any addition; leaving only the size deltas in VARIANTS
+ * also makes that table say what it is for.
+ */
+const COMPOSER_INPUT =
+  'w-full resize-none border border-[var(--border)] bg-[var(--panel)] px-3 leading-relaxed text-[var(--text)] outline-none ring-[var(--accent-ring)] transition focus:ring-2'
+const TURN_BUBBLE = 'bg-[var(--panel)] px-3 text-sm text-[var(--text-strong)] shadow-sm'
+const USER_BUBBLE = 'wrap-anywhere bg-[var(--user-bubble)] px-3 text-sm text-[var(--text)]'
+
 export type DockedSizeVariant = 'comfortable' | 'mobile'
 
 // Per-variant chrome. `comfortable` is the full-width web presentation (bordered
@@ -73,15 +107,12 @@ const VARIANTS: Record<DockedSizeVariant, VariantConfig> = {
     showTurnCount: false,
     scroll: 'mt-3 flex-1 overflow-y-auto space-y-4',
     emptyCount: 4,
-    userBubble:
-      'wrap-anywhere rounded-lg bg-[var(--user-bubble)] px-3 py-2 text-sm text-[var(--text)]',
+    userBubble: `rounded-lg py-2 ${USER_BUBBLE}`,
     noticeRadius: 'rounded-lg',
-    turnBubble:
-      'rounded-lg bg-[var(--panel)] px-3 py-2 text-sm text-[var(--text-strong)] shadow-sm',
+    turnBubble: `rounded-lg py-2 ${TURN_BUBBLE}`,
     jump: 'absolute bottom-4 left-1/2 z-10 -translate-x-1/2',
     form: 'rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3 shadow-sm',
-    textarea:
-      'w-full resize-none rounded-md border border-[var(--border)] bg-[var(--panel)] px-3 py-2.5 text-sm leading-relaxed text-[var(--text)] outline-none ring-[var(--accent-ring)] transition focus:ring-2',
+    textarea: `rounded-md py-2.5 text-sm ${COMPOSER_INPUT}`,
     textareaMinHeight: '44px',
     autoGrowMax: 200,
     showHint: true,
@@ -99,15 +130,12 @@ const VARIANTS: Record<DockedSizeVariant, VariantConfig> = {
     emptyCount: 2,
     emptyClassName:
       'rounded-2xl border border-dashed border-[var(--border)] bg-[var(--panel)] px-4 py-5',
-    userBubble:
-      'wrap-anywhere rounded-2xl bg-[var(--user-bubble)] px-3 py-2.5 text-sm text-[var(--text)]',
+    userBubble: `rounded-2xl py-2.5 ${USER_BUBBLE}`,
     noticeRadius: 'rounded-2xl',
-    turnBubble:
-      'rounded-2xl bg-[var(--panel)] px-3 py-3 text-sm text-[var(--text-strong)] shadow-sm',
+    turnBubble: `rounded-2xl py-3 ${TURN_BUBBLE}`,
     jump: 'absolute bottom-3 left-1/2 z-10 -translate-x-1/2',
     form: 'px-1 py-1',
-    textarea:
-      'w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--panel)] px-3 py-3 text-base leading-relaxed text-[var(--text)] outline-none ring-[var(--accent-ring)] transition focus:ring-2',
+    textarea: `rounded-2xl py-3 text-base ${COMPOSER_INPUT}`,
     textareaMinHeight: '52px',
     autoGrowMax: 180,
     showHint: false,
@@ -322,7 +350,7 @@ export const DockedChatSurface = ({
                 aria-label="Settings"
                 title="Settings"
                 onClick={() => setSettingsOpen(true)}
-                className={`${iconButtonBase} border-[var(--border)] ${v.settingsHasBg ? 'bg-[var(--panel)] ' : ''}text-[var(--muted)] hover:border-[var(--accent-ring)] hover:bg-[var(--panel-hover)] hover:text-[var(--text)]`}
+                className={`${iconButtonBase} ${CONTROL_CHROME} ${v.settingsHasBg ? 'bg-[var(--panel)] ' : ''}hover:text-[var(--text)]`}
               >
                 <FaGear className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -338,7 +366,7 @@ export const DockedChatSurface = ({
                   onClick={() =>
                     signInOpensSettings ? setSettingsOpen(true) : setSignInUnavailable(!signIn())
                   }
-                  className={`${iconButtonBase} border-[var(--border)] bg-[var(--panel)] text-[var(--muted)] hover:border-[var(--accent-ring)] hover:bg-[var(--panel-hover)] hover:text-[var(--text-strong)]`}
+                  className={`${iconButtonBase} ${CONTROL_CHROME_FILLED}`}
                 >
                   <FaGithub className="h-4 w-4" aria-hidden="true" />
                 </button>
@@ -376,7 +404,7 @@ export const DockedChatSurface = ({
               <SpeechToggleButton
                 speech={speech}
                 className={iconButtonBase}
-                idleClassName="border-[var(--border)] bg-[var(--panel)] text-[var(--muted)] hover:border-[var(--accent-ring)] hover:bg-[var(--panel-hover)] hover:text-[var(--text-strong)]"
+                idleClassName={CONTROL_CHROME_FILLED}
                 iconClassName="h-4 w-4"
               />
 

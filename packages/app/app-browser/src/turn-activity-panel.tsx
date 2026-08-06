@@ -166,14 +166,27 @@ const neutralView = (label: string, output: unknown): ActivityView => {
   return { title: label, status: 'unknown', sections }
 }
 
+/*
+ * The neutral status chrome, shared by `ok` and `unknown` (issue #496).
+ *
+ * Those two entries were byte-identical on three of their four style fields
+ * before this, and tokenising them made each copy longer — which is what pushed
+ * the chat route chunk past its budget. Hoisted rather than raising the budget,
+ * per the note in `apps/shell/src/bundle-size.test.ts`. `error` and `warn` stay
+ * spelled out: their colour is the signal, so they have nothing to share.
+ */
+const NEUTRAL_STATUS = {
+  border: 'border-[var(--border)] bg-[var(--panel-hover)]',
+  summary: 'text-[var(--muted)]',
+  body: 'border-[var(--border)] text-[var(--muted)]'
+} as const
+
 const statusStyles: Record<
   NonNullable<ActivityView['status']>,
   { border: string; summary: string; body: string; badge: string; icon: string; label: string }
 > = {
   ok: {
-    border: 'border-[var(--border)] bg-[var(--panel-hover)]',
-    summary: 'text-[var(--muted)]',
-    body: 'border-[var(--border)] text-[var(--muted)]',
+    ...NEUTRAL_STATUS,
     // The non-colour cue: a glyph + spelled-out word so the outcome never relies on
     // colour alone (WCAG 1.4.1, mirroring the gauge and the ReAct decision badge).
     badge: 'border-emerald-300 bg-emerald-50 text-emerald-700',
@@ -197,10 +210,8 @@ const statusStyles: Record<
     label: 'Warning'
   },
   unknown: {
-    border: 'border-[var(--border)] bg-[var(--panel-hover)]',
-    summary: 'text-[var(--muted)]',
-    body: 'border-[var(--border)] text-[var(--muted)]',
-    badge: 'border-[var(--border)] bg-[var(--panel-hover)] text-[var(--muted)]',
+    ...NEUTRAL_STATUS,
+    badge: `${NEUTRAL_STATUS.border} text-[var(--muted)]`,
     icon: '?',
     label: 'Unknown'
   }

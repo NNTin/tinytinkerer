@@ -256,6 +256,24 @@ describe('shell bundle regression guard', () => {
     // it. Measured 59.915 kB, which leaves under 100 bytes. This budget is now as
     // tight as the entry one: the next addition to the chat surface needs a real
     // reduction beside it, not a raise.
+    //
+    // NOT raised for issue #496 (2026-08-05), and this is the case the note above
+    // was written for. Tokenising `docked-chat-surface.tsx` and
+    // `turn-activity-panel.tsx` — 69 literal colour classes onto the token graph,
+    // so an embedded surface follows its host's theme — costs real bytes, because
+    // `bg-[var(--panel)]` is nine characters longer than `bg-white` and there are
+    // dozens of them. It first measured 60.257 kB, i.e. red.
+    //
+    // The reduction beside it was duplication those literals had been hiding:
+    // four copies of the composer's icon-button chrome, two byte-identical
+    // neutral entries in `statusStyles`, and three pairs in `VARIANTS` whose two
+    // size variants differed only in radius/padding/font-size while repeating the
+    // whole palette. Hoisted, the table now carries only the size deltas —
+    // which is what `sizeVariant` means — and the file reads better for it.
+    //
+    // Net 59.915 -> **59.777 kB**: the change pays for itself and returns ~140
+    // bytes. Ceiling deliberately left at 60 so the headroom stays available
+    // rather than needing a raise back through review.
     const chunk = chunks.find((entry) => entry.fileName.includes('chat-surface'))
     expect(chunk, 'No chat route chunk found in build output').toBeDefined()
     expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(60)
