@@ -129,9 +129,7 @@ describe('DocsAssistantOffice', () => {
     expect(session.selectConversation).toHaveBeenCalledWith('conv-a')
     // Named apart from the live labs' "New conversation": a lab page carries
     // both, over two different sessions.
-    expect(
-      screen.getByRole('button', { name: 'New assistant conversation' })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New assistant conversation' })).toBeInTheDocument()
   })
 
   it('falls back to the list alone when the office cannot run', () => {
@@ -141,9 +139,7 @@ describe('DocsAssistantOffice', () => {
 
     expect(screen.queryByTestId('pixel-agents-stage')).not.toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Assistant conversations' })).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'New assistant conversation' })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New assistant conversation' })).toBeInTheDocument()
   })
 
   it('routes to the fallback when the frame reports a bootstrap failure', () => {
