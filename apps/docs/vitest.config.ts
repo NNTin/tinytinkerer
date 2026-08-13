@@ -35,6 +35,16 @@ export default defineConfig({
       '@theme-original/Root': fileURLToPath(
         new URL('./src/test/theme-original-root-stub.tsx', import.meta.url)
       ),
+      '@theme-original/DocSidebar/Desktop/Content': fileURLToPath(
+        new URL('./src/test/theme-original-doc-sidebar-content-stub.tsx', import.meta.url)
+      ),
+      // Docusaurus' own alias for the site directory, declared by
+      // @docusaurus/tsconfig as `@site/* -> ./*` and resolved by webpack in a
+      // real build. The swizzled sidebar uses it to reach the light runtime
+      // barrel, the import path the maintainer docs tell a page component to
+      // use, so a test has to resolve it the same way rather than force the
+      // source to spell out four levels of `../`.
+      '@site': fileURLToPath(new URL('.', import.meta.url)),
       // See the resolution note above: the real modules, not stand-ins, so tests
       // exercise the genuine router hooks and the genuine `matchPath` the docs
       // plugin's active-doc context matches routes with.

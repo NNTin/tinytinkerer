@@ -1487,3 +1487,222 @@ html[data-theme='dark'] .docs-assistant-root .sidebar-undock:hover {
 html[data-theme='dark'] .docs-assistant-root .widget-shell-grip::before {
   background: color-mix(in srgb, var(--text) 40%, transparent);
 }
+
+/* ==========================================================================
+   The Pixel Agents Office in the documentation sidebar (issue #472)
+   ==========================================================================
+
+   Two owners, deliberately kept apart:
+
+   - `.docs-assistant-office-slot*` is the documentation's own chrome — a
+     header, a toggle, and the box the Office is portaled into. Infima tokens,
+     no `.tt-app-embed`, exactly like the labs' own in-page chrome.
+   - `.docs-assistant-office*` is the Office itself, which renders inside the
+     assistant provider. It is the product's surface with the documentation's
+     switcher beneath it.
+
+   The slot lives at the bottom of theme-classic's `DocSidebar/Desktop` flex
+   column, after the `flex-grow: 1` nav. It must therefore keep its own natural
+   height and never grow, or it would push the navigation into a scroll it did
+   not ask for. */
+
+.docs-assistant-office-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  padding: 0.5rem 0.75rem 0.75rem;
+  border-top: 1px solid var(--ifm-toc-border-color, var(--ifm-color-emphasis-300));
+}
+
+.docs-assistant-office-slot__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.docs-assistant-office-slot__title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
+}
+
+.docs-assistant-office-slot__toggle,
+.docs-assistant-office-slot__activate {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.5rem;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  cursor: pointer;
+}
+
+.docs-assistant-office-slot__toggle {
+  flex-shrink: 0;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.docs-assistant-office-slot__activate {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.docs-assistant-office-slot__toggle:focus-visible,
+.docs-assistant-office-slot__activate:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+/* A definite height, not a minimum: @tinytinkerer/pixel-agents is `height: 100%`
+   all the way down to its iframe, so without one the whole office renders at
+   zero visible height. 21rem is the room itself — at compact chrome's minimum
+   zoom the map is ~336 device pixels square — plus upstream's bottom toolbar.
+   The status line and the target share the box by overlay, so nothing on the
+   page moves when the room finishes loading. */
+.docs-assistant-office-slot__stage {
+  position: relative;
+  height: 21rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-card-border-radius);
+  overflow: hidden;
+}
+
+.docs-assistant-office-slot__target,
+.docs-assistant-office-slot__stage-status {
+  position: absolute;
+  inset: 0;
+}
+
+.docs-assistant-office-slot__stage-status {
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0.5rem;
+  font-size: 0.8rem;
+  text-align: center;
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
+}
+
+/* The Office's own two children: the stage fills the target, and the textual
+   conversation list sits under it as an ordinary disclosure. */
+.docs-assistant-office__stage {
+  height: 100%;
+}
+
+.docs-assistant-office__conversations {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  max-height: 100%;
+  overflow-y: auto;
+  border-top: 1px solid var(--ifm-color-emphasis-300);
+  background: var(--ifm-background-surface-color);
+  font-size: 0.8rem;
+}
+
+.docs-assistant-office__conversations > summary {
+  padding: 0.35rem 0.5rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.docs-assistant-office__conversations > summary:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: -2px;
+}
+
+/* Reduced motion, a narrow window, or a frame that failed to boot: the reader
+   gets the list on its own, filling the box the room would have used. */
+.docs-assistant-office__fallback {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.docs-assistant-office__switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem;
+}
+
+.docs-assistant-office__switcher-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.docs-assistant-office__switcher-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.docs-assistant-office__switcher-select {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.4rem;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  text-align: left;
+  cursor: pointer;
+}
+
+.docs-assistant-office__switcher-select[aria-current='true'] {
+  border-color: var(--ifm-color-primary);
+  background: var(--ifm-color-emphasis-200);
+  font-weight: 600;
+}
+
+.docs-assistant-office__switcher-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docs-assistant-office__switcher-status {
+  font-size: 0.9em;
+  color: var(--ifm-color-emphasis-700, var(--ifm-font-color-secondary));
+}
+
+.docs-assistant-office__switcher-delete,
+.docs-assistant-office__switcher-create {
+  flex-shrink: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 0.4rem;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  cursor: pointer;
+}
+
+.docs-assistant-office__switcher-delete[aria-pressed='true'] {
+  border-color: var(--lab-error-border);
+  background: var(--lab-error-bg);
+  color: var(--lab-error-text);
+}
+
+.docs-assistant-office__switcher-create {
+  align-self: flex-start;
+  font-weight: 600;
+}
+
+.docs-assistant-office__switcher-select:focus-visible,
+.docs-assistant-office__switcher-delete:focus-visible,
+.docs-assistant-office__switcher-create:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}

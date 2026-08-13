@@ -32,11 +32,11 @@ vi.mock('@tinytinkerer/pixel-agents', () => ({
   conversationActivityStatus: () => 'awaiting-input' as const
 }))
 
-vi.mock('../../pixel-agents/capability', () => ({
+vi.mock('../../../pixel-agents/capability', () => ({
   usePixelAgentsCapability: capability.usePixelAgentsCapability
 }))
 
-vi.mock('../../pixel-agents/upstream-url', () => ({
+vi.mock('../../../pixel-agents/upstream-url', () => ({
   useResolveUpstreamUrl: () => (path: string) => `https://example.test/upstream/${path}`
 }))
 

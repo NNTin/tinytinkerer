@@ -86,7 +86,11 @@ const EAGER_ROOTS = [
   // Docusaurus' MDX component registry, loaded by every authored page. It names
   // the live-lab and playground entry points, whose runtime must stay behind
   // their own React.lazy boundaries — which is precisely what the walk checks.
-  resolve(APP_ROOT, 'src/theme/MDXComponents.tsx')
+  resolve(APP_ROOT, 'src/theme/MDXComponents.tsx'),
+  // The swizzled sidebar, rendered on every documentation route (issue #472).
+  // It hosts the Office's portal TARGET; the Office is reached by portal out of
+  // the runtime chunk, so nothing here may import it.
+  resolve(APP_ROOT, 'src/theme/DocSidebar/Desktop/Content/index.tsx')
 ]
 
 /** Modules that must never be reachable without a dynamic import. */
@@ -97,6 +101,9 @@ const RUNTIME_ONLY = [
   'src/docs-runtime/session.ts',
   // #480's widget is the one docs-runtime component that renders ChatApp.
   'src/docs-runtime/assistant-widget.tsx',
+  // #472's Office: the office package, its stylesheet, and the session service.
+  // The sidebar slot above it must reach this by portal, never by import.
+  'src/docs-runtime/assistant-office.tsx',
   // Reads the docked panel geometry off app-browser's barrel.
   'src/docs-runtime/page-inset.ts',
   'src/live-lab/client-runtime.tsx',
@@ -121,7 +128,23 @@ describe('assistant bundle boundary', () => {
     expect(labels).toContain('src/theme/MDXComponents.tsx')
     expect(labels).toContain('src/live-lab/LiveLab.tsx')
     expect(labels).toContain('src/playground/RichContentPlayground.tsx')
+    // …and the sidebar root, whose slot registers #472's portal target.
+    expect(labels).toContain('src/theme/DocSidebar/Desktop/Content/index.tsx')
+    expect(labels).toContain('src/docs-runtime/OfficeSidebarSlot.tsx')
     expect(labels.length).toBeGreaterThan(20)
+  })
+
+  it('never reaches @tinytinkerer/pixel-agents', () => {
+    // The Office package carries the office iframe host, the workspace
+    // database and the whole bridge. The sidebar slot (issue #472) is rendered
+    // on every documentation route and gets its Office by PORTAL out of the
+    // runtime chunk precisely so none of that is eager; an ordinary import
+    // there would look identical in review and cost every reader the lot.
+    const offenders = [...eagerGraph.packages]
+      .filter(([specifier]) => specifier.startsWith('@tinytinkerer/pixel-agents'))
+      .map(([specifier, importers]) => `${specifier} (from ${importers.join(', ')})`)
+
+    expect(offenders).toEqual([])
   })
 
   it('never reaches @tinytinkerer/app-browser except through a certified subpath', () => {

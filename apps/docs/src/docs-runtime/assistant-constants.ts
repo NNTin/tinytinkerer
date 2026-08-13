@@ -12,7 +12,8 @@
  * (`tinytinkerer-docs-lab`), so assistant conversations, settings, and model
  * selection never appear in — or overwrite — either.
  *
- * #472 will consume this session rather than opening a second store of its own.
+ * #472's Office consumes this session rather than opening a second store of its
+ * own.
  */
 export const DOCS_ASSISTANT_STORAGE_NAMESPACE = 'tinytinkerer-docs-assistant'
 
@@ -35,6 +36,27 @@ export const DOCS_ASSISTANT_LAYOUT_STORAGE_KEY = 'tinytinkerer:docs-assistant-la
 
 /** The id the floating widget registers under in the #479 surface registry. */
 export const DOCS_ASSISTANT_WIDGET_SURFACE_ID = 'docs-assistant-widget'
+
+/**
+ * The id the sidebar Office registers under, and which the sidebar slot points
+ * at a DOM target (issue #472). A `portal` surface: it renders nothing at all
+ * until the slot is mounted and expanded, which is also how it stays off every
+ * route that has no documentation sidebar.
+ */
+export const DOCS_ASSISTANT_OFFICE_SURFACE_ID = 'docs-assistant-office'
+
+/**
+ * The Office's own IndexedDB database for seats, agent numbers, and the room
+ * layout, and the `localStorage` key for whether the reader collapsed it.
+ *
+ * A third workspace, distinct from the product's `tinytinkerer-pixel-agents`
+ * and the live labs' `tinytinkerer-docs-lab-pixel-agents`: both are origin-,
+ * not path-scoped, and the three offices project three different conversation
+ * sets. Sharing one would make a lab's demo agents turn up in the sidebar.
+ */
+export const DOCS_ASSISTANT_OFFICE_WORKSPACE_DATABASE = 'tinytinkerer-docs-assistant-pixel-agents'
+export const DOCS_ASSISTANT_OFFICE_COLLAPSED_STORAGE_KEY =
+  'tinytinkerer:docs-assistant-office-collapsed:v1'
 
 /**
  * Cold-start prompts for the assistant's empty conversation.

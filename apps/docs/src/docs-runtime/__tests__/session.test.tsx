@@ -1,7 +1,8 @@
 /**
- * The supported session/conversation service #472 is intended to consume (issue
- * #479). It has no consumer yet: what these tests pin is that the contract
- * exists, is exported, and cannot be satisfied by the wrong app.
+ * The supported session/conversation service (issue #479), consumed since issue
+ * #472 by the sidebar Office — the surface that gives the documentation
+ * assistant conversation management at all, `ChatApp` having had none since the
+ * office became the product's sole switcher.
  *
  * Driven against a real `BrowserApp`, a real chat store, and an in-memory
  * conversation repository — not mocked actions (issue #479 review, finding 4).
@@ -13,7 +14,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
-import { AppBrowserProvider, createBrowserApp, type BrowserApp } from '@tinytinkerer/app-browser'
+import {
+  AppBrowserProvider,
+  createBrowserApp,
+  type BrowserApp,
+  type ChatEvent
+} from '@tinytinkerer/app-browser'
 import { DocsAssistantSessionContext } from '../assistant-session-context'
 import { useDocsAssistantSession } from '../session'
 
@@ -75,11 +81,18 @@ const attachRepository = (app: BrowserApp): void => {
   })
 }
 
-const seed = (
-  app: BrowserApp,
-  slices: { id: string; title: string; isRunning?: boolean }[],
-  activeId: string
-): void => {
+type SeedSlice = {
+  id: string
+  title: string
+  isRunning?: boolean
+  events?: ChatEvent[]
+  // The store hydrates a conversation's events lazily on first activation, so
+  // after a reload every BACKGROUND conversation is `false` here. Seeding it is
+  // what lets a test tell "never ran" from "not loaded yet".
+  eventsLoaded?: boolean
+}
+
+const seed = (app: BrowserApp, slices: SeedSlice[], activeId: string): void => {
   const repository = databases.get(namespaceOf(app))!
   for (const { id, title } of slices) {
     repository.set(id, { id, title, updatedAt: new Date().toISOString() })
@@ -88,15 +101,15 @@ const seed = (
     hydrated: true,
     conversationId: activeId,
     conversations: Object.fromEntries(
-      slices.map(({ id, title, isRunning }) => [
+      slices.map(({ id, title, isRunning, events, eventsLoaded }) => [
         id,
         {
           id,
           title,
-          events: [],
+          events: events ?? [],
           isRunning: isRunning ?? false,
           isRetryPending: false,
-          eventsLoaded: true
+          eventsLoaded: eventsLoaded ?? true
         }
       ])
     ),
@@ -145,10 +158,81 @@ describe('useDocsAssistantSession', () => {
     const { result } = renderSession()
 
     expect(result.current.conversations).toEqual([
-      { id: 'assistant-active', title: 'Plugin tools', isRunning: true },
-      { id: 'assistant-other', title: 'Hosting questions', isRunning: false }
+      {
+        id: 'assistant-active',
+        title: 'Plugin tools',
+        isRunning: true,
+        events: [],
+        eventsLoaded: true
+      },
+      {
+        id: 'assistant-other',
+        title: 'Hosting questions',
+        isRunning: false,
+        events: [],
+        eventsLoaded: true
+      }
     ])
     expect(result.current.activeConversationId).toBe('assistant-active')
+  })
+
+  it('hydrates the store, so a conversation-management surface is not handed an empty list', async () => {
+    // The store hydrates on the first action or the first mounted chat surface,
+    // and a minimized widget mounts none. #472's Office sits in the sidebar
+    // beside a panel the reader may never have opened, so without this it would
+    // report "no conversations" over a repository holding two.
+    const repository = databases.get(namespaceOf(assistant))!
+    repository.set('persisted', {
+      id: 'persisted',
+      title: 'From a previous visit',
+      updatedAt: new Date().toISOString()
+    })
+    assistant.stores.chat.setState({ hydrated: false, conversations: {}, conversationOrder: [] })
+
+    const { result } = renderSession()
+
+    await waitFor(() => expect(assistant.stores.chat.getState().hydrated).toBe(true))
+    await waitFor(() =>
+      expect(result.current.conversations.map((conversation) => conversation.id)).toContain(
+        'persisted'
+      )
+    )
+  })
+
+  it('carries each conversation’s transcript and hydration flag, for a surface that visualizes activity', () => {
+    // #472's Office needs both to project a conversation onto an office
+    // character: the events drive what the character does, and the flag is what
+    // stops an unhydrated background conversation — empty `events` purely
+    // because nothing has loaded them yet — from being read as "ran, produced
+    // nothing, awaiting input" and marking every backgrounded agent idle-with-a-
+    // question after a reload.
+    const completed: ChatEvent = {
+      id: 'e1',
+      type: 'agent.run.completed',
+      payload: { steps: 1 },
+      timestamp: '2026-08-12T00:00:00.000Z'
+    }
+    seed(
+      assistant,
+      [
+        { id: 'assistant-active', title: 'Plugin tools', events: [completed] },
+        { id: 'assistant-other', title: 'Hosting questions', eventsLoaded: false }
+      ],
+      'assistant-active'
+    )
+
+    const { result } = renderSession()
+
+    expect(result.current.conversations[0]).toMatchObject({
+      id: 'assistant-active',
+      events: [completed],
+      eventsLoaded: true
+    })
+    expect(result.current.conversations[1]).toMatchObject({
+      id: 'assistant-other',
+      events: [],
+      eventsLoaded: false
+    })
   })
 
   it('forwards selection, creation, and deletion to the one assistant store', async () => {

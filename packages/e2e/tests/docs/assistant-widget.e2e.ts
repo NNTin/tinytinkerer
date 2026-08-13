@@ -789,6 +789,13 @@ test.describe('the documentation assistant widget (#480)', () => {
     await expect(composer).toBeVisible({ timeout: 30_000 })
     await expect(composer).toBeFocused()
 
+    // The consent dialog the assistant owns lands a beat after the composer
+    // does, and its overlay is `fixed inset-0` — so whether it had appeared yet
+    // decided whether the click below reached the button. That race was
+    // invisible while the page had little else to do at boot; it is not the
+    // thing this test is about either way.
+    await dismissTelemetryDialog(page)
+
     // Minimizing returns focus to the launcher that replaced the panel.
     await page.getByRole('button', { name: 'Minimize widget' }).click()
     const restore = page.getByRole('button', { name: 'Restore widget' })

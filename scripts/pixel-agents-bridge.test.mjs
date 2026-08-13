@@ -39,7 +39,11 @@ test('Pixel Agents bridge does not add an inbound listener of its own', () => {
   // PostMessageTransport, once acquireVsCodeApi makes it the active
   // transport — the parent posts raw, unenveloped message objects directly,
   // matching what it expects.
-  assert.doesNotMatch(bridge, /window\.addEventListener/)
+  //
+  // Named precisely rather than "no window listener at all": compact chrome
+  // (issue #472) installs pointer/wheel blockers on window, and a blanket
+  // assertion would have made adding them look like a violation of this rule.
+  assert.doesNotMatch(bridge, /addEventListener\(\s*'message'/)
   assert.doesNotMatch(bridge, /envelope\.direction !== 'server'/)
 })
 
@@ -58,4 +62,34 @@ test('Pixel Agents bridge drops outbound messages when no parent origin was supp
 
 test('Pixel Agents bridge fails closed when upstream has no module entry', () => {
   assert.throws(() => injectPixelAgentsBridge('<html></html>'), /module entry script/)
+})
+
+test('Pixel Agents bridge is syntactically valid JavaScript', () => {
+  // It is rendered as a template string and only ever executed inside the
+  // sandboxed frame, where a syntax error would take the whole office down
+  // with nothing on the host saying why.
+  assert.doesNotThrow(() => new Function(renderPixelAgentsBridge()))
+})
+
+test('compact chrome is off unless the frame asked for it', () => {
+  const bridge = renderPixelAgentsBridge()
+  // One prepared bundle serves the product office, the live labs and the docs
+  // sidebar, so every compact behaviour has to sit behind this one flag.
+  assert.match(bridge, /const compactChrome = params\.get\('tinytinkerer-chrome'\) === 'compact'/)
+  assert.match(bridge, /if \(compactChrome\) \{/)
+})
+
+test('compact chrome hides upstream zoom controls and blocks pan/zoom gestures', () => {
+  const bridge = renderPixelAgentsBridge()
+  // Buttons: the same title-selector technique as Settings, guarded against
+  // upstream drift by check-pixel-agents-conformance.mjs.
+  assert.match(bridge, /button\[title\^="Zoom "\]\{display:none!important\}/)
+  // Gestures: capture phase, so upstream's own canvas listeners never run.
+  // Non-passive, or preventDefault on wheel is ignored.
+  assert.match(bridge, /addEventListener\('wheel', swallow, \{ capture: true, passive: false \}\)/)
+  assert.match(bridge, /addEventListener\('mousedown', swallowMiddle, \{ capture: true \}\)/)
+  assert.match(bridge, /addEventListener\('auxclick', swallowMiddle, \{ capture: true \}\)/)
+  // Only the middle button: left selects a character, right erases in Layout
+  // mode, and swallowing either would break the office rather than calm it.
+  assert.match(bridge, /if \(event\.button === 1\)/)
 })

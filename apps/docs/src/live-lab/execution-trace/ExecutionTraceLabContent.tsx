@@ -14,14 +14,14 @@ import '@tinytinkerer/app-shell/styles.css'
 import '@tinytinkerer/pixel-agents/styles.css'
 import {
   ConversationSwitcher,
+  useResolveUpstreamUrl,
+  usePixelAgentsCapability,
   type ConversationSwitcherItem
-} from '../pixel-agents/ConversationSwitcher'
-import { usePixelAgentsCapability } from '../pixel-agents/capability'
+} from '../../pixel-agents'
 import {
   DOCS_PIXEL_AGENTS_DOCK_LAYOUT_STORAGE_KEY,
   DOCS_PIXEL_AGENTS_WORKSPACE_DATABASE
 } from '../pixel-agents/constants'
-import { useResolveUpstreamUrl } from '../pixel-agents/upstream-url'
 import { ExecutionTracePanel } from './ExecutionTracePanel'
 
 // Reuses the SAME demo workspace database/dock-layout keys as PixelAgentsLab
