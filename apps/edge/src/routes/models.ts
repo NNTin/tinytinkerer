@@ -12,6 +12,7 @@ import { z } from 'zod'
 import type { Context, TypedResponse } from 'hono'
 import type { Bindings } from '../lib/bindings'
 import { applyCorsHeaders } from '../lib/cors'
+import { collectSseChatCompletion } from '../lib/collect-sse-chat-completion'
 import { modelsChatRoute, modelsListRoute } from '../openapi/routes'
 import { fetchWithTimeout } from '../lib/fetch'
 import { safeJsonParse } from '../lib/json'
@@ -552,6 +553,8 @@ export const registerModelRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) =>
         url: litellmChatUrl(resolvedBaseUrl),
         model,
         stream: useStream,
+        // The actual upstream request always sets `stream: true` regardless of
+        // `useStream` — see the comment on the request body below.
         // Chat completions are NOT cacheable, so after we durably honour the
         // upstream rate-limit window (above) the residual 429 — the first call
         // that opens a new window — is a user-triggered, unavoidable provider
@@ -581,11 +584,26 @@ export const registerModelRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) =>
         body: JSON.stringify({
           model,
           messages: body.messages,
-          stream: useStream,
+          // Always stream from LiteLLM itself, even when the CLIENT asked for a
+          // non-streaming response (`useStream` false) — LiteLLM's `chatgpt/*`
+          // (ChatGPT-subscription/Codex) provider has a bug where its own
+          // non-streaming path returns an empty `output` array even when the
+          // model generated text, so a literal `stream: false` upstream request
+          // fails every time for those models; streaming is unaffected. When the
+          // client itself wants a single JSON response, collectSseChatCompletion
+          // reassembles it from the SSE body below instead of piping it through.
+          stream: true,
           // Forward the opt-in streaming usage flag so LiteLLM appends a final
-          // usage chunk (the client uses it for the context-usage gauge). Only
-          // sent when the client asked for it, preserving prior behaviour.
-          ...(body.stream_options ? { stream_options: body.stream_options } : {}),
+          // usage chunk. Sent unconditionally when the client wants a
+          // non-streaming response (the reassembled response's `usage` field
+          // depends on it) or when the client explicitly asked for it while
+          // streaming (the context-usage gauge use case, preserving prior
+          // behaviour).
+          ...(useStream
+            ? body.stream_options
+              ? { stream_options: body.stream_options }
+              : {}
+            : { stream_options: { include_usage: true } }),
           // Native tool calling (issue #276): forward the advertised tools and the
           // tool-use policy so the model can emit native tool_calls and the
           // replayed tool_calls/tool messages stay valid. Only sent when present,
@@ -675,13 +693,17 @@ export const registerModelRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) =>
     }
 
     const rawText = await response.text()
+    // The upstream request always sets `stream: true` (see above), so a
+    // non-streaming client response is reassembled from the SSE body here
+    // rather than parsed as a plain JSON object.
+    const collected = collectSseChatCompletion(rawText)
     // Guard the success-path parse exactly like the error paths: a 200 with a
     // truncated/HTML/unexpected body must surface as a typed 502, not an
     // unhandled JSON.parse/schema throw → generic 500.
-    const json = safeJsonParse(rawText)
-    if (!json.ok) return upstreamMalformedResponse(c)
-    const parsed = modelsChatResponseSchema.safeParse(json.value)
-    if (!parsed.success) return upstreamMalformedResponse(c)
+    const parsed = modelsChatResponseSchema.safeParse(collected)
+    if (!parsed.success || (parsed.data.choices?.length ?? 0) === 0) {
+      return upstreamMalformedResponse(c)
+    }
     return c.json(parsed.data, 200)
   })
 

@@ -52,7 +52,14 @@ for model in models:
     payload = json.dumps({
         "model": model,
         "messages": [{"role": "user", "content": "Reply with exactly: ok"}],
-        "stream": False,
+        # LiteLLM's chatgpt/* (ChatGPT-subscription/Codex) provider has a bug
+        # where its own non-streaming path returns an empty `output` array
+        # even when the model generated text, so `stream: False` fails every
+        # time for these models; streaming is unaffected — see the edge's
+        # collect-sse-chat-completion.ts for the equivalent client-side
+        # workaround. This check only needs the status, not the body, so it
+        # does not bother reassembling the stream.
+        "stream": True,
         "max_tokens": 5,
     }).encode()
     req = urllib.request.Request(

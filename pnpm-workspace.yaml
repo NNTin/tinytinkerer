@@ -64,16 +64,9 @@ auditLevel: moderate
 # forcing it would risk breaking the SDK's transport code for a Windows-only
 # path unreachable from our deployment. Re-check once the SDK bumps its own
 # @hono/node-server range.
-# GHSA-7p8r-x3mc-p8w7 (fast-uri, host confusion via backslash authority):
-# commitlint>@commitlint/config-validator>ajv>fast-uri and workbox-build>ajv>
-# fast-uri — both BUILD/DEV-only (validating our own local commitlint config, and
-# generating the PWA service worker), never processing untrusted input at
-# runtime, and never bundled into a deployed application. Its two predecessors
-# (GHSA-v2hh-gcrm-f6hx / GHSA-4c8g-83qw-93j6) ARE now fixed by the override
-# below: fast-uri@3.1.4 cleared the age gate. This newer advisory needs 3.1.5,
-# published 2026-07-31 and still inside the gate, so it stays suppressed for now.
-# Re-check once 3.1.5 clears the gate (~2026-08-07); fast-uri@4.x remains out of
-# ajv's declared `^3.0.1` range.
+# GHSA-7p8r-x3mc-p8w7 (fast-uri, host confusion via backslash authority): GONE
+# as of 2026-09-06 — fast-uri@3.1.6 (see the override below) clears both the
+# age gate and this advisory's 3.1.5 fix. Genuinely fixed, not suppressed.
 # GHSA-qwww-vcr4-c8h2 (react-router, RSC mode CSRF bypass): apps/canvas,
 # apps/host, apps/ide, apps/mermaid, apps/pixel-agents, apps/shell all pin
 # react-router-dom@7.18.1 exact (saveExact above), which resolves the
@@ -99,23 +92,27 @@ auditLevel: moderate
 # once 5.0.8 clears the age gate (~2026-07-30), then consolidate the overrides
 # below on the patched release.
 # GHSA-8j4g-w8fx-2239 (hono, ReDoS in CORS middleware via
-# Access-Control-Request-Headers): apps/edge>@hono/zod-openapi>hono and
-# apps/edge>@modelcontextprotocol/sdk>@hono/node-server>hono. This one IS in the
-# deployed Worker's dependency tree, so it was checked rather than assumed: the
-# vulnerable code is Hono's OWN `hono/cors` middleware, and nothing in this
-# repository imports it — `apps/edge/src/index.ts` mounts
-# `apps/edge/src/lib/cors.ts`, a first-party middleware, and the only Hono import
-# anywhere in apps/edge is the bare `hono` package. So the vulnerable path is not
-# reachable. The fix (hono@4.12.34) was published 2026-08-03, one day inside the
-# 7-day age gate, and @hono/zod-openapi pins its own range besides. Re-check once
-# 4.12.34 clears the gate (~2026-08-10) — this one should be TAKEN, not left
-# suppressed, since it is edge code even if the middleware is unused.
+# Access-Control-Request-Headers): GONE as of 2026-09-06 — as flagged above,
+# this one was to be TAKEN once 4.12.34 cleared the age gate. apps/edge/
+# package.json now pins hono@4.12.34 directly (@hono/zod-openapi's `>=4.10.0`
+# and @hono/node-server's `^4` both allow it), which also fixes
+# GHSA-f23p-vx2j-j53r (memo() SSR cache cross-user disclosure) and
+# GHSA-54fx-42gc-7vw4 (language-middleware ReDoS) in the same bump. Genuinely
+# fixed, not suppressed.
 # GHSA-rgw5-rvv9-x895 (brace-expansion, DoS via unbounded intermediate arrays —
 # a bypass of the earlier fix): the 1.x line, reached through @docusaurus/core's
 # build toolchain. The 2.x and 5.x lines are already forced to patched releases
 # by the overrides below. Build tooling only; brace expansion is not bundled into
 # a deployed application. The 1.x fix (1.1.18) was published 2026-07-30, inside
 # the age gate. Re-check once it clears (~2026-08-06).
+# GHSA-w3rx-r6r6-pgpr / GHSA-5p2g-fcmc-qvqq (image-size, infinite-loop DoS in
+# the ICNS/JXL/HEIF parsers): apps/docs>@docusaurus/core>@docusaurus/mdx-
+# loader>image-size, used only to read dimensions of images embedded in docs
+# content at build time — never processes untrusted/attacker-supplied images,
+# and never bundled into a deployed application. Both advisories need
+# image-size@2.0.3, which does not exist yet (2.0.2 is the latest release on
+# npm as of 2026-09-06); there is nothing to bump to. Re-check when a 2.0.3+
+# release ships.
 auditConfig:
   ignoreGhsas:
     - GHSA-gv7w-rqvm-qjhr
@@ -128,20 +125,54 @@ auditConfig:
     - GHSA-xxjr-mmjv-4gpg
     - GHSA-mwcw-c2x4-8c55
     - GHSA-frvp-7c67-39w9
-    - GHSA-7p8r-x3mc-p8w7
     - GHSA-qwww-vcr4-c8h2
     - GHSA-mh99-v99m-4gvg
-    - GHSA-8j4g-w8fx-2239
     - GHSA-rgw5-rvv9-x895
+    - GHSA-w3rx-r6r6-pgpr
+    - GHSA-5p2g-fcmc-qvqq
 overrides:
   # Transitive advisory fixes, all within semver ranges the direct dependents
   # already declare (sass wants immutable ^4.0.0, cosmiconfig wants js-yaml
   # ^4.1.0, vite wants postcss ^8.5.15) — patched versions clear of the age
   # gate above.
   immutable: 4.3.9
-  js-yaml: 4.3.0
+  js-yaml: 4.3.2
   postcss: 8.5.23
-  fast-uri: 3.1.4
+  # 3.1.6 (2026-08-23) also clears GHSA-7p8r-x3mc-p8w7 (3.1.5), previously
+  # suppressed below as inside the age gate — that suppression is now removed.
+  fast-uri: 3.1.6
+  # apps/docs>@docusaurus/theme-mermaid declares mermaid >=11.6.0, so 11.16.1
+  # (2026-08-04, clears the age gate) fits without a suppression. Fixes four
+  # GHSA advisories (CSS injection, prototype pollution, XY-chart and radar
+  # DoS) in one bump.
+  mermaid: 11.16.1
+  # apps/docs pulls mermaid's own dompurify (^3.3.3) independently of the
+  # content-react pin above, and without this override it resolves to the
+  # older 3.4.11 already in the tree instead of content-react's 3.4.13. Forced
+  # so both resolutions land on the same GHSA-55q2-fjhq-7xh7 fix.
+  dompurify: 3.4.13
+  # Transitive via @babel/helper-compilation-targets (browserslist ^4.24.0).
+  # 4.28.7 (2026-07-21) clears the age gate and fixes two DoS/prototype-write
+  # advisories.
+  browserslist: 4.28.7
+  # Transitive via docusaurus's webpack-dev-server>express(>body-parser)>qs.
+  # express/body-parser declare qs ~6.15.1/^6.14.1, narrower than 6.16.0, so
+  # this forces past their declared range the same way the serialize-javascript
+  # and sockjs>uuid overrides below do — dev-server only, never bundled into a
+  # deployed app. 6.16.0 (2026-08-29) clears the age gate and fixes two DoS
+  # advisories (array-limit bypass, attacker-controlled isBuffer).
+  qs: 6.16.0
+  # Two independently-resolved major lines of nanoid (packages/app/canvas>
+  # @excalidraw/excalidraw pins 3.3.3 directly and pulls 4.0.2 via
+  # @excalidraw/mermaid-to-excalidraw). The 3.x line has a same-major patch;
+  # the 4.x line's last release is 4.0.2, so its fix only exists in 5.x —
+  # nanoid 4 and 5 are both ESM-only single-function packages with an
+  # unchanged API, so forcing across the major is low-risk. Fixes three
+  # DoS/integer-overflow advisories; GHSA-mwcw-c2x4-8c55 (nanoid, predictable
+  # output for non-integer size) is unrelated and stays suppressed above since
+  # Excalidraw's IDs are not security-bearing there.
+  nanoid@3: 3.3.18
+  nanoid@4: 5.1.16
   # Two independently-resolved major lines of undici (jsdom under vitest pulls
   # 7.x; apps/edge>@sentry/cli pulls 6.x), each forced to its own line's first
   # advisory-free release. Both cleared the age gate on 2026-07-31. This REPLACES

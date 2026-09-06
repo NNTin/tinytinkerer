@@ -17,8 +17,8 @@ allow-ghsas:
   - GHSA-xxjr-mmjv-4gpg
   - GHSA-mwcw-c2x4-8c55
   - GHSA-frvp-7c67-39w9
-  - GHSA-7p8r-x3mc-p8w7
   - GHSA-qwww-vcr4-c8h2
   - GHSA-mh99-v99m-4gvg
-  - GHSA-8j4g-w8fx-2239
   - GHSA-rgw5-rvv9-x895
+  - GHSA-w3rx-r6r6-pgpr
+  - GHSA-5p2g-fcmc-qvqq
