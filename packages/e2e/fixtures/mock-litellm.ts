@@ -101,7 +101,7 @@ const LITELLM_BASE_URL = 'https://litellm.mock'
 // default selected model so the context-usage gauge can resolve its limits. The
 // context window + the prompt-token usage the stream reports are chosen so the
 // gauge lands deterministically in the WARNING band (8000/10000 = 80%).
-const MOCK_MODEL_ID = 'chatgpt/gpt-5.4'
+const MOCK_MODEL_ID = 'chatgpt/gpt-6-astra'
 export const MOCK_CONTEXT_WINDOW = 10_000
 export const MOCK_PROMPT_TOKENS = 8_000
 export const MOCK_CONTEXT_PERCENT = Math.round((MOCK_PROMPT_TOKENS / MOCK_CONTEXT_WINDOW) * 100)

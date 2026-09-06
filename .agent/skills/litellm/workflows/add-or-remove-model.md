@@ -18,7 +18,7 @@ Don't trample unrelated changes in the lair repo; capture the before-state.
 ## 2. Edit `$SERVICE_DIR/config.yaml`
 
 Add or remove the `model_list` entry. For `chatgpt/*` aliases copy the existing
-`chatgpt/gpt-5.4` entry shape, including `model_info.mode: responses`.
+`chatgpt/gpt-6-astra` entry shape, including `model_info.mode: responses`.
 GitHub-backed `openai/*` aliases use `api_base: https://models.github.ai/inference`
 and `api_key: os.environ/GITHUB_MODELS_TOKEN`.
 

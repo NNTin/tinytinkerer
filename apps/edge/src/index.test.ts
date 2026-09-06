@@ -100,6 +100,21 @@ const githubProbeCalls = (
 
 const DEFAULT_LITELLM_SCOPE = encodeURIComponent('https://litellm.nntin.xyz')
 
+// A non-streaming chat request still asks LiteLLM itself for `stream: true`
+// (the edge reassembles the SSE body into a single response) — see
+// collect-sse-chat-completion.ts. Test doubles for a "plain" successful chat
+// completion mock this SSE shape instead of a flat JSON body.
+const sseChatCompletionResponse = (content: string): Response =>
+  new Response(
+    [
+      `data: ${JSON.stringify({ choices: [{ index: 0, delta: { role: 'assistant', content } }] })}`,
+      `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}`,
+      'data: [DONE]',
+      ''
+    ].join('\n\n'),
+    { status: 200, headers: { 'content-type': 'text/event-stream' } }
+  )
+
 describe('edge routes', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -492,14 +507,7 @@ describe('edge routes', () => {
   })
 
   it('applies the default model when the request omits one', async () => {
-    const fetchSpy = withCallerValidation(() =>
-      Promise.resolve(
-        new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' }
-        })
-      )
-    )
+    const fetchSpy = withCallerValidation(() => Promise.resolve(sseChatCompletionResponse('hi')))
     vi.stubGlobal('fetch', fetchSpy)
 
     const response = await app.fetch(
@@ -524,7 +532,11 @@ describe('edge routes', () => {
     if (typeof upstreamBody !== 'string') {
       throw new Error('Expected LiteLLM request body to be a JSON string')
     }
-    expect((JSON.parse(upstreamBody) as { model: string }).model).toBe('chatgpt/gpt-5.4')
+    const parsedUpstreamBody = JSON.parse(upstreamBody) as { model: string; stream: boolean }
+    expect(parsedUpstreamBody.model).toBe('chatgpt/gpt-6-astra')
+    // The edge always requests stream:true from LiteLLM itself, even for a
+    // non-streaming client request — see collect-sse-chat-completion.ts.
+    expect(parsedUpstreamBody.stream).toBe(true)
   })
 
   it('serves a graceful 503 (not a 502, not a raw 429) on a cold-cache-miss models/list rate limit, and does not capture the window-opener (TINYTINKERER-EDGE-5)', async () => {
@@ -902,17 +914,7 @@ describe('edge routes', () => {
           return Promise.resolve(litellmKeyManagementOk(input, init))
         }
         upstreamRequests.push({ input, init })
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              choices: [{ message: { role: 'assistant', content: 'hi' } }]
-            }),
-            {
-              status: 200,
-              headers: { 'content-type': 'application/json' }
-            }
-          )
-        )
+        return Promise.resolve(sseChatCompletionResponse('hi'))
       })
     )
 
@@ -1213,14 +1215,7 @@ describe('edge routes', () => {
   })
 
   it('caches a successful caller validation and skips the GitHub probe on subsequent calls (issue #177)', async () => {
-    const fetchSpy = withCallerValidation(() =>
-      Promise.resolve(
-        new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' }
-        })
-      )
-    )
+    const fetchSpy = withCallerValidation(() => Promise.resolve(sseChatCompletionResponse('hi')))
     vi.stubGlobal('fetch', fetchSpy)
 
     const chatRequest = () =>
@@ -1416,12 +1411,7 @@ describe('edge routes', () => {
         return Promise.resolve(
           chatCalls === 1
             ? new Response('unauthorized', { status: 401 })
-            : new Response(
-                JSON.stringify({
-                  choices: [{ message: { role: 'assistant', content: 'hi' } }]
-                }),
-                { status: 200, headers: { 'content-type': 'application/json' } }
-              )
+            : sseChatCompletionResponse('hi')
         )
       }
       return Promise.resolve(new Response('not found', { status: 404 }))
@@ -1741,14 +1731,7 @@ describe('edge routes', () => {
   })
 
   it('admits a caller listed in GITHUB_ALLOWED_USERS by login', async () => {
-    const fetchSpy = withCallerValidation(() =>
-      Promise.resolve(
-        new Response(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' }
-        })
-      )
-    )
+    const fetchSpy = withCallerValidation(() => Promise.resolve(sseChatCompletionResponse('hi')))
     vi.stubGlobal('fetch', fetchSpy)
 
     const response = await app.fetch(
