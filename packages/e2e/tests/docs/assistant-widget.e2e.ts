@@ -140,6 +140,9 @@ test.describe('the documentation assistant widget (#480)', () => {
 
     const composer = page.getByRole('textbox', { name: 'Message' })
     await expect(composer).toBeVisible({ timeout: 30_000 })
+    // Its overlay is `fixed inset-0` and intercepts every pointer event on the
+    // page, including the sidebar link below.
+    await dismissTelemetryDialog(page)
     await composer.fill('a question I have not sent yet')
 
     await page
@@ -265,6 +268,9 @@ test.describe('the documentation assistant widget (#480)', () => {
     await page.goto(ROUTES.authored)
     await launcher(page).click()
     await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible({ timeout: 30_000 })
+    // Its overlay is `fixed inset-0` and intercepts every pointer event on the
+    // page, including the minimize button.
+    await dismissTelemetryDialog(page)
 
     await page.getByRole('button', { name: 'Minimize widget' }).click()
     await expect(page.getByRole('button', { name: 'Restore widget' })).toBeVisible()
@@ -788,6 +794,13 @@ test.describe('the documentation assistant widget (#480)', () => {
     const composer = page.getByRole('textbox', { name: 'Message' })
     await expect(composer).toBeVisible({ timeout: 30_000 })
     await expect(composer).toBeFocused()
+
+    // The consent dialog the assistant owns lands a beat after the composer
+    // does, and its overlay is `fixed inset-0` — so whether it had appeared yet
+    // decided whether the click below reached the button. That race was
+    // invisible while the page had little else to do at boot; it is not the
+    // thing this test is about either way.
+    await dismissTelemetryDialog(page)
 
     // Minimizing returns focus to the launcher that replaced the panel.
     await page.getByRole('button', { name: 'Minimize widget' }).click()

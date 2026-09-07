@@ -12,15 +12,18 @@ import {
 } from '@tinytinkerer/pixel-agents'
 import '@tinytinkerer/app-shell/styles.css'
 import '@tinytinkerer/pixel-agents/styles.css'
-import { ConversationSwitcher, type ConversationSwitcherItem } from './ConversationSwitcher'
-import { usePixelAgentsCapability } from './capability'
+import {
+  ConversationSwitcher,
+  useResolveUpstreamUrl,
+  usePixelAgentsCapability,
+  type ConversationSwitcherItem
+} from '../../pixel-agents'
 import {
   DOCS_PIXEL_AGENTS_CHAT_STORAGE_KEY,
   DOCS_PIXEL_AGENTS_DOCK_LAYOUT_STORAGE_KEY,
   DOCS_PIXEL_AGENTS_WORKSPACE_DATABASE
 } from './constants'
 import { PixelAgentsLabChatLoading } from './loading-screen'
-import { useResolveUpstreamUrl } from './upstream-url'
 
 // issue #452: the demo conversation list is the docs session's own isolated
 // chat store (see live-lab/client-runtime.tsx — a completely separate
