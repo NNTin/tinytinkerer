@@ -136,6 +136,41 @@ test.describe('docs accessibility (#457)', () => {
     await assertNoUnexpectedA11yViolations(page, NESTED_PRODUCT_SHELL_LANDMARKS)
   })
 
+  test('the sidebar office has no unexpected axe violations, and needs no landmark exception', async ({
+    page
+  }) => {
+    // Deliberately NOT given NESTED_PRODUCT_SHELL_LANDMARKS. The labs get that
+    // allowance because an embedded product shell renders its own `<main>`
+    // inside a lab page; the sidebar Office (issue #472) is on EVERY
+    // documentation route, so the same allowance would amount to switching the
+    // landmark rules off site-wide. It renders a labelled `region` instead —
+    // `@tinytinkerer/pixel-agents`' office-only layout exists for this.
+    await installChatMock(page)
+    await page.goto(`${DOCS_ORIGIN}/docs/architecture/`)
+
+    // No dismissal before this point, deliberately: `dismissFirstLoad` marks the
+    // page handled on its first call, so dismissing on a cold documentation page
+    // — where the assistant has not started and there is nothing open yet —
+    // would make the one below a no-op and leave the consent dialog covering the
+    // scan.
+    await page.getByRole('button', { name: 'Show your assistant conversations' }).click()
+    await expect(
+      page.frameLocator('iframe[title="Pixel Agents office"]').locator('canvas').first()
+    ).toBeVisible({ timeout: 30_000 })
+    // Activating opens the assistant's consent host over the page. Left up, the
+    // scan below reports that dialog's own contrast rather than the Office's —
+    // the same reason every other spec here dismisses it first.
+    await dismissFirstLoad(page)
+
+    // The accessible conversation list is the only non-pointer way to manage a
+    // conversation, the office being a canvas — so it has to be reachable and
+    // clean, not merely present.
+    await page.getByText(/^Conversations \(\d+\)$/).click()
+    await expect(page.getByRole('group', { name: 'Assistant conversations' })).toBeVisible()
+
+    await assertNoUnexpectedA11yViolations(page, [PRISM_SYNTAX_TOKEN])
+  })
+
   test('keyboard Tab reaches the skip link, search, and sidebar without a mouse', async ({
     page
   }) => {

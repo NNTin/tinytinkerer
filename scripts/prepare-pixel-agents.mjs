@@ -13,7 +13,7 @@ import {
   renderPixelAgentsAnimationProbe
 } from './pixel-agents-animation-probe.mjs'
 import { injectPixelAgentsBridge, renderPixelAgentsBridge } from './pixel-agents-bridge.mjs'
-import { patchBottomToolbarSource } from './pixel-agents-source-patch.mjs'
+import { patchBottomToolbarSource, patchDefaultZoomSource } from './pixel-agents-source-patch.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const workspaceRoot = resolve(scriptDir, '..')
@@ -173,16 +173,20 @@ const prepare = async () => {
       throw new Error(`Pixel Agents resolved to ${resolvedCommit}, expected ${lock.commit}`)
     }
 
-    // Source-level patch, applied to the pinned checkout BEFORE the build runs
-    // (unlike the bridge/probe injections below, which rewrite the already-built
-    // output): drops the "Skip permissions mode" dead-end dropdown from
-    // upstream's "+ Agent" button. See pixel-agents-source-patch.mjs for why
-    // this can't be done as a post-build CSS/DOM injection.
-    const bottomToolbarPath = join(checkout, 'webview-ui', 'src', 'components', 'BottomToolbar.tsx')
-    await writeFile(
-      bottomToolbarPath,
-      patchBottomToolbarSource(await readFile(bottomToolbarPath, 'utf8'))
-    )
+    // Source-level patches, applied to the pinned checkout BEFORE the build
+    // runs (unlike the bridge/probe injections below, which rewrite the
+    // already-built output): the "Skip permissions mode" dead-end dropdown on
+    // upstream's "+ Agent" button, and the compact-chrome initial zoom a
+    // narrow host asks for (issue #472). See pixel-agents-source-patch.mjs for
+    // why neither can be a post-build CSS/DOM injection.
+    const sourcePatches = [
+      [join('webview-ui', 'src', 'components', 'BottomToolbar.tsx'), patchBottomToolbarSource],
+      [join('webview-ui', 'src', 'office', 'toolUtils.ts'), patchDefaultZoomSource]
+    ]
+    for (const [relativePath, patch] of sourcePatches) {
+      const path = join(checkout, relativePath)
+      await writeFile(path, patch(await readFile(path, 'utf8')))
+    }
 
     // Install only the browser workspace. Lifecycle scripts remain disabled; the
     // reviewed webview build below is the sole upstream script we execute.

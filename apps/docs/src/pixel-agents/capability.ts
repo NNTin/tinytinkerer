@@ -15,11 +15,12 @@ const useMediaQuery = (query: string): boolean => {
   return matches
 }
 
-// Whether the Pixel Agents graphical office should be offered at all (issue
-// #452). Any of a narrow viewport, `prefers-reduced-motion`, or a bootstrap/
-// asset/bridge failure (reported by the caller via `pixelAgentsFailed`, fed by
-// PixelAgentsStage's `onBootstrapError`) routes the lab to its textual
-// conversation switcher instead of a half-working graphical surface.
+// Whether the Pixel Agents graphical office should be offered at all (issues
+// #452, #472). Any of a narrow viewport, `prefers-reduced-motion`, or a
+// bootstrap/asset/bridge failure (reported by the caller via
+// `pixelAgentsFailed`, fed by PixelAgentsStage's `onBootstrapError`) routes the
+// host to its textual conversation switcher instead of a half-working
+// graphical surface.
 export const usePixelAgentsCapability = (pixelAgentsFailed: boolean): boolean => {
   const isNarrowViewport = useMediaQuery(PIXEL_AGENTS_NARROW_VIEWPORT_QUERY)
   const prefersReducedMotion = useMediaQuery(PIXEL_AGENTS_REDUCED_MOTION_QUERY)

@@ -15,7 +15,11 @@ import './assistant-containment.css'
 import { LatchedErrorBoundary } from './LatchedErrorBoundary'
 import { ensureDocsAssistantApp } from './assistant-app'
 import { publishDocsAssistantRuntimeStatus } from './assistant-activation'
-import { DOCS_ASSISTANT_WIDGET_SURFACE_ID } from './assistant-constants'
+import {
+  DOCS_ASSISTANT_OFFICE_SURFACE_ID,
+  DOCS_ASSISTANT_WIDGET_SURFACE_ID
+} from './assistant-constants'
+import { DocsAssistantOffice } from './assistant-office'
 import { DocsAssistantSessionContext } from './assistant-session-context'
 import { registerDocsAssistantSurface } from './assistant-surface'
 import { AssistantSurfaces } from './assistant-surfaces'
@@ -27,11 +31,19 @@ import { useDocsRuntimeConfig } from './runtime-config'
 // resolved module even across the host's retry attempts.
 //
 // `inline` placement (issue #479's activation contract): the widget renders in the
-// runtime host, inside the provider, and never consults a portal target. #472's
-// Office is the `portal` case, and conflating the two is what made a portal
+// runtime host, inside the provider, and never consults a portal target. The
+// Office below is the `portal` case, and conflating the two is what made a portal
 // surface silently remount inline when its target unmounted.
 registerDocsAssistantSurface(DOCS_ASSISTANT_WIDGET_SURFACE_ID, DocsAssistantWidget, {
   placement: 'inline'
+})
+
+// `portal` (issue #472): drawn only into the target the documentation sidebar
+// registers, and NOTHING anywhere when there is no live target — a search
+// route, a 404, a collapsed slot. Registration and target are independent, so
+// it does not matter that this runs long before or after the slot mounts.
+registerDocsAssistantSurface(DOCS_ASSISTANT_OFFICE_SURFACE_ID, DocsAssistantOffice, {
+  placement: 'portal'
 })
 
 type AppState =

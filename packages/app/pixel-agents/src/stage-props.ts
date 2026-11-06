@@ -26,8 +26,35 @@ export type PixelAgentsStageActions = {
   deleteConversation: (conversationId: string) => void
 }
 
+// How much of upstream's own chrome the office should offer (issue #472).
+//
+// `full` is every existing host: a stage that owns most of a window, where the
+// zoom buttons and pan gestures are useful and the whole 21x22-tile room does
+// not fit at once anyway.
+//
+// `compact` is a host with a column, not a window — the documentation sidebar.
+// There, upstream's zoom buttons and the "3x" level indicator sit on top of an
+// office that is only ~300px wide, and panning is worse than useless: it moves
+// the one thing worth seeing out of view with no visible control to bring it
+// back. So the office starts at minimum zoom (where the whole room fits the
+// column), the buttons are hidden, and wheel/middle-drag pan and Ctrl+wheel
+// zoom are blocked.
+//
+// It is a request to the frame, not a host-side style: all three live inside
+// the sandboxed iframe, so it rides in on the URL and is applied by
+// scripts/pixel-agents-bridge.mjs and the `defaultZoom` source patch
+// (scripts/pixel-agents-source-patch.mjs). One prepared upstream bundle serves
+// every embedding, so this must be per-frame rather than baked in.
+export type PixelAgentsChrome = 'full' | 'compact'
+
 export type PixelAgentsStageProps = {
-  assistant: ReactNode
+  // The chat surface to dock beside the office. OMITTING it is a distinct
+  // layout, not an empty panel (issue #472): the office renders on its own,
+  // with no `DockablePanelLayout` and no `<main>` landmark — the documentation
+  // sidebar's chat is the global assistant widget, which lives elsewhere on the
+  // page, and a second `<main>` on every documentation route would be an
+  // accessibility regression rather than a lab-page exception.
+  assistant?: ReactNode
   // Display order (most-recent-first, matching the chat store's
   // `conversationOrder`) — the bootstrap and reconciliation logic project this
   // order onto agent numbers, but do not depend on it being stable.
@@ -54,8 +81,10 @@ export type PixelAgentsStageProps = {
   // localStorage key for the dockable panel layout (which panel docks where).
   // Same collision concern as `workspaceDatabaseName` above, for the same
   // same-origin-embedding reason — localStorage is also origin-, not
-  // path-scoped.
+  // path-scoped. Unused when `assistant` is omitted: there is no dock then.
   dockLayoutStorageKey?: string
+  // Defaults to `full`. See PixelAgentsChrome above.
+  chrome?: PixelAgentsChrome
   // Reports the current bootstrap failure message, or `null` once bootstrap
   // has succeeded (or on initial mount, before any attempt has resolved). A
   // host that offers its own non-graphical fallback surface (issue #452) uses

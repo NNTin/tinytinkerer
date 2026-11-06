@@ -16,12 +16,12 @@ import {
   DOCS_PIXEL_AGENTS_DOCK_LAYOUT_STORAGE_KEY,
   DOCS_PIXEL_AGENTS_WORKSPACE_DATABASE
 } from '../pixel-agents/constants'
-import { usePixelAgentsCapability } from '../pixel-agents/capability'
 import {
   ConversationSwitcher,
+  useResolveUpstreamUrl,
+  usePixelAgentsCapability,
   type ConversationSwitcherItem
-} from '../pixel-agents/ConversationSwitcher'
-import { useResolveUpstreamUrl } from '../pixel-agents/upstream-url'
+} from '../../pixel-agents'
 import { DOCS_PLUGIN_TOOL_PICKER_CHAT_STORAGE_KEY } from './constants'
 import { PLUGIN_TOOL_PICKER_APP_TOOL_GROUP_ID } from './demo-tools'
 import { PluginToolPickerLabChatLoading } from './loading-screen'

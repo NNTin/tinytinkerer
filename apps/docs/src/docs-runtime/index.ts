@@ -41,6 +41,10 @@ export { useDocsAssistantRuntime } from './assistant-activation'
 export type { DocsAssistantRuntimeStatus } from './assistant-activation'
 export { registerDocsAssistantSurface, setDocsAssistantSurfaceTarget } from './assistant-surface'
 export type { DocsAssistantSurface, DocsAssistantSurfacePlacement } from './assistant-surface'
+// The documentation sidebar's Office slot (issue #472), rendered by the
+// swizzled `@theme/DocSidebar/Desktop/Content`. Light: it registers a portal
+// target and never imports the Office itself.
+export { DocsAssistantOfficeSidebarSlot } from './OfficeSidebarSlot'
 // The stable wrapper the documentation page renders inside, so docking the
 // assistant insets the page without remounting anything in it (issue #480
 // re-review, finding 2).

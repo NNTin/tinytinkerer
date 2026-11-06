@@ -64,6 +64,28 @@ const REQUIRED_BUNDLE_PATTERNS = [
   {
     pattern: /title:\s*[`'"]Close agent[`'"]/,
     description: 'a `title: `Close agent`` (or quoted equivalent) button title'
+  },
+  // Compact chrome (issue #472) hides upstream's two ZoomControls buttons with
+  // `button[title^="Zoom "]`, injected by the same bridge script. A rename here
+  // would silently put them back on top of a ~300px-wide office in the
+  // documentation sidebar, where there is no room for them.
+  {
+    pattern: /title:\s*[`'"]Zoom in \(Ctrl\+Scroll\)[`'"]/,
+    description: 'a `title: `Zoom in (Ctrl+Scroll)`` (or quoted equivalent) button title'
+  },
+  {
+    pattern: /title:\s*[`'"]Zoom out \(Ctrl\+Scroll\)[`'"]/,
+    description: 'a `title: `Zoom out (Ctrl+Scroll)`` (or quoted equivalent) button title'
+  },
+  // The other half of compact chrome: the `defaultZoom` source patch
+  // (scripts/pixel-agents-source-patch.mjs) rewrites the initial zoom to
+  // ZOOM_MIN when the frame carries `tinytinkerer-chrome=compact`. The patch
+  // itself throws if its target moves, but this proves the patched branch
+  // actually survived into the built bundle rather than being dead-code
+  // eliminated or rewritten past recognition.
+  {
+    pattern: /tinytinkerer-chrome/,
+    description: "the patched `defaultZoom()` compact-chrome branch's URL parameter"
   }
 ]
 

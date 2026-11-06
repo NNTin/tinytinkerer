@@ -95,16 +95,23 @@ const renderStage = (
     conversations: PixelAgentsConversation[]
     activeConversationId: string | undefined
     actions: PixelAgentsStageActions
+    // Omitting `assistant` entirely is the office-only layout (issue #472), a
+    // different render path — so this is opt-in rather than merely absent.
+    withoutAssistant?: boolean
   } & Partial<
     Pick<
       PixelAgentsStageProps,
-      'resolveUpstreamUrl' | 'workspaceDatabaseName' | 'dockLayoutStorageKey' | 'onBootstrapError'
+      | 'resolveUpstreamUrl'
+      | 'workspaceDatabaseName'
+      | 'dockLayoutStorageKey'
+      | 'onBootstrapError'
+      | 'chrome'
     >
   >
 ) =>
   render(
     <PixelAgentsWorkspace
-      assistant={<div>assistant</div>}
+      {...(props.withoutAssistant ? {} : { assistant: <div>assistant</div> })}
       conversations={props.conversations}
       activeConversationId={props.activeConversationId}
       actions={props.actions}
@@ -114,6 +121,7 @@ const renderStage = (
         : {})}
       {...(props.dockLayoutStorageKey ? { dockLayoutStorageKey: props.dockLayoutStorageKey } : {})}
       {...(props.onBootstrapError ? { onBootstrapError: props.onBootstrapError } : {})}
+      {...(props.chrome ? { chrome: props.chrome } : {})}
     />
   )
 
@@ -626,5 +634,80 @@ describe('PixelAgentsWorkspace host contract (issue #452)', () => {
     const passedStore = workspace.load.mock.calls[0]?.[0]
     expect(typeof passedStore?.load).toBe('function')
     expect(typeof passedStore?.save).toBe('function')
+  })
+})
+
+describe('PixelAgentsWorkspace office-only layout (issue #472)', () => {
+  const officeConversations = (): PixelAgentsConversation[] => [
+    conversation({ id: 'conv-a', title: 'First' })
+  ]
+
+  it('renders the office alone, with no dock and no assistant panel', () => {
+    const { container, queryByText } = renderStage({
+      conversations: officeConversations(),
+      activeConversationId: 'conv-a',
+      actions: actions(),
+      withoutAssistant: true
+    })
+
+    expect(container.querySelector('iframe[title="Pixel Agents office"]')).toBeInTheDocument()
+    expect(queryByText('assistant')).not.toBeInTheDocument()
+    // The dock's own chrome: no panel header, no "Assistant" tab to dock.
+    expect(queryByText('Assistant')).not.toBeInTheDocument()
+    expect(container.querySelector('.pixel-agents-office')).toBeInTheDocument()
+  })
+
+  it('is a labelled region rather than a second <main>', () => {
+    // A `<main>` here would be a duplicate-landmark axe violation on EVERY
+    // documentation route, not the per-lab-page exception the docs suite
+    // grants today. The dock layout keeps its `<main>`; this variant does not.
+    const { container, getByRole } = renderStage({
+      conversations: officeConversations(),
+      activeConversationId: 'conv-a',
+      actions: actions(),
+      withoutAssistant: true
+    })
+
+    expect(container.querySelector('main')).toBeNull()
+    expect(getByRole('region', { name: 'TinyTinkerer Pixel Agents office' })).toBeInTheDocument()
+  })
+
+  it('still projects office-driven actions back into the host', async () => {
+    const stageActions = actions()
+    const { container } = renderStage({
+      conversations: officeConversations(),
+      activeConversationId: 'conv-a',
+      actions: stageActions,
+      withoutAssistant: true
+    })
+    const iframe = container.querySelector('iframe')
+    if (!iframe?.contentWindow) throw new Error('iframe not mounted')
+    const postSpy = spyOnPostMessage(iframe)
+
+    await bootstrap(iframe, postSpy)
+    act(() => postFromOffice(iframe, { type: 'launchAgent' }))
+
+    expect(stageActions.startNewConversation).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks the frame for compact chrome, and asks for nothing by default', () => {
+    const { container: compact } = renderStage({
+      conversations: officeConversations(),
+      activeConversationId: 'conv-a',
+      actions: actions(),
+      withoutAssistant: true,
+      chrome: 'compact'
+    })
+    expect(compact.querySelector('iframe')?.src).toContain('tinytinkerer-chrome=compact')
+
+    // Every existing host must keep the frame URL it had before #472 — the
+    // parameter is what the bridge and the `defaultZoom` source patch switch
+    // on, and its absence is how they stay off.
+    const { container: full } = renderStage({
+      conversations: officeConversations(),
+      activeConversationId: 'conv-a',
+      actions: actions()
+    })
+    expect(full.querySelector('iframe')?.src).not.toContain('tinytinkerer-chrome')
   })
 })

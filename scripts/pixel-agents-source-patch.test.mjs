@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { patchBottomToolbarSource } from './pixel-agents-source-patch.mjs'
+import { patchBottomToolbarSource, patchDefaultZoomSource } from './pixel-agents-source-patch.mjs'
 
 // A trimmed stand-in for the real upstream BottomToolbar.tsx shape (as of the
 // pinned commit) — just enough surrounding context to exercise the patch.
@@ -69,4 +69,37 @@ test('patchBottomToolbarSource throws if upstream has restructured the handler',
     'const handleBypassSelect = (bypass: boolean) => {'
   )
   assert.throws(() => patchBottomToolbarSource(restructured), /expected the handleBypassSelect/)
+})
+
+// The real upstream toolUtils.ts shape (as of the pinned commit), verbatim for
+// the function this patches.
+const toolUtilsSource = `import { ZOOM_DEFAULT_DPR_FACTOR, ZOOM_MIN } from '../constants.js';
+
+/** Compute a default integer zoom level (device pixels per sprite pixel) */
+export function defaultZoom(): number {
+  const dpr = window.devicePixelRatio || 1;
+  return Math.max(ZOOM_MIN, Math.round(ZOOM_DEFAULT_DPR_FACTOR * dpr));
+}
+`
+
+test('patchDefaultZoomSource starts a compact-chrome frame at minimum zoom', () => {
+  const patched = patchDefaultZoomSource(toolUtilsSource)
+  assert.match(patched, /tinytinkerer-chrome'\) === 'compact'/)
+  assert.match(patched, /return ZOOM_MIN;/)
+  // Every other frame keeps upstream's device-pixel-ratio default untouched —
+  // this is a new branch in front of it, not a replacement for it.
+  assert.match(patched, /const dpr = window\.devicePixelRatio \|\| 1;/)
+  assert.match(patched, /Math\.round\(ZOOM_DEFAULT_DPR_FACTOR \* dpr\)/)
+  // Indentation is carried over from the line it displaces, so the patched
+  // file still satisfies upstream's own formatter/lint step during the build.
+  assert.match(patched, /\n {2}if \(new URLSearchParams/)
+  assert.match(patched, /\n {4}return ZOOM_MIN;/)
+})
+
+test('patchDefaultZoomSource throws if upstream has restructured defaultZoom', () => {
+  const restructured = toolUtilsSource.replace(
+    'const dpr = window.devicePixelRatio || 1;',
+    'const dpr = getDevicePixelRatio();'
+  )
+  assert.throws(() => patchDefaultZoomSource(restructured), /expected the `defaultZoom\(\)`/)
 })

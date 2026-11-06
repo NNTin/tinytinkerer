@@ -33,7 +33,7 @@
         "by the eager-chunk check in the same script, not by a byte count."
       ],
       "maxBytes": 1000000,
-      "note": "Measured 2026-08-04 at 844,024 bytes (826,616 of page-referenced JS/CSS \u2014 identical across all 31 built pages, since Docusaurus loads route chunks lazily \u2014 plus a 17,408-byte corpus manifest). ~16% headroom. Essentially unchanged by issue #495: the plugin catalogue and every plugin it names are reached through dynamic imports from the assistant/live-lab runtimes, so none of them is referenced by a built page. A jump here means a page started pulling something that should have stayed lazy."
+      "note": "Measured 2026-08-12 at 851,693 bytes (834,285 of page-referenced JS/CSS \u2014 identical across all 31 built pages, since Docusaurus loads route chunks lazily \u2014 plus a 17,408-byte corpus manifest). ~15% headroom. Grew 7,669 bytes from 844,024 (2026-08-04) with issue #472: the documentation sidebar is now swizzled, and carries the Office's slot, its collapse store and their styles. That is the whole of what #472 adds here \u2014 the Office itself, `@tinytinkerer/pixel-agents` and the upstream iframe are all behind the portal and the runtime chunk, which is why this moved by kilobytes rather than by a megabyte. Essentially unchanged by issue #495: the plugin catalogue and every plugin it names are reached through dynamic imports from the assistant/live-lab runtimes, so none of them is referenced by a built page. A jump here means a page started pulling something that should have stayed lazy."
     },
     "assistantRuntime": {
       "label": "2. Opening the assistant",

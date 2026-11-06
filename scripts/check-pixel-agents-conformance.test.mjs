@@ -17,7 +17,9 @@ const COMPLETE_BUNDLE =
   'window.__pixelAgentsTestHooks=1 window.__PIXEL_AGENTS_E2E=1 ' +
   'hooks.selectAgent=e "data-testid":"agent-overlay" "data-agent-id":t ' +
   'typeof acquireVsCodeApi ' +
-  'title:`Settings` title:`Close agent`'
+  'title:`Settings` title:`Close agent` ' +
+  'title:`Zoom in (Ctrl+Scroll)` title:`Zoom out (Ctrl+Scroll)` ' +
+  'tinytinkerer-chrome'
 
 test('assertBundleConformance passes when every mirrored assumption is present', () => {
   assert.doesNotThrow(() => assertBundleConformance(COMPLETE_BUNDLE))
@@ -36,6 +38,20 @@ test('assertBundleConformance names a missing acquireVsCodeApi feature-detection
 test('assertBundleConformance names a missing button title pattern', () => {
   const bundle = COMPLETE_BUNDLE.replace('title:`Close agent`', '')
   assert.throws(() => assertBundleConformance(bundle), /Close agent/)
+})
+
+test('assertBundleConformance names a missing zoom button title', () => {
+  // Compact chrome (issue #472) hides these two by title selector; a rename
+  // upstream would silently put them back on top of the sidebar office.
+  const bundle = COMPLETE_BUNDLE.replace('title:`Zoom in (Ctrl+Scroll)` ', '')
+  assert.throws(() => assertBundleConformance(bundle), /Zoom in/)
+})
+
+test('assertBundleConformance names a missing compact-chrome zoom branch', () => {
+  // The `defaultZoom` source patch throws if its target moves, but only this
+  // proves the patched branch survived into the built bundle.
+  const bundle = COMPLETE_BUNDLE.replace(' tinytinkerer-chrome', '')
+  assert.throws(() => assertBundleConformance(bundle), /compact-chrome branch/)
 })
 
 test('assertBundleConformance names a missing selectAgent test hook', () => {

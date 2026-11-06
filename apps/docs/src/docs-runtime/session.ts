@@ -16,8 +16,8 @@
  * product runtime, so an eagerly-loaded page component must import
  * `@site/src/docs-runtime` (light) and register a surface instead.
  */
-import { useCallback, useContext, useMemo } from 'react'
-import { useAuthStore, useChatStore } from '@tinytinkerer/app-browser'
+import { useCallback, useContext, useEffect, useMemo } from 'react'
+import { useAuthStore, useChatStore, type ChatEvent } from '@tinytinkerer/app-browser'
 import { DocsAssistantSessionContext } from './assistant-session-context'
 import { beginDocsProductSignIn } from './product-sign-in'
 import { useDocsRuntimeConfig } from './runtime-config'
@@ -27,6 +27,22 @@ export type DocsAssistantConversation = {
   title: string
   /** A generation or tool call is in flight in this conversation. */
   isRunning: boolean
+  /**
+   * This conversation's transcript, for a surface that visualizes activity
+   * rather than just listing conversations — #472's Office projects each
+   * event onto an office character. `ChatEvent` is a contracts type, taken
+   * through app-browser's own re-export and imported `type`-only, so the light
+   * barrel can still re-export this shape for free.
+   */
+  events: readonly ChatEvent[]
+  /**
+   * Whether `events` was actually loaded from the repository. The store
+   * hydrates a conversation's events lazily on first activation, so after a
+   * reload every BACKGROUND conversation arrives as an empty, unhydrated
+   * array — which a consumer must not read as "this conversation never ran"
+   * (the Office would mark every backgrounded agent as awaiting input).
+   */
+  eventsLoaded: boolean
 }
 
 export type DocsAssistantSession = {
@@ -73,6 +89,7 @@ export const useDocsAssistantSession = (): DocsAssistantSession => {
   }
 
   const runtimeConfig = useDocsRuntimeConfig()
+  const initialize = useChatStore((state) => state.initialize)
   const slices = useChatStore((state) => state.conversations)
   const order = useChatStore((state) => state.conversationOrder)
   const activeConversationId = useChatStore((state) => state.conversationId)
@@ -86,6 +103,18 @@ export const useDocsAssistantSession = (): DocsAssistantSession => {
   const restartConversation = useChatStore((state) => state.restartConversation)
   const token = useAuthStore((state) => state.token)
 
+  // The store hydrates lazily, on the first action or the first mounted chat
+  // surface — and a MINIMIZED widget mounts no chat surface. Without this, a
+  // consumer that only manages conversations (issue #472's Office, in a sidebar
+  // beside a panel the reader never opened) would be handed an empty list and
+  // would report "no conversations" over a repository full of them.
+  //
+  // `initialize` is idempotent and shares one in-flight promise, so calling it
+  // here costs nothing when a chat surface has already asked.
+  useEffect(() => {
+    void initialize()
+  }, [initialize])
+
   const conversations = useMemo<readonly DocsAssistantConversation[]>(
     () =>
       // Ordered by the store's own `conversationOrder` (most recently updated
@@ -94,7 +123,17 @@ export const useDocsAssistantSession = (): DocsAssistantSession => {
       // than rendered as a blank row.
       order.flatMap((id) => {
         const slice = slices[id]
-        return slice ? [{ id, title: slice.title, isRunning: slice.isRunning }] : []
+        return slice
+          ? [
+              {
+                id,
+                title: slice.title,
+                isRunning: slice.isRunning,
+                events: slice.events,
+                eventsLoaded: slice.eventsLoaded
+              }
+            ]
+          : []
       }),
     [order, slices]
   )

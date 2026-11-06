@@ -93,6 +93,7 @@ export const PixelAgentsWorkspace = ({
   resolveUpstreamUrl,
   workspaceDatabaseName,
   dockLayoutStorageKey = DEFAULT_DOCK_LAYOUT_STORAGE_KEY,
+  chrome = 'full',
   onBootstrapError
 }: PixelAgentsStageProps): React.JSX.Element => {
   const frameRef = useRef<HTMLIFrameElement>(null)
@@ -348,9 +349,16 @@ export const PixelAgentsWorkspace = ({
     // postMessage targetOrigin.
     const src = new URL(upstreamUrl('index.html'))
     src.searchParams.set('tinytinkerer-parent-origin', window.location.origin)
+    // Only when it is asking for something other than the default, so every
+    // existing host's frame URL stays byte-identical. Read inside the frame by
+    // scripts/pixel-agents-bridge.mjs (chrome hiding, gesture blocking) and by
+    // the `defaultZoom` source patch in scripts/pixel-agents-source-patch.mjs
+    // — all three live in the sandboxed document, which is why this is a URL
+    // parameter and not a prop the host could apply itself (issue #472).
+    if (chrome !== 'full') src.searchParams.set('tinytinkerer-chrome', chrome)
     setPixelAgentsUrl(src.href)
     return () => window.removeEventListener('message', handleMessage)
-  }, [conversationIdForAgent, persistWorkspace, postMany, upstreamUrl, workspaceStore])
+  }, [chrome, conversationIdForAgent, persistWorkspace, postMany, upstreamUrl, workspaceStore])
 
   // Notifies a host-provided fallback surface (issue #452) whenever bootstrap
   // failure state changes, including the initial "no error yet" mount value —
@@ -443,23 +451,42 @@ export const PixelAgentsWorkspace = ({
     </div>
   )
 
+  const activityBridges = conversations.map((conversation) => {
+    const agentId = agentNumbers[conversation.id]
+    // Not yet assigned (bootstrap/reconciliation hasn't reached it this
+    // tick): nothing to project until it has an agent id to stamp.
+    if (agentId === undefined) return null
+    return (
+      <ConversationActivityBridge
+        key={conversation.id}
+        conversation={conversation}
+        agentId={agentId}
+        enabled={activityEnabled}
+        onMessages={postMany}
+      />
+    )
+  })
+
+  // No chat surface to dock beside: render the office alone (issue #472).
+  //
+  // A `region`, not a `<main>`. The dock layout below is a whole workspace and
+  // owns its host's window, so a `<main>` is right there; this variant is one
+  // panel inside somebody else's page — the documentation sidebar — and on
+  // every route. A second `<main>` there is an axe `landmark-no-duplicate-main`
+  // violation on the entire site rather than the per-lab-page exception the
+  // docs accessibility suite grants today.
+  if (assistant === undefined) {
+    return (
+      <section className="pixel-agents-office" aria-label="TinyTinkerer Pixel Agents office">
+        {activityBridges}
+        {pixelAgents}
+      </section>
+    )
+  }
+
   return (
     <main className="pixel-agents-root" aria-label="TinyTinkerer Pixel Agents">
-      {conversations.map((conversation) => {
-        const agentId = agentNumbers[conversation.id]
-        // Not yet assigned (bootstrap/reconciliation hasn't reached it this
-        // tick): nothing to project until it has an agent id to stamp.
-        if (agentId === undefined) return null
-        return (
-          <ConversationActivityBridge
-            key={conversation.id}
-            conversation={conversation}
-            agentId={agentId}
-            enabled={activityEnabled}
-            onMessages={postMany}
-          />
-        )
-      })}
+      {activityBridges}
       <DockablePanelLayout
         title="Pixel Agents workspace"
         storageKey={dockLayoutStorageKey}

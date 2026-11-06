@@ -1,9 +1,9 @@
 # The documentation runtime
 
 Where a `BrowserApp` comes from inside `/docs/`, who owns the document (issue
-#479), and how the floating assistant is mounted on top of it (issue #480). #472
-is intended to consume the same session, and has not been built yet — the
-contract exists and is tested; nothing imports it.
+#479), how the floating assistant is mounted on top of it (issue #480), and how
+the Pixel Agents Office reaches the same session from the documentation sidebar
+(issue #472).
 
 Two apps live in this document and share nothing but their bootstrap:
 
@@ -251,8 +251,8 @@ decision was made. So the widget uses their **controlled** mode (#480 added it,
 and its re-review extended it to `mode`): this store owns mode and
 open/minimized, the layouts own geometry. A callback-only seam was rejected — the
 two desynchronise the moment anything but the launcher opens the assistant, which
-is exactly what #472 will do when it activates the runtime while the reader had the
-widget minimized.
+is exactly what #472's sidebar Office does when it activates the runtime while the
+reader had the widget minimized.
 
 **A returning reader who left the panel open gets it back**, runtime download
 included. "Retains the presentation state" cannot mean "restores everything
@@ -349,6 +349,81 @@ of doing nothing. And the widget's reset reached the store's clear-in-place
 action, which keeps the conversation's id and title — not the semantics #479
 locked and this session documents.
 
+## The sidebar Office (#472)
+
+The Pixel Agents Office is the assistant's conversation-management surface, and
+it is not optional trim. Since the office became the product's **sole** switcher
+(`ChatApp` has none, on any shell, and `floating-chat-surface.test.tsx` /
+`docked-chat-surface.test.tsx` assert its absence), the documentation assistant
+without this had exactly one conversation and no way to start, leave, or end it.
+
+Three files, and the split between them is the whole design:
+
+| file                    | weight       | job                                                 |
+| ----------------------- | ------------ | --------------------------------------------------- |
+| `OfficeSidebarSlot.tsx` | light        | the sidebar strip, and the portal **target**        |
+| `assistant-office.tsx`  | runtime-only | the Office itself, inside the provider              |
+| `theme/DocSidebar/…`    | light        | where the slot is placed in theme-classic's sidebar |
+
+The slot is rendered by a swizzled `@theme/DocSidebar/Desktop/Content`, which
+every documentation page loads — so it may import nothing but the light barrel,
+and the Office reaches it by portal out of the lazily-loaded runtime chunk.
+`__tests__/static-safety.test.ts` asserts both halves, including that the eager
+graph never reaches `@tinytinkerer/pixel-agents` at all.
+
+**Why `Content` and not `Desktop`.** theme-classic's `Desktop` is a flex column
+with `height: 100%` whose `Content` is the `flex-grow: 1` child. A sibling after
+it lands at the bottom of the column at its natural height, above the collapse
+button, with no need to restyle a hashed CSS-module class. It is also
+desktop-only by construction: the mobile drawer renders `DocSidebarItems`
+directly, and a pixel-art room is not what a phone reader wants from a nav menu.
+
+**Nothing renders before activation.** Profile 1 forbids a runtime chunk on a
+documentation page, so the slot shows a light control and calls `activate()` —
+the same request the floating launcher makes, and the case
+`assistant-presentation.ts` was designed around, since it opens the runtime while
+the reader may have left the widget minimized.
+
+**Collapsing unmounts.** The toggle clears the portal target rather than hiding
+the element, so the iframe stops. That is the space-and-cost control the issue
+asks for; `display: none` would have left it animating behind a control that
+says it is off.
+
+### Compact chrome, and why removing pan needed the zoom too
+
+The sidebar is a ~300px column. `@tinytinkerer/pixel-agents` therefore gains two
+things, both scoped to this embedding so `/pixel-agents` and the live labs are
+untouched — one prepared upstream bundle serves all three, so the switch rides in
+on the frame URL as `tinytinkerer-chrome=compact`:
+
+- an **office-only layout** (`assistant` omitted): no `DockablePanelLayout`, no
+  Assistant panel, and a labelled `region` rather than a second `<main>`. That
+  last one is not cosmetic — the labs get a `landmark-no-duplicate-main` axe
+  exception because they are single pages, and taking the same exception for a
+  surface on _every_ documentation route would switch the landmark rules off
+  site-wide;
+- **compact chrome**: `pixel-agents-bridge.mjs` hides upstream's zoom buttons and
+  swallows wheel and middle-drag in the capture phase, and a source patch
+  (`pixel-agents-source-patch.mjs`) starts `defaultZoom()` at `ZOOM_MIN`.
+
+The zoom default is what makes removing pan safe. Upstream starts at
+`round(2 × devicePixelRatio)`, where the 21×22-tile room is ~672 device pixels
+wide; in a 300px column a reader with no pan would be stuck looking at one corner
+of an empty floor. At minimum zoom the whole room fits. The cost is honest and
+worth naming: on a 2× display the sprites render at half their usual size.
+
+**The accessible list is not a fallback.** The office is a canvas, so a character
+click is unreachable without a pointer. `ConversationSwitcher` — shared with the
+live labs from `src/pixel-agents/` — is always rendered, collapsed into a
+disclosure while the room is showing and on its own when a narrow viewport,
+`prefers-reduced-motion`, or a bootstrap failure means the room is not. Its
+create button is named "New assistant conversation", apart from the labs' "New
+conversation": a lab page carries both surfaces, over two different sessions.
+
+The Office's workspace is a **third** IndexedDB database
+(`tinytinkerer-docs-assistant-pixel-agents`). Seats and agent numbers are
+origin-scoped, and the three offices project three different conversation sets.
+
 ## The release gates (#481)
 
 ### No content reaches a model before the reader is told what a send does
@@ -388,8 +463,8 @@ Three things it deliberately is **not**:
 - **not the telemetry consent dialog.** That asks for an opt-in which defaults
   off and can be declined while the app keeps working. A data-flow disclosure is
   not a choice, so "Continue without" would have meant something false.
-- **not per-surface.** The floating widget, the docked panel and #472's future Office
-  are covered because the gate is on the app, not because three components
+- **not per-surface.** The floating widget, the docked panel and #472's sidebar
+  Office are covered because the gate is on the app, not because three components
   remembered.
 - **not the human-in-the-loop bridge.** A human prompt is run-scoped — it belongs
   to one conversation, and stopping that run settles it. This is a persisted,
@@ -544,7 +619,6 @@ engine could plausibly differ on. Everything exhaustive stays on Chromium.
 
 ## What is not here
 
-- The Pixel Agents Office UI (#472) — only the portal it mounts through.
 - Any use of the rendered DOM or live-lab state.
 - Human-in-the-loop in the documentation. Both catalogues exclude choice-prompt
   and permissions and both apps declare `humanInput: false` — a scope decision
