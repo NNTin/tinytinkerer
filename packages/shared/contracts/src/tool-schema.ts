@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import * as z from 'zod'
 
 // Canonical Zod → JSON Schema path for tool descriptors (issue #287). A tool's
 // Zod `schema` (the runtime contract `ToolRegistry.run` parses against) is the
@@ -25,6 +25,31 @@ const stripSchemaDialect = (schema: JsonSchemaObject): JsonSchemaObject => {
   return copy
 }
 
+// Since zod 4.6, a ROOT schema carrying `.meta({ id })` (the contracts name their
+// schemas for OpenAPI components, e.g. `SearchRequest`) is emitted as
+// `{ $ref: '#/$defs/<id>', $defs: { <id>: {...} } }` instead of inline. Providers
+// need the root itself to be the object (`function.parameters`, strict
+// `response_format`), so inline the referenced definition back onto the root.
+// Any other `$defs` are kept; the root's own entry is kept too if something
+// still references it (a recursive schema).
+const inlineRootRef = (schema: JsonSchemaObject): JsonSchemaObject => {
+  const { $ref, $defs, ...rest } = schema
+  if (typeof $ref !== 'string' || !$ref.startsWith('#/$defs/')) return schema
+  const defs = { ...($defs as Record<string, JsonSchemaObject> | undefined) }
+  const name = $ref.slice('#/$defs/'.length)
+  const target = defs[name]
+  if (!target) return schema
+  if (!JSON.stringify(target).includes(JSON.stringify($ref))) delete defs[name]
+  return {
+    ...rest,
+    ...target,
+    ...(Object.keys(defs).length > 0 ? { $defs: defs } : {})
+  }
+}
+
+const normalizeJsonSchema = (schema: JsonSchemaObject): JsonSchemaObject =>
+  inlineRootRef(stripSchemaDialect(schema))
+
 // Faithful JSON Schema for a tool's INPUT, generated from its Zod schema.
 //
 // - `io: 'input'` — describe what the model must SEND (pre-parse shape), so
@@ -45,7 +70,7 @@ const stripSchemaDialect = (schema: JsonSchemaObject): JsonSchemaObject => {
 // top-level union/array inside a `z.object({ ... })` to fix it. (A union nested in
 // a property is fine and stays faithful — only the root must be an object.)
 export const toolInputJsonSchema = (schema: z.ZodType): JsonSchemaObject => {
-  const json = stripSchemaDialect(z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'input' }))
+  const json = normalizeJsonSchema(z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'input' }))
   if (json.type !== 'object')
     throw new Error(
       `tool input schema must have an object root for function.parameters, got ` +
@@ -65,4 +90,4 @@ export const toolInputJsonSchema = (schema: z.ZodType): JsonSchemaObject => {
 // the provider is asked to ENFORCE the shape at generation, with a Zod re-parse as
 // the authoritative backstop. See executionPlanWireSchema for the planner's use.
 export const toStrictResponseJsonSchema = (schema: z.ZodType): JsonSchemaObject =>
-  stripSchemaDialect(z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'output' }))
+  normalizeJsonSchema(z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'output' }))

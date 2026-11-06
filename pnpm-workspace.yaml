@@ -15,119 +15,42 @@ minimumReleaseAgeExclude:
   - dompurify
 saveExact: true
 auditLevel: moderate
-# Temporary suppression: GHSA-gv7w-rqvm-qjhr (esbuild) is only patched in
-# esbuild@0.28.1 (published 2026-06-11), which is younger than the 7-day age
-# gate above. The advisory affects esbuild's Deno binary download path
-# (NPM_CONFIG_REGISTRY); this repo only uses esbuild under Node via tsx and
-# wrangler, so the exploit path is not reachable. Remove this entry once
-# esbuild@0.28.1 clears the age gate (~2026-06-18) and esbuild is upgraded.
+# Suppressions pruned 2026-11-06: GHSA-gv7w-rqvm-qjhr (esbuild),
+# GHSA-fx2h-pf6j-xcff (vite), GHSA-v6wh-96g9-6wx3 (launch-editor),
+# GHSA-h67p-54hq-rp68 (js-yaml), GHSA-f23m-r3pf-42rh (lodash-es),
+# GHSA-mwcw-c2x4-8c55 (nanoid), GHSA-frvp-7c67-39w9 (@hono/node-server),
+# GHSA-mh99-v99m-4gvg and GHSA-rgw5-rvv9-x895 (brace-expansion) no longer match
+# anything in the resolved tree — the patched releases cleared the age gate and
+# are now pulled in by the version bumps / overrides below. A suppression that
+# is no longer needed is worse than none, because it keeps claiming a judgement
+# nobody has re-made.
 #
-# The nine entries below are all DEV/BUILD-only transitive advisories — none
-# reaches the deployed Cloudflare Worker or the static Pages bundle — and the
-# patched versions are blocked by the 7-day age gate above (bumping needs a human
-# per the directive at the top of this file), so they are suppressed with a clear
-# rationale rather than upgraded. Re-check once the patches clear the age gate.
+# The remaining suppressions, each still matching the tree:
 #   - GHSA-96hv-2xvq-fx4p (ws, DoS): apps/edge>wrangler>miniflare>ws — the local
 #     dev edge runtime only; never bundled into the deployed Worker.
-#   - GHSA-fx2h-pf6j-xcff (vite, server.fs.deny bypass): apps/host>vite — Windows
-#     only and a dev-server issue; the host compositor runs only in local dev.
-#   - GHSA-v6wh-96g9-6wx3 (launch-editor via vite, NTLMv2 disclosure): Windows
-#     only, dev-server editor-open path; not used in CI or production.
-#   - GHSA-h67p-54hq-rp68 (js-yaml, quadratic DoS): commitlint>cosmiconfig>js-yaml
-#     — runs only on developer commits against trusted local config, not at runtime.
-#   (The five undici advisories previously suppressed here — GHSA-vmh5-mc38-953g,
-#   GHSA-pr7r-676h-xcf6, GHSA-vxpw-j846-p89q, GHSA-hm92-r4w5-c3mj and
-#   GHSA-p88m-4jfj-68fv — are GONE from this list as of 2026-08-04: the patched
-#   releases have cleared the age gate, so undici is now genuinely fixed by the
-#   overrides below rather than suppressed. Four further undici advisories
-#   published since are fixed by the same bump. A suppression that is no longer
-#   needed is worse than none, because it keeps claiming a judgement nobody has
-#   re-made.)
-#
-# These four advisories are transitive through @excalidraw/excalidraw and are
-# owned by the integrated packages/app/canvas stage. The lodash-es findings
-# are in Excalidraw's bundled Mermaid parser (not templates or object paths this
-# integration invokes) and have no released fix. The nanoid issue requires a
-# non-integer size; Excalidraw's IDs are not security-bearing here. Re-check all
-# four when upgrading Excalidraw.
-#   - GHSA-r5fr-rjxr-66jc (lodash-es template code injection)
-#   - GHSA-f23m-r3pf-42rh (lodash-es prototype pollution)
-#   - GHSA-xxjr-mmjv-4gpg (lodash-es prototype pollution)
-#   - GHSA-mwcw-c2x4-8c55 (nanoid predictable output for non-integer size)
-#
-# GHSA-frvp-7c67-39w9 (@hono/node-server, Windows path traversal in serve-static):
-# apps/edge>@modelcontextprotocol/sdk>@hono/node-server, pulled in for the SDK's
-# optional Node HTTP transport, which this app never invokes (apps/edge runs on
-# Cloudflare Workers/workerd, not Node, and never imports @hono/node-server or
-# its serve-static middleware directly). The only fix is @hono/node-server@2.x,
-# a major rewrite the SDK itself still pins below (`^1.19.9` as of 1.29.0), so
-# forcing it would risk breaking the SDK's transport code for a Windows-only
-# path unreachable from our deployment. Re-check once the SDK bumps its own
-# @hono/node-server range.
-# GHSA-7p8r-x3mc-p8w7 (fast-uri, host confusion via backslash authority): GONE
-# as of 2026-09-06 — fast-uri@3.1.6 (see the override below) clears both the
-# age gate and this advisory's 3.1.5 fix. Genuinely fixed, not suppressed.
-# GHSA-qwww-vcr4-c8h2 (react-router, RSC mode CSRF bypass): apps/canvas,
-# apps/host, apps/ide, apps/mermaid, apps/pixel-agents, apps/shell all pin
-# react-router-dom@7.18.1 exact (saveExact above), which resolves the
-# vulnerable react-router@7.18.1. None of these apps use RSC mode (no
-# react-server usage anywhere in the tree) so the CSRF bypass path is not
-# reachable, but the fix is still only available in react-router@8.3.0
-# (published 2026-07-22, inside the 7-day age gate above) — and
-# react-router-dom itself has no 8.x release at all, so clearing this needs a
-# framework migration (react-router-dom -> the unified react-router package),
-# not a version bump. That's a human call, not something to do as a drive-by
-# CI fix. Re-check once 8.3.0 clears the age gate (~2026-07-29) and a
-# react-router-dom v8 (or the migration) is available.
-# GHSA-r28c-9q8g-f849 (postcss, path traversal via previous sourceMappingURL):
-# dev/build-only, transitive through vite (postcss: ^8.5.15) via vitest/
-# @tailwindcss-vite/allure-vitest — never bundled into a deployed app. Fixed
-# via the override below instead of suppression since the patch is within
-# vite's declared range and already clears the age gate.
-# GHSA-mh99-v99m-4gvg (brace-expansion, unbounded expansion DoS): every released
-# major line used by the repository is affected, and the only patched release
-# (5.0.8, published 2026-07-23) is still inside the strict 7-day age gate.
-# All paths are development/build tooling through Docusaurus, ESLint, or
-# Workbox; brace expansion is not bundled into a deployed application. Re-check
-# once 5.0.8 clears the age gate (~2026-07-30), then consolidate the overrides
-# below on the patched release.
-# GHSA-8j4g-w8fx-2239 (hono, ReDoS in CORS middleware via
-# Access-Control-Request-Headers): GONE as of 2026-09-06 — as flagged above,
-# this one was to be TAKEN once 4.12.34 cleared the age gate. apps/edge/
-# package.json now pins hono@4.12.34 directly (@hono/zod-openapi's `>=4.10.0`
-# and @hono/node-server's `^4` both allow it), which also fixes
-# GHSA-f23p-vx2j-j53r (memo() SSR cache cross-user disclosure) and
-# GHSA-54fx-42gc-7vw4 (language-middleware ReDoS) in the same bump. Genuinely
-# fixed, not suppressed.
-# GHSA-rgw5-rvv9-x895 (brace-expansion, DoS via unbounded intermediate arrays —
-# a bypass of the earlier fix): the 1.x line, reached through @docusaurus/core's
-# build toolchain. The 2.x and 5.x lines are already forced to patched releases
-# by the overrides below. Build tooling only; brace expansion is not bundled into
-# a deployed application. The 1.x fix (1.1.18) was published 2026-07-30, inside
-# the age gate. Re-check once it clears (~2026-08-06).
-# GHSA-w3rx-r6r6-pgpr / GHSA-5p2g-fcmc-qvqq (image-size, infinite-loop DoS in
-# the ICNS/JXL/HEIF parsers): apps/docs>@docusaurus/core>@docusaurus/mdx-
-# loader>image-size, used only to read dimensions of images embedded in docs
-# content at build time — never processes untrusted/attacker-supplied images,
-# and never bundled into a deployed application. Both advisories need
-# image-size@2.0.3, which does not exist yet (2.0.2 is the latest release on
-# npm as of 2026-09-06); there is nothing to bump to. Re-check when a 2.0.3+
-# release ships.
+#   - GHSA-r5fr-rjxr-66jc / GHSA-xxjr-mmjv-4gpg (lodash-es template code
+#     injection / prototype pollution): transitive through
+#     @excalidraw/excalidraw's bundled Mermaid parser (owned by the integrated
+#     packages/app/canvas stage; not templates or object paths this integration
+#     invokes) with no released fix. Re-check when upgrading Excalidraw.
+#   - GHSA-qwww-vcr4-c8h2 (react-router, RSC mode CSRF bypass): the apps pin
+#     react-router-dom@7.18.1, which resolves the vulnerable react-router@7.18.1.
+#     None of them use RSC mode, so the path is not reachable; the fix only
+#     exists in react-router@8, and react-router-dom has no 8.x release, so
+#     clearing it needs a framework migration (react-router-dom -> the unified
+#     react-router package). That's a human call, not a drive-by CI fix.
+#   - GHSA-w3rx-r6r6-pgpr / GHSA-5p2g-fcmc-qvqq (image-size, infinite-loop DoS in
+#     the ICNS/JXL/HEIF parsers): apps/docs>@docusaurus/core>@docusaurus/mdx-
+#     loader>image-size, used only to read dimensions of images embedded in docs
+#     content at build time — never processes untrusted images, never bundled
+#     into a deployed app. Both need image-size@2.0.3, which does not exist yet.
+#     Re-check when a 2.0.3+ release ships.
 auditConfig:
   ignoreGhsas:
-    - GHSA-gv7w-rqvm-qjhr
     - GHSA-96hv-2xvq-fx4p
-    - GHSA-fx2h-pf6j-xcff
-    - GHSA-v6wh-96g9-6wx3
-    - GHSA-h67p-54hq-rp68
     - GHSA-r5fr-rjxr-66jc
-    - GHSA-f23m-r3pf-42rh
     - GHSA-xxjr-mmjv-4gpg
-    - GHSA-mwcw-c2x4-8c55
-    - GHSA-frvp-7c67-39w9
     - GHSA-qwww-vcr4-c8h2
-    - GHSA-mh99-v99m-4gvg
-    - GHSA-rgw5-rvv9-x895
     - GHSA-w3rx-r6r6-pgpr
     - GHSA-5p2g-fcmc-qvqq
 overrides:
@@ -140,7 +63,9 @@ overrides:
   postcss: 8.5.23
   # 3.1.6 (2026-08-23) also clears GHSA-7p8r-x3mc-p8w7 (3.1.5), previously
   # suppressed below as inside the age gate — that suppression is now removed.
-  fast-uri: 3.1.6
+  # 3.1.9 (2026-10-19) clears five further host-confusion/parsing advisories
+  # published since (GHSA-qw65, -58mr, -hrr3, -w74x, -wjr9).
+  fast-uri: 3.1.9
   # apps/docs>@docusaurus/theme-mermaid declares mermaid >=11.6.0, so 11.16.1
   # (2026-08-04, clears the age gate) fits without a suppression. Fixes four
   # GHSA advisories (CSS injection, prototype pollution, XY-chart and radar
@@ -150,7 +75,9 @@ overrides:
   # content-react pin above, and without this override it resolves to the
   # older 3.4.11 already in the tree instead of content-react's 3.4.13. Forced
   # so both resolutions land on the same GHSA-55q2-fjhq-7xh7 fix.
-  dompurify: 3.4.13
+  # 3.4.17 (2026-10-12) also fixes GHSA-cg2g-xh64-v4q7 (critical) and
+  # GHSA-mrv2-3pqr-j5jr; content-react pins the same release directly.
+  dompurify: 3.4.17
   # Transitive via @babel/helper-compilation-targets (browserslist ^4.24.0).
   # 4.28.7 (2026-07-21) clears the age gate and fixes two DoS/prototype-write
   # advisories.
@@ -161,33 +88,38 @@ overrides:
   # and sockjs>uuid overrides below do — dev-server only, never bundled into a
   # deployed app. 6.16.0 (2026-08-29) clears the age gate and fixes two DoS
   # advisories (array-limit bypass, attacker-controlled isBuffer).
-  qs: 6.16.0
+  # 6.16.2 (2026-10-27) fixes GHSA-6pq8-jhm2-2vcw on the same minor line.
+  qs: 6.16.2
   # Two independently-resolved major lines of nanoid (packages/app/canvas>
   # @excalidraw/excalidraw pins 3.3.3 directly and pulls 4.0.2 via
   # @excalidraw/mermaid-to-excalidraw). The 3.x line has a same-major patch;
   # the 4.x line's last release is 4.0.2, so its fix only exists in 5.x —
   # nanoid 4 and 5 are both ESM-only single-function packages with an
   # unchanged API, so forcing across the major is low-risk. Fixes three
-  # DoS/integer-overflow advisories; GHSA-mwcw-c2x4-8c55 (nanoid, predictable
-  # output for non-integer size) is unrelated and stays suppressed above since
-  # Excalidraw's IDs are not security-bearing there.
+  # DoS/integer-overflow advisories.
   nanoid@3: 3.3.18
   nanoid@4: 5.1.16
   # Two independently-resolved major lines of undici (jsdom under vitest pulls
   # 7.x; apps/edge>@sentry/cli pulls 6.x), each forced to its own line's first
   # advisory-free release. Both cleared the age gate on 2026-07-31. This REPLACES
   # five suppressions with an actual fix — see the note above.
-  undici@6: 6.28.0
-  undici@7: 7.29.0
+  # Bumped 2026-11-06 to 6.29.1 / 7.30.1 (both 2026-10-15) for the batch of
+  # undici advisories published in October.
+  undici@6: 6.29.1
+  undici@7: 7.30.1
   # apps/edge>@modelcontextprotocol/sdk>express-rate-limit>ip-address, on the
   # SDK's optional Node HTTP transport this deployment never invokes (it runs on
   # workerd). Patched anyway rather than reasoned about, since 10.3.1 clears the
   # age gate.
-  ip-address: 10.3.1
+  ip-address: 10.7.5
   # Two independently-resolved major lines of brace-expansion (via different
   # minimatch versions); each needs its own line's patch.
-  brace-expansion@2: 2.1.2
-  brace-expansion@5: 5.0.7
+  # Bumped 2026-11-06 (all 2026-09-14) for GHSA-q2hr-2g5m-vwhr,
+  # GHSA-qhr7-859c-m2p7 and GHSA-6j4f-fj2g-mc7p; the 1.x line (Docusaurus
+  # toolchain) is forced too now that its patch has cleared the age gate.
+  brace-expansion@1: 1.1.21
+  brace-expansion@2: 2.1.7
+  brace-expansion@5: 5.0.12
   # Docusaurus 3.10.2's build and development toolchain still declares the
   # vulnerable major lines. These targeted overrides keep unrelated consumers
   # on their existing versions while forcing the first advisory-free releases.
@@ -198,7 +130,51 @@ overrides:
   # range, unlike the entries above) for local dev asset emulation only, never
   # shipped to the deployed Worker. Forced up to match the root devDependency's
   # already-verified 0.35.3 rather than carry two sharp builds.
-  sharp: 0.35.3
+  sharp: 0.35.5
+  # Transitive advisory fixes added 2026-11-06, each the first (or a later
+  # same-line) patched release that clears the age gate. Almost all of these
+  # sit in the Docusaurus dev-server/build toolchain (express, webpack-dev-
+  # server, svgo, cssnano) or in apps/edge>@modelcontextprotocol/sdk's optional
+  # Node HTTP transport; none is bundled into a deployed app, but all have a
+  # same-major patch so they are fixed rather than suppressed.
+  body-parser@1: 1.20.9
+  body-parser@2: 2.4.0
+  colord: 2.9.4
+  compression: 1.8.2
+  follow-redirects: 1.16.2
+  joi: 17.13.9
+  launch-editor: 2.14.2
+  postcss-selector-parser@6: 6.1.5
+  postcss-selector-parser@7: 7.1.7
+  proxy-addr: 2.0.8
+  shell-quote: 1.11.0
+  smol-toml: 1.9.1
+  source-map-js: 1.2.2
+  svgo: 3.3.5
+  # @modelcontextprotocol/sdk@1.32.x widened its range to `^1.19.9 || ^2.0.5`,
+  # so the 2.x line (the only one with the GHSA-rmxm-3fg6-px4f and
+  # GHSA-frvp-7c67-39w9 fixes) is now within the SDK's own declared range.
+  '@hono/node-server': 2.1.5
+  # The 1.32.x SDK also declares hono directly (and via @hono/node-server@2);
+  # keep that copy on apps/edge's own pinned, patched release.
+  hono: 4.13.14
+  # One vite for every workspace (vitest's peer otherwise floats to 8.3.x).
+  # 8.1.6 (2026-10-06) is the security backport on the 8.1 line: it carries
+  # the four vite/launch-editor fixes while staying on Rolldown 1.1. Vite
+  # 8.2+/Rolldown 1.2 enables mergeCommonChunks, which folds the shared
+  # react-icons chunk into chat-surface and breaks the shell bundle budgets.
+  vite: 8.1.6
+  # Cross-major forces where even the latest upstream dependents still declare
+  # the vulnerable major (eslint 10.14 / @typescript-eslint 8.72 want minimatch
+  # ^10, @sentry/bundler-plugin-core 5.3 wants glob ^13, workbox-build 7.4
+  # wants glob ^11, @docusaurus/core 3.10.2 wants tinypool ^1). minimatch 11
+  # and glob 14 keep the same dual ESM/CJS exports and API; Docusaurus loads
+  # tinypool via dynamic import() of its default export, which 2.x keeps.
+  # Lint/build tooling only. Re-check and drop each once upstream widens.
+  minimatch@10: 11.0.3
+  glob@11: 14.0.3
+  glob@13: 14.0.3
+  tinypool@1: 2.2.0
 # pnpm 11 replaced onlyBuiltDependencies/ignoredBuiltDependencies with a single
 # allowBuilds map (true = allowed to run install/postinstall scripts, false =
 # blocked). Human-approved (2026-06-18): the `playwright` package ships a

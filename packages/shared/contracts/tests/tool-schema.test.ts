@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { z } from 'zod'
+import * as z from 'zod'
 import {
   executionPlanFromWire,
   executionPlanSchema,
@@ -187,5 +187,24 @@ describe('executionPlanWireSchema + executionPlanFromWire', () => {
         steps: [{ id: 's', summary: 's' }]
       })
     ).toThrow()
+  })
+
+  it('inlines a root schema named with .meta({ id }) instead of a root $ref', () => {
+    // zod >= 4.6 hoists an id-tagged root into $defs and returns { $ref, $defs };
+    // providers need the object at the root of function.parameters.
+    const item = z.object({ label: z.string() }).meta({ id: 'ToolSchemaTestItem' })
+    const root = z
+      .object({ name: z.string().describe('the name'), items: z.array(item) })
+      .meta({ id: 'ToolSchemaTestRoot' })
+    for (const json of [toolInputJsonSchema(root), toStrictResponseJsonSchema(root)]) {
+      expect(json.$ref).toBeUndefined()
+      expect(json.type).toBe('object')
+      expect(json.required).toEqual(['name', 'items'])
+      expect(json.properties).toMatchObject({
+        name: { type: 'string', description: 'the name' }
+      })
+      const defs = (json.$defs ?? {}) as Record<string, unknown>
+      expect(defs).not.toHaveProperty('ToolSchemaTestRoot')
+    }
   })
 })

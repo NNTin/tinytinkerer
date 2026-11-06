@@ -1,4 +1,5 @@
-import { z, type ZodSchema } from 'zod'
+import * as z from 'zod'
+import type { ZodSchema } from 'zod'
 import type { ChatEvent } from './index'
 // Host↔plugin presentation view-models live in their own module to keep this file
 // focused; PluginManifest references the two descriptor types below. See

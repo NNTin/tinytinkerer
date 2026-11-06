@@ -9,7 +9,7 @@
 //
 // `.meta({ id })` names a schema as a reusable OpenAPI component ($ref) in the
 // generated document; it has no effect on runtime parsing.
-import { z } from 'zod'
+import * as z from 'zod'
 
 export const serviceStatusSchema = z
   .object({
@@ -493,7 +493,7 @@ export type TelemetryHeaders = z.infer<typeof telemetryHeadersSchema>
 // "use the deployment default" by omitting `litellmBaseUrl` from requests. A
 // code-level URL here would silently point forks at someone else's LiteLLM —
 // or trip their edge allowlist with a 400 "not allowed" on every request.
-export const DEFAULT_LITELLM_MODEL = 'chatgpt/gpt-6-astra'
+export const DEFAULT_LITELLM_MODEL = 'chatgpt/gpt-6.1-sol'
 
 export const EDGE_ROUTE_PATHS = {
   health: '/health',

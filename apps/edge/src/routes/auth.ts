@@ -1,7 +1,7 @@
 import type { OpenAPIHono } from '@hono/zod-openapi'
 import { githubExchangeResponseSchema, type GitHubExchangeResponse } from '@tinytinkerer/contracts'
 import { captureTelemetryException } from '@tinytinkerer/sentry-telemetry'
-import { z } from 'zod'
+import * as z from 'zod'
 import type { Context, TypedResponse } from 'hono'
 import type { Bindings } from '../lib/bindings'
 import { fetchWithTimeout } from '../lib/fetch'

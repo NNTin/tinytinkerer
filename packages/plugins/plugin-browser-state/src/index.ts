@@ -12,7 +12,7 @@ import {
   type PluginModule,
   type Tool
 } from '@tinytinkerer/contracts'
-import { z } from 'zod'
+import * as z from 'zod'
 
 // Stable id used as the activation key and the manifest id surfaced in the
 // Settings Modal. The contributed tool id is `read_dom`.

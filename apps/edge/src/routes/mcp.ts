@@ -114,12 +114,10 @@ const validateMcpUrl = (raw: string, allowedHosts: Set<string>): boolean => {
 const toMcpHeaders = (bearerToken: string | undefined): Record<string, string> =>
   bearerToken ? { authorization: `Bearer ${bearerToken}` } : {}
 
-const makeTransport = (url: string, bearerToken: string | undefined): Transport => {
-  const transport = new StreamableHTTPClientTransport(new URL(url), {
+const makeTransport = (url: string, bearerToken: string | undefined): Transport =>
+  new StreamableHTTPClientTransport(new URL(url), {
     requestInit: { headers: toMcpHeaders(bearerToken) }
   })
-  return transport as unknown as Transport
-}
 
 export const registerMcpRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
   app.openapi(mcpDiscoverRoute, async (c) => {

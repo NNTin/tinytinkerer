@@ -5,7 +5,7 @@ import {
   searchResultSchema,
   type SearchResult
 } from '@tinytinkerer/contracts'
-import { z } from 'zod'
+import * as z from 'zod'
 import type { Bindings } from '../lib/bindings'
 import { fetchWithTimeout } from '../lib/fetch'
 import { callerValidationErrorResponse, validateLiteLLMCaller } from '../lib/caller-validation'

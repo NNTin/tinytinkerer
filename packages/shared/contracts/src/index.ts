@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import * as z from 'zod'
 import { contentDocumentSchema } from './content'
 import { toolSourceSchema } from './plugins'
 

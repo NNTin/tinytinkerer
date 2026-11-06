@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import * as z from 'zod'
 import type { AppToolGroup, Tool } from '@tinytinkerer/app-browser'
 
 // Three small, self-contained tools that stand in for a "plugin" in this lab

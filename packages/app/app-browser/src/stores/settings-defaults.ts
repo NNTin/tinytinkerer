@@ -12,7 +12,7 @@
 // two never drift.
 import type { SettingsState as CoreSettingsState } from '@tinytinkerer/app-core'
 
-const DEFAULT_MODEL = 'chatgpt/gpt-6-astra'
+const DEFAULT_MODEL = 'chatgpt/gpt-6.1-sol'
 const LITELLM_DEPLOYMENT_DEFAULT = ''
 const DEFAULT_AGENT_TYPE: CoreSettingsState['agentType'] = 'react'
 

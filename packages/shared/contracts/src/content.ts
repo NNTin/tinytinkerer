@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import * as z from 'zod'
 
 export const nodeIdSchema = z.string()
 export type NodeId = z.infer<typeof nodeIdSchema>

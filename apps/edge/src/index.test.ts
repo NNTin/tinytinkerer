@@ -533,7 +533,7 @@ describe('edge routes', () => {
       throw new Error('Expected LiteLLM request body to be a JSON string')
     }
     const parsedUpstreamBody = JSON.parse(upstreamBody) as { model: string; stream: boolean }
-    expect(parsedUpstreamBody.model).toBe('chatgpt/gpt-6-astra')
+    expect(parsedUpstreamBody.model).toBe('chatgpt/gpt-6.1-sol')
     // The edge always requests stream:true from LiteLLM itself, even for a
     // non-streaming client request — see collect-sse-chat-completion.ts.
     expect(parsedUpstreamBody.stream).toBe(true)
