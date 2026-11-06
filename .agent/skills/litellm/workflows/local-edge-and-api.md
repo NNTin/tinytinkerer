@@ -71,7 +71,7 @@ can target the wrong project and fail to update the live container. Recreate onl
 ```bash
 .agent/skills/litellm/tools/probe-api.sh
 .agent/skills/litellm/tools/litellm-status.sh
-.agent/skills/litellm/tools/smoke-test-models.sh chatgpt/gpt-6-astra
+.agent/skills/litellm/tools/smoke-test-models.sh chatgpt/gpt-6.1-sol
 ```
 
 ## 4. Mind LiteLLM virtual-key route scopes

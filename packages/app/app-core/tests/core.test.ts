@@ -145,7 +145,7 @@ describe('app-core helpers', () => {
 
   it('uses LiteLLM as the sole model provider and normalizes the base URL', () => {
     expect(DEFAULT_MODEL_PROVIDER).toBe('litellm')
-    expect(DEFAULT_MODEL).toBe('chatgpt/gpt-6-astra')
+    expect(DEFAULT_MODEL).toBe('chatgpt/gpt-6.1-sol')
     expect(normalizeLiteLLMBaseUrl('https://litellm.example.com')).toBe(
       'https://litellm.example.com/'
     )
