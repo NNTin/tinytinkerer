@@ -7,18 +7,9 @@ fail-on-scopes:
   - unknown
 license-check: false
 allow-ghsas:
-  - GHSA-gv7w-rqvm-qjhr
   - GHSA-96hv-2xvq-fx4p
-  - GHSA-fx2h-pf6j-xcff
-  - GHSA-v6wh-96g9-6wx3
-  - GHSA-h67p-54hq-rp68
   - GHSA-r5fr-rjxr-66jc
-  - GHSA-f23m-r3pf-42rh
   - GHSA-xxjr-mmjv-4gpg
-  - GHSA-mwcw-c2x4-8c55
-  - GHSA-frvp-7c67-39w9
   - GHSA-qwww-vcr4-c8h2
-  - GHSA-mh99-v99m-4gvg
-  - GHSA-rgw5-rvv9-x895
   - GHSA-w3rx-r6r6-pgpr
   - GHSA-5p2g-fcmc-qvqq

@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import * as z from 'zod'
 export { EXCALIDRAW_LIBRARY_CHANNEL } from './library-channel'
 
 export const EXCALIDRAW_ELEMENT_LIMIT = 50

@@ -8,7 +8,7 @@ import {
   type ModelEntry,
   validateLiteLLMBaseUrlPolicy
 } from '@tinytinkerer/contracts'
-import { z } from 'zod'
+import * as z from 'zod'
 import type { Context, TypedResponse } from 'hono'
 import type { Bindings } from '../lib/bindings'
 import { applyCorsHeaders } from '../lib/cors'

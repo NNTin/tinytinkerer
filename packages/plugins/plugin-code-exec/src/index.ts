@@ -12,7 +12,7 @@ import {
   type SandboxExecutionResult,
   type Tool
 } from '@tinytinkerer/contracts'
-import { z } from 'zod'
+import * as z from 'zod'
 import { CODE_EXEC_PLUGIN_ID } from './plugin-id'
 import { formatFailureReport, formatJavaScript, otherInputFieldsSection } from './format-code'
 import { summarizeCodeExecPermission } from './permission-view'

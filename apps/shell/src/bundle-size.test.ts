@@ -299,9 +299,21 @@ describe('shell bundle regression guard', () => {
     // shell's tightly-budgeted entry chunk flat — pushing it to ~122 kB. A
     // dedicated 126 kB budget absorbs that (plus the remaining #430 slices)
     // without weakening the 120 kB bar for every other chunk.
+    //
+    // Raised 126 → 147 kB (2026-11-06): security fix, not app growth. zod
+    // 4.4.3 → 4.6.7 is required for GHSA-mrhx-c7xc-m3w5 (high; unbounded issue
+    // accumulation in $ZodArray → OOM), fixed only in 4.6.6+ with no 4.4/4.5
+    // backport. zod is pulled into this chunk with app-core/agent-core/
+    // contracts (it is their static dependency), and the newer zod alone adds
+    // ~21.5 kB minified: measured 124.4 kB with zod 4.4.3 and 145.9 kB with
+    // 4.6.7 on the same Vite, our own modules unchanged (40.4 / 27.6 / 22.9 kB
+    // rendered). Splitting zod into a separate chunk would only move the bytes,
+    // since this chunk imports it statically. The new ceiling leaves the same
+    // ~1 kB of headroom the old one had; our own code in this chunk gets no
+    // extra allowance from this raise.
     const chunk = chunks.find((entry) => entry.fileName.includes('app-core'))
     expect(chunk, 'No app-core chunk found in build output').toBeDefined()
-    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(126)
+    expect((chunk!.code?.length ?? 0) / 1024).toBeLessThan(147)
   })
 
   it('keeps the shared React vendor chunk under 300 kB', () => {

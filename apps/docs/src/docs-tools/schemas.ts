@@ -14,7 +14,7 @@
  * deliberate: a model branches better on a named string than on a boolean plus a
  * code, and the tool boundary is where the two vocabularies meet.
  */
-import { z } from 'zod'
+import * as z from 'zod'
 
 /** Locked by #477. A caller asking for more is clamped, not rejected. */
 export const MAX_READ_CHARS = 20_000

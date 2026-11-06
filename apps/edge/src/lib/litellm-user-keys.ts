@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import * as z from 'zod'
 import { captureTelemetryMessage } from '@tinytinkerer/sentry-telemetry'
 import type { Bindings } from './bindings'
 import type { CallerIdentity } from './caller-validation'

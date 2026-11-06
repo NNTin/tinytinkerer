@@ -15,12 +15,12 @@
   },
   "dependencies": {
     "@hono/zod-openapi": "1.4.0",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@sentry/cloudflare": "10.55.0",
     "@tinytinkerer/contracts": "workspace:*",
     "@tinytinkerer/sentry-telemetry": "workspace:*",
-    "hono": "4.12.34",
-    "zod": "4.4.3"
+    "hono": "4.13.14",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@sentry/cli": "3.4.3",

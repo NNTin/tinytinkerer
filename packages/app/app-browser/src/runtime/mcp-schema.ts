@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import * as z from 'zod'
 
 // Minimal JSON Schema → Zod compiler that gives an MCP tool's discovered input
 // contract a LOCAL TRIAGE check at execution (previously every MCP tool used a

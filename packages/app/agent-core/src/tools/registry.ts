@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import * as z from 'zod'
 import type { Tool } from '@tinytinkerer/contracts'
 
 // The pure Tool interface moved to @tinytinkerer/contracts (the leaf) so plugin
