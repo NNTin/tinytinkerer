@@ -272,6 +272,14 @@ export const createBrowserApp = (
     // The app's grounding/answer policy (issue #478). Threaded down to the chat
     // store / runtime AND held on the app for the transcript renderer.
     appAssistantPolicy?: AppAssistantPolicy
+    /**
+     * How many steps one chat turn may take (issue #510, T4). Every decision the
+     * agent makes counts, so a ReAct turn gets `maxIterations - 1` tool calls
+     * plus its closing decision before it synthesizes from what it has. Omitted
+     * keeps the runtime default (`DEFAULT_MAX_ITERATIONS`, 16), which is enough
+     * for an iterative MCP workflow of ten or more sequential calls.
+     */
+    maxIterations?: number
     starterPrompts?: readonly string[]
     // Which document-global effects this app owns (issue #479). Omitted means
     // "owns everything", the correct answer for a document with one app.
@@ -346,6 +354,7 @@ export const createBrowserApp = (
     ...(humanPrompts ? { humanPrompts: humanPrompts.getState() } : {}),
     ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
     ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
+    ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
     // The outbound-send coordinator (issue #481), supplied only by an app that
     // declares a disclosure. Reached through a dynamic import so the gate's
     // store and dialog stay out of every shell's startup entry, and closing over

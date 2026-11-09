@@ -28,7 +28,17 @@ import { MAX_AUTO_RETRY_AFTER_MS, withTimeout } from './utils'
 // never reported.
 export type RuntimeErrorReporter = (error: Error) => void
 
+// The per-turn step bound (issue #510, T4): how many decisions a turn may take
+// before the runtime stops and synthesizes from what it has. In the ReAct loop
+// every decision counts, the closing "final" one included, so 16 leaves room for
+// fifteen tool calls — an iterative MCP workflow (create a project, place parts,
+// wire, check, fix, check again, plan, export) needs ten or more, which the old
+// default of 5 cut off half way. Plan-execute caps its plan at this many steps
+// and Hybrid caps its total sub-loop iterations at it.
+export const DEFAULT_MAX_ITERATIONS = 16
+
 export type AgentRuntimeOptions = {
+  /** Per-turn step bound. Defaults to {@link DEFAULT_MAX_ITERATIONS}. */
   maxIterations?: number
   maxToolCallsPerStep?: number
   toolTimeoutMs?: number
@@ -167,7 +177,7 @@ export abstract class AgentRuntimeBase {
     protected readonly registry: ToolRegistry,
     options: AgentRuntimeOptions = {}
   ) {
-    this.maxIterations = options.maxIterations ?? 5
+    this.maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS
     this.maxToolCallsPerStep = options.maxToolCallsPerStep ?? 1
     this.toolTimeoutMs = options.toolTimeoutMs ?? 10_000
     this.stepTimeoutMs = options.stepTimeoutMs ?? 15_000

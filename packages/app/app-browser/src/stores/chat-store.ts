@@ -131,6 +131,9 @@ export const createChatStore = (options: {
   // The host app's grounding/answer policy (issue #478). Forwarded to the
   // runtime factory; absent for every app that contributes none.
   appAssistantPolicy?: AppAssistantPolicy
+  // The host app's per-turn step bound (issue #510, T4). Forwarded to the
+  // runtime factory; absent keeps agent-core's default.
+  maxIterations?: number
   /**
    * This app's human-in-the-loop queue, as the two callbacks this store and the
    * runtime it builds actually need (issue #489).
@@ -240,6 +243,7 @@ export const createChatStore = (options: {
         pluginModules,
         ...(options.appToolGroup ? { appToolGroup: options.appToolGroup } : {}),
         ...(options.appAssistantPolicy ? { appAssistantPolicy: options.appAssistantPolicy } : {}),
+        ...(options.maxIterations !== undefined ? { maxIterations: options.maxIterations } : {}),
         // This app's prompt queue (issue #489). The factory tags each request
         // with the run's conversation id and hands the result to the PluginHost;
         // omitting it — which only a directly-constructed store does — leaves

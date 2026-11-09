@@ -34,6 +34,10 @@ export type {
 // than a hard error, mirroring how RateLimitError is re-exported here.
 export { RuntimeTimeoutError, isRuntimeTimeoutError } from '@tinytinkerer/agent-core'
 
+// The per-turn step bound's default (issue #510, T4), surfaced so a host that
+// documents or clamps its own `maxIterations` reads the one source of truth.
+export { DEFAULT_MAX_ITERATIONS } from '@tinytinkerer/agent-core'
+
 // Re-export the plugin runtime surface so app-browser composes plugins through
 // the app-core boundary, mirroring how `Tool` is surfaced here.
 export { PluginRegistry, isPluginModule } from '@tinytinkerer/agent-core'

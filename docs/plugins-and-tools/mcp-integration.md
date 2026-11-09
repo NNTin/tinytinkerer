@@ -36,17 +36,45 @@ Before the edge call, `createMcpTool` runs the model's arguments through a **loc
 
 Because the gap is invisible at the call site, treat this as triage only: **keep the remote server's validation and the tool's own error handling** — do not remove them on the strength of this local check.
 
-### 4 — Planning
+### 4 — The tool-calling loop
 
-If the user is signed in with GitHub and at least one MCP tool is registered, the planner sends a one-shot request to `/api/models/chat` asking the model to produce a JSON `ExecutionPlan` that names which tools to call and what arguments to pass. On any failure it falls back to the keyword-based `inferPlan` heuristic.
+MCP tools are ordinary entries in the run's `ToolRegistry`, next to plugin tools and the host app's own tools. Every agent strategy sees the same registry, so they all get MCP tools the same way.
+
+The default agent is **ReAct** (`agentType: 'react'`). It runs the native tool-calling loop:
+
+1. The browser sends `/api/models/chat` the conversation so far, with every registered tool advertised as a native function (`tool_choice: 'auto'`). Tool ids are sanitized into wire names, so `mcp:kiprint:add_wires` is advertised as `mcp_kiprint_add_wires`.
+2. The model answers with one `tool_calls` entry, or with plain content once it has enough.
+3. The runtime runs that tool and appends the call and its result to the conversation as an `assistant` `tool_calls` message plus a `tool` result message.
+4. The next decision sees every earlier result, so it can use a value one call returned (a `projectId`, a reported fault) as an argument to the next.
+
+The loop repeats until the model stops calling tools or the turn reaches its **step bound**.
+
+#### Step bound
+
+`maxIterations` bounds the decisions in one turn. It defaults to **16** (`DEFAULT_MAX_ITERATIONS` in agent-core). Every decision counts, including the closing one with no tool call. So a default turn can make up to 15 tool calls. When the bound is reached, the runtime stops calling tools and answers from the results it has.
+
+A host sets its own bound with `createBrowserApp(config, { …, maxIterations })`. The bound applies to all tools alike.
+
+An iterative MCP workflow fits in one turn. For example, KiPrint's: `create_project` → `add_components` → `add_wires` → `check_project` → `remove_items` → `add_wires` → `check_project` → `plan_guide` → `export_project` → `get_project`. That is ten calls, each chosen after reading the result of the one before. `packages/app/app-browser/tests/mcp-multi-step.test.ts` runs exactly this sequence against a stateful mock MCP server.
+
+#### Other agent types
+
+Users can switch the agent type in Settings:
+
+- **Plan-then-Execute** (`plan-execute`) asks the model once for a JSON `ExecutionPlan` (`mcp-planner.ts`), then runs its steps in order. Arguments are fixed when the plan is made, so a step cannot use an earlier step's result. Plans are capped at `maxIterations` steps. If the planner request fails in transport, the browser falls back to the keyword-based `inferPlan` heuristic.
+- **Hybrid** (`hybrid`) makes a plan, then runs each plan step as a short ReAct sub-loop of up to 3 decisions. If a step gets stuck, it replans once. The total across all sub-loops is capped at `maxIterations`.
+
+Use ReAct for iterative MCP work.
 
 ### 5 — Tool call
 
-The agent runtime executes each step in the plan. When a step carries a `toolCall` for an MCP tool, `createMcpTool`'s `execute` function calls `POST /api/mcp/call` on the edge, which opens a fresh MCP connection, calls the named tool, and returns a normalized result.
+When the model calls an MCP tool, `createMcpTool`'s `execute` function calls `POST /api/mcp/call` on the edge. The edge opens a fresh MCP connection, calls the named tool, and returns a normalized result. The result goes back to the model unmodified as the `tool` message, and the loop continues.
+
+A failed call becomes an observation as well. The model sees the error and can correct its arguments on the next step.
 
 ### 6 — Synthesis
 
-Tool results are included in the synthesis prompt alongside any web search results. The assistant composes its answer from all gathered context.
+Once the loop ends, the assistant composes its answer from the whole conversation, including every tool call and result, with tool calls disabled (`tool_choice: 'none'`).
 
 ---
 
@@ -66,15 +94,17 @@ sequenceDiagram
     E-->>U: { serverName, tools[], syncedAt }
     U->>S: persist discovery result
 
-    Note over U,M: Chat run
+    Note over U,M: Chat run (ReAct)
     U->>U: createRuntime()<br/>registers mcp:<id>:<toolName> tools
-    U->>E: POST /api/models/chat<br/>planning prompt with tool descriptors
-    E-->>U: ExecutionPlan JSON
-    U->>E: POST /api/mcp/call<br/>{ url, toolName, arguments }
-    E->>M: MCP initialize + callTool
-    M-->>E: tool result
-    E-->>U: { text, raw, isError }
-    U->>E: POST /api/models/chat<br/>synthesis with tool results
+    loop until no tool call, or maxIterations decisions
+        U->>E: POST /api/models/chat<br/>messages + tool results so far, tools, tool_choice auto
+        E-->>U: tool_calls[0] (or plain content: done)
+        U->>E: POST /api/mcp/call<br/>{ url, toolName, arguments }
+        E->>M: MCP initialize + callTool
+        M-->>E: tool result
+        E-->>U: { text, raw, isError }
+    end
+    U->>E: POST /api/models/chat<br/>synthesis with every tool result, tool_choice none
     E-->>U: streamed assistant response
 ```
 
@@ -87,7 +117,8 @@ flowchart TD
         surface["useSettingsSurfaceController\naddMcpServer / refreshMcpServer"]
         modal["BrowserSettingsModal\nMcpServerList component"]
         runtime["createRuntime\nregisters mcp:* tools"]
-        planner["mcp-planner.ts\nllmPlan()"]
+        decider["react-decider.ts\nnative tool_calls loop"]
+        planner["mcp-planner.ts\nllmPlan() (plan-execute / hybrid)"]
         tool["mcp-tool.ts\ncreateMcpTool()"]
         fetch["edge-fetch.ts\ncreateEdgeFetch()"]
     end
@@ -112,8 +143,10 @@ flowchart TD
     fetch --> discover
     fetch --> mcpcall
     runtime --> tool
+    runtime --> decider
     runtime --> planner
     tool --> fetch
+    decider --> fetch
     planner --> fetch
     discover --> sdk
     mcpcall --> sdk
@@ -239,27 +272,24 @@ Suppose you have a Streamable HTTP MCP server at `https://mcp.example.com/weathe
 
 Ask: _"What's the weather in Berlin right now?"_
 
-The LLM planner sees the `get_current_weather` tool descriptor and generates a plan like:
+The model sees `get_current_weather` among the advertised functions and answers with a native tool call:
 
 ```json
 {
-  "complexity": "medium",
-  "steps": [
-    { "id": "understand", "summary": "Understand the user's location query" },
+  "tool_calls": [
     {
-      "id": "weather",
-      "summary": "Fetch current weather for Berlin",
-      "toolCall": {
-        "toolId": "mcp:<serverId>:get_current_weather",
-        "input": { "location": "Berlin" }
+      "id": "call_1",
+      "type": "function",
+      "function": {
+        "name": "mcp_<serverId>_get_current_weather",
+        "arguments": "{\"location\":\"Berlin\"}"
       }
-    },
-    { "id": "compose", "summary": "Compose the answer from weather data" }
+    }
   ]
 }
 ```
 
-The tool call flows through the edge proxy to the remote MCP server, and the result is included in the synthesis prompt.
+The call goes through the edge proxy to the remote MCP server. The result goes back to the model, which can call another tool or stop. The answer is then synthesized from every result.
 
 ### What the turn activity panel shows
 
@@ -297,5 +327,5 @@ The server does not need to support resources, prompts, or sampling for V1 compa
 | Remote OAuth for MCP servers | Users manage tokens manually via Bearer token field                          |
 | SSE fallback transport       | Streamable HTTP is the standard remote transport                             |
 | stdio servers                | Browser-to-local-process communication is not feasible without a local proxy |
-| Multiple tool calls per step | The agent runtime is capped at one tool call per step by default             |
+| Parallel tool calls          | One tool call per step; a turn makes up to `maxIterations - 1` of them       |
 | Streaming tool results       | MCP call results are collected in full before being returned                 |
