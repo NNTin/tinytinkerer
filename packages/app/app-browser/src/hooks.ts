@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   canStartGitHubOAuth,
   completeGitHubOAuthCallback,
@@ -54,4 +54,35 @@ export const useGitHubOAuth = () => {
     }),
     [app]
   )
+}
+
+/**
+ * This app's sign-in route: a host-provided `signIn` wins over the shell's own
+ * GitHub OAuth when present (an embedder that supplies one has, by definition,
+ * decided where its readers authenticate). `signIn` reports whether the flow
+ * actually started; `false` means the deployment cannot begin one.
+ */
+export const useAppSignIn = (): {
+  canSignIn: boolean
+  signIn: () => boolean
+  hasHostSignIn: boolean
+} => {
+  const appSignIn = useBrowserApp().signIn
+  const { canStartGitHubOAuth, startGitHubOAuth } = useGitHubOAuth()
+  const signIn = useCallback((): boolean => {
+    if (appSignIn) {
+      return appSignIn()
+    }
+    if (!canStartGitHubOAuth) {
+      return false
+    }
+    startGitHubOAuth()
+    return true
+  }, [appSignIn, canStartGitHubOAuth, startGitHubOAuth])
+
+  return {
+    canSignIn: appSignIn !== undefined || canStartGitHubOAuth,
+    signIn,
+    hasHostSignIn: appSignIn !== undefined
+  }
 }

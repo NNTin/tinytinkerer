@@ -111,7 +111,7 @@ export const authExchangeRoute = createRoute({
       content: json(githubExchangeResponseSchema)
     },
     400: {
-      description: 'Invalid code or failed exchange',
+      description: 'Invalid code, disallowed redirect URI, or failed exchange',
       content: json(githubExchangeResponseSchema)
     },
     501: {

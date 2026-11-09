@@ -10,7 +10,17 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 // level) with trivial mocked bodies, and assert the toggle + mode persistence.
 
 vi.mock('../src/hooks.js', () => ({
-  useBrowserShellConfig: () => ({ theme: undefined })
+  useBrowserShellConfig: () => ({ theme: undefined }),
+  useAppSignIn: () => ({ canSignIn: false, signIn: () => false, hasHostSignIn: false })
+}))
+
+// The layout asks whether a signed-out reader must sign in first (issue #510);
+// a default 'hybrid' app never does, so the bodies always render here. That
+// path has its own suite (sign-in-required.test.tsx) against a real app.
+vi.mock('../src/app.js', () => ({
+  useBrowserApp: () => ({ shell: { config: { authMode: 'hybrid' } } }),
+  useAuthStore: <T,>(selector: (state: { token: string | null }) => T): T =>
+    selector({ token: null })
 }))
 
 vi.mock('../src/shell-theme.js', () => ({

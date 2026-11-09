@@ -181,6 +181,11 @@ Anonymous users use the same model list as authenticated users
 - `GITHUB_ALLOWED_USERS` (var, optional) — comma-separated GitHub numeric ids or
   logins allowed to use model/search/MCP routes. Empty allows any valid GitHub
   token. This does not affect anonymous users (they are always allowed).
+- `REQUIRE_AUTH_ORIGINS` (var, optional) — comma-separated browser origins that
+  get no anonymous path: their token-less models/search/MCP requests are a `401`
+  and never use the anonymous key. Their signed-in users share the same per-user
+  key, budget and rate limits as everywhere else on this edge. See
+  [Required sign-in per origin](vercel-deployment.md#required-sign-in-per-origin).
 
 The edge validates the base URL strictly: it must be `https://`, with no
 username/password, query string, or fragment. A plain-HTTP or otherwise
@@ -191,8 +196,8 @@ account. The edge verifies the caller with GitHub's `/user` API, reads the
 returned `id` and `login`, and then uses or provisions a key alias like
 `tinytinkerer-<namespace>-github-<id>` with `user_id=github-<id>`.
 
-**Chat requests from unauthenticated users** (no Authorization header) use a
-shared anonymous key. The edge provisions it as `tinytinkerer-<namespace>-anonymous`
+**Chat requests from unauthenticated users** (no Authorization header, from an
+origin not in `REQUIRE_AUTH_ORIGINS`) use a shared anonymous key. The edge provisions it as `tinytinkerer-<namespace>-anonymous`
 with `user_id=anonymous` on first request.
 
 Both key types use the same provisioning endpoints and the same HMAC derivation

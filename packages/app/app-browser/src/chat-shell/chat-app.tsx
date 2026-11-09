@@ -7,10 +7,13 @@ import {
   type ChatMode,
   type ChatPresentation
 } from '../chat-presentation'
+import { useAuthStore, useBrowserApp } from '../app'
+import { isSignInRequired } from '../auth'
 import { useHumanPromptSurface } from '../human-prompt-presentation'
 import { DockedChatSurface } from './docked-chat-surface'
 import { FloatingChatSurface, type ChatLoadingComponent } from './floating-chat-surface'
 import { FloatingLayout } from './floating-layout'
+import { SignInRequiredPanel } from './sign-in-required-panel'
 import { SidebarLayout } from './sidebar-layout'
 import type { DockedSizeVariant } from './docked-chat-surface'
 import type { SnapEdge } from './layout-geometry'
@@ -126,6 +129,12 @@ const ChatAppLayout = ({
   const { pending: pendingPrompt, presentation: promptPresentation } = useHumanPromptSurface()
   const composerPromptWaiting = pendingPrompt !== undefined && promptPresentation === 'composer'
 
+  // An app that requires sign-in (`authMode: 'oauth'`) renders a call to action
+  // instead of the chat body while signed out, so nothing reaches the edge.
+  const signInRequired = isSignInRequired(useBrowserApp().shell)
+  const signedIn = useAuthStore((state) => state.token !== null)
+  const showSignIn = signInRequired && !signedIn
+
   const morphTo = (mode: ChatMode, edge?: SnapEdge): void => {
     onPresentationChange(
       setChatPresentationMode(
@@ -150,15 +159,19 @@ const ChatAppLayout = ({
         fill={fill}
         {...(morphable ? { onUndock: () => morphTo('floating') } : {})}
       >
-        <DockedChatSurface
-          LoadingComponent={LoadingComponent}
-          sizeVariant={sizeVariant}
-          installSlot={installSlot}
-          settingsFallback={settingsFallback}
-          {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
-          {...(starterPrompts !== undefined ? { starterPrompts } : {})}
-          {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
-        />
+        {showSignIn ? (
+          <SignInRequiredPanel />
+        ) : (
+          <DockedChatSurface
+            LoadingComponent={LoadingComponent}
+            sizeVariant={sizeVariant}
+            installSlot={installSlot}
+            settingsFallback={settingsFallback}
+            {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
+            {...(starterPrompts !== undefined ? { starterPrompts } : {})}
+            {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
+          />
+        )}
       </SidebarLayout>
     )
   }
@@ -186,13 +199,17 @@ const ChatAppLayout = ({
           }
         : {})}
     >
-      <FloatingChatSurface
-        LoadingComponent={LoadingComponent}
-        framed={framed}
-        {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
-        {...(starterPrompts !== undefined ? { starterPrompts } : {})}
-        {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
-      />
+      {showSignIn ? (
+        <SignInRequiredPanel />
+      ) : (
+        <FloatingChatSurface
+          LoadingComponent={LoadingComponent}
+          framed={framed}
+          {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
+          {...(starterPrompts !== undefined ? { starterPrompts } : {})}
+          {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
+        />
+      )}
     </FloatingLayout>
   )
 }

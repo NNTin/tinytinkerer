@@ -4,6 +4,13 @@ export type Bindings = {
   TAVILY_API_KEY?: string
   ALLOWED_ORIGIN?: string
   ALLOWED_ORIGINS?: string
+  /**
+   * Comma-separated origins (same syntax as ALLOWED_ORIGINS) whose requests to
+   * the models, search and MCP routes must carry a GitHub token: without one
+   * they get 401 and never use the anonymous LiteLLM key. See
+   * lib/require-auth-origins.ts.
+   */
+  REQUIRE_AUTH_ORIGINS?: string
   /** Set to 'true' to allow all origins (dev only). When absent, no CORS header is sent. */
   ALLOW_ALL_ORIGINS?: string
   /** LiteLLM key with permission to create/update/read virtual keys. */

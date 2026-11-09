@@ -20,7 +20,10 @@
   // develop edge (see env.develop), so the preview wildcard is intentionally
   // absent here.
   "vars": {
-    "ALLOWED_ORIGINS": "http://localhost:3111,https://tiny.nntin.xyz",
+    // CanFactory (issue #510) embeds the assistant and requires sign-in: it is
+    // listed in both ALLOWED_ORIGINS and REQUIRE_AUTH_ORIGINS.
+    "ALLOWED_ORIGINS": "http://localhost:3111,https://tiny.nntin.xyz,https://canfactory.nntin.xyz",
+    "REQUIRE_AUTH_ORIGINS": "https://canfactory.nntin.xyz",
     "LITELLM_BASE_URL": "https://litellm.nntin.xyz/",
     "LITELLM_ALLOWED_BASE_URLS": "https://litellm.nntin.xyz/",
     "LITELLM_USER_MAX_BUDGET_USD": "1",
@@ -47,7 +50,10 @@
         }
       ],
       "vars": {
-        "ALLOWED_ORIGINS": "http://localhost:3111,https://dev.tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz",
+        // CanFactory's preview and local dev server (issue #510): CORS-allowed
+        // and sign-in required. localhost:5173 is on the develop edge only.
+        "ALLOWED_ORIGINS": "http://localhost:3111,https://dev.tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz,https://canfactory-preview.nntin.xyz,http://localhost:5173",
+        "REQUIRE_AUTH_ORIGINS": "https://canfactory-preview.nntin.xyz,http://localhost:5173",
         "LITELLM_BASE_URL": "https://litellm.nntin.xyz/",
         "LITELLM_ALLOWED_BASE_URLS": "https://litellm.nntin.xyz/",
         "LITELLM_USER_MAX_BUDGET_USD": "1",
@@ -75,6 +81,10 @@
   //   requests per caller per window for the OAuth exchange (default 10),
   //   search (default 30), and MCP (default 60) routes; "0" disables that
   //   scope's limit. See src/lib/inbound-rate-limit.ts.
+  // - REQUIRE_AUTH_ORIGINS: comma-separated origins (ALLOWED_ORIGINS syntax)
+  //   whose models/search/MCP requests must carry a GitHub token; without one
+  //   they get 401 and never use the anonymous LiteLLM key. Unset keeps the
+  //   anonymous path for every origin. See src/lib/require-auth-origins.ts.
   // - GITHUB_ALLOWED_USERS: comma-separated GitHub ids or logins allowed to use
   //   model/search/MCP proxy routes. Unset allows any valid GitHub token.
   // - LITELLM_USER_MODELS: comma-separated LiteLLM model aliases assigned to

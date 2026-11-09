@@ -13,13 +13,18 @@ const authExchange = (env: Record<string, string>, ip = '203.0.113.1') =>
   app.fetch(
     new Request('http://localhost/auth/github/exchange', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'cf-connecting-ip': ip },
+      headers: {
+        'content-type': 'application/json',
+        'cf-connecting-ip': ip,
+        origin: 'http://localhost:3111'
+      },
       body: JSON.stringify({
         code: 'abcdefghij0123456789',
         redirectUri: 'http://localhost:3111/callback'
       })
     }),
-    env
+    // The exchange requires the redirect URI's origin to be CORS-allowed.
+    { ALLOWED_ORIGINS: 'http://localhost:3111', ...env }
   )
 
 const search = (env: Record<string, string>, authorization?: string) =>

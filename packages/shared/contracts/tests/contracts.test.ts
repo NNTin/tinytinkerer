@@ -93,6 +93,8 @@ describe('contracts', () => {
         redirectUri: 'https://example.com/callback'
       }).code
     ).toBe('abc')
+    // The edge validates the redirect URI's origin, so it is no longer optional.
+    expect(githubExchangeRequestSchema.safeParse({ code: 'abc' }).success).toBe(false)
 
     expect(
       searchResponseSchema.parse({

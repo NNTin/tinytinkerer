@@ -33,13 +33,25 @@ const parseHashQuery = (hash: string): OAuthCallbackParams => {
  * part. Search wins when both happen to carry a code (it is the standard place
  * to look; the hash fallback exists only for the hash-router redirect case).
  */
-export const readOAuthCallbackParams = (): OAuthCallbackParams => {
-  const searchParams = new URLSearchParams(window.location.search)
+export const readOAuthCallbackParams = (): OAuthCallbackParams =>
+  readOAuthCallbackParamsFrom(window.location)
+
+/**
+ * {@link readOAuthCallbackParams} for an explicit URL. Works for both callback
+ * shapes: the shells' hash-routed `…/#/auth/callback?code=…` and an embedding
+ * host's plain path `…/auth/github/callback?code=…` (see
+ * GITHUB_OAUTH_CALLBACK_PATH in auth.ts), where GitHub's response is an
+ * ordinary query string.
+ */
+export const readOAuthCallbackParamsFrom = (
+  url: Pick<URL, 'search' | 'hash'>
+): OAuthCallbackParams => {
+  const searchParams = new URLSearchParams(url.search)
   if (searchParams.get('code')) {
     return { code: searchParams.get('code'), state: searchParams.get('state') }
   }
 
-  return parseHashQuery(window.location.hash)
+  return parseHashQuery(url.hash)
 }
 
 /** True when the current URL carries a GitHub OAuth `code`, in either location. */

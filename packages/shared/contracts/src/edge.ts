@@ -390,7 +390,11 @@ export type RateLimitPayload = z.infer<typeof rateLimitPayloadSchema>
 export const githubExchangeRequestSchema = z
   .object({
     code: z.string().min(1),
-    redirectUri: z.string().url().optional()
+    // Required (issue #510 T5): the edge only exchanges a code whose
+    // redirect_uri origin equals the request Origin and passes its CORS
+    // allowlist, so a host on another origin cannot complete OAuth for a
+    // callback it does not own.
+    redirectUri: z.string().url()
   })
   .meta({ id: 'GitHubExchangeRequest' })
 

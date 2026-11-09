@@ -1,3 +1,13 @@
+/**
+ * How this shell authenticates.
+ *
+ * - `'hybrid'` (default): anonymous use on the shared key, with optional GitHub
+ *   sign-in through this shell's own OAuth.
+ * - `'oauth'`: sign-in REQUIRED (issue #510). A signed-out `ChatApp` shows a
+ *   sign-in call to action instead of the chat and sends nothing to the edge.
+ * - `'host-token'`: the host supplies the token (`hostToken`); this shell never
+ *   starts OAuth itself.
+ */
 export type BrowserAuthMode = 'oauth' | 'host-token' | 'hybrid'
 
 // Optional host-supplied theme (B4). An embedding page may pass colour values
