@@ -71,6 +71,11 @@ describe('IDE bundle regression guard', () => {
     const codeMirror = chunks.find((chunk) => chunk.fileName.includes('codemirror-vendor'))
     expect(stage).toBeDefined()
     expect(codeMirror).toBeDefined()
+    // Issue #510 T5's sign-in gate in `ChatApp` lands in this chunk too; the
+    // dedupes that pay for it in the shell chat chunk (shared ThinkingDots, one
+    // lightbox action class) bring it to 259.891 kB (develop 259.809) — under
+    // the ceiling without a raise. This build keeps identifier names, so a new
+    // shared module costs its names here even when it saves bytes elsewhere.
     expect((stage?.code?.length ?? 0) / 1024).toBeLessThan(260)
     expect((codeMirror?.code?.length ?? 0) / 1024).toBeLessThan(800)
   })

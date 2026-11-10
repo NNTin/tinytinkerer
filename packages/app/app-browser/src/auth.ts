@@ -21,10 +21,38 @@ const generateState = (): string => {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
 }
 
+/**
+ * The non-hash callback path an embedding host registers as its
+ * `githubRedirectUri` (issue #510 T5), e.g.
+ * `https://canfactory.nntin.xyz/auth/github/callback`. It sits outside `/api/`
+ * and needs no client-side router: on load the host checks
+ * `location.pathname === GITHUB_OAUTH_CALLBACK_PATH` and calls
+ * `completeGitHubOAuth` (host-oauth-callback.ts). tinytinkerer's own shells keep their hash-routed
+ * `…/#/auth/callback`.
+ */
+export const GITHUB_OAUTH_CALLBACK_PATH = '/auth/github/callback'
+
+/**
+ * Whether this shell can run its own GitHub OAuth. Needs a client id AND a
+ * redirect URI: the edge only exchanges a code whose redirect URI is on the
+ * calling page's own origin, so a flow without one could never complete.
+ */
 export const canStartGitHubOAuth = (shell: BrowserShell): boolean => {
   const config = shell.config
-  return config.authMode !== 'host-token' && Boolean(config.githubClientId)
+  return (
+    config.authMode !== 'host-token' &&
+    Boolean(config.githubClientId) &&
+    Boolean(config.githubRedirectUri)
+  )
 }
+
+/**
+ * True when this shell offers no anonymous use: `authMode: 'oauth'` means a
+ * signed-out reader must sign in before anything is sent to the edge (the
+ * signed-out `ChatApp` shows a sign-in call to action instead of the chat).
+ * The default `'hybrid'` keeps answering anonymously on the shared key.
+ */
+export const isSignInRequired = (shell: BrowserShell): boolean => shell.config.authMode === 'oauth'
 
 const createGitHubLoginUrl = (shell: BrowserShell): string => {
   if (!canStartGitHubOAuth(shell)) {
@@ -108,6 +136,9 @@ export const consumeGitHubOAuthReturnUrl = (shell: BrowserShell): string | null 
 
 const exchangeCode = async (shell: BrowserShell, code: string): Promise<string> => {
   const config = shell.config
+  if (!config.githubRedirectUri) {
+    throw new Error('GitHub sign-in is not configured for this page.')
+  }
   const metadata: RequestTelemetryMetadata = {
     area: 'auth.exchange',
     origin: 'edge',
@@ -117,10 +148,8 @@ const exchangeCode = async (shell: BrowserShell, code: string): Promise<string> 
   const response = await fetchWithTelemetry(metadata, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...getTelemetryHeaders() },
-    body: JSON.stringify({
-      code,
-      ...(config.githubRedirectUri ? { redirectUri: config.githubRedirectUri } : {})
-    })
+    // Required by the edge, which checks its origin against this page's Origin.
+    body: JSON.stringify({ code, redirectUri: config.githubRedirectUri })
   })
 
   if (!response.ok) {

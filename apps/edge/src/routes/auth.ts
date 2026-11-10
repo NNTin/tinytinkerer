@@ -4,6 +4,7 @@ import { captureTelemetryException } from '@tinytinkerer/sentry-telemetry'
 import * as z from 'zod'
 import type { Context, TypedResponse } from 'hono'
 import type { Bindings } from '../lib/bindings'
+import { isOriginAllowed } from '../lib/cors'
 import { fetchWithTimeout } from '../lib/fetch'
 import { safeJsonParse } from '../lib/json'
 import { authExchangeRoute } from '../openapi/routes'
@@ -74,6 +75,31 @@ const oauthUpstreamFailure = (
 ): TypedResponse<GitHubExchangeResponse, 502, 'json'> =>
   c.json(githubExchangeResponseSchema.parse({ error: 'OAuth exchange failed' }), 502)
 
+/**
+ * The redirect URI the code was issued for must belong to the page performing
+ * the exchange: its origin equals the request `Origin`, and that origin passes
+ * the same CORS allowlist the edge answers browsers with (so e.g.
+ * `http://localhost:5173` is only accepted where ALLOWED_ORIGINS lists it).
+ * GitHub's own callback-URL check accepts any subdomain of the OAuth App's
+ * registered host, which is how tinytinkerer's previews and embedding hosts
+ * such as CanFactory share one app; this narrows that to origins this edge
+ * serves. A request with no `Origin` (non-browser) is rejected too.
+ */
+const isRedirectUriAllowed = (
+  env: Bindings,
+  requestOrigin: string | null,
+  redirectUri: string
+): boolean => {
+  if (!requestOrigin) return false
+  let redirectOrigin: string
+  try {
+    redirectOrigin = new URL(redirectUri).origin
+  } catch {
+    return false
+  }
+  return redirectOrigin === requestOrigin && isOriginAllowed(env, requestOrigin)
+}
+
 export const registerAuthRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => {
   app.openapi(authExchangeRoute, async (c) => {
     const { code, redirectUri } = c.req.valid('json')
@@ -82,6 +108,15 @@ export const registerAuthRoutes = (app: OpenAPIHono<{ Bindings: Bindings }>) => 
       return c.json(
         githubExchangeResponseSchema.parse({
           error: 'Invalid OAuth code format'
+        }),
+        400
+      )
+    }
+
+    if (!isRedirectUriAllowed(c.env, c.req.header('origin') ?? null, redirectUri)) {
+      return c.json(
+        githubExchangeResponseSchema.parse({
+          error: 'Invalid OAuth redirect URI'
         }),
         400
       )

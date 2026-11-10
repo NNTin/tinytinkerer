@@ -74,6 +74,15 @@ Why use a parent-domain callback URL:
 
 If you set a fixed `VITE_GITHUB_REDIRECT_URI` in Vercel, preview auth will stop being dynamic. Leave that variable unset unless you intentionally want a fixed callback URL.
 
+The edge narrows GitHub's subdomain rule to origins it serves. `POST /auth/github/exchange`
+requires `redirectUri`, its origin must equal the request's `Origin`, and that origin must pass
+`ALLOWED_ORIGINS` (section 3.1). Otherwise the edge answers `400 Invalid OAuth redirect URI`
+without calling GitHub. The callback page always posts its own redirect URI, so your own surfaces
+and every PR preview keep working unchanged. An embedding host on another subdomain of the
+registered parent (e.g. `https://canfactory.nntin.xyz/auth/github/callback`) can reuse the same
+OAuth App once its origin is in `ALLOWED_ORIGINS`. See
+[GitHub sign-in for embedding hosts](../extending/host-sign-in.md).
+
 ### 1.2 Add GitHub Repository Secrets
 
 In the GitHub repository:
@@ -199,16 +208,44 @@ Production (top-level):
 
 - custom domain route: `api.tiny.nntin.xyz`
 - `workers_dev: false`
-- `ALLOWED_ORIGINS=http://localhost:3111,https://tiny.nntin.xyz`
+- `ALLOWED_ORIGINS=http://localhost:3111,https://tiny.nntin.xyz,https://canfactory.nntin.xyz`
+- `REQUIRE_AUTH_ORIGINS=https://canfactory.nntin.xyz`
 - `SENTRY_ENVIRONMENT=production`
 
 Develop (`env.develop`, worker name `tinytinkerer-edge-develop`):
 
 - custom domain route: `api.dev.tiny.nntin.xyz`
-- `ALLOWED_ORIGINS=http://localhost:3111,https://dev.tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz`
+- `ALLOWED_ORIGINS=http://localhost:3111,https://dev.tiny.nntin.xyz,https://*.tiny.preview.nntin.xyz,https://canfactory-preview.nntin.xyz,http://localhost:5173`
   (the preview wildcard lives here, not on production, because PR previews call
-  the develop edge)
+  the develop edge; `localhost:5173` is CanFactory's local dev server and is on
+  the develop edge only)
+- `REQUIRE_AUTH_ORIGINS=https://canfactory-preview.nntin.xyz,http://localhost:5173`
 - `SENTRY_ENVIRONMENT=develop`
+
+#### Required sign-in per origin
+
+`REQUIRE_AUTH_ORIGINS` uses the same syntax as `ALLOWED_ORIGINS`: comma-separated, exact origins
+or a single-label `https://*.` wildcard. A browser request from a listed origin must carry a valid
+GitHub token on the models, search and MCP routes.
+
+- **No token:** `401` before the route runs. The shared anonymous LiteLLM key is never used, and no
+  key is minted or looked up.
+- **Invalid token:** `401` from GitHub validation, again before any LiteLLM call.
+- **Valid token:** the usual per-GitHub-user path.
+
+Origins not listed, and requests without an `Origin` header, keep the anonymous path. List an
+origin in both variables: `ALLOWED_ORIGINS` lets the browser read the response, including the
+`401`, and `REQUIRE_AUTH_ORIGINS` removes the anonymous fallback.
+
+This is a browser-origin policy, not an authentication boundary. A non-browser client can omit or
+forge `Origin`. It keeps an embedding host that must not offer anonymous use (CanFactory) from
+silently falling back to it.
+
+**Budgets are shared.** A signed-in reader on a `REQUIRE_AUTH_ORIGINS` host gets the same
+per-GitHub-user LiteLLM key, budget (`LITELLM_USER_MAX_BUDGET_USD` per
+`LITELLM_USER_BUDGET_DURATION`) and RPM/TPM limits as on tinytinkerer itself. Spend on CanFactory
+and on tinytinkerer counts against one allowance per GitHub account and edge. That is accepted for
+now; per-host budgets would need a separate key namespace.
 
 ### 3.2 Create the Cloudflare API Token
 
@@ -386,6 +423,16 @@ Usually caused by one of these:
 - the GitHub OAuth app callback URL is too narrow
 - `VITE_GITHUB_REDIRECT_URI` was set to a fixed URL in Vercel
 - the preview domain is outside the registered parent domain
+
+### Sign-in fails with `Invalid OAuth redirect URI`
+
+The edge refused the exchange before calling GitHub. Usually caused by one of these:
+
+- the page's origin is not in `ALLOWED_ORIGINS` on the edge it calls (e.g. `localhost:5173` against
+  the production edge)
+- `VITE_GITHUB_REDIRECT_URI` / `githubRedirectUri` points at a different origin than the page that
+  completes the callback
+- the callback was completed by a non-browser client (no `Origin` header)
 
 ### Preview deploy succeeds but API calls fail
 

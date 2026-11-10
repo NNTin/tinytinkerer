@@ -20,6 +20,9 @@ new integrated application workspace alongside Canvas, the IDE, Mermaid, and Pix
 - **Concept & reference:** [Integrated application shells](./app-shell.md) — the
   stage/controller/dock contract that Canvas, IDE, Mermaid, and Pixel Agents implement, and the
   ownership boundary between `apps/<app>` and `packages/app/<app>`.
+- **Reference:** [GitHub sign-in for embedding hosts](./host-sign-in.md) — run GitHub OAuth on
+  your own origin with tinytinkerer's OAuth App and edge, and require sign-in before the assistant
+  answers.
 - **Concept & reference:** [Interactive live labs](./interactive-labs.md) — the MDX framework for
   embedding a live, working TinyTinkerer demo directly in a docs page.
 - **Live lab:** [Rich content renderer playground](./rich-content-playground.mdx) — edit markdown

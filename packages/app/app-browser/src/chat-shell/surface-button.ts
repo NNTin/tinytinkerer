@@ -10,3 +10,7 @@ export const surfaceButtonClass = (variant: 'default' | 'secondary', extra = 'h-
       : 'bg-amber-600 text-amber-50 hover:bg-amber-700',
     extra
   ].join(' ')
+
+// Shared by both chat surfaces' sign-in affordance (one copy in the chat route chunk).
+export const SIGN_IN_UNAVAILABLE_NOTICE =
+  'Sign-in is unavailable in this deployment. You can keep asking questions anonymously.'

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { lazy, Suspense, useState, type ReactNode } from 'react'
 import {
   createChatPresentationStore,
   setChatPresentationMinimized,
@@ -7,6 +7,8 @@ import {
   type ChatMode,
   type ChatPresentation
 } from '../chat-presentation'
+import { useAuthStore, useBrowserApp } from '../app'
+import { isSignInRequired } from '../auth'
 import { useHumanPromptSurface } from '../human-prompt-presentation'
 import { DockedChatSurface } from './docked-chat-surface'
 import { FloatingChatSurface, type ChatLoadingComponent } from './floating-chat-surface'
@@ -16,6 +18,27 @@ import type { DockedSizeVariant } from './docked-chat-surface'
 import type { SnapEdge } from './layout-geometry'
 
 export type { ChatMode }
+
+// Lazy: only an app that requires sign-in ever renders it, so it stays out of
+// the shells' chat route chunk (apps/shell/src/bundle-size.test.ts).
+const SignInRequiredPanel = lazy(() => import('./sign-in-required-panel'))
+
+/**
+ * An app that requires sign-in (`authMode: 'oauth'`) renders a call to action
+ * INSTEAD of the chat body while signed out: the body is what talks to the edge,
+ * so leaving it unmounted is what sends the edge nothing (issue #510).
+ */
+const SignInGate = ({ children }: { children: ReactNode }): ReactNode => {
+  const { shell } = useBrowserApp()
+  const signedIn = useAuthStore((state) => state.token !== null)
+  return isSignInRequired(shell) && !signedIn ? (
+    <Suspense fallback={null}>
+      <SignInRequiredPanel />
+    </Suspense>
+  ) : (
+    children
+  )
+}
 
 type ChatAppBaseProps = {
   // Whether the dock/undock toggle is offered (default true). Set false to pin the
@@ -150,15 +173,17 @@ const ChatAppLayout = ({
         fill={fill}
         {...(morphable ? { onUndock: () => morphTo('floating') } : {})}
       >
-        <DockedChatSurface
-          LoadingComponent={LoadingComponent}
-          sizeVariant={sizeVariant}
-          installSlot={installSlot}
-          settingsFallback={settingsFallback}
-          {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
-          {...(starterPrompts !== undefined ? { starterPrompts } : {})}
-          {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
-        />
+        <SignInGate>
+          <DockedChatSurface
+            LoadingComponent={LoadingComponent}
+            sizeVariant={sizeVariant}
+            installSlot={installSlot}
+            settingsFallback={settingsFallback}
+            {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
+            {...(starterPrompts !== undefined ? { starterPrompts } : {})}
+            {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
+          />
+        </SignInGate>
       </SidebarLayout>
     )
   }
@@ -186,13 +211,15 @@ const ChatAppLayout = ({
           }
         : {})}
     >
-      <FloatingChatSurface
-        LoadingComponent={LoadingComponent}
-        framed={framed}
-        {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
-        {...(starterPrompts !== undefined ? { starterPrompts } : {})}
-        {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
-      />
+      <SignInGate>
+        <FloatingChatSurface
+          LoadingComponent={LoadingComponent}
+          framed={framed}
+          {...(inspectorPanelSupported !== undefined ? { inspectorPanelSupported } : {})}
+          {...(starterPrompts !== undefined ? { starterPrompts } : {})}
+          {...(starterPromptCount !== undefined ? { starterPromptCount } : {})}
+        />
+      </SignInGate>
     </FloatingLayout>
   )
 }

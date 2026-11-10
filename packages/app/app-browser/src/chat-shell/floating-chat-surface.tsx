@@ -18,7 +18,7 @@ import {
 } from '../surfaces'
 import { useStickToBottom } from '../use-stick-to-bottom'
 import { SpeechToggleButton } from './speech-toggle-button'
-import { surfaceButtonClass } from './surface-button'
+import { SIGN_IN_UNAVAILABLE_NOTICE, surfaceButtonClass } from './surface-button'
 
 // The compact-session loading/error view, supplied by the host app so each shell
 // keeps its own boot copy and palette.
@@ -283,7 +283,7 @@ export const FloatingChatSurface = ({
           ) : null}
           {signInUnavailable ? (
             <p role="alert" className="mt-1.5 text-[11px] text-rose-600">
-              Sign-in is unavailable in this deployment. You can keep asking questions anonymously.
+              {SIGN_IN_UNAVAILABLE_NOTICE}
             </p>
           ) : null}
         </div>

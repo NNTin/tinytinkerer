@@ -5,6 +5,7 @@ import { scrubEvent } from '@tinytinkerer/sentry-telemetry'
 import type { Bindings } from './lib/bindings'
 import { corsMiddleware } from './lib/cors'
 import { inboundRateLimit } from './lib/inbound-rate-limit'
+import { requireAuthForOrigin } from './lib/require-auth-origins'
 import './lib/sentry'
 import { telemetryMiddleware } from './lib/telemetry'
 import { registerAuthRoutes } from './routes/auth'
@@ -39,6 +40,18 @@ app.use(EDGE_ROUTE_PATHS.authGithubExchange, inboundRateLimit('auth'))
 app.use(EDGE_ROUTE_PATHS.search, inboundRateLimit('search'))
 app.use(EDGE_ROUTE_PATHS.mcpDiscover, inboundRateLimit('mcp'))
 app.use(EDGE_ROUTE_PATHS.mcpCall, inboundRateLimit('mcp'))
+
+// Origins listed in REQUIRE_AUTH_ORIGINS (e.g. CanFactory) must sign in: their
+// token-less requests are a 401 here and never reach the anonymous LiteLLM key.
+for (const path of [
+  EDGE_ROUTE_PATHS.modelsList,
+  EDGE_ROUTE_PATHS.modelsChat,
+  EDGE_ROUTE_PATHS.search,
+  EDGE_ROUTE_PATHS.mcpDiscover,
+  EDGE_ROUTE_PATHS.mcpCall
+]) {
+  app.use(path, requireAuthForOrigin)
+}
 
 registerHealthRoute(app)
 registerAuthRoutes(app)

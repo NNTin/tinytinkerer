@@ -42,12 +42,33 @@ const matchesConfiguredOrigin = (configuredOrigin: string, requestOrigin: string
   return subdomain.length > 0 && !subdomain.includes('.')
 }
 
-const getConfiguredOrigins = (env: Bindings): string[] => {
-  const allowlist = env.ALLOWED_ORIGINS?.split(',')
+/**
+ * Parse a comma-separated origin list (ALLOWED_ORIGINS, REQUIRE_AUTH_ORIGINS):
+ * trimmed, empty entries dropped.
+ */
+export const parseOriginList = (raw: string | undefined): string[] =>
+  (raw ?? '')
+    .split(',')
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0)
 
-  if (allowlist && allowlist.length > 0) {
+/**
+ * True when `requestOrigin` matches any entry of `configuredOrigins`, with the
+ * same exact-match / single-label `https://*.` wildcard rules the CORS
+ * allowlist uses.
+ */
+export const matchesAnyConfiguredOrigin = (
+  configuredOrigins: readonly string[],
+  requestOrigin: string
+): boolean =>
+  configuredOrigins.some((configuredOrigin) =>
+    matchesConfiguredOrigin(configuredOrigin, requestOrigin)
+  )
+
+const getConfiguredOrigins = (env: Bindings): string[] => {
+  const allowlist = parseOriginList(env.ALLOWED_ORIGINS)
+
+  if (allowlist.length > 0) {
     return allowlist
   }
 
@@ -65,12 +86,17 @@ const resolveAllowedOrigin = (env: Bindings, requestOrigin: string | null): stri
     return null
   }
 
-  return configuredOrigins.some((configuredOrigin) =>
-    matchesConfiguredOrigin(configuredOrigin, requestOrigin)
-  )
-    ? requestOrigin
-    : null
+  return matchesAnyConfiguredOrigin(configuredOrigins, requestOrigin) ? requestOrigin : null
 }
+
+/**
+ * The CORS allowlist decision as a predicate: true when the edge would answer
+ * `requestOrigin` with an `Access-Control-Allow-Origin` header (an
+ * ALLOWED_ORIGINS match, or any origin under the dev-only ALLOW_ALL_ORIGINS).
+ * Shared with the OAuth exchange's redirect-URI check so both use one matcher.
+ */
+export const isOriginAllowed = (env: Bindings, requestOrigin: string | null): boolean =>
+  resolveAllowedOrigin(env, requestOrigin) !== null
 
 // Generated from the OpenAPI source so the exposed set never drifts from the
 // LiteLLM rate-limit headers the proxy actually forwards (plus retry-after).

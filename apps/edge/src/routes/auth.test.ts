@@ -20,14 +20,37 @@ const ENV = {
 
 const VALID_CODE = 'abcdefghij0123456789'
 
-const exchange = (env: Record<string, string>, code = VALID_CODE) =>
+const CALLBACK_ORIGIN = 'http://localhost:3111'
+const CALLBACK_URI = `${CALLBACK_ORIGIN}/#/auth/callback`
+
+const exchange = (env: Record<string, string>, code = VALID_CODE) => exchangeWith({ env, code })
+
+/**
+ * POST the exchange with full control over the request Origin and redirect URI.
+ * Defaults model the real browser callback: the page at CALLBACK_ORIGIN posts
+ * its own redirect URI, and that origin is CORS-allowed.
+ */
+const exchangeWith = ({
+  env,
+  code = VALID_CODE,
+  origin = CALLBACK_ORIGIN,
+  redirectUri = CALLBACK_URI
+}: {
+  env: Record<string, string>
+  code?: string
+  origin?: string | null
+  redirectUri?: string | null
+}) =>
   app.fetch(
     new Request('http://localhost/auth/github/exchange', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code, redirectUri: 'http://localhost:3111/callback' })
+      headers: {
+        'content-type': 'application/json',
+        ...(origin ? { origin } : {})
+      },
+      body: JSON.stringify({ code, ...(redirectUri ? { redirectUri } : {}) })
     }),
-    env
+    { ALLOWED_ORIGINS: CALLBACK_ORIGIN, ...env }
   )
 
 // fetchWithTimeout passes (url, init) today, but derive URL/method/headers/body
@@ -103,7 +126,119 @@ describe('POST /auth/github/exchange', () => {
       client_id: 'test-client-id',
       client_secret: 'test-client-secret',
       code: VALID_CODE,
-      redirect_uri: 'http://localhost:3111/callback'
+      redirect_uri: CALLBACK_URI
+    })
+  })
+
+  describe('redirect URI validation (issue #510 T5)', () => {
+    // The develop edge's real ALLOWED_ORIGINS (apps/edge/wrangler.jsonc): its
+    // own surfaces, every PR preview, and CanFactory's preview + local dev.
+    const DEVELOP_ORIGINS = [
+      'http://localhost:3111',
+      'https://dev.tiny.nntin.xyz',
+      'https://*.tiny.preview.nntin.xyz',
+      'https://canfactory-preview.nntin.xyz',
+      'http://localhost:5173'
+    ].join(',')
+    const developEnv = { ...ENV, ALLOWED_ORIGINS: DEVELOP_ORIGINS }
+
+    it.each([
+      [
+        'the develop frontend',
+        'https://dev.tiny.nntin.xyz',
+        'https://dev.tiny.nntin.xyz/#/auth/callback'
+      ],
+      [
+        'a PR preview',
+        'https://pr-42.tiny.preview.nntin.xyz',
+        'https://pr-42.tiny.preview.nntin.xyz/#/auth/callback'
+      ],
+      ['the local shell', 'http://localhost:3111', 'http://localhost:3111/#/auth/callback'],
+      [
+        'CanFactory preview',
+        'https://canfactory-preview.nntin.xyz',
+        'https://canfactory-preview.nntin.xyz/auth/github/callback'
+      ]
+    ])('accepts %s exchanging for its own callback', async (_label, origin, redirectUri) => {
+      const stub = stubGitHub(JSON.stringify({ access_token: 'gho_test123' }))
+
+      const res = await exchangeWith({ env: developEnv, origin, redirectUri })
+
+      expect(res.status).toBe(200)
+      expect(stub).toHaveBeenCalledTimes(1)
+      expect(await toRequestBodyJson(...stub.mock.calls[0]!)).toMatchObject({
+        redirect_uri: redirectUri
+      })
+    })
+
+    it.each([
+      ['no redirectUri at all', { redirectUri: null }],
+      ['no Origin header', { origin: null }],
+      [
+        'a redirect URI on another allowed origin',
+        {
+          origin: 'https://dev.tiny.nntin.xyz',
+          redirectUri: 'https://canfactory-preview.nntin.xyz/auth/github/callback'
+        }
+      ],
+      [
+        'a matching origin outside ALLOWED_ORIGINS',
+        {
+          origin: 'https://evil.nntin.xyz',
+          redirectUri: 'https://evil.nntin.xyz/auth/github/callback'
+        }
+      ],
+      [
+        'a nested subdomain the single-label wildcard does not cover',
+        {
+          origin: 'https://a.b.tiny.preview.nntin.xyz',
+          redirectUri: 'https://a.b.tiny.preview.nntin.xyz/#/auth/callback'
+        }
+      ],
+      [
+        'the same host on another scheme',
+        { origin: 'https://localhost:3111', redirectUri: 'http://localhost:3111/#/auth/callback' }
+      ]
+    ])('rejects %s with 400 without calling GitHub', async (_label, overrides) => {
+      const stub = stubGitHub(JSON.stringify({ access_token: 'gho_test123' }))
+
+      const res = await exchangeWith({ env: developEnv, ...overrides })
+
+      expect(res.status).toBe(400)
+      expect(stub).not.toHaveBeenCalled()
+    })
+
+    it('rejects localhost:5173 on the prod edge, where it is not CORS-allowed', async () => {
+      const stub = stubGitHub(JSON.stringify({ access_token: 'gho_test123' }))
+
+      const res = await exchangeWith({
+        env: {
+          ...ENV,
+          ALLOWED_ORIGINS:
+            'http://localhost:3111,https://tiny.nntin.xyz,https://canfactory.nntin.xyz'
+        },
+        origin: 'http://localhost:5173',
+        redirectUri: 'http://localhost:5173/auth/github/callback'
+      })
+
+      expect(res.status).toBe(400)
+      expect(githubExchangeResponseSchema.parse(await res.json())).toEqual({
+        error: 'Invalid OAuth redirect URI'
+      })
+      expect(stub).not.toHaveBeenCalled()
+    })
+
+    it('accepts any origin under the dev-only ALLOW_ALL_ORIGINS', async () => {
+      const stub = stubGitHub(JSON.stringify({ access_token: 'gho_test123' }))
+
+      const res = await exchangeWith({
+        env: { ...ENV, ALLOWED_ORIGINS: '', ALLOW_ALL_ORIGINS: 'true' },
+        origin: 'http://127.0.0.1:4000',
+        redirectUri: 'http://127.0.0.1:4000/#/auth/callback'
+      })
+
+      expect(res.status).toBe(200)
+      expect(stub).toHaveBeenCalledTimes(1)
     })
   })
 

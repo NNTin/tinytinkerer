@@ -76,7 +76,12 @@ describe('completeGitHubOAuthCallback telemetry (issue #409)', () => {
         )
       )
     )
-    const app = makeApp({ storageNamespace: STORAGE_NS, edgeBaseUrl: 'https://edge.test' })
+    const app = makeApp({
+      storageNamespace: STORAGE_NS,
+      edgeBaseUrl: 'https://edge.test',
+      // The exchange always carries the redirect URI the edge validates.
+      githubRedirectUri: 'https://tiny.test/#/auth/callback'
+    })
 
     await expect(
       completeGitHubOAuthCallback(app, { code: 'the-secret-oauth-code', state: 'good-state' })

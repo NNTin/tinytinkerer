@@ -70,7 +70,10 @@ describe('resolveBrowserShellBootstrapConfig', () => {
     })
   })
 
-  it('omits OAuth fields when GitHub auth is not configured', () => {
+  // Without a client id no sign-in can start, but the callback redirect URI is
+  // still derived: the edge requires every exchange to carry one on the page's
+  // own origin (issue #510), and the e2e build has no client id.
+  it('omits the client id when GitHub auth is not configured but keeps the callback', () => {
     expect(
       resolveBrowserShellBootstrapConfig({
         baseUrl: '/mobile/',
@@ -82,7 +85,8 @@ describe('resolveBrowserShellBootstrapConfig', () => {
       authMode: 'hybrid',
       hostToken: null,
       appVersion: 'dev',
-      buildHash: 'dev'
+      buildHash: 'dev',
+      githubRedirectUri: 'http://localhost:3111/mobile/#/auth/callback'
     })
   })
 

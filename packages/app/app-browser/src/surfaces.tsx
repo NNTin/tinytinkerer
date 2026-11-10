@@ -17,7 +17,6 @@ import {
   type SystemStatus
 } from '@tinytinkerer/contracts'
 import {
-  useCallback,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -34,7 +33,7 @@ import { useWebSpeechInput } from './web-speech'
 import { useAuthStore, useBrowserApp, useChatStore, useSettingsStore, useStatusStore } from './app'
 import { preSendDisclosureStoreFor } from './pre-send-disclosure'
 import { MAX_CONCURRENT_RUNS } from './stores/chat-store'
-import { formatCooldown, useChatCooldown, useGitHubOAuth } from './hooks'
+import { formatCooldown, useAppSignIn, useChatCooldown, useGitHubOAuth } from './hooks'
 import { useGitHubUser } from './github-user'
 import { useModels, type ModelEntry } from './models'
 import { readOAuthCallbackParams } from './oauth-callback-url'
@@ -504,21 +503,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
   const clearToken = useAuthStore((state) => state.clearToken)
   const setToken = useAuthStore((state) => state.setToken)
   const { canStartGitHubOAuth, startGitHubOAuth } = useGitHubOAuth()
-  // A host-provided sign-in wins over this shell's own OAuth when present: an
-  // embedder that supplies one has, by definition, decided where its readers
-  // authenticate. It also reports whether the flow started, which OAuth cannot.
-  const appSignIn = useBrowserApp().signIn
-  const canSignIn = appSignIn !== undefined || canStartGitHubOAuth
-  const signIn = useCallback((): boolean => {
-    if (appSignIn) {
-      return appSignIn()
-    }
-    if (!canStartGitHubOAuth) {
-      return false
-    }
-    startGitHubOAuth()
-    return true
-  }, [appSignIn, canStartGitHubOAuth, startGitHubOAuth])
+  const { canSignIn, signIn, hasHostSignIn } = useAppSignIn()
   const user = useGitHubUser()
   // Plugin manifests are discovered dynamically (via the shared usePluginModules
   // hook); the settings UI has no static dependency on any concrete plugin package.
@@ -639,7 +624,7 @@ export const useSettingsSurfaceController = (): SettingsSurfaceController => {
     setToken,
     canSignIn,
     signIn,
-    signInOpensSettings: appSignIn === undefined,
+    signInOpensSettings: !hasHostSignIn,
     canStartGitHubOAuth,
     startGitHubOAuth,
     user,

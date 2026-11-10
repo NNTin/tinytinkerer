@@ -85,7 +85,8 @@
           }
         },
         "required": [
-          "code"
+          "code",
+          "redirectUri"
         ]
       },
       "SearchResponse": {
@@ -765,7 +766,7 @@
             }
           },
           "400": {
-            "description": "Invalid code or failed exchange",
+            "description": "Invalid code, disallowed redirect URI, or failed exchange",
             "content": {
               "application/json": {
                 "schema": {
