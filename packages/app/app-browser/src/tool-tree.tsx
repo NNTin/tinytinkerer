@@ -8,7 +8,6 @@ import { FaListCheck } from 'react-icons/fa6'
 import { useBrowserApp, useSettingsStore } from './app'
 import { appToolCatalogue } from './app-tool-group'
 import { usePluginModules } from './plugins/use-plugin-modules'
-import { SLOT_TOGGLE_CLASS } from './slot-toggle-class'
 
 // The panel is lazy-loaded so it stays out of the eagerly-loaded chat route chunk
 // and only loads when a user actually opens the tool tree. Mirrors
@@ -172,7 +171,10 @@ export const ToolTreeSlot = ({
         aria-label="Choose available tools"
         title="Choose which tools are available to the assistant"
         onClick={() => setOpen(true)}
-        className={className ?? SLOT_TOGGLE_CLASS}
+        className={
+          className ??
+          'flex h-9 w-9 items-center justify-center rounded-md border border-stone-300 bg-white text-stone-600 transition-colors hover:border-stone-400 hover:bg-stone-50 hover:text-stone-800'
+        }
       >
         {icon}
       </button>

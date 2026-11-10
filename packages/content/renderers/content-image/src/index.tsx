@@ -12,6 +12,9 @@ import {
 
 const SVG_DATA_URI_PREFIX = 'data:image/svg+xml,'
 
+// The lightbox's four toolbar actions share one look (and one copy in the bundle).
+const LIGHTBOX_ACTION_CLASS = 'rounded bg-white/10 px-2 py-1 text-xs font-medium hover:bg-white/20'
+
 const captionFor = (node: ImageNode): string | null => {
   if (node.title && node.title.trim().length > 0) {
     return node.title
@@ -153,7 +156,7 @@ export const ImageNodeRenderer = ({ node }: ContentNodeRendererProps<ImageNode>)
               type="button"
               onClick={toggleZoom}
               aria-pressed={zoomed}
-              className="rounded bg-white/10 px-2 py-1 text-xs font-medium hover:bg-white/20"
+              className={LIGHTBOX_ACTION_CLASS}
             >
               {zoomed ? 'Fit' : 'Zoom'}
             </button>
@@ -161,14 +164,14 @@ export const ImageNodeRenderer = ({ node }: ContentNodeRendererProps<ImageNode>)
               href={linkUrl}
               target="_blank"
               rel="noreferrer noopener"
-              className="rounded bg-white/10 px-2 py-1 text-xs font-medium hover:bg-white/20"
+              className={LIGHTBOX_ACTION_CLASS}
             >
               Open
             </a>
             <a
               href={linkUrl}
               download={rawSvg ? 'image.svg' : filenameFromUrl(effectiveUrl)}
-              className="rounded bg-white/10 px-2 py-1 text-xs font-medium hover:bg-white/20"
+              className={LIGHTBOX_ACTION_CLASS}
             >
               Download
             </a>
@@ -176,7 +179,7 @@ export const ImageNodeRenderer = ({ node }: ContentNodeRendererProps<ImageNode>)
               type="button"
               onClick={handleClose}
               aria-label="Close image preview"
-              className="rounded bg-white/10 px-2 py-1 text-xs font-medium hover:bg-white/20"
+              className={LIGHTBOX_ACTION_CLASS}
             >
               Close
             </button>
